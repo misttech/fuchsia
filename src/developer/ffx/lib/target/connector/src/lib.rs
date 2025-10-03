@@ -4,16 +4,14 @@
 
 use async_trait::async_trait;
 use errors::FfxError;
-use ffx_command_error::{Error, Result, return_bug};
+use ffx_command_error::{Error, Result};
 use ffx_target::Resolution;
 use fho::{FhoEnvironment, TryFromEnv};
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_developer_ffx as ffx_fidl;
 use std::sync::Arc;
 use std::time::Duration;
-use target_behavior::{
-    ConnectionBehavior, FhoTargetEnvironment, init_connection_behavior, target_interface,
-};
+use target_behavior::{ConnectionBehavior, FhoTargetEnvironment, target_interface};
 use target_holders::DaemonProxyHolder;
 
 /// A connector lets a tool make multiple attempts to connect to an object. It
@@ -36,23 +34,20 @@ impl<T: TryFromEnv> Connector<T> {
         &self,
         mut log_target_wait: impl FnMut(&Option<String>, &Option<Error>) -> Result<()>,
     ) -> Result<T> {
-        if let Some(behavior) = self.target_env.behavior() {
-            match &behavior {
-                ConnectionBehavior::DaemonConnector(_) => {
-                    daemon_try_connect(
-                        &self.env,
-                        &mut log_target_wait,
-                        Self::OPEN_TARGET_TIMEOUT,
-                        Self::KNOCK_TARGET_TIMEOUT,
-                    )
-                    .await
-                }
-                ConnectionBehavior::DirectConnector(dc) => {
-                    direct_connector_try_connect::<T>(&self.env, dc, &mut log_target_wait).await
-                }
+        let behavior = self.target_env.behavior()?;
+        match *behavior {
+            ConnectionBehavior::DaemonConnector(_) => {
+                daemon_try_connect(
+                    &self.env,
+                    &mut log_target_wait,
+                    Self::OPEN_TARGET_TIMEOUT,
+                    Self::KNOCK_TARGET_TIMEOUT,
+                )
+                .await
             }
-        } else {
-            return_bug!("Behavior must be initialized at this point")
+            ConnectionBehavior::DirectConnector(ref dc) => {
+                direct_connector_try_connect::<T>(&self.env, dc, &mut log_target_wait).await
+            }
         }
     }
 }
@@ -61,10 +56,7 @@ impl<T: TryFromEnv> Connector<T> {
 impl<T: TryFromEnv> TryFromEnv for Connector<T> {
     async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
         let target_env = target_interface(env);
-        if target_env.behavior().is_none() {
-            let b = init_connection_behavior(env.environment_context()).await?;
-            target_env.set_behavior(b)?;
-        }
+        let _behavior = target_env.init_connection_behavior(env.environment_context()).await?;
         Ok(Connector {
             env: env.clone(),
             target_env: target_env.clone(),

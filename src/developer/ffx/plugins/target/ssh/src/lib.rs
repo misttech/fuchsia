@@ -15,7 +15,7 @@ use fidl_fuchsia_developer_ffx::{TargetIpAddrInfo, TargetIpPort};
 use fidl_fuchsia_net::{IpAddress, Ipv4Address};
 use std::path::PathBuf;
 use std::process::Command;
-use target_behavior::{ConnectionBehavior, init_connection_behavior, target_interface};
+use target_behavior::{ConnectionBehavior, target_interface};
 use target_holders::{TargetInfoHolder, TargetProxyHolder};
 
 #[derive(FfxTool)]
@@ -35,14 +35,8 @@ impl FfxMain for SshTool {
     type Writer = SimpleWriter;
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
         let target_env = target_interface(&self.fho_env);
-        let behavior = if let Some(behavior) = target_env.behavior() {
-            behavior
-        } else {
-            let b = init_connection_behavior(&self.context).await?;
-            target_env.set_behavior(b.clone())?;
-            b
-        };
-        let ssh_address = match behavior {
+        let behavior = target_env.init_connection_behavior(&self.context).await?;
+        let ssh_address = match *behavior {
             ConnectionBehavior::DirectConnector(_) => self
                 .target_info
                 .await

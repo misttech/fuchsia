@@ -59,11 +59,8 @@ impl DaemonStartTool {
     async fn start_in_background(self) -> fho::Result<()> {
         log::debug!("invoking daemon background start");
         let target_env = target_behavior::target_interface(&self.fho_env);
-        if target_env.behavior().is_none() {
-            let env_context = self.fho_env.environment_context();
-            let b = target_behavior::init_daemon_connection_behavior(env_context).await?;
-            target_env.set_behavior(b)?;
-        }
+        let _behavior =
+            target_env.init_daemon_connection_behavior(&self.fho_env.environment_context()).await?;
         let _ = target_env
             .injector::<DaemonProxyHolder>(&self.fho_env)
             .await?
@@ -82,7 +79,7 @@ mod test {
     use target_behavior::{ConnectionBehavior, target_interface};
     use target_holders::{FakeInjector, fake_proxy};
 
-    fn create_fake_injector_with_result(
+    async fn create_fake_injector_with_result(
         context: &EnvironmentContext,
         succeeds: bool,
     ) -> FhoEnvironment {
@@ -103,8 +100,7 @@ mod test {
         let fho_env = FhoEnvironment::new_with_args(context, &["some", "test"]);
         let target_env = target_interface(&fho_env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
-            .expect("set_behavior");
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
         fho_env
     }
 
@@ -112,7 +108,7 @@ mod test {
     async fn test_background_start_succeeds() {
         let config_env = ffx_config::test_init().await.unwrap();
         let cmd = StartCommand { path: None, background: true };
-        let fho_env = create_fake_injector_with_result(&config_env.context, true);
+        let fho_env = create_fake_injector_with_result(&config_env.context, true).await;
         let tool = DaemonStartTool { cmd, fho_env };
         let test_buffers = ffx_writer::TestBuffers::default();
         let writer = ffx_writer::SimpleWriter::new_test(&test_buffers);
@@ -123,7 +119,7 @@ mod test {
     async fn test_background_start_fails() {
         let config_env = ffx_config::test_init().await.unwrap();
         let cmd = StartCommand { path: None, background: true };
-        let fho_env = create_fake_injector_with_result(&config_env.context, false);
+        let fho_env = create_fake_injector_with_result(&config_env.context, false).await;
         let tool = DaemonStartTool { cmd, fho_env };
         let test_buffers = ffx_writer::TestBuffers::default();
         let writer = ffx_writer::SimpleWriter::new_test(&test_buffers);

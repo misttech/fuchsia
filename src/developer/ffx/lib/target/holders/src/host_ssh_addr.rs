@@ -11,7 +11,7 @@ use ffx_command_error::Result;
 use ffx_ssh::parse::HostAddr;
 use fho::{FhoEnvironment, TryFromEnv};
 use fidl_fuchsia_developer_ffx as ffx_fidl;
-use target_behavior::{ConnectionBehavior, init_connection_behavior, target_interface};
+use target_behavior::{ConnectionBehavior, target_interface};
 
 #[derive(Clone, Debug)]
 pub struct HostAddrHolder(Option<HostAddr>);
@@ -58,14 +58,8 @@ impl From<String> for HostAddrHolder {
 impl TryFromEnv for HostAddrHolder {
     async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
         let target_env = target_interface(env);
-        let behavior = if let Some(behavior) = target_env.behavior() {
-            behavior
-        } else {
-            let b = init_connection_behavior(env.environment_context()).await?;
-            target_env.set_behavior(b.clone())?;
-            b
-        };
-        match behavior {
+        let behavior = target_env.init_connection_behavior(env.environment_context()).await?;
+        match *behavior {
             ConnectionBehavior::DaemonConnector(_) => {
                 // Get a target proxy
                 let tp = TargetProxyHolder::try_from_env(env).await?;
@@ -75,7 +69,7 @@ impl TryFromEnv for HostAddrHolder {
                     .map_err(|e| anyhow!("Got Error getting target identity: {}", e))?;
                 Ok(HostAddrHolder::from(id.ssh_host_address))
             }
-            ConnectionBehavior::DirectConnector(direct) => {
+            ConnectionBehavior::DirectConnector(ref direct) => {
                 let conn = direct.get_connection(env.environment_context()).await?;
                 let host_addr_info = conn.host_ssh_address();
                 Ok(HostAddrHolder::from(host_addr_info))

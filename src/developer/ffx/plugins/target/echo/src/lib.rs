@@ -172,9 +172,7 @@ mod test {
             &["some", "test"],
         );
         let target_env = target_behavior::target_interface(&env);
-        target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(fake_injector))
-            .expect("set_behavior");
+        target_env.set_behavior_for_test(ConnectionBehavior::DaemonConnector(fake_injector));
 
         let connector = Connector::try_from_env(&env).await.expect("Could not make test connector");
         let tool = EchoTool { cmd, rcs_proxy: connector };
@@ -222,7 +220,7 @@ mod test {
             &["some", "test"],
         );
         let target_env = target_behavior::target_interface(&env);
-        target_env.set_behavior(ConnectionBehavior::DaemonConnector(fake_injector))?;
+        target_env.set_behavior_for_test(ConnectionBehavior::DaemonConnector(fake_injector));
         let connector = Connector::try_from_env(&env).await.expect("Could not make test connector");
         let cmd = EchoCommand { text: Some("test".to_string()), repeat: false };
         let tool = EchoTool { cmd, rcs_proxy: connector };

@@ -754,8 +754,7 @@ mod tests {
         let fho_env = FhoEnvironment::new_with_args(&test_env.context, &["some", "test"]);
         let target_env = target_behavior::target_interface(&fho_env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
-            .expect("set_behavior");
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         let tool = UpdateTool {
             cmd: Update {
@@ -844,8 +843,7 @@ mod tests {
         let fho_env = FhoEnvironment::new_with_args(&test_env.context, &["some", "test"]);
         let target_env = target_behavior::target_interface(&fho_env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
-            .expect("set_behavior");
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         let tool = UpdateTool {
             cmd: Update { cmd: args::Command::ForceInstall(args.clone()) },

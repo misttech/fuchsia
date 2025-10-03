@@ -67,8 +67,9 @@ impl ShowTool {
         // To add more show information, add a `gather_*_show(*) call to this
         // list, as well as the labels in the Ok() and vec![] just below.
         // Returns Some(dc) only if we have a direct connection
-        let resolution = match target_behavior::target_interface(&self.fho_env).behavior() {
-            Some(ConnectionBehavior::DirectConnector(ref direct)) => Some(direct.clone()),
+        let behavior = target_behavior::target_interface(&self.fho_env).behavior()?;
+        let resolution = match *behavior {
+            ConnectionBehavior::DirectConnector(ref resolution) => Some(resolution.clone()),
             _ => None,
         };
         let show = match futures::try_join!(
@@ -426,9 +427,14 @@ mod tests {
         let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         let buffers = TestBuffers::default();
         let output = VerifiedMachineWriter::<TargetShowInfo>::new_test(None, &buffers);
+        let fho_env = FhoEnvironment::default();
+        let target_env = target_behavior::target_interface(&fho_env);
+        target_env.set_behavior_for_test(ConnectionBehavior::DirectConnector(
+            setup_fake_direct_connector().await,
+        ));
         let tool = ShowTool {
             cmd: args::TargetShow { ..Default::default() },
-            fho_env: FhoEnvironment::default(),
+            fho_env,
             rcs_proxy: setup_fake_rcs_server(Arc::clone(&client)).into(),
             target_proxy: setup_fake_target_server(),
             channel_control_proxy: setup_fake_channel_control_server(Arc::clone(&client)),
@@ -589,9 +595,14 @@ mod tests {
         let buffers = TestBuffers::default();
         let mut output =
             <ShowTool as FfxMain>::Writer::new_test(Some(Format::JsonPretty), &buffers);
+        let fho_env = FhoEnvironment::default();
+        let target_env = target_behavior::target_interface(&fho_env);
+        target_env.set_behavior_for_test(ConnectionBehavior::DirectConnector(
+            setup_fake_direct_connector().await,
+        ));
         let tool = ShowTool {
             cmd: args::TargetShow { ..Default::default() },
-            fho_env: FhoEnvironment::default(),
+            fho_env,
             rcs_proxy: setup_fake_rcs_server(Arc::clone(&client)).into(),
             target_proxy: setup_fake_target_server(),
             channel_control_proxy: setup_fake_channel_control_server(Arc::clone(&client)),
@@ -635,9 +646,9 @@ mod tests {
         let output = VerifiedMachineWriter::<TargetShowInfo>::new_test(None, &buffers);
         let fho_env = FhoEnvironment::default();
         let target_env = target_behavior::target_interface(&fho_env);
-        target_env
-            .set_behavior(ConnectionBehavior::DirectConnector(setup_fake_direct_connector().await))
-            .expect("set_behavior");
+        target_env.set_behavior_for_test(ConnectionBehavior::DirectConnector(
+            setup_fake_direct_connector().await,
+        ));
         let tool = ShowTool {
             cmd: args::TargetShow { ..Default::default() },
             fho_env,

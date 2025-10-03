@@ -13,7 +13,7 @@ use fho::{FhoEnvironment, TryFromEnv};
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
-use target_behavior::{ConnectionBehavior, init_connection_behavior, target_interface};
+use target_behavior::{ConnectionBehavior, target_interface};
 
 #[derive(Clone, Debug)]
 pub struct RemoteControlProxyHolder(RemoteControlProxy);
@@ -36,34 +36,30 @@ impl From<RemoteControlProxy> for RemoteControlProxyHolder {
 impl TryFromEnv for RemoteControlProxyHolder {
     async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
         let target_env = target_interface(env);
-        let behavior = if let Some(behavior) = target_env.behavior() {
-            behavior
-        } else {
-            let b = init_connection_behavior(env.environment_context()).await?;
-            target_env.set_behavior(b.clone())?;
-            b
-        };
-        match behavior {
-            ConnectionBehavior::DirectConnector(dc) => {
+        let behavior = target_env.init_connection_behavior(env.environment_context()).await?;
+        match *behavior {
+            ConnectionBehavior::DirectConnector(ref dc) => {
                 let conn = dc.get_connection(env.environment_context()).await?;
                 return conn.rcs_proxy_fdomain().await.bug().map(Into::into).map_err(Into::into);
             }
-            ConnectionBehavior::DaemonConnector(dc) => match dc.remote_factory_fdomain().await {
-                Ok(p) => Ok(p.into()),
-                Err(e) => {
-                    let doctor_tip = "Please check the connection to the target; `ffx doctor -v` may help diagnose the issue.";
-                    if let Some(ffx_e) = &e.downcast_ref::<FfxError>() {
-                        let message = format!(
-                            "Failed connecting to remote control proxy: {ffx_e}. {doctor_tip}"
-                        );
-                        Err(e).user_message(message)
-                    } else {
-                        let message =
-                            format!("Failed to create remote control proxy: {e}. {doctor_tip}");
-                        Err(e).user_message(message)
+            ConnectionBehavior::DaemonConnector(ref dc) => {
+                match dc.remote_factory_fdomain().await {
+                    Ok(p) => Ok(p.into()),
+                    Err(e) => {
+                        let doctor_tip = "Please check the connection to the target; `ffx doctor -v` may help diagnose the issue.";
+                        if let Some(ffx_e) = &e.downcast_ref::<FfxError>() {
+                            let message = format!(
+                                "Failed connecting to remote control proxy: {ffx_e}. {doctor_tip}"
+                            );
+                            Err(e).user_message(message)
+                        } else {
+                            let message =
+                                format!("Failed to create remote control proxy: {e}. {doctor_tip}");
+                            Err(e).user_message(message)
+                        }
                     }
                 }
-            },
+            }
         }
     }
 }

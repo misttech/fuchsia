@@ -992,8 +992,7 @@ mod test {
             FhoEnvironment::new_with_args(&test_env.context, &["some", "repo", "start", "test"]);
         let target_env = target_interface(&env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
-            .expect("set_behavior");
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         Connector::try_from_env(&env).await.expect("Could not make RCS test connector")
     }
@@ -1020,8 +1019,7 @@ mod test {
             FhoEnvironment::new_with_args(&test_env.context, &["some", "repo", "start", "test"]);
         let target_env = target_behavior::target_interface(&env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
-            .expect("set_behavior");
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         Connector::try_from_env(&env).await.expect("Could not make RCS test connector")
     }
@@ -1048,8 +1046,7 @@ mod test {
             FhoEnvironment::new_with_args(&test_env.context, &["some", "repo", "start", "test"]);
         let target_env = target_behavior::target_interface(&env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
-            .expect("set_behavior");
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         Connector::try_from_env(&env).await.expect("Could not make RCS test connector")
     }
@@ -1585,8 +1582,7 @@ mod test {
             FhoEnvironment::new_with_args(&test_env.context, &["some", "repo", "start", "test"]);
         let target_env = target_behavior::target_interface(&env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
-            .expect("set_behavior");
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         let tmp_port_file = tempfile::NamedTempFile::new().unwrap();
 
@@ -1745,8 +1741,7 @@ mod test {
             FhoEnvironment::new_with_args(&test_env.context, &["some", "repo", "start", "test"]);
         let target_env = target_behavior::target_interface(&env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
-            .expect("set_behavior");
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         let tmp_port_file = tempfile::NamedTempFile::new().unwrap();
         let tmp_port_file_path = tmp_port_file.path().to_owned();
@@ -1939,8 +1934,7 @@ mod test {
             FhoEnvironment::new_with_args(&test_env.context, &["some", "repo", "start", "test"]);
         let target_env = target_behavior::target_interface(&env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
-            .expect("set_behavior");
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         let (mut tx, mut rx) = futures::channel::mpsc::unbounded();
         // Run main in background
@@ -2097,8 +2091,7 @@ mod test {
             FhoEnvironment::new_with_args(&test_env.context, &["some", "repo", "start", "test"]);
         let target_env = target_behavior::target_interface(&env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
-            .expect("set_behavior");
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         let (listen_addr, repo_host) = if direct_target_connection {
             (REPO_UNSPECIFIED_IPV4_ADDR, HOST_ADDR)
@@ -2303,8 +2296,7 @@ mod test {
             FhoEnvironment::new_with_args(&test_env.context, &["some", "repo", "start", "test"]);
         let target_env = target_behavior::target_interface(&env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
-            .expect("set_behavior");
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         // Prepare serving the repo without passing the trusted root, and
         // passing of the trusted root 2.root.json explicitly
@@ -2387,8 +2379,7 @@ mod test {
             FhoEnvironment::new_with_args(&test_env.context, &["some", "repo", "start", "test"]);
         let target_env = target_behavior::target_interface(&env);
         target_env
-            .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
-            .expect("set_behavior");
+            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         let serve_cmd_with_root = StartCommand {
             repository: Some(REPO_NAME.to_string()),

@@ -469,9 +469,9 @@ mod tests {
             };
             let fho_env = FhoEnvironment::new_with_args(&test_env.context, &["some", "test"]);
             let target_env = target_behavior::target_interface(&fho_env);
-            target_env
-                .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
-                .expect("set_behavior");
+            target_env.set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(
+                fake_injector,
+            )));
 
             let rcs_proxy_connector =
                 Connector::try_from_env(&fho_env).await.expect("Could not make RCS test connector");

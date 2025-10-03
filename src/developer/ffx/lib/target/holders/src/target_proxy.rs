@@ -7,7 +7,7 @@ use ffx_command_error::{FfxContext as _, Result};
 use fho::{FhoEnvironment, TryFromEnv};
 use fidl_fuchsia_developer_ffx as ffx_fidl;
 use std::ops::Deref;
-use target_behavior::{init_daemon_connection_behavior, target_interface};
+use target_behavior::target_interface;
 
 #[derive(Clone, Debug)]
 pub struct TargetProxyHolder(ffx_fidl::TargetProxy);
@@ -30,10 +30,8 @@ impl From<ffx_fidl::TargetProxy> for TargetProxyHolder {
 impl TryFromEnv for TargetProxyHolder {
     async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
         let target_env = target_interface(env);
-        if target_env.behavior().is_none() {
-            let b = init_daemon_connection_behavior(env.environment_context()).await?;
-            target_env.set_behavior(b)?;
-        }
+        let _behavior =
+            target_env.init_daemon_connection_behavior(env.environment_context()).await?;
         match target_env.injector::<Self>(env).await?.target_factory().await.map_err(|e| {
             // This error case happens when there are multiple targets in target list.
             // So let's print out the ffx error message directly (which comes from OpenTargetError::QueryAmbiguous)

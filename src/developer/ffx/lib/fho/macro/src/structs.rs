@@ -268,8 +268,7 @@ impl ToTokens for NamedFieldStruct<'_> {
             TargetConnection::Direct => quote! {
                 {
                     let target_env = target_behavior::target_interface(&_env);
-                    let b = target_behavior::init_direct_connection_behavior(_env.environment_context()).await?;
-                    target_env.set_behavior(b)?;
+                    let _behavior = target_env.init_direct_connection_behavior(_env.environment_context()).await?;
                 }
             },
         };

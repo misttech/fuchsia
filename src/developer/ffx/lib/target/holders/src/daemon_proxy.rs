@@ -9,7 +9,7 @@ use fidl::endpoints::{Proxy, ServerEnd};
 use fidl_fuchsia_developer_ffx as ffx_fidl;
 use std::marker::PhantomData;
 use std::ops::Deref;
-use target_behavior::{init_daemon_connection_behavior, target_interface};
+use target_behavior::target_interface;
 
 #[derive(Clone, Debug)]
 pub struct DaemonProxyHolder(ffx_fidl::DaemonProxy);
@@ -32,10 +32,7 @@ impl From<ffx_fidl::DaemonProxy> for DaemonProxyHolder {
 impl TryFromEnv for DaemonProxyHolder {
     async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
         let target_env = target_interface(env);
-        if target_env.behavior().is_none() {
-            let b = init_daemon_connection_behavior(env.environment_context()).await?;
-            target_env.set_behavior(b)?;
-        }
+        let _b = target_env.init_daemon_connection_behavior(env.environment_context()).await?;
         // Might need to revisit whether it's necessary to cast every daemon_factory() invocation
         // into a user error. This line originally casted every error into "Failed to create daemon
         // proxy", which obfuscates the original error.
