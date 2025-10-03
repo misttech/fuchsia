@@ -556,11 +556,21 @@ void Node::CompleteBind(zx::result<> result) {
   }
 
   if (auto* driver_component = std::get_if<DriverComponent>(&state_); driver_component) {
-    ZX_ASSERT_MSG(driver_component->state == DriverState::kBinding,
-                  "Node %s CompleteBind() invoked at invalid state %d", name().c_str(),
-                  driver_component->state);
-    driver_component->state = DriverState::kRunning;
-    OnBind();
+    if (driver_component->state == DriverState::kStopped) {
+      fdf_log::warn(
+          "Node {} in state {} completed bind with result {} but the component is already Stopped.",
+          name(), GetNodeShutdownCoordinator().NodeStateAsString(), result);
+
+      // Even if the driver started successfully, the component is no longer there (this can happen
+      // if component framework is shutting down the system) so we can't say the bind succeeded.
+      result = zx::error(ZX_ERR_CANCELED);
+    } else {
+      ZX_ASSERT_MSG(driver_component->state == DriverState::kBinding,
+                    "Node %s CompleteBind() invoked at invalid state %d", name().c_str(),
+                    driver_component->state);
+      driver_component->state = DriverState::kRunning;
+      OnBind();
+    }
   }
 
   if (pending_bind_completer_) {
@@ -1716,10 +1726,14 @@ void Node::StopDriverComponent() {
     return;
   }
 
+  // If its already stopped we don't need to send the OnStop.
+  if (driver_component->state == DriverState::kStopped) {
+    return;
+  }
+
   // Send an epitaph to the component manager and close the connection. The
   // server of a `ComponentController` protocol is expected to send an epitaph
   // before closing the associated connection.
-  auto this_node = shared_from_this();
   fit::result<fidl::OneWayError> res =
       fidl::SendEvent(driver_component->runner_component_controller_ref)
           ->OnStop(fuchsia_component_runner::ComponentStopInfo{});
@@ -1858,8 +1872,9 @@ Node::DriverComponent::DriverComponent(
                 driver_component->state = DriverState::kStopped;
                 node->GetNodeShutdownCoordinator().CheckNodeState();
               } else {
-                fdf_log::warn("Node: {}: runner component controller channel had unexpected close.",
-                              node->name());
+                fdf_log::warn(
+                    "Node: {}: runner component controller channel had unexpected close. Node state: {}",
+                    node->name(), node->GetNodeShutdownCoordinator().NodeStateAsString());
                 driver_component->state = DriverState::kStopped;
                 node->Remove(RemovalSet::kAll, nullptr);
               }
