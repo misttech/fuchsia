@@ -125,12 +125,12 @@ mod test {
     use fdomain_fuchsia_developer_remotecontrol::{
         RemoteControlMarker, RemoteControlProxy, RemoteControlRequest,
     };
-    use ffx_target::fho::FhoConnectionBehavior;
     use ffx_writer::{Format, TestBuffers};
     use fho::{FhoEnvironment, TryFromEnv};
     use futures::FutureExt;
     use serde_json::json;
     use std::sync::Arc;
+    use target_behavior::ConnectionBehavior;
     use target_holders::FakeInjector;
 
     async fn setup_fake_service(client: Arc<fdomain_client::Client>) -> RemoteControlProxy {
@@ -171,9 +171,9 @@ mod test {
             ),
             &["some", "test"],
         );
-        let target_env = ffx_target::fho::target_interface(&env);
+        let target_env = target_behavior::target_interface(&env);
         target_env
-            .set_behavior(FhoConnectionBehavior::DaemonConnector(fake_injector))
+            .set_behavior(ConnectionBehavior::DaemonConnector(fake_injector))
             .expect("set_behavior");
 
         let connector = Connector::try_from_env(&env).await.expect("Could not make test connector");
@@ -221,8 +221,8 @@ mod test {
             ),
             &["some", "test"],
         );
-        let target_env = ffx_target::fho::target_interface(&env);
-        target_env.set_behavior(FhoConnectionBehavior::DaemonConnector(fake_injector))?;
+        let target_env = target_behavior::target_interface(&env);
+        target_env.set_behavior(ConnectionBehavior::DaemonConnector(fake_injector))?;
         let connector = Connector::try_from_env(&env).await.expect("Could not make test connector");
         let cmd = EchoCommand { text: Some("test".to_string()), repeat: false };
         let tool = EchoTool { cmd, rcs_proxy: connector };

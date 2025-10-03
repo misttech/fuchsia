@@ -8,7 +8,6 @@ use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_config::environment::EnvironmentKind;
 use ffx_ssh::ssh::{build_ssh_command, build_ssh_command_with_config_file};
-use ffx_target::fho::FhoConnectionBehavior;
 use ffx_target_ssh_args::SshCommand;
 use ffx_writer::SimpleWriter;
 use fho::{Deferred, FfxContext, FfxMain, FfxTool, FhoEnvironment};
@@ -16,7 +15,8 @@ use fidl_fuchsia_developer_ffx::{TargetIpAddrInfo, TargetIpPort};
 use fidl_fuchsia_net::{IpAddress, Ipv4Address};
 use std::path::PathBuf;
 use std::process::Command;
-use target_holders::{TargetInfoHolder, TargetProxyHolder, init_connection_behavior};
+use target_behavior::{ConnectionBehavior, init_connection_behavior, target_interface};
+use target_holders::{TargetInfoHolder, TargetProxyHolder};
 
 #[derive(FfxTool)]
 pub struct SshTool {
@@ -34,17 +34,22 @@ fho::embedded_plugin!(SshTool);
 impl FfxMain for SshTool {
     type Writer = SimpleWriter;
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
-        let behavior = init_connection_behavior(&self.context).await?;
-        let target_env = ffx_target::fho::target_interface(&self.fho_env);
-        target_env.set_behavior(behavior.clone()).expect("set_behavior");
+        let target_env = target_interface(&self.fho_env);
+        let behavior = if let Some(behavior) = target_env.behavior() {
+            behavior
+        } else {
+            let b = init_connection_behavior(&self.context).await?;
+            target_env.set_behavior(b.clone())?;
+            b
+        };
         let ssh_address = match behavior {
-            FhoConnectionBehavior::DirectConnector(_) => self
+            ConnectionBehavior::DirectConnector(_) => self
                 .target_info
                 .await
                 .user_message("failed to get TargetInfo")?
                 .ssh_address()
                 .user_message("failed to get target ssh address")?,
-            FhoConnectionBehavior::DaemonConnector(_) => self
+            ConnectionBehavior::DaemonConnector(_) => self
                 .target_proxy
                 .await
                 .user_message("failed to get target")?

@@ -1,14 +1,13 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::init_daemon_connection_behavior;
 use async_trait::async_trait;
 use errors::FfxError;
 use ffx_command_error::{FfxContext as _, Result};
-use ffx_target::fho::target_interface;
 use fho::{FhoEnvironment, TryFromEnv};
 use fidl_fuchsia_developer_ffx as ffx_fidl;
 use std::ops::Deref;
+use target_behavior::{init_daemon_connection_behavior, target_interface};
 
 #[derive(Clone, Debug)]
 pub struct TargetProxyHolder(ffx_fidl::TargetProxy);

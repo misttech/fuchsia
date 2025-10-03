@@ -431,7 +431,6 @@ mod tests {
     use super::*;
     use ffx_config::TestEnv;
     use ffx_target::TargetInfoQuery;
-    use ffx_target::fho::FhoConnectionBehavior;
     use fho::{FhoEnvironment, TryFromEnv as _};
     use fidl_fuchsia_developer_remotecontrol::{
         ConnectCapabilityError, RemoteControlProxy, RemoteControlRequest,
@@ -447,6 +446,7 @@ mod tests {
     use futures::channel::mpsc;
     use futures::{SinkExt as _, StreamExt as _, TryStreamExt as _};
     use std::sync::{Arc, Mutex};
+    use target_behavior::ConnectionBehavior;
     use target_holders::{FakeInjector, HostAddrHolder, RemoteControlProxyHolder, fake_proxy};
 
     struct FakeTestEnv {
@@ -468,9 +468,9 @@ mod tests {
                 ..Default::default()
             };
             let fho_env = FhoEnvironment::new_with_args(&test_env.context, &["some", "test"]);
-            let target_env = ffx_target::fho::target_interface(&fho_env);
+            let target_env = target_behavior::target_interface(&fho_env);
             target_env
-                .set_behavior(FhoConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
+                .set_behavior(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)))
                 .expect("set_behavior");
 
             let rcs_proxy_connector =

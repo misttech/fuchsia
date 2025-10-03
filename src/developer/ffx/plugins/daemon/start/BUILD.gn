@@ -14,7 +14,7 @@ ffx_plugin("ffx_daemon_start") {
     "//src/developer/ffx/daemon:lib",
     "//src/developer/ffx/daemon/server:lib",
     "//src/developer/ffx/lib/fho:lib",
-    "//src/developer/ffx/lib/target:lib",
+    "//src/developer/ffx/lib/target/behavior:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//third_party/rust_crates:async-trait",

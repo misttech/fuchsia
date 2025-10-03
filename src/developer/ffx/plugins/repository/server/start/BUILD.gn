@@ -71,6 +71,7 @@ ffx_plugin("ffx_repository_server_start") {
     "//src/developer/ffx/lib/pkg:empty-repo-keys",
     "//src/developer/ffx/lib/pkg:empty-repo-metadata",
     "//src/developer/ffx/lib/target:lib",
+    "//src/developer/ffx/lib/target/behavior:lib",
     "//src/developer/ffx/lib/target_net:testutil",
     "//src/lib/assembly/partitions_config",
     "//src/lib/fidl/rust/fidl",
