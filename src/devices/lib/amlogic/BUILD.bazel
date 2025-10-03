@@ -45,7 +45,6 @@ cc_library(
         "include/soc/aml-common/aml-audio-regs.h",
         "include/soc/aml-common/aml-g12-reset.h",
         "include/soc/aml-common/aml-guid.h",
-        "include/soc/aml-common/aml-i2c.h",
         "include/soc/aml-common/aml-loopback-audio.h",
         "include/soc/aml-common/aml-power-domain.h",
         "include/soc/aml-common/aml-pwm-regs.h",

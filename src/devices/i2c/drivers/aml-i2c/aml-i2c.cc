@@ -4,9 +4,7 @@
 
 #include "aml-i2c.h"
 
-#include <fidl/fuchsia.driver.compat/cpp/wire_messaging.h>
-#include <lib/ddk/metadata.h>
-#include <lib/driver/compat/cpp/metadata.h>
+#include <fidl/fuchsia.hardware.amlogic.metadata/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/trace/event.h>
@@ -14,38 +12,34 @@
 #include <zircon/errors.h>
 #include <zircon/threads.h>
 
-#include <soc/aml-common/aml-i2c.h>
-
 #include "aml-i2c-regs.h"
 
 namespace {
-
-constexpr std::string_view kDriverName = "aml-i2c";
-constexpr std::string_view kChildNodeName = "aml-i2c";
 
 constexpr zx_signals_t kErrorSignal = ZX_USER_SIGNAL_0;
 constexpr zx_signals_t kTxnCompleteSignal = ZX_USER_SIGNAL_1;
 
 constexpr size_t kMaxTransferSize = 512;
 
-zx_status_t SetClockDelay(const aml_i2c_delay_values& delay, const fdf::MmioBuffer& regs_iobuff) {
-  if (delay.quarter_clock_delay > aml_i2c::Control::kQtrClkDlyMax ||
-      delay.clock_low_delay > aml_i2c::TargetAddr::kSclLowDelayMax) {
+zx_status_t SetClockDelay(uint16_t quarter_clock_delay, uint16_t clock_low_delay,
+                          const fdf::MmioBuffer& regs_iobuff) {
+  if (quarter_clock_delay > aml_i2c::Control::kQtrClkDlyMax ||
+      clock_low_delay > aml_i2c::TargetAddr::kSclLowDelayMax) {
     FDF_LOG(ERROR, "invalid clock delay");
     return ZX_ERR_INVALID_ARGS;
   }
 
-  if (delay.quarter_clock_delay > 0) {
+  if (quarter_clock_delay > 0) {
     aml_i2c::Control::Get()
         .ReadFrom(&regs_iobuff)
-        .set_qtr_clk_dly(delay.quarter_clock_delay)
+        .set_qtr_clk_dly(quarter_clock_delay)
         .WriteTo(&regs_iobuff);
   }
 
-  if (delay.clock_low_delay > 0) {
+  if (clock_low_delay > 0) {
     aml_i2c::TargetAddr::Get()
         .FromValue(0)
-        .set_scl_low_dly(delay.clock_low_delay)
+        .set_scl_low_dly(clock_low_delay)
         .set_use_cnt_scl_low(1)
         .WriteTo(&regs_iobuff);
   }
@@ -53,13 +47,32 @@ zx_status_t SetClockDelay(const aml_i2c_delay_values& delay, const fdf::MmioBuff
   return ZX_OK;
 }
 
+zx::result<fuchsia_hardware_amlogic_metadata::AmlI2cDelayValues> GetDelay(fdf::PDev& pdev) {
+  zx::result delay = pdev.GetFidlMetadata<fuchsia_hardware_amlogic_metadata::AmlI2cDelayValues>();
+  if (delay.is_error()) {
+    if (delay.status_value() == ZX_ERR_NOT_FOUND) {
+      return zx::ok(fuchsia_hardware_amlogic_metadata::AmlI2cDelayValues({
+          .quarter_clock_delay = 0,
+          .clock_low_delay = 0,
+      }));
+    }
+    FDF_LOG(ERROR, "Failed to get delay values: %s", delay.status_string());
+    return delay.take_error();
+  }
+  if (!delay->quarter_clock_delay().has_value()) {
+    FDF_LOG(ERROR, "Delay missing `quarter_clock_delay` field");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+  if (!delay->clock_low_delay().has_value()) {
+    FDF_LOG(ERROR, "Delay missing `clock_low_delay` field");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+  return zx::ok(std::move(delay.value()));
+}
+
 }  // namespace
 
 namespace aml_i2c {
-
-AmlI2c::AmlI2c(fdf::DriverStartArgs start_args,
-               fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : fdf::DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
 
 void AmlI2c::SetTargetAddr(uint16_t addr) const {
   addr &= 0x7f;
@@ -304,20 +317,6 @@ void AmlI2c::Transact(TransactRequestView request, fdf::Arena& arena,
   }
 }
 
-zx::result<aml_i2c_delay_values> AmlI2c::GetDelay() {
-  zx::result metadata =
-      compat::GetMetadata<aml_i2c_delay_values>(incoming(), DEVICE_METADATA_PRIVATE);
-  if (metadata.is_error()) {
-    if (metadata.status_value() != ZX_ERR_NOT_FOUND) {
-      FDF_LOG(ERROR, "Failed to get metadata: %s", metadata.status_string());
-      return metadata.take_error();
-    }
-    FDF_LOG(DEBUG, "Using default delay values: No metadata found");
-    return zx::ok(aml_i2c_delay_values{0, 0});
-  }
-  return zx::ok(*metadata.value().get());
-}
-
 zx::result<> AmlI2c::Start() {
   zx::result pdev_client_end =
       incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
@@ -343,13 +342,14 @@ zx::result<> AmlI2c::Start() {
     regs_iobuff_.emplace(*std::move(mmio));
   }
 
-  zx::result delay = GetDelay();
+  zx::result delay = GetDelay(pdev);
   if (delay.is_error()) {
-    FDF_LOG(ERROR, "Failed to get delay values");
+    FDF_LOG(ERROR, "Failed to get delay values: %s", delay.status_string());
     return delay.take_error();
   }
 
-  zx_status_t status = SetClockDelay(delay.value(), regs_iobuff());
+  zx_status_t status = SetClockDelay(delay->quarter_clock_delay().value(),
+                                     delay->clock_low_delay().value(), regs_iobuff());
   if (status != ZX_OK) {
     FDF_LOG(ERROR, "Failed to set clock delay: %s", zx_status_get_string(status));
     return zx::error(status);

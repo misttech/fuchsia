@@ -16,19 +16,21 @@
 #include <lib/zx/interrupt.h>
 #include <lib/zx/time.h>
 
-#include <soc/aml-common/aml-i2c.h>
-
 namespace aml_i2c {
 
 class AmlI2c : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_i2cimpl::Device> {
  public:
-  AmlI2c(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  static constexpr std::string_view kDriverName = "aml-i2c";
+  static constexpr std::string_view kChildNodeName = "aml-i2c";
 
+  AmlI2c(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
+      : fdf::DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+
+  // fdf::DriverBase implementation.
   zx::result<> Start() override;
-
   void PrepareStop(fdf::PrepareStopCompleter completer) override;
 
-  // I2cImpl protocol implementation
+  // fdf::WireServer<fuchsia_hardware_i2cimpl::Device> implementation.
   void GetMaxTransferSize(fdf::Arena& arena, GetMaxTransferSizeCompleter::Sync& completer) override;
   void SetBitrate(SetBitrateRequestView request, fdf::Arena& arena,
                   SetBitrateCompleter::Sync& completer) override;
@@ -57,8 +59,6 @@ class AmlI2c : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_i
   zx_status_t StartIrqThread();
   void HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_status_t status,
                  const zx_packet_interrupt_t* interrupt);
-
-  zx::result<aml_i2c_delay_values> GetDelay();
 
   const fdf::MmioBuffer& regs_iobuff() const;
 

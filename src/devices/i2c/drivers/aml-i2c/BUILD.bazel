@@ -27,8 +27,8 @@ fuchsia_driver_bind_bytecode(
     ],
 )
 
-fuchsia_cc_driver(
-    name = "aml-i2c-driver",
+cc_library(
+    name = "common",
     srcs = [
         "aml-i2c.cc",
         "aml-i2c.h",
@@ -38,11 +38,9 @@ fuchsia_cc_driver(
         "ZX_ASSERT_LEVEL=2",
         "_ALL_SOURCE",
     ],
-    output_name = "aml-i2c",
     deps = [
-        "//sdk/lib/driver/compat/cpp",
         "//src/devices/lib/amlogic",
-        "//src/lib/ddk:ddk_metadata",
+        "@fuchsia_sdk//fidl/fuchsia.hardware.amlogic.metadata:fuchsia.hardware.amlogic.metadata_cpp",
         "@fuchsia_sdk//fidl/fuchsia.hardware.i2c.businfo:fuchsia.hardware.i2c.businfo_cpp",
         "@fuchsia_sdk//fidl/fuchsia.hardware.i2cimpl:fuchsia.hardware.i2cimpl_cpp",
         "@fuchsia_sdk//pkg/driver_component_cpp",
@@ -53,6 +51,14 @@ fuchsia_cc_driver(
         "@fuchsia_sdk//pkg/hwreg",
         "@fuchsia_sdk//pkg/trace",
         "@fuchsia_sdk//pkg/zx",
+    ],
+)
+
+fuchsia_cc_driver(
+    name = "aml-i2c-driver",
+    output_name = "aml-i2c",
+    deps = [
+        ":common",
     ],
 )
 
@@ -81,9 +87,6 @@ fuchsia_package(
 fuchsia_cc_test(
     name = "aml-i2c-test-bin",
     srcs = [
-        "aml-i2c.cc",
-        "aml-i2c.h",
-        "aml-i2c-regs.h",
         "aml-i2c-test.cc",
     ],
     # TODO(b/322398374) Remove this copts
@@ -91,25 +94,16 @@ fuchsia_cc_test(
         "-Wno-vla-cxx-extension",
     ],
     deps = [
-        "//sdk/fidl/fuchsia.driver.compat:fuchsia.driver.compat_cpp",
-        "//sdk/lib/driver/compat/cpp",
-        "//src/devices/lib/amlogic",
-        "//src/lib/ddk:ddk_metadata",
+        ":common",
         "//src/lib/testing/predicates",
         "@com_google_googletest//:gtest_main",
         "@fuchsia_sdk//fidl/fuchsia.hardware.i2c.businfo:fuchsia.hardware.i2c.businfo_cpp",
         "@fuchsia_sdk//fidl/fuchsia.hardware.i2cimpl:fuchsia.hardware.i2cimpl_cpp",
-        "@fuchsia_sdk//pkg/async-loop-default",
         "@fuchsia_sdk//pkg/async_patterns_testing_cpp",
-        "@fuchsia_sdk//pkg/driver_component_cpp",
         "@fuchsia_sdk//pkg/driver_fake_platform_device_cpp",
-        "@fuchsia_sdk//pkg/driver_metadata_cpp",
         "@fuchsia_sdk//pkg/driver_mmio_cpp",
-        "@fuchsia_sdk//pkg/driver_platform_device_cpp",
-        "@fuchsia_sdk//pkg/driver_runtime",
         "@fuchsia_sdk//pkg/driver_testing_cpp",
-        "@fuchsia_sdk//pkg/hwreg",
-        "@fuchsia_sdk//pkg/trace",
+        "@fuchsia_sdk//pkg/mmio",
         "@fuchsia_sdk//pkg/zx",
         "@internal_sdk//pkg/fake-mmio-reg",
     ],

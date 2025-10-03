@@ -4,11 +4,9 @@
 
 #include "aml-i2c.h"
 
+#include <fidl/fuchsia.hardware.amlogic.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.i2c.businfo/cpp/wire.h>
 #include <fidl/fuchsia.hardware.i2cimpl/cpp/driver/wire.h>
-#include <lib/async-loop/default.h>
-#include <lib/ddk/metadata.h>
-#include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/driver/testing/cpp/driver_test.h>
@@ -23,7 +21,6 @@
 #include <fake-mmio-reg/fake-mmio-reg.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include <soc/aml-common/aml-i2c.h>
 
 #include "aml-i2c-regs.h"
 #include "src/lib/testing/predicates/status.h"
@@ -188,36 +185,29 @@ class FakeAmlI2cController {
 
 class TestEnvironment : public fdf_testing::Environment {
  public:
-  void Init(zx::interrupt interrupt, std::optional<aml_i2c_delay_values> metadata) {
+  void Init(zx::interrupt interrupt,
+            const std::optional<fuchsia_hardware_amlogic_metadata::AmlI2cDelayValues>& metadata) {
     std::map<uint32_t, zx::interrupt> irqs;
     irqs[0] = std::move(interrupt);
-    pdev_server_.SetConfig({.irqs = std::move(irqs)});
-    pdev_server_.AddFidlMetadata(fuchsia_hardware_i2c_businfo::I2CBusMetadata::kSerializableName,
-                                 fuchsia_hardware_i2c_businfo::I2CBusMetadata{});
-
-    compat_server_.Initialize("default");
+    pdev_.SetConfig({.irqs = std::move(irqs)});
+    pdev_.AddFidlMetadata(fuchsia_hardware_i2c_businfo::I2CBusMetadata::kSerializableName,
+                          fuchsia_hardware_i2c_businfo::I2CBusMetadata{});
     if (metadata.has_value()) {
-      compat_server_.AddMetadata(DEVICE_METADATA_PRIVATE, &metadata.value(),
-                                 sizeof(metadata.value()));
+      pdev_.AddFidlMetadata(fuchsia_hardware_amlogic_metadata::AmlI2cDelayValues::kSerializableName,
+                            metadata.value());
     }
   }
 
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
     async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
-    zx::result add_service_result =
-        to_driver_vfs.AddService<fuchsia_hardware_platform_device::Service>(
-            pdev_server_.GetInstanceHandler(dispatcher), "pdev");
-    ZX_ASSERT(add_service_result.is_ok());
-
-    zx_status_t status = compat_server_.Serve(dispatcher, &to_driver_vfs);
-    ZX_ASSERT(status == ZX_OK);
+    EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_platform_device::Service>(
+        pdev_.GetInstanceHandler(dispatcher), "pdev"));
 
     return zx::ok();
   }
 
  private:
-  fdf_fake::FakePDev pdev_server_;
-  compat::DeviceServer compat_server_;
+  fdf_fake::FakePDev pdev_;
 };
 
 class TestConfig final {
@@ -246,7 +236,8 @@ class AmlI2cTest : public ::testing::Test {
 
   fdf_testing::BackgroundDriverTest<TestConfig>& driver_test() { return driver_test_; }
 
-  void InitAndStartDriver(std::optional<aml_i2c_delay_values> metadata = std::nullopt) {
+  void StartDriver(const std::optional<fuchsia_hardware_amlogic_metadata::AmlI2cDelayValues>&
+                       metadata = std::nullopt) {
     zx::interrupt interrupt;
     ASSERT_EQ(ZX_OK, zx::interrupt::create(zx::resource(), 0, ZX_INTERRUPT_VIRTUAL, &interrupt));
     controller_.set_interrupt(interrupt.borrow());
@@ -284,16 +275,16 @@ class AmlI2cTest : public ::testing::Test {
 };
 
 TEST_F(AmlI2cTest, SmallWrite) {
-  InitAndStartDriver();
+  StartDriver();
 
   const std::vector<uint8_t> kWriteData{0x45, 0xd9, 0x65, 0xbc, 0x31, 0x26, 0xd7, 0xe5};
 
   fidl::VectorView<uint8_t> write_buffer{arena_, kWriteData};
   std::vector<fuchsia_hardware_i2cimpl::wire::I2cImplOp> op = {
-      {0x13,
-       fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
+      {.address = 0x13,
+       .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
            fidl::ObjectView<fidl::VectorView<uint8_t>>::FromExternal(&write_buffer)),
-       true}};
+       .stop = true}};
 
   auto transact_result = i2c_.buffer(arena_)->Transact({arena_, op});
   ;
@@ -325,17 +316,17 @@ TEST_F(AmlI2cTest, SmallWrite) {
 }
 
 TEST_F(AmlI2cTest, BigWrite) {
-  InitAndStartDriver();
+  StartDriver();
 
   const std::vector<uint8_t> kWriteData{0xb9, 0x17, 0x32, 0xba, 0x8e, 0xf7, 0x19, 0xf2, 0x78, 0xbf,
                                         0xcb, 0xd3, 0xdc, 0xad, 0xbd, 0x78, 0x1b, 0xa8, 0xef, 0x1a};
 
   fidl::VectorView<uint8_t> write_buffer{arena_, kWriteData};
   std::vector<fuchsia_hardware_i2cimpl::wire::I2cImplOp> op = {
-      {0x5f,
-       fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
+      {.address = 0x5f,
+       .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
            fidl::ObjectView<fidl::VectorView<uint8_t>>::FromExternal(&write_buffer)),
-       true}};
+       .stop = true}};
 
   auto transact_result = i2c_.buffer(arena_)->Transact({arena_, op});
 
@@ -385,14 +376,16 @@ TEST_F(AmlI2cTest, BigWrite) {
 }
 
 TEST_F(AmlI2cTest, SmallRead) {
-  InitAndStartDriver();
+  StartDriver();
 
   const std::vector<uint8_t> kExpectedReadData{0xf0, 0xdb, 0xdf, 0x6b, 0xb9, 0x3e, 0xa6, 0xfa};
   controller().SetReadData({kExpectedReadData.data(), kExpectedReadData.size()});
 
   std::vector<fuchsia_hardware_i2cimpl::wire::I2cImplOp> op = {
-      {0x41, fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithReadSize(kExpectedReadData.size()),
-       true}};
+      {.address = 0x41,
+       .type =
+           fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithReadSize(kExpectedReadData.size()),
+       .stop = true}};
 
   auto transact_result = i2c_.buffer(arena_)->Transact({arena_, op});
   ASSERT_OK(transact_result.status());
@@ -423,7 +416,7 @@ TEST_F(AmlI2cTest, SmallRead) {
 }
 
 TEST_F(AmlI2cTest, BigRead) {
-  InitAndStartDriver();
+  StartDriver();
 
   const std::vector<uint8_t> kExpectedReadData{0xb9, 0x17, 0x32, 0xba, 0x8e, 0xf7, 0x19,
                                                0xf2, 0x78, 0xbf, 0xcb, 0xd3, 0xdc, 0xad,
@@ -431,8 +424,10 @@ TEST_F(AmlI2cTest, BigRead) {
   controller().SetReadData({kExpectedReadData.data(), kExpectedReadData.size()});
 
   std::vector<fuchsia_hardware_i2cimpl::wire::I2cImplOp> op = {
-      {0x29, fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithReadSize(kExpectedReadData.size()),
-       true}};
+      {.address = 0x29,
+       .type =
+           fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithReadSize(kExpectedReadData.size()),
+       .stop = true}};
 
   auto transact_result = i2c_.buffer(arena_)->Transact({arena_, op});
   ASSERT_OK(transact_result.status());
@@ -482,12 +477,14 @@ TEST_F(AmlI2cTest, BigRead) {
 }
 
 TEST_F(AmlI2cTest, EmptyRead) {
-  InitAndStartDriver();
+  StartDriver();
 
   controller().SetReadData({});
 
   std::vector<fuchsia_hardware_i2cimpl::wire::I2cImplOp> op = {
-      {0x41, fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithReadSize(0), true}};
+      {.address = 0x41,
+       .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithReadSize(0),
+       .stop = true}};
 
   auto transact_result = i2c_.buffer(arena_)->Transact({arena_, op});
 
@@ -502,14 +499,14 @@ TEST_F(AmlI2cTest, EmptyRead) {
 }
 
 TEST_F(AmlI2cTest, NoStopFlag) {
-  InitAndStartDriver();
+  StartDriver();
 
   fidl::VectorView<uint8_t> buffer{arena_, 4};
   std::vector<fuchsia_hardware_i2cimpl::wire::I2cImplOp> op = {
-      {0x00,
-       fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
+      {.address = 0x00,
+       .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
            fidl::ObjectView<fidl::VectorView<uint8_t>>::FromExternal(&buffer)),
-       false}};
+       .stop = false}};
 
   auto transact_result = i2c_.buffer(arena_)->Transact({arena_, op});
 
@@ -523,7 +520,7 @@ TEST_F(AmlI2cTest, NoStopFlag) {
 }
 
 TEST_F(AmlI2cTest, TransferError) {
-  InitAndStartDriver();
+  StartDriver();
 
   uint8_t buffer[4];
   controller().SetReadData({buffer, std::size(buffer)});
@@ -539,7 +536,7 @@ TEST_F(AmlI2cTest, TransferError) {
 }
 
 TEST_F(AmlI2cTest, ManyTransactions) {
-  InitAndStartDriver();
+  StartDriver();
 
   const uint32_t kReadCount1 = 20;
   constexpr uint32_t kReadCount2 = 4;
@@ -556,16 +553,20 @@ TEST_F(AmlI2cTest, ManyTransactions) {
       arena_, cpp20::span(kExpectedWriteData.data() + 1, kExpectedWriteData.size() - 1)};
 
   std::vector<fuchsia_hardware_i2cimpl::wire::I2cImplOp> ops = {
-      {0x1c,
-       fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
+      {.address = 0x1c,
+       .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
            fidl::ObjectView<fidl::VectorView<uint8_t>>::FromExternal(&write_buffer_1)),
-       false},
-      {0x2d, fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithReadSize(kReadCount1), true},
-      {0x3e,
-       fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
+       .stop = false},
+      {.address = 0x2d,
+       .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithReadSize(kReadCount1),
+       .stop = true},
+      {.address = 0x3e,
+       .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
            fidl::ObjectView<fidl::VectorView<uint8_t>>::FromExternal(&write_buffer_2)),
-       true},
-      {0x4f, fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithReadSize(kReadCount2), false},
+       .stop = true},
+      {.address = 0x4f,
+       .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithReadSize(kReadCount2),
+       .stop = false},
   };
 
   auto transact_result = i2c_.buffer(arena_)->Transact({arena_, ops});
@@ -659,14 +660,14 @@ TEST_F(AmlI2cTest, ManyTransactions) {
 }
 
 TEST_F(AmlI2cTest, WriteTransactionTooBig) {
-  InitAndStartDriver();
+  StartDriver();
 
   fidl::VectorView<uint8_t> buffer{arena_, 512};
   std::vector<fuchsia_hardware_i2cimpl::wire::I2cImplOp> op = {
-      {0x00,
-       fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
+      {.address = 0x00,
+       .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
            fidl::ObjectView<fidl::VectorView<uint8_t>>::FromExternal(&buffer)),
-       true}};
+       .stop = true}};
 
   auto transact_result = i2c_.buffer(arena_)->Transact({arena_, op});
 
@@ -676,10 +677,10 @@ TEST_F(AmlI2cTest, WriteTransactionTooBig) {
 
   fidl::VectorView<uint8_t> buffer2{arena_, 513};
   std::vector<fuchsia_hardware_i2cimpl::wire::I2cImplOp> op2 = {
-      {0x00,
-       fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
+      {.address = 0x00,
+       .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithWriteData(
            fidl::ObjectView<fidl::VectorView<uint8_t>>::FromExternal(&buffer2)),
-       true}};
+       .stop = true}};
 
   auto transact_result2 = i2c_.buffer(arena_)->Transact({arena_, op2});
   ASSERT_EQ(ZX_OK, transact_result2.status());
@@ -687,13 +688,15 @@ TEST_F(AmlI2cTest, WriteTransactionTooBig) {
 }
 
 TEST_F(AmlI2cTest, ReadTransactionTooBig) {
-  InitAndStartDriver();
+  StartDriver();
 
   constexpr uint8_t kReadData[512] = {0};
   controller().SetReadData({kReadData, std::size(kReadData)});
 
   std::vector<fuchsia_hardware_i2cimpl::wire::I2cImplOp> op = {
-      {0x00, fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithReadSize(512), true}};
+      {.address = 0x00,
+       .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithReadSize(512),
+       .stop = true}};
   auto transact_result = i2c_.buffer(arena_)->Transact({arena_, op});
 
   ASSERT_OK(transact_result.status());
@@ -701,23 +704,26 @@ TEST_F(AmlI2cTest, ReadTransactionTooBig) {
   EXPECT_EQ(transact_result->value()->read.size(), 1);
 
   std::vector<fuchsia_hardware_i2cimpl::wire::I2cImplOp> op2 = {
-      {0x00, fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithReadSize(513), true}};
+      {.address = 0x00,
+       .type = fuchsia_hardware_i2cimpl::wire::I2cImplOpType::WithReadSize(513),
+       .stop = true}};
   auto transact_result2 = i2c_.buffer(arena_)->Transact({arena_, op2});
   ASSERT_EQ(ZX_OK, transact_result2.status());
   EXPECT_TRUE(transact_result2->is_error());
 }
 
 TEST_F(AmlI2cTest, Metadata) {
-  constexpr aml_i2c_delay_values kMetadata{.quarter_clock_delay = 0x3cd, .clock_low_delay = 0xf12};
+  static const fuchsia_hardware_amlogic_metadata::AmlI2cDelayValues kMetadata(
+      {.quarter_clock_delay = 0x3cd, .clock_low_delay = 0xf12});
 
-  InitAndStartDriver(kMetadata);
+  StartDriver(kMetadata);
 
   EXPECT_EQ(mmio()[kControlReg / sizeof(uint32_t)], 0x3cd << 12);
   EXPECT_EQ(mmio()[kTargetAddrReg / sizeof(uint32_t)], (0xf12 << 16) | (1 << 28));
 }
 
 TEST_F(AmlI2cTest, NoMetadata) {
-  InitAndStartDriver(std::nullopt);
+  StartDriver(std::nullopt);
 
   EXPECT_EQ(mmio()[kControlReg / sizeof(uint32_t)], 0);
   EXPECT_EQ(mmio()[kTargetAddrReg / sizeof(uint32_t)], 0);

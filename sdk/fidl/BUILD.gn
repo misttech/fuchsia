@@ -132,6 +132,7 @@ _partner_idk_fidl_libraries_targets_list = [
   "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma",
   "//sdk/fidl/fuchsia.hardware.adc:fuchsia.hardware.adc",
   "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl",
+  "//sdk/fidl/fuchsia.hardware.amlogic.metadata:fuchsia.hardware.amlogic.metadata",
   "//sdk/fidl/fuchsia.hardware.audio.signalprocessing:fuchsia.hardware.audio.signalprocessing",
   "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio",
   "//sdk/fidl/fuchsia.hardware.bluetooth:fuchsia.hardware.bluetooth",

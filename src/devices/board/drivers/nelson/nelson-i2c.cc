@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.hardware.amlogic.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.i2c.businfo/cpp/wire.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
@@ -17,7 +18,6 @@
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
-#include <soc/aml-common/aml-i2c.h>
 #include <soc/aml-s905d3/s905d3-gpio.h>
 #include <soc/aml-s905d3/s905d3-hw.h>
 
@@ -37,7 +37,7 @@ struct I2cBus {
   uint32_t bus_id;
   zx_paddr_t mmio;
   uint32_t irq;
-  aml_i2c_delay_values delay;
+  fuchsia_hardware_amlogic_metadata::AmlI2cDelayValues delay;
   cpp20::span<const i2c_channel_t> channels;
 };
 
@@ -131,49 +131,31 @@ constexpr i2c_channel_t i2c_3_channels[]{
     },
 };
 
-constexpr I2cBus buses[]{
-    // Delay values are based on a core clock rate of 166 Mhz (fclk_div4 / 3).
-    {
-        .bus_id = NELSON_I2C_A0_0,
-        .mmio = S905D3_I2C_AO_0_BASE,
-        .irq = S905D3_I2C_AO_0_IRQ,
-        .delay = {819, 417},
-        .channels{i2c_ao_channels, std::size(i2c_ao_channels)},
-    },
-    {
-        .bus_id = NELSON_I2C_2,
-        .mmio = S905D3_I2C2_BASE,
-        .irq = S905D3_I2C2_IRQ,
-        .delay = {152, 125},
-        .channels{i2c_2_channels, std::size(i2c_2_channels)},
-    },
-    {
-        .bus_id = NELSON_I2C_3,
-        .mmio = S905D3_I2C3_BASE,
-        .irq = S905D3_I2C3_IRQ,
-        .delay = {152, 125},
-        .channels{i2c_3_channels, std::size(i2c_3_channels)},
-    },
-};
-
 zx_status_t AddI2cBus(const I2cBus& bus,
                       const fdf::WireSyncClient<fuchsia_hardware_platform_bus::PlatformBus>& pbus) {
-  auto encoded_i2c_metadata = fidl_metadata::i2c::I2CChannelsToFidl(bus.bus_id, bus.channels);
-  if (encoded_i2c_metadata.is_error()) {
-    zxlogf(ERROR, "Failed to FIDL encode I2C channels: %s", encoded_i2c_metadata.status_string());
-    return encoded_i2c_metadata.error_value();
+  zx::result persisted_i2c_metadata =
+      fidl_metadata::i2c::I2CChannelsToFidl(bus.bus_id, bus.channels);
+  if (persisted_i2c_metadata.is_error()) {
+    zxlogf(ERROR, "Failed to FIDL persist I2C channels: %s",
+           persisted_i2c_metadata.status_string());
+    return persisted_i2c_metadata.error_value();
+  }
+
+  fit::result persisted_i2c_delays = fidl::Persist(bus.delay);
+  if (!persisted_i2c_delays.is_ok()) {
+    zxlogf(ERROR, "Failed to persist I2C delay values: %s",
+           persisted_i2c_delays.error_value().FormatDescription().c_str());
+    return persisted_i2c_delays.error_value().status();
   }
 
   std::vector<fpbus::Metadata> i2c_metadata{
       {{
           .id = fuchsia_hardware_i2c_businfo::wire::I2CBusMetadata::kSerializableName,
-          .data = std::move(encoded_i2c_metadata.value()),
+          .data = std::move(persisted_i2c_metadata.value()),
       }},
       {{
-          .id = std::to_string(DEVICE_METADATA_PRIVATE),
-          .data = std::vector<uint8_t>(
-              reinterpret_cast<const uint8_t*>(&bus.delay),
-              reinterpret_cast<const uint8_t*>(&bus.delay) + sizeof(bus.delay)),
+          .id = fuchsia_hardware_amlogic_metadata::AmlI2cDelayValues::kSerializableName,
+          .data = std::move(persisted_i2c_delays.value()),
       }},
   };
 
@@ -194,15 +176,16 @@ zx_status_t AddI2cBus(const I2cBus& bus,
   char name[32];
   snprintf(name, sizeof(name), "i2c-%u", bus.bus_id);
 
-  fpbus::Node i2c_dev = {};
-  i2c_dev.name() = name;
-  i2c_dev.vid() = PDEV_VID_AMLOGIC;
-  i2c_dev.pid() = PDEV_PID_GENERIC;
-  i2c_dev.did() = PDEV_DID_AMLOGIC_I2C;
-  i2c_dev.mmio() = mmios;
-  i2c_dev.irq() = irqs;
-  i2c_dev.metadata() = std::move(i2c_metadata);
-  i2c_dev.instance_id() = bus.bus_id;
+  fpbus::Node i2c_node({
+      .name = name,
+      .vid = PDEV_VID_AMLOGIC,
+      .pid = PDEV_PID_GENERIC,
+      .did = PDEV_DID_AMLOGIC_I2C,
+      .instance_id = bus.bus_id,
+      .mmio = mmios,
+      .irq = irqs,
+      .metadata = std::move(i2c_metadata),
+  });
 
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('I2C_');
@@ -213,11 +196,11 @@ zx_status_t AddI2cBus(const I2cBus& bus,
       fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
   };
   const std::vector<fdf::ParentSpec2> kI2cParents = std::vector{
-      fdf::ParentSpec2{{kGpioInitRules, kGpioInitProps}},
+      fdf::ParentSpec2{{.bind_rules = kGpioInitRules, .properties = kGpioInitProps}},
   };
 
   const fdf::CompositeNodeSpec i2c_spec{{.name = name, .parents2 = kI2cParents}};
-  const auto result = pbus.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, i2c_dev),
+  const auto result = pbus.buffer(arena)->AddCompositeNodeSpec(fidl::ToWire(fidl_arena, i2c_node),
                                                                fidl::ToWire(fidl_arena, i2c_spec));
   if (!result.ok()) {
     zxlogf(ERROR, "Request to add I2C bus %u failed: %s", bus.bus_id,
@@ -234,6 +217,31 @@ zx_status_t AddI2cBus(const I2cBus& bus,
 }
 
 zx_status_t Nelson::I2cInit() {
+  static const std::array<I2cBus, 3> kBuses = {
+      // Delay values are based on a core clock rate of 166 Mhz (fclk_div4 / 3).
+      I2cBus{
+          .bus_id = NELSON_I2C_A0_0,
+          .mmio = S905D3_I2C_AO_0_BASE,
+          .irq = S905D3_I2C_AO_0_IRQ,
+          .delay = {{.quarter_clock_delay = 819, .clock_low_delay = 417}},
+          .channels{i2c_ao_channels, std::size(i2c_ao_channels)},
+      },
+      I2cBus{
+          .bus_id = NELSON_I2C_2,
+          .mmio = S905D3_I2C2_BASE,
+          .irq = S905D3_I2C2_IRQ,
+          .delay = {{.quarter_clock_delay = 152, .clock_low_delay = 125}},
+          .channels{i2c_2_channels, std::size(i2c_2_channels)},
+      },
+      I2cBus{
+          .bus_id = NELSON_I2C_3,
+          .mmio = S905D3_I2C3_BASE,
+          .irq = S905D3_I2C3_IRQ,
+          .delay = {{.quarter_clock_delay = 152, .clock_low_delay = 125}},
+          .channels{i2c_3_channels, std::size(i2c_3_channels)},
+      },
+  };
+
   // setup pinmux for our I2C busses
 
   auto i2c_pin = [](uint32_t pin, uint64_t function, uint64_t drive_strength_ua) {
@@ -256,7 +264,7 @@ zx_status_t Nelson::I2cInit() {
   gpio_init_steps_.push_back(i2c_pin(GPIO_SOC_AV_I2C_SDA, 2, 3000));
   gpio_init_steps_.push_back(i2c_pin(GPIO_SOC_AV_I2C_SCL, 2, 3000));
 
-  for (const auto& bus : buses) {
+  for (const I2cBus& bus : kBuses) {
     AddI2cBus(bus, pbus_);
   }
 

@@ -5,5 +5,12 @@
 import("//build/fidl/fidl.gni")
 
 fidl("fuchsia.hardware.amlogic.metadata") {
-  sources = [ "spi.fidl" ]
+  sdk_category = "partner"
+  stable = false
+  sources = [
+    "i2c.fidl",
+    "overview.fidl",
+    "spi.fidl",
+  ]
+  sdk_area = "Drivers"
 }
