@@ -25,6 +25,7 @@ merged_sampler_config("default-config") {
     "//src/diagnostics/config/sampler/power_metrics_recorder.json5",
     "//src/diagnostics/config/sampler/setui.json5",
     "//src/diagnostics/config/sampler/system-update-committer.json5",
+    "//src/diagnostics/config/sampler/usb.json5",
 
     # TODO(https://fxbug.dev/300170322): remove driver_manager_all.json and bring back these
     #"audio-drivers.json5",
