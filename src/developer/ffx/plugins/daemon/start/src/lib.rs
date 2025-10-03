@@ -62,8 +62,7 @@ impl DaemonStartTool {
         let _behavior =
             target_env.init_daemon_connection_behavior(&self.fho_env.environment_context()).await?;
         let _ = target_env
-            .injector::<DaemonProxyHolder>(&self.fho_env)
-            .await?
+            .injector::<DaemonProxyHolder>(&self.fho_env)?
             .daemon_factory_force_autostart()
             .await
             .user_message("Unable to connect to daemon proxy")?;

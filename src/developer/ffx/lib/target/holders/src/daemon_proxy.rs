@@ -37,8 +37,7 @@ impl TryFromEnv for DaemonProxyHolder {
         // into a user error. This line originally casted every error into "Failed to create daemon
         // proxy", which obfuscates the original error.
         target_env
-            .injector::<Self>(env)
-            .await?
+            .injector::<Self>(env)?
             .daemon_factory()
             .await
             .map(Into::into)

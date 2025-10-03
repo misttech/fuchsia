@@ -32,7 +32,7 @@ impl TryFromEnv for TargetProxyHolder {
         let target_env = target_interface(env);
         let _behavior =
             target_env.init_daemon_connection_behavior(env.environment_context()).await?;
-        match target_env.injector::<Self>(env).await?.target_factory().await.map_err(|e| {
+        match target_env.injector::<Self>(env)?.target_factory().await.map_err(|e| {
             // This error case happens when there are multiple targets in target list.
             // So let's print out the ffx error message directly (which comes from OpenTargetError::QueryAmbiguous)
             // rather than just returning "Failed to create target proxy" which is not helpful.
