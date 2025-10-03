@@ -13,12 +13,6 @@ from trace_processing import trace_model
 
 _LOGGER: logging.Logger = logging.getLogger("Performance")
 
-# These are now in reporting.metrics. Aliases left here to ease migration.
-Unit = metrics.Unit
-TestCaseResult = metrics.TestCaseResult
-MetricDescription = metrics.MetricDescription
-MetricsProcessorDescription = metrics.MetricsProcessorDescription
-
 
 class MetricsProcessor:
     """MetricsProcessor converts a trace_model.Model into TestCaseResults.
