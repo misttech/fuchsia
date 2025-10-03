@@ -35,6 +35,9 @@
 
                 // TODO(https://fxbug.dev/444498716): timers_set_timer_lat hangs at wait_signaled_sync, instance of HR_TIMER_BUG
                 "timers_set_timer_lat",
+
+                // TODO(https://fxbug.dev/449164060): De-flake and re-enable
+                "timers_nanosleep",
             ],
         },
     ],
