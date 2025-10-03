@@ -8,7 +8,7 @@ use core::mem::take;
 use core::ptr::NonNull;
 use core::slice;
 
-use crate::{CHUNK_SIZE, Chunk, Decode, DecodeError, Decoded, Slot};
+use crate::{Chunk, Decode, DecodeError, Decoded, Slot, CHUNK_SIZE};
 
 /// A decoder for FIDL handles (internal).
 pub trait InternalHandleDecoder {
@@ -191,6 +191,7 @@ impl<D: Decoder + ?Sized> DecoderExt for D {
         let mut slot = decoder.take_slot::<T>()?;
         T::decode(slot.as_mut(), decoder)?;
         decoder.commit();
+        decoder.finish()?;
         // SAFETY: `slot` decoded successfully and the decoder was committed. `slot` now points to a
         // valid `T` within the decoder.
         unsafe { Ok(Decoded::new_unchecked(slot.as_mut_ptr(), self)) }
