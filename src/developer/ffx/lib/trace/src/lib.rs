@@ -52,6 +52,28 @@ pub fn get_category_group(
     Ok(category_group)
 }
 
+pub fn get_category_groups(ctx: &EnvironmentContext) -> Result<HashMap<String, Vec<String>>> {
+    let all_groups = ctx
+        .query("trace.category_groups")
+        .select(ffx_config::SelectMode::All)
+        .get::<Value>()
+        .context("could not query `trace.category_groups` in config.")?;
+
+    let mut category_group_map: HashMap<String, Vec<String>> = HashMap::new();
+
+    all_groups.as_array().unwrap().iter().map(|group| group.as_object().unwrap()).for_each(
+        |group_map| {
+            group_map.iter().for_each(|(k, v)| {
+                let categories: Vec<String> =
+                    v.as_array().unwrap().iter().map(|s| s.as_str().unwrap().to_string()).collect();
+                category_group_map.insert(k.clone(), categories);
+            });
+        },
+    );
+
+    Ok(category_group_map)
+}
+
 pub async fn get_category_group_names(ctx: &EnvironmentContext) -> Result<Vec<String>> {
     let all_groups = ctx
         .query("trace.category_groups")

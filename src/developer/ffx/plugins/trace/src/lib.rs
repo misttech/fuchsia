@@ -9,7 +9,7 @@ use ffx_target::get_target_specifier;
 use ffx_trace_args::{Stop, TraceCommand, TraceSubCommand};
 use ffx_tracing::{self as ffx_trace, SymbolizationMap};
 use ffx_writer::{MachineWriter, ToolIO as _};
-use fho::{Deferred, FfxMain, FfxTool, deferred};
+use fho::{Deferred, FfxMain, FfxTool, bug, deferred};
 use fidl_fuchsia_tracing::{BufferingMode, KnownCategory};
 use fidl_fuchsia_tracing_controller::{
     ProviderInfo, ProviderStats, ProvisionerProxy, RecordingError, SessionManagerProxy, StopResult,
@@ -17,7 +17,10 @@ use fidl_fuchsia_tracing_controller::{
 };
 use futures::Future;
 use futures::future::{BoxFuture, FutureExt as _};
+use prettytable::format::FormatBuilder;
+use prettytable::{Table, cell, row};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io::{Stdin, stdin};
 use std::path::{Component, PathBuf};
 use std::time::Duration;
@@ -67,6 +70,7 @@ impl<'a> LineWaiter<'a> for Stdin {
 pub enum TraceOutput {
     ListCategories(Vec<TraceKnownCategory>),
     ListProviders(Vec<TraceProviderInfo>),
+    ListCategoryGroups(HashMap<String, Vec<String>>),
 }
 
 // These fields are arranged this way because deriving Ord uses field declaration order.
@@ -367,11 +371,40 @@ pub async fn trace(
             }
         }
         TraceSubCommand::ListCategoryGroups(_) => {
-            let group_names = ffx_trace::get_category_group_names(&context).await?;
-            writer.line("Category groups:")?;
-            for group_name in group_names {
-                writer.line(format!("  #{}", group_name))?;
+            let category_groups = ffx_trace::get_category_groups(&context)?;
+
+            if writer.is_machine() {
+                writer.machine(&TraceOutput::ListCategoryGroups(category_groups))?;
+                return Ok(());
             }
+
+            let mut table = Table::new();
+            let table_format = FormatBuilder::new().padding(/*left*/ 0, /*right*/ 1).build();
+            table.set_format(table_format);
+            table.set_titles(row!("Name", "Categories"));
+
+            // Sort the names with #default being last.
+            let mut names = category_groups.keys().cloned().collect::<Vec<String>>();
+            if names.contains(&"default".to_string()) {
+                names.retain(|name| *name != "default");
+                names.sort_unstable();
+                names.push("default".to_string());
+            } else {
+                names.sort_unstable();
+            }
+
+            for name in names {
+                let values = category_groups
+                    .get(&name)
+                    .unwrap()
+                    .chunks(7)
+                    .map(|chunk| chunk.join(", "))
+                    .collect::<Vec<String>>()
+                    .join("\n");
+                table.add_row(row![format!("#{name}"), values]);
+            }
+
+            table.print(&mut writer).map_err(|e| bug!(e))?;
         }
         TraceSubCommand::Start(opts) => {
             if opts.background && opts.output.is_some() {
