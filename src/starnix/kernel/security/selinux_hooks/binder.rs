@@ -29,7 +29,7 @@ pub(in crate::security) fn binder_get_context(
 }
 
 /// Checks whether the given `current_task` can become the binder context manager.
-pub fn binder_set_context_mgr(
+pub(in crate::security) fn binder_set_context_mgr(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
 ) -> Result<(), Errno> {
@@ -46,7 +46,7 @@ pub fn binder_set_context_mgr(
 
 /// Checks whether the given `current_task` has permission to send a binder transaction
 /// to the `target_task`.
-pub fn binder_transaction(
+pub(in crate::security) fn binder_transaction(
     security_server: &SecurityServer,
     connection_security_state: &BinderConnectionState,
     current_task: &CurrentTask,
@@ -78,7 +78,7 @@ pub fn binder_transaction(
 
 /// Checks whether the given `current_task` has permission to transfer Binder objects
 /// to the `target_task`.
-pub fn binder_transfer_binder(
+pub(in crate::security) fn binder_transfer_binder(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     target_task: &Task,

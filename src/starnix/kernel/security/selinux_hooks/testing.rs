@@ -20,7 +20,7 @@ pub const TEST_FILE_NAME: &str = "file";
 /// Creates a new file named [`TEST_FILE_NAME`] under the root of the filesystem.
 /// Note that this will exercise the file-labeling scheme specified for the root
 /// filesystem by the current policy.
-pub fn create_test_file(
+pub(in crate::security) fn create_test_file(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
 ) -> NamespaceNode {
@@ -40,7 +40,7 @@ pub fn create_test_file(
 /// Creates a new path of directories with the given names under the root of the
 /// filesystem. Note that this will exercise the file-labeling scheme specified for the
 /// root filesystem by the current policy.
-pub fn create_directory_with_parents(
+pub(in crate::security) fn create_directory_with_parents(
     dir_names: Vec<&FsStr>,
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
@@ -63,7 +63,7 @@ const HOOKS_TESTS_BINARY_POLICY: &[u8] =
 /// loads the hooks test policy, before delegating to the supplied test `callback`.
 // TODO: https://fxbug.dev/335397745 - Only provide an admin/test API to the test, so that tests
 // must generally exercise hooks via public entrypoints.
-pub fn spawn_kernel_with_selinux_hooks_test_policy_and_run<F>(
+pub(in crate::security) fn spawn_kernel_with_selinux_hooks_test_policy_and_run<F>(
     callback: F,
 ) -> impl Future<Output = ()>
 where
@@ -81,7 +81,7 @@ where
     })
 }
 
-pub fn create_test_executable(
+pub(in crate::security) fn create_test_executable(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     security_context: &[u8],

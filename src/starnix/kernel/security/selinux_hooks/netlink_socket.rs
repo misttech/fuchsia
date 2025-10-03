@@ -71,7 +71,7 @@ fn compute_netlink_message_permission(
 }
 
 /// Checks if the Netlink `socket` is allowed to send a message of `message_type`.
-pub fn check_netlink_send_access(
+pub(in crate::security) fn check_netlink_send_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     socket: &Socket,

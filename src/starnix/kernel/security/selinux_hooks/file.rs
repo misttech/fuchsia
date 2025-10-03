@@ -262,7 +262,7 @@ pub(in crate::security) fn check_file_fcntl_access(
 }
 
 /// Checks if the requested protection changes `prot` can be applied to `mapping`.
-pub fn file_mprotect(
+pub(in crate::security) fn file_mprotect(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     mapping_range: &Range<UserAddress>,
@@ -317,7 +317,7 @@ pub fn file_mprotect(
 
 /// Checks if `current_task` can mmap `file` or anonymous memory with the given `protection_flags`
 /// and `mapping_options`.
-pub fn mmap_file(
+pub(in crate::security) fn mmap_file(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     file: Option<&FileHandle>,

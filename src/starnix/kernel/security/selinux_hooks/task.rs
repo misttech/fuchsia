@@ -742,7 +742,7 @@ pub(in crate::security) fn task_prlimit(
 }
 
 /// Check permission before setting the max resource limits of `target` from `old_limit` to `new_limit`.
-pub fn task_setrlimit(
+pub(in crate::security) fn task_setrlimit(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     target: &Task,

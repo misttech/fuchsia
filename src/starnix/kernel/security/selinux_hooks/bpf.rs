@@ -89,7 +89,7 @@ pub(in crate::security) fn check_bpf_map_access(
 
 /// Performs necessary checks when the kernel generates and returns a file descriptor for BPF
 /// programs.
-pub fn check_bpf_prog_access(
+pub(in crate::security) fn check_bpf_prog_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     bpf_program: &Program,
