@@ -13,6 +13,7 @@
 #include <lib/symbolizer-markup/writer.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <zircon/assert.h>
 
 #include <ktl/algorithm.h>
 #include <ktl/byte.h>
@@ -22,16 +23,17 @@
 #include <ktl/string_view.h>
 #include <phys/main.h>
 #include <phys/stack.h>
+#include <phys/stdio.h>
 
-#include "zircon/assert.h"
+// FileMarkupWriter{{stdout}} et al can be used with SymbolizerContext et al.
+using FileMarkupWriter = symbolizer_markup::Writer<CallableFile>;
 
 class ElfImage;
 struct PhysExceptionState;
 class Symbolize;
-class MainSymbolize;
 
 // The Symbolize instance registered by MainSymbolize.
-extern Symbolize* gSymbolize;
+extern class Symbolize* gSymbolize;
 
 class Symbolize {
  public:
@@ -63,7 +65,7 @@ class Symbolize {
   Symbolize(const Symbolize&) = delete;
 
   explicit Symbolize(const char* name, FILE* f = stdout)
-      : name_(name), output_(f), writer_(Sink{output_}) {}
+      : name_{name}, output_{f}, writer_{{output_}} {}
 
   const char* name() const { return name_; }
 
@@ -183,12 +185,6 @@ class Symbolize {
   void set_cfi_slowpath(CallCfiSlowpathFunction* cfi_slowpath, CfiCheckFunction* main_cfi_check);
 
  private:
-  struct Sink {
-    FILE* f;
-
-    int operator()(std::string_view str) const { return f->Write(str); }
-  };
-
   void Printf(const char* fmt, ...);
 
   void AddModule(const ElfImage* module);
@@ -198,7 +194,7 @@ class Symbolize {
   ModuleList modules_;
   ktl::span<const Stack<BootStack>> stacks_;
   ktl::span<const Stack<BootShadowCallStack>> shadow_call_stacks_;
-  symbolizer_markup::Writer<Sink> writer_;
+  FileMarkupWriter writer_;
   // The currently executing module, set on the first call to LoadModule() or
   // the last to call OnHandoff().
   const ElfImage* main_module_ = nullptr;

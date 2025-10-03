@@ -12,6 +12,12 @@
 #include <stdio.h>
 #include <zircon/compiler.h>
 
+struct CallableFile {
+  FILE* f = nullptr;
+
+  int operator()(std::string_view str) const { return f->Write(str); }
+};
+
 class PhysConsole {
  public:
   static PhysConsole& Get();

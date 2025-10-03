@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 
+#include <ktl/initializer_list.h>
 #include <ktl/string_view.h>
 #include <phys/allocation.h>
 
@@ -56,6 +57,13 @@ class Log {
     RestoreStdout();
     size_ = 0;
     return ktl::move(buffer_);
+  }
+
+  // This borrows a snapshot of the accumulated log text.  **NOTE!** The view
+  // returned here must be used and discarded before anything might append to
+  // the log in any fashion, which many paths can do indirectly.
+  ktl::string_view BorrowSnapshot() const {
+    return {reinterpret_cast<const char*>(buffer_.get()), size_};
   }
 
  private:

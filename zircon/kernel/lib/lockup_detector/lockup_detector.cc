@@ -16,7 +16,6 @@
 #include <lib/lockup_detector/inline_impl.h>
 #include <lib/lockup_detector/state.h>
 #include <lib/relaxed_atomic.h>
-#include <lib/version.h>
 #include <lib/zircon-internal/macros.h>
 #include <platform.h>
 #include <zircon/time.h>

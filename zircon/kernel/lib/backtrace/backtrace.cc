@@ -6,14 +6,14 @@
 
 #include "lib/backtrace.h"
 
-#include <lib/version.h>
+#include <phys/boot-constants.h>
 
 static constexpr const char* kFormat = "{{{bt:%zu:%p:%s}}}\n";
 static constexpr const char* kRa = "ra";
 static constexpr const char* kPc = "pc";
 
 void Backtrace::Print(FILE* file) const {
-  print_backtrace_version_info(file);
+  file->Write(kBootConstants.kernel_debug_ident.get());
   PrintWithoutVersion(file);
 }
 

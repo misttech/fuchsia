@@ -36,6 +36,7 @@
 #include <kernel/thread.h>
 #include <kernel/topology.h>
 #include <lk/init.h>
+#include <phys/boot-constants.h>
 #include <phys/handoff.h>
 #include <phys/zircon-abi-spec.h>
 #include <vm/init.h>
@@ -130,6 +131,8 @@ void lk_main(PhysHandoff* handoff) {
   // that code must be changed as well. See https://fxbug.dev/42138089#c20.
   dprintf(ALWAYS, "printing enabled\n");
 
+  stdout->Write(kBootConstants.kernel_version_ident.get());
+
   // At this point the physmap (set up in start.S) is available and all static
   // constructors (if needed) have been run.
 
@@ -147,7 +150,6 @@ void lk_main(PhysHandoff* handoff) {
   // At this point, the kernel command line and serial are set up.
 
   dprintf(INFO, "\nwelcome to Zircon\n\n");
-  dprintf(SPEW, "KASLR: Kernel image at %p\n", __executable_start);
 
   // Perform any additional arch and platform-specific set up that needs to be done
   // before virtual memory or the heap are set up.

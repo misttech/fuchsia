@@ -15,7 +15,6 @@
 #include <lib/arch/x86/boot-cpuid.h>
 #include <lib/backtrace/global_cpu_context_exchange.h>
 #include <lib/console.h>
-#include <lib/version.h>
 #include <platform.h>
 #include <stdio.h>
 #include <string.h>

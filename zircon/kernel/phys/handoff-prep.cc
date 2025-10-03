@@ -367,7 +367,8 @@ void HandoffPrep::UsePackageFiles(KernelStorage::Bootfs kernel_package) {
                 static_cast<int>(userboot.size()), userboot.data(),
                 static_cast<int>(kernel_package.directory().size()),
                 kernel_package.directory().data(), handoff_->userboot.vmo.content_size);
-  ZX_ASSERT_MSG(!handoff_->version_string.empty(), "no version.txt file in kernel package");
+  ZX_ASSERT_MSG(!boot_constants_->system_version_string.empty(),
+                "no version.txt file in kernel package");
 }
 
 PhysElfImage HandoffPrep::MakePhysElfImage(KernelStorage::Bootfs::iterator file,

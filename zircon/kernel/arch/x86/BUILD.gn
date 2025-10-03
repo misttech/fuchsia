@@ -180,7 +180,6 @@ source_set("x86") {
     "//zircon/kernel/lib/perfmon",
     "//zircon/kernel/lib/root_resource_filter",
     "//zircon/kernel/lib/topology",
-    "//zircon/kernel/lib/version",
     "//zircon/kernel/object",
     "//zircon/kernel/phys:handoff",
     "//zircon/kernel/platform/pc",

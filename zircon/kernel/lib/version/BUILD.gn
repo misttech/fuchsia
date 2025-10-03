@@ -70,13 +70,16 @@ if (toolchain_environment != "kernel") {
   }
 
   source_set("version") {
+    visibility = [
+      ":*",
+      "//zircon/kernel/top",
+    ]
+
     sources = [ "version.cc" ]
-    defines = [ "ARCH=\"$current_cpu\"" ]
     deps = [
-      "//zircon/kernel/lib/arch",
       "//zircon/kernel/lib/console",
       "//zircon/kernel/lib/init",
-      "//zircon/kernel/phys:handoff",
+      "//zircon/kernel/phys:boot-constants",
     ]
   }
 }

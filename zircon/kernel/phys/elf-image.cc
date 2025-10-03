@@ -103,8 +103,12 @@ fit::result<ElfImage::Error> ElfImage::InitFromFile(ElfImage::BootfsDir::iterato
 
   auto diagnostics = GetDiagnostics();
   auto phdr_allocator = elfldltl::NoArrayFromFile<Elf::Phdr>();
-  auto headers = elfldltl::LoadHeadersFromFile<Elf>(diagnostics, image_, phdr_allocator);
+  auto headers = elfldltl::LoadHeadersFromFile<Elf>(
+      // Don't check e_machine here, just stash it in machine_.
+      diagnostics, image_, phdr_allocator, ktl::nullopt);
   auto [ehdr, phdrs] = *headers;
+  entry_ = ehdr.entry;
+  machine_ = ehdr.machine;
 
   ktl::optional<Elf::Phdr> relro, dynamic, interp;
   elfldltl::DecodePhdrs(  //
@@ -116,7 +120,6 @@ fit::result<ElfImage::Error> ElfImage::InitFromFile(ElfImage::BootfsDir::iterato
       elfldltl::PhdrStackObserver<Elf>(stack_size_), elfldltl::PhdrInterpObserver<Elf>(interp));
 
   image_.set_base(load_info_.vaddr_start());
-  entry_ = ehdr.entry;
 
   if (relocated) {
     // In the phys context, all the relocations are done in place before the
@@ -199,7 +202,29 @@ Allocation ElfImage::Load(memalloc::Type type, ktl::optional<uint64_t> relocatio
   memset(image.get() + copy, 0, load_info_.vaddr_size() - copy);
 
   // Hereafter image_ refers to the now-loaded image, not the original file.
+  // Adjust pointers into the old image to point into the new image.
+  auto adjust = [old_data = image_.image().data(), new_data = image.get()]<class T>(T& spanlike) {
+    if (!spanlike.empty()) {
+      size_t offset = reinterpret_cast<const ktl::byte*>(spanlike.data()) - old_data;
+      spanlike = T{
+          reinterpret_cast<T::value_type*>(new_data + offset),
+          spanlike.size(),
+      };
+    }
+  };
   image_.set_image(image.data());
+  adjust(dynamic_);
+  if (build_id_) {
+    adjust(build_id_->name);
+    adjust(build_id_->desc);
+  }
+  if (interp_) {
+    adjust(*interp_);
+  }
+  if (ktl::span array = init_info_.array(); !array.empty()) {
+    adjust(array);
+    init_info_.set_array(array);
+  }
 
   // Ensure that by the time we return, it's safe to jump into this code.
   // Later relocation won't touch executable segments, so additional

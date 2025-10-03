@@ -123,6 +123,9 @@ struct ZirconAbiSpec {
       false
 #endif
       ;
+
+  // This is just used in physboot's version info text rendering.
+  uint8_t kernel_debug_level = LK_DEBUGLEVEL;
 };
 static_assert(ktl::is_trivially_destructible_v<ZirconAbiSpec>);
 

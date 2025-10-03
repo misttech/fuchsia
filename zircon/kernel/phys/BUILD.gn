@@ -190,6 +190,9 @@ if (toolchain_environment == "kernel.phys" ||
       # "symbolize.h" has #include <phys/main.h>.
       ":main",
 
+      # "symbolize.h" has #include <phys/stdio.h>.
+      ":stdio",
+
       # <phys/symbolize.h> has #include <lib/symbolizer-markup/writer.h>.
       "//src/lib/symbolizer-markup",
 

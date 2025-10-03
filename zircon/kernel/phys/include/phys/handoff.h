@@ -356,8 +356,6 @@ struct PhysHandoff {
   PhysBootTimes times;
   static_assert(std::is_default_constructible_v<PhysBootTimes>);
 
-  PhysHandoffPermanentString version_string;
-
   // DT_INIT_ARRAY functions to be called.  This points inside the kernel's
   // load image at its virtual address, not into allocated handoff memory.
   PhysHandoffKernelImageSpan<const elfldltl::Elf<>::Addr> init_array;

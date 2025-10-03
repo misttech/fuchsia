@@ -234,6 +234,16 @@ class Writer {
   // are not emitted, but a leading "0x is.
   constexpr Writer& HexDigits(uint64_t n) { return Literal(kHexPrefix).template Digits<16>(n); }
 
+  // Emits plain hex digits for each byte with no separators.
+  constexpr Writer& HexString(std::span<const std::byte> bytes) {
+    for (const std::byte byte : bytes) {
+      const uint8_t b = static_cast<uint8_t>(byte);
+      const char hex[2] = {kHexDigits[b >> 4], kHexDigits[b & 0xf]};
+      Literal({hex, 2});
+    }
+    return *this;
+  }
+
  private:
   static constexpr std::string_view kDecimalDigits = "0123456789";
   static constexpr std::string_view kHexDigits = "0123456789abcdef";
@@ -304,12 +314,7 @@ class Writer {
 
   Writer& HexField(std::span<const std::byte> bytes) {
     Separator();
-    for (const std::byte byte : bytes) {
-      const uint8_t b = static_cast<uint8_t>(byte);
-      const char hex[2] = {kHexDigits[b >> 4], kHexDigits[b & 0xf]};
-      Literal({hex, 2});
-    }
-    return *this;
+    return HexString(bytes);
   }
 
   Sink sink_;

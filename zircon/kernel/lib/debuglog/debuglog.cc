@@ -11,7 +11,6 @@
 #include <lib/kconcurrent/chainlock_transaction.h>
 #include <lib/lazy_init/lazy_init.h>
 #include <lib/persistent-debuglog.h>
-#include <lib/version.h>
 #include <platform.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -167,8 +166,7 @@ void DLog::BluescreenInit() {
   // Print uptime, current CPU, and version information.
   printf("UPTIME: %" PRIi64 "ms, CPU: %" PRIu32 "\n", current_mono_time() / ZX_MSEC(1),
          arch_curr_cpu_num());
-  print_backtrace_version_info();
-  g_crashlog.base_address = (uintptr_t)__executable_start;
+  stdout->Write(kBootConstants.kernel_debug_ident.get());
 }
 
 zx_status_t DLog::Write(uint32_t severity, uint32_t flags, ktl::string_view str) {

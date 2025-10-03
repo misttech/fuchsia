@@ -87,6 +87,12 @@ void RelocateElfKernel(ElfImage& kernel) {
   // Make sure the kernel was built to match this physboot binary.
   kernel.AssertInterpMatchesBuildId(gSymbolize->name(), gSymbolize->build_id());
 
+  if (kernel.machine() != elfldltl::ElfMachine::kNative) [[unlikely]] {
+    ZX_PANIC("ELF kernel e_machine %#" PRIx16 " != expected %#" PRIx16 "\n",
+             static_cast<uint16_t>(kernel.machine()),
+             static_cast<uint16_t>(elfldltl::ElfMachine::kNative));
+  }
+
   // Use the putative eventual virtual address to relocate the kernel.
   const uint64_t kernel_vaddr = kArchHandoffVirtualAddress;
 

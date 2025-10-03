@@ -5,7 +5,6 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/instrumentation/vmo.h>
-#include <lib/version.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -13,7 +12,7 @@
 #include <ktl/iterator.h>
 #include <ktl/string_view.h>
 #include <object/vm_object_dispatcher.h>
-#include <phys/handoff.h>
+#include <phys/boot-constants.h>
 #include <vm/vm_object_paged.h>
 
 #include "private.h"
@@ -112,7 +111,7 @@ zx_status_t InstrumentationData::GetVmos(Handle* handles[]) {
   };
 
   SymbolizerFile symbolizer;
-  PrintSymbolizerContext(symbolizer.stream());
+  symbolizer.stream()->Write(kBootConstants.kernel_debug_ident.get());
 
   // This is just a fixed list of steps but using a loop and a switch gets the
   // compiler to check that every enum case is handled.

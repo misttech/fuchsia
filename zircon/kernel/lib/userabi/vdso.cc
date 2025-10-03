@@ -9,7 +9,6 @@
 #include <lib/fasttime/internal/abi.h>
 #include <lib/userabi/vdso-constants.h>
 #include <lib/userabi/vdso.h>
-#include <lib/version.h>
 #include <platform.h>
 #include <trace.h>
 #include <zircon/types.h>
@@ -19,6 +18,7 @@
 #include <kernel/mp.h>
 #include <ktl/array.h>
 #include <object/handle.h>
+#include <phys/boot-constants.h>
 #include <vm/pmm.h>
 #include <vm/vm.h>
 #include <vm/vm_aspace.h>
@@ -273,9 +273,11 @@ void SetTimeValues(const fbl::RefPtr<VmObject>& vmo) {
 
 // Fill out the contents of the vdso_constants struct.
 void SetConstants(const fbl::RefPtr<VmObject>& vmo) {
-  ktl::string_view version = VersionString();
-  ASSERT_MSG(version.size() <= kMaxVersionString, "version string size %zu > max %zu: \"%.*s\"",
-             version.size(), kMaxVersionString, static_cast<int>(version.size()), version.data());
+  ktl::string_view version_string = kBootConstants.system_version_string.get();
+  ASSERT_MSG(version_string.size() <= kMaxVersionString,
+             "version string size %zu > max %zu: \"%.*s\"",
+             kBootConstants.system_version_string.size(), kMaxVersionString,
+             static_cast<int>(version_string.size()), version_string.data());
 
   // Initialize the constants that should be visible to the vDSO.
   // Rather than assigning each member individually, do this with
@@ -295,7 +297,7 @@ void SetConstants(const fbl::RefPtr<VmObject>& vmo) {
       PAGE_SIZE,
       0,  // Padding.
       pmm_count_total_bytes(),
-      version.size(),
+      version_string.size(),
   };
 
   auto write_vmo = [offset = uint64_t{VDSO_DATA_CONSTANTS}, &vmo](auto data) mutable {
@@ -311,7 +313,7 @@ void SetConstants(const fbl::RefPtr<VmObject>& vmo) {
 
   // Store the version string and NUL terminator in the flexible array member.
   // The kMaxVersionString check ensures there is enough space for all that.
-  write_vmo(version);
+  write_vmo(version_string);
   write_vmo(ktl::span{"", 1});
 }
 

@@ -51,6 +51,10 @@ extern PhysHandoff* gPhysHandoff;
 //
 enum class PhysHandoffPtrLifetime { kPermanent, kKernelImage, kTemporary };
 
+// Forward declaration; see below.
+template <typename T, PhysHandoffPtrLifetime Lifetime>
+class PhysHandoffSpan;
+
 template <typename T, PhysHandoffPtrLifetime Lifetime>
 class PhysHandoffPtr {
  public:
@@ -138,6 +142,7 @@ class PhysHandoffPtr {
 
  private:
   friend class HandoffPrep;
+  friend class PhysHandoffSpan<T, Lifetime>;
 
   value_type* ptr_ = nullptr;
 };
@@ -180,6 +185,14 @@ class PhysHandoffSpan {
     return {ptr_.release(), size_};
   }
 
+  PhysHandoffSpan subspan(size_t offset, size_t count) const {
+    PhysHandoffSpan result;
+    assert(offset <= size_);
+    result.ptr_.ptr_ = ptr_.ptr_ + offset;
+    result.size_ = count;
+    return result;
+  }
+
  private:
   friend class HandoffPrep;
 
@@ -197,6 +210,12 @@ class PhysHandoffString : public PhysHandoffSpan<const char, Lifetime> {
   constexpr PhysHandoffString() = default;
   constexpr PhysHandoffString(PhysHandoffString&&) noexcept = default;
   constexpr PhysHandoffString& operator=(PhysHandoffString&&) noexcept = default;
+
+  PhysHandoffString substr(size_t offset, size_t count) const {
+    PhysHandoffString result;
+    result.Base::operator=(Base::subspan(offset, count));
+    return result;
+  }
 
   constexpr std::string_view get() const
     requires(Base::Ptr::kCanDeref)

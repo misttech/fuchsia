@@ -44,6 +44,12 @@ SECTIONS {
   . += SIZEOF_HEADERS;
 
   /*
+   * Place this as close as possible to the ELF headers so only a little
+   * memory needs to be scanned to identify the ELF image completely.
+   */
+  .note.gnu.build-id : { *(.note.gnu.build-id) }
+
+  /*
    * This is the metadata physboot uses to load and relocate the PIE kernel.
    * Each one has to be a separate output section because they're specially
    * produced by the linker, or in the case of `.interp` recognized by name
@@ -60,21 +66,6 @@ SECTIONS {
   .relr.dyn : { *(.relr.dyn) }
   .rela.dyn : { *(.rela.*) }
   .rel.dyn : { *(.rel.*) }
-
-  /*
-   * These boundary symbols are used by lib/version/version.cc to find
-   * the build ID.  Later that code will be replaced by having physboot
-   * provide canned text based on its extraction of the ID while loading.
-   * At that point, this can be reduced to just another metadata section.
-   * It must remain a separate output section so that its SHT_NOTE type
-   * causes the linker to produce a PT_NOTE program header for it without
-   * this linker script using an explicit PHDRS clause.
-   */
-  .note.gnu.build-id : {
-    PROVIDE_HIDDEN(__build_id_note_start = .);
-    *(.note.gnu.build-id)
-    PROVIDE_HIDDEN(__build_id_note_end = .);
-  }
 
   /*
    * This is the remainder of miscellaneous RODATA.

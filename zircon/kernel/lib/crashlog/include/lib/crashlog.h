@@ -24,10 +24,9 @@ static_assert((kMinCrashlogSize % kPersistentRamAllocationGranularity) == 0,
               "Minimum reserved crashlog size must be a multiple of the persistent RAM allocation "
               "granularity");
 
-typedef struct {
-  uintptr_t base_address;
+struct crashlog_t {
   crashlog_regs_t regs;
-} crashlog_t;
+};
 
 extern crashlog_t g_crashlog;
 

@@ -8,7 +8,6 @@
 #include <lib/instrumentation/debugdata.h>
 #include <lib/instrumentation/kernel-mapped-vmo.h>
 #include <lib/llvm-profdata/llvm-profdata.h>
-#include <lib/version.h>
 #include <stdint.h>
 #include <string.h>
 #include <zircon/assert.h>
@@ -17,6 +16,7 @@
 #include <ktl/span.h>
 #include <ktl/string_view.h>
 #include <ktl/utility.h>
+#include <phys/boot-constants.h>
 #include <vm/vm_object_paged.h>
 
 #include "private.h"
@@ -36,7 +36,7 @@ KernelMappedVmo gProfdataLiveData;
 
 InstrumentationDataVmo LlvmProfdataVmo() {
   LlvmProfdata profdata;
-  profdata.Init(ElfBuildId());
+  profdata.Init(kBootConstants.elf_build_id.get());
   if (profdata.size_bytes() == 0) {
     return {};
   }

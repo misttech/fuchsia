@@ -29,7 +29,6 @@
 #include <lib/ktrace.h>
 #include <lib/lazy_init/lazy_init.h>
 #include <lib/thread_sampler/thread_sampler.h>
-#include <lib/version.h>
 #include <lib/zircon-internal/macros.h>
 #include <platform.h>
 #include <stdio.h>

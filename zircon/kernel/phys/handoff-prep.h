@@ -109,7 +109,10 @@ class HandoffPrep {
       return {};
     }
     const ktl::optional image_vaddr = kernel_.image().GetVaddr(kernel_data);
-    ZX_DEBUG_ASSERT(image_vaddr);
+    ZX_DEBUG_ASSERT_MSG(image_vaddr, "[%p, %p) not in kernel_.image() [%p, %p)\n",
+                        kernel_data.data(), kernel_data.data() + kernel_data.size(),
+                        kernel_.image().image().data(),
+                        kernel_.image().image().data() + kernel_.image().image().size());
     const uintptr_t kernel_vaddr = *image_vaddr + kernel_.load_bias();
     PhysHandoffKernelImageSpan<const T> result;
     result.ptr_.ptr_ = reinterpret_cast<const T*>(kernel_vaddr);
@@ -119,10 +122,8 @@ class HandoffPrep {
 
   PhysHandoffKernelImageString KernelImageString(ktl::string_view kernel_str) {
     PhysHandoffKernelImageString result;
-    if (!kernel_str.empty()) {
-      static_cast<PhysHandoffKernelImageString::Base&>(result) =
-          KernelImageSpan(ktl::span(kernel_str));
-    }
+    static_cast<PhysHandoffKernelImageString::Base&>(result) =
+        KernelImageSpan(ktl::span(kernel_str));
     return result;
   }
 

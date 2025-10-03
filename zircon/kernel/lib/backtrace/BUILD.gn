@@ -12,10 +12,7 @@ static_library("backtrace") {
   complete_static_lib = true
 
   sources = [ "backtrace.cc" ]
-  deps = [
-    "//zircon/kernel/lib/version",
-    "//zircon/system/ulib/affine",
-  ]
+  deps = [ "//zircon/kernel/phys:boot-constants" ]
 }
 
 library_headers("headers") {
@@ -24,7 +21,9 @@ library_headers("headers") {
   public_deps = [
     "//zircon/kernel/lib/arch:headers",
     "//zircon/kernel/lib/ktl:headers",
-    "//zircon/system/ulib/affine",
+
+    # <lib/backtrace/cpu_context_exchange.h> has #include <lib/affine/ratio.h>.
+    "//zircon/system/ulib/affine:headers",
   ]
 
   if (current_cpu == "x64") {

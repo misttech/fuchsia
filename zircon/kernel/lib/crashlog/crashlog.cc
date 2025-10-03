@@ -13,7 +13,6 @@
 #include <lib/debuglog.h>
 #include <lib/io.h>
 #include <lib/lockup_detector.h>
-#include <lib/version.h>
 #include <platform.h>
 #include <stdio.h>
 #include <string-file.h>
@@ -31,6 +30,7 @@
 #include <object/channel_dispatcher.h>
 #include <object/handle.h>
 #include <object/root_job_observer.h>
+#include <phys/boot-constants.h>
 #include <vm/pmm.h>
 #include <vm/pmm_checker.h>
 #include <vm/vm.h>
@@ -95,7 +95,6 @@ size_t crashlog_to_string(ktl::span<char> target, zircon_crash_reason_t reason) 
   const RenderRegion regions = MapReasonToRegions(reason);
 
   if (static_cast<bool>(regions & RenderRegion::Banner)) {
-    uintptr_t crashlog_base_address = 0;
     const char* reason_str;
     switch (reason) {
       case ZirconCrashReason::NoCrash:
@@ -108,7 +107,6 @@ size_t crashlog_to_string(ktl::span<char> target, zircon_crash_reason_t reason) 
 
       case ZirconCrashReason::Panic:
         reason_str = "KERNEL PANIC";
-        crashlog_base_address = g_crashlog.base_address;
         break;
 
       case ZirconCrashReason::SoftwareWatchdog:
@@ -127,21 +125,11 @@ size_t crashlog_to_string(ktl::span<char> target, zircon_crash_reason_t reason) 
     fprintf(&outfile, "UPTIME (ms)\n%" PRIi64 "\n\n", current_boot_time() / ZX_MSEC(1));
     fprintf(&outfile, "RUNTIME (ms)\n%" PRIi64 "\n\n", current_mono_time() / ZX_MSEC(1));
 
-    // Keep the format and values in sync with the symbolizer.
-    // Print before the registers (KASLR offset).
-#if defined(__x86_64__)
-    const char* arch = "x86_64";
-#elif defined(__aarch64__)
-    const char* arch = "aarch64";
-#elif defined(__riscv)
-    const char* arch = "riscv64";
-#endif
-    ktl::string_view version = VersionString();
-    fprintf(&outfile,
-            "VERSION\narch: %s\nbuild_id: %.*s\ndso: id=%s base=%#lx "
-            "name=vmzircon\n\n",
-            arch, static_cast<int>(version.size()), version.data(), elf_build_id_string(),
-            crashlog_base_address);
+    outfile.Write(static_cast<bool>(regions & RenderRegion::DebugInfo)
+                      // Include full symbolizer markup context for DebugInfo.
+                      ? kBootConstants.kernel_debug_ident.get()
+                      // Otherwise, the human-readable prefix of the full text.
+                      : kBootConstants.kernel_version_ident.get());
   }
 
   if (static_cast<bool>(regions & RenderRegion::RootJobCritical)) {
@@ -156,8 +144,6 @@ size_t crashlog_to_string(ktl::span<char> target, zircon_crash_reason_t reason) 
   }
 
   if (static_cast<bool>(regions & RenderRegion::DebugInfo)) {
-    PrintSymbolizerContext(&outfile);
-
     // The presence of "REGISTERS" is load-bearing; we have crashlog tests that
     // that explicitly parse for it.
     // LINT.IfChange

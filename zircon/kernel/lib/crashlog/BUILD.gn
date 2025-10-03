@@ -22,8 +22,8 @@ static_library("crashlog") {
     "//zircon/kernel/lib/console",
     "//zircon/kernel/lib/counters",
     "//zircon/kernel/lib/io",
-    "//zircon/kernel/lib/version",
     "//zircon/kernel/object:headers",
+    "//zircon/kernel/phys:boot-constants",
   ]
 }
 

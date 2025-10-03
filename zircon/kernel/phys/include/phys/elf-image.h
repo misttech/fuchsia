@@ -112,6 +112,8 @@ class ElfImage {
     return image_.GetPointer<T>(entry_);
   }
 
+  elfldltl::ElfMachine machine() const { return machine_; }
+
   const elfldltl::InitFiniInfo<>& init_info() const { return init_info_; }
 
   ktl::optional<uint64_t> cfi_check_function() const { return cfi_check_; }
@@ -301,6 +303,7 @@ class ElfImage {
   elfldltl::DirectMemory image_{{}};
   LoadInfo load_info_;
   uint64_t entry_ = 0;
+  elfldltl::ElfMachine machine_{};
   ktl::span<const Elf::Dyn> dynamic_;
   elfldltl::InitFiniInfo<> init_info_;
   ktl::optional<elfldltl::ElfNote> build_id_;

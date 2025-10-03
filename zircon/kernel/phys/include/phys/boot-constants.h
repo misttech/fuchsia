@@ -48,6 +48,23 @@ struct BootConstants {
 
   // ZBI container of items to be propagated in mexec.
   PhysHandoffPermanentSpan<const std::byte> mexec_data;
+
+  // This is a multi-line string of important information to precede a panic
+  // message, for example.  It includes full symbolizer markup context logging
+  // for the kernel as well as version and build information.
+  PhysHandoffPermanentString kernel_debug_ident;
+
+  // This is a substring (prefix) of that same string (same memory), that's
+  // just the human-readable summary without the full markup.
+  PhysHandoffPermanentString kernel_version_ident;
+
+  // This is a substring of both those strings, and is just exactly what
+  // zx_system_get_version_string() will return to users.
+  PhysHandoffPermanentString system_version_string;
+
+  // This is the kernel's ELF build ID as raw bytes, pointing directly into the
+  // ELF note in the kernel's own RODATA.
+  PhysHandoffKernelImageSpan<const std::byte> elf_build_id;
 };
 static_assert(ktl::is_trivially_destructible_v<BootConstants>);
 static_assert(ktl::is_standard_layout_v<BootConstants>);

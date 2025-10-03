@@ -19,6 +19,15 @@ namespace {
 constexpr size_t kLargeBufferSize = 8 * 1024;
 constexpr size_t kTooSmallBufferSize = 64;
 
+bool ExpectBanner(ktl::string_view text) {
+  BEGIN_TEST;
+  EXPECT_TRUE(text.find("ZIRCON REBOOT REASON"sv) != ktl::string_view::npos);
+  EXPECT_TRUE(text.find("UPTIME"sv) != ktl::string_view::npos);
+  EXPECT_TRUE(text.find("build ID"sv) != ktl::string_view::npos);
+  EXPECT_TRUE(text.find("zx_system_get_version_string:"sv) != ktl::string_view::npos);
+  END_TEST;
+}
+
 bool NoCrashTest() {
   BEGIN_TEST;
 
@@ -56,9 +65,7 @@ bool OomRootJobTest() {
     ktl::string_view text{buffer.get(), len};
 
     // Banner.
-    EXPECT_TRUE(text.find("ZIRCON REBOOT REASON"sv) != ktl::string_view::npos);
-    EXPECT_TRUE(text.find("UPTIME"sv) != ktl::string_view::npos);
-    EXPECT_TRUE(text.find("VERSION"sv) != ktl::string_view::npos);
+    EXPECT_TRUE(ExpectBanner(text));
 
     // No debug info.
     EXPECT_FALSE(text.find("{{{reset}}}"sv) != ktl::string_view::npos);
@@ -98,9 +105,7 @@ bool PanicWdtTest() {
     ktl::string_view text{buffer.get(), len};
 
     // Banner.
-    EXPECT_TRUE(text.find("ZIRCON REBOOT REASON"sv) != ktl::string_view::npos);
-    EXPECT_TRUE(text.find("UPTIME"sv) != ktl::string_view::npos);
-    EXPECT_TRUE(text.find("VERSION"sv) != ktl::string_view::npos);
+    EXPECT_TRUE(ExpectBanner(text));
 
     // Debug info.
     EXPECT_TRUE(text.find("{{{reset}}}"sv) != ktl::string_view::npos);
@@ -143,9 +148,7 @@ bool UnknownTest() {
     ktl::string_view text{buffer.get(), len};
 
     // Banner.
-    EXPECT_TRUE(text.find("ZIRCON REBOOT REASON"sv) != ktl::string_view::npos);
-    EXPECT_TRUE(text.find("UPTIME"sv) != ktl::string_view::npos);
-    EXPECT_TRUE(text.find("VERSION"sv) != ktl::string_view::npos);
+    EXPECT_TRUE(ExpectBanner(text));
 
     // No debug info.
     EXPECT_FALSE(text.find("{{{reset}}}"sv) != ktl::string_view::npos);
