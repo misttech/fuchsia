@@ -272,6 +272,14 @@
             source_availability: "unknown",
         },
         {
+            protocol: [ "fuchsia.power.topology.test.SystemActivityControl" ],
+            from: "#core",
+            to: "#bootstrap",
+            dependency: "weak",
+            availability: "optional",
+            source_availability: "unknown",
+        },
+        {
             protocol: "fuchsia.sys2.RealmExplorer",
             from: "framework",
             as: "fuchsia.sys2.RealmExplorer.root",

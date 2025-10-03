@@ -279,6 +279,7 @@
                 "fuchsia.opencl.loader.Loader",
                 "fuchsia.power.battery.BatteryManager",
                 "fuchsia.power.battery.test.BatterySimulator",
+                "fuchsia.power.topology.test.SystemActivityControl",
                 "fuchsia.process.explorer.Query",
                 "fuchsia.recovery.FactoryReset",
                 "fuchsia.session.scene.Manager",

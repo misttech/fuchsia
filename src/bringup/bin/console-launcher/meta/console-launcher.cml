@@ -176,6 +176,14 @@
             availability: "optional",
         },
         {
+            // Allow managing system power from the console.
+            protocol: "fuchsia.power.topology.test.SystemActivityControl",
+
+            // The source of this protocol, system-activity-controller,
+            // may not be available on all products.
+            availability: "optional",
+        },
+        {
             protocol: "fuchsia.hardware.pty.Device",
 
             // The source of this protocol, ptysvc,

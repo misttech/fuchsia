@@ -136,6 +136,15 @@
             availability: "optional",
         },
         {
+            // Allow managing system power from the console.
+            protocol: "fuchsia.power.topology.test.SystemActivityControl",
+            from: "parent",
+            to: "#console-launcher",
+
+            // system-activity-controller is not available in all configurations.
+            availability: "optional",
+        },
+        {
             directory: "boot",
             from: "parent",
             to: "#console-launcher",
