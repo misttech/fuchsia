@@ -5,8 +5,6 @@
 #ifndef SRC_STORAGE_LIB_VFS_CPP_TESTS_DIR_TEST_UTIL_H_
 #define SRC_STORAGE_LIB_VFS_CPP_TESTS_DIR_TEST_UTIL_H_
 
-#include <lib/fdio/vfs.h>
-
 #include <cstddef>
 #include <cstdint>
 #include <cstring>

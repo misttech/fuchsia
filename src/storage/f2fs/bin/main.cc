@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include <getopt.h>
-#include <lib/fdio/vfs.h>
 #include <lib/syslog/cpp/log_settings.h>
 #include <lib/syslog/cpp/macros.h>
 #include <zircon/process.h>

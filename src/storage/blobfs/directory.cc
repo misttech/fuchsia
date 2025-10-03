@@ -5,7 +5,6 @@
 #include "src/storage/blobfs/directory.h"
 
 #include <fidl/fuchsia.io/cpp/common_types.h>
-#include <lib/fdio/vfs.h>
 #include <lib/zx/result.h>
 #include <stdlib.h>
 #include <string.h>

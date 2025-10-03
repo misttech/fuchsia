@@ -28,7 +28,6 @@ if (is_fuchsia) {
 fdio_constants = [
   "include/lib/fdio/limits.h",
   "include/lib/fdio/processargs.h",
-  "include/lib/fdio/vfs.h",
 ]
 
 # This target provides access to some shared constants and helper macros,

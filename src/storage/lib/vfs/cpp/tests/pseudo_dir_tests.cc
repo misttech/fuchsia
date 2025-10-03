@@ -4,7 +4,6 @@
 
 #include <fidl/fuchsia.io/cpp/common_types.h>
 #include <fidl/fuchsia.io/cpp/natural_types.h>
-#include <lib/fdio/vfs.h>
 #include <lib/zx/result.h>
 #include <zircon/errors.h>
 

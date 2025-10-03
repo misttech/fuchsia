@@ -5,7 +5,6 @@
 #include "console.h"
 
 #include <fidl/fuchsia.io/cpp/wire.h>
-#include <lib/fdio/vfs.h>
 #include <lib/zx/channel.h>
 #include <stdio.h>
 #include <stdlib.h>

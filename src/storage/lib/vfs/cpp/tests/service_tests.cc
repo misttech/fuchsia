@@ -9,7 +9,6 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/fdio/directory.h>
-#include <lib/fdio/vfs.h>
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/fidl/cpp/wire/status.h>
 #include <lib/fidl/cpp/wire/string_view.h>

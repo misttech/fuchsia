@@ -4,9 +4,9 @@
 
 #include "src/storage/lib/vfs/cpp/lazy_dir.h"
 
+#include <dirent.h>
 #include <fidl/fuchsia.io/cpp/common_types.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
-#include <lib/fdio/vfs.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
@@ -47,9 +47,7 @@ bool DoDot(VdirCookie* cookie) {
 LazyDir::LazyDir() = default;
 LazyDir::~LazyDir() = default;
 
-fuchsia_io::NodeProtocolKinds LazyDir::GetProtocols() const {
-  return fuchsia_io::NodeProtocolKinds::kDirectory;
-}
+fio::NodeProtocolKinds LazyDir::GetProtocols() const { return fio::NodeProtocolKinds::kDirectory; }
 
 zx_status_t LazyDir::Lookup(std::string_view name, fbl::RefPtr<fs::Vnode>* out_vnode) {
   LazyEntryVector entries;
@@ -70,9 +68,8 @@ zx_status_t LazyDir::Readdir(VdirCookie* cookie, void* dirents, size_t len, size
   fs::DirentFiller df(dirents, len);
   zx_status_t r = 0;
 
-  const uint64_t ino = fio::wire::kInoUnknown;
   if (DoDot(cookie)) {
-    if ((r = df.Next(".", fuchsia_io::DirentType::kDirectory, ino)) != ZX_OK) {
+    if ((r = df.Next(".", fio::DirentType::kDirectory, fio::kInoUnknown)) != ZX_OK) {
       *out_actual = df.BytesFilled();
       return r;
     }
@@ -84,8 +81,8 @@ zx_status_t LazyDir::Readdir(VdirCookie* cookie, void* dirents, size_t len, size
     if (cookie->n >= it->id) {
       continue;
     }
-    const uint8_t d_type = VTYPE_TO_DTYPE(it->type);
-    if ((r = df.Next(it->name, fio::DirentType{d_type}, ino)) != ZX_OK) {
+    const uint8_t d_type = IFTODT(it->type);
+    if ((r = df.Next(it->name, fio::DirentType{d_type}, fio::kInoUnknown)) != ZX_OK) {
       *out_actual = df.BytesFilled();
       return r;
     }

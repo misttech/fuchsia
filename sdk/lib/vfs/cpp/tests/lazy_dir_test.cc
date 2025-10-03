@@ -10,7 +10,6 @@
 #include <lib/fdio/directory.h>
 #include <lib/fdio/fd.h>
 #include <lib/fdio/io.h>
-#include <lib/fdio/vfs.h>
 #include <lib/vfs/cpp/lazy_dir.h>
 #include <lib/vfs/cpp/pseudo_dir.h>
 #include <sys/stat.h>
@@ -130,7 +129,7 @@ TEST_F(LazyDirTest, ValidateEntries) {
     auto entry_a = std::make_unique<vfs::PseudoDir>();
     entries["entry_a"] = TestLazyDir::Entry{
         .id = 2u,
-        .mode_type = V_TYPE_DIR,
+        .mode_type = S_IFDIR,
         .node = std::move(entry_a),
     };
 
@@ -139,7 +138,7 @@ TEST_F(LazyDirTest, ValidateEntries) {
     ASSERT_EQ(entry_b->AddEntry("subentry", std::move(subentry)), ZX_OK);
     entries["entry_b"] = TestLazyDir::Entry{
         .id = 5u,
-        .mode_type = V_TYPE_DIR,
+        .mode_type = S_IFDIR,
         .node = std::move(entry_b),
     };
 

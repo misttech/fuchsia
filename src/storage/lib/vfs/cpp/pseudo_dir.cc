@@ -4,10 +4,10 @@
 
 #include "src/storage/lib/vfs/cpp/pseudo_dir.h"
 
+#include <dirent.h>
 #include <fidl/fuchsia.io/cpp/common_types.h>
 #include <fidl/fuchsia.io/cpp/natural_types.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
-#include <lib/fdio/vfs.h>
 #include <lib/fidl/cpp/wire/channel.h>
 #include <lib/zx/result.h>
 #include <zircon/assert.h>
@@ -86,7 +86,7 @@ zx_status_t PseudoDir::Readdir(VdirCookie* cookie, void* dirents, size_t len, si
     uint32_t mode =
         attr->mode ? *attr->mode
                    : internal::GetPosixMode(it->node()->GetProtocols(), it->node()->GetAbilities());
-    const uint8_t d_type = VTYPE_TO_DTYPE(mode);
+    const uint8_t d_type = IFTODT(mode);
 
     if (df.Next(it->name(), fio::DirentType{d_type}, attr->id.value_or(fio::kInoUnknown)) !=
         ZX_OK) {

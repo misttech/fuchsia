@@ -30,10 +30,13 @@ class LazyDir : public Vnode {
 
   // Structure storing a single entry in the directory.
   struct LazyEntry {
-    // Non-zero ID for this entry, must remain stable across calls. IDs do not necessarily need to
-    // be unique, however, non-unique IDs may cause duplication in directory listings.
+    /// Non-zero ID for this entry, must remain stable across calls. IDs do not necessarily need to
+    /// be unique, however, non-unique IDs may cause duplication in directory listings. Where an ID
+    /// is not available, use the INO_UNKNOWN constant from fuchsia.io.
     uint64_t id;
+    /// Name for this entry.
     fbl::String name;
+    /// The POSIX stat mode type for this entry (e.g. S_IFREG).
     uint32_t type;
   };
   using LazyEntryVector = fbl::Vector<LazyEntry>;

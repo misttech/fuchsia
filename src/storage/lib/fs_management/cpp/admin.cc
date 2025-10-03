@@ -6,7 +6,6 @@
 
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <lib/fdio/directory.h>
-#include <lib/fdio/vfs.h>
 #include <lib/zx/channel.h>
 #include <zircon/processargs.h>
 #include <zircon/syscalls.h>

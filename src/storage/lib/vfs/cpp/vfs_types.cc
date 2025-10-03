@@ -7,8 +7,9 @@
 #include <fidl/fuchsia.io/cpp/common_types.h>
 #include <fidl/fuchsia.io/cpp/natural_types.h>
 #include <fidl/fuchsia.io/cpp/wire_types.h>
-#include <lib/fdio/vfs.h>
+#include <lib/fit/function.h>
 #include <lib/zx/result.h>
+#include <sys/stat.h>
 #include <zircon/availability.h>
 #include <zircon/errors.h>
 
@@ -283,26 +284,26 @@ zx::result<VnodeProtocol> NegotiateProtocol(fio::NodeProtocolKinds supported,
 uint32_t GetPosixMode(fio::NodeProtocolKinds protocols, fio::Abilities abilities) {
   uint32_t mode = 0;
   if (protocols & fio::NodeProtocolKinds::kDirectory) {
-    mode |= V_TYPE_DIR;
+    mode |= S_IFDIR;
     if (abilities & fio::Abilities::kEnumerate) {
-      mode |= V_IRUSR;
+      mode |= S_IRUSR;
     }
     if (abilities & fio::Abilities::kModifyDirectory) {
-      mode |= V_IWUSR;
+      mode |= S_IWUSR;
     }
     if (abilities & fio::Abilities::kTraverse) {
-      mode |= V_IXUSR;
+      mode |= S_IXUSR;
     }
   } else {
-    mode |= V_TYPE_FILE;
+    mode |= S_IFREG;
     if (abilities & fio::Abilities::kReadBytes) {
-      mode |= V_IRUSR;
+      mode |= S_IRUSR;
     }
     if (abilities & fio::Abilities::kWriteBytes) {
-      mode |= V_IWUSR;
+      mode |= S_IWUSR;
     }
     if (abilities & fio::Abilities::kExecute) {
-      mode |= V_IXUSR;
+      mode |= S_IXUSR;
     }
   }
   return mode;

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/fdio/vfs.h>
+#include <sys/stat.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
@@ -35,7 +35,7 @@ class TestLazyDirHelper : public fs::LazyDir {
   void GetContents(LazyEntryVector* out_vector) override {
     out_vector->reserve(contents_.size());
     for (const auto& content : contents_) {
-      out_vector->push_back({content.id, content.name, V_TYPE_FILE});
+      out_vector->push_back({content.id, content.name, S_IFREG});
     }
   }
 

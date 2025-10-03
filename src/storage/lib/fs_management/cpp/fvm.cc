@@ -19,7 +19,6 @@
 #include <lib/fdio/fd.h>
 #include <lib/fdio/fdio.h>
 #include <lib/fdio/limits.h>
-#include <lib/fdio/vfs.h>
 #include <lib/fdio/watcher.h>
 #include <lib/fit/defer.h>
 #include <string.h>

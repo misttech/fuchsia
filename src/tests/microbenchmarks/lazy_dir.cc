@@ -4,7 +4,7 @@
 
 #include "src/storage/lib/vfs/cpp/lazy_dir.h"
 
-#include <lib/fdio/vfs.h>
+#include <sys/stat.h>
 #include <zircon/syscalls.h>
 
 #include <random>
@@ -57,7 +57,7 @@ bool TestLookup(perftest::RepeatState* state, size_t file_count) {
 
   uint64_t id = 1;
   for (const auto& name : file_names) {
-    dir->AddEntry({id++, name, V_TYPE_FILE});
+    dir->AddEntry({id++, name, S_IFREG});
   }
 
   int i = 0;
@@ -79,7 +79,7 @@ bool TestReaddir(perftest::RepeatState* state, size_t file_count, size_t buffer_
 
   uint64_t id = 1;
   for (const auto& name : file_names) {
-    dir->AddEntry({id++, name, V_TYPE_FILE});
+    dir->AddEntry({id++, name, S_IFREG});
   }
 
   fs::VdirCookie cookie;

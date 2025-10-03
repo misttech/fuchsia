@@ -102,7 +102,6 @@ test("fdio-test") {
       "fdio_startup.cc",
       "fdio_stubs.cc",
       "fdio_unsafe.cc",
-      "fdio_vfs.cc",
       "fdio_watcher.cc",
     ]
     deps += [

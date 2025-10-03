@@ -4,7 +4,7 @@
 
 #include "src/devices/bin/driver_manager/devfs/builtin_devices.h"
 
-#include <lib/fdio/vfs.h>
+#include <sys/stat.h>
 
 #include "src/storage/lib/vfs/cpp/vfs_types.h"
 
@@ -34,7 +34,7 @@ zx_status_t BuiltinDevVnode::Truncate(size_t len) { return ZX_OK; }
 
 zx::result<fs::VnodeAttributes> BuiltinDevVnode::GetAttributes() const {
   return zx::ok(fs::VnodeAttributes{
-      .mode = V_TYPE_CDEV | V_IRUSR | V_IWUSR,
+      .mode = S_IFCHR | S_IRUSR | S_IWUSR,
   });
 }
 

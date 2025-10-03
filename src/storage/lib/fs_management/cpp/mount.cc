@@ -18,7 +18,6 @@
 #include <lib/fdio/fdio.h>
 #include <lib/fdio/limits.h>
 #include <lib/fdio/namespace.h>
-#include <lib/fdio/vfs.h>
 #include <lib/fit/defer.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/result.h>

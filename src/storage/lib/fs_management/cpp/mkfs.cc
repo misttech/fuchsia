@@ -10,7 +10,6 @@
 #include <lib/fdio/fd.h>
 #include <lib/fdio/fdio.h>
 #include <lib/fdio/limits.h>
-#include <lib/fdio/vfs.h>
 #include <lib/zx/channel.h>
 #include <unistd.h>
 #include <zircon/compiler.h>

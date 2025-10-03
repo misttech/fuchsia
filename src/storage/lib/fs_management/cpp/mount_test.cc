@@ -15,7 +15,6 @@
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/cpp/caller.h>
 #include <lib/fdio/directory.h>
-#include <lib/fdio/vfs.h>
 #include <lib/syslog/cpp/macros.h>
 #include <stdio.h>
 #include <stdlib.h>
