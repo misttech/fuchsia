@@ -418,6 +418,7 @@ def consume_json_to_create_model(
             synthetic_end_event["ph"] = "fuchsia_synthetic_end"
             synthetic_end_event["ts"] = trace_event["ts"] + trace_event["dur"]
             trace_events.append(synthetic_end_event)
+    del root_object["traceEvents"]
 
     # Sort the events by their timestamp.  We need to iterate through the events
     # in sorted order to compute things such as duration stacks and flow
@@ -429,6 +430,14 @@ def consume_json_to_create_model(
     # handled properly, because the 'fuchsia_synthetic_end' events can get
     # sorted before their corresponding beginning events.
     trace_events.sort(key=lambda x: x.get("ts", 0))
+
+    # Obtain system trace events, if any.
+    system_trace_events_list: dict[str, Any] = {}
+    if "systemTraceEvents" in root_object:
+        validate_field_type(root_object, "systemTraceEvents", dict)
+        system_trace_events_list = root_object["systemTraceEvents"]
+        del root_object["systemTraceEvents"]
+    del root_object
 
     # Maintains the current duration stack for each track.
     duration_stacks: Dict[
@@ -468,7 +477,7 @@ def consume_json_to_create_model(
         duration_stack = duration_stacks[track_key]
 
         if phase in ("X", "B"):
-            duration_event = trace_model.DurationEvent.from_dict(trace_event)
+            duration_event = trace_model.DurationEvent.consume_dict(trace_event)
             if track_key in unbound_flow_events:
                 for unbound_flow_event in unbound_flow_events[track_key]:
                     unbound_flow_event.enclosing_duration = duration_event
@@ -517,8 +526,8 @@ def consume_json_to_create_model(
                 popped_complete = duration_stack.pop()
         elif phase == "b":
             async_key: _AsyncKey = _AsyncKey.from_trace_event(trace_event)
-            async_event: trace_model.AsyncEvent = (
-                trace_model.AsyncEvent.from_dict(async_key.id, trace_event)
+            async_event = trace_model.AsyncEvent.consume_dict(
+                async_key.id, trace_event
             )
             live_async_events[async_key] = async_event
         elif phase == "e":
@@ -545,9 +554,7 @@ def consume_json_to_create_model(
                 continue
             result_events.append(begin_async_event)
         elif phase == "i" or phase == "I":
-            instant_event: trace_model.InstantEvent = (
-                trace_model.InstantEvent.from_dict(trace_event)
-            )
+            instant_event = trace_model.InstantEvent.consume_dict(trace_event)
             result_events.append(instant_event)
         elif phase == "s" or phase == "t" or phase == "f":
             binding_point: Optional[str] = None
@@ -582,7 +589,7 @@ def consume_json_to_create_model(
             enclosing_duration: Optional[trace_model.DurationEvent] = (
                 duration_stack[-1] if binding_point == "enclosing" else None
             )
-            flow_event: trace_model.FlowEvent = trace_model.FlowEvent.from_dict(
+            flow_event = trace_model.FlowEvent.consume_dict(
                 flow_key.id, enclosing_duration, trace_event
             )
             if enclosing_duration:
@@ -600,9 +607,7 @@ def consume_json_to_create_model(
                 live_flows.pop(flow_key)
             result_events.append(flow_event)
         elif phase == "C":
-            counter_event: trace_model.CounterEvent = (
-                trace_model.CounterEvent.from_dict(trace_event)
-            )
+            counter_event = trace_model.CounterEvent.consume_dict(trace_event)
             result_events.append(counter_event)
         elif phase == "n":
             # TODO(https://fxbug.dev/42117378): Support nested async events.  In the
@@ -699,13 +704,7 @@ def consume_json_to_create_model(
     tid_to_pid: Dict[int, int] = {}
 
     # Process system trace events.
-    if "systemTraceEvents" in root_object:
-        if not isinstance(root_object["systemTraceEvents"], dict):
-            raise TypeError(
-                "Expected field 'systemTraceEvents' to be of type dict"
-            )
-
-        system_trace_events_list = root_object["systemTraceEvents"]
+    if system_trace_events_list:
         validate_field_type(system_trace_events_list, "type", str)
         if not system_trace_events_list["type"] == "fuchsia":
             raise TypeError(

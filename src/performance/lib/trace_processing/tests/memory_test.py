@@ -14,7 +14,7 @@ class MemoryTest(unittest.TestCase):
     @staticmethod
     def construct_trace_model(event_count: int) -> trace_model.Model:
         events: list[trace_model.Event] = [
-            trace_model.CounterEvent.from_dict(
+            trace_model.CounterEvent.consume_dict(
                 {
                     "cat": "memory:kernel",
                     "name": "kmem_stats_a",

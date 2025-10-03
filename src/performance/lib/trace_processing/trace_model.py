@@ -41,18 +41,26 @@ class Event:
         start: trace_time.TimePoint,
         pid: int,
         tid: int,
-        args: dict[str, Any],
+        args: dict[str, Any] | None,
     ) -> None:
-        self.category: str = category
-        self.name: str = name
-        self.start: trace_time.TimePoint = start
-        self.pid: int = pid
-        self.tid: int = tid
+        self.category = category
+        self.name = name
+        self.start = start
+        self.pid = pid
+        self.tid = tid
         # Any extra arguments that the event contains.
-        self.args: dict[str, Any] = args.copy()
+        self._args = args if args else None
+
+    @property
+    def args(self) -> dict[str, Any]:
+        return self._args if self._args else {}
+
+    @args.setter
+    def args(self, rhs: dict[str, Any]) -> None:
+        self._args = rhs if rhs else None
 
     @classmethod
-    def _from_dict(cls, event_dict: dict[str, Any]) -> Self:
+    def _consume_dict(cls, event_dict: dict[str, Any]) -> Self:
         """Factory-style constructor. Intended for use by subclasses."""
         category: str = event_dict["cat"]
         name: str = event_dict["name"]
@@ -63,6 +71,7 @@ class Event:
         tid: int = event_dict["tid"]
         args: dict[str, Any] = event_dict.get("args", {})
 
+        del event_dict  # So that we get ownership of `args`.
         return cls(category, name, start, pid, tid, args)
 
     def end_time(self) -> trace_time.TimePoint | None:
@@ -91,7 +100,7 @@ class InstantEvent(Event):
         self.scope: InstantEventScope = scope
 
     @classmethod
-    def from_dict(cls, event_dict: dict[str, Any]) -> Self:
+    def consume_dict(cls, event_dict: dict[str, Any]) -> Self:
         """Factory-style constructor."""
         scope_key: str = "s"
         if scope_key not in event_dict:
@@ -114,7 +123,7 @@ class InstantEvent(Event):
             scope_str
         ]
 
-        return cls(scope, base=Event._from_dict(event_dict))
+        return cls(scope, base=Event._consume_dict(event_dict))
 
 
 class CounterEvent(Event):
@@ -127,7 +136,7 @@ class CounterEvent(Event):
         self.id: int | None = id
 
     @classmethod
-    def from_dict(cls, event_dict: dict[str, Any]) -> Self:
+    def consume_dict(cls, event_dict: dict[str, Any]) -> Self:
         """Factory-style constructor."""
         id_key: str = "id"
         id: int | None = None
@@ -140,7 +149,7 @@ class CounterEvent(Event):
                     f"parses as int: {event_dict}"
                 ) from t
 
-        return cls(id, base=Event._from_dict(event_dict))
+        return cls(id, base=Event._consume_dict(event_dict))
 
 
 class DurationEvent(Event):
@@ -175,7 +184,7 @@ class DurationEvent(Event):
         self.child_flows = child_flows
 
     @classmethod
-    def from_dict(cls, event_dict: dict[str, Any]) -> Self:
+    def consume_dict(cls, event_dict: dict[str, Any]) -> Self:
         """Factory-style constructor."""
         duration_key: str = "dur"
         duration: trace_time.TimeDelta | None = None
@@ -195,7 +204,7 @@ class DurationEvent(Event):
             parent=None,
             child_durations=[],
             child_flows=[],
-            base=Event._from_dict(event_dict),
+            base=Event._consume_dict(event_dict),
         )
 
     def end_time(self) -> trace_time.TimePoint | None:
@@ -222,9 +231,9 @@ class AsyncEvent(Event):
         self.duration: trace_time.TimeDelta | None = duration
 
     @classmethod
-    def from_dict(cls, id: int, event_dict: dict[str, Any]) -> Self:
+    def consume_dict(cls, id: int, event_dict: dict[str, Any]) -> Self:
         """Factory-style constructor."""
-        return cls(id, duration=None, base=Event._from_dict(event_dict))
+        return cls(id, duration=None, base=Event._consume_dict(event_dict))
 
     def end_time(self) -> trace_time.TimePoint | None:
         if self.duration:
@@ -269,7 +278,7 @@ class FlowEvent(Event):
         self.next_flow: Self | None = next_flow
 
     @classmethod
-    def from_dict(
+    def consume_dict(
         cls,
         id: str,
         enclosing_duration: DurationEvent | None,
@@ -301,7 +310,7 @@ class FlowEvent(Event):
             enclosing_duration,
             previous_flow=None,
             next_flow=None,
-            base=Event._from_dict(event_dict),
+            base=Event._consume_dict(event_dict),
         )
 
 

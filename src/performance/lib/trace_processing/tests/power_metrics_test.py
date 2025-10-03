@@ -59,28 +59,28 @@ class PowerMetricsTest(unittest.TestCase):
                     or e.start < power_events_stop_at
                 ),
                 [
-                    trace_model.CounterEvent.from_dict(
+                    trace_model.CounterEvent.consume_dict(
                         {  # during sync signal
                             **event_template,
                             "ts": 500000,  # microseconds
                             "args": {"Voltage": 12, "Current": 1000},
                         }
                     ),
-                    trace_model.CounterEvent.from_dict(
+                    trace_model.CounterEvent.consume_dict(
                         {  # during sync signal
                             **event_template,
                             "ts": 750000,  # microseconds
                             "args": {"Voltage": 12, "Current": 2000},
                         }
                     ),
-                    trace_model.CounterEvent.from_dict(
+                    trace_model.CounterEvent.consume_dict(
                         {
                             **event_template,
                             "ts": 1000000,  # microseconds
                             "args": {"Voltage": 12, "Current": 100},
                         }
                     ),
-                    trace_model.CounterEvent.from_dict(
+                    trace_model.CounterEvent.consume_dict(
                         {
                             **event_template,
                             "ts": 1250000,  # microseconds

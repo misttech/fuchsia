@@ -622,7 +622,7 @@ def make_synthetic_event(
     Providing this function enables building fake traces for unittests while
     preventing the event category and name from leaking outside this module.
     """
-    return trace_model.DurationEvent.from_dict(
+    return trace_model.DurationEvent.consume_dict(
         {
             "cat": _EVENT_CATEGORY,
             "name": _SAG_EVENT_NAME,
