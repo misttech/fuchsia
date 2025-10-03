@@ -14,11 +14,13 @@ use async_utils::event::Event as AsyncEvent;
 use fuchsia_inspect::{self as inspect, ArrayProperty as _, Property as _};
 use futures::lock::{Mutex, MutexGuard};
 use serde_derive::Deserialize;
+use state_recorder::StateRecorder;
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::convert::TryInto as _;
 use std::fmt::Debug;
 use std::rc::Rc;
+use strum_macros::{Display, EnumIter, FromRepr};
 use zx::sys;
 use {fidl_fuchsia_thermal as fthermal, serde_json as json};
 
@@ -515,6 +517,12 @@ impl<'a> CpuManagerMainBuilder<'a> {
             thermal_states: Vec::new(),
             boost_enabled: false,
             available_power: self.sustainable_power,
+            throttling_state_recorder: StateRecorder::new(
+                "cpu_throttling_state".into(),
+                c"thermal",
+                ThrottlingState::Inactive,
+                50,
+            )?,
         };
 
         Ok(Rc::new(CpuManagerMain {
@@ -654,9 +662,11 @@ impl CpuManagerMain {
             // transition from throttled to unthrottled. (There is some redundant logic in the
             // conditions to improve clarity.)
             if current_index == 0 && index > 0 {
+                inner.throttling_state_recorder.record_transition(ThrottlingState::Active);
                 log::info!("Starting CPU throttling because thermal state is {index}")
             }
             if current_index > 0 && index == 0 {
+                inner.throttling_state_recorder.record_transition(ThrottlingState::Inactive);
                 log::info!("Ending CPU throttling");
             }
         }
@@ -884,6 +894,19 @@ impl CpuManagerMain {
     }
 }
 
+#[derive(Copy, Clone, Display, EnumIter, Eq, PartialEq, Hash, FromRepr)]
+#[repr(u8)]
+enum ThrottlingState {
+    Inactive = 0,
+    Active = 1,
+}
+
+impl From<ThrottlingState> for u64 {
+    fn from(value: ThrottlingState) -> Self {
+        value as Self
+    }
+}
+
 struct MutableInner {
     /// Number of CPUs in the system; confirmed to be greater than the max logical CPU number of any
     /// cluster. Populated by querying the `syscall_handler` node.
@@ -916,6 +939,9 @@ struct MutableInner {
 
     /// The available power considering the thermal load
     available_power: Watts,
+
+    /// Records throttling state to Inspect and trace
+    throttling_state_recorder: state_recorder::StateRecorder<ThrottlingState>,
 }
 
 impl MutableInner {
@@ -1795,6 +1821,13 @@ mod tests {
             current_thermal_state: None,
             boost_enabled: false,
             available_power: DEFAULT_SUSTAINABLE_POWER,
+            throttling_state_recorder: StateRecorder::new(
+                "cpu_throttling_state".into(),
+                c"thermal",
+                ThrottlingState::Inactive,
+                1,
+            )
+            .unwrap(),
         };
 
         // Initially None, so not throttling.
