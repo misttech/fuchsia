@@ -33,8 +33,7 @@ void Init(SimpleTestDriver& driver) {
 
       .ExpectWrite(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'1100},
                    0x814)  // RFR Watermark = 12
-      .ExpectWrite(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'1000}, 0x810)   // RX Watermark = 8
-      .ExpectWrite(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0001}, 0x80c);  // TX Watermark = 1
+      .ExpectWrite(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'1000}, 0x810);  // RX Watermark = 8
 
   driver.Init();
   driver.io().mock().VerifyAndClear();
@@ -48,13 +47,13 @@ TEST(GeniTests, HelloWorld) {
   driver.io()
       .mock()
       // TxReady
-      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x40)     // !busy
-      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x800)    // free
-                                                                                 // Write
-      .ExpectWrite(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0100}, 0x270)   // len=4
-      .ExpectWrite(uint32_t{0b0000'1000'0000'0000'0000'0000'0000'0000}, 0x600)   // start_tx
-      .ExpectWrite(uint32_t{0x0A0D6968}, 0x700)                                  // Write
-      .ExpectWrite(uint32_t{0b0100'0000'0000'0000'0000'0000'0000'0000}, 0x618);  // clr_tx_low
+      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x40)    // !busy
+      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x800)   // free
+                                                                                // Write
+      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x40)    // !busy
+      .ExpectWrite(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0100}, 0x270)  // len=4
+      .ExpectWrite(uint32_t{0b0000'1000'0000'0000'0000'0000'0000'0000}, 0x600)  // start_tx
+      .ExpectWrite(uint32_t{0x0A0D6968}, 0x700);                                // Write
 
   EXPECT_EQ(3, driver.Write("hi\n"));
 }
@@ -67,17 +66,17 @@ TEST(GeniTests, HelloWorldBusy) {
   driver.io()
       .mock()
       // TxReady
-      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0001}, 0x40)     // busy
-                                                                                 // TxReady
-      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0001}, 0x40)     // busy
-                                                                                 // TxReady
-      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x40)     // !busy
-      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x800)    // free
-                                                                                 // Write
-      .ExpectWrite(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0100}, 0x270)   // len=4
-      .ExpectWrite(uint32_t{0b0000'1000'0000'0000'0000'0000'0000'0000}, 0x600)   // start_tx
-      .ExpectWrite(uint32_t{0x0A0D6968}, 0x700)                                  // Write
-      .ExpectWrite(uint32_t{0b0100'0000'0000'0000'0000'0000'0000'0000}, 0x618);  // clr_tx_low
+      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0001}, 0x40)    // busy
+                                                                                // TxReady
+      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0001}, 0x40)    // busy
+                                                                                // TxReady
+      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x40)    // !busy
+      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x800)   // free
+                                                                                // Write
+      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x40)    // !busy
+      .ExpectWrite(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0100}, 0x270)  // len=4
+      .ExpectWrite(uint32_t{0b0000'1000'0000'0000'0000'0000'0000'0000}, 0x600)  // start_tx
+      .ExpectWrite(uint32_t{0x0A0D6968}, 0x700);                                // Write
 
   EXPECT_EQ(3, driver.Write("hi\n"));
 }
@@ -152,17 +151,17 @@ TEST(GeniTests, TxIrqOnly) {
       .mock()
       // Read MainIrq status and mask with MainIrqEnabled.
       //
-      // Simulate a status of "tx low", and EnabledInterrupts == "tx low and cmd done"
-      .ExpectRead(uint32_t{0b0100'0000'0000'0000'0000'0000'0000'0000}, 0x610)  // tx low
-      .ExpectRead(uint32_t{0b0100'0000'0000'0000'0000'0000'0000'0001}, 0x614)  // tx low + cmd done
+      // Simulate a status of "tx_low and cmd_done", and EnabledInterrupts == "cmd done"
+      .ExpectRead(uint32_t{0b0100'0000'0000'0000'0000'0000'0000'0001}, 0x610)  // tx low + cmd done
+      .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0001}, 0x614)  // cmd done
       // Read SecondaryIrq status and mask with SecondaryIrqEnabled.
       .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x640)
       .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x644)
       // Ack Main and secondary status.
-      .ExpectWrite(uint32_t{0b0100'0000'0000'0000'0000'0000'0000'0000}, 0x618)
+      .ExpectWrite(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0001}, 0x618)
       .ExpectWrite(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x648)
-      // Clean the fifo watermark bit from the main interrupt enabled register.
-      .ExpectWrite(uint32_t{0b0100'0000'0000'0000'0000'0000'0000'0000}, 0x620);
+      // Clear CANCEL, DONE, and ABORT from the main interrupt enabled register.
+      .ExpectWrite(uint32_t{0b0000'0000'0000'0000'0000'0000'0011'0001}, 0x620);
 
   int call_count = 0;
   driver.Interrupt(
