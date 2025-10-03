@@ -5,7 +5,10 @@
 use anyhow::{Context, Result};
 use fuchsia_component::client;
 use powercli::args::PowerCommand;
-use {fidl_fuchsia_power_topology_test as fpt, fuchsia_async as fasync};
+use {
+    fidl_fuchsia_power as fpower, fidl_fuchsia_power_manager_debug as fdebug,
+    fidl_fuchsia_power_topology_test as fpt, fuchsia_async as fasync,
+};
 
 struct Connector {}
 
@@ -19,6 +22,14 @@ impl powercli::connector::Connector for Connector {
     async fn get_system_activity_control(&self) -> Result<fpt::SystemActivityControlProxy> {
         client::connect_to_protocol::<fpt::SystemActivityControlMarker>()
             .context("Failed to connect to system activity control service")
+    }
+    async fn get_debug(&self) -> Result<fdebug::DebugProxy> {
+        client::connect_to_protocol::<fdebug::DebugMarker>()
+            .context("Failed to connect to power manager debug service")
+    }
+    async fn get_reboot_initiator(&self) -> Result<fpower::CollaborativeRebootInitiatorProxy> {
+        client::connect_to_protocol::<fpower::CollaborativeRebootInitiatorMarker>()
+            .context("Failed to connect to collaborative reboot initiator service")
     }
 }
 
