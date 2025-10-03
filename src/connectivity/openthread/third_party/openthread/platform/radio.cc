@@ -970,8 +970,3 @@ void otSysSetRcpRestorationEnabled(bool aEnabled) {
   return GetRadioSpinel().SetRcpRestorationEnabled(aEnabled);
 }
 #endif
-
-#ifndef OPENTHREAD_20250514
-extern "C" bool otPlatDnsIsUpstreamQueryAvailable(otInstance *aInstance) { return true; }
-
-#endif

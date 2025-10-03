@@ -115,6 +115,14 @@ impl Resolver {
         }
     }
 
+    pub fn is_upstream_query_available(&self) -> bool {
+        if let Some(local_dns_record) = self.local_dns_record.borrow().as_ref() {
+            !local_dns_record.dns_server_list.is_empty()
+        } else {
+            false
+        }
+    }
+
     pub fn process_poll_resolver(&self, instance: &ot::Instance, cx: &mut Context<'_>) {
         // Update the waker so that we can later signal when we need to be polled again
         self.waker.replace(Some(cx.waker().clone()));
@@ -324,6 +332,14 @@ unsafe extern "C" fn otPlatDnsStartUpstreamQuery(
         // SAFETY: caller ensures the dns query is valid
         ot::Message::ref_from_ot_ptr(a_query as *mut otMessage).unwrap(),
     )
+}
+
+#[no_mangle]
+unsafe extern "C" fn otPlatDnsIsUpstreamQueryAvailable(a_instance: *mut otInstance) -> bool {
+    // The instance parameter is part of the function signature but unused in this implementation.
+    // We still get a reference to it to match the pattern of other platform functions.
+    let _ = ot::Instance::ref_from_ot_ptr(a_instance);
+    PlatformBacking::as_ref().resolver.is_upstream_query_available()
 }
 
 #[no_mangle]
