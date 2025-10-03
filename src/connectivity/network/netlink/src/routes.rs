@@ -999,7 +999,7 @@ fn handle_route_watcher_event<
                     // This is a FIDL table ID that the netlink worker didn't know about, and is
                     // not the main table ID.
                     crate::logging::log_debug!(
-                        "Observed an added route via the routes watcher that is installed in a \
+                        "Observed a removed route via the routes watcher that is installed in a \
                         non-main FIDL table not managed by netlink: {removed_installed_route:?}"
                     );
                     // Because we'll never be able to map this FIDL table ID to a netlink table
@@ -1013,17 +1013,12 @@ fn handle_route_watcher_event<
                 ),
             };
 
-            (
-                notify_message,
-                if need_clean_up_empty_table {
-                    Some(TableNeedsCleanup(
-                        table_id,
-                        table_index.expect("must have known about table if we're cleaning it up"),
-                    ))
-                } else {
-                    None
-                },
-            )
+            let table_cleanup = match (need_clean_up_empty_table, table_index) {
+                (true, Some(table_index)) => Some(TableNeedsCleanup(table_id, table_index)),
+                _ => None,
+            };
+
+            (notify_message, table_cleanup)
         }
         // We don't expect to observe any existing events, because the route watchers were drained
         // of existing events prior to starting the event loop.
@@ -1791,6 +1786,64 @@ mod tests {
         assert_eq!(&wrong_sink.take_messages()[..], &[]);
         drop(route_clients);
         scope.join().await;
+    }
+
+    // Test handling of watcher events for routes in unmanaged tables.
+    #[ip_test(I)]
+    #[fuchsia::test]
+    async fn handles_route_watcher_event_unmanaged_route_table<
+        I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdminIpExt,
+    >() {
+        let _scope = fasync::Scope::new();
+        let (subnet, next_hop) =
+            I::map_ip((), |()| (V4_SUB1, V4_NEXTHOP1), |()| (V6_SUB1, V6_NEXTHOP1));
+        let installed_route: fnet_routes_ext::InstalledRoute<I> = create_installed_route(
+            subnet,
+            Some(next_hop),
+            DEV1.into(),
+            METRIC1,
+            OTHER_FIDL_TABLE_ID,
+        );
+        let add_event = fnet_routes_ext::Event::Added(installed_route);
+        let remove_event = fnet_routes_ext::Event::Removed(installed_route);
+
+        let route_clients: ClientTable<NetlinkRoute, FakeSender<_>> = ClientTable::default();
+        let (route_table_proxy, _route_table_server_end) =
+            fidl::endpoints::create_proxy::<I::RouteTableMarker>();
+        let (unmanaged_route_set_proxy, _server_end) =
+            fidl::endpoints::create_proxy::<I::RouteSetMarker>();
+        let (route_table_provider, _server_end) =
+            fidl::endpoints::create_proxy::<I::RouteTableProviderMarker>();
+
+        let mut route_table = RouteTableMap::new(
+            route_table_proxy.clone(),
+            MAIN_FIDL_TABLE_ID,
+            unmanaged_route_set_proxy,
+            route_table_provider,
+        );
+        let mut fidl_route_map = FidlRouteMap::<I>::default();
+
+        // Process Add message.
+        assert_eq!(
+            handle_route_watcher_event(
+                &mut route_table,
+                &mut fidl_route_map,
+                &route_clients,
+                add_event,
+            ),
+            None
+        );
+
+        // Process Remove message.
+        assert_eq!(
+            handle_route_watcher_event(
+                &mut route_table,
+                &mut fidl_route_map,
+                &route_clients,
+                remove_event,
+            ),
+            None
+        );
     }
 
     #[ip_test(I)]
