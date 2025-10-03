@@ -54,4 +54,7 @@ fuchsia_unittest_package("starnix-loop-tests") {
     "//src/starnix/kernel:starnix-test-files",
   ]
   test_type = "starnix"
+  test_specs = {
+    create_no_exception_channel = true
+  }
 }

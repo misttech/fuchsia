@@ -36,6 +36,9 @@ fuchsia_unittest_package("starnix_core_unit_tests") {
   manifest = "meta/starnix_core_unit_tests.cml"
   deps = [ ":starnix_core_unit_tests_bin" ]
   test_type = "starnix"
+  test_specs = {
+    create_no_exception_channel = true
+  }
 }
 
 group("tests") {

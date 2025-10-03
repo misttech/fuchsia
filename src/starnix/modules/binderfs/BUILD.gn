@@ -73,6 +73,7 @@ fuchsia_unittest_package("starnix-binderfs-tests") {
       # Tests exercise failure cases, so ERROR logs are expected.
       max_severity = "ERROR"
     }
+    create_no_exception_channel = true
   }
   test_type = "starnix"
 }
