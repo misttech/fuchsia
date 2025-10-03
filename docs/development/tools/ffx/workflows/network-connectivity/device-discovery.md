@@ -187,8 +187,8 @@ need to add exceptions `iptables` manually in order to allow mDNS for link-local
 IPv6 messages:
 
 ```posix-terminal
-sudo ip6tables -A INPUT -s fe80::/10 -d ::/0 -p udp --sport 5353 -j ACCEPT
-sudo ip6tables -A INPUT -s fc00::/10 -d ::/0 -p udp --sport 5353 -j ACCEPT
+sudo ip6tables -A INPUT -p udp -s fe80::/10 --sport 5353 -m comment --comment 'Fuchsia MDNS' -j ACCEPT
+sudo ip6tables -A INPUT -p udp -s fc00::/7 --sport 5353 -m comment --comment 'Fuchsia MDNS' -j ACCEPT
 ```
 
 If this does not work, you may want to observe what kinds of firewall rules
