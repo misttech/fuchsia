@@ -15,6 +15,7 @@ use ffx_target::ssh_connector::SshConnector;
 use fidl::AsHandleRef;
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_device::ControllerMarker;
+use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
@@ -142,18 +143,29 @@ impl EnvContext {
         Ok(())
     }
 
-    async fn connect_remote_control_helper(
-        &self,
-    ) -> Result<fidl_fuchsia_developer_remotecontrol::RemoteControlProxy> {
+    async fn connect_remote_control_helper<F, Fut>(&self, func: F) -> Result<zx_types::zx_handle_t>
+    where
+        F: Fn(fidl_fuchsia_developer_remotecontrol::RemoteControlProxy) -> Fut,
+        Fut: Future<Output = Result<zx_types::zx_handle_t>>,
+    {
         const MAX_RECONNECT_ATTEMPTS: u32 = 1;
         for attempt in 0..=MAX_RECONNECT_ATTEMPTS {
             self.invariant_check().await?;
             let t = Duration::from_secs_f64(self.context.get(ffx_config::keys::PROXY_TIMEOUT)?);
-            match timeout::timeout(t, self.device_connection.lock().await.as_ref().unwrap().rcs_proxy()).await.map_err(|_| {
+            match timeout::timeout(t, async {
+                let rcs_proxy = self.device_connection.lock().await.as_ref().unwrap().rcs_proxy().await?;
+                log::debug!(
+                    "Acquired remote_control_proxy for EnvContext instance: {}",
+                    logging::log_id(&self.context)
+                );
+                func(rcs_proxy).await
+            }).await.map_err(|_| {
             anyhow::anyhow!("Timed out attempting to get remote control proxy. This happened after verifying that we can connect to the device, so the device has likely disconnected in the interim.")
                 }) {
                 // No timeout here (there are two layers of errors)
-                Ok(res) => return Ok(res?),
+                Ok(res) => {
+                    return Ok(res?);
+                }
                 Err(e) => {
                     if attempt < MAX_RECONNECT_ATTEMPTS {
                         log::warn!("{e} Attempting to connect once more");
@@ -173,15 +185,13 @@ impl EnvContext {
             "Entering connect_remote_control_proxy for EnvContext instance: {}",
             logging::log_id(&self.context)
         );
-        let proxy = self.connect_remote_control_helper().await?;
-        let hdl = proxy.into_channel().map_err(fxe)?.into_zx_channel();
-        let res = hdl.raw_handle();
-        std::mem::forget(hdl);
-        log::debug!(
-            "Acquired remote_control_proxy for EnvContext instance: {}",
-            logging::log_id(&self.context)
-        );
-        Ok(res)
+        self.connect_remote_control_helper(|proxy| async move {
+            let hdl = proxy.into_channel().map_err(fxe)?.into_zx_channel();
+            let res = hdl.raw_handle();
+            std::mem::forget(hdl);
+            Ok(res)
+        })
+        .await
     }
 
     pub async fn connect_device_proxy(
@@ -193,20 +203,29 @@ impl EnvContext {
             "Entering connect_device_proxy for EnvContext instance: {}",
             logging::log_id(&self.context)
         );
-        let rcs_proxy = self.connect_remote_control_helper().await?;
-        let proxy_timeout =
-            Duration::from_secs_f64(self.context.get(ffx_config::keys::PROXY_TIMEOUT)?);
-        let proxy = rcs::connect_with_timeout_at::<ControllerMarker>(
-            proxy_timeout,
-            &moniker,
-            &capability_name,
-            &rcs_proxy,
-        )
-        .await?;
-        let hdl = proxy.into_channel().map_err(fxe)?.into_zx_channel();
-        let res = hdl.raw_handle();
-        std::mem::forget(hdl);
-        Ok(res)
+        self.connect_remote_control_helper(|rcs_proxy| {
+            let capability_name_clone = capability_name.clone();
+            let moniker_clone = moniker.clone();
+            async move {
+                let proxy_timeout =
+                    Duration::from_secs_f64(self.context.get(ffx_config::keys::PROXY_TIMEOUT)?);
+                let proxy = rcs::connect_with_timeout_at::<ControllerMarker>(
+                    proxy_timeout,
+                    &moniker_clone,
+                    &capability_name_clone,
+                    &rcs_proxy,
+                )
+                .await?;
+                log::debug!(
+                    "Successfully connected to {moniker_clone}:{capability_name_clone} via RCS"
+                );
+                let hdl = proxy.into_channel().map_err(fxe)?.into_zx_channel();
+                let res = hdl.raw_handle();
+                std::mem::forget(hdl);
+                Ok(res)
+            }
+        })
+        .await
     }
 
     pub async fn target_wait(&self, timeout: u64, offline: bool) -> Result<()> {
