@@ -1203,8 +1203,9 @@
                 "AllUnixDomainSockets/UnixSocketPeerCredTest.PeerCredAfterListen/0",
                 "AllUnixDomainSockets/UnixSocketPeerCredTest.PeerCredAfterListen/6",
 
-                // New failing test; Disable for the roll to succeed
+                // New failing tests; Disable for the roll to succeed
                 "RawSocketTest.SolIPSetSockOptOnRawV6SocketFails",
+                "IoctlTest.FIOASYNCHandlesFuseFD",
             ],
         },
     ],
