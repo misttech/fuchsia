@@ -18,9 +18,9 @@ sdk_source_set("fake-mmio-reg") {
   sdk_name = "fake-mmio-reg"
   public = [ "include/fake-mmio-reg/fake-mmio-reg.h" ]
   public_deps = [
+    "//sdk/lib/driver/mmio/cpp",
+    "//sdk/lib/driver/mmio/testing/cpp",
     "//sdk/lib/fit",
-    "//src/devices/lib/mmio",
-    "//src/devices/lib/mmio:test_helper",
     "//zircon/system/ulib/mmio-ptr",
   ]
   sources = []

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/dma-buffer/buffer.h>
-#include <lib/mmio/mmio.h>
+#include <lib/driver/mmio/cpp/mmio.h>
 
 #include <fake-dma-buffer/fake-dma-buffer.h>
 #include <fbl/algorithm.h>

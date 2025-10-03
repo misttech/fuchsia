@@ -5,8 +5,8 @@
 #ifndef SRC_DEVICES_TESTING_MOCK_MMIO_REG_INCLUDE_MOCK_MMIO_REG_MOCK_MMIO_REG_H_
 #define SRC_DEVICES_TESTING_MOCK_MMIO_REG_INCLUDE_MOCK_MMIO_REG_MOCK_MMIO_REG_H_
 
+#include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/mmio-ptr/fake.h>
-#include <lib/mmio/mmio.h>
 
 #include <memory>
 
@@ -19,7 +19,7 @@
 #include <gtest/gtest.h>
 #endif
 
-#include "src/devices/lib/mmio/test-helper.h"
+#include <lib/driver/mmio/testing/cpp/test-helper.h>
 
 namespace ddk_mock {
 

@@ -20,7 +20,7 @@ test("mock-mmio-reg-test-bin") {
   output_name = "mock-mmio-reg-test"
   sources = [ "mock-mmio-reg-test.cc" ]
   deps = [
-    "//src/devices/lib/mmio",
+    "//sdk/lib/driver/mmio/cpp",
     "//src/devices/testing/mock-mmio-reg",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",
