@@ -263,7 +263,7 @@ See [examples](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/e
 Read on if the default generated Mobly config is insufficient.
 
 ```sh
-$ touch my_config.yaml
+$ touch local/my_config.yaml
 ````
 
 For simplicity, this is an example of a single Fuchsia device testbed.
@@ -284,13 +284,21 @@ TestBeds:
 local development environment (More info on this field is in the section
 below).
 
-After updating the content of this file, update BUILD.gn to include it in the
-`python_mobly_test()` target:
+After updating the content of this file, you can pass the absolute path to that
+file to your test via the `--config-yaml-path` flag:
+
+```sh
+$ fx test //src/testing/end_to_end/examples/my_test_dir:my_test_target \
+    --e2e -- --config-yaml-path $FUCHSIA_DIR/local/my_config.yaml
+```
+
+You can also update `BUILD.gn` to include it in the `python_mobly_test()`
+target:
 
 ```gn
 python_mobly_test("my_test") {
     ...
-    local_config_source = "my_config.yaml"
+    local_config_source = "//local/my_config.yaml"
     ...
 }
 ```
