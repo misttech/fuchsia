@@ -46,6 +46,7 @@ pub struct FhoTargetEnvironment {
     // Wrap real FhoTargetEnvironment in Arc because fho_env::get_interface() requires
     // our interface to be cloneable.
     inner: Arc<FhoTargetEnvironmentInner>,
+    want_direct: bool,
 }
 
 impl FhoTargetEnvironment {
@@ -56,16 +57,27 @@ impl FhoTargetEnvironment {
         self.inner.maybe_wrap_connection_errors(err)
     }
 
+    /// Specify that we want a direct connection if we ever make that connection. Used when
+    /// an FfxTool specifies '#[direct]', but may not actually need a connection at all
+    pub fn set_direct(&mut self) {
+        self.want_direct = true;
+    }
+
     /// Initialize either a daemon connection or a direct connection,
     /// depending on how the tool was run. If will be a direct connection
     /// if any of:
     ///   * we are in strict mode
     ///   * the `connectivity.direct=true` config is set (e.g. with "ffx -d")
+    ///   * set_direct() was called
     pub async fn init_connection_behavior(
         &self,
         context: &EnvironmentContext,
     ) -> Result<Arc<ConnectionBehavior>> {
-        self.inner.init_connection_behavior(context).await
+        if self.want_direct || context.is_strict() || context.get_direct_connection_mode() {
+            self.init_direct_connection_behavior(context).await
+        } else {
+            self.init_daemon_connection_behavior(context).await
+        }
     }
 
     /// Explicitly create direct connection behavior.
@@ -155,22 +167,6 @@ impl FhoTargetEnvironmentInner {
             }
         }
         err
-    }
-
-    /// Initialize either a daemon connection or a direct connection,
-    /// depending on how the tool was run. If will be a direct connection
-    /// if any of:
-    ///   * we are in strict mode
-    ///   * the `connectivity.direct=true` config is set (e.g. with "ffx -d")
-    pub async fn init_connection_behavior(
-        &self,
-        context: &EnvironmentContext,
-    ) -> Result<Arc<ConnectionBehavior>> {
-        if context.is_strict() || context.get_direct_connection_mode() {
-            self.init_direct_connection_behavior(context).await
-        } else {
-            self.init_daemon_connection_behavior(context).await
-        }
     }
 
     /// Explicitly create direct connection behavior.
@@ -343,6 +339,15 @@ mod tests {
     }
 
     #[fuchsia::test]
+    async fn test_connection_behavior_correct_with_set_direct() {
+        let env = test_env().runtime_config("target.default", "127.0.0.1").build().unwrap();
+        let mut target_env = FhoTargetEnvironment::default();
+        target_env.set_direct();
+        let behavior = target_env.init_connection_behavior(&env.context).await.unwrap();
+        assert!(matches!(*behavior, ConnectionBehavior::DirectConnector(_)));
+    }
+
+    #[fuchsia::test]
     async fn set_daemon_behavior_will_not_override_previous_direct() {
         let env = test_env()
             .runtime_config("connectivity.direct", true)
@@ -357,7 +362,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn set_direct_behavior_will_not_override_previous_daemon() {
+    async fn init_direct_behavior_will_not_override_previous_daemon() {
         let env = test_env().build().unwrap();
         let target_env = FhoTargetEnvironment::default();
         let _behavior = target_env.init_daemon_connection_behavior(&env.context).await.unwrap();
