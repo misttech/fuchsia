@@ -20,6 +20,15 @@
             dependency: "weak",
         },
         {
+            service: "fuchsia.hardware.platform.bus.ObservabilityService",
+            from: "#boot-drivers",
+            to: "#system-activity-governor",
+
+            // Looks like SAG already depends on boot drivers...
+            dependency: "weak",
+            source_availability: "unknown",
+        },
+        {
             config: [ "fuchsia.power.UseSuspender" ],
             from: "parent",
             to: "#system-activity-governor",
