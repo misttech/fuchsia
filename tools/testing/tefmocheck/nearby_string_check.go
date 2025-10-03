@@ -85,13 +85,15 @@ func (c *NearbyStringCheck) FailureReason() string {
 }
 
 func NearbyStringsChecks() []FailureModeCheck {
-	return []FailureModeCheck{
-		// For https://fxbug.dev/433753567
-		&NearbyStringCheck{
-			String1:          "WARN: Command failure occurred: ZX_ERR_IO_REFUSED: command failure",
-			String2:          "Format: Log Type - Time(microsec) - Message - Optional Info",
-			MaxDistanceLines: 20,
-			Type:             serialLogType,
-		},
-	}
+	// TODO(https://fxbug.dev/449017206): Re-enable this after the bug is fixed
+	return nil
+	// return []FailureModeCheck{
+	// 	// For https://fxbug.dev/433753567
+	// 	&NearbyStringCheck{
+	// 		String1:          "WARN: Command failure occurred: ZX_ERR_IO_REFUSED: command failure",
+	// 		String2:          "Format: Log Type - Time(microsec) - Message - Optional Info",
+	// 		MaxDistanceLines: 20,
+	// 		Type:             serialLogType,
+	// 	},
+	// }
 }
