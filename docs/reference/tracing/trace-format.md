@@ -1069,6 +1069,197 @@ _log message stream_
 
 - UTF-8 string, padded with zeros to 8 byte alignment
 
+### Profiler record (record type = 10) {#profiler-record}
+
+Describes profiler data, such as module loads, memory mappings, and backtraces.
+This record has several subtypes to represent different kinds of profiler data.
+
+##### Format
+
+```
++----------(4)-----------+----------(44)------------+--(12)--+-(4)-+
+| profiler record type   |     <type specific>      |  size  | 10  |
++------------------------+--------------------------+--------+-----+
+```
+
+_header word_
+
+- `[0 .. 3]`: record type (10)
+- `[4 .. 15]`: record size (inclusive of this word) as a multiple of 8 bytes
+- `[16 .. 19]`: profiler record subtype
+- `[20 .. 63]`: subtype specific data
+
+#### Module Record (profiler record subtype = 0)
+
+Stores the information about a loaded module.
+
+##### Format
+
+```
++-(4)-+---(8)----+---(8)----+------(16)------+---(8)----+-(4)--+----(12)----+-(4)-+
+| rsvd| build_len| name_len |   module_id    |thread_ref| 0000 |    size    | 10  |
++-----+----------+----------+----------------+----------+------+------------+-----+
++--------------------------------(64)-----------------------------------+
+|                             timestamp                                 |
++-----------------------------------------------------------------------+
++--------------------------------(64)-----------------------------------+
+|      process id (omitted unless thread ref denotes inline thread)     |
++-----------------------------------------------------------------------+
++--------------------------------(64)-----------------------------------+
+|       thread id (omitted unless thread ref denotes inline thread)     |
++-----------------------------------------------------------------------+
++--------------------------------(...)----------------------------------+
+|                             module name                               |
++-----------------------------------------------------------------------+
++--------------------------------(...)----------------------------------+
+|                               build id                                |
++-----------------------------------------------------------------------+
+```
+
+_header word_
+
+- `[0 .. 3]`: record type (10)
+- `[4 .. 15]`: record size (inclusive of this word) as a multiple of 8 bytes
+- `[16 .. 19]`: profiler record subtype (0)
+- `[20 .. 27]`: thread ref
+- `[28 .. 43]`: module id (16 bits)
+- `[44 .. 51]`: name length in bytes
+- `[52 .. 59]`: build id length in bytes
+- `[60 .. 63]`: reserved
+
+_timestamp word_
+
+- `[0 .. 63]`: number of ticks
+
+_process id word_ (omitted unless thread ref denotes inline thread)
+
+- `[0 .. 63]`: process koid (kernel object id)
+
+_thread id word_ (omitted unless thread ref denotes inline thread)
+
+- `[0 .. 63]`: thread koid (kernel object id, will constantly be 0)
+
+_module name stream_
+
+- UTF-8 string, padded with zeros to 8 byte alignment
+
+_build id stream_
+
+- Binary data, padded with zeros to 8 byte alignment
+
+#### Mmap Record (profiler record subtype = 1)
+
+Stores the details of a specific memory mapping for a specific module.
+
+##### Format
+
+```
++--------(17)-------+-(3)-+------(16)------+---(8)----+-(4)--+----(12)----+-(4)-+
+|      reserved      |flags|   module_id   |thread_ref| 0001 |    size    | 10  |
++--------------------+-----+---------------+----------+------+------------+-----+
++--------------------------------(64)-----------------------------------+
+|                             timestamp                                 |
++-----------------------------------------------------------------------+
++--------------------------------(64)-----------------------------------+
+|      process id (omitted unless thread ref denotes inline thread)     |
++-----------------------------------------------------------------------+
++--------------------------------(64)-----------------------------------+
+|       thread id (omitted unless thread ref denotes inline thread)     |
++-----------------------------------------------------------------------+
++--------------------------------(64)-----------------------------------+
+|                            start address                              |
++-----------------------------------------------------------------------+
++--------------------------------(64)-----------------------------------+
+|                            address range                              |
++-----------------------------------------------------------------------+
++--------------------------------(64)-----------------------------------+
+|                               vaddr                                   |
++-----------------------------------------------------------------------+
+```
+
+_header word_
+
+- `[0 .. 3]`: record type (10)
+- `[4 .. 15]`: record size (inclusive of this word) as a multiple of 8 bytes
+- `[16 .. 19]`: profiler record subtype (1)
+- `[20 .. 27]`: thread ref
+- `[28 .. 43]`: module id (16 bits)
+- `[44 .. 46]`: flags
+- `[47 .. 63]`: reserved
+
+_timestamp word_
+
+- `[0 .. 63]`: number of ticks
+
+_process id word_ (omitted unless thread ref denotes inline thread)
+
+- `[0 .. 63]`: process koid (kernel object id)
+
+_thread id word_ (omitted unless thread ref denotes inline thread)
+
+- `[0 .. 63]`: thread koid (kernel object id, will constantly be 0)
+
+_start address word_
+
+- `[0 .. 63]`: start address in mmap record
+
+_address range word_
+
+- `[0 .. 63]`: the range of the mmap record
+
+_vaddr word_
+
+- `[0 .. 63]`: vaddr - module relative address
+
+#### Backtrace Record (profiler record subtype = 2)
+
+Stores a list of backtrace frames (All of the backtrace frames in a single call stack) within a single record.
+
+##### Format
+
+```
++------------(28)------------+---(8)----+---(8)----+-(4)--+----(12)----+-(4)-+
+|          reserved          |record_num|thread_ref| 0010 |    size    | 10  |
++----------------------------+----------+----------+------+------------+-----+
++--------------------------------(64)-----------------------------------+
+|                             timestamp                                 |
++-----------------------------------------------------------------------+
++--------------------------------(64)-----------------------------------+
+|      process id (omitted unless thread ref denotes inline thread)     |
++-----------------------------------------------------------------------+
++--------------------------------(64)-----------------------------------+
+|       thread id (omitted unless thread ref denotes inline thread)     |
++-----------------------------------------------------------------------+
++--------------------------------(...)----------------------------------+
+|                         backtrace data                                |
++-----------------------------------------------------------------------+
+```
+
+_header word_
+
+- `[0 .. 3]`: record type (10)
+- `[4 .. 15]`: record size (inclusive of this word) as a multiple of 8 bytes
+- `[16 .. 19]`: profiler record subtype (2)
+- `[20 .. 27]`: thread ref
+- `[28 .. 35]`: number of backtrace records (backtrace data length in 8 byte units)
+- `[36 .. 63]`: reserved
+
+_timestamp word_
+
+- `[0 .. 63]`: number of ticks
+
+_process id word_ (omitted unless thread ref denotes inline thread)
+
+- `[0 .. 63]`: process koid (kernel object id)
+
+_thread id word_ (omitted unless thread ref denotes inline thread)
+
+- `[0 .. 63]`: thread koid (kernel object id)
+
+_backtrace data stream_
+
+- Binary data, in a multiple of 8 bytes.
+
 ### Large BLOB record (record type = 15, large type = 0) {#large-blob-record}
 
 Provides large binary BLOB data to be embedded within a trace. It
