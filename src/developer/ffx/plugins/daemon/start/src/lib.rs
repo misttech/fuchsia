@@ -74,7 +74,6 @@ impl DaemonStartTool {
 mod test {
     use super::*;
     use ffx_config::EnvironmentContext;
-    use std::sync::Arc;
     use target_behavior::{ConnectionBehavior, target_interface};
     use target_holders::{FakeInjector, fake_proxy};
 
@@ -98,8 +97,7 @@ mod test {
 
         let fho_env = FhoEnvironment::new_with_args(context, &["some", "test"]);
         let target_env = target_interface(&fho_env);
-        target_env
-            .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
+        target_env.set_behavior_for_test(ConnectionBehavior::fake_daemon_connector(fake_injector));
         fho_env
     }
 

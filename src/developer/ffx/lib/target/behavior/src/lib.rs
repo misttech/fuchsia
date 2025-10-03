@@ -20,6 +20,15 @@ pub enum ConnectionBehavior {
     DirectConnector(Arc<Resolution>),
 }
 
+impl ConnectionBehavior {
+    pub fn fake_direct_connector(resolution: Resolution) -> Self {
+        ConnectionBehavior::DirectConnector(Arc::new(resolution))
+    }
+    pub fn fake_daemon_connector<T: Injector + 'static>(injector: T) -> Self {
+        ConnectionBehavior::DaemonConnector(Arc::new(injector))
+    }
+}
+
 // Manually implement Debug here so we can skip implementing
 // Debug on the traits of the variant data.
 impl fmt::Debug for ConnectionBehavior {

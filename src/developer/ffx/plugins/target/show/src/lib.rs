@@ -429,8 +429,8 @@ mod tests {
         let output = VerifiedMachineWriter::<TargetShowInfo>::new_test(None, &buffers);
         let fho_env = FhoEnvironment::default();
         let target_env = target_behavior::target_interface(&fho_env);
-        target_env.set_behavior_for_test(ConnectionBehavior::DirectConnector(
-            setup_fake_direct_connector().await,
+        target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(
+            setup_fake_resolution().await,
         ));
         let tool = ShowTool {
             cmd: args::TargetShow { ..Default::default() },
@@ -597,8 +597,8 @@ mod tests {
             <ShowTool as FfxMain>::Writer::new_test(Some(Format::JsonPretty), &buffers);
         let fho_env = FhoEnvironment::default();
         let target_env = target_behavior::target_interface(&fho_env);
-        target_env.set_behavior_for_test(ConnectionBehavior::DirectConnector(
-            setup_fake_direct_connector().await,
+        target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(
+            setup_fake_resolution().await,
         ));
         let tool = ShowTool {
             cmd: args::TargetShow { ..Default::default() },
@@ -627,7 +627,7 @@ mod tests {
         };
     }
 
-    async fn setup_fake_direct_connector() -> Arc<Resolution> {
+    async fn setup_fake_resolution() -> Resolution {
         let device_address = std::net::SocketAddr::new("127.0.0.1".parse().unwrap(), 22);
         let target_addr = TargetIpAddr::from(device_address.clone());
         let target_info =
@@ -636,7 +636,7 @@ mod tests {
         let fidl_pipe = FidlPipe::fake(Some(device_address));
         let conn = ffx_target::Connection::fake(fidl_pipe);
         ret.set_connection_for_test(Some(conn)).await;
-        Arc::new(ret)
+        ret
     }
 
     #[fuchsia::test]
@@ -646,8 +646,8 @@ mod tests {
         let output = VerifiedMachineWriter::<TargetShowInfo>::new_test(None, &buffers);
         let fho_env = FhoEnvironment::default();
         let target_env = target_behavior::target_interface(&fho_env);
-        target_env.set_behavior_for_test(ConnectionBehavior::DirectConnector(
-            setup_fake_direct_connector().await,
+        target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(
+            setup_fake_resolution().await,
         ));
         let tool = ShowTool {
             cmd: args::TargetShow { ..Default::default() },
