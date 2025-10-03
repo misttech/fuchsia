@@ -340,7 +340,10 @@ impl CpuManager {
                             }
                         }
                         Some(error) => {
-                            log::warn!(error:?; "Failed to suspend");
+                            let readable_error = error.as_ref().map(|result| {
+                                result.as_ref().map_err(|err| zx::Status::from_raw(*err))
+                            });
+                            log::warn!(readable_error:?; "Failed to suspend");
                             stats.fail_count = stats.fail_count.map(|c| c + 1);
                             suspend_failed = true;
 
