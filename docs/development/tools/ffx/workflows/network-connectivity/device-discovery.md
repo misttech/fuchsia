@@ -132,7 +132,7 @@ There may also be additional netfilter restrictions in place.
 To check the rules that are running on your machine, run the following:
 
 ```posix-terminal
-nft list tables`
+sudo nft list tables
 ```
 
 You may need to adjust rules if the output looks like the following:
