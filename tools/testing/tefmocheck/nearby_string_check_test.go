@@ -6,6 +6,10 @@ package tefmocheck
 
 import (
 	"testing"
+
+	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestNearbyStringCheck(t *testing.T) {
@@ -75,7 +79,8 @@ string1`,
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			outputs := &TestingOutputs{
-				SerialLogs: [][]byte{[]byte(test.log)},
+				SerialLogs:      [][]byte{[]byte(test.log)},
+				SwarmingSummary: &SwarmingTaskSummary{Results: &SwarmingRpcsTaskResult{}},
 			}
 			if got := test.check.Check(outputs); got != test.expectedCheck {
 				t.Errorf("Check() = %v, want %v", got, test.expectedCheck)
@@ -92,6 +97,208 @@ string1`,
 				}
 				if test.check.line2 != test.expectedLine2 {
 					t.Errorf("line2 = %q, want %q", test.check.line2, test.expectedLine2)
+				}
+			}
+		})
+	}
+}
+
+func TestNearbyStringCheckWithSwarming(t *testing.T) {
+	const (
+		passedTest1 = "passedTest1"
+		passedTest2 = "passedTest2"
+		failedTest1 = "failedTest1"
+		failedTest2 = "failedTest2"
+	)
+	failedTestLog := "string1\nstring2"
+	passedTestLog := "nothing interesting"
+	testCases := []struct {
+		name                  string
+		check                 *NearbyStringCheck
+		swarmingResult        *SwarmingRpcsTaskResult
+		testSummary           *runtests.TestSummary
+		swarmingOutputPerTest []TestLog
+		expectedCheck         bool
+		expectedIsFlake       bool
+	}{
+		{
+			name: "SkipPassedTask returns false for passed task",
+			check: &NearbyStringCheck{
+				String1:          "string1",
+				String2:          "string2",
+				MaxDistanceLines: 20,
+				SkipPassedTask:   true,
+				Type:             swarmingOutputType,
+			},
+			swarmingResult: &SwarmingRpcsTaskResult{State: "COMPLETED"},
+			expectedCheck:  false,
+		},
+		{
+			name: "SkipPassedTask returns true for failed task",
+			check: &NearbyStringCheck{
+				String1:          "string1",
+				String2:          "string2",
+				MaxDistanceLines: 20,
+				SkipPassedTask:   true,
+				Type:             swarmingOutputType,
+			},
+			swarmingResult: &SwarmingRpcsTaskResult{State: "COMPLETED", Failure: true},
+			expectedCheck:  true, // because the log contains the strings
+		},
+		{
+			name: "SkipAllPassedTests returns false for all passed tests",
+			check: &NearbyStringCheck{
+				String1:            "string1",
+				String2:            "string2",
+				MaxDistanceLines:   20,
+				SkipAllPassedTests: true,
+				Type:               swarmingOutputType,
+			},
+			swarmingResult: &SwarmingRpcsTaskResult{State: "COMPLETED"},
+			testSummary: &runtests.TestSummary{
+				Tests: []runtests.TestDetails{
+					{Name: passedTest1, Result: runtests.TestSuccess},
+					{Name: passedTest2, Result: runtests.TestSuccess},
+				},
+			},
+			expectedCheck: false,
+		},
+		{
+			name: "SkipAllPassedTests returns true for some failed tests",
+			check: &NearbyStringCheck{
+				String1:            "string1",
+				String2:            "string2",
+				MaxDistanceLines:   20,
+				SkipAllPassedTests: true,
+				Type:               swarmingOutputType,
+			},
+			swarmingResult: &SwarmingRpcsTaskResult{State: "COMPLETED"},
+			testSummary: &runtests.TestSummary{
+				Tests: []runtests.TestDetails{
+					{Name: passedTest1, Result: runtests.TestSuccess},
+					{Name: failedTest1, Result: runtests.TestFailure},
+				},
+			},
+			expectedCheck: true,
+		},
+		{
+			name: "SkipAllPassedTests with IgnoreFlakes returns false",
+			check: &NearbyStringCheck{
+				String1:            "string1",
+				String2:            "string2",
+				MaxDistanceLines:   20,
+				SkipAllPassedTests: true,
+				IgnoreFlakes:       true,
+				Type:               swarmingOutputType,
+			},
+			swarmingResult: &SwarmingRpcsTaskResult{State: "COMPLETED"},
+			testSummary: &runtests.TestSummary{
+				Tests: []runtests.TestDetails{
+					{Name: failedTest1, Result: runtests.TestFailure},
+					{Name: failedTest1, Result: runtests.TestSuccess},
+				},
+			},
+			expectedCheck: false,
+		},
+		{
+			name: "AlwaysFlake returns true and isFlake",
+			check: &NearbyStringCheck{
+				String1:          "string1",
+				String2:          "string2",
+				MaxDistanceLines: 20,
+				AlwaysFlake:      true,
+				Type:             swarmingOutputType,
+			},
+			swarmingResult:  &SwarmingRpcsTaskResult{State: "COMPLETED", Failure: true},
+			expectedCheck:   true,
+			expectedIsFlake: true,
+		},
+		{
+			name: "SkipPassedTest finds in failed test",
+			check: &NearbyStringCheck{
+				String1:          "string1",
+				String2:          "string2",
+				MaxDistanceLines: 20,
+				SkipPassedTest:   true,
+				Type:             swarmingOutputType,
+			},
+			swarmingResult: &SwarmingRpcsTaskResult{State: "COMPLETED", Failure: true},
+			testSummary: &runtests.TestSummary{
+				Tests: []runtests.TestDetails{
+					{Name: failedTest1, Result: runtests.TestFailure},
+					{Name: passedTest1, Result: runtests.TestSuccess},
+				},
+			},
+			swarmingOutputPerTest: []TestLog{
+				{TestName: failedTest1, Bytes: []byte(failedTestLog)},
+				{TestName: passedTest1, Bytes: []byte(passedTestLog)},
+			},
+			expectedCheck: true,
+		},
+		{
+			name: "SkipPassedTest does not find in passed test",
+			check: &NearbyStringCheck{
+				String1:          "string1",
+				String2:          "string2",
+				MaxDistanceLines: 20,
+				SkipPassedTest:   true,
+				Type:             swarmingOutputType,
+			},
+			swarmingResult: &SwarmingRpcsTaskResult{State: "COMPLETED", Failure: true},
+			testSummary: &runtests.TestSummary{
+				Tests: []runtests.TestDetails{
+					{Name: failedTest1, Result: runtests.TestFailure},
+					{Name: passedTest1, Result: runtests.TestSuccess},
+				},
+			},
+			swarmingOutputPerTest: []TestLog{
+				{TestName: failedTest1, Bytes: []byte(passedTestLog)},
+				{TestName: passedTest1, Bytes: []byte(failedTestLog)},
+			},
+			expectedCheck: false,
+		},
+		{
+			name: "SkipPassedTest with IgnoreFlakes",
+			check: &NearbyStringCheck{
+				String1:          "string1",
+				String2:          "string2",
+				MaxDistanceLines: 20,
+				SkipPassedTest:   true,
+				IgnoreFlakes:     true,
+				Type:             swarmingOutputType,
+			},
+			swarmingResult: &SwarmingRpcsTaskResult{State: "COMPLETED", Failure: true},
+			testSummary: &runtests.TestSummary{
+				Tests: []runtests.TestDetails{
+					{Name: failedTest1, Result: runtests.TestFailure},
+					{Name: failedTest2, Result: runtests.TestFailure},
+					{Name: failedTest2, Result: runtests.TestSuccess},
+				},
+			},
+			swarmingOutputPerTest: []TestLog{
+				{TestName: failedTest1, Bytes: []byte(passedTestLog)},
+				{TestName: failedTest2, Bytes: []byte(failedTestLog)},
+				{TestName: failedTest2, Bytes: []byte(passedTestLog)},
+			},
+			expectedCheck:   true,
+			expectedIsFlake: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			outputs := &TestingOutputs{
+				SwarmingOutput:        []byte(failedTestLog),
+				SwarmingSummary:       &SwarmingTaskSummary{Results: tc.swarmingResult},
+				TestSummary:           tc.testSummary,
+				SwarmingOutputPerTest: tc.swarmingOutputPerTest,
+			}
+			if got := tc.check.Check(outputs); got != tc.expectedCheck {
+				t.Errorf("Check() got %v, want %v", got, tc.expectedCheck)
+			}
+			if tc.expectedCheck {
+				if diff := cmp.Diff(tc.expectedIsFlake, tc.check.IsFlake()); diff != "" {
+					t.Errorf("IsFlake() mismatch (-want +got):\n%s", diff)
 				}
 			}
 		})
