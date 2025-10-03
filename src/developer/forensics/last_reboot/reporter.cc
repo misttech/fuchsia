@@ -27,8 +27,7 @@ constexpr char kHasReportedOnPath[] = "/tmp/has_reported_on_reboot_log.txt";
 
 }  // namespace
 
-Reporter::Reporter(async_dispatcher_t* dispatcher, std::shared_ptr<sys::ServiceDirectory> services,
-                   cobalt::Logger* cobalt, RedactorBase* redactor,
+Reporter::Reporter(async_dispatcher_t* dispatcher, cobalt::Logger* cobalt, RedactorBase* redactor,
                    fuchsia::feedback::CrashReporter* crash_reporter)
     : dispatcher_(dispatcher),
       executor_(dispatcher),

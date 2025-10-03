@@ -71,7 +71,7 @@ TEST_F(LastRebootTest, FirstInstance) {
           .is_fatal = IsFatal(reboot_log.RebootReason()),
       }));
 
-  LastReboot last_reboot(dispatcher(), services(), Cobalt(), Redactor(), CrashReporter(),
+  LastReboot last_reboot(dispatcher(), Cobalt(), Redactor(), CrashReporter(),
                          LastReboot::Options{
                              .is_first_instance = true,
                              .reboot_log = reboot_log,
@@ -96,7 +96,7 @@ TEST_F(LastRebootTest, IsNotFirstInstance) {
 
   SetUpCrashReporterServer(std::make_unique<stubs::CrashReporterNoFileExpected>());
 
-  LastReboot last_reboot(dispatcher(), services(), Cobalt(), Redactor(), CrashReporter(),
+  LastReboot last_reboot(dispatcher(), Cobalt(), Redactor(), CrashReporter(),
                          LastReboot::Options{
                              .is_first_instance = false,
                              .reboot_log = reboot_log,

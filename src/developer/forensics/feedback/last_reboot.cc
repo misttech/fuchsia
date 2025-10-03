@@ -6,11 +6,10 @@
 
 namespace forensics::feedback {
 
-LastReboot::LastReboot(async_dispatcher_t* dispatcher,
-                       std::shared_ptr<sys::ServiceDirectory> services, cobalt::Logger* cobalt,
+LastReboot::LastReboot(async_dispatcher_t* dispatcher, cobalt::Logger* cobalt,
                        RedactorBase* redactor, fuchsia::feedback::CrashReporter* crash_reporter,
                        const Options options)
-    : reporter_(dispatcher, services, cobalt, redactor, crash_reporter),
+    : reporter_(dispatcher, cobalt, redactor, crash_reporter),
       last_reboot_info_provider_(options.reboot_log) {
   if (options.is_first_instance) {
     const zx::duration delay = (options.reboot_log.RebootReason() == RebootReason::kOOM)

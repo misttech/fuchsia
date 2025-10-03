@@ -8,7 +8,6 @@
 #include <fuchsia/feedback/cpp/fidl.h>
 #include <lib/async/dispatcher.h>
 #include <lib/fit/function.h>
-#include <lib/sys/cpp/service_directory.h>
 #include <lib/zx/time.h>
 
 #include "src/developer/forensics/feedback/reboot_log/reboot_log.h"
@@ -28,8 +27,7 @@ class LastReboot {
     zx::duration oom_crash_reporting_delay;
   };
 
-  LastReboot(async_dispatcher_t* dispatcher, std::shared_ptr<sys::ServiceDirectory> services,
-             cobalt::Logger* cobalt, RedactorBase* redactor,
+  LastReboot(async_dispatcher_t* dispatcher, cobalt::Logger* cobalt, RedactorBase* redactor,
              fuchsia::feedback::CrashReporter* crash_reporter, Options options);
 
   fuchsia::feedback::LastRebootInfoProvider* LastRebootInfoProvider();

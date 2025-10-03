@@ -104,8 +104,7 @@ class ReporterTest : public UnitTestFixture, public testing::WithParamInterface<
   }
 
   void ReportOn(const feedback::RebootLog& reboot_log) {
-    Reporter reporter(dispatcher(), services(), &cobalt_, redactor_.get(),
-                      crash_reporter_server_.get());
+    Reporter reporter(dispatcher(), &cobalt_, redactor_.get(), crash_reporter_server_.get());
     reporter.ReportOn(reboot_log, /*delay=*/zx::sec(0));
     RunLoopUntilIdle();
   }

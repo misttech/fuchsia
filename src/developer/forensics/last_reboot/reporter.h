@@ -8,10 +8,7 @@
 #include <fuchsia/feedback/cpp/fidl.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/fpromise/promise.h>
-#include <lib/sys/cpp/service_directory.h>
 #include <lib/zx/time.h>
-
-#include <memory>
 
 #include "src/developer/forensics/feedback/reboot_log/reboot_log.h"
 #include "src/developer/forensics/utils/cobalt/logger.h"
@@ -24,9 +21,7 @@ namespace last_reboot {
 // Logs the reboot reason with Cobalt and if the reboot was non-graceful, files a crash report.
 class Reporter {
  public:
-  // fuchsia.feedback.CrashReporter is expected to be in |services|.
-  Reporter(async_dispatcher_t* dispatcher, std::shared_ptr<sys::ServiceDirectory> services,
-           cobalt::Logger* cobalt, RedactorBase* redactor,
+  Reporter(async_dispatcher_t* dispatcher, cobalt::Logger* cobalt, RedactorBase* redactor,
            fuchsia::feedback::CrashReporter* crash_reporter);
 
   void ReportOn(const feedback::RebootLog& reboot_log, zx::duration crash_reporting_delay);
