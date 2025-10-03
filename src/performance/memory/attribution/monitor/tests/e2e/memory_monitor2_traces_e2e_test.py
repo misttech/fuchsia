@@ -51,6 +51,13 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
 
     def test_memory_traces_content_collect(self) -> None:
         CATEGORY = "memory:kernel"
+        EXPECTED_EVENTS = {
+            "kmem_stats_a",
+            "kmem_stats_b",
+            "kmem_stats_compression",
+            "kmem_stats_compression_time",
+            "memory_stall",
+        }
         trace_path = Path(self.test_case_path) / "trace.fxt"
         with self.dut.tracing.trace_session(
             categories=[CATEGORY],
@@ -62,7 +69,9 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
             # of time. If that proves brittle, we should fallback on a larger value.
             time.sleep(4)
 
-        model = trace_importing.create_model_from_trace_file_path(trace_path)
+        model = trace_importing.create_model_from_trace_file_path(
+            trace_path, patterns=EXPECTED_EVENTS
+        )
         events = list(
             trace_utils.filter_events(
                 model.all_events(),
@@ -73,16 +82,7 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
         asserts.assert_greater(len(events), 0)
 
         event_names = {event.name for event in events}
-        asserts.assert_equal(
-            event_names,
-            {
-                "kmem_stats_a",
-                "kmem_stats_b",
-                "kmem_stats_compression",
-                "kmem_stats_compression_time",
-                "memory_stall",
-            },
-        )
+        asserts.assert_equal(event_names, EXPECTED_EVENTS)
 
         for event in events:
             if event.name == "memory_stall":
