@@ -542,5 +542,18 @@ void Device::OnCriticalError(OnCriticalErrorRequestView request,
   completer.ReplyError(WlanPhyImplNotifyError::kNotSupported);
 }
 
+void Device::SetTxPowerScenario(SetTxPowerScenarioRequestView request,
+                                SetTxPowerScenarioCompleter::Sync& completer) {
+  completer.ReplyError(fuchsia_wlan_device::PhyError::kNotSupported);
+}
+
+void Device::ResetTxPowerScenario(ResetTxPowerScenarioCompleter::Sync& completer) {
+  completer.ReplyError(fuchsia_wlan_device::PhyError::kNotSupported);
+}
+
+void Device::GetTxPowerScenario(GetTxPowerScenarioCompleter::Sync& completer) {
+  completer.ReplyError(fuchsia_wlan_device::PhyError::kNotSupported);
+}
+
 }  // namespace wlanphy
 FUCHSIA_DRIVER_EXPORT(::wlanphy::Device);

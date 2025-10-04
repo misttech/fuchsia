@@ -54,6 +54,14 @@ type CountryCode = struct {
     alpha2 array<byte, 2>;
 };
 
+
+type PhyError = strict enum : int32 {
+    /// An unspecified internal error occurred.
+    INTERNAL = 1;
+    // The requested method is not supported by the Phy implementation.
+    NOT_SUPPORTED = 2;
+};
+
 closed protocol Phy {
     strict GetSupportedMacRoles() -> (struct {
         supported_mac_roles
@@ -106,6 +114,16 @@ closed protocol Phy {
     strict SetBtCoexistenceMode(struct {
         mode fuchsia.wlan.internal.BtCoexistenceMode;
     }) -> () error zx.Status;
+
+    strict SetTxPowerScenario(struct {
+        scenario fuchsia.wlan.internal.TxPowerScenario;
+    }) -> () error PhyError;
+
+    strict ResetTxPowerScenario() -> () error PhyError;
+
+    strict GetTxPowerScenario() -> (struct {
+        scenario fuchsia.wlan.internal.TxPowerScenario;
+    }) error PhyError;
 };
 
 // Temporary interface for bridging between the devhost-owned channel model and

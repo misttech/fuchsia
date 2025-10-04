@@ -57,3 +57,14 @@ type BtCoexistenceMode = strict enum {
     MODE_AUTO = 1;
     MODE_OFF = 2;
 };
+
+/// Specific absorption rate scenarios that can be applied to WLAN PHY devices.
+type TxPowerScenario = flexible enum {
+    DEFAULT = 0;
+    VOICE_CALL = 1;
+    HEAD_CELL_OFF = 2;
+    HEAD_CELL_ON = 3;
+    BODY_CELL_OFF = 4;
+    BODY_CELL_ON = 5;
+    BODY_BT_ACTIVE = 6;
+};

@@ -58,6 +58,10 @@ class Device final : public fdf::DriverBase,
                             SetBtCoexistenceModeCompleter::Sync& completer) override;
   void handle_unknown_event(
       fidl::UnknownEventMetadata<fuchsia_driver_framework::NodeController> metadata) override {}
+  void SetTxPowerScenario(SetTxPowerScenarioRequestView request,
+                          SetTxPowerScenarioCompleter::Sync& completer) override;
+  void ResetTxPowerScenario(ResetTxPowerScenarioCompleter::Sync& completer) override;
+  void GetTxPowerScenario(GetTxPowerScenarioCompleter::Sync& completer) override;
 
   // Function implementations in protocol fuchsia_wlan_device::Connector.
   void Connect(ConnectRequestView request, ConnectCompleter::Sync& completer) override;
