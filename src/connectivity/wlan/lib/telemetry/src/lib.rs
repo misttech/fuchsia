@@ -11,8 +11,8 @@ use windowed_stats::experimental::serve::serve_time_matrix_inspection;
 use wlan_common::bss::BssDescription;
 use {
     fidl_fuchsia_power_battery as fidl_battery, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
-    fuchsia_async as fasync, fuchsia_inspect_auto_persist as auto_persist,
-    wlan_legacy_metrics_registry as metrics,
+    fidl_fuchsia_wlan_internal as fidl_internal, fuchsia_async as fasync,
+    fuchsia_inspect_auto_persist as auto_persist, wlan_legacy_metrics_registry as metrics,
 };
 
 mod processors;
@@ -63,6 +63,10 @@ pub enum TelemetryEvent {
     RecoveryEvent,
     SmeTimeout,
     ChipPowerUpFailure,
+    ResetTxPowerScenario,
+    SetTxPowerScenario {
+        scenario: fidl_internal::TxPowerScenario,
+    },
 }
 
 /// Attempts to connect to the Cobalt service.
@@ -162,6 +166,8 @@ pub fn serve_telemetry(
     let sme_timeout_logger = processors::sme_timeout::SmeTimeoutLogger::new(cobalt_proxy.clone());
     let mut toggle_logger =
         processors::toggle_events::ToggleLogger::new(cobalt_proxy.clone(), &inspect_node);
+    let tx_power_scenario_logger =
+        processors::tx_power_scenario::TxPowerScenarioLogger::new(cobalt_proxy.clone());
 
     let client_iface_counters_logger =
         processors::client_iface_counters::ClientIfaceCountersLogger::new(
@@ -243,6 +249,12 @@ pub fn serve_telemetry(
                         }
                         SmeTimeout => {
                             sme_timeout_logger.handle_sme_timeout_event().await;
+                        }
+                        ResetTxPowerScenario => {
+                            tx_power_scenario_logger.handle_sar_reset().await;
+                        }
+                        SetTxPowerScenario {scenario} => {
+                            tx_power_scenario_logger.handle_set_sar(scenario).await;
                         }
                     }
                 }
