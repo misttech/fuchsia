@@ -4,7 +4,7 @@
 
 use crate::subsystems::prelude::*;
 use assembly_config_capabilities::{Config, ConfigNestedValueType, ConfigValueType};
-use assembly_config_schema::platform_settings::usb_config::UsbConfig;
+use assembly_config_schema::platform_settings::usb_config::{UsbConfig, UsbPeripheralFunction};
 
 pub(crate) struct UsbSubsystem;
 
@@ -36,7 +36,13 @@ impl DefineSubsystemConfiguration<UsbConfig> for UsbSubsystem {
             builder.platform_bundle("usb_host_drivers");
         }
         if context.board_config.provides_feature("fuchsia::usb_peripheral_support") {
-            builder.platform_bundle("usb_peripheral_drivers");
+            for function in usb.peripheral.functions() {
+                match function {
+                    UsbPeripheralFunction::Rndis => builder.platform_bundle("usb_rndis_function"),
+                    UsbPeripheralFunction::Ums => builder.platform_bundle("usb_ums_function"),
+                    _ => (),
+                }
+            }
         }
 
         match context.feature_set_level {

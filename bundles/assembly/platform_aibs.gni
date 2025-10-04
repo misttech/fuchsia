@@ -59,8 +59,9 @@ bootstrap_user_platform_aib_names = [
 
   # USB
   "usb_host_drivers",
-  "usb_peripheral_drivers",
   "usb_peripheral_drivers_boot",
+  "usb_rndis_function",
+  "usb_ums_function",
 
   # Storage
   "fshost_common",

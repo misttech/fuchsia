@@ -381,13 +381,18 @@ assembly_input_bundle("usb_host_drivers") {
   ]
 }
 
-assembly_input_bundle("usb_peripheral_drivers") {
+assembly_input_bundle("usb_rndis_function") {
   boot_driver_packages = [
     {
       package_target =
           "//src/connectivity/ethernet/drivers/rndis-function:package"
       driver_components = [ "meta/rndis-function.cm" ]
     },
+  ]
+}
+
+assembly_input_bundle("usb_ums_function") {
+  boot_driver_packages = [
     {
       package_target = "//src/devices/block/drivers/ums-function:package"
       driver_components = [ "meta/ums-function.cm" ]
