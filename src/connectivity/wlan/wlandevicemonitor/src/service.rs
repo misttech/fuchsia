@@ -178,6 +178,15 @@ pub(crate) async fn handle_monitor_request(
             let result = get_sme_telemetry(ifaces, iface_id, telemetry_server).await;
             responder.send(result.map_err(|e| e.into_raw()))?;
         }
+        DeviceMonitorRequest::SetTxPowerScenario { phy_id: _, scenario: _, responder } => {
+            responder.send(Err(fidl_svc::DeviceMonitorError::NotSupported))?
+        }
+        DeviceMonitorRequest::ResetTxPowerScenario { phy_id: _, responder } => {
+            responder.send(Err(fidl_svc::DeviceMonitorError::NotSupported))?
+        }
+        DeviceMonitorRequest::GetTxPowerScenario { phy_id: _, responder } => {
+            responder.send(Err(fidl_svc::DeviceMonitorError::NotSupported))?
+        }
     }
     Ok(())
 }
