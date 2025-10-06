@@ -363,6 +363,7 @@ impl SuspendResumeManager {
             Ok(Ok(res)) => {
                 log_info!("Resuming from container suspension.");
                 let wake_time = zx::BootInstant::get();
+                let resume_reason = res.resume_reason;
                 let mut state = self.lock();
                 state.update_suspend_stats(|suspend_stats| {
                     suspend_stats.success_count += 1;
@@ -373,10 +374,14 @@ impl SuspendResumeManager {
                     // The "0" here is to mimic the expected power management success string,
                     // while we don't have IRQ numbers to report.
                     suspend_stats.last_resume_reason =
-                        res.resume_reason.map(|s| format!("0 {}", s));
+                        resume_reason.clone().map(|s| format!("0 {}", s));
                 });
                 state.suspend_events_node.add_entry(|node| {
                     node.record_int(fobs::SUSPEND_RESUMED_AT, wake_time.into_nanos());
+                    node.record_string(
+                        fobs::SUSPEND_RESUME_REASON,
+                        resume_reason.unwrap_or_default(),
+                    );
                 });
                 fuchsia_trace::instant!(
                     c"power",
