@@ -19,7 +19,10 @@
                 "fuchsia.posix.socket.raw.Provider",
             ],
             from: "#netstack",
-            to: [ "#socket-proxy" ],
+            to: [
+                "#reachability",
+                "#socket-proxy",
+            ],
         },
         {
             protocol: [ "fuchsia.posix.socket.Provider" ],
@@ -29,7 +32,6 @@
                 "#dhcpv6-client",
                 "#dns-resolver",
                 "#http-client",
-                "#reachability",
             ],
         },
         {
