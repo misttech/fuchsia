@@ -10,12 +10,11 @@ use crate::key::igtk::{Igtk, IgtkProvider};
 use crate::key::ptk::Ptk;
 use crate::key_data::kde;
 use crate::nonce::NonceReader;
-use crate::{auth, psk, Authenticator, Supplicant};
+use crate::{Authenticator, Supplicant, auth, psk};
 use eapol::KeyFrameTx;
 use hex::FromHex;
 use ieee80211::{MacAddr, Ssid};
-use lazy_static::lazy_static;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use wlan_common::ie::rsn::cipher::{self};
 use wlan_common::ie::rsn::suite_filter::DEFAULT_GROUP_MGMT_CIPHER;
 use wlan_common::ie::rsn::suite_selector::OUI;
@@ -25,14 +24,15 @@ use wlan_common::ie::rsn::{
 use wlan_common::ie::{fake_wpa_ie, write_wpa1_ie};
 use wlan_common::organization::Oui;
 
-lazy_static! {
-    static ref S_ADDR: MacAddr = MacAddr::from([0x81, 0x76, 0x61, 0x14, 0xDF, 0xC9]);
-    static ref A_ADDR: MacAddr = MacAddr::from([0x1D, 0xE3, 0xFD, 0xDF, 0xCB, 0xD3]);
-    static ref PMK: Box<[u8]> =
-        Vec::from_hex("0dc0d6eb90555ed6419756b9a15ec3e3209b63df707dd508d14581f8982721af")
-            .expect("error reading PMK from hex")
-            .into_boxed_slice();
-}
+static S_ADDR: LazyLock<MacAddr> =
+    LazyLock::new(|| MacAddr::from([0x81, 0x76, 0x61, 0x14, 0xDF, 0xC9]));
+static A_ADDR: LazyLock<MacAddr> =
+    LazyLock::new(|| MacAddr::from([0x1D, 0xE3, 0xFD, 0xDF, 0xCB, 0xD3]));
+static PMK: LazyLock<Box<[u8]>> = LazyLock::new(|| {
+    Vec::from_hex("0dc0d6eb90555ed6419756b9a15ec3e3209b63df707dd508d14581f8982721af")
+        .expect("error reading PMK from hex")
+        .into_boxed_slice()
+});
 
 pub fn get_rsne_protection() -> NegotiatedProtection {
     NegotiatedProtection::from_rsne(&fake_wpa2_s_rsne())

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::key::exchange::handshake::group_key::{self, Config, GroupKeyHandshakeFrame};
-use crate::key::exchange::{compute_mic_from_buf, Key};
+use crate::key::exchange::{Key, compute_mic_from_buf};
 use crate::key::gtk::Gtk;
 use crate::key::igtk::Igtk;
 use crate::key_data::kde::GtkInfoTx;
@@ -11,7 +11,7 @@ use crate::rsna::{
     Dot11VerifiedKeyFrame, IgtkSupport, ProtectionType, SecAssocUpdate, UnverifiedKeyData,
     UpdateSink,
 };
-use crate::{format_rsn_err, key_data, Error};
+use crate::{Error, format_rsn_err, key_data};
 use bytes::Bytes;
 use eapol::KeyFrameBuf;
 use zerocopy::SplitByteSlice;
@@ -55,14 +55,14 @@ impl Supplicant {
                             _ => {
                                 return Err(format_rsn_err!(
                                     "msg1 of Group-Key Handshake must carry encrypted key data"
-                                ))
+                                ));
                             }
                         }
                     }
                 }
             }
             Dot11VerifiedKeyFrame::WithoutMic(_) => {
-                return Err(format_rsn_err!("msg1 of Group-Key Handshake must carry a MIC"))
+                return Err(format_rsn_err!("msg1 of Group-Key Handshake must carry a MIC"));
             }
         };
 
@@ -176,16 +176,14 @@ mod tests {
     use super::*;
     use crate::key::exchange::handshake::group_key::GroupKey;
     use crate::key_data::kde;
-    use crate::rsna::{test_util, NegotiatedProtection, Role};
-    use lazy_static::lazy_static;
+    use crate::rsna::{NegotiatedProtection, Role, test_util};
+    use std::sync::LazyLock;
     use wlan_common::big_endian::BigEndianU64;
-    use wlan_common::ie::rsn::cipher::{Cipher, CIPHER_BIP_CMAC_128, CIPHER_CCMP_128, TKIP};
+    use wlan_common::ie::rsn::cipher::{CIPHER_BIP_CMAC_128, CIPHER_CCMP_128, Cipher, TKIP};
     use wlan_common::organization::Oui;
 
-    lazy_static! {
-        static ref GTK: Box<[u8]> = vec![3; 16].into_boxed_slice();
-        static ref WPA1_GTK: Box<[u8]> = vec![3; 32].into_boxed_slice();
-    }
+    static GTK: LazyLock<Box<[u8]>> = LazyLock::new(|| vec![3; 16].into_boxed_slice());
+    static WPA1_GTK: LazyLock<Box<[u8]>> = LazyLock::new(|| vec![3; 32].into_boxed_slice());
 
     const KCK: [u8; 16] = [1; 16];
     const KEK: [u8; 16] = [2; 16];

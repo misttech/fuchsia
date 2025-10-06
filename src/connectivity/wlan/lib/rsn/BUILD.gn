@@ -40,7 +40,6 @@ rustc_library("wlan-rsn") {
     "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_rust",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:hex",
-    "//third_party/rust_crates:lazy_static",
   ]
 
   sources = [
