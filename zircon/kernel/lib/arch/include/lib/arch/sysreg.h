@@ -177,8 +177,8 @@ class SysReg {
 // compiling for other machines.
 //
 // For example:
-//   ARCH_ARM64_SYSREG(X86Cr0, "cr0");
-//   ARCH_ARM64_SYSREG(X86Db0, "db0");
+//   ARCH_X86_SYSREG(X86Cr0, "cr0");
+//   ARCH_X86_SYSREG(X86Db0, "db0");
 //
 #if defined(__x86_64__) || defined(__i386__)
 #define ARCH_X86_SYSREG(RegisterTag, RegisterName)                                        \
