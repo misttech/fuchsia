@@ -90,12 +90,10 @@ impl SequenceManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lazy_static::lazy_static;
+    use std::sync::LazyLock;
 
-    lazy_static! {
-        static ref FIRST_PEER: MacAddr = MacAddr::from([1; 6]);
-        static ref SECOND_PEER: MacAddr = MacAddr::from([2; 6]);
-    }
+    static FIRST_PEER: LazyLock<MacAddr> = LazyLock::new(|| MacAddr::from([1; 6]));
+    static SECOND_PEER: LazyLock<MacAddr> = LazyLock::new(|| MacAddr::from([2; 6]));
 
     #[test]
     fn sns1_next() {
