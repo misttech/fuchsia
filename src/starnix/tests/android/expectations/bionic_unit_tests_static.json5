@@ -31,10 +31,6 @@
                 "malloc.mallopt_scudo_only_options",
                 "malloc.zero_init",
 
-                // TODO(https://fxbug.dev/42054960): Implement membarrier
-                "membarrier.private_expedited",
-                "membarrier.private_expedited_sync_core",
-
                 // SIOCGIFNAME
                 "net_if.if_nameindex",
                 "net_if.if_nametoindex_if_indextoname",

@@ -202,6 +202,19 @@ pub enum DumpPolicy {
     User,
 }
 
+// Supported types of membarriers.
+pub enum MembarrierType {
+    Memory,   // MEMBARRIER_CMD_GLOBAL, etc
+    SyncCore, // MEMBARRIER_CMD_..._SYNC_CORE
+}
+
+// Tracks the types of membarriers this address space is registered to receive.
+#[derive(Default, Clone)]
+struct MembarrierRegistrations {
+    memory: bool,
+    sync_core: bool,
+}
+
 pub struct MemoryManagerState {
     /// The VMAR in which userspace mappings occur.
     ///
@@ -264,6 +277,9 @@ pub struct MemoryManagerForkableState {
     pub mmap_top: UserAddress,
     pub stack_origin: UserAddress,
     pub brk_origin: UserAddress,
+
+    // Membarrier registrations
+    membarrier_registrations: MembarrierRegistrations,
 }
 
 impl Deref for MemoryManagerState {
@@ -2064,6 +2080,34 @@ impl MemoryManagerState {
             // info query is well-formed.
             .expect("must be able to query mappings for private user VMAR")
     }
+
+    /// Register the address space managed by this memory manager for interest in
+    /// receiving private expedited memory barriers of the given kind.
+    pub fn register_membarrier_private_expedited(
+        &mut self,
+        mtype: MembarrierType,
+    ) -> Result<(), Errno> {
+        let registrations = &mut self.forkable_state.membarrier_registrations;
+        match mtype {
+            MembarrierType::Memory => {
+                registrations.memory = true;
+            }
+            MembarrierType::SyncCore => {
+                registrations.sync_core = true;
+            }
+        }
+        Ok(())
+    }
+
+    /// Checks if the address space managed by this memory manager is registered
+    /// for interest in private expedited barriers of the given kind.
+    pub fn membarrier_private_expedited_registered(&self, mtype: MembarrierType) -> bool {
+        let registrations = &self.forkable_state.membarrier_registrations;
+        match mtype {
+            MembarrierType::Memory => registrations.memory,
+            MembarrierType::SyncCore => registrations.sync_core,
+        }
+    }
 }
 
 fn create_user_vmar(vmar: &zx::Vmar, vmar_info: &zx::VmarInfo) -> Result<zx::Vmar, zx::Status> {
@@ -2342,6 +2386,21 @@ impl MemoryManager {
     /// Performs a data and instruction cache flush over the given address range.
     pub fn cache_flush(&self, range: Range<UserAddress>) -> Result<(), Errno> {
         self.state.read().cache_flush(range)
+    }
+
+    /// Register the address space managed by this memory manager for interest in
+    /// receiving private expedited memory barriers of the given type.
+    pub fn register_membarrier_private_expedited(
+        &self,
+        mtype: MembarrierType,
+    ) -> Result<(), Errno> {
+        self.state.write().register_membarrier_private_expedited(mtype)
+    }
+
+    /// Checks if the address space managed by this memory manager is registered
+    /// for interest in private expedited barriers of the given kind.
+    pub fn membarrier_private_expedited_registered(&self, mtype: MembarrierType) -> bool {
+        self.state.read().membarrier_private_expedited_registered(mtype)
     }
 }
 

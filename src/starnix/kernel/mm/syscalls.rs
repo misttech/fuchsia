@@ -4,8 +4,8 @@
 
 use crate::mm::debugger::notify_debugger_of_module_list;
 use crate::mm::{
-    DesiredAddress, FutexKey, IOVecPtr, MappingName, MappingOptions, MemoryAccessorExt,
-    MremapFlags, PAGE_SIZE, PrivateFutexKey, ProtectionFlags, SharedFutexKey,
+    DesiredAddress, FutexKey, IOVecPtr, MappingName, MappingOptions, MembarrierType,
+    MemoryAccessorExt, MremapFlags, PAGE_SIZE, PrivateFutexKey, ProtectionFlags, SharedFutexKey,
 };
 use crate::security;
 use crate::syscalls::time::TimeSpecPtr;
@@ -413,7 +413,7 @@ pub fn sys_process_mrelease(
 
 pub fn sys_membarrier(
     _locked: &mut Locked<Unlocked>,
-    _current_task: &CurrentTask,
+    current_task: &CurrentTask,
     cmd: uapi::membarrier_cmd,
     _flags: u32,
     _cpu_id: i32,
@@ -428,28 +428,49 @@ pub fn sys_membarrier(
             | uapi::membarrier_cmd_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED
             | uapi::membarrier_cmd_MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE
             | uapi::membarrier_cmd_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE),
-        // All data memory barriers are treated as a global data memory barrier.
+        // Global and global expedited barriers are treated identically. We don't track
+        // registration for global expedited barriers currently.
         uapi::membarrier_cmd_MEMBARRIER_CMD_GLOBAL
-        | uapi::membarrier_cmd_MEMBARRIER_CMD_GLOBAL_EXPEDITED
-        | uapi::membarrier_cmd_MEMBARRIER_CMD_PRIVATE_EXPEDITED => {
+        | uapi::membarrier_cmd_MEMBARRIER_CMD_GLOBAL_EXPEDITED => {
             // SAFETY: This wraps the zx_system_barrier call which is safe.
             let _ = unsafe { zx::sys::zx_system_barrier(ZX_SYSTEM_BARRIER_DATA_MEMORY) };
             Ok(0)
         }
+        // Global registration commands are ignored.
+        uapi::membarrier_cmd_MEMBARRIER_CMD_REGISTER_GLOBAL_EXPEDITED => Ok(0),
+        uapi::membarrier_cmd_MEMBARRIER_CMD_PRIVATE_EXPEDITED => {
+            // A private expedited barrier is only issued if the address space is registered
+            // for these barriers.
+            if current_task.mm()?.membarrier_private_expedited_registered(MembarrierType::Memory) {
+                // If a barrier is requested, issue a global barrier.
+                // SAFETY: This wraps the zx_system_barrier call which is safe.
+                let _ = unsafe { zx::sys::zx_system_barrier(ZX_SYSTEM_BARRIER_DATA_MEMORY) };
+                Ok(0)
+            } else {
+                error!(EPERM)
+            }
+        }
         // Private sync core barriers are treated as global instruction stream barriers.
         uapi::membarrier_cmd_MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE => {
-            // SAFETY: This wraps the zx_system_barrier call which is safe.
-            let _ = unsafe { zx::sys::zx_system_barrier(ZX_SYSTEM_BARRIER_INSTRUCTION_STREAM) };
+            if current_task.mm()?.membarrier_private_expedited_registered(MembarrierType::SyncCore)
+            {
+                // SAFETY: This wraps the zx_system_barrier call which is safe.
+                let _ = unsafe { zx::sys::zx_system_barrier(ZX_SYSTEM_BARRIER_INSTRUCTION_STREAM) };
+                Ok(0)
+            } else {
+                error!(EPERM)
+            }
+        }
+        uapi::membarrier_cmd_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED => {
+            let _ =
+                current_task.mm()?.register_membarrier_private_expedited(MembarrierType::Memory)?;
             Ok(0)
         }
-        // All registration commands are ignored.
-        uapi::membarrier_cmd_MEMBARRIER_CMD_REGISTER_GLOBAL_EXPEDITED
-        | uapi::membarrier_cmd_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED
-        | uapi::membarrier_cmd_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE => {
-            // TODO(https://fxbug.dev/297526152): This isn't quite right, even when treating all
-            // barriers as global. The Linux API returns an error when issuing a barrier with no
-            // registered processes. To implement this, we can either track registrations in
-            // Starnix and generate an error here or we could add the check in the Zircon API.
+
+        uapi::membarrier_cmd_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE => {
+            let _ = current_task
+                .mm()?
+                .register_membarrier_private_expedited(MembarrierType::SyncCore)?;
             Ok(0)
         }
         uapi::membarrier_cmd_MEMBARRIER_CMD_PRIVATE_EXPEDITED_RSEQ => {
