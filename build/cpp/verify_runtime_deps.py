@@ -170,6 +170,7 @@ def check_missing_files(
         if sdk_id:
             # This runtime dependency is an SDK library, verify that it is part
             # of the SDK manifest.
+            assert not source, "Only one of `sdk_id` or `source` should be set."
             dep = atom_deps.get(sdk_id)
             if not dep:
                 errors.add_missing_sdk_dependency(entry)
@@ -178,10 +179,15 @@ def check_missing_files(
         elif source:
             # Ignore sysroot libs
             if os.path.basename(source) in _SYSROOT_LIBS:
+                # TODO(https://fxbug.dev/447151364): Determine whether this
+                # unused logic is necessary.
+                assert False
                 continue
 
             # This runtime dependency is *not* an SDK library, this is an error.
             errors.add_non_sdk_dependency(entry)
+        else:
+            assert False, "Runtime entry is missing 'sdk_id' or 'source'."
 
     return errors
 
