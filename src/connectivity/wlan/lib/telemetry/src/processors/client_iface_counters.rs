@@ -12,10 +12,10 @@ use {fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_stats as f
 
 use log::{error, warn};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 use windowed_stats::experimental::clock::Timed;
-use windowed_stats::experimental::series::interpolation::{Constant, LastSample};
+use windowed_stats::experimental::series::interpolation::{ConstantSample, LastSample};
 use windowed_stats::experimental::series::metadata::BitSetNode;
 use windowed_stats::experimental::series::statistic::{
     ArithmeticMean, Last, LatchMax, Max, Min, PostAggregation, Sum, Union,
@@ -91,11 +91,17 @@ impl<S: InspectSender> ClientIfaceCountersLogger<S> {
                         (support.inspect_counter_configs, support.inspect_gauge_configs)
                     }
                     Ok(Err(code)) => {
-                        warn!("Failed to query telemetry support with status code {}. No driver-specific stats will be captured", code);
+                        warn!(
+                            "Failed to query telemetry support with status code {}. No driver-specific stats will be captured",
+                            code
+                        );
                         (None, None)
                     }
                     Err(e) => {
-                        error!("Failed to query telemetry support with error {}. No driver-specific stats will be captured", e);
+                        error!(
+                            "Failed to query telemetry support with error {}. No driver-specific stats will be captured",
+                            e
+                        );
                         (None, None)
                     }
                 };
@@ -150,11 +156,17 @@ impl<S: InspectSender> ClientIfaceCountersLogger<S> {
                 Some(proxy)
             }
             Ok(Err(e)) => {
-                error!("Request for SME telemetry for iface {} completed with error {}. No telemetry will be captured.", iface_id, e);
+                error!(
+                    "Request for SME telemetry for iface {} completed with error {}. No telemetry will be captured.",
+                    iface_id, e
+                );
                 None
             }
             Err(e) => {
-                error!("Failed to request SME telemetry for iface {} with error {}. No telemetry will be captured.", iface_id, e);
+                error!(
+                    "Failed to request SME telemetry for iface {} with error {}. No telemetry will be captured.",
+                    iface_id, e
+                );
                 None
             }
         };
@@ -296,28 +308,37 @@ fn create_time_series_for_gauge<S: InspectSender>(
     match statistic {
         fidl_stats::GaugeStatistic::Min => Some(time_matrix_client.inspect_time_matrix(
             format!("{gauge_name}.min"),
-            TimeMatrix::<Min<i64>, Constant>::new(SamplingProfile::balanced(), Constant::default()),
+            TimeMatrix::<Min<i64>, ConstantSample>::new(
+                SamplingProfile::balanced(),
+                ConstantSample::default(),
+            ),
         )),
         fidl_stats::GaugeStatistic::Max => Some(time_matrix_client.inspect_time_matrix(
             format!("{gauge_name}.max"),
-            TimeMatrix::<Max<i64>, Constant>::new(SamplingProfile::balanced(), Constant::default()),
+            TimeMatrix::<Max<i64>, ConstantSample>::new(
+                SamplingProfile::balanced(),
+                ConstantSample::default(),
+            ),
         )),
         fidl_stats::GaugeStatistic::Sum => Some(time_matrix_client.inspect_time_matrix(
             format!("{gauge_name}.sum"),
-            TimeMatrix::<Sum<i64>, Constant>::new(SamplingProfile::balanced(), Constant::default()),
+            TimeMatrix::<Sum<i64>, ConstantSample>::new(
+                SamplingProfile::balanced(),
+                ConstantSample::default(),
+            ),
         )),
         fidl_stats::GaugeStatistic::Last => Some(time_matrix_client.inspect_time_matrix(
             format!("{gauge_name}.last"),
-            TimeMatrix::<Last<i64>, Constant>::new(
+            TimeMatrix::<Last<i64>, ConstantSample>::new(
                 SamplingProfile::balanced(),
-                Constant::default(),
+                ConstantSample::default(),
             ),
         )),
         fidl_stats::GaugeStatistic::Mean => Some(time_matrix_client.inspect_time_matrix(
             format!("{gauge_name}.mean"),
-            TimeMatrix::<ArithmeticMean<i64>, Constant>::new(
+            TimeMatrix::<ArithmeticMean<i64>, ConstantSample>::new(
                 SamplingProfile::balanced(),
-                Constant::default(),
+                ConstantSample::default(),
             ),
         )),
         _ => None,
@@ -592,9 +613,9 @@ impl SignalTimeSeries {
         );
         let tx_rate_500kbps = client.inspect_time_matrix(
             "tx_rate_500kbps",
-            TimeMatrix::<_, Constant>::with_statistic(
+            TimeMatrix::<_, ConstantSample>::with_statistic(
                 SamplingProfile::default(),
-                Constant::default(),
+                ConstantSample::default(),
                 PostAggregation::<ArithmeticMean<u64>, _>::from_transform(|aggregation: f32| {
                     aggregation.ceil() as u64
                 }),
@@ -602,9 +623,9 @@ impl SignalTimeSeries {
         );
         let rssi = client.inspect_time_matrix(
             "rssi",
-            TimeMatrix::<_, Constant>::with_statistic(
+            TimeMatrix::<_, ConstantSample>::with_statistic(
                 SamplingProfile::default(),
-                Constant::default(),
+                ConstantSample::default(),
                 PostAggregation::<ArithmeticMean<i64>, _>::from_transform(|aggregation: f32| {
                     aggregation.ceil() as i64
                 }),
@@ -612,9 +633,9 @@ impl SignalTimeSeries {
         );
         let snr = client.inspect_time_matrix(
             "snr",
-            TimeMatrix::<_, Constant>::with_statistic(
+            TimeMatrix::<_, ConstantSample>::with_statistic(
                 SamplingProfile::default(),
-                Constant::default(),
+                ConstantSample::default(),
                 PostAggregation::<ArithmeticMean<i64>, _>::from_transform(|aggregation: f32| {
                     aggregation.ceil() as i64
                 }),
@@ -660,7 +681,7 @@ mod tests {
     use super::*;
     use crate::testing::*;
     use assert_matches::assert_matches;
-    use diagnostics_assertions::{assert_data_tree, AnyNumericProperty};
+    use diagnostics_assertions::{AnyNumericProperty, assert_data_tree};
     use futures::TryStreamExt;
     use std::pin::pin;
     use std::task::Poll;

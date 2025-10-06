@@ -19,7 +19,7 @@ use std::num::NonZeroUsize;
 
 use crate::experimental::series::SamplingInterval;
 use crate::experimental::series::buffer::encoding::Encoding;
-use crate::experimental::series::interpolation::Interpolation;
+use crate::experimental::series::interpolation::InterpolationKind;
 
 use Capacity::MinSamples;
 
@@ -41,7 +41,7 @@ use Capacity::MinSamples;
 /// [`RingBuffer`]: crate::experimental::series::buffer::RingBuffer
 pub trait BufferStrategy<A, P>
 where
-    P: Interpolation,
+    P: InterpolationKind,
 {
     type Buffer: Clone + RingBuffer<A>;
 

@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use strum_macros::{Display, EnumIter};
 use windowed_stats::experimental::clock::Timed;
-use windowed_stats::experimental::series::interpolation::{Constant, LastSample};
+use windowed_stats::experimental::series::interpolation::{ConstantSample, LastSample};
 use windowed_stats::experimental::series::metadata::{BitSetMap, BitSetNode};
 use windowed_stats::experimental::series::statistic::Union;
 use windowed_stats::experimental::series::{SamplingProfile, TimeMatrix};
@@ -430,9 +430,9 @@ impl ConnectDisconnectTimeSeries {
         );
         let connected_networks = client.inspect_time_matrix_with_metadata(
             "connected_networks",
-            TimeMatrix::<Union<u64>, Constant>::new(
+            TimeMatrix::<Union<u64>, ConstantSample>::new(
                 SamplingProfile::granular(),
-                Constant::default(),
+                ConstantSample::default(),
             ),
             BitSetNode::from_path(format!(
                 "{}/{}",
@@ -442,9 +442,9 @@ impl ConnectDisconnectTimeSeries {
         );
         let disconnected_networks = client.inspect_time_matrix_with_metadata(
             "disconnected_networks",
-            TimeMatrix::<Union<u64>, Constant>::new(
+            TimeMatrix::<Union<u64>, ConstantSample>::new(
                 SamplingProfile::granular(),
-                Constant::default(),
+                ConstantSample::default(),
             ),
             // This time matrix shares its bit labels with `connected_networks`.
             BitSetNode::from_path(format!(
@@ -455,9 +455,9 @@ impl ConnectDisconnectTimeSeries {
         );
         let disconnect_sources = client.inspect_time_matrix_with_metadata(
             "disconnect_sources",
-            TimeMatrix::<Union<u64>, Constant>::new(
+            TimeMatrix::<Union<u64>, ConstantSample>::new(
                 SamplingProfile::granular(),
-                Constant::default(),
+                ConstantSample::default(),
             ),
             BitSetNode::from_path(format!(
                 "{}/{}",

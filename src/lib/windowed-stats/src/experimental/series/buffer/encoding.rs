@@ -8,7 +8,7 @@ use byteorder::WriteBytesExt;
 use std::io;
 
 use crate::experimental::series::buffer::RingBuffer;
-use crate::experimental::series::interpolation::Interpolation;
+use crate::experimental::series::interpolation::InterpolationKind;
 use crate::experimental::series::statistic::{Aggregation, SerialStatistic};
 
 /// Describes the encoding of a [`RingBuffer`] type.
@@ -153,7 +153,7 @@ pub mod payload {
 pub fn serialize_buffer_type_descriptors<F, P>(write: impl io::Write) -> io::Result<()>
 where
     F: SerialStatistic<P>,
-    P: Interpolation,
+    P: InterpolationKind,
 {
     type BufferEncoding<F, P> =
         <<F as SerialStatistic<P>>::Buffer as RingBuffer<Aggregation<F>>>::Encoding;

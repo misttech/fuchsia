@@ -13,7 +13,7 @@ use thiserror::Error;
 
 use crate::experimental::clock::MonotonicityError;
 use crate::experimental::series::buffer::{BufferStrategy, RingBuffer};
-use crate::experimental::series::interpolation::Interpolation;
+use crate::experimental::series::interpolation::InterpolationKind;
 use crate::experimental::series::interval::SamplingInterval;
 use crate::experimental::series::{BitSet, Counter, DataSemantic, Gauge};
 use crate::experimental::vec1::Vec1;
@@ -124,7 +124,7 @@ impl<F> StatisticExt for F where F: Statistic {}
 /// [`TimeMatrix`]: crate::experimental::series::TimeMatrix
 pub trait SerialStatistic<P>: Statistic
 where
-    P: Interpolation,
+    P: InterpolationKind,
 {
     type Buffer: Clone + RingBuffer<Self::Aggregation>;
 
@@ -141,7 +141,7 @@ where
     // The data semantic must implement `BufferStrategy` for the `Statistic`'s aggregation type and
     // the given `Interpolation` type `P`.
     F::Semantic: BufferStrategy<F::Aggregation, P>,
-    P: Interpolation,
+    P: InterpolationKind,
 {
     type Buffer = <F::Semantic as BufferStrategy<F::Aggregation, P>>::Buffer;
 

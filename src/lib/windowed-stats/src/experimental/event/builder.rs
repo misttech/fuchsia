@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 use crate::experimental::clock::Timed;
 use crate::experimental::event::Event;
 use crate::experimental::event::reactor::{Context, Reactor};
-use crate::experimental::series::interpolation::Interpolation;
+use crate::experimental::series::interpolation::InterpolationKind;
 use crate::experimental::series::statistic::{FoldError, Metadata, SerialStatistic, Statistic};
 use crate::experimental::series::{MatrixSampler, SamplingProfile, TimeMatrix};
 use crate::experimental::serve::{InspectSender, InspectedTimeMatrix, TimeMatrixClient};
@@ -80,14 +80,14 @@ where
         client: &TimeMatrixClient,
         name: impl AsRef<str>,
         profile: SamplingProfile,
-        interpolation: P::State<F>,
+        interpolation: P::Output<F::Sample>,
     ) -> impl Reactor<F::Sample, S, Response = (), Error = FoldError>
     where
         TimeMatrix<F, P>: 'static + MatrixSampler<F::Sample> + Send,
         Metadata<F>: 'static + Send + Sync,
         F: SerialStatistic<P>,
         F::Sample: Send,
-        P: Interpolation<FillSample<F> = F::Sample>,
+        P: InterpolationKind,
     {
         let SampleDataRecord { statistic, metadata, .. } = self;
         let matrix = client.inspect_time_matrix_with_metadata(
@@ -129,14 +129,14 @@ where
         client: &TimeMatrixClient,
         name: impl AsRef<str>,
         profile: SamplingProfile,
-        interpolation: P::State<F>,
+        interpolation: P::Output<F::Sample>,
     ) -> impl Reactor<F::Sample, S, Response = (), Error = FoldError>
     where
         TimeMatrix<F, P>: 'static + MatrixSampler<F::Sample> + Send,
         Metadata<F>: 'static + Send + Sync,
         F: SerialStatistic<P>,
         F::Sample: Send,
-        P: Interpolation<FillSample<F> = F::Sample>,
+        P: InterpolationKind,
     {
         let SampleDataRecord { statistic, .. } = self;
         let matrix = client.inspect_time_matrix(

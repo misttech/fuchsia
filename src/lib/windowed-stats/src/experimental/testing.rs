@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use crate::experimental::clock::{Timed, Timestamp};
-use crate::experimental::series::interpolation::Interpolation;
+use crate::experimental::series::interpolation::InterpolationKind;
 use crate::experimental::series::statistic::{FoldError, Metadata, SerialStatistic};
 use crate::experimental::series::{Interpolator, MatrixSampler, SerializedBuffer, TimeMatrix};
 use crate::experimental::serve::{
@@ -118,7 +118,7 @@ impl InspectSender for MockTimeMatrixClient {
         Metadata<F>: 'static + Send + Sync,
         F: SerialStatistic<P>,
         F::Sample: Send,
-        P: Interpolation<FillSample<F> = F::Sample>,
+        P: InterpolationKind,
     {
         let name = name.into();
         let (sender, matrix) = BufferedSampler::from_time_matrix(MockTimeMatrix::new(
@@ -140,7 +140,7 @@ impl InspectSender for MockTimeMatrixClient {
         Metadata<F>: 'static + Send + Sync,
         F: SerialStatistic<P>,
         F::Sample: Send,
-        P: Interpolation<FillSample<F> = F::Sample>,
+        P: InterpolationKind,
     {
         self.inspect_time_matrix(name, matrix)
     }

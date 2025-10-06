@@ -12,7 +12,7 @@ use std::sync::Arc;
 use {async_channel as mpmc, fuchsia_async as fasync};
 
 use crate::experimental::clock::{Timed, Timestamp};
-use crate::experimental::series::interpolation::Interpolation;
+use crate::experimental::series::interpolation::InterpolationKind;
 use crate::experimental::series::statistic::{FoldError, Metadata, SerialStatistic};
 use crate::experimental::series::{Interpolator, MatrixSampler, SerializedBuffer, TimeMatrix};
 use crate::experimental::vec1::Vec1;
@@ -173,7 +173,7 @@ pub trait InspectSender {
         Metadata<F>: 'static + Send + Sync,
         F: SerialStatistic<P>,
         F::Sample: Send,
-        P: Interpolation<FillSample<F> = F::Sample>;
+        P: InterpolationKind;
 
     /// Sends a [`TimeMatrix`] to the client's inspection server.
     ///
@@ -194,7 +194,7 @@ pub trait InspectSender {
         Metadata<F>: 'static + Send + Sync,
         F: SerialStatistic<P>,
         F::Sample: Send,
-        P: Interpolation<FillSample<F> = F::Sample>;
+        P: InterpolationKind;
 }
 
 type SharedTimeMatrix = Arc<AsyncMutex<dyn ServedTimeMatrix>>;
@@ -223,7 +223,7 @@ impl TimeMatrixClient {
         Metadata<F>: 'static + Send + Sync,
         F: SerialStatistic<P>,
         F::Sample: Send,
-        P: Interpolation<FillSample<F> = F::Sample>,
+        P: InterpolationKind,
         R: 'static + Clone + Fn(&InspectNode) + Send + Sync,
     {
         let name = name.into();
@@ -254,7 +254,7 @@ impl InspectSender for TimeMatrixClient {
         Metadata<F>: 'static + Send + Sync,
         F: SerialStatistic<P>,
         F::Sample: Send,
-        P: Interpolation<FillSample<F> = F::Sample>,
+        P: InterpolationKind,
     {
         self.inspect_and_record_with(name, matrix, |_node| {})
     }
@@ -270,7 +270,7 @@ impl InspectSender for TimeMatrixClient {
         Metadata<F>: 'static + Send + Sync,
         F: SerialStatistic<P>,
         F::Sample: Send,
-        P: Interpolation<FillSample<F> = F::Sample>,
+        P: InterpolationKind,
     {
         let metadata = Arc::new(metadata.into());
         self.inspect_and_record_with(name, matrix, move |node| {

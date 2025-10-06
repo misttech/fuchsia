@@ -25,7 +25,7 @@ use crate::experimental::series::buffer::{
     Uncompressed, ZigzagSimple8bRle, encoding,
 };
 use crate::experimental::series::interpolation::{
-    Constant, Interpolation, InterpolationFor, InterpolationState, LastSample,
+    ConstantSample, Interpolation, InterpolationKind, LastSample,
 };
 use crate::experimental::series::metadata::{BitSetIndex, Metadata};
 use crate::experimental::series::statistic::{
@@ -99,12 +99,12 @@ pub enum Gauge {}
 
 impl<P> BufferStrategy<f32, P> for Gauge
 where
-    P: Interpolation,
+    P: InterpolationKind,
 {
     type Buffer = Uncompressed<f32>;
 }
 
-impl BufferStrategy<i64, Constant> for Gauge {
+impl BufferStrategy<i64, ConstantSample> for Gauge {
     type Buffer = ZigzagSimple8bRle;
 }
 
@@ -112,7 +112,7 @@ impl BufferStrategy<i64, LastSample> for Gauge {
     type Buffer = DeltaZigzagSimple8bRle<i64>;
 }
 
-impl BufferStrategy<u64, Constant> for Gauge {
+impl BufferStrategy<u64, ConstantSample> for Gauge {
     type Buffer = Simple8bRle;
 }
 
@@ -140,7 +140,7 @@ pub enum BitSet {}
 impl<A, P> BufferStrategy<A, P> for BitSet
 where
     Simple8bRle: RingBuffer<A>,
-    P: Interpolation,
+    P: InterpolationKind,
 {
     type Buffer = Simple8bRle;
 }
@@ -215,7 +215,7 @@ where
         tick: Tick,
     ) -> impl 'i + Iterator<Item = Result<(NonZeroUsize, F::Aggregation), FoldError>>
     where
-        P: InterpolationState<F::Aggregation, FillSample = F::Sample>,
+        P: Interpolation<F::Sample>,
     {
         self.interval.fold_and_get_expirations(tick, PhantomData::<F::Sample>).flat_map(
             move |expiration| {
@@ -241,7 +241,7 @@ where
         sample: F::Sample,
     ) -> impl 'i + Iterator<Item = Result<(NonZeroUsize, F::Aggregation), FoldError>>
     where
-        P: InterpolationState<F::Aggregation, FillSample = F::Sample>,
+        P: Interpolation<F::Sample>,
     {
         self.interval.fold_and_get_expirations(tick, sample).flat_map(move |expiration| {
             expiration.fold_and_get_aggregation(&mut self.statistic, interpolation).transpose()
@@ -272,27 +272,27 @@ where
 /// the buffer.
 #[derive(Derivative)]
 #[derivative(
-    Clone(bound = "F: Clone, F::Buffer: Clone, P::State<F>: Clone,"),
+    Clone(bound = "F: Clone, F::Buffer: Clone, P::Output<F::Sample>: Clone,"),
     Debug(bound = "F: Debug,
                    F::Buffer: Debug,
-                   P::State<F>: Debug,")
+                   P::Output<F::Sample>: Debug,")
 )]
 struct BufferedTimeSeries<F, P>
 where
     F: SerialStatistic<P>,
-    P: Interpolation<FillSample<F> = F::Sample>,
+    P: InterpolationKind,
 {
     buffer: F::Buffer,
-    interpolation: P::State<F>,
+    interpolation: P::Output<F::Sample>,
     series: TimeSeries<F>,
 }
 
 impl<F, P> BufferedTimeSeries<F, P>
 where
     F: SerialStatistic<P>,
-    P: Interpolation<FillSample<F> = F::Sample>,
+    P: InterpolationKind,
 {
-    pub fn new(interpolation: P::State<F>, series: TimeSeries<F>) -> Self {
+    pub fn new(interpolation: P::Output<F::Sample>, series: TimeSeries<F>) -> Self {
         let buffer = F::buffer(&series.interval);
         BufferedTimeSeries { buffer, interpolation, series }
     }
@@ -363,15 +363,15 @@ pub struct SerializedBuffer {
 /// time matrix must be the same, but the sampling intervals can and should differ.
 #[derive(Derivative)]
 #[derivative(
-    Clone(bound = "F: Clone, F::Buffer: Clone, P::State<F>: Clone,"),
+    Clone(bound = "F: Clone, F::Buffer: Clone, P::Output<F::Sample>: Clone,"),
     Debug(bound = "F: Debug,
                    F::Buffer: Debug,
-                   P::State<F>: Debug,")
+                   P::Output<F::Sample>: Debug,")
 )]
 pub struct TimeMatrix<F, P>
 where
     F: SerialStatistic<P>,
-    P: Interpolation<FillSample<F> = F::Sample>,
+    P: InterpolationKind,
 {
     created: Timestamp,
     last: ObservationTime,
@@ -381,11 +381,11 @@ where
 impl<F, P> TimeMatrix<F, P>
 where
     F: SerialStatistic<P>,
-    P: Interpolation<FillSample<F> = F::Sample>,
+    P: InterpolationKind,
 {
     fn from_series_with<Q>(series: impl Into<Vec1<TimeSeries<F>>>, mut interpolation: Q) -> Self
     where
-        Q: FnMut() -> P::State<F>,
+        Q: FnMut() -> P::Output<F::Sample>,
     {
         let buffers =
             series.into().map_into(|series| BufferedTimeSeries::new((interpolation)(), series));
@@ -395,7 +395,7 @@ where
     /// Constructs a time matrix with the given sampling profile and interpolation.
     ///
     /// Statistics are default initialized.
-    pub fn new(profile: impl Into<SamplingProfile>, interpolation: P::State<F>) -> Self
+    pub fn new(profile: impl Into<SamplingProfile>, interpolation: P::Output<F::Sample>) -> Self
     where
         F: Default,
     {
@@ -408,7 +408,7 @@ where
     /// Constructs a time matrix with the given statistic.
     pub fn with_statistic(
         profile: impl Into<SamplingProfile>,
-        interpolation: P::State<F>,
+        interpolation: P::Output<F::Sample>,
         statistic: F,
     ) -> Self {
         let sampling_intervals = profile.into().into_sampling_intervals();
@@ -477,14 +477,14 @@ where
     PostAggregation<F, R>: SerialStatistic<P, Aggregation = A>,
     F: Default + SerialStatistic<P>,
     R: Clone + Fn(F::Aggregation) -> A,
-    P: InterpolationFor<PostAggregation<F, R>>,
+    P: InterpolationKind,
     A: Clone,
 {
     /// Constructs a time matrix with the default statistic and given transform for
     /// post-aggregation.
     pub fn with_transform(
         profile: impl Into<SamplingProfile>,
-        interpolation: P::State<PostAggregation<F, R>>,
+        interpolation: P::Output<<PostAggregation<F, R> as Statistic>::Sample>,
         transform: R,
     ) -> Self
     where
@@ -502,18 +502,18 @@ where
 impl<F, P> Default for TimeMatrix<F, P>
 where
     F: Default + SerialStatistic<P>,
-    P: Interpolation<FillSample<F> = F::Sample>,
-    P::State<F>: Default,
+    P: InterpolationKind,
+    P::Output<F::Sample>: Default,
 {
     fn default() -> Self {
-        TimeMatrix::new(SamplingProfile::default(), P::State::default())
+        TimeMatrix::new(SamplingProfile::default(), P::Output::default())
     }
 }
 
 impl<F, P> Interpolator for TimeMatrix<F, P>
 where
     F: SerialStatistic<P>,
-    P: Interpolation<FillSample<F> = F::Sample>,
+    P: InterpolationKind,
 {
     fn interpolate(&mut self, timestamp: Timestamp) -> Result<(), FoldError> {
         let tick = self.last.tick(timestamp.into(), false)?;
@@ -538,7 +538,7 @@ where
 impl<F, P> MatrixSampler<F::Sample> for TimeMatrix<F, P>
 where
     F: SerialStatistic<P>,
-    P: Interpolation<FillSample<F> = F::Sample>,
+    P: InterpolationKind,
 {
     fn fold(&mut self, sample: Timed<F::Sample>) -> Result<(), FoldError> {
         let (timestamp, sample) = sample.into();
@@ -554,7 +554,7 @@ mod tests {
     use fuchsia_async as fasync;
 
     use crate::experimental::clock::{Timed, Timestamp};
-    use crate::experimental::series::interpolation::{Constant, LastSample};
+    use crate::experimental::series::interpolation::{ConstantSample, LastSample};
     use crate::experimental::series::statistic::{
         ArithmeticMean, LatchMax, Max, PostAggregation, Sum, Transform, Union,
     };
@@ -578,14 +578,14 @@ mod tests {
         let _exec = fasync::TestExecutor::new_with_fake_time();
 
         // Arithmetic mean time matrices.
-        let _ = TimeMatrix::<Mean<f32>, Constant>::default();
+        let _ = TimeMatrix::<Mean<f32>, ConstantSample>::default();
         let _ = TimeMatrix::<Mean<f32>, LastSample>::new(
             SamplingProfile::balanced(),
             LastSample::or(0.0f32),
         );
-        let _ = TimeMatrix::<_, Constant>::with_statistic(
+        let _ = TimeMatrix::<_, ConstantSample>::with_statistic(
             SamplingProfile::granular(),
-            Constant::default(),
+            ConstantSample::default(),
             Mean::<f32>::default(),
         );
 
@@ -598,9 +598,9 @@ mod tests {
         fold_and_interpolate_f32(&mut matrix);
         // This time matrix is constructed verbosely with no ad-hoc type definitions nor ergonomic
         // constructors. This is as raw as it gets.
-        let mut matrix = TimeMatrix::<_, Constant>::with_statistic(
+        let mut matrix = TimeMatrix::<_, ConstantSample>::with_statistic(
             SamplingProfile::default(),
-            Constant::default(),
+            ConstantSample::default(),
             PostAggregation::<ArithmeticMean<f32>, _>::from_transform(|aggregation: f32| {
                 aggregation.ceil() as i64
             }),
@@ -615,14 +615,14 @@ mod tests {
     fn static_test_supported_statistic_and_interpolation_combinations() {
         let _exec = fasync::TestExecutor::new_with_fake_time();
 
-        let _ = TimeMatrix::<ArithmeticMean<f32>, Constant>::default();
+        let _ = TimeMatrix::<ArithmeticMean<f32>, ConstantSample>::default();
         let _ = TimeMatrix::<ArithmeticMean<f32>, LastSample>::default();
         let _ = TimeMatrix::<LatchMax<u64>, LastSample>::default();
-        let _ = TimeMatrix::<Max<u64>, Constant>::default();
+        let _ = TimeMatrix::<Max<u64>, ConstantSample>::default();
         let _ = TimeMatrix::<Max<u64>, LastSample>::default();
-        let _ = TimeMatrix::<Sum<u64>, Constant>::default();
+        let _ = TimeMatrix::<Sum<u64>, ConstantSample>::default();
         let _ = TimeMatrix::<Sum<u64>, LastSample>::default();
-        let _ = TimeMatrix::<Union<u64>, Constant>::default();
+        let _ = TimeMatrix::<Union<u64>, ConstantSample>::default();
         let _ = TimeMatrix::<Union<u64>, LastSample>::default();
     }
 
@@ -630,9 +630,9 @@ mod tests {
     fn time_matrix_with_uncompressed_buffer() {
         let exec = fasync::TestExecutor::new_with_fake_time();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(3_000_000_000));
-        let mut time_matrix = TimeMatrix::<ArithmeticMean<f32>, Constant>::new(
+        let mut time_matrix = TimeMatrix::<ArithmeticMean<f32>, ConstantSample>::new(
             SamplingProfile::highly_granular(),
-            Constant::default(),
+            ConstantSample::default(),
         );
         let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
@@ -700,9 +700,9 @@ mod tests {
     fn time_matrix_with_simple8b_rle_buffer() {
         let exec = fasync::TestExecutor::new_with_fake_time();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(3_000_000_000));
-        let mut time_matrix = TimeMatrix::<Max<u64>, Constant>::new(
+        let mut time_matrix = TimeMatrix::<Max<u64>, ConstantSample>::new(
             SamplingProfile::highly_granular(),
-            Constant::default(),
+            ConstantSample::default(),
         );
         let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
@@ -780,9 +780,9 @@ mod tests {
     fn time_matrix_with_zigzag_simple8b_rle_buffer() {
         let exec = fasync::TestExecutor::new_with_fake_time();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(3_000_000_000));
-        let mut time_matrix = TimeMatrix::<Max<i64>, Constant>::new(
+        let mut time_matrix = TimeMatrix::<Max<i64>, ConstantSample>::new(
             SamplingProfile::highly_granular(),
-            Constant::default(),
+            ConstantSample::default(),
         );
         let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
