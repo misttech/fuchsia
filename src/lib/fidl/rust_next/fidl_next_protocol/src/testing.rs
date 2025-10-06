@@ -255,15 +255,17 @@ pub async fn test_event<T>(make_ends: impl FnOnce() -> (T, T))
 where
     T: Transport + 'static,
 {
-    struct TestClient;
+    struct TestClient<T: Transport> {
+        client: Client<T>,
+    }
 
-    impl<T: Transport> ClientHandler<T> for TestClient {
-        async fn on_event(&mut self, client: &Client<T>, ordinal: u64, buffer: T::RecvBuffer) {
+    impl<T: Transport> ClientHandler<T> for TestClient<T> {
+        async fn on_event(&mut self, _: &Client<T>, ordinal: u64, buffer: T::RecvBuffer) {
             assert_eq!(ordinal, 10);
             let message = buffer.decode::<WireString<'_>>().expect("failed to decode request");
             assert_eq!(&**message, "Surprise!");
 
-            client.close();
+            self.client.close();
         }
     }
 
@@ -276,7 +278,8 @@ where
 
     let (client_end, server_end) = make_ends();
     let client_dispatcher = ClientDispatcher::new(client_end);
-    let client_task = Task::spawn(client_dispatcher.run(TestClient));
+    let client = client_dispatcher.client().clone();
+    let client_task = Task::spawn(client_dispatcher.run(TestClient { client }));
     let server_dispatcher = ServerDispatcher::new(server_end);
     let server = server_dispatcher.server().clone();
     let server_task = Task::spawn(server_dispatcher.run(TestServer));

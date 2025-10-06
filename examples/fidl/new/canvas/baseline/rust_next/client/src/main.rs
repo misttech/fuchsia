@@ -17,7 +17,7 @@ struct CanvasClient {
 impl InstanceClientHandler for CanvasClient {
     async fn on_drawn(
         &mut self,
-        _client: &fidl_next::Client<Instance, fidl::Channel>,
+        _: &fidl_next::Client<Instance, fidl::Channel>,
         event: fidl_next::Response<OnDrawn, fidl::Channel>,
     ) {
         let bounding_box = event.take();
@@ -42,7 +42,7 @@ async fn main() -> Result<(), Error> {
     // Create a client for the Instance protocol, with an event handler to handle the OnDrawn events
     let client = connect_to_protocol::<Instance>()
         .expect("Error connecting to Instance protocol")
-        .spawn_with_handler(client_impl);
+        .spawn_handler(client_impl);
 
     for action in config.script.into_iter() {
         // If the next action in the script is to "WAIT", block until an OnDrawn event is received

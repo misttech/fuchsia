@@ -271,13 +271,13 @@ pub type HandlerTask<T, H, E = <T as HasExecutor>::Executor> =
     <E as Executor>::Task<Result<H, ProtocolError<<T as Transport>::Error>>>;
 
 impl<P, T: Transport> ClientEnd<P, T> {
-    /// Spawns a dispatcher for the given client end with a handler on an
-    /// executor.
+    /// Spawns a dispatcher for the given client end with a handler computed
+    /// from a closure on an executor.
     ///
     /// Returns the client and a join handle for the spawned task.
-    pub fn spawn_full_with_handler_on<H, E>(
+    pub fn spawn_handler_full_on_with<H, E>(
         self,
-        handler: H,
+        create_handler: impl FnOnce(&Client<P, T>) -> H,
         executor: &E,
     ) -> (Client<P, T>, HandlerTask<T, H, E>)
     where
@@ -288,51 +288,120 @@ impl<P, T: Transport> ClientEnd<P, T> {
     {
         let dispatcher = ClientDispatcher::new(self);
         let client = dispatcher.client().clone();
+        let handler = create_handler(&client);
         (client, executor.spawn(dispatcher.run(handler)))
     }
 
     /// Spawns a dispatcher for the given client end with a handler on an
     /// executor.
     ///
-    /// Returns the client.
-    pub fn spawn_with_handler_on<H, E>(self, handler: H, executor: &E) -> Client<P, T>
+    /// Returns the client and a join handle for the spawned task.
+    pub fn spawn_handler_full_on<H, E>(
+        self,
+        handler: H,
+        executor: &E,
+    ) -> (Client<P, T>, HandlerTask<T, H, E>)
     where
         P: DispatchClientMessage<H, T>,
         T: 'static,
         H: Send + 'static,
         E: Executor,
     {
-        let (client, task) = Self::spawn_full_with_handler_on(self, handler, executor);
+        self.spawn_handler_full_on_with(|_| handler, executor)
+    }
+
+    /// Spawns a dispatcher for the given client end with a handler computed
+    /// from a closure on an executor.
+    ///
+    /// Returns the client.
+    pub fn spawn_handler_on_with<H, E>(
+        self,
+        create_handler: impl FnOnce(&Client<P, T>) -> H,
+        executor: &E,
+    ) -> Client<P, T>
+    where
+        P: DispatchClientMessage<H, T>,
+        T: 'static,
+        H: Send + 'static,
+        E: Executor,
+    {
+        let (client, task) = Self::spawn_handler_full_on_with(self, create_handler, executor);
         executor.detach(task);
         client
+    }
+
+    /// Spawns a dispatcher for the given client end with a handler on an
+    /// executor.
+    ///
+    /// Returns the client.
+    pub fn spawn_handler_on<H, E>(self, handler: H, executor: &E) -> Client<P, T>
+    where
+        P: DispatchClientMessage<H, T>,
+        T: 'static,
+        H: Send + 'static,
+        E: Executor,
+    {
+        self.spawn_handler_on_with(|_| handler, executor)
+    }
+
+    /// Spawns a dispatcher for the given client end with a handler computed
+    /// from a closure on the default executor for the transport.
+    ///
+    /// Returns the client and a join handle for the spawned task.
+    pub fn spawn_handler_full_with<H>(
+        self,
+        create_handler: impl FnOnce(&Client<P, T>) -> H,
+    ) -> (Client<P, T>, HandlerTask<T, H>)
+    where
+        P: DispatchClientMessage<H, T>,
+        T: HasExecutor + 'static,
+        H: Send + 'static,
+    {
+        let executor = self.executor();
+        Self::spawn_handler_full_on_with(self, create_handler, &executor)
     }
 
     /// Spawns a dispatcher for the given client end with a handler on the
     /// default executor for the transport.
     ///
     /// Returns the client and a join handle for the spawned task.
-    pub fn spawn_full_with_handler<H>(self, handler: H) -> (Client<P, T>, HandlerTask<T, H>)
+    pub fn spawn_handler_full<H>(self, handler: H) -> (Client<P, T>, HandlerTask<T, H>)
+    where
+        P: DispatchClientMessage<H, T>,
+        T: HasExecutor + 'static,
+        H: Send + 'static,
+    {
+        self.spawn_handler_full_with(|_| handler)
+    }
+
+    /// Spawns a dispatcher for the given client end with a handler computed
+    /// from a closure on the default executor for the transport.
+    ///
+    /// Returns the client.
+    pub fn spawn_handler_with<H>(
+        self,
+        create_handler: impl FnOnce(&Client<P, T>) -> H,
+    ) -> Client<P, T>
     where
         P: DispatchClientMessage<H, T>,
         T: HasExecutor + 'static,
         H: Send + 'static,
     {
         let executor = self.executor();
-        Self::spawn_full_with_handler_on(self, handler, &executor)
+        Self::spawn_handler_on_with(self, create_handler, &executor)
     }
 
     /// Spawns a dispatcher for the given client end with a handler on the
     /// default executor for the transport.
     ///
     /// Returns the client.
-    pub fn spawn_with_handler<H>(self, handler: H) -> Client<P, T>
+    pub fn spawn_handler<H>(self, handler: H) -> Client<P, T>
     where
         P: DispatchClientMessage<H, T>,
         T: HasExecutor + 'static,
         H: Send + 'static,
     {
-        let executor = self.executor();
-        Self::spawn_with_handler_on(self, handler, &executor)
+        self.spawn_handler_with(|_| handler)
     }
 
     /// Spawns a dispatcher for the given client end on an executor.
@@ -395,6 +464,27 @@ impl<P, T: Transport> ClientEnd<P, T> {
 }
 
 impl<P, T: Transport> ServerEnd<P, T> {
+    /// Spawns a dispatcher for the given server end with a handler computed
+    /// from a closure on an executor.
+    ///
+    /// Returns the join handle for the spawned task and the server.
+    pub fn spawn_full_on_with<H, E>(
+        self,
+        create_handler: impl FnOnce(&Server<P, T>) -> H,
+        executor: &E,
+    ) -> (HandlerTask<T, H, E>, Server<P, T>)
+    where
+        P: DispatchServerMessage<H, T>,
+        T: 'static,
+        H: Send + 'static,
+        E: Executor,
+    {
+        let dispatcher = ServerDispatcher::new(self);
+        let server = dispatcher.server().clone();
+        let handler = create_handler(&server);
+        (executor.spawn(dispatcher.run(handler)), server)
+    }
+
     /// Spawns a dispatcher for the given server end with a handler on an
     /// executor.
     ///
@@ -410,9 +500,27 @@ impl<P, T: Transport> ServerEnd<P, T> {
         H: Send + 'static,
         E: Executor,
     {
+        self.spawn_full_on_with(|_| handler, executor)
+    }
+
+    /// Spawns a dispatcher for the given server end with a handler computed
+    /// from a closure on an executor.
+    ///
+    /// Returns the join handle for the spawned task.
+    pub fn spawn_on_with<H, E>(
+        self,
+        create_handler: impl FnOnce(&Server<P, T>) -> H,
+        executor: &E,
+    ) -> HandlerTask<T, H, E>
+    where
+        P: DispatchServerMessage<H, T>,
+        T: 'static,
+        H: Send + 'static,
+        E: Executor,
+    {
         let dispatcher = ServerDispatcher::new(self);
-        let server = dispatcher.server().clone();
-        (executor.spawn(dispatcher.run(handler)), server)
+        let handler = create_handler(dispatcher.server());
+        executor.spawn(dispatcher.run(handler))
     }
 
     /// Spawns a dispatcher for the given server end with a handler on an
@@ -426,7 +534,24 @@ impl<P, T: Transport> ServerEnd<P, T> {
         H: Send + 'static,
         E: Executor,
     {
-        executor.spawn(ServerDispatcher::new(self).run(handler))
+        self.spawn_on_with(|_| handler, executor)
+    }
+
+    /// Spawns a dispatcher for the given server end with a handler computed
+    /// from a closure on the default executor for the transport.
+    ///
+    /// Returns the join handle for the spawned task and the server.
+    pub fn spawn_full_with<H>(
+        self,
+        create_handler: impl FnOnce(&Server<P, T>) -> H,
+    ) -> (HandlerTask<T, H>, Server<P, T>)
+    where
+        P: DispatchServerMessage<H, T>,
+        T: HasExecutor + 'static,
+        H: Send + 'static,
+    {
+        let executor = self.executor();
+        Self::spawn_full_on_with(self, create_handler, &executor)
     }
 
     /// Spawns a dispatcher for the given server end with a handler on the
@@ -439,8 +564,21 @@ impl<P, T: Transport> ServerEnd<P, T> {
         T: HasExecutor + 'static,
         H: Send + 'static,
     {
+        self.spawn_full_with(|_| handler)
+    }
+
+    /// Spawns a dispatcher for the given server end with a handler computed
+    /// from a closure on the default executor for the transport.
+    ///
+    /// Returns the join handle for the spawned task.
+    pub fn spawn_with<H>(self, create_handler: impl FnOnce(&Server<P, T>) -> H) -> HandlerTask<T, H>
+    where
+        P: DispatchServerMessage<H, T>,
+        T: HasExecutor + 'static,
+        H: Send + 'static,
+    {
         let executor = self.executor();
-        Self::spawn_full_on(self, handler, &executor)
+        Self::spawn_on_with(self, create_handler, &executor)
     }
 
     /// Spawns a dispatcher for the given server end with a handler on the
@@ -453,7 +591,6 @@ impl<P, T: Transport> ServerEnd<P, T> {
         T: HasExecutor + 'static,
         H: Send + 'static,
     {
-        let executor = self.executor();
-        Self::spawn_on(self, handler, &executor)
+        self.spawn_with(|_| handler)
     }
 }

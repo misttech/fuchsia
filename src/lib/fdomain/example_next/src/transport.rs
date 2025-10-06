@@ -36,6 +36,7 @@ impl Stream for LocalFDomainTransport {
 }
 
 struct EchoServer {
+    server: fidl_next::Server<Echo, fidl::Channel>,
     prefix: String,
     quiet: bool,
 }
@@ -50,11 +51,10 @@ impl EchoServerHandler<fidl::Channel> for EchoServer {
         if !self.quiet {
             log::info!("Received echo request for string {:?}", value);
         }
-        let server = responder.server().clone();
         let response = EchoEchoStringResponse { response: format!("{}{value}", self.prefix) };
 
         if responder.respond(response).await.is_err() {
-            server.close()
+            self.server.close()
         } else if !self.quiet {
             log::info!("echo response sent successfully");
         }
@@ -62,13 +62,14 @@ impl EchoServerHandler<fidl::Channel> for EchoServer {
 
     async fn send_string(
         &mut self,
-        _server: &fidl_next::Server<Echo, fidl::Channel>,
+        _: &fidl_next::Server<Echo, fidl::Channel>,
         _request: fidl_next::Request<echo::SendString, fidl::Channel>,
     ) {
     }
 }
 
 struct EchoLauncherServer {
+    server: fidl_next::Server<EchoLauncher, fidl::Channel>,
     quiet: bool,
     scope: fuchsia_async::Scope,
 }
@@ -86,26 +87,28 @@ impl EchoLauncherServerHandler<fidl::Channel> for EchoLauncherServer {
         }
 
         let (client, server) = fidl::Channel::create();
-        let server = ServerEnd::<Echo, _>::from_untyped(server);
-        let client = ClientEnd::<Echo, _>::from_untyped(client);
-        let server = ServerDispatcher::new(server);
-        let quiet = self.quiet;
-        self.scope.spawn(async move {
-            server.run(EchoServer { prefix, quiet }).await.unwrap();
-        });
-        let response = EchoLauncherGetEchoResponse { response: client };
+        let server_end = ServerEnd::<Echo, _>::from_untyped(server);
+        let client_end = ClientEnd::<Echo, _>::from_untyped(client);
 
-        let server = responder.server().clone();
+        server_end
+            .spawn_on_with(
+                |server| EchoServer { server: server.clone(), prefix, quiet: self.quiet },
+                &self.scope,
+            )
+            .detach_on_drop();
+
+        let response = EchoLauncherGetEchoResponse { response: client_end };
+
         if responder.respond(response).await.is_err() {
-            server.close();
-        } else if !quiet {
+            self.server.close();
+        } else if !self.quiet {
             log::info!("echo launcher response sent successfully");
         }
     }
 
     async fn get_echo_pipelined(
         &mut self,
-        _server: &fidl_next::Server<EchoLauncher, fidl::Channel>,
+        _: &fidl_next::Server<EchoLauncher, fidl::Channel>,
         request: fidl_next::Request<echo_launcher::GetEchoPipelined, fidl::Channel>,
     ) {
         let EchoLauncherGetEchoPipelinedRequest { echo_prefix, request } = request.take();
@@ -117,11 +120,16 @@ impl EchoLauncherServerHandler<fidl::Channel> for EchoLauncherServer {
             );
         }
 
-        let server = ServerDispatcher::new(request);
-        let quiet = self.quiet;
-        self.scope.spawn(async move {
-            server.run(EchoServer { prefix: echo_prefix, quiet }).await.unwrap();
-        });
+        request
+            .spawn_on_with(
+                |server| EchoServer {
+                    server: server.clone(),
+                    prefix: echo_prefix,
+                    quiet: self.quiet,
+                },
+                &self.scope,
+            )
+            .detach_on_drop();
     }
 }
 
@@ -129,10 +137,12 @@ pub fn exec_server(quiet: bool) -> LocalFDomainTransport {
     let service = vfs::service::endpoint(move |scope, channel| {
         log::info!("Spawned endpoint");
         let endpoint = ServerEnd::<EchoLauncher, _>::from_untyped(channel.into_zx_channel());
-        let server = ServerDispatcher::new(endpoint);
+        let server_dispatcher = ServerDispatcher::new(endpoint);
         scope.spawn(async move {
-            let ret =
-                server.run(EchoLauncherServer { quiet, scope: fuchsia_async::Scope::new() }).await;
+            let server = server_dispatcher.server().clone();
+            let ret = server_dispatcher
+                .run(EchoLauncherServer { server, quiet, scope: fuchsia_async::Scope::new() })
+                .await;
 
             if let Err(e) = ret {
                 log::warn!(error:? = e; "Echo server terminated");
