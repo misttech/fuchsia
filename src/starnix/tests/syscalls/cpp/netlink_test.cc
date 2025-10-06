@@ -573,7 +573,9 @@ TEST_F(NetlinkTest, IflaCacheInfoMissingBody) {
       .nla_len = 4,
       .nla_type = IFA_CACHEINFO,
   });
-  ASSERT_THAT(SendMsg(encoder), SyscallFails());
+
+  // We expect the syscall to succeed, e.g. not crash.
+  ASSERT_THAT(SendMsg(encoder), SyscallSucceeds());
   CheckNetlinkAlive();
 }
 
