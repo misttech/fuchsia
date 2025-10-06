@@ -235,20 +235,8 @@ class MoonflowerAbrClient : public abr::Client {
                                           std::move(zircon_b.value()), std::move(client)));
   }
 
-  struct GptEntryAttributes {
-    static constexpr uint8_t kMoonflowerMaxPriority = 3;
-
-    explicit GptEntryAttributes(uint64_t flags) : flags(flags) {}
-
-    uint64_t flags;
-    DEF_SUBFIELD(flags, 49, 48, priority);
-    DEF_SUBBIT(flags, 50, active);
-    DEF_SUBFIELD(flags, 53, 51, retry_count);
-    DEF_SUBBIT(flags, 54, boot_success);
-    DEF_SUBBIT(flags, 55, unbootable);
-  };
-
-  zx::result<> GetPartitionFlags(GptEntryAttributes* a_flags, GptEntryAttributes* b_flags) {
+  zx::result<> GetPartitionFlags(MoonflowerGptEntryAttributes* a_flags,
+                                 MoonflowerGptEntryAttributes* b_flags) {
     zx::result a = zircon_a_->GetMetadata();
     if (a.is_error()) {
       return a.take_error();
@@ -262,8 +250,8 @@ class MoonflowerAbrClient : public abr::Client {
     return zx::ok();
   }
 
-  zx::result<> SetPartitionFlags(const GptEntryAttributes& a_flags,
-                                 const GptEntryAttributes& b_flags) {
+  zx::result<> SetPartitionFlags(const MoonflowerGptEntryAttributes& a_flags,
+                                 const MoonflowerGptEntryAttributes& b_flags) {
     zx::result result = UpdatePartitionMetadata(*zircon_a_, a_flags, {});
     if (result.is_error()) {
       return result.take_error();
@@ -413,7 +401,7 @@ class MoonflowerAbrClient : public abr::Client {
         partitions_manager_(std::move(partitions_manager)) {}
 
   zx::result<> UpdatePartitionMetadata(PartitionClient& client,
-                                       std::optional<GptEntryAttributes> flags,
+                                       std::optional<MoonflowerGptEntryAttributes> flags,
                                        std::optional<Uuid> type_guid) {
     zx::result partition = client.connector()->PartitionManagement();
     if (partition.is_error()) {
@@ -479,7 +467,8 @@ class MoonflowerAbrClient : public abr::Client {
   }
 
   // Determines the active slot based on the given GPT attributes.
-  static ActiveSlot GetActiveSlot(const GptEntryAttributes& a, const GptEntryAttributes& b) {
+  static ActiveSlot GetActiveSlot(const MoonflowerGptEntryAttributes& a,
+                                  const MoonflowerGptEntryAttributes& b) {
     // The bootloaders generally have more complicated logic to deal with
     // initializing from zero-state, but from the OS perspective the bootloader
     // has already initialized to a known-good state so the logic here can be
@@ -491,7 +480,7 @@ class MoonflowerAbrClient : public abr::Client {
   }
 
   zx::result<> ReadCustom(AbrSlotData* a, AbrSlotData* b, uint8_t* one_shot_recovery) override {
-    GptEntryAttributes a_flags(0), b_flags(0);
+    MoonflowerGptEntryAttributes a_flags(0), b_flags(0);
     zx::result result = GetPartitionFlags(&a_flags, &b_flags);
     if (result.is_error()) {
       return result.take_error();
@@ -511,7 +500,7 @@ class MoonflowerAbrClient : public abr::Client {
                            uint8_t one_shot_recovery) override {
     // Read the existing flags first to figure out the current slot, and to retain any non-slot bits
     // that might be set.
-    GptEntryAttributes a_flags(0), b_flags(0);
+    MoonflowerGptEntryAttributes a_flags(0), b_flags(0);
     zx::result result = GetPartitionFlags(&a_flags, &b_flags);
     if (result.is_error()) {
       return result.take_error();
@@ -548,7 +537,8 @@ class MoonflowerAbrClient : public abr::Client {
   // Updates `a_flags` and `b_flags` with the data from `a_data` and `b_data`.
   // Non-slot flags are left unmodified.
   static void ToMoonflower(const AbrSlotData& a_data, const AbrSlotData& b_data,
-                           GptEntryAttributes* a_flags, GptEntryAttributes* b_flags) {
+                           MoonflowerGptEntryAttributes* a_flags,
+                           MoonflowerGptEntryAttributes* b_flags) {
     const uint8_t a_fuchsia_priority = AbrGetNormalizedPriority(&a_data);
     const uint8_t b_fuchsia_priority = AbrGetNormalizedPriority(&b_data);
 
@@ -557,8 +547,8 @@ class MoonflowerAbrClient : public abr::Client {
 
     // The priority field in Moonflower is only 2 bits wide (max value 3). Normalize
     // AbrSlotData::priority while maintaining the slots' relative priority.
-    uint8_t a_moonflower_priority = GptEntryAttributes::kMoonflowerMaxPriority;
-    uint8_t b_moonflower_priority = GptEntryAttributes::kMoonflowerMaxPriority - 1;
+    uint8_t a_moonflower_priority = MoonflowerGptEntryAttributes::kMoonflowerMaxPriority;
+    uint8_t b_moonflower_priority = MoonflowerGptEntryAttributes::kMoonflowerMaxPriority - 1;
     if (b_active) {
       std::swap(a_moonflower_priority, b_moonflower_priority);
     }
@@ -577,7 +567,7 @@ class MoonflowerAbrClient : public abr::Client {
 
   // Converts Moonflower GPT flags to Fuchsia `AbrSlotData`.
   // The `partition` name is only used for logging if there's an inconsistent state.
-  static AbrSlotData ToFuchsia(GptEntryAttributes flags, const char* partition) {
+  static AbrSlotData ToFuchsia(MoonflowerGptEntryAttributes flags, const char* partition) {
     // libabr expects successful or unbootable slots to have zero retries. This check is also
     // important for correct functionality, if libabr sees a successful slot with nonzero retries
     // it will currently reset the slot entirely to the default state.
