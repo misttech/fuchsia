@@ -231,6 +231,12 @@ async fn handle_wifi_chip_request<I: IfaceManager>(
             telemetry_sender.send(TelemetryEvent::RecoveryEvent);
             responder.send(Ok(())).context("send TriggerSubsystemRestart response")?;
         }
+        fidl_wlanix::WifiChipRequest::ResetTxPowerScenario { .. } => {
+            warn!("Reset Tx power scenario controls are not yet implemented.")
+        }
+        fidl_wlanix::WifiChipRequest::SelectTxPowerScenario { .. } => {
+            warn!("Set Tx power scenario controls are not yet implemented.")
+        }
         fidl_wlanix::WifiChipRequest::_UnknownMethod { ordinal, .. } => {
             warn!("Unknown WifiChipRequest ordinal: {}", ordinal);
         }
@@ -1839,6 +1845,9 @@ async fn handle_wlanix_request<I: IfaceManager>(
                 )
                 .await;
             }
+        }
+        fidl_wlanix::WlanixRequest::GetWifiLegacyHal { .. } => {
+            warn!("WiFi Legacy HAL is not yet implemented.");
         }
         fidl_wlanix::WlanixRequest::_UnknownMethod { ordinal, .. } => {
             warn!("Unknown WlanixRequest ordinal: {}", ordinal);

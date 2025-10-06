@@ -20,6 +20,7 @@ enum class CommandTag {
   kWlanixGetWifi,
   kWlanixGetSupplicant,
   kWlanixGetNl80211,
+  kWlanixGetWifiLegacyHal,
   kWlanixUnknownMethod,
   kWifiRegisterEventCallback,
   kWifiStart,
@@ -39,6 +40,8 @@ enum class CommandTag {
   kWifiChipGetCapabilities,
   kWifiChipUnknownMethod,
   kWifiChipTriggerSubsystemRestart,
+  kWifiChipSelectTxPowerScenario,
+  kWifiChipResetTxPowerScenario,
   kWifiStaIfaceGetName,
   kWifiStaIfaceUnknownMethod,
   kSupplicantAddStaInterface,
@@ -91,6 +94,8 @@ class FakeWlanix : public fidl::WireServer<fuchsia_wlan_wlanix::Wlanix>,
                      GetSupplicantCompleter::Sync& completer) override;
   void GetNl80211(fuchsia_wlan_wlanix::wire::WlanixGetNl80211Request* request,
                   GetNl80211Completer::Sync& completer) override;
+  void GetWifiLegacyHal(fuchsia_wlan_wlanix::wire::WlanixGetWifiLegacyHalRequest* request,
+                        GetWifiLegacyHalCompleter::Sync& completer) override;
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_wlan_wlanix::Wlanix> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override;
 
@@ -121,6 +126,10 @@ class FakeWlanix : public fidl::WireServer<fuchsia_wlan_wlanix::Wlanix>,
   void GetMode(GetModeCompleter::Sync& completer) override;
   void GetCapabilities(GetCapabilitiesCompleter::Sync& completer) override;
   void TriggerSubsystemRestart(TriggerSubsystemRestartCompleter::Sync& completer) override;
+  void SelectTxPowerScenario(
+      fuchsia_wlan_wlanix::wire::WifiChipSelectTxPowerScenarioRequest* request,
+      SelectTxPowerScenarioCompleter::Sync& completer) override;
+  void ResetTxPowerScenario(ResetTxPowerScenarioCompleter::Sync& completer) override;
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_wlan_wlanix::WifiChip> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override;
 

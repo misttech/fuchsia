@@ -39,6 +39,12 @@ void FakeWlanix::GetNl80211(fuchsia_wlan_wlanix::wire::WlanixGetNl80211Request* 
   ZX_ASSERT_MSG(false, "GetNl80211 is not supported by fake-wlanix");
 }
 
+void FakeWlanix::GetWifiLegacyHal(fuchsia_wlan_wlanix::wire::WlanixGetWifiLegacyHalRequest* request,
+                                  GetWifiLegacyHalCompleter::Sync& completer) {
+  AppendCommand(Command{.tag = CommandTag::kWlanixGetWifiLegacyHal});
+  ZX_ASSERT_MSG(false, "GetWifiLegacyHal is not supported by fake-wlanix");
+}
+
 void FakeWlanix::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_wlan_wlanix::Wlanix> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
@@ -207,6 +213,18 @@ void FakeWlanix::GetCapabilities(GetCapabilitiesCompleter::Sync& completer) {
 void FakeWlanix::TriggerSubsystemRestart(TriggerSubsystemRestartCompleter::Sync& completer) {
   AppendCommand(Command{.tag = CommandTag::kWifiChipTriggerSubsystemRestart});
   completer.ReplySuccess();
+}
+
+void FakeWlanix::SelectTxPowerScenario(
+    fuchsia_wlan_wlanix::wire::WifiChipSelectTxPowerScenarioRequest* request,
+    SelectTxPowerScenarioCompleter::Sync& completer) {
+  AppendCommand(Command{.tag = CommandTag::kWifiChipSelectTxPowerScenario});
+  completer.Reply();
+}
+
+void FakeWlanix::ResetTxPowerScenario(ResetTxPowerScenarioCompleter::Sync& completer) {
+  AppendCommand(Command{.tag = CommandTag::kWifiChipResetTxPowerScenario});
+  completer.Reply();
 }
 
 void FakeWlanix::handle_unknown_method(
