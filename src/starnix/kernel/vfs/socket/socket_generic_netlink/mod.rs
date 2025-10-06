@@ -441,26 +441,17 @@ pub struct GenericNetlinkWorkerParams<S: Sender<GenericMessage>> {
 
 pub async fn run_generic_netlink_worker<S: Sender<GenericMessage>>(
     params: GenericNetlinkWorkerParams<S>,
+    enable_nl80211: bool,
 ) {
     // Initialize supported families on the worker, so that they shares an
     // executor with the main netlink future.
-    //
-    // TODO(https://fxbug.dev/42079282): Add dynamic family support. Right now this is only
-    // structured to support static family additions.
-    //
-    // TODO(https://fxbug.dev/447665719): Currently `nl80211::Nl80211Family::new()`
-    // doesn't check that the connection to the service was successful. If
-    // `Wlanix` service is not provided to Starnix then the `Nl80211Family`
-    // created here will not be functional.
-    let nl80211_family = nl80211::Nl80211Family::new()
-        .inspect_err(|e| {
-            log_error!(
-                tag = NETLINK_LOG_TAG;
-                "Failed to connect to Nl80211 netlink family: {}",
-                e
-            )
-        })
-        .ok();
+    let nl80211_family = if enable_nl80211 {
+        // This boolean is tied to availability of the Wlanix protocol, so this
+        // operation will always succeed unless our product config is invalid.
+        Some(nl80211::Nl80211Family::new().expect("Failed to connect to Nl80211 netlink family"))
+    } else {
+        None
+    };
     let taskstats_family = taskstats::TaskstatsFamily::new();
     {
         let mut state = params.server.state.lock();

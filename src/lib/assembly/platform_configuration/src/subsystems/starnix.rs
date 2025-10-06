@@ -33,11 +33,11 @@ impl DefineSubsystemConfiguration<PlatformStarnixConfig> for StarnixSubsystem {
 
             let has_fullmac = context.board_config.provides_feature("fuchsia::wlan_fullmac");
             let has_softmac = context.board_config.provides_feature("fuchsia::wlan_softmac");
+            let has_wifi = *enable_android_support && (has_fullmac || has_softmac);
+            if has_wifi {
+                builder.platform_bundle("wlan_wlanix");
+            }
             if *enable_android_support {
-                if has_fullmac || has_softmac {
-                    builder.platform_bundle("wlan_wlanix");
-                }
-
                 builder.set_config_capability(
                     "fuchsia.starnix.runner.EnableDataCollection",
                     Config::new(
@@ -81,6 +81,8 @@ impl DefineSubsystemConfiguration<PlatformStarnixConfig> for StarnixSubsystem {
                                 raw_args: None,
                             }),
                         },
+                        has_wifi
+                            .then_some(FeatureAndArgs { feature: Feature::Wifi, raw_args: None }),
                     ]
                     .into_iter()
                     .flatten()

@@ -117,6 +117,9 @@ pub struct KernelFeatures {
 
     /// Whether excessive crash reports should be throttled.
     pub crash_report_throttling: bool,
+
+    /// Whether or not to serve wifi support to Android.
+    pub wifi: bool,
 }
 
 /// Kernel command line argument structure
@@ -660,8 +663,9 @@ impl Kernel {
     pub fn generic_netlink(&self) -> &GenericNetlink<NetlinkToClientSender<GenericMessage>> {
         self.generic_netlink.get_or_init(|| {
             let (generic_netlink, worker_params) = GenericNetlink::new();
+            let enable_nl80211 = self.features.wifi;
             self.kthreads.spawn_future(async move {
-                crate::vfs::socket::run_generic_netlink_worker(worker_params).await;
+                crate::vfs::socket::run_generic_netlink_worker(worker_params, enable_nl80211).await;
                 log_error!("Generic Netlink future unexpectedly exited");
             });
             generic_netlink

@@ -149,6 +149,7 @@ impl Features {
                         mlock_pin_flavor,
                         netstack_mark,
                         crash_report_throttling,
+                        wifi,
                     },
                 selinux,
                 ashmem,
@@ -244,6 +245,7 @@ impl Features {
                     inspect_node
                         .record_string("mlock_pin_flavor", format!("{:?}", mlock_pin_flavor));
                     inspect_node.record_bool("netstack_mark", *netstack_mark);
+                    inspect_node.record_bool("wifi", *wifi);
                 });
             }
         });
@@ -360,6 +362,7 @@ pub fn parse_features(
             (Feature::TestData, _) => features.test_data = true,
             (Feature::Thermal, _) => features.thermal = true,
             (Feature::HvdcpOpti, _) => features.hvdcp_opti = true,
+            (Feature::Wifi, _) => features.kernel.wifi = true,
         };
     }
 
