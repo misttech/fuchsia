@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::collections::BTreeSet;
+
 use askama::Template;
 
 use super::{Context, Contextual, filters};
@@ -57,6 +59,10 @@ impl<'a> ServiceTemplate<'a> {
         };
 
         &self.resource_bindings().endpoint(protocol_transport).natural_path
+    }
+
+    fn member_transports(&self) -> BTreeSet<&str> {
+        self.service.members.iter().map(|member| self.member_transport(member)).collect()
     }
 }
 

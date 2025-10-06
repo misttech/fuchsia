@@ -512,6 +512,8 @@ impl ::fidl_next::DiscoverableService for Service {
     const MEMBER_NAMES: &'static [&'static str] = &["p"];
 }
 
+impl ::fidl_next::HasServiceRequest<::fidl_next::fuchsia::zx::Channel> for Service {}
+
 impl<___C> ::fidl_next::Service<___C> for Service
 where
     ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,

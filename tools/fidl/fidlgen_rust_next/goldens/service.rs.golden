@@ -181,6 +181,11 @@ impl ::fidl_next::DiscoverableService for MultiHeterogeneousMemberService {
     const MEMBER_NAMES: &'static [&'static str] = &["first_member", "second_member"];
 }
 
+impl ::fidl_next::HasServiceRequest<::fidl_next::fuchsia::zx::Channel>
+    for MultiHeterogeneousMemberService
+{
+}
+
 impl<___C> ::fidl_next::Service<___C> for MultiHeterogeneousMemberService
 where
     ___C: ::fidl_next::protocol::ServiceConnector<::fidl_next::fuchsia::zx::Channel>,
@@ -274,6 +279,11 @@ pub struct MultiHomogeneousMemberService;
 impl ::fidl_next::DiscoverableService for MultiHomogeneousMemberService {
     const SERVICE_NAME: &'static str = "test.service.MultiHomogeneousMemberService";
     const MEMBER_NAMES: &'static [&'static str] = &["first_member", "second_member"];
+}
+
+impl ::fidl_next::HasServiceRequest<::fidl_next::fuchsia::zx::Channel>
+    for MultiHomogeneousMemberService
+{
 }
 
 impl<___C> ::fidl_next::Service<___C> for MultiHomogeneousMemberService
@@ -502,6 +512,8 @@ impl ::fidl_next::DiscoverableService for SingleMemberService {
     const SERVICE_NAME: &'static str = "test.service.SingleMemberService";
     const MEMBER_NAMES: &'static [&'static str] = &["single_member"];
 }
+
+impl ::fidl_next::HasServiceRequest<::fidl_next::fuchsia::zx::Channel> for SingleMemberService {}
 
 impl<___C> ::fidl_next::Service<___C> for SingleMemberService
 where

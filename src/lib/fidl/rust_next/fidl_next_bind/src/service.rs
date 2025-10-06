@@ -15,13 +15,22 @@ pub trait DiscoverableService {
     const MEMBER_NAMES: &'static [&'static str];
 }
 
+/// A trait indicating that a service has members of the given type.
+///
+/// Services are currently limited to only having protocol members with a single
+/// type, so only one instance of this trait will be implemented for each
+/// service.
+pub trait HasServiceRequest<T> {}
+
 /// A FIDL service.
 ///
 /// # Safety
 ///
-/// The associated `Connector` type must be a `#[repr(transparent)]` wrapper around `C`.
+/// The associated `Connector` type must be a `#[repr(transparent)]` wrapper
+/// around `C`.
 pub trait Service<C>: DiscoverableService {
-    /// The connector for the service. It must be a `#[repr(transparent)]` wrapper around `C`.
+    /// The connector for the service. It must be a `#[repr(transparent)]`
+    /// wrapper around `C`.
     type Connector;
 }
 

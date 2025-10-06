@@ -11,6 +11,8 @@ impl ::fidl_next::DiscoverableService for DriverOnlyService {
     const MEMBER_NAMES: &'static [&'static str] = &["member"];
 }
 
+impl ::fidl_next::HasServiceRequest<::fdf_fidl::DriverChannel> for DriverOnlyService {}
+
 impl<___C> ::fidl_next::Service<___C> for DriverOnlyService
 where
     ___C: ::fidl_next::protocol::ServiceConnector<::fdf_fidl::DriverChannel>,
