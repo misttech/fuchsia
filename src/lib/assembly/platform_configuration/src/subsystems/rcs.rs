@@ -2,31 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::{
-    BoardConfigExt, BuildType, ConfigurationBuilder, ConfigurationContext,
-    DefineSubsystemConfiguration, FeatureSetLevel,
-};
+use super::{ConfigurationBuilder, ConfigurationContext, DefineSubsystemConfiguration};
 
 pub struct RcsSubsystemConfig;
 impl DefineSubsystemConfiguration<()> for RcsSubsystemConfig {
     fn define_configuration(
-        context: &ConfigurationContext<'_>,
+        _context: &ConfigurationContext<'_>,
         _config: &(),
-        builder: &mut dyn ConfigurationBuilder,
+        _builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
-        if matches!(
-            (context.feature_set_level, context.build_type),
-            (
-                FeatureSetLevel::Utility | FeatureSetLevel::Standard,
-                BuildType::UserDebug | BuildType::Eng
-            )
-        ) && context.board_config.provides_feature("fuchsia::usb_peripheral_support")
-        {
-            builder.platform_bundle("core_realm_development_access_rcs_usb");
-            // Dependency of ^
-            builder.platform_bundle("vsock_service");
-        }
-
         Ok(())
     }
 }

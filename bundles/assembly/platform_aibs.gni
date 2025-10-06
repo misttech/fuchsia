@@ -110,6 +110,7 @@ bootstrap_userdebug_platform_aib_names = [
 
   # Connectivity
   "network_drivers_boot",
+  "usb_cdc_function_boot",
 
   # Kernel args
   "kernel_args_eng",
@@ -251,6 +252,7 @@ user_platform_aib_names =
 
       # Connectivity
       "network_drivers_base",
+      "usb_cdc_function_base",
 
       # Graphics
       "vulkan_loader",
@@ -378,7 +380,7 @@ user_platform_aib_names =
 _userdebug_aib_names = bootstrap_userdebug_platform_aib_names + [
                          # Needed by both eng and userdebug products, but contains things disallowed in
                          # user.
-                         "adb_support",
+                         "usb_adb_function",
                          "bluetooth_hfp_hf",
                          "core_realm_development_access",
                          "core_realm_development_access_rcs_usb",
@@ -527,7 +529,7 @@ required_userdebug_aib_names = required_user_aib_names + [
 # NOTE: This is an allowlist only. To include your AIB,  you must also add it
 # to the appropriate AIB list above.
 experimental_aib_names = [
-  "adb_support",
+  "usb_adb_function",
   "bootstrap_realm_vsock_development_access",
 
   # Bluetooth

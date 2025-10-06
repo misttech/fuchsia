@@ -37,9 +37,47 @@ impl DefineSubsystemConfiguration<UsbConfig> for UsbSubsystem {
         }
         if context.board_config.provides_feature("fuchsia::usb_peripheral_support") {
             for function in usb.peripheral.functions() {
-                match function {
-                    UsbPeripheralFunction::Rndis => builder.platform_bundle("usb_rndis_function"),
-                    UsbPeripheralFunction::Ums => builder.platform_bundle("usb_ums_function"),
+                match (function, context.feature_set_level, context.build_type) {
+                    (UsbPeripheralFunction::Adb, _, _) => {
+                        builder.platform_bundle("usb_adb_function")
+                    }
+                    (
+                        UsbPeripheralFunction::Cdc,
+                        FeatureSetLevel::Bootstrap | FeatureSetLevel::Embeddable,
+                        BuildType::UserDebug | BuildType::Eng,
+                    ) => {
+                        builder.platform_bundle("usb_cdc_function_boot");
+                    }
+                    (
+                        UsbPeripheralFunction::Cdc,
+                        FeatureSetLevel::Utility | FeatureSetLevel::Standard,
+                        _,
+                    ) => {
+                        builder.platform_bundle("usb_cdc_function_base");
+                    }
+                    (UsbPeripheralFunction::Fastboot, _, _) => {
+                        builder.platform_bundle("fastbootd_usb_support")
+                    }
+                    (
+                        UsbPeripheralFunction::VsockBridge,
+                        FeatureSetLevel::Utility | FeatureSetLevel::Standard,
+                        BuildType::UserDebug | BuildType::Eng,
+                    ) => {
+                        builder.platform_bundle("core_realm_development_access_rcs_usb");
+                        // Dependency of ^
+                        builder.platform_bundle("vsock_service");
+                    }
+                    (UsbPeripheralFunction::Rndis, _, _) => {
+                        builder.platform_bundle("usb_rndis_function")
+                    }
+                    (UsbPeripheralFunction::Test, _, _) => {
+                        anyhow::bail!(
+                            "Product requested the \"test\" USB peripheral function which has no associated AIB"
+                        )
+                    }
+                    (UsbPeripheralFunction::Ums, _, _) => {
+                        builder.platform_bundle("usb_ums_function")
+                    }
                     _ => (),
                 }
             }

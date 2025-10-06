@@ -281,12 +281,27 @@ _NETWORK_DRIVER_PACKAGES = [
     package_target = "//src/connectivity/network/drivers/network-device:package"
     driver_components = [ "meta/network-device.cm" ]
   },
-  {
-    package_target =
-        "//src/connectivity/ethernet/drivers/usb-cdc-function:package"
-    driver_components = [ "meta/usb-cdc-function.cm" ]
-  },
 ]
+
+assembly_input_bundle("usb_cdc_function_boot") {
+  boot_driver_packages = [
+    {
+      package_target =
+          "//src/connectivity/ethernet/drivers/usb-cdc-function:package"
+      driver_components = [ "meta/usb-cdc-function.cm" ]
+    },
+  ]
+}
+
+assembly_input_bundle("usb_cdc_function_base") {
+  base_driver_packages = [
+    {
+      package_target =
+          "//src/connectivity/ethernet/drivers/usb-cdc-function:package"
+      driver_components = [ "meta/usb-cdc-function.cm" ]
+    },
+  ]
+}
 
 assembly_input_bundle("network_drivers_boot") {
   boot_driver_packages = _NETWORK_DRIVER_PACKAGES
@@ -2124,7 +2139,7 @@ assembly_input_bundle("starnix_support") {
 # valid feature_set_levels: minimal
 # valid build-types: all
 #
-assembly_input_bundle("adb_support") {
+assembly_input_bundle("usb_adb_function") {
   base_driver_packages = [
     {
       package_target = "//src/developer/adb/drivers/usb-adb-function:package"

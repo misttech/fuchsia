@@ -99,8 +99,6 @@ impl DefineSubsystemConfiguration<(&RecoveryConfig, &VolumeConfig)> for Recovery
                         "Android System Recovery",
                     )?;
                     builder.platform_bundle("recovery_android");
-                    builder.platform_bundle("fastbootd_usb_support");
-                    builder.platform_bundle("adb_support");
                     configure_platform_system_recovery(context, config, builder)?;
                 }
                 SystemRecovery::Bootfs(bootfs_recovery_config) => {

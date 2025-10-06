@@ -45,7 +45,6 @@ impl DefineSubsystemConfiguration<PlatformStarnixConfig> for StarnixSubsystem {
                         (*context.build_type == BuildType::UserDebug).into(),
                     ),
                 )?;
-                builder.platform_bundle("adb_support");
                 builder.platform_bundle("hvdcp_opti_support");
                 builder.platform_bundle("nanohub_support");
                 builder.platform_bundle("fastrpc_support");
