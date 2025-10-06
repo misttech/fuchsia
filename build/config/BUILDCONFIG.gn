@@ -369,7 +369,7 @@ shlib_toolchain = "${variant_base_toolchain}-shared"
 #
 # This cannot work when a build variant is enabled though, because
 # ":foo($shlib_toolchain)" does not correspond to the right label for
-# the library that is actually buily by ":foo" here. And the right
+# the library that is actually built by ":foo" here. And the right
 # label *cannot* be computed easily.
 #
 # To work around this problem, it is possible to use

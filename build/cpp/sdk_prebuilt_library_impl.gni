@@ -63,8 +63,11 @@ import("//build/sdk/sdk_atom_alias.gni")
 #
 #   runtime_deps (optional)
 #     List of labels representing the library's runtime dependencies. This is
-#     only needed for runtime dependencies inherited from private dependencies.
-#     Note that these labels should represent SDK targets. See note below.
+#     only needed for runtime dependencies inherited from private dependencies
+#     (`deps` or indirect dependencies not through an IDK atom's `public_deps`).
+#     See the technical note below. These labels must represent SDK targets
+#     (end in `_sdk`). Only IDK shared objects should be specified.
+#     When specified, `deps` must be defined and non-empty.
 #
 #   sdk_headers_for_internal_use (optional)
 #     Out of the headers specified in `public` or `sources`, some headers are
@@ -149,6 +152,20 @@ template("sdk_prebuilt_library_impl") {
          "Libraries are always stable (except internal).")
   assert(defined(invoker.category), "Must define an SDK category")
 
+  if (defined(invoker.runtime_deps)) {
+    assert(
+        defined(invoker.deps) && invoker.deps != [],
+        "Runtime dependencies are only applicable if there are private dependencies.")
+
+    # Unlike other deps, `runtime_deps` entries must end in `_sdk`.
+    # Append ### and use string_replace to mimic behavior of has_suffix, for
+    # lack of such a function in GN.
+    foreach(dep, invoker.runtime_deps) {
+      assert(string_replace("${dep}###", "_sdk###", "") != "${dep}###",
+             "Runtime dependency `${dep}` must end in `_sdk`.")
+    }
+  }
+
   valid_categories = [
     # "internal" is deprecated; only specific legacy cases below are allowed.
     # "compat_test" is only for ABI compatibility and thus not applicable.
@@ -215,28 +232,49 @@ template("sdk_prebuilt_library_impl") {
   sdk_target_name = "${main_target_name}_sdk"
 
   if (prebuilt_library_type == "static") {
-    # This is subtle: If one of the dependencies is listed in runtime_deps
-    # with an _sdk suffix, assume it is a shared_library() target, and ensure
-    # that the current target depends on the dependency built in the same
-    # build variant, i.e. ignoring build variant redirection, even when we
-    # are in the default toolchain.
+    # This is subtle: When `runtime_deps` is defined, `deps` may contain labels
+    # for `shared_library()` objects corresponding to atoms listed in
+    # `runtime_deps`.
+    #
+    # For example:
+    #   deps = [ "//some:shared_lib", "//some:static_lib" ]
+    #   runtime_deps = [ "//some:shared_lib_sdk" ]
+    #
+    # As described in `//build/config/BUILDCONFIG.gn`, in most cases, the label
+    # "//some:shared_lib" points either to a real `shared_library()` target or
+    # to a `group()` that redirects to it. However, in the default toolchain
+    # when variants are enabled, the label will redirect to a variant. Such
+    # redirects are disabled for shared objects in the IDK (see the use of
+    # `shlib_toolchain_no_default_variant_redirect` in defining
+    # `main_lib_target`for "shared" libraries) and thus must also be disabled
+    # here.
+    #
+    # To do this, we will rewrite `deps` such that any targets representing IDK
+    # shared objects refer directly to the target on
+    # `shlib_toolchain_no_default_variant_redirect` toolchain rather than going
+    # through the group. For example, by converting "//some:shared_lib" to
+    # "//some:shared_lib:shared_lib(//build/toolchain/fuchsia:arm64-shared)". We
+    # determine that a `deps` is an IDK shared object target if there is a
+    # corresponding entry in `runtime_deps`. This covers the case of a private
+    # dependency on an IDK shared object. Public dependencies (`public_deps`)
+    # are on the "_sdk" target, which is already correct - see the reference to
+    # the `main_lib_target` above.
     if (current_toolchain == default_toolchain &&
         defined(invoker.runtime_deps)) {
-      if (defined(invoker.deps)) {
-        _new_deps = []
-        foreach(dep, invoker.deps) {
-          _dep_label = get_label_info(dep, "label_no_toolchain")
-          _dep_sdk_label = _dep_label + "_sdk"
-          if (invoker.runtime_deps + [ _dep_sdk_label ] - [ _dep_sdk_label ] !=
-              invoker.runtime_deps) {
-            dep =
-                _dep_label + "(${shlib_toolchain_no_default_variant_redirect})"
-          }
-          _new_deps += [ dep ]
+      _new_deps = []
+      foreach(dep, invoker.deps) {
+        _dep_label = get_label_info(dep, "label_no_toolchain")
+        _dep_sdk_label = _dep_label + "_sdk"
+        if (invoker.runtime_deps + [ _dep_sdk_label ] - [ _dep_sdk_label ] !=
+            invoker.runtime_deps) {
+          # The atom (`_sdk` target) for the private dep is in runtime_deps.
+          # Ensure there is no variant redirect.
+          dep = _dep_label + "(${shlib_toolchain_no_default_variant_redirect})"
         }
-        invoker.deps = []
-        invoker.deps = _new_deps
+        _new_deps += [ dep ]
       }
+      invoker.deps = []
+      invoker.deps = _new_deps
     }
   }
 
