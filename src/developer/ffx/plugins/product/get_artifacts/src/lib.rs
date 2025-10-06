@@ -263,7 +263,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get_flashing_artifacts() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let tmp = tempdir().unwrap();
         let tempdir = Utf8Path::from_path(tmp.path()).unwrap().canonicalize_utf8().unwrap();
 
@@ -359,7 +359,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get_emu_artifacts() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let tmp = tempdir().unwrap();
         let tempdir = Utf8Path::from_path(tmp.path()).unwrap().canonicalize_utf8().unwrap();
 
@@ -459,7 +459,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get_bootloaders() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let tmp = tempdir().unwrap();
         let tempdir = Utf8Path::from_path(tmp.path()).unwrap().canonicalize_utf8().unwrap();
 
@@ -530,7 +530,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get_emu_artifacts_machine() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let pb_path = env.isolate_root.path().join("test_bundle");
         fs::create_dir_all(&pb_path).expect("create test bundle dir");
 
@@ -634,7 +634,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get_use_default_bundle() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let pb_path = env.isolate_root.path().join("test_bundle");
         fs::create_dir_all(&pb_path).expect("create test bundle dir");
 

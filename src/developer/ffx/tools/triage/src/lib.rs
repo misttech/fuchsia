@@ -229,7 +229,7 @@ mod tests {
         buffers: &mut TestBuffers,
         format: Option<Format>,
     ) {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let writer = Writer::new_test(format, &buffers);
         let data_provider_proxy = setup_fake_data_provider_server();
         let result = triage_impl(&env.context, Some(data_provider_proxy), cmd, writer)

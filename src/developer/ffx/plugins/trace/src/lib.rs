@@ -1049,7 +1049,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_list_categories() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
         run_trace_test(
@@ -1066,7 +1066,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_symbolize_success() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let fake_ir_json = json!({
            "unrelated_key": "unrelated_value",
            "protocol_declarations": [
@@ -1114,7 +1114,7 @@ mod tests {
         let fake_temp_file =
             Builder::new().suffix("foo.fxt").tempfile().expect("Failed to create a temp file");
         let fake_trace_file_name = fake_temp_file.path().to_str().unwrap().to_string();
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
         assert!(
@@ -1144,7 +1144,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_symbolize_fail() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
         run_trace_test(
@@ -1170,7 +1170,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_list_categories_machine() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(Some(Format::Json), &test_buffers);
         run_trace_test(
@@ -1193,7 +1193,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_list_categories_peer_closed() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
         let session_mgr_proxy = Deferred::from_output(Err(fho::user_error!("not found")));
@@ -1209,7 +1209,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_list_providers() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
         run_trace_test(
@@ -1228,7 +1228,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_list_providers_peer_closed() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
         let session_mgr_proxy = Deferred::from_output(Err(fho::user_error!("not found")));
@@ -1244,7 +1244,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_list_providers_machine() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(Some(Format::Json), &test_buffers);
         run_trace_test(
@@ -1261,7 +1261,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_start() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
         run_trace_test(
@@ -1304,7 +1304,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_status() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
         run_trace_test(
@@ -1327,7 +1327,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_stop() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
         run_trace_test(
@@ -1353,7 +1353,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_stop_with_long_path() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
         let long_dirname = "long_directory_name_0123456789abcdef_1123456789abcdef_2123456789abcdef_3123456789abcdef_4123456789abcdef_5123456789abcdef_6123456789abcdef_7123456789abcdef_8123456789abcdef";
@@ -1383,7 +1383,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_start_verbose() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
         run_trace_test(
@@ -1426,7 +1426,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_stop_verbose() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
         run_trace_test(
@@ -1462,7 +1462,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_start_with_duration() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
         run_trace_test(
@@ -1494,7 +1494,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_start_with_duration_foreground() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
         run_trace_test(
@@ -1529,7 +1529,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_start_foreground() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
         run_trace_test(
@@ -1565,7 +1565,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_large_buffer() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
         run_trace_test(

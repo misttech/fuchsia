@@ -315,7 +315,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_coverage() {
-        let _env = ffx_config::test_init().await.unwrap();
+        let _env = ffx_config::test_init().unwrap();
 
         let test_dir = TempDir::new().unwrap();
         let test_dir_path = test_dir.path().to_path_buf();

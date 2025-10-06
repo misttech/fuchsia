@@ -269,7 +269,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_load_product_bundle_no_build_dir() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
 
         // Can handle an empty build path
         let pb = load_product_bundle(&env.context, "some_place".to_string()).await;
@@ -336,7 +336,7 @@ mod tests {
     async fn test_load_product_bundle_v2_valid() {
         let tmp = TempDir::new().unwrap();
         let pb_dir = make_pb_v2_in!(tmp, "fake.x64");
-        let env = ffx_config::test_init().await.expect("create test config");
+        let env = ffx_config::test_init().expect("create test config");
 
         // Load with passing a path directly
         let pb =
@@ -348,7 +348,7 @@ mod tests {
     async fn test_load_product_bundle_v2_invalid() {
         let tmp = TempDir::new().unwrap();
         let pb_dir = Utf8Path::from_path(tmp.path()).unwrap();
-        let env = ffx_config::test_init().await.expect("create test config");
+        let env = ffx_config::test_init().expect("create test config");
 
         // Load with passing a path directly
         let pb = load_product_bundle(&env.context, pb_dir).await;

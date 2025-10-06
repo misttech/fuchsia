@@ -661,7 +661,7 @@ mod test {
     #[fuchsia::test]
     async fn test_load() {
         // Set up the test environment and set the ssh key paths
-        let env = test_init().await.expect("test env init");
+        let env = test_init().expect("test env init");
         env.context
             .query("ssh.pub")
             .level(Some(ConfigLevel::User))

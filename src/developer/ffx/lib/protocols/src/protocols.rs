@@ -305,7 +305,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn noop_test() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let daemon = FakeDaemonBuilder::new(&env.context)
             .register_instanced_protocol_closure::<ffx_test::NoopMarker, _>(noop_protocol_closure())
             .build();
@@ -347,7 +347,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn counter_test() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let daemon = FakeDaemonBuilder::new(&env.context)
             .register_instanced_protocol_closure::<ffx_test::NoopMarker, _>(noop_protocol_closure())
             .register_fidl_protocol::<CounterProtocol>()
@@ -394,7 +394,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn protocol_error_ensures_drop_test() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let daemon = FakeDaemonBuilder::new(&env.context)
             .register_fidl_protocol::<NoopProtocolPanicker>()
             .build();
@@ -460,7 +460,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn counter_test_singleton() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let daemon = FakeDaemonBuilder::new(&env.context)
             .register_instanced_protocol_closure::<ffx_test::NoopMarker, _>(noop_protocol_closure())
             .register_fidl_protocol::<SingletonCounterProtocol>()

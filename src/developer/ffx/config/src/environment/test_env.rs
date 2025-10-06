@@ -236,7 +236,7 @@ impl TestEnvBuilder {
 ///
 /// FIXME(https://fxbug.dev/411199300): This function inherits environment
 /// variables from the real test environment.
-pub async fn test_init() -> Result<TestEnv<'static>> {
+pub fn test_init() -> Result<TestEnv<'static>> {
     // TODO(https://fxbug.dev/411199300): Use `test_env()` when we don't need to
     // implicitly inherit environment variables from the real test environment
     // environment anymore.

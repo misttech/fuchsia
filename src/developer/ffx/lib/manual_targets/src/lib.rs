@@ -125,7 +125,7 @@ mod test {
         #[fuchsia::test]
         #[serial]
         async fn test_get_manual_targets() {
-            let env = ffx_config::test_init().await.unwrap();
+            let env = ffx_config::test_init().unwrap();
 
             env.context
                 .query(MANUAL_TARGETS)
@@ -143,7 +143,7 @@ mod test {
         #[fuchsia::test]
         #[serial]
         async fn test_add_manual_target() {
-            let env = ffx_config::test_init().await.unwrap();
+            let env = ffx_config::test_init().unwrap();
 
             let mt = Config::new_from_context(&env.context);
             mt.add("127.0.0.1:8022".to_string()).await.unwrap();
@@ -158,7 +158,7 @@ mod test {
         #[fuchsia::test]
         #[serial]
         async fn test_remove_manual_target() {
-            let env = ffx_config::test_init().await.unwrap();
+            let env = ffx_config::test_init().unwrap();
 
             env.context
                 .query(MANUAL_TARGETS)

@@ -189,7 +189,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_empty() {
-        let test_env = ffx_config::test_init().await.expect("test env");
+        let test_env = ffx_config::test_init().expect("test env");
         test_env
             .context
             .query("repository.process_dir")
@@ -213,7 +213,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_text() {
-        let test_env = ffx_config::test_init().await.expect("test env");
+        let test_env = ffx_config::test_init().expect("test env");
         test_env
             .context
             .query("repository.process_dir")
@@ -261,7 +261,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_text_full() {
-        let test_env = ffx_config::test_init().await.expect("test env");
+        let test_env = ffx_config::test_init().expect("test env");
         test_env
             .context
             .query("repository.process_dir")
@@ -314,7 +314,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_filter_name() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let dir = env.context.get("repository.process_dir").expect("process_dir");
         let mgr = PkgServerInstances::new(dir);
         let addr = SocketAddr::new(std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED), 8000);
@@ -375,7 +375,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_machine_and_schema() {
-        let test_env = ffx_config::test_init().await.expect("test env");
+        let test_env = ffx_config::test_init().expect("test env");
         test_env
             .context
             .query("repository.process_dir")

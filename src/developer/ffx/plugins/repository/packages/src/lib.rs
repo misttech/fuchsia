@@ -496,7 +496,7 @@ mod test {
     async fn setup_repo<'a>(instance_name: &'a str, path: &'a Path) -> ffx_config::TestEnv<'a> {
         test_utils::make_pm_repo_dir(path).await;
 
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let repo_process_dir = env.isolate_root.path().join("repo_data");
 
         // Override the default location for the process dir so it is test specific.

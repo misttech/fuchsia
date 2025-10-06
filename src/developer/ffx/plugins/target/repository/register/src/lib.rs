@@ -441,7 +441,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_register_standalone() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
             FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
@@ -501,7 +501,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_register_standalone_product_bundle() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
             FakeTarget::new(Some(SshHostAddrInfo { address: "127.7.7.1".to_string() }));
@@ -594,7 +594,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_register_default_repository() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
             FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
@@ -653,7 +653,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_register_storage_type() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
             FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
@@ -712,7 +712,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_register_empty_aliases() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
             FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
@@ -770,7 +770,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_register_returns_error() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
             FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
@@ -828,7 +828,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_register_returns_error_machine() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
             FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
@@ -895,7 +895,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_register_machine() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
             FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
@@ -965,7 +965,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_tunnel_required() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) = FakeTarget::new(None);
 
@@ -1021,7 +1021,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_address_override() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         env.context
             .query(TARGET_DEFAULT_KEY)

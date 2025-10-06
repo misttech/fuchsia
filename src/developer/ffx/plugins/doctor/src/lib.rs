@@ -2647,7 +2647,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_single_try_no_daemon_running_no_targets_with_default_target() {
-        let test_env = ffx_config::test_init().await.expect("Setting up test environment");
+        let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
 
         let fake = FakeDaemonManager::new(
@@ -2719,7 +2719,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_single_try_daemon_running_no_targets() {
-        let test_env = ffx_config::test_init().await.expect("Setting up test environment");
+        let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
 
         let fake = FakeDaemonManager::new(
@@ -2798,7 +2798,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_single_try_daemon_running_connection_error() {
-        let test_env = ffx_config::test_init().await.expect("Setting up test environment");
+        let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
 
         let fake = FakeDaemonManager::new(
@@ -2870,7 +2870,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_single_try_daemon_running_no_targets_default_target_empty() {
-        let test_env = ffx_config::test_init().await.expect("Setting up test environment");
+        let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
 
         let fake = FakeDaemonManager::new(
@@ -2949,7 +2949,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_two_tries_daemon_running_list_fails() {
-        let test_env = ffx_config::test_init().await.expect("Setting up test environment");
+        let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
 
         let fake = FakeDaemonManager::new(
@@ -3180,7 +3180,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_finds_target_connects_to_rcs_with_ssh_error_verbose() {
-        let test_env = ffx_config::test_init().await.expect("Setting up test environment");
+        let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
 
         let ledger = test_finds_target_connects_to_rcs_setup(
@@ -3236,7 +3236,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_ssh_connection_refused_recommends_tunnel() {
-        let test_env = ffx_config::test_init().await.expect("Setting up test environment");
+        let test_env = ffx_config::test_init().expect("Setting up test environment");
 
         let ledger = test_finds_target_connects_to_rcs_setup(
             &test_env,
@@ -3251,7 +3251,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_ssh_permission_denied_recommends_repave() {
-        let test_env = ffx_config::test_init().await.expect("Setting up test environment");
+        let test_env = ffx_config::test_init().expect("Setting up test environment");
 
         let ledger = test_finds_target_connects_to_rcs_setup(
             &test_env,
@@ -3268,7 +3268,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_finds_target_connects_to_rcs_verbose() {
-        let test_env = ffx_config::test_init().await.expect("Setting up test environment");
+        let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
 
         let ledger =
@@ -3328,7 +3328,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_finds_target_connects_to_rcs_normal() {
-        let test_env = ffx_config::test_init().await.expect("Setting up test environment");
+        let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
 
         let ledger =
@@ -3363,7 +3363,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_finds_target_with_filter() {
-        let test_env = ffx_config::test_init().await.expect("Setting up test environment");
+        let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
 
         let (tx, rx) = oneshot::channel::<()>();
@@ -3452,7 +3452,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_invalid_filter_finds_no_targets() {
-        let test_env = ffx_config::test_init().await.expect("Setting up test environment");
+        let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
 
         let (tx, rx) = oneshot::channel::<()>();
@@ -3612,7 +3612,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_single_try_daemon_running_no_targets_record_enabled() {
-        let test_env = ffx_config::test_init().await.expect("Setting up test environment");
+        let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
 
         let fake = FakeDaemonManager::new(
@@ -3704,7 +3704,7 @@ mod test {
         fake_recorder: Arc<Mutex<FakeRecorder>>,
         params: DoctorRecorderParameters,
     ) {
-        let test_env = ffx_config::test_init().await.expect("Setting up test environment");
+        let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
 
         let fake = FakeDaemonManager::new(
@@ -3851,7 +3851,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_finds_target_with_missing_nodename_verbose() {
-        let test_env = ffx_config::test_init().await.expect("Setting up test environment");
+        let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
 
         let ledger =
@@ -3910,7 +3910,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_finds_target_with_missing_nodename_normal() {
-        let test_env = ffx_config::test_init().await.expect("Setting up test environment");
+        let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
 
         let ledger =
@@ -3946,7 +3946,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_fastboot_target() {
-        let test_env = ffx_config::test_init().await.expect("Setting up test environment");
+        let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
 
         let fake = FakeDaemonManager::new(
@@ -4027,7 +4027,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_single_try_daemon_running_different_api_level() {
-        let test_env = ffx_config::test_init().await.expect("Setting up test environment");
+        let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
 
         let fake = FakeDaemonManager::new(
@@ -4107,7 +4107,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_missing_ssh_keys() {
-        let test_env = ffx_config::test_init().await.expect("Setting up test environment");
+        let test_env = ffx_config::test_init().expect("Setting up test environment");
         let pub_key = test_env.isolate_root.path().join("test_authorized_keys");
         let priv_key = test_env.isolate_root.path().join("test_ed25519_key");
         // Set the paths to use for the SSH keys

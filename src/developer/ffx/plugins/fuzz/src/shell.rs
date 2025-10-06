@@ -859,7 +859,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_empty() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
         script.add(&mut test, "");
@@ -872,7 +872,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_invalid() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
         script.add(&mut test, "foobar");
@@ -886,7 +886,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_list() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -945,7 +945,7 @@ mod tests {
     // options, files, and URLs.
     #[fuchsia::test]
     async fn test_attach() -> Result<()> {
-        let env = ffx_config::test_init().await.expect("Unable to initialize ffx_config.");
+        let env = ffx_config::test_init().expect("Unable to initialize ffx_config.");
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -996,7 +996,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1023,7 +1023,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_set() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1050,7 +1050,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_add() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
         let corpus_dir = test.corpus_dir(fuzz::Corpus::Live);
@@ -1083,7 +1083,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_run() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1129,7 +1129,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_try() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1167,7 +1167,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_cleanse() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1197,7 +1197,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_minimize() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1228,7 +1228,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_merge() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1260,7 +1260,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_resume() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1288,7 +1288,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_status() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1329,7 +1329,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_fetch() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1361,7 +1361,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_detach() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1384,7 +1384,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_stop() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1423,7 +1423,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_exit() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1452,7 +1452,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_clear() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1465,7 +1465,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_history() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 

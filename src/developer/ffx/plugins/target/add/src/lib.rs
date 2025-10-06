@@ -272,7 +272,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_machine_output() {
-        let env = ffx_config::test_init().await.expect("test_init");
+        let env = ffx_config::test_init().expect("test_init");
         let server = setup_fake_target_collection(|addr| {
             assert_eq!(
                 addr,
@@ -302,7 +302,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_machine_output_err() {
-        let env = ffx_config::test_init().await.expect("test_init");
+        let env = ffx_config::test_init().expect("test_init");
         let server = setup_fake_target_collection(|addr| {
             assert_eq!(
                 addr,

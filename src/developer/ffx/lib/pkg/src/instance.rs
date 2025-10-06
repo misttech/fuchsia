@@ -364,7 +364,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_write_instance_info_with_context() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         env.context
             .query("repository.process_dir")
             .level(Some(ConfigLevel::User))

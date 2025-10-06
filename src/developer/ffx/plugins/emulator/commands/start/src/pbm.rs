@@ -428,7 +428,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_apply_command_line_options() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let emulator_instances = EmulatorInstances::new(PathBuf::new());
 
         // Set up some test data to be applied.
@@ -546,7 +546,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_config_backed_values() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let mut cmd = StartCommand::default();
         let emu_config = EmulatorConfiguration::default();
 
@@ -599,7 +599,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_accel_auto() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let temp_path = PathBuf::from(tempdir().unwrap().path());
         let file_path = temp_path.join("kvm");
         create_dir_all(&temp_path).expect("Create all temp directory");

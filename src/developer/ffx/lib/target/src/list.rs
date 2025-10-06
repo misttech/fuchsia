@@ -128,7 +128,7 @@ mod test {
     #[fuchsia::test]
     async fn test_serial_addresses() {
         // USB targets should have an empty list of addresses, not None
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let handle = discovery::TargetHandle {
             node_name: Some("nodename".to_string()),
             state: discovery::TargetState::Fastboot(discovery::FastbootTargetState {
@@ -145,7 +145,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_handle_to_info_address_sorting() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let non_link_local_addr: addr::TargetAddr = "[2001:db8::1]:0".parse().unwrap();
         let link_local_addr: addr::TargetAddr = "[fe80::1]:0".parse().unwrap();
         let handle = discovery::TargetHandle {

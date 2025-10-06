@@ -311,7 +311,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_build_cmd_with_custom_template() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         make_fake_sdk(&env).await;
         let temp = tempdir().expect("cannot get tempdir");
         let emu_instances = EmulatorInstances::new(temp.path().to_owned());

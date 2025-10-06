@@ -144,7 +144,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_mdns_get_targets_empty() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let mdns = Rc::new(RefCell::new(Mdns {
             inner: None,
             receiver: None,
@@ -160,7 +160,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_mdns_stop() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let daemon = FakeDaemonBuilder::new(&env.context).build();
         let protocol = Rc::new(RefCell::new(Mdns {
             mdns_task: None,
@@ -176,7 +176,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_mdns_bind_event_on_first_listen() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let mdns = Rc::new(RefCell::new(Mdns {
             inner: None,
             receiver: None,
@@ -196,7 +196,7 @@ mod tests {
     #[fuchsia::test]
     #[ignore] // TODO(b/297919461) -- re-enable or delete
     async fn test_mdns_network_traffic_valid() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let mdns = Rc::new(RefCell::new(Mdns {
             inner: None,
             receiver: None,
@@ -276,7 +276,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_mdns_network_traffic_invalid() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let mdns = Rc::new(RefCell::new(Mdns {
             inner: None,
             receiver: None,
@@ -324,7 +324,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_mdns_network_traffic_wrong_protocol() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let mdns = Rc::new(RefCell::new(Mdns {
             inner: None,
             receiver: None,
@@ -378,7 +378,7 @@ mod tests {
     #[fuchsia::test]
     #[ignore] // TODO(b/297919461) -- re-enable or delete
     async fn test_new_and_rediscovered_target() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let daemon = FakeDaemonBuilder::new(&env.context).build();
         let protocol = Rc::new(RefCell::new(Mdns {
             inner: None,
@@ -421,7 +421,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_eviction() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let daemon = FakeDaemonBuilder::new(&env.context).build();
         let protocol = Rc::new(RefCell::new(Mdns {
             inner: None,
@@ -460,7 +460,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_eviction_timer_override() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let daemon = FakeDaemonBuilder::new(&env.context).build();
         let protocol = Rc::new(RefCell::new(Mdns {
             inner: None,

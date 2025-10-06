@@ -284,7 +284,7 @@ mod test {
     use std::fs::File;
 
     async fn setup_test_env() -> TestEnv<'static> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
 
         env.context
             .query(CONFIG_BASE_URLS)

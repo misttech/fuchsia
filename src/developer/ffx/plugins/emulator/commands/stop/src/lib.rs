@@ -136,7 +136,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_stop_existing() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let temp_path = PathBuf::from(tempdir().unwrap().path());
         env.context
             .query(EMU_INSTANCE_ROOT_DIR)
@@ -159,7 +159,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_stop_unknown() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let cmd = StopCommand { name: Some("unknown_instance".to_string()), ..Default::default() };
         let tool = EmuStopTool { cmd, context: env.context.clone() };
         let expected_phrase = "unknown_instance does not exist";
@@ -172,7 +172,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_stop_multiple_running_error() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let temp_path = PathBuf::from(tempdir().unwrap().path());
         env.context
             .query(EMU_INSTANCE_ROOT_DIR)
@@ -199,7 +199,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_stop_multiple_running() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let temp_path = PathBuf::from(tempdir().unwrap().path());
         env.context
             .query(EMU_INSTANCE_ROOT_DIR)
@@ -223,7 +223,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_stop_not_running() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         env.context
             .query(EMU_INSTANCE_ROOT_DIR)
             .level(Some(ConfigLevel::User))

@@ -941,7 +941,7 @@ mod test {
                 },
             ),
         ];
-        let test_env = ffx_config::test_init().await.expect("ffx_config::test_init() succeeds");
+        let test_env = ffx_config::test_init().expect("ffx_config::test_init() succeeds");
         let fake_contoller = FakeRemoteControllerProvider::new();
         for (run_command, expected_test_params) in cases.into_iter() {
             let result = params_from_args(
@@ -963,7 +963,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_params_from_args_invalid_args() {
-        let test_env = ffx_config::test_init().await.expect("ffx_config::test_init() succeeds");
+        let test_env = ffx_config::test_init().expect("ffx_config::test_init() succeeds");
         let dir = tempfile::tempdir().expect("Create temp dir");
         std::fs::write(dir.path().join(VALID_INPUT_FILENAME), &*VALID_FILE_INPUT)
             .expect("write file");
@@ -1221,7 +1221,7 @@ mod test {
                 },
             ),
         ];
-        let test_env = ffx_config::test_init().await.expect("ffx_config::test_init() succeeds");
+        let test_env = ffx_config::test_init().expect("ffx_config::test_init() succeeds");
         let fake_contoller = FakeRemoteControllerProvider::new();
         let dir = tempfile::tempdir().expect("Create temp dir");
 

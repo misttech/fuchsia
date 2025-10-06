@@ -1202,7 +1202,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_collection_insert_new_disabled() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let tc = TargetCollection::new_with_queue(&env.context);
         let nodename = String::from("what");
         let query = nodename.clone().into();
@@ -1220,7 +1220,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_collection_insert_new() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let tc = TargetCollection::new_with_queue(&env.context);
         let nodename = String::from("what");
         let query = nodename.clone().into();
@@ -1236,7 +1236,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_merge_evict_old_addresses() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let tc = TargetCollection::new_with_queue(&env.context);
         let nodename = String::from("schplew");
         let t = Target::new_with_time(
@@ -1284,7 +1284,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_collection_merge() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let tc = TargetCollection::new_with_queue(&env.context);
         let nodename = String::from("bananas");
         let t1 = Target::new_with_time(
@@ -1343,7 +1343,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_collection_merge_disjointed() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let tc = TargetCollection::new_with_queue(&env.context);
 
         const NODENAME: &str = "bananas";
@@ -1408,7 +1408,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_collection_merge_manual() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let tc = TargetCollection::new_with_queue(&env.context);
 
         const NODENAME1: &str = "discovered";
@@ -1445,7 +1445,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_collection_no_scopeless_ipv6() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let tc = TargetCollection::new_with_queue(&env.context);
         let nodename = String::from("bananas");
         let t1 = Target::new_with_time(
@@ -1477,7 +1477,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_query_target_by_addr() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let ipv4_addr: TargetIpAddr = TargetIpAddr::new(IpAddr::from([192, 168, 0, 1]), 0, 0);
 
         let ipv6_addr: TargetIpAddr = TargetIpAddr::new(
@@ -1507,7 +1507,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_new_target_event_synthesis() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let t = Target::new_named(&env.context, "clopperdoop");
         let tc = TargetCollection::new_with_queue(&env.context);
         tc.merge_insert(t.clone());
@@ -1527,7 +1527,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_collection_event_synthesis_all_connected() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let t = Target::new_autoconnected(&env.context, "clam-chowder-is-tasty");
         let t2 = Target::new_autoconnected(&env.context, "this-is-a-crunchy-falafel");
         let t3 = Target::new_autoconnected(&env.context, "i-should-probably-eat-lunch");
@@ -1559,7 +1559,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_collection_event_synthesis_none_connected() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let t = Target::new_named(&env.context, "clam-chowder-is-tasty");
         let t2 = Target::new_named(&env.context, "this-is-a-crunchy-falafel");
         let t3 = Target::new_named(&env.context, "i-should-probably-eat-lunch");
@@ -1600,7 +1600,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_collection_events() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let t = Target::new_autoconnected(&env.context, "clam-chowder-is-tasty");
         let t2 = Target::new_autoconnected(&env.context, "this-is-a-crunchy-falafel");
         let t3 = Target::new_autoconnected(&env.context, "i-should-probably-eat-lunch");
@@ -1621,7 +1621,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_discover_target() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let default = "clam-chowder-is-tasty";
         let t = Target::new_autoconnected(&env.context, default);
         let t2 = Target::new_named(&env.context, "this-is-a-crunchy-falafel");
@@ -1726,7 +1726,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_discover_target_updated_target() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let address = "f111::1";
         let ip = address.parse().unwrap();
         let mut addr_set = BTreeSet::new();
@@ -1755,7 +1755,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_merge_no_name() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let ip = "f111::3".parse().unwrap();
 
         // t1 is a target as we would naturally discover it via mdns, or from a
@@ -1793,7 +1793,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_does_not_merge_different_ports_with_no_name() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let ip = "fe80::1".parse().unwrap();
 
         let mut addr_set = BTreeSet::new();
@@ -1831,7 +1831,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_does_not_merge_different_ports() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let ip = "fe80::1".parse().unwrap();
 
         let mut addr_set = BTreeSet::new();
@@ -1866,7 +1866,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_merge_enabled_and_transient() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let tc = TargetCollection::new(&env.context);
 
         const NAME: &str = "foo";
@@ -1897,7 +1897,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_remove_unnamed_by_addr() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let ip1 = "f111::3".parse().unwrap();
         let ip2 = "f111::4".parse().unwrap();
         let mut addr_set = BTreeSet::new();
@@ -1937,7 +1937,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_remove_named_by_addr() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let ip1 = "f111::3".parse().unwrap();
         let ip2 = "f111::4".parse().unwrap();
         let mut addr_set = BTreeSet::new();
@@ -1976,7 +1976,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_remove_address() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let ip1 = "f111::3".parse().unwrap();
         let mut addr_set = BTreeSet::new();
         addr_set.replace(TargetIpAddr::new(ip1, 0xbadf00d, 0));
@@ -2014,7 +2014,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_remove_address_no_drop() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let ip1 = "f111::3".parse().unwrap();
         let ip2 = "f111::4".parse().unwrap();
         let mut addr_set = BTreeSet::new();
@@ -2064,7 +2064,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_remove_by_name() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let ip1 = "f111::3".parse().unwrap();
         let ip2 = "f111::4".parse().unwrap();
         let mut addr_set = BTreeSet::new();
@@ -2104,7 +2104,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_collection_removal_disconnects_target() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         use crate::target::HostPipeState;
         let local_node = overnet_core::Router::new(None).unwrap();
         let target = Target::new_named(&env.context, "soggy-falafel");
@@ -2126,7 +2126,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_vsock_resets_host_pipe() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         use crate::target::HostPipeState;
         let local_node = overnet_core::Router::new(None).unwrap();
         let target = Target::new_named(&env.context, "soggy-falafel");
@@ -2168,7 +2168,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_vsock_preserves_host_pipe() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         use crate::target::HostPipeState;
         let local_node = overnet_core::Router::new(None).unwrap();
         let target = Target::new_named(&env.context, "soggy-falafel");
@@ -2210,7 +2210,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_match_serial() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let string = "turritopsis-dohrnii-is-an-immortal-jellyfish";
         let t = Target::new_for_usb(&env.context, string);
         let tc = TargetCollection::new_with_queue(&env.context);
@@ -2225,7 +2225,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_target_query_matches_nodename() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let query = TargetInfoQuery::from("foo");
         let target = Rc::new(Target::new_named(&env.context, "foo"));
         assert!(query.match_description(&target.target_info()));
@@ -2404,7 +2404,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_find_overnet_id() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let tc = TargetCollection::new(&env.context);
         let target = Target::new(&env.context);
         let node = overnet_core::Router::new(None).unwrap();

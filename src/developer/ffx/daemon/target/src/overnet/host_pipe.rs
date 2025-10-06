@@ -791,7 +791,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_host_pipe_start_and_stop_normal_operation() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let target = crate::target::Target::new_with_addrs(
             &env.context,
             Some("flooooooooberdoober"),
@@ -818,7 +818,7 @@ mod test {
     #[fuchsia::test]
     async fn test_host_pipe_start_and_stop_internal_failure() {
         // TODO(awdavies): Verify the error matches.
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let target = crate::target::Target::new_with_addrs(
             &env.context,
             Some("flooooooooberdoober"),
@@ -843,7 +843,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_host_pipe_start_and_stop_ssh_failure() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let target = crate::target::Target::new_with_addrs(
             &env.context,
             Some("flooooooooberdoober"),
@@ -929,7 +929,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_start_with_failure() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         write_test_ssh_keys(&env).await;
 
         let target = crate::target::Target::new_with_addrs(
@@ -956,7 +956,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_start_ok() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         const SUPPORTED_HOST_PIPE_SH: &str = include_str!("../../test_data/supported_host_pipe.sh");
 
         let ssh_path = env.isolate_root.path().join("supported_host_pipe.sh");
@@ -991,7 +991,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_ssh_command_includes_keepalive_timeout() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         write_test_ssh_keys(&env).await;
 
         env.context
@@ -1016,7 +1016,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_host_pipe_with_overnet_id() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let target = crate::target::Target::new_with_addrs(
             &env.context,
             Some("overnetid"),

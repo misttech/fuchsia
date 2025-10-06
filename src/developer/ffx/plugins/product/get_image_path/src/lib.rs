@@ -174,7 +174,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get_image_path() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let tmp = tempdir().unwrap();
         let tempdir = Utf8Path::from_path(tmp.path()).unwrap().canonicalize_utf8().unwrap();
 
@@ -362,7 +362,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get_image_path_not_found() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let pb = ProductBundle::V2(ProductBundleV2 {
             product_name: "".to_string(),
             product_version: "".to_string(),
@@ -396,7 +396,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get_image_path_not_found_machine() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let pb_path = env.isolate_root.path().join("test_bundle");
         fs::create_dir_all(&pb_path).expect("create test bundle dir");
 
@@ -465,7 +465,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get_image_path_machine() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let pb_path = env.isolate_root.path().join("test_bundle");
         fs::create_dir_all(&pb_path).expect("create test bundle dir");
 
@@ -533,7 +533,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get_image_path_from_config() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let pb_path = env.isolate_root.path().join("test_bundle");
         fs::create_dir_all(&pb_path).expect("create test bundle dir");
 

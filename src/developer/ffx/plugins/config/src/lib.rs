@@ -282,7 +282,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_exec_env_set_set_values() -> Result<()> {
-        let test_env = test_init().await?;
+        let test_env = test_init()?;
         let writer = Vec::<u8>::new();
         let cmd = EnvSetCommand { file: "test.json".into(), level: ConfigLevel::User };
         exec_env_set(&test_env.context, writer, &cmd).await?;
@@ -292,7 +292,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_gey_key() {
-        let test_env = test_init().await.expect("test env initialized");
+        let test_env = test_init().expect("test env initialized");
         test_env
             .context
             .query("some-key")
@@ -313,7 +313,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_remove_key() {
-        let test_env = test_init().await.expect("test env initialized");
+        let test_env = test_init().expect("test env initialized");
         test_env
             .context
             .query("some-key")
@@ -340,7 +340,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_remove_nonexistant_key() {
-        let test_env = test_init().await.expect("test env initialized");
+        let test_env = test_init().expect("test env initialized");
 
         let remove_cmd = RemoveCommand { name: "some-key".into() };
 
@@ -358,7 +358,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_list_processed_by_raw() {
-        let test_env = test_init().await.expect("test env");
+        let test_env = test_init().expect("test env");
         let mut writer = Vec::<u8>::new();
 
         let private_path1 = test_env.isolate_root.path().join("privatekey1");
@@ -398,7 +398,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_list_processed_by_substitute() {
-        let test_env = test_init().await.expect("test env");
+        let test_env = test_init().expect("test env");
         let mut writer = Vec::<u8>::new();
 
         let private_path1 = test_env.isolate_root.path().join("privatekey1");
@@ -442,7 +442,7 @@ mod test {
         );
         env::set_var("ENV_SSH_PATH_FOR_TESTING_", "private_path1");
 
-        let test_env = test_init().await.expect("test env");
+        let test_env = test_init().expect("test env");
         let mut writer = Vec::<u8>::new();
 
         let private_path1 = test_env.isolate_root.path().join("privatekey1");
@@ -475,7 +475,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_list_single_by_file() {
-        let test_env = test_init().await.expect("test env");
+        let test_env = test_init().expect("test env");
         let mut writer = Vec::<u8>::new();
 
         let private_path1 = test_env.isolate_root.path().join("privatekey1");
@@ -504,7 +504,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_list_processed_by_file() {
-        let test_env = test_init().await.expect("test env");
+        let test_env = test_init().expect("test env");
         let mut writer = Vec::<u8>::new();
 
         let private_path1 = test_env.isolate_root.path().join("privatekey1");
@@ -547,7 +547,7 @@ mod test {
         );
         env::set_var("ENV_SSH_PATH_FOR_TESTING_2", private_path1.path());
 
-        let test_env = test_init().await.expect("test env");
+        let test_env = test_init().expect("test env");
         let mut writer = Vec::<u8>::new();
 
         let private_path2 = test_env.isolate_root.path().join("privatekey2");
@@ -575,7 +575,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_exec_check_mismatched_ssh_keys() {
-        let test_env = test_init().await.expect("test env");
+        let test_env = test_init().expect("test env");
 
         let auth_key_path1 = test_env.isolate_root.path().join("authorized_keys1");
         let private_path1 = test_env.isolate_root.path().join("privatekey1");
@@ -657,7 +657,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_exec_check_ok_ssh_keys() {
-        let test_env = test_init().await.expect("test env");
+        let test_env = test_init().expect("test env");
 
         let auth_key_path = test_env.isolate_root.path().join("authorized_keys");
         let private_path = test_env.isolate_root.path().join("privatekey");
@@ -712,7 +712,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_exec_check_empty_ssh_keys() {
-        let test_env = test_init().await.expect("test env");
+        let test_env = test_init().expect("test env");
 
         let auth_key_path = test_env.isolate_root.path().join("authorized_keys");
         let private_path = test_env.isolate_root.path().join("privatekey");

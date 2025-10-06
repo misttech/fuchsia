@@ -819,7 +819,7 @@ pub mod test {
     #[fuchsia::test]
     async fn test_target_stream_produces_emulator() {
         use tempfile::tempdir;
-        let env = ffx_config::test_init().await.expect("Failed to initialize test env");
+        let env = ffx_config::test_init().expect("Failed to initialize test env");
 
         // Create the emulator instance dir
         let temp = tempdir().expect("cannot get tempdir");

@@ -170,7 +170,7 @@ pub(crate) mod tests {
     // The main testing part will happen in the `main()` function of the tool.
     #[fuchsia::test]
     async fn test_run_fake_tool_with_legacy_shim() {
-        let config_env = ffx_config::test_init().await.expect("Initializing test environment");
+        let config_env = ffx_config::test_init().expect("Initializing test environment");
         let ffx_cmd_line = FfxCommandLine::new(None, &["ffx", "fake", "stuff"]).unwrap();
         let tool_cmd = ToolCommand::<FakeTool>::from_args(
             &Vec::from_iter(ffx_cmd_line.cmd_iter()),

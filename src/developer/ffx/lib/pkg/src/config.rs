@@ -100,7 +100,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get_set_unset_default_repository() {
-        let env = ffx_config::test_init().await.expect("test init");
+        let env = ffx_config::test_init().expect("test init");
         env.context.query(CONFIG_KEY_ROOT).level(Some(ConfigLevel::User)).set(json!({})).unwrap();
 
         // Initially there's no default.

@@ -118,7 +118,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_show() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let mut tool = EmuShowTool { cmd: ShowCommand::default(), context: env.context.clone() };
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
 
@@ -195,7 +195,7 @@ mod tests {
     }
     #[fuchsia::test]
     async fn test_show_unknown() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
 
         let mut tool = EmuShowTool { cmd: ShowCommand::default(), context: env.context.clone() };
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
@@ -232,7 +232,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_show_part() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         env.context
             .query(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
             .level(Some(ConfigLevel::User))

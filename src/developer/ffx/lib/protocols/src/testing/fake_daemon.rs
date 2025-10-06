@@ -347,7 +347,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_err_double_shutdown() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let f = FakeDaemonBuilder::new(&env.context)
             .register_instanced_protocol_closure::<ffx_test::NoopMarker, _>(|_, req| match req {
                 ffx_test::NoopRequest::DoNoop { responder } => responder.send().map_err(Into::into),

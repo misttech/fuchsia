@@ -960,7 +960,7 @@ mod test {
     }
 
     async fn get_test_env() -> TestEnv<'static> {
-        ffx_config::test_init().await.expect("test initialization")
+        ffx_config::test_init().expect("test initialization")
     }
 
     async fn make_fake_rcs_proxy_connector(

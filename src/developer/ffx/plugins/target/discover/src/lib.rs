@@ -537,7 +537,7 @@ mod tests {
         async fn setup() -> Self {
             let tmp_dir = tempdir().unwrap();
             let cache_path = tmp_dir.path().to_path_buf();
-            let test_env = test_init().await.unwrap();
+            let test_env = test_init().unwrap();
             test_env
                 .context
                 .query("discovery.cache_dir")

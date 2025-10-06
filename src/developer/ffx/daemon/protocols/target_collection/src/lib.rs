@@ -889,7 +889,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_handle_mdns_non_fastboot() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
         let t = Target::new_named(&env.context, "this-is-a-thing");
         let tc = Rc::new(TargetCollection::new(&env.context));
@@ -908,7 +908,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_handle_mdns_fastboot() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
         let t = Target::new_named(&env.context, "this-is-a-thing");
         let tc = Rc::new(TargetCollection::new(&env.context));
@@ -1014,7 +1014,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_protocol_integration() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let temp = tempdir().expect("cannot get tempdir");
         init_test_config(&env, temp.path()).await;
 
@@ -1120,7 +1120,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_handle_fastboot_target_no_serial() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let tc = Rc::new(TargetCollection::new(&env.context));
         handle_fastboot_target(&tc, ffx::FastbootTarget::default());
         assert_eq!(tc.targets(None).len(), 0, "target collection should remain empty");
@@ -1128,7 +1128,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_handle_fastboot_target() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let tc = Rc::new(TargetCollection::new(&env.context));
         handle_fastboot_target(
             &tc,
@@ -1145,7 +1145,7 @@ mod tests {
 
         const NODE_NAME: &str = "Teletechternacon";
 
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let dir = tempfile::tempdir().unwrap();
         let sock_path = dir.path().join("test_sock");
         let tc = Rc::new(TargetCollection::new(&env.context));
@@ -1242,7 +1242,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_persisted_manual_target_remove() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let mut map = Map::<String, Value>::new();
         map.insert("127.0.0.1:8022".to_string(), Value::Null);
         env.context
@@ -1290,7 +1290,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_add_target() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let temp = tempdir().expect("cannot get tempdir");
         init_test_config(&env, temp.path()).await;
 
@@ -1318,7 +1318,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_add_target_with_port() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let temp = tempdir().expect("cannot get tempdir");
         init_test_config(&env, temp.path()).await;
 
@@ -1346,7 +1346,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_persisted_manual_target_add() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let temp = tempdir().expect("cannot get tempdir");
         init_test_config(&env, temp.path()).await;
 
@@ -1384,7 +1384,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_persisted_manual_target_load() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let mut map = Map::<String, Value>::new();
         map.insert("127.0.0.1:8022".to_string(), Value::Null);
         env.context
@@ -1422,7 +1422,7 @@ mod tests {
     async fn test_dynamic_open_target() {
         // Without doing an "add", we can still do an "open" if the target is specified
         // with IP:port
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
 
         let tc_impl = Rc::new(RefCell::new(TargetCollectionProtocol::default()));
         let fake_daemon = FakeDaemonBuilder::new(&env.context)

@@ -1900,7 +1900,7 @@ mod test {
     // Most of this is now handled in `task.rs`
     #[fuchsia::test]
     async fn test_target_disconnect_multiple_invocations() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let node = overnet_core::Router::new(None).unwrap();
         let t = Rc::new(Target::new_named(&env.context, "flabbadoobiedoo"));
         {
@@ -1922,7 +1922,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_rcs_states() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
 
         for test in vec![
@@ -1973,7 +1973,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_into_bridge_target() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let t = Target::new_named(&env.context, "cragdune-the-impaler");
         let a1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
         let a2 = IpAddr::V6(Ipv6Addr::new(
@@ -2003,7 +2003,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_event_synthesis_wait() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
 
         let conn = RcsConnection::new_with_proxy(
@@ -2019,7 +2019,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_event_fire() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
 
         let t = Target::new_named(&env.context, "balaowihf");
@@ -2036,7 +2036,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_update_connection_state() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let t = Target::new_named(&env.context, "have-you-seen-my-cat");
         let instant = Instant::now();
         let instant_clone = instant.clone();
@@ -2050,7 +2050,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_connection_state_will_not_drop_rcs_on_mdns_events() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
 
         let t = Target::new_named(&env.context, "hello-kitty");
@@ -2068,7 +2068,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_connection_state_will_not_drop_rcs_on_manual_events() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
 
         let t = Target::new_named(&env.context, "hello-kitty");
@@ -2086,7 +2086,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_expire_state_mdns() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let t = Target::new_named(&env.context, "yo-yo-ma-plays-that-cello-ya-hear");
         let then = Instant::now() - (MDNS_MAX_AGE + Duration::from_secs(1));
         t.update_connection_state(|_| TargetConnectionState::Mdns(then));
@@ -2106,7 +2106,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_expire_state_fastboot() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let t = Target::new_named(&env.context, "platypodes-are-venomous");
         let then = Instant::now() - (FASTBOOT_MAX_AGE + Duration::from_secs(1));
         t.update_connection_state(|_| TargetConnectionState::Fastboot(then));
@@ -2126,7 +2126,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_expire_state_zedboot() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let t = Target::new_named(&env.context, "platypodes-are-venomous");
         let then = Instant::now() - (ZEDBOOT_MAX_AGE + Duration::from_secs(1));
         t.update_connection_state(|_| TargetConnectionState::Zedboot(then));
@@ -2146,7 +2146,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_expire_state_manual_fastboot() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let t = Target::new_with_addr_entries(
             &env.context,
             Some("platypodes-are-venomous"),
@@ -2169,7 +2169,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_addresses_order_preserved() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let t = Target::new_named(&env.context, "this-is-a-target-i-guess");
         let addrs_pre = vec![
             SocketAddr::V6(SocketAddrV6::new("fe80::1".parse().unwrap(), 0, 0, 0)),
@@ -2206,7 +2206,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_addresses_order() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let t = Target::new_named(&env.context, "hi-hi-hi");
         let expected = SocketAddr::V6(SocketAddrV6::new(
             "fe80::4559:49b2:462d:f46b".parse().unwrap(),
@@ -2238,7 +2238,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_set_preferred_ssh_address() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let target_addr: TargetIpAddr = TargetIpAddr::new("fe80::2".parse().unwrap(), 1, 0);
         let target = Target::new_with_addr_entries(
             &env.context,
@@ -2252,7 +2252,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_set_preferred_ssh_address_with_non_existent_address() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let target = Target::new_with_addr_entries(
             &env.context,
             Some("foo"),
@@ -2273,7 +2273,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_ssh_address_priority() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let name = Some("bubba");
         let start = std::time::SystemTime::now();
         use std::iter::FromIterator;
@@ -2399,7 +2399,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_ssh_address_info_no_port_provides_default_port() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let target = Target::new_with_addr_entries(
             &env.context,
             Some("foo"),
@@ -2425,7 +2425,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_ssh_address_info_with_port() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let target = Target::new_with_addr_entries(
             &env.context,
             Some("foo"),
@@ -2453,7 +2453,7 @@ mod test {
     #[fuchsia::test]
     async fn test_netsvc_target_has_no_ssh() {
         use std::iter::FromIterator;
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let target = Target::new_with_netsvc_addrs(
             &env.context,
             Some("foo"),
@@ -2485,7 +2485,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_netsvc_ssh_address_info_should_be_none() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let ip = "f111::4".parse().unwrap();
         let mut addr_set = BTreeSet::new();
         addr_set.replace(TargetIpAddr::new(ip, 0xbadf00d, 0));
@@ -2496,7 +2496,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_is_manual() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let target = Target::new(&env.context);
         target.addrs_insert_entry(TargetAddrEntry::new(
             TargetAddr::new("::1".parse().unwrap(), 0, 0),
@@ -2511,7 +2511,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_update_connection_state_manual_disconnect() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
 
         let target = Target::new(&env.context);
@@ -2543,7 +2543,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_disconnect() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
         let target = Target::new(&env.context);
         target.set_state(TargetConnectionState::Mdns(Instant::now()));
@@ -2562,7 +2562,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_host_pipe_state_borrow() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
         let (done_send, done_recv) = channel::oneshot::channel::<()>();
 
@@ -2585,7 +2585,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_from_target_for_targetinfo() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         {
             let target = Target::new_for_usb(&env.context, "IANTHE");
 
@@ -2636,7 +2636,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_infer_fastboot_interface() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         {
             let target = Target::new(&env.context);
 
@@ -2717,7 +2717,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_query_new_overnet_id() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
         let target = crate::target::Target::new_with_addrs(
             &env.context,
@@ -2735,7 +2735,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_query_existing_overnet_id() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
         let target = crate::target::Target::new_with_addrs(
             &env.context,
@@ -2762,7 +2762,7 @@ mod test {
 
         #[fuchsia::test]
         async fn test_enable() {
-            let env = ffx_config::test_init().await.unwrap();
+            let env = ffx_config::test_init().unwrap();
             let target = Target::new(&env.context);
 
             assert!(!target.is_enabled());
@@ -2772,7 +2772,7 @@ mod test {
 
         #[fuchsia::test]
         async fn test_manual_targets_always_enable() {
-            let env = ffx_config::test_init().await.unwrap();
+            let env = ffx_config::test_init().unwrap();
             let target = Target::new_with_addr_entries(
                 &env.context,
                 Some("foo"),
@@ -2791,7 +2791,7 @@ mod test {
 
         #[fuchsia::test]
         async fn test_disable() {
-            let env = ffx_config::test_init().await.unwrap();
+            let env = ffx_config::test_init().unwrap();
             let target = Target::new_autoconnected(&env.context, "foo");
 
             assert!(target.is_enabled());
@@ -2804,7 +2804,7 @@ mod test {
         #[cfg(not(target_os = "macos"))]
         #[fuchsia::test]
         async fn test_transient_expire() {
-            let env = ffx_config::test_init().await.unwrap();
+            let env = ffx_config::test_init().unwrap();
             let target = Target::new_autoconnected(&env.context, "foo");
 
             target.mark_transient();
@@ -2837,7 +2837,7 @@ mod test {
         #[cfg(not(target_os = "macos"))]
         #[fuchsia::test]
         async fn test_non_transient_expire() {
-            let env = ffx_config::test_init().await.unwrap();
+            let env = ffx_config::test_init().unwrap();
             let target = Target::new_autoconnected(&env.context, "foo");
 
             assert!(!target.is_transient());
@@ -2860,7 +2860,7 @@ mod test {
 
         #[fuchsia::test]
         async fn test_reset_transient_on_rediscovery() {
-            let env = ffx_config::test_init().await.unwrap();
+            let env = ffx_config::test_init().unwrap();
             let target = Target::new_autoconnected(&env.context, "foo");
 
             target.mark_transient();

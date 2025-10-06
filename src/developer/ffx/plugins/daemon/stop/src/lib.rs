@@ -207,7 +207,7 @@ mod test {
 
     #[fuchsia::test]
     async fn run_stop_test() {
-        let config_env = ffx_config::test_init().await.unwrap();
+        let config_env = ffx_config::test_init().unwrap();
         let buffers = TestBuffers::default();
         let writer = <StopTool as FfxMain>::Writer::new_test(None, &buffers);
         let tool = StopTool {
@@ -223,7 +223,7 @@ mod test {
 
     #[fuchsia::test]
     async fn run_stop_test_machine() {
-        let config_env = ffx_config::test_init().await.unwrap();
+        let config_env = ffx_config::test_init().unwrap();
         let test_stdout = TestBuffer::default();
         let writer = <StopTool as FfxMain>::Writer::new_buffers(
             Some(Format::Json),

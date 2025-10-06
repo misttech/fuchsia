@@ -317,7 +317,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_try_runner_from_name() {
-        let env = ffx_config::test_init().await.expect("test env");
+        let env = ffx_config::test_init().expect("test env");
         let suite = FfxSuite::from_env(&env.context).expect("ffx suite");
 
         let cmd = FfxCommandLine::new(None, &["ffx", "target", "list"]).expect("ffx cmdline");

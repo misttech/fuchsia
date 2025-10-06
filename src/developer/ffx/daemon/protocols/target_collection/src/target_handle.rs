@@ -303,7 +303,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_valid_target_state() {
         const TEST_SOCKETADDR: &'static str = "[fe80::1%1]:22";
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let daemon = FakeDaemonBuilder::new(&env.context).build();
         let cx = Context::new(daemon, env.context.clone());
         let target = Target::new_with_addr_entries(
@@ -390,7 +390,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_open_rcs_valid() {
         const TEST_NODE_NAME: &'static str = "villete";
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
         let node2 = overnet_core::Router::new(None).unwrap();
         let (rx2, tx2) = fidl::Socket::create_stream();

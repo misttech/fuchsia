@@ -657,7 +657,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_package_server_task() {
-        let test_env = ffx_config::test_init().await.expect("test env");
+        let test_env = ffx_config::test_init().expect("test env");
         let fake_env = FakeTestEnv::new(&test_env).await;
 
         let product_bundle = PathBuf::from("/path/to/product_bundle");
@@ -675,7 +675,7 @@ mod tests {
     }
     #[fuchsia::test]
     async fn test_wait_for_device_task() {
-        let test_env = ffx_config::test_init().await.expect("test env");
+        let test_env = ffx_config::test_init().expect("test env");
         let fake_env = FakeTestEnv::new(&test_env).await;
 
         let repo_name = "registered_test_repo".into();
@@ -685,7 +685,7 @@ mod tests {
     }
     #[fuchsia::test]
     async fn test_unregister_pb_repo_server() {
-        let test_env = ffx_config::test_init().await.expect("test env");
+        let test_env = ffx_config::test_init().expect("test env");
         let fake_env = FakeTestEnv::new(&test_env).await;
 
         let result =
@@ -695,7 +695,7 @@ mod tests {
     }
     #[fuchsia::test]
     async fn test_is_server_registered() {
-        let test_env = ffx_config::test_init().await.expect("test env");
+        let test_env = ffx_config::test_init().expect("test env");
         let fake_env = FakeTestEnv::new(&test_env).await;
 
         let repo_name = "registered_test_repo";
@@ -723,7 +723,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_deregister_standalone() {
-        let test_env = ffx_config::test_init().await.expect("test env");
+        let test_env = ffx_config::test_init().expect("test env");
         let fake_env = FakeTestEnv::new(&test_env).await;
 
         let result = deregister_standalone(

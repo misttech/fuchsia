@@ -139,7 +139,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_address_family() -> Result<()> {
-        let test_env = test_init().await?;
+        let test_env = test_init()?;
         let keys = [
             test_env.isolate_root.path().join("path2"),
             test_env.isolate_root.path().join("path1"),
@@ -173,7 +173,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_custom_config_file() -> Result<()> {
-        let test_env = test_init().await?;
+        let test_env = test_init()?;
         let keys = [
             test_env.isolate_root.path().join("path2"),
             test_env.isolate_root.path().join("path1"),

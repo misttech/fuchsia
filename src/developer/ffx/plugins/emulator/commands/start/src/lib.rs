@@ -784,7 +784,7 @@ mod tests {
     // Check that a running instance is an error
     #[fuchsia::test]
     async fn test_start_with_running_instance() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
         make_fake_sdk(&env).await;
 
@@ -826,7 +826,7 @@ mod tests {
     // Check that an existing instance that is not running is cleaned up.
     #[fuchsia::test]
     async fn test_start_with_instance_dir() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
         make_fake_sdk(&env).await;
 
@@ -880,7 +880,7 @@ mod tests {
     // Check that new_engine gets called by default and get_engine_by_name doesn't
     #[fuchsia::test]
     async fn test_get_engine_no_reuse_makes_new() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
         make_fake_sdk(&env).await;
 
@@ -923,7 +923,7 @@ mod tests {
     // Check that reuse and config together is still new_engine (i.e. config overrides reuse)
     #[fuchsia::test]
     async fn test_get_engine_with_config_doesnt_reuse() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
 
         let cmd = StartCommand {
@@ -975,7 +975,7 @@ mod tests {
     // Check that reuse and config.is_none calls get_engine_by_name
     #[fuchsia::test]
     async fn test_get_engine_without_config_does_reuse() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
         make_fake_sdk(&env).await;
 
@@ -1025,7 +1025,7 @@ mod tests {
     // reuse is checked to be false, by watching do_stage. stage() is only called on non-reused instances.
     #[fuchsia::test]
     async fn test_get_engine_doesnotexist_creates_new() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
         make_fake_sdk(&env).await;
 
@@ -1070,7 +1070,7 @@ mod tests {
     // Check that if DoesExist, then cmd.name is updated too
     #[fuchsia::test]
     async fn test_get_engine_updates_cmd_name_when_blank() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         make_fake_sdk(&env).await;
 
         env.context.query("emu.name").level(Some(ConfigLevel::User)).set("".into())?;
@@ -1121,7 +1121,7 @@ mod tests {
     // Ensure dry-run stops after building command, doesn't run
     #[fuchsia::test]
     async fn test_dry_run() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
         make_fake_sdk(&env).await;
 
@@ -1169,7 +1169,7 @@ mod tests {
     // Ensure stage stops after staging the files, doesn't run
     #[fuchsia::test]
     async fn test_stage() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
         make_fake_sdk(&env).await;
 
@@ -1211,7 +1211,7 @@ mod tests {
     // Ensure start goes through config and staging by default and calls start
     #[fuchsia::test]
     async fn test_start() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
         make_fake_sdk(&env).await;
 
@@ -1254,7 +1254,7 @@ mod tests {
     // Ensure start() skips the stage() call if the reuse flag is true
     #[fuchsia::test]
     async fn test_reuse_doesnt_stage() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
         make_fake_sdk(&env).await;
 
@@ -1300,7 +1300,7 @@ mod tests {
     // Ensure start() skips the stage() call is a custom config is provided
     #[fuchsia::test]
     async fn test_custom_config_doesnt_stage() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
 
         let cmd = StartCommand { config: Some("filename".into()), ..Default::default() };
@@ -1335,7 +1335,7 @@ mod tests {
     // Check that the final command reflects changes from the edit stage
     #[fuchsia::test]
     async fn test_edit() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
         make_fake_sdk(&env).await;
 
@@ -1392,7 +1392,7 @@ mod tests {
     // Check that the final command reflects changes from staging
     #[fuchsia::test]
     async fn test_staging_edits() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let env_context = env.context.clone();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
         make_fake_sdk(&env).await;
@@ -1447,7 +1447,7 @@ mod tests {
     // and sets the disk hashes in the config.
     #[fuchsia::test]
     async fn test_check_if_reusable_new() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
         make_fake_sdk(&env).await;
 
@@ -1506,7 +1506,7 @@ mod tests {
     // Checks that if the existing instance has matching disk hashes, it is reused.
     #[fuchsia::test]
     async fn test_check_if_reusable_matching() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
         make_fake_sdk(&env).await;
         let pb = ProductBundle::V2(
@@ -1569,7 +1569,7 @@ mod tests {
     async fn test_check_if_reusable_applies_args() {
         // Setup the test environment and SDK. This is boilerplate for
         // any test running ffx.
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         make_fake_sdk(&env).await;
         // Create a test product bundle. This is boilerplate for
         // any test that needs to use a product bundle. See the
@@ -1641,7 +1641,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_finalize_start_command_named() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
 
         let test_buffers = TestBuffers::default();
         let mut writer = VerifiedMachineWriter::new_test(None, &test_buffers);
@@ -1668,7 +1668,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_finalize_start_command_uefi_unsupported_arch() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
 
         let test_buffers = TestBuffers::default();
         let mut writer = VerifiedMachineWriter::new_test(None, &test_buffers);
@@ -1701,7 +1701,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_finalize_start_command_uefi_x64_pb() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
 
         let test_buffers = TestBuffers::default();
         let mut writer = VerifiedMachineWriter::new_test(None, &test_buffers);
@@ -1736,7 +1736,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_finalize_start_command_uefi_x64_pb_femu() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
 
         let test_buffers = TestBuffers::default();
         let mut writer = VerifiedMachineWriter::new_test(None, &test_buffers);
@@ -1772,7 +1772,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_finalize_start_command_uefi_arm64_pb() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
 
         let test_buffers = TestBuffers::default();
         let mut writer = VerifiedMachineWriter::new_test(None, &test_buffers);
@@ -1808,7 +1808,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_finalize_start_command_same_arch_pb_default_femu() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
 
         let test_buffers = TestBuffers::default();
         let mut writer = VerifiedMachineWriter::new_test(None, &test_buffers);
@@ -1838,7 +1838,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_finalize_start_command_cross_arch_pb_default_femu() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
 
         let test_buffers = TestBuffers::default();
         let mut writer = VerifiedMachineWriter::new_test(None, &test_buffers);
@@ -1875,7 +1875,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_finalize_start_command_cross_arch_pb_explicit_femu() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
 
         let test_buffers = TestBuffers::default();
         let mut writer = VerifiedMachineWriter::new_test(None, &test_buffers);
@@ -1913,7 +1913,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_finalize_start_command_noname() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
 
         let test_buffers = TestBuffers::default();
         let mut writer = VerifiedMachineWriter::new_test(None, &test_buffers);
@@ -1940,7 +1940,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_finalize_start_command_nodevice() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
 
         let test_buffers = TestBuffers::default();
         let mut writer = VerifiedMachineWriter::new_test(None, &test_buffers);
@@ -1969,7 +1969,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_finalize_start_command_uefi_vbmeta_from_ffx_config() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
         make_fake_sdk(&env).await;
 
@@ -2027,7 +2027,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_finalize_start_command_uefi_vbmeta_from_cmd_line() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
         make_fake_sdk(&env).await;
 
@@ -2095,7 +2095,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_finalize_start_command_uefi_vbmeta_non_existing_files() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
         make_fake_sdk(&env).await;
 

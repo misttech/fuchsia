@@ -1009,7 +1009,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_can_resolve_target_locally_addr() {
-        let test_env = ffx_config::test_init().await.unwrap();
+        let test_env = ffx_config::test_init().unwrap();
         let resolver = MockTargetResolver::new();
         // A network address will resolve to itself
         let (_, addr_spec) = get_addr_and_spec();
@@ -1025,7 +1025,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_can_resolve_target_locally_serial() {
-        let test_env = ffx_config::test_init().await.unwrap();
+        let test_env = ffx_config::test_init().unwrap();
         let resolver = MockTargetResolver::new();
         // A serial spec will resolve to itself
         let sn = "abcdef".to_string();
@@ -1048,7 +1048,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_can_resolve_target_locally_dns() {
-        let test_env = ffx_config::test_init().await.unwrap();
+        let test_env = ffx_config::test_init().unwrap();
         let mut resolver = MockTargetResolver::new();
         // A DNS name will satisfy the resolution request
         let name = "foobar".to_string();
@@ -1066,7 +1066,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_can_resolve_target_locally_serial_name() {
-        let test_env = ffx_config::test_init().await.unwrap();
+        let test_env = ffx_config::test_init().unwrap();
         let mut resolver = MockTargetResolver::new();
         // Test with "<serial>", _not_ "serial:<serial>"
         let sn = "abcdef".to_string();
@@ -1090,7 +1090,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_can_resolve_target_locally_name_ambiguous() {
-        let test_env = ffx_config::test_init().await.unwrap();
+        let test_env = ffx_config::test_init().unwrap();
         let mut resolver = MockTargetResolver::new();
         // An ambiguous name will result in an error
         let name = "foobar".to_string();
@@ -1109,7 +1109,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_can_resolve_target_locally_first() {
-        let test_env = ffx_config::test_init().await.unwrap();
+        let test_env = ffx_config::test_init().unwrap();
         let mut resolver = MockTargetResolver::new();
         // A "first" query will satisfy the resolution request
         let first_spec = TargetInfoQuery::First;
@@ -1124,7 +1124,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_can_resolve_target_locally_first_ambiguous() {
-        let test_env = ffx_config::test_init().await.unwrap();
+        let test_env = ffx_config::test_init().unwrap();
         let mut resolver = MockTargetResolver::new();
         // A "first" query will fail if there are multiple matches
         let name = "foobar".to_string();
@@ -1142,7 +1142,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_get_discovery_cache_dir() {
-        let test_env = ffx_config::test_init().await.unwrap();
+        let test_env = ffx_config::test_init().unwrap();
         let cache_dir = "/tmp/cache";
         test_env
             .context

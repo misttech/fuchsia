@@ -562,7 +562,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_boot_stages_file_and_calls_boot() -> fho::Result<()> {
-        let test_env = test_init().await?;
+        let test_env = test_init()?;
         let zbi_file = NamedTempFile::new().expect("tmp access failed");
         let zbi_file_name = zbi_file.path().to_string_lossy().to_string();
         let vbmeta_file = NamedTempFile::new().expect("tmp access failed");
@@ -594,7 +594,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_boot_stages_file_and_calls_boot_with_just_zbi() -> fho::Result<()> {
-        let test_env = test_init().await?;
+        let test_env = test_init()?;
         let zbi_file = NamedTempFile::new().expect("tmp access failed");
         let zbi_file_name = zbi_file.path().to_string_lossy().to_string();
         let (state, proxy) = setup();
@@ -624,7 +624,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_boot_fails_with_just_vbmeta() {
-        let test_env = test_init().await.expect("creating test env");
+        let test_env = test_init().expect("creating test env");
         let vbmeta_file = NamedTempFile::new().expect("tmp access failed");
         let vbmeta_file_name = vbmeta_file.path().to_string_lossy().to_string();
         let (_, proxy) = setup();
@@ -653,7 +653,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_lock_calls_oem_command() -> fho::Result<()> {
-        let test_env = test_init().await?;
+        let test_env = test_init()?;
         let (state, proxy) = setup();
         {
             let mut state = state.lock().unwrap();

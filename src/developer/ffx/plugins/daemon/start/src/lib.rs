@@ -103,7 +103,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_background_start_succeeds() {
-        let config_env = ffx_config::test_init().await.unwrap();
+        let config_env = ffx_config::test_init().unwrap();
         let cmd = StartCommand { path: None, background: true };
         let fho_env = create_fake_injector_with_result(&config_env.context, true).await;
         let tool = DaemonStartTool { cmd, fho_env };
@@ -114,7 +114,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_background_start_fails() {
-        let config_env = ffx_config::test_init().await.unwrap();
+        let config_env = ffx_config::test_init().unwrap();
         let cmd = StartCommand { path: None, background: true };
         let fho_env = create_fake_injector_with_result(&config_env.context, false).await;
         let tool = DaemonStartTool { cmd, fho_env };

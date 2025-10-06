@@ -502,7 +502,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_reboot_product() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let (_, proxy) = setup(&env.context).await;
         proxy
             .reboot(TargetRebootState::Product)
@@ -512,7 +512,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_reboot_recovery() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let (_, proxy) = setup(&env.context).await;
         proxy
             .reboot(TargetRebootState::Recovery)
@@ -522,7 +522,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_reboot_bootloader() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let (_, proxy) = setup(&env.context).await;
         proxy
             .reboot(TargetRebootState::Bootloader)
@@ -532,7 +532,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_fastboot_reboot_product() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let (target, proxy) = setup_usb(&env.context).await;
         target.set_state(TargetConnectionState::Fastboot(Instant::now()));
         proxy
@@ -543,7 +543,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_fastboot_reboot_recovery() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let (target, proxy) = setup_usb(&env.context).await;
         target.set_state(TargetConnectionState::Fastboot(Instant::now()));
         assert!(proxy.reboot(TargetRebootState::Recovery).await?.is_err());
@@ -552,7 +552,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_fastboot_reboot_bootloader() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let (target, proxy) = setup_usb(&env.context).await;
         target.set_state(TargetConnectionState::Fastboot(Instant::now()));
         proxy
@@ -563,7 +563,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_zedboot_reboot_bootloader() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let (target, proxy) = setup(&env.context).await;
         target.set_state(TargetConnectionState::Zedboot(Instant::now()));
         assert!(proxy.reboot(TargetRebootState::Bootloader).await?.is_err());
@@ -572,7 +572,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_zedboot_reboot_recovery() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let (target, proxy) = setup(&env.context).await;
         target.set_state(TargetConnectionState::Zedboot(Instant::now()));
         assert!(proxy.reboot(TargetRebootState::Recovery).await?.is_err());

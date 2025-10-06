@@ -436,7 +436,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn update_simple() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let target = Target::new(&env.context);
 
         assert!(!target.is_transient());
@@ -507,7 +507,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn update_discovered() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let now = Instant::now();
 
         const ADDRS: &[SocketAddr] = &[
@@ -607,7 +607,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn update_disconnect() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let now = Instant::now();
 
         let target = Target::new(&env.context);
@@ -628,7 +628,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn update_rcs() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let now = Instant::now();
 
         let target = Target::new(&env.context);
@@ -656,7 +656,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn from_rcs_identify() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         use fidl_fuchsia_developer_remotecontrol as rcs;
 
         let local_node = overnet_core::Router::new(None).unwrap();

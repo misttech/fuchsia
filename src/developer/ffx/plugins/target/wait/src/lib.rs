@@ -143,7 +143,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_success() {
-        let test_env = ffx_config::test_init().await.expect("test env");
+        let test_env = ffx_config::test_init().expect("test env");
         let mut mock_waiter = MockDeviceWaiter::new();
         mock_waiter.expect_wait().times(1).returning(|_, _, _, _| Box::pin(async { Ok(()) }));
         let tool = WaitOperation {
@@ -167,7 +167,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_unexpected_error() {
-        let test_env = ffx_config::test_init().await.expect("test env");
+        let test_env = ffx_config::test_init().expect("test env");
         let mut mock_waiter = MockDeviceWaiter::new();
         mock_waiter
             .expect_wait()
@@ -198,7 +198,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_user_error() {
-        let test_env = ffx_config::test_init().await.expect("test env");
+        let test_env = ffx_config::test_init().expect("test env");
         let mut mock_waiter = MockDeviceWaiter::new();
         mock_waiter
             .expect_wait()

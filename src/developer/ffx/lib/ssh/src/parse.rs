@@ -382,7 +382,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_parse_ssh_output_doesnt_fail_with_debug2() {
-        let env = ffx_config::test_init().await.expect("test env init");
+        let env = ffx_config::test_init().expect("test env init");
         let line = "debug1: we are debugging\ndebug2: more debugging\ndebug1: debug one again\ndebug3: man this sure is verbose";
         let err = parse_ssh_error(&mut line.as_bytes(), &env.context).await;
         // Can't assert_eq because IoError doesn't impl PartialEq.
@@ -391,7 +391,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_parse_ssh_connection_works() {
-        let env = ffx_config::test_init().await.expect("test env init");
+        let env = ffx_config::test_init().expect("test env init");
         for (line, expected) in [
             (&"++ 192.168.1.1 1234 10.0.0.1 22 ++\n"[..], ("192.168.1.1".to_string(), None)),
             (
@@ -415,7 +415,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_parse_ssh_connection_errors() {
-        let env = ffx_config::test_init().await.expect("test env init");
+        let env = ffx_config::test_init().expect("test env init");
         for line in [
             // Test for invalid anchors
             &"192.168.1.1 1234 10.0.0.1 22\n"[..],
@@ -478,7 +478,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_compat_works_without_overnet_id() {
-        let env = ffx_config::test_init().await.expect("test env init");
+        let env = ffx_config::test_init().expect("test env init");
         let line = &"{\"ssh_connection\":\"10.0.2.2 34502 10.0.2.15 22\",\"compatibility\":{\"status\":\"supported\",\"platform_abi\":12345,\"message\":\"foo\"}}\n"
             [..];
         let dci = DeviceConnectionInfo {
@@ -498,7 +498,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_compat_works_with_overnet_id() {
-        let env = ffx_config::test_init().await.expect("test env init");
+        let env = ffx_config::test_init().expect("test env init");
         let line = &"{\"ssh_connection\":\"10.0.2.2 34502 10.0.2.15 22\",\"compatibility\":{\"status\":\"supported\",\"platform_abi\":12345,\"message\":\"foo\", \"overnet_id\": 6789}}\n"
             [..];
         let dci = DeviceConnectionInfo {

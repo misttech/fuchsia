@@ -1200,7 +1200,7 @@ mod tests {
     }
     // Note that the caller MUST initialize the ffx_config environment before calling this function
     // since we override config values as part of the test. This looks like:
-    //     let env = ffx_config::test_init().await?;
+    //     let env = ffx_config::test_init()?;
     // The returned structure must remain in scope for the duration of the test to function
     // properly.
     async fn setup(
@@ -1270,7 +1270,7 @@ mod tests {
     }
 
     async fn test_staging_no_reuse_common(disk_image_format: DiskImageFormat) -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         make_fake_sdk(&env).await;
         let temp = tempdir().map_err(|e| bug!("cannot get tempdir: {e}"))?;
         let instance_name = "test-instance";
@@ -1453,7 +1453,7 @@ mod tests {
     }
 
     async fn test_staging_with_reuse_common(disk_image_format: DiskImageFormat) -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         make_fake_sdk(&env).await;
         let temp = tempdir().expect("cannot get tempdir");
         let instance_name = "test-instance";
@@ -1642,7 +1642,7 @@ mod tests {
     // depends on an external binary, making testing challenging.
     #[fuchsia::test]
     async fn test_staging_resize_fxfs() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         make_fake_sdk(&env).await;
         let temp = tempdir().expect("cannot get tempdir");
         let instance_name = "test-instance";
@@ -1705,7 +1705,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_embed_boot_data() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         make_fake_sdk(&env).await;
         let temp = tempdir().expect("cannot get tempdir");
         let mut emu_config = EmulatorConfiguration::default();
@@ -1724,7 +1724,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_embed_boot_data_with_kernel_cmdline() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         make_fake_sdk(&env).await;
         let temp = tempdir().expect("cannot get tempdir");
         let mut emu_config = EmulatorConfiguration::default();
@@ -1749,7 +1749,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_generate_vbmeta() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         make_fake_sdk(&env).await;
         let temp = tempdir().expect("cannot get tempdir");
         let mut emu_config = EmulatorConfiguration::default();
@@ -1775,7 +1775,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_authorized_keys_to_boot_loader_file() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         make_fake_sdk(&env).await;
         let temp = tempdir().expect("cannot get tempdir");
         let mut emu_config = EmulatorConfiguration::default();
@@ -1856,7 +1856,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_read_port_mappings() -> Result<()> {
-        let env = ffx_config::test_init().await?;
+        let env = ffx_config::test_init()?;
         let temp = tempdir().expect("cannot get tempdir");
         let mut data: EmulatorInstanceData =
             EmulatorInstanceData::new_with_state("test-instance", EngineState::New);

@@ -158,7 +158,7 @@ where
     let node = overnet_core::Router::new(None).expect("creating Overnet node");
 
     let ssh_path = std::env::var("FUCHSIA_SSH_KEY").unwrap().into();
-    let test_env = ffx_config::test_init().await.expect("Setting up test environment");
+    let test_env = ffx_config::test_init().expect("Setting up test environment");
     let isolate = ffx_isolate::Isolate::new_in_test(case_name, ssh_path, &test_env.context)
         .await
         .expect("create isolate");

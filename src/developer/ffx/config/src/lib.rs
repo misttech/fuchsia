@@ -446,7 +446,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_config_backed_attribute() {
-        let env = ffx_config::test_init().await.expect("create test config");
+        let env = ffx_config::test_init().expect("create test config");
         let mut empty_config_struct = TestConfigBackedStruct::default();
         assert!(empty_config_struct.value.is_none());
         assert_eq!(empty_config_struct.value(&env.context).unwrap(), "thing");
@@ -494,7 +494,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_get_host_tool() {
-        let env = ffx_config::test_init().await.expect("create test config");
+        let env = ffx_config::test_init().expect("create test config");
         let sdk_root = env.isolate_root.path().join("sdk");
         env.context
             .query("sdk.root")
@@ -522,7 +522,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_get_host_tool_override_no_exists() {
-        let env = ffx_config::test_init().await.expect("create test config");
+        let env = ffx_config::test_init().expect("create test config");
         let sdk_root = env.isolate_root.path().join("sdk");
         env.context
             .query("sdk.root")

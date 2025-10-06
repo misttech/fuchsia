@@ -230,7 +230,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get_category_group() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let birds = vec!["chickens", "bald_eagle", "blue-jay", "hawk*", "goose:gosling"];
         env.context
             .query("trace.category_groups.birds")
@@ -242,7 +242,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get_category_group_names() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let birds = vec!["chickens", "ducks"];
         let bees = vec!["honey", "bumble"];
         env.context
@@ -271,7 +271,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get_category_group_not_found() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let err = get_category_group(&env.context, "not_found").unwrap_err();
         assert!(
             err.to_string().contains("Error: no category group found for not_found"),
@@ -301,7 +301,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get_category_group_invalid_category() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         for invalid_category in INVALID_CATEGORIES {
             env.context
                 .query("trace.category_groups.flawed")
@@ -320,7 +320,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_expand_categories() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let birds = vec!["chickens", "bald_eagle", "hawk*", "goose:gosling", "blue-jay"];
         env.context
             .query("trace.category_groups.birds")
@@ -345,7 +345,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_expand_categories_invalid() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         for invalid_category in INVALID_CATEGORIES {
             let err =
                 expand_categories(&env.context, vec![invalid_category.to_string()]).unwrap_err();
@@ -360,7 +360,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_curated_category_groups_valid() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
 
         // Get all of the category groups found in config.json
         let category_groups_json: serde_json::Value =

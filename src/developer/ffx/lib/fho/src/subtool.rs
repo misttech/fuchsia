@@ -303,7 +303,7 @@ mod tests {
     // The main testing part will happen in the `main()` function of the tool.
     #[fuchsia::test]
     async fn test_run_fake_tool() {
-        let config_env = ffx_config::test_init().await.unwrap();
+        let config_env = ffx_config::test_init().unwrap();
         let ffx = FfxCommandLine::new(None, &["ffx", "fake", "stuff"]).expect("test ffx cmd");
         let fho_env = FhoEnvironment::new(&config_env.context, &ffx);
         let writer = TestWriter;
@@ -332,7 +332,7 @@ mod tests {
             }
         }
 
-        let config_env = ffx_config::test_init().await.unwrap();
+        let config_env = ffx_config::test_init().unwrap();
         let ffx = FfxCommandLine::new(None, &["ffx", "fake", "stuff"]).expect("test ffx cmd");
         let fho_env = FhoEnvironment::new(&config_env.context, &ffx);
 
@@ -348,7 +348,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn present_metadata() {
-        let test_env = ffx_config::test_init().await.expect("Test env initialization failed");
+        let test_env = ffx_config::test_init().expect("Test env initialization failed");
         let tmpdir = tempfile::tempdir().expect("tempdir");
 
         let output_path = tmpdir.path().join("metadata.json");

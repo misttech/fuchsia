@@ -181,7 +181,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_standalone_stop() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         env.context
             .query("repository.process_dir")
             .level(Some(ConfigLevel::User))
@@ -208,7 +208,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_product_bundle_stop() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         env.context
             .query("repository.process_dir")
             .level(Some(ConfigLevel::User))

@@ -489,7 +489,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn scan_workspace_subtool_directory() {
-        let test_env = ffx_config::test_init().await.expect("test init");
+        let test_env = ffx_config::test_init().expect("test init");
 
         let tempdir = tempfile::tempdir().expect("tempdir");
         create_mock_subtool(
@@ -573,7 +573,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_with_tools_manifest() {
-        let test_env = ffx_config::test_init().await.expect("test init");
+        let test_env = ffx_config::test_init().expect("test init");
 
         create_mock_subtool(
             test_env.isolate_root.path(),

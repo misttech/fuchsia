@@ -127,7 +127,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_empty_list() -> Result<(), fho::Error> {
-        let _test_env = ffx_config::test_init().await.unwrap();
+        let _test_env = ffx_config::test_init().unwrap();
         let cmd = ListCommand { only_running: false };
 
         let mut tool = EmuListTool { cmd, instances: MockInstances::new() };
@@ -154,7 +154,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_empty_list_machine() -> Result<(), fho::Error> {
-        let _test_env = ffx_config::test_init().await.unwrap();
+        let _test_env = ffx_config::test_init().unwrap();
         let cmd = ListCommand { only_running: false };
         let mut tool = EmuListTool { cmd, instances: MockInstances::new() };
 
@@ -189,7 +189,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_new_list() -> Result<(), fho::Error> {
-        let _test_env = ffx_config::test_init().await.unwrap();
+        let _test_env = ffx_config::test_init().unwrap();
         let cmd = ListCommand { only_running: false };
         let mut tool = EmuListTool { cmd, instances: MockInstances::new() };
 
@@ -214,7 +214,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_new_list_machine() -> Result<(), fho::Error> {
-        let _test_env = ffx_config::test_init().await.unwrap();
+        let _test_env = ffx_config::test_init().unwrap();
         let cmd = ListCommand { only_running: false };
         let mut tool = EmuListTool { cmd, instances: MockInstances::new() };
 
@@ -249,7 +249,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_configured_list() -> Result<(), fho::Error> {
-        let _test_env = ffx_config::test_init().await.unwrap();
+        let _test_env = ffx_config::test_init().unwrap();
         let cmd = ListCommand { only_running: false };
         let mut tool = EmuListTool { cmd, instances: MockInstances::new() };
 
@@ -278,7 +278,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_configured_list_machine() -> Result<(), fho::Error> {
-        let _test_env = ffx_config::test_init().await.unwrap();
+        let _test_env = ffx_config::test_init().unwrap();
         let cmd = ListCommand { only_running: false };
         let mut tool = EmuListTool { cmd, instances: MockInstances::new() };
 
@@ -318,7 +318,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_staged_list() -> Result<(), fho::Error> {
-        let _test_env = ffx_config::test_init().await.unwrap();
+        let _test_env = ffx_config::test_init().unwrap();
         let cmd = ListCommand { only_running: false };
         let mut tool = EmuListTool { cmd, instances: MockInstances::new() };
 
@@ -344,7 +344,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_staged_list_machine() -> Result<(), fho::Error> {
-        let _test_env = ffx_config::test_init().await.unwrap();
+        let _test_env = ffx_config::test_init().unwrap();
         let cmd = ListCommand { only_running: false };
         let mut tool = EmuListTool { cmd, instances: MockInstances::new() };
 
@@ -380,7 +380,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_running_list() -> Result<(), fho::Error> {
-        let _test_env = ffx_config::test_init().await.unwrap();
+        let _test_env = ffx_config::test_init().unwrap();
         let cmd = ListCommand { only_running: false };
         let mut tool = EmuListTool { cmd, instances: MockInstances::new() };
 
@@ -409,7 +409,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_running_list_machine() -> Result<(), fho::Error> {
-        let _test_env = ffx_config::test_init().await.unwrap();
+        let _test_env = ffx_config::test_init().unwrap();
         let cmd = ListCommand { only_running: false };
         let mut tool = EmuListTool { cmd, instances: MockInstances::new() };
 
@@ -448,7 +448,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_running_flag() -> Result<(), fho::Error> {
-        let _test_env = ffx_config::test_init().await.unwrap();
+        let _test_env = ffx_config::test_init().unwrap();
         let cmd = ListCommand { only_running: true };
         let mut tool = EmuListTool { cmd, instances: MockInstances::new() };
 
@@ -482,7 +482,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_running_flag_machine() -> Result<(), fho::Error> {
-        let _test_env = ffx_config::test_init().await.unwrap();
+        let _test_env = ffx_config::test_init().unwrap();
         let cmd = ListCommand { only_running: true };
         let mut tool = EmuListTool { cmd, instances: MockInstances::new() };
 
@@ -527,7 +527,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_all_instances() -> Result<(), fho::Error> {
-        let _test_env = ffx_config::test_init().await.unwrap();
+        let _test_env = ffx_config::test_init().unwrap();
         let cmd = ListCommand { only_running: false };
         let mut tool = EmuListTool { cmd, instances: MockInstances::new() };
 
@@ -569,7 +569,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_all_instances_machine() -> Result<(), fho::Error> {
-        let _test_env = ffx_config::test_init().await.unwrap();
+        let _test_env = ffx_config::test_init().unwrap();
         let cmd = ListCommand { only_running: false };
         let mut tool = EmuListTool { cmd, instances: MockInstances::new() };
 
@@ -621,7 +621,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_error_list() -> Result<(), fho::Error> {
-        let _test_env = ffx_config::test_init().await.unwrap();
+        let _test_env = ffx_config::test_init().unwrap();
         let cmd = ListCommand { only_running: false };
         let mut tool = EmuListTool { cmd, instances: MockInstances::new() };
 
@@ -649,7 +649,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_error_list_machine() -> Result<(), fho::Error> {
-        let _test_env = ffx_config::test_init().await.unwrap();
+        let _test_env = ffx_config::test_init().unwrap();
         let cmd = ListCommand { only_running: false };
         let mut tool = EmuListTool { cmd, instances: MockInstances::new() };
 

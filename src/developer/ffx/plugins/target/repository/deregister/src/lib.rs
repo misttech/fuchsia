@@ -249,7 +249,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_deregister_default_repository_standalone() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
 
         let default_repo_name = "default-repo";
         pkg::config::set_default_repository(&env.context, default_repo_name).await.unwrap();
@@ -281,7 +281,7 @@ mod test {
     #[fuchsia::test]
     async fn test_deregister_standalone_not_found() {
         // command should still succeed if the repo_proxy returns NOT_FOUND.
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
 
         let default_repo_name = "default-repo";
         pkg::config::set_default_repository(&env.context, default_repo_name).await.unwrap();

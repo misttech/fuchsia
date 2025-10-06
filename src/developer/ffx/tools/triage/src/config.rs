@@ -102,7 +102,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn innermost_fuchsia_dir_default_config() {
-        let env = ffx_config::test_init().await.expect("Unable to initialize ffx_config.");
+        let env = ffx_config::test_init().expect("Unable to initialize ffx_config.");
         let tempdir = tempdir().expect("Unable to create tempdir for testing.");
         let root = tempdir.path();
 
@@ -148,7 +148,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn oot_default_config() {
-        let env = ffx_config::test_init().await.expect("Unable to initialize ffx_config.");
+        let env = ffx_config::test_init().expect("Unable to initialize ffx_config.");
 
         let oot_test_default_configs =
             [Path::new("default/configs/a.triage"), Path::new("configs/b.triage")];
@@ -173,7 +173,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn directory_passed_to_config() {
-        let env = ffx_config::test_init().await.expect("Unable to initialize ffx_config.");
+        let env = ffx_config::test_init().expect("Unable to initialize ffx_config.");
         let fake_cwd = tempdir().expect("Unable to create tempdir for testing.");
 
         let tempdir = tempdir().expect("Unable to create tempdir for testing.");

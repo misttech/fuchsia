@@ -192,7 +192,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_deferred_err() {
-        let config_env = ffx_config::test_init().await.unwrap();
+        let config_env = ffx_config::test_init().unwrap();
         let ffx =
             FfxCommandLine::new(None, &["test", "test_deferred_err"]).expect("ffx command line");
 

@@ -42,7 +42,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_echo() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let daemon = FakeDaemonBuilder::new(&env.context).register_fidl_protocol::<Echo>().build();
         let proxy = daemon.open_proxy::<ffx::EchoMarker>().await;
         let string = "check-it-out".to_owned();

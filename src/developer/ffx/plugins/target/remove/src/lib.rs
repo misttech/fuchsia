@@ -160,7 +160,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_remove_existing_target() {
-        let env = ffx_config::test_init().await.expect("test_init");
+        let env = ffx_config::test_init().expect("test_init");
         let server = setup_fake_target_collection_proxy(|id| {
             assert_eq!(id, "correct-horse-battery-staple".to_owned());
             true
@@ -181,7 +181,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_remove_nonexisting_target() {
-        let env = ffx_config::test_init().await.expect("test_init");
+        let env = ffx_config::test_init().expect("test_init");
         let server = setup_fake_target_collection_proxy(|_| false);
         let tool = RemoveTool {
             cmd: RemoveCommand {
@@ -200,7 +200,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_remove_machine_nonexisting_target() {
-        let env = ffx_config::test_init().await.expect("test_init");
+        let env = ffx_config::test_init().expect("test_init");
         let server = setup_fake_target_collection_proxy(|_| false);
         let tool = RemoveTool {
             cmd: RemoveCommand {
@@ -222,7 +222,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_remove_all_targets_some() {
-        let env = ffx_config::test_init().await.expect("test_init");
+        let env = ffx_config::test_init().expect("test_init");
         const MANUAL_TARGETS: &'static str = "targets.manual";
         env.context
             .query(MANUAL_TARGETS)
@@ -247,7 +247,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_remove_all_targets_none() {
-        let env = ffx_config::test_init().await.expect("test_init");
+        let env = ffx_config::test_init().expect("test_init");
 
         let server = setup_fake_target_collection_proxy(|_| panic!("should not be called"));
         let tool = RemoveTool {

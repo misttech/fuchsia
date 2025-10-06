@@ -723,7 +723,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_check_now() {
-        let test_env = ffx_config::test_init().await.expect("test env");
+        let test_env = ffx_config::test_init().expect("test env");
 
         let fake_installer_proxy = Deferred::from_output(Ok(fake_proxy(move |req| {
             panic!("Unexpected request: {:?}", req)
@@ -793,7 +793,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_force_install() {
-        let test_env = ffx_config::test_init().await.expect("test env");
+        let test_env = ffx_config::test_init().expect("test env");
         let update_info = installer::UpdateInfo::builder().download_size(1000).build();
         let mock_installer = Arc::new(MockUpdateInstallerService::with_states(vec![
             installer::State::Prepare,

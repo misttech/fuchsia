@@ -915,7 +915,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_open_rcs_on_fastboot_error() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let (_proxy, daemon, _task) = spawn_test_daemon(&env).await;
         let target = Target::new_for_usb(&env.context, "abc");
         daemon.target_collection.merge_insert(target);
@@ -925,7 +925,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_open_rcs_on_zedboot_error() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let (_proxy, daemon, _task) = spawn_test_daemon(&env).await;
         let target = Target::new_with_netsvc_addrs(
             &env.context,
@@ -941,7 +941,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_get_target_empty() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let tempdir = tempfile::tempdir().expect("Creating tempdir");
         let socket_path = tempdir.path().join("ascendd.sock");
         let d = Daemon::new(env.context.clone(), socket_path);
@@ -953,7 +953,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_get_target_query() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let tempdir = tempfile::tempdir().expect("Creating tempdir");
         let socket_path = tempdir.path().join("ascendd.sock");
         let d = Daemon::new(env.context.clone(), socket_path);
@@ -968,7 +968,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_get_target_collection_empty_error() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let tempdir = tempfile::tempdir().expect("Creating tempdir");
         let socket_path = tempdir.path().join("ascendd.sock");
         let d = Daemon::new(env.context.clone(), socket_path);
@@ -977,7 +977,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_get_target_ambiguous() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let tempdir = tempfile::tempdir().expect("Creating tempdir");
         let socket_path = tempdir.path().join("ascendd.sock");
         let d = Daemon::new(env.context.clone(), socket_path);
@@ -990,7 +990,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_expiry() {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
         let tempdir = tempfile::tempdir().expect("Creating tempdir");
         let socket_path = tempdir.path().join("ascendd.sock");
@@ -1134,7 +1134,7 @@ mod test {
     #[fuchsia::test]
     async fn test_daemon_event_handler_merges_peers_by_node() {
         const NODE_NAME: &str = "teletecternicon";
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let local_node = overnet_core::Router::new(None).unwrap();
         let target_collection = Rc::new(TargetCollection::new(&env.context));
 

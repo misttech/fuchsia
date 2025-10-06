@@ -138,7 +138,7 @@ async fn symbolize_unresolved() {
     const FAKE_START_ADDRESS: u64 = 0x1000000;
     const FAKE_SIZE: u64 = 0x123000;
 
-    let env = ffx_config::test_init().await.unwrap();
+    let env = ffx_config::test_init().unwrap();
 
     let mut symbolizer = Symbolizer::with_context(&env.context).unwrap();
     let module_id = symbolizer.add_module("foo.so", FAKE_BUILD_ID);

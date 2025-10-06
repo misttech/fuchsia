@@ -115,7 +115,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_ffx_isolated() {
-        let env = ffx_config::test_init().await.expect("create test config");
+        let env = ffx_config::test_init().expect("create test config");
 
         // It'd be nice to check that isolation is not set by default,
         // but since a test may use an isolate-dir (which automatically
@@ -139,7 +139,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_ffx_isolated_can_override_global() {
-        let env = ffx_config::test_init().await.expect("create test config");
+        let env = ffx_config::test_init().expect("create test config");
 
         env.context
             .query("ffx.isolated")
@@ -161,7 +161,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_ffx_isolated_can_be_overridden() {
-        let env = ffx_config::test_init().await.expect("create test config");
+        let env = ffx_config::test_init().expect("create test config");
 
         env.context
             .query("ffx.isolated")

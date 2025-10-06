@@ -304,7 +304,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_start_stop() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let (noop_proxy, register) = create_noop_proxy(&env.context).await?;
         noop_proxy.do_noop().await?;
         register.shutdown(Context::new(TestDaemon::default(), env.context.clone())).await?;
@@ -314,7 +314,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_err_on_open_after_shutdown() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let register = create_noop_register();
         let (noop_proxy, server) = fidl::endpoints::create_endpoints::<ffx_test::NoopMarker>();
         register.shutdown(Context::new(TestDaemon::default(), env.context.clone())).await?;
@@ -333,7 +333,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_err_double_shutdown() -> Result<()> {
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let register = create_noop_register();
         register.shutdown(Context::new(TestDaemon::default(), env.context.clone())).await?;
         assert!(

@@ -746,7 +746,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_get_override_target_spec() {
-        let env = test_init().await.unwrap();
+        let env = test_init().unwrap();
         let mut context = env.context.clone();
         context.override_target_specifier(&Some("foo".to_string()));
         let target = get_target_specifier(&context).await.expect("get_target_specifier");
@@ -767,7 +767,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_bad_timeout() {
-        let env = test_init().await.unwrap();
+        let env = test_init().unwrap();
         assert!(
             knock_target_daemonless(
                 &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
@@ -783,7 +783,7 @@ mod test {
     async fn wait_for_device_knock_works() {
         let mut mock = MockRcsKnocker::new();
         mock.expect_knock_rcs().returning(|_, _| Box::pin(async { Ok(()) }));
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let res = wait_for_device_inner(
             mock,
             Some(Duration::from_secs(10000)),
@@ -799,7 +799,7 @@ mod test {
     async fn wait_for_device_timeout_on_shutdown() {
         let mut mock = MockRcsKnocker::new();
         mock.expect_knock_rcs().returning(|_, _| Box::pin(pending()));
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let res = wait_for_device_inner(
             mock,
             Some(Duration::from_secs(5)),
@@ -825,7 +825,7 @@ mod test {
     async fn wait_for_device_hangs_indefinitely() {
         let mut mock = MockRcsKnocker::new();
         mock.expect_knock_rcs().returning(|_, _| Box::pin(pending()));
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let res = wait_for_device_inner(
             mock,
             Some(Duration::from_secs(5)),
@@ -843,7 +843,7 @@ mod test {
         mock.expect_knock_rcs().times(1).returning(|_, _| {
             Box::pin(async { Err(KnockError::CriticalError(bug!("Oh no!").into())) })
         });
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let res = wait_for_device_inner(
             mock,
             Some(Duration::from_secs(5)),
@@ -861,7 +861,7 @@ mod test {
         mock.expect_knock_rcs().times(1).returning(|_, _| {
             Box::pin(async { Err(KnockError::CriticalError(bug!("Oh no!").into())) })
         });
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let res = wait_for_device_inner(
             mock,
             Some(Duration::from_secs(5)),
@@ -879,7 +879,7 @@ mod test {
         mock.expect_knock_rcs().returning(|_, _| {
             Box::pin(async { Err(KnockError::NonCriticalError(bug!("Oh no!").into())) })
         });
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let res = wait_for_device_inner(
             mock,
             Some(Duration::from_secs(3)),
@@ -897,7 +897,7 @@ mod test {
         mock.expect_knock_rcs().returning(|_, _| {
             Box::pin(async { Err(KnockError::NonCriticalError(bug!("Oh no!").into())) })
         });
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let res = wait_for_device_inner(
             mock,
             Some(Duration::from_secs(5)),
@@ -920,7 +920,7 @@ mod test {
             .times(1)
             .in_sequence(&mut seq)
             .returning(|_, _| Box::pin(ready(Ok(()))));
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let res = wait_for_device_inner(
             mock,
             Some(Duration::from_secs(10)),
@@ -949,7 +949,7 @@ mod test {
                 bug!("Oh no it's not connected").into(),
             ))))
         });
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let res = wait_for_device_inner(
             mock,
             Some(Duration::from_secs(10)),
@@ -965,7 +965,7 @@ mod test {
     async fn wait_for_down_when_able_to_connect_to_device() {
         let mut mock = MockRcsKnocker::new();
         mock.expect_knock_rcs().returning(|_, _| Box::pin(ready(Ok(()))));
-        let env = ffx_config::test_init().await.unwrap();
+        let env = ffx_config::test_init().unwrap();
         let res = wait_for_device_inner(
             mock,
             Some(Duration::from_secs(5)),
