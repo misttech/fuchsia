@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::error::Location;
 use crate::features::{Feature, FeatureSet};
 use crate::{
     AnyRef, Availability, Capability, CapabilityClause, CapabilityFromRef, CapabilityId, Child,
     Collection, ConfigKey, ConfigType, ConfigValueType, DependencyType, DictionaryRef, Document,
     Environment, EnvironmentExtends, Error, EventScope, Expose, ExposeFromRef, ExposeToRef,
     FromClause, Offer, OfferFromRef, OfferToRef, OneOrMany, Program, RegistrationRef, Rights,
-    RootDictionaryRef, SourceAvailability, Use, UseFromRef, offer_to_all_would_duplicate,
+    RootDictionaryRef, SourceAvailability, SpannedChild, SpannedDocument, Use, UseFromRef,
+    offer_to_all_would_duplicate,
 };
 use cm_types::{BorrowedName, IterablePath, Name};
 use itertools::Either;
@@ -98,6 +100,39 @@ pub(crate) fn validate_cml(
     res
 }
 
+/// Validates a given cml with error span.
+#[allow(dead_code)]
+pub(crate) fn validate_cml_with_span(
+    documents: HashMap<&Path, (&SpannedDocument, &String)>,
+) -> Result<(), Error> {
+    let mut ctx = ValidationContextWithSpan::new(documents);
+    ctx.validate()
+}
+
+fn byte_index_to_location(source: Option<&String>, index: usize) -> Option<Location> {
+    if let Some(source) = source {
+        let mut line = 1usize;
+        let mut column = 1usize;
+
+        for (i, ch) in source.char_indices() {
+            if i == index {
+                break;
+            }
+
+            if ch == '\n' {
+                line += 1;
+                column = 1;
+            } else {
+                column += 1;
+            }
+        }
+
+        return Some(Location { line, column });
+    }
+
+    None
+}
+
 fn duplicate_capability_check<'a>(
     duplicate_check: &mut HashSet<CapabilityId<'a>>,
     capability_string: &str,
@@ -149,6 +184,52 @@ struct ValidationContext<'a> {
     all_configs: HashSet<&'a BorrowedName>,
     all_environment_names: HashSet<&'a BorrowedName>,
     all_capability_names: HashSet<&'a BorrowedName>,
+}
+
+struct ValidationContextWithSpan<'a> {
+    documents: HashMap<&'a Path, (&'a SpannedDocument, &'a String)>,
+    current_file_path: Option<&'a Path>,
+    current_file_source: Option<&'a String>,
+}
+
+impl<'a> ValidationContextWithSpan<'a> {
+    fn new(documents: HashMap<&'a Path, (&'a SpannedDocument, &'a String)>) -> Self {
+        ValidationContextWithSpan { documents, current_file_path: None, current_file_source: None }
+    }
+
+    fn validate(&mut self) -> Result<(), Error> {
+        for (path, (document, source)) in self.documents.clone() {
+            self.current_file_path = Some(path);
+            self.current_file_source = Some(source);
+            if let Some(children) = &document.children {
+                for child in children {
+                    self.validate_child(&child)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_child(&mut self, child: &'a SpannedChild) -> Result<(), Error> {
+        if let Some(resource) = child.url.resource() {
+            if resource.ends_with(".cml") {
+                let byte_start = child.url.span().0;
+                let location = byte_index_to_location(self.current_file_source, byte_start);
+                return Err(Error::validate_with_span(
+                    format!(
+                        "child URL ends in .cml instead of .cm, \
+which is almost certainly a mistake: {}",
+                        child.url
+                    ),
+                    location,
+                    self.current_file_path,
+                ));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 // Facet key for fuchsia.test
@@ -1755,6 +1836,23 @@ mod tests {
         }
     }
 
+    macro_rules! test_validate_cml_with_span {
+        (
+            $(
+                $test_name:ident($input:expr, $($pattern:tt)+),
+            )+
+        ) => {
+            $(
+                #[test]
+                fn $test_name() {
+                    let input = format!("{}", $input);
+                    let result = validate_for_test_with_span("test.cml", &input.as_bytes());
+                    assert_matches!(result, $($pattern)+);
+                }
+            )+
+        }
+    }
+
     macro_rules! test_validate_cml_with_feature {
         (
             $features:expr,
@@ -1778,6 +1876,14 @@ mod tests {
 
     fn validate_for_test(filename: &str, input: &[u8]) -> Result<(), Error> {
         validate_with_features_for_test(filename, input, &FeatureSet::empty(), &[], &[], &[])
+    }
+
+    fn validate_for_test_with_span(filename: &str, input: &[u8]) -> Result<(), Error> {
+        let input = format!("{}", std::str::from_utf8(input).unwrap().to_string());
+        let file = Path::new(filename);
+        let document = crate::parse_one_document_with_span(&input, &file)?;
+
+        validate_cml_with_span(HashMap::from([(file, (&document, &input))]))
     }
 
     fn validate_with_features_for_test(
@@ -2801,6 +2907,27 @@ mod tests {
         );
     }
 
+    test_validate_cml_with_span! {
+        test_cml_empty_json(
+            json!({}),
+            Ok(())
+        ),
+
+        test_cml_children_url_ends_in_cml(
+            r##"{
+                "children": [
+                    {
+                        "name": "logger",
+                        "url": "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cml"
+                    }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location, filename: Some(f)}) if &err == "child URL ends in .cml instead of .cm, which is almost certainly a mistake: fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cml" &&
+                location == Some(Location {line: 5, column: 32}) &&
+                f.ends_with("test.cml")
+        ),
+    }
+
     test_validate_cml! {
         // include
         test_cml_empty_include(
@@ -2829,7 +2956,7 @@ mod tests {
         ),
 
         // program
-        test_cml_empty_json(
+        test_cml_empty_json_no_span(
             json!({}),
             Ok(())
         ),
@@ -4706,7 +4833,7 @@ mod tests {
              }),
              Err(Error::Validate { err, .. }) if &err == "identifier \"logger\" is defined twice, once in \"children\" and once in \"children\""
          ),
-         test_cml_children_url_ends_in_cml(
+         test_cml_children_url_ends_in_cml_no_span(
             json!({
                 "children": [
                      {

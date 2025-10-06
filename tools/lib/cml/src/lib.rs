@@ -22,6 +22,7 @@ use cml_macro::{CheckedVec, OneOrMany, Reference};
 use fidl_fuchsia_io as fio;
 use indexmap::IndexMap;
 use itertools::Itertools;
+use json_spanned_value::Spanned;
 use json5format::{FormatOptions, PathOption};
 use lazy_static::lazy_static;
 use maplit::{hashmap, hashset};
@@ -34,7 +35,6 @@ use std::hash::Hash;
 use std::num::NonZeroU32;
 use std::str::FromStr;
 use std::{cmp, fmt, path};
-use toml::Spanned;
 use validate::offer_to_all_from_offer;
 
 pub use cm_types::{
@@ -57,6 +57,17 @@ pub fn parse_one_document(buffer: &String, file: &std::path::Path) -> Result<Doc
         let serde_json5::Error::Message { location, msg } = e;
         let location = location.map(|l| Location { line: l.line, column: l.column });
         Error::parse(msg, location, Some(file))
+    })
+}
+
+/// Parses a string `buffer` into a [SpannedDocument]. `file` is used for error reporting.
+pub fn parse_one_document_with_span(
+    buffer: &String,
+    file: &std::path::Path,
+) -> Result<SpannedDocument, Error> {
+    json_spanned_value::from_str(&buffer).map_err(|e| {
+        let location = Location { line: e.line(), column: e.column() };
+        Error::parse(e, Some(location), Some(file))
     })
 }
 
@@ -1420,40 +1431,29 @@ pub struct Document {
 /// # Component manifest (`.cml`) reference
 ///
 /// A `.cml` file contains a single spanned json5 object literal with the keys below.
-#[derive(Deserialize, Debug, Default, PartialEq, Serialize)]
+#[derive(Deserialize, Debug, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct SpannedDocument {
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub include: Option<Vec<Spanned<String>>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub program: Option<Spanned<Program>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub children: Option<Vec<Spanned<Child>>>,
+    pub children: Option<Vec<SpannedChild>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub collections: Option<Vec<Spanned<Collection>>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub environments: Option<Vec<Spanned<Environment>>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub capabilities: Option<Vec<Spanned<Capability>>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub r#use: Option<Vec<Spanned<Use>>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub expose: Option<Vec<Spanned<Expose>>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub offer: Option<Vec<Spanned<Offer>>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub facets: Option<Spanned<IndexMap<String, Value>>>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub config: Option<Spanned<BTreeMap<ConfigKey, ConfigValueType>>>,
 }
 
@@ -3399,6 +3399,17 @@ pub struct Child {
     /// of [`environments`](#environments). If omitted, the child will inherit the same environment
     /// assigned to this component.
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub environment: Option<EnvironmentRef>,
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SpannedChild {
+    pub name: Spanned<Name>,
+    pub url: Spanned<Url>,
+    #[serde(default)]
+    pub startup: StartupMode,
+    pub on_terminate: Option<OnTerminate>,
     pub environment: Option<EnvironmentRef>,
 }
 
