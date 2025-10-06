@@ -68,9 +68,15 @@ impl UniqueReleaseInfo {
         slot: Vec<Slot>,
         artifact_type: String,
     ) -> Self {
-        let name_sanitized = sanitize(&format!("{}_{}", artifact_type, &name));
+        let name_to_sanitize = if artifact_type == "product_bundle" {
+            name.clone()
+        } else {
+            format!("{}_{}", artifact_type, &name)
+        };
+        let name_sanitized = sanitize(&name_to_sanitize);
         let version_sanitized = sanitize(&version);
         let repository_sanitized = sanitize(&repository);
+
         UniqueReleaseInfo {
             name,
             version,
@@ -300,5 +306,20 @@ mod tests {
         assert_eq!(info.name_sanitized, "products_productname");
         assert_eq!(info.version_sanitized, "version");
         assert_eq!(info.repository_sanitized, "repository");
+    }
+
+    #[test]
+    fn test_sanitization_product_bundle() {
+        // Test with product_bundle artifact type.
+        let info = UniqueReleaseInfo::new(
+            "product-name".to_string(),
+            "1.2.3".to_string(),
+            "unspecified".to_string(),
+            vec![],
+            "product_bundle".to_string(),
+        );
+        assert_eq!(info.name_sanitized, "product-name");
+        assert_eq!(info.version_sanitized, "1.2.3");
+        assert_eq!(info.repository_sanitized, "unspecified");
     }
 }
