@@ -113,10 +113,11 @@
 //!
 //! TOML's date and time syntax are not supported.
 
-#![doc(html_root_url = "https://docs.rs/basic-toml/0.1.9")]
+#![doc(html_root_url = "https://docs.rs/basic-toml/0.1.10")]
 #![deny(missing_docs)]
 #![allow(
     clippy::bool_to_int_with_if,
+    clippy::elidable_lifetime_names,
     clippy::let_underscore_untyped,
     clippy::manual_let_else,
     clippy::manual_range_contains,
@@ -124,6 +125,7 @@
     clippy::missing_errors_doc,
     clippy::must_use_candidate,
     clippy::needless_doctest_main,
+    clippy::needless_lifetimes,
     clippy::needless_pass_by_value,
     clippy::similar_names,
     clippy::type_complexity,
