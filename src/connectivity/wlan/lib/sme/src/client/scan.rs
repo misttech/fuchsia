@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::client::inspect;
 use crate::Error;
+use crate::client::inspect;
 use fuchsia_inspect::NumericProperty;
 use ieee80211::{Bssid, Ssid};
 use log::warn;
-use std::collections::{hash_map, HashMap, HashSet};
+use std::collections::{HashMap, HashSet, hash_map};
 use std::mem;
 use std::sync::Arc;
 use wlan_common::bss::BssDescription;
@@ -354,17 +354,16 @@ mod tests {
     use fuchsia_inspect::Inspector;
 
     use ieee80211::MacAddr;
-    use lazy_static::lazy_static;
     use regex::bytes::Regex;
     use std::fmt::Write;
+    use std::sync::LazyLock;
     use test_case::test_case;
     use wlan_common::test_utils::fake_capabilities::fake_5ghz_band_capability;
     use wlan_common::test_utils::fake_features::fake_spectrum_management_support_empty;
     use wlan_common::{fake_bss_description, fake_fidl_bss_description};
 
-    lazy_static! {
-        static ref CLIENT_ADDR: MacAddr = [0x7A, 0xE7, 0x76, 0xD9, 0xF2, 0x67].into();
-    }
+    static CLIENT_ADDR: LazyLock<MacAddr> =
+        LazyLock::new(|| [0x7A, 0xE7, 0x76, 0xD9, 0xF2, 0x67].into());
 
     fn passive_discovery_scan(token: i32) -> DiscoveryScan<i32> {
         DiscoveryScan::new(token, fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest {}))

@@ -13,7 +13,7 @@ use event::*;
 use remote_client::*;
 
 use crate::responder::Responder;
-use crate::{mlme_event_name, MlmeRequest, MlmeSink};
+use crate::{MlmeRequest, MlmeSink, mlme_event_name};
 use fidl_fuchsia_wlan_mlme::{self as fidl_mlme, DeviceInfo, MlmeEvent};
 use futures::channel::{mpsc, oneshot};
 use ieee80211::{MacAddr, MacAddrBytes, Ssid};
@@ -22,9 +22,9 @@ use std::collections::HashMap;
 use wlan_common::capabilities::get_device_band_cap;
 use wlan_common::channel::{Cbw, Channel};
 use wlan_common::ie::rsn::rsne::{RsnCapabilities, Rsne};
-use wlan_common::ie::{parse_ht_capabilities, ChanWidthSet, SupportedRate};
+use wlan_common::ie::{ChanWidthSet, SupportedRate, parse_ht_capabilities};
 use wlan_common::timer::{self, EventHandle, Timer};
-use wlan_common::{mac, RadioConfig};
+use wlan_common::{RadioConfig, mac};
 use wlan_rsn::psk;
 use {
     fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
@@ -484,7 +484,7 @@ fn validate_radio_cfg(
             _ => {
                 return Err(StartResult::InvalidArguments(format!(
                     "PHY type {phy:?} not supported on channel {channel}"
-                )))
+                )));
             }
         },
         fidl_common::WlanPhyType::Ht => {
@@ -493,7 +493,7 @@ fn validate_radio_cfg(
                 _ => {
                     return Err(StartResult::InvalidArguments(format!(
                         "HT-mode not supported for channel {channel}"
-                    )))
+                    )));
                 }
             }
 
@@ -501,7 +501,7 @@ fn validate_radio_cfg(
                 None => {
                     return Err(StartResult::InvalidArguments(format!(
                         "No HT capabilities: {channel}"
-                    )))
+                    )));
                 }
                 Some(ht_cap) => {
                     let ht_cap = parse_ht_capabilities(&ht_cap.bytes[..]).map_err(|e| {
@@ -524,7 +524,7 @@ fn validate_radio_cfg(
                 Cbw::Cbw160 | Cbw::Cbw80P80 { .. } => {
                     return Err(StartResult::InvalidArguments(format!(
                         "Supported for channel {channel} in VHT mode not available"
-                    )))
+                    )));
                 }
                 _ => (),
             }
@@ -547,10 +547,10 @@ fn validate_radio_cfg(
         | fidl_common::WlanPhyType::Cdmg
         | fidl_common::WlanPhyType::Cmmg
         | fidl_common::WlanPhyType::He => {
-            return Err(StartResult::InvalidArguments(format!("Unsupported PHY type: {phy:?}")))
+            return Err(StartResult::InvalidArguments(format!("Unsupported PHY type: {phy:?}")));
         }
         fidl_common::WlanPhyTypeUnknown!() => {
-            return Err(StartResult::InvalidArguments(format!("Unknown PHY type: {phy:?}")))
+            return Err(StartResult::InvalidArguments(format!("Unknown PHY type: {phy:?}")));
         }
     }
 
@@ -831,7 +831,7 @@ mod tests {
     use crate::{MlmeStream, Station};
     use assert_matches::assert_matches;
     use fidl_fuchsia_wlan_mlme as fidl_mlme;
-    use lazy_static::lazy_static;
+    use std::sync::LazyLock;
     use test_case::test_case;
     use wlan_common::channel::Cbw;
     use wlan_common::mac::Aid;
@@ -839,12 +839,14 @@ mod tests {
         fake_2ghz_band_capability_vht, fake_5ghz_band_capability, fake_5ghz_band_capability_ht_cbw,
     };
 
-    lazy_static! {
-        static ref AP_ADDR: MacAddr = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66].into();
-        static ref CLIENT_ADDR: MacAddr = [0x7A, 0xE7, 0x76, 0xD9, 0xF2, 0x67].into();
-        static ref CLIENT_ADDR2: MacAddr = [0x22, 0x22, 0x22, 0x22, 0x22, 0x22].into();
-        static ref SSID: Ssid = Ssid::try_from([0x46, 0x55, 0x43, 0x48, 0x53, 0x49, 0x41]).unwrap();
-    }
+    static AP_ADDR: LazyLock<MacAddr> =
+        LazyLock::new(|| [0x11, 0x22, 0x33, 0x44, 0x55, 0x66].into());
+    static CLIENT_ADDR: LazyLock<MacAddr> =
+        LazyLock::new(|| [0x7A, 0xE7, 0x76, 0xD9, 0xF2, 0x67].into());
+    static CLIENT_ADDR2: LazyLock<MacAddr> =
+        LazyLock::new(|| [0x22, 0x22, 0x22, 0x22, 0x22, 0x22].into());
+    static SSID: LazyLock<Ssid> =
+        LazyLock::new(|| Ssid::try_from([0x46, 0x55, 0x43, 0x48, 0x53, 0x49, 0x41]).unwrap());
 
     const RSNE: &[u8] = &[
         0x30, // element id

@@ -5,14 +5,14 @@
 use crate::ap::authenticator::Authenticator;
 use crate::ap::event::*;
 use crate::ap::remote_client::RemoteClient;
-use crate::ap::{aid, Context, RsnCfg};
+use crate::ap::{Context, RsnCfg, aid};
 use anyhow::{ensure, format_err};
 
 use ieee80211::MacAddr;
 use log::error;
 use std::sync::{Arc, Mutex};
-use wlan_common::ie::rsn::rsne;
 use wlan_common::ie::SupportedRate;
+use wlan_common::ie::rsn::rsne;
 use wlan_common::mac::{Aid, CapabilityInfo};
 use wlan_common::timer::EventHandle;
 use wlan_rsn::gtk::GtkProvider;
@@ -746,21 +746,19 @@ mod tests {
     use super::*;
     use crate::ap::create_rsn_cfg;
     use crate::ap::test_utils::MockAuthenticator;
-    use crate::{test_utils, MlmeRequest, MlmeSink, MlmeStream};
+    use crate::{MlmeRequest, MlmeSink, MlmeStream, test_utils};
     use assert_matches::assert_matches;
     use futures::channel::mpsc;
-    use ieee80211::{MacAddrBytes, Ssid};
-    use lazy_static::lazy_static;
+    use ieee80211::{MacAddr, MacAddrBytes, Ssid};
+    use std::sync::LazyLock;
     use wlan_common::ie::rsn::akm::AKM_PSK;
     use wlan_common::ie::rsn::cipher::{CIPHER_CCMP_128, CIPHER_GCMP_256};
     use wlan_common::ie::rsn::rsne::Rsne;
     use wlan_common::timer;
     use wlan_rsn::key::exchange::Key;
 
-    lazy_static! {
-        static ref AP_ADDR: MacAddr = [6u8; 6].into();
-        static ref CLIENT_ADDR: MacAddr = [7u8; 6].into();
-    }
+    static AP_ADDR: LazyLock<MacAddr> = LazyLock::new(|| [6u8; 6].into());
+    static CLIENT_ADDR: LazyLock<MacAddr> = LazyLock::new(|| [7u8; 6].into());
 
     fn make_remote_client() -> RemoteClient {
         RemoteClient::new(*CLIENT_ADDR)

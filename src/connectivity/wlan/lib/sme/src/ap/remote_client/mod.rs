@@ -7,14 +7,14 @@ mod state;
 use state::*;
 
 use crate::ap::event::{ClientEvent, Event};
-use crate::ap::{aid, Context, MlmeRequest, RsnCfg};
+use crate::ap::{Context, MlmeRequest, RsnCfg, aid};
 use ieee80211::{MacAddr, MacAddrBytes};
 use log::error;
 use wlan_common::ie::SupportedRate;
 use wlan_common::mac::{Aid, CapabilityInfo};
 use wlan_common::timer::EventHandle;
-use wlan_rsn::key::exchange::Key;
 use wlan_rsn::key::Tk;
+use wlan_rsn::key::exchange::Key;
 use {fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_mlme as fidl_mlme};
 
 pub struct RemoteClient {
@@ -210,16 +210,15 @@ impl RemoteClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{test_utils, MlmeSink, MlmeStream};
+    use crate::{MlmeSink, MlmeStream, test_utils};
     use assert_matches::assert_matches;
     use futures::channel::mpsc;
-    use lazy_static::lazy_static;
+    use ieee80211::MacAddr;
+    use std::sync::LazyLock;
     use wlan_common::timer;
 
-    lazy_static! {
-        static ref AP_ADDR: MacAddr = [6u8; 6].into();
-        static ref CLIENT_ADDR: MacAddr = [7u8; 6].into();
-    }
+    static AP_ADDR: LazyLock<MacAddr> = LazyLock::new(|| [6u8; 6].into());
+    static CLIENT_ADDR: LazyLock<MacAddr> = LazyLock::new(|| [7u8; 6].into());
 
     fn make_remote_client() -> RemoteClient {
         RemoteClient::new(*CLIENT_ADDR)

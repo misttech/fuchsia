@@ -7,14 +7,13 @@ use crate::client::{EstablishRsnaFailureReason, ServingApInfo};
 use assert_matches::assert_matches;
 use futures::channel::mpsc;
 use ieee80211::{Bssid, MacAddrBytes, Ssid};
-use lazy_static::lazy_static;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use wlan_common::bss::Protection;
 use wlan_common::channel;
 use wlan_common::ie::fake_ies::{fake_ht_cap_bytes, fake_vht_cap_bytes};
 use wlan_rsn::rsna::UpdateSink;
-use wlan_rsn::{auth, format_rsn_err, psk, Error};
+use wlan_rsn::{Error, auth, format_rsn_err, psk};
 use {
     fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
     fidl_fuchsia_wlan_mlme as fidl_mlme,
@@ -170,9 +169,7 @@ fn mock_supplicant(auth_cfg: auth::Config) -> (MockSupplicant, MockSupplicantCon
 }
 
 const MOCK_PASS: &str = "dummy_password";
-lazy_static! {
-    static ref MOCK_SSID: Ssid = Ssid::try_from("network_ssid").unwrap();
-}
+static MOCK_SSID: LazyLock<Ssid> = LazyLock::new(|| Ssid::try_from("network_ssid").unwrap());
 
 pub fn mock_psk_supplicant() -> (MockSupplicant, MockSupplicantController) {
     let config = auth::Config::ComputedPsk(

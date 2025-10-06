@@ -46,9 +46,9 @@ use {
 // even though the module itself is private and will never be exported.
 // As a workaround, we add another private module with public types.
 mod internal {
-    use crate::client::event::Event;
-    use crate::client::{inspect, ConnectionAttemptId};
     use crate::MlmeSink;
+    use crate::client::event::Event;
+    use crate::client::{ConnectionAttemptId, inspect};
     use std::sync::Arc;
     use wlan_common::timer::Timer;
     use {fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_mlme as fidl_mlme};
@@ -991,13 +991,13 @@ mod tests {
     use crate::Config as SmeConfig;
     use assert_matches::assert_matches;
     use ieee80211::MacAddr;
-    use lazy_static::lazy_static;
     use std::collections::HashSet;
+    use std::sync::LazyLock;
     use test_case::test_case;
     use wlan_common::{
         channel::{Cbw, Channel},
         fake_bss_description, fake_fidl_bss_description,
-        ie::{fake_ht_cap_bytes, fake_vht_cap_bytes, /*rsn::akm,*/ IeType},
+        ie::{/*rsn::akm,*/ IeType, fake_ht_cap_bytes, fake_vht_cap_bytes},
         security::{wep::WEP40_KEY_BYTES, wpa::credential::PSK_SIZE_BYTES},
         test_utils::{
             fake_features::{
@@ -1015,11 +1015,10 @@ mod tests {
 
     use super::test_utils::{create_on_wmm_status_resp, fake_wmm_param, fake_wmm_status_resp};
 
-    use crate::{test_utils, Station};
+    use crate::{Station, test_utils};
 
-    lazy_static! {
-        static ref CLIENT_ADDR: MacAddr = [0x7A, 0xE7, 0x76, 0xD9, 0xF2, 0x67].into();
-    }
+    static CLIENT_ADDR: LazyLock<MacAddr> =
+        LazyLock::new(|| [0x7A, 0xE7, 0x76, 0xD9, 0xF2, 0x67].into());
 
     fn authentication_open() -> fidl_security::Authentication {
         fidl_security::Authentication { protocol: fidl_security::Protocol::Open, credentials: None }
@@ -1091,13 +1090,14 @@ mod tests {
     fn default_client_protection_is_bss_compatible(protection: FakeProtectionCfg) {
         let cfg = ClientConfig::default();
         let fake_device_info = test_utils::fake_device_info([1u8; 6].into());
-        assert!(cfg
-            .bss_compatibility(
+        assert!(
+            cfg.bss_compatibility(
                 &fake_bss_description!(protection => protection),
                 &fake_device_info,
                 &fake_security_support_empty()
             )
-            .is_ok(),);
+            .is_ok(),
+        );
     }
 
     #[test_case(FakeProtectionCfg::Wpa1)]
@@ -1107,13 +1107,14 @@ mod tests {
     fn default_client_protection_is_bss_incompatible(protection: FakeProtectionCfg) {
         let cfg = ClientConfig::default();
         let fake_device_info = test_utils::fake_device_info([1u8; 6].into());
-        assert!(cfg
-            .bss_compatibility(
+        assert!(
+            cfg.bss_compatibility(
                 &fake_bss_description!(protection => protection),
                 &fake_device_info,
                 &fake_security_support_empty()
             )
-            .is_err(),);
+            .is_err(),
+        );
     }
 
     #[test_case(FakeProtectionCfg::Open)]
@@ -1125,12 +1126,13 @@ mod tests {
         protection: FakeProtectionCfg,
     ) {
         let cfg = ClientConfig::default();
-        assert!(!cfg
-            .security_protocol_intersection(
+        assert!(
+            !cfg.security_protocol_intersection(
                 &fake_bss_description!(protection => protection),
                 &fake_security_support_empty()
             )
-            .is_empty());
+            .is_empty()
+        );
     }
 
     #[test_case(FakeProtectionCfg::Wpa1)]
@@ -1141,12 +1143,13 @@ mod tests {
         protection: FakeProtectionCfg,
     ) {
         let cfg = ClientConfig::default();
-        assert!(cfg
-            .security_protocol_intersection(
+        assert!(
+            cfg.security_protocol_intersection(
                 &fake_bss_description!(protection => protection),
                 &fake_security_support_empty()
             )
-            .is_empty(),);
+            .is_empty(),
+        );
     }
 
     #[test_case(FakeProtectionCfg::Wpa1, [SecurityDescriptor::WPA1])]
@@ -1181,24 +1184,26 @@ mod tests {
     fn configured_client_bss_wep_compatible() {
         // WEP support is configurable.
         let cfg = ClientConfig::from_config(Config::default().with_wep(), false);
-        assert!(!cfg
-            .security_protocol_intersection(
+        assert!(
+            !cfg.security_protocol_intersection(
                 &fake_bss_description!(Wep),
                 &fake_security_support_empty()
             )
-            .is_empty());
+            .is_empty()
+        );
     }
 
     #[test]
     fn configured_client_bss_wpa1_compatible() {
         // WPA1 support is configurable.
         let cfg = ClientConfig::from_config(Config::default().with_wpa1(), false);
-        assert!(!cfg
-            .security_protocol_intersection(
+        assert!(
+            !cfg.security_protocol_intersection(
                 &fake_bss_description!(Wpa1),
                 &fake_security_support_empty()
             )
-            .is_empty());
+            .is_empty()
+        );
     }
 
     #[test]
@@ -1207,15 +1212,17 @@ mod tests {
         let cfg = ClientConfig::from_config(Config::default(), true);
         let mut security_support = fake_security_support_empty();
         security_support.mfp.supported = true;
-        assert!(!cfg
-            .security_protocol_intersection(&fake_bss_description!(Wpa3), &security_support)
-            .is_empty());
-        assert!(!cfg
-            .security_protocol_intersection(
+        assert!(
+            !cfg.security_protocol_intersection(&fake_bss_description!(Wpa3), &security_support)
+                .is_empty()
+        );
+        assert!(
+            !cfg.security_protocol_intersection(
                 &fake_bss_description!(Wpa3Transition),
                 &security_support,
             )
-            .is_empty());
+            .is_empty()
+        );
     }
 
     #[test]
