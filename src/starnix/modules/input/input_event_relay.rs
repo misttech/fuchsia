@@ -22,7 +22,9 @@ use futures::StreamExt as _;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use futures::channel::oneshot::{self, Sender};
 use futures::executor::block_on;
-use starnix_core::power::{create_proxy_for_wake_events_counter, mark_proxy_message_handled};
+use starnix_core::power::{
+    ContainerWakingProxy, create_proxy_for_wake_events_counter, mark_proxy_message_handled,
+};
 use starnix_core::task::{Kernel, LockedAndTask};
 use starnix_logging::{
     log_warn, trace_duration, trace_duration_begin, trace_duration_end, trace_flow_step,
@@ -31,7 +33,9 @@ use starnix_sync::Mutex;
 use starnix_types::time::timeval_from_time;
 use starnix_uapi::uapi;
 use starnix_uapi::vfs::FdEvents;
+use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
+use std::rc::Rc;
 use std::sync::{Arc, Weak};
 use {fidl_fuchsia_ui_policy as fuipolicy, fidl_fuchsia_ui_views as fuiviews};
 
@@ -166,46 +170,28 @@ impl InputEventsRelay {
         default_mouse_device_inspect: Option<Arc<InputDeviceStatus>>,
     ) {
         kernel.kthreads.spawn_async_with_role(INPUT_RELAY_ROLE_NAME, async move |_: LockedAndTask<'_>| {
-            // For event types (touch, mouse, or button streams), the sequence for handling events
-            // MUST be:
-            //
-            // 1. create future
-            // 2. decrease counter
-            // 3. await future
-            //
-            // for allowing suspend - wake.
-
             // touch
-            let (mut default_touch_device, touch_source_proxy, touch_message_counter) =
+            let previous_touch_event_disposition: Rc<RefCell<Vec<FidlTouchResponse>>> = Default::default();
+            let touch_waking_fn = |p: &fuipointer::TouchSourceProxy| p.watch(&previous_touch_event_disposition.borrow_mut());
+            let (mut default_touch_device, touch_waking_proxy) =
                 setup_touch_relay(
                     event_proxy_mode,
                     touch_source_client_end,
                     default_touch_device_opened_files,
                     default_touch_device_inspect,
                 );
-            let mut previous_touch_event_disposition: Vec<FidlTouchResponse> = vec![];
-            // Create the touch future to watch for the the next input events, but don't execute
-            // it...
-            let mut touch_future = touch_source_proxy.watch(&previous_touch_event_disposition);
-            // .. until the counter that we passed to the runner has been decremented. This prevents
-            // the container from suspending between calls to `watch`.
-            touch_message_counter.as_ref().map(mark_proxy_message_handled);
+            let mut touch_future = Box::pin(touch_waking_proxy.call(touch_waking_fn.clone()));
 
             // mouse
-            let (mut default_mouse_device, mouse_source_proxy, mouse_message_counter) =
+            let (mut default_mouse_device, mouse_waking_proxy) =
                 setup_mouse_relay(
                     event_proxy_mode,
                     mouse_source_client_end,
                     default_mouse_device_opened_files,
                     default_mouse_device_inspect,
-                );
 
-            // Create the mouse future to watch for the the next input events, but don't execute
-            // it...
-            let mut mouse_future = mouse_source_proxy.watch();
-            // .. until the message counter has been decremented. This prevents
-            // the container from suspending between calls to `watch`.
-            mouse_message_counter.as_ref().map(mark_proxy_message_handled);
+                );
+            let mut mouse_future = Box::pin(mouse_waking_proxy.call(fuipointer::MouseSourceProxy::watch));
 
             // keyboard
             let (mut default_keyboard_device, mut keyboard_event_stream) = setup_keyboard_relay(
@@ -235,29 +221,19 @@ impl InputEventsRelay {
                     touch_future_res = touch_future => {
                         match touch_future_res {
                             Ok(touch_events) => {
-                                previous_touch_event_disposition = self.process_touch_event(&mut default_touch_device, touch_events);
-                                // Create the touch future to watch for the the next input events, but don't execute
-                                // it...
-                                touch_future = touch_source_proxy.watch(&previous_touch_event_disposition);
-                                // .. until the counter that we passed to the runner has been decremented. This prevents
-                                // the container from suspending between calls to `watch`.
-                                touch_message_counter.as_ref().map(mark_proxy_message_handled);
+                                *previous_touch_event_disposition.borrow_mut() = self.process_touch_event(&mut default_touch_device, touch_events);
+                                touch_future.set(touch_waking_proxy.call(touch_waking_fn.clone()));
                             }
                             Err(e) => {
                                 log_warn!("error {:?} reading from TouchSourceProxy; input is stopped", e);
                             }
-                        };
+                        }
                     }
                     mouse_future_res = mouse_future => {
                         match mouse_future_res {
                             Ok(mouse_events) => {
                                 self.process_mouse_event(&mut default_mouse_device, mouse_events);
-                                // Create the mouse future to watch for the the next input events, but don't execute
-                                // it...
-                                mouse_future = mouse_source_proxy.watch();
-                                // .. until the counter that we passed to the runner has been decremented. This prevents
-                                // the container from suspending between calls to `watch`.
-                                mouse_message_counter.as_ref().map(mark_proxy_message_handled);
+                                mouse_future.set(mouse_waking_proxy.call(fuipointer::MouseSourceProxy::watch));
                             }
                             Err(e) => {
                                 log_warn!("error {:?} reading from MouseSourceProxy; input is stopped", e);
@@ -735,7 +711,8 @@ fn setup_touch_relay(
     touch_source_client_end: ClientEnd<fuipointer::TouchSourceMarker>,
     default_touch_device_opened_files: OpenedFiles,
     device_inspect_status: Option<Arc<InputDeviceStatus>>,
-) -> (DeviceState, fuipointer::TouchSourceProxy, Option<zx::Counter>) {
+) -> (DeviceState, ContainerWakingProxy<fuipointer::TouchSourceProxy>) {
+    let touch_counter_name = "touch";
     let default_touch_device = DeviceState {
         device_type: InputDeviceType::Touch(FuchsiaTouchEventToLinuxTouchEventConverter::create()),
         open_files: default_touch_device_opened_files,
@@ -747,7 +724,7 @@ fn setup_touch_relay(
             // wake the container when it is suspended.
             let (touch_source_channel, message_counter) = create_proxy_for_wake_events_counter(
                 touch_source_client_end.into_channel(),
-                "touch".to_string(),
+                touch_counter_name.to_string(),
             );
             (
                 fuipointer::TouchSourceProxy::new(fidl::AsyncChannel::from_channel(
@@ -758,7 +735,10 @@ fn setup_touch_relay(
         }
         EventProxyMode::None => (touch_source_client_end.into_proxy(), None),
     };
-    (default_touch_device, touch_source_proxy, message_counter)
+    (
+        default_touch_device,
+        ContainerWakingProxy::new(touch_counter_name, message_counter, touch_source_proxy),
+    )
 }
 
 fn setup_keyboard_relay(
@@ -870,7 +850,8 @@ fn setup_mouse_relay(
     mouse_source_client_end: ClientEnd<fuipointer::MouseSourceMarker>,
     default_mouse_device_opened_files: OpenedFiles,
     device_inspect_status: Option<Arc<InputDeviceStatus>>,
-) -> (DeviceState, fuipointer::MouseSourceProxy, Option<zx::Counter>) {
+) -> (DeviceState, ContainerWakingProxy<fuipointer::MouseSourceProxy>) {
+    let mouse_counter_name = "mouse";
     let default_mouse_device = DeviceState {
         device_type: InputDeviceType::Mouse,
         open_files: default_mouse_device_opened_files,
@@ -894,7 +875,10 @@ fn setup_mouse_relay(
         EventProxyMode::None => (mouse_source_client_end.into_proxy(), None),
     };
 
-    (default_mouse_device, mouse_source_proxy, message_counter)
+    (
+        default_mouse_device,
+        ContainerWakingProxy::new(mouse_counter_name, message_counter, mouse_source_proxy),
+    )
 }
 
 /// Returns a FIDL response for `fidl_event`.

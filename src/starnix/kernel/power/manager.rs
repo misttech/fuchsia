@@ -8,9 +8,11 @@ use crate::vfs::EpollKey;
 
 use std::cmp::min;
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::sync::Arc;
 
 use anyhow::{Context, anyhow};
+use fidl::endpoints::Proxy;
 use fuchsia_component::client::connect_to_protocol_sync;
 use fuchsia_inspect::{ArrayProperty, StringArrayProperty};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
@@ -587,8 +589,58 @@ pub fn create_watcher_for_wake_events(watcher: zx::EventPair) {
         .expect("Failed to register wake watcher");
 }
 
+/// A proxy wrapper that manages a `zx::Counter` to allow the container to suspend
+/// after events are being processed.
+///
+/// When the proxy is dropped, the counter is reset to 0 to release the wake-lock.
+pub struct ContainerWakingProxy<P: Proxy> {
+    #[allow(dead_code)]
+    name: String,
+    counter: Option<zx::Counter>,
+    proxy: P,
+}
+
+impl<P: Proxy> Drop for ContainerWakingProxy<P> {
+    fn drop(&mut self) {
+        self.counter.as_ref().map(mark_all_proxy_messages_handled);
+    }
+}
+
+impl<P: Proxy> ContainerWakingProxy<P> {
+    pub fn new(name: &str, counter: Option<zx::Counter>, proxy: P) -> Self {
+        Self { name: name.to_string(), counter, proxy }
+    }
+
+    /// Create a `Future` call on the proxy.
+    ///
+    /// The counter will be decremented as message handled after the future is created.
+    pub fn call<T, F, R>(&self, future: F) -> R
+    where
+        F: FnOnce(&P) -> R,
+        R: Future<Output = T>,
+    {
+        // The sequence for handling events MUST be:
+        //
+        // 1. create future
+        // 2. decrease counter
+        // 3. await future
+        //
+        // for allowing suspend - wake.
+        let f = future(&self.proxy);
+        self.counter.as_ref().map(mark_proxy_message_handled);
+        f
+    }
+}
+
+#[cfg(test)]
 mod test {
-    #[test]
+    use fidl::endpoints::create_proxy_and_stream;
+    use fidl_test_placeholders::{EchoMarker, EchoRequest};
+    use fuchsia_async as fasync;
+    use futures::StreamExt;
+    use zx::{self, HandleBased};
+
+    #[::fuchsia::test]
     fn test_counter_zero_initialization() {
         let (_endpoint, endpoint) = zx::Channel::create();
         let (_channel, counter) =
@@ -596,11 +648,48 @@ mod test {
         assert_eq!(counter.read(), Ok(0));
     }
 
-    #[test]
+    #[::fuchsia::test]
     fn test_counter_initialization() {
         let (_endpoint, endpoint) = zx::Channel::create();
         let (_channel, counter) =
             super::create_proxy_for_wake_events_counter(endpoint, "test".into());
         assert_eq!(counter.read(), Ok(1));
+    }
+
+    #[::fuchsia::test]
+    async fn test_container_waking_proxy() {
+        let (proxy, mut stream) = create_proxy_and_stream::<EchoMarker>();
+        let server_task = fasync::Task::spawn(async move {
+            let request = stream.next().await.unwrap().unwrap();
+            match request {
+                EchoRequest::EchoString { value, responder } => {
+                    responder.send(value.as_deref()).unwrap();
+                }
+            }
+        });
+
+        let counter = zx::Counter::create();
+        counter.add(5).unwrap();
+        assert_eq!(counter.read(), Ok(5));
+
+        let waking_proxy = super::ContainerWakingProxy::new(
+            "test_proxy",
+            Some(counter.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+            proxy,
+        );
+
+        let response_future = waking_proxy.call(|p| p.echo_string(Some("hello")));
+
+        // The `call` method decrements the counter.
+        assert_eq!(counter.read(), Ok(4));
+
+        let response = response_future.await.unwrap();
+        assert_eq!(response.as_deref(), Some("hello"));
+
+        server_task.await;
+
+        assert_eq!(counter.read(), Ok(4));
+        drop(waking_proxy);
+        assert_eq!(counter.read(), Ok(0));
     }
 }
