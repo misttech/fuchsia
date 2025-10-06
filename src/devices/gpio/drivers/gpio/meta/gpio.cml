@@ -18,10 +18,19 @@
     capabilities: [
         { service: "fuchsia.hardware.gpio.Service" },
         { service: "fuchsia.hardware.pin.Service" },
+        { service: "fuchsia.hardware.power.PowerTokenService" },
     ],
     use: [
+        {
+            config: "fuchsia.power.SuspendEnabled",
+            key: "enable_suspend",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
         { service: 'fuchsia.hardware.pinimpl.Service' },
         { service: 'fuchsia.hardware.pinimpl.Metadata' },
+        { service: "fuchsia.hardware.power.PowerTokenService" },
         { service: "fuchsia.scheduler.RoleName" },
     ],
     expose: [
@@ -31,6 +40,10 @@
         },
         {
             service: "fuchsia.hardware.pin.Service",
+            from: "self",
+        },
+        {
+            service: "fuchsia.hardware.power.PowerTokenService",
             from: "self",
         },
     ],

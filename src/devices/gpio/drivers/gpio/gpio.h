@@ -20,6 +20,8 @@
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
 
+#include "src/devices/gpio/drivers/gpio/gpio_config.h"
+
 namespace gpio {
 
 class GpioDevice : public fidl::WireServer<fuchsia_hardware_pin::Pin>,
@@ -36,10 +38,10 @@ class GpioDevice : public fidl::WireServer<fuchsia_hardware_pin::Pin>,
 
   zx::result<> AddServices(const std::shared_ptr<fdf::Namespace>& incoming,
                            const std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
-                           const std::optional<std::string>& node_name);
+                           const std::optional<std::string>& node_name, gpio_config::Config config);
 
   zx::result<> AddDevice(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> root_node,
-                         fdf::Logger& logger);
+                         fdf::Logger& logger, gpio_config::Config config);
 
  private:
   class GpioInstance : public fbl::RefCounted<GpioInstance>,
@@ -174,13 +176,13 @@ class GpioRootDevice : public fdf::DriverBase {
 
   // Must be run on the FIDL dispatcher.
   void CreatePinDevices(uint32_t controller_id, std::span<fuchsia_hardware_pinimpl::Pin> pins,
-                        fdf::StartCompleter completer);
+                        gpio_config::Config config, fdf::StartCompleter completer);
 
   // Must be run on the driver dispatcher.
-  void ServePinDevices(fdf::StartCompleter completer);
+  void ServePinDevices(gpio_config::Config config, fdf::StartCompleter completer);
 
   // Must be run on the FIDL dispatcher.
-  void AddPinDevices(fdf::StartCompleter completer);
+  void AddPinDevices(gpio_config::Config config, fdf::StartCompleter completer);
 
   void ClientTeardownHandler();
 

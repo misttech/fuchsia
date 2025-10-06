@@ -17,6 +17,8 @@
 #include <sdk/lib/driver/testing/cpp/driver_runtime.h>
 #include <src/lib/testing/predicates/status.h>
 
+#include "src/devices/gpio/drivers/gpio/gpio_config.h"
+
 #define DECL_GPIO_PIN(x)     \
   {                          \
     {                        \
@@ -235,7 +237,12 @@ TEST_F(GpioTest, TestGpioAll) {
                        DECL_GPIO_PIN(3),
                    }}}});
 
-  EXPECT_TRUE(driver_test().StartDriver().is_ok());
+  EXPECT_TRUE(driver_test()
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    gpio_config::Config config{{.enable_suspend = true}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_ok());
 
   zx::result client_end = driver_test().Connect<fuchsia_hardware_gpio::Service::Device>("gpio-1");
   EXPECT_TRUE(client_end.is_ok());
@@ -375,7 +382,12 @@ TEST_F(GpioTest, TestPinAll) {
                        DECL_GPIO_PIN(3),
                    }}}});
 
-  EXPECT_TRUE(driver_test().StartDriver().is_ok());
+  EXPECT_TRUE(driver_test()
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    gpio_config::Config config{{.enable_suspend = true}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_ok());
 
   zx::result client_end = driver_test().Connect<fuchsia_hardware_pin::Service::Device>("gpio-1");
   EXPECT_TRUE(client_end.is_ok());
@@ -433,7 +445,12 @@ TEST_F(GpioTest, ValidateMetadataOk) {
                        DECL_GPIO_PIN(3),
                    }}}});
 
-  EXPECT_TRUE(driver_test().StartDriver().is_ok());
+  EXPECT_TRUE(driver_test()
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    gpio_config::Config config{{.enable_suspend = true}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_ok());
 
   driver_test().RunInNodeContext([](fdf_testing::TestNode& node) {
     ASSERT_EQ(node.children().count("gpio"), 1ul);
@@ -453,7 +470,12 @@ TEST_F(GpioTest, ValidateMetadataRejectDuplicates) {
                        DECL_GPIO_PIN(0),
                    }}}});
 
-  ASSERT_FALSE(driver_test().StartDriver().is_ok());
+  ASSERT_FALSE(driver_test()
+                   .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                     gpio_config::Config config{{.enable_suspend = true}};
+                     args.config(config.ToVmo());
+                   })
+                   .is_ok());
 }
 
 TEST_F(GpioTest, ValidateGpioNameGeneration) {
@@ -548,7 +570,12 @@ TEST_F(GpioTest, Init) {
       }},
   }});
 
-  EXPECT_TRUE(driver_test().StartDriver().is_ok());
+  EXPECT_TRUE(driver_test()
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    gpio_config::Config config{{.enable_suspend = true}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_ok());
 
   // Validate the final state of the pins with the init steps applied.
   EXPECT_EQ(pin_state(1).mode, MockPinImpl::PinState::Mode::kOut);
@@ -582,7 +609,12 @@ TEST_F(GpioTest, InitWithoutPins) {
 
   SetPinMetadata({{.init_steps = std::move(steps)}});
 
-  EXPECT_TRUE(driver_test().StartDriver().is_ok());
+  EXPECT_TRUE(driver_test()
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    gpio_config::Config config{{.enable_suspend = true}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_ok());
 
   EXPECT_EQ(pin_state(1).pull, fuchsia_hardware_pin::Pull::kDown);
 
@@ -634,7 +666,12 @@ TEST_F(GpioTest, InitErrorHandling) {
       }},
   }});
 
-  EXPECT_TRUE(driver_test().StartDriver().is_ok());
+  EXPECT_TRUE(driver_test()
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    gpio_config::Config config{{.enable_suspend = true}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_ok());
 
   EXPECT_EQ(pin_state(2).mode, MockPinImpl::PinState::Mode::kUnknown);
   EXPECT_EQ(pin_state(2).pull, fuchsia_hardware_pin::Pull::kNone);
@@ -669,7 +706,12 @@ TEST_F(GpioTest, ControllerId) {
       .pins = kPins,
   }});
 
-  EXPECT_TRUE(driver_test().StartDriver().is_ok());
+  EXPECT_TRUE(driver_test()
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    gpio_config::Config config{{.enable_suspend = true}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_ok());
 
   driver_test().RunInNodeContext([](fdf_testing::TestNode& node) {
     ASSERT_EQ(node.children().count("gpio"), 1ul);
@@ -723,7 +765,12 @@ TEST_F(GpioTest, SchedulerRole) {
     EXPECT_OK(env.SetSchedulerRoleName(kRoleName));
   });
 
-  EXPECT_TRUE(driver_test().StartDriver().is_ok());
+  EXPECT_TRUE(driver_test()
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    gpio_config::Config config{{.enable_suspend = true}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_ok());
 
   driver_test().RunInNodeContext([](fdf_testing::TestNode& node) {
     ASSERT_EQ(node.children().count("gpio"), 1ul);
@@ -759,7 +806,12 @@ TEST_F(GpioTest, MultipleClients) {
 
   SetPinMetadata({{.pins = kPins}});
 
-  EXPECT_TRUE(driver_test().StartDriver().is_ok());
+  EXPECT_TRUE(driver_test()
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    gpio_config::Config config{{.enable_suspend = true}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_ok());
 
   std::vector<fidl::WireClient<fuchsia_hardware_gpio::Gpio>> clients;
   for (size_t i = 0; i < kPins.size(); ++i) {
@@ -789,7 +841,12 @@ TEST_F(GpioTest, DebugDevfs) {
                        DECL_GPIO_PIN(3),
                    }}}});
 
-  EXPECT_TRUE(driver_test().StartDriver().is_ok());
+  EXPECT_TRUE(driver_test()
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    gpio_config::Config config{{.enable_suspend = true}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_ok());
 
   zx::result client_end = driver_test().ConnectThroughDevfs<fuchsia_hardware_pin::Debug>(
       std::vector<std::string>{"gpio", "gpio-1"});
@@ -891,7 +948,12 @@ TEST_F(GpioTest, MultipleClientsGetInterrupts) {
                        DECL_GPIO_PIN(2),
                    }}}});
 
-  EXPECT_TRUE(driver_test().StartDriver().is_ok());
+  EXPECT_TRUE(driver_test()
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    gpio_config::Config config{{.enable_suspend = true}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_ok());
 
   zx::result client_end = driver_test().Connect<fuchsia_hardware_gpio::Service::Device>("gpio-1");
   EXPECT_TRUE(client_end.is_ok());
@@ -968,7 +1030,12 @@ TEST_F(GpioTest, UnbindingClientReleasesInterrupt) {
                        DECL_GPIO_PIN(1),
                    }}}});
 
-  EXPECT_TRUE(driver_test().StartDriver().is_ok());
+  EXPECT_TRUE(driver_test()
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    gpio_config::Config config{{.enable_suspend = true}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_ok());
 
   EXPECT_FALSE(pin_state(1).has_interrupt);
 
@@ -1033,7 +1100,12 @@ TEST_F(GpioTest, OnlyClientWithInterruptCanConfigure) {
                        DECL_GPIO_PIN(1),
                    }}}});
 
-  EXPECT_TRUE(driver_test().StartDriver().is_ok());
+  EXPECT_TRUE(driver_test()
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    gpio_config::Config config{{.enable_suspend = true}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_ok());
 
   EXPECT_FALSE(pin_state(1).has_interrupt);
 
@@ -1147,7 +1219,12 @@ TEST_F(GpioTest, DoubleGetInterruptAndRelease) {
                        DECL_GPIO_PIN(1),
                    }}}});
 
-  EXPECT_TRUE(driver_test().StartDriver().is_ok());
+  EXPECT_TRUE(driver_test()
+                  .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+                    gpio_config::Config config{{.enable_suspend = true}};
+                    args.config(config.ToVmo());
+                  })
+                  .is_ok());
 
   EXPECT_FALSE(pin_state(1).has_interrupt);
 

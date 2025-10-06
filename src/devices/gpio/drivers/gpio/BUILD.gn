@@ -15,6 +15,15 @@ driver_bind_rules("gpio_bind") {
       [ "//sdk/fidl/fuchsia.hardware.pinimpl:fuchsia.hardware.pinimpl_bindlib" ]
 }
 
+fuchsia_component_manifest("gpio-manifest") {
+  component_name = "gpio"
+  manifest = "meta/gpio.cml"
+}
+
+fuchsia_structured_config_cpp_elf_lib("gpio-config") {
+  cm_label = ":gpio-manifest"
+}
+
 source_set("common") {
   sources = [
     "gpio.cc",
@@ -22,6 +31,7 @@ source_set("common") {
   ]
   deps = [
     ":gpio_bind",
+    "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_cpp",
     "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/driver/metadata/cpp",
@@ -32,6 +42,7 @@ source_set("common") {
     "//zircon/system/ulib/zx",
   ]
   public_deps = [
+    ":gpio-config",
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
     "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_cpp",
     "//sdk/fidl/fuchsia.hardware.pinimpl:fuchsia.hardware.pinimpl_cpp",

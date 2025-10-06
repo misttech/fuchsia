@@ -4,6 +4,7 @@
 
 #include "gpio.h"
 
+#include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <fidl/fuchsia.scheduler/cpp/fidl.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
@@ -249,7 +250,8 @@ void GpioDevice::ConnectGpio(fidl::ServerEnd<fuchsia_hardware_gpio::Gpio> server
 
 zx::result<> GpioDevice::AddServices(const std::shared_ptr<fdf::Namespace>& incoming,
                                      const std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
-                                     const std::optional<std::string>& node_name) {
+                                     const std::optional<std::string>& node_name,
+                                     gpio_config::Config config) {
   fuchsia_hardware_gpio::Service::InstanceHandler gpio_handler({
       .device =
           [&](fidl::ServerEnd<fuchsia_hardware_gpio::Gpio> server) {
@@ -281,15 +283,43 @@ zx::result<> GpioDevice::AddServices(const std::shared_ptr<fdf::Namespace>& inco
     return service_result.take_error();
   }
 
+  if (config.enable_suspend()) {
+    // Forward PowerTokenService to our parent if suspend is enabled.
+    fuchsia_hardware_power::PowerTokenService::InstanceHandler handler({
+        .token_provider =
+            [incoming =
+                 incoming](fidl::ServerEnd<fuchsia_hardware_power::PowerTokenProvider> server) {
+              zx::result<> result =
+                  incoming->Connect<fuchsia_hardware_power::PowerTokenService::TokenProvider>(
+                      std::move(server));
+              if (result.is_error()) {
+                FDF_LOG(WARNING, "Failed to connect to power token service: %s",
+                        result.status_string());
+              }
+            },
+    });
+
+    zx::result result = outgoing->AddService<fuchsia_hardware_power::PowerTokenService>(
+        std::move(handler), pin_name());
+    if (result.is_error()) {
+      FDF_LOG(ERROR, "Failed to add power token service: %s", result.status_string());
+      return result.take_error();
+    }
+  }
+
   return zx::ok();
 }
 
 zx::result<> GpioDevice::AddDevice(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> root_node,
-                                   fdf::Logger& logger) {
+                                   fdf::Logger& logger, gpio_config::Config config) {
   std::vector<fuchsia_driver_framework::Offer> offers{
       fdf::MakeOffer2<fuchsia_hardware_gpio::Service>(pin_name()),
       fdf::MakeOffer2<fuchsia_hardware_pin::Service>(pin_name()),
   };
+
+  if (config.enable_suspend()) {
+    offers.emplace_back(fdf::MakeOffer2<fuchsia_hardware_power::PowerTokenService>(pin_name()));
+  }
 
   std::vector<fuchsia_driver_framework::NodeProperty> props{
       fdf::MakeProperty(bind_fuchsia::GPIO_PIN, pin_),
@@ -435,8 +465,9 @@ void GpioRootDevice::Start(fdf::StartCompleter completer) {
   }
 
   async::PostTask(fidl_dispatcher()->async_dispatcher(),
-                  [=, this, pins = std::move(pins), completer = std::move(completer)]() mutable {
-                    CreatePinDevices(controller_id, pins, std::move(completer));
+                  [=, this, pins = std::move(pins), config = take_config<gpio_config::Config>(),
+                   completer = std::move(completer)]() mutable {
+                    CreatePinDevices(controller_id, pins, config, std::move(completer));
                   });
 }
 
@@ -448,7 +479,7 @@ void GpioRootDevice::PrepareStop(fdf::PrepareStopCompleter completer) {
 
 void GpioRootDevice::CreatePinDevices(const uint32_t controller_id,
                                       std::span<fuchsia_hardware_pinimpl::Pin> pins,
-                                      fdf::StartCompleter completer) {
+                                      gpio_config::Config config, fdf::StartCompleter completer) {
   for (const auto& pin : pins) {
     fbl::AllocChecker ac;
     children_.emplace_back(new (&ac) GpioDevice(pinimpl_.Clone(), pin.pin().value(), controller_id,
@@ -459,14 +490,15 @@ void GpioRootDevice::CreatePinDevices(const uint32_t controller_id,
     }
   }
 
-  async::PostTask(dispatcher(), [=, this, completer = std::move(completer)]() mutable {
-    ServePinDevices(std::move(completer));
-  });
+  async::PostTask(dispatcher(),
+                  [this, config = config, completer = std::move(completer)]() mutable {
+                    ServePinDevices(config, std::move(completer));
+                  });
 }
 
-void GpioRootDevice::ServePinDevices(fdf::StartCompleter completer) {
+void GpioRootDevice::ServePinDevices(gpio_config::Config config, fdf::StartCompleter completer) {
   for (std::unique_ptr<GpioDevice>& child : children_) {
-    zx::result<> result = child->AddServices(incoming(), outgoing(), node_name());
+    zx::result<> result = child->AddServices(incoming(), outgoing(), node_name(), config);
     if (result.is_error()) {
       completer(result);
       return;
@@ -474,14 +506,15 @@ void GpioRootDevice::ServePinDevices(fdf::StartCompleter completer) {
   }
 
   async::PostTask(fidl_dispatcher()->async_dispatcher(),
-                  [=, this, completer = std::move(completer)]() mutable {
-                    AddPinDevices(std::move(completer));
+                  [this, config = config, completer = std::move(completer)]() mutable {
+                    AddPinDevices(config, std::move(completer));
                   });
 }
 
-void GpioRootDevice::AddPinDevices(fdf::StartCompleter completer) {
+void GpioRootDevice::AddPinDevices(gpio_config::Config config, fdf::StartCompleter completer) {
   for (std::unique_ptr<GpioDevice>& child : children_) {
-    if (zx::result<> result = child->AddDevice(node_.node_.borrow(), logger()); result.is_error()) {
+    if (zx::result<> result = child->AddDevice(node_.node_.borrow(), logger(), config);
+        result.is_error()) {
       completer(result);
       return;
     }
