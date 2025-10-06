@@ -492,9 +492,9 @@ impl PortWaiter {
         self.queue_events(&key, WaitEvents::Fd(events));
     }
 
-    /// Establish an asynchronous wait for the signals on the given Zircon handle (not to be
-    /// confused with POSIX signals), optionally running a FnOnce. Wait operations will return
-    /// the error code present in the provided SignalHandler.
+    /// Establish an asynchronous wait for the signals on the given Zircon
+    /// handle (not to be confused with POSIX signals). Wait operations will
+    /// return the error code present in the provided SignalHandler.
     ///
     /// Returns a `PortWaitCanceler` that can be used to cancel the wait.
     fn wake_on_zircon_signals(
@@ -507,12 +507,7 @@ impl PortWaiter {
 
         let callback = WaitCallback::SignalHandler(handler);
         let key = self.register_callback(callback);
-        self.port.object_wait_async(
-            handle,
-            key.raw,
-            zx_signals,
-            zx::WaitAsyncOpts::EDGE_TRIGGERED,
-        )?;
+        self.port.object_wait_async(handle, key.raw, zx_signals, zx::WaitAsyncOpts::empty())?;
         Ok(PortWaitCanceler { waiter: Arc::downgrade(self), key })
     }
 
