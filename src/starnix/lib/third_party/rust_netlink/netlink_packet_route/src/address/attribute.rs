@@ -166,10 +166,14 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for AddressAttribu
                     });
                 }
             }
-            IFA_CACHEINFO => Self::CacheInfo(
-                CacheInfo::parse(&CacheInfoBuffer::new(payload))
+            IFA_CACHEINFO => {
+                Self::CacheInfo(
+                    CacheInfo::parse(&CacheInfoBuffer::new_checked(payload).map_err(|err| {
+                        AddressError::ParseAttribute { kind: "IFA_CACHEINFO", err }
+                    })?)
                     .map_err(|err| AddressError::ParseAttribute { kind: "IFA_CACHEINFO", err })?,
-            ),
+                )
+            }
             IFA_MULTICAST => {
                 if payload.len() == IPV6_ADDR_LEN {
                     let mut data = [0u8; IPV6_ADDR_LEN];

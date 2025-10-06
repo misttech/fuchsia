@@ -561,4 +561,20 @@ TEST(NetlinkSocket, NlctrlFamily) {
   ASSERT_FALSE(memcmp(input.name, "nlctrl", sizeof(input.name)));
 }
 
+// Regression test for syzkaller finding on https://fxbug.dev/387599168.
+TEST_F(NetlinkTest, IflaCacheInfoMissingBody) {
+  // The reproducer sends a message type 0x16, which is RTM_GETADDR.
+  test_helper::NetlinkEncoder encoder(RTM_GETADDR, NLM_F_DUMP);
+  encoder.Write(ifaddrmsg{
+      .ifa_family = AF_INET6,
+  });
+  encoder.Write(nlattr{
+      // Correct size for address cache info is 16.
+      .nla_len = 4,
+      .nla_type = IFA_CACHEINFO,
+  });
+  ASSERT_THAT(SendMsg(encoder), SyscallFails());
+  CheckNetlinkAlive();
+}
+
 }  // namespace
