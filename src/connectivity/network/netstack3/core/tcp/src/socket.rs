@@ -19,7 +19,7 @@
 
 pub(crate) mod accept_queue;
 pub(crate) mod demux;
-pub(crate) mod isn;
+pub(crate) mod generators;
 
 use core::convert::Infallible as Never;
 use core::fmt::{self, Debug};
@@ -83,7 +83,7 @@ use crate::internal::counters::{
 use crate::internal::settings::TcpSettings;
 use crate::internal::socket::accept_queue::{AcceptQueue, ListenerNotifier};
 use crate::internal::socket::demux::tcp_serialize_segment;
-use crate::internal::socket::isn::IsnGenerator;
+use crate::internal::socket::generators::{IsnGenerator, TimestampOffsetGenerator};
 use crate::internal::state::{
     CloseError, CloseReason, Closed, Initial, NewlyClosed, ShouldRetransmit, State,
     StateMachineDebugId, Takeable, TakeableRef,
@@ -727,9 +727,9 @@ pub trait TcpContext<I: DualStackIpExt, BC: TcpBindingsTypes>:
         cb: F,
     );
 
-    /// Calls the function with access to the socket state, ISN generator, and
-    /// Transport + Demux context.
-    fn with_socket_mut_isn_transport_demux<
+    /// Calls the function with access to the socket state,
+    /// ISN & Timestamp Offset generators, and Transport + Demux context.
+    fn with_socket_mut_generators_transport_demux<
         O,
         F: for<'a> FnOnce(
             MaybeDualStack<
@@ -738,6 +738,7 @@ pub trait TcpContext<I: DualStackIpExt, BC: TcpBindingsTypes>:
             >,
             &mut TcpSocketState<I, Self::WeakDeviceId, BC>,
             &IsnGenerator<BC::Instant>,
+            &TimestampOffsetGenerator<BC::Instant>,
         ) -> O,
     >(
         &mut self,
@@ -784,9 +785,10 @@ pub trait TcpContext<I: DualStackIpExt, BC: TcpBindingsTypes>:
         id: &TcpSocketId<I, Self::WeakDeviceId, BC>,
         cb: F,
     ) -> O {
-        self.with_socket_mut_isn_transport_demux(id, |ctx, socket_state, _isn| {
-            cb(ctx, socket_state)
-        })
+        self.with_socket_mut_generators_transport_demux(
+            id,
+            |ctx, socket_state, _isn, _timestamp_offset| cb(ctx, socket_state),
+        )
     }
 
     /// Calls the function with mutable access to the socket state.
@@ -795,7 +797,10 @@ pub trait TcpContext<I: DualStackIpExt, BC: TcpBindingsTypes>:
         id: &TcpSocketId<I, Self::WeakDeviceId, BC>,
         cb: F,
     ) -> O {
-        self.with_socket_mut_isn_transport_demux(id, |_ctx, socket_state, _isn| cb(socket_state))
+        self.with_socket_mut_generators_transport_demux(
+            id,
+            |_ctx, socket_state, _isn, _timestamp_offset| cb(socket_state),
+        )
     }
 
     /// Calls the function with the mutable reference to the socket state and a
@@ -811,17 +816,20 @@ pub trait TcpContext<I: DualStackIpExt, BC: TcpBindingsTypes>:
         id: &TcpSocketId<I, Self::WeakDeviceId, BC>,
         cb: F,
     ) -> O {
-        self.with_socket_mut_isn_transport_demux(id, |ctx, socket_state, _isn| {
-            let converter = match ctx {
-                MaybeDualStack::NotDualStack((_core_ctx, converter)) => {
-                    MaybeDualStack::NotDualStack(converter)
-                }
-                MaybeDualStack::DualStack((_core_ctx, converter)) => {
-                    MaybeDualStack::DualStack(converter)
-                }
-            };
-            cb(socket_state, converter)
-        })
+        self.with_socket_mut_generators_transport_demux(
+            id,
+            |ctx, socket_state, _isn, _timestamp_offset| {
+                let converter = match ctx {
+                    MaybeDualStack::NotDualStack((_core_ctx, converter)) => {
+                        MaybeDualStack::NotDualStack(converter)
+                    }
+                    MaybeDualStack::DualStack((_core_ctx, converter)) => {
+                        MaybeDualStack::DualStack(converter)
+                    }
+                };
+                cb(socket_state, converter)
+            },
+        )
     }
 }
 
@@ -2665,8 +2673,9 @@ where
         remote_port: NonZeroU16,
     ) -> Result<(), ConnectError> {
         let (core_ctx, bindings_ctx) = self.contexts();
-        let result =
-            core_ctx.with_socket_mut_isn_transport_demux(id, |core_ctx, socket_state, isn| {
+        let result = core_ctx.with_socket_mut_generators_transport_demux(
+            id,
+            |core_ctx, socket_state, isn, timestamp_offset| {
                 let TcpSocketState { socket_state, ip_options, socket_options, notifier: _ } =
                     socket_state;
                 debug!("connect on {id:?} to {remote_ip:?}:{remote_port}");
@@ -2781,6 +2790,7 @@ where
                             bindings_ctx,
                             id,
                             isn,
+                            timestamp_offset,
                             local_addr_this_stack.clone(),
                             remote_ip,
                             remote_port,
@@ -2811,6 +2821,7 @@ where
                             bindings_ctx,
                             id,
                             isn,
+                            timestamp_offset,
                             local_addr_this_stack.clone(),
                             remote_ip,
                             remote_port,
@@ -2846,6 +2857,7 @@ where
                             bindings_ctx,
                             id,
                             isn,
+                            timestamp_offset,
                             local_addr_other_stack.clone(),
                             remote_ip,
                             remote_port,
@@ -2890,7 +2902,8 @@ where
                         DualStackRemoteIp::OtherStack(_),
                     ) => Err(ConnectError::NoRoute),
                 }
-            });
+            },
+        );
         match &result {
             Ok(()) => {}
             Err(err) => {
@@ -5283,6 +5296,7 @@ fn connect_inner<CC, BC, SockI, WireI, Demux>(
     bindings_ctx: &mut BC,
     sock_id: &TcpSocketId<SockI, CC::WeakDeviceId, BC>,
     isn: &IsnGenerator<BC::Instant>,
+    timestamp_offset: &TimestampOffsetGenerator<BC::Instant>,
     listener_addr: Option<ListenerAddr<ListenerIpAddr<WireI::Addr, NonZeroU16>, CC::WeakDeviceId>>,
     remote_ip: ZonedAddr<SocketIpAddr<WireI::Addr>, CC::DeviceId>,
     remote_port: NonZeroU16,
@@ -5395,6 +5409,13 @@ where
         })?;
 
     let isn = isn.generate::<SocketIpAddr<WireI::Addr>, NonZeroU16>(
+        bindings_ctx.now(),
+        conn_addr.ip.local,
+        conn_addr.ip.remote,
+    );
+    // TODO(https://fxbug.dev/360401604): Use this when initializing state for
+    // the timestamp option.
+    let _timestamp_offset = timestamp_offset.generate::<SocketIpAddr<WireI::Addr>, NonZeroU16>(
         bindings_ctx.now(),
         conn_addr.ip.local,
         conn_addr.ip.remote,
@@ -5729,6 +5750,7 @@ mod tests {
 
     struct FakeTcpState<I: TcpTestIpExt, D: FakeStrongDeviceId, BT: TcpBindingsTypes> {
         isn_generator: Rc<IsnGenerator<BT::Instant>>,
+        timestamp_offset_generator: Rc<TimestampOffsetGenerator<BT::Instant>>,
         demux: Rc<RefCell<DemuxState<I, D::Weak, BT>>>,
         // Always destroy all sockets last so the strong references in the demux
         // are gone.
@@ -5747,6 +5769,7 @@ mod tests {
         fn default() -> Self {
             Self {
                 isn_generator: Default::default(),
+                timestamp_offset_generator: Default::default(),
                 all_sockets: Default::default(),
                 demux: Rc::new(RefCell::new(DemuxState { socketmap: Default::default() })),
                 counters_with_socket: Default::default(),
@@ -6200,7 +6223,7 @@ mod tests {
             unimplemented!()
         }
 
-        fn with_socket_mut_isn_transport_demux<
+        fn with_socket_mut_generators_transport_demux<
             O,
             F: for<'a> FnOnce(
                 MaybeDualStack<
@@ -6212,6 +6235,7 @@ mod tests {
                 >,
                 &mut TcpSocketState<Ipv6, Self::WeakDeviceId, BC>,
                 &IsnGenerator<BC::Instant>,
+                &TimestampOffsetGenerator<BC::Instant>,
             ) -> O,
         >(
             &mut self,
@@ -6219,7 +6243,13 @@ mod tests {
             cb: F,
         ) -> O {
             let isn = Rc::clone(&self.tcp.v6.isn_generator);
-            cb(MaybeDualStack::DualStack((self, ())), id.get_mut().deref_mut(), isn.deref())
+            let timestamp_offset = Rc::clone(&self.tcp.v6.timestamp_offset_generator);
+            cb(
+                MaybeDualStack::DualStack((self, ())),
+                id.get_mut().deref_mut(),
+                isn.deref(),
+                timestamp_offset.deref(),
+            )
         }
 
         fn with_socket_and_converter<
@@ -6267,7 +6297,7 @@ mod tests {
             unimplemented!()
         }
 
-        fn with_socket_mut_isn_transport_demux<
+        fn with_socket_mut_generators_transport_demux<
             O,
             F: for<'a> FnOnce(
                 MaybeDualStack<
@@ -6279,6 +6309,7 @@ mod tests {
                 >,
                 &mut TcpSocketState<Ipv4, Self::WeakDeviceId, BC>,
                 &IsnGenerator<BC::Instant>,
+                &TimestampOffsetGenerator<BC::Instant>,
             ) -> O,
         >(
             &mut self,
@@ -6287,7 +6318,15 @@ mod tests {
         ) -> O {
             let isn: Rc<IsnGenerator<<BC as InstantBindingsTypes>::Instant>> =
                 Rc::clone(&self.tcp.v4.isn_generator);
-            cb(MaybeDualStack::NotDualStack((self, ())), id.get_mut().deref_mut(), isn.deref())
+            let timestamp_offset: Rc<
+                TimestampOffsetGenerator<<BC as InstantBindingsTypes>::Instant>,
+            > = Rc::clone(&self.tcp.v4.timestamp_offset_generator);
+            cb(
+                MaybeDualStack::NotDualStack((self, ())),
+                id.get_mut().deref_mut(),
+                isn.deref(),
+                timestamp_offset.deref(),
+            )
         }
 
         fn with_socket_and_converter<

@@ -14,8 +14,8 @@ use netstack3_datagram as datagram;
 use netstack3_device::WeakDeviceId;
 use netstack3_tcp::{
     self as tcp, IsnGenerator, TcpContext, TcpCountersWithSocket, TcpCountersWithoutSocket,
-    TcpDemuxContext, TcpDualStackContext, TcpSocketId, TcpSocketSet, TcpSocketState,
-    WeakTcpSocketId,
+    TcpDemuxContext, TcpDualStackContext, TcpSocketId, TcpSocketSet, TcpSocketState, TcpState,
+    TimestampOffsetGenerator, WeakTcpSocketId,
 };
 use netstack3_udp::{
     self as udp, UdpCountersWithSocket, UdpCountersWithoutSocket, UdpSocketId, UdpSocketSet,
@@ -104,7 +104,7 @@ where
         });
     }
 
-    fn with_socket_mut_isn_transport_demux<
+    fn with_socket_mut_generators_transport_demux<
         O,
         F: for<'a> FnOnce(
             MaybeDualStack<
@@ -113,23 +113,23 @@ where
             >,
             &mut TcpSocketState<Ipv4, Self::WeakDeviceId, BC>,
             &IsnGenerator<BC::Instant>,
+            &TimestampOffsetGenerator<BC::Instant>,
         ) -> O,
     >(
         &mut self,
         id: &TcpSocketId<Ipv4, Self::WeakDeviceId, BC>,
         cb: F,
     ) -> O {
-        let isn = &self
+        let TcpState { isn_generator, timestamp_offset_generator, .. } = &self
             .unlocked_access::<crate::lock_ordering::UnlockedState>()
             .transport
-            .tcp_state::<Ipv4>()
-            .isn_generator;
+            .tcp_state::<Ipv4>();
         let mut locked = self.adopt(id);
         let (mut socket_state, mut restricted) = locked
             .write_lock_with_and::<crate::lock_ordering::TcpSocketState<Ipv4>, _>(|c| c.right());
         let mut restricted = restricted.cast_core_ctx();
         let maybe_dual_stack = MaybeDualStack::NotDualStack((&mut restricted, ()));
-        cb(maybe_dual_stack, &mut socket_state, isn)
+        cb(maybe_dual_stack, &mut socket_state, isn_generator, timestamp_offset_generator)
     }
 
     fn with_socket_and_converter<
@@ -195,7 +195,7 @@ where
         });
     }
 
-    fn with_socket_mut_isn_transport_demux<
+    fn with_socket_mut_generators_transport_demux<
         O,
         F: for<'a> FnOnce(
             MaybeDualStack<
@@ -204,23 +204,23 @@ where
             >,
             &mut TcpSocketState<Ipv6, Self::WeakDeviceId, BC>,
             &IsnGenerator<BC::Instant>,
+            &TimestampOffsetGenerator<BC::Instant>,
         ) -> O,
     >(
         &mut self,
         id: &TcpSocketId<Ipv6, Self::WeakDeviceId, BC>,
         cb: F,
     ) -> O {
-        let isn = &self
+        let TcpState { isn_generator, timestamp_offset_generator, .. } = &self
             .unlocked_access::<crate::lock_ordering::UnlockedState>()
             .transport
-            .tcp_state::<Ipv6>()
-            .isn_generator;
+            .tcp_state::<Ipv6>();
         let mut locked = self.adopt(id);
         let (mut socket_state, mut restricted) = locked
             .write_lock_with_and::<crate::lock_ordering::TcpSocketState<Ipv6>, _>(|c| c.right());
         let mut restricted = restricted.cast_core_ctx();
         let maybe_dual_stack = MaybeDualStack::DualStack((&mut restricted, ()));
-        cb(maybe_dual_stack, &mut socket_state, isn)
+        cb(maybe_dual_stack, &mut socket_state, isn_generator, timestamp_offset_generator)
     }
 
     fn with_socket_and_converter<

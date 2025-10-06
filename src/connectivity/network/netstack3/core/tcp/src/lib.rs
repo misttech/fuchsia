@@ -44,7 +44,7 @@ pub use internal::counters::{
 };
 pub use internal::settings::TcpSettings;
 pub use internal::socket::accept_queue::ListenerNotifier;
-pub use internal::socket::isn::IsnGenerator;
+pub use internal::socket::generators::{IsnGenerator, TimestampOffsetGenerator};
 pub use internal::socket::{
     AcceptError, BindError, BoundInfo, ConnectError, ConnectionInfo, DemuxState,
     DualStackDemuxIdConverter, DualStackIpExt, Ipv6Options, Ipv6SocketIdToIpv4DemuxIdConverter,

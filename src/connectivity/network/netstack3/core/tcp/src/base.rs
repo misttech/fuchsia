@@ -25,7 +25,7 @@ use thiserror::Error;
 
 use crate::internal::buffer::BufferLimits;
 use crate::internal::counters::{TcpCountersWithSocket, TcpCountersWithoutSocket};
-use crate::internal::socket::isn::IsnGenerator;
+use crate::internal::socket::generators::{IsnGenerator, TimestampOffsetGenerator};
 use crate::internal::socket::{DualStackIpExt, Sockets, TcpBindingsTypes, WeakTcpSocketId};
 use crate::internal::state::DEFAULT_MAX_SYN_RETRIES;
 
@@ -210,6 +210,8 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes>
 pub struct TcpState<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> {
     /// The initial sequence number generator.
     pub isn_generator: IsnGenerator<BT::Instant>,
+    /// The timestamp offset generator.
+    pub timestamp_offset_generator: TimestampOffsetGenerator<BT::Instant>,
     /// TCP sockets state.
     pub sockets: Sockets<I, D, BT>,
     /// TCP counters that cannot be attributed to a specific socket.
@@ -223,6 +225,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes> TcpState<
     pub fn new(now: BT::Instant, rng: &mut impl Rng) -> Self {
         Self {
             isn_generator: IsnGenerator::new(now, rng),
+            timestamp_offset_generator: TimestampOffsetGenerator::new(now, rng),
             sockets: Sockets::new(),
             counters_without_socket: Default::default(),
             counters_with_socket: Default::default(),

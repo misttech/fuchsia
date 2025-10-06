@@ -45,7 +45,7 @@ use crate::internal::base::{BufferSizes, ConnectionError, SocketOptions, TcpIpSo
 use crate::internal::counters::{
     self, TcpCounterContext, TcpCountersRefs, TcpCountersWithoutSocket,
 };
-use crate::internal::socket::isn::IsnGenerator;
+use crate::internal::socket::generators::{IsnGenerator, TimestampOffsetGenerator};
 use crate::internal::socket::{
     self, AsThisStack as _, BoundSocketState, Connection, CoreTxMetadataContext, DemuxState,
     DeviceIpSocketHandler, DoSendLimit, DualStackDemuxIdConverter as _, DualStackIpExt,
@@ -301,15 +301,16 @@ fn handle_incoming_packet<WireI, BC, CC, H>(
             Some(SocketLookupResult::Listener((demux_listener_id, _listener_addr))) => {
                 match WireI::as_dual_stack_ip_socket(&demux_listener_id) {
                     EitherStack::ThisStack(listener_id) => {
-                        let disposition = core_ctx.with_socket_mut_isn_transport_demux(
+                        let disposition = core_ctx.with_socket_mut_generators_transport_demux(
                             &listener_id,
-                            |core_ctx, socket_state, isn| match core_ctx {
+                            |core_ctx, socket_state, isn, timestamp_offset| match core_ctx {
                                 MaybeDualStack::NotDualStack((core_ctx, converter)) => {
                                     try_handle_incoming_for_listener::<WireI, WireI, CC, BC, _, _>(
                                         core_ctx,
                                         bindings_ctx,
                                         &listener_id,
                                         isn,
+                                        timestamp_offset,
                                         socket_state,
                                         header_info,
                                         incoming,
@@ -327,6 +328,7 @@ fn handle_incoming_packet<WireI, BC, CC, H>(
                                         bindings_ctx,
                                         &listener_id,
                                         isn,
+                                        timestamp_offset,
                                         socket_state,
                                         header_info,
                                         incoming,
@@ -357,9 +359,9 @@ fn handle_incoming_packet<WireI, BC, CC, H>(
                         }
                     }
                     EitherStack::OtherStack(listener_id) => {
-                        let disposition = core_ctx.with_socket_mut_isn_transport_demux(
+                        let disposition = core_ctx.with_socket_mut_generators_transport_demux(
                             &listener_id,
-                            |core_ctx, socket_state, isn| {
+                            |core_ctx, socket_state, isn, timestamp_offset| {
                                 match core_ctx {
                                     MaybeDualStack::NotDualStack((_core_ctx, _converter)) => {
                                         // TODO(https://issues.fuchsia.dev/316408184):
@@ -374,6 +376,7 @@ fn handle_incoming_packet<WireI, BC, CC, H>(
                                             bindings_ctx,
                                             &listener_id,
                                             isn,
+                                            timestamp_offset,
                                             socket_state,
                                             header_info,
                                             incoming,
@@ -905,6 +908,7 @@ fn try_handle_incoming_for_listener<SockI, WireI, CC, BC, DC, H>(
     bindings_ctx: &mut BC,
     listener_id: &TcpSocketId<SockI, CC::WeakDeviceId, BC>,
     isn: &IsnGenerator<BC::Instant>,
+    timestamp_offset: &TimestampOffsetGenerator<BC::Instant>,
     socket_state: &mut TcpSocketState<SockI, CC::WeakDeviceId, BC>,
     header_info: &H,
     incoming: &VerifiedTcpSegment<'_>,
@@ -1016,6 +1020,13 @@ where
     };
 
     let isn = isn.generate(
+        bindings_ctx.now(),
+        (ip_sock.local_ip().clone().into(), local_port),
+        (ip_sock.remote_ip().clone(), remote_port),
+    );
+    // TODO(https://fxbug.dev/360401604): Use this when initializing state for
+    // the timestamp option.
+    let _timestamp_offset = timestamp_offset.generate::<SocketIpAddr<WireI::Addr>, NonZeroU16>(
         bindings_ctx.now(),
         (ip_sock.local_ip().clone().into(), local_port),
         (ip_sock.remote_ip().clone(), remote_port),
