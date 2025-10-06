@@ -126,6 +126,7 @@ impl FshostBuilder {
             ("blobfs_write_compression_algorithm", "fuchsia.blobfs.WriteCompressionAlgorithm"),
             ("blobfs_cache_eviction_policy", "fuchsia.blobfs.CacheEvictionPolicy"),
             ("provision_fxfs", "fuchsia.fshost.ProvisionFxfs"),
+            ("watch_deprecated_v1_drivers", "fuchsia.fshost.WatchDeprecatedV1Drivers"),
         ]);
 
         if self.create_starnix_volume_crypt {

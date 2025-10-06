@@ -82,6 +82,7 @@ template("generated_fshost_config") {
       blobfs_write_compression_algorithm = ""
       blobfs_cache_eviction_policy = ""
       provision_fxfs = false
+      watch_deprecated_v1_drivers = false
 
       if (defined(invoker.options)) {
         forward_variables_from(invoker.options, "*")

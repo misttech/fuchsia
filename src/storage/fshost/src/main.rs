@@ -62,15 +62,18 @@ async fn main() -> Result<(), Error> {
     let registered_devices = Arc::new(device::RegisteredDevices::default());
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<service::FshostShutdownResponder>(1);
     let (watcher, device_stream) = Watcher::new(if config.storage_host {
-        let mut sources = vec![
-            Box::new(PathSource::new(
+        // TODO(https://fxbug.dev/394968352): Don't watch /dev/class/nand
+        let mut sources =
+            vec![Box::new(PathSource::new(DEV_CLASS_NAND, PathSourceType::Nand, None))
+                as Box<dyn WatchSource>];
+        if config.watch_deprecated_v1_drivers {
+            // TODO(https://fxbug.dev/394968352): Don't watch /dev/class/block
+            sources.push(Box::new(PathSource::new(
                 DEV_CLASS_BLOCK,
                 PathSourceType::Block,
                 Some(Arc::new(|_| Parent::Dev)),
-            )) as Box<dyn WatchSource>,
-            Box::new(PathSource::new(DEV_CLASS_NAND, PathSourceType::Nand, None))
-                as Box<dyn WatchSource>,
-        ];
+            )) as Box<dyn WatchSource>);
+        }
         sources.extend(
             fuchsia_fs::directory::open_in_namespace(VOLUME_SERVICE_PATH, fio::Flags::empty()).map(
                 |d| {

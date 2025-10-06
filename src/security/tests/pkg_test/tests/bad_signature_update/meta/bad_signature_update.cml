@@ -173,6 +173,7 @@
                 "fuchsia.fshost.StarnixVolumeName",
                 "fuchsia.fshost.StorageHost",
                 "fuchsia.fshost.UseDiskMigration",
+                "fuchsia.fshost.WatchDeprecatedV1Drivers",
             ],
             from: "#fshost_config",
             to: "#fshost",

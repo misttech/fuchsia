@@ -71,6 +71,7 @@
                 "fuchsia.fshost.StarnixVolumeName",
                 "fuchsia.fshost.StorageHost",
                 "fuchsia.fshost.UseDiskMigration",
+                "fuchsia.fshost.WatchDeprecatedV1Drivers",
                 "fuchsia.pkgcache.AllPackagesExecutable",
                 "fuchsia.pkgcache.EnableUpgradablePackages",
                 "fuchsia.pkgcache.UseSystemImage",

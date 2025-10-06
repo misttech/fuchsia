@@ -52,6 +52,14 @@ pub struct BoardFilesystemConfig {
     #[serde(default)]
     pub block_devices: Vec<BlockDeviceConfig>,
 
+    /// Instruct fshost to watch devfs for dfv1 drivers. This is intended to be used on boards
+    /// where some of the drivers are not yet converted to dfv2, in situations when fshost would
+    /// otherwise not look for them. This flag is ignored when `storage_host` is disabled.
+    /// TODO(https://fxbug.dev/445938525): Remove this flag when all the relevant drivers export
+    /// services.
+    #[serde(default)]
+    pub watch_deprecated_v1_drivers: bool,
+
     /// DEPRECATED.  Use GptMode::AllowMultiple.
     #[serde(default)]
     pub gpt_all: bool,

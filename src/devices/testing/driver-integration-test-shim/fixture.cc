@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "include/lib/driver-integration-test/fixture.h"
+
 #include <fidl/fuchsia.board.test/cpp/wire.h>
 #include <fidl/fuchsia.boot/cpp/wire.h>
 #include <fidl/fuchsia.driver.framework/cpp/wire.h>
@@ -21,7 +23,6 @@
 
 #include <bind/fuchsia/platform/cpp/bind.h>
 
-#include "include/lib/driver-integration-test/fixture.h"
 #include "lib/sys/component/cpp/testing/realm_builder.h"
 
 namespace driver_integration_test {
@@ -126,6 +127,7 @@ zx_status_t IsolatedDevmgr::Create(Args* args, IsolatedDevmgr* out) {
       Config{.name = "fuchsia.fshost.StarnixVolumeName"},
       Config{.name = "fuchsia.fshost.InlineCrypto"},
       Config{.name = "fuchsia.fshost.ProvisionFxfs"},
+      Config{.name = "fuchsia.fshost.WatchDeprecatedV1Drivers"},
   };
 
   if (!args->fshost_config.empty()) {

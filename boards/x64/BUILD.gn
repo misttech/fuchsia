@@ -69,6 +69,10 @@ common_board_configuration = {
       size_checker_maximum_bytes = 5216665600
     }
     gpt = "allow_multiple"
+
+    # TODO(https://fxbug.dev/445938525): Remove this flag when relevant drivers
+    # export services.
+    watch_deprecated_v1_drivers = true
   }
 }
 

@@ -248,6 +248,8 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
             }
             None => Config::new_void(),
         };
+        let watch_deprecated_v1_drivers =
+            context.board_config.filesystems.watch_deprecated_v1_drivers;
 
         let configs = [
             ("fuchsia.fshost.Blobfs", Config::new_bool(true)),
@@ -295,6 +297,10 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
             ("fuchsia.blobfs.WriteCompressionAlgorithm", algorithm),
             ("fuchsia.blobfs.CacheEvictionPolicy", policy),
             ("fuchsia.fshost.ProvisionFxfs", Config::new_bool(provision_fxfs)),
+            (
+                "fuchsia.fshost.WatchDeprecatedV1Drivers",
+                Config::new_bool(watch_deprecated_v1_drivers),
+            ),
         ];
         for config in configs {
             builder.set_config_capability(config.0, config.1)?;

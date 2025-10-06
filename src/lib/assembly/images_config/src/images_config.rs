@@ -531,6 +531,7 @@ mod tests {
             },
             gpt: bfc::GptMode::Enabled,
             block_devices: vec![],
+            watch_deprecated_v1_drivers: false,
             gpt_all: false,
             merge_super_and_userdata: false,
         }
@@ -581,6 +582,7 @@ mod tests {
             },
             gpt: bfc::GptMode::Disabled,
             block_devices: vec![],
+            watch_deprecated_v1_drivers: false,
             gpt_all: false,
             merge_super_and_userdata: false,
         }

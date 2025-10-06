@@ -210,5 +210,13 @@
             key: "provision_fxfs",
             type: "bool",
         },
+        {
+            /// If true, force fshost to always watch for deprecated dfv1 drivers.
+            /// TODO(https://fxbug.dev/445938525): Remove this flag when all the relevant drivers
+            /// export services.
+            config: "fuchsia.fshost.WatchDeprecatedV1Drivers",
+            key: "watch_deprecated_v1_drivers",
+            type: "bool",
+        },
     ],
 }
