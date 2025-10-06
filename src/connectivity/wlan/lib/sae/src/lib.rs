@@ -7,7 +7,7 @@ mod frame;
 pub mod hmac_utils;
 mod state;
 
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use boringssl::{Bignum, EcGroupId};
 use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 pub use frame::{AntiCloggingTokenMsg, CommitMsg, ConfirmMsg};
@@ -169,8 +169,8 @@ pub fn new_sae_handshake(
                     Box::new(group)
                         as Box<
                             dyn internal::FiniteCyclicGroup<
-                                Element = <ecc::Group as internal::FiniteCyclicGroup>::Element,
-                            >,
+                                    Element = <ecc::Group as internal::FiniteCyclicGroup>::Element,
+                                >,
                         >
                 })
             });
@@ -301,18 +301,18 @@ mod tests {
     #![allow(unused_variables)] // Allow unused variables in tests.
     use super::*;
     use assert_matches::assert_matches;
-    use lazy_static::lazy_static;
     use std::convert::TryFrom;
+    use std::sync::LazyLock;
     use wlan_common::ie::rsn::akm::{AKM_PSK, AKM_SAE};
 
     // IEEE 802.11-2016 Annex J.10 SAE test vector
     const TEST_SSID: &'static str = "SSID not in 802.11-2016";
     const TEST_PWD: &'static str = "thisisreallysecret";
 
-    lazy_static! {
-        static ref TEST_STA_A: MacAddr = MacAddr::from([0x7b, 0x88, 0x56, 0x20, 0x2d, 0x8d]);
-        static ref TEST_STA_B: MacAddr = MacAddr::from([0xe2, 0x47, 0x1c, 0x0a, 0x5a, 0xcb]);
-    }
+    pub(crate) static TEST_STA_A: LazyLock<MacAddr> =
+        LazyLock::new(|| MacAddr::from([0x7b, 0x88, 0x56, 0x20, 0x2d, 0x8d]));
+    pub(crate) static TEST_STA_B: LazyLock<MacAddr> =
+        LazyLock::new(|| MacAddr::from([0xe2, 0x47, 0x1c, 0x0a, 0x5a, 0xcb]));
 
     #[test]
     fn bad_akm() {
@@ -328,8 +328,10 @@ mod tests {
             *TEST_STA_B,
         );
         assert!(res.is_err());
-        assert!(format!("{}", res.err().unwrap())
-            .contains("Cannot construct SAE handshake with AKM 00-0F-AC:2"));
+        assert!(
+            format!("{}", res.err().unwrap())
+                .contains("Cannot construct SAE handshake with AKM 00-0F-AC:2")
+        );
     }
 
     #[test]

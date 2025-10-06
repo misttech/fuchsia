@@ -9,7 +9,7 @@ use super::{
     AntiCloggingTokenMsg, CommitMsg, ConfirmMsg, Key, RejectReason, SaeHandshake, SaeUpdate,
     SaeUpdateSink, Timeout,
 };
-use anyhow::{bail, format_err, Error};
+use anyhow::{Error, bail, format_err};
 use log::{error, warn};
 use wlan_statemachine::*;
 
@@ -715,22 +715,22 @@ mod test {
     use super::*;
     use crate::boringssl::{Bignum, EcGroupId};
     use crate::hmac_utils::HmacUtilsImpl;
-    use crate::{ecc, PweMethod};
+    use crate::{PweMethod, ecc};
     use assert_matches::assert_matches;
     use hex::FromHex;
     use ieee80211::{MacAddr, Ssid};
-    use lazy_static::lazy_static;
     use mundane::hash::Sha256;
     use std::convert::TryFrom;
+    use std::sync::LazyLock;
 
     // IEEE Std 802.11-18/1104r0: "New Test Vectors for SAE" provides all of these values.
     // TEST_PWD is slightly modified by concatenating the password identifier field; IEEE Std
     // 802.11-2020 specifies that a password identifier may not be used with PWE generation by
     // looping.
-    lazy_static! {
-        static ref TEST_STA_A: MacAddr = MacAddr::from([0x82, 0x7b, 0x91, 0x9d, 0xd4, 0xb9]);
-        static ref TEST_STA_B: MacAddr = MacAddr::from([0x1e, 0xec, 0x49, 0xea, 0x64, 0x88]);
-    }
+    static TEST_STA_A: LazyLock<MacAddr> =
+        LazyLock::new(|| MacAddr::from([0x82, 0x7b, 0x91, 0x9d, 0xd4, 0xb9]));
+    static TEST_STA_B: LazyLock<MacAddr> =
+        LazyLock::new(|| MacAddr::from([0x1e, 0xec, 0x49, 0xea, 0x64, 0x88]));
 
     const TEST_GROUP: EcGroupId = EcGroupId::P256;
     const TEST_SSID: &'static str = "SSID in from 802.11-18/r1104r0";

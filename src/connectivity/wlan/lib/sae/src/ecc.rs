@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::PweMethod;
 use crate::boringssl::{self, Bignum, BignumCtx, EcGroup, EcGroupId, EcGroupParams, EcPoint};
 use crate::internal::{FiniteCyclicGroup, SaeParameters};
-use crate::PweMethod;
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use ieee80211::MacAddr;
 use log::warn;
-use num::integer::Integer;
 use num::ToPrimitive;
+use num::integer::Integer;
 
 /// An elliptic curve group to be used as the finite cyclic group for SAE.
 pub struct Group {
@@ -379,9 +379,9 @@ mod tests {
     use super::*;
     use crate::hmac_utils::HmacUtilsImpl;
     use ieee80211::{MacAddr, Ssid};
-    use lazy_static::lazy_static;
     use mundane::hash::Sha256;
     use std::convert::TryFrom;
+    use std::sync::LazyLock;
 
     #[derive(Debug)]
     struct SswuTestVector {
@@ -400,10 +400,10 @@ mod tests {
 
     // IEEE Std 802.11-2020 J.10
     // Test vectors for looping PWE generation
-    lazy_static! {
-        static ref TEST_LOOP_STA_A: MacAddr = MacAddr::from([0x4d, 0x3f, 0x2f, 0xff, 0xe3, 0x87]);
-        static ref TEST_LOOP_STA_B: MacAddr = MacAddr::from([0xa5, 0xd8, 0xaa, 0x95, 0x8e, 0x3c]);
-    }
+    static TEST_LOOP_STA_A: LazyLock<MacAddr> =
+        LazyLock::new(|| MacAddr::from([0x4d, 0x3f, 0x2f, 0xff, 0xe3, 0x87]));
+    static TEST_LOOP_STA_B: LazyLock<MacAddr> =
+        LazyLock::new(|| MacAddr::from([0xa5, 0xd8, 0xaa, 0x95, 0x8e, 0x3c]));
     const TEST_LOOP_PWE_X: &'static str =
         "da6eb7b06a1ac5624974f90afdd6a8e9d5722634cf987c34defc91a9874e5658";
     const TEST_LOOP_PWE_Y: &'static str =
@@ -411,10 +411,10 @@ mod tests {
 
     // IEEE Std 802.11-2020 J.10
     // Test vectors for direct PWE generation
-    lazy_static! {
-        static ref TEST_DIRECT_STA_A: MacAddr = MacAddr::from([0x00, 0x09, 0x5b, 0x66, 0xec, 0x1e]);
-        static ref TEST_DIRECT_STA_B: MacAddr = MacAddr::from([0x00, 0x0b, 0x6b, 0xd9, 0x02, 0x46]);
-    }
+    static TEST_DIRECT_STA_A: LazyLock<MacAddr> =
+        LazyLock::new(|| MacAddr::from([0x00, 0x09, 0x5b, 0x66, 0xec, 0x1e]));
+    static TEST_DIRECT_STA_B: LazyLock<MacAddr> =
+        LazyLock::new(|| MacAddr::from([0x00, 0x0b, 0x6b, 0xd9, 0x02, 0x46]));
     const TEST_DIRECT_Z: &'static str =
         "ffffffff00000001000000000000000000000000fffffffffffffffffffffff5";
     const TEST_DIRECT_C1: &'static str =
