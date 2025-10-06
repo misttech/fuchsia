@@ -694,41 +694,6 @@ static inline size_t cmpct_heap_remaining() TA_EXCL(TheHeapLock::Get()) {
   return theheap.remaining;
 }
 
-static void WasteFreeMemory(void) TA_EXCL(TheHeapLock::Get()) {
-  while (cmpct_heap_remaining() != 0) {
-    cmpct_alloc(1);
-  }
-}
-
-// If we just make a big allocation it gets rounded off.  If we actually
-// want to use a reasonably accurate amount of memory for test purposes, we
-// have to do many small allocations.
-static void* TestTrimHelper(ssize_t target) TA_EXCL(TheHeapLock::Get()) {
-  void* answer = NULL;
-  size_t remaining = cmpct_heap_remaining();
-  while (cmpct_heap_remaining() - target > 512) {
-    void* next_block =
-        static_cast<char*>(cmpct_alloc(8 + ((cmpct_heap_remaining() - target) >> 2)));
-    *(static_cast<void**>(next_block)) = answer;
-    answer = next_block;
-    if (cmpct_heap_remaining() > remaining) {
-      return answer;
-    }
-    // Abandon attempt to hit particular freelist entry size if we
-    // accidentally got more memory from the OS.
-    remaining = cmpct_heap_remaining();
-  }
-  return answer;
-}
-
-static void TestTrimFreeHelper(char* block) TA_EXCL(TheHeapLock::Get()) {
-  while (block) {
-    char* next_block = *(char**)block;
-    cmpct_free(block);
-    block = next_block;
-  }
-}
-
 static void cmpct_test_buckets(void) TA_EXCL(TheHeapLock::Get()) {
   size_t rounded;
   unsigned bucket;
@@ -1194,7 +1159,7 @@ void cmpct_test(void) {
   cmpct_test_buckets();
   cmpct_test_get_back_newly_freed();
   cmpct_test_return_to_os();
-  cmpct_dump(false);
+  cmpct_dump(CmpctDumpOptions::None);
   void* ptr[16];
 
   ptr[0] = cmpct_alloc(8);
@@ -1211,7 +1176,7 @@ void cmpct_test(void) {
   cmpct_free(ptr[4]);
   cmpct_free(ptr[2]);
 
-  cmpct_dump(false);
+  cmpct_dump(CmpctDumpOptions::None);
 
   int i;
   for (i = 0; i < 16; i++)
@@ -1235,7 +1200,7 @@ void cmpct_test(void) {
     // printf("ptr[0x%x] = %p, align 0x%x\n", index, ptr[index], align);
 
     ZX_DEBUG_ASSERT(((uintptr_t)ptr[index] % align) == 0);
-    // cmpct_dump(false);
+    // cmpct_dump(CmpctDumpOptions::None);
   }
 
   for (i = 0; i < 16; i++) {
@@ -1244,7 +1209,7 @@ void cmpct_test(void) {
     }
   }
 
-  cmpct_dump(false);
+  cmpct_dump(CmpctDumpOptions::None);
 }
 
 #else
