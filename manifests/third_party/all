@@ -112,7 +112,7 @@
     <project name="third_party/github.com/google/emboss"
              path="third_party/github.com/google/emboss/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/google/emboss"
-             revision="42e85144f366f16cb611f5b10546bc8b34bc06d4"
+             revision="f595908cba6f366746d6834a2e885868d1a836cd"
              gerrithost="https://fuchsia-review.googlesource.com"/>
     <project name="third_party/github.com/google/bt-test-interfaces"
              path="third_party/github.com/google/bt-test-interfaces/src"

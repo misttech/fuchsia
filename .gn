@@ -100,6 +100,7 @@ default_args = {
 
   # Configures Pigweed to use Fuchsia's Emboss checkout.
   dir_pw_third_party_emboss = "//third_party/github.com/google/emboss/src"
+  pw_third_party_emboss_USE_GEN_SOURCES = "true"
 
   # Enable usage of the pw_async Pigweed module.
   pw_async_EXPERIMENTAL_MODULE_VISIBILITY = [
