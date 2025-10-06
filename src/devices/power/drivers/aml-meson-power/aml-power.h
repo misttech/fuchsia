@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_POWER_DRIVERS_AML_MESON_POWER_AML_POWER_H_
 #define SRC_DEVICES_POWER_DRIVERS_AML_MESON_POWER_AML_POWER_H_
 
+#include <fidl/fuchsia.hardware.amlogic.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.pwm/cpp/wire.h>
 #include <fidl/fuchsia.hardware.vreg/cpp/wire.h>
@@ -18,8 +19,6 @@
 #include <optional>
 #include <vector>
 
-#include <soc/aml-common/aml-power.h>
-
 namespace power {
 
 class AmlPower : public fdf::DriverBase, public ddk::PowerImplProtocol<AmlPower> {
@@ -28,9 +27,10 @@ class AmlPower : public fdf::DriverBase, public ddk::PowerImplProtocol<AmlPower>
    public:
     static constexpr int kInvalidIndex = -1;
 
-    explicit DomainInfo(std::optional<fidl::WireSyncClient<fuchsia_hardware_pwm::Pwm>> pwm,
-                        std::vector<aml_voltage_table_t> voltage_table,
-                        voltage_pwm_period_ns_t pwm_period)
+    explicit DomainInfo(
+        std::optional<fidl::WireSyncClient<fuchsia_hardware_pwm::Pwm>> pwm,
+        std::vector<fuchsia_hardware_amlogic_metadata::VoltageTableEntry> voltage_table,
+        zx::duration pwm_period)
         : pwm(std::move(pwm)), voltage_table(std::move(voltage_table)), pwm_period(pwm_period) {}
 
     explicit DomainInfo(std::optional<fidl::WireSyncClient<fuchsia_hardware_vreg::Vreg>> vreg)
@@ -38,8 +38,8 @@ class AmlPower : public fdf::DriverBase, public ddk::PowerImplProtocol<AmlPower>
 
     std::optional<fidl::WireSyncClient<fuchsia_hardware_pwm::Pwm>> pwm;
     std::optional<fidl::WireSyncClient<fuchsia_hardware_vreg::Vreg>> vreg;
-    std::vector<aml_voltage_table_t> voltage_table;
-    voltage_pwm_period_ns_t pwm_period;
+    std::vector<fuchsia_hardware_amlogic_metadata::VoltageTableEntry> voltage_table;
+    zx::duration pwm_period;
     int current_voltage_index = kInvalidIndex;
   };
 
@@ -83,7 +83,7 @@ class AmlPower : public fdf::DriverBase, public ddk::PowerImplProtocol<AmlPower>
   compat::SyncInitializedDeviceServer compat_server_;
   fidl::ClientEnd<fuchsia_driver_framework::NodeController> child_;
   compat::BanjoServer banjo_server_{ZX_PROTOCOL_POWER_IMPL, this, &power_impl_protocol_ops_};
-  fdf_metadata::MetadataServer<fuchsia_hardware_power::DomainMetadata> metadata_server;
+  fdf_metadata::MetadataServer<fuchsia_hardware_power::DomainMetadata> metadata_server_;
 };
 
 }  // namespace power

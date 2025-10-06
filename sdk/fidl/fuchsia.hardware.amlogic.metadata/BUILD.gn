@@ -10,7 +10,9 @@ fidl("fuchsia.hardware.amlogic.metadata") {
   sources = [
     "i2c.fidl",
     "overview.fidl",
+    "power.fidl",
     "spi.fidl",
   ]
+  public_deps = [ "//zircon/vdso/zx" ]
   sdk_area = "Drivers"
 }

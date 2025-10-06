@@ -20,9 +20,13 @@
         { service: "fuchsia.hardware.power.DomainMetadata" },
     ],
     use: [
-        { service: "fuchsia.hardware.platform.device.Service" },
-        { service: "fuchsia.hardware.vreg.Service" },
-        { service: "fuchsia.hardware.pwm.Service" },
+        {
+            service: [
+                "fuchsia.hardware.platform.device.Service",
+                "fuchsia.hardware.pwm.Service",
+                "fuchsia.hardware.vreg.Service",
+            ],
+        },
     ],
     expose: [
         {

@@ -34,30 +34,6 @@ bool operator==(const fuchsia_hardware_pwm::wire::PwmConfig& lhs,
 
 namespace power::test {
 
-const std::vector<aml_voltage_table_t> kTestVoltageTable = {
-    {.microvolt = 1'050'000, .duty_cycle = 0},  {.microvolt = 1'040'000, .duty_cycle = 3},
-    {.microvolt = 1'030'000, .duty_cycle = 6},  {.microvolt = 1'020'000, .duty_cycle = 8},
-    {.microvolt = 1'010'000, .duty_cycle = 11}, {.microvolt = 1'000'000, .duty_cycle = 14},
-    {.microvolt = 990'000, .duty_cycle = 17},   {.microvolt = 980'000, .duty_cycle = 20},
-    {.microvolt = 970'000, .duty_cycle = 23},   {.microvolt = 960'000, .duty_cycle = 26},
-    {.microvolt = 950'000, .duty_cycle = 29},   {.microvolt = 940'000, .duty_cycle = 31},
-    {.microvolt = 930'000, .duty_cycle = 34},   {.microvolt = 920'000, .duty_cycle = 37},
-    {.microvolt = 910'000, .duty_cycle = 40},   {.microvolt = 900'000, .duty_cycle = 43},
-    {.microvolt = 890'000, .duty_cycle = 45},   {.microvolt = 880'000, .duty_cycle = 48},
-    {.microvolt = 870'000, .duty_cycle = 51},   {.microvolt = 860'000, .duty_cycle = 54},
-    {.microvolt = 850'000, .duty_cycle = 56},   {.microvolt = 840'000, .duty_cycle = 59},
-    {.microvolt = 830'000, .duty_cycle = 62},   {.microvolt = 820'000, .duty_cycle = 65},
-    {.microvolt = 810'000, .duty_cycle = 68},   {.microvolt = 800'000, .duty_cycle = 70},
-    {.microvolt = 790'000, .duty_cycle = 73},   {.microvolt = 780'000, .duty_cycle = 76},
-    {.microvolt = 770'000, .duty_cycle = 79},   {.microvolt = 760'000, .duty_cycle = 81},
-    {.microvolt = 750'000, .duty_cycle = 84},   {.microvolt = 740'000, .duty_cycle = 87},
-    {.microvolt = 730'000, .duty_cycle = 89},   {.microvolt = 720'000, .duty_cycle = 92},
-    {.microvolt = 710'000, .duty_cycle = 95},   {.microvolt = 700'000, .duty_cycle = 98},
-    {.microvolt = 690'000, .duty_cycle = 100},
-};
-
-constexpr voltage_pwm_period_ns_t kTestPwmPeriodNs = 1250;
-
 class FakePwmServer final : public fidl::testing::WireTestBase<fuchsia_hardware_pwm::Pwm> {
  public:
   void SetConfig(SetConfigRequestView request, SetConfigCompleter::Sync& completer) override {
@@ -162,11 +138,9 @@ class AmlPowerTestEnvironment : public fdf_testing::Environment {
     kVim3,
   };
 
-  void InitAstro(std::span<aml_voltage_table_t> voltage_table,
-                 const voltage_pwm_period_ns_t& pwm_period) {
-    device_server_.AddMetadata(DEVICE_METADATA_AML_VOLTAGE_TABLE, voltage_table.data(),
-                               voltage_table.size() * sizeof(aml_voltage_table_t));
-    device_server_.AddMetadata(DEVICE_METADATA_AML_PWM_PERIOD_NS, &pwm_period, sizeof(pwm_period));
+  void InitAstro(const fuchsia_hardware_amlogic_metadata::PowerMetadata& metadata) {
+    pdev_.AddFidlMetadata(fuchsia_hardware_amlogic_metadata::PowerMetadata::kSerializableName,
+                          metadata);
     mode_ = Mode::kAstro;
   }
 
@@ -255,10 +229,11 @@ class AmlPowerTest : public ::testing::Test {
   }
 
  protected:
-  void StartDriverAstro(std::vector<aml_voltage_table_t> voltage_table = kTestVoltageTable,
-                        voltage_pwm_period_ns_t pwm_period = kTestPwmPeriodNs) {
-    driver_test_.RunInEnvironmentTypeContext(
-        [&](auto& env) { env.InitAstro(voltage_table, pwm_period); });
+  static const fuchsia_hardware_amlogic_metadata::PowerMetadata kTestMetadata;
+
+  void StartDriverAstro(
+      const fuchsia_hardware_amlogic_metadata::PowerMetadata& metadata = kTestMetadata) {
+    driver_test_.RunInEnvironmentTypeContext([&](auto& env) { env.InitAstro(metadata); });
     StartDriver(
         std::vector{MakeOffer<fuchsia_hardware_pwm::Service>(AmlPower::kPwmPrimaryParentName)});
   }
@@ -358,6 +333,20 @@ class AmlPowerTest : public ::testing::Test {
 
   fdf_testing::ForegroundDriverTest<FixtureConfig> driver_test_;
 };
+
+const fuchsia_hardware_amlogic_metadata::PowerMetadata AmlPowerTest::kTestMetadata{
+    {.voltage_table =
+         std::vector<fuchsia_hardware_amlogic_metadata::VoltageTableEntry>{
+             {1'050'000, 0},  {1'040'000, 3}, {1'030'000, 6}, {1'020'000, 8}, {1'010'000, 11},
+             {1'000'000, 14}, {990'000, 17},  {980'000, 20},  {970'000, 23},  {960'000, 26},
+             {950'000, 29},   {940'000, 31},  {930'000, 34},  {920'000, 37},  {910'000, 40},
+             {900'000, 43},   {890'000, 45},  {880'000, 48},  {870'000, 51},  {860'000, 54},
+             {850'000, 56},   {840'000, 59},  {830'000, 62},  {820'000, 65},  {810'000, 68},
+             {800'000, 70},   {790'000, 73},  {780'000, 76},  {770'000, 79},  {760'000, 81},
+             {750'000, 84},   {740'000, 87},  {730'000, 89},  {720'000, 92},  {710'000, 95},
+             {700'000, 98},   {690'000, 100},
+         },
+     .voltage_pwm_period = zx::nsec(1250).get()}};
 
 TEST_F(AmlPowerTest, SetVoltage) {
   StartDriverAstro();

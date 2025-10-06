@@ -4,9 +4,8 @@
 
 #include "aml-power.h"
 
-#include <lib/ddk/metadata.h>
-#include <lib/driver/compat/cpp/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/platform-device/cpp/pdev.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -45,9 +44,9 @@ zx_status_t InitPwmProtocolClient(const fidl::WireSyncClient<fuchsia_hardware_pw
   return ZX_OK;
 }
 
-bool IsSortedDescending(const std::vector<aml_voltage_table_t>& vt) {
+bool IsSortedDescending(std::span<const fuchsia_hardware_amlogic_metadata::VoltageTableEntry> vt) {
   for (size_t i = 0; i < vt.size() - 1; i++) {
-    if (vt[i].microvolt < vt[i + 1].microvolt)
+    if (vt[i].microvolt() < vt[i + 1].microvolt())
       // Bail early if we find a voltage that isn't strictly descending.
       return false;
   }
@@ -142,8 +141,8 @@ zx_status_t AmlPower::PowerImplGetSupportedVoltageRange(uint32_t index, uint32_t
   if (domain.pwm) {
     // Voltage table is sorted in descending order so the minimum voltage is the last element and
     // the maximum voltage is the first element.
-    *min_voltage = domain.voltage_table.back().microvolt;
-    *max_voltage = domain.voltage_table.front().microvolt;
+    *min_voltage = domain.voltage_table.back().microvolt();
+    *max_voltage = domain.voltage_table.front().microvolt();
     fdf::debug("Getting {} Cluster VReg Range max = {}, min = {}", index ? "Little" : "Big",
                *max_voltage, *min_voltage);
 
@@ -163,13 +162,15 @@ zx_status_t AmlPower::GetTargetIndex(const fidl::WireSyncClient<fuchsia_hardware
   }
 
   // Find the largest voltage that does not exceed u_volts.
-  const aml_voltage_table_t target_voltage = {.microvolt = u_volts, .duty_cycle = 0};
+  const fuchsia_hardware_amlogic_metadata::VoltageTableEntry target_voltage(
+      {.microvolt = u_volts, .duty_cycle = 0});
 
   const auto& target =
-      std::lower_bound(domain.voltage_table.cbegin(), domain.voltage_table.cend(), target_voltage,
-                       [](const aml_voltage_table_t& l, const aml_voltage_table_t& r) {
-                         return l.microvolt > r.microvolt;
-                       });
+      std::ranges::lower_bound(domain.voltage_table, target_voltage,
+                               [](const fuchsia_hardware_amlogic_metadata::VoltageTableEntry& l,
+                                  const fuchsia_hardware_amlogic_metadata::VoltageTableEntry& r) {
+                                 return l.microvolt() > r.microvolt();
+                               });
 
   if (target == domain.voltage_table.cend()) {
     fdf::error("Could not find a voltage less than or equal to {}\n", u_volts);
@@ -225,8 +226,8 @@ zx_status_t AmlPower::Update(const fidl::WireSyncClient<fuchsia_hardware_pwm::Pw
   aml_pwm::mode_config on = {aml_pwm::Mode::kOn, {}};
   fuchsia_hardware_pwm::wire::PwmConfig cfg = {
       .polarity = false,
-      .period_ns = domain.pwm_period,
-      .duty_cycle = static_cast<float>(domain.voltage_table[target_idx].duty_cycle),
+      .period_ns = static_cast<uint32_t>(domain.pwm_period.to_nsecs()),
+      .duty_cycle = static_cast<float>(domain.voltage_table[target_idx].duty_cycle()),
       .mode_config =
           fidl::VectorView<uint8_t>::FromExternal(reinterpret_cast<uint8_t*>(&on), sizeof(on))};
   auto result = pwm->SetConfig(cfg);
@@ -316,7 +317,7 @@ zx_status_t AmlPower::PowerImplRequestVoltage(uint32_t index, uint32_t voltage,
   if (domain.pwm) {
     zx_status_t st = RequestVoltage(domain.pwm.value(), voltage, domain);
     if ((st == ZX_OK) && actual_voltage) {
-      *actual_voltage = domain.voltage_table[domain.current_voltage_index].microvolt;
+      *actual_voltage = domain.voltage_table[domain.current_voltage_index].microvolt();
     }
     return st;
   }
@@ -360,7 +361,7 @@ zx_status_t AmlPower::PowerImplGetCurrentVoltage(uint32_t index, uint32_t* curre
   if (domain.pwm) {
     if (domain.current_voltage_index == DomainInfo::kInvalidIndex)
       return ZX_ERR_BAD_STATE;
-    *current_voltage = domain.voltage_table[domain.current_voltage_index].microvolt;
+    *current_voltage = domain.voltage_table[domain.current_voltage_index].microvolt();
   } else if (domain.vreg) {
     fidl::WireResult params = (*domain.vreg)->GetRegulatorParams();
     if (!params.ok()) {
@@ -383,20 +384,18 @@ zx_status_t AmlPower::PowerImplGetCurrentVoltage(uint32_t index, uint32_t* curre
 }
 
 zx::result<> AmlPower::Start() {
-  zx::result pdev = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
-  if (pdev.is_error()) {
-    fdf::error("Failed to connect to platform device: {}", pdev);
-    return pdev.take_error();
+  zx::result pdev_client = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
+  if (pdev_client.is_error()) {
+    fdf::error("Failed to connect to platform device: {}", pdev_client);
+    return pdev_client.take_error();
   }
-  if (zx::result result = metadata_server.SetMetadataFromPDevIfExists(pdev.value());
+  if (zx::result result =
+          metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), pdev_client.value());
       result.is_error()) {
-    fdf::error("Failed to set metadata: {}", result);
+    fdf::error("Failed to forward and serve metadata: {}", result);
     return result.take_error();
   }
-  if (zx::result result = metadata_server.Serve(*outgoing(), dispatcher()); result.is_error()) {
-    fdf::error("Failed to serve  metadata: {}", result);
-    return result.take_error();
-  }
+  fdf::PDev pdev(std::move(pdev_client.value()));
 
   compat::DeviceServer::BanjoConfig banjo_config{.default_proto_id = ZX_PROTOCOL_POWER_IMPL};
   banjo_config.callbacks[ZX_PROTOCOL_POWER_IMPL] = banjo_server_.callback();
@@ -412,23 +411,24 @@ zx::result<> AmlPower::Start() {
   // and fragment is expected to be configured appropriately by the board driver. After gathering
   // all the available metadata and fragment DomainInfo for little core and big core (if exists) is
   // populated. DomainInfo vector is then used to construct AmlPower.
-  zx::result voltage_table =
-      compat::GetMetadataArray<aml_voltage_table_t>(incoming(), DEVICE_METADATA_AML_VOLTAGE_TABLE);
-  if (voltage_table.is_ok()) {
-    if (!IsSortedDescending(*voltage_table)) {
+  zx::result metadata = pdev.GetFidlMetadata<fuchsia_hardware_amlogic_metadata::PowerMetadata>();
+  if (metadata.is_ok()) {
+    if (!metadata->voltage_table().has_value()) {
+      fdf::error("Metadata missing `voltage_table` field");
+      return zx::error(ZX_ERR_INTERNAL);
+    }
+    if (!metadata->voltage_pwm_period().has_value()) {
+      fdf::error("Metadata missing `voltage_pwm_period` field");
+      return zx::error(ZX_ERR_INTERNAL);
+    }
+
+    if (!IsSortedDescending(metadata->voltage_table().value())) {
       fdf::error("Voltage table was not sorted in strictly descending order");
       return zx::error(ZX_ERR_INTERNAL);
     }
-  } else if (voltage_table.status_value() != ZX_ERR_NOT_FOUND) {
-    fdf::error("Failed to get aml voltage table: {}", voltage_table);
-    return voltage_table.take_error();
-  }
-
-  zx::result pwm_period =
-      compat::GetMetadata<voltage_pwm_period_ns_t>(incoming(), DEVICE_METADATA_AML_PWM_PERIOD_NS);
-  if (pwm_period.is_error() && pwm_period.status_value() != ZX_ERR_NOT_FOUND) {
-    fdf::error("Failed to get aml pwm period: {}", pwm_period);
-    return pwm_period.take_error();
+  } else if (metadata.status_value() != ZX_ERR_NOT_FOUND) {
+    fdf::error("Failed to get metadata: {}", metadata);
+    return metadata.take_error();
   }
 
   zx::result client_end =
@@ -451,9 +451,11 @@ zx::result<> AmlPower::Start() {
   zx::result big_cluster_vreg =
       incoming()->Connect<fuchsia_hardware_vreg::Service::Vreg>(kVregPwmBigParentName);
 
-  if (primary_cluster_pwm.is_valid() && voltage_table.is_ok() && pwm_period.is_ok()) {
+  if (primary_cluster_pwm.is_valid() && metadata.is_ok()) {
     // For Astro.
-    domain_info_.emplace_back(std::move(primary_cluster_pwm), *voltage_table, *pwm_period.value());
+    domain_info_.emplace_back(std::move(primary_cluster_pwm),
+                              std::move(metadata->voltage_table().value()),
+                              zx::duration(metadata->voltage_pwm_period().value()));
   } else {
     // For Vim3.
     if (big_cluster_vreg.is_error() || little_cluster_vreg.is_error()) {
@@ -473,7 +475,10 @@ zx::result<> AmlPower::Start() {
   }
 
   std::vector offers = compat_server_.CreateOffers2();
-  offers.push_back(metadata_server.MakeOffer());
+  std::optional metadata_offer = metadata_server_.MakeOffer();
+  if (metadata_offer.has_value()) {
+    offers.push_back(std::move(metadata_offer.value()));
+  }
   std::vector<fuchsia_driver_framework::NodeProperty2> properties = {
       fdf::MakeProperty2(bind_fuchsia::PROTOCOL, static_cast<uint32_t>(ZX_PROTOCOL_POWER_IMPL))};
   zx::result child = AddChild(kChildNodeName, properties, offers);
