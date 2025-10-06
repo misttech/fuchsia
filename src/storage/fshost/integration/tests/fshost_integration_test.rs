@@ -1834,3 +1834,79 @@ async fn merge_super_and_userdata() {
 
     fixture.tear_down().await;
 }
+
+#[cfg(feature = "fxblob")]
+#[fuchsia::test]
+async fn blobfs_and_data_mounted_with_keymint() {
+    let mut builder = new_builder().with_crypt_policy(crypt_policy::Policy::Keymint);
+    let data_spec = DataSpec { crypt_policy: crypt_policy::Policy::Keymint, ..data_fs_spec() };
+    builder.with_disk().format_volumes(volumes_spec()).format_data(data_spec);
+    let fixture = builder.build().await;
+
+    fixture.check_fs_type("blob", blob_fs_type()).await;
+    fixture.check_fs_type("data", data_fs_type()).await;
+    fixture.check_test_data_file().await;
+    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
+    fixture.tear_down().await;
+}
+
+#[cfg(feature = "fxblob")]
+#[fuchsia::test]
+async fn data_formatted_keymint() {
+    let mut builder = new_builder().with_crypt_policy(crypt_policy::Policy::Keymint);
+    builder.with_disk().format_volumes(volumes_spec());
+    let fixture = builder.build().await;
+
+    fixture.check_fs_type("blob", blob_fs_type()).await;
+    fixture.check_fs_type("data", data_fs_type()).await;
+    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
+
+    fixture.tear_down().await;
+}
+
+#[cfg(feature = "fxblob")]
+#[fuchsia::test]
+async fn shred_data_volume_when_mounted_keymint() {
+    let mut builder = new_builder().with_crypt_policy(crypt_policy::Policy::Keymint);
+    builder.with_disk().format_volumes(volumes_spec());
+    let fixture = builder.build().await;
+
+    fuchsia_fs::directory::open_file(
+        &fixture.dir("data", fio::PERM_READABLE | fio::PERM_WRITABLE),
+        "test-file",
+        fio::Flags::FLAG_MAYBE_CREATE,
+    )
+    .await
+    .expect("open_file failed");
+
+    let admin: AdminProxy = fixture
+        .realm
+        .root
+        .connect_to_protocol_at_exposed_dir()
+        .expect("connect_to_protcol_at_exposed_dir failed");
+
+    admin
+        .shred_data_volume()
+        .await
+        .expect("shred_data_volume FIDL failed")
+        .expect("shred_data_volume failed");
+
+    let disk = fixture.tear_down().await.unwrap();
+
+    let fixture = new_builder().with_disk_from(disk).build().await;
+
+    // If we try and open the same test file, it shouldn't exist because the data volume should have
+    // been shredded.
+    assert_matches!(
+        fuchsia_fs::directory::open_file(
+            &fixture.dir("data", fio::PERM_READABLE),
+            "test-file",
+            fio::PERM_READABLE,
+        )
+        .await
+        .expect_err("open_file failed"),
+        fuchsia_fs::node::OpenError::OpenError(zx::Status::NOT_FOUND)
+    );
+
+    fixture.tear_down().await;
+}

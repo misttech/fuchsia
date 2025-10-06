@@ -60,7 +60,9 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         // Set the storage security policy/configuration for zxcrypt
         let zxcrypt_config_path = gendir.join("zxcrypt");
 
-        if context.board_config.provides_feature("fuchsia::keysafe_ta") {
+        if context.board_config.provides_feature("fuchsia::keymint") {
+            std::fs::write(&zxcrypt_config_path, "keymint")
+        } else if context.board_config.provides_feature("fuchsia::keysafe_ta") {
             std::fs::write(&zxcrypt_config_path, "tee")
         } else {
             std::fs::write(&zxcrypt_config_path, "null")
