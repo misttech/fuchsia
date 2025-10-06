@@ -1154,6 +1154,7 @@ class PokeInMappingTest : public testing::TestWithParam<BackingType> {
  public:
   void SetUp() override {
     const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+    len_ = 2 * page_size;
     int flags = map_flags;
     int fd = -1;
     switch (GetParam()) {
@@ -1162,7 +1163,7 @@ class PokeInMappingTest : public testing::TestWithParam<BackingType> {
         break;
       case BackingType::MEMFD:
         fd = memfd_create("ptrace_test", 0);
-        SAFE_SYSCALL(ftruncate(fd, 2 * page_size));
+        SAFE_SYSCALL(ftruncate(fd, len_));
         ASSERT_NE(fd, -1) << strerror(errno);
         break;
       case BackingType::READ_ONLY_FILE:
@@ -1172,32 +1173,15 @@ class PokeInMappingTest : public testing::TestWithParam<BackingType> {
       case BackingType::WRITABLE_FILE:
         fd = temp_file_.fd();
         ASSERT_NE(fd, -1) << "ScopedTempFD is -1";
-        SAFE_SYSCALL(ftruncate(fd, 2 * page_size));
+        SAFE_SYSCALL(ftruncate(fd, len_));
         break;
     }
-    mapping_ = mmap(nullptr, 2 * page_size, prot_flags, flags, fd, 0);
+    mapping_ = mmap(nullptr, len_, prot_flags, flags, fd, 0);
     ASSERT_NE(mapping_, MAP_FAILED) << strerror(errno);
 
     if (fd != -1) {
       close(fd);
     }
-
-    helper_.OnlyWaitForForkedChildren();
-    child_pid_ = helper_.RunInForkedProcess([&] {
-      SAFE_SYSCALL(ptrace(PTRACE_TRACEME, 0, 0, 0));
-      raise(SIGSTOP);
-      _exit(0);
-    });
-
-    // In parent process.
-    ASSERT_NE(child_pid_, 0);
-
-    // Wait for the process to hit SIGSTOP.
-    int status = 0;
-    SAFE_SYSCALL(waitpid(child_pid_, &status, 0));
-    ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP) << std::hex << status;
-
-    // The child process is now stopped and ptrace is attached.
   }
 
   void TearDown() override {
@@ -1205,21 +1189,50 @@ class PokeInMappingTest : public testing::TestWithParam<BackingType> {
     ASSERT_TRUE(helper_.WaitForChildren());
   }
 
+  // If `assert_memory_after_stop` is true, checks that the first byte of memory is modified by
+  // ptrace_pokedata.
+  void CreateChildProcess(bool assert_memory_after_stop) {
+    helper_.OnlyWaitForForkedChildren();
+    child_pid_ = helper_.RunInForkedProcess([&] {
+      SAFE_SYSCALL(ptrace(PTRACE_TRACEME, 0, 0, 0));
+      raise(SIGSTOP);
+      if (assert_memory_after_stop) {
+        SAFE_SYSCALL(mprotect(mapping_, len_, PROT_READ));
+        ASSERT_EQ(static_cast<const volatile unsigned long *>(mapping_)[0], 0xBBUL);
+      }
+      _exit(0);
+    });
+    ASSERT_NE(child_pid_, 0);
+  }
+
+  // Wait for the child process to hit SIGSTOP.
+  // After this call, the child process is stopped and ptrace is attached.
+  void WaitForChildStop() {
+    int status = 0;
+    SAFE_SYSCALL(waitpid(child_pid_, &status, 0));
+    ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP) << std::hex << status;
+  }
+
  protected:
   test_helper::ForkHelper helper_;
   test_helper::ScopedTempFD temp_file_;
   pid_t child_pid_ = 0;
   void *mapping_ = nullptr;
+  size_t len_ = 0;
 };
 
 // Poking in private memory should work, regardless of the backing and permissions.
 using PokeInPrivateMappingTest = PokeInMappingTest<MAP_PRIVATE, PROT_NONE>;
 
 TEST_P(PokeInPrivateMappingTest, Data) {
+  CreateChildProcess(/*assert_memory_after_stop=*/true);
+  WaitForChildStop();
   EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), SyscallSucceeds());
 }
 
 TEST_P(PokeInPrivateMappingTest, Text) {
+  CreateChildProcess(/*assert_memory_after_stop=*/true);
+  WaitForChildStop();
   EXPECT_THAT(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), SyscallSucceeds());
 }
 
@@ -1231,10 +1244,14 @@ INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInPrivateMappingTest,
 using PokeInPrivateROMappingTest = PokeInMappingTest<MAP_PRIVATE, PROT_READ>;
 
 TEST_P(PokeInPrivateROMappingTest, Data) {
+  CreateChildProcess(/*assert_memory_after_stop=*/true);
+  WaitForChildStop();
   EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), SyscallSucceeds());
 }
 
 TEST_P(PokeInPrivateROMappingTest, Text) {
+  CreateChildProcess(/*assert_memory_after_stop=*/true);
+  WaitForChildStop();
   EXPECT_THAT(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), SyscallSucceeds());
 }
 
@@ -1246,10 +1263,14 @@ INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInPrivateROMappingTest,
 using PokeInPrivateRWMappingTest = PokeInMappingTest<MAP_PRIVATE, PROT_READ | PROT_WRITE>;
 
 TEST_P(PokeInPrivateRWMappingTest, Data) {
+  CreateChildProcess(/*assert_memory_after_stop=*/true);
+  WaitForChildStop();
   EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), SyscallSucceeds());
 }
 
 TEST_P(PokeInPrivateRWMappingTest, Text) {
+  CreateChildProcess(/*assert_memory_after_stop=*/true);
+  WaitForChildStop();
   EXPECT_THAT(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), SyscallSucceeds());
 }
 
@@ -1261,10 +1282,14 @@ INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInPrivateRWMappingTest,
 using PokeInPrivateRXMappingTest = PokeInMappingTest<MAP_PRIVATE, PROT_READ | PROT_EXEC>;
 
 TEST_P(PokeInPrivateRXMappingTest, Data) {
+  CreateChildProcess(/*assert_memory_after_stop=*/true);
+  WaitForChildStop();
   EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), SyscallSucceeds());
 }
 
 TEST_P(PokeInPrivateRXMappingTest, Text) {
+  CreateChildProcess(/*assert_memory_after_stop=*/true);
+  WaitForChildStop();
   EXPECT_THAT(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), SyscallSucceeds());
 }
 
@@ -1277,10 +1302,14 @@ using PokeInPrivateRWXMappingTest =
     PokeInMappingTest<MAP_PRIVATE, PROT_READ | PROT_WRITE | PROT_EXEC>;
 
 TEST_P(PokeInPrivateRWXMappingTest, Data) {
+  CreateChildProcess(/*assert_memory_after_stop=*/true);
+  WaitForChildStop();
   EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), SyscallSucceeds());
 }
 
 TEST_P(PokeInPrivateRWXMappingTest, Text) {
+  CreateChildProcess(/*assert_memory_after_stop=*/true);
+  WaitForChildStop();
   EXPECT_THAT(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), SyscallSucceeds());
 }
 
@@ -1293,10 +1322,14 @@ INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInPrivateRWXMappingTest,
 using PokeInSharedMappingTest = PokeInMappingTest<MAP_SHARED, PROT_NONE>;
 
 TEST_P(PokeInSharedMappingTest, Data) {
+  CreateChildProcess(/*assert_memory_after_stop=*/false);
+  WaitForChildStop();
   EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), SyscallFailsWithErrno(EIO));
 }
 
 TEST_P(PokeInSharedMappingTest, Text) {
+  CreateChildProcess(/*assert_memory_after_stop=*/false);
+  WaitForChildStop();
   EXPECT_THAT(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), SyscallFailsWithErrno(EIO));
 }
 
@@ -1308,10 +1341,14 @@ INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInSharedMappingTest,
 using PokeInSharedROMappingTest = PokeInMappingTest<MAP_SHARED, PROT_READ>;
 
 TEST_P(PokeInSharedROMappingTest, Data) {
+  CreateChildProcess(/*assert_memory_after_stop=*/false);
+  WaitForChildStop();
   EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), SyscallFailsWithErrno(EIO));
 }
 
 TEST_P(PokeInSharedROMappingTest, Text) {
+  CreateChildProcess(/*assert_memory_after_stop=*/false);
+  WaitForChildStop();
   EXPECT_THAT(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), SyscallFailsWithErrno(EIO));
 }
 
@@ -1323,13 +1360,17 @@ INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInSharedROMappingTest,
 using PokeInSharedRWMappingTest = PokeInMappingTest<MAP_SHARED, PROT_READ | PROT_WRITE>;
 
 TEST_P(PokeInSharedRWMappingTest, Data) {
+  CreateChildProcess(/*assert_memory_after_stop=*/true);
+  WaitForChildStop();
   EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), SyscallSucceeds());
-  EXPECT_EQ(static_cast<const unsigned long *>(mapping_)[0], 0xBBUL);
+  EXPECT_EQ(static_cast<const volatile unsigned long *>(mapping_)[0], 0xBBUL);
 }
 
 TEST_P(PokeInSharedRWMappingTest, Text) {
+  CreateChildProcess(/*assert_memory_after_stop=*/true);
+  WaitForChildStop();
   EXPECT_THAT(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), SyscallSucceeds());
-  EXPECT_EQ(static_cast<const unsigned long *>(mapping_)[0], 0xBBUL);
+  EXPECT_EQ(static_cast<const volatile unsigned long *>(mapping_)[0], 0xBBUL);
 }
 
 // Skip READ_ONLY_FILE because we cannot create writable memory from read-only file.
@@ -1341,10 +1382,14 @@ INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInSharedRWMappingTest,
 using PokeInSharedRXMappingTest = PokeInMappingTest<MAP_SHARED, PROT_READ | PROT_EXEC>;
 
 TEST_P(PokeInSharedRXMappingTest, Data) {
+  CreateChildProcess(/*assert_memory_after_stop=*/false);
+  WaitForChildStop();
   EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), SyscallFailsWithErrno(EIO));
 }
 
 TEST_P(PokeInSharedRXMappingTest, Text) {
+  CreateChildProcess(/*assert_memory_after_stop=*/false);
+  WaitForChildStop();
   EXPECT_THAT(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), SyscallFailsWithErrno(EIO));
 }
 
@@ -1357,13 +1402,17 @@ using PokeInSharedRWXMappingTest =
     PokeInMappingTest<MAP_SHARED, PROT_READ | PROT_WRITE | PROT_EXEC>;
 
 TEST_P(PokeInSharedRWXMappingTest, Data) {
+  CreateChildProcess(/*assert_memory_after_stop=*/true);
+  WaitForChildStop();
   EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping_, 0xBB), SyscallSucceeds());
-  EXPECT_EQ(static_cast<const unsigned long *>(mapping_)[0], 0xBBUL);
+  EXPECT_EQ(static_cast<const volatile unsigned long *>(mapping_)[0], 0xBBUL);
 }
 
 TEST_P(PokeInSharedRWXMappingTest, Text) {
+  CreateChildProcess(/*assert_memory_after_stop=*/true);
+  WaitForChildStop();
   EXPECT_THAT(ptrace(PTRACE_POKETEXT, child_pid_, mapping_, 0xBB), SyscallSucceeds());
-  EXPECT_EQ(static_cast<const unsigned long *>(mapping_)[0], 0xBBUL);
+  EXPECT_EQ(static_cast<const volatile unsigned long *>(mapping_)[0], 0xBBUL);
 }
 
 // Skip READ_ONLY_FILE because we cannot create writable memory from read-only file.
