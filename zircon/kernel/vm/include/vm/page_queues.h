@@ -569,8 +569,7 @@ class PageQueues {
 
   // General lock used to protect all logic and members that are not part of critical latency
   // sensitive operations.
-  // Where both locks need to be acquire lock_, being a mutex, must be acquired prior to the
-  // list_lock_.
+  // Where both locks need to be acquired, lock_ must be acquired prior to the list_lock_.
   DECLARE_CRITICAL_MUTEX(PageQueues) mutable lock_;
 
   // Externally supplied event that we should signal anytime aging occurs.

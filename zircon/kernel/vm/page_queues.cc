@@ -406,20 +406,24 @@ bool PageQueues::NeedsLruProcessingLocked() const {
 }
 
 void PageQueues::DisableAging() {
-  // Take the lock over disabling aging to ensure the MruThread is not presently aging and will
-  // therefore observe the aging_disabled_ flag next time it runs.
-  Guard<CriticalMutex> guard{&lock_};
-  // Validate a double DisableAging is not happening.
-  if (aging_disabled_) {
-    panic("Mismatched disable/enable pair");
+  {
+    // Take the lock_ over disabling aging to ensure the MruThread is not presently aging and will
+    // therefore observe the aging_disabled_ flag next time it runs.
+    Guard<CriticalMutex> guard{&lock_};
+    // Validate a double DisableAging is not happening.
+    if (aging_disabled_) {
+      panic("Mismatched disable/enable pair");
+    }
+    aging_disabled_ = true;
+    // Drop the lock_ before pausing the debug_compressor_ below which might trigger VMO destruction
+    // and acquire the heap lock.
   }
-  aging_disabled_ = true;
 
 #if DEBUG_ASSERT_IMPLEMENTED
   // Pause might drop the last reference to a VMO and trigger VMO destruction, which would then call
-  // back into the page queues, so we must not hold the lock_ over the operation. We can utilize the
-  // fact that once the debug_compressor_ is set it is never destroyed, so can take a raw pointer to
-  // it.
+  // back into the page queues, so we must not hold the list_lock_ over the operation. We can
+  // utilize the fact that once the debug_compressor_ is set it is never destroyed, so can take a
+  // raw pointer to it.
   VmDebugCompressor* dc = nullptr;
   {
     Guard<CriticalMutex> list_guard{&list_lock_};

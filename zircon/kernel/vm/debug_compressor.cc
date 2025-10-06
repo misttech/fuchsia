@@ -95,6 +95,7 @@ void VmDebugCompressor::CompressThread() {
 }
 
 void VmDebugCompressor::Pause() {
+  lockdep::AssertNoLocksHeld();
   {
     Guard<SpinLock, IrqSave> guard{&lock_};
     if (state_ == State::Shutdown) {
