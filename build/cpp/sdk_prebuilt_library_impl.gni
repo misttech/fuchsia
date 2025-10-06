@@ -335,7 +335,7 @@ template("sdk_prebuilt_library_impl") {
       assert(!defined(metadata))
       metadata = {
         if (is_fuchsia) {
-          # Used by sdk_verify_runtime_deps() template.
+          # Used by //build/cpp/verify_runtime_deps.py.
           sdk_runtime_deps = [
             {
               sdk_id = sdk_id
@@ -562,6 +562,10 @@ template("sdk_prebuilt_library_impl") {
 
   runtime_deps_target_name = "${target_name}_runtime_deps"
   runtime_deps_file_name = "${target_gen_dir}/${target_name}.runtime_deps"
+  generate_runtime_deps(runtime_deps_target_name) {
+    atom_target = main_lib_target
+    runtime_deps_file = runtime_deps_file_name
+  }
 
   # LINT.IfChange
   _common_binaries = {
@@ -685,25 +689,10 @@ template("sdk_prebuilt_library_impl") {
     }
   }
 
-  sdk_manifest_file = "${target_gen_dir}/${manifest_target_name}.sdk"
-
-  verify_runtime_deps_target = "${main_target_name}_verify_runtime_deps"
-
-  sdk_verify_runtime_deps(verify_runtime_deps_target) {
-    atom_target = main_lib_target
-    manifest_file = sdk_manifest_file
-    manifest_target = ":$manifest_target_name"
-    runtime_deps_file = runtime_deps_file_name
-    runtime_deps_target = runtime_deps_target_name
-  }
-
   sdk_atom_alias(sdk_target_name) {
     atom = ":${manifest_target_name}"
 
-    non_sdk_deps = [
-      ":${verify_public_headers_target}",
-      ":${verify_runtime_deps_target}",
-    ]
+    non_sdk_deps = [ ":${verify_public_headers_target}" ]
 
     if (generate_plasa_artifacts) {
       non_sdk_deps += [ ":${_plasa_artifacts_target_name}" ]

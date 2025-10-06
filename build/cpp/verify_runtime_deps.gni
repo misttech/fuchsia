@@ -2,13 +2,15 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# Parameters
 #
-# atom_target:
+#   atom_target (required)
+#     The taret for which to generate runtime dependencies metadata.
 #
-# manifest_target:
-# manifest_file:
+#   runtime_deps_file (required)
+#     Path to the output file listing the runtime dependencies.
 #
-template("sdk_verify_runtime_deps") {
+template("generate_runtime_deps") {
   # Collect all sdk_runtime_deps metadata entry from the dependencies of
   # `atom_target`. The metadata.sdk_runtime_deps list entries should be scopes
   # describing shared libraries, with the following schema:
@@ -27,35 +29,11 @@ template("sdk_verify_runtime_deps") {
   #       targets, and not regular shared_library() ones.
   #
 
-  generated_file(invoker.runtime_deps_target) {
+  generated_file(target_name) {
     deps = [ invoker.atom_target ]
     outputs = [ invoker.runtime_deps_file ]
     output_conversion = "json"
     data_keys = [ "sdk_runtime_deps" ]
     walk_keys = [ "sdk_runtime_deps_barrier" ]
-  }
-
-  action(target_name) {
-    script = "//build/cpp/verify_runtime_deps.py"
-
-    inputs = [
-      invoker.manifest_file,
-      invoker.runtime_deps_file,
-    ]
-
-    outputs = [ "${target_gen_dir}/${target_name}.gn_stamp" ]
-
-    args = [
-      "--sdk-runtime-deps",
-      rebase_path(invoker.runtime_deps_file, root_build_dir),
-      "--sdk-manifest",
-      rebase_path(invoker.manifest_file, root_build_dir),
-      "--stamp-file",
-      rebase_path(outputs[0], root_build_dir),
-    ]
-    deps = [
-      ":${invoker.runtime_deps_target}",
-      invoker.manifest_target,
-    ]
   }
 }

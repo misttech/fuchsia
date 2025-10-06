@@ -2,25 +2,9 @@
 # Copyright 2023 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""Verify the runtime dependencies of a prebuilt SDK library (static or shared).
-See //build/cpp/verify_runtime_deps.gni for details. This takes two input files:
 
-- A JSON file that lists the runtime dependencies of the library, each
-  one of them through a schema described in //build/cpp/verify_runtime_deps.gni
-
-- An SDK manifest file, another JSON file that describes the SDK atom for
-  the target as well as _all_ its transitive dependencies. See sdk_atom()
-  template for more details.
-
-On success, a stamp file is written. On failure, error messages are printed
-to stderr and the script returns with an error status.
-"""
-
-import argparse
 import collections
-import json
 import os
-import sys
 import typing as T
 
 # The following runtime libraries are provided directly by the SDK sysroot,
@@ -32,36 +16,6 @@ AtomInfo: T.TypeAlias = dict[str, T.Any]
 
 # The contents of a JSON file.
 JsonFileContent: T.TypeAlias = dict[str, T.Any]
-
-
-def parse_sdk_manifest(
-    manifest: JsonFileContent,
-) -> tuple[str, dict[str, AtomInfo]]:
-    """Parse SDK manifest file and extract atom id and dependencies.
-
-    Args:
-      manifest: A directionary representation of the JSON SDK manifest.
-
-    Returns:
-      an (sdk_id, deps) tuple, where 'sdk_id' is a string identifying the
-      atom (e.g. 'sdk://pkg/async'), and 'deps' is a dictionary mapping
-      the sdk ids of all transitive dependencies to the corresponding
-      manifest JSON object.
-    """
-    atom_id = manifest["ids"][0]
-
-    def find_atom(id: str) -> AtomInfo:
-        return next(a for a in manifest["atoms"] if a["id"] == id)
-
-    atom = find_atom(atom_id)
-    # print(atom)
-    deps = [find_atom(a) for a in atom["deps"]]
-    deps += [atom]
-
-    # Maps sdk_ids to the corresponding entry
-    deps_map = {dep["id"]: dep for dep in deps}
-
-    return atom_id, deps_map
 
 
 _NON_SDK_DEPS_ERROR_HEADER = r"""## Non-SDK dependencies required at runtime:
@@ -220,58 +174,3 @@ def check_for_missing_runtime_deps(
             assert False, "Runtime entry is missing 'sdk_id' or 'source'."
 
     return errors
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument(
-        "--sdk-runtime-deps",
-        help="Path to the list of runtime deps.",
-        required=True,
-    )
-    parser.add_argument(
-        "--sdk-manifest",
-        help="Path to the target's SDK manifest file.",
-        required=True,
-    )
-    parser.add_argument(
-        "--stamp-file", help="Path to the output stamp file.", required=True
-    )
-    args = parser.parse_args()
-
-    with open(args.sdk_runtime_deps, "r") as runtime_deps_file:
-        runtime_files = json.load(runtime_deps_file)
-
-    # Read the list of package dependencies for the library's SDK incarnation.
-    with open(args.sdk_manifest, "r") as manifest_file:
-        manifest = json.load(manifest_file)
-
-    atom_id, deps = parse_sdk_manifest(manifest)
-
-    # Find atom label with `_sdk_manifest($toolchain_suffix)` removed
-    atom_label, _, _ = deps[atom_id]["gn-label"].rpartition("_sdk_manifest(")
-
-    # Check whether all runtime files are available for packaging.
-    errors = check_for_missing_runtime_deps(runtime_files, deps)
-    if errors.has_error():
-        print(
-            r"""
-ERROR: When verifying runtime dependencies for the IDK atom: `%s` generated_by `%s`
-
-%s"""
-            % (atom_id, atom_label, errors),
-            file=sys.stderr,
-        )
-        return 1
-
-    with open(args.stamp_file, "w") as stamp:
-        stamp.write("Success!")
-
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
