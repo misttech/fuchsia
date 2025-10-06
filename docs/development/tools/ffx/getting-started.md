@@ -38,12 +38,13 @@ This will list all of the available `ffx` subcommands. You'll see something
 like:
 
 ```none
-Usage: ffx [-c <config>] [-e <env>] [-t <target>] [<command>] [<args>]
+Usage: ffx [-c <config>] [-e <env>] [-t <target>] [-d] [<command>] [<args>]
 
 Fuchsia's developer tool
 
 Options:
   -c, --config      override default configuration
+  -d, --direct      make a direct connection to the target
   -e, --env         override default environment settings
   -t, --target      apply operations across single or multiple targets
   -o, --log-output  specify destination of log output
@@ -182,6 +183,66 @@ ffx -t $NODENAME repository server start
 
 ffx --target $NODENAME repository server start
 ```
+
+### Making a direct connection
+
+The normal behavior of `ffx` is to make an indirect connection to the target, mediated
+by the `ffx daemon`. The daemon will eventually be deprecated and removed, however,
+due to its complexity and statefulness. It is possible, meanwhile, to make a connection
+without going through the daemon, by passing the `-d`/`--direct` flag, e.g.
+
+```posix-terminal
+ffx -d target echo
+```
+
+To change the default behavior for all `ffx` invocations, you can instead set
+the `connectivity.direct` configuration option to `true`:
+
+```posix-terminal
+ffx config set connectivity.direct true
+```
+
+#### Mitigating connection delays
+
+Direct connections provide improved predictability and reliability over
+daemon-based connections, but they also introduce some delays. The next two
+sections describe how to remove both delays. With both of these mitigations
+enabled, target connections are as fast as when running with the daemon.
+
+##### Caching the discovered targets
+
+When using a direct connection, the `ffx` invocation must first determine
+how to connect to the desired target, by finding its address (or if no target
+is specified, by discovering all accessible targets). When using the daemon,
+discovery results are stored by the daemon. But when making the connection
+directly, every command may need to perform a (relatively) slow discovery
+process, which can take a second or more.
+
+To eliminate this delay, you can run `ffx target discover`, which will start
+a background process to discover the available targets and make them available
+when connecting to the target. This discovery cache is refreshed by default
+every 6o seconds, but if you want to refresh it more quickly (e.g. because you
+have just disconnected a target), you can simply run `ffx target discover` again
+to update the cache immediately.
+
+See `ffx target discover help` for more information.
+
+##### Speeding up `ssh` connections
+
+Direct connections can introduce another delay when connecting to targets over
+the network (i.e. via `ssh`). This connection can add a noticeable delay on every
+`ffx` invocation. To mitigate this delay, you can use `ssh`'s `ControlMaster`
+functionality, by setting the following configuration option:
+
+```posix-terminal
+ffx config set ssh.controlmaster.mode managed
+```
+
+This will cause `ffx` to use a shared `ssh` connection when establishing
+communication with the target. After this, the initial `ffx` invocation to the
+target will set up the `ssh` channel, and future `ffx` connections will reuse
+the same channel. For more information see the `ControlMaster` documentation in
+`man 5 ssh_config`.
 
 ### Controlling the state of target devices
 
