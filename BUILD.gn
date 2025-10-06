@@ -2134,7 +2134,7 @@ build_api_module("nuc11_fastboot_images_location") {
 #
 # Type: list(scope)
 #
-#   gn_label
+#   gn_target
 #     - Required: GN label of bazel_action() target.
 #     - Type: string
 #
@@ -2190,7 +2190,7 @@ generated_file("bazel_build_action_targets") {
   output_conversion = "json"
 }
 
-# LINT.ThenChange(//build/bazel/scripts/gn_targets_utils.py, //build/bazel/bazel_action.gni:bazel_build_actions)
+# LINT.ThenChange(//build/bazel/scripts/gn_targets_utils.py:bazel_build_actions, //build/bazel/bazel_action.gni:bazel_build_actions)
 
 ###
 ### Top-level targets.

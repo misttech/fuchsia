@@ -895,11 +895,11 @@ template("bazel_action") {
                 rebase_path(_gn_targets_repository_path, root_build_dir)
             gn_targets_manifest =
                 rebase_path(_gn_targets_repository_manifest, root_build_dir)
-            build_events_log_json = _rebased_bazel_build_events_log_json
+            debug_symbols_manifest = _rebased_debug_symbols_manifest
             bazel_command_file = _rebased_bazel_command_file
             path_mapping = _rebased_path_mapping
             timings_file = _rebased_timings_file
-            debug_symbols_manifest = _rebased_debug_symbols_manifest
+            build_events_log_json = _rebased_bazel_build_events_log_json
           },
           # LINT.ThenChange(//BUILD.gn:bazel_build_actions)
         ]

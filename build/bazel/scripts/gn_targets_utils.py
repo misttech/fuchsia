@@ -19,15 +19,17 @@ class BazelBuildActionInfo(object):
     See //BUILD.gn for schema description.
     """
 
-    # LINT.IfChange
+    # LINT.IfChange(bazel_build_actions)
     gn_target: str
     bazel_targets: list[str]
     no_sdk: bool
     gn_targets_dir: str
     gn_targets_manifest: str
+    debug_symbols_manifest: str
     bazel_command_file: str = ""
-    build_events_log_json: str = ""
     path_mapping: str = ""
+    timings_file: str = ""
+    build_events_log_json: str = ""
     # LINT.ThenChange(//BUILD.gn:bazel_build_actions)
 
 
