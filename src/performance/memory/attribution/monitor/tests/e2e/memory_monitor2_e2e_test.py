@@ -10,6 +10,7 @@ import json
 import re
 import unittest
 from pathlib import Path
+from typing import Any
 
 from fuchsia_base_test import fuchsia_base_test
 from honeydew.fuchsia_device import fuchsia_device
@@ -57,9 +58,7 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
         assertContainsRegex(
             r"(?m)^\s*Memory stalls \(full\): \d+(\.\d+)? .?s\s*$", profile
         )
-        assertContainsRegex(
-            r"(?m)^\s*Page refaults: \d+(\.\d+)? .?s\s*$", profile
-        )
+        assertContainsRegex(r"(?m)^\s*Page refaults: \d+(\.\d+)?\s*$", profile)
 
     def test_ffx_profile_memory_component_stdin_cycle(self) -> None:
         debug_json = self.dut.ffx.run(
@@ -95,11 +94,11 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
         )
 
         profile = json.loads(cmd_output)
-        asserts.assert_in("performance", set(profile))
+        asserts.assert_in("Summary", set(profile))
 
         (mm2,) = [
             p
-            for p in profile["principals"]
+            for p in profile["Summary"]["principals"]
             if p["name"] == "core/memory_monitor2"
         ]
         asserts.assert_in("processes", mm2)
@@ -137,28 +136,48 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
         # There should be at least one assertion per lazy node to detect failures and timeouts.
         asserts.assert_equal(only_entry["moniker"], "core/memory_monitor2")
 
-        root = only_entry["payload"]["component_manager"]
-        asserts.assert_greater(root["kmem_stats"]["total_bytes"], 0)
-        asserts.assert_greater_equal(
-            root["kmem_stats_compression"]["pages_decompressed_unit_ns"], 0
-        )
+        self.assert_inspect_payload_is_valid(only_entry["payload"])
 
     def test_memory_monitor2_inspect2(self) -> None:
         inspect_col = self.dut.get_inspect_data(
             monikers=["core/memory_monitor2"]
         )
         (only_entry,) = inspect_col.data
-
         # Verifies that some data is produced.
         # There should be at least one assertion per lazy node to detect failures and timeouts.
         asserts.assert_equal(only_entry.moniker, "core/memory_monitor2")
         if only_entry.payload is None:
             raise AssertionError("Payload should not be none")
-        root = only_entry.payload["component_manager"]
-        asserts.assert_greater(root["kmem_stats"]["total_bytes"], 0)
-        asserts.assert_greater_equal(
-            root["kmem_stats_compression"]["pages_decompressed_unit_ns"], 0
+
+        self.write_output(
+            json.dumps(only_entry.payload), "inspect_payload.json"
         )
+        self.assert_inspect_payload_is_valid(only_entry.payload)
+
+    @staticmethod
+    def assert_inspect_payload_is_valid(payload: dict[str, Any]) -> None:
+        root = payload["root"]
+        asserts.assert_in("config", root)
+
+        asserts.assert_in("kmem_stats", root)
+        asserts.assert_in("total_heap_bytes", root["kmem_stats"])
+
+        asserts.assert_in("kmem_stats_compression", root)
+        asserts.assert_in(
+            "compressed_fragmentation_bytes", root["kmem_stats_compression"]
+        )
+
+        asserts.assert_in("logger", root)
+        asserts.assert_in("buckets", root["logger"])
+        asserts.assert_in("measurements", root["logger"])
+
+        asserts.assert_in("stalls", root)
+        asserts.assert_in("full_ms", root["stalls"])
+        asserts.assert_in("some_ms", root["stalls"])
+
+        asserts.assert_in("task health", root)
+        for k, v in root["task health"].items():
+            asserts.assert_equal(v, "ok", msg=f"task health {k} is not ok")
 
     def test_profile_memory_with_monitor2_report(self) -> None:
         profile = self.dut.ffx.run(

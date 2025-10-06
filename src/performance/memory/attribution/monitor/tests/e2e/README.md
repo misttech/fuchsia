@@ -6,7 +6,7 @@ This test exercises the various services offered by `memory_monitor2`:
 Test it locally with:
 
 ```
-fx set begonia_eng.x64 --release --with-host //src/performance/memory/attribution/monitor/tests/e2e:tests
+fx set workbench_eng.x64 --with-host //src/performance/memory/attribution/monitor/tests/e2e:tests
 fx build
 fx ffx emu start -H
 fx serve
@@ -15,13 +15,7 @@ fx serve
 In another terminal:
 
 ```
-rm -rf /tmp/test/* /tmp/fctemp.* ; fx test --e2e --output --simple --ffx-output-directory /tmp/test //src/performance/memory/attribution/monitor/tests/e2e:memory_monitor2_e2e_test
-```
-
-Once it starts waiting for the device, open another terminal:
-
-```
-fx ffx --isolate-dir /tmp/fctemp.* emu start -H --console out/default/obj/vendor/google/products/begonia/begonia_eng.x64/product_bundle
+rm -rf /tmp/test/* ; fx test --e2e --output --simple --ffx-output-directory /tmp/test //src/performance/memory/attribution/monitor/tests/e2e:memory_monitor2_e2e_test
 ```
 
 Quit this one with `ctrl-a`, `x`
