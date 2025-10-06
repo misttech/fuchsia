@@ -171,6 +171,7 @@
                 "fuchsia.bluetooth.le.Peripheral",
                 "fuchsia.bluetooth.le.PrivilegedPeripheral",
                 "fuchsia.bluetooth.sys.Access",
+                "fuchsia.bluetooth.sys.AddressLookup",
                 "fuchsia.bluetooth.sys.Bootstrap",
                 "fuchsia.bluetooth.sys.Configuration",
                 "fuchsia.bluetooth.sys.HostWatcher",

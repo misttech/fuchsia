@@ -1246,6 +1246,10 @@ assembly_input_bundle("core_realm_eng") {
       components = [ "bt-cli" ]
     },
     {
+      package = "bt-le-broadcast-assistant"
+      components = [ "bt-le-broadcast-assistant" ]
+    },
+    {
       package = "bt-le-central"
       components = [ "bt-le-central" ]
     },
