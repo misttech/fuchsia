@@ -878,7 +878,8 @@ bool MsdVsiDevice::LoadInitialAddressSpace(std::shared_ptr<MsdVsiContext> contex
   }
   constexpr uint32_t kTimeoutMs = 1000;
   if (!WaitUntilIdle(kTimeoutMs)) {
-    MAGMA_LOG(ERROR, "failed to wait for device to be idle");
+    MAGMA_LOG(ERROR, "failed to wait for device to be idle: addr 0x%08lx size 0x%x",
+              bus_mapping->Get()[0], magma::to_uint32(buf_writer.bytes_written()));
     return false;
   }
 
