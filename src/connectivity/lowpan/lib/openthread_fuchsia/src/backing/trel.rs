@@ -72,7 +72,8 @@ fn process_addresses_from_socket_addresses<
                             port
                         );
                     }
-                    if !ipv6addr_is_unicast_link_local(&addr) {
+                    // Require link-local. Thread requires TREL peers to advertise link-local via mDNS.
+                    if ipv6addr_is_unicast_link_local(&addr) {
                         return Some(addr);
                     }
                 }
@@ -209,6 +210,7 @@ impl TrelInstance {
                     "ServiceSubscriptionListenerRequest::OnInstanceDiscovered: [PII]({instance_name:?}) port:{port:?} addresses:{addresses:?}"
                 );
 
+                // Pick the smallest link-local to be robust to reorderings.
                 if let Some(address) = addresses.first() {
                     let sockaddr = ot::SockAddr::new(*address, port.unwrap());
 
@@ -217,7 +219,12 @@ impl TrelInstance {
                     let info = ot::PlatTrelPeerInfo::new(false, &txt, sockaddr);
                     info!(tag = "trel"; "otPlatTrelHandleDiscoveredPeerInfo: Adding {:?}", info);
                     ot_instance.plat_trel_handle_discovered_peer_info(&info);
-                };
+                } else {
+                    warn!(
+                        tag = "trel";
+                        "Peer {instance_name:?} does not have any IPv6 link-local address, ignored"
+                    );
+                }
 
                 responder.send().context("Unable to respond to OnInstanceDiscovered")?;
             }
@@ -241,6 +248,7 @@ impl TrelInstance {
                     "ServiceSubscriptionListenerRequest::OnInstanceChanged: [PII]({instance_name:?}) port:{port:?} addresses:{addresses:?}"
                 );
 
+                // Pick the smallest link-local to be robust to reorderings.
                 if let Some(address) = addresses.first() {
                     let sockaddr = ot::SockAddr::new(*address, port.unwrap());
 
@@ -264,7 +272,12 @@ impl TrelInstance {
                         );
                         ot_instance.plat_trel_handle_discovered_peer_info(&info);
                     }
-                };
+                } else {
+                    warn!(
+                        tag = "trel";
+                        "Peer {instance_name:?} does not have any IPv6 link-local address, ignored"
+                    );
+                }
 
                 responder.send().context("Unable to respond to OnInstanceChanged")?;
             }
