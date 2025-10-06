@@ -2,26 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
 use ffx_target::get_target_specifier;
 use ffx_trace_args::{Stop, TraceCommand, TraceSubCommand};
 use ffx_tracing::{self as ffx_trace, SymbolizationMap};
 use ffx_writer::{MachineWriter, ToolIO as _};
-use fho::{Deferred, FfxMain, FfxTool, bug, deferred};
+use fho::{bug, deferred, Deferred, FfxMain, FfxTool};
 use fidl_fuchsia_tracing::{BufferingMode, KnownCategory};
 use fidl_fuchsia_tracing_controller::{
     ProviderInfo, ProviderStats, ProvisionerProxy, RecordingError, SessionManagerProxy, StopResult,
     TraceConfig, TraceOptions, Trigger,
 };
-use futures::Future;
-use futures::future::{BoxFuture, FutureExt as _};
+use futures::future::{BoxFuture, Future, FutureExt as _};
 use prettytable::format::FormatBuilder;
-use prettytable::{Table, cell, row};
+use prettytable::{cell, row, Table};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::{Stdin, stdin};
+use std::io::{stdin, Stdin};
 use std::path::{Component, PathBuf};
 use std::time::Duration;
 use target_holders::moniker;
@@ -606,8 +605,9 @@ fn post_process(
 ) -> Result<()> {
     let expanded_categories =
         ffx_trace::expand_categories(context, categories.clone().unwrap_or(vec![]))?;
-    let skip_symbolization =
-        skip_symbolization || !expanded_categories.contains(&"kernel:ipc".to_string());
+    let skip_symbolization = skip_symbolization
+        || !expanded_categories.contains(&"kernel:ipc".to_string())
+            && !expanded_categories.contains(&"kernel:*".to_string());
     writer.line("Post Processing Trace...")?;
     let warnings =
         process_trace_file(&output_file, &output_file, !skip_symbolization, categories, context)?;
@@ -1117,29 +1117,27 @@ mod tests {
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
-        assert!(
-            run_trace_test(
-                env.context.clone(),
-                TraceCommand {
-                    sub_cmd: TraceSubCommand::Start(Start {
-                        buffer_size: 2,
-                        categories: vec!["invalid_categories".to_string()],
-                        duration: Some(1),
-                        buffering_mode: tracing::BufferingMode::Oneshot,
-                        output: Some(fake_trace_file_name),
-                        background: false,
-                        verbose: false,
-                        trigger: vec![],
-                        no_symbolize: false,
-                        no_verify_trace: false,
-                        on_boot: false,
-                    }),
-                },
-                writer,
-            )
-            .await
-            .is_err()
-        );
+        assert!(run_trace_test(
+            env.context.clone(),
+            TraceCommand {
+                sub_cmd: TraceSubCommand::Start(Start {
+                    buffer_size: 2,
+                    categories: vec!["invalid_categories".to_string()],
+                    duration: Some(1),
+                    buffering_mode: tracing::BufferingMode::Oneshot,
+                    output: Some(fake_trace_file_name),
+                    background: false,
+                    verbose: false,
+                    trigger: vec![],
+                    no_symbolize: false,
+                    no_verify_trace: false,
+                    on_boot: false,
+                }),
+            },
+            writer,
+        )
+        .await
+        .is_err());
     }
 
     #[fuchsia::test]
