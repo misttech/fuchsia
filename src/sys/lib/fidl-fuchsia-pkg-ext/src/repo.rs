@@ -45,7 +45,7 @@ pub enum RepositoryRegistrationAliasConflictMode {
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase", tag = "type", content = "value", deny_unknown_fields)]
 pub enum RepositoryKey {
-    Ed25519(#[serde(with = "hex_serde")] Vec<u8>),
+    Ed25519(#[serde(with = "hex::serde")] Vec<u8>),
 }
 
 /// Convenience wrapper for the FIDL MirrorConfig type
@@ -1381,27 +1381,6 @@ mod tests {
         let url = RepositoryUrl { url: "fuchsia-pkg://fuchsia.com".parse().unwrap() };
         let as_fidl: fidl::RepositoryUrl = url.clone().into();
         assert_eq!(RepositoryUrl::try_from(&as_fidl).unwrap(), url);
-    }
-}
-
-mod hex_serde {
-    use serde::Deserialize;
-
-    pub fn serialize<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let s = hex::encode(bytes);
-        serializer.serialize_str(&s)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        hex::decode(value.as_bytes())
-            .map_err(|e| serde::de::Error::custom(format!("bad hex value: {:?}: {}", value, e)))
     }
 }
 
