@@ -9,6 +9,7 @@ use anyhow::{Error, format_err};
 use core::sync::atomic::AtomicUsize;
 use fidl::endpoints::create_endpoints;
 use fidl_fuchsia_wlan_device_service::{self as fidl_svc, DeviceMonitorRequest};
+use fidl_fuchsia_wlan_internal::TxPowerScenario;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::stream::FuturesUnordered;
@@ -178,14 +179,16 @@ pub(crate) async fn handle_monitor_request(
             let result = get_sme_telemetry(ifaces, iface_id, telemetry_server).await;
             responder.send(result.map_err(|e| e.into_raw()))?;
         }
-        DeviceMonitorRequest::SetTxPowerScenario { phy_id: _, scenario: _, responder } => {
-            responder.send(Err(fidl_svc::DeviceMonitorError::NotSupported))?
+        DeviceMonitorRequest::SetTxPowerScenario { phy_id, scenario, responder } => {
+            let status = set_tx_power_scenario(phys, phy_id, &scenario).await;
+            responder.send(status)?
         }
-        DeviceMonitorRequest::ResetTxPowerScenario { phy_id: _, responder } => {
-            responder.send(Err(fidl_svc::DeviceMonitorError::NotSupported))?
+        DeviceMonitorRequest::ResetTxPowerScenario { phy_id, responder } => {
+            let status = reset_tx_power_scenario(phys, phy_id).await;
+            responder.send(status)?
         }
-        DeviceMonitorRequest::GetTxPowerScenario { phy_id: _, responder } => {
-            responder.send(Err(fidl_svc::DeviceMonitorError::NotSupported))?
+        DeviceMonitorRequest::GetTxPowerScenario { phy_id, responder } => {
+            responder.send(get_tx_power_scenario(phys, phy_id).await)?
         }
     }
     Ok(())
@@ -430,6 +433,43 @@ async fn set_bt_coexistence_mode(
             Err(zx::Status::INTERNAL)
         }
     }
+}
+
+async fn set_tx_power_scenario(
+    phys: &PhyMap,
+    phy_id: u16,
+    scenario: &TxPowerScenario,
+) -> Result<(), fidl_svc::DeviceMonitorError> {
+    let phy = phys.get(&phy_id).ok_or(fidl_svc::DeviceMonitorError::InvalidPhy)?;
+    phy_result_to_device_monitor_result(
+        phy_id,
+        "SetTxPowerScenario",
+        phy.proxy.set_tx_power_scenario(*scenario).await,
+    )
+}
+
+async fn reset_tx_power_scenario(
+    phys: &PhyMap,
+    phy_id: u16,
+) -> Result<(), fidl_svc::DeviceMonitorError> {
+    let phy = phys.get(&phy_id).ok_or(fidl_svc::DeviceMonitorError::InvalidPhy)?;
+    phy_result_to_device_monitor_result(
+        phy_id,
+        "ResetTxPowerScenario",
+        phy.proxy.reset_tx_power_scenario().await,
+    )
+}
+
+async fn get_tx_power_scenario(
+    phys: &PhyMap,
+    phy_id: u16,
+) -> Result<TxPowerScenario, fidl_svc::DeviceMonitorError> {
+    let phy = phys.get(&phy_id).ok_or(fidl_svc::DeviceMonitorError::InvalidPhy)?;
+    phy_result_to_device_monitor_result(
+        phy_id,
+        "GetTxPowerScenario",
+        phy.proxy.get_tx_power_scenario().await,
+    )
 }
 
 #[allow(clippy::too_many_arguments, reason = "mass allow for https://fxbug.dev/381896734")]
@@ -691,6 +731,24 @@ fn phy_result_to_status(
         }
     }
 }
+
+fn phy_result_to_device_monitor_result<T>(
+    phy_id: u16,
+    context: &str,
+    result: Result<Result<T, fidl_dev::PhyError>, fidl::Error>,
+) -> Result<T, fidl_svc::DeviceMonitorError> {
+    match result {
+        Ok(result) => result.map_err(|e| match e {
+            fidl_dev::PhyError::NotSupported => fidl_svc::DeviceMonitorError::NotSupported,
+            fidl_dev::PhyError::Internal => fidl_svc::DeviceMonitorError::Internal,
+        }),
+        Err(e) => {
+            error!("{} request failed phy#{} : {}", context, phy_id, e);
+            Err(fidl_svc::DeviceMonitorError::Internal)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2044,6 +2102,853 @@ mod tests {
         responder.send(Ok(())).expect("failed to send the response to SetBtCoexistenceMode");
 
         assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Ok(())));
+    }
+
+    #[fuchsia::test]
+    fn test_set_tx_power_scenario_nonexistent_phy_id() {
+        // Setup environment
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let (phy, _phy_stream) = fake_phy();
+
+        test_values.phys.insert(0, phy);
+
+        // Set the power state for a PHY ID that is not present.
+        let req_fut =
+            super::set_tx_power_scenario(&test_values.phys, 9999, &TxPowerScenario::HeadCellOff);
+        let mut req_fut = pin!(req_fut);
+
+        // Verify that a NOT_FOUND error is returned.
+        assert_eq!(
+            exec.run_until_stalled(&mut req_fut),
+            Poll::Ready(Err(fidl_svc::DeviceMonitorError::InvalidPhy))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_set_tx_power_scenario_request_fails() {
+        // Setup environment
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let (phy, phy_stream) = fake_phy();
+        let phy_id: u16 = 0;
+        test_values.phys.insert(phy_id, phy);
+
+        // Drop the phy stream so that the request fails.
+        drop(phy_stream);
+
+        // Set the power state for a PHY ID that is not present.
+        let req_fut =
+            super::set_tx_power_scenario(&test_values.phys, phy_id, &TxPowerScenario::HeadCellOff);
+        let mut req_fut = pin!(req_fut);
+
+        // Verify that a NOT_FOUND error is returned.
+        assert_eq!(
+            exec.run_until_stalled(&mut req_fut),
+            Poll::Ready(Err(fidl_svc::DeviceMonitorError::Internal))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_set_tx_power_scenario_fails() {
+        // Setup environment
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let (phy, mut phy_stream) = fake_phy();
+        let phy_id: u16 = 0;
+        test_values.phys.insert(phy_id, phy);
+        let test_scenario = TxPowerScenario::HeadCellOff;
+
+        // Attempt to set the TxPowerScenario
+        let req_fut = super::set_tx_power_scenario(&test_values.phys, phy_id, &test_scenario);
+        let mut req_fut = pin!(req_fut);
+        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Pending);
+
+        // Send back an error response
+        assert_matches!(exec.run_until_stalled(&mut phy_stream.next()),
+            Poll::Ready(Some(Ok(fidl_dev::PhyRequest::SetTxPowerScenario { responder, scenario }))) => {
+                assert_eq!(scenario, test_scenario);
+
+                // Send back an error response
+                responder.send(Err(fidl_dev::PhyError::NotSupported))
+                    .expect("failed to send the response to SetTxPowerScenario");
+            }
+        );
+
+        // Verify that the error was propagated to the caller.
+        assert_matches!(
+            exec.run_until_stalled(&mut req_fut),
+            Poll::Ready(Err(fidl_svc::DeviceMonitorError::NotSupported))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_set_tx_power_scenario_succeeds() {
+        // Setup environment
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let (phy, mut phy_stream) = fake_phy();
+        let phy_id: u16 = 0;
+        test_values.phys.insert(phy_id, phy);
+        let test_scenario = TxPowerScenario::HeadCellOff;
+
+        // Attempt to set the TxPowerScenario
+        let req_fut = super::set_tx_power_scenario(&test_values.phys, phy_id, &test_scenario);
+        let mut req_fut = pin!(req_fut);
+        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Pending);
+
+        // Send back an ok response
+        assert_matches!(exec.run_until_stalled(&mut phy_stream.next()),
+            Poll::Ready(Some(Ok(fidl_dev::PhyRequest::SetTxPowerScenario { responder, scenario }))) => {
+                assert_eq!(scenario, test_scenario);
+
+                // Send back an error response
+                responder.send(Ok(()))
+                    .expect("failed to send the response to SetTxPowerScenario");
+            }
+        );
+
+        // Verify that the error was propagated to the caller.
+        assert_matches!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Ok(())));
+    }
+
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_set_nonexistent_phy() {
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let cfg = fake_wlandevicemonitor_config();
+        let (phy, _phy_stream) = fake_phy();
+        test_values.phys.insert(0, phy);
+
+        let service_fut = serve_monitor_requests(
+            test_values.monitor_stream,
+            &test_values.phys,
+            &test_values.ifaces,
+            &test_values.watcher_service,
+            &test_values.new_iface_sink,
+            &test_values.iface_counter,
+            &test_values.ifaces_tree,
+            &cfg,
+        );
+        let mut service_fut = pin!(service_fut);
+
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Request Tx power scenario set for a bogus PHY ID
+        let test_scenario = TxPowerScenario::BodyCellOff;
+        let set_fut = test_values.monitor_proxy.set_tx_power_scenario(9999, test_scenario);
+        let mut set_fut = pin!(set_fut);
+        assert_matches!(exec.run_until_stalled(&mut set_fut), Poll::Pending);
+
+        // Advance the service fut to handle the request.
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Verify that a not-found error is returned
+        assert_matches!(
+            exec.run_until_stalled(&mut set_fut),
+            Poll::Ready(Ok(Err(fidl_svc::DeviceMonitorError::InvalidPhy)))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_set_request_fails() {
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let cfg = fake_wlandevicemonitor_config();
+        let (phy, phy_stream) = fake_phy();
+        let phy_id: u16 = 0;
+        test_values.phys.insert(phy_id, phy);
+
+        // Drop the PHY request stream so that all requests fail.
+        drop(phy_stream);
+
+        let service_fut = serve_monitor_requests(
+            test_values.monitor_stream,
+            &test_values.phys,
+            &test_values.ifaces,
+            &test_values.watcher_service,
+            &test_values.new_iface_sink,
+            &test_values.iface_counter,
+            &test_values.ifaces_tree,
+            &cfg,
+        );
+        let mut service_fut = pin!(service_fut);
+
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Request Tx power scenario set for a bogus PHY ID
+        let test_scenario = TxPowerScenario::BodyCellOff;
+        let set_fut = test_values.monitor_proxy.set_tx_power_scenario(phy_id, test_scenario);
+        let mut set_fut = pin!(set_fut);
+        assert_matches!(exec.run_until_stalled(&mut set_fut), Poll::Pending);
+
+        // Advance the service fut to handle the request.
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Verify that an internal error is returned
+        assert_matches!(
+            exec.run_until_stalled(&mut set_fut),
+            Poll::Ready(Ok(Err(fidl_svc::DeviceMonitorError::Internal)))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_set_fails() {
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let cfg = fake_wlandevicemonitor_config();
+        let (phy, mut phy_stream) = fake_phy();
+        let phy_id: u16 = 0;
+        test_values.phys.insert(phy_id, phy);
+
+        let service_fut = serve_monitor_requests(
+            test_values.monitor_stream,
+            &test_values.phys,
+            &test_values.ifaces,
+            &test_values.watcher_service,
+            &test_values.new_iface_sink,
+            &test_values.iface_counter,
+            &test_values.ifaces_tree,
+            &cfg,
+        );
+        let mut service_fut = pin!(service_fut);
+
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Request Tx power scenario be set
+        let test_scenario = TxPowerScenario::BodyCellOff;
+        let set_fut = test_values.monitor_proxy.set_tx_power_scenario(phy_id, test_scenario);
+        let mut set_fut = pin!(set_fut);
+        assert_matches!(exec.run_until_stalled(&mut set_fut), Poll::Pending);
+
+        // Advance the service fut to handle the request.
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Verify that the request has been issued and send back an error response.
+        assert_matches!(exec.run_until_stalled(&mut phy_stream.next()),
+            Poll::Ready(Some(Ok(fidl_dev::PhyRequest::SetTxPowerScenario { responder, scenario }))) => {
+                assert_eq!(test_scenario, scenario);
+                // Send back an error response
+                responder.send(Err(fidl_dev::PhyError::Internal))
+                    .expect("failed to send the response to SetTxPowerScenario");
+            }
+        );
+
+        // Allow the service to process the request.
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Verify that the response is returned to the caller.
+        assert_matches!(
+            exec.run_until_stalled(&mut set_fut),
+            Poll::Ready(Ok(Err(fidl_svc::DeviceMonitorError::Internal)))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_set_succeeds() {
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let cfg = fake_wlandevicemonitor_config();
+        let (phy, mut phy_stream) = fake_phy();
+        let phy_id: u16 = 0;
+        test_values.phys.insert(phy_id, phy);
+
+        let service_fut = serve_monitor_requests(
+            test_values.monitor_stream,
+            &test_values.phys,
+            &test_values.ifaces,
+            &test_values.watcher_service,
+            &test_values.new_iface_sink,
+            &test_values.iface_counter,
+            &test_values.ifaces_tree,
+            &cfg,
+        );
+        let mut service_fut = pin!(service_fut);
+
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Request Tx power scenario be set
+        let test_scenario = TxPowerScenario::BodyCellOff;
+        let set_fut = test_values.monitor_proxy.set_tx_power_scenario(phy_id, test_scenario);
+        let mut set_fut = pin!(set_fut);
+        assert_matches!(exec.run_until_stalled(&mut set_fut), Poll::Pending);
+
+        // Advance the service fut to handle the request.
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Verify that the request has been issued and send back an ok response.
+        assert_matches!(exec.run_until_stalled(&mut phy_stream.next()),
+            Poll::Ready(Some(Ok(fidl_dev::PhyRequest::SetTxPowerScenario { responder, scenario }))) => {
+                assert_eq!(test_scenario, scenario);
+
+                // Send back an error response
+                responder.send(Ok(()))
+                    .expect("failed to send the response to SetTxPowerScenario");
+            }
+        );
+
+        // Allow the service to process the request.
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Verify that the response is returned to the caller.
+        assert_matches!(exec.run_until_stalled(&mut set_fut), Poll::Ready(Ok(Ok(()))));
+    }
+
+    #[fuchsia::test]
+    fn test_get_tx_power_scenario_nonexistent_phy_id() {
+        // Setup environment
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let (phy, _phy_stream) = fake_phy();
+
+        test_values.phys.insert(0, phy);
+
+        // Get the power state for a PHY ID that is not present.
+        let req_fut = super::get_tx_power_scenario(&test_values.phys, 9999);
+        let mut req_fut = pin!(req_fut);
+
+        // Verify that a NOT_FOUND error is returned.
+        assert_eq!(
+            exec.run_until_stalled(&mut req_fut),
+            Poll::Ready(Err(fidl_svc::DeviceMonitorError::InvalidPhy))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_get_tx_power_scenario_request_fails() {
+        // Setup environment
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let (phy, phy_stream) = fake_phy();
+
+        // Drop the request stream so that the request fails.
+        drop(phy_stream);
+
+        let phy_id: u16 = 0;
+        test_values.phys.insert(phy_id, phy);
+
+        // Get the power state for a PHY ID that is not present.
+        let req_fut = super::get_tx_power_scenario(&test_values.phys, phy_id);
+        let mut req_fut = pin!(req_fut);
+
+        // The future should complete immediately with an internal error.
+        assert_eq!(
+            exec.run_until_stalled(&mut req_fut),
+            Poll::Ready(Err(fidl_svc::DeviceMonitorError::Internal))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_get_tx_power_scenario_fails() {
+        // Setup environment
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let (phy, mut phy_stream) = fake_phy();
+        let phy_id: u16 = 0;
+        test_values.phys.insert(phy_id, phy);
+
+        // Make the request to get the power state.
+        let req_fut = super::get_tx_power_scenario(&test_values.phys, phy_id);
+        let mut req_fut = pin!(req_fut);
+        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Pending);
+
+        // Send back an error response
+        assert_matches!(exec.run_until_stalled(&mut phy_stream.next()),
+            Poll::Ready(Some(Ok(fidl_dev::PhyRequest::GetTxPowerScenario { responder }))) => {
+                // Send back an error response
+                responder.send(Err(fidl_dev::PhyError::NotSupported))
+                    .expect("failed to send the response to GetTxPowerScenario");
+            }
+        );
+
+        // Verify that the error was propagated to the caller.
+        assert_matches!(
+            exec.run_until_stalled(&mut req_fut),
+            Poll::Ready(Err(fidl_svc::DeviceMonitorError::NotSupported))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_get_tx_power_scenario_succeeds() {
+        // Setup environment
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let (phy, mut phy_stream) = fake_phy();
+        let phy_id: u16 = 0;
+        test_values.phys.insert(phy_id, phy);
+
+        // Make the request to get the power state.
+        let req_fut = super::get_tx_power_scenario(&test_values.phys, phy_id);
+        let mut req_fut = pin!(req_fut);
+        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Pending);
+
+        // Send back a response
+        assert_matches!(exec.run_until_stalled(&mut phy_stream.next()),
+            Poll::Ready(Some(Ok(fidl_dev::PhyRequest::GetTxPowerScenario { responder }))) => {
+                // Send back an error response
+                responder.send(Ok(TxPowerScenario::HeadCellOff))
+                    .expect("failed to send the response to GetTxPowerScenario");
+            }
+        );
+
+        // Verify that the response was propagated to the caller.
+        assert_matches!(
+            exec.run_until_stalled(&mut req_fut),
+            Poll::Ready(Ok(TxPowerScenario::HeadCellOff))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_get_nonexistent_phy() {
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let cfg = fake_wlandevicemonitor_config();
+        let (phy, _phy_stream) = fake_phy();
+        test_values.phys.insert(0, phy);
+
+        let service_fut = serve_monitor_requests(
+            test_values.monitor_stream,
+            &test_values.phys,
+            &test_values.ifaces,
+            &test_values.watcher_service,
+            &test_values.new_iface_sink,
+            &test_values.iface_counter,
+            &test_values.ifaces_tree,
+            &cfg,
+        );
+        let mut service_fut = pin!(service_fut);
+
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Get Tx power scenario reset for a bogus PHY ID
+        let reset_fut = test_values.monitor_proxy.get_tx_power_scenario(9999);
+        let mut reset_fut = pin!(reset_fut);
+        assert_matches!(exec.run_until_stalled(&mut reset_fut), Poll::Pending);
+
+        // Advance the service fut to handle the request.
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Verify that a not-found error is returned
+        assert_matches!(
+            exec.run_until_stalled(&mut reset_fut),
+            Poll::Ready(Ok(Err(fidl_svc::DeviceMonitorError::InvalidPhy)))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_get_request_fails() {
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let cfg = fake_wlandevicemonitor_config();
+        let (phy, phy_stream) = fake_phy();
+        let phy_id: u16 = 0;
+        test_values.phys.insert(phy_id, phy);
+
+        // Drop the PHY request stream so that all requests fail.
+        drop(phy_stream);
+
+        let service_fut = serve_monitor_requests(
+            test_values.monitor_stream,
+            &test_values.phys,
+            &test_values.ifaces,
+            &test_values.watcher_service,
+            &test_values.new_iface_sink,
+            &test_values.iface_counter,
+            &test_values.ifaces_tree,
+            &cfg,
+        );
+        let mut service_fut = pin!(service_fut);
+
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Get Tx power scenario reset for a bogus PHY ID
+        let reset_fut = test_values.monitor_proxy.get_tx_power_scenario(phy_id);
+        let mut reset_fut = pin!(reset_fut);
+        assert_matches!(exec.run_until_stalled(&mut reset_fut), Poll::Pending);
+
+        // Advance the service fut to handle the request.
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Verify that an internal error is returned
+        assert_matches!(
+            exec.run_until_stalled(&mut reset_fut),
+            Poll::Ready(Ok(Err(fidl_svc::DeviceMonitorError::Internal)))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_get_fails() {
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let cfg = fake_wlandevicemonitor_config();
+        let (phy, mut phy_stream) = fake_phy();
+        let phy_id: u16 = 0;
+        test_values.phys.insert(phy_id, phy);
+
+        let service_fut = serve_monitor_requests(
+            test_values.monitor_stream,
+            &test_values.phys,
+            &test_values.ifaces,
+            &test_values.watcher_service,
+            &test_values.new_iface_sink,
+            &test_values.iface_counter,
+            &test_values.ifaces_tree,
+            &cfg,
+        );
+        let mut service_fut = pin!(service_fut);
+
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Request the Tx power scenario
+        let reset_fut = test_values.monitor_proxy.get_tx_power_scenario(phy_id);
+        let mut reset_fut = pin!(reset_fut);
+        assert_matches!(exec.run_until_stalled(&mut reset_fut), Poll::Pending);
+
+        // Advance the service fut to handle the request.
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Verify that the request has been issued and send back an error response.
+        assert_matches!(exec.run_until_stalled(&mut phy_stream.next()),
+            Poll::Ready(Some(Ok(fidl_dev::PhyRequest::GetTxPowerScenario { responder }))) => {
+                // Send back an error response
+                responder.send(Err(fidl_dev::PhyError::NotSupported))
+                    .expect("failed to send the response to GetTxPowerScenario");
+            }
+        );
+
+        // Allow the service to process the request.
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Verify that the response is returned to the caller.
+        assert_matches!(
+            exec.run_until_stalled(&mut reset_fut),
+            Poll::Ready(Ok(Err(fidl_svc::DeviceMonitorError::NotSupported)))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_get_succeeds() {
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let cfg = fake_wlandevicemonitor_config();
+        let (phy, mut phy_stream) = fake_phy();
+        let phy_id: u16 = 0;
+        test_values.phys.insert(phy_id, phy);
+
+        let service_fut = serve_monitor_requests(
+            test_values.monitor_stream,
+            &test_values.phys,
+            &test_values.ifaces,
+            &test_values.watcher_service,
+            &test_values.new_iface_sink,
+            &test_values.iface_counter,
+            &test_values.ifaces_tree,
+            &cfg,
+        );
+        let mut service_fut = pin!(service_fut);
+
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Request Tx power scenario reset
+        let reset_fut = test_values.monitor_proxy.get_tx_power_scenario(phy_id);
+        let mut reset_fut = pin!(reset_fut);
+        assert_matches!(exec.run_until_stalled(&mut reset_fut), Poll::Pending);
+
+        // Advance the service fut to handle the request.
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Verify that the request has been issued and send back an ok response.
+        let scenario = TxPowerScenario::BodyBtActive;
+        assert_matches!(exec.run_until_stalled(&mut phy_stream.next()),
+            Poll::Ready(Some(Ok(fidl_dev::PhyRequest::GetTxPowerScenario { responder }))) => {
+                // Send back an ok response
+                responder.send(Ok(scenario))
+                    .expect("failed to send the response to GetTxPowerScenario");
+            }
+        );
+
+        // Allow the service to process the request.
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Verify that the response is returned to the caller.
+        assert_matches!(exec.run_until_stalled(&mut reset_fut), Poll::Ready(Ok(Ok(response))) => {
+            assert_eq!(response, scenario);
+        });
+    }
+
+    #[fuchsia::test]
+    fn test_reset_tx_power_scenario_nonexistent_phy_id() {
+        // Setup environment
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let (phy, _phy_stream) = fake_phy();
+
+        test_values.phys.insert(0, phy);
+
+        // Reset the power state for a PHY ID that is not present.
+        let req_fut = super::reset_tx_power_scenario(&test_values.phys, 9999);
+        let mut req_fut = pin!(req_fut);
+
+        // Verify that a NOT_FOUND error is returned.
+        assert_eq!(
+            exec.run_until_stalled(&mut req_fut),
+            Poll::Ready(Err(fidl_svc::DeviceMonitorError::InvalidPhy))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_reset_tx_power_scenario_request_fails() {
+        // Setup environment
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let (phy, phy_stream) = fake_phy();
+        let phy_id: u16 = 0;
+        test_values.phys.insert(phy_id, phy);
+
+        // Drop the PHY request stream so that the request will fail.
+        drop(phy_stream);
+
+        // Reset the power state for a valid PHY ID.
+        let req_fut = super::reset_tx_power_scenario(&test_values.phys, phy_id);
+        let mut req_fut = pin!(req_fut);
+
+        // Verify that there is an internal error
+        assert_eq!(
+            exec.run_until_stalled(&mut req_fut),
+            Poll::Ready(Err(fidl_svc::DeviceMonitorError::Internal))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_reset_tx_power_scenario_fails() {
+        // Setup environment
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let (phy, mut phy_stream) = fake_phy();
+        let phy_id: u16 = 0;
+        test_values.phys.insert(phy_id, phy);
+
+        // Reset the power state for a valid PHY ID.
+        let req_fut = super::reset_tx_power_scenario(&test_values.phys, phy_id);
+        let mut req_fut = pin!(req_fut);
+        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Pending);
+
+        // Respond to the request with an error.
+        assert_matches!(exec.run_until_stalled(&mut phy_stream.next()),
+            Poll::Ready(Some(Ok(fidl_dev::PhyRequest::ResetTxPowerScenario { responder }))) => {
+                // Send back an error response
+                responder.send(Err(fidl_dev::PhyError::NotSupported))
+                    .expect("failed to send the response to ResetTxPowerScenario");
+            }
+        );
+
+        // Verify that the error was propagated to the caller.
+        assert_matches!(
+            exec.run_until_stalled(&mut req_fut),
+            Poll::Ready(Err(fidl_svc::DeviceMonitorError::NotSupported))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_reset_tx_power_scenario_succeeds() {
+        // Setup environment
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let (phy, mut phy_stream) = fake_phy();
+        let phy_id: u16 = 0;
+        test_values.phys.insert(phy_id, phy);
+
+        // Reset the power state for a PHY ID that is not present.
+        let req_fut = super::reset_tx_power_scenario(&test_values.phys, phy_id);
+        let mut req_fut = pin!(req_fut);
+        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Pending);
+
+        // Respond to the request with an error.
+        assert_matches!(exec.run_until_stalled(&mut phy_stream.next()),
+            Poll::Ready(Some(Ok(fidl_dev::PhyRequest::ResetTxPowerScenario { responder }))) => {
+                // Send back an ok response
+                responder.send(Ok(()))
+                    .expect("failed to send the response to ResetTxPowerScenario");
+            }
+        );
+
+        // Verify that the error was propagated to the caller.
+        assert_matches!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Ok(())));
+    }
+
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_reset_nonexistent_phy() {
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let cfg = fake_wlandevicemonitor_config();
+        let (phy, _phy_stream) = fake_phy();
+        test_values.phys.insert(0, phy);
+
+        let service_fut = serve_monitor_requests(
+            test_values.monitor_stream,
+            &test_values.phys,
+            &test_values.ifaces,
+            &test_values.watcher_service,
+            &test_values.new_iface_sink,
+            &test_values.iface_counter,
+            &test_values.ifaces_tree,
+            &cfg,
+        );
+        let mut service_fut = pin!(service_fut);
+
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Request Tx power scenario reset for a bogus PHY ID
+        let reset_fut = test_values.monitor_proxy.reset_tx_power_scenario(9999);
+        let mut reset_fut = pin!(reset_fut);
+        assert_matches!(exec.run_until_stalled(&mut reset_fut), Poll::Pending);
+
+        // Advance the service fut to handle the request.
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Verify that a not-found error is returned
+        assert_matches!(
+            exec.run_until_stalled(&mut reset_fut),
+            Poll::Ready(Ok(Err(fidl_svc::DeviceMonitorError::InvalidPhy)))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_reset_request_fails() {
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let cfg = fake_wlandevicemonitor_config();
+        let (phy, phy_stream) = fake_phy();
+        let phy_id: u16 = 0;
+        test_values.phys.insert(phy_id, phy);
+
+        // Drop the PHY request stream so that all requests fail.
+        drop(phy_stream);
+
+        let service_fut = serve_monitor_requests(
+            test_values.monitor_stream,
+            &test_values.phys,
+            &test_values.ifaces,
+            &test_values.watcher_service,
+            &test_values.new_iface_sink,
+            &test_values.iface_counter,
+            &test_values.ifaces_tree,
+            &cfg,
+        );
+        let mut service_fut = pin!(service_fut);
+
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Request Tx power scenario reset for a bogus PHY ID
+        let reset_fut = test_values.monitor_proxy.reset_tx_power_scenario(phy_id);
+        let mut reset_fut = pin!(reset_fut);
+        assert_matches!(exec.run_until_stalled(&mut reset_fut), Poll::Pending);
+
+        // Advance the service fut to handle the request.
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Verify that an internal error is returned
+        assert_matches!(
+            exec.run_until_stalled(&mut reset_fut),
+            Poll::Ready(Ok(Err(fidl_svc::DeviceMonitorError::Internal)))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_reset_fails() {
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let cfg = fake_wlandevicemonitor_config();
+        let (phy, mut phy_stream) = fake_phy();
+        let phy_id: u16 = 0;
+        test_values.phys.insert(phy_id, phy);
+
+        let service_fut = serve_monitor_requests(
+            test_values.monitor_stream,
+            &test_values.phys,
+            &test_values.ifaces,
+            &test_values.watcher_service,
+            &test_values.new_iface_sink,
+            &test_values.iface_counter,
+            &test_values.ifaces_tree,
+            &cfg,
+        );
+        let mut service_fut = pin!(service_fut);
+
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Request Tx power scenario reset
+        let reset_fut = test_values.monitor_proxy.reset_tx_power_scenario(phy_id);
+        let mut reset_fut = pin!(reset_fut);
+        assert_matches!(exec.run_until_stalled(&mut reset_fut), Poll::Pending);
+
+        // Advance the service fut to handle the request.
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Verify that the request has been issued and send back an error response.
+        assert_matches!(exec.run_until_stalled(&mut phy_stream.next()),
+            Poll::Ready(Some(Ok(fidl_dev::PhyRequest::ResetTxPowerScenario { responder }))) => {
+                // Send back an error response
+                responder.send(Err(fidl_dev::PhyError::NotSupported))
+                    .expect("failed to send the response to ResetTxPowerScenario");
+            }
+        );
+
+        // Allow the service to process the request.
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Verify that the response is returned to the caller.
+        assert_matches!(
+            exec.run_until_stalled(&mut reset_fut),
+            Poll::Ready(Ok(Err(fidl_svc::DeviceMonitorError::NotSupported)))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_service_tx_power_scenario_reset_succeeds() {
+        let mut exec = fasync::TestExecutor::new();
+        let test_values = test_setup();
+        let cfg = fake_wlandevicemonitor_config();
+        let (phy, mut phy_stream) = fake_phy();
+        let phy_id: u16 = 0;
+        test_values.phys.insert(phy_id, phy);
+
+        let service_fut = serve_monitor_requests(
+            test_values.monitor_stream,
+            &test_values.phys,
+            &test_values.ifaces,
+            &test_values.watcher_service,
+            &test_values.new_iface_sink,
+            &test_values.iface_counter,
+            &test_values.ifaces_tree,
+            &cfg,
+        );
+        let mut service_fut = pin!(service_fut);
+
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Request Tx power scenario reset
+        let reset_fut = test_values.monitor_proxy.reset_tx_power_scenario(phy_id);
+        let mut reset_fut = pin!(reset_fut);
+        assert_matches!(exec.run_until_stalled(&mut reset_fut), Poll::Pending);
+
+        // Advance the service fut to handle the request.
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Verify that the request has been issued and send back an ok response.
+        assert_matches!(exec.run_until_stalled(&mut phy_stream.next()),
+            Poll::Ready(Some(Ok(fidl_dev::PhyRequest::ResetTxPowerScenario { responder }))) => {
+                // Send back an error response
+                responder.send(Ok(()))
+                    .expect("failed to send the response to ResetTxPowerScenario");
+            }
+        );
+
+        // Allow the service to process the request.
+        assert_matches!(exec.run_until_stalled(&mut service_fut), Poll::Pending);
+
+        // Verify that the response is returned to the caller.
+        assert_matches!(exec.run_until_stalled(&mut reset_fut), Poll::Ready(Ok(Ok(()))));
     }
 
     #[fuchsia::test]
