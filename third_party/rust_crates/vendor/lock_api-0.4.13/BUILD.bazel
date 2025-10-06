@@ -82,7 +82,7 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/lock_api-0.4.13:build_script_build",
         "//third_party/rust_crates/vendor/scopeguard-1.2.0:scopeguard",
-        "//third_party/rust_crates/vendor/serde-1.0.204:serde",
+        "//third_party/rust_crates/vendor/serde-1.0.228:serde",
     ],
 )
 

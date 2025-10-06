@@ -2527,26 +2527,26 @@ alias(
 )
 
 alias(
-    name = "serde-1.0.204",
-    actual = "//third_party/rust_crates/vendor/serde-1.0.204:serde",
+    name = "serde-1.0.228",
+    actual = "//third_party/rust_crates/vendor/serde-1.0.228:serde",
     tags = ["manual"],
 )
 
 alias(
     name = "serde",
-    actual = "//third_party/rust_crates/vendor/serde-1.0.204:serde",
+    actual = "//third_party/rust_crates/vendor/serde-1.0.228:serde",
     tags = ["manual"],
 )
 
 alias(
-    name = "serde_derive-1.0.204",
-    actual = "//third_party/rust_crates/vendor/serde_derive-1.0.204:serde_derive",
+    name = "serde_derive-1.0.228",
+    actual = "//third_party/rust_crates/vendor/serde_derive-1.0.228:serde_derive",
     tags = ["manual"],
 )
 
 alias(
     name = "serde_derive",
-    actual = "//third_party/rust_crates/vendor/serde_derive-1.0.204:serde_derive",
+    actual = "//third_party/rust_crates/vendor/serde_derive-1.0.228:serde_derive",
     tags = ["manual"],
 )
 

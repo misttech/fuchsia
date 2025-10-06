@@ -66,7 +66,7 @@ rust_proc_macro(
     crate_root = "src/lib.rs",
     edition = "2021",
     proc_macro_deps = [
-        "//third_party/rust_crates/vendor/serde_derive-1.0.204:serde_derive",
+        "//third_party/rust_crates/vendor/serde_derive-1.0.228:serde_derive",
     ],
     rustc_flags = [
         "--cap-lints=allow",
@@ -94,7 +94,7 @@ rust_proc_macro(
         "//third_party/rust_crates/vendor/proc-macro2-1.0.97:proc_macro2",
         "//third_party/rust_crates/vendor/quote-1.0.40:quote",
         "//third_party/rust_crates/vendor/rustc-hash-2.1.1:rustc_hash",
-        "//third_party/rust_crates/vendor/serde-1.0.204:serde",
+        "//third_party/rust_crates/vendor/serde-1.0.228:serde",
         "//third_party/rust_crates/vendor/syn-2.0.103:syn",
     ],
 )

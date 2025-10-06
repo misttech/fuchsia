@@ -78,6 +78,6 @@ rust_library(
     version = "0.1.0",
     deps = [
         "//third_party/rust_crates/vendor/base16ct-0.1.1:base16ct",
-        "//third_party/rust_crates/vendor/serde-1.0.204:serde",
+        "//third_party/rust_crates/vendor/serde-1.0.228:serde",
     ],
 )

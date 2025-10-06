@@ -92,7 +92,7 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/hashbrown-0.12.3:hashbrown",
         "//third_party/rust_crates/vendor/indexmap-1.9.2:build_script_build",
-        "//third_party/rust_crates/vendor/serde-1.0.204:serde",
+        "//third_party/rust_crates/vendor/serde-1.0.228:serde",
     ],
 )
 

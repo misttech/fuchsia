@@ -77,6 +77,6 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/ciborium-io-0.2.2:ciborium_io",
         "//third_party/rust_crates/vendor/ciborium-ll-0.2.2:ciborium_ll",
-        "//third_party/rust_crates/vendor/serde-1.0.204:serde",
+        "//third_party/rust_crates/vendor/serde-1.0.228:serde",
     ],
 )

@@ -83,7 +83,7 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/camino-1.1.9:build_script_build",
         "//third_party/rust_crates/vendor/proptest-1.7.0:proptest",
-        "//third_party/rust_crates/vendor/serde-1.0.204:serde",
+        "//third_party/rust_crates/vendor/serde-1.0.228:serde",
     ],
 )
 

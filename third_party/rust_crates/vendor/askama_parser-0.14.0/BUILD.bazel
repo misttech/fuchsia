@@ -58,7 +58,7 @@ rust_library(
     crate_root = "src/lib.rs",
     edition = "2021",
     proc_macro_deps = [
-        "//third_party/rust_crates/vendor/serde_derive-1.0.204:serde_derive",
+        "//third_party/rust_crates/vendor/serde_derive-1.0.228:serde_derive",
     ],
     rustc_flags = [
         "--cap-lints=allow",
@@ -81,7 +81,7 @@ rust_library(
     version = "0.14.0",
     deps = [
         "//third_party/rust_crates/ask2patch/memchr",
-        "//third_party/rust_crates/vendor/serde-1.0.204:serde",
+        "//third_party/rust_crates/vendor/serde-1.0.228:serde",
         "//third_party/rust_crates/vendor/winnow-0.7.12:winnow",
     ],
 )
