@@ -20,7 +20,7 @@
             event_codes: [
                 4,
             ],
-            metric_id: 40,
+            metric_id: 43,
             metric_type: "Integer",
             selector: "core/network/netstack:root/Filtering\\ State/IPv4/conntrack:num_entries",
         },
@@ -28,7 +28,7 @@
             event_codes: [
                 6,
             ],
-            metric_id: 40,
+            metric_id: 43,
             metric_type: "Integer",
             selector: "core/network/netstack:root/Filtering\\ State/IPv6/conntrack:num_entries",
         },
