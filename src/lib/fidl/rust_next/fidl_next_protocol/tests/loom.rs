@@ -7,8 +7,8 @@
 use fidl_next_codec::{DecoderExt as _, WireString};
 use fidl_next_protocol_loom::mpsc::Mpsc;
 use fidl_next_protocol_loom::{
-    Client, ClientDispatcher, ClientHandler, Responder, Server, ServerDispatcher, ServerHandler,
-    Transport,
+    Client, ClientDispatcher, ClientHandler, ProtocolError, Responder, ServerDispatcher,
+    ServerHandler, Transport,
 };
 use loom::future::block_on;
 use loom::thread::spawn;
@@ -24,7 +24,11 @@ fn close_on_drop() {
     struct TestServer;
 
     impl<T: Transport + 'static> ServerHandler<T> for TestServer {
-        async fn on_one_way(&mut self, _: &Server<T>, _: u64, _: T::RecvBuffer) {
+        async fn on_one_way(
+            &mut self,
+            _: u64,
+            _: T::RecvBuffer,
+        ) -> Result<(), ProtocolError<T::Error>> {
             panic!("unexpected event");
         }
 
@@ -33,7 +37,7 @@ fn close_on_drop() {
             ordinal: u64,
             buffer: T::RecvBuffer,
             responder: Responder<T>,
-        ) {
+        ) -> Result<(), ProtocolError<T::Error>> {
             let message = buffer.decode::<WireString<'_>>().expect("failed to decode request");
             assert_eq!(ordinal, 42);
             assert_eq!(&**message, "Ping");
@@ -43,6 +47,8 @@ fn close_on_drop() {
                 .expect("failed to encode response")
                 .await
                 .expect("failed to send response");
+
+            Ok(())
         }
     }
 
@@ -75,7 +81,11 @@ fn send_one_way() {
     struct TestServer;
 
     impl<T: Transport + 'static> ServerHandler<T> for TestServer {
-        async fn on_one_way(&mut self, _: &Server<T>, _: u64, _: T::RecvBuffer) {
+        async fn on_one_way(
+            &mut self,
+            _: u64,
+            _: T::RecvBuffer,
+        ) -> Result<(), ProtocolError<T::Error>> {
             panic!("unexpected event");
         }
 
@@ -84,7 +94,7 @@ fn send_one_way() {
             ordinal: u64,
             buffer: T::RecvBuffer,
             responder: Responder<T>,
-        ) {
+        ) -> Result<(), ProtocolError<T::Error>> {
             let message = buffer.decode::<WireString<'_>>().expect("failed to decode request");
             assert_eq!(ordinal, 42);
             assert_eq!(&**message, "Ping");
@@ -94,6 +104,8 @@ fn send_one_way() {
                 .expect("failed to encode response")
                 .await
                 .expect("failed to send response");
+
+            Ok(())
         }
     }
 
@@ -125,7 +137,11 @@ fn two_way() {
     struct TestServer;
 
     impl<T: Transport + 'static> ServerHandler<T> for TestServer {
-        async fn on_one_way(&mut self, _: &Server<T>, _: u64, _: T::RecvBuffer) {
+        async fn on_one_way(
+            &mut self,
+            _: u64,
+            _: T::RecvBuffer,
+        ) -> Result<(), ProtocolError<T::Error>> {
             panic!("unexpected event");
         }
 
@@ -134,7 +150,7 @@ fn two_way() {
             ordinal: u64,
             buffer: T::RecvBuffer,
             responder: Responder<T>,
-        ) {
+        ) -> Result<(), ProtocolError<T::Error>> {
             assert_eq!(ordinal, 42);
             let message = buffer.decode::<WireString<'_>>().expect("failed to decode request");
             assert_eq!(&**message, "Ping");
@@ -144,6 +160,8 @@ fn two_way() {
                 .expect("failed to encode response")
                 .await
                 .expect("failed to send response");
+
+            Ok(())
         }
     }
 
@@ -175,7 +193,11 @@ fn multiple_two_way() {
     struct TestServer;
 
     impl<T: Transport + 'static> ServerHandler<T> for TestServer {
-        async fn on_one_way(&mut self, _: &Server<T>, _: u64, _: T::RecvBuffer) {
+        async fn on_one_way(
+            &mut self,
+            _: u64,
+            _: T::RecvBuffer,
+        ) -> Result<(), ProtocolError<T::Error>> {
             panic!("unexpected event");
         }
 
@@ -184,7 +206,7 @@ fn multiple_two_way() {
             ordinal: u64,
             buffer: T::RecvBuffer,
             responder: Responder<T>,
-        ) {
+        ) -> Result<(), ProtocolError<T::Error>> {
             let message = buffer.decode::<WireString<'_>>().expect("failed to decode request");
 
             let response = match ordinal {
@@ -201,6 +223,8 @@ fn multiple_two_way() {
                 .expect("server failed to encode response")
                 .await
                 .expect("server failed to send response");
+
+            Ok(())
         }
     }
 
@@ -256,20 +280,40 @@ fn event() {
     }
 
     impl<T: Transport> ClientHandler<T> for TestClient<T> {
-        async fn on_event(&mut self, _: &Client<T>, ordinal: u64, buffer: T::RecvBuffer) {
+        async fn on_event(
+            &mut self,
+            ordinal: u64,
+            buffer: T::RecvBuffer,
+        ) -> Result<(), ProtocolError<T::Error>> {
             assert_eq!(ordinal, 10);
             let message = buffer.decode::<WireString<'_>>().expect("failed to decode request");
             assert_eq!(&**message, "Surprise!");
 
             self.client.close();
+
+            Ok(())
         }
     }
 
     pub struct TestServer;
 
     impl<T: Transport> ServerHandler<T> for TestServer {
-        async fn on_one_way(&mut self, _: &Server<T>, _: u64, _: T::RecvBuffer) {}
-        async fn on_two_way(&mut self, _: u64, _: T::RecvBuffer, _: Responder<T>) {}
+        async fn on_one_way(
+            &mut self,
+            _: u64,
+            _: T::RecvBuffer,
+        ) -> Result<(), ProtocolError<T::Error>> {
+            Ok(())
+        }
+
+        async fn on_two_way(
+            &mut self,
+            _: u64,
+            _: T::RecvBuffer,
+            _: Responder<T>,
+        ) -> Result<(), ProtocolError<T::Error>> {
+            Ok(())
+        }
     }
 
     loom().check(|| {
@@ -294,13 +338,24 @@ fn one_way_nonblocking() {
     struct TestServer;
 
     impl<T: Transport> ServerHandler<T> for TestServer {
-        async fn on_one_way(&mut self, _: &Server<T>, ordinal: u64, buffer: T::RecvBuffer) {
+        async fn on_one_way(
+            &mut self,
+            ordinal: u64,
+            buffer: T::RecvBuffer,
+        ) -> Result<(), ProtocolError<T::Error>> {
             assert_eq!(ordinal, 42);
             let message = buffer.decode::<WireString<'_>>().expect("failed to decode request");
             assert_eq!(&**message, "Hello world");
+
+            Ok(())
         }
 
-        async fn on_two_way(&mut self, _: u64, _: T::RecvBuffer, _: Responder<T>) {
+        async fn on_two_way(
+            &mut self,
+            _: u64,
+            _: T::RecvBuffer,
+            _: Responder<T>,
+        ) -> Result<(), ProtocolError<T::Error>> {
             panic!("unexpected two-way message");
         }
     }

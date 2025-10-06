@@ -590,12 +590,11 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
-            ordinal => client.close(),
+            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
         }
     }
 }
@@ -610,7 +609,6 @@ pub trait ExampleProtocolServerHandler<
 {
     fn method(
         &mut self,
-        server: &::fidl_next::Server<ExampleProtocol, ___T>,
 
         request: ::fidl_next::Request<example_protocol::Method, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -625,17 +623,25 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
             6023439637367187273 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.method(server, decoded).await,
-                Err(e) => server.close(),
+                Ok(decoded) => {
+                    handler.method(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 6023439637367187273,
+                    error,
+                }),
             },
 
-            ordinal => server.close(),
+            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
         }
     }
 
@@ -644,9 +650,12 @@ where
         ordinal: u64,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
-            ordinal => responder.server().close(),
+            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
         }
     }
 }

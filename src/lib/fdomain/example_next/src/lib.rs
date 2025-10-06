@@ -15,6 +15,7 @@ use std::sync::Arc;
 mod transport;
 
 struct EchoServer {
+    server: fidl_next::Server<Echo, Channel>,
     prefix: String,
 }
 
@@ -28,23 +29,19 @@ impl EchoServerHandler<Channel> for EchoServer {
         let response = format!("{}: {}", self.prefix, value);
         let response = EchoEchoStringResponse { response };
 
-        let sender = responder.server().clone();
         if responder.respond(response).await.is_err() {
-            sender.close();
+            self.server.close();
         }
     }
 
-    async fn send_string(
-        &mut self,
-        _server: &fidl_next::Server<Echo, Channel>,
-        _request: fidl_next::Request<echo::SendString, Channel>,
-    ) {
+    async fn send_string(&mut self, _request: fidl_next::Request<echo::SendString, Channel>) {
         // The SendString request is not used in this example, so just
         // ignore it
     }
 }
 
 struct EchoLauncherServer {
+    server: fidl_next::Server<EchoLauncher, Channel>,
     client: Arc<Client>,
     scope: fuchsia_async::Scope,
 }
@@ -53,9 +50,10 @@ impl EchoLauncherServer {
     fn run_echo_server(&self, server: fidl_next::ServerEnd<Echo, Channel>, echo_prefix: String) {
         self.scope.spawn(async move {
             println!("Running echo server with prefix {echo_prefix}");
-            let result = fidl_next::ServerDispatcher::new(server)
-                .run(EchoServer { prefix: echo_prefix })
-                .await;
+            let dispatcher = fidl_next::ServerDispatcher::new(server);
+            let server = dispatcher.server().clone();
+
+            let result = dispatcher.run(EchoServer { server, prefix: echo_prefix }).await;
             if let Err(result) = result {
                 println!("Echo server failed: {result:?}");
             }
@@ -76,9 +74,8 @@ impl EchoLauncherServerHandler<Channel> for EchoLauncherServer {
         let server_end = fidl_next::ServerEnd::<Echo, _>::from_untyped(server_end);
         let response = EchoLauncherGetEchoResponse { response: client_end };
 
-        let sender = responder.server().clone();
         if responder.respond(response).await.is_err() {
-            sender.close();
+            self.server.close();
             return;
         }
         self.run_echo_server(server_end, echo_prefix);
@@ -86,7 +83,6 @@ impl EchoLauncherServerHandler<Channel> for EchoLauncherServer {
 
     async fn get_echo_pipelined(
         &mut self,
-        _server: &fidl_next::Server<EchoLauncher, Channel>,
         request: fidl_next::Request<echo_launcher::GetEchoPipelined, Channel>,
     ) {
         let EchoLauncherGetEchoPipelinedRequest { echo_prefix, request } = request.take();
@@ -99,8 +95,10 @@ async fn run_server(
     client: &Arc<Client>,
     server_end: fidl_next::ServerEnd<EchoLauncher, Channel>,
 ) -> anyhow::Result<()> {
-    let server = fidl_next::ServerDispatcher::new(server_end);
-    let fut = server.run(EchoLauncherServer {
+    let dispatcher = fidl_next::ServerDispatcher::new(server_end);
+    let server = dispatcher.server().clone();
+    let fut = dispatcher.run(EchoLauncherServer {
+        server,
         client: Arc::clone(&client),
         scope: fuchsia_async::Scope::new(),
     });

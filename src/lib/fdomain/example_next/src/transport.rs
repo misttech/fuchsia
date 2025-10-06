@@ -60,11 +60,7 @@ impl EchoServerHandler<fidl::Channel> for EchoServer {
         }
     }
 
-    async fn send_string(
-        &mut self,
-        _: &fidl_next::Server<Echo, fidl::Channel>,
-        _request: fidl_next::Request<echo::SendString, fidl::Channel>,
-    ) {
+    async fn send_string(&mut self, _request: fidl_next::Request<echo::SendString, fidl::Channel>) {
     }
 }
 
@@ -108,7 +104,6 @@ impl EchoLauncherServerHandler<fidl::Channel> for EchoLauncherServer {
 
     async fn get_echo_pipelined(
         &mut self,
-        _: &fidl_next::Server<EchoLauncher, fidl::Channel>,
         request: fidl_next::Request<echo_launcher::GetEchoPipelined, fidl::Channel>,
     ) {
         let EchoLauncherGetEchoPipelinedRequest { echo_prefix, request } = request.take();

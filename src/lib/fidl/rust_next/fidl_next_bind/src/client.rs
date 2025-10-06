@@ -66,10 +66,9 @@ pub trait DispatchClientMessage<
     /// Handles a received client event with the given handler.
     fn on_event(
         handler: &mut H,
-        client: &Client<Self, T>,
         ordinal: u64,
         buffer: T::RecvBuffer,
-    ) -> impl Future<Output = ()> + Send;
+    ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 }
 
 /// An adapter for a client protocol handler.
@@ -94,11 +93,10 @@ where
 {
     fn on_event(
         &mut self,
-        client: &protocol::Client<T>,
         ordinal: u64,
         buffer: T::RecvBuffer,
-    ) -> impl Future<Output = ()> + Send {
-        P::on_event(&mut self.handler, Client::wrap_untyped(client), ordinal, buffer)
+    ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send {
+        P::on_event(&mut self.handler, ordinal, buffer)
     }
 }
 

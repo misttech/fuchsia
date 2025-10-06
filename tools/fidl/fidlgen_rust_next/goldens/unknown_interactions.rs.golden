@@ -2013,11 +2013,14 @@ pub trait UnknownInteractionsAjarDriverProtocolClientHandler<
 {
     fn on_unknown_interaction(
         &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsAjarDriverProtocol, ___T>,
         ordinal: u64,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
-        client.close();
-        ::core::future::ready(())
+    ) -> impl ::core::future::Future<
+        Output = ::core::result::Result<
+            (),
+            ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+        >,
+    > + ::core::marker::Send {
+        ::core::future::ready(Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)))
     }
 }
 
@@ -2077,10 +2080,9 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
 
 
@@ -2114,7 +2116,7 @@ where
 
 
 
-                ordinal => handler.on_unknown_interaction(client, ordinal).await,
+                ordinal => handler.on_unknown_interaction(ordinal).await,
 
         }
     }
@@ -2128,14 +2130,11 @@ pub trait UnknownInteractionsAjarDriverProtocolServerHandler<
     #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
 >
 {
-    fn strict_one_way(
-        &mut self,
-        server: &::fidl_next::Server<UnknownInteractionsAjarDriverProtocol, ___T>,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
+    fn strict_one_way(&mut self)
+    -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn flexible_one_way(
         &mut self,
-        server: &::fidl_next::Server<UnknownInteractionsAjarDriverProtocol, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_two_way(
@@ -2212,11 +2211,14 @@ pub trait UnknownInteractionsAjarDriverProtocolServerHandler<
 
     fn on_unknown_interaction(
         &mut self,
-        server: &::fidl_next::Server<UnknownInteractionsAjarDriverProtocol, ___T>,
         ordinal: u64,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
-        server.close();
-        ::core::future::ready(())
+    ) -> impl ::core::future::Future<
+        Output = ::core::result::Result<
+            (),
+            ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+        >,
+    > + ::core::marker::Send {
+        ::core::future::ready(Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)))
     }
 }
 
@@ -2228,20 +2230,24 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
             200845620698173917 => {
-                handler.strict_one_way(server).await;
+                handler.strict_one_way().await;
+                Ok(())
             }
 
             3790953144423004126 => {
-                handler.flexible_one_way(server).await;
+                handler.flexible_one_way().await;
+                Ok(())
             }
 
-            ordinal => handler.on_unknown_interaction(server, ordinal).await,
+            ordinal => handler.on_unknown_interaction(ordinal).await,
         }
     }
 
@@ -2250,60 +2256,68 @@ where
         ordinal: u64,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
             523076268125513549 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way(responder).await;
+                Ok(())
             }
 
             902155904889801604 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_fields(responder).await;
+                Ok(())
             }
 
             8952307689721713673 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_union(responder).await;
+                Ok(())
             }
 
             3114064683372134045 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_table(responder).await;
+                Ok(())
             }
 
             7057260423103547829 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_err(responder).await;
+                Ok(())
             }
 
             6490530264582540031 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_fields_err(responder).await;
+                Ok(())
             }
 
             2319476129312263555 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_union_err(responder).await;
+                Ok(())
             }
 
             6883106306697493305 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_table_err(responder).await;
+                Ok(())
             }
 
-            ordinal => {
-                let server = ::fidl_next::Server::wrap_untyped(responder.server());
-                handler.on_unknown_interaction(server, ordinal).await;
-            }
+            ordinal => handler.on_unknown_interaction(ordinal).await,
         }
     }
 }
@@ -6232,65 +6246,57 @@ pub trait UnknownInteractionsAjarProtocolClientHandler<
     #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
 >
 {
-    fn strict_event(
-        &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsAjarProtocol, ___T>,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
+    fn strict_event(&mut self) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_event_fields(
         &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsAjarProtocol, ___T>,
 
         event: ::fidl_next::Response<unknown_interactions_ajar_protocol::StrictEventFields, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_event_union(
         &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsAjarProtocol, ___T>,
 
         event: ::fidl_next::Response<unknown_interactions_ajar_protocol::StrictEventUnion, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_event_table(
         &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsAjarProtocol, ___T>,
 
         event: ::fidl_next::Response<unknown_interactions_ajar_protocol::StrictEventTable, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
-    fn flexible_event(
-        &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsAjarProtocol, ___T>,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
+    fn flexible_event(&mut self)
+    -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn flexible_event_fields(
         &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsAjarProtocol, ___T>,
 
         event: ::fidl_next::Response<unknown_interactions_ajar_protocol::FlexibleEventFields, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn flexible_event_union(
         &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsAjarProtocol, ___T>,
 
         event: ::fidl_next::Response<unknown_interactions_ajar_protocol::FlexibleEventUnion, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn flexible_event_table(
         &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsAjarProtocol, ___T>,
 
         event: ::fidl_next::Response<unknown_interactions_ajar_protocol::FlexibleEventTable, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn on_unknown_interaction(
         &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsAjarProtocol, ___T>,
         ordinal: u64,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
-        client.close();
-        ::core::future::ready(())
+    ) -> impl ::core::future::Future<
+        Output = ::core::result::Result<
+            (),
+            ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+        >,
+    > + ::core::marker::Send {
+        ::core::future::ready(Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)))
     }
 }
 
@@ -6327,50 +6333,87 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
             6927291151663612592 => {
-                handler.strict_event(client).await;
+                handler.strict_event().await;
+                Ok(())
             }
 
             5838220329633564521 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.strict_event_fields(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.strict_event_fields(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 5838220329633564521,
+                    error,
+                }),
             },
 
             6303151946645602671 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.strict_event_union(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.strict_event_union(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 6303151946645602671,
+                    error,
+                }),
             },
 
             659277224687564957 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.strict_event_table(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.strict_event_table(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 659277224687564957,
+                    error,
+                }),
             },
 
             1281760452005010931 => {
-                handler.flexible_event(client).await;
+                handler.flexible_event().await;
+                Ok(())
             }
 
             4298964238728681570 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.flexible_event_fields(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.flexible_event_fields(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 4298964238728681570,
+                    error,
+                }),
             },
 
             8950943792372972717 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.flexible_event_union(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.flexible_event_union(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 8950943792372972717,
+                    error,
+                }),
             },
 
             705539350563403440 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.flexible_event_table(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.flexible_event_table(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 705539350563403440,
+                    error,
+                }),
             },
 
-            ordinal => handler.on_unknown_interaction(client, ordinal).await,
+            ordinal => handler.on_unknown_interaction(ordinal).await,
         }
     }
 }
@@ -6383,14 +6426,11 @@ pub trait UnknownInteractionsAjarProtocolServerHandler<
     #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
 >
 {
-    fn strict_one_way(
-        &mut self,
-        server: &::fidl_next::Server<UnknownInteractionsAjarProtocol, ___T>,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
+    fn strict_one_way(&mut self)
+    -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn flexible_one_way(
         &mut self,
-        server: &::fidl_next::Server<UnknownInteractionsAjarProtocol, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_two_way(
@@ -6464,11 +6504,14 @@ pub trait UnknownInteractionsAjarProtocolServerHandler<
 
     fn on_unknown_interaction(
         &mut self,
-        server: &::fidl_next::Server<UnknownInteractionsAjarProtocol, ___T>,
         ordinal: u64,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
-        server.close();
-        ::core::future::ready(())
+    ) -> impl ::core::future::Future<
+        Output = ::core::result::Result<
+            (),
+            ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+        >,
+    > + ::core::marker::Send {
+        ::core::future::ready(Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)))
     }
 }
 
@@ -6479,20 +6522,24 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
             956561744635167883 => {
-                handler.strict_one_way(server).await;
+                handler.strict_one_way().await;
+                Ok(())
             }
 
             2483093178939638607 => {
-                handler.flexible_one_way(server).await;
+                handler.flexible_one_way().await;
+                Ok(())
             }
 
-            ordinal => handler.on_unknown_interaction(server, ordinal).await,
+            ordinal => handler.on_unknown_interaction(ordinal).await,
         }
     }
 
@@ -6501,60 +6548,68 @@ where
         ordinal: u64,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
             364341676962177080 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way(responder).await;
+                Ok(())
             }
 
             1821674633227946298 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_fields(responder).await;
+                Ok(())
             }
 
             5870221221557233361 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_union(responder).await;
+                Ok(())
             }
 
             8038805778859962068 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_table(responder).await;
+                Ok(())
             }
 
             6577335136969723910 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_err(responder).await;
+                Ok(())
             }
 
             595881957484758745 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_fields_err(responder).await;
+                Ok(())
             }
 
             3224530777258896533 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_union_err(responder).await;
+                Ok(())
             }
 
             3515589146717969463 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_table_err(responder).await;
+                Ok(())
             }
 
-            ordinal => {
-                let server = ::fidl_next::Server::wrap_untyped(responder.server());
-                handler.on_unknown_interaction(server, ordinal).await;
-            }
+            ordinal => handler.on_unknown_interaction(ordinal).await,
         }
     }
 }
@@ -8618,10 +8673,9 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
 
 
@@ -8652,7 +8706,7 @@ where
 
 
 
-                ordinal => client.close(),
+                ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
 
         }
     }
@@ -8666,10 +8720,8 @@ pub trait UnknownInteractionsClosedDriverProtocolServerHandler<
     #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
 >
 {
-    fn strict_one_way(
-        &mut self,
-        server: &::fidl_next::Server<UnknownInteractionsClosedDriverProtocol, ___T>,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
+    fn strict_one_way(&mut self)
+    -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_two_way(
         &mut self,
@@ -8752,16 +8804,19 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
             9111839835597799810 => {
-                handler.strict_one_way(server).await;
+                handler.strict_one_way().await;
+                Ok(())
             }
 
-            ordinal => server.close(),
+            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
         }
     }
 
@@ -8770,57 +8825,68 @@ where
         ordinal: u64,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
             2815690661228737027 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way(responder).await;
+                Ok(())
             }
 
             5761316743698652038 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_fields(responder).await;
+                Ok(())
             }
 
             7235351480214368636 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_union(responder).await;
+                Ok(())
             }
 
             1839495150551777151 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_table(responder).await;
+                Ok(())
             }
 
             4350840352076287137 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_err(responder).await;
+                Ok(())
             }
 
             3933117456632607830 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_fields_err(responder).await;
+                Ok(())
             }
 
             4598950031783776653 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_union_err(responder).await;
+                Ok(())
             }
 
             1456858375973362525 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_table_err(responder).await;
+                Ok(())
             }
 
-            ordinal => responder.server().close(),
+            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
         }
     }
 }
@@ -11776,28 +11842,22 @@ pub trait UnknownInteractionsClosedProtocolClientHandler<
     #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
 >
 {
-    fn strict_event(
-        &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsClosedProtocol, ___T>,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
+    fn strict_event(&mut self) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_event_fields(
         &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsClosedProtocol, ___T>,
 
         event: ::fidl_next::Response<unknown_interactions_closed_protocol::StrictEventFields, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_event_union(
         &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsClosedProtocol, ___T>,
 
         event: ::fidl_next::Response<unknown_interactions_closed_protocol::StrictEventUnion, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_event_table(
         &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsClosedProtocol, ___T>,
 
         event: ::fidl_next::Response<unknown_interactions_closed_protocol::StrictEventTable, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -11831,31 +11891,49 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
             760799297757210939 => {
-                handler.strict_event(client).await;
+                handler.strict_event().await;
+                Ok(())
             }
 
             6736355582617074292 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.strict_event_fields(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.strict_event_fields(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 6736355582617074292,
+                    error,
+                }),
             },
 
             4288682345454280036 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.strict_event_union(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.strict_event_union(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 4288682345454280036,
+                    error,
+                }),
             },
 
             2871682464255309246 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.strict_event_table(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.strict_event_table(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 2871682464255309246,
+                    error,
+                }),
             },
 
-            ordinal => client.close(),
+            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
         }
     }
 }
@@ -11868,10 +11946,8 @@ pub trait UnknownInteractionsClosedProtocolServerHandler<
     #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
 >
 {
-    fn strict_one_way(
-        &mut self,
-        server: &::fidl_next::Server<UnknownInteractionsClosedProtocol, ___T>,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
+    fn strict_one_way(&mut self)
+    -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_two_way(
         &mut self,
@@ -11951,16 +12027,19 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
             401526495318825508 => {
-                handler.strict_one_way(server).await;
+                handler.strict_one_way().await;
+                Ok(())
             }
 
-            ordinal => server.close(),
+            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
         }
     }
 
@@ -11969,57 +12048,68 @@ where
         ordinal: u64,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
             6834828562275693047 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way(responder).await;
+                Ok(())
             }
 
             1379139029283639891 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_fields(responder).await;
+                Ok(())
             }
 
             7544414847426850727 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_union(responder).await;
+                Ok(())
             }
 
             7947328131967870853 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_table(responder).await;
+                Ok(())
             }
 
             5738532966428790074 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_err(responder).await;
+                Ok(())
             }
 
             802395819586836733 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_fields_err(responder).await;
+                Ok(())
             }
 
             925029359463709824 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_union_err(responder).await;
+                Ok(())
             }
 
             1260407702860823440 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_table_err(responder).await;
+                Ok(())
             }
 
-            ordinal => responder.server().close(),
+            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
         }
     }
 }
@@ -15931,11 +16021,14 @@ pub trait UnknownInteractionsDriverProtocolClientHandler<
 {
     fn on_unknown_interaction(
         &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsDriverProtocol, ___T>,
         ordinal: u64,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
-        client.close();
-        ::core::future::ready(())
+    ) -> impl ::core::future::Future<
+        Output = ::core::result::Result<
+            (),
+            ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+        >,
+    > + ::core::marker::Send {
+        ::core::future::ready(Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)))
     }
 }
 
@@ -16043,10 +16136,9 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
 
 
@@ -16104,7 +16196,7 @@ where
 
 
 
-                ordinal => handler.on_unknown_interaction(client, ordinal).await,
+                ordinal => handler.on_unknown_interaction(ordinal).await,
 
         }
     }
@@ -16118,14 +16210,11 @@ pub trait UnknownInteractionsDriverProtocolServerHandler<
     #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
 >
 {
-    fn strict_one_way(
-        &mut self,
-        server: &::fidl_next::Server<UnknownInteractionsDriverProtocol, ___T>,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
+    fn strict_one_way(&mut self)
+    -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn flexible_one_way(
         &mut self,
-        server: &::fidl_next::Server<UnknownInteractionsDriverProtocol, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_two_way(
@@ -16271,11 +16360,14 @@ pub trait UnknownInteractionsDriverProtocolServerHandler<
 
     fn on_unknown_interaction(
         &mut self,
-        server: &::fidl_next::Server<UnknownInteractionsDriverProtocol, ___T>,
         ordinal: u64,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
-        server.close();
-        ::core::future::ready(())
+    ) -> impl ::core::future::Future<
+        Output = ::core::result::Result<
+            (),
+            ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+        >,
+    > + ::core::marker::Send {
+        ::core::future::ready(Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)))
     }
 }
 
@@ -16287,20 +16379,24 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
             6982839851953080288 => {
-                handler.strict_one_way(server).await;
+                handler.strict_one_way().await;
+                Ok(())
             }
 
             1083620022582160398 => {
-                handler.flexible_one_way(server).await;
+                handler.flexible_one_way().await;
+                Ok(())
             }
 
-            ordinal => handler.on_unknown_interaction(server, ordinal).await,
+            ordinal => handler.on_unknown_interaction(ordinal).await,
         }
     }
 
@@ -16309,108 +16405,124 @@ where
         ordinal: u64,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
             1481114722667499972 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way(responder).await;
+                Ok(())
             }
 
             6841797014773573215 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_fields(responder).await;
+                Ok(())
             }
 
             1451514501977162287 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_union(responder).await;
+                Ok(())
             }
 
             3330693085881435529 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_table(responder).await;
+                Ok(())
             }
 
             8222960355260037542 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_err(responder).await;
+                Ok(())
             }
 
             225387363174180470 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_fields_err(responder).await;
+                Ok(())
             }
 
             3066880266580913088 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_union_err(responder).await;
+                Ok(())
             }
 
             708169949929096689 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_table_err(responder).await;
+                Ok(())
             }
 
             2929398860738426482 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.flexible_two_way(responder).await;
+                Ok(())
             }
 
             8423663794424433896 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.flexible_two_way_fields(responder).await;
+                Ok(())
             }
 
             8216450897182897849 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.flexible_two_way_union(responder).await;
+                Ok(())
             }
 
             1049265954148894210 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.flexible_two_way_table(responder).await;
+                Ok(())
             }
 
             5583489590753947170 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.flexible_two_way_err(responder).await;
+                Ok(())
             }
 
             6033174601748665003 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.flexible_two_way_fields_err(responder).await;
+                Ok(())
             }
 
             6235121653537390575 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.flexible_two_way_union_err(responder).await;
+                Ok(())
             }
 
             940887795361350656 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.flexible_two_way_table_err(responder).await;
+                Ok(())
             }
 
-            ordinal => {
-                let server = ::fidl_next::Server::wrap_untyped(responder.server());
-                handler.on_unknown_interaction(server, ordinal).await;
-            }
+            ordinal => handler.on_unknown_interaction(ordinal).await,
         }
     }
 }
@@ -22149,65 +22261,57 @@ pub trait UnknownInteractionsProtocolClientHandler<
     #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
 >
 {
-    fn strict_event(
-        &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsProtocol, ___T>,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
+    fn strict_event(&mut self) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_event_fields(
         &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsProtocol, ___T>,
 
         event: ::fidl_next::Response<unknown_interactions_protocol::StrictEventFields, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_event_union(
         &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsProtocol, ___T>,
 
         event: ::fidl_next::Response<unknown_interactions_protocol::StrictEventUnion, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_event_table(
         &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsProtocol, ___T>,
 
         event: ::fidl_next::Response<unknown_interactions_protocol::StrictEventTable, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
-    fn flexible_event(
-        &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsProtocol, ___T>,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
+    fn flexible_event(&mut self)
+    -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn flexible_event_fields(
         &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsProtocol, ___T>,
 
         event: ::fidl_next::Response<unknown_interactions_protocol::FlexibleEventFields, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn flexible_event_union(
         &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsProtocol, ___T>,
 
         event: ::fidl_next::Response<unknown_interactions_protocol::FlexibleEventUnion, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn flexible_event_table(
         &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsProtocol, ___T>,
 
         event: ::fidl_next::Response<unknown_interactions_protocol::FlexibleEventTable, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn on_unknown_interaction(
         &mut self,
-        client: &::fidl_next::Client<UnknownInteractionsProtocol, ___T>,
         ordinal: u64,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
-        client.close();
-        ::core::future::ready(())
+    ) -> impl ::core::future::Future<
+        Output = ::core::result::Result<
+            (),
+            ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+        >,
+    > + ::core::marker::Send {
+        ::core::future::ready(Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)))
     }
 }
 
@@ -22260,50 +22364,87 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
             685715276307386305 => {
-                handler.strict_event(client).await;
+                handler.strict_event().await;
+                Ok(())
             }
 
             8896208255987935026 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.strict_event_fields(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.strict_event_fields(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 8896208255987935026,
+                    error,
+                }),
             },
 
             3919175221694221274 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.strict_event_union(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.strict_event_union(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 3919175221694221274,
+                    error,
+                }),
             },
 
             2711448698318579984 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.strict_event_table(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.strict_event_table(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 2711448698318579984,
+                    error,
+                }),
             },
 
             7042257263728687206 => {
-                handler.flexible_event(client).await;
+                handler.flexible_event().await;
+                Ok(())
             }
 
             3613822014516746241 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.flexible_event_fields(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.flexible_event_fields(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 3613822014516746241,
+                    error,
+                }),
             },
 
             2499446536152409191 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.flexible_event_union(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.flexible_event_union(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 2499446536152409191,
+                    error,
+                }),
             },
 
             5724881371349617120 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.flexible_event_table(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.flexible_event_table(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 5724881371349617120,
+                    error,
+                }),
             },
 
-            ordinal => handler.on_unknown_interaction(client, ordinal).await,
+            ordinal => handler.on_unknown_interaction(ordinal).await,
         }
     }
 }
@@ -22316,14 +22457,11 @@ pub trait UnknownInteractionsProtocolServerHandler<
     #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
 >
 {
-    fn strict_one_way(
-        &mut self,
-        server: &::fidl_next::Server<UnknownInteractionsProtocol, ___T>,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
+    fn strict_one_way(&mut self)
+    -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn flexible_one_way(
         &mut self,
-        server: &::fidl_next::Server<UnknownInteractionsProtocol, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_two_way(
@@ -22445,11 +22583,14 @@ pub trait UnknownInteractionsProtocolServerHandler<
 
     fn on_unknown_interaction(
         &mut self,
-        server: &::fidl_next::Server<UnknownInteractionsProtocol, ___T>,
         ordinal: u64,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
-        server.close();
-        ::core::future::ready(())
+    ) -> impl ::core::future::Future<
+        Output = ::core::result::Result<
+            (),
+            ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+        >,
+    > + ::core::marker::Send {
+        ::core::future::ready(Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)))
     }
 }
 
@@ -22460,20 +22601,24 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
             5652707722400962470 => {
-                handler.strict_one_way(server).await;
+                handler.strict_one_way().await;
+                Ok(())
             }
 
             583422011583300678 => {
-                handler.flexible_one_way(server).await;
+                handler.flexible_one_way().await;
+                Ok(())
             }
 
-            ordinal => handler.on_unknown_interaction(server, ordinal).await,
+            ordinal => handler.on_unknown_interaction(ordinal).await,
         }
     }
 
@@ -22482,108 +22627,124 @@ where
         ordinal: u64,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
             8308184097687583042 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way(responder).await;
+                Ok(())
             }
 
             3697260130745060067 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_fields(responder).await;
+                Ok(())
             }
 
             2455165891480464557 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_union(responder).await;
+                Ok(())
             }
 
             8389853739594228663 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_table(responder).await;
+                Ok(())
             }
 
             7862264614495172967 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_err(responder).await;
+                Ok(())
             }
 
             2414673307948662059 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_fields_err(responder).await;
+                Ok(())
             }
 
             4988571416540160202 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_union_err(responder).await;
+                Ok(())
             }
 
             5487292735562672344 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.strict_two_way_table_err(responder).await;
+                Ok(())
             }
 
             334879577560091516 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.flexible_two_way(responder).await;
+                Ok(())
             }
 
             4257018954691721778 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.flexible_two_way_fields(responder).await;
+                Ok(())
             }
 
             4913460516188409782 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.flexible_two_way_union(responder).await;
+                Ok(())
             }
 
             9171907422498283911 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.flexible_two_way_table(responder).await;
+                Ok(())
             }
 
             6999736795697216519 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.flexible_two_way_err(responder).await;
+                Ok(())
             }
 
             1093132337162001157 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.flexible_two_way_fields_err(responder).await;
+                Ok(())
             }
 
             2410151523245950935 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.flexible_two_way_union_err(responder).await;
+                Ok(())
             }
 
             7893309626427980786 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 handler.flexible_two_way_table_err(responder).await;
+                Ok(())
             }
 
-            ordinal => {
-                let server = ::fidl_next::Server::wrap_untyped(responder.server());
-                handler.on_unknown_interaction(server, ordinal).await;
-            }
+            ordinal => handler.on_unknown_interaction(ordinal).await,
         }
     }
 }

@@ -193,16 +193,17 @@ impl<'a, T: Transport> Future for TwoWayRequestFuture<'a, T> {
 
 /// A type which handles incoming events for a client.
 pub trait ClientHandler<T: Transport> {
-    /// Handles a received client event.
+    /// Handles a received client event, returning the appropriate flow control
+    /// to perform.
     ///
-    /// The client cannot handle more messages until `on_event` completes. If `on_event` should
-    /// handle requests in parallel, it should spawn a new async task and return.
+    /// The client cannot handle more messages until `on_event` completes. If
+    /// `on_event` should handle requests in parallel, it should spawn a new
+    /// async task and return.
     fn on_event(
         &mut self,
-        client: &Client<T>,
         ordinal: u64,
         buffer: T::RecvBuffer,
-    ) -> impl Future<Output = ()> + Send;
+    ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 }
 
 /// A dispatcher for a client endpoint.
@@ -306,7 +307,7 @@ impl<T: Transport> ClientDispatcher<T> {
                 decode_epitaph::<T>(&mut buffer).map_err(ProtocolError::InvalidEpitaphBody)?;
             return Err(ProtocolError::PeerClosedWithEpitaph(epitaph));
         } else if txid == 0 {
-            handler.on_event(&self.client, ordinal, buffer).await;
+            handler.on_event(ordinal, buffer).await?;
         } else {
             let mut responses = self.client.inner.responses.lock().unwrap();
             let locker = responses
@@ -340,5 +341,7 @@ impl<T: Transport> ClientDispatcher<T> {
 pub struct IgnoreEvents;
 
 impl<T: Transport> ClientHandler<T> for IgnoreEvents {
-    async fn on_event(&mut self, _: &Client<T>, _: u64, _: T::RecvBuffer) {}
+    async fn on_event(&mut self, _: u64, _: T::RecvBuffer) -> Result<(), ProtocolError<T::Error>> {
+        Ok(())
+    }
 }

@@ -410,7 +410,6 @@ pub trait {{ client_handler_name }}<
             {{ self.doc_string(method.attributes) -}}
             fn {{ method_name }}(
                 &mut self,
-                client: &::fidl_next::Client<{{ protocol_name }}, ___T>,
                 {% if method.maybe_response_payload.is_some() %}
                     event: ::fidl_next::Response<{{ module_name }}::{{ method_type_name }}, ___T>,
                 {% endif %}
@@ -421,11 +420,14 @@ pub trait {{ client_handler_name }}<
     {% if protocol.openness != ProtocolOpenness::Closed %}
         fn on_unknown_interaction(
             &mut self,
-            client: &::fidl_next::Client<{{ protocol_name }}, ___T>,
             ordinal: u64,
-        ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
-            client.close();
-            ::core::future::ready(())
+        ) -> impl ::core::future::Future<
+            Output = ::core::result::Result<
+                (),
+                ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+            >
+        > + ::core::marker::Send {
+            ::core::future::ready(Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)))
         }
     {% endif %}
 }
@@ -444,10 +446,9 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
             {% for method in protocol.methods %}
                 {% let method_name = filters::escape_snake(method.name) %}
@@ -455,19 +456,26 @@ where
                     {{ method.ordinal }} => {
                         {% if method.maybe_response_payload.is_some() %}
                             match ::fidl_next::DecoderExt::decode(buffer) {
-                                Ok(decoded) => handler.{{ method_name }}(client, decoded).await,
-                                Err(e) => client.close(),
+                                Ok(decoded) => {
+                                    handler.{{ method_name }}(decoded).await;
+                                    Ok(())
+                                }
+                                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                                    ordinal: {{ method.ordinal }},
+                                    error,
+                                }),
                             }
                         {% else %}
-                            handler.{{ method_name}}(client).await;
+                            handler.{{ method_name}}().await;
+                            Ok(())
                         {% endif %}
                     }
                 {% endif %}
             {% endfor %}
             {% if protocol.openness != ProtocolOpenness::Closed %}
-                ordinal => handler.on_unknown_interaction(client, ordinal).await,
+                ordinal => handler.on_unknown_interaction(ordinal).await,
             {% else %}
-                ordinal => client.close(),
+                ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
             {% endif %}
         }
     }
@@ -491,7 +499,6 @@ pub trait {{ server_handler_name }}<
                 {{ self.doc_string(method.attributes) -}}
                 fn {{ method_name }}(
                     &mut self,
-                    server: &::fidl_next::Server<{{ protocol_name }}, ___T>,
                     {% if let Some(request) = method.maybe_request_payload %}
                         request: ::fidl_next::Request<{{ module_name }}::{{ method_type_name }}, ___T>,
                     {% endif %}
@@ -512,11 +519,14 @@ pub trait {{ server_handler_name }}<
     {% if protocol.openness != ProtocolOpenness::Closed %}
         fn on_unknown_interaction(
             &mut self,
-            server: &::fidl_next::Server<{{ protocol_name }}, ___T>,
             ordinal: u64,
-        ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
-            server.close();
-            ::core::future::ready(())
+        ) -> impl ::core::future::Future<
+            Output = ::core::result::Result<
+                (),
+                ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+            >
+        > + ::core::marker::Send {
+            ::core::future::ready(Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)))
         }
     {% endif %}
 }
@@ -535,10 +545,9 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
         match ordinal {
             {% for method in protocol.methods %}
                 {% let method_name = filters::escape_snake(method.name) %}
@@ -546,19 +555,26 @@ where
                     {{ method.ordinal }} => {
                         {% if let Some(request) = method.maybe_request_payload %}
                             match ::fidl_next::DecoderExt::decode(buffer) {
-                                Ok(decoded) => handler.{{ method_name }}(server, decoded).await,
-                                Err(e) => server.close(),
+                                Ok(decoded) => {
+                                    handler.{{ method_name }}(decoded).await;
+                                    Ok(())
+                                }
+                                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                                    ordinal: {{ method.ordinal }},
+                                    error,
+                                }),
                             }
                         {% else %}
-                            handler.{{ method_name}}(server).await;
+                            handler.{{ method_name}}().await;
+                            Ok(())
                         {% endif %}
                     }
                 {% endif %}
             {% endfor %}
             {% if protocol.openness != ProtocolOpenness::Closed %}
-                ordinal => handler.on_unknown_interaction(server, ordinal).await,
+                ordinal => handler.on_unknown_interaction(ordinal).await,
             {% else %}
-                ordinal => server.close(),
+                ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
             {% endif %}
         }
     }
@@ -568,7 +584,7 @@ where
         ordinal: u64,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
-    ) {
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
         match ordinal {
             {% for method in protocol.methods %}
                 {% let method_name = filters::escape_snake(method.name) %}
@@ -577,22 +593,26 @@ where
                         let responder = ::fidl_next::Responder::from_untyped(responder);
                         {% if let Some(request) = method.maybe_request_payload %}
                             match ::fidl_next::DecoderExt::decode(buffer) {
-                                Ok(decoded) => handler.{{ method_name }}(decoded, responder).await,
-                                Err(e) => drop(responder),
+                                Ok(decoded) => {
+                                    handler.{{ method_name }}(decoded, responder).await;
+                                    Ok(())
+                                }
+                                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                                    ordinal: {{ method.ordinal }},
+                                    error,
+                                }),
                             }
                         {% else %}
                             handler.{{ method_name}}(responder).await;
+                            Ok(())
                         {% endif %}
                     }
                 {% endif %}
             {% endfor %}
             {% if protocol.openness != ProtocolOpenness::Closed %}
-                ordinal => {
-                    let server = ::fidl_next::Server::wrap_untyped(responder.server());
-                    handler.on_unknown_interaction(server, ordinal).await;
-                }
+                ordinal => handler.on_unknown_interaction(ordinal).await,
             {% else %}
-                ordinal => responder.server().close(),
+                ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
             {% endif %}
         }
     }

@@ -51,4 +51,18 @@ pub enum ProtocolError<E> {
         /// The actual ordinal of the response
         actual: u64,
     },
+
+    /// The client or server received a message with an unknown ordinal.
+    #[error("received a message with an unknown ordinal: {0}")]
+    InvalidOrdinal(u64),
+
+    /// The client or server failed to decode a message as the type indicated
+    /// by the ordinal.
+    #[error("failed to decode a message with ordinal {ordinal}: {error}")]
+    InvalidMessage {
+        /// The ordinal of the message that failed to decode.
+        ordinal: u64,
+        /// The error encountered while attempting to decode the message.
+        error: DecodeError,
+    },
 }

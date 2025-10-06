@@ -303,12 +303,11 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
-            ordinal => client.close(),
+            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
         }
     }
 }
@@ -330,12 +329,14 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
-            ordinal => server.close(),
+            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
         }
     }
 
@@ -344,9 +345,12 @@ where
         ordinal: u64,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
-            ordinal => responder.server().close(),
+            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
         }
     }
 }
@@ -420,11 +424,14 @@ pub trait ProtocolClientHandler<
 {
     fn on_unknown_interaction(
         &mut self,
-        client: &::fidl_next::Client<Protocol, ___T>,
         ordinal: u64,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
-        client.close();
-        ::core::future::ready(())
+    ) -> impl ::core::future::Future<
+        Output = ::core::result::Result<
+            (),
+            ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+        >,
+    > + ::core::marker::Send {
+        ::core::future::ready(Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)))
     }
 }
 
@@ -435,12 +442,11 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
-            ordinal => handler.on_unknown_interaction(client, ordinal).await,
+            ordinal => handler.on_unknown_interaction(ordinal).await,
         }
     }
 }
@@ -453,18 +459,18 @@ pub trait ProtocolServerHandler<
     #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
 >
 {
-    fn foo(
-        &mut self,
-        server: &::fidl_next::Server<Protocol, ___T>,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
+    fn foo(&mut self) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn on_unknown_interaction(
         &mut self,
-        server: &::fidl_next::Server<Protocol, ___T>,
         ordinal: u64,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
-        server.close();
-        ::core::future::ready(())
+    ) -> impl ::core::future::Future<
+        Output = ::core::result::Result<
+            (),
+            ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+        >,
+    > + ::core::marker::Send {
+        ::core::future::ready(Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)))
     }
 }
 
@@ -475,16 +481,19 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
             6231434419097198905 => {
-                handler.foo(server).await;
+                handler.foo().await;
+                Ok(())
             }
 
-            ordinal => handler.on_unknown_interaction(server, ordinal).await,
+            ordinal => handler.on_unknown_interaction(ordinal).await,
         }
     }
 
@@ -493,12 +502,12 @@ where
         ordinal: u64,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
-            ordinal => {
-                let server = ::fidl_next::Server::wrap_untyped(responder.server());
-                handler.on_unknown_interaction(server, ordinal).await;
-            }
+            ordinal => handler.on_unknown_interaction(ordinal).await,
         }
     }
 }

@@ -2940,35 +2940,30 @@ pub trait MainProtocolClientHandler<
 {
     fn on_anon_composed(
         &mut self,
-        client: &::fidl_next::Client<MainProtocol, ___T>,
 
         event: ::fidl_next::Response<main_protocol::OnAnonComposed, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn on_named_composed(
         &mut self,
-        client: &::fidl_next::Client<MainProtocol, ___T>,
 
         event: ::fidl_next::Response<main_protocol::OnNamedComposed, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn on_import(
         &mut self,
-        client: &::fidl_next::Client<MainProtocol, ___T>,
 
         event: ::fidl_next::Response<main_protocol::OnImport, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn on_local(
         &mut self,
-        client: &::fidl_next::Client<MainProtocol, ___T>,
 
         event: ::fidl_next::Response<main_protocol::OnLocal, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn on_anon(
         &mut self,
-        client: &::fidl_next::Client<MainProtocol, ___T>,
 
         event: ::fidl_next::Response<main_protocol::OnAnon, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -3011,37 +3006,66 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
             9198778981238868491 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.on_anon_composed(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.on_anon_composed(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 9198778981238868491,
+                    error,
+                }),
             },
 
             6802961197456477674 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.on_named_composed(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.on_named_composed(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 6802961197456477674,
+                    error,
+                }),
             },
 
             6584793811321990352 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.on_import(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.on_import(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 6584793811321990352,
+                    error,
+                }),
             },
 
             4199259762307646332 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.on_local(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.on_local(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 4199259762307646332,
+                    error,
+                }),
             },
 
             7275479350674227467 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.on_anon(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.on_anon(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 7275479350674227467,
+                    error,
+                }),
             },
 
-            ordinal => client.close(),
+            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
         }
     }
 }
@@ -3056,7 +3080,6 @@ pub trait MainProtocolServerHandler<
 {
     fn one_way_anon_composed(
         &mut self,
-        server: &::fidl_next::Server<MainProtocol, ___T>,
 
         request: ::fidl_next::Request<main_protocol::OneWayAnonComposed, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -3079,7 +3102,6 @@ pub trait MainProtocolServerHandler<
 
     fn one_way_named_composed(
         &mut self,
-        server: &::fidl_next::Server<MainProtocol, ___T>,
 
         request: ::fidl_next::Request<main_protocol::OneWayNamedComposed, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -3102,7 +3124,6 @@ pub trait MainProtocolServerHandler<
 
     fn one_way_import(
         &mut self,
-        server: &::fidl_next::Server<MainProtocol, ___T>,
 
         request: ::fidl_next::Request<main_protocol::OneWayImport, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -3125,7 +3146,6 @@ pub trait MainProtocolServerHandler<
 
     fn one_way_local(
         &mut self,
-        server: &::fidl_next::Server<MainProtocol, ___T>,
 
         request: ::fidl_next::Request<main_protocol::OneWayLocal, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -3148,7 +3168,6 @@ pub trait MainProtocolServerHandler<
 
     fn one_way_anon(
         &mut self,
-        server: &::fidl_next::Server<MainProtocol, ___T>,
 
         request: ::fidl_next::Request<main_protocol::OneWayAnon, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -3207,37 +3226,69 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
             467706262354916833 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.one_way_anon_composed(server, decoded).await,
-                Err(e) => server.close(),
+                Ok(decoded) => {
+                    handler.one_way_anon_composed(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 467706262354916833,
+                    error,
+                }),
             },
 
             6735359826241449560 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.one_way_named_composed(server, decoded).await,
-                Err(e) => server.close(),
+                Ok(decoded) => {
+                    handler.one_way_named_composed(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 6735359826241449560,
+                    error,
+                }),
             },
 
             374039999976906043 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.one_way_import(server, decoded).await,
-                Err(e) => server.close(),
+                Ok(decoded) => {
+                    handler.one_way_import(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 374039999976906043,
+                    error,
+                }),
             },
 
             6085941264859402051 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.one_way_local(server, decoded).await,
-                Err(e) => server.close(),
+                Ok(decoded) => {
+                    handler.one_way_local(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 6085941264859402051,
+                    error,
+                }),
             },
 
             4203317713771984620 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.one_way_anon(server, decoded).await,
-                Err(e) => server.close(),
+                Ok(decoded) => {
+                    handler.one_way_anon(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 4203317713771984620,
+                    error,
+                }),
             },
 
-            ordinal => server.close(),
+            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
         }
     }
 
@@ -3246,14 +3297,23 @@ where
         ordinal: u64,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
             1634702755099390832 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.two_way_anon_composed(decoded, responder).await,
-                    Err(e) => drop(responder),
+                    Ok(decoded) => {
+                        handler.two_way_anon_composed(decoded, responder).await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 1634702755099390832,
+                        error,
+                    }),
                 }
             }
 
@@ -3262,9 +3322,13 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.two_way_anon_composed_with_error(decoded, responder).await
+                        handler.two_way_anon_composed_with_error(decoded, responder).await;
+                        Ok(())
                     }
-                    Err(e) => drop(responder),
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 3374101322700362141,
+                        error,
+                    }),
                 }
             }
 
@@ -3272,8 +3336,14 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.two_way_named_composed(decoded, responder).await,
-                    Err(e) => drop(responder),
+                    Ok(decoded) => {
+                        handler.two_way_named_composed(decoded, responder).await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 1110122450485917712,
+                        error,
+                    }),
                 }
             }
 
@@ -3282,9 +3352,13 @@ where
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
                     Ok(decoded) => {
-                        handler.two_way_named_composed_with_error(decoded, responder).await
+                        handler.two_way_named_composed_with_error(decoded, responder).await;
+                        Ok(())
                     }
-                    Err(e) => drop(responder),
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 3520341666774118271,
+                        error,
+                    }),
                 }
             }
 
@@ -3292,8 +3366,14 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.two_way_import(decoded, responder).await,
-                    Err(e) => drop(responder),
+                    Ok(decoded) => {
+                        handler.two_way_import(decoded, responder).await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 3167860988423964164,
+                        error,
+                    }),
                 }
             }
 
@@ -3301,8 +3381,14 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.two_way_import_with_error(decoded, responder).await,
-                    Err(e) => drop(responder),
+                    Ok(decoded) => {
+                        handler.two_way_import_with_error(decoded, responder).await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 4837028007581646602,
+                        error,
+                    }),
                 }
             }
 
@@ -3310,8 +3396,14 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.two_way_local(decoded, responder).await,
-                    Err(e) => drop(responder),
+                    Ok(decoded) => {
+                        handler.two_way_local(decoded, responder).await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 7763901300032164763,
+                        error,
+                    }),
                 }
             }
 
@@ -3319,8 +3411,14 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.two_way_local_with_error(decoded, responder).await,
-                    Err(e) => drop(responder),
+                    Ok(decoded) => {
+                        handler.two_way_local_with_error(decoded, responder).await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 5609487496960056151,
+                        error,
+                    }),
                 }
             }
 
@@ -3328,8 +3426,14 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.two_way_anon(decoded, responder).await,
-                    Err(e) => drop(responder),
+                    Ok(decoded) => {
+                        handler.two_way_anon(decoded, responder).await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 7435080039097281487,
+                        error,
+                    }),
                 }
             }
 
@@ -3337,12 +3441,18 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.two_way_anon_with_error(decoded, responder).await,
-                    Err(e) => drop(responder),
+                    Ok(decoded) => {
+                        handler.two_way_anon_with_error(decoded, responder).await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 7770394869745610225,
+                        error,
+                    }),
                 }
             }
 
-            ordinal => responder.server().close(),
+            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
         }
     }
 }
@@ -4192,25 +4302,26 @@ pub trait OpenProtocolClientHandler<
 {
     fn flexible_event(
         &mut self,
-        client: &::fidl_next::Client<OpenProtocol, ___T>,
 
         event: ::fidl_next::Response<open_protocol::FlexibleEvent, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn strict_event(
         &mut self,
-        client: &::fidl_next::Client<OpenProtocol, ___T>,
 
         event: ::fidl_next::Response<open_protocol::StrictEvent, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn on_unknown_interaction(
         &mut self,
-        client: &::fidl_next::Client<OpenProtocol, ___T>,
         ordinal: u64,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
-        client.close();
-        ::core::future::ready(())
+    ) -> impl ::core::future::Future<
+        Output = ::core::result::Result<
+            (),
+            ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+        >,
+    > + ::core::marker::Send {
+        ::core::future::ready(Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)))
     }
 }
 
@@ -4233,22 +4344,33 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
             9152311661656086484 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.flexible_event(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.flexible_event(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 9152311661656086484,
+                    error,
+                }),
             },
 
             3921073878922106269 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.strict_event(client, decoded).await,
-                Err(e) => client.close(),
+                Ok(decoded) => {
+                    handler.strict_event(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 3921073878922106269,
+                    error,
+                }),
             },
 
-            ordinal => handler.on_unknown_interaction(client, ordinal).await,
+            ordinal => handler.on_unknown_interaction(ordinal).await,
         }
     }
 }
@@ -4263,7 +4385,6 @@ pub trait OpenProtocolServerHandler<
 {
     fn flexible_one_way(
         &mut self,
-        server: &::fidl_next::Server<OpenProtocol, ___T>,
 
         request: ::fidl_next::Request<open_protocol::FlexibleOneWay, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -4286,7 +4407,6 @@ pub trait OpenProtocolServerHandler<
 
     fn strict_one_way(
         &mut self,
-        server: &::fidl_next::Server<OpenProtocol, ___T>,
 
         request: ::fidl_next::Request<open_protocol::StrictOneWay, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -4309,18 +4429,20 @@ pub trait OpenProtocolServerHandler<
 
     fn flexible_one_way_named_payload(
         &mut self,
-        server: &::fidl_next::Server<OpenProtocol, ___T>,
 
         request: ::fidl_next::Request<open_protocol::FlexibleOneWayNamedPayload, ___T>,
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 
     fn on_unknown_interaction(
         &mut self,
-        server: &::fidl_next::Server<OpenProtocol, ___T>,
         ordinal: u64,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
-        server.close();
-        ::core::future::ready(())
+    ) -> impl ::core::future::Future<
+        Output = ::core::result::Result<
+            (),
+            ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+        >,
+    > + ::core::marker::Send {
+        ::core::future::ready(Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)))
     }
 }
 
@@ -4345,27 +4467,47 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
             3516779973873009953 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.flexible_one_way(server, decoded).await,
-                Err(e) => server.close(),
+                Ok(decoded) => {
+                    handler.flexible_one_way(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 3516779973873009953,
+                    error,
+                }),
             },
 
             8790149921168801703 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.strict_one_way(server, decoded).await,
-                Err(e) => server.close(),
+                Ok(decoded) => {
+                    handler.strict_one_way(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 8790149921168801703,
+                    error,
+                }),
             },
 
             1525606789639046512 => match ::fidl_next::DecoderExt::decode(buffer) {
-                Ok(decoded) => handler.flexible_one_way_named_payload(server, decoded).await,
-                Err(e) => server.close(),
+                Ok(decoded) => {
+                    handler.flexible_one_way_named_payload(decoded).await;
+                    Ok(())
+                }
+                Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                    ordinal: 1525606789639046512,
+                    error,
+                }),
             },
 
-            ordinal => handler.on_unknown_interaction(server, ordinal).await,
+            ordinal => handler.on_unknown_interaction(ordinal).await,
         }
     }
 
@@ -4374,14 +4516,23 @@ where
         ordinal: u64,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
             5572735551219638488 => {
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.flexible_two_way_no_error(decoded, responder).await,
-                    Err(e) => drop(responder),
+                    Ok(decoded) => {
+                        handler.flexible_two_way_no_error(decoded, responder).await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 5572735551219638488,
+                        error,
+                    }),
                 }
             }
 
@@ -4389,8 +4540,14 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.flexible_two_way_with_error(decoded, responder).await,
-                    Err(e) => drop(responder),
+                    Ok(decoded) => {
+                        handler.flexible_two_way_with_error(decoded, responder).await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 3504132377779779458,
+                        error,
+                    }),
                 }
             }
 
@@ -4398,8 +4555,14 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.strict_two_way_no_error(decoded, responder).await,
-                    Err(e) => drop(responder),
+                    Ok(decoded) => {
+                        handler.strict_two_way_no_error(decoded, responder).await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 3690935745864999300,
+                        error,
+                    }),
                 }
             }
 
@@ -4407,15 +4570,18 @@ where
                 let responder = ::fidl_next::Responder::from_untyped(responder);
 
                 match ::fidl_next::DecoderExt::decode(buffer) {
-                    Ok(decoded) => handler.strict_two_way_with_error(decoded, responder).await,
-                    Err(e) => drop(responder),
+                    Ok(decoded) => {
+                        handler.strict_two_way_with_error(decoded, responder).await;
+                        Ok(())
+                    }
+                    Err(error) => Err(::fidl_next::ProtocolError::InvalidMessage {
+                        ordinal: 5364624536440098871,
+                        error,
+                    }),
                 }
             }
 
-            ordinal => {
-                let server = ::fidl_next::Server::wrap_untyped(responder.server());
-                handler.on_unknown_interaction(server, ordinal).await;
-            }
+            ordinal => handler.on_unknown_interaction(ordinal).await,
         }
     }
 }

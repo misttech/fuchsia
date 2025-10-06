@@ -422,10 +422,7 @@ pub trait InterfaceClientHandler<
 >
 {
     #[doc = " event comment #1\n\n event comment #3\n"]
-    fn on_event(
-        &mut self,
-        client: &::fidl_next::Client<Interface, ___T>,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
+    fn on_event(&mut self) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Interface
@@ -435,16 +432,16 @@ where
 {
     async fn on_event(
         handler: &mut ___H,
-        client: &::fidl_next::Client<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
             28780186509098736 => {
-                handler.on_event(client).await;
+                handler.on_event().await;
+                Ok(())
             }
 
-            ordinal => client.close(),
+            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
         }
     }
 }
@@ -458,10 +455,7 @@ pub trait InterfaceServerHandler<
 >
 {
     #[doc = " method comment #1\n\n method comment #3\n"]
-    fn method(
-        &mut self,
-        server: &::fidl_next::Server<Interface, ___T>,
-    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
+    fn method(&mut self) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
 impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for Interface
@@ -471,16 +465,19 @@ where
 {
     async fn on_one_way(
         handler: &mut ___H,
-        server: &::fidl_next::Server<Self, ___T>,
         ordinal: u64,
         buffer: ___T::RecvBuffer,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
             5017051197196532121 => {
-                handler.method(server).await;
+                handler.method().await;
+                Ok(())
             }
 
-            ordinal => server.close(),
+            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
         }
     }
 
@@ -489,9 +486,12 @@ where
         ordinal: u64,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
-    ) {
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
         match ordinal {
-            ordinal => responder.server().close(),
+            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
         }
     }
 }

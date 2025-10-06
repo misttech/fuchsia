@@ -20,11 +20,7 @@ impl<T: Transport> MyCalculatorClient<T> {
 }
 
 impl<T: Transport> CalculatorClientHandler<T> for MyCalculatorClient<T> {
-    async fn on_error(
-        &mut self,
-        _: &Client<Calculator, T>,
-        response: Response<calculator::OnError, T>,
-    ) {
+    async fn on_error(&mut self, response: Response<calculator::OnError, T>) {
         self.error = Some(*response.status_code);
         self.client.close();
     }
@@ -73,7 +69,7 @@ impl<T: Transport> CalculatorServerHandler<T> for MyCalculatorServer {
         let _ = responder.respond(response).await;
     }
 
-    async fn clear(&mut self, _: &Server<Calculator, T>) {
+    async fn clear(&mut self) {
         self.last_result = None;
     }
 }

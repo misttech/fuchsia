@@ -91,10 +91,9 @@ pub trait ServerHandler<T: Transport> {
     /// offload work to an async task.
     fn on_one_way(
         &mut self,
-        server: &Server<T>,
         ordinal: u64,
         buffer: T::RecvBuffer,
-    ) -> impl Future<Output = ()> + Send;
+    ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 
     /// Handles a received two-way server message.
     ///
@@ -106,7 +105,7 @@ pub trait ServerHandler<T: Transport> {
         ordinal: u64,
         buffer: T::RecvBuffer,
         responder: Responder<T>,
-    ) -> impl Future<Output = ()> + Send;
+    ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 }
 
 /// A dispatcher for a server endpoint.
@@ -209,9 +208,9 @@ impl<T: Transport> ServerDispatcher<T> {
             decode_header::<T>(&mut buffer).map_err(ProtocolError::InvalidMessageHeader)?;
         if let Some(txid) = NonZeroU32::new(txid) {
             let responder = Responder { server: self.server.clone(), txid };
-            handler.on_two_way(ordinal, buffer, responder).await;
+            handler.on_two_way(ordinal, buffer, responder).await?;
         } else {
-            handler.on_one_way(&self.server, ordinal, buffer).await;
+            handler.on_one_way(ordinal, buffer).await?;
         }
 
         Ok(())
@@ -232,11 +231,6 @@ impl<T: Transport> Drop for Responder<T> {
 }
 
 impl<T: Transport> Responder<T> {
-    /// Returns the responder's server.
-    pub fn server(&self) -> &Server<T> {
-        &self.server
-    }
-
     /// Send a response to a two-way message.
     pub fn respond<M>(self, ordinal: u64, response: M) -> Result<RespondFuture<T>, EncodeError>
     where

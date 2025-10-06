@@ -72,10 +72,9 @@ pub trait DispatchServerMessage<
     /// Handles a received server one-way message with the given handler.
     fn on_one_way(
         handler: &mut H,
-        server: &Server<Self, T>,
         ordinal: u64,
         buffer: T::RecvBuffer,
-    ) -> impl Future<Output = ()> + Send;
+    ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 
     /// Handles a received server two-way message with the given handler.
     fn on_two_way(
@@ -83,7 +82,7 @@ pub trait DispatchServerMessage<
         ordinal: u64,
         buffer: T::RecvBuffer,
         responder: protocol::Responder<T>,
-    ) -> impl Future<Output = ()> + Send;
+    ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 }
 
 /// An adapter for a server protocol handler.
@@ -108,11 +107,10 @@ where
 {
     fn on_one_way(
         &mut self,
-        server: &protocol::Server<T>,
         ordinal: u64,
         buffer: T::RecvBuffer,
-    ) -> impl Future<Output = ()> + Send {
-        P::on_one_way(&mut self.handler, Server::wrap_untyped(server), ordinal, buffer)
+    ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send {
+        P::on_one_way(&mut self.handler, ordinal, buffer)
     }
 
     fn on_two_way(
@@ -120,7 +118,7 @@ where
         ordinal: u64,
         buffer: <T as Transport>::RecvBuffer,
         responder: protocol::Responder<T>,
-    ) -> impl Future<Output = ()> + Send {
+    ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send {
         P::on_two_way(&mut self.handler, ordinal, buffer, responder)
     }
 }
@@ -189,14 +187,6 @@ impl<M, T: Transport> Responder<M, T> {
     /// Creates a new responder.
     pub fn from_untyped(responder: protocol::Responder<T>) -> Self {
         Self { responder, _method: PhantomData }
-    }
-
-    /// Returns the server held by the responder.
-    pub fn server(&self) -> &Server<M::Protocol, T>
-    where
-        M: Method,
-    {
-        Server::wrap_untyped(self.responder.server())
     }
 
     /// Responds to the client.
