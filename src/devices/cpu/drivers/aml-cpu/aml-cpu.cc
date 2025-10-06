@@ -27,7 +27,7 @@ constexpr uint32_t kInitialOpp = fuchsia_hardware_cpu_ctrl::wire::kDeviceOperati
 
 }  // namespace
 
-zx_status_t GetPopularVoltageTable(const zx::resource& smc_resource, uint32_t* metadata_type) {
+zx_status_t GetPopularVoltageTable(const zx::resource& smc_resource) {
   if (smc_resource.is_valid()) {
     zx_smc_parameters_t smc_params = {};
     smc_params.func_id = kCpuGetDvfsTableIndexFuncId;
@@ -39,22 +39,6 @@ zx_status_t GetPopularVoltageTable(const zx::resource& smc_resource, uint32_t* m
       FDF_LOG(ERROR, "zx_smc_call failed: %s", zx_status_get_string(status));
       return status;
     }
-
-    switch (smc_result.arg0) {
-      case amlogic_cpu::OppTable1:
-        *metadata_type = DEVICE_METADATA_AML_OP_1_POINTS;
-        break;
-      case amlogic_cpu::OppTable2:
-        *metadata_type = DEVICE_METADATA_AML_OP_2_POINTS;
-        break;
-      case amlogic_cpu::OppTable3:
-        *metadata_type = DEVICE_METADATA_AML_OP_3_POINTS;
-        break;
-      default:
-        *metadata_type = DEVICE_METADATA_AML_OP_POINTS;
-        break;
-    }
-    FDF_LOG(INFO, "Dvfs using table%ld.\n", smc_result.arg0);
   }
 
   return ZX_OK;
@@ -78,7 +62,6 @@ zx::result<AmlCpuConfiguration> LoadConfiguration(fdf::PDev& pdev) {
   }
   config.info = std::move(device_info.value());
 
-  config.metadata_type = DEVICE_METADATA_AML_OP_POINTS;
   config.fragments_per_pf_domain = kFragmentsPerPfDomain;
   zx_off_t cpu_version_offset = kCpuVersionOffset;
   if (config.info.pid == PDEV_PID_AMLOGIC_A5) {
@@ -88,7 +71,7 @@ zx::result<AmlCpuConfiguration> LoadConfiguration(fdf::PDev& pdev) {
       return smc_resource.take_error();
     }
 
-    st = GetPopularVoltageTable(smc_resource.value(), &config.metadata_type);
+    st = GetPopularVoltageTable(smc_resource.value());
     if (st != ZX_OK) {
       FDF_LOG(ERROR, "Failed to get popular voltage table: %s", zx_status_get_string(st));
       return zx::error(st);
@@ -111,22 +94,24 @@ zx::result<AmlCpuConfiguration> LoadConfiguration(fdf::PDev& pdev) {
   return zx::ok(config);
 }
 
-std::vector<operating_point_t> PerformanceDomainOpPoints(
+std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint> PerformanceDomainOpPoints(
     const fuchsia_hardware_amlogic_metadata::PerformanceDomain& perf_domain,
-    std::vector<operating_point>& op_points) {
-  std::vector<operating_point_t> pd_op_points;
-  std::ranges::copy_if(
-      op_points, std::back_inserter(pd_op_points),
-      [&perf_domain](const operating_point_t& op) { return op.pd_id == perf_domain.id(); });
+    std::span<const fuchsia_hardware_amlogic_metadata::OperatingPoint> op_points) {
+  std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint> pd_op_points;
+  std::ranges::copy_if(op_points, std::back_inserter(pd_op_points),
+                       [&perf_domain](const fuchsia_hardware_amlogic_metadata::OperatingPoint& op) {
+                         return op.pd_id() == perf_domain.id();
+                       });
 
   // Order operating points from highest frequency to lowest because Operating Point 0 is the
   // fastest.
-  std::ranges::sort(pd_op_points, [](const operating_point_t& a, const operating_point_t& b) {
+  std::ranges::sort(pd_op_points, [](const fuchsia_hardware_amlogic_metadata::OperatingPoint& a,
+                                     const fuchsia_hardware_amlogic_metadata::OperatingPoint& b) {
     // Use voltage as a secondary sorting key.
-    if (a.freq_hz == b.freq_hz) {
-      return a.volt_uv > b.volt_uv;
+    if (a.freq_hz() == b.freq_hz()) {
+      return a.volt_uv() > b.volt_uv();
     }
-    return a.freq_hz > b.freq_hz;
+    return a.freq_hz() > b.freq_hz();
   });
 
   return pd_op_points;
@@ -145,15 +130,17 @@ zx_status_t AmlCpu::SetCurrentOperatingPointInternal(uint32_t requested_opp, uin
     return ZX_ERR_INVALID_ARGS;
   }
 
-  const operating_point_t& target_opp = operating_points_[requested_opp];
-  const operating_point_t& initial_opp = operating_points_[current_operating_point_];
+  const fuchsia_hardware_amlogic_metadata::OperatingPoint& target_opp =
+      operating_points_[requested_opp];
+  const fuchsia_hardware_amlogic_metadata::OperatingPoint& initial_opp =
+      operating_points_[current_operating_point_];
 
   // In the event of an error, these are used to attempt to revert the state of the parent
   // power/clock settings back to their original state.
   fit::deferred_action<std::function<void(void)>> reset_voltage;
   fit::deferred_action<std::function<void(void)>> reset_frequency;
   auto reset_voltage_func = [this, initial_opp]() {
-    auto result = this->pwr_->RequestVoltage(initial_opp.volt_uv);
+    auto result = this->pwr_->RequestVoltage(initial_opp.volt_uv());
     if (!result.ok()) {
       FDF_LOG(ERROR, "FIDL Call Failed to restore voltage to original setting: %s",
               result.status_string());
@@ -163,9 +150,9 @@ zx_status_t AmlCpu::SetCurrentOperatingPointInternal(uint32_t requested_opp, uin
               zx_status_get_string(result->error_value()));
     }
     uint32_t actual_voltage = result->value()->actual_voltage;
-    if (actual_voltage != initial_opp.volt_uv) {
+    if (actual_voltage != initial_opp.volt_uv()) {
       FDF_LOG(ERROR, "Restored voltage does not match, requested = %u, got = %u",
-              initial_opp.volt_uv, actual_voltage);
+              initial_opp.volt_uv(), actual_voltage);
     }
   };
 
@@ -174,19 +161,21 @@ zx_status_t AmlCpu::SetCurrentOperatingPointInternal(uint32_t requested_opp, uin
   *out_opp = requested_opp;
 
   // TODO(b/376589801): Consider publishing this via inspect.
-  FDF_LOG(DEBUG, "Scaling from %u MHz %u mV to %u MHz %u mV", initial_opp.freq_hz / 1000000,
-          initial_opp.volt_uv / 1000, target_opp.freq_hz / 1000000, target_opp.volt_uv / 1000);
+  FDF_LOG(DEBUG, "Scaling from %u MHz %u mV to %u MHz %u mV", initial_opp.freq_hz() / 1000000,
+          initial_opp.volt_uv() / 1000, target_opp.freq_hz() / 1000000,
+          target_opp.volt_uv() / 1000);
 
-  if (initial_opp.freq_hz == target_opp.freq_hz && initial_opp.volt_uv == target_opp.volt_uv) {
+  if (initial_opp.freq_hz() == target_opp.freq_hz() &&
+      initial_opp.volt_uv() == target_opp.volt_uv()) {
     // Nothing to be done.
     return ZX_OK;
   }
 
-  if (target_opp.volt_uv > initial_opp.volt_uv) {
+  if (target_opp.volt_uv() > initial_opp.volt_uv()) {
     // If we're increasing the voltage we need to do it before setting the
     // frequency.
     ZX_ASSERT(pwr_.is_valid());
-    fidl::WireResult result = pwr_->RequestVoltage(target_opp.volt_uv);
+    fidl::WireResult result = pwr_->RequestVoltage(target_opp.volt_uv());
     if (!result.ok()) {
       FDF_LOG(ERROR, "Failed to send RequestVoltage request: %s", result.status_string());
       return result.error().status();
@@ -199,9 +188,9 @@ zx_status_t AmlCpu::SetCurrentOperatingPointInternal(uint32_t requested_opp, uin
     }
 
     uint32_t actual_voltage = result->value()->actual_voltage;
-    if (actual_voltage != target_opp.volt_uv) {
-      FDF_LOG(ERROR, "Actual voltage does not match, requested = %u, got = %u", target_opp.volt_uv,
-              actual_voltage);
+    if (actual_voltage != target_opp.volt_uv()) {
+      FDF_LOG(ERROR, "Actual voltage does not match, requested = %u, got = %u",
+              target_opp.volt_uv(), actual_voltage);
       reset_voltage_func();
       return ZX_ERR_INTERNAL;
     }
@@ -211,7 +200,7 @@ zx_status_t AmlCpu::SetCurrentOperatingPointInternal(uint32_t requested_opp, uin
   }
 
   // Set the frequency next.
-  fidl::WireResult result = cpuscaler_->SetRate(target_opp.freq_hz);
+  fidl::WireResult result = cpuscaler_->SetRate(target_opp.freq_hz());
   if (!result.ok() || result->is_error()) {
     FDF_LOG(ERROR, "Could not set CPU frequency: %s", result.FormatDescription().c_str());
 
@@ -222,7 +211,7 @@ zx_status_t AmlCpu::SetCurrentOperatingPointInternal(uint32_t requested_opp, uin
   }
 
   reset_frequency = [this, initial_opp]() {
-    auto result = this->cpuscaler_->SetRate(initial_opp.freq_hz);
+    auto result = this->cpuscaler_->SetRate(initial_opp.freq_hz());
     if (!result.ok()) {
       FDF_LOG(ERROR, "FIDL Call Failed to restore frequency to original setting: %s",
               result.status_string());
@@ -235,9 +224,9 @@ zx_status_t AmlCpu::SetCurrentOperatingPointInternal(uint32_t requested_opp, uin
 
   // If we're decreasing the voltage, then we do it after the frequency has been
   // reduced to avoid undervolt conditions.
-  if (target_opp.volt_uv < initial_opp.volt_uv) {
+  if (target_opp.volt_uv() < initial_opp.volt_uv()) {
     ZX_ASSERT(pwr_.is_valid());
-    fidl::WireResult result = pwr_->RequestVoltage(target_opp.volt_uv);
+    fidl::WireResult result = pwr_->RequestVoltage(target_opp.volt_uv());
     if (!result.ok()) {
       FDF_LOG(ERROR, "Failed to send RequestVoltage request: %s", result.status_string());
       return result.error().status();
@@ -250,11 +239,11 @@ zx_status_t AmlCpu::SetCurrentOperatingPointInternal(uint32_t requested_opp, uin
     }
 
     uint32_t actual_voltage = result->value()->actual_voltage;
-    if (actual_voltage != target_opp.volt_uv) {
+    if (actual_voltage != target_opp.volt_uv()) {
       FDF_LOG(ERROR,
               "Failed to set cpu voltage, requested = %u, got = %u. "
               "Voltage and frequency mismatch!",
-              target_opp.volt_uv, actual_voltage);
+              target_opp.volt_uv(), actual_voltage);
       reset_voltage_func();
       return ZX_ERR_INTERNAL;
     }
@@ -268,8 +257,8 @@ zx_status_t AmlCpu::SetCurrentOperatingPointInternal(uint32_t requested_opp, uin
   reset_voltage.cancel();
   reset_frequency.cancel();
 
-  TRACE_COUNTER("dvfs", "cpu_freq", GetDomainId(), "frequency", TA_INT64(target_opp.freq_hz),
-                "voltage", TA_INT64(target_opp.volt_uv));
+  TRACE_COUNTER("dvfs", "cpu_freq", GetDomainId(), "frequency", TA_INT64(target_opp.freq_hz()),
+                "voltage", TA_INT64(target_opp.volt_uv()));
 
   return ZX_OK;
 }
@@ -381,8 +370,8 @@ void AmlCpu::GetOperatingPointInfo(GetOperatingPointInfoRequestView request,
   }
 
   fuchsia_hardware_cpu_ctrl::wire::CpuOperatingPointInfo result;
-  result.frequency_hz = operating_points[request->opp].freq_hz;
-  result.voltage_uv = operating_points[request->opp].volt_uv;
+  result.frequency_hz = operating_points[request->opp].freq_hz();
+  result.voltage_uv = operating_points[request->opp].volt_uv();
 
   completer.ReplySuccess(result);
 }

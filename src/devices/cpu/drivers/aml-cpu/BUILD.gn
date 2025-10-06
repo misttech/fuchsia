@@ -45,7 +45,7 @@ source_set("common") {
     "//sdk/fidl/fuchsia.hardware.amlogic.metadata:fuchsia.hardware.amlogic.metadata_cpp",
     "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_cpp",
     "//sdk/fidl/fuchsia.hardware.cpu.ctrl:fuchsia.hardware.cpu.ctrl_cpp",
-    "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/platform-device/cpp",
     "//src/devices/lib/amlogic",
   ]
@@ -53,7 +53,10 @@ source_set("common") {
 
 fuchsia_cc_driver("aml-cpu-driver") {
   output_name = "aml-cpu"
-  deps = [ ":common" ]
+  deps = [
+    ":common",
+    "//src/devices/lib/driver:driver_runtime",
+  ]
 }
 
 fuchsia_driver_component("aml-cpu") {

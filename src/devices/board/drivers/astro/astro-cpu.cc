@@ -19,7 +19,6 @@
 #include <bind/fuchsia/hardware/clock/cpp/bind.h>
 #include <bind/fuchsia/hardware/power/cpp/bind.h>
 #include <bind/fuchsia/power/cpp/bind.h>
-#include <soc/aml-common/aml-cpu-metadata.h>
 #include <soc/aml-meson/g12a-clk.h>
 #include <soc/aml-s905d2/s905d2-hw.h>
 
@@ -33,28 +32,12 @@ using namespace fuchsia_driver_framework;
 namespace {
 namespace fpbus = fuchsia_hardware_platform_bus;
 
-constexpr amlogic_cpu::PerfDomainId kPdArmA53 = 1;
-
 const std::vector<fpbus::Mmio> cpu_mmios{
     {{
         // AOBUS
         .base = S905D2_AOBUS_BASE,
         .length = 0x1000,
     }},
-};
-
-constexpr amlogic_cpu::operating_point_t operating_points[] = {
-    {.freq_hz = 100'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53},
-    {.freq_hz = 250'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53},
-    {.freq_hz = 500'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53},
-    {.freq_hz = 667'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53},
-    {.freq_hz = 1'000'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53},
-    {.freq_hz = 1'200'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53},
-    {.freq_hz = 1'398'000'000, .volt_uv = 761'000, .pd_id = kPdArmA53},
-    {.freq_hz = 1'512'000'000, .volt_uv = 791'000, .pd_id = kPdArmA53},
-    {.freq_hz = 1'608'000'000, .volt_uv = 831'000, .pd_id = kPdArmA53},
-    {.freq_hz = 1'704'000'000, .volt_uv = 861'000, .pd_id = kPdArmA53},
-    {.freq_hz = 1'896'000'000, .volt_uv = 1'022'000, .pd_id = kPdArmA53},
 };
 
 const std::vector<fdf::BindRule2> kPowerRules = std::vector{
@@ -90,12 +73,28 @@ const std::map<uint32_t, std::string> kClockFunctionMap = {
 namespace astro {
 
 zx_status_t Astro::CpuInit() {
+  static constexpr uint32_t kPdArmA53 = 1;
+
   static const fuchsia_hardware_amlogic_metadata::CpuMetadata kMetadata(
-      {.performance_domains = std::vector<fuchsia_hardware_amlogic_metadata::PerformanceDomain>{
-           {{.id = kPdArmA53,
-             .core_count = 4,
-             .relative_performance = 255,
-             .name = "s905d2-arm-a53"}}}});
+      {.performance_domains =
+           std::vector<fuchsia_hardware_amlogic_metadata::PerformanceDomain>{
+               {{.id = kPdArmA53,
+                 .core_count = 4,
+                 .relative_performance = 255,
+                 .name = "s905d2-arm-a53"}}},
+       .operating_points = std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint>{
+           {{.freq_hz = 100'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53}},
+           {{.freq_hz = 250'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53}},
+           {{.freq_hz = 500'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53}},
+           {{.freq_hz = 667'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53}},
+           {{.freq_hz = 1'000'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53}},
+           {{.freq_hz = 1'200'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53}},
+           {{.freq_hz = 1'398'000'000, .volt_uv = 761'000, .pd_id = kPdArmA53}},
+           {{.freq_hz = 1'512'000'000, .volt_uv = 791'000, .pd_id = kPdArmA53}},
+           {{.freq_hz = 1'608'000'000, .volt_uv = 831'000, .pd_id = kPdArmA53}},
+           {{.freq_hz = 1'704'000'000, .volt_uv = 861'000, .pd_id = kPdArmA53}},
+           {{.freq_hz = 1'896'000'000, .volt_uv = 1'022'000, .pd_id = kPdArmA53}},
+       }});
 
   fit::result persisted_metadata = fidl::Persist(kMetadata);
   if (!persisted_metadata.is_ok()) {
@@ -104,26 +103,17 @@ zx_status_t Astro::CpuInit() {
     return persisted_metadata.error_value().status();
   }
 
-  std::vector<fpbus::Metadata> metadata{
-      {{
-          .id = std::to_string(DEVICE_METADATA_AML_OP_POINTS),
-          .data = std::vector<uint8_t>(
-              reinterpret_cast<const uint8_t*>(&operating_points),
-              reinterpret_cast<const uint8_t*>(&operating_points) + sizeof(operating_points)),
-      }},
-      {{
+  const fpbus::Node node({
+      .name = "aml-cpu",
+      .vid = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_VID_GOOGLE,
+      .pid = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_PID_ASTRO,
+      .did = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_DID_GOOGLE_AMLOGIC_CPU,
+      .mmio = cpu_mmios,
+      .metadata = std::vector<fpbus::Metadata>{{{
           .id = fuchsia_hardware_amlogic_metadata::CpuMetadata::kSerializableName,
           .data = std::move(persisted_metadata.value()),
-      }},
-  };
-
-  const fpbus::Node node(
-      {.name = "aml-cpu",
-       .vid = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_VID_GOOGLE,
-       .pid = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_PID_ASTRO,
-       .did = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_DID_GOOGLE_AMLOGIC_CPU,
-       .mmio = cpu_mmios,
-       .metadata = std::move(metadata)});
+      }}},
+  });
 
   gpio_init_steps_.push_back(GpioOutput(S905D2_PWM_D_PIN, false));
 

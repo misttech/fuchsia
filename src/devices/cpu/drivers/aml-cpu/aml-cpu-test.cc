@@ -4,7 +4,6 @@
 
 #include <fidl/fuchsia.hardware.clock/cpp/wire_test_base.h>
 #include <lib/ddk/platform-defs.h>
-#include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 
@@ -29,41 +28,40 @@ const std::vector<fuchsia_hardware_amlogic_metadata::PerformanceDomain> kPerform
     {{.id = kPdArmA53, .core_count = 4, .relative_performance = 255, .name = "S905D2 ARM A53"}},
 };
 
-const fuchsia_hardware_amlogic_metadata::CpuMetadata kMetadata(
-    {.performance_domains = kPerformanceDomains});
+const std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint> kOperatingPoints{
+    {{.freq_hz = 100'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53}},
+    {{.freq_hz = 250'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53}},
+    {{.freq_hz = 500'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53}},
+    {{.freq_hz = 667'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53}},
+    {{.freq_hz = 1'000'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53}},
+    {{.freq_hz = 1'200'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53}},
+    {{.freq_hz = 1'398'000'000, .volt_uv = 761'000, .pd_id = kPdArmA53}},
+    {{.freq_hz = 1'512'000'000, .volt_uv = 791'000, .pd_id = kPdArmA53}},
+    {{.freq_hz = 1'608'000'000, .volt_uv = 831'000, .pd_id = kPdArmA53}},
+    {{.freq_hz = 1'704'000'000, .volt_uv = 861'000, .pd_id = kPdArmA53}},
+    {{.freq_hz = 1'896'000'000, .volt_uv = 1'022'000, .pd_id = kPdArmA53}}};
 
-const std::vector<amlogic_cpu::operating_point_t> kOperatingPointsMetadata = {
-    {.freq_hz = 100'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53},
-    {.freq_hz = 250'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53},
-    {.freq_hz = 500'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53},
-    {.freq_hz = 667'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53},
-    {.freq_hz = 1'000'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53},
-    {.freq_hz = 1'200'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53},
-    {.freq_hz = 1'398'000'000, .volt_uv = 761'000, .pd_id = kPdArmA53},
-    {.freq_hz = 1'512'000'000, .volt_uv = 791'000, .pd_id = kPdArmA53},
-    {.freq_hz = 1'608'000'000, .volt_uv = 831'000, .pd_id = kPdArmA53},
-    {.freq_hz = 1'704'000'000, .volt_uv = 861'000, .pd_id = kPdArmA53},
-    {.freq_hz = 1'896'000'000, .volt_uv = 1'022'000, .pd_id = kPdArmA53},
-};
+const fuchsia_hardware_amlogic_metadata::CpuMetadata kMetadata(
+    {.performance_domains = kPerformanceDomains, .operating_points = kOperatingPoints});
 
 const std::vector<fuchsia_hardware_amlogic_metadata::PerformanceDomain> kTestPerformanceDomains{
     {{.id = kPdArmA53, .core_count = 1, .relative_performance = 0, .name = "testpd"}}};
 
-const fuchsia_hardware_amlogic_metadata::CpuMetadata kTestMetadata(
-    {.performance_domains = kTestPerformanceDomains});
-
-const std::vector<operating_point_t> kTestOperatingPoints = {
-    {.freq_hz = MHZ(10), .volt_uv = 15000, .pd_id = kPdArmA53},
-    {.freq_hz = MHZ(9), .volt_uv = 13500, .pd_id = kPdArmA53},
-    {.freq_hz = MHZ(8), .volt_uv = 12000, .pd_id = kPdArmA53},
-    {.freq_hz = MHZ(7), .volt_uv = 10500, .pd_id = kPdArmA53},
-    {.freq_hz = MHZ(6), .volt_uv = 9000, .pd_id = kPdArmA53},
-    {.freq_hz = MHZ(5), .volt_uv = 7500, .pd_id = kPdArmA53},
-    {.freq_hz = MHZ(4), .volt_uv = 6000, .pd_id = kPdArmA53},
-    {.freq_hz = MHZ(3), .volt_uv = 4500, .pd_id = kPdArmA53},
-    {.freq_hz = MHZ(2), .volt_uv = 3000, .pd_id = kPdArmA53},
-    {.freq_hz = MHZ(1), .volt_uv = 1500, .pd_id = kPdArmA53},
+const std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint> kTestOperatingPoints{
+    {{.freq_hz = MHZ(10), .volt_uv = 15000, .pd_id = kPdArmA53}},
+    {{.freq_hz = MHZ(9), .volt_uv = 13500, .pd_id = kPdArmA53}},
+    {{.freq_hz = MHZ(8), .volt_uv = 12000, .pd_id = kPdArmA53}},
+    {{.freq_hz = MHZ(7), .volt_uv = 10500, .pd_id = kPdArmA53}},
+    {{.freq_hz = MHZ(6), .volt_uv = 9000, .pd_id = kPdArmA53}},
+    {{.freq_hz = MHZ(5), .volt_uv = 7500, .pd_id = kPdArmA53}},
+    {{.freq_hz = MHZ(4), .volt_uv = 6000, .pd_id = kPdArmA53}},
+    {{.freq_hz = MHZ(3), .volt_uv = 4500, .pd_id = kPdArmA53}},
+    {{.freq_hz = MHZ(2), .volt_uv = 3000, .pd_id = kPdArmA53}},
+    {{.freq_hz = MHZ(1), .volt_uv = 1500, .pd_id = kPdArmA53}},
 };
+
+const fuchsia_hardware_amlogic_metadata::CpuMetadata kTestMetadata(
+    {.performance_domains = kTestPerformanceDomains, .operating_points = kTestOperatingPoints});
 
 class FakeMmio {
  public:
@@ -216,8 +214,6 @@ class AmlCpuEnvironment : public fdf_testing::Environment {
  public:
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) {
     auto dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
-    device_server_.Initialize("pdev");
-    EXPECT_EQ(ZX_OK, device_server_.Serve(dispatcher, &to_driver_vfs));
 
     std::map<uint32_t, fdf_fake::Mmio> mmios;
     mmios[0] = mmio_.mmio();
@@ -257,7 +253,6 @@ class AmlCpuEnvironment : public fdf_testing::Environment {
     return zx::ok();
   }
 
-  compat::DeviceServer device_server_;
   FakeMmio mmio_;
   fdf_fake::FakePDev pdev_server_;
   TestPowerDevice power_server_;
@@ -274,34 +269,33 @@ class AmlCpuBindingConfiguration final {
 
 class AmlCpuTest : public ::testing::Test {
  public:
-  void StartWithMetadata(const fuchsia_hardware_amlogic_metadata::CpuMetadata& metadata,
-                         const std::vector<operating_point_t>& op_points) {
+  void StartWithMetadata(const fuchsia_hardware_amlogic_metadata::CpuMetadata& metadata) {
     // Notes on AmlCpu Initialization:
     //  + Should enable the CPU and PLL clocks.
     //  + Should initially assume that the device is in it's opp.
     //  + Should configure the device to it's highest opp.
-    const operating_point_t& slowest = op_points.front();
-    const operating_point_t& fastest = op_points.back();
+    const fuchsia_hardware_amlogic_metadata::OperatingPoint& slowest =
+        metadata.operating_points().value().front();
+    const fuchsia_hardware_amlogic_metadata::OperatingPoint& fastest =
+        metadata.operating_points().value().back();
 
     driver_test().RunInEnvironmentTypeContext([slowest, fastest](AmlCpuEnvironment& env) {
       // The DUT should initialize.
-      env.power_server_.SetSupportedVoltageRange(slowest.volt_uv, fastest.volt_uv);
+      env.power_server_.SetSupportedVoltageRange(slowest.volt_uv(), fastest.volt_uv());
 
       // The DUT scales up to the fastest available opp.
-      env.power_server_.SetVoltage(fastest.volt_uv);
+      env.power_server_.SetVoltage(fastest.volt_uv());
     });
 
-    driver_test().RunInEnvironmentTypeContext([&metadata, &op_points](AmlCpuEnvironment& env) {
+    driver_test().RunInEnvironmentTypeContext([&metadata](AmlCpuEnvironment& env) {
       env.pdev_server_.AddFidlMetadata(
           fuchsia_hardware_amlogic_metadata::CpuMetadata::kSerializableName, metadata);
-      env.device_server_.AddMetadata(DEVICE_METADATA_AML_OP_POINTS, op_points.data(),
-                                     op_points.size() * sizeof(operating_point_t));
     });
     ASSERT_OK(driver_test().StartDriver().status_value());
 
     driver_test().RunInEnvironmentTypeContext([slowest, fastest](AmlCpuEnvironment& env) {
-      ASSERT_EQ(env.power_server_.min_needed_voltage(), slowest.volt_uv);
-      ASSERT_EQ(env.power_server_.max_supported_voltage(), fastest.volt_uv);
+      ASSERT_EQ(env.power_server_.min_needed_voltage(), slowest.volt_uv());
+      ASSERT_EQ(env.power_server_.max_supported_voltage(), fastest.volt_uv());
     });
 
     driver_test().RunInNodeContext(
@@ -328,19 +322,22 @@ class AmlCpuTest : public ::testing::Test {
   CpuCtrlClient cpu_ctrl_;
 };
 
-TEST_F(AmlCpuTest, TrivialBinding) { StartWithMetadata(kMetadata, kOperatingPointsMetadata); }
+TEST_F(AmlCpuTest, TrivialBinding) { StartWithMetadata(kMetadata); }
 
 TEST_F(AmlCpuTest, UnorderedOperatingPoints) {
   // AML CPU's bind hook expects that all operating points are strictly
   // ordered and it should handle the situation where there are duplicate
   // frequencies.
-  const std::vector<amlogic_cpu::operating_point_t> kOperatingPointsMetadata = {
-      {.freq_hz = MHZ(1), .volt_uv = 200'000, .pd_id = kPdArmA53},
-      {.freq_hz = MHZ(1), .volt_uv = 100'000, .pd_id = kPdArmA53},
-      {.freq_hz = MHZ(1), .volt_uv = 300'000, .pd_id = kPdArmA53},
+  const std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint> kOperatingPoints = {
+      {{.freq_hz = MHZ(1), .volt_uv = 200'000, .pd_id = kPdArmA53}},
+      {{.freq_hz = MHZ(1), .volt_uv = 100'000, .pd_id = kPdArmA53}},
+      {{.freq_hz = MHZ(1), .volt_uv = 300'000, .pd_id = kPdArmA53}},
   };
 
-  StartWithMetadata(kMetadata, kOperatingPointsMetadata);
+  const fuchsia_hardware_amlogic_metadata::CpuMetadata kMetadata(
+      {.performance_domains = kPerformanceDomains, .operating_points = kOperatingPoints});
+
+  StartWithMetadata(kMetadata);
 
   ConnectToCpuCtrl(kPerformanceDomains[0]);
 
@@ -355,7 +352,7 @@ TEST_F(AmlCpuTest, UnorderedOperatingPoints) {
 }
 
 TEST_F(AmlCpuTest, TestGetOperatingPointInfo) {
-  StartWithMetadata(kTestMetadata, kTestOperatingPoints);
+  StartWithMetadata(kTestMetadata);
   ConnectToCpuCtrl(kTestPerformanceDomains[0]);
 
   auto opp_size = kTestOperatingPoints.size();
@@ -372,8 +369,8 @@ TEST_F(AmlCpuTest, TestGetOperatingPointInfo) {
     ASSERT_FALSE(oppInfo->is_error());
 
     // Then make sure that we're getting the expected frequency and voltage values.
-    EXPECT_EQ(oppInfo->value()->info.frequency_hz, kTestOperatingPoints[i].freq_hz);
-    EXPECT_EQ(oppInfo->value()->info.voltage_uv, kTestOperatingPoints[i].volt_uv);
+    EXPECT_EQ(oppInfo->value()->info.frequency_hz, kTestOperatingPoints[i].freq_hz());
+    EXPECT_EQ(oppInfo->value()->info.voltage_uv, kTestOperatingPoints[i].volt_uv());
   }
 
   // Make sure that we can't get any information about opps that don't
@@ -392,15 +389,16 @@ TEST_F(AmlCpuTest, TestGetOperatingPointInfo) {
 }
 
 TEST_F(AmlCpuTest, TestSetCurrentOperatingPoint) {
-  StartWithMetadata(kTestMetadata, kTestOperatingPoints);
+  StartWithMetadata(kTestMetadata);
   ConnectToCpuCtrl(kTestPerformanceDomains[0]);
 
   // Scale to the lowest opp.
   const uint32_t min_opp_index = static_cast<uint32_t>(kTestOperatingPoints.size() - 1);
-  const operating_point_t& min_opp = kTestOperatingPoints[min_opp_index];
+  const fuchsia_hardware_amlogic_metadata::OperatingPoint& min_opp =
+      kTestOperatingPoints[min_opp_index];
 
   driver_test().RunInEnvironmentTypeContext(
-      [&min_opp](AmlCpuEnvironment& env) { env.power_server_.SetVoltage(min_opp.volt_uv); });
+      [&min_opp](AmlCpuEnvironment& env) { env.power_server_.SetVoltage(min_opp.volt_uv()); });
 
   auto min_result = cpu_ctrl_->SetCurrentOperatingPoint(min_opp_index);
   EXPECT_OK(min_result.status());
@@ -409,7 +407,7 @@ TEST_F(AmlCpuTest, TestSetCurrentOperatingPoint) {
   driver_test().RunInEnvironmentTypeContext([&min_opp](AmlCpuEnvironment& env) {
     auto rate = env.clock_cpu_scaler_server_.rate();
     ASSERT_TRUE(rate.has_value());
-    ASSERT_EQ(rate.value(), min_opp.freq_hz);
+    ASSERT_EQ(rate.value(), min_opp.freq_hz());
   });
 
   // Check that we get the same value back from GetCurrentOperatingPoint
@@ -419,10 +417,11 @@ TEST_F(AmlCpuTest, TestSetCurrentOperatingPoint) {
 
   // Scale to the highest opp.
   const uint32_t max_opp_index = 0;
-  const operating_point_t& max_opp = kTestOperatingPoints[max_opp_index];
+  const fuchsia_hardware_amlogic_metadata::OperatingPoint& max_opp =
+      kTestOperatingPoints[max_opp_index];
 
   driver_test().RunInEnvironmentTypeContext(
-      [&max_opp](AmlCpuEnvironment& env) { env.power_server_.SetVoltage(max_opp.volt_uv); });
+      [&max_opp](AmlCpuEnvironment& env) { env.power_server_.SetVoltage(max_opp.volt_uv()); });
 
   auto max_result = cpu_ctrl_->SetCurrentOperatingPoint(max_opp_index);
   EXPECT_OK(max_result.status());
@@ -431,7 +430,7 @@ TEST_F(AmlCpuTest, TestSetCurrentOperatingPoint) {
   driver_test().RunInEnvironmentTypeContext([&max_opp](AmlCpuEnvironment& env) {
     auto rate = env.clock_cpu_scaler_server_.rate();
     ASSERT_TRUE(rate.has_value());
-    ASSERT_EQ(rate.value(), max_opp.freq_hz);
+    ASSERT_EQ(rate.value(), max_opp.freq_hz());
   });
 
   // Check that we get the same value back from GetCurrentOperatingPoint
@@ -454,7 +453,7 @@ TEST_F(AmlCpuTest, TestSetCurrentOperatingPoint) {
 TEST_F(AmlCpuTest, TestCpuInfo) {
   using namespace inspect::testing;
 
-  StartWithMetadata(kTestMetadata, kTestOperatingPoints);
+  StartWithMetadata(kTestMetadata);
 
   driver_test().RunInDriverContext([](AmlCpuDriver& driver) {
     auto& dut = driver.performance_domains().front();
@@ -475,7 +474,7 @@ TEST_F(AmlCpuTest, TestCpuInfo) {
 }
 
 TEST_F(AmlCpuTest, TestGetOperatingPointCount) {
-  StartWithMetadata(kTestMetadata, kTestOperatingPoints);
+  StartWithMetadata(kTestMetadata);
   ConnectToCpuCtrl(kTestPerformanceDomains[0]);
 
   auto resp = cpu_ctrl_->GetOperatingPointCount();
@@ -486,7 +485,7 @@ TEST_F(AmlCpuTest, TestGetOperatingPointCount) {
 }
 
 TEST_F(AmlCpuTest, TestGetLogicalCoreCount) {
-  StartWithMetadata(kTestMetadata, kTestOperatingPoints);
+  StartWithMetadata(kTestMetadata);
   ConnectToCpuCtrl(kTestPerformanceDomains[0]);
 
   auto coreCountResp = cpu_ctrl_->GetNumLogicalCores();
@@ -498,7 +497,7 @@ TEST_F(AmlCpuTest, TestGetLogicalCoreCount) {
 
 // We attempt to lower the voltage and then inject a fault into the parent voltage driver.
 TEST_F(AmlCpuTest, TestVregLowerFail) {
-  StartWithMetadata(kTestMetadata, kTestOperatingPoints);
+  StartWithMetadata(kTestMetadata);
   ConnectToCpuCtrl(kTestPerformanceDomains[0]);
 
   uint32_t initial_rate;
@@ -533,7 +532,7 @@ TEST_F(AmlCpuTest, TestVregLowerFail) {
 // This test is much like TestVregLowerFail from above but we inject the fault after lowering the
 // voltage and then attempt to raise it which should fail.
 TEST_F(AmlCpuTest, TestVregRaiseFail) {
-  StartWithMetadata(kTestMetadata, kTestOperatingPoints);
+  StartWithMetadata(kTestMetadata);
   ConnectToCpuCtrl(kTestPerformanceDomains[0]);
 
   // Scale to the lowest opp.

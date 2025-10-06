@@ -21,7 +21,17 @@ type PerformanceDomain = struct {
     name string:MAX_PERFORMANCE_DOMAIN_NAME_LENGTH;
 };
 
+type OperatingPoint = struct {
+    freq_hz uint32;
+
+    volt_uv uint32;
+
+    /// Performance domain ID.
+    pd_id uint32;
+};
+
 @serializable
 type CpuMetadata = table {
     1: performance_domains vector<PerformanceDomain>:MAX;
+    2: operating_points vector<OperatingPoint>:MAX;
 };

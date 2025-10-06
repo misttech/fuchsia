@@ -37,7 +37,6 @@ constexpr zx_off_t kCpuVersionOffsetA1 = 0x220;
 
 struct AmlCpuConfiguration {
   fdf::PDev::DeviceInfo info;
-  uint32_t metadata_type;
   size_t fragments_per_pf_domain;
   uint32_t cpu_version_packed;
 
@@ -47,14 +46,14 @@ struct AmlCpuConfiguration {
 
 class AmlCpu : public fidl::WireServer<fuchsia_hardware_cpu_ctrl::Device> {
  public:
-  explicit AmlCpu(const std::vector<operating_point_t>& operating_points,
+  explicit AmlCpu(std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint> operating_points,
                   fuchsia_hardware_amlogic_metadata::PerformanceDomain perf_domain,
                   inspect::ComponentInspector& inspect)
       : current_operating_point_(
             static_cast<uint32_t>(operating_points.size() -
                                   1))  // Assume the core is running at the slowest clock to begin.
         ,
-        operating_points_(operating_points),
+        operating_points_(std::move(operating_points)),
         perf_domain_(std::move(perf_domain)),
         inspect_(inspect) {}
 
@@ -77,7 +76,9 @@ class AmlCpu : public fidl::WireServer<fuchsia_hardware_cpu_ctrl::Device> {
     return static_cast<uint32_t>(operating_points_.size());
   }
 
-  const std::vector<operating_point_t>& GetOperatingPoints() { return operating_points_; }
+  const std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint>& GetOperatingPoints() {
+    return operating_points_;
+  }
 
   uint32_t GetCoreCount() const { return perf_domain_.core_count(); }
   PerfDomainId GetDomainId() const { return perf_domain_.id(); }
@@ -108,7 +109,7 @@ class AmlCpu : public fidl::WireServer<fuchsia_hardware_cpu_ctrl::Device> {
 
   std::mutex lock_;
   uint32_t current_operating_point_ __TA_GUARDED(lock_);
-  const std::vector<operating_point_t> operating_points_;
+  const std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint> operating_points_;
 
   fuchsia_hardware_amlogic_metadata::PerformanceDomain perf_domain_;
 
@@ -120,10 +121,10 @@ class AmlCpu : public fidl::WireServer<fuchsia_hardware_cpu_ctrl::Device> {
   inspect::UintProperty inspect_package_id_;
 };
 
-std::vector<operating_point_t> PerformanceDomainOpPoints(
+std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint> PerformanceDomainOpPoints(
     const fuchsia_hardware_amlogic_metadata::PerformanceDomain& perf_domain,
-    std::vector<operating_point>& op_points);
-zx_status_t GetPopularVoltageTable(const zx::resource& smc_resource, uint32_t* metadata_type);
+    std::span<const fuchsia_hardware_amlogic_metadata::OperatingPoint> op_points);
+zx_status_t GetPopularVoltageTable(const zx::resource& smc_resource);
 zx::result<AmlCpuConfiguration> LoadConfiguration(fdf::PDev& pdev);
 
 }  // namespace amlogic_cpu

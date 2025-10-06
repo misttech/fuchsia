@@ -11,8 +11,6 @@
 #include <regex>
 #include <vector>
 
-#include "soc/aml-common/aml-cpu-metadata.h"
-
 namespace performance_domain_visitor_dt {
 
 PerformanceDomainVisitor::PerformanceDomainVisitor() {
@@ -46,7 +44,7 @@ zx::result<> PerformanceDomainVisitor::Visit(fdf_devicetree::Node& node,
   auto device_node = node.parent().GetNode();
 
   std::vector<fuchsia_hardware_amlogic_metadata::PerformanceDomain> performance_domains;
-  std::vector<amlogic_cpu::operating_point_t> opp_tables;
+  std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint> opp_tables;
 
   for (auto& child : node.children()) {
     zx::result performance_domain = ParsePerformanceDomain(*child.GetNode(), opp_tables);
@@ -60,31 +58,22 @@ zx::result<> PerformanceDomainVisitor::Visit(fdf_devicetree::Node& node,
   }
 
   if (!performance_domains.empty()) {
-    const fuchsia_hardware_amlogic_metadata::CpuMetadata metadata(
-        {.performance_domains = std::move(performance_domains)});
+    const fuchsia_hardware_amlogic_metadata::CpuMetadata cpu_metadata(
+        {.performance_domains = std::move(performance_domains),
+         .operating_points = std::move(opp_tables)});
 
-    fit::result persisted_metadata = fidl::Persist(metadata);
+    fit::result persisted_metadata = fidl::Persist(cpu_metadata);
     if (!persisted_metadata.is_ok()) {
       FDF_LOG(ERROR, "Failed to persist metadata: %s",
               persisted_metadata.error_value().FormatDescription().c_str());
       return zx::error(persisted_metadata.error_value().status());
     }
 
-    fuchsia_hardware_platform_bus::Metadata perf_domains_metadata({
+    fuchsia_hardware_platform_bus::Metadata metadata({
         .id = fuchsia_hardware_amlogic_metadata::CpuMetadata::kSerializableName,
         .data = std::move(persisted_metadata.value()),
     });
-    device_node->AddMetadata(std::move(perf_domains_metadata));
-
-    fuchsia_hardware_platform_bus::Metadata opp_metadata = {{
-        .id = std::to_string(DEVICE_METADATA_AML_OP_POINTS),
-        .data =
-            std::vector<uint8_t>(reinterpret_cast<const uint8_t*>(opp_tables.data()),
-                                 reinterpret_cast<const uint8_t*>(opp_tables.data()) +
-                                     (opp_tables.size() * sizeof(amlogic_cpu::operating_point_t))),
-    }};
-
-    device_node->AddMetadata(std::move(opp_metadata));
+    device_node->AddMetadata(std::move(metadata));
   }
 
   return zx::ok();
@@ -105,7 +94,8 @@ std::optional<std::string> PerformanceDomainVisitor::GetDomainName(const std::st
 
 zx::result<fuchsia_hardware_amlogic_metadata::PerformanceDomain>
 PerformanceDomainVisitor::ParsePerformanceDomain(
-    fdf_devicetree::Node& node, std::vector<amlogic_cpu::operating_point_t>& opp_tables) {
+    fdf_devicetree::Node& node,
+    std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint>& opp_tables) {
   auto parser_output = performance_domain_parser_->Parse(node);
   if (parser_output.is_error()) {
     FDF_LOG(ERROR, "Performance domain visitor failed for node '%s' : %s", node.name().c_str(),
@@ -143,9 +133,9 @@ PerformanceDomainVisitor::ParsePerformanceDomain(
   return zx::ok(performance_domain);
 }
 
-zx::result<std::vector<amlogic_cpu::operating_point_t>> PerformanceDomainVisitor::ParseOppTable(
-    fdf_devicetree::Node& node, uint32_t domain_id) {
-  std::vector<amlogic_cpu::operating_point_t> opp_table;
+zx::result<std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint>>
+PerformanceDomainVisitor::ParseOppTable(fdf_devicetree::Node& node, uint32_t domain_id) {
+  std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint> opp_table;
   for (auto& child : node.children()) {
     auto parser_output = opp_parser_->Parse(*child.GetNode());
     if (parser_output.is_error()) {
@@ -154,10 +144,11 @@ zx::result<std::vector<amlogic_cpu::operating_point_t>> PerformanceDomainVisitor
       return parser_output.take_error();
     }
 
-    opp_table.push_back({.freq_hz = static_cast<uint32_t>(
-                             parser_output->Get<uint64_t>(kOperatingFrequency).value()),
-                         .volt_uv = parser_output->Get<uint32_t>(kOperatingMicrovolt).value(),
-                         .pd_id = domain_id});
+    opp_table.push_back(fuchsia_hardware_amlogic_metadata::OperatingPoint(
+        {.freq_hz =
+             static_cast<uint32_t>(parser_output->Get<uint64_t>(kOperatingFrequency).value()),
+         .volt_uv = parser_output->Get<uint32_t>(kOperatingMicrovolt).value(),
+         .pd_id = domain_id}));
   }
   return zx::ok(opp_table);
 }

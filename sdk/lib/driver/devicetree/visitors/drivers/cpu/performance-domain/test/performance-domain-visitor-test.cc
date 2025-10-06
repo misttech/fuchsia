@@ -40,11 +40,12 @@ TEST(PerformanceDomainVisitorTest, TestMetadataAndBindProperty) {
   ASSERT_EQ(cpu_controller.size(), 1u);
   auto metadata = cpu_controller[0].metadata();
   ASSERT_TRUE(metadata);
-  ASSERT_EQ(metadata->size(), 2u);
+  ASSERT_EQ(metadata->size(), 1u);
   fit::result cpu_metadata =
       fidl::Unpersist<fuchsia_hardware_amlogic_metadata::CpuMetadata>(*(*metadata)[0].data());
   ASSERT_TRUE(cpu_metadata.is_ok());
   ASSERT_TRUE(cpu_metadata->performance_domains().has_value());
+
   std::span performance_domains = cpu_metadata->performance_domains().value();
   EXPECT_EQ(performance_domains.size(), 2u);
   EXPECT_EQ(performance_domains[0].id(), static_cast<uint32_t>(TEST_DOMAIN_1));
@@ -58,20 +59,17 @@ TEST(PerformanceDomainVisitorTest, TestMetadataAndBindProperty) {
   EXPECT_EQ(performance_domains[1].relative_performance(),
             static_cast<uint32_t>(TEST_DOMAIN_2_PERFORMANCE));
 
-  std::vector<uint8_t> metadata_blob1 = std::move(*(*metadata)[1].data());
-  auto metadata_start1 = reinterpret_cast<amlogic_cpu::operating_point_t*>(metadata_blob1.data());
-  std::vector<amlogic_cpu::operating_point_t> opp_points(
-      metadata_start1,
-      metadata_start1 + (metadata_blob1.size() / sizeof(amlogic_cpu::operating_point_t)));
-  EXPECT_EQ(opp_points.size(), 8u);
+  ASSERT_TRUE(cpu_metadata->operating_points().has_value());
+  std::span operating_points = cpu_metadata->operating_points().value();
+  EXPECT_EQ(operating_points.size(), 8u);
 
 #define TEST_OPP_POINT(DOMAIN, INDEX)                                          \
   {                                                                            \
-    EXPECT_EQ(opp_points[(INDEX - 1) + (4 * (DOMAIN - 1))].freq_hz,            \
+    EXPECT_EQ(operating_points[(INDEX - 1) + (4 * (DOMAIN - 1))].freq_hz(),    \
               static_cast<uint32_t>(TEST_DOMAIN_##DOMAIN##_OPP_##INDEX##_HZ)); \
-    EXPECT_EQ(opp_points[(INDEX - 1) + (4 * (DOMAIN - 1))].volt_uv,            \
+    EXPECT_EQ(operating_points[(INDEX - 1) + (4 * (DOMAIN - 1))].volt_uv(),    \
               static_cast<uint32_t>(TEST_DOMAIN_##DOMAIN##_OPP_##INDEX##_UV)); \
-    EXPECT_EQ(opp_points[(INDEX - 1) + (4 * (DOMAIN - 1))].pd_id,              \
+    EXPECT_EQ(operating_points[(INDEX - 1) + (4 * (DOMAIN - 1))].pd_id(),      \
               static_cast<uint32_t>(TEST_DOMAIN_##DOMAIN));                    \
   }
 

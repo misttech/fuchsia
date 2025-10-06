@@ -4,7 +4,6 @@
 
 #include "src/devices/cpu/drivers/aml-cpu/aml-cpu-driver.h"
 
-#include <lib/driver/compat/cpp/metadata.h>
 #include <lib/driver/component/cpp/driver_export.h>
 
 #include <soc/aml-common/aml-cpu-metadata.h>
@@ -32,19 +31,15 @@ zx::result<> AmlCpuDriver::Start() {
     FDF_LOG(ERROR, "Metadata missing `performance_domains` field");
     return zx::error(ZX_ERR_INTERNAL);
   }
+  if (!metadata->operating_points().has_value()) {
+    FDF_LOG(ERROR, "Metadata missing `operating_points` field");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
 
-  auto config = LoadConfiguration(pdev);
+  zx::result config = LoadConfiguration(pdev);
   if (config.is_error()) {
     FDF_LOG(ERROR, "Failed to load cpu configuration: %s", config.status_string());
     return config.take_error();
-  }
-
-  auto op_points =
-      compat::GetMetadataArray<operating_point_t>(incoming(), config->metadata_type, "pdev");
-  if (op_points.is_error()) {
-    FDF_LOG(ERROR, "Failed to get operating point from board driver: %s",
-            op_points.status_string());
-    return zx::error(op_points.error_value());
   }
 
   node_.Bind(std::move(node()));
@@ -53,8 +48,8 @@ zx::result<> AmlCpuDriver::Start() {
   for (const fuchsia_hardware_amlogic_metadata::PerformanceDomain& perf_domain :
        metadata->performance_domains().value()) {
     // Vector of operating points that belong to this power domain.
-    std::vector<operating_point_t> pd_op_points =
-        PerformanceDomainOpPoints(perf_domain, op_points.value());
+    std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint> pd_op_points =
+        PerformanceDomainOpPoints(perf_domain, metadata->operating_points().value());
     auto device = BuildPerformanceDomain(perf_domain, pd_op_points, config.value());
     if (device.is_error()) {
       FDF_LOG(ERROR, "Failed to build performance domain node: %s", device.status_string());
@@ -80,7 +75,8 @@ zx::result<> AmlCpuDriver::Start() {
 
 zx::result<std::unique_ptr<AmlCpuPerformanceDomain>> AmlCpuDriver::BuildPerformanceDomain(
     fuchsia_hardware_amlogic_metadata::PerformanceDomain perf_domain,
-    const std::vector<operating_point>& pd_op_points, const AmlCpuConfiguration& config) {
+    std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint> pd_op_points,
+    const AmlCpuConfiguration& config) {
   char fragment_name[32];
   fidl::ClientEnd<fuchsia_hardware_clock::Clock> pll_div16_client;
   fidl::ClientEnd<fuchsia_hardware_clock::Clock> cpu_div16_client;
@@ -131,7 +127,7 @@ zx::result<std::unique_ptr<AmlCpuPerformanceDomain>> AmlCpuDriver::BuildPerforma
     power_client = std::move(client_end_result.value());
   }
 
-  auto device = std::make_unique<AmlCpuPerformanceDomain>(dispatcher(), pd_op_points,
+  auto device = std::make_unique<AmlCpuPerformanceDomain>(dispatcher(), std::move(pd_op_points),
                                                           std::move(perf_domain), inspector());
 
   auto st = device->Init(std::move(pll_div16_client), std::move(cpu_div16_client),

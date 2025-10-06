@@ -9,8 +9,6 @@
 #include <lib/driver/devicetree/manager/visitor.h>
 #include <lib/driver/devicetree/visitors/property-parser.h>
 
-#include <soc/aml-common/aml-cpu-metadata.h>
-
 namespace performance_domain_visitor_dt {
 
 class PerformanceDomainVisitor : public fdf_devicetree::Visitor {
@@ -36,10 +34,11 @@ class PerformanceDomainVisitor : public fdf_devicetree::Visitor {
   static std::optional<std::string> GetDomainName(const std::string& node_name);
 
   zx::result<fuchsia_hardware_amlogic_metadata::PerformanceDomain> ParsePerformanceDomain(
-      fdf_devicetree::Node& node, std::vector<amlogic_cpu::operating_point_t>& opp_tables);
+      fdf_devicetree::Node& node,
+      std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint>& opp_tables);
 
-  zx::result<std::vector<amlogic_cpu::operating_point_t>> ParseOppTable(fdf_devicetree::Node& node,
-                                                                        uint32_t domain_id);
+  zx::result<std::vector<fuchsia_hardware_amlogic_metadata::OperatingPoint>> ParseOppTable(
+      fdf_devicetree::Node& node, uint32_t domain_id);
 
   std::unique_ptr<fdf_devicetree::PropertyParser> performance_domain_parser_;
   std::unique_ptr<fdf_devicetree::PropertyParser> opp_parser_;
