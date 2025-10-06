@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result, anyhow, bail};
-use errors::{ffx_bail, ffx_error};
+use errors::ffx_error;
 use log::warn;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -78,11 +78,6 @@ pub struct FfxToolFiles {
 ///
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SdkRoot {
-    /// Modular SDKRoot is not used widely - it was an attempt to make a partial SDK, specifically
-    /// just the host tools needed to run build actions. In this case, the module is a SDK manifest
-    /// that is located at ${sdk.root}/host-${cpu}/sdk/manifest/${module}.
-    Modular { root: PathBuf, module: String },
-
     /// Full SDK root is actually referring to the root directory of an IDK.  This means it
     /// has the contents of is normally found in meta/manifest.json in the IDK. The paths in the
     ///  manifest are relative to the root directory.
@@ -108,33 +103,11 @@ pub enum SdkRoot {
 pub struct FfxSdkConfig {
     pub root: Option<PathBuf>,
     pub manifest: Option<String>,
-    pub module: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct SdkAtoms {
-    atoms: Vec<Atom>,
-}
-
-#[derive(Deserialize, Debug)]
-struct Atom {
-    files: Vec<File>,
-    meta: String,
-    #[serde(rename = "type")]
-    kind: ElementType,
-    #[serde(default)]
-    stable: bool,
-}
-
-#[derive(Deserialize, Debug)]
-struct File {
-    destination: String,
-    source: String,
 }
 
 impl SdkRoot {
     /// Gets the basic information about the sdk as configured, without diving deeper into the sdk's own configuration.
-    pub fn from_paths(start_path: Option<&Path>, module: Option<String>) -> Result<Self> {
+    pub fn from_paths(start_path: Option<&Path>) -> Result<Self> {
         // All gets in this function should declare that they don't want the build directory searched, because
         // if there is a build directory it *is* generally the sdk.
         let sdk_root = match start_path {
@@ -161,16 +134,8 @@ impl SdkRoot {
             }
         };
 
-        match module {
-            Some(module) => {
-                log::debug!("Found modular Fuchsia SDK at {sdk_root:?} with module {module}");
-                Ok(SdkRoot::Modular { root: sdk_root, module })
-            }
-            _ => {
-                log::debug!("Found full Fuchsia SDK at {sdk_root:?}");
-                Ok(SdkRoot::Full { root: sdk_root, manifest: None })
-            }
-        }
+        log::debug!("Found full Fuchsia SDK at {sdk_root:?}");
+        Ok(SdkRoot::Full { root: sdk_root, manifest: None })
     }
 
     fn find_sdk_root(start_path: &Path) -> Result<Option<PathBuf>> {
@@ -208,13 +173,6 @@ impl SdkRoot {
                 Some(root.join(SDK_MANIFEST_PATH))
             }
             Self::Full { .. } => None,
-            Self::Modular { root, module } => {
-                if let Ok(module_path) = module_manifest_path(root, module) {
-                    if module_path.exists() { Some(module_path) } else { None }
-                } else {
-                    None
-                }
-            }
             Self::HostTools { .. } => None,
         }
     }
@@ -223,13 +181,6 @@ impl SdkRoot {
     pub fn get_sdk(self) -> Result<Sdk> {
         log::debug!("get_sdk from {self:?}");
         match self {
-            Self::Modular { root, module } => {
-                // Modular only ever makes sense as part of a build directory
-                // sdk, so there's no need to figure out what kind it is.
-                Sdk::from_build_dir(&root, Some(&module)).with_context(|| {
-                    anyhow!("Loading modular sdk at `{}` with module `{module}`", root.display())
-                })
-            }
             Self::Full { root, manifest: Some(manifest_file) } => {
                 // If manifest file is specified, use it as an IDK manifest.
                 Sdk::from_sdk_dir(&root, &manifest_file).with_context(|| {
@@ -257,15 +208,8 @@ impl SdkRoot {
 
     pub fn to_config(&self) -> FfxSdkConfig {
         match self.clone() {
-            Self::Modular { root, module } => {
-                FfxSdkConfig { root: Some(root), manifest: None, module: Some(module) }
-            }
-            Self::Full { root, manifest } => {
-                FfxSdkConfig { root: Some(root), manifest, module: None }
-            }
-            Self::HostTools { root } => {
-                FfxSdkConfig { root: Some(root), manifest: None, module: None }
-            }
+            Self::Full { root, manifest } => FfxSdkConfig { root: Some(root), manifest },
+            Self::HostTools { root } => FfxSdkConfig { root: Some(root), manifest: None },
         }
     }
 }
@@ -323,38 +267,7 @@ fn find_exe_path() -> Result<PathBuf> {
     }
 }
 
-fn module_manifest_path(path: &Path, module: &str) -> Result<PathBuf> {
-    let arch_path = if cfg!(target_arch = "x86_64") {
-        "host_x64"
-    } else if cfg!(target_arch = "aarch64") {
-        "host_arm64"
-    } else {
-        ffx_bail!("Host architecture {} not supported by the SDK", std::env::consts::ARCH)
-    };
-    Ok(path.join(arch_path).join("sdk/manifest").join(module))
-}
-
 impl Sdk {
-    fn from_build_dir(path: &Path, module_manifest: Option<&str>) -> Result<Self> {
-        let path = std::fs::canonicalize(path).with_context(|| {
-            ffx_error!("SDK path `{}` was invalid and couldn't be canonicalized", path.display())
-        })?;
-        let manifest_path = match module_manifest {
-            None => {
-                log::info!("Creating build-dir SDK without a manifest");
-                return Ok(Self::new());
-            }
-            Some(module) => module_manifest_path(&path, module)?,
-        };
-
-        let file = Self::open_manifest(&manifest_path)?;
-        let atoms = Self::parse_manifest(&manifest_path, file)?;
-
-        // If we are able to parse the json file into atoms, creates a Sdk object from the atoms.
-        Self::from_sdk_atoms(&path, module_manifest, atoms, SdkVersion::InTree)
-            .with_context(|| anyhow!("Parsing atoms from SDK manifest at `{}`", path.display()))
-    }
-
     pub fn from_sdk_dir(path_prefix: &Path, manifest_file: &str) -> Result<Self> {
         let path_prefix = std::fs::canonicalize(path_prefix).with_context(|| {
             ffx_error!(
@@ -574,48 +487,6 @@ impl Sdk {
             real_paths: None,
             version,
         }
-    }
-
-    /// Allocates a new Sdk using the given atoms.
-    ///
-    /// All the meta files specified in the atoms are loaded.
-    /// The creation succeed only if all the meta files have been loaded successfully.
-    fn from_sdk_atoms(
-        path_prefix: &Path,
-        module: Option<&str>,
-        atoms: SdkAtoms,
-        version: SdkVersion,
-    ) -> Result<Self> {
-        let mut metas = Vec::new();
-        let mut real_paths = HashMap::new();
-
-        for atom in atoms.atoms.iter() {
-            for file in atom.files.iter() {
-                real_paths.insert(file.destination.clone(), file.source.clone());
-            }
-
-            if atom.meta.len() > 0 {
-                // Usually, the meta is a relative file path, but in one case it is a build label.
-                // So just pass through the value if a real path is not found.
-                let meta = real_paths.get(&atom.meta).unwrap_or(&atom.meta);
-
-                metas.push(Part {
-                    meta: meta.clone(),
-                    kind: atom.kind.clone(),
-                    stable: atom.stable,
-                });
-            } else {
-                log::debug!("Atom did not contain a meta file, skipping it: {atom:?}");
-            }
-        }
-
-        Ok(Sdk {
-            path_prefix: path_prefix.to_owned(),
-            module: module.map(str::to_owned),
-            parts: metas,
-            real_paths: Some(real_paths),
-            version,
-        })
     }
 }
 
@@ -838,7 +709,6 @@ mod test {
 
         assert_eq!(config.root, Some(start_path));
         assert_eq!(config.manifest, None);
-        assert_eq!(config.module, None);
     }
 
     #[fuchsia::test]

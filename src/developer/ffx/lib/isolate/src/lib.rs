@@ -32,7 +32,7 @@ impl SearchContext {
                 // TODO(392136182): Do not refer to hardcoded SDK paths. This support is being
                 // removed.
                 let root = Some(build_root.join("sdk/exported/core"));
-                Some(FfxSdkConfig { root, manifest: None, module: None })
+                Some(FfxSdkConfig { root, manifest: None })
             }
             _ => None,
         }

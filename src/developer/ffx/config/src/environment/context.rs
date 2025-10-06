@@ -441,17 +441,10 @@ impl EnvironmentContext {
         // Out of tree, we will always want to pull the config from the normal config path, which
         // we can defer to the SdkRoot's mechanisms for.
         let runtime_root: Option<PathBuf> = self.query("sdk.root").get().ok();
-        let module = self.query("sdk.module").get().ok();
 
         match (&self.kind, runtime_root) {
-            (EnvironmentKind::InTree { build_dir: Some(build_dir), .. }, None) => {
-                let root = build_dir.clone();
-                match module {
-                    Some(module) => Ok(SdkRoot::Modular { root, module }),
-                    None => Ok(SdkRoot::from_paths(None, module)?),
-                }
-            }
-            (_, runtime_root) => SdkRoot::from_paths(runtime_root.as_deref(), module),
+            (EnvironmentKind::InTree { .. }, None) => Ok(SdkRoot::from_paths(None)?),
+            (_, runtime_root) => SdkRoot::from_paths(runtime_root.as_deref()),
         }
     }
 
