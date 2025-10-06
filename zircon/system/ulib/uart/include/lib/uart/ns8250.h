@@ -248,7 +248,7 @@ class DriverImpl : public DriverBase<DriverImpl<KdrvExtra, KdrvConfig, IoRegType
       return cpp20::to_array<std::string_view>(
           {"ns8250", "ns16450", "ns16550a", "ns16550", "ns16750", "ns16850"});
     } else if constexpr (KdrvExtra == ZBI_KERNEL_DRIVER_DW8250_UART) {
-      return cpp20::to_array<std::string_view>({"snps,dw-apb-uart"});
+      return cpp20::to_array<std::string_view>({"snps,dw-apb-uart", "goog,goog-dw-apb-uart"});
     } else if constexpr (KdrvExtra == ZBI_KERNEL_DRIVER_PXA_UART) {
       return cpp20::to_array<std::string_view>({"spacemit,pxa-uart"});
     } else {
