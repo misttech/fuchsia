@@ -20,7 +20,7 @@ use crate::error::Error;
 ///
 /// This type represents a Bluetooth device address. `Address` can be converted to/from a FIDL
 /// Bluetooth device address type.
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Eq, Hash, PartialEq)]
 pub enum Address {
     Public(AddressBytes),
     Random(AddressBytes),
@@ -137,6 +137,23 @@ impl Into<fidl::Address> for &Address {
     }
 }
 
+impl fmt::Debug for Address {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let formatted_bytes = self
+            .bytes()
+            .iter()
+            .map(|&b| format!("0x{:02X}", b))
+            .collect::<Vec<String>>()
+            .join(", ");
+
+        let addr_type = match self {
+            Self::Public(_) => "Public",
+            Self::Random(_) => "Random",
+        };
+        f.debug_tuple(&addr_type).field(&format_args!("[{}]", formatted_bytes)).finish()
+    }
+}
+
 impl fmt::Display for Address {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(fmt, "[address ({}) {}]", self.address_type_string(), addr_to_string(self.bytes()))
@@ -203,6 +220,13 @@ mod tests {
             let fidl_address: fidl::Address = address.into();
             assert_eq!(address, Address::from(fidl_address));
         }
+    }
+
+    #[test]
+    fn address_debug_string() {
+        let address = Address::Public([9, 0x02, 0x12, 0xDD, 20, 0xFF]);
+        let debug = format!("{address:?}");
+        assert_eq!(debug, "Public([0x09, 0x02, 0x12, 0xDD, 0x14, 0xFF])".to_string());
     }
 
     #[test]
