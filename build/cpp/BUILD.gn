@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/python/python_library.gni")
+
 # This allows code call FIDL wire table constructors and setters rather than using builders.
 config("fidl-wire-deprecated-mutable-tables") {
   cflags_cc = [ "-DFIDL_WIRE_ALLOW_DEPRECATED_MUTABLE_TABLES" ]
@@ -373,4 +375,18 @@ config("fidl-wire-deprecated-mutable-tables") {
     #------------------
     #------------------
   ]
+}
+
+if (is_host) {
+  python_library("cpp") {
+    visibility = [
+      ":*",
+      "//build/sdk/generate_prebuild_idk/*",
+    ]
+    library_name = "cpp"
+    sources = [
+      "__init__.py",
+      "verify_runtime_deps.py",
+    ]
+  }
 }

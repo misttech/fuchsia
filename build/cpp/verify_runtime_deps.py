@@ -122,7 +122,7 @@ class DependencyErrors(object):
             if category == "non_sdk_deps":
                 result += _NON_SDK_DEPS_ERROR_HEADER
                 for entry in entries:
-                    result += "- %s generated_by %s\n" % (
+                    result += "- `%s` generated_by `%s`\n" % (
                         entry["source"],
                         entry["label"],
                     )
@@ -131,7 +131,7 @@ class DependencyErrors(object):
             elif category == "bad_sdk_deps":
                 result += _BAD_SDK_DEPS_ERROR_HEADER
                 for entry in entries:
-                    result += "- SDK_atom %s generated_by %s\n" % (
+                    result += "- IDK atom `%s` generated_by `%s`\n" % (
                         entry["sdk_id"],
                         entry["label"],
                     )
@@ -140,7 +140,7 @@ class DependencyErrors(object):
             elif category == "missing_sdk_deps":
                 result += _MISSING_SDK_DEPS_ERROR_HEADER
                 for entry in entries:
-                    result += "- SDK_atom %s generated_by %s\n" % (
+                    result += "- IDK atom `%s` generated_by `%s`\n" % (
                         entry["sdk_id"],
                         entry["label"],
                     )
@@ -152,10 +152,33 @@ class DependencyErrors(object):
         return result
 
 
-def check_missing_files(
-    runtime_files: list[dict[str, str]], atom_deps: dict[str, AtomInfo]
+def check_for_missing_runtime_deps(
+    runtime_files: T.Sequence[dict[str, str]], atom_deps: dict[str, AtomInfo]
 ) -> DependencyErrors:
-    """Verify runtime requirements, and return a DependencyErrors instance."""
+    """Verifies the runtime dependencies of a prebuilt IDK library (static or shared).
+
+    Verifies the atoms corresponding to the list of runtime requirements in
+    `runtime_files` are all included in `atom_deps`.
+
+    This ensures that atoms containing all runtime files are included in the
+    atom's deps so that IDK consumers will know to package them when using
+    the atom. This also verifies those atoms will be included in the IDK.
+
+    Args:
+      runtime_files: A JSON list of dictionaries, each representing a runtime
+        dependency. Each dictionary must follow the schema described in
+        //build/cpp/verify_runtime_deps.gni and contain either an 'sdk_id' or a
+        'source' key.
+      atom_deps: A dictionary mapping the atom IDs of the atom and its
+        dependencies to their corresponding atom information. (The
+        implementation does not care whether the dependencies are only direct or
+        include all its transitive dependencies, but the results may vary
+        depending on this.)
+
+    Returns:
+      A DependencyErrors instance containing any errors found during
+      verification.
+    """
     errors = DependencyErrors()
 
     for entry in runtime_files:
@@ -168,15 +191,22 @@ def check_missing_files(
         )
 
         if sdk_id:
-            # This runtime dependency is an SDK library, verify that it is part
-            # of the SDK manifest.
+            # This runtime dependency is an IDK library. Verify that the library
+            # is in the atom's deps.
             assert not source, "Only one of `sdk_id` or `source` should be set."
             dep = atom_deps.get(sdk_id)
             if not dep:
                 errors.add_missing_sdk_dependency(entry)
-            elif dep["type"] != "cc_prebuilt_library":
+            elif "type" in dep:
+                # The atom info is from the old .sdk build manifest.
+                if dep["type"] != "cc_prebuilt_library":
+                    errors.add_bad_sdk_dependency(entry)
+            # Else the atom info is from prebuild info.
+            elif dep["atom_type"] != "cc_prebuilt_library":
                 errors.add_bad_sdk_dependency(entry)
         elif source:
+            # A non-IDK library.
+
             # Ignore sysroot libs
             if os.path.basename(source) in _SYSROOT_LIBS:
                 # TODO(https://fxbug.dev/447151364): Determine whether this
@@ -184,7 +214,7 @@ def check_missing_files(
                 assert False
                 continue
 
-            # This runtime dependency is *not* an SDK library, this is an error.
+            # This runtime dependency is *not* an IDK library. This is an error.
             errors.add_non_sdk_dependency(entry)
         else:
             assert False, "Runtime entry is missing 'sdk_id' or 'source'."
@@ -225,11 +255,11 @@ def main() -> int:
     atom_label, _, _ = deps[atom_id]["gn-label"].rpartition("_sdk_manifest(")
 
     # Check whether all runtime files are available for packaging.
-    errors = check_missing_files(runtime_files, deps)
+    errors = check_for_missing_runtime_deps(runtime_files, deps)
     if errors.has_error():
         print(
             r"""
-ERROR: When verifying runtime dependencies for the SDK atom: %s generated_by %s
+ERROR: When verifying runtime dependencies for the IDK atom: `%s` generated_by `%s`
 
 %s"""
             % (atom_id, atom_label, errors),

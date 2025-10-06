@@ -36,6 +36,9 @@ import generate_version_history
 import yaml
 from sdk_common import MinimalAtom, Validator
 
+sys.path.insert(0, str(_SCRIPT_DIR / "../.."))
+from cpp import check_for_missing_runtime_deps
+
 # Information about an atom in the prebuild manifest.
 AtomInfo: T.TypeAlias = dict[str, T.Any]
 
@@ -485,7 +488,53 @@ class PrebuildMap(object):
             set(),
         )
 
+    def _verify_runtime_deps(self, info: AtomInfo) -> set[str]:
+        """Verifies that all of the atom's runtime dependencies are included in its `atom_deps`.
+
+        This ensures that atoms containing all runtime files are included in the
+        atom's deps so that IDK consumers will know to package them when using
+        the atom. This also verifies those atoms are be included in the IDK.
+
+        NOTE: This only considers direct dependencies and not transitive ones,
+        which should also be sufficient to satisfy the requirements above.
+        Either this function or `check_for_missing_runtime_deps()` could be
+        extended to consider transitive dependencies if this becomes an issue.
+        Args:
+            info: The atom's info.
+        Returns: Additional files read.
+        Raises: Assert if verification fails.
+        """
+        runtime_deps_file_path = (
+            self._build_dir / info["prebuild_info"]["runtime_deps_file"]
+        )
+        with runtime_deps_file_path.open() as f:
+            runtime_deps = json.load(f)
+
+        all_deps = self.resolve_unique_labels(info.get("atom_deps", []))
+
+        # Create a dictionary of ID to AtomInfo as required by the function.
+        deps_by_id = {info["atom_id"]: info}
+        for dep in all_deps:
+            dep_info = self._labels_map[dep]
+            deps_by_id[dep_info["atom_id"]] = dep_info
+
+        errors = check_for_missing_runtime_deps(runtime_deps, deps_by_id)
+        assert not errors.has_error(), r"""
+    ERROR: When verifying runtime dependencies for the IDK atom: `%s` generated_by `%s`
+
+    %s""" % (
+            info["idk_name"],
+            info["atom_label"],
+            errors,
+        )
+
+        additional_files_read: set[str] = set()
+        additional_files_read.add(str(runtime_deps_file_path))
+        return additional_files_read
+
     def _meta_for_cc_prebuilt_library(self, info: AtomInfo) -> GetMetaResult:
+        additional_files_read = self._verify_runtime_deps(info)
+
         prebuild = info["prebuild_info"]
         binaries = {}
         variants = []
@@ -546,7 +595,8 @@ class PrebuildMap(object):
                 result["ifs"] = ifs_file
         if variants:
             result["variants"] = variants
-        return self.GetMetaResult(result, {}, {}, set())
+
+        return self.GetMetaResult(result, {}, {}, additional_files_read)
 
     def _meta_for_version_history(self, info: AtomInfo) -> GetMetaResult:
         assert "atom_deps" not in info and "idk_name" not in info

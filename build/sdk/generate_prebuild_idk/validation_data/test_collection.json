@@ -455,7 +455,8 @@
         "pkg/fdio/include/lib/fdio/limits.h",
         "pkg/fdio/include/lib/fdio/vfs.h"
       ],
-      "include_dir": "pkg/fdio/include"
+      "include_dir": "pkg/fdio/include",
+      "runtime_deps_file": "gen/sdk/lib/fdio/fdio.runtime_deps"
     }
   },
   {
@@ -535,7 +536,8 @@
     "category": "partner",
     "is_stable": true,
     "atom_deps": [
-      "//sdk/lib/async:async_sdk"
+      "//sdk/lib/async:async_sdk",
+      "//sdk/lib/fdio:fdio_sdk"
     ],
     "idk_name": "svc",
     "prebuild_info": {
@@ -555,7 +557,8 @@
       "headers": [
         "pkg/svc/include/lib/svc/dir.h"
       ],
-      "include_dir": "pkg/svc/include"
+      "include_dir": "pkg/svc/include",
+      "runtime_deps_file": "gen/sdk/lib/svc/svc.runtime_deps"
     }
   },
   {

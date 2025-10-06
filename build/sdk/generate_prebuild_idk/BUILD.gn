@@ -39,6 +39,7 @@ if (is_host) {
     ]
 
     deps = [
+      "//build/cpp",
       "//build/sdk/generate_version_history",
       "//build/sdk/sdk_common",
       "//third_party/pyyaml:yaml",

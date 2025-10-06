@@ -1,6 +1,7 @@
 {
   "deps": [
-    "async"
+    "async",
+    "fdio"
   ],
   "format": "shared",
   "headers": [

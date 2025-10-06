@@ -560,6 +560,9 @@ template("sdk_prebuilt_library_impl") {
     not_needed(invoker, [ "sdk_headers_for_internal_use" ])
   }
 
+  runtime_deps_target_name = "${target_name}_runtime_deps"
+  runtime_deps_file_name = "${target_gen_dir}/${target_name}.runtime_deps"
+
   # LINT.IfChange
   _common_binaries = {
     api_level = "$current_build_target_api_level"
@@ -568,6 +571,7 @@ template("sdk_prebuilt_library_impl") {
   }
   _prebuild_info = {
     format = prebuild_format
+    runtime_deps_file = rebase_path(runtime_deps_file_name, root_build_dir)
     include_dir = include_dest
     file_base = sdk_root_path
     headers = sdk_metadata_headers
@@ -660,7 +664,10 @@ template("sdk_prebuilt_library_impl") {
 
     deps = sdk_deps
 
-    non_sdk_deps = [ main_lib_target ]
+    non_sdk_deps = [
+      ":${runtime_deps_target_name}",
+      main_lib_target,
+    ]
     if (should_verify_pragma) {
       non_sdk_deps += [ ":${verify_pragma_target_name}" ]
     }
@@ -686,6 +693,8 @@ template("sdk_prebuilt_library_impl") {
     atom_target = main_lib_target
     manifest_file = sdk_manifest_file
     manifest_target = ":$manifest_target_name"
+    runtime_deps_file = runtime_deps_file_name
+    runtime_deps_target = runtime_deps_target_name
   }
 
   sdk_atom_alias(sdk_target_name) {
