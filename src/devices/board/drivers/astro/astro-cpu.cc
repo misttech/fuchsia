@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.hardware.amlogic.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
 #include <lib/ddk/binding.h>
@@ -56,25 +57,6 @@ constexpr amlogic_cpu::operating_point_t operating_points[] = {
     {.freq_hz = 1'896'000'000, .volt_uv = 1'022'000, .pd_id = kPdArmA53},
 };
 
-constexpr amlogic_cpu::perf_domain_t performance_domains[] = {
-    {.id = kPdArmA53, .core_count = 4, .relative_performance = 255, .name = "s905d2-arm-a53"},
-};
-
-static const std::vector<fpbus::Metadata> cpu_metadata{
-    {{
-        .id = std::to_string(DEVICE_METADATA_AML_OP_POINTS),
-        .data = std::vector<uint8_t>(
-            reinterpret_cast<const uint8_t*>(&operating_points),
-            reinterpret_cast<const uint8_t*>(&operating_points) + sizeof(operating_points)),
-    }},
-    {{
-        .id = std::to_string(DEVICE_METADATA_AML_PERF_DOMAINS),
-        .data = std::vector<uint8_t>(
-            reinterpret_cast<const uint8_t*>(&performance_domains),
-            reinterpret_cast<const uint8_t*>(&performance_domains) + sizeof(performance_domains)),
-    }},
-};
-
 const std::vector<fdf::BindRule2> kPowerRules = std::vector{
     fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_power::SERVICE,
                              bind_fuchsia_hardware_power::SERVICE_ZIRCONTRANSPORT),
@@ -103,22 +85,46 @@ const std::map<uint32_t, std::string> kClockFunctionMap = {
     {g12a_clk::CLK_SYS_CPU_CLK, bind_fuchsia_clock::FUNCTION_SYS_CPU_BIG_CLK},
 };
 
-static const fpbus::Node cpu_dev = []() {
-  fpbus::Node result = {};
-  result.name() = "aml-cpu";
-  result.vid() = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_VID_GOOGLE;
-  result.pid() = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_PID_ASTRO;
-  result.did() = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_DID_GOOGLE_AMLOGIC_CPU;
-  result.metadata() = cpu_metadata;
-  result.mmio() = cpu_mmios;
-  return result;
-}();
-
 }  // namespace
 
 namespace astro {
 
 zx_status_t Astro::CpuInit() {
+  static const fuchsia_hardware_amlogic_metadata::CpuMetadata kMetadata(
+      {.performance_domains = std::vector<fuchsia_hardware_amlogic_metadata::PerformanceDomain>{
+           {{.id = kPdArmA53,
+             .core_count = 4,
+             .relative_performance = 255,
+             .name = "s905d2-arm-a53"}}}});
+
+  fit::result persisted_metadata = fidl::Persist(kMetadata);
+  if (!persisted_metadata.is_ok()) {
+    zxlogf(ERROR, "Failed to persist metadata: %s",
+           persisted_metadata.error_value().FormatDescription().c_str());
+    return persisted_metadata.error_value().status();
+  }
+
+  std::vector<fpbus::Metadata> metadata{
+      {{
+          .id = std::to_string(DEVICE_METADATA_AML_OP_POINTS),
+          .data = std::vector<uint8_t>(
+              reinterpret_cast<const uint8_t*>(&operating_points),
+              reinterpret_cast<const uint8_t*>(&operating_points) + sizeof(operating_points)),
+      }},
+      {{
+          .id = fuchsia_hardware_amlogic_metadata::CpuMetadata::kSerializableName,
+          .data = std::move(persisted_metadata.value()),
+      }},
+  };
+
+  const fpbus::Node node(
+      {.name = "aml-cpu",
+       .vid = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_VID_GOOGLE,
+       .pid = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_PID_ASTRO,
+       .did = bind_fuchsia_google_platform::BIND_PLATFORM_DEV_DID_GOOGLE_AMLOGIC_CPU,
+       .mmio = cpu_mmios,
+       .metadata = std::move(metadata)});
+
   gpio_init_steps_.push_back(GpioOutput(S905D2_PWM_D_PIN, false));
 
   // Configure the GPIO to be Output & set it to alternate
@@ -148,7 +154,7 @@ zx_status_t Astro::CpuInit() {
   }
 
   auto composite_result = pbus_.buffer(arena)->AddCompositeNodeSpec(
-      fidl::ToWire(fidl_arena, cpu_dev),
+      fidl::ToWire(fidl_arena, node),
       fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
                                    {.name = "aml_cpu", .parents2 = parents}}));
 

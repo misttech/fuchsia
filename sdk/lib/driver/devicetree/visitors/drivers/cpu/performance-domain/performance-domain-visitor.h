@@ -5,6 +5,7 @@
 #ifndef LIB_DRIVER_DEVICETREE_VISITORS_DRIVERS_CPU_PERFORMANCE_DOMAIN_PERFORMANCE_DOMAIN_VISITOR_H_
 #define LIB_DRIVER_DEVICETREE_VISITORS_DRIVERS_CPU_PERFORMANCE_DOMAIN_PERFORMANCE_DOMAIN_VISITOR_H_
 
+#include <fidl/fuchsia.hardware.amlogic.metadata/cpp/fidl.h>
 #include <lib/driver/devicetree/manager/visitor.h>
 #include <lib/driver/devicetree/visitors/property-parser.h>
 
@@ -34,7 +35,7 @@ class PerformanceDomainVisitor : public fdf_devicetree::Visitor {
   // "high-performance".
   static std::optional<std::string> GetDomainName(const std::string& node_name);
 
-  zx::result<amlogic_cpu::perf_domain_t> ParsePerformanceDomain(
+  zx::result<fuchsia_hardware_amlogic_metadata::PerformanceDomain> ParsePerformanceDomain(
       fdf_devicetree::Node& node, std::vector<amlogic_cpu::operating_point_t>& opp_tables);
 
   zx::result<std::vector<amlogic_cpu::operating_point_t>> ParseOppTable(fdf_devicetree::Node& node,

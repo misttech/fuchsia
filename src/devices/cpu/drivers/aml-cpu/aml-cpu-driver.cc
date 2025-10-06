@@ -16,26 +16,27 @@ AmlCpuDriver::AmlCpuDriver(fdf::DriverStartArgs start_args,
     : DriverBase("aml-cpu", std::move(start_args), std::move(driver_dispatcher)) {}
 
 zx::result<> AmlCpuDriver::Start() {
-  // Get the metadata for the performance domains.
-  auto perf_doms =
-      compat::GetMetadataArray<perf_domain_t>(incoming(), DEVICE_METADATA_AML_PERF_DOMAINS, "pdev");
-  if (perf_doms.is_error()) {
-    FDF_LOG(ERROR, "Failed to get performance domains from board driver, st = %s",
-            perf_doms.status_string());
-    return zx::error(perf_doms.take_error());
+  auto pdev_client = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+  if (pdev_client.is_error()) {
+    FDF_LOG(ERROR, "Failed to connect to platform device: %s", pdev_client.status_string());
+    return zx::error(pdev_client.take_error());
   }
+  fdf::PDev pdev(std::move(pdev_client.value()));
 
-  auto pdev_conn = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
-  if (pdev_conn.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to platform device, error = %s", pdev_conn.status_string());
-    return zx::error(pdev_conn.take_error());
+  zx::result metadata = pdev.GetFidlMetadata<fuchsia_hardware_amlogic_metadata::CpuMetadata>();
+  if (metadata.is_error()) {
+    FDF_LOG(ERROR, "Failed to get metadata: %s", metadata.status_string());
+    return metadata.take_error();
   }
-  fdf::PDev pdev{std::move(pdev_conn.value())};
+  if (!metadata->performance_domains().has_value()) {
+    FDF_LOG(ERROR, "Metadata missing `performance_domains` field");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
 
   auto config = LoadConfiguration(pdev);
   if (config.is_error()) {
     FDF_LOG(ERROR, "Failed to load cpu configuration: %s", config.status_string());
-    return zx::error(config.take_error());
+    return config.take_error();
   }
 
   auto op_points =
@@ -49,7 +50,8 @@ zx::result<> AmlCpuDriver::Start() {
   node_.Bind(std::move(node()));
 
   // Build and publish each performance domain.
-  for (const perf_domain_t& perf_domain : perf_doms.value()) {
+  for (const fuchsia_hardware_amlogic_metadata::PerformanceDomain& perf_domain :
+       metadata->performance_domains().value()) {
     // Vector of operating points that belong to this power domain.
     std::vector<operating_point_t> pd_op_points =
         PerformanceDomainOpPoints(perf_domain, op_points.value());
@@ -77,13 +79,13 @@ zx::result<> AmlCpuDriver::Start() {
 }
 
 zx::result<std::unique_ptr<AmlCpuPerformanceDomain>> AmlCpuDriver::BuildPerformanceDomain(
-    const perf_domain_t& perf_domain, const std::vector<operating_point>& pd_op_points,
-    const AmlCpuConfiguration& config) {
+    fuchsia_hardware_amlogic_metadata::PerformanceDomain perf_domain,
+    const std::vector<operating_point>& pd_op_points, const AmlCpuConfiguration& config) {
   char fragment_name[32];
   fidl::ClientEnd<fuchsia_hardware_clock::Clock> pll_div16_client;
   fidl::ClientEnd<fuchsia_hardware_clock::Clock> cpu_div16_client;
   if (config.has_div16_clients) {
-    snprintf(fragment_name, sizeof(fragment_name), "clock-pll-div16-%02d", perf_domain.id);
+    snprintf(fragment_name, sizeof(fragment_name), "clock-pll-div16-%02d", perf_domain.id());
     zx::result pll_clock_client =
         incoming()->Connect<fuchsia_hardware_clock::Service::Clock>(fragment_name);
     if (pll_clock_client.is_error()) {
@@ -93,7 +95,7 @@ zx::result<std::unique_ptr<AmlCpuPerformanceDomain>> AmlCpuDriver::BuildPerforma
     }
     pll_div16_client = std::move(*pll_clock_client);
 
-    snprintf(fragment_name, sizeof(fragment_name), "clock-cpu-div16-%02d", perf_domain.id);
+    snprintf(fragment_name, sizeof(fragment_name), "clock-cpu-div16-%02d", perf_domain.id());
     zx::result cpu_clock_client =
         incoming()->Connect<fuchsia_hardware_clock::Service::Clock>(fragment_name);
     if (cpu_clock_client.is_error()) {
@@ -104,7 +106,7 @@ zx::result<std::unique_ptr<AmlCpuPerformanceDomain>> AmlCpuDriver::BuildPerforma
     cpu_div16_client = std::move(*cpu_clock_client);
   }
 
-  snprintf(fragment_name, sizeof(fragment_name), "clock-cpu-scaler-%02d", perf_domain.id);
+  snprintf(fragment_name, sizeof(fragment_name), "clock-cpu-scaler-%02d", perf_domain.id());
   zx::result clock_client =
       incoming()->Connect<fuchsia_hardware_clock::Service::Clock>(fragment_name);
   if (clock_client.is_error()) {
@@ -118,7 +120,7 @@ zx::result<std::unique_ptr<AmlCpuPerformanceDomain>> AmlCpuDriver::BuildPerforma
   // The fixed voltage is 0.8v, we can't adjust it dynamically.
   fidl::ClientEnd<fuchsia_hardware_power::Device> power_client;
   if (config.has_power_client) {
-    snprintf(fragment_name, sizeof(fragment_name), "power-%02d", perf_domain.id);
+    snprintf(fragment_name, sizeof(fragment_name), "power-%02d", perf_domain.id());
     zx::result client_end_result =
         incoming()->Connect<fuchsia_hardware_power::Service::Device>(fragment_name);
     if (client_end_result.is_error()) {
@@ -129,8 +131,8 @@ zx::result<std::unique_ptr<AmlCpuPerformanceDomain>> AmlCpuDriver::BuildPerforma
     power_client = std::move(client_end_result.value());
   }
 
-  auto device = std::make_unique<AmlCpuPerformanceDomain>(dispatcher(), pd_op_points, perf_domain,
-                                                          inspector());
+  auto device = std::make_unique<AmlCpuPerformanceDomain>(dispatcher(), pd_op_points,
+                                                          std::move(perf_domain), inspector());
 
   auto st = device->Init(std::move(pll_div16_client), std::move(cpu_div16_client),
                          std::move(cpu_scaler_client), std::move(power_client));

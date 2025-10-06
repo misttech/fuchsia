@@ -45,28 +45,35 @@ zx::result<> PerformanceDomainVisitor::Visit(fdf_devicetree::Node& node,
 
   auto device_node = node.parent().GetNode();
 
-  std::vector<amlogic_cpu::perf_domain_t> performance_domains;
+  std::vector<fuchsia_hardware_amlogic_metadata::PerformanceDomain> performance_domains;
   std::vector<amlogic_cpu::operating_point_t> opp_tables;
 
   for (auto& child : node.children()) {
-    auto performance_domain = ParsePerformanceDomain(*child.GetNode(), opp_tables);
+    zx::result performance_domain = ParsePerformanceDomain(*child.GetNode(), opp_tables);
     if (performance_domain.is_error()) {
       return performance_domain.take_error();
     }
 
-    FDF_LOG(DEBUG, "Added performance domain '%s' to node '%s'.", performance_domain->name,
-            device_node->name().c_str());
-    performance_domains.push_back(*performance_domain);
+    FDF_LOG(DEBUG, "Added performance domain '%s' to node '%s'.",
+            performance_domain->name().c_str(), device_node->name().c_str());
+    performance_domains.push_back(std::move(performance_domain.value()));
   }
 
   if (!performance_domains.empty()) {
-    fuchsia_hardware_platform_bus::Metadata perf_domains_metadata = {{
-        .id = std::to_string(DEVICE_METADATA_AML_PERF_DOMAINS),
-        .data = std::vector<uint8_t>(
-            reinterpret_cast<const uint8_t*>(performance_domains.data()),
-            reinterpret_cast<const uint8_t*>(performance_domains.data()) +
-                (performance_domains.size() * sizeof(amlogic_cpu::perf_domain_t))),
-    }};
+    const fuchsia_hardware_amlogic_metadata::CpuMetadata metadata(
+        {.performance_domains = std::move(performance_domains)});
+
+    fit::result persisted_metadata = fidl::Persist(metadata);
+    if (!persisted_metadata.is_ok()) {
+      FDF_LOG(ERROR, "Failed to persist metadata: %s",
+              persisted_metadata.error_value().FormatDescription().c_str());
+      return zx::error(persisted_metadata.error_value().status());
+    }
+
+    fuchsia_hardware_platform_bus::Metadata perf_domains_metadata({
+        .id = fuchsia_hardware_amlogic_metadata::CpuMetadata::kSerializableName,
+        .data = std::move(persisted_metadata.value()),
+    });
     device_node->AddMetadata(std::move(perf_domains_metadata));
 
     fuchsia_hardware_platform_bus::Metadata opp_metadata = {{
@@ -96,7 +103,8 @@ std::optional<std::string> PerformanceDomainVisitor::GetDomainName(const std::st
   return std::nullopt;
 }
 
-zx::result<amlogic_cpu::perf_domain_t> PerformanceDomainVisitor::ParsePerformanceDomain(
+zx::result<fuchsia_hardware_amlogic_metadata::PerformanceDomain>
+PerformanceDomainVisitor::ParsePerformanceDomain(
     fdf_devicetree::Node& node, std::vector<amlogic_cpu::operating_point_t>& opp_tables) {
   auto parser_output = performance_domain_parser_->Parse(node);
   if (parser_output.is_error()) {
@@ -105,11 +113,11 @@ zx::result<amlogic_cpu::perf_domain_t> PerformanceDomainVisitor::ParsePerformanc
     return parser_output.take_error();
   }
 
-  amlogic_cpu::perf_domain_t performance_domain;
-  performance_domain.id = parser_output->Get<uint32_t>(kDomainID).value();
-  performance_domain.relative_performance =
+  fuchsia_hardware_amlogic_metadata::PerformanceDomain performance_domain;
+  performance_domain.id() = parser_output->Get<uint32_t>(kDomainID).value();
+  performance_domain.relative_performance() =
       static_cast<uint8_t>(parser_output->Get<uint32_t>(kRelativePerformance).value());
-  performance_domain.core_count =
+  performance_domain.core_count() =
       static_cast<uint32_t>(parser_output->Get<std::vector<uint32_t>>(kCpus)->size());
 
   auto operating_points = parser_output->Get<fdf_devicetree::References>(kOperatingPoints);
@@ -119,19 +127,19 @@ zx::result<amlogic_cpu::perf_domain_t> PerformanceDomainVisitor::ParsePerformanc
   }
 
   auto opp_table =
-      ParseOppTable(*operating_points->at(0).reference_node().GetNode(), performance_domain.id);
+      ParseOppTable(*operating_points->at(0).reference_node().GetNode(), performance_domain.id());
   if (opp_table.is_error()) {
     return opp_table.take_error();
   }
   opp_tables.insert(opp_tables.end(), opp_table->begin(), opp_table->end());
 
-  auto domain_name = GetDomainName(node.name());
+  const std::optional domain_name = GetDomainName(node.name());
 
   if (!domain_name) {
     FDF_LOG(ERROR, "Performance domain has invalid node name '%s'.", node.name().c_str());
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
-  strncpy(performance_domain.name, domain_name->c_str(), sizeof(performance_domain.name));
+  performance_domain.name() = domain_name.value();
   return zx::ok(performance_domain);
 }
 

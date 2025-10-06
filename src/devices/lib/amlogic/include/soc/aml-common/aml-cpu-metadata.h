@@ -10,11 +10,10 @@
 
 namespace amlogic_cpu {
 
-#define DEVICE_METADATA_AML_PERF_DOMAINS (0x50524600 | DEVICE_METADATA_PRIVATE)  // PRF
-#define DEVICE_METADATA_AML_OP_POINTS (0x4f505000 | DEVICE_METADATA_PRIVATE)     // OPP
-#define DEVICE_METADATA_AML_OP_1_POINTS (0x4f503100 | DEVICE_METADATA_PRIVATE)   // OP1
-#define DEVICE_METADATA_AML_OP_2_POINTS (0x4f503200 | DEVICE_METADATA_PRIVATE)   // OP2
-#define DEVICE_METADATA_AML_OP_3_POINTS (0x4f503300 | DEVICE_METADATA_PRIVATE)   // OP3
+#define DEVICE_METADATA_AML_OP_POINTS (0x4f505000 | DEVICE_METADATA_PRIVATE)    // OPP
+#define DEVICE_METADATA_AML_OP_1_POINTS (0x4f503100 | DEVICE_METADATA_PRIVATE)  // OP1
+#define DEVICE_METADATA_AML_OP_2_POINTS (0x4f503200 | DEVICE_METADATA_PRIVATE)  // OP2
+#define DEVICE_METADATA_AML_OP_3_POINTS (0x4f503300 | DEVICE_METADATA_PRIVATE)  // OP3
 
 // Note that this is only used for Sherlock's proxy driver and should be removed once that
 // driver is fully deprecated.
@@ -29,22 +28,6 @@ enum CpuOppTable {
   OppTable2,
   OppTable3,
 };
-
-typedef struct perf_domain {
-  // A unique identifier that maps this performance domain to its
-  // operating points.
-  PerfDomainId id;
-
-  // Number of logical processors in this performance domain.
-  uint32_t core_count;
-
-  // An integer in the range [0-255] that defines the relative performance
-  // of this domain compared to others in the system.
-  uint8_t relative_performance;
-
-  // A friendly name for this performance domain.
-  char name[kMaxPerformanceDomainNameLength];
-} perf_domain_t;
 
 typedef struct operating_point {
   uint32_t freq_hz;

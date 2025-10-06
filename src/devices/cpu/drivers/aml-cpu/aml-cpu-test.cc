@@ -25,9 +25,12 @@ using CpuCtrlClient = fidl::WireSyncClient<fuchsia_hardware_cpu_ctrl::Device>;
 
 constexpr uint32_t kPdArmA53 = 1;
 
-const std::vector<amlogic_cpu::perf_domain_t> kPerfDomains = {
-    {.id = kPdArmA53, .core_count = 4, .relative_performance = 255, .name = "S905D2 ARM A53"},
+const std::vector<fuchsia_hardware_amlogic_metadata::PerformanceDomain> kPerformanceDomains{
+    {{.id = kPdArmA53, .core_count = 4, .relative_performance = 255, .name = "S905D2 ARM A53"}},
 };
+
+const fuchsia_hardware_amlogic_metadata::CpuMetadata kMetadata(
+    {.performance_domains = kPerformanceDomains});
 
 const std::vector<amlogic_cpu::operating_point_t> kOperatingPointsMetadata = {
     {.freq_hz = 100'000'000, .volt_uv = 731'000, .pd_id = kPdArmA53},
@@ -43,9 +46,11 @@ const std::vector<amlogic_cpu::operating_point_t> kOperatingPointsMetadata = {
     {.freq_hz = 1'896'000'000, .volt_uv = 1'022'000, .pd_id = kPdArmA53},
 };
 
-const std::vector<amlogic_cpu::perf_domain_t> kTestPerfDomains = {
-    {.id = kPdArmA53, .core_count = 1, .relative_performance = 0, .name = "testpd"},
-};
+const std::vector<fuchsia_hardware_amlogic_metadata::PerformanceDomain> kTestPerformanceDomains{
+    {{.id = kPdArmA53, .core_count = 1, .relative_performance = 0, .name = "testpd"}}};
+
+const fuchsia_hardware_amlogic_metadata::CpuMetadata kTestMetadata(
+    {.performance_domains = kTestPerformanceDomains});
 
 const std::vector<operating_point_t> kTestOperatingPoints = {
     {.freq_hz = MHZ(10), .volt_uv = 15000, .pd_id = kPdArmA53},
@@ -269,7 +274,7 @@ class AmlCpuBindingConfiguration final {
 
 class AmlCpuTest : public ::testing::Test {
  public:
-  void StartWithMetadata(const std::vector<perf_domain_t>& perf_domains,
+  void StartWithMetadata(const fuchsia_hardware_amlogic_metadata::CpuMetadata& metadata,
                          const std::vector<operating_point_t>& op_points) {
     // Notes on AmlCpu Initialization:
     //  + Should enable the CPU and PLL clocks.
@@ -286,9 +291,9 @@ class AmlCpuTest : public ::testing::Test {
       env.power_server_.SetVoltage(fastest.volt_uv);
     });
 
-    driver_test().RunInEnvironmentTypeContext([&perf_domains, &op_points](AmlCpuEnvironment& env) {
-      env.device_server_.AddMetadata(DEVICE_METADATA_AML_PERF_DOMAINS, perf_domains.data(),
-                                     perf_domains.size() * sizeof(perf_domain_t));
+    driver_test().RunInEnvironmentTypeContext([&metadata, &op_points](AmlCpuEnvironment& env) {
+      env.pdev_server_.AddFidlMetadata(
+          fuchsia_hardware_amlogic_metadata::CpuMetadata::kSerializableName, metadata);
       env.device_server_.AddMetadata(DEVICE_METADATA_AML_OP_POINTS, op_points.data(),
                                      op_points.size() * sizeof(operating_point_t));
     });
@@ -303,9 +308,9 @@ class AmlCpuTest : public ::testing::Test {
         [](fdf_testing::TestNode& node) { ASSERT_EQ(node.children().size(), 0u); });
   }
 
-  void ConnectToCpuCtrl(const perf_domain_t& perf_domain) {
+  void ConnectToCpuCtrl(const fuchsia_hardware_amlogic_metadata::PerformanceDomain& perf_domain) {
     auto device =
-        driver_test().Connect<fuchsia_hardware_cpu_ctrl::Service::Device>(perf_domain.name);
+        driver_test().Connect<fuchsia_hardware_cpu_ctrl::Service::Device>(perf_domain.name());
     EXPECT_OK(device.status_value());
     cpu_ctrl_.Bind(std::move(device.value()));
   }
@@ -323,7 +328,7 @@ class AmlCpuTest : public ::testing::Test {
   CpuCtrlClient cpu_ctrl_;
 };
 
-TEST_F(AmlCpuTest, TrivialBinding) { StartWithMetadata(kPerfDomains, kOperatingPointsMetadata); }
+TEST_F(AmlCpuTest, TrivialBinding) { StartWithMetadata(kMetadata, kOperatingPointsMetadata); }
 
 TEST_F(AmlCpuTest, UnorderedOperatingPoints) {
   // AML CPU's bind hook expects that all operating points are strictly
@@ -335,9 +340,9 @@ TEST_F(AmlCpuTest, UnorderedOperatingPoints) {
       {.freq_hz = MHZ(1), .volt_uv = 300'000, .pd_id = kPdArmA53},
   };
 
-  StartWithMetadata(kPerfDomains, kOperatingPointsMetadata);
+  StartWithMetadata(kMetadata, kOperatingPointsMetadata);
 
-  ConnectToCpuCtrl(kPerfDomains[0]);
+  ConnectToCpuCtrl(kPerformanceDomains[0]);
 
   auto out = cpu_ctrl_->SetCurrentOperatingPoint(0);
   EXPECT_OK(out.status());
@@ -350,8 +355,8 @@ TEST_F(AmlCpuTest, UnorderedOperatingPoints) {
 }
 
 TEST_F(AmlCpuTest, TestGetOperatingPointInfo) {
-  StartWithMetadata(kTestPerfDomains, kTestOperatingPoints);
-  ConnectToCpuCtrl(kTestPerfDomains[0]);
+  StartWithMetadata(kTestMetadata, kTestOperatingPoints);
+  ConnectToCpuCtrl(kTestPerformanceDomains[0]);
 
   auto opp_size = kTestOperatingPoints.size();
 
@@ -387,8 +392,8 @@ TEST_F(AmlCpuTest, TestGetOperatingPointInfo) {
 }
 
 TEST_F(AmlCpuTest, TestSetCurrentOperatingPoint) {
-  StartWithMetadata(kTestPerfDomains, kTestOperatingPoints);
-  ConnectToCpuCtrl(kTestPerfDomains[0]);
+  StartWithMetadata(kTestMetadata, kTestOperatingPoints);
+  ConnectToCpuCtrl(kTestPerformanceDomains[0]);
 
   // Scale to the lowest opp.
   const uint32_t min_opp_index = static_cast<uint32_t>(kTestOperatingPoints.size() - 1);
@@ -449,7 +454,7 @@ TEST_F(AmlCpuTest, TestSetCurrentOperatingPoint) {
 TEST_F(AmlCpuTest, TestCpuInfo) {
   using namespace inspect::testing;
 
-  StartWithMetadata(kTestPerfDomains, kTestOperatingPoints);
+  StartWithMetadata(kTestMetadata, kTestOperatingPoints);
 
   driver_test().RunInDriverContext([](AmlCpuDriver& driver) {
     auto& dut = driver.performance_domains().front();
@@ -470,8 +475,8 @@ TEST_F(AmlCpuTest, TestCpuInfo) {
 }
 
 TEST_F(AmlCpuTest, TestGetOperatingPointCount) {
-  StartWithMetadata(kTestPerfDomains, kTestOperatingPoints);
-  ConnectToCpuCtrl(kTestPerfDomains[0]);
+  StartWithMetadata(kTestMetadata, kTestOperatingPoints);
+  ConnectToCpuCtrl(kTestPerformanceDomains[0]);
 
   auto resp = cpu_ctrl_->GetOperatingPointCount();
 
@@ -481,20 +486,20 @@ TEST_F(AmlCpuTest, TestGetOperatingPointCount) {
 }
 
 TEST_F(AmlCpuTest, TestGetLogicalCoreCount) {
-  StartWithMetadata(kTestPerfDomains, kTestOperatingPoints);
-  ConnectToCpuCtrl(kTestPerfDomains[0]);
+  StartWithMetadata(kTestMetadata, kTestOperatingPoints);
+  ConnectToCpuCtrl(kTestPerformanceDomains[0]);
 
   auto coreCountResp = cpu_ctrl_->GetNumLogicalCores();
 
   ASSERT_OK(coreCountResp.status());
 
-  EXPECT_EQ(coreCountResp.value().count, kTestPerfDomains[0].core_count);
+  EXPECT_EQ(coreCountResp.value().count, kTestPerformanceDomains[0].core_count());
 }
 
 // We attempt to lower the voltage and then inject a fault into the parent voltage driver.
 TEST_F(AmlCpuTest, TestVregLowerFail) {
-  StartWithMetadata(kTestPerfDomains, kTestOperatingPoints);
-  ConnectToCpuCtrl(kTestPerfDomains[0]);
+  StartWithMetadata(kTestMetadata, kTestOperatingPoints);
+  ConnectToCpuCtrl(kTestPerformanceDomains[0]);
 
   uint32_t initial_rate;
   driver_test().RunInEnvironmentTypeContext([&initial_rate](AmlCpuEnvironment& env) {
@@ -528,8 +533,8 @@ TEST_F(AmlCpuTest, TestVregLowerFail) {
 // This test is much like TestVregLowerFail from above but we inject the fault after lowering the
 // voltage and then attempt to raise it which should fail.
 TEST_F(AmlCpuTest, TestVregRaiseFail) {
-  StartWithMetadata(kTestPerfDomains, kTestOperatingPoints);
-  ConnectToCpuCtrl(kTestPerfDomains[0]);
+  StartWithMetadata(kTestMetadata, kTestOperatingPoints);
+  ConnectToCpuCtrl(kTestPerformanceDomains[0]);
 
   // Scale to the lowest opp.
   const uint32_t min_opp_index = static_cast<uint32_t>(kTestOperatingPoints.size() - 1);

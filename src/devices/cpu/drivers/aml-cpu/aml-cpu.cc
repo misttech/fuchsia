@@ -14,6 +14,7 @@
 #include <lib/trace/event_args.h>
 #include <zircon/syscalls/smc.h>
 
+#include <algorithm>
 #include <vector>
 
 namespace amlogic_cpu {
@@ -110,22 +111,23 @@ zx::result<AmlCpuConfiguration> LoadConfiguration(fdf::PDev& pdev) {
   return zx::ok(config);
 }
 
-std::vector<operating_point_t> PerformanceDomainOpPoints(const perf_domain_t& perf_domain,
-                                                         std::vector<operating_point>& op_points) {
+std::vector<operating_point_t> PerformanceDomainOpPoints(
+    const fuchsia_hardware_amlogic_metadata::PerformanceDomain& perf_domain,
+    std::vector<operating_point>& op_points) {
   std::vector<operating_point_t> pd_op_points;
-  std::copy_if(op_points.begin(), op_points.end(), std::back_inserter(pd_op_points),
-               [&perf_domain](const operating_point_t& op) { return op.pd_id == perf_domain.id; });
+  std::ranges::copy_if(
+      op_points, std::back_inserter(pd_op_points),
+      [&perf_domain](const operating_point_t& op) { return op.pd_id == perf_domain.id(); });
 
   // Order operating points from highest frequency to lowest because Operating Point 0 is the
   // fastest.
-  std::sort(pd_op_points.begin(), pd_op_points.end(),
-            [](const operating_point_t& a, const operating_point_t& b) {
-              // Use voltage as a secondary sorting key.
-              if (a.freq_hz == b.freq_hz) {
-                return a.volt_uv > b.volt_uv;
-              }
-              return a.freq_hz > b.freq_hz;
-            });
+  std::ranges::sort(pd_op_points, [](const operating_point_t& a, const operating_point_t& b) {
+    // Use voltage as a secondary sorting key.
+    if (a.freq_hz == b.freq_hz) {
+      return a.volt_uv > b.volt_uv;
+    }
+    return a.freq_hz > b.freq_hz;
+  });
 
   return pd_op_points;
 }
@@ -415,11 +417,11 @@ void AmlCpu::GetLogicalCoreId(GetLogicalCoreIdRequestView request,
 }
 
 void AmlCpu::GetDomainId(GetDomainIdCompleter::Sync& completer) {
-  completer.Reply(perf_domain_.id);
+  completer.Reply(perf_domain_.id());
 }
 
 void AmlCpu::GetRelativePerformance(GetRelativePerformanceCompleter::Sync& completer) {
-  completer.ReplySuccess(perf_domain_.relative_performance);
+  completer.ReplySuccess(perf_domain_.relative_performance());
 }
 
 }  // namespace amlogic_cpu

@@ -41,21 +41,21 @@ TEST(PerformanceDomainVisitorTest, TestMetadataAndBindProperty) {
   auto metadata = cpu_controller[0].metadata();
   ASSERT_TRUE(metadata);
   ASSERT_EQ(metadata->size(), 2u);
-  std::vector<uint8_t> metadata_blob0 = std::move(*(*metadata)[0].data());
-  auto metadata_start0 = reinterpret_cast<amlogic_cpu::perf_domain_t*>(metadata_blob0.data());
-  std::vector<amlogic_cpu::perf_domain_t> performance_domains(
-      metadata_start0,
-      metadata_start0 + (metadata_blob0.size() / sizeof(amlogic_cpu::perf_domain_t)));
+  fit::result cpu_metadata =
+      fidl::Unpersist<fuchsia_hardware_amlogic_metadata::CpuMetadata>(*(*metadata)[0].data());
+  ASSERT_TRUE(cpu_metadata.is_ok());
+  ASSERT_TRUE(cpu_metadata->performance_domains().has_value());
+  std::span performance_domains = cpu_metadata->performance_domains().value();
   EXPECT_EQ(performance_domains.size(), 2u);
-  EXPECT_EQ(performance_domains[0].id, static_cast<uint32_t>(TEST_DOMAIN_1));
-  EXPECT_EQ(strcmp(performance_domains[0].name, "arm-a73"), 0);
-  EXPECT_EQ(performance_domains[0].core_count, 4u);
-  EXPECT_EQ(performance_domains[0].relative_performance,
+  EXPECT_EQ(performance_domains[0].id(), static_cast<uint32_t>(TEST_DOMAIN_1));
+  EXPECT_EQ(performance_domains[0].name(), "arm-a73");
+  EXPECT_EQ(performance_domains[0].core_count(), 4u);
+  EXPECT_EQ(performance_domains[0].relative_performance(),
             static_cast<uint32_t>(TEST_DOMAIN_1_PERFORMANCE));
-  EXPECT_EQ(performance_domains[1].id, static_cast<uint32_t>(TEST_DOMAIN_2));
-  EXPECT_EQ(strcmp(performance_domains[1].name, "arm-a53"), 0);
-  EXPECT_EQ(performance_domains[1].core_count, 2u);
-  EXPECT_EQ(performance_domains[1].relative_performance,
+  EXPECT_EQ(performance_domains[1].id(), static_cast<uint32_t>(TEST_DOMAIN_2));
+  EXPECT_EQ(performance_domains[1].name(), "arm-a53");
+  EXPECT_EQ(performance_domains[1].core_count(), 2u);
+  EXPECT_EQ(performance_domains[1].relative_performance(),
             static_cast<uint32_t>(TEST_DOMAIN_2_PERFORMANCE));
 
   std::vector<uint8_t> metadata_blob1 = std::move(*(*metadata)[1].data());
