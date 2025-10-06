@@ -1,0 +1,26 @@
+// Copyright 2024 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+{
+    include: [
+        'driver_component/driver.shard.cml',
+        'syslog/client.shard.cml',
+    ],
+    program: {
+        runner: 'driver',
+        binary: 'driver/driver_transport_rust_next_parent.so',
+        bind: 'meta/bind/parent-driver.bindbc',
+
+        // Run in the same driver host as the parent driver
+        colocate: 'true',
+    },
+    capabilities: [
+        { service: 'fuchsia.hardware.i2cimpl.Service' },
+    ],
+    expose: [
+        {
+            service: 'fuchsia.hardware.i2cimpl.Service',
+            from: 'self',
+        },
+    ],
+}

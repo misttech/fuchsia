@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdf_component::{
-    Driver, DriverContext, Node, NodeBuilder, ZirconServiceOffer, driver_register,
-};
+use fdf_component::{Driver, DriverContext, Node, NodeBuilder, ServiceOffer, driver_register};
 use fidl_fuchsia_hardware_i2c as i2c;
 use fuchsia_component::server::ServiceFs;
 use futures::{StreamExt, TryStreamExt};
@@ -45,7 +43,7 @@ impl Driver for ZirconParentDriver {
 
         info!("Offering an i2c service in the outgoing directory");
         let mut outgoing = ServiceFs::new();
-        let offer = ZirconServiceOffer::new()
+        let offer = ServiceOffer::new()
             .add_default_named(&mut outgoing, "default", |i| {
                 // Since we're only acting on one kind of service here, we just unwrap it and that's
                 // the type of our handler. If you were handling more services, you would usually
@@ -53,7 +51,7 @@ impl Driver for ZirconParentDriver {
                 let i2c::ServiceRequest::Device(service) = i;
                 service
             })
-            .build();
+            .build_zircon_offer();
 
         info!("Creating child node with a service offer");
         let child_node = NodeBuilder::new("zircon_transport_rust_child").add_offer(offer).build();

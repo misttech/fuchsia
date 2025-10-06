@@ -12,7 +12,7 @@ use std::sync::{Mutex, MutexGuard};
 use std::task::{Context, Poll};
 
 use fidl_next::Chunk;
-use zx::Status;
+use zx::{HandleBased, Status};
 
 use fdf_channel::arena::{Arena, ArenaBox};
 use fdf_channel::channel::Channel;
@@ -57,6 +57,19 @@ impl<D> DriverChannel<D> {
         Self::create_with_dispatchers(dispatcher.clone(), dispatcher)
     }
 
+    /// Does a server side token exchange from a [`zx::Channel`]'s handle to obtain
+    /// a driver runtime [`DriverChannel`] synchronously.
+    pub fn receive_from_token_with_dispatcher(
+        dispatcher: D,
+        token: zx::Channel,
+    ) -> Result<DriverChannel<D>, Status> {
+        let mut handle = 0;
+        Status::ok(unsafe { fdf_sys::fdf_token_receive(token.into_raw(), &mut handle) })?;
+        let handle = NonZero::new(handle).ok_or(Status::BAD_HANDLE)?;
+        let channel = unsafe { Channel::from_driver_handle(DriverHandle::new_unchecked(handle)) };
+        Ok(DriverChannel::new_with_dispatcher(dispatcher, channel))
+    }
+
     /// Returns the underlying data channel
     pub fn into_channel(self) -> Channel<[Chunk]> {
         self.channel
@@ -79,6 +92,18 @@ impl DriverChannel<CurrentDispatcher> {
     /// [`CurrentDispatcher`].
     pub fn create() -> (Self, Self) {
         Self::create_with_dispatcher(CurrentDispatcher)
+    }
+
+    /// Does a server side token exchange from a [`zx::Channel`]'s handle to obtain
+    /// a driver runtime [`DriverChannel`] synchronously.
+    pub fn receive_from_token(token: zx::Channel) -> Result<DriverChannel, Status> {
+        Self::receive_from_token_with_dispatcher(CurrentDispatcher, token)
+    }
+}
+
+impl fidl_next::InstanceFromServiceTransport<zx::Channel> for DriverChannel<CurrentDispatcher> {
+    fn from_service_transport(handle: zx::Channel) -> Self {
+        DriverChannel::receive_from_token(handle).unwrap()
     }
 }
 

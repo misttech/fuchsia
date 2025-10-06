@@ -60,6 +60,20 @@ impl<S: Service<C>, C> Deref for ServiceConnector<S, C> {
     }
 }
 
+/// A trait that can be implemented to transform service instance
+/// transport handles from their parent server's transport handles.
+pub trait InstanceFromServiceTransport<T> {
+    /// Converts the given service transport handle of type `T` to [`Self`]
+    fn from_service_transport(handle: T) -> Self;
+}
+
+/// A given transport can always be converted to itself
+impl<T> InstanceFromServiceTransport<T> for T {
+    fn from_service_transport(handle: T) -> Self {
+        handle
+    }
+}
+
 /// A service which dispatches incoming connections to a handler.
 pub trait DispatchServiceHandler<
     H,

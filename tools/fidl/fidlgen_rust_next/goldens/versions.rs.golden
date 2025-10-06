@@ -551,18 +551,25 @@ where
 }
 
 /// A service handler for the `Service` service.
-pub trait ServiceHandler<___T> {
+pub trait ServiceHandler {
     /// Handles an attempt to connect to the `p` member.
-    fn p(&self, server_end: ::fidl_next::ServerEnd<crate::Protocol, ___T>);
+    fn p(
+        &self,
+        server_end: ::fidl_next::ServerEnd<crate::Protocol, ::fidl_next::fuchsia::zx::Channel>,
+    );
 }
 
 impl<___H, ___T> ::fidl_next::DispatchServiceHandler<___H, ___T> for Service
 where
-    ___H: ServiceHandler<___T>,
+    ___H: ServiceHandler,
+    ::fidl_next::fuchsia::zx::Channel: ::fidl_next::InstanceFromServiceTransport<___T>,
 {
     fn on_connection(handler: &___H, member: &str, server_end: ___T) {
+        use ::fidl_next::InstanceFromServiceTransport;
         match member {
-            "p" => handler.p(::fidl_next::ServerEnd::from_untyped(server_end)),
+            "p" => handler.p(::fidl_next::ServerEnd::from_untyped(
+                ::fidl_next::fuchsia::zx::Channel::from_service_transport(server_end),
+            )),
 
             _ => unreachable!(),
         }

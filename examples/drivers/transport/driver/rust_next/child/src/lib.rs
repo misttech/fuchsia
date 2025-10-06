@@ -9,18 +9,18 @@ use zx::Status;
 
 /// The implementation of our driver will live in this object, which implements [`Driver`].
 #[allow(unused)]
-struct ZirconChildDriver {
+struct DriverTransportChild {
     /// The [`Node`] is our handle to the node we bound to. We need to keep this handle
     /// open to keep the node around.
     node: Node,
 }
 
 // This creates the exported driver registration structures that allow the driver host to
-// find and run the start and stop methods on our `ZirconChildDriver`.
-driver_register!(ZirconChildDriver);
+// find and run the start and stop methods on our `DriverTransportChild`.
+driver_register!(DriverTransportChild);
 
-impl Driver for ZirconChildDriver {
-    const NAME: &str = "zircon_child_rust_next_driver";
+impl Driver for DriverTransportChild {
+    const NAME: &str = "driver_child_rust_next_driver";
 
     async fn start(mut context: DriverContext) -> Result<Self, Status> {
         info!(
@@ -44,7 +44,9 @@ impl Driver for ZirconChildDriver {
     }
 
     async fn stop(&self) {
-        info!("ZirconChildDriver::stop() was invoked. Use this function to do any cleanup needed.");
+        info!(
+            "DriverTransportChild::stop() was invoked. Use this function to do any cleanup needed."
+        );
     }
 }
 

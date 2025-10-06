@@ -7,11 +7,12 @@ use std::marker::PhantomData;
 use fidl::endpoints::{ServiceMarker, ServiceRequest};
 use fidl_fuchsia_component_decl::{NameMapping, OfferService};
 use fidl_fuchsia_driver_framework::Offer;
+use fidl_next::HasServiceRequest;
 use fuchsia_component::DEFAULT_SERVICE_INSTANCE;
 use fuchsia_component::server::{FidlServiceMember, ServiceFs, ServiceObjTrait};
 
 /// A builder for creating [`Offer`]-compatible values for [`crate::NodeBuilder::add_offer`] that
-/// service a zircon fidl service.
+/// serves a fidl service.
 ///
 /// The methods on this that start with `add_` are helpers that will both register a service handler
 /// with a [`ServiceFs`] and register the instance name in the structure. If you're handling adding
@@ -20,19 +21,19 @@ use fuchsia_component::server::{FidlServiceMember, ServiceFs, ServiceObjTrait};
 ///
 /// If no calls to add any instances are made, then when this is transformed into a service offer
 /// it will be as if a single default instance with the default name was added.
-pub struct ZirconServiceOffer<S> {
+pub struct ServiceOffer<S> {
     service_name: String,
     instances: Vec<NameMapping>,
     _p: PhantomData<S>,
 }
 
-impl<S: fidl_next::DiscoverableService> Default for ZirconServiceOffer<S> {
+impl<S: fidl_next::DiscoverableService> Default for ServiceOffer<S> {
     fn default() -> Self {
         Self::new_next()
     }
 }
 
-impl<S> ZirconServiceOffer<S> {
+impl<S> ServiceOffer<S> {
     /// Builds an offer for a zircon transport service based on the [`ServiceMarker`] for `S`.
     ///
     /// If the compiler can't deduce the type of `S` (which may be the case if you're not using the
@@ -47,7 +48,7 @@ impl<S> ZirconServiceOffer<S> {
         Self { service_name, instances, _p: PhantomData }
     }
 
-    /// Builds an offer for a zircon transport service based on the [`DiscoverableService`] for `S`.
+    /// Builds an offer for a service based on the [`fidl_next::DiscoverableService`] for `S`.
     ///
     /// If the compiler can't deduce the type of `S` (which may be the case if you're not using the
     /// `add_` methods to add to a [`ServiceFs`] at the same time), you can use
@@ -73,7 +74,7 @@ impl<S> ZirconServiceOffer<S> {
         Self { service_name, instances, _p: PhantomData }
     }
 
-    /// Builds an offer for a zircon transport service based on the [`DiscoverableService`].
+    /// Builds an offer for a service based on the [`fidl_next::DiscoverableService`].
     ///
     /// This is mostly useful if the compiler can't derive the type of `S` on its own.
     pub fn new_marker_next(_marker: S) -> Self
@@ -187,9 +188,7 @@ impl<S> ZirconServiceOffer<S> {
         self
     }
 
-    /// Finalize the construction of the [`Offer`] object for use with
-    /// [`super::NodeBuilder::add_offer`].
-    pub fn build(self) -> Offer {
+    fn build_offer(self) -> fidl_fuchsia_component_decl::Offer {
         // if no instances were added, assume there's a single default instance
         let mut instances = self.instances;
         if instances.is_empty() {
@@ -205,6 +204,36 @@ impl<S> ZirconServiceOffer<S> {
             renamed_instances: Some(instances),
             ..Default::default()
         };
-        Offer::ZirconTransport(fidl_fuchsia_component_decl::Offer::Service(service))
+        fidl_fuchsia_component_decl::Offer::Service(service)
+    }
+
+    /// Finalize the construction of the [`Offer`] object for use with
+    /// [`super::NodeBuilder::add_offer`] when the service is a zircon transport
+    /// service.
+    pub fn build_zircon_offer(self) -> Offer
+    where
+        S: ServiceMarker,
+    {
+        Offer::ZirconTransport(self.build_offer())
+    }
+
+    /// Finalize the construction of the [`Offer`] object for use with
+    /// [`super::NodeBuilder::add_offer`] when the service is a zircon transport
+    /// service with the new wire bindings.
+    pub fn build_zircon_offer_next(self) -> Offer
+    where
+        S: HasServiceRequest<zx::Channel>,
+    {
+        Offer::ZirconTransport(self.build_offer())
+    }
+
+    /// Finalize the construction of the [`Offer`] object for use with
+    /// [`super::NodeBuilder::add_offer`] when the service is a driver
+    /// transport service.
+    pub fn build_driver_offer(self) -> Offer
+    where
+        S: HasServiceRequest<fdf_fidl::DriverChannel>,
+    {
+        Offer::DriverTransport(self.build_offer())
     }
 }

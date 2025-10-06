@@ -48,18 +48,25 @@ where
 }
 
 /// A service handler for the `DriverOnlyService` service.
-pub trait DriverOnlyServiceHandler<___T> {
+pub trait DriverOnlyServiceHandler {
     /// Handles an attempt to connect to the `member` member.
-    fn member(&self, server_end: ::fidl_next::ServerEnd<crate::SomeDriverProtocol, ___T>);
+    fn member(
+        &self,
+        server_end: ::fidl_next::ServerEnd<crate::SomeDriverProtocol, ::fdf_fidl::DriverChannel>,
+    );
 }
 
 impl<___H, ___T> ::fidl_next::DispatchServiceHandler<___H, ___T> for DriverOnlyService
 where
-    ___H: DriverOnlyServiceHandler<___T>,
+    ___H: DriverOnlyServiceHandler,
+    ::fdf_fidl::DriverChannel: ::fidl_next::InstanceFromServiceTransport<___T>,
 {
     fn on_connection(handler: &___H, member: &str, server_end: ___T) {
+        use ::fidl_next::InstanceFromServiceTransport;
         match member {
-            "member" => handler.member(::fidl_next::ServerEnd::from_untyped(server_end)),
+            "member" => handler.member(::fidl_next::ServerEnd::from_untyped(
+                ::fdf_fidl::DriverChannel::from_service_transport(server_end),
+            )),
 
             _ => unreachable!(),
         }

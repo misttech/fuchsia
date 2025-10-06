@@ -3,9 +3,7 @@
 // found in the LICENSE file.
 
 use crate::graph::{NodeGraph, NodeId, Path, PathId};
-use fdf_component::{
-    Driver, DriverContext, Node, NodeBuilder, ZirconServiceOffer, driver_register,
-};
+use fdf_component::{Driver, DriverContext, Node, NodeBuilder, ServiceOffer, driver_register};
 use fidl_fuchsia_driver_framework::NodeControllerProxy;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::Inspector;
@@ -172,12 +170,12 @@ impl InterconnectDriver {
         for path in paths {
             let name = format!("{}-{}", path.name(), path.id());
             let name_clone = name.clone();
-            let offer = ZirconServiceOffer::new()
+            let offer = ServiceOffer::new()
                 .add_default_named(&mut outgoing, &name, move |req| {
                     let icc::PathServiceRequest::Path(service) = req;
                     (service, name_clone.clone())
                 })
-                .build();
+                .build_zircon_offer();
 
             let node_args = NodeBuilder::new(&name)
                 .add_property(bind_fuchsia::BIND_INTERCONNECT_PATH_ID, path.id().0)

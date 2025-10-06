@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdf_component::{
-    Driver, DriverContext, Node, NodeBuilder, ZirconServiceOffer, driver_register,
-};
+use fdf_component::{Driver, DriverContext, Node, NodeBuilder, ServiceOffer, driver_register};
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_driver_framework::NodeControllerMarker;
 use fuchsia_component::server::ServiceFs;
@@ -30,12 +28,12 @@ impl Driver for FakeInterconnectDriver {
 
         let mut outgoing = ServiceFs::new();
 
-        let offer = ZirconServiceOffer::new()
+        let offer = ServiceOffer::new()
             .add_default_named(&mut outgoing, Self::NAME, move |req| {
                 let icc::ServiceRequest::Device(service) = req;
                 service
             })
-            .build();
+            .build_zircon_offer();
 
         let node_args = NodeBuilder::new(Self::NAME).add_offer(offer).build();
         let child_controller = node.add_child(node_args).await?;

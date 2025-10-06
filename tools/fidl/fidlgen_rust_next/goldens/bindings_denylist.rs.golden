@@ -7898,13 +7898,14 @@ pub struct OnlyHlcppConnector<___C> {
 impl<___C> OnlyHlcppConnector<___C> {}
 
 /// A service handler for the `OnlyHlcpp` service.
-pub trait OnlyHlcppHandler<___T> {}
+pub trait OnlyHlcppHandler {}
 
 impl<___H, ___T> ::fidl_next::DispatchServiceHandler<___H, ___T> for OnlyHlcpp
 where
-    ___H: OnlyHlcppHandler<___T>,
+    ___H: OnlyHlcppHandler,
 {
     fn on_connection(handler: &___H, member: &str, server_end: ___T) {
+        use ::fidl_next::InstanceFromServiceTransport;
         match member {
             _ => unreachable!(),
         }

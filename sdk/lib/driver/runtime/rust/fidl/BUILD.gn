@@ -16,6 +16,7 @@ rustc_library("fidl") {
   deps = [
     "//sdk/lib/driver/runtime/rust/channel",
     "//sdk/lib/driver/runtime/rust/core",
+    "//sdk/lib/driver/runtime/rust/fdf_sys",
     "//sdk/rust/zx",
     "//src/devices/bin/driver_runtime",
     "//src/lib/fidl/rust_next/fidl_next",

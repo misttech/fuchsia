@@ -1055,18 +1055,25 @@ where
 }
 
 /// A service handler for the `Service` service.
-pub trait ServiceHandler<___T> {
+pub trait ServiceHandler {
     /// Handles an attempt to connect to the `interface` member.
-    fn interface(&self, server_end: ::fidl_next::ServerEnd<crate::Interface, ___T>);
+    fn interface(
+        &self,
+        server_end: ::fidl_next::ServerEnd<crate::Interface, ::fidl_next::fuchsia::zx::Channel>,
+    );
 }
 
 impl<___H, ___T> ::fidl_next::DispatchServiceHandler<___H, ___T> for Service
 where
-    ___H: ServiceHandler<___T>,
+    ___H: ServiceHandler,
+    ::fidl_next::fuchsia::zx::Channel: ::fidl_next::InstanceFromServiceTransport<___T>,
 {
     fn on_connection(handler: &___H, member: &str, server_end: ___T) {
+        use ::fidl_next::InstanceFromServiceTransport;
         match member {
-            "interface" => handler.interface(::fidl_next::ServerEnd::from_untyped(server_end)),
+            "interface" => handler.interface(::fidl_next::ServerEnd::from_untyped(
+                ::fidl_next::fuchsia::zx::Channel::from_service_transport(server_end),
+            )),
 
             _ => unreachable!(),
         }

@@ -70,29 +70,33 @@ where
 }
 
 /// A service handler for the `{{ non_canonical_name }}` service.
-pub trait {{ handler_name }}<___T> {
+pub trait {{ handler_name }} {
     {% for member in service.members %}
         /// Handles an attempt to connect to the `{{ member.name.non_canonical() }}` member.
         fn {{ member.name|snake }}(
             &self,
-            server_end: ::fidl_next::ServerEnd<{{ self.natural_id(self.member_protocol(member)) }}, ___T>,
+            server_end: ::fidl_next::ServerEnd<{{ self.natural_id(self.member_protocol(member)) }}, {{ self.member_transport(member) }}>,
         );
     {% endfor %}
 }
 
 impl<___H, ___T> ::fidl_next::DispatchServiceHandler<___H, ___T> for {{ service_name }}
 where
-    ___H: {{ handler_name }}<___T>,
+    ___H: {{ handler_name }},
+    {% for member in service.members %}
+        {{ self.member_transport(member) }}: ::fidl_next::InstanceFromServiceTransport<___T>,
+    {% endfor %}
 {
     fn on_connection(
         handler: &___H,
         member: &str,
         server_end: ___T,
     ) {
+        use ::fidl_next::InstanceFromServiceTransport;
         match member {
             {% for member in service.members %}
                 "{{ member.name.non_canonical() }}" => handler.{{ member.name|snake }}(
-                    ::fidl_next::ServerEnd::from_untyped(server_end),
+                    ::fidl_next::ServerEnd::from_untyped({{ self.member_transport(member) }}::from_service_transport(server_end)),
                 ),
             {% endfor %}
             _ => unreachable!(),

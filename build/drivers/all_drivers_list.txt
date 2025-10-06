@@ -14,6 +14,7 @@
 //examples/drivers/transport/banjo/v2:child_driver
 //examples/drivers/transport/banjo/v2:parent_driver
 //examples/drivers/transport/driver/rust_next/child:driver
+//examples/drivers/transport/driver/rust_next/parent:driver
 //examples/drivers/transport/driver/v1:child_driver
 //examples/drivers/transport/driver/v1:parent_driver
 //examples/drivers/transport/driver/v2:child_bazel_package.bazel_build
@@ -297,10 +298,10 @@
 //src/devices/usb/drivers/usb-hub:usb-hub-driver
 //src/devices/usb/drivers/usb-peripheral-test:usb-peripheral-test-driver
 //src/devices/usb/drivers/usb-peripheral:usb-peripheral-driver
-//src/devices/usb/drivers/usb-virtual-bus/tests/virtual-bus-tester:virtual-bus-tester-banjo-driver
-//src/devices/usb/drivers/usb-virtual-bus/tests/virtual-bus-tester:virtual-bus-tester-fidl-driver
 //src/devices/usb/drivers/usb-virtual-bus/tests/virtual-bus-tester-function:virtual-bus-tester-function-banjo-driver
 //src/devices/usb/drivers/usb-virtual-bus/tests/virtual-bus-tester-function:virtual-bus-tester-function-fidl-driver
+//src/devices/usb/drivers/usb-virtual-bus/tests/virtual-bus-tester:virtual-bus-tester-banjo-driver
+//src/devices/usb/drivers/usb-virtual-bus/tests/virtual-bus-tester:virtual-bus-tester-fidl-driver
 //src/devices/usb/drivers/usb-virtual-bus:usb-virtual-bus-driver
 //src/devices/usb/drivers/xhci:xhci-driver
 //src/devices/usb/tests/usb-hci-test:fuchsia_driver
