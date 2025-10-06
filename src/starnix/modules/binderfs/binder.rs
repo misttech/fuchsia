@@ -50,7 +50,7 @@ use starnix_types::vfs::default_statfs;
 use starnix_uapi::arc_key::ArcKey;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_type::DeviceType;
-use starnix_uapi::errors::{EINTR, Errno};
+use starnix_uapi::errors::{EACCES, EINTR, EPERM, Errno};
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::math::round_up_to_increment;
 use starnix_uapi::open_flags::OpenFlags;
@@ -4240,8 +4240,7 @@ impl BinderDriver {
                     context.current_task,
                     &target_task,
                     context.connection_security_state,
-                )
-                .map_err(|_| TransactionError::Failure)?;
+                )?;
 
                 let security_context: Option<FsString> =
                     if object.flags.contains(BinderObjectFlags::TXN_SECURITY_CTX) {
@@ -4830,8 +4829,7 @@ impl BinderDriver {
                     SerializedBinderObject::from_bytes(&transaction_data[object_offset..])?;
                 let translated_object = match serialized_object {
                     SerializedBinderObject::Handle { handle, flags, cookie } => {
-                        security::binder_transfer_binder(source.current_task, target_task)
-                            .map_err(|_| TransactionError::Failure)?;
+                        security::binder_transfer_binder(source.current_task, target_task)?;
 
                         match handle {
                             Handle::ContextManager => {
@@ -4880,8 +4878,7 @@ impl BinderDriver {
                         }
                     }
                     SerializedBinderObject::Object { local, flags } => {
-                        security::binder_transfer_binder(source.current_task, target_task)
-                            .map_err(|_| TransactionError::Failure)?;
+                        security::binder_transfer_binder(source.current_task, target_task)?;
 
                         let mut actions = RefCountActions::default();
                         release_after!(actions, (), {
@@ -5382,7 +5379,10 @@ impl TransactionError {
 
 impl From<Errno> for TransactionError {
     fn from(errno: Errno) -> TransactionError {
-        TransactionError::Malformed(errno)
+        match errno.code {
+            EACCES | EPERM => TransactionError::Failure,
+            _ => TransactionError::Malformed(errno),
+        }
     }
 }
 
