@@ -104,8 +104,9 @@ pub(crate) fn validate_cml(
 #[allow(dead_code)]
 pub(crate) fn validate_cml_with_span(
     documents: HashMap<&Path, (&SpannedDocument, &String)>,
+    features: &FeatureSet,
 ) -> Result<(), Error> {
-    let mut ctx = ValidationContextWithSpan::new(documents);
+    let mut ctx = ValidationContextWithSpan::new(documents, features);
     ctx.validate()
 }
 
@@ -188,22 +189,38 @@ struct ValidationContext<'a> {
 
 struct ValidationContextWithSpan<'a> {
     documents: HashMap<&'a Path, (&'a SpannedDocument, &'a String)>,
+    features: &'a FeatureSet,
     current_file_path: Option<&'a Path>,
     current_file_source: Option<&'a String>,
 }
 
 impl<'a> ValidationContextWithSpan<'a> {
-    fn new(documents: HashMap<&'a Path, (&'a SpannedDocument, &'a String)>) -> Self {
-        ValidationContextWithSpan { documents, current_file_path: None, current_file_source: None }
+    fn new(
+        documents: HashMap<&'a Path, (&'a SpannedDocument, &'a String)>,
+        features: &'a FeatureSet,
+    ) -> Self {
+        ValidationContextWithSpan {
+            documents,
+            features,
+            current_file_path: None,
+            current_file_source: None,
+        }
     }
 
     fn validate(&mut self) -> Result<(), Error> {
         for (path, (document, source)) in self.documents.clone() {
             self.current_file_path = Some(path);
             self.current_file_source = Some(source);
+
             if let Some(children) = &document.children {
                 for child in children {
                     self.validate_child(&child)?;
+                }
+            }
+
+            if let Some(collections) = &document.collections {
+                for collection in collections {
+                    self.validate_collection(&collection)?;
                 }
             }
         }
@@ -228,6 +245,13 @@ which is almost certainly a mistake: {}",
             }
         }
 
+        Ok(())
+    }
+
+    fn validate_collection(&mut self, collection: &'a Collection) -> Result<(), Error> {
+        if collection.allow_long_names.is_some() {
+            self.features.check(Feature::AllowLongNames)?;
+        }
         Ok(())
     }
 }
@@ -1883,7 +1907,7 @@ mod tests {
         let file = Path::new(filename);
         let document = crate::parse_one_document_with_span(&input, &file)?;
 
-        validate_cml_with_span(HashMap::from([(file, (&document, &input))]))
+        validate_cml_with_span(HashMap::from([(file, (&document, &input))]), &FeatureSet::empty())
     }
 
     fn validate_with_features_for_test(
@@ -2925,6 +2949,19 @@ mod tests {
             Err(Error::ValidateWithSpan { err, location, filename: Some(f)}) if &err == "child URL ends in .cml instead of .cm, which is almost certainly a mistake: fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cml" &&
                 location == Some(Location {line: 5, column: 32}) &&
                 f.ends_with("test.cml")
+        ),
+
+        test_cml_allow_long_names_without_feature(
+            json!({
+                "collections": [
+                    {
+                        "name": "foo",
+                        "durability": "transient",
+                        "allow_long_names": true
+                    },
+                ],
+            }),
+            Err(Error::RestrictedFeature(s)) if s == "allow_long_names"
         ),
     }
 
@@ -6872,7 +6909,7 @@ mod tests {
     // Tests that the use of `allow_long_names` fails when the "AllowLongNames"
     // feature is not set.
     test_validate_cml! {
-        test_cml_allow_long_names_without_feature(
+        test_cml_allow_long_names_without_feature_no_span(
             json!({
                 "collections": [
                     {
