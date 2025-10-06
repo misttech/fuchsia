@@ -32,7 +32,6 @@ pub enum ImageType {
     Zbi,
     VBMeta,
     Fvm,
-    Fxfs,
     FxfsFastboot,
     QemuKernel,
     Dtbo,
@@ -45,12 +44,11 @@ impl FromStr for ImageType {
             "zbi" => Ok(ImageType::Zbi),
             "vbmeta" => Ok(ImageType::VBMeta),
             "fvm" => Ok(ImageType::Fvm),
-            "fxfs" => Ok(ImageType::Fxfs),
             "fxfs.fastboot" => Ok(ImageType::FxfsFastboot),
             "qemu-kernel" => Ok(ImageType::QemuKernel),
             "dtbo" => Ok(ImageType::Dtbo),
             _ => Err(anyhow!(
-                "Invalid image_type: {}. Expect one of : zbi, vbmeta, fvm, fxfs, fxfs.fastboot, qemu-kernel, dtbo",
+                "Invalid image_type: {}. Expect one of : zbi, vbmeta, fvm, fxfs.fastboot, qemu-kernel, dtbo",
                 value
             )),
         }
@@ -71,7 +69,7 @@ pub struct GetImagePathCommand {
     #[argh(option)]
     pub slot: Option<Slot>,
 
-    /// the type of image. Supported types are zbi, vbmeta, fvm, fxfs, fxfs.fastboot, qemu-kernel,
+    /// the type of image. Supported types are zbi, vbmeta, fvm, fxfs.fastboot, qemu-kernel,
     /// or dtbo.
     #[argh(option)]
     pub image_type: Option<ImageType>,
