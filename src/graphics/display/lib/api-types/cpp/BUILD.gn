@@ -48,6 +48,8 @@ library_sources = [
   "mode.h",
   "pixel-format.cc",
   "pixel-format.h",
+  "power-mode.cc",
+  "power-mode.h",
   "rectangle.cc",
   "rectangle.h",
   "vsync-ack-cookie.h",
@@ -102,6 +104,7 @@ test_sources = [
   "mode-and-id-test.cc",
   "mode-test.cc",
   "pixel-format-test.cc",
+  "power-mode-test.cc",
   "rectangle-test.cc",
 ]
 
