@@ -132,14 +132,6 @@ void jtrace_set_location(void* ptr, size_t len);
 void jtrace_invalidate();
 void jtrace_log(jtrace::Entry<kJTraceUseLargeEntries>& e);
 void jtrace_dump(jtrace::TraceBufferType which);
-#else
-inline void jtrace_init() {}
-inline void jtrace_set_after_thread_init_early() {}
-inline void jtrace_set_location(void* ptr, size_t len) {}
-inline void jtrace_invalidate() {}
-inline void jtrace_log(jtrace::Entry<kJTraceUseLargeEntries>& e) {}
-inline void jtrace_dump(jtrace::TraceBufferType which) {}
-#endif
 
 #define JTRACE(tag, ...)                                                         \
   do {                                                                           \
@@ -148,5 +140,18 @@ inline void jtrace_dump(jtrace::TraceBufferType which) {}
     jtrace::Entry<kJTraceUseLargeEntries> _entry{tag, &ffl_info, ##__VA_ARGS__}; \
     jtrace_log(_entry);                                                          \
   } while (false)
+
+#else
+inline void jtrace_init() {}
+inline void jtrace_set_after_thread_init_early() {}
+inline void jtrace_set_location(void* ptr, size_t len) {}
+inline void jtrace_invalidate() {}
+inline void jtrace_log(jtrace::Entry<kJTraceUseLargeEntries>& e) {}
+inline void jtrace_dump(jtrace::TraceBufferType which) {}
+
+// JTRACE is disabled.  Ignore the args, but demand a `;`.
+#define JTRACE(tag, ...) while (false)
+
+#endif
 
 #endif  // ZIRCON_KERNEL_LIB_JTRACE_INCLUDE_LIB_JTRACE_JTRACE_H_
