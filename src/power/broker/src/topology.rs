@@ -53,6 +53,24 @@ impl std::cmp::Ord for IndexedPowerLevel {
     }
 }
 
+/// A IndexedPowerLevel satisfies a required IndexedPowerLevel if it is
+/// greater than or equal to it on the same scale.
+pub trait SatisfyPowerLevel {
+    fn satisfies(&self, required: IndexedPowerLevel) -> bool;
+}
+
+impl SatisfyPowerLevel for IndexedPowerLevel {
+    fn satisfies(&self, required: IndexedPowerLevel) -> bool {
+        self >= &required
+    }
+}
+
+impl SatisfyPowerLevel for Option<IndexedPowerLevel> {
+    fn satisfies(&self, required: IndexedPowerLevel) -> bool {
+        self.is_some() && self.unwrap().satisfies(required)
+    }
+}
+
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq)]
 pub struct ElementID(u32);
 
@@ -61,7 +79,7 @@ impl ElementID {
         Self(id)
     }
 
-    fn gen() -> Self {
+    fn generate() -> Self {
         Self(rand::random::<u32>())
     }
 }
@@ -88,6 +106,12 @@ pub struct ElementLevel {
 impl fmt::Display for ElementLevel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}({})", self.element_id, self.level)
+    }
+}
+
+impl ElementLevel {
+    pub fn satisfies(&self, required: &ElementLevel) -> bool {
+        self.element_id == required.element_id && self.level.satisfies(required.level)
     }
 }
 
@@ -268,7 +292,7 @@ impl Topology {
     ) -> Result<ElementID, AddElementError> {
         let id = {
             loop {
-                let element_id = ElementID::gen();
+                let element_id = ElementID::generate();
                 if !self.elements.contains_key(&element_id) {
                     break element_id;
                 }
@@ -653,7 +677,7 @@ impl Topology {
 mod tests {
     use super::*;
     use crate::inspect::InspectUpdateLevel;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use power_broker_client::BINARY_POWER_LEVELS;
 
     const BINARY_POWER_LEVEL_ON: IndexedPowerLevel = IndexedPowerLevel { level: 1, index: 1 };
