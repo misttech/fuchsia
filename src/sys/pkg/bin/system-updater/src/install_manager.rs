@@ -137,7 +137,7 @@ async fn run<N, U, E>(
                 // We got a FIDL requests (via the mpsc::Receiver).
                 Op::Request(req) => {
                     requests_node.add_entry(|node| {
-                        req.write_to_inspect(node);
+                        req.write_to_inspect(Some(&attempt_id), node);
                     });
                     handle_active_control_request(
                         req,
@@ -195,7 +195,7 @@ where
     // Right now we are in a state where there is no update running.
     while let Some(control_request) = recv.next().await {
         requests_node.add_entry(|node| {
-            control_request.write_to_inspect(node);
+            control_request.write_to_inspect(None, node);
         });
         match control_request {
             ControlRequest::Start(start_data) => {
@@ -423,8 +423,9 @@ where
 }
 
 impl<N: Notify> ControlRequest<N> {
-    fn write_to_inspect(&self, node: &inspect::Node) {
+    fn write_to_inspect(&self, in_progress_attempt_id: Option<&str>, node: &inspect::Node) {
         NodeTimeExt::<zx::MonotonicTimeline>::record_time(node, "time");
+        node.record_string("already_in_progress_attempt_id", format!("{in_progress_attempt_id:?}"));
 
         match self {
             Self::Start(data) => {
@@ -845,16 +846,19 @@ mod tests {
                     requests: {
                         "0": {
                             request: "start",
+                            already_in_progress_attempt_id: "None",
                             config: AnyProperty,
                             time: AnyProperty,
                         },
                         "1": {
                             request: "suspend",
+                            already_in_progress_attempt_id: r#"Some("my-attempt")"#,
                             "attempt id": "my-attempt",
                             time: AnyProperty,
                         },
                         "2": {
                             request: "resume",
+                            already_in_progress_attempt_id: r#"Some("my-attempt")"#,
                             "attempt id": "my-attempt",
                             time: AnyProperty,
                         },
@@ -1026,20 +1030,24 @@ mod tests {
                     requests: {
                         "0": {
                             request: "cancel",
+                            already_in_progress_attempt_id: "None",
                             time: AnyProperty,
                         },
                         "1": {
                             request: "start",
+                            already_in_progress_attempt_id: "None",
                             config: AnyProperty,
                             time: AnyProperty,
                         },
                         "2": {
                             request: "cancel",
+                            already_in_progress_attempt_id: r#"Some("my-attempt")"#,
                             "attempt id": "my-attempt",
                             time: AnyProperty,
                         },
                         "3": {
                             request: "cancel",
+                            already_in_progress_attempt_id: "None",
                             "attempt id": "my-attempt",
                             time: AnyProperty,
                         },
@@ -1267,6 +1275,7 @@ mod tests {
                     requests: {
                         "0": {
                             request: "start",
+                            already_in_progress_attempt_id: "None",
                             config: AnyProperty,
                             time: AnyProperty,
                         },
@@ -1326,6 +1335,7 @@ mod tests {
                     requests: {
                         "0": {
                             request: "start",
+                            already_in_progress_attempt_id: "None",
                             config: AnyProperty,
                             time: AnyProperty,
                         },
@@ -1366,6 +1376,7 @@ mod tests {
                     requests: {
                         "0": {
                             request: "start",
+                            already_in_progress_attempt_id: "None",
                             config: AnyProperty,
                             time: AnyProperty,
                         },
@@ -1384,6 +1395,7 @@ mod tests {
                     requests: {
                         "0": {
                             request: "start",
+                            already_in_progress_attempt_id: "None",
                             config: AnyProperty,
                             time: AnyProperty,
                         },
@@ -1417,11 +1429,13 @@ mod tests {
                     requests: {
                         "0": {
                             request: "start",
+                            already_in_progress_attempt_id: "None",
                             config: AnyProperty,
                             time: AnyProperty,
                         },
                         "1": {
                             request: "start",
+                            already_in_progress_attempt_id: "None",
                             config: AnyProperty,
                             time: AnyProperty,
                         },
@@ -1477,6 +1491,7 @@ mod tests {
                     requests: {
                         "0": {
                             request: "start",
+                            already_in_progress_attempt_id: "None",
                             config: AnyProperty,
                             time: AnyProperty,
                         },
