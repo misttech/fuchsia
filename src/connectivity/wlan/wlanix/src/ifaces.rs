@@ -315,7 +315,7 @@ impl From<StaIfacePowerLevel> for u64 {
 pub(crate) struct PowerState {
     suspend_mode_enabled: bool,
     power_save_enabled: bool,
-    recorder: Option<power_observability_state_recorder::StateRecorder<StaIfacePowerLevel>>,
+    recorder: Option<power_observability_state_recorder::EnumStateRecorder<StaIfacePowerLevel>>,
 }
 
 #[async_trait]
@@ -391,7 +391,7 @@ impl SmeClientIface {
         // cause logic errors. So far, this is a safe assumption based on the drivers we have.
         // TODO(https://fxbug.dev/378878423): Read this from the driver at initialization.
         let initial_level = StaIfacePowerLevel::NoPowerSavings;
-        let recorder = match power_observability_state_recorder::StateRecorder::new(
+        let recorder = match power_observability_state_recorder::EnumStateRecorder::new(
             element_name,
             power_observability_state_recorder::lazy_static_cstr("power").unwrap(),
             initial_level,
@@ -434,7 +434,7 @@ impl SmeClientIface {
     /// interfaces exist.
     async fn update_power_level(&self, new_level: StaIfacePowerLevel) -> Result<(), Error> {
         if let Some(recorder) = &mut self.power_state.lock().await.recorder {
-            recorder.record_transition(new_level);
+            recorder.record(new_level);
             self.telemetry_sender.send(TelemetryEvent::IfacePowerLevelChanged {
                 iface_id: self.iface_id,
                 iface_power_level: match new_level {
@@ -1306,7 +1306,7 @@ mod tests {
                 suspend_mode_enabled: false,
                 power_save_enabled: false,
                 recorder: Some(
-                    power_observability_state_recorder::StateRecorder::new(
+                    power_observability_state_recorder::EnumStateRecorder::new(
                         "test_state".into(),
                         power_observability_state_recorder::lazy_static_cstr("test").unwrap(),
                         StaIfacePowerLevel::NoPowerSavings,
@@ -1530,7 +1530,7 @@ mod tests {
                 suspend_mode_enabled: false,
                 power_save_enabled: false,
                 recorder: Some(
-                    power_observability_state_recorder::StateRecorder::new(
+                    power_observability_state_recorder::EnumStateRecorder::new(
                         "test_state".into(),
                         power_observability_state_recorder::lazy_static_cstr("test").unwrap(),
                         StaIfacePowerLevel::NoPowerSavings,

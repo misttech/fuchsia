@@ -7,21 +7,19 @@ use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::component::inspector;
 use futures::StreamExt;
-use futures::channel::mpsc;
-use state_recorder::StateRecorder;
-use strum::IntoEnumIterator;
+use state_recorder::{EnumStateRecorder, NumericStateRecorder, units};
 use strum_macros::{Display, EnumIter, FromRepr};
 
 #[derive(Copy, Clone, Display, EnumIter, Eq, PartialEq, Hash, FromRepr)]
 #[repr(u8)]
-enum FanSpeed {
-    OFF = 0,
-    LOW = 1,
-    HIGH = 2,
+enum ChargingState {
+    Discharging = 0,
+    Charging = 1,
+    FullyCharged = 2,
 }
 
-impl From<FanSpeed> for u64 {
-    fn from(value: FanSpeed) -> Self {
+impl From<ChargingState> for u64 {
+    fn from(value: ChargingState) -> Self {
         value as Self
     }
 }
@@ -34,40 +32,54 @@ async fn main() -> Result<(), Error> {
     // Set up tracing
     fuchsia_trace_provider::trace_provider_create_with_fdio();
 
+    // Wait a few seconds to give the user a chance to start collecting a trace.
+    fasync::Timer::new(std::time::Duration::from_secs(2)).await;
+
     let _inspect_server_task =
         inspect_runtime::publish(inspector(), inspect_runtime::PublishOptions::default());
-    inspector().root().record_string("version", "foo");
 
-    let mut recorder = StateRecorder::new("fan_speed".into(), c"power_example", FanSpeed::OFF, 10)
-        .expect("StateRecorder construction failed");
+    let initial_charging_state = ChargingState::Charging;
+    let mut charging_state_recorder = EnumStateRecorder::new(
+        "charging_state".into(),
+        c"power_example",
+        initial_charging_state,
+        10,
+    )
+    .expect("DiscreteStateRecorder construction failed");
+    let mut battery_level_recorder = NumericStateRecorder::new(
+        "battery_level".into(),
+        c"power_example",
+        units!(Percent),
+        Some((0u8, 100)),
+        90,
+        30,
+    )
+    .expect("ContinuousStateRecorder construction failed");
 
-    let (mut sender, mut receiver) = mpsc::channel(10);
-
-    // Simulate some state transitions
+    // Simulate a charging interval, followed by an interval at full charge, followed by an interval
+    // discharging.
     fasync::Task::local(async move {
-        for _ in 0..30 {
-            for value in FanSpeed::iter() {
-                sender.try_send(value).unwrap();
-                fasync::Timer::new(std::time::Duration::from_secs(1)).await;
+        let mut last_charging_state = initial_charging_state;
+
+        for i in 0..25 {
+            let (charging_state, battery_level) = match i {
+                0..10 => (ChargingState::Charging, 90 + i),
+                10..15 => (ChargingState::FullyCharged, 100),
+                15..25 => (ChargingState::Discharging, 100 - i + 15),
+                _ => unreachable!(),
+            };
+
+            if charging_state != last_charging_state {
+                charging_state_recorder.record(charging_state);
             }
-        }
-    })
-    .detach();
+            last_charging_state = charging_state;
 
-    // Record ticks on the process track so the state transitions themselves don't dictate the
-    // trace timeline.
-    fasync::Task::local(async move {
-        loop {
-            fuchsia_trace::instant!(c"power_example", c"tick", fuchsia_trace::Scope::Process);
-            fasync::Timer::new(std::time::Duration::from_millis(100)).await;
-        }
-    })
-    .detach();
+            battery_level_recorder.record(battery_level);
 
-    fasync::Task::local(async move {
-        while let Some(state) = receiver.next().await {
-            recorder.record_transition(state);
+            fasync::Timer::new(std::time::Duration::from_millis(500)).await;
         }
+
+        // Wait indefinitely to keep recorders from dropping.
         let () = std::future::pending().await;
     })
     .detach();

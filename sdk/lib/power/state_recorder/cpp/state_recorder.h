@@ -75,14 +75,14 @@ class StateRecorderManager final {
   std::mutex mutex_;
 };
 
-// Metadata for a discrete state.
+// Metadata for an enum state.
 template <typename T>
-struct DiscreteStateMetadata {
+struct EnumStateMetadata {
   static_assert(std::is_enum_v<T>, "T must be an enum type.");
   // Name of the state.
   // - Inspect: This name will be used for this state's Inspect node, recorded in
   //   a node named "power_observability_state_recorders" within the component inspector's root.
-  // - Trace: State transitions will be recorded on a *global* track with this name. If names
+  // - Trace: Time series will be recorded on a *global* track with this name. If names
   //   collide, events for the colliding recorders will be placed on the same track.
   std::string name;
 
@@ -105,7 +105,7 @@ class StateRecorder final {
   // Errors:
   //   - ZX_ERR_ALREADY_EXISTS: `metadata.name` is already in use by a StateRecorder exporting
   //     to the provided inspector.
-  static zx::result<StateRecorder<T>> Create(DiscreteStateMetadata<T> metadata, T initial_state,
+  static zx::result<StateRecorder<T>> Create(EnumStateMetadata<T> metadata, T initial_state,
                                              size_t capacity, StateRecorderManager& manager);
 
   void RecordTransition(T state_enum);
@@ -118,7 +118,7 @@ class StateRecorder final {
     trace_category_literal_ = other.trace_category_literal_;
     state_names_ = std::move(other.state_names_);
     root_node_ = std::move(other.root_node_);
-    transition_history_ = std::move(other.transition_history_);
+    history_ = std::move(other.history_);
     trace_id_ = other.trace_id_;
     trace_name_ = std::move(other.trace_name_);
     trace_name_ref_ = other.trace_name_ref_;
@@ -134,7 +134,7 @@ class StateRecorder final {
         trace_category_literal_(other.trace_category_literal_),
         state_names_(std::move(other.state_names_)),
         root_node_(std::move(other.root_node_)),
-        transition_history_(std::move(other.transition_history_)),
+        history_(std::move(other.history_)),
         trace_id_(other.trace_id_),
         trace_name_(std::move(other.trace_name_)),
         trace_name_ref_(other.trace_name_ref_),
@@ -149,12 +149,12 @@ class StateRecorder final {
   }
 
  protected:
-  StateRecorder(DiscreteStateMetadata<T> metadata, T initial_state, size_t capacity,
+  StateRecorder(EnumStateMetadata<T> metadata, T initial_state, size_t capacity,
                 StateRecorderManager& manager, inspect::Node root_node)
       : name_(metadata.name),
         trace_category_literal_(metadata.trace_category_literal),
         root_node_(std::move(root_node)),
-        transition_history_(root_node_.CreateChild("transition_history"), capacity),
+        history_(root_node_.CreateChild("history"), capacity),
         trace_id_(TRACE_NONCE()),
         trace_name_(std::make_unique<std::string>(
             std::format("{} {} {}", name_, internal::GetPid(), trace_id_))),
@@ -162,7 +162,7 @@ class StateRecorder final {
         manager_(&manager) {
     root_node_.RecordChild("metadata", [&](inspect::Node& metadata_node) {
       metadata_node.RecordString("name", metadata.name);
-      metadata_node.RecordString("type", "discrete");
+      metadata_node.RecordString("type", "enum");
       metadata_node.RecordChild("states", [&](inspect::Node& states_node) {
         for (const auto& [state_enum, state_name] : metadata.states) {
           states_node.RecordUint(state_name, static_cast<std::underlying_type_t<T>>(state_enum));
@@ -198,7 +198,7 @@ class StateRecorder final {
   std::unordered_map<T, StateName> state_names_;
 
   inspect::Node root_node_;
-  inspect::BoundedListNode transition_history_;
+  inspect::BoundedListNode history_;
 
   trace_async_id_t trace_id_;
 
@@ -218,7 +218,7 @@ class StateRecorder final {
 };
 
 template <typename T>
-zx::result<StateRecorder<T>> StateRecorder<T>::Create(DiscreteStateMetadata<T> metadata,
+zx::result<StateRecorder<T>> StateRecorder<T>::Create(EnumStateMetadata<T> metadata,
                                                       T initial_state, size_t capacity,
                                                       StateRecorderManager& manager) {
   auto result = manager.RegisterName(metadata.name);
@@ -275,7 +275,7 @@ void StateRecorder<T>::RecordTransition(T state_enum) {
   }
 
   auto timestamp = zx::clock::get_boot().get();
-  transition_history_.CreateEntry([&](inspect::Node& node) {
+  history_.CreateEntry([&](inspect::Node& node) {
     node.RecordInt("@time", timestamp);
     node.RecordString("value", *current_state_name_.value()->inspect_name);
   });

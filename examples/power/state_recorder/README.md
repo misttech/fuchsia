@@ -31,7 +31,7 @@ function run_example() {
   if ffx component list 2>/dev/null | grep -q ${EXAMPLE}$; then
     ffx component destroy /core/ffx-laboratory:${EXAMPLE}
   fi
-  ffx trace start --categories kernel:meta,power_example --duration 10 &
+  ffx trace start --categories kernel:meta,power_example --duration 15 &
   sleep 0.2
   ffx component run \
     /core/ffx-laboratory:${EXAMPLE} \

@@ -8,6 +8,7 @@ pub use std::collections::HashMap;
 pub use std::ffi::{CStr, CString};
 use std::fmt::Display;
 use std::hash::Hash;
+use std::marker::PhantomData;
 use std::sync::{Arc, LazyLock};
 use strum::IntoEnumIterator;
 use zx::AsHandleRef;
@@ -114,38 +115,40 @@ struct StateName {
     // from a borrow of `self`.
     //
     // The alternative -- while preserving `Send` for StateRecorder -- would be to wrap
-    // StateRecorder::trace_state_event and StateRecorder::transition_history in Mutexes.
+    // StateRecorder::trace_state_event and StateRecorder::history in Mutexes.
     inspect_name: Arc<String>,
 }
 
-/// Records state changes to Inspect and trace.
-pub struct StateRecorder<T: RecordableEnum> {
+/// Records time series data for an enum-valued state. This is best-suited for categorical
+/// observations, where the name of the state and not a numeric value will be most relevant for
+/// diagnostic and forensic purposes.
+pub struct EnumStateRecorder<T: RecordableEnum> {
     manager: Arc<Mutex<StateRecorderManager>>,
     name: String,
     trace_category: &'static CStr,
     state_names: HashMap<T, StateName>,
-    transition_history: BoundedListNode,
+    history: BoundedListNode,
     _root_node: inspect::Node,
     trace_id: ftrace::Id,
     trace_track_name: &'static CStr,
     trace_state_event: Option<ftrace::AsyncScope>,
 }
 
-impl<T: RecordableEnum> std::fmt::Debug for StateRecorder<T> {
+impl<T: RecordableEnum> std::fmt::Debug for EnumStateRecorder<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StateRecorder")
             .field("metadata", &self.name)
             .field("trace_category", &self.trace_category)
-            .field("transition_history", &self.transition_history)
+            .field("history", &self.history)
             .finish()
     }
 }
 
-impl<T: RecordableEnum> StateRecorder<T> {
-    /// Creates a new StateRecorder that records up to`capacity` transitions on a rolling basis. A
-    /// record is emitted for `initial_state` upon creation.
+impl<T: RecordableEnum> EnumStateRecorder<T> {
+    /// Creates a new EnumStateRecorder that records up to `capacity` state values on a rolling
+    /// basis. A record is emitted for `initial_state` upon creation.
     ///
-    /// A StateRecorder created by this function is linked to this module's singleton
+    /// An EnumStateRecorder created by this function is linked to this module's singleton
     /// StateRecorderManager, which in turn corresponds to the singleton Inspector. Any client not
     /// using the singleton Inspector should call `new_with_manager` instead.
     ///
@@ -154,9 +157,6 @@ impl<T: RecordableEnum> StateRecorder<T> {
     ///     associated with `manager`.
     ///   - StateRecorderError::IncompatibleString: Either `name` or the display name of a state
     ///     cannot be converted to a CString.
-
-    /// Version of `new` that uses a singleton StateRecorderManager, which is associated with the
-    /// singleton inspector.
     pub fn new(
         name: String,
         trace_category: &'static CStr,
@@ -199,15 +199,13 @@ impl<T: RecordableEnum> StateRecorder<T> {
 
         node.record_child("metadata", |metadata_node| {
             metadata_node.record_string("name", &name);
+            metadata_node.record_string("type", "enum");
             metadata_node.record_child("states", |states_node| {
                 for (state_enum, state_name) in state_names.iter() {
                     states_node.record_uint(state_name.inspect_name.as_ref(), (*state_enum).into());
                 }
             });
         });
-
-        let transition_history =
-            BoundedListNode::new(node.create_child("transition_history"), capacity);
 
         let trace_id = ftrace::Id::random();
         let trace_id_u64: u64 = trace_id.into();
@@ -218,13 +216,13 @@ impl<T: RecordableEnum> StateRecorder<T> {
             name,
             trace_category,
             state_names,
-            transition_history,
+            history: BoundedListNode::new(node.create_child("history"), capacity),
             _root_node: node,
             trace_id,
             trace_track_name,
             trace_state_event: None,
         };
-        this.record_transition(initial_state);
+        this.record(initial_state);
         Ok(this)
     }
 
@@ -236,12 +234,12 @@ impl<T: RecordableEnum> StateRecorder<T> {
         self.state_names.get(&state_enum).unwrap_or(&UNKNOWN_NAME)
     }
 
-    pub fn record_transition(&mut self, state_enum: T) {
+    pub fn record(&mut self, state_enum: T) {
         // Clear the trace state event to end the current slice, if one exists.
         self.trace_state_event.take();
 
         // Clone `inspect_name` so this borrow of `self` can end before the mutable borrows used
-        // to modify self.trace_state_event and self.transition_history below.
+        // to modify self.trace_state_event and self.history below.
         let state_name = self.state_name(state_enum);
         let inspect_name = state_name.inspect_name.clone();
 
@@ -254,14 +252,292 @@ impl<T: RecordableEnum> StateRecorder<T> {
 
         let timestamp = zx::BootInstant::get().into_nanos();
 
-        self.transition_history.add_entry(|node| {
+        self.history.add_entry(|node| {
             node.record_int("@time", timestamp);
             node.record_string("value", inspect_name.as_ref());
         });
     }
 }
 
-impl<T: RecordableEnum> Drop for StateRecorder<T> {
+impl<T: RecordableEnum> Drop for EnumStateRecorder<T> {
+    fn drop(&mut self) {
+        self.manager.lock().unregister_name(&self.name);
+    }
+}
+
+/// To be recordable, a numeric type must, in essence, be able to widen into a trace-compatible
+/// type and an Inspect-compatible type. Users are not expected to implement this trait; this
+/// module implements it for common numeric types below.
+pub trait RecordableNumericType: Sized {
+    type TraceType: ftrace::ArgValue;
+
+    fn trace_value(&self) -> Self::TraceType;
+    fn record(&self, node: &inspect::Node, name: &str);
+    fn record_range(range: &(Self, Self), node: &inspect::Node);
+}
+
+macro_rules! impl_recordable_numeric_type {
+    ($numeric_type:ty, $trace_type:ty, u64) => {
+        impl RecordableNumericType for $numeric_type {
+            type TraceType = $trace_type;
+
+            fn trace_value(&self) -> Self::TraceType {
+                *self as Self::TraceType
+            }
+            fn record(&self, node: &inspect::Node, name: &str) {
+                node.record_uint(name, *self as u64);
+            }
+            fn record_range(range: &(Self, Self), node: &inspect::Node) {
+                node.record_uint("min_inc", range.0 as u64);
+                node.record_uint("max_inc", range.1 as u64);
+            }
+        }
+    };
+    ($numeric_type:ty, $trace_type:ty, i64) => {
+        impl RecordableNumericType for $numeric_type {
+            type TraceType = $trace_type;
+
+            fn trace_value(&self) -> Self::TraceType {
+                *self as Self::TraceType
+            }
+            fn record(&self, node: &inspect::Node, name: &str) {
+                node.record_int(name, *self as i64);
+            }
+            fn record_range(range: &(Self, Self), node: &inspect::Node) {
+                node.record_int("min_inc", range.0 as i64);
+                node.record_int("max_inc", range.1 as i64);
+            }
+        }
+    };
+    ($numeric_type:ty, $trace_type:ty, f64) => {
+        impl RecordableNumericType for $numeric_type {
+            type TraceType = $trace_type;
+
+            fn trace_value(&self) -> Self::TraceType {
+                *self as Self::TraceType
+            }
+            fn record(&self, node: &inspect::Node, name: &str) {
+                node.record_double(name, *self as f64);
+            }
+            fn record_range(range: &(Self, Self), node: &inspect::Node) {
+                node.record_double("min_inc", range.0 as f64);
+                node.record_double("max_inc", range.1 as f64);
+            }
+        }
+    };
+}
+
+impl_recordable_numeric_type!(u8, u32, u64);
+impl_recordable_numeric_type!(u16, u32, u64);
+impl_recordable_numeric_type!(u32, u32, u64);
+impl_recordable_numeric_type!(u64, u64, u64);
+impl_recordable_numeric_type!(i8, i32, i64);
+impl_recordable_numeric_type!(i16, i32, i64);
+impl_recordable_numeric_type!(i32, i32, i64);
+impl_recordable_numeric_type!(i64, i64, i64);
+impl_recordable_numeric_type!(f32, f64, f64);
+impl_recordable_numeric_type!(f64, f64, f64);
+
+/// Units supported by NumericStateRecorder. The `units!` macro is recommended for construction.
+///
+/// Bytes and bit-rates are specifically not included yet because they invite the question of
+/// whether they should be restricted to binary prefixes. We'll address that once we instrument a
+/// specific use case.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Units {
+    Amps(Option<DecimalPrefix>),
+    Hertz(Option<DecimalPrefix>),
+    Joules(Option<DecimalPrefix>),
+    Watts(Option<DecimalPrefix>),
+    Volts(Option<DecimalPrefix>),
+    Celsius(Option<DecimalPrefix>),
+    Number(Option<DecimalPrefix>),
+    Percent,
+}
+
+impl Display for Units {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn write_helper(
+            f: &mut std::fmt::Formatter<'_>,
+            prefix: &Option<DecimalPrefix>,
+            unit_str: &str,
+        ) -> std::fmt::Result {
+            match prefix {
+                Some(p) => write!(f, "{}{}", p, unit_str),
+                None => write!(f, "{}", unit_str),
+            }
+        }
+
+        match self {
+            Units::Amps(prefix) => write_helper(f, prefix, "A"),
+            Units::Hertz(prefix) => write_helper(f, prefix, "Hz"),
+            Units::Joules(prefix) => write_helper(f, prefix, "J"),
+            Units::Watts(prefix) => write_helper(f, prefix, "W"),
+            Units::Volts(prefix) => write_helper(f, prefix, "V"),
+            Units::Celsius(prefix) => write_helper(f, prefix, "C"),
+            Units::Number(prefix) => write_helper(f, prefix, "#"),
+            Units::Percent => write!(f, "%"),
+        }
+    }
+}
+
+/// Decimal prefixes for use with certain `Units`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum DecimalPrefix {
+    Nano,
+    Micro,
+    Milli,
+    Centi,
+    Deci,
+    Kilo,
+    Mega,
+    Giga,
+}
+
+impl Display for DecimalPrefix {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DecimalPrefix::Nano => write!(f, "n"),
+            DecimalPrefix::Micro => write!(f, "u"),
+            DecimalPrefix::Milli => write!(f, "m"),
+            DecimalPrefix::Centi => write!(f, "c"),
+            DecimalPrefix::Deci => write!(f, "d"),
+            DecimalPrefix::Kilo => write!(f, "k"),
+            DecimalPrefix::Mega => write!(f, "M"),
+            DecimalPrefix::Giga => write!(f, "G"),
+        }
+    }
+}
+
+/// Assembles fully-specified measurement units for NumericStateRecorder, combining a base unit
+/// with an optional prefix.
+///
+/// Examples:
+///     - units!(Volt)
+///     - units!(Percent)
+///     - units!(Kilo, Hertz)
+///     - units!(Milli, Amp)
+#[macro_export]
+macro_rules! units {
+    (Percent) => {
+        $crate::Units::Percent
+    };
+    ($base_unit:ident) => {
+        $crate::Units::$base_unit(None)
+    };
+    ($prefix:ident, $base_unit:ident) => {
+        $crate::Units::$base_unit(Some($crate::DecimalPrefix::$prefix))
+    };
+}
+
+/// Records time series data of a numeric-valued state.
+pub struct NumericStateRecorder<T: RecordableNumericType> {
+    manager: Arc<Mutex<StateRecorderManager>>,
+    name: String,
+    trace_category: &'static CStr,
+    trace_name: &'static CStr,
+    units: String,
+    history: BoundedListNode,
+    _root_node: inspect::Node,
+    trace_id: ftrace::Id,
+    _phantom: PhantomData<T>,
+}
+
+impl<T: RecordableNumericType> NumericStateRecorder<T> {
+    /// Creates a new NumericStateRecorder that records up to `capacity` state values on a rolling
+    /// basis. A record is emitted for `initial_state` upon creation.
+    ///
+    /// A NumericStateRecorder created by this function is linked to this module's singleton
+    /// StateRecorderManager, which in turn corresponds to the singleton Inspector. Any client not
+    /// using the singleton Inspector should call `new_with_manager` instead.
+    ///
+    /// Errors:
+    ///   - StateRecorderError::DuplicateName: `metadata.name` is already in use by a StateRecorder
+    ///     associated with `manager`.
+    ///   - StateRecorderError::IncompatibleString: Either `name` or the display name of a state
+    ///     cannot be converted to a CString.
+    pub fn new(
+        name: String,
+        trace_category: &'static CStr,
+        units: Units,
+        range: Option<(T, T)>,
+        initial_state: T,
+        capacity: usize,
+    ) -> Result<Self, StateRecorderError> {
+        Self::new_with_manager(
+            SINGLETON_MANAGER.clone(),
+            name,
+            trace_category,
+            units,
+            range,
+            initial_state,
+            capacity,
+        )
+    }
+
+    /// Like `new`, but with a StateRecorderManager provided by the caller.
+    pub fn new_with_manager(
+        manager: Arc<Mutex<StateRecorderManager>>,
+        name: String,
+        trace_category: &'static CStr,
+        units: Units,
+        range: Option<(T, T)>,
+        initial_state: T,
+        capacity: usize,
+    ) -> Result<Self, StateRecorderError> {
+        let node = {
+            let mut manager = manager.lock();
+            if let Err(e) = manager.register_name(&name) {
+                return Err(e);
+            }
+            manager.node.create_child(&name)
+        };
+
+        let trace_name = lazy_static_cstr(&name)?;
+        let units = format!("{}", units);
+
+        node.record_child("metadata", |metadata_node| {
+            metadata_node.record_string("name", &name);
+            metadata_node.record_string("type", "numeric");
+            metadata_node.record_string("units", &units);
+            match range {
+                Some(r) => metadata_node.record_child("range", |node| T::record_range(&r, node)),
+                None => metadata_node.record_string("range", "<Unspecified>"),
+            }
+        });
+
+        let mut this = Self {
+            manager,
+            name,
+            trace_category,
+            trace_name,
+            units,
+            history: BoundedListNode::new(node.create_child("history"), capacity),
+            _root_node: node,
+            trace_id: ftrace::Id::random(),
+            _phantom: PhantomData,
+        };
+        this.record(initial_state);
+        Ok(this)
+    }
+
+    pub fn record(&mut self, state_value: T) {
+        let timestamp = zx::BootInstant::get().into_nanos();
+
+        ftrace::counter!(
+            self.trace_category,
+            self.trace_name,
+            self.trace_id.into(),
+            &self.units.to_string() => state_value.trace_value()
+        );
+        self.history.add_entry(|node| {
+            node.record_int("@time", timestamp);
+            state_value.record(node, "value");
+        });
+    }
+}
+
+impl<T: RecordableNumericType> Drop for NumericStateRecorder<T> {
     fn drop(&mut self) {
         self.manager.lock().unregister_name(&self.name);
     }
@@ -288,11 +564,11 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_off_on() {
+    async fn test_enum_off_on() {
         let inspector = Inspector::default();
         let manager = StateRecorderManager::new(&inspector);
 
-        let mut recorder = StateRecorder::new_with_manager(
+        let mut recorder = EnumStateRecorder::new_with_manager(
             manager,
             "my_switch".into(),
             c"power_test",
@@ -301,20 +577,21 @@ mod tests {
         )
         .unwrap();
 
-        recorder.record_transition(SwitchState::ON);
-        recorder.record_transition(SwitchState::OFF);
-        recorder.record_transition(SwitchState::ON);
+        recorder.record(SwitchState::ON);
+        recorder.record(SwitchState::OFF);
+        recorder.record(SwitchState::ON);
         assert_data_tree!(inspector, root: {
             power_observability_state_recorders: {
                 my_switch: {
                     metadata: {
                         name: "my_switch",
+                        type: "enum",
                         states: {
                             "OFF": 0u64,
                             "ON": 1u64,
                         }
                     },
-                    transition_history: {
+                    history: {
                         "0": {
                             "@time": AnyIntProperty,
                             "value": "OFF",
@@ -354,7 +631,7 @@ mod tests {
         let inspector = Inspector::default();
         let manager = StateRecorderManager::new(&inspector);
 
-        let mut recorder_0 = StateRecorder::new_with_manager(
+        let mut recorder_0 = EnumStateRecorder::new_with_manager(
             manager.clone(),
             "switch_0".into(),
             c"power_test",
@@ -362,7 +639,7 @@ mod tests {
             10,
         )
         .unwrap();
-        let mut recorder_1 = StateRecorder::new_with_manager(
+        let mut recorder_1 = EnumStateRecorder::new_with_manager(
             manager,
             "switch_1".into(),
             c"power_test",
@@ -370,20 +647,21 @@ mod tests {
             10,
         )
         .unwrap();
-        recorder_0.record_transition(SwitchState::ON);
-        recorder_1.record_transition(EnablementState::DISABLED);
+        recorder_0.record(SwitchState::ON);
+        recorder_1.record(EnablementState::DISABLED);
 
         assert_data_tree!(inspector, root: {
             power_observability_state_recorders: {
                 switch_0: {
                     metadata: {
                         name: "switch_0",
+                        type: "enum",
                         states: {
                             "OFF": 0u64,
                             "ON": 1u64,
                         }
                     },
-                    transition_history: {
+                    history: {
                         "0": {
                             "@time": AnyIntProperty,
                             "value": "OFF",
@@ -397,12 +675,13 @@ mod tests {
                switch_1: {
                     metadata: {
                         name: "switch_1",
+                        type: "enum",
                         states: {
                             "DISABLED": 0u64,
                             "ENABLED": 1u64,
                         }
                     },
-                    transition_history: {
+                    history: {
                         "0": {
                             "@time": AnyIntProperty,
                             "value": "ENABLED",
@@ -418,7 +697,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_three_states() {
+    async fn test_enum_three_states() {
         #[derive(Copy, Clone, Display, EnumIter, Eq, PartialEq, Hash)]
         #[repr(u8)]
         enum FanSpeed {
@@ -436,7 +715,7 @@ mod tests {
         let inspector = Inspector::default();
         let manager = StateRecorderManager::new(&inspector);
 
-        let mut recorder = StateRecorder::new_with_manager(
+        let mut recorder = EnumStateRecorder::new_with_manager(
             manager,
             "the_best_fan".into(),
             c"power_test",
@@ -445,22 +724,23 @@ mod tests {
         )
         .unwrap();
 
-        recorder.record_transition(FanSpeed::LOW);
-        recorder.record_transition(FanSpeed::HIGH);
-        recorder.record_transition(FanSpeed::OFF);
-        recorder.record_transition(FanSpeed::HIGH);
+        recorder.record(FanSpeed::LOW);
+        recorder.record(FanSpeed::HIGH);
+        recorder.record(FanSpeed::OFF);
+        recorder.record(FanSpeed::HIGH);
         assert_data_tree!(inspector, root: {
             power_observability_state_recorders: {
                 the_best_fan: {
                     metadata: {
                         name: "the_best_fan",
+                        type: "enum",
                         states: {
                             "OFF": 0u64,
                             "LOW": 1u64,
                             "HIGH": 2u64,
                         }
                     },
-                    transition_history: {
+                    history: {
                         "0": {
                             "@time": AnyIntProperty,
                             "value": "OFF",
@@ -492,7 +772,7 @@ mod tests {
         let inspector = Inspector::default();
         let manager = StateRecorderManager::new(&inspector);
 
-        let recorder = StateRecorder::new_with_manager(
+        let recorder = EnumStateRecorder::new_with_manager(
             manager.clone(),
             "my_switch".into(),
             c"power_test",
@@ -502,7 +782,7 @@ mod tests {
         .unwrap();
 
         // While `recorder` is still in scope, its name cannot be reused.
-        let result = StateRecorder::new_with_manager(
+        let result = EnumStateRecorder::new_with_manager(
             manager.clone(),
             "my_switch".into(),
             c"power_test",
@@ -513,7 +793,7 @@ mod tests {
 
         // After `recorder` is dropped, its name can be used again.
         drop(recorder);
-        let result = StateRecorder::new_with_manager(
+        let result = EnumStateRecorder::new_with_manager(
             manager.clone(),
             "my_switch".into(),
             c"power_test",
@@ -526,20 +806,22 @@ mod tests {
     #[fuchsia::test]
     async fn test_singleton_manager() {
         let mut recorder =
-            StateRecorder::new("my_switch".into(), c"power_test", SwitchState::OFF, 10).unwrap();
+            EnumStateRecorder::new("my_switch".into(), c"power_test", SwitchState::OFF, 10)
+                .unwrap();
 
-        recorder.record_transition(SwitchState::ON);
+        recorder.record(SwitchState::ON);
         assert_data_tree!(inspect::component::inspector(), root: {
             power_observability_state_recorders: {
                 my_switch: {
                     metadata: {
                         name: "my_switch",
+                        type: "enum",
                         states: {
                             "OFF": 0u64,
                             "ON": 1u64,
                         }
                     },
-                    transition_history: {
+                    history: {
                         "0": {
                             "@time": AnyIntProperty,
                             "value": "OFF",
@@ -557,6 +839,166 @@ mod tests {
     #[fuchsia::test]
     async fn test_recorder_is_send() {
         fn assert_send<T: Send>() {}
-        assert_send::<StateRecorder<SwitchState>>();
+        assert_send::<EnumStateRecorder<SwitchState>>();
+    }
+
+    async fn test_uint_numeric_type<T: RecordableNumericType>()
+    where
+        T: Into<u64> + From<u8>,
+    {
+        let inspector = Inspector::default();
+        let manager = StateRecorderManager::new(&inspector);
+
+        let mut recorder = NumericStateRecorder::new_with_manager(
+            manager,
+            "my_stateful_thing".into(),
+            c"power_test",
+            units!(Percent),
+            Some((T::from(0), T::from(255))),
+            T::from(10),
+            10,
+        )
+        .unwrap();
+
+        recorder.record(T::from(0));
+        assert_data_tree!(inspector, root: {
+            power_observability_state_recorders: {
+                my_stateful_thing: {
+                    metadata: {
+                        name: "my_stateful_thing",
+                        type: "numeric",
+                        units: "%",
+                        range: {
+                            min_inc: 0u64,
+                            max_inc: 255u64
+                        },
+                    },
+                    history: {
+                        "0": {
+                            "@time": AnyIntProperty,
+                            "value": 10u64,
+                        },
+                        "1": {
+                            "@time": AnyIntProperty,
+                            "value": 0u64,
+                        },
+                    }
+                }
+            }
+        });
+    }
+
+    #[fuchsia::test]
+    async fn test_uint_numeric_types() {
+        test_uint_numeric_type::<u8>().await;
+        test_uint_numeric_type::<u16>().await;
+        test_uint_numeric_type::<u32>().await;
+        test_uint_numeric_type::<u64>().await;
+    }
+
+    async fn test_int_numeric_type<T: RecordableNumericType>()
+    where
+        T: Into<i64> + From<i8>,
+    {
+        let inspector = Inspector::default();
+        let manager = StateRecorderManager::new(&inspector);
+
+        let mut recorder = NumericStateRecorder::new_with_manager(
+            manager,
+            "my_stateful_thing".into(),
+            c"power_test",
+            units!(Number),
+            Some((T::from(-128), T::from(127))),
+            T::from(10),
+            10,
+        )
+        .unwrap();
+
+        recorder.record(T::from(0));
+        assert_data_tree!(inspector, root: {
+            power_observability_state_recorders: {
+                my_stateful_thing: {
+                    metadata: {
+                        name: "my_stateful_thing",
+                        type: "numeric",
+                        units: "#",
+                        range: {
+                            min_inc: -128i64,
+                            max_inc: 127i64
+                        },
+                    },
+                    history: {
+                        "0": {
+                            "@time": AnyIntProperty,
+                            "value": 10i64,
+                        },
+                        "1": {
+                            "@time": AnyIntProperty,
+                            "value": 0i64,
+                        },
+                    }
+                }
+            }
+        });
+    }
+
+    #[fuchsia::test]
+    async fn test_int_numeric_types() {
+        test_int_numeric_type::<i8>().await;
+        test_int_numeric_type::<i16>().await;
+        test_int_numeric_type::<i32>().await;
+        test_int_numeric_type::<i64>().await;
+    }
+
+    async fn test_float_numeric_type<T: RecordableNumericType>()
+    where
+        T: Into<f64> + From<u8>,
+    {
+        let inspector = Inspector::default();
+        let manager = StateRecorderManager::new(&inspector);
+
+        let mut recorder = NumericStateRecorder::new_with_manager(
+            manager,
+            "my_stateful_thing".into(),
+            c"power_test",
+            units!(Kilo, Hertz),
+            Some((T::from(0), T::from(255))),
+            T::from(10),
+            10,
+        )
+        .unwrap();
+
+        recorder.record(T::from(0));
+        assert_data_tree!(inspector, root: {
+            power_observability_state_recorders: {
+                my_stateful_thing: {
+                    metadata: {
+                        name: "my_stateful_thing",
+                        type: "numeric",
+                        units: "kHz",
+                        range: {
+                            min_inc: 0.0,
+                            max_inc: 255.0
+                        },
+                    },
+                    history: {
+                        "0": {
+                            "@time": AnyIntProperty,
+                            "value": 10.0,
+                        },
+                        "1": {
+                            "@time": AnyIntProperty,
+                            "value": 0.0,
+                        },
+                    }
+                }
+            }
+        });
+    }
+
+    #[fuchsia::test]
+    async fn test_float_numeric_types() {
+        test_float_numeric_type::<f32>().await;
+        test_float_numeric_type::<f64>().await;
     }
 }

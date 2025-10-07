@@ -58,7 +58,7 @@ static const std::map<SwitchState, std::string> kOffOn = {
 };
 
 TEST_F(StateRecorderTest, OffOn) {
-  DiscreteStateMetadata metadata = {
+  EnumStateMetadata metadata = {
       .name = "my_switch",
       .states = kOffOn,
       .trace_category_literal = "power_test",
@@ -84,47 +84,45 @@ TEST_F(StateRecorderTest, OffOn) {
 
   auto recorder_hierarchy = recorders_root_hierarchy->GetByPath({"my_switch"});
   ASSERT_NE(recorder_hierarchy, nullptr);
-  EXPECT_THAT(
-      *recorder_hierarchy,
-      AllOf(NodeMatches(NameMatches("my_switch")),
-            ChildrenMatch(UnorderedElementsAre(NodeMatches(NameMatches("metadata")),
-                                               NodeMatches(NameMatches("transition_history"))))));
+  EXPECT_THAT(*recorder_hierarchy,
+              AllOf(NodeMatches(NameMatches("my_switch")),
+                    ChildrenMatch(UnorderedElementsAre(NodeMatches(NameMatches("metadata")),
+                                                       NodeMatches(NameMatches("history"))))));
 
   auto metadata_hierarchy = recorder_hierarchy->GetByPath({"metadata"});
   ASSERT_NE(metadata_hierarchy, nullptr);
   EXPECT_THAT(*metadata_hierarchy,
               AllOf(NodeMatches(PropertyList(UnorderedElementsAre(StringIs("name", "my_switch"),
-                                                                  StringIs("type", "discrete")))),
+                                                                  StringIs("type", "enum")))),
                     ChildrenMatch(UnorderedElementsAre(NodeMatches(NameMatches("states"))))));
   auto states_hierarchy = metadata_hierarchy->GetByPath({"states"});
   ASSERT_NE(states_hierarchy, nullptr);
   EXPECT_THAT(*states_hierarchy,
               NodeMatches(PropertyList(UnorderedElementsAre(UintIs("OFF", 0), UintIs("ON", 1)))));
 
-  auto transition_history = recorder_hierarchy->GetByPath({"transition_history"});
-  ASSERT_NE(transition_history, nullptr);
+  auto history = recorder_hierarchy->GetByPath({"history"});
+  ASSERT_NE(history, nullptr);
 
-  EXPECT_THAT(*transition_history,
-              ChildrenMatch(UnorderedElementsAre(
-                  NodeMatches(NameMatches("0")), NodeMatches(NameMatches("1")),
-                  NodeMatches(NameMatches("2")), NodeMatches(NameMatches("3")))));
+  EXPECT_THAT(*history, ChildrenMatch(UnorderedElementsAre(
+                            NodeMatches(NameMatches("0")), NodeMatches(NameMatches("1")),
+                            NodeMatches(NameMatches("2")), NodeMatches(NameMatches("3")))));
 
-  EXPECT_THAT(*transition_history->GetByPath({"0"}),
+  EXPECT_THAT(*history->GetByPath({"0"}),
               NodeMatches(PropertyList(
                   UnorderedElementsAre(IntIs("@time", testing::_), StringIs("value", "OFF")))));
-  EXPECT_THAT(*transition_history->GetByPath({"1"}),
+  EXPECT_THAT(*history->GetByPath({"1"}),
               NodeMatches(PropertyList(
                   UnorderedElementsAre(IntIs("@time", testing::_), StringIs("value", "ON")))));
-  EXPECT_THAT(*transition_history->GetByPath({"2"}),
+  EXPECT_THAT(*history->GetByPath({"2"}),
               NodeMatches(PropertyList(
                   UnorderedElementsAre(IntIs("@time", testing::_), StringIs("value", "OFF")))));
-  EXPECT_THAT(*transition_history->GetByPath({"3"}),
+  EXPECT_THAT(*history->GetByPath({"3"}),
               NodeMatches(PropertyList(
                   UnorderedElementsAre(IntIs("@time", testing::_), StringIs("value", "ON")))));
 }
 
 TEST_F(StateRecorderTest, CantReuseName) {
-  DiscreteStateMetadata metadata = {
+  EnumStateMetadata metadata = {
       .name = "my_switch",
       .states = kOffOn,
       .trace_category_literal = "power_test",
@@ -153,12 +151,12 @@ TEST_F(StateRecorderTest, MultipleRecorders) {
       {EnablementState::kEnabled, "ENABLED"},
   };
 
-  DiscreteStateMetadata<SwitchState> metadata_0 = {
+  EnumStateMetadata<SwitchState> metadata_0 = {
       .name = "switch_0",
       .states = kOffOn,
       .trace_category_literal = "power_test",
   };
-  DiscreteStateMetadata<EnablementState> metadata_1 = {
+  EnumStateMetadata<EnablementState> metadata_1 = {
       .name = "switch_1",
       .states = kDisabledEnabled,
       .trace_category_literal = "power_test",
@@ -187,29 +185,25 @@ TEST_F(StateRecorderTest, MultipleRecorders) {
               ChildrenMatch(ElementsAre(NodeMatches(NameMatches("switch_0")),
                                         NodeMatches(NameMatches("switch_1")))));
 
-  auto transition_history_0 =
-      recorders_root_hierarchy->GetByPath({"switch_0", "transition_history"});
-  ASSERT_NE(transition_history_0, nullptr);
-  EXPECT_THAT(*transition_history_0,
-              ChildrenMatch(UnorderedElementsAre(NodeMatches(NameMatches("0")),
-                                                 NodeMatches(NameMatches("1")))));
-  EXPECT_THAT(*transition_history_0->GetByPath({"0"}),
+  auto history_0 = recorders_root_hierarchy->GetByPath({"switch_0", "history"});
+  ASSERT_NE(history_0, nullptr);
+  EXPECT_THAT(*history_0, ChildrenMatch(UnorderedElementsAre(NodeMatches(NameMatches("0")),
+                                                             NodeMatches(NameMatches("1")))));
+  EXPECT_THAT(*history_0->GetByPath({"0"}),
               NodeMatches(PropertyList(
                   UnorderedElementsAre(IntIs("@time", testing::_), StringIs("value", "OFF")))));
-  EXPECT_THAT(*transition_history_0->GetByPath({"1"}),
+  EXPECT_THAT(*history_0->GetByPath({"1"}),
               NodeMatches(PropertyList(
                   UnorderedElementsAre(IntIs("@time", testing::_), StringIs("value", "ON")))));
 
-  auto transition_history_1 =
-      recorders_root_hierarchy->GetByPath({"switch_1", "transition_history"});
-  ASSERT_NE(transition_history_1, nullptr);
-  EXPECT_THAT(*transition_history_1,
-              ChildrenMatch(UnorderedElementsAre(NodeMatches(NameMatches("0")),
-                                                 NodeMatches(NameMatches("1")))));
-  EXPECT_THAT(*transition_history_1->GetByPath({"0"}),
+  auto history_1 = recorders_root_hierarchy->GetByPath({"switch_1", "history"});
+  ASSERT_NE(history_1, nullptr);
+  EXPECT_THAT(*history_1, ChildrenMatch(UnorderedElementsAre(NodeMatches(NameMatches("0")),
+                                                             NodeMatches(NameMatches("1")))));
+  EXPECT_THAT(*history_1->GetByPath({"0"}),
               NodeMatches(PropertyList(
                   UnorderedElementsAre(IntIs("@time", testing::_), StringIs("value", "ENABLED")))));
-  EXPECT_THAT(*transition_history_1->GetByPath({"1"}),
+  EXPECT_THAT(*history_1->GetByPath({"1"}),
               NodeMatches(PropertyList(UnorderedElementsAre(IntIs("@time", testing::_),
                                                             StringIs("value", "DISABLED")))));
 }
@@ -222,7 +216,7 @@ TEST_F(StateRecorderTest, ThreeStates) {
       {FanSpeed::kLow, "LOW_SPEED"},
       {FanSpeed::kHigh, "HIGH_SPEED"},
   };
-  DiscreteStateMetadata metadata = {
+  EnumStateMetadata metadata = {
       .name = "my_fan",
       .states = kFanSpeeds,
       .trace_category_literal = "power_test",
@@ -247,26 +241,25 @@ TEST_F(StateRecorderTest, ThreeStates) {
 
   auto recorder_hierarchy = recorders_root_hierarchy->GetByPath({"my_fan"});
   ASSERT_NE(recorder_hierarchy, nullptr);
-  EXPECT_THAT(
-      *recorder_hierarchy,
-      AllOf(NodeMatches(NameMatches("my_fan")),
-            ChildrenMatch(UnorderedElementsAre(NodeMatches(NameMatches("metadata")),
-                                               NodeMatches(NameMatches("transition_history"))))));
+  EXPECT_THAT(*recorder_hierarchy,
+              AllOf(NodeMatches(NameMatches("my_fan")),
+                    ChildrenMatch(UnorderedElementsAre(NodeMatches(NameMatches("metadata")),
+                                                       NodeMatches(NameMatches("history"))))));
 
-  auto transition_history = recorder_hierarchy->GetByPath({"transition_history"});
-  ASSERT_NE(transition_history, nullptr);
+  auto history = recorder_hierarchy->GetByPath({"history"});
+  ASSERT_NE(history, nullptr);
 
-  EXPECT_THAT(*transition_history, ChildrenMatch(UnorderedElementsAre(
-                                       NodeMatches(NameMatches("0")), NodeMatches(NameMatches("1")),
-                                       NodeMatches(NameMatches("2")))));
+  EXPECT_THAT(*history, ChildrenMatch(UnorderedElementsAre(NodeMatches(NameMatches("0")),
+                                                           NodeMatches(NameMatches("1")),
+                                                           NodeMatches(NameMatches("2")))));
 
-  EXPECT_THAT(*transition_history->GetByPath({"0"}),
+  EXPECT_THAT(*history->GetByPath({"0"}),
               NodeMatches(PropertyList(
                   UnorderedElementsAre(IntIs("@time", testing::_), StringIs("value", "OFF")))));
-  EXPECT_THAT(*transition_history->GetByPath({"1"}),
+  EXPECT_THAT(*history->GetByPath({"1"}),
               NodeMatches(PropertyList(UnorderedElementsAre(IntIs("@time", testing::_),
                                                             StringIs("value", "HIGH_SPEED")))));
-  EXPECT_THAT(*transition_history->GetByPath({"2"}),
+  EXPECT_THAT(*history->GetByPath({"2"}),
               NodeMatches(PropertyList(UnorderedElementsAre(IntIs("@time", testing::_),
                                                             StringIs("value", "LOW_SPEED")))));
 }

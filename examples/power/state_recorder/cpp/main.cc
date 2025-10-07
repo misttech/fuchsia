@@ -82,7 +82,7 @@ class ExampleComponent {
   trace::TraceProviderWithFdio trace_provider_;
   inspect::ComponentInspector inspector_;
   power_observability::StateRecorderManager manager_;
-  power_observability::DiscreteStateMetadata<FanSpeed> metadata_;
+  power_observability::EnumStateMetadata<FanSpeed> metadata_;
   std::optional<StateRecorder<FanSpeed>> recorder_;
   uint32_t transition_counter_ = 1;
 
