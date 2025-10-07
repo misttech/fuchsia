@@ -22,7 +22,8 @@ class ArmEhAbiModule {
   // Load the .ARM.exidx binary search table.
   [[nodiscard]] Error Load();
 
-  [[nodiscard]] Error Step(Memory* stack, const Registers& current, Registers& next);
+  [[nodiscard]] Error Step(Memory* stack, const Registers& current, Registers& next,
+                           bool pc_is_return_address);
 
   struct IdxHeaderData {
     uint32_t fn_addr = 0;

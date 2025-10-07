@@ -33,7 +33,7 @@ Error ArmEhAbiUnwinder::Step(Memory* stack, const Frame& current, Frame& next) {
       // Make sure we mark the next registers as 32 bit so we're setting the expected PC, LR, and SP
       // registers.
       next.regs = Registers(Registers::Arch::kArm32);
-      return Step(stack, elf_module, current.regs, next.regs);
+      return Step(stack, elf_module, current.regs, next.regs, current.pc_is_return_address);
     case Module::AddressSize::k64Bit:
       return Error("Module for PC is not 32 bit.");
     default:
@@ -42,13 +42,13 @@ Error ArmEhAbiUnwinder::Step(Memory* stack, const Frame& current, Frame& next) {
 }
 
 Error ArmEhAbiUnwinder::Step(Memory* stack, Module* elf_module, const Registers& current,
-                             Registers& next) {
+                             Registers& next, bool pc_is_return_address) {
   ArmEhAbiModule* ehabi_module = nullptr;
   if (auto e = GetEhAbiModuleFromModuleInfo(elf_module, &ehabi_module); e.has_err()) {
     return e;
   }
 
-  return ehabi_module->Step(stack, current, next);
+  return ehabi_module->Step(stack, current, next, pc_is_return_address);
 }
 
 void ArmEhAbiUnwinder::AsyncStep(AsyncMemory* stack, const Frame& current,

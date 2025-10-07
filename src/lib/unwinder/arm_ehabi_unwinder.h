@@ -27,7 +27,8 @@ class ArmEhAbiUnwinder : public UnwinderBase {
                  fit::callback<void(Error, Registers)> cb) override;
 
  private:
-  Error Step(Memory* stack, Module* elf_module, const Registers& current, Registers& next);
+  Error Step(Memory* stack, Module* elf_module, const Registers& current, Registers& next,
+             bool pc_is_return_address);
 
   void AsyncStep(AsyncMemory* stack, Registers current, bool is_return_address,
                  fit::callback<void(Error, Registers)> cb);

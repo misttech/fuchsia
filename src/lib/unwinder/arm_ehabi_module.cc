@@ -111,10 +111,23 @@ Error ArmEhAbiModule::Search(uint32_t pc, IdxHeader& entry) {
   return Success();
 }
 
-Error ArmEhAbiModule::Step(Memory* stack, const Registers& current, Registers& next) {
+Error ArmEhAbiModule::Step(Memory* stack, const Registers& current, Registers& next,
+                           bool pc_is_return_address) {
   uint64_t pc;
   if (auto err = current.GetPC(pc); err.has_err()) {
     return err;
+  }
+
+  // pc_is_return_address indicates whether pc in the current registers is a return address from a
+  // previous "Step". If it is, we need to subtract 1 to find the call site because "call" could
+  // be the last instruction of a nonreturn function and now the PC is pointing outside of the
+  // valid code boundary.
+  //
+  // Subtracting 1 is sufficient here because in |Search| above, we binary search function start
+  // addresses to find the unwinding instructions corresponding to this address. So it's still
+  // correct even if pc is not pointing to the beginning of an instruction.
+  if (pc_is_return_address) {
+    pc -= 1;
   }
 
   IdxHeader entry;
