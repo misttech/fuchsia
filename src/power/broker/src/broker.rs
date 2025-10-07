@@ -6,14 +6,14 @@ use crate::inspect::{
     AddElementInspectWriter, EagerInspectWriter, InspectAddDependency, InspectUpdateLevel,
     UpdateLevelInspectWriter,
 };
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use async_utils::hanging_get::server::{HangingGet, Publisher, Subscriber};
 use fidl_fuchsia_power_broker::{
     self as fpb, DependencyType, LeaseStatus, Permissions, RegisterDependencyTokenError,
     StatusError, StatusWatchPowerLevelResponder, UnregisterDependencyTokenError,
 };
 use fuchsia_inspect::{InspectType as IType, Node as INode};
-use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
+use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use itertools::Itertools;
 use std::borrow::Cow;
 use std::cmp::max;
@@ -949,7 +949,7 @@ impl Broker {
             // belonging to another lease that has not been dropped, is not contingent, and whose
             // required level satisfies its required level, we can drop this claim immediately.
             if self.catalog.assertive_claims.activated.claims.contains_key(&claim_to_check.id) {
-                for related_claim in self
+                let mut related_claims = self
                     .catalog
                     .assertive_claims
                     .activated
@@ -958,14 +958,16 @@ impl Broker {
                     .filter(|c| c.lease_id != claim_to_check.lease_id)
                     .filter(|c| !self.catalog.is_lease_dropped(&c.lease_id))
                     .filter(|c| !self.is_lease_contingent(&c.lease_id))
-                {
-                    if related_claim.requires().level.satisfies(claim_to_check.requires().level) {
-                        log::debug!(
-                            "required level still required by another lease's activated assertive claim, will drop/deactivate {claim_to_check}"
-                        );
-                        claims_to_drop_or_deactivate.push(claim_to_check.clone());
-                        continue;
-                    }
+                    .into_iter();
+                let related_claim = related_claims.find(|related_claim| {
+                    related_claim.requires().level.satisfies(claim_to_check.requires().level)
+                });
+                if let Some(related_claim) = related_claim {
+                    log::debug!(
+                        "required level still required by another lease's activated assertive claim({related_claim}), will drop/deactivate {claim_to_check}"
+                    );
+                    claims_to_drop_or_deactivate.push(claim_to_check.clone());
+                    continue;
                 }
             }
             if self.current_level_satisfies(claim_to_check.dependent()) {
@@ -1045,7 +1047,10 @@ impl Broker {
                 self.catalog.opportunistic_claims.activated.for_required_element(&element_id)
             {
                 if !max_required_by_assertive.satisfies(opportunistic_claim.requires().level) {
-                    log::debug!("opportunistic_claim {opportunistic_claim} no longer satisfied, must reevaluate lease {}", opportunistic_claim.lease_id);
+                    log::debug!(
+                        "opportunistic_claim {opportunistic_claim} no longer satisfied, must reevaluate lease {}",
+                        opportunistic_claim.lease_id
+                    );
                     leases_affected.insert(opportunistic_claim.lease_id);
                 }
             }
@@ -1928,7 +1933,7 @@ impl SatisfyPowerLevel for Option<IndexedPowerLevel> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fidl_fuchsia_power_broker::{BinaryPowerLevel, DependencyToken};
     use lazy_static::lazy_static;
     use power_broker_client::BINARY_POWER_LEVELS;
