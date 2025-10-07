@@ -425,6 +425,10 @@ group("handlebars") {
   public_deps = [ ":handlebars-v4_3_5" ]
 }
 
+group("hashbrown") {
+  public_deps = [ ":hashbrown-v0_15_4" ]
+}
+
 group("hashlink") {
   public_deps = [ ":hashlink-v0_10_0" ]
 }

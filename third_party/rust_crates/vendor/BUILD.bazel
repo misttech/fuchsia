@@ -1207,6 +1207,18 @@ alias(
 )
 
 alias(
+    name = "hashbrown-0.15.4",
+    actual = "//third_party/rust_crates/vendor/hashbrown-0.15.4:hashbrown",
+    tags = ["manual"],
+)
+
+alias(
+    name = "hashbrown",
+    actual = "//third_party/rust_crates/vendor/hashbrown-0.15.4:hashbrown",
+    tags = ["manual"],
+)
+
+alias(
     name = "hashlink-0.10.0",
     actual = "//third_party/rust_crates/vendor/hashlink-0.10.0:hashlink",
     tags = ["manual"],

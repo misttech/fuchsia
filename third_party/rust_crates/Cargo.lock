@@ -1634,6 +1634,7 @@ dependencies = [
  "gpt",
  "half",
  "handlebars",
+ "hashbrown 0.15.4",
  "hashlink",
  "heck 0.4.1",
  "hex",
