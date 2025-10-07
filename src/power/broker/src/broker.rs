@@ -249,15 +249,14 @@ impl Broker {
                         .difference(&HashSet::<Dependency>::from_iter(opportunistic_dependencies_safe.clone()))
                         .cloned()
                         .collect::<HashSet<Dependency>>();
-                let broken_claims = assertive_dependencies_broken
+                let broken_dependencies = assertive_dependencies_broken
                     .into_iter()
                     .chain(opportunistic_dependencies_broken.into_iter())
-                    .map(|d| Claim::new(d, &lease_id))
                     .collect::<HashSet<_>>();
 
-                for claim in broken_claims {
+                for dependency in broken_dependencies {
                     let mut claim_on_broken_element = false;
-                    if claim.requires().element_id == *element_id {
+                    if dependency.requires.element_id == *element_id {
                         claim_on_broken_element = true;
                     }
                     self.catalog
@@ -266,7 +265,7 @@ impl Broker {
                         .for_lease(&lease_id)
                         .into_iter()
                         .chain(self.catalog.opportunistic_claims.activated.for_lease(&lease_id))
-                        .filter(|c| c.dependency == claim.dependency)
+                        .filter(|c| c.dependency == dependency)
                         .for_each(|c| {
                             // Eagerly deactivate these claims, instead of simply
                             // marking them for deactivation. This ensures that they
@@ -1279,8 +1278,8 @@ impl Lease {
     }
 }
 
-#[derive(Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub struct ClaimID(String);
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
+pub struct ClaimID(u64);
 
 impl fmt::Display for ClaimID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -1289,9 +1288,9 @@ impl fmt::Display for ClaimID {
 }
 
 impl ops::Deref for ClaimID {
-    type Target = str;
-    fn deref(&self) -> &str {
-        self.0.as_str()
+    type Target = u64;
+    fn deref(&self) -> &u64 {
+        &self.0
     }
 }
 
@@ -1309,11 +1308,6 @@ impl fmt::Display for Claim {
 }
 
 impl Claim {
-    fn new(dependency: Dependency, lease_id: &LeaseID) -> Self {
-        let id = Uuid::new_v4().as_simple().to_string();
-        Claim { id: ClaimID(id), dependency, lease_id: lease_id.clone() }
-    }
-
     fn dependent(&self) -> &ElementLevel {
         &self.dependency.dependent
     }
@@ -1361,6 +1355,7 @@ struct Catalog {
     /// level. In order for this to happen, an assertive claim from
     /// another lease must have been activated and then satisfied.
     opportunistic_claims: ClaimActivationTracker,
+    last_claim_id: ClaimID,
 }
 
 impl Catalog {
@@ -1372,7 +1367,17 @@ impl Catalog {
             lease_contingent: HashMap::new(),
             assertive_claims: ClaimActivationTracker::new(DependencyType::Assertive),
             opportunistic_claims: ClaimActivationTracker::new(DependencyType::Opportunistic),
+            last_claim_id: ClaimID(0),
         }
+    }
+
+    fn next_claim_id(&mut self) -> ClaimID {
+        self.last_claim_id = ClaimID(self.last_claim_id.0 + 1);
+        self.last_claim_id
+    }
+
+    fn add_claim(&mut self, dependency: Dependency, lease_id: &LeaseID) -> Claim {
+        Claim { id: self.next_claim_id(), dependency, lease_id: lease_id.clone() }
     }
 
     fn minimum_level(&self, element_id: &ElementID) -> IndexedPowerLevel {
@@ -1548,11 +1553,11 @@ impl Catalog {
         // Create all possible claims from the assertive and opportunistic dependencies.
         let assertive_claims = assertive_dependencies
             .into_iter()
-            .map(|dependency| Claim::new(dependency, &lease.id))
+            .map(|dependency| self.add_claim(dependency, &lease.id))
             .collect::<Vec<Claim>>();
         let opportunistic_claims = opportunistic_dependencies
             .into_iter()
-            .map(|dependency| Claim::new(dependency, &lease.id))
+            .map(|dependency| self.add_claim(dependency, &lease.id))
             .collect::<Vec<Claim>>();
         // Filter claims down to only the essential (i.e. non-redundant) claims.
         let (essential_assertive_claims, essential_opportunistic_claims) =
@@ -2122,13 +2127,15 @@ mod tests {
     }
 
     fn create_test_claim(
+        id: u64,
         dependent_element_id: ElementID,
         dependent_element_level: fpb::PowerLevel,
         requires_element_id: ElementID,
         requires_element_level: fpb::PowerLevel,
     ) -> Claim {
-        Claim::new(
-            Dependency {
+        Claim {
+            id: ClaimID(id),
+            dependency: Dependency {
                 dependent: ElementLevel {
                     element_id: dependent_element_id,
                     level: IndexedPowerLevel::from_same_level_and_index(dependent_element_level),
@@ -2138,8 +2145,8 @@ mod tests {
                     level: IndexedPowerLevel::from_same_level_and_index(requires_element_level),
                 },
             },
-            &LeaseID(0),
-        )
+            lease_id: LeaseID(0),
+        }
     }
 
     #[fuchsia::test]
@@ -2148,8 +2155,8 @@ mod tests {
 
         let element_a = ElementID::new(1);
         let element_b = ElementID::new(2);
-        let claim_a_1_b_1 = create_test_claim(element_a, 1, element_b, 1);
-        let claim_a_2_b_2 = create_test_claim(element_a, 2, element_b, 2);
+        let claim_a_1_b_1 = create_test_claim(1, element_a, 1, element_b, 1);
+        let claim_a_2_b_2 = create_test_claim(2, element_a, 2, element_b, 2);
 
         lookup.add(claim_a_1_b_1.clone());
         lookup.add(claim_a_2_b_2.clone());
@@ -2174,11 +2181,11 @@ mod tests {
         let element_a = ElementID::new(1);
         let element_b = ElementID::new(2);
         let element_c = ElementID::new(3);
-        let claim_a_1_b_1 = create_test_claim(element_a, 1, element_b, 1);
-        let claim_a_2_b_2 = create_test_claim(element_a, 2, element_b, 2);
-        let claim_a_1_c_1 = create_test_claim(element_a, 1, element_c, 1);
-        let claim_b_1_c_1 = create_test_claim(element_b, 1, element_c, 1);
-        let claim_a_2_c_2 = create_test_claim(element_a, 2, element_c, 2);
+        let claim_a_1_b_1 = create_test_claim(1, element_a, 1, element_b, 1);
+        let claim_a_2_b_2 = create_test_claim(2, element_a, 2, element_b, 2);
+        let claim_a_1_c_1 = create_test_claim(3, element_a, 1, element_c, 1);
+        let claim_b_1_c_1 = create_test_claim(4, element_b, 1, element_c, 1);
+        let claim_a_2_c_2 = create_test_claim(5, element_a, 2, element_c, 2);
 
         //  A     B
         //  1 ==> 1 (redundant with A@2=>B@2)
