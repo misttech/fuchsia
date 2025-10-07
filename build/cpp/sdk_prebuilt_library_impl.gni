@@ -80,12 +80,17 @@ import("//build/sdk/sdk_atom_alias.gni")
 #
 #     See https://fxbug.dev/42068255 for more details about this field.
 #
+# ==============================================================================
+#
 # TECHNICAL NOTE ON 'runtime_deps':
 #
 # The `runtime_deps` parameter is used to list the sdk_shared_library()
-# targets that this one depends on at runtime. Unfortunately, this cannot be
-# computed directly by GN. To better understand why, consider the following
-# example:
+# targets that this target depends on at runtime but that cannot be computed
+# directly by GN. Doing so ensures that the dependencies are included in the IDK
+# collection and that they are is listed in the IDK metadata for the target so
+# that IDK consumers will know to package them when using the target.
+#
+# To better understand why this is necessary, consider the following example:
 #
 #     sdk_shared_library("foo") {
 #       ...
@@ -115,7 +120,6 @@ import("//build/sdk/sdk_atom_alias.gni")
 #      v
 #     bar <--- bar_sdk
 #
-#
 # However, without "runtime_deps", 'foo_sdk' will _not_ depend on 'bar_sdk',
 # which means that if an sdk_collection() target depends on 'foo_sdk', the
 # atom for the 'bar_sdk' target will be ignored. The result is a "broken"
@@ -142,6 +146,52 @@ import("//build/sdk/sdk_atom_alias.gni")
 #      |          |--- this dependency added through runtime_deps!
 #      v          v
 #     bar <--- bar_sdk
+#
+#
+# There are also indirect scenarios, such as the following example:
+#
+#     sdk_shared_library("foo") {
+#       ...
+#       deps = [ ":baz" ]
+#     }
+#
+#     static_library("baz") {
+#       ...
+#       deps = [ ":bar" ]
+#     }
+#
+#     sdk_shared_library("bar") {
+#       ...
+#     }
+#
+# This creates the following dependencies:
+#
+#     foo <--- foo_sdk
+#      |
+#      v
+#     baz
+#      |
+#      v
+#     bar <--- bar_sdk
+#
+# In this case, 'foo' has no direct knowledge of 'bar' but still has a runtime
+# dependency on it.
+#
+# To fix this, set 'runtime_deps' to point to the SDK atom target for bar as
+# before, as in:
+#
+#    sdk_shared_library("foo") {
+#      ...
+#      deps = [ ":baz" ]
+#      runtime_deps = [ ":bar_sdk" ]
+#    }
+#
+#
+# The runtime dependencies for the atom defined by this template are collected
+# by the `generate_runtime_deps()` subtarget. During IDK generation,
+# `//build/cpp/verify_runtime_deps.py` verifies that all runtime dependencies
+# are covered by the atom's dependencies, which are the union of `public_deps`
+#  and `runtime_deps` in this template.
 #
 template("sdk_prebuilt_library_impl") {
   assert(defined(invoker.prebuilt_library_type),
