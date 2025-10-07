@@ -81,7 +81,14 @@ if (current_build_target_api_level != "PLATFORM") {
 # excluded or different. ":core_packages" is an example.
 # Note: The current value is broader than needed to satisfy the description. It
 # could be narrowed if we find a way to ensure it does not rot.
-_all_idk_atoms_affecting_compatibility = [ ":fuchsia_collection" ]
+_all_idk_atoms_affecting_compatibility = [
+  ":fuchsia_collection",
+
+  # Not all FIDL libraries with compatibility guarantees are in the IDK. Include
+  # this target to cover those. Note that not all of these directly affect
+  # runtime compatibility.
+  "//sdk/fidl:compatibility_tests",
+]
 
 if (!sdk_inside_sub_build) {
   # This default target depends on the most important atoms built in the main
@@ -121,11 +128,7 @@ if (current_toolchain == default_toolchain) {
       "//scripts/versioning:*",
     ]
     testonly = true
-    deps = _all_idk_atoms_affecting_compatibility + [
-             # Not all FIDL libraries with compatibility guarantees are in the IDK. Include this
-             # target to cover those.
-             "//sdk/fidl:compatibility_tests",
-           ]
+    deps = _all_idk_atoms_affecting_compatibility
   }
 }
 
