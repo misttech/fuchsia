@@ -104,26 +104,6 @@ class Atom(MinimalAtom):
         return self.id < other.id
 
 
-def gather_dependencies(
-    manifests: list[str] | None,
-) -> tuple[set[str], set[Atom]]:
-    """Extracts the set of all required atoms from the given manifests, as well
-    as the set of names of all the direct dependencies.
-    """
-    direct_deps: set[str] = set()
-    atoms: set[Atom] = set()
-
-    if manifests is None:
-        return (direct_deps, atoms)
-
-    for dep in manifests:
-        with open(dep, "r") as dep_file:
-            dep_manifest = json.load(dep_file)
-            direct_deps.update(dep_manifest["ids"])
-            atoms.update([Atom(a) for a in dep_manifest["atoms"]])
-    return (direct_deps, atoms)
-
-
 def detect_collisions(atoms: Sequence[MinimalAtom]) -> Iterator[str]:
     """Detects name collisions in a given atom list. Yields a series of error
     messages as strings."""

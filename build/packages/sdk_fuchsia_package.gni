@@ -266,7 +266,6 @@ template("sdk_fuchsia_package") {
                                ])
 
         id = "sdk://packages/${invoker.distribution_name}"
-        type = "package"
       }
 
       # Suppress unused variable warnings.
