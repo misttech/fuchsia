@@ -45,7 +45,7 @@ class PlatformUartIoProvider<zbi_dcfg_simple_t, IoType>
   using Base::Base;
   PlatformUartIoProvider(const zbi_dcfg_simple_t& config, size_t io_slots)
       : Base(config, io_slots, gPhysHandoff->uart_mmio.data()) {
-    ZX_DEBUG_ASSERT(config.mmio_phys == gPhysHandoff->uart_mmio.paddr);
+    ZX_DEBUG_ASSERT(config.mmio_phys == gPhysHandoff->uart_mmio.paddr());
   }
 };
 

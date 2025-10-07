@@ -51,7 +51,7 @@ void HandoffPrep::ArchConstructKernelAddressSpace() {
   if (arch_handoff.plic_driver) {
     const zbi_dcfg_riscv_plic_driver_t& config = arch_handoff.plic_driver->zbi;
     arch_handoff.plic_driver->mmio =
-        PublishSingleMmioMappingVmar("PLIC"sv, config.mmio_phys, config.size_bytes);
+        PublishSingleMmioMappingVmar("PLIC"sv, config.mmio_phys, config.size_bytes).get();
   }
 }
 

@@ -12,6 +12,7 @@
 
 #include <assert.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <zircon/assert.h>
 
 #include <span>
@@ -122,8 +123,11 @@ class PhysHandoffPtr {
 
   // Default-constructible, movable but not copyable (use .get() instead).
   constexpr PhysHandoffPtr() = default;
-  constexpr PhysHandoffPtr(const PhysHandoffPtr&) = delete;
   constexpr PhysHandoffPtr(PhysHandoffPtr&& other) noexcept : ptr_(std::exchange(other.ptr_, {})) {}
+
+  constexpr PhysHandoffPtr(const PhysHandoffPtr&)
+    requires(kCanDeref)  // It's copyable when kCanDeref, move-only otherwise.
+  = default;
 
   // In the kernel proper, pointers that are definitely into the image itself
   // can be initialized as constinit.
@@ -135,6 +139,10 @@ class PhysHandoffPtr {
     ptr_ = std::exchange(other.ptr_, {});
     return *this;
   }
+
+  constexpr PhysHandoffPtr& operator=(const PhysHandoffPtr&)
+    requires(kCanDeref)  // It's copyable when kCanDeref, move-only otherwise.
+  = default;
 
   constexpr auto operator<=>(const PhysHandoffPtr& other) const = default;
 
@@ -202,11 +210,12 @@ class PhysHandoffSpan {
   using value_type = Ptr::value_type;
 
   constexpr PhysHandoffSpan() = default;
-  PhysHandoffSpan(const PhysHandoffSpan&) = delete;
+  constexpr PhysHandoffSpan(const PhysHandoffSpan&) = default;
   constexpr PhysHandoffSpan(PhysHandoffSpan&&) noexcept = default;
 
   constexpr PhysHandoffSpan(Ptr ptr, size_t size) : ptr_(std::move(ptr)), size_(size) {}
 
+  constexpr PhysHandoffSpan& operator=(const PhysHandoffSpan&) noexcept = default;
   constexpr PhysHandoffSpan& operator=(PhysHandoffSpan&&) noexcept = default;
 
   constexpr auto operator<=>(const PhysHandoffSpan& other) const = default;
@@ -323,5 +332,43 @@ using PhysHandoffPhysicalPtr = PhysHandoffPtr<T, PhysHandoffPtrLifetime::kPhysic
 
 template <typename T>
 using PhysHandoffPhysicalSpan = PhysHandoffSpan<T, PhysHandoffPtrLifetime::kPhysical>;
+
+// A mapped MMIO region is a kPhysical span that also carries its paddr.
+class MappedMmioRange : public PhysHandoffPhysicalSpan<volatile std::byte> {
+ public:
+  constexpr MappedMmioRange() = default;
+
+  constexpr MappedMmioRange(const MappedMmioRange&) = default;
+
+  constexpr MappedMmioRange& operator=(const MappedMmioRange&) = default;
+
+  // Sort only by paddr.
+  constexpr auto operator<=>(const MappedMmioRange& other) const { return paddr_ <=> other.paddr_; }
+
+  constexpr uint64_t paddr() const { return paddr_; }
+
+  constexpr uint64_t paddr_end() const { return paddr_ + size_bytes(); }
+
+  constexpr bool contains_paddr(uint64_t paddr) const {
+    return paddr >= paddr_ && paddr - paddr_ < size_bytes();
+  }
+
+  uintptr_t vaddr() const { return reinterpret_cast<uintptr_t>(data()); }
+
+  uintptr_t vaddr_end() const { return vaddr() + size_bytes(); }
+
+  bool contains_vaddr(uintptr_t addr) const {
+    return addr >= vaddr() && addr - vaddr() < size_bytes();
+  }
+
+ private:
+  friend class HandoffPrep;
+
+  using Base = PhysHandoffPhysicalSpan<volatile std::byte>;
+
+  using Base::operator=;
+
+  uint64_t paddr_ = 0;
+};
 
 #endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_HANDOFF_PTR_H_

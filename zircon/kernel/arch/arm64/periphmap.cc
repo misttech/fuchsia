@@ -36,13 +36,13 @@ void RecordPeriphRanges(uint level) {
 LK_INIT_HOOK(record_periph_ranges, RecordPeriphRanges, LK_INIT_LEVEL_EARLIEST)
 
 struct Phys2VirtTrait {
-  static uint64_t src(const MappedMmioRange& r) { return r.paddr; }
+  static uint64_t src(const MappedMmioRange& r) { return r.paddr(); }
   static uint64_t dst(const MappedMmioRange& r) { return reinterpret_cast<uintptr_t>(r.data()); }
 };
 
 struct Virt2PhysTrait {
   static uint64_t src(const MappedMmioRange& r) { return reinterpret_cast<uintptr_t>(r.data()); }
-  static uint64_t dst(const MappedMmioRange& r) { return r.paddr; }
+  static uint64_t dst(const MappedMmioRange& r) { return r.paddr(); }
 };
 
 template <typename Fetch>
@@ -240,9 +240,8 @@ int cmd_peripheral_map(int argc, const cmd_args* argv, uint32_t flags) {
   if (!strcmp(argv[1].str, "dump")) {
     for (const auto& range : gPeriphRanges) {
       DEBUG_ASSERT(range.size_bytes() > 0);
-      printf("Phys [%016lx, %016lx) ==> Virt [%16p, %016lx) (len 0x%08lx)\n", range.paddr,
-             range.paddr + range.size_bytes(), range.data(),
-             reinterpret_cast<uintptr_t>(range.data()) + range.size_bytes(), range.size_bytes());
+      printf("Phys [%016lx, %016lx) ==> Virt [%16p, %016lx) (len 0x%08lx)\n", range.paddr(),
+             range.paddr_end(), range.data(), range.vaddr_end(), range.size_bytes());
     }
     printf("Dumped %zu defined peripheral map ranges\n", gPeriphRanges.size());
   } else if (!strcmp(argv[1].str, "phys2virt") || !strcmp(argv[1].str, "virt2phys")) {

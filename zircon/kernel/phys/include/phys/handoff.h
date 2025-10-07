@@ -305,7 +305,6 @@ struct MappedRange : public std::span<Byte> {
 };
 
 using MappedMemoryRange = MappedRange<std::byte>;
-using MappedMmioRange = MappedRange<volatile std::byte>;
 
 // This holds (or points to) everything that is handed off from physboot to the
 // kernel proper at boot time for active initialization use.  This is best used

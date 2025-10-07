@@ -403,8 +403,13 @@ class HandoffPrep {
 
   // A specialization for an MMIO range.
   MappedMmioRange PublishSingleMmioMappingVmar(ktl::string_view name, uintptr_t addr, size_t size) {
-    return PublishSingleMappingVmar(name, PhysMapping::Type::kMmio, addr, size,
-                                    PhysMapping::Permissions::Rw());
+    ktl::span vaddr_range = PublishSingleMappingVmar(name, PhysMapping::Type::kMmio, addr, size,
+                                                     PhysMapping::Permissions::Rw());
+    MappedMmioRange result;
+    result.ptr_.ptr_ = vaddr_range.data();
+    result.size_ = vaddr_range.size_bytes();
+    result.paddr_ = addr;
+    return result;
   }
 
   // A specialization for a non-MMIO range.
