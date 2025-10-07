@@ -65,6 +65,10 @@ impl PolicyCursor {
         Ok(())
     }
 
+    pub fn data(&self) -> &PolicyData {
+        &self.data
+    }
+
     /// Returns a slice of remaining data.
     fn remaining_slice(&self) -> &[u8] {
         let s: &[u8] = self.data.as_ref();

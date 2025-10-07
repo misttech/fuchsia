@@ -378,7 +378,7 @@ impl Validate for AccessVectorRule {
     }
 }
 
-#[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, PartialEq, Unaligned)]
+#[derive(Clone, Debug, KnownLayout, FromBytes, Immutable, Eq, PartialEq, Unaligned, Hash)]
 #[repr(C, packed)]
 pub(super) struct AccessVectorRuleMetadata {
     source_type: le::U16,
@@ -388,6 +388,14 @@ pub(super) struct AccessVectorRuleMetadata {
 }
 
 impl AccessVectorRuleMetadata {
+    pub fn for_query(source: TypeId, target: TypeId, class: ClassId, rule_type: u16) -> Self {
+        let source_type = le::U16::new(source.0.get() as u16);
+        let target_type = le::U16::new(target.0.get() as u16);
+        let class = le::U16::new(class.0.get() as u16);
+        let access_vector_rule_type = le::U16::new(rule_type);
+        Self { source_type, target_type, class, access_vector_rule_type }
+    }
+
     fn permission_data_size(&self) -> usize {
         if (self.access_vector_rule_type & ACCESS_VECTOR_RULE_DATA_IS_XPERM_MASK) != 0 {
             std::mem::size_of::<ExtendedPermissions>()
@@ -396,24 +404,6 @@ impl AccessVectorRuleMetadata {
         } else {
             std::mem::size_of::<le::U32>()
         }
-    }
-
-    /// Returns whether this access vector rule comes from an
-    /// `allow [source] [target]:[class] { [permissions] };` policy statement.
-    pub fn is_allow(&self) -> bool {
-        (self.access_vector_rule_type & ACCESS_VECTOR_RULE_TYPE_ALLOW) != 0
-    }
-
-    /// Returns whether this access vector rule comes from an
-    /// `auditallow [source] [target]:[class] { [permissions] };` policy statement.
-    pub fn is_auditallow(&self) -> bool {
-        (self.access_vector_rule_type & ACCESS_VECTOR_RULE_TYPE_AUDITALLOW) != 0
-    }
-
-    /// Returns whether this access vector rule comes from an
-    /// `dontaudit [source] [target]:[class] { [permissions] };` policy statement.
-    pub fn is_dontaudit(&self) -> bool {
-        (self.access_vector_rule_type & ACCESS_VECTOR_RULE_TYPE_DONTAUDIT) != 0
     }
 
     /// Returns whether this access vector rule comes from a

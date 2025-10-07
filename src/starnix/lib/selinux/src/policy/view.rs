@@ -5,7 +5,11 @@
 use super::PolicyValidationContext;
 use super::parser::{PolicyCursor, PolicyData, PolicyOffset};
 use crate::policy::{Counted, Parse, Validate};
+use hashbrown::hash_table::HashTable;
+use std::fmt::Debug;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::marker::PhantomData;
+use std::ops::Deref;
 use zerocopy::FromBytes;
 
 /// A trait for types that have metadata.
@@ -226,5 +230,85 @@ impl<M: Counted + Parse + Sized, D: Parse> Parse for ArrayView<M, D> {
         let count = metadata.count();
         let cursor = parse_array_data::<D>(cursor, count)?;
         Ok((Self::new(start, count), cursor))
+    }
+}
+
+/// A view into the data of an array of objects, with efficient lookup based on metadata hash.
+///
+/// This struct contains only a vector of offsets into the policy data, to allow efficient lookup
+/// of vector elements with matching metadata.
+#[derive(Debug, Clone)]
+pub(crate) struct HashedArrayView<M, D: HasMetadata> {
+    array_view: ArrayView<M, D>,
+    index: HashTable<PolicyOffset>,
+}
+
+impl<M, D: HasMetadata> Deref for HashedArrayView<M, D> {
+    type Target = ArrayView<M, D>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.array_view
+    }
+}
+
+impl<D: HasMetadata, M> HashedArrayView<M, D>
+where
+    D::Metadata: Hash,
+{
+    fn metadata_hash(metadata: &D::Metadata) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        metadata.hash(&mut hasher);
+        hasher.finish()
+    }
+}
+
+impl<D: Parse + HasMetadata, M> HashedArrayView<M, D>
+where
+    D::Metadata: Eq + PartialEq + Hash + Debug,
+{
+    /// Looks up the entry with the specified metadata `key`, and parsed & returns the value.
+    pub fn find(&self, key: D::Metadata, policy_data: &PolicyData) -> Option<D> {
+        let key_hash = Self::metadata_hash(&key);
+        let offset = self.index.find(key_hash, |&offset| {
+            let element = View::<D>::at(offset);
+            key == element.read_metadata(policy_data)
+        })?;
+        let element = View::<D>::at(*offset);
+        Some(element.parse(policy_data))
+    }
+}
+
+impl<M: Counted + Parse + Sized, D: Parse + HasMetadata> Parse for HashedArrayView<M, D>
+where
+    D::Metadata: Eq + Debug + PartialEq + Parse + Hash,
+{
+    /// [`HashedArrayView`] abstracts over two types (`M` and `D`) that may have different
+    /// [`Parse::Error`] types. Unify error return type via [`anyhow::Error`].
+    type Error = anyhow::Error;
+
+    fn parse(cursor: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
+        // Parse the array using `ArrayView<>` rather than replicating that logic, for now.
+        let (array_view, _) =
+            ArrayView::<M, D>::parse(cursor.clone()).map_err(Into::<anyhow::Error>::into)?;
+
+        // Allocate a hash table sized appropriately for the array size.
+        let mut index = HashTable::with_capacity(array_view.count as usize);
+
+        // Iterate over the elements inserting their offsets into hash buckets.
+        let (_, mut cursor) = M::parse(cursor).map_err(Into::<anyhow::Error>::into)?;
+        for _ in 0..array_view.count {
+            let (metadata, _) =
+                D::Metadata::parse(cursor.clone()).map_err(Into::<anyhow::Error>::into)?;
+            let (_, next) = D::parse(cursor.clone()).map_err(Into::<anyhow::Error>::into)?;
+
+            index.insert_unique(Self::metadata_hash(&metadata), cursor.offset(), |&offset| {
+                let element = View::<D>::at(offset);
+                Self::metadata_hash(&element.read_metadata(cursor.data()))
+            });
+
+            cursor = next;
+        }
+
+        Ok((Self { array_view, index }, cursor))
     }
 }
