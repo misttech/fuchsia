@@ -4357,6 +4357,66 @@ static bool vmo_loaned_high_priority_parent_test() {
   END_TEST;
 }
 
+// Attempts to transfer data over a parent content marker slot where the parent content is a zero
+// marker.
+static bool vmo_zero_marker_transfer_test() {
+  BEGIN_TEST;
+
+  // Need a compressor.
+  auto compression = Pmm::Node().GetPageCompression();
+  if (!compression) {
+    END_TEST;
+  }
+
+  AutoVmScannerDisable scanner_disable;
+
+  const size_t kNumPages = 1;
+  const size_t alloc_size = kNumPages * PAGE_SIZE;
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, alloc_size, &vmo));
+
+  ASSERT_OK(vmo->CommitRange(0, alloc_size));
+
+  fbl::RefPtr<VmObject> clone1;
+  ASSERT_OK(vmo->CreateClone(Resizability::NonResizable, SnapshotType::Full, 0, alloc_size, false,
+                             &clone1));
+
+  ASSERT_OK(vmo->CommitRange(0, alloc_size));
+
+  // A second level clone is needed so that the compressor actually inserts a zero marker instead of
+  // simply freeing up the deduped zero page.
+  fbl::RefPtr<VmObject> clone2;
+  ASSERT_OK(vmo->CreateClone(Resizability::NonResizable, SnapshotType::Full, 0, alloc_size, false,
+                             &clone2));
+
+  // Compress the parent page by reaching into the hidden VMO parent.
+  fbl::RefPtr<VmCowPages> hidden_root = vmo->DebugGetCowPages()->DebugGetParent();
+  ASSERT_NONNULL(hidden_root);
+  vm_page_t* page = hidden_root->DebugGetPage(0);
+  ASSERT_NONNULL(page);
+  {
+    auto compressor = compression->AcquireCompressor();
+    ASSERT_OK(compressor.get().Arm());
+    // Attempt to reclaim the page in the hidden parent.
+    uint64_t reclaimed = reclaim_page(hidden_root, page, 0, VmCowPages::EvictionAction::FollowHint,
+                                      &compressor.get());
+    EXPECT_EQ(reclaimed, 1u);
+  }
+  ASSERT_TRUE(hidden_root->DebugIsMarker(0));
+
+  // Transfer data, overwriting the parent content marker.
+  fbl::RefPtr<VmObjectPaged> aux;
+  ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, alloc_size, &aux));
+  ASSERT_OK(aux->CommitRange(0, alloc_size));
+
+  VmPageSpliceList pages;
+  ASSERT_OK(aux->TakePages(0, alloc_size, &pages));
+  ASSERT_OK(vmo->SupplyPages(0, alloc_size, &pages, SupplyOptions::TransferData));
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(vmo_tests)
 VM_UNITTEST(vmo_create_test)
 VM_UNITTEST(vmo_create_maximum_size)
@@ -4426,6 +4486,7 @@ VM_UNITTEST(vmo_skip_range_update_test)
 VM_UNITTEST(vmo_user_stream_size_test)
 VM_UNITTEST(vmo_loaned_high_priority_parent_test)
 VM_UNITTEST(vmo_loaned_page_in_high_priority_test)
+VM_UNITTEST(vmo_zero_marker_transfer_test)
 UNITTEST_END_TESTCASE(vmo_tests, "vmo", "VmObject tests")
 
 }  // namespace vm_unittest

@@ -5910,8 +5910,10 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
             FindInitialPageContentLocked(dst_offset, &lookup_info);
             DEBUG_ASSERT(lookup_info.cursor.current() && !lookup_info.cursor.current()->IsEmpty());
             DEBUG_ASSERT(lookup_info.owner);
-            lookup_info.owner.locked().DecrementCowContentShareCount(
-                lookup_info.cursor.current(), dst_offset, deferred.FreedList(this), compression);
+            if (lookup_info.cursor.current()->IsPageOrRef()) {
+              lookup_info.owner.locked().DecrementCowContentShareCount(
+                  lookup_info.cursor.current(), dst_offset, deferred.FreedList(this), compression);
+            }
           }
           return ZX_ERR_NEXT;
         },
