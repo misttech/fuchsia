@@ -241,6 +241,13 @@ void FakeWlanix::GetName(GetNameCompleter::Sync& completer) {
   completer.Reply(builder.Build());
 }
 
+void FakeWlanix::SetScanOnlyMode(
+    fuchsia_wlan_wlanix::wire::WifiStaIfaceSetScanOnlyModeRequest* request,
+    SetScanOnlyModeCompleter::Sync& completer) {
+  AppendCommand(Command{.tag = CommandTag::kWifiStaIfaceSetScanOnlyMode});
+  completer.Reply(fit::ok());
+}
+
 void FakeWlanix::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_wlan_wlanix::WifiStaIface> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {

@@ -53,6 +53,22 @@ async fn handle_wifi_sta_iface_request(req: fidl_wlanix::WifiStaIfaceRequest) ->
             };
             responder.send(&response).context("send GetName response")?;
         }
+        fidl_wlanix::WifiStaIfaceRequest::SetScanOnlyMode { responder, payload } => {
+            let enabled = payload.enable;
+            info!("fidl_wlanix::WifiStaIfaceRequest::SetScanOnlyMode: {:?}", enabled);
+            let res = match enabled {
+                Some(true) => {
+                    // TODO(b/443061003): make a call to the driver here
+                    Err(zx::sys::ZX_ERR_NOT_SUPPORTED)
+                }
+                Some(false) => {
+                    // TODO(b/443061003): make a call to the driver here
+                    Err(zx::sys::ZX_ERR_NOT_SUPPORTED)
+                }
+                None => Err(zx::sys::ZX_ERR_INVALID_ARGS),
+            };
+            responder.send(res).context("send SetScanOnlyMode response")?;
+        }
         fidl_wlanix::WifiStaIfaceRequest::_UnknownMethod { ordinal, .. } => {
             warn!("Unknown WifiStaIfaceRequest ordinal: {}", ordinal);
         }

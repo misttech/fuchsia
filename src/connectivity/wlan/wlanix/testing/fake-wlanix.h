@@ -43,6 +43,7 @@ enum class CommandTag {
   kWifiChipSelectTxPowerScenario,
   kWifiChipResetTxPowerScenario,
   kWifiStaIfaceGetName,
+  kWifiStaIfaceSetScanOnlyMode,
   kWifiStaIfaceUnknownMethod,
   kSupplicantAddStaInterface,
   kSupplicantRemoveInterface,
@@ -135,6 +136,8 @@ class FakeWlanix : public fidl::WireServer<fuchsia_wlan_wlanix::Wlanix>,
 
   // WifiStaIface methods
   void GetName(GetNameCompleter::Sync& completer) override;
+  void SetScanOnlyMode(fuchsia_wlan_wlanix::wire::WifiStaIfaceSetScanOnlyModeRequest* request,
+                       SetScanOnlyModeCompleter::Sync& completer) override;
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_wlan_wlanix::WifiStaIface> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override;

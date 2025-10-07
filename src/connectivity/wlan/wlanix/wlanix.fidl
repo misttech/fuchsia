@@ -150,6 +150,9 @@ open protocol WifiStaIface {
     flexible GetName() -> (table {
         1: iface_name string:16;
     });
+    flexible SetScanOnlyMode(resource table {
+        1: enable bool;
+    }) -> () error zx.Status;
 };
 
 open protocol Supplicant {
