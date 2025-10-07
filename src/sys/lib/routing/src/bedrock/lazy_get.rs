@@ -40,14 +40,19 @@ impl<R: Routable<Dict> + 'static, T: CapabilityBound> LazyGet<T> for R {
                 request: Option<Request>,
                 debug: bool,
             ) -> Result<RouterResponse<T>, RouterError> {
+                let get_init_request = || -> Result<Option<Request>, RoutingError> {
+                    let res = if self.path.iter_segments().count() > 1 {
+                        request_with_dictionary_replacement(request.as_ref())?
+                    } else {
+                        request.as_ref().map(|r| r.try_clone()).transpose()?
+                    };
+                    Ok(res)
+                };
+
                 // If `debug` is true, that should only apply to the capability at `path`.
                 // Here we're looking up the containing dictionary, so set `debug = false`, to
                 // obtain the actual Dict and not its debug info.
-                let init_request = if self.path.iter_segments().count() > 1 {
-                    request_with_dictionary_replacement(request.as_ref())?
-                } else {
-                    request.as_ref().map(|r| r.try_clone()).transpose()?
-                };
+                let init_request = (get_init_request)()?;
                 match self.router.route(init_request, false).await? {
                     RouterResponse::<Dict>::Capability(dict) => {
                         let moniker: ExtendedMoniker = self.not_found_error.clone().into();
@@ -64,10 +69,33 @@ impl<R: Routable<Dict> + 'static, T: CapabilityBound> LazyGet<T> for R {
                         })?;
                         return Ok(resp);
                     }
-                    _ => Err(RoutingError::BedrockMemberAccessUnsupported {
-                        moniker: self.not_found_error.clone().into(),
+                    RouterResponse::<Dict>::Debug(data) => Ok(RouterResponse::<T>::Debug(data)),
+                    RouterResponse::<Dict>::Unavailable => {
+                        if !debug {
+                            Ok(RouterResponse::<T>::Unavailable)
+                        } else {
+                            // `debug=true` was the input to this function but the call above to
+                            // [`Router::route`] used `debug=false`. Call the router again with the
+                            // same arguments but with `debug=true` so that we return the debug
+                            // info to the caller (which ought to be [`CapabilitySource::Void`]).
+                            let init_request = (get_init_request)()?;
+                            match self.router.route(init_request, true).await? {
+                                RouterResponse::<Dict>::Debug(d) => {
+                                    Ok(RouterResponse::<T>::Debug(d))
+                                }
+                                _ => {
+                                    // This shouldn't happen (we passed debug=true).
+                                    let moniker = self.not_found_error.clone().into();
+                                    Err(RoutingError::BedrockWrongCapabilityType {
+                                        expected: "RouterResponse::Debug".into(),
+                                        actual: "not RouterResponse::Debug".into(),
+                                        moniker,
+                                    }
+                                    .into())
+                                }
+                            }
+                        }
                     }
-                    .into()),
                 }
             }
         }

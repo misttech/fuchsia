@@ -17,8 +17,8 @@ use crate::error::{ErrorReporter, RouteRequestErrorInfo, RoutingError};
 use crate::{DictExt, LazyGet, Sources, WithPorcelain};
 use async_trait::async_trait;
 use cm_rust::{
-    CapabilityTypeName, DictionaryValue, ExposeDeclCommon, NativeIntoFidl, OfferDeclCommon,
-    SourceName, SourcePath, UseDeclCommon,
+    CapabilityTypeName, DictionaryValue, ExposeDecl, ExposeDeclCommon, NativeIntoFidl, OfferDecl,
+    OfferDeclCommon, SourceName, SourcePath, UseDeclCommon,
 };
 use cm_types::{Availability, BorrowedSeparatedPath, IterablePath, Name, SeparatedPath};
 use fidl::endpoints::DiscoverableProtocolMarker;
@@ -1552,10 +1552,7 @@ fn extend_dict_with_offer<T, C: ComponentInstanceInterface + 'static>(
                 Router::<T>::new_error(err)
             }
         }
-        cm_rust::OfferSource::Void => UnavailableRouter::new::<T>(
-            InternalCapability::Protocol(offer.source_name().clone()),
-            component,
-        ),
+        cm_rust::OfferSource::Void => UnavailableRouter::new_from_offer(offer, component),
         cm_rust::OfferSource::Collection(_collection_name) => {
             // There's nothing in a collection at this stage, and thus we can't get any routers to
             // things in the collection. What's more: the contents of the collection can change
@@ -1726,10 +1723,7 @@ fn extend_dict_with_expose<T, C: ComponentInstanceInterface + 'static>(
                 Router::<T>::new_error(err)
             }
         }
-        cm_rust::ExposeSource::Void => UnavailableRouter::new(
-            InternalCapability::Protocol(expose.source_name().clone()),
-            component,
-        ),
+        cm_rust::ExposeSource::Void => UnavailableRouter::new_from_expose(expose, component),
         // There's nothing in a collection at this stage, and thus we can't get any routers to
         // things in the collection. What's more: the contents of the collection can change over
         // time, so it must be monitored. We don't handle collections here, they're handled in a
@@ -1765,7 +1759,37 @@ struct UnavailableRouter<C: ComponentInstanceInterface> {
 
 impl<C: ComponentInstanceInterface + 'static> UnavailableRouter<C> {
     fn new<T: CapabilityBound>(capability: InternalCapability, component: &Arc<C>) -> Router<T> {
-        Router::<T>::new(UnavailableRouter { capability, component: component.as_weak() })
+        Router::<T>::new(Self { capability, component: component.as_weak() })
+    }
+
+    fn new_from_offer<T: CapabilityBound>(offer: &OfferDecl, component: &Arc<C>) -> Router<T> {
+        let name = offer.source_name().clone();
+        let capability = match offer {
+            OfferDecl::Service(_) => InternalCapability::Service(name),
+            OfferDecl::Protocol(_) => InternalCapability::Protocol(name),
+            OfferDecl::Directory(_) => InternalCapability::Directory(name),
+            OfferDecl::Storage(_) => InternalCapability::Storage(name),
+            OfferDecl::Runner(_) => InternalCapability::Runner(name),
+            OfferDecl::Resolver(_) => InternalCapability::Resolver(name),
+            OfferDecl::EventStream(_) => InternalCapability::EventStream(name),
+            OfferDecl::Dictionary(_) => InternalCapability::Dictionary(name),
+            OfferDecl::Config(_) => InternalCapability::Config(name),
+        };
+        Self::new(capability, component)
+    }
+
+    fn new_from_expose<T: CapabilityBound>(expose: &ExposeDecl, component: &Arc<C>) -> Router<T> {
+        let name = expose.source_name().clone();
+        let capability = match expose {
+            ExposeDecl::Service(_) => InternalCapability::Service(name),
+            ExposeDecl::Protocol(_) => InternalCapability::Protocol(name),
+            ExposeDecl::Directory(_) => InternalCapability::Directory(name),
+            ExposeDecl::Runner(_) => InternalCapability::Runner(name),
+            ExposeDecl::Resolver(_) => InternalCapability::Resolver(name),
+            ExposeDecl::Dictionary(_) => InternalCapability::Dictionary(name),
+            ExposeDecl::Config(_) => InternalCapability::Config(name),
+        };
+        Self::new(capability, component)
     }
 }
 

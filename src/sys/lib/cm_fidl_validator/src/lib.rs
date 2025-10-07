@@ -1805,7 +1805,7 @@ impl<'a> ValidationContext<'a> {
                     e.source_dictionary.as_ref(),
                     e.target.as_ref(),
                     e.target_name.as_ref(),
-                    Some(&fdecl::Availability::Required),
+                    e.availability.as_ref(),
                     expose_to_parent_ids,
                     expose_to_framework_ids,
                 );

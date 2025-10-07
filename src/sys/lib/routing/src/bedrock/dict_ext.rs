@@ -164,11 +164,13 @@ impl DictExt for Dict {
                 request: Option<Request>,
                 debug: bool,
             ) -> Result<RouterResponse<T>, RouterError> {
+                let get_init_request = || request_with_dictionary_replacement(request.as_ref());
+
                 // If `debug` is true, that should only apply to the capability at `path`.
                 // Here we're looking up the containing dictionary, so set `debug = false`, to
                 // obtain the actual Dict and not its debug info. For the same reason, we need
                 // to set the capability type on the first request to Dictionary.
-                let init_request = request_with_dictionary_replacement(request.as_ref())?;
+                let init_request = (get_init_request)()?;
                 match self.router.route(init_request, false).await? {
                     RouterResponse::<Dict>::Capability(dict) => {
                         let moniker: ExtendedMoniker = self.not_found_error.clone().into();
@@ -185,10 +187,33 @@ impl DictExt for Dict {
                         })?;
                         Ok(resp)
                     }
-                    _ => Err(RoutingError::BedrockMemberAccessUnsupported {
-                        moniker: self.not_found_error.clone().into(),
+                    RouterResponse::<Dict>::Debug(data) => Ok(RouterResponse::<T>::Debug(data)),
+                    RouterResponse::<Dict>::Unavailable => {
+                        if !debug {
+                            Ok(RouterResponse::<T>::Unavailable)
+                        } else {
+                            // `debug=true` was the input to this function but the call above to
+                            // [`Router::route`] used `debug=false`. Call the router again with the
+                            // same arguments but with `debug=true` so that we return the debug
+                            // info to the caller (which ought to be [`CapabilitySource::Void`]).
+                            let init_request = (get_init_request)()?;
+                            match self.router.route(init_request, true).await? {
+                                RouterResponse::<Dict>::Debug(d) => {
+                                    Ok(RouterResponse::<T>::Debug(d))
+                                }
+                                _ => {
+                                    // This shouldn't happen (we passed debug=true).
+                                    let moniker = self.not_found_error.clone().into();
+                                    Err(RoutingError::BedrockWrongCapabilityType {
+                                        expected: "RouterResponse::Debug".into(),
+                                        actual: "not RouterResponse::Debug".into(),
+                                        moniker,
+                                    }
+                                    .into())
+                                }
+                            }
+                        }
                     }
-                    .into()),
                 }
             }
         }
@@ -306,35 +331,49 @@ impl DictExt for Dict {
                 return Ok(None);
             };
 
-            // Resolve the capability, this is a noop if it's not a router.
-            let debug = if next_idx < num_segments - 1 {
-                // If `request.debug` is true, that should only apply to the capability at `path`.
-                // Since we're not looking up the final path segment, set `debug = false`, to
-                // obtain the actual Dict and not its debug info.
-                false
-            } else {
-                debug
-            };
-
             if next_idx < num_segments - 1 {
                 // Not at the end of the path yet, so there's more nesting. We expect to
                 // have found a [Dict], or a [Dict] router -- traverse into this [Dict].
-                let request = request_with_dictionary_replacement(request.as_ref())?;
+                let dict_request = request_with_dictionary_replacement(request.as_ref())?;
                 match capability {
                     Capability::Dictionary(d) => {
                         current_dict = d;
                     }
-                    Capability::DictionaryRouter(r) => match r.route(request, false).await? {
+                    Capability::DictionaryRouter(r) => match r.route(dict_request, false).await? {
                         RouterResponse::<Dict>::Capability(d) => {
                             current_dict = d;
-                        }
-                        RouterResponse::<Dict>::Unavailable => {
-                            return Ok(Some(GenericRouterResponse::Unavailable));
                         }
                         RouterResponse::<Dict>::Debug(d) => {
                             // This shouldn't happen (we passed debug=false). Just pass it up
                             // the chain so the caller can decide how to deal with it.
                             return Ok(Some(GenericRouterResponse::Debug(d)));
+                        }
+                        RouterResponse::<Dict>::Unavailable => {
+                            if !debug {
+                                return Ok(Some(GenericRouterResponse::Unavailable));
+                            } else {
+                                // `debug=true` was the input to this function but the call above
+                                // to [`Router::route`] used `debug=false`. Call the router again
+                                // with the same arguments but with `debug=true` so that we return
+                                // the debug info to the caller (which ought to be
+                                // [`CapabilitySource::Void`]).
+                                let dict_request =
+                                    request_with_dictionary_replacement(request.as_ref())?;
+                                match r.route(dict_request, true).await? {
+                                    RouterResponse::<Dict>::Debug(d) => {
+                                        return Ok(Some(GenericRouterResponse::Debug(d)));
+                                    }
+                                    _ => {
+                                        // This shouldn't happen (we passed debug=true).
+                                        return Err(RoutingError::BedrockWrongCapabilityType {
+                                            expected: "RouterResponse::Debug".into(),
+                                            actual: "not RouterResponse::Debug".into(),
+                                            moniker: moniker.clone(),
+                                        }
+                                        .into());
+                                    }
+                                }
+                            }
                         }
                     },
                     _ => {

@@ -57,6 +57,7 @@ use sandbox::{
     Capability, CapabilityBound, Connector, Data, Dict, DirConnector, Request, Routable, Router,
     RouterResponse,
 };
+use std::fmt::Debug;
 use std::sync::Arc;
 use subdir::SubDir;
 use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio, zx_status as zx};
@@ -625,7 +626,7 @@ async fn route_capability_inner<T, C>(
 ) -> Result<RouteSource, RoutingError>
 where
     C: ComponentInstanceInterface + 'static,
-    T: CapabilityBound,
+    T: CapabilityBound + Debug,
     Router<T>: TryFrom<Capability>,
 {
     let router = dictionary
@@ -645,13 +646,13 @@ async fn perform_route<T, C>(
 ) -> Result<RouteSource, RoutingError>
 where
     C: ComponentInstanceInterface + 'static,
-    T: CapabilityBound,
+    T: CapabilityBound + Debug,
     Router<T>: TryFrom<Capability>,
 {
     let request = Request { target: WeakComponentInstanceInterface::new(target).into(), metadata };
     let data = match router.route(Some(request), true).await? {
         RouterResponse::<T>::Debug(d) => d,
-        _ => panic!("Debug route did not return a debug response"),
+        d => panic!("Debug route did not return a debug response: {d:?}"),
     };
     Ok(RouteSource::new(data.try_into().unwrap()))
 }
