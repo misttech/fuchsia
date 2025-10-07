@@ -816,11 +816,13 @@ pub type FxfsKeyV49 = fxfs_crypto::FxfsKey;
 
 #[cfg(test)]
 mod tests {
-    use super::{ObjectKey, ObjectKeyV43};
+    use super::{ObjectKey, ObjectKeyV43, TimestampV49};
     use crate::lsm_tree::types::{
         FuzzyHash as _, LayerKey, OrdLowerBound, OrdUpperBound, RangeKey,
     };
     use std::cmp::Ordering;
+    use std::ops::Add;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     // Smoke test to ensure hash stability for Fxfs objects.
     // If this test fails, the hash algorithm changed, and that won't do -- Fxfs relies on stable
@@ -896,5 +898,25 @@ mod tests {
             ObjectKey::extent(1, 0, 50..100).overlaps(&ObjectKey::extent(1, 0, 0..50)),
             false
         );
+    }
+
+    #[test]
+    fn test_timestamp() {
+        fn compare_time(std_time: Duration) {
+            let ts_time: TimestampV49 = std_time.into();
+            assert_eq!(<TimestampV49 as Into<Duration>>::into(ts_time), std_time);
+            assert_eq!(ts_time.subsec_nanos(), std_time.subsec_nanos());
+            assert_eq!(ts_time.as_secs(), std_time.as_secs());
+            assert_eq!(ts_time.as_nanos() as u128, std_time.as_nanos());
+        }
+        compare_time(Duration::from_nanos(0));
+        compare_time(Duration::from_nanos(u64::MAX));
+        compare_time(SystemTime::now().duration_since(UNIX_EPOCH).unwrap());
+
+        let ts: TimestampV49 = Duration::from_secs(u64::MAX - 1).into();
+        assert_eq!(ts.nanos, u64::MAX);
+
+        let ts: TimestampV49 = (Duration::from_nanos(u64::MAX).add(Duration::from_nanos(1))).into();
+        assert_eq!(ts.nanos, u64::MAX);
     }
 }

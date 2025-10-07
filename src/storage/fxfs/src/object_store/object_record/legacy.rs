@@ -263,7 +263,7 @@ impl From<TimestampV32> for TimestampV49 {
     }
 }
 
-#[derive(Serialize, Deserialize, TypeFingerprint)]
+#[derive(Copy, Clone, Serialize, Deserialize, TypeFingerprint)]
 pub struct TimestampV32 {
     pub secs: u64,
     pub nanos: u32,
@@ -298,5 +298,17 @@ impl From<ObjectItemV41> for ObjectItemV43 {
 impl From<ObjectItemV40> for ObjectItemV41 {
     fn from(item: ObjectItemV40) -> Self {
         Self { key: item.key.into(), value: item.value.into(), sequence: item.sequence }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_timestamp_v32_to_v49() {
+        let v32 = TimestampV32 { secs: 100, nanos: 200 };
+        let v49: TimestampV49 = v32.into();
+        assert_eq!(v32.secs * 1_000_000_000 + v32.nanos as u64, v49.nanos);
     }
 }
