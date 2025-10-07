@@ -4,6 +4,7 @@
 
 use crate::disk_builder::{DataSpec, DiskBuilder, VolumesSpec};
 use anyhow::Error;
+use fake_keymint::FakeKeymint;
 use ffeedback::FileReportResults;
 use fidl::prelude::*;
 use fs_management::filesystem::DirBasedBlockConnector;
@@ -12,13 +13,13 @@ use fuchsia_component_test::LocalComponentHandles;
 use futures::channel::mpsc::{self};
 use futures::future::BoxFuture;
 use futures::{FutureExt as _, SinkExt as _, StreamExt as _};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use vfs::execution_scope::ExecutionScope;
 
 use {
     fidl_fuchsia_boot as fboot, fidl_fuchsia_feedback as ffeedback,
     fidl_fuchsia_fshost_fxfsprovisioner as ffxfsprovisioner, fidl_fuchsia_io as fio,
-    fidl_fuchsia_storage_partitions as fpartitions,
+    fidl_fuchsia_security_keymint as fkeymint, fidl_fuchsia_storage_partitions as fpartitions,
 };
 
 /// Identifier for ramdisk storage. Defined in sdk/lib/zbi-format/include/lib/zbi-format/zbi.h.
@@ -28,13 +29,15 @@ pub fn new_mocks(
     vmo: Option<zx::Vmo>,
     crash_reports_sink: mpsc::Sender<ffeedback::CrashReport>,
     device_config: String,
+    crypt_policy: crypt_policy::Policy,
 ) -> impl Fn(LocalComponentHandles) -> BoxFuture<'static, Result<(), Error>> + Sync + Send + 'static
 {
     let vmo = vmo.map(Arc::new);
     let mock = move |handles: LocalComponentHandles| {
         let vmo_clone = vmo.clone();
         let config_clone = device_config.clone();
-        run_mocks(handles, vmo_clone, crash_reports_sink.clone(), config_clone).boxed()
+        run_mocks(handles, vmo_clone, crash_reports_sink.clone(), config_clone, crypt_policy)
+            .boxed()
     };
 
     mock
@@ -45,16 +48,19 @@ async fn run_mocks(
     vmo: Option<Arc<zx::Vmo>>,
     crash_reports_sink: mpsc::Sender<ffeedback::CrashReport>,
     device_config: String,
+    crypt_policy: crypt_policy::Policy,
 ) -> Result<(), Error> {
     let export = vfs::pseudo_directory! {
         "boot" => vfs::pseudo_directory! {
             "config" => vfs::pseudo_directory! {
                 "fshost" => vfs::file::read_only(&device_config),
-                // Tests are expected to use a null zxcrypt policy.
-                "zxcrypt" => vfs::file::read_only("null"),
+                "zxcrypt" => vfs::file::read_only(&format!("{crypt_policy}")),
             },
         },
         "svc" => vfs::pseudo_directory! {
+            fkeymint::SealingKeysMarker::PROTOCOL_NAME => vfs::service::host(move |stream| {
+                run_keymint(stream)
+            }),
             fboot::ItemsMarker::PROTOCOL_NAME => vfs::service::host(move |stream| {
                 let vmo_clone = vmo.clone();
                 run_boot_items(stream, vmo_clone)
@@ -147,7 +153,7 @@ async fn run_fxfs_provisioner(mut stream: ffxfsprovisioner::FxfsProvisionerReque
                 let mut disk_builder = DiskBuilder::new();
                 disk_builder
                     .format_volumes(VolumesSpec { fxfs_blob: true, create_data_partition: true })
-                    .format_data(DataSpec { format: Some("fxfs"), zxcrypt: false });
+                    .format_data(DataSpec { format: Some("fxfs"), ..Default::default() });
                 disk_builder.build_fxfs_as_volume_manager(connector).await;
 
                 responder.send(Ok(())).unwrap();
@@ -157,4 +163,11 @@ async fn run_fxfs_provisioner(mut stream: ffxfsprovisioner::FxfsProvisionerReque
             }
         }
     }
+}
+
+async fn run_keymint(stream: fkeymint::SealingKeysRequestStream) {
+    // We have to use a singleton because the Keymint service is stateful.
+    static KEYMINT: LazyLock<FakeKeymint> = LazyLock::new(FakeKeymint::default);
+    let keymint = &*KEYMINT;
+    keymint.run_keymint_service(stream).await.unwrap();
 }

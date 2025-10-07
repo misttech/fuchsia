@@ -5,7 +5,7 @@
 use aes_gcm_siv::aead::{Aead as _, Payload};
 use aes_gcm_siv::{Aes128GcmSiv, Key, KeyInit as _, Nonce};
 use anyhow::Error;
-use crypt_policy::{KeyConsumer, Policy, unseal_sources};
+use crypt_policy::{KeyConsumer, KeySource, Policy, unseal_sources};
 use fidl::endpoints::{ClientEnd, create_request_stream};
 use fidl_fuchsia_fxfs::CryptRequest;
 use futures::{FutureExt, TryStreamExt};
@@ -35,7 +35,12 @@ async fn unwrap_zxcrypt_key(policy: Policy, wrapped_key: &[u8]) -> Result<Vec<u8
     let (header, _) = ZxcryptHeader::read_from_prefix(wrapped_key).unwrap();
 
     for source in sources {
-        let key = source.get_key(KeyConsumer::Zxcrypt).await.map_err(|_| zx::Status::INTERNAL)?;
+        let key = match source {
+            KeySource::Null(null) => null.get_key(KeyConsumer::Zxcrypt),
+            KeySource::TeeDerived(tee) => tee.get_key().await.map_err(|_| zx::Status::INTERNAL)?,
+            // zxcrypt is deprecated, so don't bother supporting any new key sources
+            _ => return Err(zx::Status::NOT_SUPPORTED),
+        };
         let hk = Hkdf::<sha2::Sha256>::new(Some(&header.guid), &key);
         let mut wrap_key = [0; 16];
         let mut wrap_iv = [0; 12];
@@ -70,7 +75,11 @@ async fn create_zxcrypt_key(policy: Policy) -> Result<([u8; 16], Vec<u8>, Vec<u8
     zx::cprng_draw(&mut unwrapped_key);
 
     if let Some(source) = sources.first() {
-        let key = source.get_key(KeyConsumer::Zxcrypt).await.map_err(|_| zx::Status::INTERNAL)?;
+        let key = match source {
+            KeySource::Null(null) => null.get_key(KeyConsumer::Zxcrypt),
+            KeySource::TeeDerived(tee) => tee.get_key().await.map_err(|_| zx::Status::INTERNAL)?,
+            _ => return Err(zx::Status::NOT_SUPPORTED),
+        };
         let hk = Hkdf::<sha2::Sha256>::new(Some(&header.guid), &key);
         let mut wrap_key = [0; 16];
         let mut wrap_iv = [0; 12];

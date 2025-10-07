@@ -2,9 +2,28 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+//! Manages encryption for Fxfs' data volume.
+//!
+//! The keys for the data volume are stored in the "unencrypted" volume in a keybag.  The contents
+//! of "unencrypted" differ, depending on the crypt policy used:
+//!
+//! # Legacy policies (null / tee):
+//!
+//! keys/
+//!   fxfs-data  # Wrapped keys for the data volume are serialized to this file; see
+//!              # [`KeyBagManager`]
+//!
+//! # Keymint policy (hardware-sealed keys)
+//!
+//! keys/
+//!   keymint.0 # The sealing key ID and sealed keys for each volume are stored in this file; see
+//!             # [`KeyManager`]
+
 use crate::device::constants::{DATA_VOLUME_LABEL, UNENCRYPTED_VOLUME_LABEL};
 use anyhow::{Context, Error, anyhow};
-use crypt_policy::{KeyConsumer, format_sources, get_policy, unseal_sources};
+use crypt_policy::{
+    KeyConsumer, KeySource, KeymintSealedData, format_sources, get_policy, unseal_sources,
+};
 use fidl::endpoints::{ClientEnd, Proxy};
 use fidl_fuchsia_component::{self as fcomponent, RealmMarker};
 use fidl_fuchsia_fs_startup::{CheckOptions, CreateOptions, MountOptions};
@@ -13,64 +32,185 @@ use fs_management::filesystem::{ServingMultiVolumeFilesystem, ServingVolume};
 use fuchsia_component::client::{
     connect_to_protocol, connect_to_protocol_at_dir_root, open_childs_exposed_directory,
 };
-use fuchsia_fs::directory::open_directory;
-use fuchsia_fs::node::OpenError;
 use key_bag::{AES128_KEY_SIZE, AES256_KEY_SIZE, Aes256Key, KeyBagManager, WrappingKey};
+use std::collections::BTreeMap;
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio};
 
-const KEYBAG_DIR_NAME: &str = "keys";
+struct KeyManager {
+    dir: fio::DirectoryProxy,
+}
+
+const KEYBAG_DIR_NAME: &'static str = "keys";
+
+// The suffix at the end shall be treated as a version number corresponding with
+// `PersistentKeymintSealedData`.
+const KEYMINT_PERSISTENCE_FILE: &'static str = "keymint.0";
+
 const KEYBAG_FILE_NAME: &str = "fxfs-data";
 
-async fn unwrap_or_create_keys(
-    mut keybag: KeyBagManager,
-    create: bool,
-) -> Result<(Aes256Key, Aes256Key), Error> {
-    let policy = get_policy().await?;
-    let sources = if create { format_sources(policy) } else { unseal_sources(policy) };
+#[derive(serde::Serialize, serde::Deserialize)]
+struct PersistentKeymintSealedDataV0 {
+    sealing_key_info: Vec<u8>,
+    sealing_key_blob: Vec<u8>,
+    sealed_keys: BTreeMap<String, Vec<u8>>,
+}
 
-    let mut last_err = anyhow!("no keys?");
-    for source in sources {
-        let key = source.get_key(KeyConsumer::Fxfs).await?;
-        let wrapping_key = match key.len() {
-            // unwrap is safe because we know the length of the requested array is the same length
-            // as the Vec in both branches.
-            AES128_KEY_SIZE => WrappingKey::Aes128(key.try_into().unwrap()),
-            AES256_KEY_SIZE => WrappingKey::Aes256(key.try_into().unwrap()),
-            _ => {
-                log::warn!("key from {:?} source was an invalid size - skipping", source);
-                last_err = anyhow!("invalid key size");
-                continue;
-            }
-        };
-
-        let mut unwrap_fn = |slot| {
-            if create {
-                keybag.new_key(slot, &wrapping_key).context("new key")
-            } else {
-                keybag.unwrap_key(slot, &wrapping_key).context("unwrapping key")
-            }
-        };
-
-        let data_unwrapped = match unwrap_fn(0) {
-            Ok(data_unwrapped) => data_unwrapped,
-            Err(e) => {
-                last_err = e.context("data key");
-                continue;
-            }
-        };
-        let metadata_unwrapped = match unwrap_fn(1) {
-            Ok(metadata_unwrapped) => metadata_unwrapped,
-            Err(e) => {
-                last_err = e.context("metadata key");
-                continue;
-            }
-        };
-        return Ok((data_unwrapped, metadata_unwrapped));
+impl From<PersistentKeymintSealedDataV0> for KeymintSealedData {
+    fn from(value: PersistentKeymintSealedDataV0) -> Self {
+        Self {
+            sealing_key_info: value.sealing_key_info,
+            sealing_key_blob: value.sealing_key_blob,
+            sealed_keys: value.sealed_keys,
+        }
     }
-    Err(last_err)
+}
+
+impl From<KeymintSealedData> for PersistentKeymintSealedDataV0 {
+    fn from(value: KeymintSealedData) -> Self {
+        Self {
+            sealing_key_info: value.sealing_key_info,
+            sealing_key_blob: value.sealing_key_blob,
+            sealed_keys: value.sealed_keys,
+        }
+    }
+}
+
+impl KeyManager {
+    async fn load_keymint_data(&self) -> Result<Option<KeymintSealedData>, Error> {
+        match fuchsia_fs::directory::read_file(&self.dir, KEYMINT_PERSISTENCE_FILE).await {
+            Ok(contents) => {
+                let data: PersistentKeymintSealedDataV0 =
+                    serde_json::from_slice(&contents[..]).context("deserializing key data")?;
+                Ok(Some(data.into()))
+            }
+            Err(err) if err.is_not_found_error() => return Ok(None),
+            Err(err) => return Err(anyhow!(err)),
+        }
+    }
+
+    async fn store_keymint_data(&self, data: KeymintSealedData) -> Result<(), Error> {
+        let bytes = serde_json::to_vec(&PersistentKeymintSealedDataV0::from(data))
+            .context("seriaizing key data")?;
+        fuchsia_fs::directory::atomic_write_file(&self.dir, KEYMINT_PERSISTENCE_FILE, &bytes[..])
+            .await?;
+        Ok(())
+    }
+
+    async fn unseal_keymint_keys(&mut self) -> Result<Option<(Aes256Key, Aes256Key)>, Error> {
+        let (data, metadata) = {
+            let keymint = if let Some(data) =
+                self.load_keymint_data().await.context("Failed to load keymint data")?
+            {
+                data
+            } else {
+                return Ok(None);
+            };
+            (keymint.unseal_key("data.data").await?, keymint.unseal_key("data.metadata").await?)
+        };
+        Ok(Some((
+            Aes256Key::try_from(data).map_err(|_| anyhow!("Invalid data key"))?,
+            Aes256Key::try_from(metadata).map_err(|_| anyhow!("Invalid metadata key"))?,
+        )))
+    }
+
+    async fn create_keymint_keys(&mut self) -> Result<Option<(Aes256Key, Aes256Key)>, Error> {
+        let (data, metadata) = {
+            let mut keymint = KeymintSealedData::new().await?;
+            let keys = (
+                keymint.create_key("data.data").await?,
+                keymint.create_key("data.metadata").await?,
+            );
+            self.store_keymint_data(keymint).await.context("Failed to store keymint data")?;
+            keys
+        };
+        Ok(Some((
+            Aes256Key::try_from(data).map_err(|_| anyhow!("Invalid data key"))?,
+            Aes256Key::try_from(metadata).map_err(|_| anyhow!("Invalid metadata key"))?,
+        )))
+    }
+
+    // Returns `None` if the keybag was absent when attempting to unwrap.  (`None` is never returned
+    // when `create` is set).
+    async fn unwrap_or_create_keys(
+        &mut self,
+        create: bool,
+    ) -> Result<Option<(Aes256Key, Aes256Key)>, Error> {
+        let policy = get_policy().await?;
+        log::info!("unwrap_or_create_keys create: {create} policy: {policy:?}");
+        let sources = if create { format_sources(policy) } else { unseal_sources(policy) };
+
+        let mut keybag = None;
+        let mut last_err = anyhow!("no keys?");
+        for source in sources {
+            let key = match source {
+                KeySource::Null(null) => null.get_key(KeyConsumer::Fxfs),
+                KeySource::TeeDerived(tee) => tee.get_key().await?,
+                KeySource::KeymintSealed => {
+                    if create {
+                        return self.create_keymint_keys().await;
+                    } else {
+                        return self.unseal_keymint_keys().await;
+                    };
+                }
+            };
+            let wrapping_key = match key.len() {
+                // unwrap is safe because we know the length of the requested array is the same
+                // length as the Vec in both branches.
+                AES128_KEY_SIZE => WrappingKey::Aes128(key.try_into().unwrap()),
+                AES256_KEY_SIZE => WrappingKey::Aes256(key.try_into().unwrap()),
+                _ => {
+                    last_err = anyhow!("invalid key size");
+                    continue;
+                }
+            };
+            if keybag.is_none() {
+                let keybag_dir =
+                    fuchsia_fs::directory::clone(&self.dir).context("Failed to clone dir")?;
+                let keybag_dir_fd =
+                    fdio::create_fd(keybag_dir.into_channel().unwrap().into_zx_channel().into())?;
+                keybag = Some(if create {
+                    KeyBagManager::create(keybag_dir_fd, Path::new(KEYBAG_FILE_NAME))?
+                } else {
+                    match KeyBagManager::open(keybag_dir_fd, Path::new(KEYBAG_FILE_NAME))? {
+                        Some(keybag) => keybag,
+                        None => return Ok(None),
+                    }
+                });
+            }
+
+            let mut unwrap_fn = |slot| {
+                if create {
+                    keybag.as_mut().unwrap().new_key(slot, &wrapping_key).context("new key")
+                } else {
+                    keybag
+                        .as_mut()
+                        .unwrap()
+                        .unwrap_key(slot, &wrapping_key)
+                        .context("unwrapping key")
+                }
+            };
+
+            let data_unwrapped = match unwrap_fn(0) {
+                Ok(data_unwrapped) => data_unwrapped,
+                Err(e) => {
+                    last_err = e.context("data key");
+                    continue;
+                }
+            };
+            let metadata_unwrapped = match unwrap_fn(1) {
+                Ok(metadata_unwrapped) => metadata_unwrapped,
+                Err(e) => {
+                    last_err = e.context("metadata key");
+                    continue;
+                }
+            };
+            return Ok(Some((data_unwrapped, metadata_unwrapped)));
+        }
+        Err(last_err)
+    }
 }
 
 /// Unwraps the data volume in `fs`.  Any failures should be treated as fatal and the filesystem
@@ -91,21 +231,24 @@ pub async fn unlock_data_volume(
             .await
             .context("Failed to open unencrypted")?,
         async |unencrypted_volume: &mut ServingVolume| {
-            let keybag_dir = open_directory(
+            let dir = match fuchsia_fs::directory::open_directory(
                 unencrypted_volume.root(),
                 KEYBAG_DIR_NAME,
                 fio::PERM_READABLE | fio::PERM_WRITABLE,
             )
             .await
-            .context("Failed to open keys dir")?;
-            let keybag_dir_fd =
-                fdio::create_fd(keybag_dir.into_channel().unwrap().into_zx_channel().into())?;
-            let keybag = match KeyBagManager::open(keybag_dir_fd, Path::new(KEYBAG_FILE_NAME))? {
-                Some(keybag) => keybag,
-                None => return Ok(None),
+            {
+                Ok(dir) => dir,
+                Err(err) if err.is_not_found_error() => return Ok(None),
+                Err(err) => return Err(anyhow!(err)),
             };
-
-            let (data_unwrapped, metadata_unwrapped) = unwrap_or_create_keys(keybag, false).await?;
+            let mut key_manager = KeyManager { dir };
+            let (data_unwrapped, metadata_unwrapped) =
+                if let Some(keys) = key_manager.unwrap_or_create_keys(false).await? {
+                    keys
+                } else {
+                    return Ok(None);
+                };
 
             let crypt_service =
                 CryptService::new(data_unwrapped, metadata_unwrapped, &config.fxfs_crypt_url)
@@ -159,18 +302,16 @@ pub async fn init_data_volume<'a>(
         .await
         .context("Failed to create unencrypted")?,
         async |unencrypted_volume| {
-            let keybag_dir = fuchsia_fs::directory::create_directory(
+            let dir = fuchsia_fs::directory::create_directory(
                 unencrypted_volume.root(),
                 KEYBAG_DIR_NAME,
                 fio::PERM_READABLE | fio::PERM_WRITABLE,
             )
             .await
             .context("Failed to create keys dir")?;
-            let keybag_dir_fd =
-                fdio::create_fd(keybag_dir.into_channel().unwrap().into_zx_channel().into())?;
-            let keybag = KeyBagManager::create(keybag_dir_fd, Path::new(KEYBAG_FILE_NAME))?;
-
-            let (data_unwrapped, metadata_unwrapped) = unwrap_or_create_keys(keybag, true).await?;
+            let mut key_manager = KeyManager { dir };
+            let (data_unwrapped, metadata_unwrapped) =
+                key_manager.unwrap_or_create_keys(true).await?.unwrap();
 
             let crypt_service =
                 CryptService::new(data_unwrapped, metadata_unwrapped, &config.fxfs_crypt_url)
@@ -290,38 +431,21 @@ pub async fn shred_key_bag(fs: &ServingMultiVolumeFilesystem) -> Result<(), Erro
         return Ok(());
     }
 
+    // TODO(https://fxbug.dev/448661604): Also delete keys from keymint when the API to do so
+    // exists.
     with_unencrypted_volume(
         fs.open_volume(UNENCRYPTED_VOLUME_LABEL, MountOptions::default())
             .await
             .context("Failed to open unencrypted volume")?,
         async |vol| {
-            // Open the keybag directory and remove the keybag file.
-            let dir = match open_directory(vol.root(), KEYBAG_DIR_NAME, fio::PERM_WRITABLE).await {
-                Ok(dir) => dir,
-                Err(OpenError::OpenError(zx::Status::NOT_FOUND)) => {
-                    // If the keybag directory is missing, the keys may have already been shredded.
-                    log::warn!("Keybag directory not present");
-                    return Ok(());
-                }
-                Err(e) => {
-                    return Err(e).context("Failed to open keybag directory");
-                }
-            };
-            match dir
-                .unlink(KEYBAG_FILE_NAME, &Default::default())
-                .await
-                .context("transport error on unlink")?
-                .map_err(zx::Status::from_raw)
-            {
-                Ok(()) => Ok(()),
-                Err(zx::Status::NOT_FOUND) => {
-                    // If the keybag is missing, the keys may have already been shredded.
-                    log::warn!("Keybag file not present");
-                    Ok(())
-                }
-                Err(status) => Err(status),
+            if !fuchsia_fs::directory::dir_contains(vol.root(), KEYBAG_DIR_NAME).await? {
+                log::info!("Directory {KEYBAG_DIR_NAME} not present; not shredding");
+                return Ok(());
             }
-            .context("Failed to unlink keybag file")
+            fuchsia_fs::directory::remove_dir_recursive(vol.root(), KEYBAG_DIR_NAME)
+                .await
+                .context("Faild to shred keys")?;
+            Ok(())
         },
     )
     .await
