@@ -32,6 +32,7 @@ group("tests") {
     "features:tests",
     "kernel_manager:tests",
     "memory_pinning:tests",
+    "page_buf:tests",
     "range_map:tests",
     "selinux:tests",
     "split_enum_storage:tests",
