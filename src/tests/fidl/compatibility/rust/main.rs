@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl_fidl_test_compatibility::{
     EchoEchoArraysWithErrorResult, EchoEchoMinimalWithErrorResult, EchoEchoStructWithErrorResult,
     EchoEchoTableWithErrorResult, EchoEchoUnionPayloadWithErrorRequest,
@@ -450,7 +450,7 @@ async fn echo_server(stream: EchoRequestStream) -> Result<(), Error> {
                                 ResponseUnion::Signed(signed.value.clone())
                             }
                             RequestUnionUnknown!() => {
-                                return Err(format_err!("Unknown union variant"))
+                                return Err(format_err!("Unknown union variant"));
                             }
                         };
                         responder.send(&resp).context("Error responding")?;
@@ -496,7 +496,7 @@ async fn echo_server(stream: EchoRequestStream) -> Result<(), Error> {
                                 }
                             }
                             EchoEchoUnionPayloadWithErrorRequestUnknown!() => {
-                                return Err(format_err!("Unknown union variant"))
+                                return Err(format_err!("Unknown union variant"));
                             }
                         };
                         responder.send(result).context("Error responding")?
@@ -538,7 +538,7 @@ async fn echo_server(stream: EchoRequestStream) -> Result<(), Error> {
                                 ResponseUnion::Signed(signed.value.clone())
                             }
                             RequestUnionUnknown!() => {
-                                return Err(format_err!("Unknown union variant"))
+                                return Err(format_err!("Unknown union variant"));
                             }
                         };
                         control_handle
@@ -617,7 +617,7 @@ fn main() -> Result<(), Error> {
 }
 
 fn run_test() -> Result<(), Error> {
-    let mut executor = fasync::LocalExecutor::new();
+    let mut executor = fasync::LocalExecutor::default();
     let mut fs = ServiceFs::new_local();
     fs.dir("svc").add_fidl_service(|stream| stream);
     fs.take_and_serve_directory_handle().context("Error serving directory handle")?;

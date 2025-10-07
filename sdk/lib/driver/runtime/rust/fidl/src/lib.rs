@@ -541,7 +541,7 @@ mod test {
                 let res = client.get_event().await.unwrap().take();
 
                 // wait for the event on a fuchsia_async executor
-                let mut executor = fuchsia_async::LocalExecutor::new();
+                let mut executor = fuchsia_async::LocalExecutor::default();
                 let signalled = executor
                     .run_singlethreaded(OnSignals::new(res.event, Signals::USER_0))
                     .unwrap();

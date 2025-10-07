@@ -63,7 +63,7 @@ impl FakeLogSink {
             let ehandle_and_ring_buffer = Arc::new((Mutex::new(None), Condvar::new()));
             let eh_and_rb = ehandle_and_ring_buffer.clone();
             std::thread::spawn(|| {
-                let _ = fasync::LocalExecutor::new().run_singlethreaded(Abortable::new(
+                let _ = fasync::LocalExecutor::default().run_singlethreaded(Abortable::new(
                     async move {
                         let reader = RingBuffer::create(ring_buffer::MAX_MESSAGE_SIZE);
                         *eh_and_rb.0.lock().unwrap() = Some((EHandle::local(), reader));

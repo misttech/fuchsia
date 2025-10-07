@@ -2268,7 +2268,7 @@ mod tests {
 
     #[test]
     fn test_detach() {
-        let mut e = LocalExecutor::new();
+        let mut e = LocalExecutor::default();
         e.run_singlethreaded(async {
             let counter = Arc::new(AtomicU32::new(0));
 
@@ -2293,7 +2293,7 @@ mod tests {
 
     #[test]
     fn test_cancel() {
-        let mut e = LocalExecutor::new();
+        let mut e = LocalExecutor::default();
         e.run_singlethreaded(async {
             let ref_count = Arc::new(());
             // First, just drop the task.
@@ -2568,7 +2568,7 @@ mod tests {
 
     #[test]
     fn child_finished_when_parent_pending() {
-        let mut executor = LocalExecutor::new();
+        let mut executor = LocalExecutor::default();
         executor.run_singlethreaded(async {
             let scope = Scope::new();
             let _guard = scope.active_guard().expect("acquire guard");
@@ -2587,7 +2587,7 @@ mod tests {
 
     #[test]
     fn guarded_scopes_observe_closed() {
-        let mut executor = LocalExecutor::new();
+        let mut executor = LocalExecutor::default();
         executor.run_singlethreaded(async {
             let scope = Scope::new();
             let handle = scope.to_handle();

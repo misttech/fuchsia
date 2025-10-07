@@ -32,7 +32,7 @@ const STASH_IDENTITY: &str = "settings_service";
 
 #[fuchsia::main(logging_tags = ["setui-service"])]
 fn main() -> Result<(), Error> {
-    let executor = fasync::LocalExecutor::new();
+    let executor = fasync::LocalExecutor::default();
     log::info!("Starting setui-service...");
 
     let inspector = component::inspector();

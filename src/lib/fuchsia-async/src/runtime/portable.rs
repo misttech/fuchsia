@@ -9,8 +9,8 @@ pub mod task {
     use std::future::Future;
     use std::mem::ManuallyDrop;
     use std::pin::Pin;
-    pub use tokio::task::yield_now;
     use tokio::task::AbortHandle;
+    pub use tokio::task::yield_now;
 
     use futures::FutureExt;
 
@@ -162,8 +162,8 @@ pub mod task {
 }
 
 pub mod executor {
-    use crate::runtime::WakeupTime;
     use crate::Timer;
+    use crate::runtime::WakeupTime;
     use futures::future::BoxFuture;
     use std::future::Future;
     use std::ops::{Deref, DerefMut};
@@ -322,7 +322,7 @@ pub mod executor {
 
         /// Builds the `LocalExecutor`, consuming this `LocalExecutorBuilder`.
         pub fn build(self) -> LocalExecutor {
-            LocalExecutor::new()
+            LocalExecutor::default()
         }
     }
 
@@ -343,7 +343,7 @@ pub mod executor {
     impl TestExecutor {
         /// Create a new executor for testing.
         pub fn new() -> Self {
-            Self { executor: LocalExecutor::new() }
+            Self { executor: LocalExecutor::default() }
         }
     }
 

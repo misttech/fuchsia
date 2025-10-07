@@ -185,7 +185,7 @@ where
     // join, which is blocking and prevents any other futures from polling).
     let (done_sender, done) = futures::channel::oneshot::channel();
     let join_handle = std::thread::spawn(move || {
-        let mut test_executor = fasync::LocalExecutor::new();
+        let mut test_executor = fasync::LocalExecutor::default();
         test_executor.run_singlethreaded(test_fn(component_connector));
         let _ = done_sender.send(());
     });

@@ -59,7 +59,7 @@ async fn start_server(
             let ctx = context_clone.clone();
             let cmd_clone = cmd.clone();
             let res = spawn_blocking(move || {
-                fuchsia_async::LocalExecutor::new()
+                fuchsia_async::LocalExecutor::default()
                     .run_singlethreaded(collect_target_status(&ctx, cmd_clone))
             })
             .await;

@@ -4,8 +4,8 @@
 
 use crate::happy_eyeballs::{self, RealSocketConnector};
 use crate::{
-    connect_and_bind_device, parse_ip_addr, HyperConnectorFuture, SocketOptions, TcpOptions,
-    TcpStream,
+    HyperConnectorFuture, SocketOptions, TcpOptions, TcpStream, connect_and_bind_device,
+    parse_ip_addr,
 };
 use fidl_connector::{Connect, ServiceReconnector};
 use fidl_fuchsia_net_name::{LookupIpOptions, LookupMarker, LookupProxy, LookupResult};
@@ -271,13 +271,13 @@ mod test {
 
     #[test]
     fn can_create_client() {
-        let _exec = LocalExecutor::new();
+        let _exec = LocalExecutor::default();
         let _client = new_client();
     }
 
     #[test]
     fn can_create_https_client() {
-        let _exec = LocalExecutor::new();
+        let _exec = LocalExecutor::default();
         let _client = new_https_client();
     }
 

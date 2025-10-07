@@ -246,7 +246,7 @@ mod tests {
         let (client, mut requests) = create_request_stream::<LogSinkMarker>();
         let t = std::thread::spawn(move || {
             // Unused, but its existence is needed by AsyncChannel.
-            let _executor = fuchsia_async::LocalExecutor::new();
+            let _executor = fuchsia_async::LocalExecutor::default();
             let (filter, _on_changes) =
                 InterestFilter::new(client, fdiagnostics::Interest::default(), true);
             filter

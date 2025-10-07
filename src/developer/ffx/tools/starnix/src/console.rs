@@ -28,7 +28,7 @@ fn forward_stdin(console_in: fidl::Socket) -> Result<()> {
     // We never wait for this thread to complete because we're happy to copy data from stdin into
     // this socket until the process exits.
     let _ = std::thread::spawn(|| {
-        let mut executor = fasync::LocalExecutor::new();
+        let mut executor = fasync::LocalExecutor::default();
         executor.run_singlethreaded(async move {
             let _ = futures::io::copy(Unblock::new(std::io::stdin()), &mut tx).await;
         });
@@ -44,7 +44,7 @@ async fn forward_stdout(console_out: fidl::Socket) -> Result<()> {
     //
     // We wait for this thread to complete using fasync::unblock.
     fasync::unblock(|| {
-        let mut executor = fasync::LocalExecutor::new();
+        let mut executor = fasync::LocalExecutor::default();
         executor.run_singlethreaded(async move {
             // We make a duplicate of stdout so that fs::File can take ownership of the FD.
             const STDOUT_FILENO: std::os::fd::RawFd = 1;

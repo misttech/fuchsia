@@ -481,7 +481,7 @@ pub unsafe extern "C" fn block_server_new(
 pub unsafe extern "C" fn block_server_thread(arg: *const c_void) {
     let session_manager = &*(arg as *const SessionManager);
 
-    let mut executor = fasync::LocalExecutor::new();
+    let mut executor = fasync::LocalExecutor::default();
     let (abort_handle, registration) = AbortHandle::new_pair();
 
     session_manager.mbox.post(Mail::Initialized(EHandle::local(), abort_handle));

@@ -24,7 +24,7 @@ use fuchsia_bluetooth::types::Channel;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_sync::Mutex;
 use futures::channel::{mpsc, oneshot};
-use futures::{select, StreamExt, TryFutureExt};
+use futures::{StreamExt, TryFutureExt, select};
 use std::ffi::{CStr, CString};
 use std::thread;
 
@@ -61,7 +61,7 @@ impl WorkThread {
         let (sender, receiver) = mpsc::unbounded::<Request>();
 
         let thread_handle = thread::spawn(move || {
-            LocalExecutor::new().run_singlethreaded(Self::handle_requests(receiver))?;
+            LocalExecutor::default().run_singlethreaded(Self::handle_requests(receiver))?;
             Ok(())
         });
 

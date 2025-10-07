@@ -21,9 +21,9 @@ use std::fmt;
 use std::future::Future;
 use std::marker::PhantomPinned;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
-use std::task::{ready, Poll, Waker};
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::task::{Poll, Waker, ready};
 use zx::AsHandleRef as _;
 
 pub trait TimeInterface:
@@ -215,11 +215,7 @@ impl HeapIndex {
     const NULL: HeapIndex = HeapIndex(usize::MAX);
 
     fn get(&self) -> Option<usize> {
-        if *self == HeapIndex::NULL {
-            None
-        } else {
-            Some(self.0)
-        }
+        if *self == HeapIndex::NULL { None } else { Some(self.0) }
     }
 }
 
@@ -793,7 +789,7 @@ mod test {
     use futures::future::Either;
     use futures::prelude::*;
     use rand::seq::SliceRandom;
-    use rand::{rng, Rng};
+    use rand::{Rng, rng};
     use std::future::poll_fn;
     use std::pin::pin;
     use zx::MonotonicDuration;
@@ -820,7 +816,7 @@ mod test {
     }
 
     fn test_shorter_fires_first<T: TestTimeInterface>() {
-        let mut exec = LocalExecutor::new();
+        let mut exec = LocalExecutor::default();
         let shorter = pin!(Timer::new(T::after(zx::Duration::<T::Timeline>::from_millis(100))));
         let longer = pin!(Timer::new(T::after(zx::Duration::<T::Timeline>::from_seconds(1))));
         match exec.run_singlethreaded(future::select(shorter, longer)) {
@@ -1033,7 +1029,7 @@ mod test {
 
     #[test]
     fn timer_reset_to_earlier_time() {
-        let mut exec = LocalExecutor::new();
+        let mut exec = LocalExecutor::default();
 
         for _ in 0..100 {
             let instant = MonotonicInstant::after(MonotonicDuration::from_millis(100));
@@ -1041,16 +1037,18 @@ mod test {
             let task = Task::spawn(async move {
                 let mut timer = pin!(Timer::new(instant));
                 let mut receiver = pin!(receiver.fuse());
-                poll_fn(|cx| loop {
-                    if timer.as_mut().poll_unpin(cx).is_ready() {
-                        return Poll::Ready(());
-                    }
-                    if !receiver.is_terminated() && receiver.poll_unpin(cx).is_ready() {
-                        timer
-                            .as_mut()
-                            .reset(MonotonicInstant::after(MonotonicDuration::from_millis(1)));
-                    } else {
-                        return Poll::Pending;
+                poll_fn(|cx| {
+                    loop {
+                        if timer.as_mut().poll_unpin(cx).is_ready() {
+                            return Poll::Ready(());
+                        }
+                        if !receiver.is_terminated() && receiver.poll_unpin(cx).is_ready() {
+                            timer
+                                .as_mut()
+                                .reset(MonotonicInstant::after(MonotonicDuration::from_millis(1)));
+                        } else {
+                            return Poll::Pending;
+                        }
                     }
                 })
                 .await;

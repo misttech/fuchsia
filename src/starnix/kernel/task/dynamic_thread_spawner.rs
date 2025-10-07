@@ -201,7 +201,7 @@ impl DynamicThreadSpawner {
         for<'a> F: FnScopeHelper<'a>,
     {
         self.spawn(move |locked, current_task| {
-            let mut exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::default();
             let locked_and_task = LockedAndTask::new(locked, current_task);
             let fut = f.call(locked_and_task.clone());
             let wrapped_future = WrappedSpawnedFuture::new(locked_and_task, fut);
@@ -436,7 +436,7 @@ mod tests {
         spawn_kernel_and_run(|_locked, current_task| {
             let spawner = DynamicThreadSpawner::new(2, current_task.weak_task());
             spawner.spawn(move |locked, current_task| {
-                let mut exec = fuchsia_async::LocalExecutor::new();
+                let mut exec = fuchsia_async::LocalExecutor::default();
                 let locked_and_task = LockedAndTask::new(locked, current_task);
                 let fut = async {};
                 let wrapped_future = WrappedSpawnedFuture::new(locked_and_task, fut);

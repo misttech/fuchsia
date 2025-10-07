@@ -57,7 +57,7 @@ async fn create_realm() -> RealmBuilder {
 }
 
 fn bench_write_read_log(b: &mut criterion::Bencher, format: Format) {
-    let mut executor = fasync::LocalExecutor::new();
+    let mut executor = fasync::LocalExecutor::default();
     let instance = executor.run_singlethreaded(async move {
         let builder = create_realm().await;
         builder.build().await.expect("create instance")

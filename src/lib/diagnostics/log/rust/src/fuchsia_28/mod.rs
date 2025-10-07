@@ -245,7 +245,7 @@ pub fn initialize_sync(opts: PublishOptions<'_>) -> impl Drop {
             install_panic_hook,
             panic_prefix,
         };
-        let mut exec = fuchsia_async::LocalExecutor::new();
+        let mut exec = fuchsia_async::LocalExecutor::default();
         let mut publisher = initialize_publishing(options).expect("initialize logging");
         if let Some(ready_send) = ready_send {
             ready_send.send(()).unwrap();

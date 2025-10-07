@@ -399,7 +399,7 @@ mod tests {
         // Use signalling on a zx::Channel to indicate that the test is done.
         std::thread::spawn(move || {
             let done = done1;
-            let mut executor = fasync::LocalExecutor::new();
+            let mut executor = fasync::LocalExecutor::default();
             executor.run_singlethreaded(async {
                 verify_reader_with_mode(tree_client, VerifyMode::ExpectComponentFailure).await;
                 done.signal_peer(zx::Signals::NONE, zx::Signals::USER_0).expect("signalling peer");

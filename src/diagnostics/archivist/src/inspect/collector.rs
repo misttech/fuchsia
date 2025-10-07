@@ -296,7 +296,7 @@ mod tests {
         // Use signalling on a zx::Channel to indicate that the test is done.
         std::thread::spawn(move || {
             let done = done1;
-            let mut executor = fasync::LocalExecutor::new();
+            let mut executor = fasync::LocalExecutor::default();
 
             executor.run_singlethreaded(async {
                 let inspect_proxy = Arc::new(InspectHandle::directory(

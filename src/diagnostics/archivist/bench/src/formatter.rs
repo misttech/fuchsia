@@ -63,7 +63,7 @@ fn bench_json_packet_serializer(b: &mut criterion::Bencher, total_logs: u64) {
         })
         .collect::<Vec<_>>();
 
-    let mut executor = fasync::LocalExecutor::new();
+    let mut executor = fasync::LocalExecutor::default();
     b.iter(|| {
         let logs_for_fut = logs.clone();
         executor.run_singlethreaded(async move {

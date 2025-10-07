@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context};
+use anyhow::{Context, format_err};
 use fidl::endpoints::Proxy;
 use fuchsia_component::client::connect_to_protocol_at;
 use fuchsia_sync::Mutex;
@@ -57,7 +57,7 @@ impl Tracing {
             .map_err(|e| format_err!("Failed to initialize tracing: {e:?}"))?;
 
         let tracing_collector = std::thread::spawn(move || {
-            let mut executor = fuchsia_async::LocalExecutor::new();
+            let mut executor = fuchsia_async::LocalExecutor::default();
             executor.run_singlethreaded(async move {
                 let mut tracing_socket = fuchsia_async::Socket::from_socket(tracing_socket);
                 info!("draining trace record socket...");

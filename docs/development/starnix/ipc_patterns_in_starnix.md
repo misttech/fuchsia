@@ -220,7 +220,7 @@ A code example that spawns a separate `kthread` that runs its own executor:
 
 ```rust {:.devsite-disable-click-to-copy}
     kernel.kthreads.spawner().spawn(|_, _| {
-        let mut executor = fasync::LocalExecutor::new();
+        let mut executor = fasync::LocalExecutor::default();
         let scheduler = ThroughputScheduler::new();
         let mut view_bound_protocols = Some(view_bound_protocols);
         let mut view_identity = Some(view_identity);

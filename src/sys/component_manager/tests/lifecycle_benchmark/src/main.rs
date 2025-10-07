@@ -1,8 +1,8 @@
 use fidl::endpoints::{ClientEnd, ServerEnd};
 use fidl::handle::Signals;
-use fidl::{endpoints, HandleBased};
+use fidl::{HandleBased, endpoints};
 use fuchsia_component_test::{RealmBuilder, RealmBuilderParams};
-use fuchsia_criterion::{criterion, FuchsiaCriterion};
+use fuchsia_criterion::{FuchsiaCriterion, criterion};
 use fuchsia_runtime::{HandleInfo, HandleType};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -23,7 +23,7 @@ fn main() {
         .measurement_time(Duration::from_secs(1))
         .sample_size(20);
 
-    let executor = Arc::new(Mutex::new(fasync::LocalExecutor::new()));
+    let executor = Arc::new(Mutex::new(fasync::LocalExecutor::default()));
     let realm = executor.lock().unwrap().run_singlethreaded(async move {
         // One instance of nested component manager shared by all tests.
         let builder = RealmBuilder::with_params(

@@ -521,7 +521,7 @@ mod tests {
             rust_async_dispatcher
                 .post_task_sync(move |_| {
                     Dispatcher::override_current(fdf_dispatcher, || {
-                        let mut executor = fuchsia_async::LocalExecutor::new();
+                        let mut executor = fuchsia_async::LocalExecutor::default();
                         executor.run_singlethreaded(ping(ping_chan));
                     });
                 })
@@ -663,7 +663,7 @@ mod tests {
                 dispatcher
                     .post_task_sync(move |_| {
                         Dispatcher::override_current(fdf_dispatcher, || {
-                            let mut executor = fuchsia_async::LocalExecutor::new();
+                            let mut executor = fuchsia_async::LocalExecutor::default();
                             executor.run_singlethreaded(recv_lots_of_bytes_with_cancellations(
                                 rx,
                                 fin_tx,

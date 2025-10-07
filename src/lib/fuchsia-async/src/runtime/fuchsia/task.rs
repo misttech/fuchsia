@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::scope::ScopeHandle;
 use crate::EHandle;
+use crate::scope::ScopeHandle;
 use futures::prelude::*;
 use std::future::poll_fn;
 use std::marker::PhantomData;
@@ -310,7 +310,7 @@ mod tests {
 
     #[test]
     fn future_destroyed_before_await_returns() {
-        LocalExecutor::new().run_singlethreaded(async {
+        LocalExecutor::default().run_singlethreaded(async {
             let (sets_bool_true_on_drop, value) = SetsBoolTrueOnDrop::new();
 
             // Move the switch into a different thread.

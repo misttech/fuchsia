@@ -287,7 +287,7 @@ mod tests {
 
     #[fuchsia::test]
     fn inspect_repo_disallows_duplicated_handles() {
-        let _exec = fuchsia_async::LocalExecutor::new();
+        let _exec = fuchsia_async::LocalExecutor::default();
         let inspect_repo = Arc::new(InspectRepository::new(vec![], fasync::Scope::new()));
         let moniker = ExtendedMoniker::parse_str("./a/b/foo").unwrap();
         let identity = Arc::new(ComponentIdentity::new(moniker, TEST_URL));
@@ -369,7 +369,7 @@ mod tests {
 
     #[fuchsia::test]
     fn data_repo_filters_inspect_by_selectors() {
-        let _exec = fuchsia_async::LocalExecutor::new();
+        let _exec = fuchsia_async::LocalExecutor::default();
         let data_repo = Arc::new(InspectRepository::new(vec![], fasync::Scope::new()));
         let moniker = ExtendedMoniker::parse_str("./a/b/foo").unwrap();
         let identity = Arc::new(ComponentIdentity::new(moniker, TEST_URL));
@@ -536,7 +536,7 @@ mod tests {
 
     #[fuchsia::test]
     fn repo_fetch_escrow_with_tree_returns_data_keeps_tree() {
-        let _exec = fuchsia_async::LocalExecutor::new();
+        let _exec = fuchsia_async::LocalExecutor::default();
         let repo = Arc::new(InspectRepository::new(vec![], fasync::Scope::new()));
         let moniker = ExtendedMoniker::parse_str("a/b/foo").unwrap();
         let identity = Arc::new(ComponentIdentity::new(moniker, TEST_URL));

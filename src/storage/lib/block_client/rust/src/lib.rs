@@ -870,7 +870,7 @@ impl RemoteBlockClientSync {
         // the fifo registers for notifications to be delivered.
         let (sender, receiver) = oneshot::channel::<Result<Self, zx::Status>>();
         std::thread::spawn(move || {
-            let mut executor = fasync::LocalExecutor::new();
+            let mut executor = fasync::LocalExecutor::default();
             let fifo = fasync::Fifo::from_fifo(fifo);
             let common = Common::new(fifo, &info, temp_vmo, vmo_id);
             let fifo_state = common.fifo_state.clone();

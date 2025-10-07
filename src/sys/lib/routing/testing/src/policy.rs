@@ -50,7 +50,7 @@ macro_rules! instantiate_global_policy_checker_tests {
     };
     ($fixture_impl:path, $test:ident) => {
         fn $test() -> Result<(), Error> {
-            let mut executor = fuchsia_async::LocalExecutor::new();
+            let mut executor = fuchsia_async::LocalExecutor::default();
             executor.run_singlethreaded(<$fixture_impl as Default>::default().$test())
         }
     };

@@ -353,7 +353,7 @@ fn forward_to_pty(
     kernel.kthreads.spawn({
         move |locked, current_task| {
             let _result: Result<(), Error> =
-                fasync::LocalExecutor::new().run_singlethreaded(async {
+                fasync::LocalExecutor::default().run_singlethreaded(async {
                     let mut buffer = VecOutputBuffer::new(BUFFER_CAPACITY);
                     loop {
                         buffer.reset();

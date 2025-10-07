@@ -165,7 +165,7 @@ pub extern "C" fn rs_wait_trace_state_is(expected: u32) {
 pub extern "C" fn rs_setup_trace_observer() {
     static BARRIER: Barrier = Barrier::new(2);
     std::thread::spawn(|| {
-        let mut executor = fasync::LocalExecutor::new();
+        let mut executor = fasync::LocalExecutor::default();
         executor.run_singlethreaded(async move {
             let observer = trace_observer::TraceObserver::new();
             BARRIER.wait();

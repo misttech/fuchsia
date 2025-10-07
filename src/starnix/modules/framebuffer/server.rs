@@ -153,7 +153,7 @@ fn init_fb_scene(
     std::thread::Builder::new()
         .name("kthread-fb-alloc".to_string())
         .spawn(move || -> Result<(), anyhow::Error> {
-            let mut executor = fasync::LocalExecutor::new();
+            let mut executor = fasync::LocalExecutor::default();
 
             let mut buffer_allocator = BufferCollectionAllocator::new(
                 width,

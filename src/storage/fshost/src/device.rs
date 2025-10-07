@@ -627,7 +627,7 @@ impl LocalBlockDevice {
         // rest of the fshost executor.  Note that tasks spawned in `scope` run in this thread.
         // Take care when modifying this!
         let thread = std::thread::spawn(move || {
-            let mut executor = fasync::LocalExecutor::new();
+            let mut executor = fasync::LocalExecutor::default();
             scope_tx.send(executor.root_scope().new_child()).unwrap();
             let _ = executor
                 .run_singlethreaded(Abortable::new(std::future::pending::<()>(), registration));

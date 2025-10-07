@@ -7,11 +7,11 @@ use fidl_fuchsia_bluetooth_sys::{BondableMode, PairingOptions, PairingSecurityLe
 use fuchsia_async::LocalExecutor;
 use fuchsia_bt_test_affordances::WorkThread;
 use fuchsia_sync::Mutex;
+use futures::StreamExt;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::oneshot;
 use futures::executor::block_on;
-use futures::StreamExt;
-use std::ffi::{c_void, CStr};
+use std::ffi::{CStr, c_void};
 use std::sync::LazyLock;
 use std::thread::JoinHandle;
 use zx::sys::zx_status_t;
@@ -37,7 +37,7 @@ impl State {
         let le_peer_receiver = block_on(self.worker.start_le_scan())?;
         *self.le_scan.lock() = Some((
             std::thread::spawn(move || {
-                LocalExecutor::new().run_singlethreaded(Self::le_scan(
+                LocalExecutor::default().run_singlethreaded(Self::le_scan(
                     le_peer_receiver,
                     context,
                     cb,

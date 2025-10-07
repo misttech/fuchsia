@@ -4,10 +4,10 @@
 
 mod commands;
 use crate::commands::{CmdHelper, Command, ReplControl};
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl_fuchsia_power_battery_test::BatterySimulatorProxy;
 use fuchsia_component::client::connect_to_protocol;
-use futures::channel::mpsc::{channel, SendError};
+use futures::channel::mpsc::{SendError, channel};
 use futures::{Sink, SinkExt, Stream, StreamExt, TryFutureExt};
 use rustyline::error::ReadlineError;
 use rustyline::{CompletionType, Config, EditMode, Editor};
@@ -123,7 +123,10 @@ fn set_charge_source(charge_source: &str, service: &BatterySimulatorProxy) -> Re
         "USB" => fpower::ChargeSource::Usb,
         "WIRELESS" => fpower::ChargeSource::Wireless,
         _ => {
-            println!("{} does not exist as an option for ChargeSource. Type set --help for more information", charge_source);
+            println!(
+                "{} does not exist as an option for ChargeSource. Type set --help for more information",
+                charge_source
+            );
             return Ok(());
         }
     };
@@ -151,7 +154,10 @@ fn set_battery_status(battery_status: &str, service: &BatterySimulatorProxy) -> 
         "NOT_AVAILABLE" => fpower::BatteryStatus::NotAvailable,
         "NOT_PRESENT" => fpower::BatteryStatus::NotPresent,
         _ => {
-            println!("{} does not exist as an option for BatteryStatus. Type set --help for more information", battery_status);
+            println!(
+                "{} does not exist as an option for BatteryStatus. Type set --help for more information",
+                battery_status
+            );
             return Ok(());
         }
     };
@@ -167,7 +173,10 @@ fn set_level_status(level_status: &str, service: &BatterySimulatorProxy) -> Resu
         "LOW" => fpower::LevelStatus::Low,
         "CRITICAL" => fpower::LevelStatus::Critical,
         _ => {
-            println!("{} does not exist as an option for LevelStatus. Type set --help for more information", level_status);
+            println!(
+                "{} does not exist as an option for LevelStatus. Type set --help for more information",
+                level_status
+            );
             return Ok(());
         }
     };
@@ -183,7 +192,10 @@ fn set_charge_status(charge_status: &str, service: &BatterySimulatorProxy) -> Re
         "DISCHARGING" => fpower::ChargeStatus::Discharging,
         "FULL" => fpower::ChargeStatus::Full,
         _ => {
-            println!("{} does not exist as an option for ChargeStatus. Type set --help for more information", charge_status);
+            println!(
+                "{} does not exist as an option for ChargeStatus. Type set --help for more information",
+                charge_status
+            );
             return Ok(());
         }
     };
@@ -289,7 +301,7 @@ fn cmd_stream() -> (impl Stream<Item = String>, impl Sink<(), Error = SendError>
     let (mut cmd_sender, cmd_receiver) = channel(512);
     let (ack_sender, mut ack_receiver) = channel(512);
     thread::spawn(move || -> Result<(), Error> {
-        let mut exec = fasync::LocalExecutor::new();
+        let mut exec = fasync::LocalExecutor::default();
         let fut = async {
             let config = Config::builder()
                 .auto_add_history(true)
@@ -344,8 +356,10 @@ async fn run_repl(service: BatterySimulatorProxy) -> Result<(), Error> {
 async fn main() -> Result<(), Error> {
     println!("Welcome to the Battery Simulator. Type help and <Enter> to see all the options!");
     let battery_simulator = connect_to_protocol::<spower::BatterySimulatorMarker>()?;
-    let repl = pin!(run_repl(battery_simulator)
-        .unwrap_or_else(|e| eprintln!("REPL failed unexpectedly {:?}", e)));
+    let repl = pin!(
+        run_repl(battery_simulator)
+            .unwrap_or_else(|e| eprintln!("REPL failed unexpectedly {:?}", e))
+    );
 
     repl.await;
 

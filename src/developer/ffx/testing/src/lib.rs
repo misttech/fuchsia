@@ -79,7 +79,7 @@ where
     // future executor, we check completion of the test thread using a oneshot channel.
     let (done_sender, done) = futures::channel::oneshot::channel();
     let join_handle = std::thread::spawn(move || {
-        let mut test_executor = fasync::LocalExecutor::new();
+        let mut test_executor = fasync::LocalExecutor::default();
         test_executor.run_singlethreaded(test_fn(config));
         // The sender will notify the receiver if it is used or dropped during a panic.
         let _ = done_sender.send(());

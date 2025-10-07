@@ -12,7 +12,7 @@
 //!
 //! ```
 //! fn main() -> Result<(), Error> {
-//!     let mut executor = fasync::LocalExecutor::new();
+//!     let mut executor = fasync::LocalExecutor::default();
 //!     let actual_main = async {
 //!         // Actual main code
 //!         Ok(())
@@ -26,7 +26,7 @@
 //! ```
 //! #[test]
 //! fn test_foo() -> Result<(), Error> {
-//!     let mut executor = fasync::LocalExecutor::new();
+//!     let mut executor = fasync::LocalExecutor::default();
 //!     let test = async {
 //!         // Actual test code here
 //!         Ok(())
@@ -69,7 +69,7 @@ use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::{quote, quote_spanned};
 use syn::parse::{Error, Parse, ParseStream};
-use syn::{parse_macro_input, Ident};
+use syn::{Ident, parse_macro_input};
 
 mod kw {
     syn::custom_keyword!(test);

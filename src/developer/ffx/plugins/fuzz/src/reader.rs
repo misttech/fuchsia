@@ -134,7 +134,7 @@ impl Reader for ShellReader {
         // Set up a thread for forwarding stdin. Reading from stdin is a blocking operation which
         // will halt the executor if it were to run on the same thread.
         thread::spawn(move || {
-            let mut executor = fasync::LocalExecutor::new();
+            let mut executor = fasync::LocalExecutor::default();
             executor.run_singlethreaded(async move {
                 shell_read_loop(tests_json, req_receiver, resp_sender, state, history).await;
             });

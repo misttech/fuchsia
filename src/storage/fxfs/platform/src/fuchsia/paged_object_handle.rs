@@ -2333,7 +2333,7 @@ mod tests {
         // Run the test in a separate executor to avoid issues caused by stalling page_in requests
         // (see `page_in` above).
         std::thread::spawn(move || {
-            fasync::LocalExecutor::new().run_singlethreaded(async move {
+            fasync::LocalExecutor::default().run_singlethreaded(async move {
                 let root_object_id = vol.store().root_directory_object_id();
                 let root_dir = Directory::open(&vol, root_object_id).await.expect("open failed");
 

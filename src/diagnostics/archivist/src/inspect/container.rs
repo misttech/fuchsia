@@ -614,7 +614,7 @@ mod test {
 
     #[fuchsia::test]
     fn only_one_directory_proxy_is_populated() {
-        let _executor = fuchsia_async::LocalExecutor::new();
+        let _executor = fuchsia_async::LocalExecutor::default();
         let (directory, _) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
         let mut container = InspectArtifactsContainer::default();
         let _rx = container.push_handle(InspectHandle::directory(directory), |_| {});
@@ -632,7 +632,7 @@ mod test {
 
     #[fuchsia::test]
     fn prefilter_on_names_for_directories() {
-        let _executor = fuchsia_async::LocalExecutor::new();
+        let _executor = fuchsia_async::LocalExecutor::default();
         let all_selector = fdiagnostics::Selector {
             tree_names: Some(fdiagnostics::TreeNames::All(fdiagnostics::All {})),
             component_selector: Some(fdiagnostics::ComponentSelector {
@@ -723,7 +723,7 @@ mod test {
 
     #[fuchsia::test]
     fn name_filter_with_no_matches() {
-        let _executor = fuchsia_async::LocalExecutor::new();
+        let _executor = fuchsia_async::LocalExecutor::default();
 
         let b_only = fdiagnostics::Selector {
             tree_names: Some(fdiagnostics::TreeNames::Some(vec!["b".to_string()])),
@@ -752,7 +752,7 @@ mod test {
 
     #[fuchsia::test]
     fn all_name_filter_matches_everything() {
-        let _executor = fuchsia_async::LocalExecutor::new();
+        let _executor = fuchsia_async::LocalExecutor::default();
 
         let iac = inspect_artifacts_container_with_n_trees(["a", "b"]);
         let container = iac
@@ -791,7 +791,7 @@ mod test {
 
     #[fuchsia::test]
     fn none_name_filter_matches_root_only() {
-        let _executor = fuchsia_async::LocalExecutor::new();
+        let _executor = fuchsia_async::LocalExecutor::default();
 
         let lists_each_name = fdiagnostics::Selector {
             tree_names: None,
@@ -820,7 +820,7 @@ mod test {
 
     #[fuchsia::test]
     fn select_subset_of_names() {
-        let _executor = fuchsia_async::LocalExecutor::new();
+        let _executor = fuchsia_async::LocalExecutor::default();
 
         let a_only = fdiagnostics::Selector {
             tree_names: Some(fdiagnostics::TreeNames::Some(vec!["a".to_string()])),
@@ -856,7 +856,7 @@ mod test {
 
     #[fuchsia::test]
     fn names_are_case_sensitive() {
-        let _executor = fuchsia_async::LocalExecutor::new();
+        let _executor = fuchsia_async::LocalExecutor::default();
 
         let a_but_wrong_case = fdiagnostics::Selector {
             tree_names: Some(fdiagnostics::TreeNames::Some(vec!["A".to_string()])),

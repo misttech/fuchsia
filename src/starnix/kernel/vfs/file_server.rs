@@ -913,7 +913,7 @@ mod tests {
             .join()
             .expect("join");
             scope.shutdown();
-            fasync::LocalExecutor::new().run_singlethreaded(scope.wait());
+            fasync::LocalExecutor::default().run_singlethreaded(scope.wait());
             // This ensures fs cannot be captures in the thread.
             std::mem::drop(fs);
         })
@@ -1000,7 +1000,7 @@ mod tests {
             .join()
             .expect("join");
             scope.shutdown();
-            fasync::LocalExecutor::new().run_singlethreaded(scope.wait());
+            fasync::LocalExecutor::default().run_singlethreaded(scope.wait());
 
             // This ensures fs cannot be captured in the thread.
             std::mem::drop(fs);
@@ -1057,7 +1057,7 @@ mod tests {
             .join()
             .expect("join");
             scope.shutdown();
-            fasync::LocalExecutor::new().run_singlethreaded(scope.wait());
+            fasync::LocalExecutor::default().run_singlethreaded(scope.wait());
 
             // This ensures fs cannot be captured in the thread.
             std::mem::drop(ns);

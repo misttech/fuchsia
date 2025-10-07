@@ -6,7 +6,7 @@ use log::{error, info, warn};
 use nix::unistd::{self, Pid};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
-use std::fs::{remove_file, File, Metadata, OpenOptions};
+use std::fs::{File, Metadata, OpenOptions, remove_file};
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
@@ -520,7 +520,7 @@ mod test {
                     // until we get our lock.
                     let mut attempt = 0;
                     let lockfile = loop {
-                        let mut executor = fuchsia_async::LocalExecutor::new();
+                        let mut executor = fuchsia_async::LocalExecutor::default();
                         let lockfile = executor.run_singlethreaded(async {
                             Lockfile::lock_for(&lockfile_path, Duration::from_secs(10)).await
                         });
@@ -530,7 +530,9 @@ mod test {
                                 break lockfile;
                             }
                             Err(err) if err.is_timeout() => {
-                                println!("timed out getting lockfile, trying again. lock_num: {lock_num} attempt: {attempt}");
+                                println!(
+                                    "timed out getting lockfile, trying again. lock_num: {lock_num} attempt: {attempt}"
+                                );
 
                                 if attempt > 10 {
                                     panic!("failed to get a lockfile after 10 attempts");

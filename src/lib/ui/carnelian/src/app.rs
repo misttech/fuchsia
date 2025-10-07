@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::app::strategies::base::{create_app_strategy, AppStrategyPtr};
+use crate::IdGenerator2;
+use crate::app::strategies::base::{AppStrategyPtr, create_app_strategy};
 use crate::app::strategies::framebuffer::DisplayId;
 use crate::drawing::DisplayRotation;
 use crate::geometry::Size;
@@ -11,17 +12,16 @@ use crate::message::Message;
 use crate::scene::facets::FacetId;
 use crate::view::strategies::base::ViewStrategyParams;
 use crate::view::{ViewAssistantPtr, ViewController, ViewKey};
-use crate::IdGenerator2;
-use anyhow::{bail, format_err, Context as _, Error};
+use anyhow::{Context as _, Error, bail, format_err};
 use fidl_fuchsia_hardware_display::{CoordinatorListenerRequest, ProviderProxy, VirtconMode};
 use fidl_fuchsia_input_report as hid_input_report;
 use fuchsia_async::{self as fasync, DurationExt, Timer};
 use fuchsia_component::{self as component};
 use fuchsia_trace::duration;
 
-use futures::channel::mpsc::{unbounded, UnboundedSender};
-use futures::future::{Either, Future};
 use futures::StreamExt;
+use futures::channel::mpsc::{UnboundedSender, unbounded};
+use futures::future::{Either, Future};
 use once_cell::sync::OnceCell;
 use serde::Deserialize;
 use std::any::Any;
@@ -29,7 +29,7 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::fs;
 use std::path::PathBuf;
-use std::pin::{pin, Pin};
+use std::pin::{Pin, pin};
 
 pub(crate) mod strategies;
 
@@ -459,7 +459,7 @@ impl App {
     /// Starts an application based on Carnelian. The `assistant` parameter will
     /// be used to create new views when asked to do so by the Fuchsia view system.
     pub fn run(assistant_creator_func: AssistantCreatorFunc) -> Result<(), Error> {
-        let mut executor = fasync::LocalExecutor::new();
+        let mut executor = fasync::LocalExecutor::default();
         let (internal_sender, mut internal_receiver) = unbounded::<MessageInternal>();
         let f = async {
             let app_sender = AppSender { sender: internal_sender.clone() };
@@ -629,7 +629,7 @@ impl App {
     /// first update call, or until a five second timeout. The Result returned is the
     /// result of the test, an Ok(()) result means the test passed.
     pub fn test(assistant_creator_func: AssistantCreatorFunc) -> Result<(), Error> {
-        let mut executor = fasync::LocalExecutor::new();
+        let mut executor = fasync::LocalExecutor::default();
         let (internal_sender, mut internal_receiver) = unbounded::<MessageInternal>();
         let f = async {
             let app_sender = AppSender { sender: internal_sender.clone() };

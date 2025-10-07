@@ -1132,7 +1132,7 @@ mod tests {
 
         // A separate thread is needed to allow independent execution of the server.
         let _detached = thread::spawn(move || {
-            fasync::LocalExecutor::new().run_singlethreaded(async move {
+            fasync::LocalExecutor::default().run_singlethreaded(async move {
                 let stream =
                     fidl::endpoints::ServerEnd::<fta::WakeAlarmsMarker>::new(server).into_stream();
                 serve_fake_wake_alarms(message_counter, response_type, stream, /*once*/ false)

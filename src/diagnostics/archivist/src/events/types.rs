@@ -198,7 +198,7 @@ mod tests {
 
     #[fuchsia::test]
     fn inspect_sink_capability_requested() {
-        let _exec = fuchsia_async::LocalExecutor::new();
+        let _exec = fuchsia_async::LocalExecutor::default();
         let (_, inspect_sink_server_end) =
             fidl::endpoints::create_endpoints::<finspect::InspectSinkMarker>();
         let event = create_inspect_sink_requested_event(
@@ -220,7 +220,7 @@ mod tests {
 
     #[fuchsia::test]
     fn log_sink_capability_requested() {
-        let _exec = fuchsia_async::LocalExecutor::new();
+        let _exec = fuchsia_async::LocalExecutor::default();
         let (_, log_sink_server_end) = fidl::endpoints::create_endpoints::<LogSinkMarker>();
         let event = create_log_sink_requested_event(
             "a/b".into(),

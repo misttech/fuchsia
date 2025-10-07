@@ -745,7 +745,7 @@ mod tests {
             dispatcher.spawn_task(ping(ping_tx, ping_rx)).unwrap();
 
             // and run pong on the fuchsia_async executor
-            let mut executor = fuchsia_async::LocalExecutor::new();
+            let mut executor = fuchsia_async::LocalExecutor::default();
             executor.run_singlethreaded(slow_pong(fin_tx, pong_tx, pong_rx));
 
             fin_rx.recv().expect("to receive final value");

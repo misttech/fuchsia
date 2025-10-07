@@ -9599,7 +9599,7 @@ pub mod tests {
         server_end: ServerEnd<fbinder::ProcessAccessorMarker>,
     ) -> std::thread::JoinHandle<Result<TestFdTable, anyhow::Error>> {
         std::thread::spawn(move || {
-            let mut executor = LocalExecutor::new();
+            let mut executor = LocalExecutor::default();
             executor.run_singlethreaded(run_process_accessor(server_end))
         })
     }

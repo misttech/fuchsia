@@ -13,7 +13,7 @@ use std::process;
 /// This component immediately escrows its outgoing directory and then exits.
 #[fuchsia::main]
 fn main() {
-    let _executor = fasync::LocalExecutor::new();
+    let _executor = fasync::LocalExecutor::default();
 
     let Some(lifecycle_handle) =
         fruntime::take_startup_handle(HandleInfo::new(HandleType::Lifecycle, 0))

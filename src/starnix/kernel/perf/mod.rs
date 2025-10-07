@@ -287,7 +287,7 @@ impl FileOps for PerfEventFile {
                         TODO("https://fxbug.dev/438271095"),
                         "[perf_event_open] swap to spawn_future()"
                     );
-                    let mut executor = fuchsia_async::LocalExecutor::new();
+                    let mut executor = fuchsia_async::LocalExecutor::default();
                     executor.run_singlethreaded(async {
                         // The sample period from the PERF_COUNT_SW_CPU_CLOCK is
                         // 1 nanosecond per tick. Convert this duration into zx::duration.

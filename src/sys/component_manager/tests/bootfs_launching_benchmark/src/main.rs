@@ -6,7 +6,7 @@ use fidl::endpoints::{self, DiscoverableProtocolMarker};
 use fsandbox::DictionaryRef;
 use fuchsia_component::client;
 use fuchsia_component_test::ScopedInstance;
-use fuchsia_criterion::{criterion, FuchsiaCriterion};
+use fuchsia_criterion::{FuchsiaCriterion, criterion};
 use fuchsia_runtime::{HandleInfo, HandleType};
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryStreamExt};
@@ -71,7 +71,7 @@ struct FinishedElfComponentLaunchTest {
 
 impl ElfComponentLaunchTest {
     fn new(number_of_echo_connections: usize) -> Self {
-        let mut executor = fasync::LocalExecutor::new();
+        let mut executor = fasync::LocalExecutor::default();
 
         let vmo = read_file_to_vmo(ZBI_PATH);
         let numbered_handles = vec![fprocess::HandleInfo {

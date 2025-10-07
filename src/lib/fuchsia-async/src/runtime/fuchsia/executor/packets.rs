@@ -340,7 +340,7 @@ mod tests {
             }
         }
 
-        let _executor = LocalExecutor::new();
+        let _executor = LocalExecutor::default();
         let reg1 = EHandle::local().register_receiver(DummyPacketReceiver { id: 1 });
         assert_eq!(reg1.key(), 0);
 

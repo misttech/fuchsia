@@ -1427,7 +1427,7 @@ mod tests {
 
     #[fuchsia::test]
     fn verify_asynchronous_signal_honored() {
-        let mut executor = fasync::LocalExecutor::new();
+        let mut executor = fasync::LocalExecutor::default();
         let (test_sender, mut test_received) = mpsc::channel(1);
         let (mut s, r) = mpsc::channel(1);
         let clock = create_clock();
@@ -1480,7 +1480,7 @@ mod tests {
 
     #[fuchsia::test]
     fn verify_asynchronous_test_signal_honored() {
-        let mut executor = fasync::LocalExecutor::new();
+        let mut executor = fasync::LocalExecutor::default();
         let (test_sender, mut test_received) = mpsc::channel(1);
         let (mut s, r) = mpsc::channel(1);
         let clock = create_clock();

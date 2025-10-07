@@ -52,7 +52,7 @@ pub fn run_proxy_thread(
         if let Err(e) = fuchsia_scheduler::set_role_for_this_thread(PROXY_ROLE_NAME) {
             warn!(e:%; "failed to set thread role");
         }
-        let mut executor = fasync::LocalExecutor::new();
+        let mut executor = fasync::LocalExecutor::default();
         executor.run_singlethreaded(async move {
             let mut tasks = fasync::TaskGroup::new();
             let bounce_bytes = Rc::new(RefCell::new(

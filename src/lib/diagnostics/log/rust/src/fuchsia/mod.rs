@@ -223,7 +223,7 @@ impl Publisher {
         if listen_for_interest_updates {
             let publisher = publisher.clone();
             std::thread::spawn(move || {
-                fuchsia_async::LocalExecutor::new()
+                fuchsia_async::LocalExecutor::default()
                     .run_singlethreaded(publisher.listen_for_interest_updates(client.into_proxy()));
             });
         }

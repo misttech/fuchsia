@@ -2038,7 +2038,7 @@ mod test {
 
         // Simulate a first run of starnix.
         let fixture = fuchsia_async::unblock(move || {
-            let mut exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::default();
 
             let (server, client) = zx::Channel::create();
             fixture.root().clone(server.into()).expect("clone failed");
@@ -2118,7 +2118,7 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
 
         let fixture = fuchsia_async::unblock(move || {
-            let mut exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::default();
             exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 current_task
@@ -2204,7 +2204,7 @@ mod test {
         const MODE: FileMode = FileMode::from_bits(FileMode::IFDIR.bits() | 0o777);
 
         let fixture = fuchsia_async::unblock(move || {
-            let mut exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::default();
             exec.run_singlethreaded(spawn_kernel_and_run(|_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
@@ -2327,7 +2327,7 @@ mod test {
         const REG_MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits());
 
         let fixture = fuchsia_async::unblock(move || {
-            let mut exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::default();
             exec.run_singlethreaded(spawn_kernel_and_run(|_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
@@ -2413,7 +2413,7 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
 
         let fixture = fuchsia_async::unblock(move || {
-            let mut exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::default();
             exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
@@ -2475,7 +2475,7 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
 
         let fixture = fuchsia_async::unblock(move || {
-            let mut exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::default();
             exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
@@ -2527,7 +2527,7 @@ mod test {
         const MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits() | 0o467);
 
         let fixture = fuchsia_async::unblock(move || {
-            let mut exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::default();
             exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
@@ -2592,7 +2592,7 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
 
         let fixture = fuchsia_async::unblock(move || {
-            let mut exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::default();
             exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
@@ -2639,7 +2639,7 @@ mod test {
         const MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits() | 0o467);
 
         let fixture = fuchsia_async::unblock(move || {
-            let mut exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::default();
             exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
@@ -2700,7 +2700,7 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
 
         let fixture = fuchsia_async::unblock(move || {
-            let mut exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::default();
             exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
@@ -2746,7 +2746,7 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
 
         fuchsia_async::unblock(move || {
-            let mut exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::default();
             exec.run_singlethreaded(spawn_kernel_and_run(move |locked, current_task| {
                 let kernel = current_task.kernel();
                 let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
@@ -2783,7 +2783,7 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
 
         let fixture = fuchsia_async::unblock(move || {
-            let mut exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::default();
             exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
@@ -2851,7 +2851,7 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
 
         let fixture = fuchsia_async::unblock(move || {
-            let mut exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::default();
             exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
@@ -2921,7 +2921,7 @@ mod test {
         const MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits() | 0o467);
 
         let (fixture, last_modified) = fuchsia_async::unblock(move || {
-            let mut exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::default();
             let last_modified =
                 exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                     let kernel = current_task.kernel().clone();
@@ -3007,7 +3007,7 @@ mod test {
         let (server, client) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone failed");
         let refreshed_modified_time = fuchsia_async::unblock(move || {
-            let mut exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::default();
             exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
@@ -3061,7 +3061,7 @@ mod test {
         const MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits() | 0o467);
 
         fuchsia_async::unblock(move || {
-            let mut exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::default();
             exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
@@ -3159,7 +3159,7 @@ mod test {
         const MODE: FileMode = FileMode::from_bits(FileMode::IFREG.bits() | 0o467);
 
         let fixture = fuchsia_async::unblock(move || {
-            let mut exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::default();
             exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
@@ -3263,7 +3263,7 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
 
         let fixture = fuchsia_async::unblock(move || {
-            let mut exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::default();
             let _ = exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
@@ -3320,7 +3320,7 @@ mod test {
         let (server, client) = zx::Channel::create();
         fixture.root().clone(server.into()).expect("clone failed");
         let casefold = fuchsia_async::unblock(move || {
-            let mut exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::default();
             exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
@@ -3377,7 +3377,7 @@ mod test {
 
             // Set up file.
             let (fixture, info_after_read) = fuchsia_async::unblock(move || {
-                let mut exec = fuchsia_async::LocalExecutor::new();
+                let mut exec = fuchsia_async::LocalExecutor::default();
                 let info_after_read =
                     exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                         let kernel = current_task.kernel().clone();
@@ -3458,7 +3458,7 @@ mod test {
             fixture.root().clone(server.into()).expect("clone failed");
 
             let fixture = fuchsia_async::unblock(move || {
-                let mut exec = fuchsia_async::LocalExecutor::new();
+                let mut exec = fuchsia_async::LocalExecutor::default();
                 exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                     let kernel = current_task.kernel().clone();
                     kernel
@@ -3522,7 +3522,7 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
 
         let fixture = fuchsia_async::unblock(move || {
-            let mut exec = fuchsia_async::LocalExecutor::new();
+            let mut exec = fuchsia_async::LocalExecutor::default();
             exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel

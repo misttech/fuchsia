@@ -546,7 +546,7 @@ mod tests {
     async fn test_remote_uds() {
         let (client, server) = zx::Channel::create();
         let handle = std::thread::spawn(|| {
-            let mut executor = fasync::LocalExecutor::new();
+            let mut executor = fasync::LocalExecutor::default();
             executor.run_singlethreaded(async move {
                 let uds_impl = UnixDomainSocketImpl::default();
                 Arc::new(uds_impl).serve(server).await;
@@ -631,7 +631,7 @@ mod tests {
     async fn test_remote_uds_peer_closed() {
         let (client, server) = zx::Channel::create();
         let handle = std::thread::spawn(move || {
-            let mut executor = fasync::LocalExecutor::new();
+            let mut executor = fasync::LocalExecutor::default();
             executor.run_singlethreaded(async move {
                 let uds_impl = UnixDomainSocketImpl { close_on_read: true, ..Default::default() };
                 Arc::new(uds_impl).serve(server).await;

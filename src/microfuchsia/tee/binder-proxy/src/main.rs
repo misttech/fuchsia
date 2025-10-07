@@ -18,7 +18,7 @@ unsafe extern "C" {
 }
 
 fn get_pmem_buffer() -> Result<zx::Vmo, Error> {
-    fuchsia_async::LocalExecutor::new().run_singlethreaded((async || {
+    fuchsia_async::LocalExecutor::default().run_singlethreaded((async || {
         log::info!("waiting for virtiopmem");
         let virtio_pmem = Service::open(fidl_fuchsia_hardware_virtio_pmem::ServiceMarker)
             .context("Failed to open service")?

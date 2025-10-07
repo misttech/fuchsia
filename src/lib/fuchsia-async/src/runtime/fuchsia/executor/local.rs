@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use super::atomic_future::AtomicFutureHandle;
-use super::common::{EHandle, Executor, ExecutorTime, TaskHandle, MAIN_TASK_ID};
+use super::common::{EHandle, Executor, ExecutorTime, MAIN_TASK_ID, TaskHandle};
 use super::scope::ScopeHandle;
 use super::time::{BootInstant, MonotonicInstant};
 use zx::BootDuration;
@@ -12,10 +12,10 @@ use crate::runtime::instrument::TaskInstrument;
 use futures::future::{self, Either};
 use futures::task::AtomicWaker;
 use std::fmt;
-use std::future::{poll_fn, Future};
+use std::future::{Future, poll_fn};
 use std::pin::pin;
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::task::{Context, Poll};
 
 /// A single-threaded port-based executor for Fuchsia.
@@ -176,7 +176,7 @@ impl LocalExecutorBuilder {
     pub fn build(self) -> LocalExecutor {
         match self.port {
             Some(port) => LocalExecutor::new_with_port(port, self.instrument),
-            None => LocalExecutor::new(),
+            None => LocalExecutor::default(),
         }
     }
 }

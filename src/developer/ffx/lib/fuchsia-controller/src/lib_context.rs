@@ -82,7 +82,7 @@ fn new_command_thread(
     notifier: Notifier,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(|| {
-        let mut executor = LocalExecutor::new();
+        let mut executor = LocalExecutor::default();
         executor.run_singlethreaded(async move {
             while let Ok(cmd) = receiver.recv().await {
                 if let LibraryCommand::ShutdownLib = cmd {

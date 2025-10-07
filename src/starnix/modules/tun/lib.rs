@@ -397,7 +397,7 @@ impl FileOps for DevTun {
                     .run_in_state(
                         RunState::Waiter(WaiterRef::from_abort_handle(&abort_handle)),
                         || {
-                            let mut executor = fasync::LocalExecutor::new();
+                            let mut executor = fasync::LocalExecutor::default();
                             let tun_control = fuchsia_component::client::connect_to_protocol::<
                                 fnet_tun::ControlMarker,
                             >()

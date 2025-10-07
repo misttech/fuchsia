@@ -79,7 +79,7 @@ pub extern "C" fn install_from_usb(source: *const c_char, destination: *const c_
     let source = to_string(source);
     let destination = to_string(destination);
     let func = move || {
-        LocalExecutor::new().run_singlethreaded(install_from_usb_internal(
+        LocalExecutor::default().run_singlethreaded(install_from_usb_internal(
             source,
             destination,
             &Dependencies::default(),

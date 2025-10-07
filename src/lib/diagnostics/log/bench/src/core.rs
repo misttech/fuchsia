@@ -121,7 +121,7 @@ fn set_up_old_log_write_benchmarks(
 }
 
 fn main() {
-    let _executor = fuchsia_async::LocalExecutor::new();
+    let _executor = fuchsia_async::LocalExecutor::default();
     let mut c = FuchsiaCriterion::default();
     let internal_c: &mut criterion::Criterion = &mut c;
     *internal_c = std::mem::take(internal_c)

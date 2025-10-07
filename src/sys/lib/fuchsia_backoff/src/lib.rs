@@ -255,8 +255,8 @@ mod tests {
     use super::*;
     use futures::prelude::*;
     use std::iter;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     const BACKOFF_DURATION: u64 = 100;
 
@@ -323,7 +323,7 @@ mod tests {
     {
         // The host-side executor doesn't support fake time, so just run the future and make sure
         // it ran longer than the backoff duration.
-        let mut executor = fasync::LocalExecutor::new();
+        let mut executor = fasync::LocalExecutor::default();
 
         let start_time = fasync::MonotonicInstant::now();
 

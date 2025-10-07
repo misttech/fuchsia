@@ -139,7 +139,7 @@ pub unsafe extern "C" fn start_bridged_wlansoftmac(
     let task = dispatcher.spawn_task(async move {
         wtrace::duration!(c"Rust MLME dispatcher");
 
-        let mut executor = LocalExecutor::new();
+        let mut executor = LocalExecutor::default();
 
         let wlan_softmac_bridge_proxy = {
             // Safety: This is safe because the caller promises `wlan_softmac_bridge_client_handle`

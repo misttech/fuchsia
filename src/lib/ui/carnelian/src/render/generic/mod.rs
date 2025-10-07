@@ -440,7 +440,7 @@ pub(crate) mod tests {
             return;
         }
 
-        let mut executor = fasync::LocalExecutor::new();
+        let mut executor = fasync::LocalExecutor::default();
         let f = async { f() };
         executor.run_singlethreaded(f);
     }

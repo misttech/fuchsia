@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use carnelian::{App, AppAssistantPtr};
 use fidl_fuchsia_boot::ReadOnlyLogMarker;
 use fuchsia_async::LocalExecutor;
@@ -20,7 +20,7 @@ fn main() -> Result<(), Error> {
         Ok::<(), Error>(())
     };
     {
-        let mut executor = LocalExecutor::new();
+        let mut executor = LocalExecutor::default();
         executor.run_singlethreaded(init)?;
     }
 
@@ -49,7 +49,7 @@ fn main() -> Result<(), Error> {
     };
 
     let read_only_debuglog = {
-        let mut executor = LocalExecutor::new();
+        let mut executor = LocalExecutor::default();
         executor.run_singlethreaded(get_read_only_debuglog)?
     };
 

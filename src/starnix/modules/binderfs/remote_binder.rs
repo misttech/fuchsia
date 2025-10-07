@@ -1221,7 +1221,7 @@ mod tests {
             + 'static,
     {
         spawn_kernel_and_run(|_, init_task| {
-            let mut executor = fasync::LocalExecutor::new();
+            let mut executor = fasync::LocalExecutor::default();
             executor.run_singlethreaded(async move {
                 let service_name = Alphanumeric.sample_string(&mut rand::rng(), 16);
                 let (remote_controller_client, remote_controller_server) =
@@ -1529,7 +1529,7 @@ mod tests {
         spawn_kernel_and_run(move |_locked, current_task| {
             let kernel = current_task.kernel().clone();
 
-            let mut executor = fuchsia_async::LocalExecutor::new();
+            let mut executor = fuchsia_async::LocalExecutor::default();
             let (power_controller, power_controller_server_end) = fidl::endpoints::create_proxy();
             let message_counter = zx::Counter::create();
             let message_counter_clone = message_counter

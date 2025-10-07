@@ -6,7 +6,7 @@
 
 //! `stash_ctl` provides a terminal interface to the contents of stash.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl::endpoints::create_proxy;
 use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
@@ -19,7 +19,7 @@ use fidl_fuchsia_stash::{KeyValue, ListItem, SecureStoreMarker, StoreMarker, Val
 fn main() -> Result<(), Error> {
     let cfg: StashCtlConfig = env::args().try_into()?;
 
-    let mut executor = fasync::LocalExecutor::new();
+    let mut executor = fasync::LocalExecutor::default();
 
     let acc = if cfg.secure {
         let stashserver = connect_to_protocol::<SecureStoreMarker>()?;

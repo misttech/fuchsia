@@ -303,7 +303,7 @@ pub async fn serve_starnix_manager(
             }
             fstarnixrunner::ManagerRequest::CreatePager { payload, .. } => {
                 std::thread::spawn(|| {
-                    fasync::LocalExecutor::new().run_singlethreaded(run_pager(payload));
+                    fasync::LocalExecutor::default().run_singlethreaded(run_pager(payload));
                 });
             }
             _ => {}
