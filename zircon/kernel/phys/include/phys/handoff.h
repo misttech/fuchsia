@@ -41,6 +41,7 @@
 #include "handoff-ptr.h"
 
 struct BootOptions;
+struct ralloc_region_t;
 
 // This holds arch::EarlyTicks timestamps collected by physboot before the
 // kernel proper is cognizant.  Once the platform timer hardware is set up for
@@ -413,9 +414,9 @@ struct PhysHandoff {
   // ZBI_TYPE_CRASHLOG payload.
   PhysHandoffTemporaryString crashlog;
 
-  // A mapped ZBI_TYPE_NVRAM payload, if not empty().
-  // A physical memory region that will persist across warm boots.
-  MappedMemoryRange nvram;
+  // The mapped region described by a ZBI_TYPE_NVRAM payload, if not empty():
+  // a physical memory region that will persist across warm boots.
+  PhysHandoffPhysicalSpan<std::byte> nvram;
 
   // ZBI_TYPE_PLATFORM_ID payload.
   std::optional<zbi_platform_id_t> platform_id;
@@ -441,6 +442,10 @@ struct PhysHandoff {
 
   // The UART's mapped MMIO range, if present and MMIO-based.
   MappedMmioRange uart_mmio;
+
+  // Special physical memory ranges (not normal RAM known to the PMM) to be
+  // reserved for kernel use, not available for user-level drivers to map.
+  PhysHandoffTemporarySpan<const ralloc_region_t> mmio_deny;
 
   // Mapped kPeripheral ranges.
   PhysHandoffPermanentSpan<const MappedMmioRange> periph_ranges;

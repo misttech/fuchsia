@@ -337,7 +337,7 @@ static void init_topology(uint level) {
 
 LK_INIT_HOOK(init_topology, init_topology, LK_INIT_LEVEL_VM)
 
-static void allocate_persistent_ram(const MappedMemoryRange& range) {
+static void allocate_persistent_ram(ktl::span<ktl::byte> range) {
   // Figure out how to divide up our persistent RAM.  Right now there are
   // three potential users:
   //
@@ -418,7 +418,7 @@ static void allocate_persistent_ram(const MappedMemoryRange& range) {
 
 void platform_early_init() {
   if (!gPhysHandoff->nvram.empty()) {
-    allocate_persistent_ram(gPhysHandoff->nvram);
+    allocate_persistent_ram(gPhysHandoff->nvram.get());
   }
 
   // Initialize the PmmChecker now that the cmdline has been parsed.

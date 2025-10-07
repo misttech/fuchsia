@@ -456,6 +456,13 @@ class HandoffPrep {
     requires(ktl::constructible_from<T, Args...> && ktl::is_trivially_destructible_v<T>)
   T* NewInKernelImage(const PhysHandoffKernelImagePtr<const T>& ptr, Args&&... args) const;
 
+  template <typename T>
+  PhysHandoffPhysicalSpan<T> FromPhysical(ktl::span<T> span) {
+    PhysHandoffPhysicalPtr<T> ptr;
+    ptr.ptr_ = span.data();
+    return {ktl::move(ptr), span.size()};
+  }
+
   const ElfImage kernel_;
   PhysHandoff* handoff_ = nullptr;
   const ZirconAbiSpec* abi_spec_ = nullptr;

@@ -52,14 +52,9 @@ void RootResourceFilter::Finalize() {
   };
   memalloc::NormalizeRanges(gPhysHandoff->memory.get(), add_region, filter_for_ram);
 
-  // Ditto for the NVRAM range, which backs kernel state like the crashlog.
-  if (!gPhysHandoff->nvram.empty()) {
-    mmio_deny_.AddRegion(
-        {
-            .base = gPhysHandoff->nvram.paddr,
-            .size = gPhysHandoff->nvram.size_bytes(),
-        },
-        RegionAllocator::AllowOverlap::No);
+  // Also handle any special non-RAM ranges mapped by physboot.
+  for (ralloc_region_t region : gPhysHandoff->mmio_deny.get()) {
+    mmio_deny_.AddRegion(region, RegionAllocator::AllowOverlap::No);
   }
 
   // Dump the deny list at spew level for debugging purposes.

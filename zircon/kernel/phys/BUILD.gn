@@ -643,6 +643,7 @@ if (toolchain_environment == "kernel.phys" ||
       "//zircon/kernel/lib/instrumentation",
       "//zircon/kernel/phys/lib/memalloc",
       "//zircon/system/ulib/fbl",
+      "//zircon/system/ulib/region-alloc:headers",
     ]
   }
 

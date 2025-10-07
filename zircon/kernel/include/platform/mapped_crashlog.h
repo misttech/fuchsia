@@ -4,8 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#ifndef ZIRCON_KERNEL_INCLUDE_PLATFORM_RAM_MAPPABLE_CRASHLOG_H_
-#define ZIRCON_KERNEL_INCLUDE_PLATFORM_RAM_MAPPABLE_CRASHLOG_H_
+#ifndef ZIRCON_KERNEL_INCLUDE_PLATFORM_MAPPED_CRASHLOG_H_
+#define ZIRCON_KERNEL_INCLUDE_PLATFORM_MAPPED_CRASHLOG_H_
 
 #include <kernel/lockdep.h>
 #include <kernel/spinlock.h>
@@ -54,4 +54,4 @@ class MappedCrashlog final : public PlatformCrashlog::Interface {
   ktl::atomic<bool> status_printed_to_debuglog_{false};
 };
 
-#endif  // ZIRCON_KERNEL_INCLUDE_PLATFORM_RAM_MAPPABLE_CRASHLOG_H_
+#endif  // ZIRCON_KERNEL_INCLUDE_PLATFORM_MAPPED_CRASHLOG_H_

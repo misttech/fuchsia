@@ -76,7 +76,7 @@ void platform_save_bootloader_data() {
   // MappedCrashlog implementation and configure the generic platform
   // layer to use it.
   if (!gPhysHandoff->nvram.empty() && !PlatformCrashlog::HasNonTrivialImpl()) {
-    gMappedCrashlog.Initialize(gPhysHandoff->nvram);
+    gMappedCrashlog.Initialize(gPhysHandoff->nvram.get());
     PlatformCrashlog::Bind(gMappedCrashlog.Get());
   }
 }

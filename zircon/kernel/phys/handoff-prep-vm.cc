@@ -13,11 +13,13 @@
 #include <fbl/algorithm.h>
 #include <ktl/algorithm.h>
 #include <ktl/bit.h>
+#include <ktl/inplace_vector.h>
 #include <ktl/iterator.h>
 #include <ktl/string_view.h>
 #include <phys/address-space.h>
 #include <phys/allocation.h>
 #include <phys/elf-image.h>
+#include <region-alloc/region.h>
 
 #include "handoff-prep.h"
 
@@ -216,6 +218,8 @@ HandoffPrep::ZirconAbi HandoffPrep::ConstructKernelAddressSpace(const UartDriver
   const memalloc::Pool& pool = Allocation::GetPool();
   ZirconAbi abi{};
 
+  ktl::inplace_vector<ralloc_region_t, 1> mmio_deny;
+
   // Physmap.
   {
     size_t size = PhysmapSize();
@@ -370,13 +374,24 @@ HandoffPrep::ZirconAbi HandoffPrep::ConstructKernelAddressSpace(const UartDriver
       return range.type == memalloc::Type::kNvram;
     });
     if (nvram != pool.end()) {
-      handoff_->nvram = PublishSingleWritableDataMappingVmar("NVRAM"sv, nvram->addr, nvram->size);
+      handoff_->nvram =
+          FromPhysical(PublishSingleWritableDataMappingVmar("NVRAM"sv, nvram->addr, nvram->size));
+      mmio_deny.push_back({.base = nvram->addr, .size = nvram->size});
     }
   }
 
   // Construct the arch-specific bits at the end (to give the non-arch-specific
   // placements in the address space a small amount of relative familiarity).
   ArchConstructKernelAddressSpace();
+
+  // If any mmio_deny regions were collected, transfer them over now.
+  if (!mmio_deny.empty()) {
+    fbl::AllocChecker ac;
+    ktl::span handoff_deny = New(handoff_->mmio_deny, ac, mmio_deny.size());
+    ZX_ASSERT(ac.check());
+    ZX_DEBUG_ASSERT(handoff_deny.size() == mmio_deny.size());
+    ktl::ranges::copy(mmio_deny, handoff_deny.begin());
+  }
 
   return abi;
 }

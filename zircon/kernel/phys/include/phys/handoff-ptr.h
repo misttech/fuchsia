@@ -10,6 +10,7 @@
 // Note: we refrain from using the ktl namespace as <phys/handoff.h> is
 // expected to be compiled in the userboot toolchain.
 
+#include <assert.h>
 #include <stddef.h>
 #include <zircon/assert.h>
 
@@ -49,30 +50,75 @@ extern PhysHandoff* gPhysHandoff;
 //    which ends once EndHandoff() is called.  This data resides on pages that
 //    the PMM may be told to reuse after handoff.
 //
-enum class PhysHandoffPtrLifetime { kPermanent, kKernelImage, kTemporary };
+enum class PhysHandoffPtrLifetime {
+  // In normal RAM handed off as mempool::Type::kTemporaryPhysHandoff.  These
+  // are normal pages (mapped in the physmap as well as this virtual mapping).
+  // But the kernel will reclaim them in EndHandoff, so they are referenced
+  // only in PhysHandoff and not in BootConstants.
+  kTemporary,
+
+  // In normal RAM handed off as mempool::Type::kPermanentPhysHandoff.  These
+  // are normal pages (mapped in the physmap as well as this virtual mapping),
+  // but wired forever in the kernel.  These pointers can live anywhere.
+  kPermanent,
+
+  // In the kernel's own ELF load image.  This is not quite normal RAM!  Its
+  // pages are handed off as mempool::Type::kKernel and managed by the VM
+  // system (and wired forever).  But it is kept out of the physmap, so in the
+  // kernel proper it's only directly accessible through protected mappings.
+  kKernelImage,
+
+  // This represents a mapping to physical pages (whether normal or MMIO) that
+  // is outside the VM system's management of physical pages (PMM).  These
+  // mappings stay wired forever in the kernel; the pointers can live anywhere.
+  kPhysical,
+};
 
 // Forward declaration; see below.
 template <typename T, PhysHandoffPtrLifetime Lifetime>
 class PhysHandoffSpan;
 
+// Forward declaration; see below.
 template <typename T, PhysHandoffPtrLifetime Lifetime>
+class PhysHandoffSpan;
+
+template <typename T>
+consteval bool PhysHandoffPtrValidType(PhysHandoffPtrLifetime Lifetime) {
+  switch (Lifetime) {
+    case PhysHandoffPtrLifetime::kTemporary:
+    case PhysHandoffPtrLifetime::kPermanent:
+      // Handoff "heap" pointers are always pointers to const.
+      return std::is_const_v<T>;
+
+    case PhysHandoffPtrLifetime::kKernelImage:
+      return true;
+
+    case PhysHandoffPtrLifetime::kPhysical:
+      // Physical pointers are never const: the virtual mappings are always
+      // writable, so they can be dereferenced freely in phys as in the kernel proper.
+      return !std::is_const_v<T>;
+  }
+}
+
+// Most handoff pointers can only be dereferenced in the kernel proper.
+constexpr bool kPhysHandoffPtrCanDeref =
+#ifdef HANDOFF_PTR_DEREF
+    HANDOFF_PTR_DEREF
+#elif defined(_KERNEL)
+    true
+#else
+    false
+#endif
+    ;
+
+template <typename T, PhysHandoffPtrLifetime Lifetime>
+  requires(PhysHandoffPtrValidType<T>(Lifetime))
 class PhysHandoffPtr {
  public:
-  // Handoff "heap" pointers are always pointers to const.  But a pointer into
-  // the kernel image can have any kind of qualifiers or lack thereof.
-  using value_type =
-      std::conditional_t<Lifetime == PhysHandoffPtrLifetime::kKernelImage, T, const T>;
+  using value_type = T;
 
-  // Handoff pointers can only be dereferenced in the kernel proper.
   static constexpr bool kCanDeref =
-#ifdef HANDOFF_PTR_DEREF
-      HANDOFF_PTR_DEREF
-#elif defined(_KERNEL)
-      true
-#else
-      false
-#endif
-      ;
+      kPhysHandoffPtrCanDeref || Lifetime == PhysHandoffPtrLifetime::kPhysical;
 
   // Default-constructible, movable but not copyable (use .get() instead).
   constexpr PhysHandoffPtr() = default;
@@ -94,7 +140,7 @@ class PhysHandoffPtr {
 
   explicit constexpr operator bool() const { return ptr_; }
 
-  constexpr const T* get() const
+  constexpr value_type* get() const
     requires(kCanDeref)
   {
     if constexpr (Lifetime == PhysHandoffPtrLifetime::kTemporary) {
@@ -105,21 +151,21 @@ class PhysHandoffPtr {
   }
 
   // This is allowed for debugging purposes in physboot.
-  constexpr const T* force_get() const { return ptr_; }
+  constexpr value_type* force_get() const { return ptr_; }
 
-  const T* release()
+  [[nodiscard]] value_type* release()
     requires(kCanDeref)
   {
     return std::exchange(ptr_, {});
   }
 
-  const T& operator*() const
+  value_type& operator*() const
     requires(kCanDeref)
   {
     return *get();
   }
 
-  const T* operator->() const
+  value_type* operator->() const
     requires(kCanDeref)
   {
     return get();
@@ -147,14 +193,13 @@ class PhysHandoffPtr {
   value_type* ptr_ = nullptr;
 };
 
-// PhysHandoffSpan<T> is to std::span<const T> as PhysHandoffPtr<T> is to const
-// T*.  It has get() and release() methods that return std::span<const T>.
-
+// PhysHandoffSpan<T> is to std::span<T> as PhysHandoffPtr<T> is to T*.  It has
+// get() and release() methods that return std::span<T>.
 template <typename T, PhysHandoffPtrLifetime Lifetime>
 class PhysHandoffSpan {
  public:
   using Ptr = PhysHandoffPtr<T, Lifetime>;
-  using value_type = const T;
+  using value_type = Ptr::value_type;
 
   constexpr PhysHandoffSpan() = default;
   PhysHandoffSpan(const PhysHandoffSpan&) = delete;
@@ -168,7 +213,15 @@ class PhysHandoffSpan {
 
   constexpr size_t size() const { return size_; }
 
+  constexpr size_t size_bytes() const { return size_ * sizeof(value_type); }
+
   constexpr bool empty() const { return size() == 0; }
+
+  constexpr value_type* data() const
+    requires(Ptr::kCanDeref)
+  {
+    return ptr_.get();
+  }
 
   constexpr std::span<value_type> get() const
     requires(Ptr::kCanDeref)
@@ -179,13 +232,15 @@ class PhysHandoffSpan {
   // This is allowed for debugging purposes in physboot.
   constexpr std::span<value_type> force_get() const { return {ptr_.force_get(), size_}; }
 
-  constexpr std::span<value_type> release()
+  [[nodiscard]] constexpr std::span<value_type> release()
     requires(Ptr::kCanDeref)
   {
     return {ptr_.release(), size_};
   }
 
-  PhysHandoffSpan subspan(size_t offset, size_t count) const {
+  constexpr uintptr_t address() const { return ptr_.address(); }
+
+  constexpr PhysHandoffSpan subspan(size_t offset, size_t count) const {
     PhysHandoffSpan result;
     assert(offset <= size_);
     result.ptr_.ptr_ = ptr_.ptr_ + offset;
@@ -211,6 +266,12 @@ class PhysHandoffString : public PhysHandoffSpan<const char, Lifetime> {
   constexpr PhysHandoffString(PhysHandoffString&&) noexcept = default;
   constexpr PhysHandoffString& operator=(PhysHandoffString&&) noexcept = default;
 
+  constexpr const char* data() const
+    requires(Base::Ptr::kCanDeref)
+  {
+    return Base::data();
+  }
+
   PhysHandoffString substr(size_t offset, size_t count) const {
     PhysHandoffString result;
     result.Base::operator=(Base::subspan(offset, count));
@@ -220,11 +281,10 @@ class PhysHandoffString : public PhysHandoffSpan<const char, Lifetime> {
   constexpr std::string_view get() const
     requires(Base::Ptr::kCanDeref)
   {
-    std::span str = Base::get();
-    return {str.data(), str.size()};
+    return {data(), Base::size()};
   }
 
-  constexpr std::string_view release()
+  [[nodiscard]] constexpr std::string_view release()
     requires(Base::Ptr::kCanDeref)
   {
     std::span str = Base::release();
@@ -235,18 +295,18 @@ class PhysHandoffString : public PhysHandoffSpan<const char, Lifetime> {
 // Convenience aliases used in the PhysHandoff declaration.
 
 template <typename T>
-using PhysHandoffTemporaryPtr = PhysHandoffPtr<T, PhysHandoffPtrLifetime::kTemporary>;
+using PhysHandoffTemporaryPtr = PhysHandoffPtr<const T, PhysHandoffPtrLifetime::kTemporary>;
 
 template <typename T>
-using PhysHandoffTemporarySpan = PhysHandoffSpan<T, PhysHandoffPtrLifetime::kTemporary>;
+using PhysHandoffTemporarySpan = PhysHandoffSpan<const T, PhysHandoffPtrLifetime::kTemporary>;
 
 using PhysHandoffTemporaryString = PhysHandoffString<PhysHandoffPtrLifetime::kTemporary>;
 
 template <typename T>
-using PhysHandoffPermanentPtr = PhysHandoffPtr<T, PhysHandoffPtrLifetime::kPermanent>;
+using PhysHandoffPermanentPtr = PhysHandoffPtr<const T, PhysHandoffPtrLifetime::kPermanent>;
 
 template <typename T>
-using PhysHandoffPermanentSpan = PhysHandoffSpan<T, PhysHandoffPtrLifetime::kPermanent>;
+using PhysHandoffPermanentSpan = PhysHandoffSpan<const T, PhysHandoffPtrLifetime::kPermanent>;
 
 using PhysHandoffPermanentString = PhysHandoffString<PhysHandoffPtrLifetime::kPermanent>;
 
@@ -257,5 +317,11 @@ template <typename T>
 using PhysHandoffKernelImageSpan = PhysHandoffSpan<T, PhysHandoffPtrLifetime::kKernelImage>;
 
 using PhysHandoffKernelImageString = PhysHandoffString<PhysHandoffPtrLifetime::kKernelImage>;
+
+template <typename T>
+using PhysHandoffPhysicalPtr = PhysHandoffPtr<T, PhysHandoffPtrLifetime::kPhysical>;
+
+template <typename T>
+using PhysHandoffPhysicalSpan = PhysHandoffSpan<T, PhysHandoffPtrLifetime::kPhysical>;
 
 #endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_HANDOFF_PTR_H_
