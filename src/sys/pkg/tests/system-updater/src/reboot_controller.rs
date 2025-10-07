@@ -26,6 +26,7 @@ async fn reboot_controller_detach_causes_deferred_reboot(update_url: &str) {
         default_options(),
         &env.installer_proxy(),
         Some(server_end),
+        None,
     )
     .await
     .unwrap();
@@ -60,6 +61,7 @@ async fn reboot_controller_unblock_causes_reboot(update_url: &str) {
         default_options(),
         &env.installer_proxy(),
         Some(server_end),
+        None,
     )
     .await
     .unwrap();
@@ -94,6 +96,7 @@ async fn reboot_controller_dropped_causes_reboot(update_url: &str) {
         default_options(),
         &env.installer_proxy(),
         Some(server_end),
+        None,
     )
     .await
     .unwrap();

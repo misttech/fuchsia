@@ -106,6 +106,7 @@ async fn reboots_regardless_of_reboot_controller(update_url: &str) {
         default_options(),
         &env.installer_proxy(),
         Some(server_end),
+        None,
     )
     .await
     .unwrap();

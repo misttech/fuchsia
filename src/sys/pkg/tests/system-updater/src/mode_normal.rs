@@ -149,14 +149,7 @@ async fn updates_the_system_with_progress() {
         .resolve(&env.resolver.package("system_image/0", SYSTEM_IMAGE_HASH));
 
     // Start the system update.
-    let attempt = start_update(
-        &UPDATE_PKG_URL.parse().unwrap(),
-        default_options(),
-        &env.installer_proxy(),
-        None,
-    )
-    .await
-    .unwrap();
+    let attempt = env.start_update().await.unwrap();
 
     // Verify progress reporting events.
     assert_success_monitor_states(
@@ -219,14 +212,7 @@ async fn updates_the_system_with_progress_packageless() {
         .await;
 
     // Start the system update.
-    let attempt = start_update(
-        &MANIFEST_URL.parse().unwrap(),
-        default_options(),
-        &env.installer_proxy(),
-        None,
-    )
-    .await
-    .unwrap();
+    let attempt = env.start_packageless_update().await.unwrap();
 
     // Verify progress reporting events.
     assert_success_monitor_states(

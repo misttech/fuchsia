@@ -115,6 +115,7 @@ impl MockUpdateInstallerService {
                     options,
                     monitor,
                     reboot_controller,
+                    signature: _,
                     responder,
                 } => {
                     self.captured_args.lock().push(CapturedUpdateInstallerRequest::StartUpdate {
@@ -236,7 +237,7 @@ mod tests {
         let (monitor_client_end, stream) =
             fidl::endpoints::create_request_stream::<MonitorMarker>();
         proxy
-            .start_update(&url, &options, monitor_client_end, None)
+            .start_update(&url, &options, monitor_client_end, None, None)
             .await
             .expect("made start_update call")
             .expect("start_update call succeeded");

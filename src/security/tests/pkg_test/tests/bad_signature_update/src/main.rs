@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Result};
-use argh::{from_env, FromArgs};
-use fidl::endpoints::{create_endpoints, create_proxy, ServerEnd};
+use anyhow::{Result, bail};
+use argh::{FromArgs, from_env};
+use fidl::endpoints::{ServerEnd, create_endpoints, create_proxy};
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_pkg::PackageUrl;
 use fidl_fuchsia_sys2::{StorageAdminMarker, StorageIteratorMarker};
@@ -19,7 +19,7 @@ use fuchsia_fs::directory::readdir;
 use fuchsia_hash::Hash;
 use fuchsia_merkle::MerkleTree;
 use futures::channel::oneshot::channel;
-use futures::{join, TryStreamExt};
+use futures::{TryStreamExt, join};
 use log::info;
 use security_pkg_test_util::config::load_config;
 use security_pkg_test_util::storage::mount_image_as_ramdisk;
@@ -111,6 +111,7 @@ async fn attempt_update(update_url: &str) -> Result<State> {
             },
             monitor_client_end,
             Some(reboot_controller_server_end),
+            None,
         )
         .await
         .unwrap()

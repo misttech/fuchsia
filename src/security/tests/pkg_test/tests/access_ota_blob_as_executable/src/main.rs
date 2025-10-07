@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use argh::{from_env, FromArgs};
-use fidl::endpoints::{create_endpoints, create_proxy, ServerEnd};
+use argh::{FromArgs, from_env};
+use fidl::endpoints::{ServerEnd, create_endpoints, create_proxy};
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_mem::Buffer;
 use fidl_fuchsia_pkg::{BlobId, PackageCacheMarker, PackageResolverMarker, PackageUrl};
@@ -21,7 +21,7 @@ use fuchsia_fs::file;
 use fuchsia_hash::Hash;
 use fuchsia_merkle::MerkleTree;
 use futures::channel::oneshot::channel;
-use futures::{join, TryStreamExt};
+use futures::{TryStreamExt, join};
 use log::info;
 use security_pkg_test_util::config::load_config;
 use security_pkg_test_util::storage::mount_image_as_ramdisk;
@@ -359,6 +359,7 @@ async fn perform_update(update_url: &str) {
             },
             monitor_client_end,
             Some(reboot_controller_server_end),
+            None,
         )
         .await
         .unwrap()
@@ -478,14 +479,18 @@ async fn access_ota_blob_as_executable() {
 
     // Pre-update base version access check: Access should always succeed.
     assert!(hello_world_v0_access_check_result.pkg_cache_get.unwrap().is_readable_executable_ok());
-    assert!(hello_world_v0_access_check_result
-        .pkg_resolver_with_hash
-        .unwrap()
-        .is_readable_executable_ok());
-    assert!(hello_world_v0_access_check_result
-        .pkg_resolver_without_hash
-        .unwrap()
-        .is_readable_executable_ok());
+    assert!(
+        hello_world_v0_access_check_result
+            .pkg_resolver_with_hash
+            .unwrap()
+            .is_readable_executable_ok()
+    );
+    assert!(
+        hello_world_v0_access_check_result
+            .pkg_resolver_without_hash
+            .unwrap()
+            .is_readable_executable_ok()
+    );
 
     info!("Package server running on {}", package_server_url);
 
@@ -513,23 +518,29 @@ async fn access_ota_blob_as_executable() {
 
     // Post-update base version access check: Access should always succeed.
     assert!(hello_world_v0_access_check_result.pkg_cache_get.unwrap().is_readable_executable_ok());
-    assert!(hello_world_v0_access_check_result
-        .pkg_resolver_with_hash
-        .unwrap()
-        .is_readable_executable_ok());
-    assert!(hello_world_v0_access_check_result
-        .pkg_resolver_without_hash
-        .unwrap()
-        .is_readable_executable_ok());
+    assert!(
+        hello_world_v0_access_check_result
+            .pkg_resolver_with_hash
+            .unwrap()
+            .is_readable_executable_ok()
+    );
+    assert!(
+        hello_world_v0_access_check_result
+            .pkg_resolver_without_hash
+            .unwrap()
+            .is_readable_executable_ok()
+    );
 
     let different_package_name_access_check_result =
         different_package_name_access_check.perform_access_check().await;
 
     // Accessing via different package name: Should fail.
-    assert!(different_package_name_access_check_result
-        .pkg_resolver_with_hash
-        .unwrap()
-        .is_executable_err());
+    assert!(
+        different_package_name_access_check_result
+            .pkg_resolver_with_hash
+            .unwrap()
+            .is_executable_err()
+    );
 
     // Clean up ramdisk, not necessary but good practice
     ramdisk_client.destroy().await.unwrap();

@@ -51,6 +51,7 @@ impl Updater {
             },
             &self.proxy,
             Some(reboot_controller_server_end),
+            None,
         )
         .await
         .context("starting system update")?;

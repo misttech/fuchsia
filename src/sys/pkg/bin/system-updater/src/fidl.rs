@@ -87,6 +87,7 @@ impl FidlServer {
                 options,
                 monitor,
                 reboot_controller,
+                signature: _,
                 responder,
             } => {
                 let mut install_manager_ch = self.install_manager_ch.clone();

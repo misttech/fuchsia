@@ -713,7 +713,7 @@ impl TestEnv {
         url: &str,
         options: Options,
     ) -> Result<UpdateAttempt, UpdateAttemptError> {
-        start_update(&url.parse().unwrap(), options, &self.installer_proxy(), None).await
+        start_update(&url.parse().unwrap(), options, &self.installer_proxy(), None, None).await
     }
 
     async fn run_update(&self) -> Result<(), Error> {

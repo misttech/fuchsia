@@ -101,13 +101,20 @@ pub async fn start_update(
     options: Options,
     installer_proxy: &InstallerProxy,
     reboot_controller_server_end: Option<ServerEnd<RebootControllerMarker>>,
+    signature: Option<&[u8]>,
 ) -> Result<UpdateAttempt, UpdateAttemptError> {
     let url = fidl_fuchsia_pkg::PackageUrl { url: update_url.to_string() };
     let (monitor_client_end, monitor) =
         UpdateAttemptMonitor::new().map_err(UpdateAttemptError::FIDL)?;
 
     let attempt_id = installer_proxy
-        .start_update(&url, &options.into(), monitor_client_end, reboot_controller_server_end)
+        .start_update(
+            &url,
+            &options.into(),
+            monitor_client_end,
+            reboot_controller_server_end,
+            signature,
+        )
         .await
         .map_err(UpdateAttemptError::FIDL)?
         .map_err(|reason| match reason {
@@ -289,10 +296,15 @@ mod tests {
             fidl::endpoints::create_proxy::<RebootControllerMarker>();
 
         let installer_fut = async move {
-            let returned_update_attempt =
-                start_update(&pkgurl, opts, &proxy, Some(reboot_controller_server_end))
-                    .await
-                    .unwrap();
+            let returned_update_attempt = start_update(
+                &pkgurl,
+                opts,
+                &proxy,
+                Some(reboot_controller_server_end),
+                Some(&[1; 64]),
+            )
+            .await
+            .unwrap();
             assert_eq!(
                 returned_update_attempt.attempt_id(),
                 "00000000-0000-0000-0000-000000000001"
@@ -312,6 +324,7 @@ mod tests {
                         },
                     monitor: _,
                     reboot_controller,
+                    signature,
                     responder,
                 }) => {
                     assert_eq!(url.url, TEST_URL);
@@ -319,6 +332,7 @@ mod tests {
                     assert_matches!(reboot_controller, Some(_));
                     assert_eq!(should_write_recovery, Some(true));
                     assert_eq!(allow_attach_to_existing_attempt, Some(false));
+                    assert_eq!(signature, Some(vec![1; 64]));
                     responder.send(Ok("00000000-0000-0000-0000-000000000001")).unwrap();
                 }
                 request => panic!("Unexpected request: {request:?}"),
@@ -344,7 +358,7 @@ mod tests {
 
         let installer_fut = async move {
             let returned_update_attempt =
-                start_update(&pkgurl, opts, &proxy, Some(reboot_controller_server_end))
+                start_update(&pkgurl, opts, &proxy, Some(reboot_controller_server_end), None)
                     .await
                     .unwrap();
 
@@ -383,7 +397,7 @@ mod tests {
         let (proxy, mut stream) = fidl::endpoints::create_proxy_and_stream::<InstallerMarker>();
 
         let installer_fut = async move {
-            match start_update(&pkgurl, opts, &proxy, None).await {
+            match start_update(&pkgurl, opts, &proxy, None, None).await {
                 Err(UpdateAttemptError::FIDL(_)) => {} // expected
                 _ => panic!("Unexpected result"),
             }
@@ -416,7 +430,7 @@ mod tests {
 
         let installer_fut = async move {
             let mut returned_update_attempt =
-                start_update(&pkgurl, opts, &proxy, Some(reboot_controller_server_end))
+                start_update(&pkgurl, opts, &proxy, Some(reboot_controller_server_end), None)
                     .await
                     .unwrap();
             assert_matches!(
@@ -487,7 +501,7 @@ mod tests {
 
         let installer_fut = async move {
             let returned_update_attempt =
-                start_update(&pkgurl, opts, &proxy, Some(reboot_controller_server_end))
+                start_update(&pkgurl, opts, &proxy, Some(reboot_controller_server_end), None)
                     .await
                     .unwrap();
 

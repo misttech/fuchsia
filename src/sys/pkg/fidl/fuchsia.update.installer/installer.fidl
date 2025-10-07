@@ -28,6 +28,8 @@ closed protocol Installer {
     /// + request `reboot_controller` An optional protocol to control the timing
     ///     of the reboot into the update system. If not provided, the update
     ///     attempt will initiate the reboot as soon as it is ready.
+    /// + request `signature` The Ed25519 signature used to verify the manifest.
+    ///     Required for packageless updates. Disallowed for package-based updates.
     ///
     /// - response `attempt_id` UUID identifying this update attempt. For
     ///     updates that require a reboot, components may use this identifier to
@@ -38,6 +40,7 @@ closed protocol Installer {
         options Options;
         monitor client_end:Monitor;
         reboot_controller server_end:<RebootController, optional>;
+        signature vector<byte>:<64, optional>;
     }) -> (struct {
         attempt_id AttemptId;
     }) error UpdateNotStartedReason;

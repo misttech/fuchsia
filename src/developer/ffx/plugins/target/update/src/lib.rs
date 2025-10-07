@@ -284,6 +284,7 @@ impl UpdateTool {
             options,
             &installer_proxy,
             Some(reboot_controller_server_end),
+            None,
         )
         .await
         .bug_context("starting update")?;

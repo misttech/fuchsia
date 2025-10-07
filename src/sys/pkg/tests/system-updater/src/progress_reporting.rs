@@ -381,7 +381,8 @@ async fn fail_additional_start_requests_when_not_compatible(
             &compatible_url.parse().unwrap(),
             compatible_options,
             &installer_proxy,
-            Some(server_end)
+            Some(server_end),
+            None,
         )
         .await
         .map(|_| ())
