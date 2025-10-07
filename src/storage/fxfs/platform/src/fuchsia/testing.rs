@@ -16,8 +16,8 @@ use fidl_fuchsia_memorypressure::WatcherProxy;
 use fxfs::filesystem::{FxFilesystem, FxFilesystemBuilder, OpenFxFilesystem, PreCommitHook};
 use fxfs::fsck::errors::FsckIssue;
 use fxfs::fsck::{FsckOptions, fsck_volume_with_options, fsck_with_options};
-use fxfs::object_store::NO_OWNER;
 use fxfs::object_store::volume::root_volume;
+use fxfs::object_store::{NewChildStoreOptions, StoreOptions};
 use fxfs_crypto::Crypt;
 use fxfs_insecure_crypto::InsecureCrypt;
 use refaults_vmo::PageRefaultCounter;
@@ -112,8 +112,13 @@ impl TestFixture {
             let store = root_volume
                 .new_volume(
                     "vol",
-                    NO_OWNER,
-                    if options.encrypted { Some(crypt.clone()) } else { None },
+                    NewChildStoreOptions {
+                        options: StoreOptions {
+                            crypt: if options.encrypted { Some(crypt.clone()) } else { None },
+                            ..StoreOptions::default()
+                        },
+                        ..NewChildStoreOptions::default()
+                    },
                 )
                 .await
                 .unwrap();
@@ -151,7 +156,13 @@ impl TestFixture {
             let filesystem = FxFilesystemBuilder::new().open(device).await.unwrap();
             let root_volume = root_volume(filesystem.clone()).await.unwrap();
             let store = root_volume
-                .volume("vol", NO_OWNER, if options.encrypted { Some(crypt.clone()) } else { None })
+                .volume(
+                    "vol",
+                    StoreOptions {
+                        crypt: if options.encrypted { Some(crypt.clone()) } else { None },
+                        ..StoreOptions::default()
+                    },
+                )
                 .await
                 .unwrap();
             let store_object_id = store.store_object_id();

@@ -12,8 +12,8 @@ use fxfs::log::info;
 use fxfs::object_handle::ObjectProperties;
 use fxfs::object_store::volume::root_volume;
 use fxfs::object_store::{
-    DataObjectHandle, Directory, HandleOptions, NO_OWNER, ObjectDescriptor, ObjectKey, ObjectKind,
-    ObjectStore, ObjectValue, Timestamp,
+    DataObjectHandle, Directory, HandleOptions, NewChildStoreOptions, ObjectDescriptor, ObjectKey,
+    ObjectKind, ObjectStore, ObjectValue, StoreOptions, Timestamp,
 };
 use fxfs_crypto::Crypt;
 use once_cell::sync::OnceCell;
@@ -115,11 +115,20 @@ impl FuseFs {
         let fs = FxFilesystem::new_empty(device).await.expect("fxfs new_empty failed");
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
         root_volume
-            .new_volume(DEFAULT_VOLUME_NAME, NO_OWNER, crypt.clone())
+            .new_volume(
+                DEFAULT_VOLUME_NAME,
+                NewChildStoreOptions {
+                    options: StoreOptions { crypt: crypt.clone(), ..StoreOptions::default() },
+                    ..NewChildStoreOptions::default()
+                },
+            )
             .await
             .expect("new_volume failed");
         let default_store = root_volume
-            .volume(DEFAULT_VOLUME_NAME, NO_OWNER, crypt.clone())
+            .volume(
+                DEFAULT_VOLUME_NAME,
+                StoreOptions { crypt: crypt.clone(), ..StoreOptions::default() },
+            )
             .await
             .expect("failed to open default store");
 
@@ -140,7 +149,10 @@ impl FuseFs {
         let fs = FxFilesystem::open(device).await.expect("new_empty failed");
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
         let default_store = root_volume
-            .volume(DEFAULT_VOLUME_NAME, NO_OWNER, crypt.clone())
+            .volume(
+                DEFAULT_VOLUME_NAME,
+                StoreOptions { crypt: crypt.clone(), ..StoreOptions::default() },
+            )
             .await
             .expect("failed to open default store");
 

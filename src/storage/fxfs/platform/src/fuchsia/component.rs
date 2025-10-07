@@ -554,7 +554,7 @@ mod tests {
     use futures::future::{BoxFuture, FusedFuture, FutureExt};
     use futures::{pin_mut, select};
     use fxfs::filesystem::FxFilesystem;
-    use fxfs::object_store::NO_OWNER;
+    use fxfs::object_store::NewChildStoreOptions;
     use fxfs::object_store::volume::root_volume;
     use std::pin::Pin;
     use std::sync::Arc;
@@ -595,7 +595,7 @@ mod tests {
             {
                 let root_volume = root_volume(fs.clone()).await.expect("Open root_volume failed");
                 root_volume
-                    .new_volume("default", NO_OWNER, None)
+                    .new_volume("default", NewChildStoreOptions::default())
                     .await
                     .expect("Create volume failed");
             }

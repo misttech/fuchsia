@@ -24,7 +24,9 @@ use fxfs::fsck;
 use fxfs::log::*;
 use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
 use fxfs::object_store::volume::RootVolume;
-use fxfs::object_store::{Directory, ObjectDescriptor, ObjectStore, StoreOwner};
+use fxfs::object_store::{
+    Directory, NewChildStoreOptions, ObjectDescriptor, ObjectStore, StoreOptions, StoreOwner,
+};
 use fxfs_crypto::Crypt;
 use fxfs_trace::{TraceFutureExt, trace_future_args};
 use refaults_vmo::PageRefaultCounter;
@@ -92,25 +94,21 @@ impl MountedVolumesGuard<'_> {
         create: bool,
         as_blob: bool,
     ) -> Result<FxVolumeAndRoot, Error> {
+        let owner = Arc::downgrade(&self.volumes_directory) as Weak<dyn StoreOwner>;
         let store = if create {
             self.volumes_directory
                 .root_volume
                 .new_volume(
                     name,
-                    Arc::downgrade(&self.volumes_directory) as Weak<dyn StoreOwner>,
-                    crypt,
+                    NewChildStoreOptions {
+                        options: StoreOptions { owner, crypt },
+                        ..Default::default()
+                    },
                 )
                 .await
                 .context("failed to create new volume")?
         } else {
-            self.volumes_directory
-                .root_volume
-                .volume(
-                    name,
-                    Arc::downgrade(&self.volumes_directory) as Weak<dyn StoreOwner>,
-                    crypt,
-                )
-                .await?
+            self.volumes_directory.root_volume.volume(name, StoreOptions { owner, crypt }).await?
         };
         ensure!(
             !self.mounted_volumes.contains_key(&store.store_object_id()),

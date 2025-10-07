@@ -235,22 +235,30 @@ pub struct ObjectEncryptionOptions {
     pub unwrapped_key: UnwrappedKey,
 }
 
-pub struct NewChildStoreOptions {
+pub struct StoreOptions {
     /// The owner of the store.
     pub owner: Weak<dyn StoreOwner>,
 
     /// The store is unencrypted if store is none.
     pub crypt: Option<Arc<dyn Crypt>>,
+}
+
+impl Default for StoreOptions {
+    fn default() -> Self {
+        Self { owner: NO_OWNER, crypt: None }
+    }
+}
+
+#[derive(Default)]
+pub struct NewChildStoreOptions {
+    pub options: StoreOptions,
 
     /// Specifies the object ID in the root store to be used for the store.  If set to
     /// INVALID_OBJECT_ID (the default and typical case), a suitable ID will be chosen.
     pub object_id: u64,
-}
 
-impl Default for NewChildStoreOptions {
-    fn default() -> Self {
-        Self { owner: NO_OWNER, crypt: None, object_id: INVALID_OBJECT_ID }
-    }
+    /// If true, reserve all 32 bit object_ids.
+    pub reserve_32bit_object_ids: bool,
 }
 
 pub type EncryptedMutations = EncryptedMutationsV49;
@@ -425,17 +433,22 @@ struct LastObjectId {
 impl LastObjectId {
     // Returns true if a cipher is needed to generate new object IDs.
     fn should_create_cipher(&self) -> bool {
-        self.id as u32 == u32::MAX
+        self.cipher.is_some() && self.id as u32 == u32::MAX
     }
 
     fn get_next_object_id(&mut self) -> u64 {
-        self.id += 1;
         if let Some(cipher) = &self.cipher {
             let hi = self.id & OBJECT_ID_HI_MASK;
-            assert_ne!(hi, INVALID_OBJECT_ID);
-            assert_ne!(self.id as u32, 0); // This would indicate the ID wrapped.
-            hi | cipher.encrypt(self.id as u32) as u64
+            loop {
+                self.id += 1;
+                assert_ne!(self.id as u32, 0); // This would indicate the ID wrapped.
+                let candidate = hi | cipher.encrypt(self.id as u32) as u64;
+                if candidate != INVALID_OBJECT_ID {
+                    break candidate;
+                }
+            }
         } else {
+            self.id += 1;
             self.id
         }
     }
@@ -614,7 +627,8 @@ impl ObjectStore {
             ObjectStore::create_object(self, transaction, HandleOptions::default(), None).await?
         };
         let filesystem = self.filesystem();
-        let store = if let Some(crypt) = options.crypt {
+        let id = if options.reserve_32bit_object_ids { 0x1_0000_0000 } else { 0 };
+        let store = if let Some(crypt) = options.options.crypt {
             let (wrapped_key, unwrapped_key) =
                 crypt.create_key(handle.object_id(), KeyPurpose::Metadata).await?;
             let (object_id_wrapped, object_id_unwrapped) =
@@ -630,13 +644,8 @@ impl ObjectStore {
                 }),
                 object_cache,
                 Some(StreamCipher::new(&unwrapped_key, 0)),
-                LockState::Unlocked { owner: options.owner, crypt },
-                LastObjectId {
-                    // We need to avoid accidentally getting INVALID_OBJECT_ID, so we set
-                    // the top 32 bits to a non-zero value.
-                    id: 1 << 32,
-                    cipher: Some(Ff1::new(&object_id_unwrapped)),
-                },
+                LockState::Unlocked { owner: options.options.owner, crypt },
+                LastObjectId { id, cipher: Some(Ff1::new(&object_id_unwrapped)) },
             )
         } else {
             Self::new(
@@ -647,7 +656,7 @@ impl ObjectStore {
                 object_cache,
                 None,
                 LockState::Unencrypted,
-                LastObjectId::default(),
+                LastObjectId { id, ..LastObjectId::default() },
             )
         };
         assert!(store.store_info_handle.set(handle).is_ok());
@@ -858,21 +867,6 @@ impl ObjectStore {
     #[cfg(feature = "migration")]
     pub fn last_object_id(&self) -> u64 {
         self.last_object_id.lock().id
-    }
-
-    /// Bumps the unencrypted last object ID if `object_id` is greater than
-    /// the current maximum.
-    #[cfg(feature = "migration")]
-    pub fn maybe_bump_last_object_id(&self, object_id: u64) -> Result<(), Error> {
-        let mut last_object_id = self.last_object_id.lock();
-        if object_id > last_object_id.id {
-            ensure!(
-                object_id < (u32::MAX as u64) && last_object_id.cipher.is_none(),
-                "LastObjectId bump only valid for unencrypted inodes"
-            );
-            last_object_id.id = object_id;
-        }
-        Ok(())
     }
 
     /// Provides access to the allocator to mark a specific region of the device as allocated.
@@ -2538,8 +2532,10 @@ pub async fn load_store_info(
 #[cfg(test)]
 mod tests {
     use super::{
-        DEFAULT_DATA_ATTRIBUTE_ID, FSVERITY_MERKLE_ATTRIBUTE_ID, MAX_STORE_INFO_SERIALIZED_SIZE,
-        NO_OWNER, OBJECT_ID_HI_MASK, StoreInfo,
+        DEFAULT_DATA_ATTRIBUTE_ID, FSVERITY_MERKLE_ATTRIBUTE_ID, FsverityMetadata, HandleOptions,
+        LastObjectId, LockKey, MAX_STORE_INFO_SERIALIZED_SIZE, Mutation, NO_OWNER,
+        NewChildStoreOptions, OBJECT_ID_HI_MASK, ObjectStore, RootDigest, StoreInfo, StoreOptions,
+        StoreOwner,
     };
     use crate::errors::FxfsError;
     use crate::filesystem::{FxFilesystem, JournalingObject, OpenFxFilesystem, SyncOptions};
@@ -2553,16 +2549,16 @@ mod tests {
     use crate::object_store::object_record::{AttributeKey, ObjectKey, ObjectKind, ObjectValue};
     use crate::object_store::transaction::{Options, lock_keys};
     use crate::object_store::volume::root_volume;
-    use crate::object_store::{
-        FsverityMetadata, HandleOptions, LockKey, Mutation, ObjectStore, RootDigest, StoreOwner,
-    };
     use crate::serialized_types::VersionedLatest;
     use assert_matches::assert_matches;
     use async_trait::async_trait;
     use fuchsia_async as fasync;
     use fuchsia_sync::Mutex;
     use futures::join;
-    use fxfs_crypto::{Crypt, FXFS_WRAPPED_KEY_SIZE, FxfsKey, WrappedKeyBytes};
+    use fxfs_crypto::ff1::Ff1;
+    use fxfs_crypto::{
+        Crypt, FXFS_KEY_SIZE, FXFS_WRAPPED_KEY_SIZE, FxfsKey, UnwrappedKey, WrappedKeyBytes,
+    };
     use fxfs_insecure_crypto::InsecureCrypt;
     use std::sync::Arc;
     use std::time::Duration;
@@ -2728,7 +2724,16 @@ mod tests {
         let store_id = {
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
             root_volume
-                .new_volume("test", NO_OWNER, Some(Arc::new(InsecureCrypt::new())))
+                .new_volume(
+                    "test",
+                    NewChildStoreOptions {
+                        options: StoreOptions {
+                            owner: NO_OWNER,
+                            crypt: Some(Arc::new(InsecureCrypt::new())),
+                        },
+                        ..Default::default()
+                    },
+                )
                 .await
                 .expect("new_volume failed")
                 .store_object_id()
@@ -2754,7 +2759,16 @@ mod tests {
         {
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
             let store = root_volume
-                .new_volume("test", NO_OWNER, Some(Arc::new(InsecureCrypt::new())))
+                .new_volume(
+                    "test",
+                    NewChildStoreOptions {
+                        options: StoreOptions {
+                            owner: NO_OWNER,
+                            crypt: Some(Arc::new(InsecureCrypt::new())),
+                        },
+                        ..Default::default()
+                    },
+                )
                 .await
                 .expect("new_volume failed");
             dir_id =
@@ -2795,8 +2809,10 @@ mod tests {
         let store_id;
         {
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
-            let store =
-                root_volume.new_volume("test", NO_OWNER, None).await.expect("new_volume failed");
+            let store = root_volume
+                .new_volume("test", NewChildStoreOptions::default())
+                .await
+                .expect("new_volume failed");
             dir_id =
                 store.get_or_create_internal_directory_id().await.expect("Create internal dir");
             store_id = store.store_object_id();
@@ -2923,7 +2939,16 @@ mod tests {
         let fs = test_filesystem().await;
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
         let store = root_volume
-            .new_volume("test", NO_OWNER, Some(Arc::new(InsecureCrypt::new())))
+            .new_volume(
+                "test",
+                NewChildStoreOptions {
+                    options: StoreOptions {
+                        crypt: Some(Arc::new(InsecureCrypt::new())),
+                        ..StoreOptions::default()
+                    },
+                    ..NewChildStoreOptions::default()
+                },
+            )
             .await
             .expect("new_volume failed");
         let mut transaction = fs
@@ -3063,7 +3088,10 @@ mod tests {
             let (store_object_id, object_id) = {
                 let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
                 let store = root_volume
-                    .volume("test", NO_OWNER, Some(crypt.clone()))
+                    .volume(
+                        "test",
+                        StoreOptions { crypt: Some(crypt.clone()), ..StoreOptions::default() },
+                    )
                     .await
                     .expect("volume failed");
 
@@ -3103,7 +3131,10 @@ mod tests {
                 async move {
                     let root_volume = root_volume(fs).await.expect("root_volume failed");
                     let volume = root_volume
-                        .volume("test", NO_OWNER, Some(crypt))
+                        .volume(
+                            "test",
+                            StoreOptions { crypt: Some(crypt), ..StoreOptions::default() },
+                        )
                         .await
                         .expect("volume failed");
 
@@ -3174,7 +3205,16 @@ mod tests {
         {
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
             let _store = root_volume
-                .new_volume("test", NO_OWNER, Some(crypt.clone()))
+                .new_volume(
+                    "test",
+                    NewChildStoreOptions {
+                        options: StoreOptions {
+                            crypt: Some(crypt.clone()),
+                            ..StoreOptions::default()
+                        },
+                        ..Default::default()
+                    },
+                )
                 .await
                 .expect("new_volume failed");
         }
@@ -3193,7 +3233,16 @@ mod tests {
         {
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
             let store = root_volume
-                .new_volume("test", NO_OWNER, Some(crypt.clone()))
+                .new_volume(
+                    "test",
+                    NewChildStoreOptions {
+                        options: StoreOptions {
+                            crypt: Some(crypt.clone()),
+                            ..StoreOptions::default()
+                        },
+                        ..Default::default()
+                    },
+                )
                 .await
                 .expect("new_volume failed");
 
@@ -3202,7 +3251,7 @@ mod tests {
             // Hack the last object ID to force a roll of the object ID cipher.
             {
                 let mut last_object_id = store.last_object_id.lock();
-                assert_eq!(last_object_id.id & OBJECT_ID_HI_MASK, 1u64 << 32);
+                assert_eq!(last_object_id.id & OBJECT_ID_HI_MASK, 0);
                 last_object_id.id |= 0xffffffff;
             }
 
@@ -3226,12 +3275,71 @@ mod tests {
                 .expect("create_child_file failed");
             transaction.commit().await.expect("commit failed");
 
-            assert_eq!(object.object_id() & OBJECT_ID_HI_MASK, 2u64 << 32);
+            assert_eq!(object.object_id() & OBJECT_ID_HI_MASK, 1u64 << 32);
 
             // Check that the key has been changed.
             assert_ne!(store.store_info().unwrap().object_id_key, store_info.object_id_key);
 
-            assert_eq!(store.last_object_id.lock().id, 2u64 << 32);
+            assert_eq!(store.last_object_id.lock().id, 1u64 << 32);
+        };
+
+        fs.close().await.expect("Close failed");
+        let device = fs.take_device().await;
+        device.reopen(false);
+        let fs = FxFilesystem::open(device).await.expect("open failed");
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+        let store = root_volume
+            .volume("test", StoreOptions { crypt: Some(crypt.clone()), ..StoreOptions::default() })
+            .await
+            .expect("volume failed");
+
+        assert_eq!(store.last_object_id.lock().id, 1u64 << 32);
+    }
+
+    #[fuchsia::test]
+    async fn test_object_id_no_roll_for_unencrypted_store() {
+        let fs = test_filesystem().await;
+
+        {
+            let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+            let store = root_volume
+                .new_volume("test", NewChildStoreOptions::default())
+                .await
+                .expect("new_volume failed");
+
+            // Hack the last object ID.
+            {
+                let mut last_object_id = store.last_object_id.lock();
+                assert_eq!(last_object_id.id & OBJECT_ID_HI_MASK, 0);
+                last_object_id.id |= 0xffffffff;
+            }
+
+            let mut transaction = fs
+                .clone()
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        store.store_object_id(),
+                        store.root_directory_object_id()
+                    )],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            let root_directory = Directory::open(&store, store.root_directory_object_id())
+                .await
+                .expect("open failed");
+            let object = root_directory
+                .create_child_file(&mut transaction, "test")
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+
+            assert_eq!(object.object_id(), 0x1_0000_0000);
+
+            // Check that there is still no key.
+            assert!(store.store_info().unwrap().object_id_key.is_none());
+
+            assert_eq!(store.last_object_id.lock().id, 0x1_0000_0000);
         };
 
         fs.close().await.expect("Close failed");
@@ -3240,9 +3348,18 @@ mod tests {
         let fs = FxFilesystem::open(device).await.expect("open failed");
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
         let store =
-            root_volume.volume("test", NO_OWNER, Some(crypt.clone())).await.expect("volume failed");
+            root_volume.volume("test", StoreOptions::default()).await.expect("volume failed");
 
-        assert_eq!(store.last_object_id.lock().id, 2u64 << 32);
+        assert_eq!(store.last_object_id.lock().id, 0x1_0000_0000);
+    }
+
+    #[fuchsia::test]
+    fn test_object_id_is_not_invalid_object_id() {
+        let key = UnwrappedKey::new(vec![0; FXFS_KEY_SIZE]);
+        // 1106634048 results in INVALID_OBJECT_ID with this key.
+        let mut last_object_id = LastObjectId { id: 1106634047, cipher: Some(Ff1::new(&key)) };
+        assert_ne!(last_object_id.get_next_object_id(), INVALID_OBJECT_ID);
+        assert_ne!(last_object_id.get_next_object_id(), INVALID_OBJECT_ID);
     }
 
     #[fuchsia::test(threads = 10)]
@@ -3252,7 +3369,13 @@ mod tests {
 
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
         let store = root_volume
-            .new_volume("test", NO_OWNER, Some(crypt.clone()))
+            .new_volume(
+                "test",
+                NewChildStoreOptions {
+                    options: StoreOptions { crypt: Some(crypt.clone()), ..StoreOptions::default() },
+                    ..NewChildStoreOptions::default()
+                },
+            )
             .await
             .expect("new_volume failed");
         let mut transaction = fs
@@ -3286,7 +3409,13 @@ mod tests {
 
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
         let store = root_volume
-            .new_volume("test", NO_OWNER, Some(crypt.clone()))
+            .new_volume(
+                "test",
+                NewChildStoreOptions {
+                    options: StoreOptions { crypt: Some(crypt.clone()), ..StoreOptions::default() },
+                    ..NewChildStoreOptions::default()
+                },
+            )
             .await
             .expect("new_volume failed");
         let mut transaction = fs
@@ -3325,7 +3454,16 @@ mod tests {
         {
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
             let store = root_volume
-                .new_volume("test", NO_OWNER, Some(crypt.clone()))
+                .new_volume(
+                    "test",
+                    NewChildStoreOptions {
+                        options: StoreOptions {
+                            crypt: Some(crypt.clone()),
+                            ..StoreOptions::default()
+                        },
+                        ..Default::default()
+                    },
+                )
                 .await
                 .expect("new_volume failed");
             let mut transaction = fs
@@ -3361,7 +3499,10 @@ mod tests {
             {
                 let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
                 let store = root_volume
-                    .volume("test", NO_OWNER, Some(crypt.clone()))
+                    .volume(
+                        "test",
+                        StoreOptions { crypt: Some(crypt.clone()), ..StoreOptions::default() },
+                    )
                     .await
                     .expect("open_volume failed");
 
@@ -3425,7 +3566,16 @@ mod tests {
         let store = {
             let crypt = Arc::new(InsecureCrypt::new());
             let store = root_volume
-                .new_volume("vol", NO_OWNER, Some(crypt.clone()))
+                .new_volume(
+                    "vol",
+                    NewChildStoreOptions {
+                        options: StoreOptions {
+                            crypt: Some(crypt.clone()),
+                            ..StoreOptions::default()
+                        },
+                        ..Default::default()
+                    },
+                )
                 .await
                 .expect("new_volume failed");
             let root_directory = Directory::open(&store, store.root_directory_object_id())
@@ -3496,7 +3646,10 @@ mod tests {
     async fn large_transaction_causes_panic_in_debug_builds() {
         let fs = test_filesystem().await;
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
-        let store = root_volume.new_volume("vol", NO_OWNER, None).await.expect("new_volume failed");
+        let store = root_volume
+            .new_volume("vol", NewChildStoreOptions::default())
+            .await
+            .expect("new_volume failed");
         let root_directory =
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
         let mut transaction = fs
@@ -3534,12 +3687,30 @@ mod tests {
             // both later.
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
             let store1 = root_volume
-                .new_volume("vol1", NO_OWNER, Some(Arc::new(InsecureCrypt::new())))
+                .new_volume(
+                    "vol1",
+                    NewChildStoreOptions {
+                        options: StoreOptions {
+                            crypt: Some(Arc::new(InsecureCrypt::new())),
+                            ..StoreOptions::default()
+                        },
+                        ..Default::default()
+                    },
+                )
                 .await
                 .expect("new_volume failed");
             let crypt = Arc::new(InsecureCrypt::new());
             let store2 = root_volume
-                .new_volume("vol2", Arc::downgrade(&owner), Some(crypt.clone()))
+                .new_volume(
+                    "vol2",
+                    NewChildStoreOptions {
+                        options: StoreOptions {
+                            owner: Arc::downgrade(&owner),
+                            crypt: Some(crypt.clone()),
+                        },
+                        ..Default::default()
+                    },
+                )
                 .await
                 .expect("new_volume failed");
             for store in [&store1, &store2] {
@@ -3581,7 +3752,13 @@ mod tests {
 
         for volume_name in ["vol1", "vol2"] {
             let store = root_volume
-                .volume(volume_name, NO_OWNER, Some(Arc::new(InsecureCrypt::new())))
+                .volume(
+                    volume_name,
+                    StoreOptions {
+                        crypt: Some(Arc::new(InsecureCrypt::new())),
+                        ..StoreOptions::default()
+                    },
+                )
                 .await
                 .expect("open volume failed");
             let root_directory = Directory::open(&store, store.root_directory_object_id())
@@ -3609,7 +3786,16 @@ mod tests {
         let store_object_id = {
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
             let store = root_volume
-                .new_volume("vol", Arc::downgrade(&owner), Some(Arc::new(InsecureCrypt::new())))
+                .new_volume(
+                    "vol",
+                    NewChildStoreOptions {
+                        options: StoreOptions {
+                            owner: Arc::downgrade(&owner),
+                            crypt: Some(Arc::new(InsecureCrypt::new())),
+                        },
+                        ..Default::default()
+                    },
+                )
                 .await
                 .expect("new_volume failed");
             let root_directory = Directory::open(&store, store.root_directory_object_id())
@@ -3648,8 +3834,15 @@ mod tests {
             join!(
                 async move {
                     // Unlock might fail, so ignore errors.
-                    let _ =
-                        root_volume.volume("vol", Arc::downgrade(&owner), Some(crypt_clone)).await;
+                    let _ = root_volume
+                        .volume(
+                            "vol",
+                            StoreOptions {
+                                owner: Arc::downgrade(&owner),
+                                crypt: Some(crypt_clone),
+                            },
+                        )
+                        .await;
                 },
                 async move {
                     // Block until unlock is finished but before flushing due to unlock is finished, to
@@ -3668,7 +3861,13 @@ mod tests {
         let fs = FxFilesystem::open(device).await.expect("open failed");
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
         let store = root_volume
-            .volume("vol", NO_OWNER, Some(Arc::new(InsecureCrypt::new())))
+            .volume(
+                "vol",
+                StoreOptions {
+                    crypt: Some(Arc::new(InsecureCrypt::new())),
+                    ..StoreOptions::default()
+                },
+            )
             .await
             .expect("open volume failed");
         let root_directory =

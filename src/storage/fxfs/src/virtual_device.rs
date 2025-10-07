@@ -99,7 +99,7 @@ mod tests {
     use crate::object_handle::ObjectHandle as _;
     use crate::object_store::transaction::{LockKey, lock_keys};
     use crate::object_store::volume::root_volume;
-    use crate::object_store::{DataObjectHandle, Directory, NO_OWNER, ObjectStore};
+    use crate::object_store::{DataObjectHandle, Directory, NewChildStoreOptions, ObjectStore};
     use std::sync::Arc;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
@@ -111,7 +111,7 @@ mod tests {
         num_blocks: usize,
     ) -> DataObjectHandle<ObjectStore> {
         let root_vol = root_volume(fs.clone()).await.unwrap();
-        let store = root_vol.new_volume("test", NO_OWNER, None).await.unwrap();
+        let store = root_vol.new_volume("test", NewChildStoreOptions::default()).await.unwrap();
         let test_vol_root =
             Directory::open(&store, store.root_directory_object_id()).await.unwrap();
 

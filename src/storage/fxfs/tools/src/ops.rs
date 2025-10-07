@@ -13,8 +13,8 @@ use fxfs::object_store::directory::{ReplacedChild, replace_child};
 use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
 use fxfs::object_store::volume::root_volume;
 use fxfs::object_store::{
-    Directory, HandleOptions, NO_OWNER, ObjectDescriptor, ObjectStore, SetExtendedAttributeMode,
-    StoreObjectHandle, StoreOwner,
+    Directory, HandleOptions, NewChildStoreOptions, ObjectDescriptor, ObjectStore,
+    SetExtendedAttributeMode, StoreObjectHandle, StoreOptions, StoreOwner,
 };
 use fxfs_crypto::{Crypt, WrappingKeyId};
 use std::io::Write;
@@ -84,7 +84,15 @@ pub async fn create_volume(
     crypt: Option<Arc<dyn Crypt>>,
 ) -> Result<Arc<ObjectStore>, Error> {
     let root_volume = root_volume(fs.deref().clone()).await?;
-    root_volume.new_volume(name, NO_OWNER, crypt).await
+    root_volume
+        .new_volume(
+            name,
+            NewChildStoreOptions {
+                options: StoreOptions { crypt, ..StoreOptions::default() },
+                ..Default::default()
+            },
+        )
+        .await
 }
 
 /// Opens a volume on a device and returns a Directory to it's root.
@@ -95,7 +103,7 @@ pub async fn open_volume(
     crypt: Option<Arc<dyn Crypt>>,
 ) -> Result<Arc<ObjectStore>, Error> {
     let root_volume = root_volume(fs.deref().clone()).await?;
-    root_volume.volume(name, owner, crypt).await.map(|v| v.into())
+    root_volume.volume(name, StoreOptions { owner, crypt }).await.map(|v| v.into())
 }
 
 /// Walks a directory path from a given root.

@@ -17,7 +17,7 @@ use crate::object_store::transaction::{
     TRANSACTION_METADATA_MAX_AMOUNT, Transaction, WriteGuard, lock_keys,
 };
 use crate::object_store::volume::{VOLUMES_DIRECTORY, root_volume};
-use crate::object_store::{NO_OWNER, ObjectStore};
+use crate::object_store::{NewChildStoreOptions, ObjectStore, StoreOptions};
 use crate::range::RangeExt;
 use crate::serialized_types::{LATEST_VERSION, Version};
 use anyhow::{Context, Error, anyhow, bail, ensure};
@@ -983,7 +983,16 @@ pub async fn mkfs_with_volume(
         // expect instead of propagating errors here, since otherwise we could drop |fs| before
         // close is called, which leads to confusing and unrelated error messages.
         let root_volume = root_volume(fs.clone()).await.expect("Open root_volume failed");
-        root_volume.new_volume(volume_name, NO_OWNER, crypt).await.expect("Create volume failed");
+        root_volume
+            .new_volume(
+                volume_name,
+                NewChildStoreOptions {
+                    options: StoreOptions { crypt, ..StoreOptions::default() },
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("Create volume failed");
     }
     fs.close().await?;
     Ok(fs.take_device().await)
@@ -1039,7 +1048,9 @@ mod tests {
     use crate::object_store::journal::super_block::SuperBlockInstance;
     use crate::object_store::transaction::{LockKey, Options, lock_keys};
     use crate::object_store::volume::root_volume;
-    use crate::object_store::{HandleOptions, NO_OWNER, ObjectDescriptor, ObjectStore};
+    use crate::object_store::{
+        HandleOptions, NewChildStoreOptions, ObjectDescriptor, ObjectStore, StoreOptions,
+    };
     use crate::range::RangeExt;
     use fuchsia_async as fasync;
     use fuchsia_sync::Mutex;
@@ -1360,7 +1371,16 @@ mod tests {
                     .expect("sync failed");
 
                 let store = root_volume
-                    .new_volume("test", NO_OWNER, Some(Arc::new(InsecureCrypt::new())))
+                    .new_volume(
+                        "test",
+                        NewChildStoreOptions {
+                            options: StoreOptions {
+                                crypt: Some(Arc::new(InsecureCrypt::new())),
+                                ..StoreOptions::default()
+                            },
+                            ..Default::default()
+                        },
+                    )
                     .await
                     .expect("new_volume failed");
                 let root_directory = Directory::open(&store, store.root_directory_object_id())
@@ -1470,7 +1490,13 @@ mod tests {
                 let store = root_volume(fs.clone())
                     .await
                     .expect("root_volume failed")
-                    .volume("test", NO_OWNER, Some(Arc::new(InsecureCrypt::new())))
+                    .volume(
+                        "test",
+                        StoreOptions {
+                            crypt: Some(Arc::new(InsecureCrypt::new())),
+                            ..StoreOptions::default()
+                        },
+                    )
                     .await
                     .expect("volume failed");
 
@@ -1550,7 +1576,13 @@ mod tests {
                 let store = root_volume(fs.clone())
                     .await
                     .expect("root_volume failed")
-                    .volume("test", NO_OWNER, Some(Arc::new(InsecureCrypt::new())))
+                    .volume(
+                        "test",
+                        StoreOptions {
+                            crypt: Some(Arc::new(InsecureCrypt::new())),
+                            ..StoreOptions::default()
+                        },
+                    )
                     .await
                     .expect("volume failed");
                 // We should be able to open the C object.
@@ -1608,7 +1640,16 @@ mod tests {
         {
             let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
             root_vol
-                .new_volume("test", NO_OWNER, Some(Arc::new(InsecureCrypt::new())))
+                .new_volume(
+                    "test",
+                    NewChildStoreOptions {
+                        options: StoreOptions {
+                            crypt: Some(Arc::new(InsecureCrypt::new())),
+                            ..StoreOptions::default()
+                        },
+                        ..NewChildStoreOptions::default()
+                    },
+                )
                 .await
                 .expect("there is no test volume");
             fs.close().await.expect("close failed");
@@ -1626,7 +1667,13 @@ mod tests {
 
         let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
         let store = root_vol
-            .volume("test", NO_OWNER, Some(Arc::new(InsecureCrypt::new())))
+            .volume(
+                "test",
+                StoreOptions {
+                    crypt: Some(Arc::new(InsecureCrypt::new())),
+                    ..StoreOptions::default()
+                },
+            )
             .await
             .expect("there is no test volume");
 
@@ -1684,7 +1731,16 @@ mod tests {
         {
             let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
             root_vol
-                .new_volume("test", NO_OWNER, Some(Arc::new(InsecureCrypt::new())))
+                .new_volume(
+                    "test",
+                    NewChildStoreOptions {
+                        options: StoreOptions {
+                            crypt: Some(Arc::new(InsecureCrypt::new())),
+                            ..StoreOptions::default()
+                        },
+                        ..NewChildStoreOptions::default()
+                    },
+                )
                 .await
                 .expect("there is no test volume");
             fs.close().await.expect("close failed");
@@ -1702,7 +1758,13 @@ mod tests {
 
         let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
         let store = root_vol
-            .volume("test", NO_OWNER, Some(Arc::new(InsecureCrypt::new())))
+            .volume(
+                "test",
+                StoreOptions {
+                    crypt: Some(Arc::new(InsecureCrypt::new())),
+                    ..StoreOptions::default()
+                },
+            )
             .await
             .expect("there is no test volume");
 

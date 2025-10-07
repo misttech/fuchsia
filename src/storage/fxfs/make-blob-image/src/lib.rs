@@ -16,7 +16,8 @@ use fxfs::object_store::journal::super_block::SuperBlockInstance;
 use fxfs::object_store::transaction::{LockKey, lock_keys};
 use fxfs::object_store::volume::root_volume;
 use fxfs::object_store::{
-    BLOB_MERKLE_ATTRIBUTE_ID, DataObjectHandle, DirectWriter, HandleOptions, NO_OWNER, ObjectStore,
+    BLOB_MERKLE_ATTRIBUTE_ID, DataObjectHandle, DirectWriter, HandleOptions, NewChildStoreOptions,
+    ObjectStore,
 };
 use fxfs::round::round_up;
 use fxfs::serialized_types::BlobMetadata;
@@ -184,7 +185,7 @@ impl FxBlobBuilder {
             .context("Failed to format filesystem")?;
         let root_volume = root_volume(filesystem.clone()).await?;
         let vol = root_volume
-            .new_volume(BLOB_VOLUME_NAME, NO_OWNER, None)
+            .new_volume(BLOB_VOLUME_NAME, NewChildStoreOptions::default())
             .await
             .context("Failed to create volume")?;
         let blob_directory = Directory::open(&vol, vol.root_directory_object_id())
@@ -457,7 +458,7 @@ mod tests {
     use assert_matches::assert_matches;
     use fuchsia_async as fasync;
     use fxfs::filesystem::FxFilesystem;
-    use fxfs::object_store::NO_OWNER;
+    use fxfs::object_store::StoreOptions;
     use fxfs::object_store::directory::Directory;
     use fxfs::object_store::volume::root_volume;
     use sparse::reader::SparseReader;
@@ -584,7 +585,8 @@ mod tests {
             let device = DeviceHolder::new(FileBackedDevice::new(image, 4096));
             let filesystem = FxFilesystem::open(device).await.unwrap();
             let root_volume = root_volume(filesystem.clone()).await.expect("Opening root volume");
-            let vol = root_volume.volume("blob", NO_OWNER, None).await.expect("Opening volume");
+            let vol =
+                root_volume.volume("blob", StoreOptions::default()).await.expect("Opening volume");
             let directory = Directory::open(&vol, vol.root_directory_object_id())
                 .await
                 .expect("Opening root dir");

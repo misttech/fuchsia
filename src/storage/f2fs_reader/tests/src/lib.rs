@@ -12,8 +12,8 @@ use fxfs::object_store::transaction::{LockKey, Mutation, Options, Transaction, l
 use fxfs::object_store::volume::root_volume;
 use fxfs::object_store::{
     AttributeKey, DEFAULT_DATA_ATTRIBUTE_ID, Directory, ExtentValue, FSCRYPT_KEY_ID, HandleOptions,
-    NO_OWNER, ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKind, ObjectStore, ObjectValue,
-    PosixAttributes, Timestamp, VOLUME_DATA_KEY_ID,
+    NewChildStoreOptions, ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKind, ObjectStore,
+    ObjectValue, PosixAttributes, StoreOptions, Timestamp, VOLUME_DATA_KEY_ID,
 };
 use fxfs_crypto::{Crypt, EncryptionKey, WrappingKeyId};
 use fxfs_insecure_crypto::InsecureCrypt;
@@ -776,7 +776,14 @@ async fn migrate_device(
         // Create a "userdata" volume in fxfs.
         let root_volume = root_volume(fxfs.clone()).await.expect("Opening root volume");
         let vol = root_volume
-            .new_volume("userdata", NO_OWNER, Some(crypt.clone()))
+            .new_volume(
+                "userdata",
+                NewChildStoreOptions {
+                    options: StoreOptions { crypt: Some(crypt.clone()), ..StoreOptions::default() },
+                    reserve_32bit_object_ids: true,
+                    ..NewChildStoreOptions::default()
+                },
+            )
             .await
             .expect("Opening volume");
         let root_directory =
@@ -815,9 +822,6 @@ async fn migrate_device(
         )
         .await
         .expect("reserve f2fs metadata");
-
-        // Bump last_object_id to avoid an inode collision with data we just added.
-        vol.maybe_bump_last_object_id(f2fs.max_ino() as u64).expect("bump last_object_id");
 
         // multi_write mutates the disk -- reopen rw.
         fxfs.device().reopen(/*read_only=*/ false);
@@ -938,8 +942,10 @@ async fn test_fxfs_migration_no_keys() {
 
     fxfs::fsck::fsck(fxfs.clone()).await.expect("fsck failed");
     let root_volume = root_volume(fxfs.clone()).await.expect("Opening root volume");
-    let vol =
-        root_volume.volume("userdata", NO_OWNER, crypt.clone()).await.expect("Opening volume");
+    let vol = root_volume
+        .volume("userdata", StoreOptions { crypt: crypt.clone(), ..StoreOptions::default() })
+        .await
+        .expect("Opening volume");
     fxfs::fsck::fsck_volume(&fxfs, vol.store_object_id(), crypt).await.expect("fsck volume");
     let root_directory =
         Directory::open(&vol, vol.root_directory_object_id()).await.expect("open failed");
@@ -990,7 +996,7 @@ async fn test_fxfs_read_lblk32_ino_file() {
 
     let root_volume = root_volume(fxfs.clone()).await.expect("Opening root volume");
     let vol = root_volume
-        .volume("userdata", NO_OWNER, Some(crypt.clone()))
+        .volume("userdata", StoreOptions { crypt: Some(crypt.clone()), ..StoreOptions::default() })
         .await
         .expect("Opening volume");
     fxfs::fsck::fsck_volume(&fxfs, vol.store_object_id(), Some(crypt.clone()))
@@ -1045,7 +1051,7 @@ async fn test_fxfs_verify_encrypted_data() {
 
     let root_volume = root_volume(fxfs.clone()).await.expect("Opening root volume");
     let vol = root_volume
-        .volume("userdata", NO_OWNER, Some(crypt.clone()))
+        .volume("userdata", StoreOptions { crypt: Some(crypt.clone()), ..StoreOptions::default() })
         .await
         .expect("Opening volume");
     fxfs::fsck::fsck_volume(&fxfs, vol.store_object_id(), Some(crypt.clone()))

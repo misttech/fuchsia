@@ -2144,7 +2144,7 @@ mod tests {
     };
     use crate::object_store::transaction::{Options, TRANSACTION_METADATA_MAX_AMOUNT, lock_keys};
     use crate::object_store::volume::root_volume;
-    use crate::object_store::{Directory, LockKey, NO_OWNER, ObjectStore};
+    use crate::object_store::{Directory, LockKey, NewChildStoreOptions, ObjectStore};
     use crate::range::RangeExt;
     use crate::round::round_up;
     use fuchsia_async as fasync;
@@ -2598,8 +2598,10 @@ mod tests {
 
         let mut store_id = {
             let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
-            let store =
-                root_vol.new_volume("vol", NO_OWNER, None).await.expect("new_volume failed");
+            let store = root_vol
+                .new_volume("vol", NewChildStoreOptions::default())
+                .await
+                .expect("new_volume failed");
 
             create_file(&store, FILE_SIZE).await;
             store.store_object_id()
@@ -2638,8 +2640,10 @@ mod tests {
                     .await
                     .expect("delete_volume failed");
 
-                let store =
-                    root_vol.new_volume("vol", NO_OWNER, None).await.expect("new_volume failed");
+                let store = root_vol
+                    .new_volume("vol", NewChildStoreOptions::default())
+                    .await
+                    .expect("new_volume failed");
                 create_file(&store, FILE_SIZE).await;
                 store_id = store.store_object_id();
             }
@@ -2663,8 +2667,10 @@ mod tests {
             const FILE_SIZE: usize = 10_000_000;
 
             let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
-            let store =
-                root_vol.new_volume("vol", NO_OWNER, None).await.expect("new_volume failed");
+            let store = root_vol
+                .new_volume("vol", NewChildStoreOptions::default())
+                .await
+                .expect("new_volume failed");
 
             create_file(&store, FILE_SIZE).await;
 
@@ -2736,8 +2742,10 @@ mod tests {
         for _ in 0..50 {
             {
                 let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
-                let store =
-                    root_vol.new_volume("vol", NO_OWNER, None).await.expect("new_volume failed");
+                let store = root_vol
+                    .new_volume("vol", NewChildStoreOptions::default())
+                    .await
+                    .expect("new_volume failed");
 
                 create_file(&store, 1_000_000).await;
 

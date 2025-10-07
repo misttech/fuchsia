@@ -978,7 +978,7 @@ mod tests {
     use fxfs::object_store::directory::replace_child;
     use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
     use fxfs::object_store::volume::root_volume;
-    use fxfs::object_store::{HandleOptions, NO_OWNER, ObjectDescriptor, ObjectStore};
+    use fxfs::object_store::{HandleOptions, ObjectDescriptor, ObjectStore, StoreOptions};
     use fxfs_crypto::WrappingKeyId;
     use fxfs_insecure_crypto::InsecureCrypt;
     use refaults_vmo::PageRefaultCounter;
@@ -2933,7 +2933,7 @@ mod tests {
         // Ensure we can access the volume and gracefully terminate any tasks.
         {
             let root_volume = root_volume(fs.clone()).await.unwrap();
-            let store = root_volume.volume("vol", NO_OWNER, None).await.unwrap();
+            let store = root_volume.volume("vol", StoreOptions::default()).await.unwrap();
             let unique_id = store.store_object_id();
             let blob_resupplied_count =
                 Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
@@ -2966,7 +2966,10 @@ mod tests {
         // Ensure we can access the volume and gracefully terminate any tasks.
         {
             let root_volume = root_volume(fs.clone()).await.unwrap();
-            let store = root_volume.volume("vol", NO_OWNER, Some(crypt)).await.unwrap();
+            let store = root_volume
+                .volume("vol", StoreOptions { crypt: Some(crypt), ..StoreOptions::default() })
+                .await
+                .unwrap();
             let unique_id = store.store_object_id();
             let blob_resupplied_count =
                 Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));

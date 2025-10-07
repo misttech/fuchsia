@@ -504,8 +504,8 @@ mod tests {
     use crate::object_store::transaction::{Options, lock_keys};
     use crate::object_store::volume::root_volume;
     use crate::object_store::{
-        HandleOptions, LockKey, NO_OWNER, ObjectStore, layer_size_from_encrypted_mutations_size,
-        tree,
+        HandleOptions, LockKey, NO_OWNER, NewChildStoreOptions, ObjectStore, StoreOptions,
+        layer_size_from_encrypted_mutations_size, tree,
     };
     use fxfs_insecure_crypto::InsecureCrypt;
     use std::sync::Arc;
@@ -518,7 +518,16 @@ mod tests {
         let store_id = {
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
             root_volume
-                .new_volume("test", NO_OWNER, Some(Arc::new(InsecureCrypt::new())))
+                .new_volume(
+                    "test",
+                    NewChildStoreOptions {
+                        options: StoreOptions {
+                            crypt: Some(Arc::new(InsecureCrypt::new())),
+                            ..StoreOptions::default()
+                        },
+                        ..NewChildStoreOptions::default()
+                    },
+                )
                 .await
                 .expect("new_volume failed")
                 .store_object_id()
@@ -647,7 +656,13 @@ mod tests {
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
         let crypt = Arc::new(InsecureCrypt::new());
         let store = root_volume
-            .new_volume("test", NO_OWNER, Some(crypt.clone()))
+            .new_volume(
+                "test",
+                NewChildStoreOptions {
+                    options: StoreOptions { crypt: Some(crypt.clone()), ..StoreOptions::default() },
+                    ..NewChildStoreOptions::default()
+                },
+            )
             .await
             .expect("new_volume failed");
         let root_dir =

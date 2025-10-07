@@ -24,15 +24,14 @@ use crate::object_store::tree::reservation_amount_from_layer_size;
 use crate::object_store::volume::{RootVolume, root_volume};
 use crate::object_store::{
     DataObjectHandle, DirectWriter, Directory, FileExtent, HandleOptions, HandleOwner,
-    INVALID_OBJECT_ID, ObjectHandle, ObjectStore, ReadObjectHandle as _, StoreInfo, merge,
+    INVALID_OBJECT_ID, ObjectHandle, ObjectStore, ReadObjectHandle as _, StoreInfo, StoreOptions,
+    merge,
 };
 use crate::range::RangeExt;
 use crate::virtual_device::ReadOnlyDevice;
 use anyhow::{Context, Error, bail};
 use std::sync::Arc;
 use storage_device::DeviceHolder;
-
-use crate::object_store::NO_OWNER;
 
 impl ObjectStore {
     /// Installs `src`, replacing `dst` if it exists. `src` must contain a file named `image_file`,
@@ -52,7 +51,7 @@ impl ObjectStore {
     ) -> Result<(), Error> {
         // If we're going to replace an existing volume, make sure it isn't encrypted.
         if root.volume_directory().lookup(dst).await?.is_some() {
-            let dst_vol = root.volume(dst, NO_OWNER, None).await?;
+            let dst_vol = root.volume(dst, StoreOptions::default()).await?;
             if dst_vol.is_encrypted() {
                 return Err(FxfsError::AccessDenied)
                     .context("cannot install volume: dst volume is encrypted");
@@ -60,7 +59,7 @@ impl ObjectStore {
         }
 
         let src_vol =
-            root.volume(src, NO_OWNER, None).await.context("could not open src volume")?;
+            root.volume(src, StoreOptions::default()).await.context("could not open src volume")?;
         if src_vol.is_encrypted() {
             return Err(FxfsError::AccessDenied)
                 .context("cannot install volume: src volume is encrypted");
@@ -97,7 +96,7 @@ impl ObjectStore {
         {
             let inner_root = root_volume(inner_fs.clone()).await?;
             let inner_volume = inner_root
-                .volume(dst, NO_OWNER, None)
+                .volume(dst, StoreOptions::default())
                 .await
                 .context("could not open target volume in mounted image")?;
             if inner_volume.is_encrypted() {
@@ -412,6 +411,7 @@ mod tests {
     use crate::filesystem::{FxFilesystem, SyncOptions};
     use crate::fsck::{FsckOptions, fsck_with_options};
     use crate::object_handle::WriteObjectHandle as _;
+    use crate::object_store::NewChildStoreOptions;
     use crate::object_store::directory::Directory;
     use fxfs_crypto::Crypt;
     use fxfs_insecure_crypto::InsecureCrypt;
@@ -433,7 +433,8 @@ mod tests {
         let fs = FxFilesystem::new_empty(device).await.unwrap();
         {
             let root = root_volume(fs.clone()).await.unwrap();
-            let volume = root.new_volume(volume_name, NO_OWNER, None).await.unwrap();
+            let volume =
+                root.new_volume(volume_name, NewChildStoreOptions::default()).await.unwrap();
             let inner_dir =
                 Directory::open(&volume, volume.root_directory_object_id()).await.unwrap();
             // Let's create some files that contain some data we'll read back.
@@ -507,7 +508,7 @@ mod tests {
     }
 
     async fn verify_volume_contents(root: &RootVolume, volume_name: &str, files: &[(&str, &str)]) {
-        let volume = root.volume(volume_name, NO_OWNER, None).await.unwrap();
+        let volume = root.volume(volume_name, StoreOptions::default()).await.unwrap();
         let dir = Directory::open(&volume, volume.root_directory_object_id()).await.unwrap();
 
         for (name, expected_contents) in files.iter() {
@@ -522,7 +523,7 @@ mod tests {
     }
 
     async fn ensure_volume_graveyard_is_empty(root: &RootVolume, volume_name: &str) {
-        let volume = root.volume(volume_name, NO_OWNER, None).await.unwrap();
+        let volume = root.volume(volume_name, StoreOptions::default()).await.unwrap();
         let layer_set = volume.tree().layer_set();
         let mut merger = layer_set.merger();
         let iter = crate::object_store::Graveyard::iter(
@@ -542,7 +543,7 @@ mod tests {
         };
         fsck_with_options(fs.clone(), &fsck_options).await.expect("fsck filesystem");
         let root = root_volume(fs.clone()).await.unwrap();
-        let vol = root.volume(volume_name, NO_OWNER, None).await.expect("missing volume");
+        let vol = root.volume(volume_name, StoreOptions::default()).await.expect("missing volume");
         crate::fsck::fsck_volume_with_options(&fs, &fsck_options, vol.store_object_id(), None)
             .await
             .expect("fsck volume");
@@ -564,7 +565,7 @@ mod tests {
         {
             // Write the image into a file in a new volume.
             let root = root_volume(fs.clone()).await.unwrap();
-            let src = root.new_volume(SRC_NAME, NO_OWNER, None).await.unwrap();
+            let src = root.new_volume(SRC_NAME, NewChildStoreOptions::default()).await.unwrap();
             write_image_to_file(&src, &image, INSTALL_FILE).await;
             // Install the pending volume, after which it should be gone and we should be able to
             // access the files we expect.
@@ -605,7 +606,7 @@ mod tests {
 
         {
             let root = root_volume(fs.clone()).await.unwrap();
-            let src = root.new_volume(SRC_NAME, NO_OWNER, None).await.unwrap();
+            let src = root.new_volume(SRC_NAME, NewChildStoreOptions::default()).await.unwrap();
             write_image_to_file(&src, &image, INSTALL_FILE).await;
             // We should see a different set of files before/after installation.
             verify_volume_contents(&root, DST_NAME, &existing_files).await;
@@ -638,7 +639,7 @@ mod tests {
         {
             // Write the image into a file in a new volume.
             let root = root_volume(fs.clone()).await.unwrap();
-            let src = root.volume(SRC_NAME, NO_OWNER, None).await.unwrap();
+            let src = root.volume(SRC_NAME, StoreOptions::default()).await.unwrap();
             write_image_to_file(&src, &image, INSTALL_FILE).await;
             // Installation should fail due to the presence of other extent records.
             let err = ObjectStore::install_volume(&root, SRC_NAME, INSTALL_FILE, DST_NAME)
@@ -671,8 +672,9 @@ mod tests {
             .unwrap();
         {
             let root = root_volume(fs.clone()).await.unwrap();
-            let src_volume = root.new_volume(SRC_NAME, NO_OWNER, None).await.unwrap();
-            let dst_volume = root.volume(DST_NAME, NO_OWNER, None).await.unwrap();
+            let src_volume =
+                root.new_volume(SRC_NAME, NewChildStoreOptions::default()).await.unwrap();
+            let dst_volume = root.volume(DST_NAME, StoreOptions::default()).await.unwrap();
 
             // Write the image into a file in the pending volume.
             write_image_to_file(&src_volume, &image, INSTALL_FILE).await;
@@ -729,7 +731,8 @@ mod tests {
             ];
             let image = create_test_filesystem(512, 4096, DST_NAME, &files).await;
             let root = root_volume(fs).await.unwrap();
-            let src_volume = root.new_volume(SRC_NAME, NO_OWNER, None).await.unwrap();
+            let src_volume =
+                root.new_volume(SRC_NAME, NewChildStoreOptions::default()).await.unwrap();
             write_image_to_file(&src_volume, &image, INSTALL_FILE).await;
             ObjectStore::install_volume(&root, SRC_NAME, INSTALL_FILE, DST_NAME).await.unwrap();
             verify_volume_contents(&root, DST_NAME, &files).await;
@@ -772,7 +775,8 @@ mod tests {
                 .await
                 .expect_err("install_volume should fail if src volume is missing");
             assert_eq!(err.downcast::<FxfsError>().unwrap(), FxfsError::NotFound);
-            let _src_volume = root.new_volume(SRC_NAME, NO_OWNER, None).await.unwrap();
+            let _src_volume =
+                root.new_volume(SRC_NAME, NewChildStoreOptions::default()).await.unwrap();
             let err = ObjectStore::install_volume(&root, SRC_NAME, INSTALL_FILE, DST_NAME)
                 .await
                 .expect_err("install_volume should fail if src install file missing");
@@ -793,7 +797,16 @@ mod tests {
             // Write the image into an encrypted source volume.
             let image = create_test_filesystem(512, 4096, DST_NAME, &[]).await;
             let src_volume = root
-                .new_volume(SRC_NAME, NO_OWNER, Some(crypt.clone() as Arc<dyn Crypt>))
+                .new_volume(
+                    SRC_NAME,
+                    NewChildStoreOptions {
+                        options: StoreOptions {
+                            crypt: Some(crypt.clone() as Arc<dyn Crypt>),
+                            ..StoreOptions::default()
+                        },
+                        ..Default::default()
+                    },
+                )
                 .await
                 .unwrap();
             write_image_to_file(&src_volume, &image, INSTALL_FILE).await;
@@ -816,12 +829,22 @@ mod tests {
             let root = root_volume(fs.clone()).await.unwrap();
             // Create an encrypted destination volume.
             let _dst_volume = root
-                .new_volume(DST_NAME, NO_OWNER, Some(crypt.clone() as Arc<dyn Crypt>))
+                .new_volume(
+                    DST_NAME,
+                    NewChildStoreOptions {
+                        options: StoreOptions {
+                            crypt: Some(crypt.clone() as Arc<dyn Crypt>),
+                            ..StoreOptions::default()
+                        },
+                        ..Default::default()
+                    },
+                )
                 .await
                 .unwrap();
             // Write the image to an unencrypted source volume.
             let image = create_test_filesystem(512, 4096, DST_NAME, &[]).await;
-            let src_volume = root.new_volume(SRC_NAME, NO_OWNER, None).await.unwrap();
+            let src_volume =
+                root.new_volume(SRC_NAME, NewChildStoreOptions::default()).await.unwrap();
             write_image_to_file(&src_volume, &image, INSTALL_FILE).await;
             let err = ObjectStore::install_volume(&root, SRC_NAME, INSTALL_FILE, DST_NAME)
                 .await
