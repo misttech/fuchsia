@@ -27,10 +27,10 @@ Schemas for the various types of SDK elements are available under
 tools outside the Fuchsia build.
 
 
-## Building the Fuchsia Core IDK
+## Building the Fuchsia IDK
 
-The simplest way to build the Fuchsia "Core" IDK, is to run the following
-command:
+The simplest way to build the Fuchsia IDK (aka the "Partner IDK"), is to run the
+following command:
 
 ```
 fx build final_fuchsia_idk
@@ -81,21 +81,22 @@ way to provide hierarchy to SDK atoms, but they do not have an id, as they
 are only used as a grouping mechanism within the Fuchsia build.
 
 The [`sdk_collection`](sdk_collection.gni) template is used to declare
-a group of atoms (or molecules), while verifying that its content matches
-a given API/ABI. It will also create an "export directory" that follows
-the standard IDK layout for all its elements, under
+a group of atoms (or molecules). It will also create an "export directory" that
+follows the standard IDK layout for all its elements, under
 `$OUTPUT_DIR/sdk/exported/<name>`.
 
-The [`idk`](idk.gn) template generates the final IDK in
-`$BUILD_DIR/sdk/exported/<name>` by building its constituent `sdk_atom`s for
-all supported target CPU architectures and API levels, and merging them all
-together into a single IDK. The [`idk_archive`](idk_archive.gn) template can
-then be used to compress it into a `.tar.gz` file.
-
+There is an `sdk_collection` for each combination of supported target CPU
+architecture and API level.
 It is possible to see an SDK collection as a "partial IDK" since it
 only contains a subset of atoms that go into the final IDK, but only
 provides prebuilts for the current build configuration's `target_cpu`,
 and for the current SDK API level / build variant.
+
+//build/sdk/generate_idk generates the final IDK in
+`$BUILD_DIR/sdk/exported/<name>` by merging the collections for
+all supported target CPU architectures and API levels into a single IDK.
+The [`idk_archive`](idk_archive.gn) template can
+then be used to compress it into a `.tar.gz` file.
 
 
 ## Declaring SDK elements
@@ -143,10 +144,6 @@ Each `sdk_collection("foo")` target also generates sibling targets
 that other parts of the build system (and sometimes internal scripts)
 rely on:
 
-- `foo_final_manifest`: Creates a internal JSON manifest at
-  `$OUTPUT_DIR/sdk/manifest/<name>`. This is seldom used by
-  other parts of the build systems.
-
 - `foo_export`: Creates the collection's export directory under
   `$OUTPUT_DIR/sdk/exported/<name>`. This contains files that
   follow the [standard IDK layout][idk-layout], including
@@ -159,27 +156,6 @@ rely on:
 
 - `foo_archive`: Creates a compressed archive from the content
   of the collection under `$OUTPUT_DIR/sdk/archive/<name>.tar.gz`.
-
-By default, target `foo` only depends on `foo_final_manifest`
-and `foo_export`. They can depend optionally on `foo_archive`
-though this is not the default.
-
-Note that sdk collection archives only contain binaries for
-the current `target_cpu` value, and current API level. In theory
-they should not exist, nor distributed outside of the Fuchsia
-tree, though they currently are for historical reasons.
-
-They are nonetheless deprecated. Generating archives should only be done using
-the `idk_archive()` GN template instead.
-
-## Creating a custom IDK
-
-Historically, there have been a number of "custom IDKs" with different
-requirements. This led to more complexity and confusion than it was worth,
-given that only 2 or 3 were actually in use/not deprecated.
-
-If you think you need a custom IDK, please send an email to
-fuchsia-idk@google.com.
 
 ## GN build arguments
 

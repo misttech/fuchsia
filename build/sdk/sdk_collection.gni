@@ -16,11 +16,6 @@ import("sdk_molecule.gni")
 # will follow the standard IDK layout, including a top-level meta/manifest.json
 # file describing all atoms in the collection using the standard IDK schema.
 #
-# It may write the $BUILD_DIR/sdk/manifest/{collection_name} file, as an
-# internal IDK manifest describing all atoms. Note that this format is internal
-# to the build system, and should not be used outside of it (though it is
-# ok for `ffx` to use that from a Fuchsia checkout).
-#
 # Parameters
 #
 #   id (optional)
