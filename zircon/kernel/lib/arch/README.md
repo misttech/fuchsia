@@ -235,6 +235,8 @@ the identifiers are expected to be one of the following:
 
 **\[arm/v8\]** ~ [Arm Architecture Reference Manual Armv8, for Armv8-A architecture profile](https://developer.arm.com/documentation/ddi0487/fc), July 17 2020
 
+**\[arm/v9\]** ~ [Arm Architecture Reference Manual for A-profile architecture](https://developer.arm.com/documentation/ddi0487/lb), 30 April 2025
+
 **\[arm/sysreg\]** ~ [Arm® Architecture Registers Armv8, for Armv8-A architecture profile](https://developer.arm.com/docs/ddi0595/i/aarch64-system-registers), September 29 2020
 
 **\[arm/smccc\]** ~ [SMC Calling Convention](https://developer.arm.com/documentation/den0028/latest), May 2022

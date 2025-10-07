@@ -96,6 +96,11 @@ struct arm64_mmu_features {
 
   // extended CCSIDR register format
   bool ccsidx;
+
+  // virtualization features
+  bool vhe;
+  bool e2h0;
+  arm64_asid_width vmid_width;
 };
 
 // the global feature structure for mmu features
@@ -104,6 +109,11 @@ extern arm64_mmu_features arm64_mmu_features;
 inline enum arm64_asid_width arm64_asid_width() {
   DEBUG_ASSERT(arm64_mmu_features.asid_width != arm64_asid_width::UNKNOWN);
   return arm64_mmu_features.asid_width;
+}
+
+inline enum arm64_asid_width arm64_vmid_width() {
+  DEBUG_ASSERT(arm64_mmu_features.vmid_width != arm64_asid_width::UNKNOWN);
+  return arm64_mmu_features.vmid_width;
 }
 
 // call on every cpu to initialize the feature set

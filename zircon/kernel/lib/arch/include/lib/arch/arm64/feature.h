@@ -493,9 +493,9 @@ enum class ArmAsidSize {
 // The same encoding is used by several registers, including system registers TCR_EL1.IPS,
 // TCR_EL2.PS, and the feature register ID_AA64MMFR0_EL1.PARange.
 //
-// [arm/v9]: D23.2.74 ID_AA64MMFR0_EL1, AArch64 Memory Model Feature Register 0
-// [arm/v9]: D23.2.174 Translation Control Register (EL1)
-// [arm/v9]: D23.2.175 Translation Control Register (EL2)
+// [arm/v9]: D24.2.82 ID_AA64MMFR0_EL1, AArch64 Memory Model Feature Register 0
+// [arm/v9]: D24.2.182 Translation Control Register (EL1)
+// [arm/v9]: D24.2.183 Translation Control Register (EL2)
 enum class ArmPhysicalAddressSize {
   k32Bits = 0b0000,
   k36Bits = 0b0001,
@@ -509,7 +509,7 @@ enum class ArmPhysicalAddressSize {
 
 // ID_AA64MMFR0_EL1, AArch64 Memory Model Feature Register 0
 //
-// [arm/v9]: D23.2.74 ID_AA64MMFR0_EL1, AArch64 Memory Model Feature Register 0
+// [arm/v9]: D24.2.82 ID_AA64MMFR0_EL1, AArch64 Memory Model Feature Register 0
 struct ArmIdAa64Mmfr0El1 : public SysRegBase<ArmIdAa64Mmfr0El1> {
   DEF_FIELD(63, 60, ecv);  // Enhanced Counter Virtualization (FEAT_ECV)
   DEF_FIELD(59, 56, fgt);  // Fine-Grained Trap controls (FEAT_FGT)
@@ -532,7 +532,7 @@ ARCH_ARM64_SYSREG(ArmIdAa64Mmfr0El1, "id_aa64mmfr0_el1");
 
 // ID_AA64MMFR1_EL1, AArch64 Memory Model Feature Register 1
 //
-// [arm/v9]: D23.2.75 ID_AA64MMFR1_EL1, AArch64 Memory Model Feature Register 1
+// [arm/v9]: D24.2.83 ID_AA64MMFR1_EL1, AArch64 Memory Model Feature Register 1
 struct ArmIdAa64Mmfr1El1 : public SysRegBase<ArmIdAa64Mmfr1El1> {
   // Bits [63:60] reserved.
   DEF_FIELD(59, 56, cmow);      // Cache maintenance instruction permission (FEAT_CMOW)
@@ -556,7 +556,7 @@ ARCH_ARM64_SYSREG(ArmIdAa64Mmfr1El1, "id_aa64mmfr1_el1");
 
 // ID_AA64MMFR2_EL1, AArch64 Memory Model Feature Register 2
 //
-// [arm/v9]: D23.2.76 ID_AA64MMFR2_EL1, AArch64 Memory Model Feature Register 2
+// [arm/v9]: D24.2.84 ID_AA64MMFR2_EL1, AArch64 Memory Model Feature Register 2
 struct ArmIdAa64Mmfr2El1 : public SysRegBase<ArmIdAa64Mmfr2El1> {
   DEF_FIELD(63, 60, e0pd);  // Preventing EL0 access to halves to address space (FEAT_E0PD)
   DEF_FIELD(59, 56, evt);   // Enhanced Virtualization Traps (FEAT_EVT)
@@ -578,9 +578,9 @@ struct ArmIdAa64Mmfr2El1 : public SysRegBase<ArmIdAa64Mmfr2El1> {
 
 ARCH_ARM64_SYSREG(ArmIdAa64Mmfr2El1, "id_aa64mmfr2_el1");
 
-// ID_AA64MMFR2_EL1, AArch64 Memory Model Feature Register 3
+// ID_AA64MMFR3_EL1, AArch64 Memory Model Feature Register 3
 //
-// [arm/v9]: D23.2.77 ID_AA64MMFR3_EL1, AArch64 Memory Model Feature Register 3
+// [arm/v9]: D24.2.85 ID_AA64MMFR3_EL1, AArch64 Memory Model Feature Register 3
 struct ArmIdAa64Mmfr3El1 : public SysRegBase<ArmIdAa64Mmfr3El1> {
   DEF_FIELD(63, 60, spec_fpacc);  // Speculative behavior in pac auth failure
   DEF_FIELD(59, 56, aderr);       // Asynchronous device error exception
@@ -601,6 +601,24 @@ struct ArmIdAa64Mmfr3El1 : public SysRegBase<ArmIdAa64Mmfr3El1> {
 };
 
 ARCH_ARM64_SYSREG(ArmIdAa64Mmfr3El1, "id_aa64mmfr3_el1");
+
+// ID_AA64MMFR4_EL1, AArch64 Memory Model Feature Register 3
+//
+// [arm/v9]: D24.2.86 ID_AA64MMFR4_EL1, AArch64 Memory Model Feature Register 4
+struct ArmIdAa64Mmfr4El1 : public SysRegBase<ArmIdAa64Mmfr4El1> {
+  // Bits [63:40] reserved.
+  DEF_FIELD(39, 36, e3dse);  // Delegated SError exceptions from EL3 (FEAT_E3DSE)
+  // Bits [35:28] reserved.
+  DEF_FIELD(27, 24, e2h0);     // Support for programming HCR_EL2.E2H (FEAT_E2H0)
+  DEF_FIELD(23, 20, nv_frac);  // Support for a subset of FEAT_NV and FEAT_NV2
+  DEF_FIELD(19, 16, fgwte3);   // Fine Grained Write Trap EL3 (FEAT_FGWTE3)
+  DEF_FIELD(15, 12, hacdbs);   // Hardware accelerated cleaning of dirty state (FEAT_HACDBS)
+  DEF_FIELD(11, 8, asid2);     // Support for concurrent use of two ASIDs (FEAT_ASID2)
+  DEF_FIELD(7, 4, eiesb);      // Early Implicit Error Synchronization event (FEAT_IESB)
+  // Bits [3:0] reserved.
+};
+
+ARCH_ARM64_SYSREG(ArmIdAa64Mmfr4El1, "id_aa64mmfr4_el1");
 
 }  // namespace arch
 

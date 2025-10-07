@@ -580,6 +580,26 @@ void arm64_feature_init() {
       // address translation instruction variants with PAN.
     }
 
+    // Check for VHE features.
+    if (mmfr1.vh() != 0) {
+      arm64_mmu_features.vhe = true;
+    }
+
+    // Check the size of the VMID.
+    switch (mmfr1.vmid_bits()) {
+      default:
+        printf("ARM: warning, unrecognized VMID width value (%u) in ID_AA64MMFR1_EL1\n",
+               static_cast<uint32_t>(mmfr0.asid_bits()));
+        // default to 8 bits
+        [[fallthrough]];
+      case arch::ArmAsidSize::k8bits:
+        arm64_mmu_features.vmid_width = arm64_asid_width::ASID_8;
+        break;
+      case arch::ArmAsidSize::k16bits:
+        arm64_mmu_features.vmid_width = arm64_asid_width::ASID_16;
+        break;
+    }
+
     auto mmfr2 = arch::ArmIdAa64Mmfr2El1::Read();
 
     // Check for User Access Override
@@ -593,6 +613,13 @@ void arm64_feature_init() {
     // Check if FEAT_PMUv3 is enabled.
     uint64_t pmu_version = (__arm_rsr64("id_aa64dfr0_el1") >> 8) & 0xf;
     feat_pmuv3_enabled = pmu_version > 0b0000 && pmu_version < 0b1111;
+
+    auto mmfr4 = arch::ArmIdAa64Mmfr4El1::Read();
+
+    // Check for E2H0 features.
+    if (mmfr4.e2h0() == 0) {
+      arm64_mmu_features.e2h0 = true;
+    }
   }
 
   // read the cache info for each cpu
@@ -650,6 +677,9 @@ void arm64_feature_debug(bool full) {
     dprintf(INFO, "ARM PAN %d, UAO %d\n", arm64_mmu_features.pan, arm64_mmu_features.uao);
     dprintf(INFO, "ARM cache line sizes: icache %u dcache %u zva %u\n", arm64_icache_size,
             arm64_dcache_size, arm64_zva_size);
+    dprintf(INFO, "ARM VMID width %s\n",
+            (arm64_asid_width() == arm64_asid_width::ASID_16) ? "16" : "8");
+    dprintf(INFO, "ARM VHE %d, E2H0 %d\n", arm64_mmu_features.vhe, arm64_mmu_features.e2h0);
     if (DPRINTF_ENABLED_FOR_LEVEL(INFO)) {
       arm64_dump_cache_info(arch_curr_cpu_num());
     }
