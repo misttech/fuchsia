@@ -14,8 +14,6 @@
 #include "src/developer/forensics/crash_reports/annotation_map.h"
 #include "src/developer/forensics/crash_reports/info/crash_register_info.h"
 #include "src/developer/forensics/crash_reports/product.h"
-#include "third_party/rapidjson/include/rapidjson/document.h"
-
 namespace forensics {
 namespace crash_reports {
 
@@ -42,13 +40,12 @@ class CrashRegister : public fuchsia::feedback::CrashReportingProductRegister {
 
  private:
   void RestoreFromJson();
-  void UpdateJson(const std::string& component_url, const Product& product);
+  void UpdateJson();
 
   CrashRegisterInfo info_;
 
   std::map<std::string, Product> component_to_products_;
 
-  rapidjson::Document register_json_;
   std::string register_filepath_;
 };
 
