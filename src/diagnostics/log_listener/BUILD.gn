@@ -39,6 +39,7 @@ rustc_binary("bin") {
 }
 
 renamed_binary("log_bin") {
+  keep_original = true
   dest = "bin/log"
   source = "$root_out_dir/log_listener"
   source_deps = [ ":bin" ]
