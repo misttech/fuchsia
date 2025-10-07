@@ -111,18 +111,6 @@ if (!sdk_inside_sub_build) {
   }
 }
 
-# This file contains the list of all source files used in sdk_source_set()
-# targets reachable from the Fuchsia IDK. The schema is simply a JSON list,
-# where each item is the path to a single source file, relative to the source
-# directory. Path are not sorted and appear in order of metadata walk, which is
-# unstable.
-build_api_module("sdk_source_set_list") {
-  visibility += [ "//:*" ]
-  testonly = true
-  data_keys = [ "sdk_source_set_sources" ]
-  deps = _all_idk_atoms_affecting_compatibility
-}
-
 if (current_toolchain == default_toolchain) {
   # Generates compatibility testing goldens for FIDL libraries in the IDK.
   # TODO(https://fxbug.dev/324656719): Ensure this covers APIs, libraries, etc.
@@ -272,7 +260,6 @@ if (!is_host) {
       ":final_fuchsia_idk.exported",
       ":generate_compatibility_goldens",
       ":plasa_manifest",
-      ":sdk_source_set_list",
       "//build/bazel/licenses:all_bazel_inputs",
     ]
     subbuilds_visibility = [

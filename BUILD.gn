@@ -259,7 +259,6 @@ build_api_module("api") {
     ":vnames_config",
     "//build/images/archive",
     "//build/rbe:rbe_settings.json",
-    "//sdk:sdk_source_set_list",
     "//sdk/ctf:ctf_artifacts_path",
   ]
 }

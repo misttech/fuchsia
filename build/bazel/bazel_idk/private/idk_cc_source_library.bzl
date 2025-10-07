@@ -219,10 +219,6 @@ def _idk_cc_source_library_impl(
         visibility = get_atom_visibility(visibility),
     )
 
-    # TODO(https://fxbug.dev/446996512): Implement the //sdk:sdk_source_set_list
-    # build API module and merge with the GN data.
-    # sdk_source_set_sources = all_source_files
-
 idk_cc_source_library = macro(
     doc = """Defines a C++ source library that can be exported to an IDK.
 
