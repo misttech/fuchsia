@@ -6,6 +6,7 @@
         "//src/power/system-activity-governor/meta/no-suspending-token-for-test-sag.shard.cml",
         "inspect/offer.shard.cml",
         "syslog/offer.shard.cml",
+        "trace/offer.shard.cml",
     ],
     program: {
         runner: "starnix_test_runner",
