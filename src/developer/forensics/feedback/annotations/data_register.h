@@ -9,7 +9,6 @@
 
 #include "src/developer/forensics/feedback/annotations/provider.h"
 #include "src/developer/forensics/feedback/annotations/types.h"
-#include "third_party/rapidjson/include/rapidjson/document.h"
 
 namespace forensics::feedback {
 
@@ -36,7 +35,7 @@ class DataRegister : public fuchsia::feedback::ComponentDataRegister,
 
  private:
   void RestoreFromJson();
-  void UpdateJson(const std::string& _namespace, const Annotations& annotations);
+  void UpdateJson();
 
   size_t max_num_annotations_;
   std::set<std::string> disallowed_annotation_namespaces_;
@@ -44,8 +43,6 @@ class DataRegister : public fuchsia::feedback::ComponentDataRegister,
 
   std::map<std::string, Annotations> namespaced_annotations_;
   bool is_missing_annotations_{false};
-
-  rapidjson::Document register_json_;
 };
 
 }  // namespace forensics::feedback

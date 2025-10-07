@@ -11,6 +11,7 @@
 #include "src/lib/files/file.h"
 #include "src/lib/files/path.h"
 #include "src/lib/fxl/strings/string_printf.h"
+#include "third_party/rapidjson/include/rapidjson/document.h"
 #include "third_party/rapidjson/include/rapidjson/error/en.h"
 #include "third_party/rapidjson/include/rapidjson/prettywriter.h"
 #include "third_party/rapidjson/include/rapidjson/stringbuffer.h"
@@ -24,9 +25,9 @@ const char kNamespaceSeparator[] = ".";
 
 Annotations Flatten(const std::map<std::string, Annotations>& namespaced_annotations) {
   Annotations flat_annotations;
-  for (const auto& [namespace_, annotations] : namespaced_annotations) {
+  for (const auto& [ns, annotations] : namespaced_annotations) {
     for (const auto& [k, v] : annotations) {
-      flat_annotations.insert({namespace_ + kNamespaceSeparator + k, v});
+      flat_annotations.insert({ns + kNamespaceSeparator + k, v});
     }
   }
 
@@ -90,7 +91,7 @@ void DataRegister::Upsert(fuchsia::feedback::ComponentData data, UpsertCallback 
 
   namespaced_annotations_[ns] = std::move(new_annotations);
 
-  UpdateJson(ns, namespaced_annotations_[ns]);
+  UpdateJson();
 }
 
 Annotations DataRegister::Get() { return Flatten(namespaced_annotations_); }
@@ -109,31 +110,28 @@ Annotations DataRegister::Get() { return Flatten(namespaced_annotations_); }
 //         "k3": "v3"
 //     }
 // }
-void DataRegister::UpdateJson(const std::string& _namespace, const Annotations& annotations) {
+void DataRegister::UpdateJson() {
   using namespace rapidjson;
 
-  auto& allocator = register_json_.GetAllocator();
+  Document register_json;
+  register_json.SetObject();
+  auto& allocator = register_json.GetAllocator();
 
-  // If there are already annotations for |_namespace|, delete them.
-  if (register_json_.HasMember(_namespace)) {
-    register_json_.RemoveMember(_namespace);
-  }
+  for (const auto& [ns, annotations] : namespaced_annotations_) {
+    register_json.AddMember(Value(ns, allocator), Value(rapidjson::kObjectType), allocator);
 
-  // Make an empty object for |_namespace|.
-  register_json_.AddMember(Value(_namespace, register_json_.GetAllocator()),
-                           Value(rapidjson::kObjectType), allocator);
-
-  const auto& json_annotations = register_json_[_namespace].GetObject();
-  for (const auto& [k, v] : annotations) {
-    auto key = Value(k, allocator);
-    auto val = Value(v.Value(), allocator);
-    json_annotations.AddMember(key, val, allocator);
+    auto json_annotations = register_json[ns].GetObject();
+    for (const auto& [k, v] : annotations) {
+      auto key = Value(k, allocator);
+      auto val = Value(v.Value(), allocator);
+      json_annotations.AddMember(key, val, allocator);
+    }
   }
 
   StringBuffer buffer;
   PrettyWriter<StringBuffer> writer(buffer);
 
-  register_json_.Accept(writer);
+  register_json.Accept(writer);
 
   if (!files::WriteFile(register_filepath_, buffer.GetString(), buffer.GetLength())) {
     FX_LOGS(ERROR) << "Failed to write data register contents to " << register_filepath_;
@@ -142,8 +140,6 @@ void DataRegister::UpdateJson(const std::string& _namespace, const Annotations& 
 
 void DataRegister::RestoreFromJson() {
   using namespace rapidjson;
-
-  register_json_.SetObject();
 
   // If the file doesn't exit, return.
   if (!files::IsFile(register_filepath_)) {
@@ -154,7 +150,8 @@ void DataRegister::RestoreFromJson() {
   std::string json;
   FX_CHECK(files::ReadFileToString(register_filepath_, &json));
 
-  ParseResult ok = register_json_.Parse(json);
+  Document register_json;
+  ParseResult ok = register_json.Parse(json);
   if (!ok) {
     FX_LOGS(ERROR) << "Error parsing data register as JSON at offset " << ok.Offset() << " "
                    << GetParseError_En(ok.Code());
@@ -164,8 +161,8 @@ void DataRegister::RestoreFromJson() {
 
   // Each namespace in the register is represented by an object containing at string-string pairs
   // that are the annotations.
-  FX_CHECK(register_json_.IsObject());
-  for (const auto& member : register_json_.GetObject()) {
+  FX_CHECK(register_json.IsObject());
+  for (const auto& member : register_json.GetObject()) {
     // Skip any non-object members.
     if (!member.value.IsObject()) {
       continue;
