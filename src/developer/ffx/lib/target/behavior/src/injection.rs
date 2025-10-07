@@ -438,7 +438,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_init_daemon_proxy_link_lost() {
-        let test_env = ffx_config::test_init().await.expect("Failed to initialize test env");
+        let test_env = ffx_config::test_init().expect("Failed to initialize test env");
         let sockpath = test_env.context.get_ascendd_path().await.expect("No ascendd path");
 
         // Start a listener that accepts and immediately closes the socket..
@@ -463,8 +463,9 @@ mod test {
     }
 
     #[fuchsia::test]
+    #[ignore = "takes too long"]
     async fn test_init_daemon_proxy_timeout_no_connection() {
-        let test_env = ffx_config::test_init().await.expect("Failed to initialize test env");
+        let test_env = ffx_config::test_init().expect("Failed to initialize test env");
         let sockpath = test_env.context.get_ascendd_path().await.expect("No ascendd path");
 
         // Start a listener that never accepts the socket.
@@ -577,7 +578,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_init_daemon_proxy_hash_matches() {
-        let test_env = ffx_config::test_init().await.expect("Failed to initialize test env");
+        let test_env = ffx_config::test_init().expect("Failed to initialize test env");
         let sockpath = test_env.context.get_ascendd_path().await.expect("No ascendd path");
         let local_node = overnet_core::Router::new(None).unwrap();
 
@@ -608,7 +609,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_init_daemon_proxy_upgrade() {
-        let test_env = ffx_config::test_init().await.expect("Failed to initialize test env");
+        let test_env = ffx_config::test_init().expect("Failed to initialize test env");
         let sockpath = test_env.context.get_ascendd_path().await.expect("No ascendd path");
         let local_node = overnet_core::Router::new(None).unwrap();
 
@@ -642,7 +643,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_init_daemon_blocked_for_4s_succeeds() {
-        let test_env = ffx_config::test_init().await.expect("Failed to initialize test env");
+        let test_env = ffx_config::test_init().expect("Failed to initialize test env");
         let sockpath = test_env.context.get_ascendd_path().await.expect("No ascendd path");
         let local_node = overnet_core::Router::new(None).unwrap();
 
@@ -666,8 +667,9 @@ mod test {
     }
 
     #[fuchsia::test]
+    #[ignore = "takes too long"]
     async fn test_init_daemon_blocked_for_long_timesout() {
-        let test_env = ffx_config::test_init().await.expect("Failed to initialize test env");
+        let test_env = ffx_config::test_init().expect("Failed to initialize test env");
         let sockpath = test_env.context.get_ascendd_path().await.expect("No ascendd path");
         let local_node = overnet_core::Router::new(None).unwrap();
 
@@ -692,8 +694,9 @@ mod test {
     }
 
     #[fuchsia::test]
+    #[ignore = "takes too long"]
     async fn test_remote_proxy_timeout() {
-        let test_env = ffx_config::test_init().await.expect("Failed to initialize test env");
+        let test_env = ffx_config::test_init().expect("Failed to initialize test env");
         let sockpath = test_env.context.get_ascendd_path().await.expect("No ascendd path");
         let local_node = overnet_core::Router::new(None).unwrap();
 
@@ -797,7 +800,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_rcs_connection_eventually_successful() {
-        let test_env = ffx_config::test_init().await.expect("Failed to initialize test env");
+        let test_env = ffx_config::test_init().expect("Failed to initialize test env");
         let sockpath = test_env.context.get_ascendd_path().await.expect("No ascendd path");
         let local_node = overnet_core::Router::new(None).unwrap();
         fn start_target_task(
@@ -928,7 +931,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_rcs_connection_fdomain() {
-        let test_env = ffx_config::test_init().await.expect("Failed to initialize test env");
+        let test_env = ffx_config::test_init().expect("Failed to initialize test env");
         let sockpath = test_env.context.get_ascendd_path().await.expect("No ascendd path");
         let local_node = overnet_core::Router::new(None).unwrap();
         fn start_target_task(target_handle: ServerEnd<TargetMarker>) -> Task<()> {

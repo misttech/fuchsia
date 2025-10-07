@@ -786,7 +786,7 @@ mod test {
         let env = ffx_config::test_init().unwrap();
         let res = wait_for_device_inner(
             mock,
-            Some(Duration::from_secs(10000)),
+            Some(Duration::from_secs(3000)),
             &env.context,
             &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
             WaitFor::DeviceOnline,
@@ -802,7 +802,7 @@ mod test {
         let env = ffx_config::test_init().unwrap();
         let res = wait_for_device_inner(
             mock,
-            Some(Duration::from_secs(5)),
+            Some(Duration::from_secs(3)),
             &env.context,
             &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
             WaitFor::DeviceOffline,
@@ -828,7 +828,7 @@ mod test {
         let env = ffx_config::test_init().unwrap();
         let res = wait_for_device_inner(
             mock,
-            Some(Duration::from_secs(5)),
+            Some(Duration::from_secs(3)),
             &env.context,
             &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
             WaitFor::DeviceOnline,
@@ -952,7 +952,7 @@ mod test {
         let env = ffx_config::test_init().unwrap();
         let res = wait_for_device_inner(
             mock,
-            Some(Duration::from_secs(10)),
+            Some(Duration::from_secs(3)),
             &env.context,
             &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
             WaitFor::DeviceOffline,
@@ -968,7 +968,7 @@ mod test {
         let env = ffx_config::test_init().unwrap();
         let res = wait_for_device_inner(
             mock,
-            Some(Duration::from_secs(5)),
+            Some(Duration::from_secs(3)),
             &env.context,
             &TargetInfoQuery::NodenameOrSerial("foo".to_string()),
             WaitFor::DeviceOffline,

@@ -72,7 +72,12 @@ rustc_library("lib") {
 
 group("tests") {
   testonly = true
-  deps = [ ":lib_test" ]
+  deps = [
+    ":lib_test",
+    "behavior:tests",
+    "connector:tests",
+    "holders:tests",
+  ]
 }
 
 group("target") {
