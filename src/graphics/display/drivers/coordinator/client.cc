@@ -13,6 +13,7 @@
 #include <lib/fit/defer.h>
 #include <lib/image-format/image_format.h>
 #include <lib/inspect/cpp/inspect.h>
+#include <lib/stdcompat/inplace_vector.h>
 #include <lib/sync/completion.h>
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/trace/event.h>
@@ -35,7 +36,6 @@
 #include <fbl/alloc_checker.h>
 #include <fbl/auto_lock.h>
 #include <fbl/ref_ptr.h>
-#include <fbl/static_vector.h>
 #include <fbl/string_printf.h>
 #include <fbl/vector.h>
 
@@ -1064,7 +1064,7 @@ display::ConfigCheckResult Client::CheckConfigForDisplay(
       .height = mode_it->mode().active_area().height(),
   }};
 
-  fbl::static_vector<display::DriverLayer, display::EngineInfo::kMaxAllowedMaxLayerCount>
+  cpp26::inplace_vector<display::DriverLayer, display::EngineInfo::kMaxAllowedMaxLayerCount>
       driver_layers;
 
   // Normalize the display configuration, and perform Coordinator-level

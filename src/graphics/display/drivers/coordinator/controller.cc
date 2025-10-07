@@ -8,6 +8,7 @@
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/fit/function.h>
+#include <lib/stdcompat/inplace_vector.h>
 #include <lib/trace/event.h>
 #include <lib/zbi-format/graphics.h>
 #include <lib/zx/channel.h>
@@ -36,7 +37,6 @@
 #include <fbl/alloc_checker.h>
 #include <fbl/array.h>
 #include <fbl/ref_ptr.h>
-#include <fbl/static_vector.h>
 #include <fbl/vector.h>
 
 #include "src/graphics/display/drivers/coordinator/added-display-info.h"
@@ -352,7 +352,7 @@ void Controller::ApplyConfig(DisplayConfig& display_config,
 
   // The applied configuration's stamp.
   display::DriverConfigStamp driver_config_stamp = {};
-  fbl::static_vector<display::DriverLayer, display::EngineInfo::kMaxAllowedMaxLayerCount>
+  cpp26::inplace_vector<display::DriverLayer, display::EngineInfo::kMaxAllowedMaxLayerCount>
       driver_layers;
 
   {
