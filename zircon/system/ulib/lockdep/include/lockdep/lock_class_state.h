@@ -44,7 +44,7 @@ class LockClassState {
 
   // Returns the lock class id for this instance. The id is the address of the
   // instance.
-  LockClassId id() const { return this; }
+  constexpr LockClassId id() const { return this; }
 };
 
 // A derivative of LockClassState that stores basic metadata about the lock

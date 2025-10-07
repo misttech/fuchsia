@@ -59,19 +59,16 @@
 #define LOCAL_TRACE 0
 
 namespace {
-namespace crashlog_impls {
 
 lazy_init::LazyInit<MappedCrashlog, lazy_init::CheckType::None, lazy_init::Destructor::Disabled>
-    ram_mappable;
-EfiCrashlog efi;
+    gMappedCrashlog;
 
-}  // namespace crashlog_impls
-}  // namespace
+constinit EfiCrashlog gEfiCrashlog;
 
-static void platform_save_bootloader_data(void) {
+void platform_save_bootloader_data() {
   // Record any previous crashlog.
   if (ktl::string_view crashlog = gPhysHandoff->crashlog.get(); !crashlog.empty()) {
-    crashlog_impls::efi.SetLastCrashlogLocation(crashlog);
+    gEfiCrashlog.SetLastCrashlogLocation(crashlog);
   }
 
   // If we have an NVRAM location and we have not already configured a platform
@@ -79,19 +76,19 @@ static void platform_save_bootloader_data(void) {
   // MappedCrashlog implementation and configure the generic platform
   // layer to use it.
   if (!gPhysHandoff->nvram.empty() && !PlatformCrashlog::HasNonTrivialImpl()) {
-    crashlog_impls::ram_mappable.Initialize(gPhysHandoff->nvram);
-    PlatformCrashlog::Bind(crashlog_impls::ram_mappable.Get());
+    gMappedCrashlog.Initialize(gPhysHandoff->nvram);
+    PlatformCrashlog::Bind(gMappedCrashlog.Get());
   }
 }
 
-static void platform_init_crashlog(void) {
+void platform_init_crashlog() {
   // Nothing to do if we have already selected a crashlog implementation.
   if (PlatformCrashlog::HasNonTrivialImpl()) {
     return;
   }
 
   // Initialize and select the EfiCrashlog implementation.
-  PlatformCrashlog::Bind(crashlog_impls::efi);
+  PlatformCrashlog::Bind(gEfiCrashlog);
 }
 
 // Number of pages required to identity map 16GiB of memory.
@@ -101,12 +98,14 @@ constexpr size_t kNumL3PageTables = 1;
 constexpr size_t kNumL4PageTables = 1;
 constexpr size_t kTotalPageTableCount = kNumL2PageTables + kNumL3PageTables + kNumL4PageTables;
 
-static fbl::RefPtr<VmAspace> mexec_identity_aspace;
+fbl::RefPtr<VmAspace> gMexecIdentityAspace;
 
 // Array of pages that are safe to use for the new kernel's page tables.  These must
 // be after where the new boot image will be placed during mexec.  This array is
 // populated in platform_mexec_prep and used in platform_mexec.
-static paddr_t mexec_safe_pages[kTotalPageTableCount];
+paddr_t gMexecSafePages[kTotalPageTableCount];
+
+}  // namespace
 
 void platform_mexec_prep(uintptr_t final_bootimage_addr, size_t final_bootimage_len) {
   DEBUG_ASSERT(!arch_ints_disabled());
@@ -120,22 +119,22 @@ void platform_mexec_prep(uintptr_t final_bootimage_addr, size_t final_bootimage_
   static_assert(kNumL4PageTables == 1, "Only 1 L4 page table is supported at this time.");
 
   // Identity map the first 16GiB of RAM
-  mexec_identity_aspace = VmAspace::Create(VmAspace::Type::LowKernel, "x86-64 mexec 1:1");
-  DEBUG_ASSERT(mexec_identity_aspace);
+  gMexecIdentityAspace = VmAspace::Create(VmAspace::Type::LowKernel, "x86-64 mexec 1:1");
+  DEBUG_ASSERT(gMexecIdentityAspace);
 
   const uint perm_flags_rwx =
       ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE | ARCH_MMU_FLAG_PERM_EXECUTE;
-  void* identity_address = 0x0;
+  void* identity_address = nullptr;
   paddr_t pa = 0;
   zx_status_t result =
-      mexec_identity_aspace->AllocPhysical("1:1 mapping", kBytesToIdentityMap, &identity_address, 0,
-                                           pa, VmAspace::VMM_FLAG_VALLOC_SPECIFIC, perm_flags_rwx);
+      gMexecIdentityAspace->AllocPhysical("1:1 mapping", kBytesToIdentityMap, &identity_address, 0,
+                                          pa, VmAspace::VMM_FLAG_VALLOC_SPECIFIC, perm_flags_rwx);
   if (result != ZX_OK) {
     panic("failed to identity map low memory");
   }
 
   result = alloc_pages_greater_than(final_bootimage_addr + final_bootimage_len + PAGE_SIZE,
-                                    kTotalPageTableCount, kBytesToIdentityMap, mexec_safe_pages);
+                                    kTotalPageTableCount, kBytesToIdentityMap, gMexecSafePages);
   if (result != ZX_OK) {
     panic("failed to alloc mexec_safe_pages");
   }
@@ -152,13 +151,13 @@ void platform_mexec(mexec_asm_func mexec_assembly, memmov_ops_t* ops, uintptr_t 
                 "Kexec identity map size is too large. Only one L3 PTE is supported at this time.");
   static_assert(kNumL3PageTables == 1, "Only 1 L3 page table is supported at this time.");
   static_assert(kNumL4PageTables == 1, "Only 1 L4 page table is supported at this time.");
-  DEBUG_ASSERT(mexec_identity_aspace);
+  DEBUG_ASSERT(gMexecIdentityAspace);
 
-  vmm_set_active_aspace(mexec_identity_aspace.get());
+  vmm_set_active_aspace(gMexecIdentityAspace.get());
 
   size_t safe_page_id = 0;
-  volatile pt_entry_t* ptl4 = (pt_entry_t*)paddr_to_physmap(mexec_safe_pages[safe_page_id++]);
-  volatile pt_entry_t* ptl3 = (pt_entry_t*)paddr_to_physmap(mexec_safe_pages[safe_page_id++]);
+  volatile pt_entry_t* ptl4 = (pt_entry_t*)paddr_to_physmap(gMexecSafePages[safe_page_id++]);
+  volatile pt_entry_t* ptl3 = (pt_entry_t*)paddr_to_physmap(gMexecSafePages[safe_page_id++]);
 
   // Initialize these to 0
   for (size_t i = 0; i < NO_OF_PT_ENTRIES; i++) {
@@ -167,8 +166,8 @@ void platform_mexec(mexec_asm_func mexec_assembly, memmov_ops_t* ops, uintptr_t 
   }
 
   for (size_t i = 0; i < kNumL2PageTables; i++) {
-    ptl3[i] = mexec_safe_pages[safe_page_id] | X86_KERNEL_PD_FLAGS;
-    volatile pt_entry_t* ptl2 = (pt_entry_t*)paddr_to_physmap(mexec_safe_pages[safe_page_id]);
+    ptl3[i] = gMexecSafePages[safe_page_id] | X86_KERNEL_PD_FLAGS;
+    volatile pt_entry_t* ptl2 = (pt_entry_t*)paddr_to_physmap(gMexecSafePages[safe_page_id]);
 
     for (size_t j = 0; j < NO_OF_PT_ENTRIES; j++) {
       ptl2[j] = (2 * MB * (i * NO_OF_PT_ENTRIES + j)) | X86_KERNEL_PD_LP_FLAGS;

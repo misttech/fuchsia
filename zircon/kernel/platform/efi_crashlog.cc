@@ -24,7 +24,7 @@ NO_ASAN void EfiCrashlog::Finalize(zircon_crash_reason_t reason, size_t amt) {
   // Store the log.
   amt = ktl::min(amt, sizeof(render_target_));
   efi_status result = services->SetVariable(kZirconCrashlogEfiVarName, &kZirconVendorGuid,
-                                            ZIRCON_CRASHLOG_EFIATTR, amt, render_target_);
+                                            ZIRCON_CRASHLOG_EFIATTR, amt, render_target_.data());
 
   // If we are writing a zero length crashlog then this has the meaning of deleting the variable
   // from the efi storage, if the crashlog already doesn't exist then attempting to delete it is

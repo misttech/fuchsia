@@ -19,12 +19,15 @@
 class MappedCrashlog final : public PlatformCrashlog::Interface {
  public:
   MappedCrashlog() = delete;
-  MappedCrashlog(ktl::span<ktl::byte> range);
+
+  explicit MappedCrashlog(ktl::span<ktl::byte> range);
 
   ktl::span<char> GetRenderTarget() final { return render_target_; }
 
   void Finalize(zircon_crash_reason_t reason, size_t amt) final;
+
   size_t Recover(FILE* tgt) final;
+
   void EnableCrashlogUptimeUpdates(bool enabled) final;
 
  private:

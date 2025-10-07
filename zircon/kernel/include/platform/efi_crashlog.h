@@ -8,15 +8,20 @@
 #define ZIRCON_KERNEL_INCLUDE_PLATFORM_EFI_CRASHLOG_H_
 
 #include <kernel/spinlock.h>
+#include <ktl/array.h>
+#include <ktl/string_view.h>
 #include <platform/crashlog.h>
 
 class EfiCrashlog final : public PlatformCrashlog::Interface {
  public:
   EfiCrashlog() = default;
 
-  ktl::span<char> GetRenderTarget() final { return {render_target_, sizeof(render_target_)}; }
+  ktl::span<char> GetRenderTarget() final { return render_target_; }
+
   void Finalize(zircon_crash_reason_t reason, size_t amt) final;
+
   size_t Recover(FILE* tgt) final;
+
   void EnableCrashlogUptimeUpdates(bool enabled) final {}
 
   void SetLastCrashlogLocation(ktl::string_view last_crashlog) {
@@ -31,8 +36,8 @@ class EfiCrashlog final : public PlatformCrashlog::Interface {
 
   // Stashed crashlog-related values.
   DECLARE_SPINLOCK(EfiCrashlog) last_crashlog_lock_;
-  ktl::string_view last_crashlog_ TA_GUARDED(last_crashlog_lock_){};
-  char render_target_[kMaxEfiCrashlogLen];
+  ktl::string_view last_crashlog_ TA_GUARDED(last_crashlog_lock_);
+  ktl::array<char, kMaxEfiCrashlogLen> render_target_{};
 };
 
 #endif  // ZIRCON_KERNEL_INCLUDE_PLATFORM_EFI_CRASHLOG_H_
