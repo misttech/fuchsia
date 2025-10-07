@@ -47,6 +47,10 @@ import("//build/python/python_action.gni")
 #    [list, GN labels] A list of GN labels of fuchsia_package targets to
 #    include in the cache package set.
 #
+#  anchored_automatic_packages [optional]
+#    [list, GN labels] A list of GN labels of fuchsia_package targets to
+#    include in the anchored automatic package set.
+#
 #  flexible_packages [optional]
 #    [list, GN labels] A list of GN labels of fuchsia_package targets that
 #    assembly may choose to put in base, cache, or elsewhere depending on the
@@ -420,6 +424,16 @@ template("assembly_input_bundle") {
         ]
       }
     }
+    anchored_automatic = []
+    if (defined(invoker.anchored_automatic_packages)) {
+      foreach(_target, invoker.anchored_automatic_packages) {
+        anchored_automatic += [
+          {
+            package_target = _target
+          },
+        ]
+      }
+    }
     flexible = []
     if (defined(invoker.flexible_packages)) {
       foreach(_target, invoker.flexible_packages) {
@@ -477,6 +491,7 @@ template("assembly_input_bundle") {
           [
             "base",
             "cache",
+            "anchored-automatic",
             "flexible",
             "system",
             "base-drivers",

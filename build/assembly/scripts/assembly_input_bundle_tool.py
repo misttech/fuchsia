@@ -59,6 +59,11 @@ def create_bundle(args: argparse.Namespace) -> None:
             aib_creator, args.on_demand_pkg_list, "on_demand"
         )
 
+    if args.anchored_automatic_pkg_list:
+        add_pkg_list_from_file(
+            aib_creator, args.anchored_automatic_pkg_list, "anchored_automatic"
+        )
+
     if args.shell_cmds_list:
         add_shell_commands_from_file(aib_creator, args.shell_cmds_list)
 
@@ -471,6 +476,11 @@ def main() -> int:
         "--system-pkg-list",
         type=argparse.FileType("r"),
         help="Path to a json list of package manifests for the 'system' package set",
+    )
+    bundle_creation_parser.add_argument(
+        "--anchored-automatic-pkg-list",
+        type=argparse.FileType("r"),
+        help="Path to a json list of package manifests for the 'anchored automatic' package set",
     )
     bundle_creation_parser.add_argument(
         "--kernel-cmdline",
