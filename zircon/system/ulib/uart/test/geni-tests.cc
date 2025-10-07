@@ -51,6 +51,8 @@ TEST(GeniTests, HelloWorld) {
       .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x800)   // free
                                                                                 // Write
       .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x40)    // !busy
+      .ExpectWrite(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0001}, 0x618)  // Clear cmd_done
+                                                                                // from status
       .ExpectWrite(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0100}, 0x270)  // len=4
       .ExpectWrite(uint32_t{0b0000'1000'0000'0000'0000'0000'0000'0000}, 0x600)  // start_tx
       .ExpectWrite(uint32_t{0x0A0D6968}, 0x700);                                // Write
@@ -74,6 +76,8 @@ TEST(GeniTests, HelloWorldBusy) {
       .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x800)   // free
                                                                                 // Write
       .ExpectRead(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0000}, 0x40)    // !busy
+      .ExpectWrite(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0001}, 0x618)  // Clear cmd_done
+                                                                                // from status
       .ExpectWrite(uint32_t{0b0000'0000'0000'0000'0000'0000'0000'0100}, 0x270)  // len=4
       .ExpectWrite(uint32_t{0b0000'1000'0000'0000'0000'0000'0000'0000}, 0x600)  // start_tx
       .ExpectWrite(uint32_t{0x0A0D6968}, 0x700);                                // Write

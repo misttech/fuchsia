@@ -113,7 +113,7 @@ struct IrqStatusRegister : public hwreg::RegisterBase<IrqStatusRegister, uint32_
   DEF_BIT(4, command_cancel);
   DEF_BIT(5, command_abort);
   DEF_BIT(6, timestamp);
-  DEF_BIT(7, tx_irq);
+  DEF_BIT(7, rx_irq);
   // ...
   DEF_BIT(20, hardware_irq);
   DEF_BIT(21, tx_fifo_not_empty);
@@ -292,6 +292,20 @@ struct RxParametersRegister {
   static auto Get() { return hwreg::RegisterAddr<SerialHwParametersRegister>(0xe28); }
 };
 
+struct GpLengthRegister : public hwreg::RegisterBase<GpLengthRegister, uint32_t> {
+  DEF_FIELD(31, 0, length);
+
+  static auto Get(uint32_t offset) { return hwreg::RegisterAddr<GpLengthRegister>(offset); }
+};
+
+struct MainGpLengthRegister {
+  static auto Get() { return hwreg::RegisterAddr<GpLengthRegister>(0x910); }
+};
+
+struct SecondaryGpLengthRegister {
+  static auto Get() { return hwreg::RegisterAddr<GpLengthRegister>(0x914); }
+};
+
 // This corresponds to the size of the MMIO region from a provided base address.
 // In common configurations, each serial engine gets 16kB of register maps.
 // Unfortunately, this approach is not ideal for accessing the common QUP SE
@@ -335,6 +349,7 @@ class Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_GENI_UART, zbi_dcfg_s
     // Store width in bytes, not bits.
     tx_fifo_width_ = tx_hw_params.fifo_width() >> 3;
     tx_fifo_width_ = std::min(tx_fifo_width_, kFifoWidth);
+
     auto rx_hw_params = RxParametersRegister::Get().ReadFrom(io.io());
     rx_fifo_depth_ = rx_hw_params.fifo_depth();
     rx_fifo_width_ = rx_hw_params.fifo_width() >> 3;
@@ -402,34 +417,32 @@ class Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_GENI_UART, zbi_dcfg_s
 
   template <class IoProvider, typename It1, typename It2>
   auto Write(IoProvider& io, uint32_t ready_space, It1 it, const It2& end) {
-    const auto job_size = std::distance(it, end);
-    if ((job_size <= 0) || (ready_space == 0)) {
+    // If we have no space, do nothing.
+    if (ready_space == 0) {
       return it;
     }
 
-    // If we a job in progress, we need to wait until the job finishes.
+    // If we have a command in progress already, do nothing.
     auto geni_status = GeniStatusRegister::Get().ReadFrom(io.io());
     if (geni_status.m_command_active()) {
       return it;
     }
 
-    // Start our new command and pack the bytes into the fifo.
-    uint32_t bytes = static_cast<uint32_t>(std::min<decltype(job_size)>(job_size, ready_space));
-    UartTransmitLengthRegister::Get().FromValue(0).set_length(bytes).WriteTo(io.io());
-    MainCommandRegister::Get().FromValue(0).set_command(StartTx).WriteTo(io.io());
-
-    while (bytes > 0) {
-      auto tx = TxFifoRegister::Get().FromValue(0);
-      uint32_t value = 0;
-      uint32_t fifo_len = std::min(tx_fifo_width_, bytes);
-      for (uint32_t i = 0; i < fifo_len; ++i, it++, bytes--) {
-        // Fill out the value
-        value |= (*it & 0xff) << (i * CHAR_BIT);
-      }
-      tx.set_data(value).WriteTo(io.io());
-      arch::DeviceMemoryBarrier();
+    // Figure out how much of this job we can fit (at most), then start to pack
+    // these bytes into the shadow buffer, keeping track of how much we manage
+    // to fit as we go.
+    const uint32_t max_job_size =
+        std::min(ready_space, static_cast<uint32_t>(tx_fifo_shadow_.size()));
+    uint32_t job_size = 0;
+    while ((job_size < max_job_size) && (it != end)) {
+      tx_fifo_shadow_[job_size++] = *(it++) & 0xFF;
     }
 
+    // Finally, if we actually have bytes to send, pack the actual FIFO and start the transmit
+    // command.
+    if (job_size) {
+      StartTxCommand(io, job_size);
+    }
     return it;
   }
 
@@ -443,21 +456,21 @@ class Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_GENI_UART, zbi_dcfg_s
 
   template <class IoProvider>
   void EnableTxInterrupt(IoProvider& io, bool enable = true) {
-    if (enable) {
-      auto enable_set = MainIrqEnableSetRegister::Get()
-                            .FromValue(0)
-                            .set_command_done(1)
-                            .set_command_cancel(1)
-                            .set_command_abort(1);
-      enable_set.WriteTo(io.io());
-    } else {
-      auto clear_set = MainIrqEnableClearRegister::Get()
-                           .FromValue(0)
-                           .set_command_done(1)
-                           .set_command_cancel(1)
-                           .set_command_abort(1);
-      clear_set.WriteTo(io.io());
+    if (!enable) {
+      // Don't do anything when it is time to disable TX interrupts.  The only
+      // interrupts we care about are edge triggered interrupts which are
+      // automatically ack'ed in the interrupt handler.  If we _really_ need to
+      // disable interrupts (for example, when we need to suspend) we just
+      // mask the top level GIC interrupt.
+      return;
     }
+
+    auto enable_set = MainIrqEnableSetRegister::Get()
+                          .FromValue(0)
+                          .set_command_done(1)
+                          .set_command_cancel(1)
+                          .set_command_abort(1);
+    enable_set.WriteTo(io.io());
   }
 
   template <class IoProvider>
@@ -519,55 +532,38 @@ class Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_GENI_UART, zbi_dcfg_s
     irq.SetInterruptsEnabled(true);
   }
 
-  template <class IoProvider, typename Lock, typename Waiter, typename Tx, typename Rx>
-  void Interrupt(IoProvider& io, Lock& lock, Waiter& waiter, Tx&& tx, Rx&& rx) {
-    // Read the IRQ status registers, but mask them with the current value in
-    // the IRQ Enable register.
-    //
-    // We are going to use these bits to decide the reason that we woke up, but
-    // the status registers give the _unmasked_ interrupt status.  The normal
-    // idle state of the TX side of things should pretty much always indicate
-    // that the TX-fifo is below the low-water mark.  If we receive an RX
-    // interrupt, and fail to mask properly, it is going to look (to us) like we
-    // need to process a TX-fifo-low interrupt when we don't actually expect one
-    // (nor do we want to process one).
-    //
-    // Applying the current value of the mask register helps us to avoid stuff
-    // like this.
-    auto m_status = MainIrqStatusRegister::Get().FromValue(
-        MainIrqStatusRegister::Get().ReadFrom(io.io()).reg_value() &
-        MainIrqEnableRegister::Get().ReadFrom(io.io()).reg_value());
-    auto s_status = SecondaryIrqStatusRegister::Get().FromValue(
-        SecondaryIrqStatusRegister::Get().ReadFrom(io.io()).reg_value() &
-        SecondaryIrqEnableRegister::Get().ReadFrom(io.io()).reg_value());
+  template <class IoProvider, template <class T> class LockType, class MemberOf, typename Waiter,
+            typename Tx, typename Rx>
+  void Interrupt(IoProvider& io, LockType<MemberOf>& lock, Waiter& waiter, Tx&& tx, Rx&& rx) {
+    IrqStatusRegister m_status, s_status;
+    {
+      // Hold the main lock while we manipulate the interrupt status bits.
+      using GuardType = MemberOf::template Guard<typename MemberOf::DefaultLockPolicy>;
+      GuardType guard(&lock, SOURCE_TAG);
 
-    // Interrupts like "command done" are effectively edge triggered.  Make sure
-    // to clear the pending flags before proceeding with processing so that we
-    // don't accidentally miss a subsequent "command done" interrupt.
-    //
-    // Note, the only way that this could happen in theory is if we were racing
-    // with the TX thread and somehow got held off for an excessive length of
-    // time after signaling the thread, and before acking the interrupts; but
-    // still.
-    //
-    // 1) A command completes, and the IRQ fires.
-    // 2) The IRQ notices there is space in buffer, so it signals the thread to
-    //    add more data.
-    // 3) The thread runs and queues some more data, starting a new command as
-    //    it does.
-    // 4) The command completes and sets the "command complete" pending bit.
-    // 5) Back in IRQ land, we finish finish up by acking what we thought was
-    //    the _previous_ command complete interrupt.  Unfortunately, we
-    //    accidentally acked the command which was just queued by the TX thread.
-    // 6) Now we might be stuck.  We are not going to signal the TX thread again
-    // until
-    //
-    // If we signal that thread, and then clear the "command done" status bit,
-    // we might accidentally end up in a race we don't want.
-    auto m_clear = MainIrqStatusClearRegister::Get().FromValue(m_status.reg_value());
-    m_clear.WriteTo(io.io());
-    auto s_clear = SecondaryIrqStatusClearRegister::Get().FromValue(s_status.reg_value());
-    s_clear.WriteTo(io.io());
+      // Read the IRQ status registers, but mask them with the current value in
+      // the IRQ Enable register.
+      //
+      // We are going to use these bits to decide the reason that we woke up, but
+      // the status registers give the _unmasked_ interrupt status.  The normal
+      // idle state of the TX side of things should pretty much always indicate
+      // that the TX-fifo is below the low-water mark.  If we receive an RX
+      // interrupt, and fail to mask properly, it is going to look (to us) like we
+      // need to process a TX-fifo-low interrupt when we don't actually expect one
+      // (nor do we want to process one).
+      //
+      // Applying the current value of the mask register helps us to avoid stuff
+      // like this.
+      m_status = MainIrqStatusRegister::Get().FromValue(
+          MainIrqStatusRegister::Get().ReadFrom(io.io()).reg_value() &
+          MainIrqEnableRegister::Get().ReadFrom(io.io()).reg_value());
+      s_status = SecondaryIrqStatusRegister::Get().FromValue(
+          SecondaryIrqStatusRegister::Get().ReadFrom(io.io()).reg_value() &
+          SecondaryIrqEnableRegister::Get().ReadFrom(io.io()).reg_value());
+
+      MainIrqStatusClearRegister::Get().FromValue(m_status.reg_value()).WriteTo(io.io());
+      SecondaryIrqStatusClearRegister::Get().FromValue(s_status.reg_value()).WriteTo(io.io());
+    }
 
     // As this driver is for debug output only, there is no handling of errors,
     // illegal commands, etc.
@@ -617,7 +613,9 @@ class Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_GENI_UART, zbi_dcfg_s
       }
     }
 
-    // If any of the conditions below have been raised, attempting to transmit is ok.
+    // If our transmit command is done, or was canceled/aborted, then our
+    // most recent job is done.  Clear the bytes-in-flight accounting, and
+    // signal any users waiting to send more data.
     if (m_status.command_done() || m_status.command_cancel() || m_status.command_abort()) {
       auto tx_irq = TxInterrupt(lock, waiter, [&]() { EnableTxInterrupt(io, false); });
       tx(tx_irq);
@@ -626,11 +624,9 @@ class Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_GENI_UART, zbi_dcfg_s
 
   template <typename IoProvider, typename IrqProvider>
   void PrepareForSuspend(IoProvider& io, IrqProvider& irq) {
-    // Start by disabling our top level interrupt at the GIC level of things.
-    // Then, mask the TX/RX specific interrupts in the Geni hardware.
+    // Disable our top level interrupt, but leave individual device level
+    // interrupts as they are. We will handle them when we resume.
     irq.SetInterruptsEnabled(false);
-    EnableTxInterrupt(io, false);
-    EnableRxInterrupt(io, false);
 
     // Cancel any TX commands which are in flight, and wait for the HW to
     // confirm that they have been canceled.  According to docs, if we have a TX
@@ -644,11 +640,22 @@ class Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_GENI_UART, zbi_dcfg_s
     }
     MainIrqStatusClearRegister::Get().FromValue(0).set_command_cancel(1).WriteTo(io.io());
 
-    // TODO(johngro): pay attention to the TX FIFO status after canceling the
-    // command.  It will report how full the FIFO was when the command got
-    // canceled.  Adding a FIFO-sized buffer to the driver and paying attention
-    // to this value will allow us to pick up where we left off when we come out
-    // of suspend, instead of simply dropping whatever was in the FIFO.
+    // Check the IRQ status to see if the RX_IRQ bit is set.  If it is not set,
+    // then M_GP_LENGTH should contain the number of bytes we successfully
+    // transmitted before the cancel finished. Use this to figure out which
+    // bytes we need to re-play when we come out of suspend.
+    //
+    // Otherwise, unconditionally update the TX-bytes-in-flight to be zero so
+    // that we don't attempt to restart the TX pipeline later on.
+    uint32_t remaining_tx_bytes{0};
+    if (MainIrqStatusRegister::Get().ReadFrom(io.io()).rx_irq() == 0) {
+      const uint32_t transmitted = MainGpLengthRegister::Get().ReadFrom(io.io()).length();
+      if (transmitted < last_tx_job_size_) {
+        remaining_tx_bytes = last_tx_job_size_ - transmitted;
+        ::memmove(tx_fifo_shadow_.data(), tx_fifo_shadow_.data() + transmitted, remaining_tx_bytes);
+      }
+    }
+    last_tx_job_size_ = remaining_tx_bytes;
 
     // Now, repeat the process, this time for the RX side of things.  In theory,
     // we don't have to do this.  In practice, failure to cancel the
@@ -663,20 +670,62 @@ class Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_GENI_UART, zbi_dcfg_s
 
   template <typename IoProvider, typename IrqProvider>
   void WakeupFromSuspend(IoProvider& io, IrqProvider& irq) {
-    // Resuming is pretty simple right now.  We just need to issue a "go"
-    // command to the RX pipeline in order to start receiving bytes again, and
-    // then re-enable our interrupts.
+    // Did we have a TX command in progress when we suspended?  If so, re-pack
+    // the FIFO from our shadow buffer and finish up the job.
+    if (last_tx_job_size_ > 0) {
+      StartTxCommand(io, last_tx_job_size_);
+    }
+
+    // Restart the never-ending RX command.
     SecondaryCommandRegister::Get().FromValue(0).set_start_read(1).WriteTo(io.io());
-    EnableRxInterrupt(io, true);
-    EnableTxInterrupt(io, true);
+
+    // Re-enable the top level interrupt.
     irq.SetInterruptsEnabled(true);
   }
 
  private:
+  template <typename IoProvider>
+  void StartTxCommand(IoProvider& io, uint32_t tx_job_size) {
+    // Make sure that there are no "command done" interrupts pending before
+    // starting a new TX job.  Note that it is important that we are holding the
+    // lock here so that we don't end up racing an in-flight IRQ handler (who
+    // also holds the lock while manipulating interrupt status registers).
+    MainIrqStatusClearRegister::Get().FromValue(0).set_command_done(1).WriteTo(io.io());
+
+    // Set the command length and tell the job to start.
+    UartTransmitLengthRegister::Get().FromValue(0).set_length(tx_job_size).WriteTo(io.io());
+    MainCommandRegister::Get().FromValue(0).set_command(StartTx).WriteTo(io.io());
+    last_tx_job_size_ = tx_job_size;
+
+    // And finally pack the bytes.
+    for (uint32_t i = 0; i < last_tx_job_size_;) {
+      uint32_t value = 0;
+      for (uint32_t j = 0; (j < tx_fifo_width_) && (i < last_tx_job_size_); ++i, ++j) {
+        // Fill out the value
+        value |= tx_fifo_shadow_[i] << (j * CHAR_BIT);
+      }
+
+      TxFifoRegister::Get().FromValue(0).set_data(value).WriteTo(io.io());
+      arch::DeviceMemoryBarrier();
+    }
+  }
+
   uint32_t rx_fifo_depth_ = kRxFifoDepth;
   uint32_t tx_fifo_depth_ = kTxFifoDepth;
   uint32_t rx_fifo_width_ = kFifoWidth;
   uint32_t tx_fifo_width_ = kFifoWidth;
+
+  // A small, fifo-sized buffer of the bytes we have written to the transmit
+  // fifo the last time we started a TX job.  In the event that we have to
+  // suspend the driver in the middle of a TX job, we will cancel any job which
+  // is in progress right now.  In the process, we will be told the number of
+  // byte which we successful clocked out of the TX engine when the job became
+  // canceled.  We then use this information along with our shadow buffer to
+  // replay the bytes which were canceled, finishing the job which was
+  // interrupted by the suspend/resume cycle.
+  //
+  std::array<uint8_t, kTxFifoDepth * kFifoWidth> tx_fifo_shadow_;
+  uint32_t last_tx_job_size_{0};
 };
 
 }  // namespace uart::geni

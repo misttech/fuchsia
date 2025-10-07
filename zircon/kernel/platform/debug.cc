@@ -52,8 +52,22 @@ using GuardSelector =
 
 // Implements SyncPolicy as defined in <lib/uart/sync.h>
 struct UartSyncPolicy {
+  // While tempting, do *not* use a templated `using` statement here.  In some
+  // places in code, we will need to deduce (via argument passing) what
+  // `MemberOf` is.  Attempting to do this when we declare lock as a using alias
+  // is not going to work in this situation.  The deduction is going to execute
+  // against the underlying type, not the `using` statement.  So the final type
+  // (in this case, a LockDep instance) would need to be a template with exactly
+  // one argument which is identical to MemberOf.  In the case of LockDep locks,
+  // this is *not* the case.
+  //
+  // Declaring this as a single-argument templated struct with no members which
+  // inherits from the underlying LockDep type works around this issue.  Guards
+  // and other things will auto-upcast to the proper underlying LockDep type,
+  // and the only constructor needed/supported is the default constructor, so we
+  // don't need to write a forwarding constructor to the underlying type.
   template <typename MemberOf>
-  using Lock = DECLARE_SPINLOCK_WITH_TYPE(MemberOf, MonitoredSpinLock);
+  struct Lock : public DECLARE_SPINLOCK_WITH_TYPE(MemberOf, MonitoredSpinLock) {};
 
   template <typename LockPolicy>
   using Guard = GuardSelector<LockPolicy, Guard<MonitoredSpinLock, LockPolicy>>;

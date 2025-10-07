@@ -565,6 +565,7 @@ class Driver;
 template <class UartDriver, template <typename, IoRegisterType> class IoProvider, class SyncPolicy,
           class IrqProvider>
 class KernelDriver {
+ public:
   using Waiter = typename SyncPolicy::Waiter;
 
   template <typename LockPolicy>
@@ -575,7 +576,6 @@ class KernelDriver {
 
   using DefaultLockPolicy = typename SyncPolicy::DefaultLockPolicy;
 
- public:
   using uart_type = UartDriver;
   using config_type = UartDriver::config_type;
   static_assert(std::is_copy_constructible_v<uart_type> || std::is_same_v<uart_type, mock::Driver>);
