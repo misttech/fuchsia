@@ -64,7 +64,7 @@ class RingBufferServer
   template <typename ServerT, template <typename T> typename FidlServerT, typename ProtocolT>
   friend class BaseFidlServer;
 
-  static inline const std::string_view kClassName = "RingBufferServer";
+  static inline constexpr std::string_view kClassName = "RingBufferServer";
   static inline uint64_t count_ = 0;
 
   RingBufferServer(std::shared_ptr<ControlServer> parent, std::shared_ptr<Device> device,

@@ -15,29 +15,33 @@
 #include "src/media/audio/services/device_registry/audio_device_registry.h"
 #include "src/media/audio/services/device_registry/inspector.h"
 #include "src/media/audio/services/device_registry/logging.h"
+#include "src/media/audio/services/device_registry/strings.h"
+
+using media_audio::Inspector;
 
 int main(int argc, const char** argv) {
   fuchsia_logging::LogSettingsBuilder builder;
-  builder.WithTags({"audio_device_registry"}).BuildAndInitialize();
+  builder.WithTags({media_audio::kAdrLoggingTag}).BuildAndInitialize();
   ADR_LOG(media_audio::kLogMain) << "AudioDeviceRegistry is starting up";
 
   // Create a loop, and use it to create our AudioDeviceRegistry singleton...
   auto loop = std::make_shared<async::Loop>(&kAsyncLoopConfigAttachToCurrentThread);
-  auto adr_thread = media_audio::FidlThread::CreateFromCurrentThread("AudioDeviceRegistryMain",
+
+  auto adr_thread = media_audio::FidlThread::CreateFromCurrentThread(media_audio::kAdrThreadName,
                                                                      loop->dispatcher());
   auto adr_service = std::make_shared<media_audio::AudioDeviceRegistry>(adr_thread);
 
-  trace::TraceProviderWithFdio trace_provider(loop->dispatcher(), "audio_device_registry_provider");
+  trace::TraceProviderWithFdio trace_provider(loop->dispatcher(), media_audio::kAdrTraceProvider);
 
   // ...then create the connection to Inspect, so we can chronicle the subsequent actions...
-  media_audio::Inspector::Initialize(loop->dispatcher());
+  Inspector::Initialize(loop->dispatcher());
 
   // ...then start the device detection process (which continues after this call returns)...
   if (auto status = adr_service->StartDeviceDetection(); status != ZX_OK) {
     auto str = std::string("StartDeviceDetection failed to start devfs device detection: ") +
                std::to_string(status);
     FX_LOGS(ERROR) << str;
-    media_audio::Inspector::Singleton()->RecordUnhealthy(str);
+    Inspector::Singleton()->RecordUnhealthy(str);
     return -1;
   }
 
@@ -46,12 +50,12 @@ int main(int argc, const char** argv) {
     auto str = std::string("RegisterAndServeOutgoing failed to serve outgoing directory: ") +
                std::to_string(status);
     FX_LOGS(ERROR) << str;
-    media_audio::Inspector::Singleton()->RecordUnhealthy(str);
+    Inspector::Singleton()->RecordUnhealthy(str);
     return -2;
   }
 
   // ...then chronicle that adr_service has completed its "starting up" steps...
-  media_audio::Inspector::Singleton()->RecordHealthOk();
+  Inspector::Singleton()->RecordHealthOk();
 
   // ...then run our loop here in main(), so AudioDeviceRegistry doesn't have to deal with it.
   loop->Run();

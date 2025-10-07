@@ -84,7 +84,7 @@ class FakeDevicePresenceWatcher : public DevicePresenceWatcher {
   uint16_t on_removal_from_ready_count() const { return on_removal_from_ready_count_; }
 
  private:
-  static inline const std::string_view kClassName = "FakeDevicePresenceWatcher";
+  static inline constexpr std::string_view kClassName = "FakeDevicePresenceWatcher";
 
   std::unordered_set<std::shared_ptr<Device>> ready_devices_;
   std::unordered_set<std::shared_ptr<Device>> error_devices_;

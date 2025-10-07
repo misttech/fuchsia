@@ -285,7 +285,7 @@ class FakeComposite final
  private:
   friend FakeCompositeRingBuffer;
 
-  static inline const std::string_view kClassName = "FakeComposite";
+  static inline constexpr std::string_view kClassName = "FakeComposite";
 
   struct FakeElementRecord {
     fuchsia_hardware_audio_signalprocessing::Element element;

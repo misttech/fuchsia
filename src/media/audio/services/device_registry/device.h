@@ -223,7 +223,7 @@ class Device : public std::enable_shared_from_this<Device> {
   friend class CompositeTest;
   friend class AudioDeviceRegistryServerTestBase;
 
-  static inline const std::string_view kClassName = "Device";
+  static inline constexpr std::string_view kClassName = "Device";
   static inline uint64_t count_ = 0;
   static inline uint64_t initialized_count_ = 0;
   static inline uint64_t unhealthy_count_ = 0;

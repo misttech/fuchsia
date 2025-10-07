@@ -55,7 +55,10 @@ fuchsia_component("device_registry_comp") {
 ## Executables
 executable("device_registry_bin") {
   output_name = "audio_device_registry"
-  sources = [ "main.cc" ]
+  sources = [
+    "main.cc",
+    "strings.h",
+  ]
 
   deps = [
     ":device_registry_lib",

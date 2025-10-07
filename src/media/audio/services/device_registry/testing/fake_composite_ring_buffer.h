@@ -25,7 +25,7 @@ class FakeComposite;
 
 class FakeCompositeRingBuffer final
     : public fidl::testing::TestBase<fuchsia_hardware_audio::RingBuffer> {
-  static inline const std::string_view kClassName = "FakeCompositeRingBuffer";
+  static inline constexpr std::string_view kClassName = "FakeCompositeRingBuffer";
 
  public:
   static constexpr bool kDefaultNeedsCacheFlushInvalidate = false;

@@ -60,7 +60,7 @@ class RegistryServer
   template <typename ServerT, template <typename T> typename FidlServerT, typename ProtocolT>
   friend class BaseFidlServer;
 
-  static inline const std::string_view kClassName = "RegistryServer";
+  static inline constexpr std::string_view kClassName = "RegistryServer";
   static inline uint64_t count_ = 0;
 
   explicit RegistryServer(std::shared_ptr<AudioDeviceRegistry> parent);

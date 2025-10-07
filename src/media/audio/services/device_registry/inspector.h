@@ -77,7 +77,7 @@ class SetActiveChannelsInspectInstance {
   ~SetActiveChannelsInspectInstance();
 
  private:
-  static inline const std::string_view kClassName = "SetActiveChannelsInspectInstance";
+  static inline constexpr std::string_view kClassName = "SetActiveChannelsInspectInstance";
 
   inspect::Node set_active_channels_node_;
   inspect::IntProperty called_at_;
@@ -94,7 +94,7 @@ class RunningIntervalInspectInstance {
   void RecordStopTime(const zx::time& stopped_at);
 
  private:
-  static inline const std::string_view kClassName = "RunningIntervalInspectInstance";
+  static inline constexpr std::string_view kClassName = "RunningIntervalInspectInstance";
 
   inspect::Node running_interval_node_;
   inspect::IntProperty started_at_;
@@ -117,7 +117,7 @@ class RingBufferInspectInstance {
       uint64_t channel_bitmask, const zx::time& called_at, const zx::time& completed_at);
 
  private:
-  static inline const std::string_view kClassName = "RingBufferInspectInstance";
+  static inline constexpr std::string_view kClassName = "RingBufferInspectInstance";
 
   inspect::Node ring_buffer_instance_node_;
   inspect::IntProperty created_at_;
@@ -142,7 +142,7 @@ class RingBufferElement {
   ElementId element_id() const { return element_id_; }
 
  private:
-  static inline const std::string_view kClassName = "RingBufferElement";
+  static inline constexpr std::string_view kClassName = "RingBufferElement";
 
   inspect::Node ring_buffer_element_node_;
   ElementId element_id_;
@@ -178,7 +178,7 @@ class DeviceInspectInstance {
   void RecordRemoval(const zx::time& removed_at);
 
  private:
-  static inline const std::string_view kClassName = "DeviceInspectInstance";
+  static inline constexpr std::string_view kClassName = "DeviceInspectInstance";
 
   inspect::Node device_node_;
   std::string name_;
@@ -217,7 +217,7 @@ class FidlServerInspectInstance {
   inspect::Node& instance_node() { return instance_node_; }
 
  private:
-  static inline const std::string_view kClassName = "FidlServerInspectInstance";
+  static inline constexpr std::string_view kClassName = "FidlServerInspectInstance";
 
   inspect::Node instance_node_;
   inspect::IntProperty created_at_;
@@ -236,7 +236,7 @@ class ProviderInspectInstance : public FidlServerInspectInstance {
                          const zx::time& added_at);
 
  private:
-  static inline const std::string_view kClassName = "ProviderInspectInstance";
+  static inline constexpr std::string_view kClassName = "ProviderInspectInstance";
 
   inspect::Node provider_devices_root_node_;
   std::vector<std::shared_ptr<DeviceInspectInstance>> provider_devices_;
@@ -282,7 +282,7 @@ class Inspector {
       const zx::time& created_at);
 
  private:
-  static inline const std::string_view kClassName = "Inspector";
+  static inline constexpr std::string_view kClassName = "Inspector";
 
   static std::unique_ptr<Inspector> singleton_;
 

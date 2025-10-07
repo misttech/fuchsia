@@ -49,7 +49,7 @@ class ProviderServer
   template <typename ServerT, template <typename T> typename FidlServerT, typename ProtocolT>
   friend class BaseFidlServer;
 
-  static inline const std::string_view kClassName = "ProviderServer";
+  static inline constexpr std::string_view kClassName = "ProviderServer";
   static inline uint64_t count_ = 0;
 
   explicit ProviderServer(std::shared_ptr<AudioDeviceRegistry> parent);

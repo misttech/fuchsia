@@ -48,7 +48,7 @@ class StubControlCreatorServer : public BaseFidlServer<StubControlCreatorServer,
   template <typename ServerT, template <typename T> typename FidlServerT, typename ProtocolT>
   friend class BaseFidlServer;
 
-  static inline const std::string_view kClassName = "StubControlCreatorServer";
+  static inline constexpr std::string_view kClassName = "StubControlCreatorServer";
 
   StubControlCreatorServer() = default;
 };

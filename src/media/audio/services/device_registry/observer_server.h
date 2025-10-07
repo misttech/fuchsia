@@ -73,7 +73,7 @@ class ObserverServer
   template <typename ServerT, template <typename T> typename FidlServerT, typename ProtocolT>
   friend class BaseFidlServer;
 
-  static inline const std::string_view kClassName = "ObserverServer";
+  static inline constexpr std::string_view kClassName = "ObserverServer";
   static inline uint64_t count_ = 0;
 
   explicit ObserverServer(std::shared_ptr<const Device> device);
