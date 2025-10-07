@@ -6,6 +6,9 @@
         {
             type: "skip",
             matchers: [
+                // TODO(https://fxbug.dev/449813778): Flaking on infrastructure with a timeout.
+                "*AspaceTest.RangeFault*",
+
                 // TODO(https://fxbug.dev/437183123): Virtually all are failing and/or flaking.
                 // Since the results are flakey, we'll need to skip instead of expecting failure.
                 "BpfTest.*",
@@ -15,6 +18,9 @@
 
                 // TODO(https://fxbug.dev/436916082): Crashes on Machina.
                 "CgroupTest.*",
+
+                // TODO(): Times out on infrastructure specifically, possibly due to missing fake-hrtimer.
+                "EpollTest.*",
 
                 // TODO(https://fxbug.dev/436985423): At least the /1 variant of this is flakey.
                 "FusePathWalkRefreshDirEntryTest/FusePathWalkRefreshDirEntryTest.PathWalkRefreshDirEntry/2",
@@ -36,9 +42,8 @@
                 // TODO(https://fxbug.dev/436909751): Intermittently failing.
                 "IoUringTest.IoUringReadWrite",
 
-                // TODO(https://fxbug.dev/437189628): Crashes on Machina.
-                "PerfEventOpenTest.MmapMetadataPageIsValid",
-                "PerfEventOpenTest.MmapFirstRecordPageIsValid",
+                // TODO(https://fxbug.dev/437191224): PerfEventOpenTest has a variety of flakes, crashes and timeouts.
+                "PerfEventOpenTest.*",
 
                 // TODO(https://fxbug.dev/436978535): I believe the test is wrong. Most of these
                 // fail outright, but a couple of the permutations (Write/8 and Write/20) seem to
@@ -130,29 +135,6 @@
 
                 // TODO(https://fxbug.dev/368658840): Not Machina-specific.
                 "OverlayFs/FsMountTest.ChownMinusOneNoPathAccessFails/0",
-
-                // TODO(https://fxbug.dev/437191224)
-                "PerfEventOpenTest.CountingCPUClockSucceeds",
-                "PerfEventOpenTest.GroupLeaderCleanup",
-                "PerfEventOpenTest.InvalidPidAndCpuFails",
-                "PerfEventOpenTest.MultipleDisablesDoesNotChangeTime",
-                "PerfEventOpenTest.ReadEventWithBufferTooSmallFails",
-                "PerfEventOpenTest.ReadEventWithPerfFormatIdSucceeds",
-                "PerfEventOpenTest.ReadEventWithTimeEnabledAndRunningSucceeds",
-                "PerfEventOpenTest.ReadEventWithTimeEnabledSucceeds",
-                "PerfEventOpenTest.ReadEventWithTimeRunningSucceeds",
-                "PerfEventOpenTest.ReadingFirstEightBytesCanReturnCountAsALong",
-                "PerfEventOpenTest.SampleIdIsValid",
-                "PerfEventOpenTest.SettingIoctlDisabledCallWorks",
-                "PerfEventOpenTest.SettingIoctlEnabledCallWorks",
-                "PerfEventOpenTest.ValidInputsSucceed",
-                "PerfEventOpenTest.WhenDisabledEventCountShouldBeZero",
-                "PerfEventOpenTest.WhenDisabledTimeRunningAndTimeEnabledAreCorrect",
-                "PerfEventOpenTest.WhenDisabledTotalTimeRunningAndEnabledAreZero",
-                "PerfEventOpenTest.WhenEnabledEventCountShouldBeOne",
-                "PerfEventOpenTest.WhenEnabledTimeEnabledIsCorrect",
-                "PerfEventOpenTest.WhenEnabledTimeRunningIsCorrect",
-                "PerfEventOpenTest.WhenResetAndDisabledEventCountShouldBeZero",
 
                 // TODO(https://fxbug.dev/436921256): I believe the test is wrong.
                 "ProcMountsTest.MountAdded",
