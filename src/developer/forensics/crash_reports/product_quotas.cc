@@ -12,9 +12,6 @@
 #include <string>
 #include <utility>
 
-#include "rapidjson/prettywriter.h"
-#include "rapidjson/rapidjson.h"
-#include "rapidjson/stringbuffer.h"
 #include "src/developer/forensics/crash_reports/product.h"
 #include "src/developer/forensics/utils/time.h"
 #include "src/developer/forensics/utils/utc_clock_ready_watcher.h"
@@ -23,6 +20,9 @@
 #include "src/lib/fxl/strings/string_printf.h"
 #include "src/lib/timekeeper/clock.h"
 #include "third_party/rapidjson/include/rapidjson/error/en.h"
+#include "third_party/rapidjson/include/rapidjson/prettywriter.h"
+#include "third_party/rapidjson/include/rapidjson/rapidjson.h"
+#include "third_party/rapidjson/include/rapidjson/stringbuffer.h"
 
 namespace forensics {
 namespace crash_reports {
