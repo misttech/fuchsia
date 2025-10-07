@@ -18,6 +18,7 @@ STATIC_COMMAND_START
 STATIC_COMMAND("clock_tests", "test clocks", &clock_tests)
 STATIC_COMMAND("sleep_tests", "tests sleep", &sleep_tests)
 STATIC_COMMAND("bench", "miscellaneous benchmarks", &benchmarks)
+STATIC_COMMAND("fibo", "threaded fibonacci", &fibo)
 STATIC_COMMAND("spinner", "create a spinning thread", &spinner)
 STATIC_COMMAND("timer_diag", "prints timer diagnostics", &timer_diag)
 STATIC_COMMAND("timer_stress", "runs a timer stress test", &timer_stress)

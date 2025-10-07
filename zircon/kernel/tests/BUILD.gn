@@ -76,6 +76,7 @@ if (toolchain_environment == "kernel") {
       "cpu_tests.cc",
       "dpc_tests.cc",
       "event_tests.cc",
+      "fibo.cc",
       "heap_tests.cc",
       "interrupt_disable_tests.cc",
       "job_tests.cc",
