@@ -87,4 +87,7 @@ workbench_platform_config = {
         },
         "scheduler_enable_new_wakeup_accounting": True,
     },
+    "memory_monitor": {
+        "memory_monitor_versions": ["v2"],
+    },
 }
