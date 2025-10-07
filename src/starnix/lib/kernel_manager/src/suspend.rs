@@ -109,11 +109,16 @@ pub async fn suspend_container(
 
         {
             log::info!("Notifying wake watchers of container suspend.");
-            let watchers = suspend_context.wake_watchers.lock();
-            for event in watchers.iter() {
-                let (clear_mask, set_mask) = (AWAKE_SIGNAL, ASLEEP_SIGNAL);
-                event.signal_peer(clear_mask, set_mask)?;
-            }
+            let mut watchers = suspend_context.wake_watchers.lock();
+            let (clear_mask, set_mask) = (AWAKE_SIGNAL, ASLEEP_SIGNAL);
+            watchers.retain(|event| match event.signal_peer(clear_mask, set_mask) {
+                Err(zx::Status::PEER_CLOSED) => false,
+                Ok(()) => true,
+                Err(e) => {
+                    log::warn!("Failed to signal wake watcher of suspension: {e:?}");
+                    true
+                }
+            });
         }
         kernels.drop_wake_lease(&container_job)?;
 
@@ -160,11 +165,16 @@ pub async fn suspend_container(
     kernels.acquire_wake_lease(&container_job).await?;
 
     log::info!("Notifying wake watchers of container wakeup.");
-    let watchers = suspend_context.wake_watchers.lock();
-    for event in watchers.iter() {
-        let (clear_mask, set_mask) = (ASLEEP_SIGNAL, AWAKE_SIGNAL);
-        event.signal_peer(clear_mask, set_mask)?;
-    }
+    let mut watchers = suspend_context.wake_watchers.lock();
+    let (clear_mask, set_mask) = (ASLEEP_SIGNAL, AWAKE_SIGNAL);
+    watchers.retain(|event| match event.signal_peer(clear_mask, set_mask) {
+        Err(zx::Status::PEER_CLOSED) => false,
+        Ok(()) => true,
+        Err(e) => {
+            log::warn!("Failed to signal wake watcher of wakeup: {e:?}");
+            true
+        }
+    });
 
     log::info!("Returning successfully from suspend container");
     Ok(Ok(fstarnixrunner::ManagerSuspendContainerResponse {
