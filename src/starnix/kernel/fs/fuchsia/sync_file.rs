@@ -306,35 +306,16 @@ impl FileOps for SyncFile {
                 err_code: None,
             };
 
-            let canceler_result = waiter.wake_on_zircon_signals(
-                sync_point.counter.as_ref(),
-                Self::SIGNALS,
-                signal_handler,
-            );
-            let canceler_result = match canceler_result {
-                Ok(o) => o,
-                Err(e) => {
+            let canceler_result = waiter
+                .wake_on_zircon_signals(sync_point.counter.as_ref(), Self::SIGNALS, signal_handler)
+                .map_err(|e| {
                     log_warn!("Error returned from wake_on_zircon_signals: {:?}", e);
-                    return None;
-                }
-            };
+                    e
+                })
+                .ok()?;
 
-            // The wakeup is edge triggered, so handles that were already signaled will never get
-            // a callback. Normally the "already signaled" case is handled by a call to
-            // query_events() after this query_async() returns; however that works only if all
-            // handles are signaled.  Here we perform the counting, and cancel waits, for any
-            // handles currently signaled.
-            if sync_point.counter.wait_handle(Self::SIGNALS, zx::MonotonicInstant::ZERO).to_result()
-                == Err(zx::Status::TIMED_OUT)
-            {
-                canceler = WaitCanceler::merge_unbounded(
-                    canceler,
-                    WaitCanceler::new_port(canceler_result),
-                );
-            } else {
-                canceler_result.cancel();
-                count.next();
-            }
+            canceler =
+                WaitCanceler::merge_unbounded(canceler, WaitCanceler::new_port(canceler_result));
         }
 
         Some(canceler)
