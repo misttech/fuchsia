@@ -16,6 +16,7 @@ fidl("fuchsia.hardware.display.types") {
     "layer.fidl",
     "mode.fidl",
     "overview.fidl",
+    "power-mode.fidl",
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.images2",
