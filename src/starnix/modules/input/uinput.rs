@@ -27,15 +27,16 @@ use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_type::INPUT_MAJOR;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::user_address::{ArchSpecific, UserRef};
+use starnix_uapi::user_address::{MultiArchUserRef, UserRef};
 use starnix_uapi::{device_type, errno, error, uapi};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
-use zerocopy::FromBytes;
 
 // Return the current uinput API version 5, it also told caller this uinput
 // supports UI_DEV_SETUP.
 const UINPUT_VERSION: u32 = 5;
+
+type InputEventPtr = MultiArchUserRef<uapi::input_event, uapi::arch32::input_event>;
 
 #[derive(Clone)]
 enum DeviceType {
@@ -518,14 +519,8 @@ impl FileOps for UinputDeviceFile {
         data: &mut dyn vfs::buffers::InputBuffer,
     ) -> Result<usize, Errno> {
         let content = data.read_all()?;
-        let event = if current_task.is_arch32() {
-            uapi::input_event::read_from_bytes(&content).map_err(|_| errno!(EINVAL))?
-        } else {
-            uapi::input_event::from(
-                uapi::arch32::input_event::read_from_bytes(&content).map_err(|_| errno!(EINVAL))?,
-            )
-        };
-
+        let event =
+            InputEventPtr::read_from_prefix(current_task, &content).map_err(|_| errno!(EINVAL))?;
         let mut inner = self.inner.lock();
 
         match &mut inner.created_device {
