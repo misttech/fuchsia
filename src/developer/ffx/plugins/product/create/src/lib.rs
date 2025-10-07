@@ -192,10 +192,12 @@ async fn sanitized_product_bundle_create(
     let gcs_client = gcs::client::Client::initial().map_err(|e| {
         ArtifactError::new(anyhow::anyhow!("Failed to initialize GCS client: {}", e))
     })?;
-    let token = pbms::handle_new_access_token(&cmd.auth, &structured_ui::MockUi::new())
-        .await
-        .context("Failed to handle or retrieve new access token")?;
-    gcs_client.set_access_token(token).await;
+    if !matches!(cmd.auth, pbms::AuthFlowChoice::NoAuth) {
+        let token = pbms::handle_new_access_token(&cmd.auth, &structured_ui::MockUi::new())
+            .await
+            .context("Failed to handle or retrieve new access token")?;
+        gcs_client.set_access_token(token).await;
+    }
 
     let cache = ArtifactCache::new(build_dir, gcs_client)?;
     let assembly =
