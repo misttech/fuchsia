@@ -1138,12 +1138,14 @@ impl SuspendResumeListener for SystemActivityGovernor {
     }
 
     async fn notify_on_suspend(&self) {
+        fuchsia_trace::duration!(c"power", c"system-activity-governor:suspend_callbacks");
         self.sag_event_logger.log(SagEvent::SuspendCallbackPhaseStarted);
         self.update_suspend_blockers(true).await;
         self.sag_event_logger.log(SagEvent::SuspendCallbackPhaseEnded);
     }
 
     async fn notify_on_resume(&self) {
+        fuchsia_trace::duration!(c"power", c"system-activity-governor:resume_callbacks");
         self.sag_event_logger.log(SagEvent::ResumeCallbackPhaseStarted);
         self.update_suspend_blockers(false).await;
         self.sag_event_logger.log(SagEvent::ResumeCallbackPhaseEnded);
