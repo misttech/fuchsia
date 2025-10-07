@@ -136,52 +136,6 @@ func (r *RunCommand) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&r.testrunnerOptions.LLVMProfdataPath, "llvm-profdata", "", "Optional path to a llvm-profdata binary to use for merging profiles on the host in between tests.")
 }
 
-func setupFFXDaemon(ctx context.Context, ffx *ffxutil.FFXInstance) (*ffxutil.FFXInstance, func(), error) {
-	var cleanup func()
-	ffxOutputsDir := filepath.Join(os.Getenv(testrunnerconstants.TestOutDirEnvKey), "ffx_outputs")
-	daemonLog, err := osmisc.CreateFile(filepath.Join(ffxOutputsDir, "daemon.log"))
-	if err != nil {
-		return ffx, cleanup, err
-	}
-	cmd := ffx.StartDaemon(ctx, daemonLog)
-	if err := cmd.Start(); err != nil {
-		return ffx, cleanup, err
-	}
-	// Use a new context so that the subprocess can only be terminated by
-	// a direct call to the cancel function.
-	daemonCtx, daemonCancel := context.WithCancel(context.Background())
-
-	// Wait for the daemon process to terminate in a separate goroutine
-	// and log when it finishes in order to detect if the process gets
-	// terminated earlier than expected.
-	cmdWait := make(chan error)
-	go func() {
-		// Using subprocess.WaitForCmd() instead of cmd.Wait() ensures that
-		// the function returns when the context is done.
-		if err := subprocess.WaitForCmd(daemonCtx, cmd); err != nil {
-			logger.Errorf(ctx, "daemon process finished with err: %s", err)
-		} else {
-			logger.Debugf(ctx, "ffx daemon process finished")
-		}
-		cmdWait <- err
-	}()
-	cleanup = func() {
-		// TODO(https://fxbug.dev/42071857): Clean up daemon by sending a SIGTERM to the
-		// process once that is supported.
-		if err := ffx.Stop(); err != nil {
-			logger.Errorf(ctx, "failed to stop ffx daemon: %s", err)
-		}
-
-		// Wait for the daemon process to finish before closing the log.
-		daemonCancel()
-		<-cmdWait
-		if err := daemonLog.Close(); err != nil {
-			logger.Errorf(ctx, "failed to close ffx daemon log: %s", err)
-		}
-	}
-	return ffx, cleanup, ffx.WaitForDaemon(ctx)
-}
-
 // This returns an `ffx` instance, a cleanup function (dispatched via `defer`), and an error.
 func (r *RunCommand) setupFFX(ctx context.Context, invokeMode ffxutil.FFXInvokeMode) (*ffxutil.FFXInstance, func(), error) {
 	if r.ffxPath == "" {
@@ -211,13 +165,7 @@ func (r *RunCommand) setupFFX(ctx context.Context, invokeMode ffxutil.FFXInvokeM
 	if err := ffx.ConfigEnv(ctx); err != nil {
 		return ffx, nil, err
 	}
-	if invokeMode == ffxutil.UseFFXStrict {
-		// It should not be necessary to start the daemon when running --strict. Generally this
-		// shouldn't be this file's responsibility anyway, but it's the next best thing.
-		return ffx, nil, nil
-	} else {
-		return setupFFXDaemon(ctx, ffx)
-	}
+	return ffx, nil, nil
 }
 
 func (r *RunCommand) setupSerialLog(ctx context.Context, eg *errgroup.Group, fuchsiaTargets []targets.FuchsiaTarget) error {
@@ -408,18 +356,16 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 					return err
 				}
 				t.GetFFX().SetTarget(addr.String())
-				if experiments.Contains(botanist.UseFFXStrict) {
-					sshSocketPath, cleanupControlMaster, err := r.setupSSHControlMaster(ctx, t.SSHKey(), addr.String())
-					if err != nil {
-						return fmt.Errorf("failed to set up ssh controlmaster: %w", err)
-					}
-					defer cleanupControlMaster()
-					if err := t.GetFFX().ConfigSet(ctx, "ssh.controlmaster.mode", "explicit"); err != nil {
-						return fmt.Errorf("failed to set ssh.controlmaster.mode to explicit: %w", err)
-					}
-					if err := t.GetFFX().ConfigSet(ctx, "ssh.controlmaster.path", sshSocketPath); err != nil {
-						return fmt.Errorf("failed to set ssh.controlmaster.path to %s: %w", sshSocketPath, err)
-					}
+				sshSocketPath, cleanupControlMaster, err := r.setupSSHControlMaster(ctx, t.SSHKey(), addr.String())
+				if err != nil {
+					return fmt.Errorf("failed to set up ssh controlmaster: %w", err)
+				}
+				defer cleanupControlMaster()
+				if err := t.GetFFX().ConfigSet(ctx, "ssh.controlmaster.mode", "explicit"); err != nil {
+					return fmt.Errorf("failed to set ssh.controlmaster.mode to explicit: %w", err)
+				}
+				if err := t.GetFFX().ConfigSet(ctx, "ssh.controlmaster.path", sshSocketPath); err != nil {
+					return fmt.Errorf("failed to set ssh.controlmaster.path to %s: %w", sshSocketPath, err)
 				}
 				if r.syslogDir != "" {
 					if _, err := os.Stat(r.syslogDir); errors.Is(err, os.ErrNotExist) {
@@ -484,10 +430,7 @@ func (r *RunCommand) execute(ctx context.Context, args []string) error {
 	}
 
 	experiments := botanist.GetExperiments(r.experiments)
-	invokeMode := ffxutil.UseFFXLegacy
-	if experiments.Contains(botanist.UseFFXStrict) {
-		invokeMode = ffxutil.UseFFXStrict
-	}
+	invokeMode := ffxutil.UseFFXStrict
 	ffx, cleanup, err := r.setupFFX(ctx, invokeMode)
 	if cleanup != nil {
 		defer cleanup()
