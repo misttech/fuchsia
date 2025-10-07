@@ -27,7 +27,7 @@ use std::ptr::NonNull;
 use wlan_common::append::Append;
 use wlan_common::bss::BssDescription;
 use wlan_common::buffer_writer::BufferWriter;
-use wlan_common::capabilities::{derive_join_capabilities, ClientCapabilities};
+use wlan_common::capabilities::{ClientCapabilities, derive_join_capabilities};
 use wlan_common::channel::Channel;
 use wlan_common::ie::rsn::rsne;
 use wlan_common::ie::{self, Id};
@@ -1274,16 +1274,15 @@ mod tests {
     use super::state::DEFAULT_AUTO_DEAUTH_TIMEOUT_BEACON_COUNT;
     use super::*;
     use crate::block_ack::{
-        self, BlockAckState, Closed, ADDBA_REQ_FRAME_LEN, ADDBA_RESP_FRAME_LEN,
+        self, ADDBA_REQ_FRAME_LEN, ADDBA_RESP_FRAME_LEN, BlockAckState, Closed,
     };
     use crate::client::lost_bss::LostBssCounter;
     use crate::client::test_utils::drain_timeouts;
-    use crate::device::{test_utils, FakeDevice, FakeDeviceConfig, FakeDeviceState, LinkStatus};
-    use crate::test_utils::{fake_wlan_channel, MockWlanRxInfo};
+    use crate::device::{FakeDevice, FakeDeviceConfig, FakeDeviceState, LinkStatus, test_utils};
+    use crate::test_utils::{MockWlanRxInfo, fake_wlan_channel};
     use assert_matches::assert_matches;
     use fuchsia_sync::Mutex;
-    use lazy_static::lazy_static;
-    use std::sync::Arc;
+    use std::sync::{Arc, LazyLock};
     use wlan_common::capabilities::StaCapabilities;
     use wlan_common::channel::Cbw;
     use wlan_common::stats::SignalStrengthAverage;
@@ -1294,10 +1293,8 @@ mod tests {
     use wlan_sme::responder::Responder;
     use wlan_statemachine::*;
     use {fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_internal as fidl_internal};
-    lazy_static! {
-        static ref BSSID: Bssid = [6u8; 6].into();
-        static ref IFACE_MAC: MacAddr = [7u8; 6].into();
-    }
+    static BSSID: LazyLock<Bssid> = LazyLock::new(|| [6u8; 6].into());
+    static IFACE_MAC: LazyLock<MacAddr> = LazyLock::new(|| [7u8; 6].into());
     const RSNE: &[u8] = &[
         0x30, 0x14, //  ID and len
         1, 0, //  version

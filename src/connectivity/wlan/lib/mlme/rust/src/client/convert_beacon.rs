@@ -6,7 +6,7 @@ use anyhow::Error;
 use ieee80211::{Bssid, MacAddrBytes};
 use wlan_common::channel::derive_channel;
 use wlan_common::mac::CapabilityInfo;
-use wlan_common::{ie, TimeUnit};
+use wlan_common::{TimeUnit, ie};
 use {fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_softmac as fidl_softmac};
 
 /// Given information from beacon or probe response, convert to BssDescription.
@@ -69,11 +69,9 @@ fn get_bss_type(capability_info: CapabilityInfo) -> fidl_common::BssType {
 mod tests {
     use super::*;
     use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
-    use lazy_static::lazy_static;
+    use std::sync::LazyLock;
 
-    lazy_static! {
-        static ref BSSID: Bssid = [0x33; 6].into();
-    }
+    static BSSID: LazyLock<Bssid> = LazyLock::new(|| [0x33; 6].into());
 
     const BEACON_INTERVAL: u16 = 100;
     // Capability information: ESS, privacy, spectrum mgmt, radio msmt

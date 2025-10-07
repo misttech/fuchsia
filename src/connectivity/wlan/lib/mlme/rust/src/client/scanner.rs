@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::client::convert_beacon::construct_bss_description;
+use crate::WlanSoftmacBandCapabilityExt as _;
 use crate::client::Context;
+use crate::client::convert_beacon::construct_bss_description;
 use crate::ddk_converter::cssid_from_ssid_unchecked;
 use crate::device::{self, DeviceOps};
 use crate::error::Error;
-use crate::WlanSoftmacBandCapabilityExt as _;
 use anyhow::format_err;
 use ieee80211::{Bssid, MacAddr};
 use log::{error, warn};
@@ -539,20 +539,17 @@ mod tests {
     use super::*;
     use crate::client::TimedEvent;
     use crate::device::{FakeDevice, FakeDeviceState};
-    use crate::test_utils::{fake_wlan_channel, MockWlanRxInfo};
+    use crate::test_utils::{MockWlanRxInfo, fake_wlan_channel};
     use assert_matches::assert_matches;
     use fidl_fuchsia_wlan_common as fidl_common;
     use fuchsia_sync::Mutex;
     use ieee80211::{MacAddrBytes, Ssid};
-    use lazy_static::lazy_static;
-    use std::sync::Arc;
+    use std::sync::{Arc, LazyLock};
     use test_case::test_case;
     use wlan_common::sequence::SequenceManager;
-    use wlan_common::timer::{self, create_timer, Timer};
+    use wlan_common::timer::{self, Timer, create_timer};
 
-    lazy_static! {
-        static ref BSSID_FOO: Bssid = [6u8; 6].into();
-    }
+    static BSSID_FOO: LazyLock<Bssid> = LazyLock::new(|| [6u8; 6].into());
     const CAPABILITY_INFO_FOO: CapabilityInfo = CapabilityInfo(1);
     const BEACON_INTERVAL_FOO: u16 = 100;
 
@@ -566,13 +563,12 @@ mod tests {
         0x05, 0x04, 0x00, 0x01, 0x00, 0x02,
     ];
 
-    lazy_static! {
-        static ref RX_INFO_FOO: fidl_softmac::WlanRxInfo = MockWlanRxInfo {
-            rssi_dbm: -30,
-            ..MockWlanRxInfo::with_channel(fake_wlan_channel().into())
-        }
-        .into();
-        static ref BSS_DESCRIPTION_FOO: fidl_common::BssDescription = fidl_common::BssDescription {
+    static RX_INFO_FOO: LazyLock<fidl_softmac::WlanRxInfo> = LazyLock::new(|| {
+        MockWlanRxInfo { rssi_dbm: -30, ..MockWlanRxInfo::with_channel(fake_wlan_channel().into()) }
+            .into()
+    });
+    static BSS_DESCRIPTION_FOO: LazyLock<fidl_common::BssDescription> =
+        LazyLock::new(|| fidl_common::BssDescription {
             bssid: BSSID_FOO.to_array(),
             bss_type: fidl_common::BssType::Infrastructure,
             beacon_period: BEACON_INTERVAL_FOO,
@@ -585,9 +581,8 @@ mod tests {
                 secondary80: 0,
             },
             snr_db: 0,
-        };
-        static ref BSSID_BAR: Bssid = [1u8; 6].into();
-    }
+        });
+    static BSSID_BAR: LazyLock<Bssid> = LazyLock::new(|| [1u8; 6].into());
 
     const CAPABILITY_INFO_BAR: CapabilityInfo = CapabilityInfo(33);
     const BEACON_INTERVAL_BAR: u16 = 150;
@@ -600,13 +595,12 @@ mod tests {
         // TIM - DTIM count: 0, DTIM period: 1, PVB: 2
         0x05, 0x04, 0x00, 0x01, 0x00, 0x02,
     ];
-    lazy_static! {
-        static ref RX_INFO_BAR: fidl_softmac::WlanRxInfo = MockWlanRxInfo {
-            rssi_dbm: -60,
-            ..MockWlanRxInfo::with_channel(fake_wlan_channel().into())
-        }
-        .into();
-        static ref BSS_DESCRIPTION_BAR: fidl_common::BssDescription = fidl_common::BssDescription {
+    static RX_INFO_BAR: LazyLock<fidl_softmac::WlanRxInfo> = LazyLock::new(|| {
+        MockWlanRxInfo { rssi_dbm: -60, ..MockWlanRxInfo::with_channel(fake_wlan_channel().into()) }
+            .into()
+    });
+    static BSS_DESCRIPTION_BAR: LazyLock<fidl_common::BssDescription> =
+        LazyLock::new(|| fidl_common::BssDescription {
             bssid: BSSID_BAR.to_array(),
             bss_type: fidl_common::BssType::Infrastructure,
             beacon_period: BEACON_INTERVAL_BAR,
@@ -619,12 +613,9 @@ mod tests {
                 secondary80: 0,
             },
             snr_db: 0,
-        };
-    }
+        });
 
-    lazy_static! {
-        static ref IFACE_MAC: MacAddr = [7u8; 6].into();
-    }
+    static IFACE_MAC: LazyLock<MacAddr> = LazyLock::new(|| [7u8; 6].into());
 
     fn passive_scan_req() -> fidl_mlme::ScanRequest {
         fidl_mlme::ScanRequest {

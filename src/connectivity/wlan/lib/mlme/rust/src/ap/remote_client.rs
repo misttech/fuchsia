@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::ap::{frame_writer, BufferedFrame, Context, TimedEvent};
+use crate::ap::{BufferedFrame, Context, TimedEvent, frame_writer};
 use crate::device::DeviceOps;
 use crate::disconnect::LocallyInitiated;
 use crate::error::Error;
@@ -14,7 +14,7 @@ use wlan_common::append::Append;
 use wlan_common::buffer_writer::BufferWriter;
 use wlan_common::mac::{self, Aid, AuthAlgorithmNumber, FrameClass, ReasonCode};
 use wlan_common::timer::EventHandle;
-use wlan_common::{ie, TimeUnit};
+use wlan_common::{TimeUnit, ie};
 use wlan_statemachine::StateMachine;
 use zerocopy::SplitByteSlice;
 use {
@@ -1088,18 +1088,16 @@ mod tests {
     use crate::device::FakeDevice;
     use assert_matches::assert_matches;
     use ieee80211::Bssid;
-    use lazy_static::lazy_static;
+    use std::sync::LazyLock;
     use test_case::test_case;
     use wlan_common::mac::{CapabilityInfo, IntoBytesExt as _};
     use wlan_common::test_utils::fake_frames::*;
     use wlan_common::timer::{self, create_timer};
     use zerocopy::Unalign;
 
-    lazy_static! {
-        static ref CLIENT_ADDR: MacAddr = [1; 6].into();
-        static ref AP_ADDR: Bssid = [2; 6].into();
-        static ref CLIENT_ADDR2: MacAddr = [3; 6].into();
-    }
+    static CLIENT_ADDR: LazyLock<MacAddr> = LazyLock::new(|| [1; 6].into());
+    static AP_ADDR: LazyLock<Bssid> = LazyLock::new(|| [2; 6].into());
+    static CLIENT_ADDR2: LazyLock<MacAddr> = LazyLock::new(|| [3; 6].into());
     fn make_remote_client() -> RemoteClient {
         RemoteClient::new(*CLIENT_ADDR)
     }

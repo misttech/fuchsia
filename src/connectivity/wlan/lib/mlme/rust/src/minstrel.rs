@@ -6,12 +6,12 @@ use crate::common::mac::WlanGi;
 use crate::probe_sequence::{ProbeEntry, ProbeSequence};
 use ieee80211::{MacAddr, MacAddrBytes};
 use log::{debug, error};
-use std::collections::{hash_map, HashMap, HashSet};
+use std::collections::{HashMap, HashSet, hash_map};
 use std::time::Duration;
 use wlan_common::ie::{HtCapabilities, RxMcsBitmask, SupportedRate};
 use wlan_common::mac::FrameControl;
 use wlan_common::tx_vector::{
-    TxVecIdx, TxVector, ERP_NUM_TX_VECTOR, ERP_START_IDX, HT_NUM_MCS, HT_NUM_UNIQUE_MCS,
+    ERP_NUM_TX_VECTOR, ERP_START_IDX, HT_NUM_MCS, HT_NUM_UNIQUE_MCS, TxVecIdx, TxVector,
 };
 use {
     fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
@@ -27,11 +27,11 @@ const MINSTREL_EXP_WEIGHT: f32 = 0.75; // Used to calculate moving average throu
 
 // TODO(https://fxbug.dev/42163096): Determine if we should use a separate variable for (1.0 - MINSTREL_PROABILITY_THRESHOLD).
 const MINSTREL_PROBABILITY_THRESHOLD: f32 = 0.9; // If probability is past this level,
-                                                 // only consider throughput
+// only consider throughput
 const PROBE_INTERVAL: u8 = 16; // Number of normal packets to send between two probe packets.
 const MAX_SLOW_PROBE: u64 = 2; // If the data rate is low, don't probe more than twice per update interval.
 const DEAD_PROBE_CYCLE_COUNT: u8 = 32; // If the success rate is under (1 - MINSTREL_PROBABILITY_THRESHOLD)
-                                       // only probe once every DEAD_PROBE_CYCLE_COUNT cycles.
+// only probe once every DEAD_PROBE_CYCLE_COUNT cycles.
 
 type TxStatsMap = HashMap<TxVecIdx, TxStats>;
 
@@ -301,11 +301,7 @@ impl Peer {
                 let tx_vector_idx = tx_vector.to_idx();
                 self.tx_stats_map.insert(tx_vector_idx, erp_idx_stats(tx_vector_idx, rate));
                 tx_stats_added += 1;
-                if rate.basic() {
-                    Some(tx_vector_idx)
-                } else {
-                    None
-                }
+                if rate.basic() { Some(tx_vector_idx) } else { None }
             })
             .collect();
         debug!("{} ERP added.", tx_stats_added);
@@ -700,8 +696,7 @@ fn erp_idx_stats(tx_vector_idx: TxVecIdx, rate: SupportedRate) -> TxStats {
 mod tests {
     use super::*;
     use fidl_fuchsia_wlan_common as fidl_common;
-    use lazy_static::lazy_static;
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, LazyLock, Mutex};
     use wlan_common::ie::{ChanWidthSet, HtCapabilityInfo};
     use wlan_common::mac::FrameType;
     use wlan_common::tx_vector::HT_START_IDX;
@@ -729,9 +724,8 @@ mod tests {
         (MinstrelRateSelector::new(timer_manager, update_interval, probe_sequence), timer)
     }
 
-    lazy_static! {
-        static ref TEST_MAC_ADDR: MacAddr = MacAddr::from([50, 53, 51, 56, 55, 52]);
-    }
+    static TEST_MAC_ADDR: LazyLock<MacAddr> =
+        LazyLock::new(|| MacAddr::from([50, 53, 51, 56, 55, 52]));
 
     const BASIC_RATE_BIT: u8 = 0b10000000;
 

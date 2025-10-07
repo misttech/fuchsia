@@ -14,9 +14,9 @@ use fdf::ArenaStaticBox;
 use ieee80211::{Bssid, MacAddr, Ssid};
 use log::{debug, error, info, trace, warn};
 use std::fmt;
+use wlan_common::TimeUnit;
 use wlan_common::mac::{self, CapabilityInfo};
 use wlan_common::timer::Timer;
-use wlan_common::TimeUnit;
 use zerocopy::SplitByteSlice;
 use {
     fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_minstrel as fidl_minstrel,
@@ -452,13 +452,12 @@ impl<D: DeviceOps> Ap<D> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::device::{test_utils, FakeDevice, FakeDeviceConfig, FakeDeviceState, LinkStatus};
+    use crate::device::{FakeDevice, FakeDeviceConfig, FakeDeviceState, LinkStatus, test_utils};
     use crate::test_utils::MockWlanRxInfo;
     use assert_matches::assert_matches;
     use fuchsia_sync::Mutex;
     use ieee80211::MacAddrBytes;
-    use lazy_static::lazy_static;
-    use std::sync::Arc;
+    use std::sync::{Arc, LazyLock};
     use wlan_common::big_endian::BigEndianU16;
     use wlan_common::test_utils::fake_frames::fake_wpa2_rsne;
     use wlan_common::timer;
@@ -469,11 +468,9 @@ mod tests {
         fidl_fuchsia_wlan_softmac as fidl_softmac,
     };
 
-    lazy_static! {
-        static ref CLIENT_ADDR: MacAddr = [4u8; 6].into();
-        static ref BSSID: Bssid = [2u8; 6].into();
-        static ref CLIENT_ADDR2: MacAddr = [6u8; 6].into();
-    }
+    static CLIENT_ADDR: LazyLock<MacAddr> = LazyLock::new(|| [4u8; 6].into());
+    static BSSID: LazyLock<Bssid> = LazyLock::new(|| [2u8; 6].into());
+    static CLIENT_ADDR2: LazyLock<MacAddr> = LazyLock::new(|| [6u8; 6].into());
 
     fn make_eth_frame(
         dst_addr: MacAddr,
@@ -497,8 +494,8 @@ mod tests {
     // TODO(https://fxbug.dev/327499461): This function is async to ensure MLME functions will
     // run in an async context and not call `wlan_common::timer::Timer::now` without an
     // executor.
-    async fn make_ap(
-    ) -> (Ap<FakeDevice>, Arc<Mutex<FakeDeviceState>>, timer::EventStream<TimedEvent>) {
+    async fn make_ap()
+    -> (Ap<FakeDevice>, Arc<Mutex<FakeDeviceState>>, timer::EventStream<TimedEvent>) {
         let (timer, time_stream) = timer::create_timer();
         let (fake_device, fake_device_state) = FakeDevice::new_with_config(
             FakeDeviceConfig::default()

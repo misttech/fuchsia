@@ -19,7 +19,7 @@ use fuchsia_trace::Id as TraceId;
 use ieee80211::{Bssid, MacAddr, MacAddrBytes};
 use log::{debug, error, info, trace, warn};
 use wlan_common::buffer_reader::BufferReader;
-use wlan_common::capabilities::{intersect_with_ap_as_client, ApCapabilities, StaCapabilities};
+use wlan_common::capabilities::{ApCapabilities, StaCapabilities, intersect_with_ap_as_client};
 use wlan_common::energy::DecibelMilliWatt;
 use wlan_common::mac::{self, BeaconHdr};
 use wlan_common::stats::SignalStrengthAverage;
@@ -495,11 +495,7 @@ pub enum Qos {
 
 impl From<bool> for Qos {
     fn from(b: bool) -> Self {
-        if b {
-            Self::Enabled
-        } else {
-            Self::Disabled
-        }
+        if b { Self::Enabled } else { Self::Disabled }
     }
 }
 
@@ -1419,18 +1415,17 @@ mod free_function_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::block_ack::{write_addba_req_body, ADDBA_REQ_FRAME_LEN};
+    use crate::block_ack::{ADDBA_REQ_FRAME_LEN, write_addba_req_body};
     use crate::client::channel_switch::ChannelState;
     use crate::client::scanner::Scanner;
     use crate::client::test_utils::drain_timeouts;
     use crate::client::{Client, Context, ParsedConnectRequest, TimedEventClass};
     use crate::device::{FakeDevice, FakeDeviceState};
-    use crate::test_utils::{fake_set_keys_req, fake_wlan_channel, MockWlanRxInfo};
+    use crate::test_utils::{MockWlanRxInfo, fake_set_keys_req, fake_wlan_channel};
     use akm::AkmAlgorithm;
     use assert_matches::assert_matches;
     use fuchsia_sync::Mutex;
-    use lazy_static::lazy_static;
-    use std::sync::Arc;
+    use std::sync::{Arc, LazyLock};
     use test_case::test_case;
     use wlan_common::buffer_writer::BufferWriter;
     use wlan_common::ie::IeType;
@@ -1444,10 +1439,8 @@ mod tests {
     use wlan_frame_writer::append_frame_to;
     use {fidl_fuchsia_wlan_common as fidl_common, wlan_statemachine as statemachine};
 
-    lazy_static! {
-        static ref BSSID: Bssid = [6u8; 6].into();
-        static ref IFACE_MAC: MacAddr = [3u8; 6].into();
-    }
+    static BSSID: LazyLock<Bssid> = LazyLock::new(|| [6u8; 6].into());
+    static IFACE_MAC: LazyLock<MacAddr> = LazyLock::new(|| [3u8; 6].into());
 
     struct MockObjects {
         fake_device: FakeDevice,

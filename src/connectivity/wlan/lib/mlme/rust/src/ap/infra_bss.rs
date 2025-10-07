@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::WlanTxPacketExt as _;
 use crate::ap::remote_client::{ClientRejection, RemoteClient};
-use crate::ap::{frame_writer, BeaconOffloadParams, BufferedFrame, Context, Rejection, TimedEvent};
+use crate::ap::{BeaconOffloadParams, BufferedFrame, Context, Rejection, TimedEvent, frame_writer};
 use crate::ddk_converter::softmac_key_configuration_from_mlme;
 use crate::device::{self, DeviceOps};
 use crate::error::Error;
-use crate::WlanTxPacketExt as _;
 use anyhow::format_err;
 use fdf::ArenaStaticBox;
 use ieee80211::{MacAddr, MacAddrBytes, Ssid};
@@ -15,7 +15,7 @@ use log::error;
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Display;
 use wlan_common::mac::{self, CapabilityInfo, EthernetIIHdr};
-use wlan_common::{ie, tim, TimeUnit};
+use wlan_common::{TimeUnit, ie, tim};
 use zerocopy::SplitByteSlice;
 use {
     fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_mlme as fidl_mlme,
@@ -619,20 +619,17 @@ mod tests {
     use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
     use fuchsia_sync::Mutex;
     use ieee80211::Bssid;
-    use lazy_static::lazy_static;
-    use std::sync::Arc;
+    use std::sync::{Arc, LazyLock};
     use test_case::test_case;
     use wlan_common::big_endian::BigEndianU16;
     use wlan_common::mac::IntoBytesExt as _;
     use wlan_common::test_utils::fake_frames::fake_wpa2_rsne;
     use wlan_common::timer::{self, create_timer};
 
-    lazy_static! {
-        static ref CLIENT_ADDR: MacAddr = [4u8; 6].into();
-        static ref BSSID: Bssid = [2u8; 6].into();
-        static ref CLIENT_ADDR2: MacAddr = [6u8; 6].into();
-        static ref REMOTE_ADDR: MacAddr = [123u8; 6].into();
-    }
+    static CLIENT_ADDR: LazyLock<MacAddr> = LazyLock::new(|| [4u8; 6].into());
+    static BSSID: LazyLock<Bssid> = LazyLock::new(|| [2u8; 6].into());
+    static CLIENT_ADDR2: LazyLock<MacAddr> = LazyLock::new(|| [6u8; 6].into());
+    static REMOTE_ADDR: LazyLock<MacAddr> = LazyLock::new(|| [123u8; 6].into());
 
     fn make_context(
         fake_device: FakeDevice,

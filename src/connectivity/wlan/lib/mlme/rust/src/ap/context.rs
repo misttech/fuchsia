@@ -15,7 +15,7 @@ use wlan_common::ie::{self};
 use wlan_common::mac::{self, Aid, AuthAlgorithmNumber, StatusCode};
 use wlan_common::sequence::SequenceManager;
 use wlan_common::timer::{EventHandle, Timer};
-use wlan_common::{data_writer, mgmt_writer, wmm, TimeUnit};
+use wlan_common::{TimeUnit, data_writer, mgmt_writer, wmm};
 use wlan_frame_writer::{write_frame, write_frame_with_fixed_slice};
 use {fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_mlme as fidl_mlme};
 
@@ -518,14 +518,12 @@ mod test {
     use crate::ap::ClientEvent;
     use crate::device::FakeDevice;
     use assert_matches::assert_matches;
-    use lazy_static::lazy_static;
+    use std::sync::LazyLock;
     use wlan_common::timer::{self, create_timer};
 
-    lazy_static! {
-        static ref CLIENT_ADDR: MacAddr = [1u8; 6].into();
-        static ref BSSID: Bssid = [2u8; 6].into();
-        static ref CLIENT_ADDR2: MacAddr = [3u8; 6].into();
-    }
+    static CLIENT_ADDR: LazyLock<MacAddr> = LazyLock::new(|| [1u8; 6].into());
+    static BSSID: LazyLock<Bssid> = LazyLock::new(|| [2u8; 6].into());
+    static CLIENT_ADDR2: LazyLock<MacAddr> = LazyLock::new(|| [3u8; 6].into());
 
     fn make_context(
         fake_device: FakeDevice,
