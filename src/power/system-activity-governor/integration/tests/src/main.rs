@@ -2306,7 +2306,6 @@ async fn test_activity_governor_cpu_element_allows_leases_during_boot() -> Resul
 }
 
 #[fuchsia::test]
-#[ignore = "Disabling while de-flaking; see b/444072032"]
 async fn test_acquire_wake_lease_blocks_during_suspend() -> Result<()> {
     let (realm, activity_governor_moniker) = create_realm().await?;
     let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
