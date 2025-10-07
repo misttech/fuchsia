@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, Result};
-use std::fs::{create_dir_all, read_to_string, remove_file, File};
+use std::fs::{File, create_dir_all, read_to_string, remove_file};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
@@ -138,10 +138,6 @@ impl MetricsState {
             _ => (),
         };
         Ok(())
-    }
-
-    pub(crate) fn is_opted_in(&self) -> bool {
-        self.status.is_opted_in()
     }
 
     pub(crate) fn set_new_opt_in_status(&mut self, status: MetricsStatus) -> Result<(), Error> {
@@ -417,11 +413,7 @@ fn delete_uuid_file(metrics_dir: &PathBuf) -> Result<(), Error> {
 fn delete_app_file(metrics_dir: &PathBuf, app: &str) -> Result<(), Error> {
     let file = metrics_dir.join(app);
     let path = file.as_path();
-    if file.exists() {
-        Ok(remove_file(path)?)
-    } else {
-        Ok(())
-    }
+    if file.exists() { Ok(remove_file(path)?) } else { Ok(()) }
 }
 
 fn write_uuid_file(dir: &PathBuf, uuid: &str) -> Result<(), Error> {

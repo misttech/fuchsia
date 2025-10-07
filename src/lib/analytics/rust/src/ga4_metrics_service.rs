@@ -3,70 +3,30 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
-use fuchsia_hyper::{HttpsClient, new_https_client};
-use hyper::body::HttpBody;
-use hyper::{Body, Method, Request};
 use std::collections::{BTreeMap, HashMap};
-use std::mem;
-use std::ops::{Deref, DerefMut};
 
+use crate::analytics_client::GA4AnalyticsClient;
 use crate::env_info::{get_arch, get_os, is_googler};
 use crate::ga4_event::*;
 use crate::metrics_state::*;
 use crate::notice::{BRIEF_NOTICE, FULL_NOTICE, GOOGLER_ENHANCED_NOTICE, SHOW_NOTICE_TEMPLATE};
 
-const DOMAIN: &str = "www.google-analytics.com";
-const ENDPOINT: &str = "/mp/collect";
-
-#[derive(Clone)]
-enum GA4MetricsServiceState {
-    OptedIn(MetricsState, HttpsClient),
-    OptedOut(MetricsState),
-}
-
-impl Default for GA4MetricsServiceState {
-    fn default() -> Self {
-        GA4MetricsServiceState::OptedOut(MetricsState::default())
-    }
-}
-
-impl Deref for GA4MetricsServiceState {
-    type Target = MetricsState;
-
-    fn deref(&self) -> &MetricsState {
-        match self {
-            GA4MetricsServiceState::OptedIn(state, _) | GA4MetricsServiceState::OptedOut(state) => {
-                state
-            }
-        }
-    }
-}
-
-impl DerefMut for GA4MetricsServiceState {
-    fn deref_mut(&mut self) -> &mut MetricsState {
-        match self {
-            GA4MetricsServiceState::OptedIn(state, _) | GA4MetricsServiceState::OptedOut(state) => {
-                state
-            }
-        }
-    }
-}
-
 /// The implementation of the GA4 Measurement Protocol metrics public api.
-#[derive(Clone)]
+//#[derive(Clone)]
 pub struct GA4MetricsService {
-    state: GA4MetricsServiceState,
+    metrics_state: MetricsState,
+    client: Option<GA4AnalyticsClient>,
     post: Post,
 }
 
 impl GA4MetricsService {
     pub(crate) fn new(state: MetricsState) -> Self {
-        let state = if state.is_opted_in() {
-            GA4MetricsServiceState::OptedIn(state, new_https_client())
+        let client = if state.status.is_opted_in() {
+            Some(GA4AnalyticsClient::new(state.ga4_key.clone(), state.ga4_product_code.clone()))
         } else {
-            GA4MetricsServiceState::OptedOut(state)
+            None
         };
-        let mut svc = GA4MetricsService { state, post: Post::default() };
+        let mut svc = GA4MetricsService { metrics_state: state, client, post: Post::default() };
         svc.init_post();
         svc
     }
@@ -74,15 +34,15 @@ impl GA4MetricsService {
     /// Returns Analytics disclosure notice according to PDD rules.
     pub fn get_notice(&self) -> Option<String> {
         if !is_googler() {
-            match self.state.status {
+            match self.metrics_state.status {
                 MetricsStatus::NewUser => Some(FULL_NOTICE.to_string()),
                 MetricsStatus::NewToTool => Some(BRIEF_NOTICE.to_string()),
                 _ => None,
             }
         } else {
-            match self.state.status {
+            match self.metrics_state.status {
                 MetricsStatus::GooglerNeedsNotice | MetricsStatus::GooglerOptedInAndNeedsNotice => {
-                    if let Some(invoker) = &self.state.invoker {
+                    if let Some(invoker) = &self.metrics_state.invoker {
                         if invoker != "fx" {
                             Some(GOOGLER_ENHANCED_NOTICE.to_string())
                         } else {
@@ -98,7 +58,7 @@ impl GA4MetricsService {
     }
 
     pub async fn show_status_message(&self) -> String {
-        let optin_status = match self.state.status {
+        let optin_status = match self.metrics_state.status {
             MetricsStatus::OptedIn
             | MetricsStatus::GooglerOptedInAndNeedsNotice
             | MetricsStatus::NewToTool => "enabled",
@@ -115,39 +75,49 @@ impl GA4MetricsService {
     /// Records Analytics participation status.
     /// TODO remove this once foxtrot is migrated to set_new_opt_in_status
     pub fn set_opt_in_status(&mut self, enabled: bool) -> Result<()> {
-        self.state.set_opt_in_status(enabled)
+        if enabled {
+            if self.client.is_none() {
+                self.client = Some(GA4AnalyticsClient::new(
+                    self.metrics_state.ga4_key.clone(),
+                    self.metrics_state.ga4_product_code.clone(),
+                ));
+            }
+        } else {
+            self.client = None;
+        }
+        self.metrics_state.set_opt_in_status(enabled)
     }
 
     /// Record analytics participation status in new migrated status file to support
     /// enhanced analytics for Googlers.
     pub fn set_new_opt_in_status(&mut self, status: MetricsStatus) -> Result<()> {
-        let mut state = mem::take(&mut self.state);
         if status.is_opted_in() {
-            if let GA4MetricsServiceState::OptedOut(state_inside) = state {
-                state = GA4MetricsServiceState::OptedIn(state_inside, new_https_client());
+            if self.client.is_none() {
+                self.client = Some(GA4AnalyticsClient::new(
+                    self.metrics_state.ga4_key.clone(),
+                    self.metrics_state.ga4_product_code.clone(),
+                ));
             }
         } else {
-            if let GA4MetricsServiceState::OptedIn(state_inside, _) = state {
-                state = GA4MetricsServiceState::OptedOut(state_inside);
-            }
+            self.client = None;
         }
-        self.state = state;
-        self.state.set_new_opt_in_status(status)
+        self.metrics_state.set_new_opt_in_status(status)
     }
 
     pub fn opt_in_status(&self) -> MetricsStatus {
-        self.state.status.clone()
+        self.metrics_state.status.clone()
     }
 
     /// Returns Analytics participation status.
     pub fn is_opted_in(&self) -> bool {
-        self.state.is_opted_in()
+        self.metrics_state.status.is_opted_in()
     }
 
     /// Disables analytics for this invocation only.
     /// This does not affect the global analytics state.
     pub fn opt_out_for_this_invocation(&mut self) -> Result<()> {
-        self.state.opt_out_for_this_invocation()
+        self.client = None;
+        self.metrics_state.opt_out_for_this_invocation()
     }
 
     /// Adds a launch event to the Post
@@ -174,7 +144,7 @@ impl GA4MetricsService {
             action,
             label,
             custom_dimensions,
-            self.state.invoker.as_deref(),
+            self.metrics_state.invoker.as_deref(),
             event_name,
         );
         self.post.add_event(ga4_event);
@@ -189,7 +159,8 @@ impl GA4MetricsService {
         if !self.is_opted_in() {
             return Ok(());
         }
-        let ga4_event = make_ga4_crash_event(description, fatal, self.state.invoker.as_deref());
+        let ga4_event =
+            make_ga4_crash_event(description, fatal, self.metrics_state.invoker.as_deref());
         self.post.add_event(ga4_event);
         Ok(())
     }
@@ -212,7 +183,7 @@ impl GA4MetricsService {
             variable,
             label,
             custom_dimensions,
-            self.state.invoker.as_deref(),
+            self.metrics_state.invoker.as_deref(),
         );
         self.post.add_event(ga4_event);
         Ok(())
@@ -226,27 +197,9 @@ impl GA4MetricsService {
         }
         self.rewrite_ua_ffx_known_batch_to_ga4();
 
-        if let GA4MetricsServiceState::OptedIn(_, ref client) = self.state {
+        if let Some(ref client) = self.client {
             let _ = self.post.validate()?;
-            let post_body = self.post.to_json();
-            let url = self.get_url();
-            log::trace!(url:%, post_body:%; "POSTING GA4 ANALYTICS");
-
-            let req = Request::builder()
-                .method(Method::POST)
-                .uri(url)
-                .header("Content-Type", "application/json")
-                .body(Body::from(post_body))?;
-            let res = client.request(req).await;
-            Ok(match res {
-                Ok(mut res) => {
-                    log::trace!("GA 4 Analytics response: {}", res.status());
-                    while let Some(chunk) = res.body_mut().data().await {
-                        log::trace!(chunk:?; "");
-                    }
-                }
-                Err(e) => log::trace!("Error posting GA 4 analytics: {}", e),
-            })
+            client.send(&mut self.post).await
         } else {
             // Normally analytics errors are logged as traces only, esp. those caused by network
             // errors. However this branch being reachable would be a real bug in the code.
@@ -282,7 +235,7 @@ impl GA4MetricsService {
     }
 
     fn uuid_as_str(&self) -> String {
-        self.state.uuid.map_or_else(|| "No uuid".to_string(), |u| u.to_string())
+        self.metrics_state.uuid.map_or_else(|| "No uuid".to_string(), |u| u.to_string())
     }
 
     /// Create the GA4 Post object that will be sent to Google Analytics.
@@ -295,11 +248,14 @@ impl GA4MetricsService {
         HashMap::from([
             (
                 "build_version".into(),
-                ValueObject { value: self.state.build_version.clone().into() },
+                ValueObject { value: self.metrics_state.build_version.clone().into() },
             ),
             ("os".into(), ValueObject { value: get_os().into() }),
             ("arch".into(), ValueObject { value: get_arch().into() }),
-            ("sdk_version".into(), ValueObject { value: self.state.sdk_version.clone().into() }),
+            (
+                "sdk_version".into(),
+                ValueObject { value: self.metrics_state.sdk_version.clone().into() },
+            ),
             ("internal".into(), ValueObject { value: is_googler_as_int().into() }),
             ("metrics_level".into(), ValueObject { value: self.opted_in_metrics_level().into() }),
         ])
@@ -310,13 +266,6 @@ impl GA4MetricsService {
     // Used to encode level for analytics.
     fn opted_in_metrics_level(&self) -> u64 {
         if self.opt_in_status() == MetricsStatus::OptedInEnhanced { 2 } else { 1 }
-    }
-
-    fn get_url(&self) -> String {
-        format!(
-            "https://{}{}?api_secret={}&measurement_id={}",
-            DOMAIN, ENDPOINT, self.state.ga4_key, self.state.ga4_product_code
-        )
     }
 }
 
@@ -330,10 +279,12 @@ fn is_googler_as_int() -> u64 {
 
 impl Default for GA4MetricsService {
     fn default() -> Self {
-        Self {
-            state: GA4MetricsServiceState::OptedIn(MetricsState::default(), new_https_client()),
-            post: Post::default(),
-        }
+        let metrics_state = MetricsState::default();
+        let client = Some(GA4AnalyticsClient::new(
+            metrics_state.ga4_key.clone(),
+            metrics_state.ga4_product_code.clone(),
+        ));
+        Self { metrics_state, client, post: Post::default() }
     }
 }
 
@@ -411,9 +362,9 @@ mod tests {
             false,
         );
         if !is_googler() {
-            assert_eq!(ms.state.status, MetricsStatus::NewToTool);
+            assert_eq!(ms.metrics_state.status, MetricsStatus::NewToTool);
         } else {
-            assert_eq!(ms.state.status, MetricsStatus::GooglerOptedInAndNeedsNotice);
+            assert_eq!(ms.metrics_state.status, MetricsStatus::GooglerOptedInAndNeedsNotice);
         }
         if !is_googler() {
             assert_eq!(ms.get_notice(), Some(BRIEF_NOTICE.into()));
@@ -509,12 +460,12 @@ mod tests {
         );
 
         if !is_googler() {
-            assert_eq!(ms.state.status, MetricsStatus::NewUser);
+            assert_eq!(ms.metrics_state.status, MetricsStatus::NewUser);
         } else {
-            assert_eq!(ms.state.status, MetricsStatus::GooglerNeedsNotice);
+            assert_eq!(ms.metrics_state.status, MetricsStatus::GooglerNeedsNotice);
         }
         let _res = ms.opt_out_for_this_invocation().unwrap();
-        assert_eq!(ms.state.status, MetricsStatus::OptedOut);
+        assert_eq!(ms.metrics_state.status, MetricsStatus::OptedOut);
 
         drop(dir);
         Ok(())
@@ -534,11 +485,11 @@ mod tests {
             UNKNOWN_GA4_KEY.to_string(),
             false,
         );
-        assert!(!ms.state.status.is_opted_in());
-        assert!(matches!(ms.state, GA4MetricsServiceState::OptedOut(_)));
+        assert!(!ms.metrics_state.status.is_opted_in());
+        assert!(ms.client.is_none());
         ms.set_new_opt_in_status(MetricsStatus::OptedIn).unwrap();
-        assert!(ms.state.status.is_opted_in(), "{:?}", ms.state.status);
-        assert!(matches!(ms.state, GA4MetricsServiceState::OptedIn(_, _)));
+        assert!(ms.metrics_state.status.is_opted_in(), "{:?}", ms.metrics_state.status);
+        assert!(ms.client.is_some());
 
         drop(dir);
         Ok(())
@@ -559,11 +510,11 @@ mod tests {
             false,
         );
 
-        assert!(ms.state.status.is_opted_in(), "{:?}", ms.state.status);
-        assert!(matches!(ms.state, GA4MetricsServiceState::OptedIn(_, _)));
+        assert!(ms.metrics_state.status.is_opted_in(), "{:?}", ms.metrics_state.status);
+        assert!(ms.client.is_some());
         ms.set_new_opt_in_status(MetricsStatus::OptedOut).unwrap();
-        assert!(!ms.state.status.is_opted_in());
-        assert!(matches!(ms.state, GA4MetricsServiceState::OptedOut(_)));
+        assert!(!ms.metrics_state.status.is_opted_in());
+        assert!(ms.client.is_none());
 
         drop(dir);
         Ok(())
@@ -584,11 +535,11 @@ mod tests {
             false,
         );
 
-        assert!(ms.state.status.is_opted_in(), "{:?}", ms.state.status);
-        assert!(matches!(ms.state, GA4MetricsServiceState::OptedIn(_, _)));
+        assert!(ms.metrics_state.status.is_opted_in(), "{:?}", ms.metrics_state.status);
+        assert!(ms.client.is_some());
         ms.set_new_opt_in_status(MetricsStatus::OptedIn).unwrap();
-        assert!(ms.state.status.is_opted_in());
-        assert!(matches!(ms.state, GA4MetricsServiceState::OptedIn(_, _)));
+        assert!(ms.metrics_state.status.is_opted_in());
+        assert!(ms.client.is_some());
 
         drop(dir);
         Ok(())
@@ -609,11 +560,11 @@ mod tests {
             false,
         );
 
-        assert!(!ms.state.status.is_opted_in(), "{:?}", ms.state.status);
-        assert!(matches!(ms.state, GA4MetricsServiceState::OptedOut(_)));
+        assert!(!ms.metrics_state.status.is_opted_in(), "{:?}", ms.metrics_state.status);
+        assert!(ms.client.is_none());
         ms.set_new_opt_in_status(MetricsStatus::OptedOut).unwrap();
-        assert!(!ms.state.status.is_opted_in());
-        assert!(matches!(ms.state, GA4MetricsServiceState::OptedOut(_)));
+        assert!(!ms.metrics_state.status.is_opted_in());
+        assert!(ms.client.is_none());
 
         drop(dir);
         Ok(())

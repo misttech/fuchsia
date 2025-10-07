@@ -1,10 +1,13 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+mod analytics_client;
 mod env_info;
 mod ga4_event;
 mod ga4_metrics_service;
 pub mod metrics_state;
+#[cfg(test)]
+mod mock_https_client;
 mod notice;
 
 use anyhow::{Result, bail};

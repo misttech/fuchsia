@@ -16,6 +16,7 @@ if (is_host) {
     deps = [
       "//src/lib/fuchsia-hyper",
       "//third_party/rust_crates:anyhow",
+      "//third_party/rust_crates:cfg-if",
       "//third_party/rust_crates:futures",
       "//third_party/rust_crates:home",
       "//third_party/rust_crates:hyper",
@@ -27,14 +28,20 @@ if (is_host) {
       "//third_party/rust_crates:uuid",
     ]
 
-    test_deps = [ "//third_party/rust_crates:tempfile" ]
+    test_deps = [
+      "//src/lib/fuchsia-async",
+      "//third_party/rust_crates:tempfile",
+      "//third_party/rust_crates:url",
+    ]
 
     sources = [
+      "src/analytics_client.rs",
       "src/env_info.rs",
       "src/ga4_event.rs",
       "src/ga4_metrics_service.rs",
       "src/lib.rs",
       "src/metrics_state.rs",
+      "src/mock_https_client.rs",
       "src/notice.rs",
     ]
   }
