@@ -1160,6 +1160,11 @@ void Client::ApplyConfigImpl() {
       // config stamp of the latest *fully applied* config. For example, a config is not fully
       // applied if one of the images in the config is still waiting on a fence, even if the other
       // images in the config have appeared on-screen.
+      //
+      // TODO(https://fxbug.dev/449807074): This can cause a Vsync event with the wrong config stamp
+      // to be sent. This occurs when the value returned by `GetCurrentClientConfigStamp()` has not
+      // been updated to reflect the most recent config where the layer/image is used (the precise
+      // details are not yet understood).
       std::optional<display::ConfigStamp> applied_layer_client_config_stamp =
           applied_layer->GetCurrentClientConfigStamp();
       if (applied_layer_client_config_stamp != std::nullopt) {
