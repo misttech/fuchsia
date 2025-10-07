@@ -24,7 +24,7 @@ if [[ "$(uname -s)" != "Linux" ]]; then
 fi
 
 dryrun=false
-while [[ $# > 0 ]]; do
+while [[ $# -gt 0 ]]; do
   case "$1" in
   -n|--dry-run)
     dryrun=true
@@ -42,12 +42,14 @@ dryer() {
     "${@}"
     return $?
   fi
-  echo >&2 "+ $@"
+  echo >&2 "+ $*"
   return 0
 }
 
-if ! $(which ufw >/dev/null 2>&1); then
+if ! which ufw >/dev/null 2>&1; then
   fx-error "UFW is not available on this system. This script cannot continue!"
+  fx-error "Alternatively consider using \`fx setup-firewall\` if you are"
+  fx-error "experiencing connectivity issues with your device."
   exit 1
 fi
 
