@@ -205,6 +205,7 @@ impl<S: InspectSender> ClientIfaceCountersLogger<S> {
                         }
                         error => {
                             warn!("Failed to get interface stats: {:?}", error);
+                            self.log_get_iface_stats_failure_cobalt().await;
                         }
                     }
 
@@ -273,6 +274,15 @@ impl<S: InspectSender> ClientIfaceCountersLogger<S> {
             }
         }
         *prev_connection_stats = stats.connection_stats;
+    }
+
+    async fn log_get_iface_stats_failure_cobalt(&self) {
+        let metric_events = vec![MetricEvent {
+            metric_id: metrics::GET_IFACE_STATS_FAILURE_METRIC_ID,
+            event_codes: vec![],
+            payload: MetricEventPayload::Count(1),
+        }];
+        log_cobalt_batch!(self.cobalt_proxy, &metric_events, "log_get_iface_stats_failure_cobalt");
     }
 
     async fn log_signal_report_inspect(&self, report: &fidl_stats::SignalReport) {
@@ -1409,6 +1419,37 @@ mod tests {
         let metrics = test_helper.get_logged_metrics(metrics::BAD_TX_RATE_METRIC_ID);
         assert_eq!(metrics.len(), 1);
         assert_eq!(metrics[0].payload, MetricEventPayload::IntegerValue(200)); // 2%
+    }
+
+    #[fuchsia::test]
+    fn test_handle_periodic_telemetry_get_iface_stats_failure() {
+        let mut test_helper = setup_test();
+        let driver_counters_mock_matrix_client = MockTimeMatrixClient::new();
+        let driver_gauges_mock_matrix_client = MockTimeMatrixClient::new();
+        let logger = ClientIfaceCountersLogger::new(
+            test_helper.cobalt_proxy.clone(),
+            test_helper.monitor_svc_proxy.clone(),
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
+            &test_helper.mock_time_matrix_client,
+            driver_counters_mock_matrix_client.clone(),
+            driver_gauges_mock_matrix_client.clone(),
+        );
+
+        // Transition to IfaceCreated state
+        handle_iface_created(&mut test_helper, &logger);
+
+        let mut test_fut = pin!(logger.handle_periodic_telemetry());
+        assert_eq!(
+            test_helper
+                .run_and_respond_iface_stats_req(&mut test_fut, Err(zx::sys::ZX_ERR_TIMED_OUT)),
+            Poll::Pending
+        );
+        assert_eq!(test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut), Poll::Pending);
+
+        let metrics = test_helper.get_logged_metrics(metrics::GET_IFACE_STATS_FAILURE_METRIC_ID);
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[0].payload, MetricEventPayload::Count(1));
     }
 
     #[fuchsia::test]
