@@ -1228,7 +1228,6 @@ EOF
       "$profile_wrap"
       --vmstat-log "$vmstat_log"
       --ifconfig-log "$ifconfig_log"
-      -n 2
       --
     )
   fi
