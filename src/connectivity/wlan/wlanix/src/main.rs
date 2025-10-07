@@ -231,11 +231,20 @@ async fn handle_wifi_chip_request<I: IfaceManager>(
             telemetry_sender.send(TelemetryEvent::RecoveryEvent);
             responder.send(Ok(())).context("send TriggerSubsystemRestart response")?;
         }
-        fidl_wlanix::WifiChipRequest::ResetTxPowerScenario { .. } => {
-            warn!("Reset Tx power scenario controls are not yet implemented.")
+        fidl_wlanix::WifiChipRequest::ResetTxPowerScenario { responder } => {
+            if let Err(e) = iface_manager.reset_tx_power_scenario(chip_id).await {
+                warn!("{}", e);
+            }
+            responder.send().context("send ResetTxPowerScenario responder")?;
         }
-        fidl_wlanix::WifiChipRequest::SelectTxPowerScenario { .. } => {
-            warn!("Set Tx power scenario controls are not yet implemented.")
+
+        fidl_wlanix::WifiChipRequest::SelectTxPowerScenario { scenario, responder } => {
+            if let Some(scenario) = wifi_chip_tx_power_scenario_to_internal(scenario) {
+                if let Err(e) = iface_manager.set_tx_power_scenario(chip_id, scenario).await {
+                    warn!("{}", e);
+                }
+                responder.send().context("send SetTxPowerScenario responder")?;
+            }
         }
         fidl_wlanix::WifiChipRequest::_UnknownMethod { ordinal, .. } => {
             warn!("Unknown WifiChipRequest ordinal: {}", ordinal);
@@ -270,6 +279,32 @@ async fn serve_wifi_chip<I: IfaceManager>(
         }
     })
     .await;
+}
+
+fn wifi_chip_tx_power_scenario_to_internal(
+    scenario: fidl_wlanix::WifiChipTxPowerScenario,
+) -> Option<fidl_internal::TxPowerScenario> {
+    match scenario {
+        fidl_wlanix::WifiChipTxPowerScenario::VoiceCall => {
+            Some(fidl_internal::TxPowerScenario::VoiceCall)
+        }
+        fidl_wlanix::WifiChipTxPowerScenario::OnBodyCellOff => {
+            Some(fidl_internal::TxPowerScenario::BodyCellOff)
+        }
+        fidl_wlanix::WifiChipTxPowerScenario::OnBodyCellOn => {
+            Some(fidl_internal::TxPowerScenario::BodyCellOn)
+        }
+        fidl_wlanix::WifiChipTxPowerScenario::OnHeadCellOff => {
+            Some(fidl_internal::TxPowerScenario::HeadCellOff)
+        }
+        fidl_wlanix::WifiChipTxPowerScenario::OnHeadCellOn => {
+            Some(fidl_internal::TxPowerScenario::HeadCellOn)
+        }
+        other => {
+            warn!("Unexpected power scenario: {:?}", other);
+            None
+        }
+    }
 }
 
 fn maybe_run_callback<T: fidl::endpoints::Proxy>(
@@ -4041,5 +4076,164 @@ mod tests {
         let message = expect_nl80211_message(&responses[0]);
         assert_eq!(message.payload.cmd, Nl80211Cmd::GetReg);
         assert!(message.payload.attrs.contains(&Nl80211Attr::RegulatoryRegionAlpha2([b'W', b'W'])));
+    }
+
+    #[test]
+    fn test_reset_tx_power_scenario_succeeds() {
+        let mut exec = fasync::TestExecutor::new();
+        let iface_manager = Arc::new(TestIfaceManager::new());
+        let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let telemetry_sender = TelemetrySender::new(telemetry_sender);
+        let phy_id = 123;
+
+        // Create a proxy and server to instantiate a FIDL request and responder.
+        let (proxy, mut server) = create_proxy_and_stream::<fidl_wlanix::WifiChipMarker>();
+        let request_fut = proxy.reset_tx_power_scenario();
+        let mut request_fut = pin!(request_fut);
+        assert_matches!(exec.run_until_stalled(&mut request_fut), Poll::Pending);
+        let req = assert_matches!(exec.run_until_stalled(&mut server.next()), Poll::Ready(Some(Ok(req))) => req);
+
+        // Handle the request.  It should complete immediately since the response was set on the
+        // TestIfaceManager.
+        let fut = handle_wifi_chip_request(req, phy_id, iface_manager.clone(), telemetry_sender);
+        let mut fut = pin!(fut);
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+
+        // Verify the response was sent to the client.
+        assert_matches!(exec.run_until_stalled(&mut request_fut), Poll::Ready(Ok(())));
+
+        // The TestIfaceManager should have a reset request logged
+        let calls = iface_manager.calls.lock();
+        assert_eq!(calls.len(), 1);
+        assert_matches!(
+            calls[0],
+            ifaces::test_utils::IfaceManagerCall::ResetTxPowerScenario(id) => assert_eq!(id, phy_id)
+        );
+    }
+
+    #[test]
+    fn test_reset_tx_power_scenario_fails() {
+        let mut exec = fasync::TestExecutor::new();
+        let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let telemetry_sender = TelemetrySender::new(telemetry_sender);
+        let phy_id = 123;
+
+        // Configure the reset Tx power scenario call to fail.
+        let iface_manager =
+            Arc::new(TestIfaceManager::new().mock_reset_tx_power_scenario_failure());
+
+        // Create a proxy and server to instantiate a FIDL request and responder.
+        let (proxy, mut server) = create_proxy_and_stream::<fidl_wlanix::WifiChipMarker>();
+        let request_fut = proxy.reset_tx_power_scenario();
+        let mut request_fut = pin!(request_fut);
+        assert_matches!(exec.run_until_stalled(&mut request_fut), Poll::Pending);
+        let req = assert_matches!(exec.run_until_stalled(&mut server.next()), Poll::Ready(Some(Ok(req))) => req);
+
+        // Handle the request.  It should complete immediately since the response was set on the
+        // TestIfaceManager.
+        let fut = handle_wifi_chip_request(req, phy_id, iface_manager.clone(), telemetry_sender);
+        let mut fut = pin!(fut);
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+
+        // Verify the response was sent to the client.
+        assert_matches!(exec.run_until_stalled(&mut request_fut), Poll::Ready(Ok(())));
+
+        // The TestIfaceManager should have a reset request logged
+        let calls = iface_manager.calls.lock();
+        assert_eq!(calls.len(), 1);
+        assert_matches!(
+            calls[0],
+            ifaces::test_utils::IfaceManagerCall::ResetTxPowerScenario(id) => assert_eq!(id, phy_id)
+        );
+    }
+
+    #[test]
+    fn test_set_tx_power_scenario_succeeds() {
+        let mut exec = fasync::TestExecutor::new();
+        let iface_manager = Arc::new(TestIfaceManager::new());
+        let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let telemetry_sender = TelemetrySender::new(telemetry_sender);
+        let test_phy_id = 123;
+
+        // Create a proxy and server to instantiate a FIDL request and responder.
+        let (proxy, mut server) = create_proxy_and_stream::<fidl_wlanix::WifiChipMarker>();
+        let request_fut =
+            proxy.select_tx_power_scenario(fidl_wlanix::WifiChipTxPowerScenario::OnBodyCellOff);
+        let mut request_fut = pin!(request_fut);
+        assert_matches!(exec.run_until_stalled(&mut request_fut), Poll::Pending);
+        let req = assert_matches!(exec.run_until_stalled(&mut server.next()), Poll::Ready(Some(Ok(req))) => req);
+
+        // Handle the request.  It should complete immediately since the response was set on the
+        // TestIfaceManager.
+        let fut =
+            handle_wifi_chip_request(req, test_phy_id, iface_manager.clone(), telemetry_sender);
+        let mut fut = pin!(fut);
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+
+        // Verify the response was sent to the client.
+        assert_matches!(exec.run_until_stalled(&mut request_fut), Poll::Ready(Ok(())));
+
+        // The TestIfaceManager should have a set request logged
+        let calls = iface_manager.calls.lock();
+        assert_eq!(calls.len(), 1);
+        assert_matches!(
+            calls[0],
+            ifaces::test_utils::IfaceManagerCall::SetTxPowerScenario { phy_id, scenario} => {
+                assert_eq!(phy_id, test_phy_id);
+                assert_eq!(scenario, fidl_internal::TxPowerScenario::BodyCellOff);
+            }
+        );
+    }
+
+    #[test]
+    fn test_set_tx_power_scenario_fails() {
+        let mut exec = fasync::TestExecutor::new();
+        let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let telemetry_sender = TelemetrySender::new(telemetry_sender);
+        let test_phy_id = 123;
+
+        // Configure the set Tx power scenario call to fail.
+        let iface_manager = Arc::new(TestIfaceManager::new().mock_set_tx_power_scenario_failure());
+
+        // Create a proxy and server to instantiate a FIDL request and responder.
+        let (proxy, mut server) = create_proxy_and_stream::<fidl_wlanix::WifiChipMarker>();
+        let request_fut =
+            proxy.select_tx_power_scenario(fidl_wlanix::WifiChipTxPowerScenario::VoiceCall);
+        let mut request_fut = pin!(request_fut);
+        assert_matches!(exec.run_until_stalled(&mut request_fut), Poll::Pending);
+        let req = assert_matches!(exec.run_until_stalled(&mut server.next()), Poll::Ready(Some(Ok(req))) => req);
+
+        // Handle the request.  It should complete immediately since the response was set on the
+        // TestIfaceManager.
+        let fut =
+            handle_wifi_chip_request(req, test_phy_id, iface_manager.clone(), telemetry_sender);
+        let mut fut = pin!(fut);
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+
+        // Verify the response was sent to the client.
+        assert_matches!(exec.run_until_stalled(&mut request_fut), Poll::Ready(Ok(())));
+
+        // The TestIfaceManager should have a set request logged
+        let calls = iface_manager.calls.lock();
+        assert_eq!(calls.len(), 1);
+        assert_matches!(
+            calls[0],
+            ifaces::test_utils::IfaceManagerCall::SetTxPowerScenario { phy_id, scenario} => {
+                assert_eq!(phy_id, test_phy_id);
+                assert_eq!(scenario, fidl_internal::TxPowerScenario::VoiceCall);
+            }
+        );
+    }
+
+    #[test_case(fidl_wlanix::WifiChipTxPowerScenario::VoiceCall, Some(fidl_internal::TxPowerScenario::VoiceCall); "Voice Call")]
+    #[test_case(fidl_wlanix::WifiChipTxPowerScenario::OnBodyCellOff, Some(fidl_internal::TxPowerScenario::BodyCellOff); "Body Cell Off")]
+    #[test_case(fidl_wlanix::WifiChipTxPowerScenario::OnBodyCellOn, Some(fidl_internal::TxPowerScenario::BodyCellOn); "Body Cell On")]
+    #[test_case(fidl_wlanix::WifiChipTxPowerScenario::OnHeadCellOff, Some(fidl_internal::TxPowerScenario::HeadCellOff); "Head Cell Off")]
+    #[test_case(fidl_wlanix::WifiChipTxPowerScenario::OnHeadCellOn, Some(fidl_internal::TxPowerScenario::HeadCellOn); "Head Cell On")]
+    fn test_scenario_conversion(
+        wifi_chip_scenario: fidl_wlanix::WifiChipTxPowerScenario,
+        internal_scenario: Option<fidl_internal::TxPowerScenario>,
+    ) {
+        assert_eq!(wifi_chip_tx_power_scenario_to_internal(wifi_chip_scenario), internal_scenario)
     }
 }

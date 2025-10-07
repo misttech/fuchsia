@@ -55,6 +55,12 @@ pub(crate) trait IfaceManager: Send + Sync {
         iface_id: u16,
     ) -> Result<fidl_device_service::QueryIfaceResponse, Error>;
     async fn create_client_iface(&self, phy_id: u16) -> Result<u16, Error>;
+    async fn reset_tx_power_scenario(&self, phy_id: u16) -> Result<(), Error>;
+    async fn set_tx_power_scenario(
+        &self,
+        phy_id: u16,
+        scenario: fidl_internal::TxPowerScenario,
+    ) -> Result<(), Error>;
     async fn get_client_iface(&self, iface_id: u16) -> Result<Arc<Self::Client>, Error>;
     async fn destroy_iface(&self, iface_id: u16) -> Result<(), Error>;
 }
@@ -231,6 +237,32 @@ impl IfaceManager for DeviceMonitorIfaceManager {
             }
         } else {
             Ok(())
+        }
+    }
+
+    async fn reset_tx_power_scenario(&self, phy_id: u16) -> Result<(), Error> {
+        self.telemetry_sender.send(TelemetryEvent::ResetTxPowerScenario);
+        match self.monitor_svc.reset_tx_power_scenario(phy_id).await {
+            Ok(result) => match result {
+                Ok(()) => Ok(()),
+                Err(e) => Err(format_err!("resetting Tx power scenario failed: {:?}", e)),
+            },
+            Err(e) => Err(format_err!("unable to reset Tx power scenario: {}", e)),
+        }
+    }
+
+    async fn set_tx_power_scenario(
+        &self,
+        phy_id: u16,
+        scenario: fidl_internal::TxPowerScenario,
+    ) -> Result<(), Error> {
+        self.telemetry_sender.send(TelemetryEvent::SetTxPowerScenario { scenario });
+        match self.monitor_svc.set_tx_power_scenario(phy_id, scenario).await {
+            Ok(result) => match result {
+                Ok(()) => Ok(()),
+                Err(e) => Err(format_err!("setting Tx power scenario failed: {:?}", e)),
+            },
+            Err(e) => Err(format_err!("unable to set Tx power scenario: {}", e)),
         }
     }
 }
@@ -935,6 +967,8 @@ pub mod test_utils {
         PowerDown(u16),
         PowerUp(u16),
         GetPowerState(u16),
+        ResetTxPowerScenario(u16),
+        SetTxPowerScenario { phy_id: u16, scenario: fidl_internal::TxPowerScenario },
     }
 
     pub struct TestIfaceManager {
@@ -945,6 +979,8 @@ pub mod test_utils {
         mock_create_client_iface_result: Result<u16, Error>,
         mock_destroy_client_iface_result: Result<(), Error>,
         mock_power_up_result: Result<(), Error>,
+        mock_reset_tx_power_scenario_result: Result<(), Error>,
+        mock_set_tx_power_scenario_result: Result<(), Error>,
         iface_id: Arc<Mutex<u16>>,
     }
 
@@ -958,6 +994,8 @@ pub mod test_utils {
                 mock_create_client_iface_result: Ok(FAKE_IFACE_RESPONSE.id),
                 mock_destroy_client_iface_result: Ok(()),
                 mock_power_up_result: Ok(()),
+                mock_reset_tx_power_scenario_result: Ok(()),
+                mock_set_tx_power_scenario_result: Ok(()),
                 iface_id: Arc::new(Mutex::new(FAKE_IFACE_RESPONSE.id)),
             }
         }
@@ -1011,6 +1049,24 @@ pub mod test_utils {
 
         pub fn mock_power_up_failure(self) -> Self {
             Self { mock_power_up_result: Err(format_err!("mocked PowerUp failure")), ..self }
+        }
+
+        pub fn mock_reset_tx_power_scenario_failure(self) -> Self {
+            Self {
+                mock_reset_tx_power_scenario_result: Err(format_err!(
+                    "mocked ResetTxPowerScenario failure"
+                )),
+                ..self
+            }
+        }
+
+        pub fn mock_set_tx_power_scenario_failure(self) -> Self {
+            Self {
+                mock_set_tx_power_scenario_result: Err(format_err!(
+                    "mocked SetTxPowerScenario failure"
+                )),
+                ..self
+            }
         }
 
         pub fn set_iface_id(&self, new_id: u16) {
@@ -1110,6 +1166,26 @@ pub mod test_utils {
         async fn get_power_state(&self, phy_id: u16) -> Result<bool, Error> {
             self.calls.lock().push(IfaceManagerCall::GetPowerState(phy_id));
             Ok(*self.power_state.lock())
+        }
+
+        async fn reset_tx_power_scenario(&self, phy_id: u16) -> Result<(), Error> {
+            self.calls.lock().push(IfaceManagerCall::ResetTxPowerScenario(phy_id));
+            match &self.mock_reset_tx_power_scenario_result {
+                Ok(()) => Ok(()),
+                Err(e) => bail!("{}", e),
+            }
+        }
+
+        async fn set_tx_power_scenario(
+            &self,
+            phy_id: u16,
+            scenario: fidl_internal::TxPowerScenario,
+        ) -> Result<(), Error> {
+            self.calls.lock().push(IfaceManagerCall::SetTxPowerScenario { phy_id, scenario });
+            match &self.mock_set_tx_power_scenario_result {
+                Ok(()) => Ok(()),
+                Err(e) => bail!("{}", e),
+            }
         }
     }
 }
@@ -2349,5 +2425,151 @@ mod tests {
                 wlan_telemetry::UnclearPowerDemand::PowerSaveRequestedWhileSuspendModeEnabled
             )
         );
+    }
+
+    #[test]
+    fn test_reset_tx_power_scenario_succeeds() {
+        let (mut exec, mut monitor_stream, mut telemetry_stream, manager) = setup_test_manager();
+        let test_phy_id = 123;
+
+        // Attempt to reset the SAR scenario.
+        let fut = manager.reset_tx_power_scenario(test_phy_id);
+        let mut fut = pin!(fut);
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+
+        // Verify that the request has been passed on to the device monitor service.
+        assert_matches!(
+            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::ResetTxPowerScenario {
+                phy_id,
+                responder })
+            ) => {
+                assert_eq!(phy_id, test_phy_id);
+                responder.send(Ok(())).expect("failed to send device monitor response")
+            }
+        );
+
+        // Verify that metric has been logged.
+        assert_matches!(
+            exec.run_until_stalled(&mut telemetry_stream.select_next_some()),
+            Poll::Ready(TelemetryEvent::ResetTxPowerScenario)
+        );
+
+        // Run the future to completion.
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+    }
+
+    #[test]
+    fn test_reset_tx_power_scenario_fails() {
+        let (mut exec, mut monitor_stream, mut telemetry_stream, manager) = setup_test_manager();
+        let test_phy_id = 123;
+
+        // Attempt to reset the SAR scenario.
+        let fut = manager.reset_tx_power_scenario(test_phy_id);
+        let mut fut = pin!(fut);
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+
+        // Verify that the request has been passed on to the device monitor service and send back
+        // an error.
+        assert_matches!(
+            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::ResetTxPowerScenario {
+                phy_id,
+                responder })
+            ) => {
+                assert_eq!(phy_id, test_phy_id);
+                responder.send(Err(fidl_device_service::DeviceMonitorError::Internal)).expect("failed to send device monitor response")
+            }
+        );
+
+        // Verify that metric has been logged.
+        assert_matches!(
+            exec.run_until_stalled(&mut telemetry_stream.select_next_some()),
+            Poll::Ready(TelemetryEvent::ResetTxPowerScenario)
+        );
+
+        // Run the future to completion.
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
+    }
+
+    #[test_case(fidl_internal::TxPowerScenario::Default)]
+    #[test_case(fidl_internal::TxPowerScenario::VoiceCall)]
+    #[test_case(fidl_internal::TxPowerScenario::HeadCellOff)]
+    #[test_case(fidl_internal::TxPowerScenario::HeadCellOn)]
+    #[test_case(fidl_internal::TxPowerScenario::BodyCellOff)]
+    #[test_case(fidl_internal::TxPowerScenario::BodyCellOn)]
+    #[test_case(fidl_internal::TxPowerScenario::BodyBtActive)]
+    #[fuchsia::test(add_test_attr = false)]
+    fn test_set_tx_power_scenario_succeeds(test_scenario: fidl_internal::TxPowerScenario) {
+        let (mut exec, mut monitor_stream, mut telemetry_stream, manager) = setup_test_manager();
+        let test_phy_id = 123;
+
+        // Attempt to reset the SAR scenario.
+        let fut = manager.set_tx_power_scenario(test_phy_id, test_scenario);
+        let mut fut = pin!(fut);
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+
+        // Verify that the request has been passed on to the device monitor service.
+        assert_matches!(
+            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::SetTxPowerScenario {
+                phy_id,
+                scenario,
+                responder })
+            ) => {
+                assert_eq!(phy_id, test_phy_id);
+                assert_eq!(scenario, test_scenario);
+                responder.send(Ok(())).expect("failed to send device monitor response")
+            }
+        );
+
+        // Verify that metric has been logged.
+        assert_matches!(
+            exec.run_until_stalled(&mut telemetry_stream.select_next_some()),
+            Poll::Ready(TelemetryEvent::SetTxPowerScenario { scenario }) => {
+                assert_eq!(scenario, test_scenario);
+            }
+        );
+
+        // Run the future to completion.
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+    }
+
+    #[test]
+    fn test_set_tx_power_scenario_fails() {
+        let (mut exec, mut monitor_stream, mut telemetry_stream, manager) = setup_test_manager();
+        let test_phy_id = 123;
+        let test_scenario = fidl_internal::TxPowerScenario::Default;
+
+        // Attempt to reset the SAR scenario.
+        let fut = manager.set_tx_power_scenario(test_phy_id, test_scenario);
+        let mut fut = pin!(fut);
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
+
+        // Verify that the request has been passed on to the device monitor service and send back a
+        // failure.
+        assert_matches!(
+            exec.run_until_stalled(&mut monitor_stream.select_next_some()),
+            Poll::Ready(Ok(fidl_device_service::DeviceMonitorRequest::SetTxPowerScenario {
+                phy_id,
+                scenario,
+                responder })
+            ) => {
+                assert_eq!(phy_id, test_phy_id);
+                assert_eq!(scenario, test_scenario);
+                responder.send(Err(fidl_device_service::DeviceMonitorError::Internal)).expect("failed to send device monitor response")
+            }
+        );
+
+        // Verify that metric has been logged.
+        assert_matches!(
+            exec.run_until_stalled(&mut telemetry_stream.select_next_some()),
+            Poll::Ready(TelemetryEvent::SetTxPowerScenario { scenario }) => {
+                assert_eq!(scenario, test_scenario);
+            }
+        );
+
+        // Run the future to completion.
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
     }
 }
