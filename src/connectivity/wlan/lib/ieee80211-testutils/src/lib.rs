@@ -2,17 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use lazy_static::lazy_static;
 use regex::Regex;
+use std::sync::LazyLock;
 
 // The following regular expressions match a strict subset of the strings
 // that match the regular expression defined in //src/developer/forensics/utils/redact/replacer.cc.
-lazy_static! {
-    pub static ref MAC_ADDR_REGEX: Regex =
-        Regex::new(r#"^(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$"#).unwrap();
-    pub static ref BSSID_REGEX: Regex = MAC_ADDR_REGEX.clone();
-    pub static ref SSID_REGEX: Regex = Regex::new(r#"^<ssid-[0-9a-fA-F]{0,64}>$"#).unwrap();
-}
+pub static MAC_ADDR_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"^(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$"#).unwrap());
+pub static BSSID_REGEX: LazyLock<Regex> = LazyLock::new(|| MAC_ADDR_REGEX.clone());
+pub static SSID_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"^<ssid-[0-9a-fA-F]{0,64}>$"#).unwrap());
 
 #[cfg(test)]
 mod tests {

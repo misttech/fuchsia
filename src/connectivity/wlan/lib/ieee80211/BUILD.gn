@@ -19,8 +19,6 @@ rustc_library("ieee80211") {
     "//third_party/rust_crates:zerocopy",
   ]
 
-  test_deps = [ "//third_party/rust_crates:lazy_static" ]
-
   sources = [
     "src/bssid.rs",
     "src/lib.rs",

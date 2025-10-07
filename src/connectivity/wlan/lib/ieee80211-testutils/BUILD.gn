@@ -10,10 +10,7 @@ rustc_library("ieee80211-testutils") {
   with_unit_tests = true
   edition = "2021"
 
-  deps = [
-    "//third_party/rust_crates:lazy_static",
-    "//third_party/rust_crates:regex",
-  ]
+  deps = [ "//third_party/rust_crates:regex" ]
 
   test_deps = [
     "//sdk/fidl/fuchsia.wlan.ieee80211:fuchsia.wlan.ieee80211_rust",

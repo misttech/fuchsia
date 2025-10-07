@@ -235,12 +235,11 @@ impl Ssid {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lazy_static::lazy_static;
+    use std::sync::LazyLock;
 
-    lazy_static! {
-        static ref SSID_12345: Ssid = Ssid::try_from([0x01, 0x02, 0x03, 0x04, 0x05]).unwrap();
-        static ref SSID_FOO: Ssid = Ssid::try_from([0x66, 0x6F, 0x6F]).unwrap();
-    }
+    static SSID_12345: LazyLock<Ssid> =
+        LazyLock::new(|| Ssid::try_from([0x01, 0x02, 0x03, 0x04, 0x05]).unwrap());
+    static SSID_FOO: LazyLock<Ssid> = LazyLock::new(|| Ssid::try_from([0x66, 0x6F, 0x6F]).unwrap());
 
     #[test]
     fn ssid_check() {
