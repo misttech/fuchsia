@@ -21,6 +21,8 @@
 #include <fbl/ref_ptr.h>
 #include <fbl/slab_allocator.h>
 
+#include "region.h"
+
 // RegionAllocator
 //
 // == Overview ==
@@ -131,11 +133,6 @@
 //   * to the pool.
 //   */
 //
-
-struct ralloc_region_t {
-  uint64_t base;
-  uint64_t size;
-};
 
 class RegionAllocator {
  private:
