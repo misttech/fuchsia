@@ -22,8 +22,8 @@ use {
     fidl_fuchsia_boot as fboot, fidl_fuchsia_driver_test as fdt,
     fidl_fuchsia_feedback as ffeedback, fidl_fuchsia_fshost_fxfsprovisioner as ffxfsprovisioner,
     fidl_fuchsia_hardware_block_volume as fvolume, fidl_fuchsia_hardware_ramdisk as framdisk,
-    fidl_fuchsia_io as fio, fidl_fuchsia_security_keymint as fkeymint,
-    fidl_fuchsia_storage_partitions as fpartitions, fuchsia_async as fasync,
+    fidl_fuchsia_io as fio, fidl_fuchsia_storage_partitions as fpartitions,
+    fuchsia_async as fasync,
 };
 
 pub mod disk_builder;
@@ -59,7 +59,6 @@ pub struct TestFixtureBuilder {
     zbi_ramdisk: Option<disk_builder::DiskBuilder>,
     storage_host: bool,
     device_config: Vec<BlockDeviceConfig>,
-    crypt_policy: crypt_policy::Policy,
 }
 
 impl TestFixtureBuilder {
@@ -72,7 +71,6 @@ impl TestFixtureBuilder {
             zbi_ramdisk: None,
             storage_host,
             device_config: Vec::new(),
-            crypt_policy: crypt_policy::Policy::Null,
         }
     }
 
@@ -115,11 +113,6 @@ impl TestFixtureBuilder {
         self
     }
 
-    pub fn with_crypt_policy(mut self, policy: crypt_policy::Policy) -> Self {
-        self.crypt_policy = policy;
-        self
-    }
-
     pub async fn build(self) -> TestFixture {
         let builder = RealmBuilder::new().await.unwrap();
         let fshost = self.fshost.build(&builder).await;
@@ -130,7 +123,7 @@ impl TestFixtureBuilder {
             None => None,
         };
         let (tx, crash_reports) = mpsc::channel(32);
-        let mocks = mocks::new_mocks(maybe_zbi_vmo, tx, device_config, self.crypt_policy);
+        let mocks = mocks::new_mocks(maybe_zbi_vmo, tx, device_config);
 
         let mocks = builder
             .add_local_child("mocks", move |h| mocks(h).boxed(), ChildOptions::new())
@@ -142,7 +135,6 @@ impl TestFixtureBuilder {
                     .capability(Capability::protocol::<ffeedback::CrashReporterMarker>())
                     .capability(Capability::directory("boot").rights(fio::R_STAR_DIR).path("/boot"))
                     .capability(Capability::protocol::<ffxfsprovisioner::FxfsProvisionerMarker>())
-                    .capability(Capability::protocol::<fkeymint::SealingKeysMarker>())
                     .from(&mocks)
                     .to(&fshost),
             )

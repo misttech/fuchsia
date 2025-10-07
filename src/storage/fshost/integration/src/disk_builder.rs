@@ -57,44 +57,24 @@ pub const DEFAULT_DISK_SIZE: u64 = DEFAULT_DATA_VOLUME_SIZE * 2 + BLOBFS_MAX_BYT
 // These keys match the DATA_KEY and METADATA_KEY respectively, when wrapped with the "zxcrypt"
 // static key used by fshost.
 // Note this isn't used in the legacy crypto format.
-const KEY_BAG_CONTENTS: &'static str = r#"
+const KEY_BAG_CONTENTS: &'static str = "\
 {
-    "version":1,
-    "keys": {
-        "0":{
-            "Aes128GcmSivWrapped": [
-                "7a7c6a718cfde7078f6edec5",
-                "7cc31b765c74db3191e269d2666267022639e758fe3370e8f36c166d888586454fd4de8aeb47aadd81c531b0a0a66f27"
+    \"version\":1,
+    \"keys\": {
+        \"0\":{
+            \"Aes128GcmSivWrapped\": [
+                \"7a7c6a718cfde7078f6edec5\",
+                \"7cc31b765c74db3191e269d2666267022639e758fe3370e8f36c166d888586454fd4de8aeb47aadd81c531b0a0a66f27\"
             ]
         },
-        "1":{
-            "Aes128GcmSivWrapped": [
-                "b7d7f459cbee4cc536cc4324",
-                "9f6a5d894f526b61c5c091e5e02a7ff94d18e6ad36a0aa439c86081b726eca79e6b60bd86ee5d86a20b3df98f5265a99"
+        \"1\":{
+            \"Aes128GcmSivWrapped\": [
+                \"b7d7f459cbee4cc536cc4324\",
+                \"9f6a5d894f526b61c5c091e5e02a7ff94d18e6ad36a0aa439c86081b726eca79e6b60bd86ee5d86a20b3df98f5265a99\"
             ]
         }
     }
-}"#;
-
-// Same keys as KEY_BAG_CONTENTS, but sealed with FakeKeymint using the algorithm from
-// //src/storage/crypt/policy.
-const KEYMINT_FILE_CONTENTS: &'static str = r#"
-{
-    "sealing_key_info": [102,117,99,104,115,105,97],
-    "sealing_key_blob": [102,117,99,104,115,105,97],
-    "sealed_keys": {
-        "data.data": [
-            10, 246, 253, 5, 63, 210, 11, 149, 218, 43, 169, 227, 108, 200, 61, 98, 166, 187, 79,
-            216, 134, 67, 124, 246, 46, 114, 231, 201, 1, 114, 227, 190, 223, 74, 190, 76, 44, 86,
-            54, 169, 173, 158, 138, 205, 17, 61, 240, 118
-        ],
-        "data.metadata": [
-            43, 239, 206, 127, 204, 133, 152, 192, 124, 150, 99, 47, 92, 220, 172, 123, 175, 154,
-            133, 228, 170, 184, 50, 109, 213, 160, 25, 154, 158, 88, 90, 248, 134, 135, 163, 249,
-            14, 45, 136, 124, 241, 40, 93, 207, 48, 95, 74, 72
-        ]
-    }
-}"#;
+}";
 
 pub const TEST_BLOB_CONTENTS: [u8; 1000] = [1; 1000];
 
@@ -212,21 +192,10 @@ impl Disk {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct DataSpec {
     pub format: Option<&'static str>,
     pub zxcrypt: bool,
-    pub crypt_policy: crypt_policy::Policy,
-}
-
-impl Default for DataSpec {
-    fn default() -> Self {
-        Self {
-            format: Default::default(),
-            zxcrypt: Default::default(),
-            crypt_policy: crypt_policy::Policy::Null,
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -277,7 +246,7 @@ impl DiskBuilder {
             blob_hash: None,
             data_volume_size: DEFAULT_DATA_VOLUME_SIZE,
             fvm_slice_size: FVM_SLICE_SIZE,
-            data_spec: DataSpec::default(),
+            data_spec: DataSpec { format: None, zxcrypt: false },
             volumes_spec: VolumesSpec { fxfs_blob: false, create_data_partition: true },
             corrupt_data: false,
             gpt: false,
@@ -496,8 +465,7 @@ impl DiskBuilder {
         }
 
         if self.data_spec.format.is_some() {
-            self.init_data_fxfs(FxfsType::FxBlob(fs, crypt_realm), self.data_spec.crypt_policy)
-                .await;
+            self.init_data_fxfs(FxfsType::FxBlob(fs, crypt_realm)).await;
         } else {
             fs.shutdown().await.expect("shutdown failed");
         }
@@ -588,13 +556,10 @@ impl DiskBuilder {
                 }
             } else if self.data_spec.format == Some("fxfs") {
                 let dir = fuchsia_fs::directory::clone(data_volume.exposed_dir()).unwrap();
-                self.init_data_fxfs(
-                    FxfsType::Fxfs(Box::new(DirBasedBlockConnector::new(
-                        dir,
-                        String::from("svc/fuchsia.hardware.block.volume.Volume"),
-                    ))),
-                    self.data_spec.crypt_policy,
-                )
+                self.init_data_fxfs(FxfsType::Fxfs(Box::new(DirBasedBlockConnector::new(
+                    dir,
+                    String::from("svc/fuchsia.hardware.block.volume.Volume"),
+                ))))
                 .await
             } else if self.data_spec.format.is_some() {
                 self.write_test_data(data_volume.root()).await;
@@ -619,7 +584,7 @@ impl DiskBuilder {
         fvm.shutdown().await.expect("fvm shutdown failed");
     }
 
-    async fn init_data_fxfs(&self, fxfs: FxfsType, crypt_policy: crypt_policy::Policy) {
+    async fn init_data_fxfs(&self, fxfs: FxfsType) {
         let mut fxblob = false;
         let (fs, crypt_realm) = match fxfs {
             FxfsType::Fxfs(connector) => {
@@ -640,57 +605,30 @@ impl DiskBuilder {
                 .create_volume("unencrypted", CreateOptions::default(), MountOptions::default())
                 .await
                 .expect("create_volume failed");
-            if let crypt_policy::Policy::Keymint = crypt_policy {
-                let keys_dir = fuchsia_fs::directory::create_directory(
-                    vol.root(),
-                    "keys",
-                    fio::PERM_READABLE | fio::PERM_WRITABLE,
-                )
-                .await
-                .unwrap();
-                let keymint_file = fuchsia_fs::directory::open_file(
-                    &keys_dir,
-                    "keymint.0",
-                    fio::Flags::FLAG_MAYBE_CREATE
-                        | fio::Flags::PROTOCOL_FILE
-                        | fio::PERM_READABLE
-                        | fio::PERM_WRITABLE,
-                )
-                .await
-                .unwrap();
-                let mut contents = KEYMINT_FILE_CONTENTS.as_bytes();
-                if self.corrupt_data && fxblob {
-                    contents = &TEST_BLOB_CONTENTS;
-                }
-                fuchsia_fs::file::write(&keymint_file, contents).await.unwrap();
-                fuchsia_fs::file::close(keymint_file).await.unwrap();
-                fuchsia_fs::directory::close(keys_dir).await.unwrap();
-            } else {
-                let keys_dir = fuchsia_fs::directory::create_directory(
-                    vol.root(),
-                    "keybag",
-                    fio::PERM_READABLE | fio::PERM_WRITABLE,
-                )
-                .await
-                .unwrap();
-                let keys_file = fuchsia_fs::directory::open_file(
-                    &keys_dir,
-                    "fxfs-data",
-                    fio::Flags::FLAG_MAYBE_CREATE
-                        | fio::Flags::PROTOCOL_FILE
-                        | fio::PERM_READABLE
-                        | fio::PERM_WRITABLE,
-                )
-                .await
-                .unwrap();
-                let mut key_bag = KEY_BAG_CONTENTS.as_bytes();
-                if self.corrupt_data && fxblob {
-                    key_bag = &TEST_BLOB_CONTENTS;
-                }
-                fuchsia_fs::file::write(&keys_file, key_bag).await.unwrap();
-                fuchsia_fs::file::close(keys_file).await.unwrap();
-                fuchsia_fs::directory::close(keys_dir).await.unwrap();
+            let keys_dir = fuchsia_fs::directory::create_directory(
+                vol.root(),
+                "keys",
+                fio::PERM_READABLE | fio::PERM_WRITABLE,
+            )
+            .await
+            .unwrap();
+            let keys_file = fuchsia_fs::directory::open_file(
+                &keys_dir,
+                "fxfs-data",
+                fio::Flags::FLAG_MAYBE_CREATE
+                    | fio::Flags::PROTOCOL_FILE
+                    | fio::PERM_READABLE
+                    | fio::PERM_WRITABLE,
+            )
+            .await
+            .unwrap();
+            let mut key_bag = KEY_BAG_CONTENTS.as_bytes();
+            if self.corrupt_data && fxblob {
+                key_bag = &TEST_BLOB_CONTENTS;
             }
+            fuchsia_fs::file::write(&keys_file, key_bag).await.unwrap();
+            fuchsia_fs::file::close(keys_file).await.unwrap();
+            fuchsia_fs::directory::close(keys_dir).await.unwrap();
 
             let crypt = Some(
                 crypt_realm

@@ -5,7 +5,7 @@
 use crate::device::{Device, Parent};
 use anyhow::{Context, Error, anyhow};
 use async_trait::async_trait;
-use crypt_policy::{KeyConsumer, KeySource, format_sources, get_policy, unseal_sources};
+use crypt_policy::{KeyConsumer, format_sources, get_policy, unseal_sources};
 use device_watcher::recursive_wait_and_open;
 use fidl::endpoints::Proxy as _;
 use fidl_fuchsia_device::ControllerProxy;
@@ -58,11 +58,7 @@ impl ZxcryptDevice {
 
         let mut last_err = anyhow!("no keys?");
         for source in sources {
-            let key = match source {
-                KeySource::Null(null) => null.get_key(KeyConsumer::Zxcrypt),
-                KeySource::TeeDerived(tee) => tee.get_key().await?,
-                _ => return Err(anyhow!("Unsupported key source")),
-            };
+            let key = source.get_key(KeyConsumer::Zxcrypt).await?;
             match zx::ok(proxy.format(&key, 0).await?) {
                 Ok(()) => {
                     let zxcrypt_device =
@@ -89,11 +85,7 @@ impl ZxcryptDevice {
 
         let mut last_res = Err(anyhow!("no keys?"));
         for source in sources {
-            let key = match source {
-                KeySource::Null(null) => null.get_key(KeyConsumer::Zxcrypt),
-                KeySource::TeeDerived(tee) => tee.get_key().await?,
-                _ => return Err(anyhow!("Unsupported key source")),
-            };
+            let key = source.get_key(KeyConsumer::Zxcrypt).await?;
             match zx::ok(proxy.unseal(&key, 0).await?) {
                 Ok(()) => {
                     let device = ZxcryptDevice {

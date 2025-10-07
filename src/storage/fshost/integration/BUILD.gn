@@ -28,7 +28,6 @@ rustc_library("fshost_test_fixture") {
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
     "//sdk/fidl/fuchsia.process:fuchsia.process_rust",
-    "//sdk/fidl/fuchsia.security.keymint:fuchsia.security.keymint_rust",
     "//sdk/fidl/fuchsia.storage.partitions:fuchsia.storage.partitions_rust",
     "//sdk/lib/driver_test_realm/realm_builder/rust",
     "//sdk/rust/zx",
@@ -41,7 +40,6 @@ rustc_library("fshost_test_fixture") {
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test",
     "//src/lib/fuchsia-fs",
-    "//src/security/lib/fake-keymint",
     "//src/storage/blobfs/bin:blobfs-component",
     "//src/storage/crypt/policy",
     "//src/storage/crypt/zxcrypt",
@@ -276,7 +274,6 @@ template("fshost_integration_test_package") {
     if (data_filesystem_variant == "fxblob") {
       deps += [
         "//sdk/fidl/fuchsia.fs:fuchsia.fs_rust",
-        "//src/storage/crypt/policy",
         "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
         "//src/storage/lib/blob_writer:blob-writer",
       ]

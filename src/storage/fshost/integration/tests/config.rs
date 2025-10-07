@@ -53,7 +53,7 @@ pub fn volumes_spec() -> VolumesSpec {
 }
 
 pub fn data_fs_spec() -> DataSpec {
-    DataSpec { format: Some(data_fs_name()), zxcrypt: data_fs_zxcrypt(), ..Default::default() }
+    DataSpec { format: Some(data_fs_name()), zxcrypt: data_fs_zxcrypt() }
 }
 
 pub fn fvm_slice_size() -> u64 {

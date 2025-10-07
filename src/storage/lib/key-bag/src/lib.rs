@@ -217,19 +217,6 @@ impl_serde!(KeyBytes);
 #[derive(Default, PartialEq)]
 pub struct Aes256Key([u8; AES256_KEY_SIZE]);
 
-impl TryFrom<Vec<u8>> for Aes256Key {
-    type Error = ();
-    fn try_from(mut value: Vec<u8>) -> Result<Self, Self::Error> {
-        if value.len() != AES256_KEY_SIZE {
-            return Err(());
-        }
-        let mut this = Self([0u8; AES256_KEY_SIZE]);
-        this.0.copy_from_slice(&value[..]);
-        value.fill(0);
-        Ok(this)
-    }
-}
-
 impl Aes256Key {
     pub const fn create(data: [u8; AES256_KEY_SIZE]) -> Self {
         Self(data)

@@ -19,7 +19,6 @@ use log::warn;
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::future::Future;
-use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use std::pin::pin;
 
 type KeyInfo = Vec<u8>;
@@ -39,17 +38,11 @@ impl Inner {
 
     // NB: A real Keymint implementation would return a different sealing key each time this is
     // called, and remember the keys that are created.  Since we don't have anywhere to persist
-    // them, we just derive the sealing key from the key info directly, and then store the key info
-    // as the sealed key blob.  Obviously, this is not secure.
+    // them, just directly use the KeyInfo as the key.  Obviously, this is not secure.
     fn derive_key(key_info: &KeyInfo) -> SealingKey {
-        let hash = {
-            let mut hasher = DefaultHasher::new();
-            key_info.hash(&mut hasher);
-            hasher.finish()
-        };
-        let mut derived_key: [u8; 16] = [0; 16];
-        derived_key[..std::mem::size_of::<u64>()].copy_from_slice(&hash.to_le_bytes());
-        let cipher = Aes128GcmSiv::new(Key::<Aes128GcmSiv>::from_slice(&derived_key));
+        let mut extended_key: [u8; 16] = [0; 16];
+        extended_key[..key_info.len()].copy_from_slice(&key_info[..]);
+        let cipher = Aes128GcmSiv::new(Key::<Aes128GcmSiv>::from_slice(&extended_key));
         SealingKey { cipher, key_blob: key_info.clone() }
     }
 
