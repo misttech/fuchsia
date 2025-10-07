@@ -246,11 +246,12 @@ class HandoffPrep {
 
       uintptr_t vaddr = va_allocator_.AllocatePages(size);
       uintptr_t paddr = reinterpret_cast<uintptr_t>(pages.get());
-      PhysMapping mapping(mapping_name, PhysMapping::Type::kNormal, vaddr, size, paddr,
-                          PhysMapping::Permissions::Rw());
-      void* ptr = static_cast<void*>(CreateMapping(mapping).data());
-      mappings_.push_front(HandoffMapping::New(ktl::move(mapping)));
+      const PhysMapping mapping(mapping_name, PhysMapping::Type::kNormal, vaddr, size, paddr,
+                                PhysMapping::Permissions::Rw());
+      ApplyMapping(mapping);
+      mappings_.push_front(HandoffMapping::New(mapping));
 
+      void* ptr = reinterpret_cast<void*>(vaddr);
       return {ptr, Capability{ktl::move(pages), ptr}};
     }
 
@@ -290,12 +291,11 @@ class HandoffPrep {
 
     // Creates the provided mapping and publishes it within the associated VMAR
     // being built up.
-    MappedMemoryRange PublishMapping(PhysMapping mapping) {
+    void PublishMapping(PhysMapping mapping) {
       ZX_DEBUG_ASSERT(vmar_.base <= mapping.vaddr);
       ZX_DEBUG_ASSERT(mapping.vaddr_end() <= vmar_.end());
-      ktl::span mapped = CreateMapping(mapping);
+      ApplyMapping(mapping);
       mappings_.push_front(HandoffMapping::New(ktl::move(mapping)));
-      return {mapped, mapping.paddr};
     }
 
     // Publishes the PhysVmar in the hand-off.
@@ -329,7 +329,7 @@ class HandoffPrep {
   static PhysVmo MakePhysVmo(ktl::span<const ktl::byte> data, ktl::string_view name,
                              size_t content_size);
 
-  static MappedMemoryRange CreateMapping(const PhysMapping& mapping);
+  static void ApplyMapping(const PhysMapping& mapping);
 
   // Packs a list of pending VM objects into a single hand-off span in sorted
   // order.
@@ -391,15 +391,15 @@ class HandoffPrep {
 
   // Publishes a PhysVmar with a single mapping covering its extent, returning
   // its mapped virtual address range.
-  MappedMemoryRange PublishSingleMappingVmar(PhysMapping mapping);
+  void PublishSingleMappingVmar(PhysMapping mapping);
 
   // A variation that assumes a first-class mapping and allocates and the
   // virtual addresses itself. The provided address range may be
   // non-page-aligned, in which the virtual mapping of [addr, addr + size) is
   // returned directly rather than with page alignment.
-  MappedMemoryRange PublishSingleMappingVmar(ktl::string_view name, PhysMapping::Type type,
-                                             uintptr_t addr, size_t size,
-                                             PhysMapping::Permissions perms);
+  ktl::span<ktl::byte> PublishSingleMappingVmar(ktl::string_view name, PhysMapping::Type type,
+                                                uintptr_t addr, size_t size,
+                                                PhysMapping::Permissions perms);
 
   // A specialization for an MMIO range.
   MappedMmioRange PublishSingleMmioMappingVmar(ktl::string_view name, uintptr_t addr, size_t size) {
@@ -412,14 +412,15 @@ class HandoffPrep {
     return result;
   }
 
-  // A specialization for a non-MMIO range.
-  MappedMemoryRange PublishSingleWritableDataMappingVmar(ktl::string_view name, uintptr_t addr,
-                                                         size_t size) {
-    return PublishSingleMappingVmar(name, PhysMapping::Type::kNormal, addr, size,
-                                    PhysMapping::Permissions::Rw());
+  // A specialization for a non-MMIO physical range.
+  PhysHandoffPhysicalSpan<ktl::byte> PublishSingleWritableDataMappingVmar(ktl::string_view name,
+                                                                          uintptr_t addr,
+                                                                          size_t size) {
+    return FromPhysical(PublishSingleMappingVmar(name, PhysMapping::Type::kNormal, addr, size,
+                                                 PhysMapping::Permissions::Rw()));
   }
 
-  MappedMemoryRange PublishStackVmar(ZirconAbiSpec::Stack stack, memalloc::Type type);
+  ktl::span<ktl::byte> PublishStackVmar(ZirconAbiSpec::Stack stack, memalloc::Type type);
 
   // This constructs a PhysElfImage from an ELF file in the KernelStorage.
   PhysElfImage MakePhysElfImage(KernelStorage::Bootfs::iterator file, ktl::string_view name);

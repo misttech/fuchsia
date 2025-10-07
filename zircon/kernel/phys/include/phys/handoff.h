@@ -288,24 +288,6 @@ struct PhysElfImage {
   Info info;
 };
 
-// A mapping of a physical address range.
-template <std::common_with<std::byte> Byte>
-struct MappedRange : public std::span<Byte> {
-  constexpr MappedRange() = default;
-
-  constexpr MappedRange(std::span<Byte> mapped, uintptr_t paddr)
-      : std::span<Byte>::span(mapped), paddr(paddr) {}
-
-  template <typename T>
-    requires std::convertible_to<std::span<T>, std::span<Byte>>
-  explicit(false) constexpr MappedRange(const MappedRange<T>& other)
-      : std::span<Byte>{other}, paddr{other.paddr} {}
-
-  uintptr_t paddr = 0;
-};
-
-using MappedMemoryRange = MappedRange<std::byte>;
-
 // This holds (or points to) everything that is handed off from physboot to the
 // kernel proper at boot time for active initialization use.  This is best used
 // for things that are only used temporarily to initialize other subsystems in

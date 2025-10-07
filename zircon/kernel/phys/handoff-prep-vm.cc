@@ -132,7 +132,7 @@ uintptr_t HandoffPrep::VirtualAddressAllocator::AllocatePages(size_t size) {
   __UNREACHABLE;
 }
 
-MappedMemoryRange HandoffPrep::CreateMapping(const PhysMapping& mapping) {
+void HandoffPrep::ApplyMapping(const PhysMapping& mapping) {
   // TODO(https://fxbug.dev/42164859): Debug assert that mapping.vaddr is >= to
   // the base of the high kernel address space.
   AddressSpace::MapSettings settings;
@@ -151,22 +151,18 @@ MappedMemoryRange HandoffPrep::CreateMapping(const PhysMapping& mapping) {
   }
   AddressSpace::PanicIfError(
       gAddressSpace->Map(mapping.vaddr, mapping.size, mapping.paddr, settings));
-
-  return {{reinterpret_cast<ktl::byte*>(mapping.vaddr), mapping.size}, mapping.paddr};
 }
 
-MappedMemoryRange HandoffPrep::PublishSingleMappingVmar(PhysMapping mapping) {
+void HandoffPrep::PublishSingleMappingVmar(PhysMapping mapping) {
   PhysVmarPrep prep =
       PrepareVmarAt(ktl::string_view{mapping.name.data()}, mapping.vaddr, mapping.size);
-  MappedMemoryRange mapped = prep.PublishMapping(ktl::move(mapping));
+  prep.PublishMapping(mapping);
   ktl::move(prep).Publish();
-  return mapped;
 }
 
-MappedMemoryRange HandoffPrep::PublishSingleMappingVmar(ktl::string_view name,
-                                                        PhysMapping::Type type, uintptr_t addr,
-                                                        size_t size,
-                                                        PhysMapping::Permissions perms) {
+ktl::span<ktl::byte> HandoffPrep::PublishSingleMappingVmar(  //
+    ktl::string_view name, PhysMapping::Type type, uintptr_t addr, size_t size,
+    PhysMapping::Permissions perms) {
   uint64_t aligned_paddr = PageAlignDown(addr);
   uint64_t aligned_size = PageAlignUp(size + (addr - aligned_paddr));
 
@@ -180,11 +176,13 @@ MappedMemoryRange HandoffPrep::PublishSingleMappingVmar(ktl::string_view name,
       aligned_paddr,                                               //
       perms,                                                       //
   };
-  ktl::span aligned = PublishSingleMappingVmar(ktl::move(mapping));
-  return {aligned.subspan(addr - aligned_paddr, size), addr};
+  PublishSingleMappingVmar(mapping);
+  ktl::span aligned{reinterpret_cast<ktl::byte*>(mapping.vaddr), mapping.size};
+  return aligned.subspan(addr - aligned_paddr, size);
 }
 
-MappedMemoryRange HandoffPrep::PublishStackVmar(ZirconAbiSpec::Stack stack, memalloc::Type type) {
+ktl::span<ktl::byte> HandoffPrep::PublishStackVmar(ZirconAbiSpec::Stack stack,
+                                                   memalloc::Type type) {
   ktl::string_view name = memalloc::ToString(type);
 
   ZX_DEBUG_ASSERT_MSG(IsPageAligned(stack.size_bytes), "%.*s size (%#x) is not page-aligned",
@@ -208,7 +206,11 @@ MappedMemoryRange HandoffPrep::PublishStackVmar(ZirconAbiSpec::Stack stack, mema
       paddr,                                //
       PhysMapping::Permissions::Rw(),       //
   };
-  MappedMemoryRange mapped = prep.PublishMapping(mapping);
+  prep.PublishMapping(mapping);
+  ktl::span<ktl::byte> mapped{
+      reinterpret_cast<ktl::byte*>(mapping.vaddr),
+      mapping.size,
+  };
   memset(mapped.data(), 0, mapped.size_bytes());
   ktl::move(prep).Publish();
   return mapped;
@@ -374,8 +376,7 @@ HandoffPrep::ZirconAbi HandoffPrep::ConstructKernelAddressSpace(const UartDriver
       return range.type == memalloc::Type::kNvram;
     });
     if (nvram != pool.end()) {
-      handoff_->nvram =
-          FromPhysical(PublishSingleWritableDataMappingVmar("NVRAM"sv, nvram->addr, nvram->size));
+      handoff_->nvram = PublishSingleWritableDataMappingVmar("NVRAM"sv, nvram->addr, nvram->size);
       mmio_deny.push_back({.base = nvram->addr, .size = nvram->size});
     }
   }
