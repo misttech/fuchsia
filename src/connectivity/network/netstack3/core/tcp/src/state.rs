@@ -1096,7 +1096,7 @@ impl<I: Instant, R: ReceiveBuffer> Recv<I, R> {
             // Discard delayed ack timer if any, we're sending out an
             // acknowledgement now.
             self.timer = None;
-            Some(Segment::ack_with_options(
+            Some(Segment::ack(
                 snd_max,
                 self.nxt(),
                 calculated_window_size >> self.wnd_scale,
@@ -1268,7 +1268,7 @@ trait RecvSegmentArgumentsProvider: Sized {
     fn make_ack<P: Payload>(self, seq: SeqNum) -> Segment<P> {
         let (ack, wnd, sack_blocks) = self.take_rcv_segment_args();
         // TODO(https://fxbug.dev/436529062): Use the timestamp option.
-        Segment::ack_with_options(seq, ack, wnd, SegmentOptions { sack_blocks, timestamp: None })
+        Segment::ack(seq, ack, wnd, SegmentOptions { sack_blocks, timestamp: None })
     }
 }
 
@@ -3729,6 +3729,9 @@ mod test {
     // One MSS worth of test data.
     const TEST_BYTES: &[u8] = &[0xab; TEST_MSS.get() as usize];
 
+    const DEFAULT_SEGMENT_OPTIONS: SegmentOptions =
+        SegmentOptions { sack_blocks: SackBlocks::EMPTY, timestamp: None };
+
     fn default_quickack_counter() -> usize {
         quickack_counter(
             BufferLimits { capacity: WindowSize::DEFAULT.into(), len: 0 },
@@ -4026,7 +4029,10 @@ mod test {
     #[test_case(Segment::rst_ack(TEST_IRS, TEST_ISS, ResetOptions::default()) => None; "drop RST|ACK")]
     #[test_case(Segment::syn(TEST_IRS, UnscaledWindowSize::from(0), HandshakeOptions::default()) => Some(Segment::rst_ack(SeqNum::new(0), TEST_IRS + 1, ResetOptions::default())); "reset SYN")]
     #[test_case(Segment::syn_ack(TEST_IRS, TEST_ISS, UnscaledWindowSize::from(0), HandshakeOptions::default()) => Some(Segment::rst(TEST_ISS, ResetOptions::default())); "reset SYN|ACK")]
-    #[test_case(Segment::with_data(TEST_IRS, TEST_ISS, UnscaledWindowSize::from(0), &[0, 1, 2][..]) => Some(Segment::rst(TEST_ISS, ResetOptions::default())); "reset data segment")]
+    #[test_case(
+        Segment::with_data(
+            TEST_IRS, TEST_ISS, UnscaledWindowSize::from(0), DEFAULT_SEGMENT_OPTIONS, &[0, 1, 2][..]
+        ) => Some(Segment::rst(TEST_ISS, ResetOptions::default())); "reset data segment")]
     fn segment_arrives_when_closed(
         incoming: impl Into<Segment<&'static [u8]>>,
     ) -> Option<Segment<()>> {
@@ -4038,7 +4044,10 @@ mod test {
         Segment::rst_ack(TEST_ISS, TEST_IRS - 1, ResetOptions::default()), RTT
     => SynSentOnSegmentDisposition::Ignore; "unacceptable ACK with RST")]
     #[test_case(
-        Segment::ack(TEST_ISS, TEST_IRS - 1, UnscaledWindowSize::from(u16::MAX)), RTT
+        Segment::ack(
+            TEST_ISS, TEST_IRS - 1, UnscaledWindowSize::from(u16::MAX), DEFAULT_SEGMENT_OPTIONS
+        ),
+        RTT
     => SynSentOnSegmentDisposition::SendRst(
         Segment::rst(TEST_IRS-1, ResetOptions::default()),
     ); "unacceptable ACK without RST")]
@@ -4098,13 +4107,22 @@ mod test {
         }
     ); "SYN only")]
     #[test_case(
-        Segment::fin(TEST_ISS, TEST_IRS + 1, UnscaledWindowSize::from(u16::MAX)), RTT
+        Segment::fin(
+            TEST_ISS, TEST_IRS + 1, UnscaledWindowSize::from(u16::MAX), DEFAULT_SEGMENT_OPTIONS
+        ),
+        RTT
     => SynSentOnSegmentDisposition::Ignore; "acceptable ACK with FIN")]
     #[test_case(
-        Segment::ack(TEST_ISS, TEST_IRS + 1, UnscaledWindowSize::from(u16::MAX)), RTT
+        Segment::ack(
+            TEST_ISS, TEST_IRS + 1, UnscaledWindowSize::from(u16::MAX), DEFAULT_SEGMENT_OPTIONS
+        ),
+        RTT
     => SynSentOnSegmentDisposition::Ignore; "acceptable ACK(ISS+1) with nothing")]
     #[test_case(
-        Segment::ack(TEST_ISS, TEST_IRS, UnscaledWindowSize::from(u16::MAX)), RTT
+        Segment::ack(
+            TEST_ISS, TEST_IRS, UnscaledWindowSize::from(u16::MAX), DEFAULT_SEGMENT_OPTIONS
+        ),
+        RTT
     => SynSentOnSegmentDisposition::Ignore; "acceptable ACK(ISS) without RST")]
     #[test_case(
         Segment::syn(TEST_ISS, UnscaledWindowSize::from(u16::MAX), HandshakeOptions::default()),
@@ -4135,8 +4153,11 @@ mod test {
     }
 
     #[test_case(Segment::rst(TEST_ISS, ResetOptions::default()) => ListenOnSegmentDisposition::Ignore; "ignore RST")]
-    #[test_case(Segment::ack(TEST_ISS, TEST_IRS, UnscaledWindowSize::from(u16::MAX)) =>
-        ListenOnSegmentDisposition::SendRst(Segment::rst(TEST_IRS, ResetOptions::default())); "reject ACK")]
+    #[test_case(
+        Segment::ack(
+            TEST_ISS, TEST_IRS, UnscaledWindowSize::from(u16::MAX), DEFAULT_SEGMENT_OPTIONS
+        ) => ListenOnSegmentDisposition::SendRst(Segment::rst(TEST_IRS, ResetOptions::default()));
+        "reject ACK")]
     #[test_case(Segment::syn(TEST_ISS, UnscaledWindowSize::from(u16::MAX),
         HandshakeOptions {
             window_scale: Some(WindowScale::default()),
@@ -4189,11 +4210,13 @@ mod test {
     }
 
     #[test_case(
-        Segment::ack(TEST_IRS, TEST_ISS, UnscaledWindowSize::from(u16::MAX)),
+        Segment::ack(
+            TEST_IRS, TEST_ISS, UnscaledWindowSize::from(u16::MAX), DEFAULT_SEGMENT_OPTIONS
+        ),
         None
-    => Some(
-        Segment::ack(TEST_ISS + 1, TEST_IRS + 1, UnscaledWindowSize::from(u16::MAX))
-    ); "OTW segment")]
+    => Some(Segment::ack(
+        TEST_ISS + 1, TEST_IRS + 1, UnscaledWindowSize::from(u16::MAX), DEFAULT_SEGMENT_OPTIONS
+    )) ; "OTW segment")]
     #[test_case(
         Segment::rst_ack(TEST_IRS, TEST_ISS, ResetOptions::default()),
         None
@@ -4210,13 +4233,17 @@ mod test {
         Segment::rst(TEST_ISS + 1, ResetOptions::default())
     ); "duplicate syn")]
     #[test_case(
-        Segment::ack(TEST_IRS + 1, TEST_ISS, UnscaledWindowSize::from(u16::MAX)),
+        Segment::ack(
+            TEST_IRS + 1, TEST_ISS, UnscaledWindowSize::from(u16::MAX), DEFAULT_SEGMENT_OPTIONS
+        ),
         None
     => Some(
         Segment::rst(TEST_ISS, ResetOptions::default())
     ); "unacceptable ack (ISS)")]
     #[test_case(
-        Segment::ack(TEST_IRS + 1, TEST_ISS + 1, UnscaledWindowSize::from(u16::MAX)),
+        Segment::ack(
+            TEST_IRS + 1, TEST_ISS + 1, UnscaledWindowSize::from(u16::MAX), DEFAULT_SEGMENT_OPTIONS
+        ),
         Some(State::Established(
             Established {
                 snd: Send {
@@ -4237,13 +4264,17 @@ mod test {
         ))
     => None; "acceptable ack (ISS + 1)")]
     #[test_case(
-        Segment::ack(TEST_IRS + 1, TEST_ISS + 2, UnscaledWindowSize::from(u16::MAX)),
+        Segment::ack(
+            TEST_IRS + 1, TEST_ISS + 2, UnscaledWindowSize::from(u16::MAX), DEFAULT_SEGMENT_OPTIONS
+        ),
         None
     => Some(
         Segment::rst(TEST_ISS + 2, ResetOptions::default())
     ); "unacceptable ack (ISS + 2)")]
     #[test_case(
-        Segment::ack(TEST_IRS + 1, TEST_ISS - 1, UnscaledWindowSize::from(u16::MAX)),
+        Segment::ack(
+            TEST_IRS + 1, TEST_ISS - 1, UnscaledWindowSize::from(u16::MAX), DEFAULT_SEGMENT_OPTIONS
+        ),
         None
     => Some(
         Segment::rst(TEST_ISS - 1, ResetOptions::default())
@@ -4259,7 +4290,9 @@ mod test {
         None
     => None; "no ack")]
     #[test_case(
-        Segment::fin(TEST_IRS + 1, TEST_ISS + 1, UnscaledWindowSize::from(u16::MAX)),
+        Segment::fin(
+            TEST_IRS + 1, TEST_ISS + 1, UnscaledWindowSize::from(u16::MAX), DEFAULT_SEGMENT_OPTIONS
+        ),
         Some(State::CloseWait(CloseWait {
             snd: Send {
                 rtt_estimator: Estimator::Measured {
@@ -4274,9 +4307,9 @@ mod test {
                 wnd_scale: WindowScale::ZERO,
             }
         }))
-    => Some(
-        Segment::ack(TEST_ISS + 1, TEST_IRS + 2, UnscaledWindowSize::from(u16::MAX - 1))
-    ); "fin")]
+    => Some(Segment::ack(
+        TEST_ISS + 1, TEST_IRS + 2, UnscaledWindowSize::from(u16::MAX - 1), DEFAULT_SEGMENT_OPTIONS
+    )); "fin")]
     fn segment_arrives_when_syn_rcvd(
         incoming: Segment<()>,
         expected: Option<State<FakeInstant, RingBuffer, NullBuffer, ()>>,
@@ -4325,17 +4358,23 @@ mod test {
         ))
     => None; "accepatable rst")]
     #[test_case(
-        Segment::ack(TEST_ISS + 1, TEST_IRS + 2, UnscaledWindowSize::from(u16::MAX)),
+        Segment::ack(
+            TEST_ISS + 1, TEST_IRS + 2, UnscaledWindowSize::from(u16::MAX), DEFAULT_SEGMENT_OPTIONS
+        ),
         None
-    => Some(
-        Segment::ack(TEST_ISS + 1, TEST_IRS + 1, UnscaledWindowSize::from(2))
-    ); "unacceptable ack")]
+    => Some(Segment::ack(
+            TEST_ISS + 1, TEST_IRS + 1, UnscaledWindowSize::from(2), DEFAULT_SEGMENT_OPTIONS
+    )); "unacceptable ack")]
     #[test_case(
-        Segment::ack(TEST_IRS + 1, TEST_ISS + 1, UnscaledWindowSize::from(u16::MAX)),
+        Segment::ack(
+            TEST_IRS + 1, TEST_ISS + 1, UnscaledWindowSize::from(u16::MAX), DEFAULT_SEGMENT_OPTIONS
+        ),
         None
     => None; "pure ack")]
     #[test_case(
-        Segment::fin(TEST_IRS + 1, TEST_ISS + 1, UnscaledWindowSize::from(u16::MAX)),
+        Segment::fin(
+            TEST_IRS + 1, TEST_ISS + 1, UnscaledWindowSize::from(u16::MAX), DEFAULT_SEGMENT_OPTIONS
+        ),
         Some(State::CloseWait(CloseWait {
             snd: Send::default_for_test(NullBuffer).into(),
             closed_rcv: RecvParams {
@@ -4345,10 +4384,18 @@ mod test {
             }
         }))
     => Some(
-        Segment::ack(TEST_ISS + 1, TEST_IRS + 2, UnscaledWindowSize::from(1))
+        Segment::ack(
+            TEST_ISS + 1, TEST_IRS + 2, UnscaledWindowSize::from(1), DEFAULT_SEGMENT_OPTIONS
+        )
     ); "pure fin")]
     #[test_case(
-        Segment::piggybacked_fin(TEST_IRS + 1, TEST_ISS + 1, UnscaledWindowSize::from(u16::MAX), "A".as_bytes()),
+        Segment::piggybacked_fin(
+            TEST_IRS + 1,
+            TEST_ISS + 1,
+            UnscaledWindowSize::from(u16::MAX),
+            DEFAULT_SEGMENT_OPTIONS,
+            "A".as_bytes()
+        ),
         Some(State::CloseWait(CloseWait {
             snd: Send::default_for_test(NullBuffer).into(),
             closed_rcv: RecvParams {
@@ -4358,14 +4405,21 @@ mod test {
             }
         }))
     => Some(
-        Segment::ack(TEST_ISS + 1, TEST_IRS + 3, UnscaledWindowSize::from(0))
-    ); "fin with 1 byte")]
+        Segment::ack(
+            TEST_ISS + 1, TEST_IRS + 3, UnscaledWindowSize::from(0), DEFAULT_SEGMENT_OPTIONS
+    )); "fin with 1 byte")]
     #[test_case(
-        Segment::piggybacked_fin(TEST_IRS + 1, TEST_ISS + 1, UnscaledWindowSize::from(u16::MAX), "AB".as_bytes()),
+        Segment::piggybacked_fin(
+            TEST_IRS + 1,
+            TEST_ISS + 1,
+            UnscaledWindowSize::from(u16::MAX),
+            DEFAULT_SEGMENT_OPTIONS,
+            "AB".as_bytes()
+        ),
         None
-    => Some(
-        Segment::ack(TEST_ISS + 1, TEST_IRS + 3, UnscaledWindowSize::from(0))
-    ); "fin with 2 bytes")]
+    => Some(Segment::ack(
+            TEST_ISS + 1, TEST_IRS + 3, UnscaledWindowSize::from(0), DEFAULT_SEGMENT_OPTIONS
+    )); "fin with 2 bytes")]
     fn segment_arrives_when_established(
         incoming: Segment<&[u8]>,
         expected: Option<State<FakeInstant, RingBuffer, NullBuffer, ()>>,
@@ -4407,6 +4461,7 @@ mod test {
                         TEST_IRS + 1,
                         TEST_ISS + 1,
                         UnscaledWindowSize::from(u16::MAX),
+                        DEFAULT_SEGMENT_OPTIONS,
                         TEST_BYTES
                     ),
                     FakeInstant::default(),
@@ -4416,7 +4471,8 @@ mod test {
                     Some(Segment::ack(
                         TEST_ISS + 1,
                         TEST_IRS + 1 + TEST_BYTES.len(),
-                        UnscaledWindowSize::from(0)
+                        UnscaledWindowSize::from(0),
+                        DEFAULT_SEGMENT_OPTIONS
                     )),
                     None
                 )
@@ -4487,7 +4543,8 @@ mod test {
                     Segment::<()>::ack(
                         TEST_IRS + 1,
                         TEST_ISS + 1 + TEST_BYTES.len(),
-                        UnscaledWindowSize::from(u16::MAX)
+                        UnscaledWindowSize::from(u16::MAX),
+                        DEFAULT_SEGMENT_OPTIONS
                     ),
                     FakeInstant::default(),
                     &counters.refs(),
@@ -4529,15 +4586,31 @@ mod test {
         ))
     => None; "rst")]
     #[test_case(
-        Segment::fin(TEST_IRS + 2, TEST_ISS + 1, UnscaledWindowSize::from(u16::MAX)),
+        Segment::fin(
+            TEST_IRS + 2, TEST_ISS + 1, UnscaledWindowSize::from(u16::MAX), DEFAULT_SEGMENT_OPTIONS
+        ),
         None
     => None; "ignore fin")]
     #[test_case(
-        Segment::with_data(TEST_IRS, TEST_ISS + 1, UnscaledWindowSize::from(u16::MAX), "a".as_bytes()),
-        None => Some(Segment::ack(TEST_ISS + 1, TEST_IRS + 2, UnscaledWindowSize::from(u16::MAX)));
+        Segment::with_data(
+            TEST_IRS,
+            TEST_ISS + 1,
+            UnscaledWindowSize::from(u16::MAX),
+            DEFAULT_SEGMENT_OPTIONS,
+            "a".as_bytes()
+        ),
+        None => Some(Segment::ack(
+            TEST_ISS + 1, TEST_IRS + 2, UnscaledWindowSize::from(u16::MAX), DEFAULT_SEGMENT_OPTIONS
+        ));
         "ack old data")]
     #[test_case(
-        Segment::with_data(TEST_IRS + 2, TEST_ISS + 1, UnscaledWindowSize::from(u16::MAX), "Hello".as_bytes()),
+        Segment::with_data(
+            TEST_IRS + 2,
+            TEST_ISS + 1,
+            UnscaledWindowSize::from(u16::MAX),
+            DEFAULT_SEGMENT_OPTIONS,
+            "Hello".as_bytes()
+        ),
         Some(State::Closed (
             Closed { reason: Some(ConnectionError::ConnectionReset) },
         ))
@@ -4699,7 +4772,12 @@ mod test {
         assert_eq!(passive_open, None);
         assert_eq!(
             ack_seg,
-            Segment::ack(active_iss + 1, passive_iss + 1, UnscaledWindowSize::from(u16::MAX))
+            Segment::ack(
+                active_iss + 1,
+                passive_iss + 1,
+                UnscaledWindowSize::from(u16::MAX),
+                DEFAULT_SEGMENT_OPTIONS
+            )
         );
         let established = assert_matches!(&active, State::Established(e) => e);
         assert_eq!(
@@ -4900,7 +4978,15 @@ mod test {
                 clock.now(),
                 &counters.refs(),
             ),
-            (Some(Segment::ack(ISS_1 + 1, ISS_2 + 1, UnscaledWindowSize::from(u16::MAX))), None)
+            (
+                Some(Segment::ack(
+                    ISS_1 + 1,
+                    ISS_2 + 1,
+                    UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS
+                )),
+                None
+            )
         );
         assert_eq!(
             state2.on_segment_with_default_options::<_, ClientlessBufferProvider>(
@@ -4908,7 +4994,15 @@ mod test {
                 clock.now(),
                 &counters.refs(),
             ),
-            (Some(Segment::ack(ISS_2 + 1, ISS_1 + 1, UnscaledWindowSize::from(u16::MAX))), None)
+            (
+                Some(Segment::ack(
+                    ISS_2 + 1,
+                    ISS_1 + 1,
+                    UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS
+                )),
+                None
+            )
         );
 
         let established = assert_matches!(state1, State::Established(e) => e);
@@ -4987,6 +5081,7 @@ mod test {
                     TEST_IRS + 1,
                     TEST_ISS + 1,
                     UnscaledWindowSize::from(0),
+                    DEFAULT_SEGMENT_OPTIONS,
                     TEST_BYTES,
                 ),
                 clock.now(),
@@ -4997,6 +5092,7 @@ mod test {
                     TEST_ISS + 1,
                     TEST_IRS + 1 + TEST_BYTES.len(),
                     UnscaledWindowSize::from((BUFFER_SIZE - TEST_BYTES.len()) as u16),
+                    DEFAULT_SEGMENT_OPTIONS
                 )),
                 None
             ),
@@ -5017,13 +5113,14 @@ mod test {
                     segment_start,
                     TEST_ISS + 1,
                     UnscaledWindowSize::from(0),
+                    DEFAULT_SEGMENT_OPTIONS,
                     TEST_BYTES,
                 ),
                 clock.now(),
                 &counters.refs()
             ),
             (
-                Some(Segment::ack_with_options(
+                Some(Segment::ack(
                     TEST_ISS + 1,
                     TEST_IRS + 1 + TEST_BYTES.len(),
                     UnscaledWindowSize::from(u16::try_from(BUFFER_SIZE).unwrap()),
@@ -5061,6 +5158,7 @@ mod test {
                     TEST_IRS + 1 + TEST_BYTES.len(),
                     TEST_ISS + 1,
                     UnscaledWindowSize::from(0),
+                    DEFAULT_SEGMENT_OPTIONS,
                     TEST_BYTES,
                 ),
                 clock.now(),
@@ -5071,6 +5169,7 @@ mod test {
                     TEST_ISS + 1,
                     TEST_IRS + 1 + 3 * TEST_BYTES.len(),
                     UnscaledWindowSize::from_usize(BUFFER_SIZE - 2 * TEST_BYTES.len()),
+                    DEFAULT_SEGMENT_OPTIONS
                 )),
                 None
             ),
@@ -5114,7 +5213,12 @@ mod test {
                            counters: &TcpCountersRefs<'_>| {
             assert_eq!(
                 established.on_segment_with_default_options::<(), ClientlessBufferProvider>(
-                    Segment::ack(TEST_IRS + 1, ack, UnscaledWindowSize::from_usize(win)),
+                    Segment::ack(
+                        TEST_IRS + 1,
+                        ack,
+                        UnscaledWindowSize::from_usize(win),
+                        DEFAULT_SEGMENT_OPTIONS
+                    ),
                     now,
                     counters
                 ),
@@ -5129,6 +5233,7 @@ mod test {
                 TEST_ISS + 1,
                 TEST_IRS + 1,
                 UnscaledWindowSize::from_usize(BUFFER_SIZE),
+                DEFAULT_SEGMENT_OPTIONS,
                 FragmentedPayload::new_contiguous(&TEST_BYTES[1..2]),
             ))
         );
@@ -5147,6 +5252,7 @@ mod test {
                 TEST_ISS + 2,
                 TEST_IRS + 1,
                 UnscaledWindowSize::from_usize(BUFFER_SIZE),
+                DEFAULT_SEGMENT_OPTIONS,
                 FragmentedPayload::new_contiguous(TEST_BYTES),
             ))
         );
@@ -5222,7 +5328,15 @@ mod test {
                 clock.now(),
                 &counters.refs(),
             ),
-            (Some(Segment::ack(ISS_1 + 1, ISS_1 + 1, UnscaledWindowSize::from(u16::MAX))), None)
+            (
+                Some(Segment::ack(
+                    ISS_1 + 1,
+                    ISS_1 + 1,
+                    UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS
+                )),
+                None
+            )
         );
         match state {
             State::Closed(_)
@@ -5274,7 +5388,8 @@ mod test {
                 Segment::ack(
                     ISS_1 + 1 + TEST_BYTES.len(),
                     ISS_1 + 1 + 1,
-                    UnscaledWindowSize::from(u16::MAX)
+                    UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS
                 ),
                 clock.now(),
                 &counters.refs(),
@@ -5329,7 +5444,8 @@ mod test {
                 Segment::ack(
                     ISS_1 + 1 + TEST_BYTES.len(),
                     ISS_1 + usize::from(Mss::MIN) + 2,
-                    UnscaledWindowSize::from(u16::MAX)
+                    UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS
                 ),
                 clock.now(),
                 &counters.refs(),
@@ -5368,7 +5484,8 @@ mod test {
                 Segment::ack(
                     ISS_1 + 1 + TEST_BYTES.len(),
                     ISS_1 + 1 + TEST_BYTES.len(),
-                    UnscaledWindowSize::from(u16::MAX)
+                    UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS
                 ),
                 clock.now(),
                 &counters.refs()
@@ -5402,7 +5519,12 @@ mod test {
         // Transition the state machine to CloseWait by sending a FIN.
         assert_eq!(
             state.on_segment_with_default_options::<(), ClientlessBufferProvider>(
-                Segment::fin(TEST_IRS + 1, TEST_ISS + 1, UnscaledWindowSize::from(u16::MAX)),
+                Segment::fin(
+                    TEST_IRS + 1,
+                    TEST_ISS + 1,
+                    UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS
+                ),
                 clock.now(),
                 &counters.refs(),
             ),
@@ -5410,7 +5532,8 @@ mod test {
                 Some(Segment::ack(
                     TEST_ISS + 1,
                     TEST_IRS + 2,
-                    UnscaledWindowSize::from_usize(BUFFER_SIZE - 1)
+                    UnscaledWindowSize::from_usize(BUFFER_SIZE - 1),
+                    DEFAULT_SEGMENT_OPTIONS
                 )),
                 None
             )
@@ -5442,6 +5565,7 @@ mod test {
                 TEST_ISS + 1,
                 TEST_IRS + 2,
                 last_wnd >> WindowScale::default(),
+                DEFAULT_SEGMENT_OPTIONS,
                 FragmentedPayload::new_contiguous(TEST_BYTES),
             ))
         );
@@ -5467,7 +5591,8 @@ mod test {
                 Segment::ack(
                     TEST_IRS + 2,
                     TEST_ISS + TEST_BYTES.len() + PARTIAL_LEN + 1,
-                    UnscaledWindowSize::from(u16::MAX)
+                    UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS
                 ),
                 clock.now(),
                 &counters.refs(),
@@ -5482,7 +5607,8 @@ mod test {
             Some(Segment::fin(
                 TEST_ISS + TEST_BYTES.len() + PARTIAL_LEN + 1,
                 TEST_IRS + 2,
-                last_wnd >> WindowScale::default()
+                last_wnd >> WindowScale::default(),
+                DEFAULT_SEGMENT_OPTIONS
             ))
         );
 
@@ -5493,6 +5619,7 @@ mod test {
                     TEST_IRS + 2,
                     TEST_ISS + TEST_BYTES.len() + PARTIAL_LEN + 2,
                     UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS
                 ),
                 clock.now(),
                 &counters.refs(),
@@ -5547,7 +5674,12 @@ mod test {
         assert_matches!(state, State::FinWait1(_));
         assert_eq!(
             state.poll_send_with_default_options(FakeInstant::default(), &counters.refs()),
-            Some(Segment::fin(TEST_ISS + 1, TEST_IRS + 1, UnscaledWindowSize::from(u16::MAX)))
+            Some(Segment::fin(
+                TEST_ISS + 1,
+                TEST_IRS + 1,
+                UnscaledWindowSize::from(u16::MAX),
+                DEFAULT_SEGMENT_OPTIONS
+            ))
         );
     }
 
@@ -5595,6 +5727,7 @@ mod test {
                 TEST_ISS + 1,
                 TEST_IRS + 1,
                 UnscaledWindowSize::from_usize(BUFFER_SIZE),
+                DEFAULT_SEGMENT_OPTIONS,
                 FragmentedPayload::new_contiguous(TEST_BYTES)
             ))
         );
@@ -5622,6 +5755,7 @@ mod test {
                     TEST_IRS + 1,
                     TEST_ISS + TEST_BYTES.len() + 1,
                     UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS,
                     TEST_BYTES
                 ),
                 clock.now(),
@@ -5632,6 +5766,7 @@ mod test {
                     TEST_ISS + TEST_BYTES.len() + PARTIAL_LEN + 2,
                     TEST_IRS + TEST_BYTES.len() + 1,
                     UnscaledWindowSize::from_usize(BUFFER_SIZE - TEST_BYTES.len()),
+                    DEFAULT_SEGMENT_OPTIONS
                 )),
                 None
             )
@@ -5673,7 +5808,8 @@ mod test {
                 Segment::ack(
                     TEST_IRS + TEST_BYTES.len() + 1,
                     TEST_ISS + TEST_BYTES.len() + PARTIAL_LEN + 2,
-                    UnscaledWindowSize::from(u16::MAX)
+                    UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS
                 ),
                 clock.now(),
                 &counters.refs(),
@@ -5689,6 +5825,7 @@ mod test {
                     TEST_IRS + TEST_BYTES.len() + 1,
                     TEST_ISS + TEST_BYTES.len() + 2,
                     UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS,
                     TEST_BYTES
                 ),
                 clock.now(),
@@ -5699,6 +5836,7 @@ mod test {
                     TEST_ISS + TEST_BYTES.len() + PARTIAL_LEN + 2,
                     TEST_IRS + 2 * TEST_BYTES.len() + 1,
                     UnscaledWindowSize::from_usize(BUFFER_SIZE - TEST_BYTES.len()),
+                    DEFAULT_SEGMENT_OPTIONS
                 )),
                 None
             )
@@ -5719,7 +5857,8 @@ mod test {
                 Segment::fin(
                     TEST_IRS + 2 * TEST_BYTES.len() + 1,
                     TEST_ISS + TEST_BYTES.len() + 2,
-                    UnscaledWindowSize::from(u16::MAX)
+                    UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS
                 ),
                 clock.now(),
                 &counters.refs(),
@@ -5729,6 +5868,7 @@ mod test {
                     TEST_ISS + TEST_BYTES.len() + PARTIAL_LEN + 2,
                     TEST_IRS + 2 * TEST_BYTES.len() + 2,
                     UnscaledWindowSize::from_usize(BUFFER_SIZE - 1),
+                    DEFAULT_SEGMENT_OPTIONS
                 )),
                 None
             )
@@ -5768,7 +5908,12 @@ mod test {
         });
         assert_eq!(
             state.on_segment_with_default_options::<(), ClientlessBufferProvider>(
-                Segment::fin(TEST_IRS + 1, TEST_ISS + 2, UnscaledWindowSize::from(u16::MAX)),
+                Segment::fin(
+                    TEST_IRS + 1,
+                    TEST_ISS + 2,
+                    UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS
+                ),
                 FakeInstant::default(),
                 &counters.refs(),
             ),
@@ -5776,7 +5921,8 @@ mod test {
                 Some(Segment::ack(
                     TEST_ISS + 2,
                     TEST_IRS + 2,
-                    UnscaledWindowSize::from_usize(BUFFER_SIZE - 1)
+                    UnscaledWindowSize::from_usize(BUFFER_SIZE - 1),
+                    DEFAULT_SEGMENT_OPTIONS
                 )),
                 None
             ),
@@ -5836,6 +5982,7 @@ mod test {
                     iss + 1,
                     iss + 1,
                     UnscaledWindowSize::from_usize(BUFFER_SIZE),
+                    DEFAULT_SEGMENT_OPTIONS,
                     TEST_BYTES,
                 ),
                 clock.now(),
@@ -5846,6 +5993,7 @@ mod test {
                     iss + TEST_BYTES.len() + 2,
                     iss + TEST_BYTES.len() + 2,
                     UnscaledWindowSize::from_usize(BUFFER_SIZE - TEST_BYTES.len() - 1),
+                    DEFAULT_SEGMENT_OPTIONS
                 )),
                 None
             )
@@ -5860,6 +6008,7 @@ mod test {
                     iss + TEST_BYTES.len() + 2,
                     iss + TEST_BYTES.len() + 2,
                     UnscaledWindowSize::from_usize(BUFFER_SIZE - TEST_BYTES.len() - 1),
+                    DEFAULT_SEGMENT_OPTIONS
                 ),
                 clock.now(),
                 &counters.refs(),
@@ -5903,12 +6052,22 @@ mod test {
         clock.sleep(Duration::from_secs(1));
         assert_eq!(
             time_wait.on_segment_with_default_options::<(), ClientlessBufferProvider>(
-                Segment::fin(TEST_IRS + 2, TEST_ISS + 2, UnscaledWindowSize::from(u16::MAX)),
+                Segment::fin(
+                    TEST_IRS + 2,
+                    TEST_ISS + 2,
+                    UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS
+                ),
                 clock.now(),
                 &counters.refs(),
             ),
             (
-                Some(Segment::ack(TEST_ISS + 2, TEST_IRS + 2, UnscaledWindowSize::from(u16::MAX))),
+                Some(Segment::ack(
+                    TEST_ISS + 2,
+                    TEST_IRS + 2,
+                    UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS
+                )),
                 None
             ),
         );
@@ -5920,8 +6079,18 @@ mod test {
             snd: Send::default_for_test_at(TEST_ISS, NullBuffer).into(),
             rcv: Recv::default_for_test_at(TEST_IRS + u32::from(TEST_MSS), RingBuffer::default()).into(),
         }),
-        Segment::with_data(TEST_IRS, TEST_ISS, UnscaledWindowSize::from(u16::MAX), TEST_BYTES) =>
-        Some(Segment::ack(TEST_ISS, TEST_IRS + u32::from(TEST_MSS), UnscaledWindowSize::from(u16::MAX)));
+        Segment::with_data(
+            TEST_IRS,
+            TEST_ISS,
+            UnscaledWindowSize::from(u16::MAX),
+            DEFAULT_SEGMENT_OPTIONS,
+            TEST_BYTES
+        ) => Some(Segment::ack(
+            TEST_ISS,
+            TEST_IRS + u32::from(TEST_MSS),
+            UnscaledWindowSize::from(u16::MAX),
+            DEFAULT_SEGMENT_OPTIONS
+        ));
         "retransmit data"
     )]
     #[test_case(
@@ -5949,7 +6118,9 @@ mod test {
         }),
         Segment::syn_ack(TEST_IRS, TEST_ISS + 1, UnscaledWindowSize::from(u16::MAX),
         HandshakeOptions { window_scale: Some(WindowScale::default()), ..Default::default() }) =>
-        Some(Segment::ack(TEST_ISS + 1, TEST_IRS + 1, UnscaledWindowSize::from(u16::MAX))); "retransmit syn_ack"
+        Some(Segment::ack(
+            TEST_ISS + 1, TEST_IRS + 1, UnscaledWindowSize::from(u16::MAX), DEFAULT_SEGMENT_OPTIONS
+        )); "retransmit syn_ack"
     )]
     // Regression test for https://fxbug.dev/42058963
     fn ack_to_retransmitted_segment(
@@ -5997,6 +6168,7 @@ mod test {
                 TEST_ISS,
                 TEST_IRS,
                 UnscaledWindowSize::from(u16::MAX),
+                DEFAULT_SEGMENT_OPTIONS,
                 FragmentedPayload::new_contiguous(&[b'A'; Mss::DEFAULT_IPV4.get() as usize]),
             ))
         );
@@ -6005,7 +6177,12 @@ mod test {
             clock.sleep(Duration::from_millis(10));
             assert_eq!(
                 state.on_segment_with_default_options::<(), ClientlessBufferProvider>(
-                    Segment::ack(TEST_IRS, TEST_ISS, UnscaledWindowSize::from(u16::MAX)),
+                    Segment::ack(
+                        TEST_IRS,
+                        TEST_ISS,
+                        UnscaledWindowSize::from(u16::MAX),
+                        DEFAULT_SEGMENT_OPTIONS
+                    ),
                     clock.now(),
                     counters,
                 ),
@@ -6069,7 +6246,8 @@ mod test {
                 Segment::ack(
                     TEST_IRS,
                     TEST_ISS + u32::from(Mss::DEFAULT_IPV4),
-                    UnscaledWindowSize::from(u16::MAX)
+                    UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS
                 ),
                 clock.now(),
                 &counters.refs(),
@@ -6130,7 +6308,12 @@ mod test {
             state.on_segment::<&[u8], ClientlessBufferProvider>(
                 &FakeStateMachineDebugId::default(),
                 &counters.refs(),
-                Segment::ack(TEST_IRS, TEST_ISS, UnscaledWindowSize::from(u16::MAX)),
+                Segment::ack(
+                    TEST_IRS,
+                    TEST_ISS,
+                    UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS
+                ),
                 clock.now(),
                 socket_options,
                 &None::<()>, /* data_notifier */
@@ -6152,7 +6335,12 @@ mod test {
                     clock.now(),
                     socket_options,
                 ),
-                Ok(Segment::ack(TEST_ISS - 1, TEST_IRS, UnscaledWindowSize::from(u16::MAX)))
+                Ok(Segment::ack(
+                    TEST_ISS - 1,
+                    TEST_IRS,
+                    UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS
+                ))
             );
             clock.sleep(keep_alive.interval.into());
             assert_matches!(state, State::Established(_));
@@ -6307,6 +6495,7 @@ mod test {
                 TEST_ISS + 1,
                 TEST_IRS + 1,
                 UnscaledWindowSize::from_usize(BUFFER_SIZE),
+                DEFAULT_SEGMENT_OPTIONS,
                 FragmentedPayload::new_contiguous(&TEST_BYTES[0..1])
             ))
         );
@@ -6314,7 +6503,12 @@ mod test {
         // The receiver still has a zero window.
         assert_eq!(
             state.on_segment_with_default_options::<(), ClientlessBufferProvider>(
-                Segment::ack(TEST_IRS + 1, TEST_ISS + 1, UnscaledWindowSize::from(0)),
+                Segment::ack(
+                    TEST_IRS + 1,
+                    TEST_ISS + 1,
+                    UnscaledWindowSize::from(0),
+                    DEFAULT_SEGMENT_OPTIONS
+                ),
                 clock.now(),
                 &counters.refs(),
             ),
@@ -6336,6 +6530,7 @@ mod test {
                 TEST_ISS + 1,
                 TEST_IRS + 1,
                 UnscaledWindowSize::from_usize(BUFFER_SIZE),
+                DEFAULT_SEGMENT_OPTIONS,
                 FragmentedPayload::new_contiguous(&TEST_BYTES[0..1])
             ))
         );
@@ -6343,7 +6538,12 @@ mod test {
         // The receiver now opens its receive window.
         assert_eq!(
             state.on_segment_with_default_options::<(), ClientlessBufferProvider>(
-                Segment::ack(TEST_IRS + 1, TEST_ISS + 2, UnscaledWindowSize::from(u16::MAX)),
+                Segment::ack(
+                    TEST_IRS + 1,
+                    TEST_ISS + 2,
+                    UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS
+                ),
                 clock.now(),
                 &counters.refs(),
             ),
@@ -6398,6 +6598,7 @@ mod test {
                 TEST_ISS + 1,
                 TEST_IRS + 1,
                 UnscaledWindowSize::from_usize(BUFFER_SIZE),
+                DEFAULT_SEGMENT_OPTIONS,
                 FragmentedPayload::new_contiguous(TEST_BYTES)
             ))
         );
@@ -6469,7 +6670,12 @@ mod test {
                 &counters.refs(),
             ),
             (
-                Some(Segment::ack(TEST_ISS + 1, TEST_ISS + 1, UnscaledWindowSize::from(u16::MAX))),
+                Some(Segment::ack(
+                    TEST_ISS + 1,
+                    TEST_ISS + 1,
+                    UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS
+                )),
                 None
             )
         );
@@ -6497,6 +6703,7 @@ mod test {
                 TEST_ISS + 1,
                 TEST_ISS + 1,
                 UnscaledWindowSize::from(u16::MAX),
+                DEFAULT_SEGMENT_OPTIONS,
                 FragmentedPayload::new_contiguous(&TEST_BYTES[..usize::from(mss)]),
             ))
         );
@@ -6542,6 +6749,7 @@ mod test {
                     seg.header().ack.unwrap(),
                     seg.header().seq,
                     UnscaledWindowSize::from(0),
+                    DEFAULT_SEGMENT_OPTIONS,
                 );
                 assert_matches!(
                     state.on_segment::<(), ClientlessBufferProvider>(
@@ -6667,6 +6875,7 @@ mod test {
                     TEST_IRS + 1,
                     TEST_ISS + 1,
                     UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS,
                     TEST_BYTES,
                 ),
                 clock.now(),
@@ -6689,6 +6898,7 @@ mod test {
                 TEST_ISS + 1,
                 TEST_IRS + 1 + TEST_BYTES.len(),
                 UnscaledWindowSize::from_u32(2 * u32::from(DEVICE_MAXIMUM_SEGMENT_SIZE)),
+                DEFAULT_SEGMENT_OPTIONS
             ))
         );
         let full_segment_sized_payload =
@@ -6708,6 +6918,7 @@ mod test {
                     TEST_IRS + 1 + TEST_BYTES.len(),
                     TEST_ISS + 1,
                     UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS,
                     &full_segment_sized_payload[..],
                 ),
                 clock.now(),
@@ -6733,6 +6944,7 @@ mod test {
                     TEST_IRS + 1 + TEST_BYTES.len() + full_segment_sized_payload.len(),
                     TEST_ISS + 1,
                     UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS,
                     &full_segment_sized_payload[..],
                 ),
                 clock.now(),
@@ -6745,6 +6957,7 @@ mod test {
                     TEST_ISS + 1,
                     TEST_IRS + 1 + TEST_BYTES.len() + 2 * u32::from(DEVICE_MAXIMUM_SEGMENT_SIZE),
                     UnscaledWindowSize::from(0),
+                    DEFAULT_SEGMENT_OPTIONS
                 )),
                 None,
                 DataAcked::No,
@@ -6788,6 +7001,7 @@ mod test {
                     segment_start,
                     TEST_ISS + 1,
                     UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS,
                     &TEST_BYTES[1..]
                 ),
                 clock.now(),
@@ -6796,7 +7010,7 @@ mod test {
                 false,       /* defunct */
             ),
             (
-                Some(Segment::ack_with_options(
+                Some(Segment::ack(
                     TEST_ISS + 1,
                     TEST_IRS + 1,
                     UnscaledWindowSize::from(u16::try_from(TEST_BYTES.len() + 1).unwrap()),
@@ -6831,6 +7045,7 @@ mod test {
                     TEST_IRS + 1,
                     TEST_ISS + 1,
                     UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS,
                     &TEST_BYTES[..1]
                 ),
                 clock.now(),
@@ -6843,6 +7058,7 @@ mod test {
                     TEST_ISS + 1,
                     TEST_IRS + 1 + TEST_BYTES.len(),
                     UnscaledWindowSize::from(1),
+                    DEFAULT_SEGMENT_OPTIONS
                 )),
                 None,
                 DataAcked::No,
@@ -6859,6 +7075,7 @@ mod test {
                     TEST_IRS + 1 + TEST_BYTES.len(),
                     TEST_ISS + 1,
                     UnscaledWindowSize::from(u16::MAX),
+                    DEFAULT_SEGMENT_OPTIONS
                 ),
                 clock.now(),
                 &socket_options,
@@ -6870,6 +7087,7 @@ mod test {
                     TEST_ISS + 1,
                     TEST_IRS + 1 + TEST_BYTES.len() + 1,
                     UnscaledWindowSize::from(0),
+                    DEFAULT_SEGMENT_OPTIONS
                 )),
                 None,
                 DataAcked::No,
@@ -7089,6 +7307,7 @@ mod test {
             TEST_IRS + 1 + u16::MAX as usize,
             TEST_ISS + 1,
             UnscaledWindowSize::from(u16::MAX),
+            DEFAULT_SEGMENT_OPTIONS,
             &TEST_BYTES[..],
         )
     )]
@@ -7098,6 +7317,7 @@ mod test {
             TEST_IRS + 1 + u16::MAX as usize,
             TEST_ISS + 1,
             UnscaledWindowSize::from(u16::MAX),
+            DEFAULT_SEGMENT_OPTIONS,
             &TEST_BYTES[..],
         )
     )]
@@ -7135,7 +7355,15 @@ mod test {
                 FakeInstant::default(),
                 &counters.refs()
             ),
-            (Some(Segment::ack(TEST_ISS + 1, TEST_IRS + 1, buffer_sizes.rwnd_unscaled())), None),
+            (
+                Some(Segment::ack(
+                    TEST_ISS + 1,
+                    TEST_IRS + 1,
+                    buffer_sizes.rwnd_unscaled(),
+                    DEFAULT_SEGMENT_OPTIONS
+                )),
+                None
+            ),
         )
     }
 
@@ -7165,6 +7393,7 @@ mod test {
                 TEST_ISS + 1,
                 TEST_IRS + 1,
                 WindowSize::DEFAULT >> WindowScale::default(),
+                DEFAULT_SEGMENT_OPTIONS,
                 FragmentedPayload::new_contiguous(&TEST_BYTES[..TEST_BYTES.len() - RESERVED_BYTES])
             ))
         );
@@ -7314,6 +7543,7 @@ mod test {
                 TEST_ISS + 1,
                 TEST_IRS + 1,
                 UnscaledWindowSize::from(u16::MAX),
+                DEFAULT_SEGMENT_OPTIONS,
                 FragmentedPayload::new_contiguous(TEST_BYTES),
             )),
         );
@@ -7383,6 +7613,7 @@ mod test {
                 TEST_ISS + 1 + TEST_BYTES.len(),
                 TEST_IRS + 1,
                 UnscaledWindowSize::from(u16::MAX),
+                DEFAULT_SEGMENT_OPTIONS,
                 FragmentedPayload::new_contiguous(&TEST_BYTES[..1]),
             ))
         );
@@ -7494,6 +7725,7 @@ mod test {
                 TEST_ISS + 1 + TEST_BYTES.len() + seq_index,
                 TEST_IRS + 1,
                 UnscaledWindowSize::from(u16::MAX),
+                DEFAULT_SEGMENT_OPTIONS,
                 FragmentedPayload::new_contiguous(&TEST_BYTES[seq_index..3 + seq_index]),
             ))
         );
@@ -7534,6 +7766,7 @@ mod test {
                 TEST_ISS + 1,
                 TEST_IRS + 1,
                 UnscaledWindowSize::from(u16::MAX),
+                DEFAULT_SEGMENT_OPTIONS,
                 FragmentedPayload::new_contiguous(TEST_BYTES),
             )),
         );
@@ -7619,6 +7852,7 @@ mod test {
                 iss,
                 iss,
                 UnscaledWindowSize::from(u16::try_from(BUFFER_SIZE).unwrap()),
+                DEFAULT_SEGMENT_OPTIONS,
                 FragmentedPayload::new_contiguous(TEST_BYTES),
             )),
         );
@@ -7644,6 +7878,7 @@ mod test {
                 iss,
                 iss,
                 UnscaledWindowSize::from(u16::try_from(BUFFER_SIZE).unwrap()),
+                DEFAULT_SEGMENT_OPTIONS,
                 FragmentedPayload::new_contiguous(TEST_BYTES),
             )),
         );
@@ -7656,6 +7891,7 @@ mod test {
                     iss,
                     iss,
                     UnscaledWindowSize::from(u16::try_from(BUFFER_SIZE).unwrap()),
+                    DEFAULT_SEGMENT_OPTIONS,
                     TEST_BYTES,
                 ),
                 clock.now(),
@@ -7668,6 +7904,7 @@ mod test {
                     UnscaledWindowSize::from(
                         u16::try_from(BUFFER_SIZE - TEST_BYTES.len()).unwrap()
                     ),
+                    DEFAULT_SEGMENT_OPTIONS
                 )),
                 None,
             )
@@ -7783,6 +8020,7 @@ mod test {
                     TEST_IRS + 1,
                     TEST_ISS + 1,
                     UnscaledWindowSize::from(0),
+                    DEFAULT_SEGMENT_OPTIONS,
                     TEST_BYTES,
                 ),
                 clock.now(),
@@ -7794,6 +8032,7 @@ mod test {
                 TEST_ISS + 1,
                 TEST_IRS + 1 + TEST_BYTES.len(),
                 UnscaledWindowSize::from((BUFFER_SIZE - TEST_BYTES.len()) as u16),
+                DEFAULT_SEGMENT_OPTIONS,
             ));
             assert_eq!(seg, (expect_ack, None));
             assert_matches!(state.poll_receive_data_dequeued(), None);
@@ -7838,7 +8077,7 @@ mod test {
 
                 assert_eq!(
                     state.poll_receive_data_dequeued(),
-                    Some(Segment::ack_with_options(
+                    Some(Segment::ack(
                         TEST_ISS + 1,
                         TEST_IRS + 1 + TEST_BYTES.len(),
                         UnscaledWindowSize::from(BUFFER_SIZE as u16),
@@ -8187,7 +8426,8 @@ mod test {
                 Segment::ack(
                     TEST_IRS + 1,
                     ack_number,
-                    WindowSize::DEFAULT >> WindowScale::default()
+                    WindowSize::DEFAULT >> WindowScale::default(),
+                    DEFAULT_SEGMENT_OPTIONS
                 ),
                 clock.now(),
                 &counters.refs()
@@ -8225,7 +8465,8 @@ mod test {
                 Segment::ack(
                     TEST_IRS + 1,
                     TEST_ISS + 1 + TEST_BYTES.len() * 2,
-                    WindowSize::DEFAULT >> WindowScale::default()
+                    WindowSize::DEFAULT >> WindowScale::default(),
+                    DEFAULT_SEGMENT_OPTIONS
                 ),
                 clock.now(),
                 &counters.refs()
@@ -8264,6 +8505,7 @@ mod test {
             TEST_IRS + 1,
             seg.header().seq,
             WindowSize::DEFAULT >> WindowScale::default(),
+            DEFAULT_SEGMENT_OPTIONS,
         );
 
         let mut dup_acks = 0;
@@ -8348,7 +8590,7 @@ mod test {
         clock.sleep(RTT);
 
         // Receive an ACK with SACK blocks that put us in SACK recovery.
-        let ack = Segment::ack_with_options(
+        let ack = Segment::ack(
             TEST_IRS + 1,
             una,
             WindowSize::DEFAULT >> WindowScale::default(),
@@ -8527,7 +8769,7 @@ mod test {
                 poll_until_empty(&mut state, &mut pending_segments, clock.now());
             } else {
                 for (ack, sack_blocks) in pending_acks.drain(..) {
-                    let seg: Segment<()> = Segment::ack_with_options(
+                    let seg: Segment<()> = Segment::ack(
                         TEST_IRS + 1,
                         ack,
                         snd_wnd >> wnd_scale,
@@ -8690,7 +8932,8 @@ mod test {
 
         // First receive a cumulative ACK for the entire transfer.
         let end = state.assert_established().snd.nxt;
-        let seg = Segment::<()>::ack(TEST_IRS + 1, end, snd_wnd >> wnd_scale);
+        let seg =
+            Segment::<()>::ack(TEST_IRS + 1, end, snd_wnd >> wnd_scale, DEFAULT_SEGMENT_OPTIONS);
         assert_eq!(
             state.on_segment::<_, ClientlessBufferProvider>(
                 &FakeStateMachineDebugId::default(),
@@ -8722,7 +8965,7 @@ mod test {
         )
         .unwrap();
         assert!(sack_block.right().before(end));
-        let seg = Segment::<()>::ack_with_options(
+        let seg = Segment::<()>::ack(
             TEST_IRS + 1,
             start,
             snd_wnd >> wnd_scale,
@@ -8801,8 +9044,12 @@ mod test {
             // conditions with this test.
             assert!(!(is_last && is_periodic));
             assert_eq!(seg.header().push, is_last || is_periodic, "at {i}");
-            let ack =
-                Segment::ack(TEST_IRS + 1, seg.header().seq + seg.len(), snd_wnd >> wnd_scale);
+            let ack = Segment::ack(
+                TEST_IRS + 1,
+                seg.header().seq + seg.len(),
+                snd_wnd >> wnd_scale,
+                DEFAULT_SEGMENT_OPTIONS,
+            );
             assert_eq!(
                 state.on_segment::<(), ClientlessBufferProvider>(
                     &FakeStateMachineDebugId::default(),

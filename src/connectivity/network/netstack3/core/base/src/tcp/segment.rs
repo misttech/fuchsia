@@ -659,13 +659,8 @@ impl<P: Payload> Segment<P> {
         seg
     }
 
-    /// Creates an ACK segment with options.
-    pub fn ack_with_options(
-        seq: SeqNum,
-        ack: SeqNum,
-        wnd: UnscaledWindowSize,
-        options: SegmentOptions,
-    ) -> Self {
+    /// Creates an ACK segment.
+    pub fn ack(seq: SeqNum, ack: SeqNum, wnd: UnscaledWindowSize, options: SegmentOptions) -> Self {
         Segment::new_empty(SegmentHeader {
             seq,
             ack: Some(ack),
@@ -1067,7 +1062,13 @@ mod testutils {
 
     impl<P: Payload> Segment<P> {
         /// Creates a new segment with the provided data.
-        pub fn with_data(seq: SeqNum, ack: SeqNum, wnd: UnscaledWindowSize, data: P) -> Segment<P> {
+        pub fn with_data(
+            seq: SeqNum,
+            ack: SeqNum,
+            wnd: UnscaledWindowSize,
+            options: SegmentOptions,
+            data: P,
+        ) -> Segment<P> {
             Segment::new_assert_no_discard(
                 SegmentHeader {
                     seq,
@@ -1075,15 +1076,10 @@ mod testutils {
                     control: None,
                     wnd,
                     push: false,
-                    options: Options::new(None),
+                    options: Options::Segment(options),
                 },
                 data,
             )
-        }
-
-        /// Creates an ACK segment with empty options.
-        pub fn ack(seq: SeqNum, ack: SeqNum, wnd: UnscaledWindowSize) -> Self {
-            Self::ack_with_options(seq, ack, wnd, SegmentOptions::default())
         }
 
         /// Creates a new FIN segment with the provided data.
@@ -1091,6 +1087,7 @@ mod testutils {
             seq: SeqNum,
             ack: SeqNum,
             wnd: UnscaledWindowSize,
+            options: SegmentOptions,
             data: P,
         ) -> Segment<P> {
             Segment::new_assert_no_discard(
@@ -1100,21 +1097,26 @@ mod testutils {
                     control: Some(Control::FIN),
                     wnd,
                     push: false,
-                    options: Options::new(None),
+                    options: Options::Segment(options),
                 },
                 data,
             )
         }
 
         /// Creates a new FIN segment.
-        pub fn fin(seq: SeqNum, ack: SeqNum, wnd: UnscaledWindowSize) -> Self {
+        pub fn fin(
+            seq: SeqNum,
+            ack: SeqNum,
+            wnd: UnscaledWindowSize,
+            options: SegmentOptions,
+        ) -> Self {
             Segment::new_empty(SegmentHeader {
                 seq,
                 ack: Some(ack),
                 control: Some(Control::FIN),
                 wnd,
                 push: false,
-                options: Options::new(None),
+                options: Options::Segment(options),
             })
         }
     }

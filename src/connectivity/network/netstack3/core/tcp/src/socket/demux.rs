@@ -1271,7 +1271,7 @@ where
 #[cfg(test)]
 mod test {
     use ip_test_macro::ip_test;
-    use netstack3_base::{HandshakeOptions, UnscaledWindowSize};
+    use netstack3_base::{HandshakeOptions, SegmentOptions, UnscaledWindowSize};
     use packet::{ParseBuffer as _, Serializer as _};
     use test_case::test_case;
 
@@ -1295,7 +1295,9 @@ mod test {
             mss: Some(Mss::new(1440).unwrap()),
             ..Default::default() }), &[]
             ; "syn with mss")]
-    #[test_case(Segment::ack(SEQ, ACK, UnscaledWindowSize::from(u16::MAX)), &[]; "ack")]
+    #[test_case(
+        Segment::ack(SEQ, ACK, UnscaledWindowSize::from(u16::MAX), SegmentOptions::default()),
+        &[]; "ack")]
     #[test_case(Segment::with_fake_data(SEQ, ACK, FAKE_DATA), FAKE_DATA; "data")]
     #[test_case(Segment::new_assert_no_discard(SegmentHeader {
             seq: SEQ,
