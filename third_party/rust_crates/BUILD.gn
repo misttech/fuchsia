@@ -978,7 +978,8 @@ if (!(current_os == "fuchsia")) {
 
 if (!(current_os == "fuchsia")) {
   group("serial_test") {
-    public_deps = [ ":serial_test-v0_5_1" ]
+    public_deps = [ ":serial_test-v0_8_0" ]
+    testonly = true
   }
 }
 
@@ -16704,56 +16705,64 @@ rustc_library("serdect-v0_1_0") {
   applicable_licenses = [ ":serdect-v0_1_0.license" ]
 }
 
-license("serial_test-v0_5_1.license") {
+license("serial_test-v0_8_0.license") {
   public_package_name = "serial_test"
   license_files =
-      [ "//third_party/rust_crates/vendor/serial_test-0.5.1/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/serial_test-0.8.0/LICENSE" ]
 }
 
-rustc_library("serial_test-v0_5_1") {
+rustc_library("serial_test-v0_8_0") {
   crate_name = "serial_test"
-  source_root = "//third_party/rust_crates/vendor/serial_test-0.5.1/src/lib.rs"
-  output_name = "serial_test-cf7a4047894f2a7b"
+  source_root = "//third_party/rust_crates/vendor/serial_test-0.8.0/src/lib.rs"
+  output_name = "serial_test-16e38e1d5b83f3ed"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":futures-v0_3_31" ]
   deps += [ ":lazy_static-v1_5_0" ]
-  deps += [ ":parking_lot-v0_11_1" ]
-  deps += [ ":serial_test_derive-v0_5_1($host_toolchain)" ]
+  deps += [ ":log-v0_4_27" ]
+  deps += [ ":parking_lot-v0_12_4" ]
+  deps += [ ":serial_test_derive-v0_8_0($host_toolchain)" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=cf7a4047894f2a7b",
-    "-Cextra-filename=-cf7a4047894f2a7b",
+    "-Cmetadata=16e38e1d5b83f3ed",
+    "-Cextra-filename=-16e38e1d5b83f3ed",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"log\"",
+    "--cfg=feature=\"logging\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":serial_test-v0_5_1.license" ]
+  testonly = true
+  applicable_licenses = [ ":serial_test-v0_8_0.license" ]
 }
 
-license("serial_test_derive-v0_5_1.license") {
+license("serial_test_derive-v0_8_0.license") {
   public_package_name = "serial_test_derive"
   license_files =
-      [ "//third_party/rust_crates/vendor/serial_test_derive-0.5.1/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/serial_test_derive-0.8.0/LICENSE" ]
 }
 
-rustc_macro("serial_test_derive-v0_5_1") {
+rustc_macro("serial_test_derive-v0_8_0") {
   crate_name = "serial_test_derive"
   source_root =
-      "//third_party/rust_crates/vendor/serial_test_derive-0.5.1/src/lib.rs"
-  output_name = "serial_test_derive-349c76aef8defaba"
+      "//third_party/rust_crates/vendor/serial_test_derive-0.8.0/src/lib.rs"
+  output_name = "serial_test_derive-e562c3734da85242"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":rustversion-v1_0_12($host_toolchain)" ]
+  deps += [ ":proc-macro-error-v1_0_4" ]
   deps += [ ":proc-macro2-v1_0_97" ]
   deps += [ ":quote-v1_0_40" ]
   deps += [ ":syn-v1_0_98" ]
@@ -16762,13 +16771,13 @@ rustc_macro("serial_test_derive-v0_5_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=349c76aef8defaba",
-    "-Cextra-filename=-349c76aef8defaba",
+    "-Cmetadata=e562c3734da85242",
+    "-Cextra-filename=-e562c3734da85242",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":serial_test_derive-v0_5_1.license" ]
+  applicable_licenses = [ ":serial_test_derive-v0_8_0.license" ]
 }
 
 license("sha1-v0_10_6.license") {

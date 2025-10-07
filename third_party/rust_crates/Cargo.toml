@@ -343,7 +343,7 @@ rustfix = "0.9.0"
 rustls-native-certs = "0.6.3"
 semver = "1.0.26"
 serde_yaml = "0.9.14" # To use on Fuchsia, serde_yaml and unsafe-libyaml will need to be re-audited.
-serial_test = "0.5.1" # Not for use on Fuchsia, only for a single process.
+serial_test = "0.8.0" # Not for use on Fuchsia, only for a single process.
 shared_child = { version = "1.1.1", default-features = false }
 signal-hook = "0.3.18"
 syn = { version = "2.0.103", features = ["full", "visit", "visit-mut", "extra-traits"] }
@@ -1039,6 +1039,9 @@ env_vars = [
 
 [gn.package.serde_json."1.0.145"]
 rustflags = ["--cfg=fast_arithmetic=\\\"64\\\""]
+
+[gn.package.serial_test."0.8.0"]
+testonly = true
 
 [gn.package.sha1."0.10.6"]
 group_visibility = { import = "//third_party/rust_crates/visibility.gni", variable = "sha1_visibility" }

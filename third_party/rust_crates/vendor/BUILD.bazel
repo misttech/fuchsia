@@ -2611,14 +2611,14 @@ alias(
 )
 
 alias(
-    name = "serial_test-0.5.1",
-    actual = "//third_party/rust_crates/vendor/serial_test-0.5.1:serial_test",
+    name = "serial_test-0.8.0",
+    actual = "//third_party/rust_crates/vendor/serial_test-0.8.0:serial_test",
     tags = ["manual"],
 )
 
 alias(
     name = "serial_test",
-    actual = "//third_party/rust_crates/vendor/serial_test-0.5.1:serial_test",
+    actual = "//third_party/rust_crates/vendor/serial_test-0.8.0:serial_test",
     tags = ["manual"],
 )
 

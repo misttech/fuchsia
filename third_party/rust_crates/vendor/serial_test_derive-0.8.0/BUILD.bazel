@@ -6,7 +6,7 @@
 #     fx update-rustc-third-party
 ###############################################################################
 
-load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_proc_macro")
 load("@rules_license//rules:license.bzl", "license")
 load("@rules_license//rules:package_info.bzl", "package_info")
 
@@ -20,9 +20,9 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "serial_test",
+    package_name = "serial_test_derive",
     package_url = "https://github.com/palfrey/serial_test/",
-    package_version = "0.5.1",
+    package_version = "0.8.0",
 )
 
 license(
@@ -31,8 +31,8 @@ license(
     license_text = "LICENSE",
 )
 
-rust_library(
-    name = "serial_test",
+rust_proc_macro(
+    name = "serial_test_derive",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -52,14 +52,14 @@ rust_library(
     crate_root = "src/lib.rs",
     edition = "2018",
     proc_macro_deps = [
-        "//third_party/rust_crates/vendor/serial_test_derive-0.5.1:serial_test_derive",
+        "//third_party/rust_crates/empty/rustversion:rustversion",
     ],
     rustc_flags = [
         "--cap-lints=allow",
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=serial_test",
+        "crate-name=serial_test_derive",
         "manual",
         "noclippy",
         "norustfmt",
@@ -72,9 +72,11 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.5.1",
+    version = "0.8.0",
     deps = [
-        "//third_party/rust_crates/vendor/lazy_static-1.5.0:lazy_static",
-        "//third_party/rust_crates/vendor/parking_lot-0.11.1:parking_lot",
+        "//third_party/rust_crates/vendor/proc-macro-error-1.0.4:proc_macro_error",
+        "//third_party/rust_crates/vendor/proc-macro2-1.0.97:proc_macro2",
+        "//third_party/rust_crates/vendor/quote-1.0.40:quote",
+        "//third_party/rust_crates/vendor/syn-1.0.98:syn",
     ],
 )
