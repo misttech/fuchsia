@@ -154,6 +154,8 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // Only called from the main thread.
   bool SetMinimumRgb(uint8_t minimum_rgb) FXL_LOCKS_EXCLUDED(lock_);
 
+  display::CoordinatorProxy* GetDisplayCoordinatorForTest() { return &display_coordinator_; }
+
  private:
   friend class test::DisplayCompositorSmokeTest;
   friend class test::DisplayCompositorPixelTest;
@@ -206,19 +208,17 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // Generates a new FrameEventData struct to be used with a render target on a display.
   FrameEventData NewFrameEventData() FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
-  display::WireImageMetadata CreateImageMetadata(const allocation::ImageMetadata& metadata) const
-      FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
-
-  // Generates a hardware layer for direct compositing on the display. Returns the ID used
-  // to reference that layer in the display coordinator API.
-  display::LayerId CreateDisplayLayer() FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
+  // The second value is the "image tiling type".
+  std::pair<types::Extent2, uint32_t> CreateImageMetadata(
+      const allocation::ImageMetadata& metadata) const FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Moves a token out of |display_buffer_collection_ptrs_| and returns it.
   fuchsia::sysmem2::BufferCollectionSyncPtr TakeDisplayBufferCollectionPtr(
       allocation::GlobalBufferCollectionId collection_id) FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Used when we're forced to fall back to GPU rendering.
-  bool PerformGpuComposition(uint64_t frame_number, zx::time presentation_time,
+  bool PerformGpuComposition(uint64_t frame_number, uint64_t trace_flow_id,
+                             zx::time presentation_time,
                              const std::vector<RenderData>& render_data_list,
                              std::vector<zx::event> release_fences,
                              scheduling::FramePresentedCallback callback)
@@ -231,8 +231,8 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
 
   // Calls SetRenderData for each item in |render_data_list| and applies direct-to-display color
   // conversion. Return false if this fails for any RenderData.
-  bool TryDirectToDisplay(const std::vector<RenderData>& render_data_list)
-      FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
+  bool TryDirectToDisplay(const std::vector<RenderData>& render_data_list, uint64_t frame_number,
+                          uint64_t trace_flow_id) FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Sets the provided layers onto the display referenced by the given display_id.
   void SetDisplayLayers(display::DisplayId display_id, const std::span<display::LayerId>& layers)
@@ -247,19 +247,12 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
                        const allocation::ImageMetadata& image, const display::EventId& wait_id)
       FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
-  // Checks if the display coordinator is capable of applying the configuration settings that
-  // have been set up until that point.
-  bool CheckConfig() FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
-
-  // Erases the configuration that has been set on the display coordinator.
-  void DiscardConfig() FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
-
   // Applies the config to the display coordinator and record the corresponding ConfigStamp, so that
   // we can observe Vsync events to know when this config was actually displayed.
   //
   // This should only be called after CheckConfig() has verified that the config is okay, since
   // ApplyConfig does not return any errors.
-  void ApplyConfig(uint64_t frame_number, uint64_t trace_flow_id)
+  zx::result<> ApplyConfig(uint64_t frame_number, uint64_t trace_flow_id)
       FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   bool ImportBufferCollectionToDisplayCoordinator(
@@ -291,9 +284,8 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // References the coordinator to keep it alive. Don't use; instead use `display_coordinator_`.
   std::shared_ptr<display::CoordinatorProxy> display_coordinator_shared_ptr_ FXL_GUARDED_BY(lock_);
 
-  // Reference to the `display_coordinator_shared_ptr_`.
-  fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& display_coordinator_
-      FXL_GUARDED_BY(lock_);
+  // Thin proxy to optimize communication with `fuchsia.hardware.display/Coordinator`.
+  display::CoordinatorProxy& display_coordinator_ FXL_GUARDED_BY(lock_);
 
   // Maps a buffer collection ID to a BufferCollectionSyncPtr in the same domain as the token with
   // display constraints set. This is used as a bridge between ImportBufferCollection() and
@@ -363,6 +355,8 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   const async_dispatcher_t* const main_dispatcher_;
 
   const DisplayCompositorConfig config_;
+
+  inspect::Node inspect_node_;
 };
 
 }  // namespace flatland

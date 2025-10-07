@@ -16,7 +16,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "src/ui/scenic/lib/display/display_spec.h"
+#include "src/ui/scenic/lib/display/display_equivalence.h"
 #include "src/ui/scenic/lib/display/fidl_id_types.h"
 #include "src/ui/scenic/lib/display/fidl_typedefs.h"
 #include "src/ui/scenic/lib/display/layer.h"
@@ -182,11 +182,11 @@ class CoordinatorProxy {
   // Coordinator's state matches this proxy.
   void SendDiffsToCoordinator();
 
-  // Computes a `DisplaySpec` that is used by `ApplyConfig()` as the key for finding/caching the
-  // result of `FidlCheckConfig()` calls.
+  // Computes a `DisplayEquivalence` that is used by `ApplyConfig()` as the key for finding/caching
+  // the result of `FidlCheckConfig()` calls.
   //
-  // This is the only method allowed to mutate `temp_display_spec_`.
-  void UpdateTempDisplaySpecForApplyConfig();
+  // This is the only method allowed to mutate `temp_display_equivalence_`.
+  void UpdateDisplayEquivalenceForApplyConfig();
 
   // One-way call to Coordinator FIDL service.
   void FidlApplyConfig(const WireConfigStamp& config_stamp);
@@ -261,18 +261,18 @@ class CoordinatorProxy {
                                                                0.0f, 0.0f, 0.0f, 1.0f};
   std::array<float, 3> draft_color_conversion_postoffsets_ = {0.f, 0.f, 0.f};
 
-  // This `DisplaySpec` is used as a temporary variable within the `ApplyConfig()` method to hold a
-  // representation of the current draft configuration *relevant for `CheckConfig()` equivalency*.
-  // This "spec" is a subset of the total display state, containing only the fields that affect
-  // the hardware's ability to display the configuration.
+  // This `DisplayEquivalence` is used as a temporary variable within the `ApplyConfig()` method to
+  // hold a representation of the current draft configuration *relevant for `CheckConfig()`
+  // equivalency*. This "spec" is a subset of the total display state, containing only the fields
+  // that affect the hardware's ability to display the configuration.
   //
   // It is stored as a member variable to avoid repeated heap allocations for its internal vectors,
   // thereby optimizing performance.
   //
   // It is declared const to prevent accidental modifications in other methods.  However, it is
-  // mutated *only* within the `UpdateTempDisplaySpecForApplyConfig()` method, which uses a
+  // mutated *only* within the `UpdateDisplayEquivalenceForApplyConfig()` method, which uses a
   // const_cast for this specific purpose.
-  const internal::DisplaySpec temp_display_spec_ = {};
+  const internal::DisplayEquivalence temp_display_equivalence_ = {};
 
   // Cached `CheckConfig()` results.  If there is no entry in the map, then it means that the
   // config has not been seen before, and a FIDL `CheckConfig()` call is necessary.  Otherwise
@@ -281,7 +281,7 @@ class CoordinatorProxy {
   //
   // TODO(https://fxbug.dev/446042966): the size of the cache is unbounded; we may want to implement
   // a pruning strategy.
-  std::unordered_map<internal::DisplaySpec, bool> check_config_cache_;
+  std::unordered_map<internal::DisplayEquivalence, bool> check_config_cache_;
 
   // Track the number of state-setting methods called on `CoordinatorProxy`, and the number of
   // corresponding FIDL methods sent to the `fuchsia.hardware.display/Coordinator` service.

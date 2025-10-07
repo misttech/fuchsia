@@ -338,7 +338,7 @@ VK_TEST_F(DisplayTest, SetDisplayImageTest) {
 
   // Import the above events to the display.
   display::EventId display_wait_event_id =
-      display::ImportEvent(display_coordinator, display_wait_fence);
+      display::ImportEventForTest(display_coordinator, display_wait_fence);
   EXPECT_NE(display_wait_event_id, display::kInvalidEventId);
 
   // Set the layer image and apply the config.

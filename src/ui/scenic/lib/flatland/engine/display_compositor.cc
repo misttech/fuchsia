@@ -28,6 +28,7 @@
 #include "src/ui/scenic/lib/allocation/id.h"
 #include "src/ui/scenic/lib/display/util.h"
 #include "src/ui/scenic/lib/flatland/buffers/util.h"
+#include "src/ui/scenic/lib/utils/fidl_array_cast.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 #include "src/ui/scenic/lib/utils/logging.h"
 
@@ -235,7 +236,7 @@ DisplayCompositor::DisplayCompositor(async_dispatcher_t* main_dispatcher,
                                      fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator,
                                      const DisplayCompositorConfig& config)
     : display_coordinator_shared_ptr_(std::move(coordinator_proxy)),
-      display_coordinator_(display_coordinator_shared_ptr_->raw()),
+      display_coordinator_(*display_coordinator_shared_ptr_),
       renderer_(renderer),
       release_fence_manager_(main_dispatcher),
       sysmem_allocator_(std::move(sysmem_allocator)),
@@ -249,21 +250,29 @@ DisplayCompositor::DisplayCompositor(async_dispatcher_t* main_dispatcher,
 
 DisplayCompositor::~DisplayCompositor() {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
+
   // Destroy all of the display layers.
-  DiscardConfig();
-  for (const auto& [_, data] : display_engine_data_map_) {
-    for (const display::LayerId& layer : data.layers) {
-      fidl::OneWayStatus result = display_coordinator_.sync()->DestroyLayer(layer.ToFidl());
-      if (!result.ok()) {
-        FX_LOGS(ERROR) << "Failed to call FIDL DestroyLayer method: " << result.status_string();
-      }
+  //
+  // TODO(https://fxbug.dev/447261550): this is really bad.  Luckily it doesn't impact production.
+  {
+    const fidl::OneWayStatus result = display_coordinator_.raw().sync()->DiscardConfig();
+    if (!result.ok()) {
+      FX_LOGS(ERROR) << "Failed to call FIDL DiscardConfig method: " << result.status_string();
     }
-    for (const auto& event_data : data.frame_event_datas) {
-      fidl::OneWayStatus result =
-          display_coordinator_.sync()->ReleaseEvent(event_data.wait_id.ToFidl());
-      if (!result.ok()) {
-        FX_LOGS(ERROR) << "Failed to call FIDL ReleaseEvent on wait event ("
-                       << event_data.wait_id.value() << "): " << result.status_string();
+    for (const auto& [_, data] : display_engine_data_map_) {
+      for (const display::LayerId& layer : data.layers) {
+        fidl::OneWayStatus result = display_coordinator_.raw().sync()->DestroyLayer(layer.ToFidl());
+        if (!result.ok()) {
+          FX_LOGS(ERROR) << "Failed to call FIDL DestroyLayer method: " << result.status_string();
+        }
+      }
+      for (const auto& event_data : data.frame_event_datas) {
+        fidl::OneWayStatus result =
+            display_coordinator_.raw().sync()->ReleaseEvent(event_data.wait_id.ToFidl());
+        if (!result.ok()) {
+          FX_LOGS(ERROR) << "Failed to call FIDL ReleaseEvent on wait event ("
+                         << event_data.wait_id.value() << "): " << result.status_string();
+        }
       }
     }
   }
@@ -366,7 +375,7 @@ void DisplayCompositor::ReleaseBufferCollection(
   const display::WireBufferCollectionId display_collection_id =
       display::ToDisplayFidlBufferCollectionId(collection_id);
   const fidl::OneWayStatus result =
-      display_coordinator_.sync()->ReleaseBufferCollection(display_collection_id);
+      display_coordinator_.raw().sync()->ReleaseBufferCollection(display_collection_id);
   if (!result.ok()) {
     FX_LOGS(ERROR) << "Failed to call FIDL ReleaseBufferCollection method: "
                    << result.status_string();
@@ -384,7 +393,7 @@ fuchsia::sysmem2::BufferCollectionSyncPtr DisplayCompositor::TakeDisplayBufferCo
   return token;
 }
 
-display::WireImageMetadata DisplayCompositor::CreateImageMetadata(
+std::pair<types::Extent2, uint32_t> DisplayCompositor::CreateImageMetadata(
     const allocation::ImageMetadata& metadata) const {
   // TODO(https://fxbug.dev/42150686): Pixel format should be ignored when using sysmem. We do not
   // want to have to deal with this default image format. Work was in progress to address this, but
@@ -392,8 +401,10 @@ display::WireImageMetadata DisplayCompositor::CreateImageMetadata(
   FX_DCHECK(buffer_collection_pixel_format_modifier_.count(metadata.collection_id));
   const auto pixel_format_modifier =
       buffer_collection_pixel_format_modifier_.at(metadata.collection_id);
-  return {.dimensions = {.width = metadata.width, .height = metadata.height},
-          .tiling_type = BufferCollectionPixelFormatToImageTilingType(pixel_format_modifier)};
+
+  return {types::Extent2({.width = static_cast<int32_t>(metadata.width),
+                          .height = static_cast<int32_t>(metadata.height)}),
+          BufferCollectionPixelFormatToImageTilingType(pixel_format_modifier)};
 }
 
 bool DisplayCompositor::ImportBufferImage(const allocation::ImageMetadata& metadata,
@@ -444,21 +455,16 @@ bool DisplayCompositor::ImportBufferImage(const allocation::ImageMetadata& metad
     return true;
   }
 
-  const display::WireImageMetadata image_metadata = CreateImageMetadata(metadata);
-  const auto import_image_result = display_coordinator_.sync()->ImportImage(
-      image_metadata, display_collection_id, metadata.vmo_index, metadata.identifier.ToFidl());
-  if (!import_image_result.ok()) {
-    FX_LOGS(ERROR) << "ImportImage transport error: " << import_image_result.status_string();
-    return false;
-  }
-  if (import_image_result->is_error()) {
-    FX_LOGS(ERROR) << "ImportImage method error: "
-                   << zx_status_get_string(import_image_result->error_value());
-    return false;
-  }
+  const auto [image_extent, image_tiling_type] = CreateImageMetadata(metadata);
 
-  display_imported_images_.insert(metadata.identifier);
-  return true;
+  zx::result<> result =
+      display_coordinator_.ImportImage(image_extent, image_tiling_type, display_collection_id,
+                                       metadata.vmo_index, metadata.identifier);
+  if (result.is_ok()) {
+    display_imported_images_.insert(metadata.identifier);
+    return true;
+  }
+  return false;
 }
 
 void DisplayCompositor::ReleaseBufferImage(const allocation::GlobalImageId image_id) {
@@ -472,29 +478,8 @@ void DisplayCompositor::ReleaseBufferImage(const allocation::GlobalImageId image
 
   if (display_imported_images_.erase(image_id) == 1) {
     FX_DCHECK(display_coordinator_.is_valid());
-
-    fidl::OneWayStatus result = display_coordinator_->ReleaseImage(image_id.ToFidl());
-    if (!result.ok()) {
-      FX_LOGS(ERROR) << "Failed to call FIDL ReleaseImage method: " << result.status_string();
-    }
+    display_coordinator_.ReleaseImage(display::ImageId(image_id));
   }
-}
-
-display::LayerId DisplayCompositor::CreateDisplayLayer() {
-  FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
-  FX_DCHECK(display_coordinator_.is_valid());
-
-  const auto create_layer_result = display_coordinator_.sync()->CreateLayer();
-  if (!create_layer_result.ok()) {
-    FX_LOGS(ERROR) << "CreateLayer transport error: " << create_layer_result.status_string();
-    return display::kInvalidLayerId;
-  }
-  if (create_layer_result->is_error()) {
-    FX_LOGS(ERROR) << "CreateLayer method error: "
-                   << zx_status_get_string(create_layer_result->error_value());
-    return display::kInvalidLayerId;
-  }
-  return display::LayerId((*create_layer_result)->layer_id);
 }
 
 void DisplayCompositor::SetDisplayLayers(const display::DisplayId display_id,
@@ -504,17 +489,7 @@ void DisplayCompositor::SetDisplayLayers(const display::DisplayId display_id,
   FX_DCHECK(display_coordinator_.is_valid());
 
   // Set all of the layers for each of the images on the display.
-
-  // This reinterpret_cast<> stuff is very temporary: soon DisplayCompositor will access the
-  // coordinator via a proxy whose API uses display:: types instead of FIDL types.
-  static_assert(sizeof(display::LayerId) == sizeof(display::WireLayerId));
-  auto fidl_layers = fidl::VectorView<display::WireLayerId>::FromExternal(
-      reinterpret_cast<display::WireLayerId*>(layers.data()), layers.size());
-
-  const fidl::OneWayStatus set_display_layers_result =
-      display_coordinator_.sync()->SetDisplayLayers(display_id.ToFidl(), fidl_layers);
-  FX_DCHECK(set_display_layers_result.ok()) << "Failed to call FIDL SetDisplayLayers method: "
-                                            << set_display_layers_result.status_string();
+  display_coordinator_.SetDisplayLayers(display_id, layers);
 }
 
 bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
@@ -549,7 +524,8 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
     const allocation::GlobalImageId image_id = data.images[i].identifier;
     if (image_id != allocation::kInvalidImageId) {
       if (display_imported_images_.count(data.images[i].identifier)) {
-        ApplyLayerImage(layers[i], data.rectangles[i], data.images[i], display::kInvalidEventId);
+        ApplyLayerImage(layers[i], data.rectangles[i], data.images[i],
+                        /*wait_id*/ display::kInvalidEventId);
       } else {
         TRACE_INSTANT("gfx", "scenic_d2d_failed: image not imported for direct-display.",
                       TRACE_SCOPE_THREAD);
@@ -584,20 +560,16 @@ void DisplayCompositor::ApplyLayerColor(const display::LayerId& layer_id,
       0,
   };
 
-  const fuchsia_math::wire::RectU display_destination = {
-      .x = static_cast<uint32_t>(rectangle.origin.x),
-      .y = static_cast<uint32_t>(rectangle.origin.y),
-      .width = static_cast<uint32_t>(rectangle.extent.x),
-      .height = static_cast<uint32_t>(rectangle.extent.y),
-  };
+  const display::Rectangle display_destination({
+      .x = static_cast<int32_t>(rectangle.origin.x),
+      .y = static_cast<int32_t>(rectangle.origin.y),
+      .width = static_cast<int32_t>(rectangle.extent.x),
+      .height = static_cast<int32_t>(rectangle.extent.y),
+  });
 
-  const fidl::OneWayStatus set_layer_color_result =
-      display_coordinator_.sync()->SetLayerColorConfig(
-          layer_id.ToFidl(),
-          {.format = fuchsia_images2::PixelFormat::kB8G8R8A8, .bytes = color_bytes},
-          display_destination);
-  FX_DCHECK(set_layer_color_result.ok()) << "Failed to call FIDL SetLayerColorConfig method: "
-                                         << set_layer_color_result.status_string();
+  display_coordinator_.SetLayerColorConfig(
+      layer_id, {.format = fuchsia_images2::PixelFormat::kB8G8R8A8, .bytes = color_bytes},
+      display_destination);
 
 // TODO(https://fxbug.dev/42056054): Currently, not all display hardware supports the ability to
 // set either the position or the alpha on a color layer, as color layers are not primary
@@ -610,25 +582,18 @@ void DisplayCompositor::ApplyLayerColor(const display::LayerId& layer_id,
 // however, not all hardware supports images with sizes that differ from the destination size of
 // the rect. So implementing that solution on the display path as well is problematic.
 #if 0
-
   const auto [src, dst] = DisplaySrcDstFrames::New(rectangle, image);
 
-  const display::WireCoordinateTransformation transform =
-      GetDisplayTransformFromOrientationAndFlip(rectangle.orientation, image.flip);
+  // TODO(https://fxbug.dev/42056054): `fidl::HLCPPToNatural()` doesn't work with const arguments.
+  const fuchsia_ui_composition::Orientation orientation = fidl::HLCPPToNatural(
+      const_cast<fuchsia::ui::composition::Orientation&>(rectangle.orientation));
 
-  const auto set_layer_position_result =
-      display_coordinator_.sync()->SetLayerPrimaryPosition(layer_id, transform, src, dst);
-  FX_DCHECK(set_layer_position_result.ok())
-      << "Failed to call FIDL SetLayerPrimaryPosition method: "
-      << set_layer_position_result.status_string();
+  display_coordinator_.SetLayerPrimaryPosition(
+      layer_id, display:RotateFlip::From(orientation, image.flip), src, dst);
 
   const fuchsia_hardware_display_types::AlphaMode alpha_mode =
       image.blend_mode.ToDisplayAlphaMode();
-  const auto set_layer_alpha_result = display_coordinator_.sync()->SetLayerPrimaryAlpha(
-      layer_id, alpha_mode, image.multiply_color[3]);
-  FX_DCHECK(set_layer_alpha_result.ok())
-      << "Failed to call FIDL SetLayerPrimaryAlpha method: "
-      << set_layer_alpha_result.status_string();
+  display_coordinator_.SetLayerPrimaryAlpha(layer_id, image.blend_mode, image.multiply_color[3]);
 #endif
 }
 
@@ -641,62 +606,29 @@ void DisplayCompositor::ApplyLayerImage(const display::LayerId& layer_id,
   FX_DCHECK(display_coordinator_.is_valid());
 
   const auto [src, dst] = DisplaySrcDstFrames::New(rectangle, image);
-  FX_DCHECK(src.width && src.height) << "Source frame cannot be empty.";
-  FX_DCHECK(dst.width && dst.height) << "Destination frame cannot be empty.";
-  const display::WireCoordinateTransformation transform =
-      GetDisplayTransformFromOrientationAndFlip(rectangle.orientation, image.flip);
+  FX_DCHECK(src.width() && src.height()) << "Source frame cannot be empty.";
+  FX_DCHECK(dst.width() && dst.height()) << "Destination frame cannot be empty.";
+
+  // TODO(https://fxbug.dev/42056054): `fidl::HLCPPToNatural()` doesn't work with const arguments.
+  const fuchsia_ui_composition::Orientation orientation = fidl::HLCPPToNatural(
+      const_cast<fuchsia::ui::composition::Orientation&>(rectangle.orientation));
+
   const fuchsia_hardware_display_types::AlphaMode alpha_mode =
       image.blend_mode.ToDisplayAlphaMode();
 
-  const display::WireImageMetadata image_metadata = CreateImageMetadata(image);
-  const fidl::OneWayStatus set_layer_primary_config_result =
-      display_coordinator_.sync()->SetLayerPrimaryConfig(layer_id.ToFidl(), image_metadata);
-  FX_DCHECK(set_layer_primary_config_result.ok())
-      << "Failed to call FIDL SetLayerPrimaryConfig method: "
-      << set_layer_primary_config_result.status_string();
+  const auto [image_extent, image_tiling_type] = CreateImageMetadata(image);
+  display_coordinator_.SetLayerPrimaryConfig(layer_id, image_extent, image_tiling_type);
 
-  const fidl::OneWayStatus set_layer_primary_position_result =
-      display_coordinator_.sync()->SetLayerPrimaryPosition(layer_id.ToFidl(), transform, src, dst);
+  display_coordinator_.SetLayerPrimaryPosition(
+      layer_id, display::RotateFlip::From(orientation, image.flip), src, dst);
 
-  FX_DCHECK(set_layer_primary_position_result.ok())
-      << "Failed to call FIDL SetLayerPrimaryPosition method: "
-      << set_layer_primary_position_result.status_string();
-
-  const fidl::OneWayStatus set_layer_primary_alpha_result =
-      display_coordinator_.sync()->SetLayerPrimaryAlpha(layer_id.ToFidl(), alpha_mode,
-                                                        image.multiply_color[3]);
-  FX_DCHECK(set_layer_primary_alpha_result.ok())
-      << "Failed to call FIDL SetLayerPrimaryAlpha method: "
-      << set_layer_primary_alpha_result.status_string();
+  display_coordinator_.SetLayerPrimaryAlpha(layer_id, image.blend_mode, image.multiply_color[3]);
 
   // Set the imported image on the layer.
-  const fidl::OneWayStatus set_layer_image_result = display_coordinator_.sync()->SetLayerImage2(
-      layer_id.ToFidl(), image.identifier.ToFidl(), wait_id.ToFidl());
-  FX_DCHECK(set_layer_image_result.ok())
-      << "Failed to call FIDL SetLayerImage2 method: " << set_layer_image_result.status_string();
+  display_coordinator_.SetLayerImage(layer_id, display::ImageId(image.identifier), wait_id);
 }
 
-bool DisplayCompositor::CheckConfig() {
-  FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
-  FX_DCHECK(display_coordinator_.is_valid());
-
-  TRACE_DURATION("gfx", "flatland::DisplayCompositor::CheckConfig");
-  const auto check_config_result = display_coordinator_.sync()->CheckConfig();
-  FX_DCHECK(check_config_result.ok())
-      << "Failed to call FIDL CheckConfig method: " << check_config_result.status_string();
-  return check_config_result->res == fuchsia_hardware_display_types::ConfigResult::kOk;
-}
-
-void DisplayCompositor::DiscardConfig() {
-  FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
-  FX_DCHECK(display_coordinator_.is_valid());
-
-  TRACE_DURATION("gfx", "flatland::DisplayCompositor::DiscardConfig");
-  const fidl::OneWayStatus result = display_coordinator_->DiscardConfig();
-  FX_DCHECK(result.ok()) << "Failed to call FIDL DiscardConfig method: " << result.status_string();
-}
-
-void DisplayCompositor::ApplyConfig(uint64_t frame_number, uint64_t trace_flow_id) {
+zx::result<> DisplayCompositor::ApplyConfig(uint64_t frame_number, uint64_t trace_flow_id) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   FX_DCHECK(display_coordinator_.is_valid());
 
@@ -707,20 +639,22 @@ void DisplayCompositor::ApplyConfig(uint64_t frame_number, uint64_t trace_flow_i
 
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::ApplyConfig");
   fidl::Arena arena;
-  const fidl::OneWayStatus result = display_coordinator_->ApplyConfig3(
-      fuchsia_hardware_display::wire::CoordinatorApplyConfig3Request::Builder(arena)
-          .stamp(config_stamp)
-          .Build());
-  FX_DCHECK(result.ok()) << "Failed to call FIDL ApplyConfig method: " << result.status_string();
+
+  auto result = display_coordinator_.ApplyConfig(config_stamp);
+  if (result.is_error()) {
+    return result;
+  }
 
   pending_apply_configs_.push_back({
       .config_stamp = config_stamp,
       .frame_number = frame_number,
       .trace_flow_id = trace_flow_id,
   });
+  return fit::ok();
 }
 
 bool DisplayCompositor::PerformGpuComposition(const uint64_t frame_number,
+                                              const uint64_t trace_flow_id,
                                               const zx::time_monotonic presentation_time,
                                               const std::vector<RenderData>& render_data_list,
                                               std::vector<zx::event> release_fences,
@@ -747,13 +681,12 @@ bool DisplayCompositor::PerformGpuComposition(const uint64_t frame_number,
     // Clear any past CC state here, before applying GPU CC.
     if (cc_state_machine_.GpuRequiresDisplayClearing()) {
       TRACE_DURATION("gfx", "flatland::DisplayCompositor::PerformGpuComposition[cc]");
-      const fidl::OneWayStatus set_display_color_conversion_result =
-          display_coordinator_.sync()->SetDisplayColorConversion(
-              render_data.display_id.ToFidl(), kDefaultColorConversionOffsets,
-              kDefaultColorConversionCoefficients, kDefaultColorConversionOffsets);
-      FX_CHECK(set_display_color_conversion_result.ok())
-          << "Could not apply hardware color conversion: "
-          << set_display_color_conversion_result.status_string();
+      display_coordinator_.SetDisplayColorConversion(
+          render_data.display_id, kDefaultColorConversionOffsets,
+          kDefaultColorConversionCoefficients, kDefaultColorConversionOffsets);
+      // TODO(https://fxbug.dev/449801667): investigate whether making this call here can cause
+      // problems when GPU composition fails.  This is not a high priority issue, because we
+      // generally rely on GPU composition succeeding.
       cc_state_machine_.DisplayCleared();
     }
 
@@ -823,15 +756,15 @@ bool DisplayCompositor::PerformGpuComposition(const uint64_t frame_number,
         applied_display_mode || MaybeSetPendingDisplayMode(render_data.display_id);
   }
 
-  // We are being opportunistic and skipping the costly CheckConfig() call at this stage, because
-  // we know that gpu composited layers work and there is no fallback case beyond this. See
-  // https://fxbug.dev/42165041 for more details.
-#ifndef NDEBUG
-  if (!CheckConfig()) {
-    FX_LOGS(ERROR) << "Both display hardware composition and GPU rendering have failed.";
-    return false;
+  {
+    // We expect this to succeed, or else something is very wrong.
+    auto result = ApplyConfig(frame_number, trace_flow_id);
+    if (result.is_error()) {
+      FX_LOGS(ERROR) << "Both display hardware composition and GPU rendering have failed:"
+                     << result.status_string();
+      return false;
+    }
   }
-#endif
 
   if (applied_display_mode) {
     // We set one or more display modes, and they passed `CheckConfig()` so we won't need to apply
@@ -873,7 +806,7 @@ DisplayCompositor::RenderFrameResult DisplayCompositor::RenderFrame(
                                             !test_args.force_gpu_composition &&
                                             !config_.enable_frame_counter_overlay;
   if (should_try_direct_to_display) {
-    if (TryDirectToDisplay(render_data_list)) {
+    if (TryDirectToDisplay(render_data_list, frame_number, trace_flow_id)) {
       for (const auto& data : render_data_list) {
         const int32_t num_render_data = static_cast<int32_t>(data.rectangles.size());
         const uint64_t display_id = data.display_id.value();
@@ -888,15 +821,11 @@ DisplayCompositor::RenderFrameResult DisplayCompositor::RenderFrame(
       release_fence_manager_.OnDirectScanoutFrame(frame_number, std::move(release_fences),
                                                   std::move(callback));
 
-      ApplyConfig(frame_number, trace_flow_id);
       return RenderFrameResult::kDirectToDisplay;
     }
-
-    // Fall through to GPU composition.
-    DiscardConfig();
   }
 
-  if (PerformGpuComposition(frame_number, presentation_time, render_data_list,
+  if (PerformGpuComposition(frame_number, trace_flow_id, presentation_time, render_data_list,
                             std::move(release_fences), std::move(callback))) {
     for (const auto& data : render_data_list) {
       const int32_t num_render_data = static_cast<int32_t>(data.rectangles.size());
@@ -905,20 +834,30 @@ DisplayCompositor::RenderFrameResult DisplayCompositor::RenderFrame(
       TRACE_COUNTER("gfx", "Scenic GPU images", display_id, "count", TA_INT32(num_render_data));
     }
 
-    ApplyConfig(frame_number, trace_flow_id);
     return RenderFrameResult::kGpuComposition;
+  }
+
+  // Clear counters to indicate that rendering didn't happen.
+  for (const auto& data : render_data_list) {
+    const int32_t num_render_data = static_cast<int32_t>(data.rectangles.size());
+    const uint64_t display_id = data.display_id.value();
+    TRACE_COUNTER("gfx", "Scenic D2D images", display_id, "count", TA_INT32(0));
+    TRACE_COUNTER("gfx", "Scenic GPU images", display_id, "count", TA_INT32(0));
   }
 
   return RenderFrameResult::kFailure;
 }
 
-bool DisplayCompositor::TryDirectToDisplay(const std::vector<RenderData>& render_data_list) {
+bool DisplayCompositor::TryDirectToDisplay(const std::vector<RenderData>& render_data_list,
+                                           uint64_t frame_number, uint64_t trace_flow_id) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   FX_DCHECK(config_.enable_direct_to_display);
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::TryDirectToDisplay");
 
   bool applied_display_mode = false;
   for (const auto& data : render_data_list) {
+    const display::DisplayId& display_id = data.display_id;
+
     if (!SetRenderDataOnDisplay(data)) {
       // TODO(https://fxbug.dev/42157429): just because setting the data on one display fails (e.g.
       // due to too many layers), that doesn't mean that all displays need to use GPU-composition.
@@ -931,20 +870,15 @@ bool DisplayCompositor::TryDirectToDisplay(const std::vector<RenderData>& render
 
     // Check the state machine to see if there's any CC data to apply.
     if (const auto cc_data = cc_state_machine_.GetDataToApply()) {
-      // Apply direct-to-display color conversion here.
-      const fidl::OneWayStatus set_display_color_conversion_result =
-          display_coordinator_.sync()->SetDisplayColorConversion(
-              data.display_id.ToFidl(), (*cc_data).preoffsets, (*cc_data).coefficients,
-              (*cc_data).postoffsets);
-      FX_CHECK(set_display_color_conversion_result.ok())
-          << "Could not apply hardware color conversion: "
-          << set_display_color_conversion_result.status_string();
+      display_coordinator_.SetDisplayColorConversion(
+          display_id, (*cc_data).preoffsets, (*cc_data).coefficients, (*cc_data).postoffsets);
     }
 
-    applied_display_mode = applied_display_mode || MaybeSetPendingDisplayMode(data.display_id);
+    applied_display_mode = applied_display_mode || MaybeSetPendingDisplayMode(display_id);
   }
 
-  if (!CheckConfig()) {
+  auto result = ApplyConfig(frame_number, trace_flow_id);
+  if (result.is_error()) {
     TRACE_INSTANT("gfx", "scenic_d2d_failed: check config failed.", TRACE_SCOPE_THREAD);
     return false;
   }
@@ -1004,7 +938,7 @@ DisplayCompositor::FrameEventData DisplayCompositor::NewFrameEventData() {
     const auto status = zx::event::create(0, &result.wait_event);
     FX_DCHECK(status == ZX_OK);
   }
-  result.wait_id = display::ImportEvent(display_coordinator_, result.wait_event);
+  result.wait_id = display_coordinator_.ImportEvent(result.wait_event);
   FX_DCHECK(result.wait_id != display::kInvalidEventId);
   return result;
 }
@@ -1046,7 +980,7 @@ void DisplayCompositor::AddDisplay(display::Display* display, const DisplayInfo 
     // TODO(https://fxbug.dev/42157936): per-display layer lists are probably a bad idea; this
     // approach doesn't reflect the constraints of the underlying display hardware.
     for (uint32_t i = 0; i < config_.max_display_layers; i++) {
-      display_engine_data.layers.push_back(CreateDisplayLayer());
+      display_engine_data.layers.push_back(display_coordinator_.CreateLayer());
     }
   }
 
@@ -1094,8 +1028,10 @@ void DisplayCompositor::SetColorConversionValues(const fidl::Array<float, 9>& co
                                                  const fidl::Array<float, 3>& preoffsets,
                                                  const fidl::Array<float, 3>& postoffsets) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
-  cc_state_machine_.SetData(
-      {.coefficients = coefficients, .preoffsets = preoffsets, .postoffsets = postoffsets});
+
+  cc_state_machine_.SetData({.coefficients = utils::ReinterpretFidlArrayAsStdArray(coefficients),
+                             .preoffsets = utils::ReinterpretFidlArrayAsStdArray(preoffsets),
+                             .postoffsets = utils::ReinterpretFidlArrayAsStdArray(postoffsets)});
 
   renderer_->SetColorConversionValues(coefficients, preoffsets, postoffsets);
 }
@@ -1105,7 +1041,7 @@ bool DisplayCompositor::SetMinimumRgb(const uint8_t minimum_rgb) {
   std::scoped_lock lock(lock_);
   FX_DCHECK(display_coordinator_.is_valid());
 
-  const auto result = display_coordinator_.sync()->SetMinimumRgb(minimum_rgb);
+  const auto result = display_coordinator_.raw().sync()->SetMinimumRgb(minimum_rgb);
   if (!result.ok()) {
     FX_LOGS(ERROR) << "SetMinimumRgb transport error: " << result.status_string();
     return false;
@@ -1290,7 +1226,7 @@ bool DisplayCompositor::ImportBufferCollectionToDisplayCoordinator(
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
     const fuchsia_hardware_display_types::wire::ImageBufferUsage& image_buffer_usage) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
-  return display::ImportBufferCollection(identifier, display_coordinator_, std::move(token),
+  return display::ImportBufferCollection(identifier, display_coordinator_.raw(), std::move(token),
                                          image_buffer_usage);
 }
 
@@ -1304,14 +1240,7 @@ bool DisplayCompositor::MaybeSetPendingDisplayMode(const display::DisplayId& dis
   if (!maybe_mode.has_value()) {
     return false;
   }
-  const auto result =
-      display_coordinator_.sync()->SetDisplayMode(display_id.ToFidl(), maybe_mode.value());
-  if (!result.ok()) {
-    FX_LOGS(ERROR) << "SetDisplayMode transport error: " << result.status_string();
-    // Doesn't really matter what we return, the subsequent `CheckConfig()` will also result in a
-    // transport error and Scenic will crash.  Return false in case this ever becomes recoverable.
-    return false;
-  }
+  display_coordinator_.SetDisplayMode(display_id, types::DisplayMode::From(maybe_mode.value()));
   return true;
 }
 

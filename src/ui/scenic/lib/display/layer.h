@@ -6,7 +6,7 @@
 #define SRC_UI_SCENIC_LIB_DISPLAY_LAYER_H_
 
 #include "src/ui/scenic/lib/display/fidl_id_types.h"
-#include "src/ui/scenic/lib/display/layer_spec.h"
+#include "src/ui/scenic/lib/display/layer_equivalence.h"
 
 namespace display::internal {
 
@@ -15,16 +15,16 @@ namespace display::internal {
 // representing the configuration last known to be successfully applied on the display hardware via
 // the FIDL `ApplyConfig()` method.
 //
-// The `Layer` also holds a `LayerSpec`, which is a projection of the layer's state used by
+// The `Layer` also holds a `LayerEquivalence`, which is a projection of the layer's state used by
 // `CoordinatorProxy` to determine `CheckConfig()` equivalency.
 //
 // Workflow:
-// 1.  Calls to `Set*()` methods update the `draft_spec_` and other draft fields
+// 1.  Calls to `Set*()` methods update the `draft_equiv_` and other draft fields
 //     (e.g., `draft_image_`).
 // 2.  `CoordinatorProxy` calls `SendDiffsToCoordinator()`. This method compares the current
-//     `draft_spec_` and `draft_image_` against the `applied_spec_` and `applied_image_`.  It sends
-//     the minimal set of FIDL commands to the `fuchsia.hardware.display.Coordinator` to make the
-//     coordinator's layer state match this `Layer`'s draft state.
+//     `draft_equiv_` and `draft_image_` against the `applied_equiv_` and `applied_image_`.  It
+//     sends the minimal set of FIDL commands to the `fuchsia.hardware.display.Coordinator` to make
+//     the coordinator's layer state match this `Layer`'s draft state.
 // 3a. *After* a successful `CheckConfig()` and `ApplyConfig()` sequence in `CoordinatorProxy`, the
 //     proxy calls this `Layer`'s `AcceptDraftState()` method to promote the draft state to the
 //     applied state.  Or:
@@ -69,24 +69,24 @@ class Layer {
   // Replace the accepted state with the draft state.  Afterward, they are identical.
   void AcceptDraftState();
 
-  const LayerSpec& draft_spec() const { return draft_spec_; }
+  const LayerEquivalence& draft_equiv() const { return draft_equiv_; }
 
  private:
   // Helper for `SendDiffsToCoordinator()`.
-  size_t SetImageLayerDiffsToCoordinator(
+  size_t SendImageLayerDiffsToCoordinator(
       const LayerId& layer_id,
       fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& coordinator);
 
   // Helper for `SendDiffsToCoordinator()`.
-  size_t SetColorLayerDiffsToCoordinator(
+  size_t SendColorLayerDiffsToCoordinator(
       const LayerId& layer_id,
       fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& coordinator);
 
-  LayerSpec applied_spec_;
+  LayerEquivalence applied_equiv_;
   ImageId applied_image_ = kInvalidImageId;
   EventId applied_wait_event_ = kInvalidEventId;
 
-  LayerSpec draft_spec_;
+  LayerEquivalence draft_equiv_;
   ImageId draft_image_ = kInvalidImageId;
   EventId draft_wait_event_ = kInvalidEventId;
 };

@@ -2,24 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_UI_SCENIC_LIB_DISPLAY_DISPLAY_SPEC_H_
-#define SRC_UI_SCENIC_LIB_DISPLAY_DISPLAY_SPEC_H_
+#ifndef SRC_UI_SCENIC_LIB_DISPLAY_DISPLAY_EQUIVALENCE_H_
+#define SRC_UI_SCENIC_LIB_DISPLAY_DISPLAY_EQUIVALENCE_H_
 
-#include "src/ui/scenic/lib/display/layer_spec.h"
+#include "src/ui/scenic/lib/display/layer_equivalence.h"
 #include "src/ui/scenic/lib/types/display_mode.h"
 
 namespace display::internal {
 
 // Represents the subset of the Display's configuration relevant for
-// `fuchsia.hardware.display.Coordinator/CheckConfig()`. This aggregates `LayerSpec`s for active
-// layers and display-wide properties like mode and color conversion settings.
+// `fuchsia.hardware.display.Coordinator/CheckConfig()`.  This struct defines an
+// **equivalence class**: any two display configurations that produce an identical
+// `DisplayEquivalence` object are considered equivalent for the purpose of `CheckConfig()`
+// validation.
 //
-// This is used to key the cache for `CheckConfig()` results. The order of layers in the `layers`
-// vector matters, as it corresponds to the order provided to the display hardware. However, the
-// specific `LayerId` values used in the application are not part of the spec, only the properties
-// of the layers themselves in their specified order.
-struct DisplaySpec {
-  std::vector<LayerSpec> layers;
+// This aggregates `LayerEquivalence`s for active layers and display-wide
+// properties like mode and color conversion settings.  This is used to key the
+// cache for `CheckConfig()` results in `CoordinatorProxy`.  The order of layers
+// in the `layers` vector matters, as it corresponds to the order provided to
+// the display hardware.
+struct DisplayEquivalence {
+  std::vector<LayerEquivalence> layers;
   types::DisplayMode display_mode;
   // TODO(https://fxbug.dev/446042966): small changes to these might cause us to thrash the
   // `CheckConfig()` cache in `CoordinatorProxy`.  See bug for possible mitigations.
@@ -27,7 +30,7 @@ struct DisplaySpec {
   std::array<float, 9> color_conversion_coefficients = {};
   std::array<float, 3> color_conversion_postoffsets = {};
 
-  constexpr bool operator==(const DisplaySpec& other) const {
+  constexpr bool operator==(const DisplayEquivalence& other) const {
     return layers == other.layers && display_mode == other.display_mode &&
            color_conversion_preoffsets == other.color_conversion_preoffsets &&
            color_conversion_coefficients == other.color_conversion_coefficients &&
@@ -40,8 +43,8 @@ struct DisplaySpec {
 namespace std {
 
 template <>
-struct hash<display::internal::DisplaySpec> {
-  std::size_t operator()(const display::internal::DisplaySpec& spec) const {
+struct hash<display::internal::DisplayEquivalence> {
+  std::size_t operator()(const display::internal::DisplayEquivalence& spec) const {
     // Random seed (`openssl rand -hex 8`) avoids collisions with types with the same memory layout.
     std::size_t seed = 0x5804602f4cac9f58;
     for (auto& layer : spec.layers) {
@@ -69,4 +72,4 @@ struct hash<display::internal::DisplaySpec> {
 
 }  // namespace std
 
-#endif  // SRC_UI_SCENIC_LIB_DISPLAY_DISPLAY_SPEC_H_
+#endif  // SRC_UI_SCENIC_LIB_DISPLAY_DISPLAY_EQUIVALENCE_H_

@@ -63,10 +63,12 @@ bool ImportBufferCollection(
   return true;
 }
 
-EventId ImportEvent(
+EventId ImportEventForTest(
     const fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& display_coordinator,
     const zx::event& event) {
-  static EventId id_generator(1);
+  // `CoordinatorProxy::ImportEvent()` has its own ID counter that starts at 1, so start this at
+  // a big number to greatly reduce the chance of a collision.
+  static EventId id_generator(987654321);
 
   zx::event dup;
   if (event.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup) != ZX_OK) {
@@ -106,11 +108,10 @@ bool IsCaptureSupported(
   return (*result)->supported;
 }
 
-zx_status_t ImportImageForCapture(
-    const fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& display_coordinator,
-    const WireImageMetadata& image_metadata,
-    allocation::GlobalBufferCollectionId buffer_collection_id, uint32_t vmo_idx,
-    allocation::GlobalImageId image_id) {
+zx_status_t ImportImageForCapture(CoordinatorProxy& display_coordinator,
+                                  const WireImageMetadata& image_metadata,
+                                  allocation::GlobalBufferCollectionId buffer_collection_id,
+                                  uint32_t vmo_idx, allocation::GlobalImageId image_id) {
   if (buffer_collection_id == 0) {
     FX_LOGS(ERROR) << "Buffer collection id is 0.";
     return 0;
@@ -124,18 +125,10 @@ zx_status_t ImportImageForCapture(
   const WireBufferCollectionId display_buffer_collection_id =
       ToDisplayFidlBufferCollectionId(buffer_collection_id);
 
-  auto import_image_result = display_coordinator.sync()->ImportImage(
-      image_metadata, display_buffer_collection_id, vmo_idx, image_id.ToFidl());
-  if (!import_image_result.ok()) {
-    FX_LOGS(ERROR) << "ImportImage transport error: " << import_image_result.status_string();
-    return import_image_result->error_value();
-  }
-  if (import_image_result->is_error()) {
-    FX_LOGS(ERROR) << "ImportImage method error: "
-                   << zx_status_get_string(import_image_result->error_value());
-    return import_image_result->error_value();
-  }
-  return ZX_OK;
+  auto import_image_result = display_coordinator.ImportImage(
+      Extent2::From(image_metadata.dimensions), image_metadata.tiling_type,
+      display_buffer_collection_id, vmo_idx, image_id);
+  return import_image_result.status_value();
 }
 
 }  // namespace display

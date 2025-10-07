@@ -5,14 +5,13 @@
 #ifndef SRC_UI_SCENIC_LIB_FLATLAND_ENGINE_COLOR_CONVERSION_STATE_MACHINE_H_
 #define SRC_UI_SCENIC_LIB_FLATLAND_ENGINE_COLOR_CONVERSION_STATE_MACHINE_H_
 
-#include <lib/fidl/cpp/wire/array.h>
-
+#include <array>
 #include <optional>
 
 namespace flatland {
 
-extern const fidl::Array<float, 9> kDefaultColorConversionCoefficients;
-extern const fidl::Array<float, 3> kDefaultColorConversionOffsets;
+extern const std::array<float, 9> kDefaultColorConversionCoefficients;
+extern const std::array<float, 3> kDefaultColorConversionOffsets;
 
 // Color Conversion Data Struct. The data here modulates pixel data with
 // the following formula:
@@ -20,9 +19,9 @@ extern const fidl::Array<float, 3> kDefaultColorConversionOffsets;
 // where 'pixel' is comprised of the RGB components of the physical pixel
 // on the display.
 struct ColorConversionData {
-  fidl::Array<float, 9> coefficients = kDefaultColorConversionCoefficients;
-  fidl::Array<float, 3> preoffsets = kDefaultColorConversionOffsets;
-  fidl::Array<float, 3> postoffsets = kDefaultColorConversionOffsets;
+  std::array<float, 9> coefficients = kDefaultColorConversionCoefficients;
+  std::array<float, 3> preoffsets = kDefaultColorConversionOffsets;
+  std::array<float, 3> postoffsets = kDefaultColorConversionOffsets;
 
   bool operator==(const ColorConversionData& rhs) const {
     return this->coefficients == rhs.coefficients && this->preoffsets == rhs.preoffsets &&

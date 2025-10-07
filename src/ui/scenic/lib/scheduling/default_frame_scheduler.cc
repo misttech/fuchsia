@@ -231,8 +231,8 @@ void DefaultFrameScheduler::MaybeRenderFrame(async_dispatcher_t*, async::TaskBas
 
     FLATLAND_VERBOSE_LOG << "FrameScheduler::MaybeRenderFrame() frame_number=" << frame_number
                          << "  target_presentation_time=" << target_presentation_time.get()
-                         << "  skipping render because last_presented_frame_number="
-                         << last_presented_frame_number_ << "  is still in flight";
+                         << "  skipping render because frame_number="
+                         << (last_presented_frame_number_ + 1) << "  is still in flight";
 
     last_frame_is_presented_ = false;
     return;

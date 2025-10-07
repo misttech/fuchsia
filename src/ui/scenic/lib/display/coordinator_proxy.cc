@@ -9,6 +9,10 @@
 #include <algorithm>
 
 #include "src/ui/scenic/lib/utils/fidl_array_cast.h"
+#include "src/ui/scenic/lib/utils/logging.h"
+
+// Allows us to manually change this to enable logging without *all* Flatland verbose logging.
+#define CP_VERBOSE_LOG FLATLAND_VERBOSE_LOG
 
 namespace display {
 
@@ -41,6 +45,8 @@ zx::result<> CoordinatorProxy::ImportImage(types::Extent2 image_dimensions,
                                            uint32_t image_tiling_type,
                                            WireBufferCollectionId buffer_collection_id,
                                            uint32_t buffer_index, ImageId image_id) {
+  CP_VERBOSE_LOG << "CoordinatorProxy::ImportImage(image_dimensions=" << image_dimensions << ")";
+
   IncrementImportImageCallsSent();
   FX_DCHECK(!images_.contains(image_id)) << "Not expecting to find image_id=" << image_id.value();
 
@@ -67,6 +73,7 @@ zx::result<> CoordinatorProxy::ImportImage(types::Extent2 image_dimensions,
 }
 
 void CoordinatorProxy::ReleaseImage(const ImageId& image_id) {
+  CP_VERBOSE_LOG << "CoordinatorProxy::ReleaseImage";
   FX_DCHECK(images_.erase(image_id)) << "Expected to find image_id=" << image_id.value();
   UpdateCurrentImageCount();
 
@@ -77,6 +84,7 @@ void CoordinatorProxy::ReleaseImage(const ImageId& image_id) {
 }
 
 void CoordinatorProxy::ImportEvent(zx::event event, const EventId& event_id) {
+  CP_VERBOSE_LOG << "CoordinatorProxy::ImportEvent";
   IncrementImportEventCallsSent();
   FX_DCHECK(!events_.contains(event_id)) << "Not expecting to find event_id=" << event_id.value();
 
@@ -106,6 +114,7 @@ EventId CoordinatorProxy::ImportEvent(const zx::event& event) {
 }
 
 void CoordinatorProxy::ReleaseEvent(const EventId& event_id) {
+  CP_VERBOSE_LOG << "CoordinatorProxy::ReleaseEvent";
   FX_DCHECK(events_.erase(event_id)) << "Expected to find event_id=" << event_id.value();
   UpdateCurrentEventCount();
 
@@ -116,6 +125,7 @@ void CoordinatorProxy::ReleaseEvent(const EventId& event_id) {
 }
 
 LayerId CoordinatorProxy::CreateLayer() {
+  CP_VERBOSE_LOG << "CoordinatorProxy::CreateLayer";
   IncrementApiCallsReceived();
   IncrementApiCallsSent();
 
@@ -138,6 +148,7 @@ LayerId CoordinatorProxy::CreateLayer() {
 }
 
 void CoordinatorProxy::DestroyLayer(const LayerId& layer_id) {
+  CP_VERBOSE_LOG << "CoordinatorProxy::DestroyLayer";
   IncrementApiCallsReceived();
   IncrementApiCallsSent();
 
@@ -154,6 +165,7 @@ void CoordinatorProxy::DestroyLayer(const LayerId& layer_id) {
 }
 
 void CoordinatorProxy::SetDisplayMode(const DisplayId& display_id, const DisplayMode& mode) {
+  CP_VERBOSE_LOG << "CoordinatorProxy::SetDisplayMode";
   CheckDisplayId(display_id);
   IncrementApiCallsReceived();
 
@@ -164,6 +176,7 @@ void CoordinatorProxy::SetDisplayColorConversion(const DisplayId& display_id,
                                                  const std::array<float, 3>& preoffsets,
                                                  const std::array<float, 9>& coefficients,
                                                  const std::array<float, 3>& postoffsets) {
+  CP_VERBOSE_LOG << "CoordinatorProxy::SetDisplayColorConversion";
   CheckDisplayId(display_id);
   IncrementApiCallsReceived();
 
@@ -174,6 +187,7 @@ void CoordinatorProxy::SetDisplayColorConversion(const DisplayId& display_id,
 
 void CoordinatorProxy::SetDisplayLayers(const DisplayId& display_id,
                                         const std::span<const LayerId>& layer_ids) {
+  CP_VERBOSE_LOG << "CoordinatorProxy::SetDisplayLayers(layer_count=" << layer_ids.size() << ")";
   CheckDisplayId(display_id);
   IncrementApiCallsReceived();
 
@@ -183,6 +197,7 @@ void CoordinatorProxy::SetDisplayLayers(const DisplayId& display_id,
 void CoordinatorProxy::SetLayerPrimaryConfig(const LayerId& layer_id,
                                              const Extent2& image_dimensions,
                                              uint32_t image_tiling_type) {
+  CP_VERBOSE_LOG << "CoordinatorProxy::SetLayerPrimaryConfig(layer=" << layer_id.value() << ")";
   IncrementApiCallsReceived();
 
   GetLayer(layer_id).SetPrimaryConfig(image_dimensions, image_tiling_type);
@@ -191,6 +206,7 @@ void CoordinatorProxy::SetLayerPrimaryConfig(const LayerId& layer_id,
 void CoordinatorProxy::SetLayerPrimaryPosition(const LayerId& layer_id, const RotateFlip& transform,
                                                const Rectangle& image_source,
                                                const Rectangle& display_destination) {
+  CP_VERBOSE_LOG << "CoordinatorProxy::SetLayerPrimaryPosition(layer=" << layer_id.value() << ")";
   IncrementApiCallsReceived();
 
   GetLayer(layer_id).SetPrimaryPosition(transform, image_source, display_destination);
@@ -198,6 +214,7 @@ void CoordinatorProxy::SetLayerPrimaryPosition(const LayerId& layer_id, const Ro
 
 void CoordinatorProxy::SetLayerPrimaryAlpha(const LayerId& layer_id, const BlendMode& blend_mode,
                                             float alpha_value) {
+  CP_VERBOSE_LOG << "CoordinatorProxy::SetLayerPrimaryAlpha(layer=" << layer_id.value() << ")";
   IncrementApiCallsReceived();
 
   GetLayer(layer_id).SetPrimaryAlpha(blend_mode, alpha_value);
@@ -205,6 +222,8 @@ void CoordinatorProxy::SetLayerPrimaryAlpha(const LayerId& layer_id, const Blend
 
 void CoordinatorProxy::SetLayerImage(const LayerId& layer_id, const ImageId& image_id,
                                      const EventId& wait_event_id) {
+  CP_VERBOSE_LOG << "CoordinatorProxy::SetLayerImage(layer=" << layer_id.value()
+                 << " image=" << image_id.value() << " wait_event=" << wait_event_id.value() << ")";
   IncrementApiCallsReceived();
 
   GetLayer(layer_id).SetLayerImage(image_id, wait_event_id);
@@ -212,20 +231,22 @@ void CoordinatorProxy::SetLayerImage(const LayerId& layer_id, const ImageId& ima
 
 void CoordinatorProxy::SetLayerColorConfig(const LayerId& layer_id, const WireColor& color,
                                            const Rectangle& display_destination) {
+  CP_VERBOSE_LOG << "CoordinatorProxy::SetLayerColorConfig(layer=" << layer_id.value() << ")";
   IncrementApiCallsReceived();
 
   GetLayer(layer_id).SetColorConfig(color, display_destination);
 }
 
 zx::result<> CoordinatorProxy::ApplyConfig(const WireConfigStamp& config_stamp) {
+  CP_VERBOSE_LOG << "CoordinatorProxy::ApplyConfig(stamp=" << config_stamp.value << ")";
   TRACE_DURATION("gfx", "display::CoordinatorProxy::ApplyConfig");
   IncrementApplyConfigCallsReceived();
 
-  // Set `temp_display_spec_` to have the values we need.
-  UpdateTempDisplaySpecForApplyConfig();
+  // Set `temp_display_equivalence_` to have the values we need.
+  UpdateDisplayEquivalenceForApplyConfig();
 
-  // If an equivalent spec is already in `check_config_cache_` we can skip calling the FIDL method.
-  const auto check_config_it = check_config_cache_.find(temp_display_spec_);
+  // If an equivalent equiv is already in `check_config_cache_` we can skip calling the FIDL method.
+  const auto check_config_it = check_config_cache_.find(temp_display_equivalence_);
   const bool has_cached_check_config = check_config_it != check_config_cache_.end();
 
   if (has_cached_check_config && !check_config_it->second) {
@@ -363,24 +384,27 @@ void CoordinatorProxy::SendDiffsToCoordinator() {
   }
 }
 
-void CoordinatorProxy::UpdateTempDisplaySpecForApplyConfig() {
-  TRACE_DURATION("gfx", "display::CoordinatorProxy::UpdateTempDisplaySpecForApplyConfig");
+void CoordinatorProxy::UpdateDisplayEquivalenceForApplyConfig() {
+  TRACE_DURATION("gfx", "display::CoordinatorProxy::UpdateDisplayEquivalenceForApplyConfig");
 
-  // This is the only method allowed to mutate `temp_display_spec_`.  It is const everywhere else.
-  internal::DisplaySpec& spec = const_cast<internal::DisplaySpec&>(temp_display_spec_);
+  // This is the only method allowed to mutate `temp_display_equivalence_`.  It is const everywhere
+  // else.
+  internal::DisplayEquivalence& equiv =
+      const_cast<internal::DisplayEquivalence&>(temp_display_equivalence_);
 
-  spec.layers.clear();
+  equiv.layers.clear();
   for (LayerId& layer_id : draft_display_layers_) {
-    spec.layers.push_back(GetLayer(layer_id).draft_spec());
+    equiv.layers.push_back(GetLayer(layer_id).draft_equiv());
   }
-  spec.display_mode = draft_display_mode_;
-  spec.color_conversion_preoffsets = draft_color_conversion_preoffsets_;
-  spec.color_conversion_coefficients = draft_color_conversion_coefficients_;
-  spec.color_conversion_postoffsets = draft_color_conversion_postoffsets_;
+  equiv.display_mode = draft_display_mode_;
+  equiv.color_conversion_preoffsets = draft_color_conversion_preoffsets_;
+  equiv.color_conversion_coefficients = draft_color_conversion_coefficients_;
+  equiv.color_conversion_postoffsets = draft_color_conversion_postoffsets_;
 }
 
 void CoordinatorProxy::FidlApplyConfig(const WireConfigStamp& config_stamp) {
   TRACE_DURATION("gfx", "display::CoordinatorProxy::FidlApplyConfig");
+  CP_VERBOSE_LOG << "CoordinatorProxy::FidlApplyConfig(stamp=" << config_stamp.value << ")";
 
   IncrementApplyConfigCallsSent();
 
@@ -389,6 +413,7 @@ void CoordinatorProxy::FidlApplyConfig(const WireConfigStamp& config_stamp) {
       fuchsia_hardware_display::wire::CoordinatorApplyConfig3Request::Builder(arena)
           .stamp(config_stamp)
           .Build());
+
   FX_DCHECK(result.ok()) << "Failed to call FIDL ApplyConfig method: " << result.status_string();
 }
 
@@ -411,7 +436,7 @@ WireConfigResult CoordinatorProxy::FidlCheckConfig() {
 }
 
 void CoordinatorProxy::CacheCheckConfigResult(bool success) {
-  check_config_cache_[temp_display_spec_] = success;
+  check_config_cache_[temp_display_equivalence_] = success;
   inspect_check_config_cache_size_.Set(check_config_cache_.size());
 }
 

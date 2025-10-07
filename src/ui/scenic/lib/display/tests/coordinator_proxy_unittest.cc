@@ -559,7 +559,9 @@ TEST_F(CoordinatorProxyTest, ApplyConfig_CheckConfigCache) {
             // 7 (previous value) +
             // 2 SetDisplayLayers
             9U);
-  EXPECT_EQ(coordinator_proxy_->api_calls_sent(), 9U);
+  EXPECT_EQ(coordinator_proxy_->api_calls_sent(),
+            // TODO(https://fxbug.dev/449807074): +1 extra call to `SetLayerImage`.
+            9U + 1U);
 
   // The two-layer config will fail.
   mock_coordinator_->set_check_config_fn(
@@ -581,7 +583,9 @@ TEST_F(CoordinatorProxyTest, ApplyConfig_CheckConfigCache) {
             // 9 (previous value) +
             // 1 SetDisplayLayers
             10U);
-  EXPECT_EQ(coordinator_proxy_->api_calls_sent(), 10U);
+  EXPECT_EQ(coordinator_proxy_->api_calls_sent(),
+            // TODO(https://fxbug.dev/449807074): +1 previous +1 new extra call to `SetLayerImage`.
+            10U + 2U);
 
   // Go through the same 3 configs.  We should get the same results as before, but without needing
   // to call `CheckConfig()`.
@@ -631,7 +635,8 @@ TEST_F(CoordinatorProxyTest, ApplyConfig_CheckConfigCache) {
             // NOTE: the third SetDisplayLayers is not sent because the proxy was able to determine
             //       that CheckConfig would fail without calling SetDisplayLayers, and then needing
             //       to subsequently call DiscardConfig to clean up afterward.
-            12U);
+            // TODO(https://fxbug.dev/449807074): +2 previous +2 new extra call to `SetLayerImage`.
+            12U + 4U);
 }
 
 }  // namespace display::test

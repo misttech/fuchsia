@@ -12,6 +12,7 @@
 #include <cstdint>
 
 #include "src/ui/scenic/lib/allocation/id.h"
+#include "src/ui/scenic/lib/display/coordinator_proxy.h"
 #include "src/ui/scenic/lib/display/fidl_id_types.h"
 
 namespace display {
@@ -27,7 +28,9 @@ bool ImportBufferCollection(
 // Imports a zx::event to the provided display controller. The return value is an ID to
 // reference that event on other display controller functions that take an event as an
 // argument. On failure, the return value will be fuchsia_hardware_display_types::kInvalidDispId.
-EventId ImportEvent(
+//
+// Deprecated.  Prefer to use `CoordinatorProxy::ImportEvent()`.
+EventId ImportEventForTest(
     const fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& display_coordinator,
     const zx::event& event);
 
@@ -45,11 +48,10 @@ bool IsCaptureSupported(
 // On failure, this function returns the error value.
 //
 // TODO(https://fxbug.dev/42080575): Unify this method with ImportBufferImage().
-zx_status_t ImportImageForCapture(
-    const fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& display_coordinator,
-    const WireImageMetadata& image_metadata,
-    allocation::GlobalBufferCollectionId buffer_collection_id, uint32_t vmo_idx,
-    allocation::GlobalImageId capture_image_id);
+zx_status_t ImportImageForCapture(CoordinatorProxy& display_coordinator,
+                                  const WireImageMetadata& image_metadata,
+                                  allocation::GlobalBufferCollectionId buffer_collection_id,
+                                  uint32_t vmo_idx, allocation::GlobalImageId capture_image_id);
 
 inline WireBufferCollectionId ToDisplayFidlBufferCollectionId(
     allocation::GlobalBufferCollectionId global_buffer_collection_id) {

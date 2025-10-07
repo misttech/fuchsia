@@ -443,12 +443,10 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
       allocation::GlobalBufferCollectionId collection_id, fuchsia::images2::PixelFormat pixel_type,
       fuchsia::sysmem2::BufferCollectionInfo* collection_info, allocation::GlobalImageId image_id) {
     auto display = display_manager_->default_display();
-    auto& display_coordinator = raw_display_coordinator();
     EXPECT_TRUE(display);
-    EXPECT_TRUE(display_coordinator);
 
     // This should only be running on devices with capture support.
-    bool capture_supported = display::IsCaptureSupported(display_coordinator);
+    bool capture_supported = display::IsCaptureSupported(raw_display_coordinator());
     if (!capture_supported) {
       FX_LOGS(FATAL) << "Capture is not supported on this device. Test skipped.";
       return fpromise::error(ZX_ERR_NOT_SUPPORTED);
@@ -462,7 +460,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
     auto tokens = SysmemTokens::Create(sysmem_allocator_.get());
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> dup_token(
         std::move(tokens.dup_token).Unbind().TakeChannel());
-    auto result = display::ImportBufferCollection(collection_id, display_coordinator,
+    auto result = display::ImportBufferCollection(collection_id, raw_display_coordinator(),
                                                   std::move(dup_token), image_buffer_usage);
     EXPECT_TRUE(result);
     fuchsia::sysmem2::BufferCollectionSyncPtr collection;
@@ -531,8 +529,8 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
         .tiling_type = fuchsia_hardware_display_types::kImageTilingTypeCapture,
     };
 
-    zx_status_t import_status = display::ImportImageForCapture(display_coordinator, image_metadata,
-                                                               collection_id, 0, image_id);
+    zx_status_t import_status = display::ImportImageForCapture(
+        *display_manager_->coordinator_proxy(), image_metadata, collection_id, 0, image_id);
     EXPECT_EQ(import_status, ZX_OK);
     if (import_status != ZX_OK) {
       return fpromise::error(import_status);
@@ -591,7 +589,8 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
   }
 
   // Captures the pixel values on the display and reads them into |read_values|.
-  void CaptureDisplayOutput(const fuchsia::sysmem2::BufferCollectionInfo& collection_info,
+  void CaptureDisplayOutput(display::CoordinatorProxy& display_coordinator,
+                            const fuchsia::sysmem2::BufferCollectionInfo& collection_info,
                             allocation::GlobalImageId capture_image_id,
                             std::vector<uint8_t>* read_values, bool release_capture_image = true) {
     // Make sure the config from the DisplayCompositor has been completely applied first before
@@ -600,19 +599,17 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
 
     // This ID would only be zero if we were running in an environment without capture support.
     EXPECT_NE(capture_image_id, display::kInvalidImageId);
-    const display::WireImageId fidl_capture_image_id = capture_image_id.ToFidl();
 
     auto display = display_manager_->default_display();
-    auto& display_coordinator = raw_display_coordinator();
 
     zx::event capture_signal_fence;
     auto status = zx::event::create(0, &capture_signal_fence);
     EXPECT_EQ(status, ZX_OK);
 
     display::EventId capture_signal_fence_id =
-        display::ImportEvent(display_coordinator, capture_signal_fence);
-    const auto start_capture_result = display_coordinator.sync()->StartCapture(
-        capture_signal_fence_id.ToFidl(), fidl_capture_image_id);
+        display_coordinator.ImportEvent(capture_signal_fence);
+    const auto start_capture_result = display_coordinator.raw().sync()->StartCapture(
+        capture_signal_fence_id.ToFidl(), capture_image_id.ToFidl());
     ASSERT_TRUE(start_capture_result.ok())
         << "Failed to call FIDL StartCapture: " << start_capture_result.status_string();
     ASSERT_TRUE(start_capture_result->is_ok())
@@ -632,9 +629,7 @@ class DisplayCompositorPixelTest : public DisplayCompositorTestBase {
 
     // Cleanup the capture.
     if (release_capture_image) {
-      const fidl::OneWayStatus result =
-          display_coordinator.sync()->ReleaseImage(fidl_capture_image_id);
-      EXPECT_TRUE(result.ok()) << "Failed to call FIDL ReleaseImage: " << result.status_string();
+      display_coordinator.ReleaseImage(capture_image_id);
     }
   }
 
@@ -959,7 +954,8 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenRectangleTest) {
       std::vector<uint8_t> read_values;
       // We do not release the capture image as it's used in future attempts.
       // The capture image will be cleaned up after all attempts are finished.
-      CaptureDisplayOutput(capture_info, capture_image_id, &read_values,
+      CaptureDisplayOutput(*display_compositor->GetDisplayCoordinatorForTest(), capture_info,
+                           capture_image_id, &read_values,
                            /* release_capture_image= */ false);
 
       // Compare the capture vmo data to the texture data above.
@@ -1083,7 +1079,8 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, ColorConversionTest) {
 
     // Grab the capture vmo data.
     std::vector<uint8_t> read_values;
-    CaptureDisplayOutput(capture_info, capture_image_id, &read_values);
+    CaptureDisplayOutput(*display_compositor->GetDisplayCoordinatorForTest(), capture_info,
+                         capture_image_id, &read_values);
 
     // Compare the capture vmo data to the texture data above.
     bool images_are_same =
@@ -1187,7 +1184,8 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenSolidColorRectangle
 
   // Grab the capture vmo data.
   std::vector<uint8_t> read_values;
-  CaptureDisplayOutput(capture_info, capture_image_id, &read_values);
+  CaptureDisplayOutput(*display_compositor->GetDisplayCoordinatorForTest(), capture_info,
+                       capture_image_id, &read_values);
 
   // Compare the capture vmo data to the texture data above.
   bool images_are_same = CaptureCompare(read_values, write_bytes, GetParam(),
@@ -1309,7 +1307,8 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, SetMinimumRGBTest) {
 
   // Grab the capture vmo data.
   std::vector<uint8_t> readback_values;
-  CaptureDisplayOutput(capture_info, capture_image_id, &readback_values);
+  CaptureDisplayOutput(*display_compositor->GetDisplayCoordinatorForTest(), capture_info,
+                       capture_image_id, &readback_values);
 
   // Compare the capture vmo data to the expected data above.
   bool images_are_same = CaptureCompare(readback_values, expected_values, GetParam(),
@@ -1477,7 +1476,8 @@ VK_TEST_P(DisplayCompositorFallbackParameterizedPixelTest, SoftwareRenderingTest
                  [&](const uint8_t* vmo_host, uint32_t num_bytes) {
                    // Grab the capture vmo data.
                    std::vector<uint8_t> read_values;
-                   CaptureDisplayOutput(capture_info, capture_image_id, &read_values);
+                   CaptureDisplayOutput(*display_compositor->GetDisplayCoordinatorForTest(),
+                                        capture_info, capture_image_id, &read_values);
 
                    // Compare the capture vmo data to the values we are expecting.
                    const fuchsia::images2::PixelFormat render_target_pixel_format =
@@ -1647,7 +1647,8 @@ VK_TEST_P(DisplayCompositorTransparencyPixelTest, OverlappingTransparencyTest) {
 
         // Grab the capture vmo data.
         std::vector<uint8_t> read_values;
-        CaptureDisplayOutput(capture_info, capture_image_id, &read_values);
+        CaptureDisplayOutput(*display_compositor->GetDisplayCoordinatorForTest(), capture_info,
+                             capture_image_id, &read_values);
 
         const fuchsia::images2::PixelFormat render_target_pixel_format_type =
             render_target_info.settings().image_format_constraints().pixel_format();
@@ -1884,7 +1885,8 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
             std::vector<uint8_t> read_values;
             // We do not release the capture image as it's used in future attempts.
             // The capture image will be cleaned up after all attempts are finished.
-            CaptureDisplayOutput(capture_info, capture_image_id, &read_values,
+            CaptureDisplayOutput(*display_compositor->GetDisplayCoordinatorForTest(), capture_info,
+                                 capture_image_id, &read_values,
                                  /* release_capture_image= */ false);
 
             // Compare the capture vmo data to the values we are expecting.
@@ -2116,7 +2118,8 @@ VK_TEST_P(DisplayCompositorParameterizedTest, ImageFlipRotate180DegreesPixelTest
       [&](const uint8_t* vmo_host, uint32_t num_bytes) {
         // Grab the capture vmo data.
         std::vector<uint8_t> read_values;
-        CaptureDisplayOutput(capture_info, capture_image_id, &read_values);
+        CaptureDisplayOutput(*display_compositor->GetDisplayCoordinatorForTest(), capture_info,
+                             capture_image_id, &read_values);
 
         const fuchsia::images2::PixelFormat render_target_pixel_format_type =
             render_target_info.settings().image_format_constraints().pixel_format();
@@ -2312,7 +2315,8 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
 
   // Grab the capture vmo data, and compare to the texture data.
   std::vector<uint8_t> read_values;
-  CaptureDisplayOutput(capture_info, capture_image_id, &read_values,
+  CaptureDisplayOutput(*display_compositor->GetDisplayCoordinatorForTest(), capture_info,
+                       capture_image_id, &read_values,
                        /*release_capture_image=*/false);
   bool images_are_same = CaptureCompare(read_values, blue_write_values, kPixelFormat,
                                         display->height_in_px(), display->width_in_px());
@@ -2326,7 +2330,8 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
   EXPECT_EQ(render_frame_result, DisplayCompositor::RenderFrameResult::kGpuComposition);
 
   // Grab the capture vmo data, and compare to the texture data.
-  CaptureDisplayOutput(capture_info, capture_image_id, &read_values,
+  CaptureDisplayOutput(*display_compositor->GetDisplayCoordinatorForTest(), capture_info,
+                       capture_image_id, &read_values,
                        /*release_capture_image=*/false);
   images_are_same = CaptureCompare(read_values, green_write_values, kPixelFormat,
                                    display->height_in_px(), display->width_in_px());
@@ -2340,7 +2345,8 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
   EXPECT_EQ(render_frame_result, DisplayCompositor::RenderFrameResult::kDirectToDisplay);
 
   // Grab the capture vmo data, and compare to the texture data.
-  CaptureDisplayOutput(capture_info, capture_image_id, &read_values,
+  CaptureDisplayOutput(*display_compositor->GetDisplayCoordinatorForTest(), capture_info,
+                       capture_image_id, &read_values,
                        /*release_capture_image=*/false);
   images_are_same = CaptureCompare(read_values, blue_write_values, kPixelFormat,
                                    display->height_in_px(), display->width_in_px());
@@ -2354,7 +2360,8 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
   EXPECT_EQ(render_frame_result, DisplayCompositor::RenderFrameResult::kDirectToDisplay);
 
   // Grab the capture vmo data, and compare to the texture data.
-  CaptureDisplayOutput(capture_info, capture_image_id, &read_values,
+  CaptureDisplayOutput(*display_compositor->GetDisplayCoordinatorForTest(), capture_info,
+                       capture_image_id, &read_values,
                        /*release_capture_image=*/false);
   images_are_same = CaptureCompare(read_values, green_write_values, kPixelFormat,
                                    display->height_in_px(), display->width_in_px());
@@ -2368,7 +2375,8 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
   EXPECT_EQ(render_frame_result, DisplayCompositor::RenderFrameResult::kGpuComposition);
 
   // Grab the capture vmo data, and compare to the texture data.
-  CaptureDisplayOutput(capture_info, capture_image_id, &read_values,
+  CaptureDisplayOutput(*display_compositor->GetDisplayCoordinatorForTest(), capture_info,
+                       capture_image_id, &read_values,
                        /*release_capture_image=*/false);
   images_are_same = CaptureCompare(read_values, blue_write_values, kPixelFormat,
                                    display->height_in_px(), display->width_in_px());
@@ -2382,7 +2390,8 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
   EXPECT_EQ(render_frame_result, DisplayCompositor::RenderFrameResult::kDirectToDisplay);
 
   // Grab the capture vmo data, and compare to the texture data.
-  CaptureDisplayOutput(capture_info, capture_image_id, &read_values,
+  CaptureDisplayOutput(*display_compositor->GetDisplayCoordinatorForTest(), capture_info,
+                       capture_image_id, &read_values,
                        /*release_capture_image=*/false);
   images_are_same = CaptureCompare(read_values, green_write_values, kPixelFormat,
                                    display->height_in_px(), display->width_in_px());

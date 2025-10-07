@@ -13,6 +13,8 @@
 #include "src/ui/scenic/lib/allocation/buffer_collection_importer.h"
 #include "src/ui/scenic/lib/display/fidl_id_types.h"
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
+#include "src/ui/scenic/lib/types/rectangle.h"
+#include "src/ui/scenic/lib/types/rotate_flip.h"
 
 namespace flatland {
 
@@ -44,8 +46,8 @@ struct RenderData {
 // of the image and the dst rectangle represents the position in screen space where
 // the layer will be placed.
 struct DisplaySrcDstFrames {
-  fuchsia_math::wire::RectU src;
-  fuchsia_math::wire::RectU dst;
+  types::Rectangle src;
+  types::Rectangle dst;
 
   // When setting an image on a layer in the display, you have to specify the "source"
   // and "destination", where the source represents the pixel offsets and dimensions to
@@ -56,12 +58,6 @@ struct DisplaySrcDstFrames {
   // source and destination information.
   static DisplaySrcDstFrames New(ImageRect rectangle, allocation::ImageMetadata image);
 };
-
-// Converts a flatland |Orientation| and |ImageFlip| value to the appropriate hardware display
-// transform enum.
-display::WireCoordinateTransformation GetDisplayTransformFromOrientationAndFlip(
-    fuchsia::ui::composition::Orientation orientation,
-    fuchsia_ui_composition::ImageFlip image_flip);
 
 }  // namespace flatland
 

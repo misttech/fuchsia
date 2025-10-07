@@ -32,7 +32,7 @@ Display::Display(WireDisplayId id, const WireDisplayMode& mode, uint32_t width_i
 Display::Display(WireDisplayId id, uint32_t width_in_px, uint32_t height_in_px)
     : Display(id,
               WireDisplayMode{.active_area = {.width = width_in_px, .height = height_in_px},
-                              .refresh_rate_millihertz = 0},
+                              .refresh_rate_millihertz = 60'000},
               0, 0, {fuchsia_images2::PixelFormat::kB8G8R8A8}) {}
 
 void Display::Claim() {

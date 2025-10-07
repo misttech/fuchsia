@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/ui/scenic/lib/display/display_spec.h"
+#include "src/ui/scenic/lib/display/display_equivalence.h"
 
 #include <gtest/gtest.h>
 
 namespace display::internal::test {
 namespace {
 
-TEST(LayerSpec, HashingAndEquality) {
-  // Test ImageLayerSpec fields individually.
-  ImageLayerSpec image_layer1, image_layer2;
-  std::hash<ImageLayerSpec> image_hasher;
+TEST(LayerEquivalence, HashingAndEquality) {
+  // Test ImageLayerEquivalence fields individually.
+  ImageLayerEquivalence image_layer1, image_layer2;
+  std::hash<ImageLayerEquivalence> image_hasher;
 
   EXPECT_EQ(image_layer1, image_layer2);
   EXPECT_EQ(image_hasher(image_layer1), image_hasher(image_layer2));
@@ -66,9 +66,9 @@ TEST(LayerSpec, HashingAndEquality) {
   EXPECT_EQ(image_layer1, image_layer2);
   EXPECT_EQ(image_hasher(image_layer1), image_hasher(image_layer2));
 
-  // Test ColorLayerSpec fields individually.
-  ColorLayerSpec color_layer1, color_layer2;
-  std::hash<ColorLayerSpec> color_hasher;
+  // Test ColorLayerEquivalence fields individually.
+  ColorLayerEquivalence color_layer1, color_layer2;
+  std::hash<ColorLayerEquivalence> color_hasher;
 
   EXPECT_EQ(color_layer1, color_layer2);
   EXPECT_EQ(color_hasher(color_layer1), color_hasher(color_layer2));
@@ -95,11 +95,11 @@ TEST(LayerSpec, HashingAndEquality) {
   EXPECT_EQ(color_layer1, color_layer2);
   EXPECT_EQ(color_hasher(color_layer1), color_hasher(color_layer2));
 
-  LayerSpec layer1, layer2;
-  std::hash<LayerSpec> layer_hasher;
+  LayerEquivalence layer1, layer2;
+  std::hash<LayerEquivalence> layer_hasher;
 
-  // Test UninitializedLayerSpec
-  LayerSpec uninitialized_layer1, uninitialized_layer2;
+  // Test UninitializedLayerEquivalence
+  LayerEquivalence uninitialized_layer1, uninitialized_layer2;
   EXPECT_EQ(uninitialized_layer1, uninitialized_layer2);
   EXPECT_EQ(layer_hasher(uninitialized_layer1), layer_hasher(uninitialized_layer2));
 
@@ -121,9 +121,9 @@ TEST(LayerSpec, HashingAndEquality) {
   EXPECT_EQ(layer_hasher(layer1), layer_hasher(layer2));
 }
 
-TEST(DisplaySpec, HashingAndEquality) {
-  DisplaySpec spec1, spec2;
-  std::hash<DisplaySpec> hasher;
+TEST(DisplayEquivalence, HashingAndEquality) {
+  DisplayEquivalence spec1, spec2;
+  std::hash<DisplayEquivalence> hasher;
 
   EXPECT_EQ(spec1.layers, spec2.layers);
   EXPECT_EQ(spec1.display_mode, spec2.display_mode);
@@ -135,28 +135,28 @@ TEST(DisplaySpec, HashingAndEquality) {
   EXPECT_EQ(hasher(spec1), hasher(spec2));
 
   // Test layers
-  ImageLayerSpec image_layer;
+  ImageLayerEquivalence image_layer;
   image_layer.alpha_value = 0.5f;
-  ColorLayerSpec color_layer;
+  ColorLayerEquivalence color_layer;
   color_layer.display_destination = Rectangle({.x = 10, .y = 10, .width = 20, .height = 20});
 
-  spec1.layers.push_back(LayerSpec{image_layer});
+  spec1.layers.push_back(LayerEquivalence{image_layer});
   EXPECT_NE(spec1, spec2);
   EXPECT_NE(hasher(spec1), hasher(spec2));
-  spec2.layers.push_back(LayerSpec{image_layer});
+  spec2.layers.push_back(LayerEquivalence{image_layer});
   EXPECT_EQ(spec1, spec2);
   EXPECT_EQ(hasher(spec1), hasher(spec2));
 
-  spec1.layers.push_back(LayerSpec{color_layer});
+  spec1.layers.push_back(LayerEquivalence{color_layer});
   EXPECT_NE(spec1, spec2);
   EXPECT_NE(hasher(spec1), hasher(spec2));
-  spec2.layers.push_back(LayerSpec{color_layer});
+  spec2.layers.push_back(LayerEquivalence{color_layer});
   EXPECT_EQ(spec1, spec2);
   EXPECT_EQ(hasher(spec1), hasher(spec2));
 
   // Order matters
-  spec1.layers = {LayerSpec{image_layer}, LayerSpec{color_layer}};
-  spec2.layers = {LayerSpec{color_layer}, LayerSpec{image_layer}};
+  spec1.layers = {LayerEquivalence{image_layer}, LayerEquivalence{color_layer}};
+  spec2.layers = {LayerEquivalence{color_layer}, LayerEquivalence{image_layer}};
   EXPECT_NE(spec1, spec2);
   EXPECT_NE(hasher(spec1), hasher(spec2));
   spec2.layers = spec1.layers;

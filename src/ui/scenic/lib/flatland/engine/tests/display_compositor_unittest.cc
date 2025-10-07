@@ -16,13 +16,9 @@
 
 #include <gmock/gmock.h>
 
-#include "src/lib/fsl/handles/object_info.h"
-#include "src/lib/fxl/strings/join_strings.h"
 #include "src/ui/scenic/lib/allocation/buffer_collection_importer.h"
 #include "src/ui/scenic/lib/allocation/id.h"
-#include "src/ui/scenic/lib/display/tests/mock_display_coordinator.h"
 #include "src/ui/scenic/lib/display/util.h"
-#include "src/ui/scenic/lib/flatland/buffers/util.h"
 #include "src/ui/scenic/lib/flatland/engine/tests/common.h"
 #include "src/ui/scenic/lib/flatland/engine/tests/mock_display_coordinator.h"
 #include "src/ui/scenic/lib/flatland/renderer/mock_renderer.h"
@@ -34,20 +30,8 @@ using ::testing::Return;
 
 using allocation::BufferCollectionUsage;
 using allocation::ImageMetadata;
-using flatland::LinkSystem;
 using flatland::MockDisplayCoordinator;
-using flatland::Renderer;
-using flatland::TransformGraph;
 using flatland::TransformHandle;
-using flatland::UberStruct;
-using flatland::UberStructSystem;
-using fuchsia::sysmem::BufferUsage;
-using fuchsia::ui::composition::ChildViewStatus;
-using fuchsia::ui::composition::ChildViewWatcher;
-using fuchsia::ui::composition::LayoutInfo;
-using fuchsia::ui::composition::ParentViewportWatcher;
-using fuchsia::ui::views::ViewCreationToken;
-using fuchsia::ui::views::ViewportCreationToken;
 using fuchsia_ui_composition::ImageFlip;
 
 namespace fuchsia_hardware_display::wire {
@@ -917,7 +901,7 @@ TEST_F(DisplayCompositorTest, VsyncConfigStampAreProcessed) {
 
   EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
   EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
-      .Times(2)
+      .Times(1)
       .WillRepeatedly(
           testing::Invoke([&](MockDisplayCoordinator::CheckConfigCompleter::Sync& completer) {
             completer.Reply(display::WireConfigResult::kOk);

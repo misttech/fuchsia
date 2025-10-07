@@ -33,6 +33,9 @@ using BlendMode = types::BlendMode;
 // texel coordinates beginning at the top-left coordinate (in texture-space). The orientation
 // specifies the rotation applied to the rect. Note that origin and extent are specified in the
 // new global coordinate-space (i.e. after all transforms have been applied).
+//
+// TODO(https://fxbug.dev/446975761): consider replacing `orientation` with a `types::RotateFlip`
+// and `origin`/`extent` with a `types::RectangleF`.  This is not completely trivial.
 struct ImageRect {
   ImageRect(const glm::vec2& origin, const glm::vec2& extent, const std::array<glm::ivec2, 4> uvs,
             fuchsia::ui::composition::Orientation orientation)
@@ -57,6 +60,11 @@ struct ImageRect {
                                          glm::ivec2(0, 1)};
   fuchsia::ui::composition::Orientation orientation;
 
+  // Two `ImageRect` are identical if all of the following are true:
+  // - orientations are identical
+  // - texel_uvs are identical
+  // - origins within epsilon-distance
+  // - extents within epsilon-distance
   bool operator==(const ImageRect& other) const;
 };
 

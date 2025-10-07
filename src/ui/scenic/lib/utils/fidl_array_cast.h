@@ -12,9 +12,9 @@
 namespace utils {
 
 template <typename T, size_t N>
-fidl::Array<T, N>& ReinterpretStdArrayAsFidlArray(std::array<T, N>& std_array) {
-  using FidlArray = fidl::Array<T, N>;
-  using StdArray = std::array<T, N>;
+const fidl::Array<T, N>& ReinterpretStdArrayAsFidlArray(const std::array<T, N>& std_array) {
+  using FidlArray = const fidl::Array<T, N>;
+  using StdArray = const std::array<T, N>;
   static_assert(sizeof(FidlArray) == sizeof(StdArray));
   static_assert(alignof(FidlArray) == alignof(StdArray));
   static_assert(std::is_standard_layout_v<FidlArray>);
@@ -23,6 +23,20 @@ fidl::Array<T, N>& ReinterpretStdArrayAsFidlArray(std::array<T, N>& std_array) {
   static_assert(std::is_trivially_copyable_v<StdArray>);
 
   return *reinterpret_cast<FidlArray*>(&std_array);
+}
+
+template <typename T, size_t N>
+const std::array<T, N>& ReinterpretFidlArrayAsStdArray(const fidl::Array<T, N>& fidl_array) {
+  using FidlArray = const fidl::Array<T, N>;
+  using StdArray = const std::array<T, N>;
+  static_assert(sizeof(FidlArray) == sizeof(StdArray));
+  static_assert(alignof(FidlArray) == alignof(StdArray));
+  static_assert(std::is_standard_layout_v<FidlArray>);
+  static_assert(std::is_standard_layout_v<StdArray>);
+  static_assert(std::is_trivially_copyable_v<FidlArray>);
+  static_assert(std::is_trivially_copyable_v<StdArray>);
+
+  return *reinterpret_cast<StdArray*>(&fidl_array);
 }
 
 }  // namespace utils
