@@ -276,7 +276,7 @@ impl TryFrom<fnet_matchers::AddressRange> for AddressRange {
 }
 
 /// Extension type for [`fnet_matchers::Address`].
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum AddressMatcherType {
     Subnet(Subnet),
     Range(AddressRange),
@@ -339,7 +339,7 @@ impl Debug for AddressMatcherType {
 }
 
 /// Extension type for [`fnet_matchers::Address`].
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Address {
     pub matcher: AddressMatcherType,
     pub invert: bool,

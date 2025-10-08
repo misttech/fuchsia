@@ -124,6 +124,15 @@ impl FromExt<ip::IpVersion> for fidl::IpVersion {
     }
 }
 
+impl FromExt<fidl::IpVersion> for ip::IpVersion {
+    fn from_ext(version: fidl::IpVersion) -> ip::IpVersion {
+        match version {
+            fidl::IpVersion::V4 => ip::IpVersion::V4,
+            fidl::IpVersion::V6 => ip::IpVersion::V6,
+        }
+    }
+}
+
 /// Extension trait to allow user-friendly formatting.
 pub trait DisplayExt {
     type Displayable: Display;
