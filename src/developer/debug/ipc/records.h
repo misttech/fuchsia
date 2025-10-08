@@ -627,12 +627,7 @@ struct Filter {
     ser | type | pattern | job_koid;
 
     if (ver < 64) {
-      if (ver >= 61) {
-        ser | id | config.weak;
-      }
-      if (ver >= 62) {
-        ser | config.recursive;
-      }
+      ser | id | config.weak | config.recursive;
     } else {
       ser | id | config;
     }

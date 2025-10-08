@@ -5,8 +5,6 @@
 #ifndef SRC_DEVELOPER_DEBUG_IPC_PROTOCOL_H_
 #define SRC_DEVELOPER_DEBUG_IPC_PROTOCOL_H_
 
-#include <set>
-
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/arch.h"
 #include "src/developer/debug/shared/platform.h"
@@ -59,10 +57,10 @@ constexpr uint32_t kCurrentProtocolVersion = 71;
 //   - INITIAL_VERSION_FOR_API_LEVEL_CURRENT = kCurrentProtocolVersion
 //   - CURRENT_SUPPORTED_API_LEVEL = NEXT_STABLE_API_LEVEL
 
-#define INITIAL_VERSION_FOR_API_LEVEL_MINUS_2 60
-#define INITIAL_VERSION_FOR_API_LEVEL_MINUS_1 63
-#define INITIAL_VERSION_FOR_API_LEVEL_CURRENT 66
-#define CURRENT_SUPPORTED_API_LEVEL 26
+#define INITIAL_VERSION_FOR_API_LEVEL_MINUS_2 63
+#define INITIAL_VERSION_FOR_API_LEVEL_MINUS_1 66
+#define INITIAL_VERSION_FOR_API_LEVEL_CURRENT 71
+#define CURRENT_SUPPORTED_API_LEVEL 29
 
 constexpr uint32_t kMinimumProtocolVersion = INITIAL_VERSION_FOR_API_LEVEL_MINUS_2;
 
@@ -265,9 +263,7 @@ struct AttachRequest {
   void Serialize(Serializer& ser, uint32_t ver) {
     ser | koid;
     if (ver < 64) {
-      if (ver >= 61) {
-        ser | config.weak;
-      }
+      ser | config.weak;
     } else {
       ser | config;
     }
@@ -497,34 +493,7 @@ struct UpdateFilterReply {
   // filter's list of matches.
   std::vector<FilterMatch> matched_processes_for_filter;
 
-  void Serialize(Serializer& ser, uint32_t ver) {
-    if (ver < 61) {
-      // List of koids for currently running processes that match any of the filters.
-      // Guaranteed that each koid is unique.
-      std::vector<uint64_t> matched_processes;
-
-      // This set will filter out duplicate koids.
-      std::set<uint64_t> pids;
-
-      for (auto& match : matched_processes_for_filter) {
-        pids.insert(match.matched_pids.begin(), match.matched_pids.end());
-      }
-
-      matched_processes.reserve(pids.size());
-      matched_processes.insert(matched_processes.end(), pids.begin(), pids.end());
-
-      pids.clear();
-      matched_processes_for_filter.clear();
-
-      ser | matched_processes;
-
-      // There's no way for us to reconstruct the filter id to pid mapping, so we map all of the
-      // matches to the reserved invalid filter id.
-      matched_processes_for_filter.emplace_back(kInvalidFilterId, std::move(matched_processes));
-    } else {
-      ser | matched_processes_for_filter;
-    }
-  }
+  void Serialize(Serializer& ser, uint32_t ver) { ser | matched_processes_for_filter; }
 };
 
 struct WriteMemoryRequest {
@@ -707,11 +676,8 @@ struct NotifyProcessStarting {
   std::optional<AddressRegion> shared_address_space = std::nullopt;
 
   void Serialize(Serializer& ser, uint32_t ver) {
-    ser | timestamp | type | koid | name | components;
+    ser | timestamp | type | koid | name | components | filter_id;
 
-    if (ver >= 61) {
-      ser | filter_id;
-    }
     if (ver >= 69) {
       ser | shared_address_space;
     }
