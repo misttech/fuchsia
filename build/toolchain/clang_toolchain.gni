@@ -1115,8 +1115,6 @@ template("clang_toolchain") {
       _link_concurrent_jobs = concurrent_jobs.local
       rspfile = "$outfile.rsp"
 
-      use_llvm_ifs =
-          invoker.toolchain_os != "mac" && invoker.toolchain_os != "win"
       if (invoker.toolchain_os == "mac") {
         # TODO(https://fxbug.dev/42079107): enable depfile support in ld64.lld.
         command += "$ld {{SOLINK_FLAGS}}{{ldflags}} -o \"$unstripped_outfile\" -Wl,-filelist,\"$rspfile\" {{solibs}} {{libs}} {{frameworks}}"
@@ -1298,7 +1296,8 @@ template("clang_toolchain") {
       # Do not use BREAKPAD_NAME in shared libraries.
       command = string_replace(command, "{{BREAKPAD_NAME}}", "")
 
-      if (use_llvm_ifs) {
+      # Use llvm_ifs if ELF.
+      if (is_elf) {
         # The Ninja dependency for linking in the shared library will be
         # the .ifs file (depend_output), though the actual linking *input*
         # will be the original .so file (link_output).  Ninja will restat

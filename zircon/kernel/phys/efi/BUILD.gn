@@ -63,12 +63,15 @@ if (current_toolchain == default_toolchain) {
     # Always enable frame pointers.
     configs += [ "//build/config:frame_pointers" ]
 
-    # Don't set MSVC predefines.
-    cflags = [
-      "-Wno-builtin-macro-redefined",
-      "-U_MSC_VER",
-      "-U_MSC_FULL_VER",
-    ]
+    cflags = [ "-Wno-builtin-macro-redefined" ]
+
+    if (is_win) {
+      # Don't set MSVC predefines which are set by the compiler when Windows target triples are used.
+      cflags += [
+        "-U_MSC_VER",
+        "-U_MSC_FULL_VER",
+      ]
+    }
 
     # TODO(https://fxbug.dev/435771251): Support __PE_COFF__ predefine upstream
     defines = [ "__PE_COFF__" ]

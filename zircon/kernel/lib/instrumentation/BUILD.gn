@@ -64,6 +64,10 @@ if (is_kernel) {
       "//zircon/kernel/phys:boot-constants",
       "//zircon/kernel/vm:headers",
     ]
+    if (is_pecoff) {
+      # TODO(https://fxbug.dev/440394989) Support calling convention predefine upstream for uefi triple.
+      defines += [ "__MSVC_X86_64_CC__" ]
+    }
   }
 
   source_set("memory-profile") {

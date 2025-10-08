@@ -9,7 +9,7 @@
 .text
 
 // EFI uses different argument registers in the C calling convention.
-#ifdef _WIN32
+#if defined(__MSVC_X86_64_CC__)
 #define ARG0 %rcx
 #else
 #define ARG0 %rdi

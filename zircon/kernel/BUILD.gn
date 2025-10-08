@@ -254,7 +254,7 @@ config("standalone") {
     "-faligned-new=8",
   ]
 
-  if (current_os != "win") {
+  if (!is_pecoff) {
     if (current_cpu == "x64") {
       # This only matters in an environment where interrupt handlers might
       # push trap frames in the same privilege level, like the kernel.

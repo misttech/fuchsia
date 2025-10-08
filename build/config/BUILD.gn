@@ -325,7 +325,7 @@ config("relative_paths") {
   asmflags = cflags
   ldflags = cflags
 
-  if (current_os == "win") {
+  if (is_pecoff) {
     ldflags += [
       # This embeds just "name.pdb" in the binary instead of the absolute
       # path to the PDB file.
@@ -398,7 +398,7 @@ variant("linker_gc") {
 
   # These are the link-time flags to take advantage of the code generation
   # flags in config("linker_gc.compiler").
-  if (current_os == "win") {
+  if (is_pecoff) {
     ldflags = [ "-Wl,/opt:ref" ]
   } else {
     ldflags = [ "-Wl,--gc-sections" ]
@@ -433,7 +433,7 @@ config("default_linker_gc") {
 }
 
 config("linker_string_merging") {
-  if (current_os == "win") {
+  if (is_pecoff) {
     ldflags = [ "-Wl,/opt:lldtailmerge" ]
   } else {
     ldflags = [ "-Wl,-O2" ]
@@ -610,7 +610,7 @@ config("default_optimize") {
 
 config("debuginfo_none") {
   cflags = [ "-g0" ]
-  if (current_os != "win") {
+  if (is_dwarf) {
     asmflags = cflags
   }
   ldflags = cflags
@@ -619,7 +619,7 @@ config("debuginfo_none") {
 
 config("debuginfo_backtrace") {
   cflags = [ "-g1" ]
-  if (current_os != "win") {
+  if (is_dwarf) {
     asmflags = cflags
   }
   ldflags = cflags
@@ -635,7 +635,7 @@ config("debuginfo_debug") {
     # to -grecord-command-line, but both compilers accept this spelling for it.
     "-grecord-gcc-switches",
   ]
-  if (current_os != "win") {
+  if (is_dwarf) {
     asmflags = cflags
   }
   ldflags = cflags
@@ -671,7 +671,7 @@ config("default_debuginfo") {
   cflags = []
   ldflags = []
   configs = [ ":debuginfo_${debuginfo}" ]
-  if (current_os != "win" && current_cpu != "wasm32") {
+  if (is_dwarf) {
     configs += [
       ":dwarf_version",
       ":compress_debuginfo",
@@ -686,7 +686,7 @@ config("default_debuginfo") {
         "-debug-info-kind=constructor",
       ]
     }
-  } else if (debuginfo != "none" && current_os == "win") {
+  } else if (debuginfo != "none" && is_pecoff) {
     # TODO(https://fxbug.dev/42132853): This produces the .pdb file, but it doesn't seem
     # to get the DWARF data out of the main output file.
     ldflags += [ "-Wl,/debug:full" ]
@@ -1384,7 +1384,7 @@ config("werror") {
     asmflags = [ "-Wa,--fatal-warnings" ]
     cflags += asmflags
 
-    if (current_os == "win") {
+    if (is_pecoff) {
       ldflags = [ "-Wl,/WX" ]
     }
 
@@ -1474,7 +1474,7 @@ config("no_profile") {
 config("icf") {
   # This changes C/C++ semantics and might be incompatible with third-party
   # code that relies on function pointers comparison.
-  if (current_os == "win" && (linker == "lld" || !is_gcc)) {
+  if (is_pecoff) {
     ldflags = [ "-Wl,/opt:icf=all" ]
   } else if (linker == "gold" || linker == "lld") {
     ldflags = [ "-Wl,--icf=all" ]

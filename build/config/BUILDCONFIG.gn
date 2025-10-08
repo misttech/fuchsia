@@ -194,8 +194,12 @@ is_ios = false
 is_linux = false
 is_mac = false
 is_win = false
+is_uefi = false
 is_component_build = false
 is_official_build = false
+is_elf = false
+is_pecoff = false
+is_dwarf = false
 
 # [END toolchain_is_variables]
 
@@ -209,12 +213,21 @@ is_fuchsia_tree = true
 
 if (current_os == "fuchsia") {
   is_fuchsia = true
+  is_dwarf = true
+  is_elf = true
 } else if (current_os == "linux") {
   is_linux = true
+  is_dwarf = true
+  is_elf = true
 } else if (current_os == "mac") {
   is_mac = true
+  is_dwarf = true
 } else if (current_os == "win") {
   is_win = true
+  is_pecoff = true
+} else if (current_os == "uefi") {
+  is_uefi = true
+  is_pecoff = true
 }
 
 support_rust = zircon_toolchain == false
@@ -263,6 +276,7 @@ is_clang = !is_gcc
 is_kernel = toolchain_variant.tags + [ "kernel" ] - [ "kernel" ] !=
             toolchain_variant.tags
 
+# TODO(https://fxbug.dev/432826717): Remove this in favor of is_uefi when the target triple is switched to *-uefi.
 # Whether we are in the context of the EFI toolchain.
 is_efi_toolchain =
     toolchain_variant.tags + [ "efi" ] - [ "efi" ] != toolchain_variant.tags
@@ -286,9 +300,6 @@ is_ubsan =
 # Whether we are in the context of a fuzzer toolchain.
 is_fuzzer = toolchain_variant.tags + [ "fuzzer" ] - [ "fuzzer" ] !=
             toolchain_variant.tags
-
-# Whether we are building an ELF target.
-is_elf = !is_mac && !is_win
 
 # Very unfortunately, GN never sets `current_toolchain` when executing
 # BUILDCONFIG.gn, so the logic below is used to detect when this file
@@ -3213,7 +3224,7 @@ template("_fuchsia_shared_library") {
           os = current_os
           debug = rebase_path(link_output_file, root_build_dir)
           dist = rebased_output_file
-          if (current_os != "win") {
+          if (is_elf) {
             elf_build_id = rebased_output_file + ".build-id.stamp"
           }
           if (output_breakpad_syms && current_os == "fuchsia") {
@@ -3230,7 +3241,7 @@ template("_fuchsia_shared_library") {
           cpu = current_cpu
           dest_path = "lib/${toolchain_variant.libprefix}$install_name"
           debug = rebase_path(link_output_file, root_build_dir)
-          if (current_os != "win") {
+          if (is_elf) {
             elf_build_id_file = rebased_output_file + ".build-id.stamp"
           }
           if (output_breakpad_syms && current_os == "fuchsia") {
@@ -3691,7 +3702,7 @@ template("executable") {
 
     rebased_output_file = rebase_path(output_file, root_build_dir)
     rebased_link_output_file = rebase_path(link_output_file, root_build_dir)
-    if (current_os == "win") {
+    if (is_pecoff) {
       rebased_debug_file =
           rebase_path("$output_dir/$output_name.pdb", root_build_dir)
     } else {
@@ -3954,7 +3965,7 @@ template("loadable_module") {
           os = current_os
           debug = rebased_link_output_file
           dist = rebased_output_file
-          if (current_os != "win") {
+          if (is_elf) {
             elf_build_id =
                 rebase_path("${output_file}.build-id.stamp", root_build_dir)
           }
@@ -3974,7 +3985,7 @@ template("loadable_module") {
             dest_path = "lib/$output_file_name"
           }
           debug = rebased_link_output_file
-          if (current_os != "win") {
+          if (is_elf) {
             elf_build_id_file = _rebased_elf_build_id_file
             rebase_path("${output_file}.build-id.stamp", root_build_dir)
           }

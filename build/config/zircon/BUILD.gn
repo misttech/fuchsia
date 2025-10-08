@@ -149,7 +149,7 @@ config("compiler") {
       # can optimize for or check generated sizes.
       cflags += [ "-fsized-deallocation" ]
     }
-  } else if (current_os == "win") {
+  } else if (is_pecoff) {
     # This avoids timestamps in PE-COFF relocatable (.o) files.  When using
     # clang-cl, it can also be spelled `/Brepro` as the linker option is.
     # But for the normal clang(++) driver, stick to the `-` option syntax.
