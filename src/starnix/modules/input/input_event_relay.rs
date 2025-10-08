@@ -2,11 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{
-    FuchsiaTouchEventToLinuxTouchEventConverter, InputDeviceStatus, InputFile,
-    LinuxEventWithTraceId, parse_fidl_keyboard_event_to_linux_input_event,
-    parse_fidl_media_button_event, parse_fidl_touch_button_event,
-};
+use crate::{InputDeviceStatus, InputFile, LinuxEventWithTraceId, uinput};
 use fidl::endpoints::{ClientEnd, RequestStream};
 use fidl_fuchsia_ui_input::TouchDeviceInfo;
 use fidl_fuchsia_ui_input3::{
@@ -29,6 +25,11 @@ use starnix_core::task::{Kernel, LockedAndTask};
 use starnix_logging::{
     log_warn, trace_duration, trace_duration_begin, trace_duration_end, trace_flow_step,
 };
+use starnix_modules_input_event_conversion::button_fuchsia_to_linux::{
+    parse_fidl_media_button_event, parse_fidl_touch_button_event,
+};
+use starnix_modules_input_event_conversion::key_fuchsia_to_linux::parse_fidl_keyboard_event_to_linux_input_event;
+use starnix_modules_input_event_conversion::touch_fuchsia_to_linux::FuchsiaTouchEventToLinuxTouchEventConverter;
 use starnix_sync::Mutex;
 use starnix_types::time::timeval_from_time;
 use starnix_uapi::uapi;
@@ -410,7 +411,10 @@ impl InputEventsRelay {
             KeyboardListenerRequest::OnKeyEvent { event, responder } => {
                 trace_duration!(c"input", c"starnix_process_keyboard_event");
 
-                let new_events = parse_fidl_keyboard_event_to_linux_input_event(&event);
+                let new_events = parse_fidl_keyboard_event_to_linux_input_event(
+                    &event,
+                    uinput::uinput_running(),
+                );
 
                 let dev = match event.device_id {
                     Some(device_id) => {

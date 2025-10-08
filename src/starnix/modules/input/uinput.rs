@@ -3,16 +3,13 @@
 // found in the LICENSE file.
 
 use crate::uinput::vfs::{CloseFreeSafe, NamespaceNode};
-use crate::{
-    InputEventsRelayHandle, InputFile, LinuxKeyboardEventParser, LinuxTouchEventParser, OpenedFiles,
-};
+use crate::{InputEventsRelayHandle, InputFile, OpenedFiles};
 use bit_vec::BitVec;
 use fidl_fuchsia_ui_test_input::{
     self as futinput, CoordinateUnit, DisplayDimensions, KeyboardSimulateKeyEventRequest,
     RegistryRegisterKeyboardAndGetDeviceInfoRequest,
     RegistryRegisterTouchScreenAndGetDeviceInfoRequest,
 };
-
 use starnix_core::device::kobject::{Device, DeviceMetadata};
 use starnix_core::device::{DeviceMode, DeviceOps};
 use starnix_core::fileops_impl_seekless;
@@ -22,6 +19,8 @@ use starnix_core::vfs::{
     self, FileObject, FileOps, FsString, default_ioctl, fileops_impl_noop_sync,
 };
 use starnix_logging::log_warn;
+use starnix_modules_input_event_conversion::key_linux_to_fuchsia::LinuxKeyboardEventParser;
+use starnix_modules_input_event_conversion::touch_linux_to_fuchsia::LinuxTouchEventParser;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_type::INPUT_MAJOR;
