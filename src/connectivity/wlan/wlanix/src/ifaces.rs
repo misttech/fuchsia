@@ -981,6 +981,7 @@ pub mod test_utils {
         mock_power_up_result: Result<(), Error>,
         mock_reset_tx_power_scenario_result: Result<(), Error>,
         mock_set_tx_power_scenario_result: Result<(), Error>,
+        mock_list_phys_result: Result<Vec<u16>, Error>,
         iface_id: Arc<Mutex<u16>>,
     }
 
@@ -996,6 +997,7 @@ pub mod test_utils {
                 mock_power_up_result: Ok(()),
                 mock_reset_tx_power_scenario_result: Ok(()),
                 mock_set_tx_power_scenario_result: Ok(()),
+                mock_list_phys_result: Ok(vec![1]),
                 iface_id: Arc::new(Mutex::new(FAKE_IFACE_RESPONSE.id)),
             }
         }
@@ -1072,6 +1074,14 @@ pub mod test_utils {
         pub fn set_iface_id(&self, new_id: u16) {
             *self.iface_id.lock() = new_id;
         }
+
+        pub fn mock_list_phys_failure(self) -> Self {
+            Self { mock_list_phys_result: Err(format_err!("mocked ListPhys failure")), ..self }
+        }
+
+        pub fn mock_no_phys_available(self) -> Self {
+            Self { mock_list_phys_result: Ok(vec![]), ..self }
+        }
     }
 
     #[async_trait]
@@ -1080,7 +1090,10 @@ pub mod test_utils {
 
         async fn list_phys(&self) -> Result<Vec<u16>, Error> {
             self.calls.lock().push(IfaceManagerCall::ListPhys);
-            Ok(vec![1])
+            match &self.mock_list_phys_result {
+                Ok(phys) => Ok(phys.clone()),
+                Err(e) => bail!("{e}"),
+            }
         }
 
         fn list_ifaces(&self) -> Vec<u16> {

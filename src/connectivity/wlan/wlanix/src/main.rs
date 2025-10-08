@@ -8,6 +8,8 @@ use anyhow::{Context, Error, bail, format_err};
 use fidl::endpoints::ProtocolMarker;
 use fidl_fuchsia_wlan_wlanix::{
     Nl80211MessageResponder, Nl80211MessageResponse, Nl80211MessageV2Responder,
+    WifiLegacyHalResetTxPowerScenarioResponder, WifiLegacyHalSelectTxPowerScenarioRequest,
+    WifiLegacyHalSelectTxPowerScenarioResponder, WifiLegacyHalStatus,
 };
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
@@ -1851,6 +1853,211 @@ async fn serve_nl80211<I: IfaceManager>(
     }
 }
 
+fn legacy_hal_tx_power_scenario_to_internal(
+    scenario: fidl_wlanix::WifiLegacyHalTxPowerScenario,
+) -> Option<fidl_internal::TxPowerScenario> {
+    match scenario {
+        // If the caller provides an explicitly invalid SAR scenario, do not attempt to use it.
+        fidl_wlanix::WifiLegacyHalTxPowerScenario::Invalid => None,
+
+        // Default and VoiceCall map directly to SAR scenario definitions.
+        fidl_wlanix::WifiLegacyHalTxPowerScenario::Default => {
+            Some(fidl_internal::TxPowerScenario::Default)
+        }
+        fidl_wlanix::WifiLegacyHalTxPowerScenario::VoiceCallLegacy => {
+            Some(fidl_internal::TxPowerScenario::VoiceCall)
+        }
+
+        // These scenarios represent situations where the device is detected to be near the body
+        // AND EITHER
+        //   a. Cell is explicitly *OFF*
+        //   b. Cell is assumed to be off due to lack of hotspot or cell presence
+        fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyCellOff
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyCellOffUnfolded
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyCellOffUnfoldedCap
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyRearCamera
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyVideoRecording => {
+            Some(fidl_internal::TxPowerScenario::BodyCellOff)
+        }
+
+        // These scenarios represent situations where
+        // 1. The device is detected to be near the body
+        // 2. No cell activity detected
+        // 3. There is an ongoing BT stream
+        fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyBt
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyBtUnfolded
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyBtUnfoldedCap => {
+            Some(fidl_internal::TxPowerScenario::BodyBtActive)
+        }
+
+        // These scenarios represent situations where
+        // 1. The device is detected to be near the body
+        // 2. Cell is explicitly enabled
+        fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyCellOn
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyCellOnUnfolded
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyCellOnUnfoldedCap
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyCellOnBt
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyCellOnBtUnfolded
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyCellOnBtUnfoldedCap
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyHotspot
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyHotspotBt
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyHotspotMmw
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyHotspotBtMmw
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyHotspotUnfolded
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyHotspotBtUnfolded
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyHotspotMmwUnfolded
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyHotspotBtMmwUnfolded => {
+            Some(fidl_internal::TxPowerScenario::BodyCellOn)
+        }
+
+        // These scenarios represent situations where
+        // 1. The device is detected to be near the head
+        // 2. Cell is explicitly enabled
+        fidl_wlanix::WifiLegacyHalTxPowerScenario::OnHeadCellOn
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnHeadCellOnUnfolded
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnHeadHotspot
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnHeadHotspotMmw
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnHeadHotspotUnfolded
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnHeadHotspotMmwUnfolded => {
+            Some(fidl_internal::TxPowerScenario::HeadCellOn)
+        }
+
+        // These scenarios represent situations where the device is detected to be near the head
+        // AND Cell is explicitly off.
+        fidl_wlanix::WifiLegacyHalTxPowerScenario::OnHeadCellOff
+        | fidl_wlanix::WifiLegacyHalTxPowerScenario::OnHeadCellOffUnfolded => {
+            Some(fidl_internal::TxPowerScenario::HeadCellOff)
+        }
+        other => {
+            warn!("Invalid power scenario: {:?}", other);
+            None
+        }
+    }
+}
+
+async fn select_tx_power_scenario<I: IfaceManager>(
+    iface_manager: Arc<I>,
+    req: WifiLegacyHalSelectTxPowerScenarioRequest,
+    responder: WifiLegacyHalSelectTxPowerScenarioResponder,
+) -> Result<(), Error> {
+    // The incoming request must a TxPowerScenario.
+    let scenario = match req.scenario {
+        Some(scenario) => scenario,
+        None => {
+            responder
+                .send(Err(WifiLegacyHalStatus::InvalidArgument))
+                .context("Invalid arguments for setting Tx power scenario")?;
+            return Err(format_err!("Tx power scenario ({:?}) must be defined", req.scenario));
+        }
+    };
+
+    // Ensure that the requested power scenario is supported.
+    let scenario = match legacy_hal_tx_power_scenario_to_internal(scenario) {
+        Some(scenario) => scenario,
+        None => {
+            responder
+                .send(Err(WifiLegacyHalStatus::InvalidArgument))
+                .context("Invalid power scenario")?;
+            return Err(format_err!("Invalid power scenario: {:?}", scenario));
+        }
+    };
+
+    // Determine the list of PHYs that need to have their power scenarios set.
+    let phys = match iface_manager.list_phys().await {
+        Ok(phys) => phys,
+        Err(e) => {
+            responder.send(Err(WifiLegacyHalStatus::Internal)).context("Unable to list PHYs")?;
+            return Err(format_err!("Could not list PHYs: {}", e));
+        }
+    };
+
+    if phys.is_empty() {
+        responder.send(Err(WifiLegacyHalStatus::Internal)).context("No PHYs available")?;
+        return Err(format_err!("No PHYs available for TxPowerScenario selection"));
+    }
+
+    // Set the requested Tx power scenario.
+    let mut response = Ok(());
+    let mut result = Ok(());
+    for phy_id in phys {
+        if let Err(e) = iface_manager.set_tx_power_scenario(phy_id, scenario).await {
+            warn!("PHY {}: Failed to select Tx power scenario: {:?}", phy_id, e);
+            response = Err(WifiLegacyHalStatus::Internal);
+            result = Err(format_err!("Could not apply power scenario {:?} to all PHYs", scenario));
+        }
+    }
+
+    responder.send(response).context("Set Tx power scenario")?;
+    result
+}
+
+async fn reset_tx_power_scenario<I: IfaceManager>(
+    iface_manager: Arc<I>,
+    responder: WifiLegacyHalResetTxPowerScenarioResponder,
+) -> Result<(), Error> {
+    let phys = match iface_manager.list_phys().await {
+        Ok(phys) => phys,
+        Err(e) => {
+            responder.send(Err(WifiLegacyHalStatus::Internal)).context("Unable to list PHYs")?;
+            return Err(format_err!("Could not list PHYs: {}", e));
+        }
+    };
+
+    if phys.is_empty() {
+        responder.send(Err(WifiLegacyHalStatus::Internal)).context("No PHYs available")?;
+        return Err(format_err!("No PHYs available for TxPowerScenario reset"));
+    }
+
+    let mut response = Ok(());
+    let mut result = Ok(());
+    for phy_id in phys {
+        if let Err(e) = iface_manager.reset_tx_power_scenario(phy_id).await {
+            warn!("Failed to reset Tx power scenario for PHY {}: {}", phy_id, e);
+            result = Err(format_err!("Could not reset Tx power scenario on all PHYs"));
+            response = Err(WifiLegacyHalStatus::Internal);
+        }
+    }
+
+    responder.send(response).context("Reset Tx power scenario")?;
+    result
+}
+
+async fn handle_wifi_legacy_hal_request<I: IfaceManager>(
+    req: fidl_wlanix::WifiLegacyHalRequest,
+    iface_manager: Arc<I>,
+) -> Result<(), Error> {
+    match req {
+        fidl_wlanix::WifiLegacyHalRequest::SelectTxPowerScenario { payload, responder } => {
+            select_tx_power_scenario(iface_manager, payload, responder).await
+        }
+        fidl_wlanix::WifiLegacyHalRequest::ResetTxPowerScenario { responder } => {
+            reset_tx_power_scenario(iface_manager, responder).await
+        }
+        other => Err(format_err!("Unsupported legacy HAL request: {:?}", other)),
+    }
+}
+
+async fn serve_wifi_legacy_hal_requests<I: IfaceManager>(
+    reqs: fidl_wlanix::WifiLegacyHalRequestStream,
+    iface_manager: Arc<I>,
+) {
+    reqs.for_each_concurrent(None, |req| async {
+        match req {
+            Ok(req) => {
+                if let Err(e) =
+                    handle_wifi_legacy_hal_request(req, Arc::clone(&iface_manager)).await
+                {
+                    warn!("Failed to handle WifiLegacyHalRequest: {}", e);
+                }
+            }
+            Err(e) => {
+                error!("WifiLegacyHal request stream failed: {}", e);
+            }
+        }
+    })
+    .await;
+}
+
 async fn handle_wlanix_request<I: IfaceManager>(
     req: fidl_wlanix::WlanixRequest,
     state: Arc<Mutex<WifiState>>,
@@ -1897,8 +2104,12 @@ async fn handle_wlanix_request<I: IfaceManager>(
                 .await;
             }
         }
-        fidl_wlanix::WlanixRequest::GetWifiLegacyHal { .. } => {
-            warn!("WiFi Legacy HAL is not yet implemented.");
+        fidl_wlanix::WlanixRequest::GetWifiLegacyHal { payload, .. } => {
+            info!("fidl_wlanix::WlanixRequest::GetWifiLegacyHal");
+            if let Some(legacy_hal) = payload.legacy_hal {
+                let legacy_hal_stream = legacy_hal.into_stream();
+                serve_wifi_legacy_hal_requests(legacy_hal_stream, Arc::clone(&iface_manager)).await;
+            }
         }
         fidl_wlanix::WlanixRequest::_UnknownMethod { ordinal, .. } => {
             warn!("Unknown WlanixRequest ordinal: {}", ordinal);
@@ -4251,5 +4462,431 @@ mod tests {
         internal_scenario: Option<fidl_internal::TxPowerScenario>,
     ) {
         assert_eq!(wifi_chip_tx_power_scenario_to_internal(wifi_chip_scenario), internal_scenario)
+    }
+
+    #[test]
+    fn test_legacy_hardware_scenario_conversion_invalid() {
+        assert_eq!(
+            legacy_hal_tx_power_scenario_to_internal(
+                fidl_wlanix::WifiLegacyHalTxPowerScenario::Invalid
+            ),
+            None
+        )
+    }
+
+    #[test]
+    fn test_legacy_hardware_scenario_conversion_default() {
+        assert_eq!(
+            legacy_hal_tx_power_scenario_to_internal(
+                fidl_wlanix::WifiLegacyHalTxPowerScenario::Default
+            ),
+            Some(fidl_internal::TxPowerScenario::Default)
+        )
+    }
+
+    #[test]
+    fn test_legacy_hardware_scenario_conversion_voice_call() {
+        assert_eq!(
+            legacy_hal_tx_power_scenario_to_internal(
+                fidl_wlanix::WifiLegacyHalTxPowerScenario::VoiceCallLegacy
+            ),
+            Some(fidl_internal::TxPowerScenario::VoiceCall)
+        )
+    }
+
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyCellOn; "cell on")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyCellOnUnfolded; "cell on unfolded")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyCellOnUnfoldedCap; "cell on unfolded cap")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyCellOnBt; "cell on BT")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyCellOnBtUnfolded; "cell on BT unfolded")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyCellOnBtUnfoldedCap; "cell on BT unfolded cap")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyHotspot; "hotspot")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyHotspotBt; "hotspot BT")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyHotspotMmw; "hotspot mmw")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyHotspotBtMmw; "hotspot BT mmw")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyHotspotUnfolded; "hotspot unfolded")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyHotspotBtUnfolded; "hotspot BT unfolded")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyHotspotMmwUnfolded; "hotspot mmw unfolded")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyHotspotBtMmwUnfolded; "hotspot BT mmw unfolded")]
+    fn test_legacy_hardware_scenario_conversion_on_body_cell_on(
+        scenario: fidl_wlanix::WifiLegacyHalTxPowerScenario,
+    ) {
+        assert_eq!(
+            legacy_hal_tx_power_scenario_to_internal(scenario),
+            Some(fidl_internal::TxPowerScenario::BodyCellOn)
+        )
+    }
+
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyCellOff; "cell off")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyCellOffUnfolded; "unfolded")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyCellOffUnfoldedCap; "unfolded cap")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyRearCamera; "rear camera")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnBodyVideoRecording; "video recording")]
+    fn test_legacy_hardware_scenario_conversion_on_body_cell_off(
+        scenario: fidl_wlanix::WifiLegacyHalTxPowerScenario,
+    ) {
+        assert_eq!(
+            legacy_hal_tx_power_scenario_to_internal(scenario),
+            Some(fidl_internal::TxPowerScenario::BodyCellOff)
+        )
+    }
+
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnHeadCellOn; "cell on")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnHeadCellOnUnfolded; "unfolded")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnHeadHotspot; "hotspot")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnHeadHotspotMmw; "hotspot mmw")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnHeadHotspotUnfolded; "hotspot unfolded")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnHeadHotspotMmwUnfolded; "hotspot mmw unfolded")]
+    fn test_legacy_hardware_scenario_conversion_on_head_cell_on(
+        scenario: fidl_wlanix::WifiLegacyHalTxPowerScenario,
+    ) {
+        assert_eq!(
+            legacy_hal_tx_power_scenario_to_internal(scenario),
+            Some(fidl_internal::TxPowerScenario::HeadCellOn)
+        )
+    }
+
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnHeadCellOff; "cell off")]
+    #[test_case(fidl_wlanix::WifiLegacyHalTxPowerScenario::OnHeadCellOffUnfolded; "unfolded")]
+    fn test_legacy_hardware_scenario_conversion_on_head_cell_off(
+        scenario: fidl_wlanix::WifiLegacyHalTxPowerScenario,
+    ) {
+        assert_eq!(
+            legacy_hal_tx_power_scenario_to_internal(scenario),
+            Some(fidl_internal::TxPowerScenario::HeadCellOff)
+        )
+    }
+
+    #[test]
+    fn test_reset_tx_power_scenario_no_phys() {
+        let mut exec = fasync::TestExecutor::new();
+        let iface_manager = Arc::new(TestIfaceManager::new().mock_no_phys_available());
+
+        // Create a proxy and server to instantiate a FIDL request and responder.
+        let (proxy, mut server) = create_proxy_and_stream::<fidl_wlanix::WifiLegacyHalMarker>();
+        let request_fut = proxy.reset_tx_power_scenario();
+        let mut request_fut = pin!(request_fut);
+        assert_matches!(exec.run_until_stalled(&mut request_fut), Poll::Pending);
+        let req = assert_matches!(exec.run_until_stalled(&mut server.next()), Poll::Ready(Some(Ok(req))) => req);
+
+        // Handle the request.  It should complete immediately since there are no PHYs available.
+        let fut = handle_wifi_legacy_hal_request(req, iface_manager.clone());
+        let mut fut = pin!(fut);
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
+
+        // Verify the response was sent to the client.
+        assert_matches!(
+            exec.run_until_stalled(&mut request_fut),
+            Poll::Ready(Ok(Err(WifiLegacyHalStatus::Internal)))
+        );
+
+        // Verify that the list PHYs request was the only call to the IfaceManager.
+        let calls = iface_manager.calls.lock();
+        assert_eq!(calls.len(), 1);
+        assert_matches!(calls[0], ifaces::test_utils::IfaceManagerCall::ListPhys);
+    }
+
+    #[test]
+    fn test_reset_tx_power_scenario_list_phys_fails() {
+        let mut exec = fasync::TestExecutor::new();
+        let iface_manager = Arc::new(TestIfaceManager::new().mock_list_phys_failure());
+
+        // Create a proxy and server to instantiate a FIDL request and responder.
+        let (proxy, mut server) = create_proxy_and_stream::<fidl_wlanix::WifiLegacyHalMarker>();
+        let request_fut = proxy.reset_tx_power_scenario();
+        let mut request_fut = pin!(request_fut);
+        assert_matches!(exec.run_until_stalled(&mut request_fut), Poll::Pending);
+        let req = assert_matches!(exec.run_until_stalled(&mut server.next()), Poll::Ready(Some(Ok(req))) => req);
+
+        // Handle the request.  It should complete immediately since the error response was set on
+        // the TestIfaceManager.
+        let fut = handle_wifi_legacy_hal_request(req, iface_manager.clone());
+        let mut fut = pin!(fut);
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
+
+        // Verify the response was sent to the client.
+        assert_matches!(
+            exec.run_until_stalled(&mut request_fut),
+            Poll::Ready(Ok(Err(WifiLegacyHalStatus::Internal)))
+        );
+
+        // Verify that the list PHYs request was the only call to the IfaceManager.
+        let calls = iface_manager.calls.lock();
+        assert_eq!(calls.len(), 1);
+        assert_matches!(calls[0], ifaces::test_utils::IfaceManagerCall::ListPhys);
+    }
+
+    #[test]
+    fn test_reset_tx_power_scenario_reset_fails() {
+        let mut exec = fasync::TestExecutor::new();
+        let iface_manager =
+            Arc::new(TestIfaceManager::new().mock_reset_tx_power_scenario_failure());
+
+        // Create a proxy and server to instantiate a FIDL request and responder.
+        let (proxy, mut server) = create_proxy_and_stream::<fidl_wlanix::WifiLegacyHalMarker>();
+        let request_fut = proxy.reset_tx_power_scenario();
+        let mut request_fut = pin!(request_fut);
+        assert_matches!(exec.run_until_stalled(&mut request_fut), Poll::Pending);
+        let req = assert_matches!(exec.run_until_stalled(&mut server.next()), Poll::Ready(Some(Ok(req))) => req);
+
+        // Handle the request.  It should complete immediately since the error response was set on
+        // the TestIfaceManager.
+        let fut = handle_wifi_legacy_hal_request(req, iface_manager.clone());
+        let mut fut = pin!(fut);
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
+
+        // Verify the response was sent to the client.
+        assert_matches!(
+            exec.run_until_stalled(&mut request_fut),
+            Poll::Ready(Ok(Err(WifiLegacyHalStatus::Internal)))
+        );
+
+        // Verify the calls made to the IfaceManager.
+        let calls = iface_manager.calls.lock();
+        assert_eq!(calls.len(), 2);
+        assert_matches!(calls[0], ifaces::test_utils::IfaceManagerCall::ListPhys);
+        assert_matches!(calls[1], ifaces::test_utils::IfaceManagerCall::ResetTxPowerScenario(1));
+    }
+
+    #[test]
+    fn test_reset_tx_power_scenario_reset_succeeds() {
+        let mut exec = fasync::TestExecutor::new();
+        let iface_manager = Arc::new(TestIfaceManager::new());
+
+        // Create a proxy and server to instantiate a FIDL request and responder.
+        let (proxy, mut server) = create_proxy_and_stream::<fidl_wlanix::WifiLegacyHalMarker>();
+        let request_fut = proxy.reset_tx_power_scenario();
+        let mut request_fut = pin!(request_fut);
+        assert_matches!(exec.run_until_stalled(&mut request_fut), Poll::Pending);
+        let req = assert_matches!(exec.run_until_stalled(&mut server.next()), Poll::Ready(Some(Ok(req))) => req);
+
+        // Process the reset request and observe an immediate success.
+        let fut = handle_wifi_legacy_hal_request(req, iface_manager.clone());
+        let mut fut = pin!(fut);
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+
+        // Verify the response was sent to the client.
+        assert_matches!(exec.run_until_stalled(&mut request_fut), Poll::Ready(Ok(Ok(()))));
+
+        // Verify the calls made to the IfaceManager.
+        let calls = iface_manager.calls.lock();
+        assert_eq!(calls.len(), 2);
+        assert_matches!(calls[0], ifaces::test_utils::IfaceManagerCall::ListPhys);
+        assert_matches!(calls[1], ifaces::test_utils::IfaceManagerCall::ResetTxPowerScenario(1));
+    }
+
+    #[test]
+    fn test_select_tx_power_scenario_invalid_request() {
+        let mut exec = fasync::TestExecutor::new();
+        let iface_manager = Arc::new(TestIfaceManager::new());
+
+        // Create a proxy and server to instantiate a FIDL request and responder.
+        let (proxy, mut server) = create_proxy_and_stream::<fidl_wlanix::WifiLegacyHalMarker>();
+        let request_fut = proxy.select_tx_power_scenario(
+            fidl_wlanix::WifiLegacyHalSelectTxPowerScenarioRequest {
+                scenario: None,
+                ..Default::default()
+            },
+        );
+        let mut request_fut = pin!(request_fut);
+        assert_matches!(exec.run_until_stalled(&mut request_fut), Poll::Pending);
+        let req = assert_matches!(exec.run_until_stalled(&mut server.next()), Poll::Ready(Some(Ok(req))) => req);
+
+        // Handle the request.  It should complete immediately since the request is missing the scenario.
+        let fut = handle_wifi_legacy_hal_request(req, iface_manager.clone());
+        let mut fut = pin!(fut);
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
+
+        // Verify the response was sent to the client.
+        assert_matches!(
+            exec.run_until_stalled(&mut request_fut),
+            Poll::Ready(Ok(Err(WifiLegacyHalStatus::InvalidArgument)))
+        );
+
+        // There should not have been any interaction with the IfaceManager.
+        let calls = iface_manager.calls.lock();
+        assert!(calls.is_empty());
+    }
+
+    #[test]
+    fn test_select_tx_power_scenario_unsupported_scenario() {
+        let mut exec = fasync::TestExecutor::new();
+        let iface_manager = Arc::new(TestIfaceManager::new());
+
+        // Create a proxy and server to instantiate a FIDL request and responder.
+        let (proxy, mut server) = create_proxy_and_stream::<fidl_wlanix::WifiLegacyHalMarker>();
+        let request_fut = proxy.select_tx_power_scenario(
+            fidl_wlanix::WifiLegacyHalSelectTxPowerScenarioRequest {
+                scenario: Some(fidl_wlanix::WifiLegacyHalTxPowerScenario::unknown()),
+                ..Default::default()
+            },
+        );
+        let mut request_fut = pin!(request_fut);
+        assert_matches!(exec.run_until_stalled(&mut request_fut), Poll::Pending);
+        let req = assert_matches!(exec.run_until_stalled(&mut server.next()), Poll::Ready(Some(Ok(req))) => req);
+
+        // Handle the request.  It should complete immediately since the requested scenario is not handled.
+        let fut = handle_wifi_legacy_hal_request(req, iface_manager.clone());
+        let mut fut = pin!(fut);
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
+
+        // Verify the response was sent to the client.
+        assert_matches!(
+            exec.run_until_stalled(&mut request_fut),
+            Poll::Ready(Ok(Err(WifiLegacyHalStatus::InvalidArgument)))
+        );
+
+        // There should not have been any interaction with the IfaceManager.
+        let calls = iface_manager.calls.lock();
+        assert!(calls.is_empty());
+    }
+
+    #[test]
+    fn test_select_tx_power_scenario_no_phys_available() {
+        let mut exec = fasync::TestExecutor::new();
+        let iface_manager = Arc::new(TestIfaceManager::new().mock_no_phys_available());
+
+        // Create a proxy and server to instantiate a FIDL request and responder.
+        let (proxy, mut server) = create_proxy_and_stream::<fidl_wlanix::WifiLegacyHalMarker>();
+        let request_fut = proxy.select_tx_power_scenario(
+            fidl_wlanix::WifiLegacyHalSelectTxPowerScenarioRequest {
+                scenario: Some(fidl_wlanix::WifiLegacyHalTxPowerScenario::Default),
+                ..Default::default()
+            },
+        );
+        let mut request_fut = pin!(request_fut);
+        assert_matches!(exec.run_until_stalled(&mut request_fut), Poll::Pending);
+        let req = assert_matches!(exec.run_until_stalled(&mut server.next()), Poll::Ready(Some(Ok(req))) => req);
+
+        // Handle the request.  It should complete immediately since there are no PHYs available.
+        let fut = handle_wifi_legacy_hal_request(req, iface_manager.clone());
+        let mut fut = pin!(fut);
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
+
+        // Verify the response was sent to the client.
+        assert_matches!(
+            exec.run_until_stalled(&mut request_fut),
+            Poll::Ready(Ok(Err(WifiLegacyHalStatus::Internal)))
+        );
+
+        // Verify that the list PHYs request was the only call to the IfaceManager.
+        let calls = iface_manager.calls.lock();
+        assert_eq!(calls.len(), 1);
+        assert_matches!(calls[0], ifaces::test_utils::IfaceManagerCall::ListPhys);
+    }
+
+    #[test]
+    fn test_select_tx_power_scenario_list_phys_fails() {
+        let mut exec = fasync::TestExecutor::new();
+        let iface_manager = Arc::new(TestIfaceManager::new().mock_list_phys_failure());
+
+        // Create a proxy and server to instantiate a FIDL request and responder.
+        let (proxy, mut server) = create_proxy_and_stream::<fidl_wlanix::WifiLegacyHalMarker>();
+        let request_fut = proxy.select_tx_power_scenario(
+            fidl_wlanix::WifiLegacyHalSelectTxPowerScenarioRequest {
+                scenario: Some(fidl_wlanix::WifiLegacyHalTxPowerScenario::Default),
+                ..Default::default()
+            },
+        );
+        let mut request_fut = pin!(request_fut);
+        assert_matches!(exec.run_until_stalled(&mut request_fut), Poll::Pending);
+        let req = assert_matches!(exec.run_until_stalled(&mut server.next()), Poll::Ready(Some(Ok(req))) => req);
+
+        // Handle the request.  It should complete immediately since the error response was set on
+        // the TestIfaceManager.
+        let fut = handle_wifi_legacy_hal_request(req, iface_manager.clone());
+        let mut fut = pin!(fut);
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
+
+        // Verify the response was sent to the client.
+        assert_matches!(
+            exec.run_until_stalled(&mut request_fut),
+            Poll::Ready(Ok(Err(WifiLegacyHalStatus::Internal)))
+        );
+
+        // Verify that the list PHYs request was the only call to the IfaceManager.
+        let calls = iface_manager.calls.lock();
+        assert_eq!(calls.len(), 1);
+        assert_matches!(calls[0], ifaces::test_utils::IfaceManagerCall::ListPhys);
+    }
+
+    #[test]
+    fn test_select_tx_power_scenario_request_fails() {
+        let mut exec = fasync::TestExecutor::new();
+        let iface_manager = Arc::new(TestIfaceManager::new().mock_set_tx_power_scenario_failure());
+
+        // Create a proxy and server to instantiate a FIDL request and responder.
+        let (proxy, mut server) = create_proxy_and_stream::<fidl_wlanix::WifiLegacyHalMarker>();
+        let request_fut = proxy.select_tx_power_scenario(
+            fidl_wlanix::WifiLegacyHalSelectTxPowerScenarioRequest {
+                scenario: Some(fidl_wlanix::WifiLegacyHalTxPowerScenario::Default),
+                ..Default::default()
+            },
+        );
+        let mut request_fut = pin!(request_fut);
+        assert_matches!(exec.run_until_stalled(&mut request_fut), Poll::Pending);
+        let req = assert_matches!(exec.run_until_stalled(&mut server.next()), Poll::Ready(Some(Ok(req))) => req);
+
+        // Handle the request.  It should complete immediately since the error response was set on
+        // the TestIfaceManager.
+        let fut = handle_wifi_legacy_hal_request(req, iface_manager.clone());
+        let mut fut = pin!(fut);
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Err(_)));
+
+        // Verify the response was sent to the client.
+        assert_matches!(
+            exec.run_until_stalled(&mut request_fut),
+            Poll::Ready(Ok(Err(WifiLegacyHalStatus::Internal)))
+        );
+
+        // Verify that the list PHYs request was the only call to the IfaceManager.
+        let calls = iface_manager.calls.lock();
+        assert_eq!(calls.len(), 2);
+        assert_matches!(calls[0], ifaces::test_utils::IfaceManagerCall::ListPhys);
+        assert_matches!(
+            calls[1],
+            ifaces::test_utils::IfaceManagerCall::SetTxPowerScenario {
+                phy_id: 1,
+                scenario: fidl_internal::TxPowerScenario::Default,
+            }
+        );
+    }
+
+    #[test]
+    fn test_select_tx_power_scenario_request_succeeds() {
+        let mut exec = fasync::TestExecutor::new();
+        let iface_manager = Arc::new(TestIfaceManager::new());
+
+        // Create a proxy and server to instantiate a FIDL request and responder.
+        let (proxy, mut server) = create_proxy_and_stream::<fidl_wlanix::WifiLegacyHalMarker>();
+        let request_fut = proxy.select_tx_power_scenario(
+            fidl_wlanix::WifiLegacyHalSelectTxPowerScenarioRequest {
+                scenario: Some(fidl_wlanix::WifiLegacyHalTxPowerScenario::Default),
+                ..Default::default()
+            },
+        );
+        let mut request_fut = pin!(request_fut);
+        assert_matches!(exec.run_until_stalled(&mut request_fut), Poll::Pending);
+        let req = assert_matches!(exec.run_until_stalled(&mut server.next()), Poll::Ready(Some(Ok(req))) => req);
+
+        // The request should succeed since all IfaceManager operations were configured to succeed.
+        let fut = handle_wifi_legacy_hal_request(req, iface_manager.clone());
+        let mut fut = pin!(fut);
+        assert_matches!(exec.run_until_stalled(&mut fut), Poll::Ready(Ok(())));
+
+        // Verify the response was sent to the client.
+        assert_matches!(exec.run_until_stalled(&mut request_fut), Poll::Ready(Ok(Ok(()))));
+
+        // Verify that the list PHYs request was the only call to the IfaceManager.
+        let calls = iface_manager.calls.lock();
+        assert_eq!(calls.len(), 2);
+        assert_matches!(calls[0], ifaces::test_utils::IfaceManagerCall::ListPhys);
+        assert_matches!(
+            calls[1],
+            ifaces::test_utils::IfaceManagerCall::SetTxPowerScenario {
+                phy_id: 1,
+                scenario: fidl_internal::TxPowerScenario::Default,
+            }
+        );
     }
 }
