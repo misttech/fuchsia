@@ -10,6 +10,7 @@ use super::symbols::{
 };
 use super::{ClassId, ParsedPolicy, RoleId, TypeId};
 
+use crate::policy::arrays::ACCESS_VECTOR_RULE_TYPE_TYPE_TRANSITION;
 use crate::{ClassPermission as _, NullessByteStr};
 use std::collections::HashMap;
 
@@ -428,16 +429,13 @@ impl PolicyIndex {
     ) -> Option<TypeId> {
         // Return first match. The `checkpolicy` tool will not compile a policy that has
         // multiple matches, so behavior on multiple matches is undefined.
-        self.parsed_policy
-            .access_vector_rules()
-            .find(|access_vector_rule_view| {
-                let metadata = access_vector_rule_view.read_metadata(&self.parsed_policy.data);
-                metadata.is_type_transition()
-                    && metadata.source_type() == source_type
-                    && metadata.target_type() == target_type
-                    && metadata.target_class() == class.id()
-            })
-            .map(|x| x.parse(&self.parsed_policy.data).new_type().unwrap())
+        let rule = self.parsed_policy.find_access_vector_rule(
+            source_type,
+            target_type,
+            class.id(),
+            ACCESS_VECTOR_RULE_TYPE_TYPE_TRANSITION,
+        )?;
+        Some(rule.new_type().unwrap())
     }
 
     fn type_transition_new_type_with_name(

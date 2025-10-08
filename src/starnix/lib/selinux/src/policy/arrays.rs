@@ -406,12 +406,6 @@ impl AccessVectorRuleMetadata {
         }
     }
 
-    /// Returns whether this access vector rule comes from a
-    /// `type_transition [source] [target]:[class] [new_type];` policy statement.
-    pub fn is_type_transition(&self) -> bool {
-        (self.access_vector_rule_type & ACCESS_VECTOR_RULE_TYPE_TYPE_TRANSITION) != 0
-    }
-
     /// Returns whether this access vector rule comes from an
     /// `allowxperm [source] [target]:[class] [permission] {
     /// [extended_permissions] };` policy statement.
