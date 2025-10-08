@@ -463,6 +463,25 @@ fn translate_use(
                 source_dictionary,
                 ..Default::default()
             }));
+        } else if let Some(n) = &use_.dictionary {
+            let (source, source_dictionary) =
+                extract_use_source(options, use_, all_capability_names, all_children, None)?;
+            let availability = extract_use_availability(use_)?;
+            for source_name in n.into_iter() {
+                out_uses.push(fdecl::Use::Dictionary(fdecl::UseDictionary {
+                    source: Some(source.clone()),
+                    source_name: Some(source_name.to_string()),
+                    source_dictionary: source_dictionary.clone(),
+                    target_path: Some(
+                        use_.path().as_ref().expect("no path on use dictionary").to_string(),
+                    ),
+                    dependency_type: Some(
+                        use_.dependency.clone().unwrap_or(cm::DependencyType::Strong).into(),
+                    ),
+                    availability: Some(availability),
+                    ..Default::default()
+                }));
+            }
         } else {
             return Err(Error::internal(format!("no capability in use declaration")));
         };
@@ -2971,6 +2990,7 @@ mod tests {
         },
 
         test_compile_use => {
+            features = FeatureSet::from(vec![Feature::UseDictionaries]),
             input = json!({
                 "use": [
                     {
@@ -3007,6 +3027,10 @@ mod tests {
                         "path": "/event_stream/another",
                     },
                     { "runner": "usain", "from": "parent", },
+                    {
+                        "dictionary": "toolbox",
+                        "path": "/svc",
+                    },
                 ],
                 "capabilities": [
                     { "protocol": "fuchsia.sys2.Echo" },
@@ -3195,6 +3219,14 @@ mod tests {
                     fdecl::Use::Runner(fdecl::UseRunner {
                         source_name: Some("usain".to_string()),
                         source: Some(fdecl::Ref::Parent(fdecl::ParentRef{})),
+                        ..Default::default()
+                    }),
+                    fdecl::Use::Dictionary(fdecl::UseDictionary {
+                        source_name: Some("toolbox".to_string()),
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef{})),
+                        target_path: Some("/svc".to_string()),
+                        dependency_type: Some(fdecl::DependencyType::Strong),
+                        availability: Some(fdecl::Availability::Required),
                         ..Default::default()
                     }),
                 ]),

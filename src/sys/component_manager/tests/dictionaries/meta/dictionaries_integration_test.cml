@@ -46,6 +46,11 @@
             protocol: [ "fidl.test.components.Trigger-d" ],
             from: "self/outer/inner",
         },
+        {
+            dictionary: "outer",
+            from: "self",
+            path: "/svc2",
+        },
     ],
     offer: [
         {

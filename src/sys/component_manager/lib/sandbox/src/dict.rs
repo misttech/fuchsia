@@ -5,6 +5,7 @@
 use crate::{Capability, CapabilityBound};
 use derivative::Derivative;
 use fidl_fuchsia_component_sandbox as fsandbox;
+use futures::channel::oneshot;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
@@ -145,6 +146,46 @@ impl Dict {
         if let UpdateNotifierRetention::Retain = (notifier_fn)(EntryUpdate::Idle) {
             guard.update_notifiers.0.push(notifier_fn);
         }
+    }
+
+    /// Keeps this dictionary updated as any entries are added to or removed from other_dict. If
+    /// there are conflicting entries in `self` and `other_dict` at the time this function is
+    /// called, then `Some` will be returned with the name of the conflicting entry. If a
+    /// conflicting entry is added to `other_dict` after this function has been returned, then a
+    /// log about the conflict will be emitted. In both cases the conflicting item in `other_dict`
+    /// will be ignored, and the preexisting entry in `self` will take precedence.
+    pub async fn follow_updates_from(&self, other_dict: Dict) -> Option<Key> {
+        let self_clone = self.clone();
+        let (sender, receiver) = oneshot::channel();
+        let mut sender = Some(sender);
+        other_dict.register_update_notifier(Box::new(move |entry_update| {
+            match entry_update {
+                EntryUpdate::Add(key, capability) => {
+                    if let Some(_preexisting_value) = self_clone.get(key).ok().flatten() {
+                        // There's a conflict! Let's let the preexisting value take precedence, and
+                        // report the issue.
+                        if let Some(sender) = sender.take() {
+                            let _ = sender.send(Some(key.into()));
+                        } else {
+                            log::warn!("unable to add {key} to dictionary because the dictionary already contains an item with the same name");
+                        }
+                    } else {
+                        let _ = self_clone.insert(key.into(), capability.try_clone().unwrap());
+                    }
+                }
+                EntryUpdate::Remove(key) => {
+                    let _ = self_clone.remove(key);
+                }
+                EntryUpdate::Idle => {
+                    if let Some(sender) = sender.take() {
+                        let _ = sender.send(None);
+                    }
+                }
+            }
+            UpdateNotifierRetention::Retain
+        }));
+
+        receiver.await.expect("sender was dropped unexpectedly")
     }
 
     /// Inserts an entry, mapping `key` to `capability`. If an entry already exists at `key`, a

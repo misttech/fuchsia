@@ -521,6 +521,7 @@ impl RoutingTest {
                 UseDecl::Runner(s) => Some(s.source_name.to_string().into()),
                 // Using config doesn't add a namespace path.
                 UseDecl::Config(_) => None,
+                UseDecl::Dictionary(d) => Some(d.target_path.to_string()),
             })
             .collect();
         let mut expected_paths = vec![];
@@ -1573,6 +1574,7 @@ pub mod capability_util {
         dir_path: &NamespacePath,
     ) -> fio::DirectoryProxy {
         let mut ns = namespace.lock().await;
+        log::warn!("want to remove {dir_path:?}, namespace contents: {:?}", *ns);
         ns.remove(dir_path).unwrap().into_proxy()
     }
 

@@ -38,4 +38,38 @@ async fn protocols() {
     }
 }
 
+#[fuchsia::test]
+async fn protocols_use_dictionary() {
+    fn path(letter: &str) -> String {
+        format!("/svc2/fidl.test.components.Trigger-{letter}")
+    }
+    // See the test's cml to understand how this exercises dictionary routing.
+    {
+        let trigger =
+            client::connect_to_protocol_at_path::<ftest::TriggerMarker>(&path("a")).unwrap();
+        let out = trigger.run().await.unwrap();
+        assert_eq!(&out, "Triggered a");
+    }
+    {
+        let trigger =
+            client::connect_to_protocol_at_path::<ftest::TriggerMarker>(&path("b")).unwrap();
+        let out = trigger.run().await.unwrap();
+        assert_eq!(&out, "Triggered b");
+    }
+    {
+        let trigger =
+            client::connect_to_protocol_at_path::<ftest::TriggerMarker>(&path("c")).unwrap();
+        let out = trigger.run().await.unwrap();
+        assert_eq!(&out, "Triggered c");
+    }
+    {
+        let trigger = client::connect_to_protocol_at_path::<ftest::TriggerMarker>(
+            "/svc2/inner/fidl.test.components.Trigger-d",
+        )
+        .unwrap();
+        let out = trigger.run().await.unwrap();
+        assert_eq!(&out, "Triggered d");
+    }
+}
+
 // TODO(https://fxbug.dev/383601465): Add tests for more capability types.

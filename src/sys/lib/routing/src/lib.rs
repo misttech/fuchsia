@@ -45,8 +45,8 @@ use cm_rust::{
     OfferResolverDecl, OfferRunnerDecl, OfferServiceDecl, OfferSource, OfferStorageDecl,
     OfferTarget, RegistrationDeclCommon, RegistrationSource, ResolverRegistration,
     RunnerRegistration, SourceName, StorageDecl, StorageDirectorySource, UseConfigurationDecl,
-    UseDecl, UseDeclCommon, UseDirectoryDecl, UseEventStreamDecl, UseProtocolDecl, UseRunnerDecl,
-    UseServiceDecl, UseSource, UseStorageDecl,
+    UseDecl, UseDeclCommon, UseDictionaryDecl, UseDirectoryDecl, UseEventStreamDecl,
+    UseProtocolDecl, UseRunnerDecl, UseServiceDecl, UseSource, UseStorageDecl,
 };
 use cm_types::{IterablePath, Name, RelativePath};
 use from_enum::FromEnum;
@@ -94,6 +94,7 @@ pub enum RouteRequest {
     UseStorage(UseStorageDecl),
     UseRunner(UseRunnerDecl),
     UseConfig(UseConfigurationDecl),
+    UseDictionary(UseDictionaryDecl),
 
     // Route a capability from an OfferDecl.
     OfferDirectory(OfferDirectoryDecl),
@@ -117,6 +118,7 @@ impl From<UseDecl> for RouteRequest {
             UseDecl::EventStream(decl) => Self::UseEventStream(decl),
             UseDecl::Runner(decl) => Self::UseRunner(decl),
             UseDecl::Config(decl) => Self::UseConfig(decl),
+            UseDecl::Dictionary(decl) => Self::UseDictionary(decl),
         }
     }
 }
@@ -188,7 +190,8 @@ impl RouteRequest {
             | UseProtocol(UseProtocolDecl { availability, .. })
             | UseService(UseServiceDecl { availability, .. })
             | UseConfig(UseConfigurationDecl { availability, .. })
-            | UseStorage(UseStorageDecl { availability, .. }) => Some(*availability),
+            | UseStorage(UseStorageDecl { availability, .. })
+            | UseDictionary(UseDictionaryDecl { availability, .. }) => Some(*availability),
 
             ExposeDirectory(decl) => Some(*decl.availability()),
             ExposeProtocol(decl) => Some(*decl.availability()),
@@ -255,6 +258,9 @@ impl std::fmt::Display for RouteRequest {
             }
             Self::UseConfig(u) => {
                 write!(f, "config `{}`", u.source_name)
+            }
+            Self::UseDictionary(u) => {
+                write!(f, "dictionary `{}`", u.source_name)
             }
             Self::StorageBackingDirectory(u) => {
                 write!(f, "storage backing directory `{}`", u.backing_dir)
@@ -491,6 +497,15 @@ where
         }
         RouteRequest::UseConfig(use_config_decl) => {
             route_config(use_config_decl, target, mapper).await
+        }
+        RouteRequest::UseDictionary(use_dictionary_decl) => {
+            route_capability_inner::<Dict, _>(
+                &target.component_sandbox().await?.program_input.namespace(),
+                &use_dictionary_decl.target_path,
+                dictionary_metadata(use_dictionary_decl.availability),
+                target,
+            )
+            .await
         }
 
         // Route from a OfferDecl

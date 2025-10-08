@@ -126,6 +126,9 @@ fn program_input_dict_to_namespace(
             Ok(cap @ Capability::DirConnectorRouter(_)) => {
                 namespace.add_entry(cap, &new_prefix)?;
             }
+            Ok(cap @ Capability::DictionaryRouter(_)) => {
+                namespace.add_entry(cap, &new_prefix)?;
+            }
             Ok(cap) => {
                 namespace.add_object(cap, &Path::new(format!("{prefix}/{key}")).unwrap())?;
             }

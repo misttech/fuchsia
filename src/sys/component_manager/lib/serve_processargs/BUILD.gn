@@ -23,6 +23,7 @@ rustc_library("serve_processargs") {
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-fs",
     "//src/lib/fuchsia-runtime",
     "//src/storage/lib/vfs/rust:vfs",
     "//src/sys/component_manager/lib/router_error",
@@ -30,6 +31,7 @@ rustc_library("serve_processargs") {
     "//src/sys/lib/cm_types",
     "//src/sys/lib/namespace",
     "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:log",
     "//third_party/rust_crates:thiserror",
   ]
 
@@ -39,7 +41,6 @@ rustc_library("serve_processargs") {
     "//src/lib/fdio/rust:fdio",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
-    "//src/lib/fuchsia-fs",
     "//src/storage/lib/vfs/rust:vfs",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:assert_matches",

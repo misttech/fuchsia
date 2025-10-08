@@ -24,11 +24,7 @@ impl FeatureSet {
 
     /// Returns an `Err` if `feature` is not enabled.
     pub fn check(&self, feature: Feature) -> Result<(), Error> {
-        if self.has(&feature) {
-            Ok(())
-        } else {
-            Err(Error::RestrictedFeature(feature.to_string()))
-        }
+        if self.has(&feature) { Ok(()) } else { Err(Error::RestrictedFeature(feature.to_string())) }
     }
 }
 
@@ -48,6 +44,9 @@ pub enum Feature {
     /// Allows `dictionary` capabilities with `extends: program/...` to be defined (a.k.a.
     /// dynamic dictionaries)
     DynamicDictionaries,
+
+    /// Allows `dictionary` use declarations.
+    UseDictionaries,
 
     // Allows dynamic child name lengths to exceed the default limit.
     AllowLongNames,
@@ -74,6 +73,7 @@ impl FromStr for Feature {
         match s {
             "dictionaries" => Ok(Feature::Dictionaries),
             "dynamic_dictionaries" => Ok(Feature::DynamicDictionaries),
+            "use_dictionaries" => Ok(Feature::UseDictionaries),
             "allow_long_names" => Ok(Feature::AllowLongNames),
             "allow_non_hermetic_packages" => Ok(Feature::AllowNonHermeticPackages),
             "enable_allow_non_hermetic_packages_feature" => {
@@ -91,6 +91,7 @@ impl fmt::Display for Feature {
         f.write_str(match self {
             Feature::Dictionaries => "dictionaries",
             Feature::DynamicDictionaries => "dynamic_dictionaries",
+            Feature::UseDictionaries => "use_dictionaries",
             Feature::AllowLongNames => "allow_long_names",
             Feature::AllowNonHermeticPackages => "allow_non_hermetic_packages",
             Feature::EnableAllowNonHermeticPackagesFeature => {

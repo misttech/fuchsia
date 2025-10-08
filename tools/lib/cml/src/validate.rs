@@ -625,6 +625,9 @@ which is almost certainly a mistake: {}",
                 "\"availability: same_as_target\" cannot be used with use declarations",
             ));
         }
+        if use_.dictionary.is_some() {
+            self.features.check(Feature::UseDictionaries)?;
+        }
         if let Some(UseFromRef::Dictionary(_)) = use_.from.as_ref() {
             if use_.storage.is_some() {
                 return Err(Error::validate(
@@ -1067,7 +1070,8 @@ which is almost certainly a mistake: {}",
                                 | CapabilityId::UsedStorage(_)
                                 | CapabilityId::UsedEventStream(_)
                                 | CapabilityId::UsedRunner(_)
-                                | CapabilityId::UsedConfiguration(_) => {
+                                | CapabilityId::UsedConfiguration(_)
+                                | CapabilityId::UsedDictionary(_) => {
                                     unreachable!("this is not a use")
                                 }
                             }
@@ -3047,32 +3051,32 @@ mod tests {
         test_cml_use(
             json!({
                 "use": [
-                  { "protocol": "CoolFonts", "path": "/svc/MyFonts" },
-                  { "protocol": "CoolFonts2", "path": "/svc/MyFonts2", "from": "parent/dict" },
-                  { "protocol": "fuchsia.test.hub.HubReport", "from": "framework" },
-                  { "protocol": "fuchsia.sys2.StorageAdmin", "from": "#data-storage" },
-                  { "protocol": ["fuchsia.ui.scenic.Scenic", "fuchsia.logger.LogSink"] },
-                  {
-                    "directory": "assets",
-                    "path": "/data/assets",
-                    "rights": ["rw*"],
-                  },
-                  {
-                    "directory": "config",
-                    "from": "parent",
-                    "path": "/data/config",
-                    "rights": ["rx*"],
-                    "subdir": "fonts/all",
-                  },
-                  { "storage": "data", "path": "/example" },
-                  { "storage": "cache", "path": "/tmp" },
-                  {
-                   "event_stream": ["started", "stopped", "running"],
-                   "scope":["#test"],
-                   "path":"/svc/testpath",
-                   "from":"parent",
-                  },
-                  { "runner": "usain", "from": "parent" }
+                    { "protocol": "CoolFonts", "path": "/svc/MyFonts" },
+                    { "protocol": "CoolFonts2", "path": "/svc/MyFonts2", "from": "parent/dict" },
+                    { "protocol": "fuchsia.test.hub.HubReport", "from": "framework" },
+                    { "protocol": "fuchsia.sys2.StorageAdmin", "from": "#data-storage" },
+                    { "protocol": ["fuchsia.ui.scenic.Scenic", "fuchsia.logger.LogSink"] },
+                    {
+                        "directory": "assets",
+                        "path": "/data/assets",
+                        "rights": ["rw*"],
+                    },
+                    {
+                        "directory": "config",
+                        "from": "parent",
+                        "path": "/data/config",
+                        "rights": ["rx*"],
+                        "subdir": "fonts/all",
+                    },
+                    { "storage": "data", "path": "/example" },
+                    { "storage": "cache", "path": "/tmp" },
+                    {
+                        "event_stream": ["started", "stopped", "running"],
+                        "scope":["#test"],
+                        "path":"/svc/testpath",
+                        "from":"parent",
+                    },
+                    { "runner": "usain", "from": "parent" },
                 ],
                 "capabilities": [
                     {
@@ -3383,7 +3387,7 @@ mod tests {
             json!({
                 "use": [ { "path": "/svc/fuchsia.logger.Log" } ]
             }),
-            Err(Error::Validate { err, .. }) if &err == "`use` declaration is missing a capability keyword, one of: \"service\", \"protocol\", \"directory\", \"storage\", \"event_stream\", \"runner\", \"config\""
+            Err(Error::Validate { err, .. }) if &err == "`use` declaration is missing a capability keyword, one of: \"service\", \"protocol\", \"directory\", \"storage\", \"event_stream\", \"runner\", \"config\", \"dictionary\""
         ),
         test_cml_use_from_with_storage(
             json!({
@@ -6906,6 +6910,25 @@ mod tests {
         ),
     }}
 
+    // Tests using a dictionary when the UseDictionaries feature is set
+    test_validate_cml_with_feature! { FeatureSet::from(vec![Feature::UseDictionaries]), {
+        test_cml_validate_set_allow_use_dictionaries(
+            json!({
+                "use": [
+                    {
+                        "protocol": "fuchsia.examples.Echo",
+                        "path": "/svc/fuchsia.examples.Echo",
+                    },
+                    {
+                        "dictionary": "toolbox",
+                        "path": "/svc",
+                    },
+                ],
+            }),
+            Ok(())
+        ),
+    }}
+
     // Tests that the use of `allow_long_names` fails when the "AllowLongNames"
     // feature is not set.
     test_validate_cml! {
@@ -6920,6 +6943,21 @@ mod tests {
                 ],
             }),
             Err(Error::RestrictedFeature(s)) if s == "allow_long_names"
+        ),
+    }
+
+    // Tests that using a dictionary fails when the "UseDictionaries" feature is not set.
+    test_validate_cml! {
+        test_cml_allow_use_dictionary_without_feature(
+            json!({
+                "use": [
+                    {
+                        "dictionary": "foo",
+                        "path": "/foo",
+                    },
+                ],
+            }),
+            Err(Error::RestrictedFeature(s)) if s == "use_dictionaries"
         ),
     }
 
@@ -7114,16 +7152,6 @@ mod tests {
                 ],
             }),
             Ok(())
-        ),
-        test_cml_use_dictionary_disallowed(
-            json!({
-                "use": [
-                    {
-                        "dictionary": "dict",
-                    },
-                ],
-            }),
-            Err(Error::Parse { err, .. }) if err.starts_with("unknown field `dictionary`")
         ),
         test_cml_expose_dictionary_from_self(
             json!({

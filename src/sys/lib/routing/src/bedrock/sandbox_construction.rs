@@ -7,10 +7,12 @@ use crate::bedrock::request_metadata::Metadata;
 use crate::bedrock::structured_dict::{
     ComponentEnvironment, ComponentInput, ComponentOutput, StructuredDictMap,
 };
+use crate::bedrock::use_dictionary_router::UseDictionaryRouter;
 use crate::bedrock::with_service_renames_and_filter::WithServiceRenamesAndFilter;
 use crate::capability_source::{
     AggregateCapability, AggregateInstance, AggregateMember, AnonymizedAggregateSource,
-    CapabilitySource, FilteredAggregateProviderSource, InternalCapability, VoidSource,
+    CapabilitySource, ComponentCapability, ComponentSource, FilteredAggregateProviderSource,
+    InternalCapability, VoidSource,
 };
 use crate::component_instance::{ComponentInstanceInterface, WeakComponentInstanceInterface};
 use crate::error::{ErrorReporter, RouteRequestErrorInfo, RoutingError};
@@ -356,6 +358,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
         collection_inputs.insert(collection.name.clone(), input).ok();
     }
 
+    let mut dictionary_use_bundles = vec![];
     for use_bundle in group_use_aggregates(&decl.uses).into_iter() {
         let first_use = *use_bundle.first().unwrap();
         match first_use {
@@ -445,6 +448,9 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                 error_reporter.clone(),
                 event_stream_use_router_fn,
             ),
+            cm_rust::UseDecl::Dictionary(_) => {
+                dictionary_use_bundles.push(use_bundle);
+            }
             _ => (),
         }
     }
@@ -470,6 +476,26 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                 error_reporter.clone(),
             )
         }
+    }
+
+    // Dictionary uses are special: if any capabilities are used at a path that's a prefix of a
+    // dictionary use, then those capabilities are transparently added to the dictionary we
+    // assemble in the program input dictionary. In order to do this correctly, we want the program
+    // input dictionary to be complete (aside from used dictionaries) so that the dictionaries
+    // we're merging with the used dictionaries aren't missing entries. For this reason, we wait
+    // until after all other uses are processed before processing used dictionaries.
+    for dictionary_use_bundle in dictionary_use_bundles {
+        extend_dict_with_dictionary_use(
+            component,
+            &child_component_output_dictionary_routers,
+            &component_input,
+            &program_input,
+            &program_output_dict,
+            &framework_router,
+            &capability_sourced_capabilities_dict,
+            dictionary_use_bundle,
+            error_reporter.clone(),
+        )
     }
 
     for offer_bundle in group_offer_aggregates(&decl.offers).into_iter() {
@@ -876,16 +902,7 @@ fn group_use_aggregates(uses: &[cm_rust::UseDecl]) -> Vec<Vec<&cm_rust::UseDecl>
     let mut groupings = HashMap::new();
     let mut ungroupable_uses = vec![];
     for use_ in uses.iter() {
-        let maybe_target_path = match use_ {
-            cm_rust::UseDecl::Service(u) => Some(&u.target_path),
-            cm_rust::UseDecl::Protocol(u) => u.target_path.as_ref(),
-            cm_rust::UseDecl::Directory(u) => Some(&u.target_path),
-            cm_rust::UseDecl::Storage(u) => Some(&u.target_path),
-            cm_rust::UseDecl::EventStream(u) => Some(&u.target_path),
-            cm_rust::UseDecl::Runner(_u) => None,
-            cm_rust::UseDecl::Config(_u) => None,
-        };
-        if let Some(target_path) = maybe_target_path {
+        if let Some(target_path) = use_.path() {
             groupings.entry(target_path).or_insert(vec![]).push(use_);
         } else {
             ungroupable_uses.push(vec![use_]);
@@ -1144,6 +1161,7 @@ pub fn is_supported_use(use_: &cm_rust::UseDecl) -> bool {
             | cm_rust::UseDecl::Service(_)
             | cm_rust::UseDecl::Directory(_)
             | cm_rust::UseDecl::EventStream(_)
+            | cm_rust::UseDecl::Dictionary(_)
     )
 }
 
@@ -1402,29 +1420,82 @@ fn extend_dict_with_use<T, C: ComponentInstanceInterface + 'static>(
     }
     let router = router_builder.build();
 
-    if let Some(target_path) = use_.path() {
-        if let Err(e) = program_input.namespace().insert_capability(target_path, router.into()) {
-            warn!("failed to insert {} in program input dict: {e:?}", target_path)
+    match use_ {
+        cm_rust::UseDecl::Protocol(cm_rust::UseProtocolDecl {
+            numbered_handle: Some(numbered_handle),
+            ..
+        }) => {
+            let numbered_handle = Name::from(*numbered_handle);
+            if let Err(e) =
+                program_input.numbered_handles().insert_capability(&numbered_handle, router.into())
+            {
+                warn!("failed to insert {} in program input dict: {e:?}", numbered_handle)
+            }
         }
-    } else {
-        match use_ {
-            cm_rust::UseDecl::Protocol(cm_rust::UseProtocolDecl {
-                numbered_handle: Some(numbered_handle),
-                ..
-            }) => {
-                let numbered_handle = Name::from(*numbered_handle);
-                if let Err(e) = program_input
-                    .numbered_handles()
-                    .insert_capability(&numbered_handle, router.into())
-                {
-                    warn!("failed to insert {} in program input dict: {e:?}", numbered_handle)
-                }
+        cm_rust::UseDecl::Runner(_) => {
+            assert!(program_input.runner().is_none(), "component can't use multiple runners");
+            program_input.set_runner(router.into());
+        }
+        _ => {
+            if let Err(e) =
+                program_input.namespace().insert_capability(use_.path().unwrap(), router.into())
+            {
+                warn!("failed to insert {} in program input dict: {e:?}", use_.path().unwrap())
             }
-            cm_rust::UseDecl::Runner(_) => {
-                assert!(program_input.runner().is_none(), "component can't use multiple runners");
-                program_input.set_runner(router.into());
-            }
-            _ => panic!("unexpected capability type: {:?}", use_),
+        }
+    }
+}
+
+fn extend_dict_with_dictionary_use<C: ComponentInstanceInterface + 'static>(
+    component: &Arc<C>,
+    child_component_output_dictionary_routers: &HashMap<ChildName, Router<Dict>>,
+    component_input: &ComponentInput,
+    program_input: &ProgramInput,
+    program_output_dict: &Dict,
+    framework_router: &Router<Dict>,
+    capability_sourced_capabilities_dict: &Dict,
+    use_bundle: Vec<&cm_rust::UseDecl>,
+    error_reporter: impl ErrorReporter,
+) {
+    let path = use_bundle[0].path().unwrap();
+    let mut dictionary_routers = vec![];
+    for use_ in use_bundle.iter() {
+        let dict_for_used_router = ProgramInput::new(Dict::new(), None, Dict::new());
+        extend_dict_with_use::<Dict, _>(
+            component,
+            child_component_output_dictionary_routers,
+            component_input,
+            &dict_for_used_router,
+            program_output_dict,
+            framework_router,
+            capability_sourced_capabilities_dict,
+            use_,
+            error_reporter.clone(),
+        );
+        let dictionary_router = match dict_for_used_router.namespace().get_capability(path) {
+            Some(Capability::DictionaryRouter(router)) => router,
+            other_value => panic!("unexpected dictionary get result: {other_value:?}"),
+        };
+        dictionary_routers.push(dictionary_router);
+    }
+    let original_dictionary = match program_input.namespace().get_capability(path) {
+        Some(Capability::Dictionary(dictionary)) => dictionary,
+        _ => Dict::new(),
+    };
+    let router = UseDictionaryRouter::new(
+        original_dictionary,
+        dictionary_routers,
+        CapabilitySource::Component(ComponentSource {
+            capability: ComponentCapability::Use_((*use_bundle.first().unwrap()).clone()),
+            moniker: component.moniker().clone(),
+        }),
+    );
+    match program_input.namespace().insert_capability(path, router.into()) {
+        Ok(()) => (),
+        Err(_e) => {
+            // The only reason this will happen is if we're shadowing something else.
+            // `insert_capability` will still insert the new capability when it returns an error,
+            // so we can safely ignore this.
         }
     }
 }

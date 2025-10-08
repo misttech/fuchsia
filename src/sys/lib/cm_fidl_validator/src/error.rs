@@ -41,7 +41,9 @@ pub enum Error {
     #[error("\"{0}\" capabilities are not currently allowed as built-ins.")]
     CapabilityCannotBeBuiltin(DeclType),
 
-    #[error("Encountered an unknown capability declaration. This may happen due to ABI skew between the FIDL component declaration and the system.")]
+    #[error(
+        "Encountered an unknown capability declaration. This may happen due to ABI skew between the FIDL component declaration and the system."
+    )]
     UnknownCapability,
 
     #[error("\"{1}\" is referenced in {0} but it does not appear in children.")]
@@ -65,25 +67,35 @@ pub enum Error {
     #[error("There are dependency cycle(s): {0}.")]
     DependencyCycle(String),
 
-    #[error("Path \"{path}\" from {decl} overlaps with \"{other_path}\" path from {other_decl}. Paths across decls must be unique in order to avoid namespace collisions.")]
+    #[error(
+        "Path \"{path}\" from {decl} overlaps with \"{other_path}\" path from {other_decl}. Paths across decls must be unique in order to avoid namespace collisions."
+    )]
     InvalidPathOverlap { decl: DeclField, path: String, other_decl: DeclField, other_path: String },
 
     #[error("{} \"{}\" path overlaps with \"/pkg\", which is a protected path", decl, path)]
     PkgPathOverlap { decl: DeclField, path: String },
 
-    #[error("Source path \"{1}\" provided to {0} decl is unnecessary. Built-in capabilities don't need this field as they originate from the framework.")]
+    #[error(
+        "Source path \"{1}\" provided to {0} decl is unnecessary. Built-in capabilities don't need this field as they originate from the framework."
+    )]
     ExtraneousSourcePath(DeclField, String),
 
-    #[error("Configuration schema defines a vector nested inside another vector. Vector can only contain numbers, booleans, and strings.")]
+    #[error(
+        "Configuration schema defines a vector nested inside another vector. Vector can only contain numbers, booleans, and strings."
+    )]
     NestedVector,
 
-    #[error("The `availability` field in {0} for {1} must be set to \"optional\" because the source is \"void\".")]
+    #[error(
+        "The `availability` field in {0} for {1} must be set to \"optional\" because the source is \"void\"."
+    )]
     AvailabilityMustBeOptional(DeclField, String),
 
     #[error("Invalid aggregate offer: {0}")]
     InvalidAggregateOffer(String),
 
-    #[error("All sources that feed into an aggregation operation should have the same availability. Got {0}.")]
+    #[error(
+        "All sources that feed into an aggregation operation should have the same availability. Got {0}."
+    )]
     DifferentAvailabilityInAggregation(AvailabilityList),
 
     #[error("Multiple runners used.")]
@@ -368,6 +380,7 @@ pub enum DeclType {
     StorageId,
     Use,
     UseConfiguration,
+    UseDictionary,
     UseDirectory,
     UseEventStream,
     UseProtocol,
@@ -464,6 +477,7 @@ impl fmt::Display for DeclType {
             DeclType::StorageId => "StorageId",
             DeclType::Use => "Use",
             DeclType::UseConfiguration => "UseConfiguration",
+            DeclType::UseDictionary => "UseDictionary",
             DeclType::UseDirectory => "UseDirectory",
             DeclType::UseEventStream => "UseEventStream",
             DeclType::UseProtocol => "UseProtocol",

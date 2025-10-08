@@ -97,7 +97,8 @@ impl NamespaceBuilder {
             | Capability::Dictionary(_)
             | Capability::DirEntry(_)
             | Capability::DirConnector(_)
-            | Capability::DirConnectorRouter(_) => {}
+            | Capability::DirConnectorRouter(_)
+            | Capability::DictionaryRouter(_) => {}
             _ => return Err(NamespaceError::EntryError(EntryError::UnsupportedType).into()),
         }
         self.entries.add(path, cap)?;
@@ -181,6 +182,55 @@ impl NamespaceBuilder {
                             | fio::Flags::PERM_INHERIT_EXECUTE,
                     )
                     .map_err(|err| BuildNamespaceError::Serve { path: path.clone(), err })?
+                }
+                Capability::DictionaryRouter(router) => {
+                    let (client, server) =
+                        fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
+                    // We don't wait to sit around for the results of this task, so we drop the
+                    // fuchsia_async::JoinHandle which causes the task to be detached.
+                    let path = path.clone();
+                    let scope = self.namespace_scope.clone();
+                    let _ = self.namespace_scope.spawn(async move {
+                        let res =
+                            fasync::OnSignals::new(&server, fidl::Signals::OBJECT_READABLE).await;
+                        if res.is_err() {
+                            return;
+                        }
+                        match router.route(None, false).await {
+                            Ok(RouterResponse::Capability(dictionary)) => {
+                                let entry = match dictionary.try_into_directory_entry(scope.clone()) {
+                                    Ok(entry) => entry,
+                                    Err(e) => {
+                                        log::error!("failed to convert namespace dictionary at path {path} into dir entry: {e:?}");
+                                        return;
+                                    }
+                                };
+                                let client_end = serve_directory(
+                                    entry,
+                                    &scope,
+                                    fio::Flags::PROTOCOL_DIRECTORY
+                                        | fio::PERM_READABLE
+                                        | fio::Flags::PERM_INHERIT_WRITE
+                                        | fio::Flags::PERM_INHERIT_EXECUTE,
+                                ).expect("failed to serve dictionary as directory");
+                                let proxy = client_end.into_proxy();
+                                fuchsia_fs::directory::clone_onto(&proxy, server).expect("failed to clone directory we are hosting");
+                            }
+                            Ok(RouterResponse::Unavailable) => {
+                                let _ = server.close_with_epitaph(fidl::Status::NOT_FOUND);
+                            }
+                            Ok(RouterResponse::Debug(_)) => {
+                                panic!("debug response wasn't requested");
+                            }
+                            Err(e) => {
+                                // Error logging will be performed by the ErrorReporter router set
+                                // up by sandbox construction, so we don't need to log about
+                                // routing errors here.
+                                let _ = server.close_with_epitaph(e.as_zx_status());
+                            }
+                        }
+                    });
+                    client
                 }
                 _ => return Err(NamespaceError::EntryError(EntryError::UnsupportedType).into()),
             };

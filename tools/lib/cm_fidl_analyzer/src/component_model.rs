@@ -963,6 +963,22 @@ impl ComponentModelForAnalyzer {
                     (Err(err), route) => (Err(err.into()), vec![route], capability),
                 }
             }
+            UseDecl::Dictionary(use_dictionary_decl) => {
+                let capability = use_dictionary_decl.source_name.clone();
+                let (result, route) = Self::route_capability_sync(
+                    RouteRequest::UseDictionary(use_dictionary_decl),
+                    target,
+                );
+
+                // Ignore any valid routes to void.
+                if let Ok(ref source) = result {
+                    if matches!(source.source, CapabilitySource::Void(_)) {
+                        return vec![];
+                    }
+                }
+
+                (result.map_err(|e| AnalyzerModelError::from(e)), vec![route], capability)
+            }
         };
         match route_result {
             (Ok(source), routes, capability) => match self.check_use_source(&source, &target).await

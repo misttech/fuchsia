@@ -178,7 +178,11 @@ template("cm") {
 
     # Add a dependency on the feature's allowlist.
     foreach(feature, restricted_features) {
-      deps += [ "//tools/cmc/build/restricted_features:" + feature ]
+      if (feature == "use_dictionaries") {
+        deps += [ "//tools/cmc/build/restricted_features/security_owned:use_dictionaries" ]
+      } else {
+        deps += [ "//tools/cmc/build/restricted_features:" + feature ]
+      }
     }
 
     if (defined(invoker.experimental_force_runner)) {

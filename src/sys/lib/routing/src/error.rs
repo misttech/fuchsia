@@ -361,6 +361,11 @@ pub enum RoutingError {
 
     #[error("path at `{moniker}` was too long for `{keyword}`: {path}")]
     PathTooLong { moniker: ExtendedMoniker, path: String, keyword: String },
+
+    #[error(
+        "conflicting dictionary entries detected with name `{conflicting_name}` in component `{moniker}`"
+    )]
+    ConflictingDictionaryEntries { moniker: ExtendedMoniker, conflicting_name: Name },
 }
 
 impl Explain for RoutingError {
@@ -390,6 +395,7 @@ impl Explain for RoutingError {
             | RoutingError::CapabilityFromFrameworkNotFound { .. }
             | RoutingError::CapabilityFromCapabilityNotFound { .. }
             | RoutingError::CapabilityFromComponentManagerNotFound { .. }
+            | RoutingError::ConflictingDictionaryEntries { .. }
             | RoutingError::ExposeFromSelfNotFound { .. }
             | RoutingError::ExposeFromChildInstanceNotFound { .. }
             | RoutingError::ExposeFromCollectionNotFound { .. }
@@ -469,6 +475,7 @@ impl From<RoutingError> for ExtendedMoniker {
             | RoutingError::BedrockFailedToSend { moniker, .. }
             | RoutingError::BedrockMissingCapabilityType { moniker, .. }
             | RoutingError::BedrockWrongCapabilityType { moniker, .. }
+            | RoutingError::ConflictingDictionaryEntries { moniker, .. }
             | RoutingError::NonDebugRoutesUnsupported { moniker }
             | RoutingError::DebugRoutesUnsupported { moniker }
             | RoutingError::RouteUnexpectedDebug { moniker, .. }

@@ -37,6 +37,7 @@ rustc_binary("dict_trigger_bin") {
 
 fuchsia_unittest_package("dictionaries_integration_test") {
   manifest = "meta/dictionaries_integration_test.cml"
+  restricted_features = [ "use_dictionaries" ]
   deps = [
     ":dictionaries_integration_test_bin",
     ":trigger_c",

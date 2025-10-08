@@ -17,6 +17,8 @@ type Use = flexible union {
     8: runner UseRunner;
     @available(added=20)
     9: config UseConfiguration;
+    @available(added=NEXT)
+    10: dictionary UseDictionary;
 };
 
 /// Declares a service used by a component, which was offered to it.
@@ -51,7 +53,7 @@ type UseService = table {
     /// capability from the same child, must mark the dependency as `weak`.  A
     /// `weak` dependency implies that the capability may become unavailable at
     /// any point. Taking a strong dependency on a child's capability will
-    /// cause this the child to shut down before its parent. When using a weak
+    /// cause the child to shut down before its parent. When using a weak
     /// dependency, the parent shuts down before the child.
     4: dependency_type DependencyType;
 
@@ -266,4 +268,43 @@ type UseConfiguration = table {
     /// dictionary.
     @available(added=25)
     7: source_dictionary dictionary_path;
+};
+
+@available(added=NEXT)
+type UseDictionary = table {
+    /// (Required) The provider of the dictionary relative to the component
+    /// itself.
+    1: source Ref;
+
+    /// (Required) Name identifying the directory, by which it was presented to
+    /// this component.
+    2: source_name name;
+
+    /// (Optional) Path in a dictionary provided by `source` which contains
+    /// `source_name`. If this field is absent, `source_name` identifies a
+    /// capability directly routed by `source`. If set, `source_name` identifies
+    /// a capability nested inside this dictionary.
+    8: source_dictionary dictionary_path;
+
+    /// (Required) The path where the capability should be installed in the
+    /// component's namespace.
+    ///
+    /// Must be an absolute path starting with /.
+    3: target_path string:MAX_PATH_LENGTH;
+
+    /// (Required) The dependency type this use represents.
+    ///
+    /// A component which offers a capability to a child from itself and uses a
+    /// capability from the same child, must mark the dependency as `weak`.  A
+    /// `weak` dependency implies that the capability may become unavailable at
+    /// any point. Taking a strong dependency on a child's capability will
+    /// cause this the child to shut down before its parent. When using a weak
+    /// dependency, the parent shuts down before the child.
+    6: dependency_type DependencyType;
+
+    /// (Optional, defaults to `REQUIRED`) The availability of this capability.
+    /// If set to `required`, the component is likely to malfunction if this
+    /// capability is not provided. If set to `optional`, the component can
+    /// handle the capability's absence.
+    7: availability Availability;
 };

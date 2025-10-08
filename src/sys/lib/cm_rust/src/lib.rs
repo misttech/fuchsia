@@ -349,6 +349,8 @@ pub enum UseDecl {
     #[cfg(fuchsia_api_level_at_least = "HEAD")]
     Runner(UseRunnerDecl),
     Config(UseConfigurationDecl),
+    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+    Dictionary(UseDictionaryDecl),
 }
 
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
@@ -455,6 +457,21 @@ pub struct UseRunnerDecl {
     pub source_name: Name,
     #[fidl_decl(default_preserve_none)]
     pub source_dictionary: RelativePath,
+}
+
+#[cfg(fuchsia_api_level_at_least = "NEXT")]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(FidlDecl, UseDeclCommon, Debug, Clone, PartialEq, Eq)]
+#[fidl_decl(fidl_table = "fdecl::UseDictionary", source_path = "dictionary")]
+pub struct UseDictionaryDecl {
+    pub source: UseSource,
+    pub source_name: Name,
+    #[fidl_decl(default_preserve_none)]
+    pub source_dictionary: RelativePath,
+    pub target_path: Path,
+    pub dependency_type: DependencyType,
+    #[fidl_decl(default)]
+    pub availability: Availability,
 }
 
 #[cfg(fuchsia_api_level_at_least = "HEAD")]
@@ -716,6 +733,8 @@ impl UseDeclCommon for UseDecl {
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
             UseDecl::Runner(u) => u.source(),
             UseDecl::Config(u) => u.source(),
+            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            UseDecl::Dictionary(u) => u.source(),
         }
     }
 
@@ -729,6 +748,8 @@ impl UseDeclCommon for UseDecl {
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
             UseDecl::Runner(u) => u.availability(),
             UseDecl::Config(u) => u.availability(),
+            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            UseDecl::Dictionary(u) => u.availability(),
         }
     }
 }
@@ -1986,6 +2007,8 @@ impl UseDecl {
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
             UseDecl::Runner(_) => None,
             UseDecl::Config(_) => None,
+            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            UseDecl::Dictionary(d) => Some(&d.target_path),
         }
     }
 
@@ -1997,6 +2020,8 @@ impl UseDecl {
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
             UseDecl::Runner(_) => None,
             UseDecl::Config(_) => None,
+            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            UseDecl::Dictionary(_) => None,
         }
     }
 }
@@ -2012,6 +2037,8 @@ impl SourceName for UseDecl {
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
             UseDecl::Runner(runner_decl) => &runner_decl.source_name,
             UseDecl::Config(u) => &u.source_name,
+            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            UseDecl::Dictionary(dictionary_decl) => &dictionary_decl.source_name,
         }
     }
 }
@@ -2027,6 +2054,8 @@ impl SourcePath for UseDecl {
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
             UseDecl::Runner(u) => u.source_path(),
             UseDecl::Config(u) => u.source_path(),
+            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            UseDecl::Dictionary(u) => u.source_path(),
         }
     }
 }
@@ -2141,6 +2170,8 @@ impl From<&UseDecl> for CapabilityTypeName {
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
             UseDecl::Runner(_) => Self::Runner,
             UseDecl::Config(_) => Self::Config,
+            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            UseDecl::Dictionary(_) => Self::Dictionary,
         }
     }
 }
@@ -2999,6 +3030,16 @@ mod tests {
                         }),
                         ..Default::default()
                     }),
+                    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                    fdecl::Use::Dictionary(fdecl::UseDictionary {
+                        dependency_type: Some(fdecl::DependencyType::Strong),
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        source_name: Some("dictionary".to_string()),
+                        source_dictionary: Some("other_dictionary".to_string()),
+                        target_path: Some("/svc".to_string()),
+                        availability: Some(fdecl::Availability::Optional),
+                        ..Default::default()
+                    }),
                 ]),
                 exposes: Some(vec![
                     fdecl::Expose::Protocol(fdecl::ExposeProtocol {
@@ -3466,6 +3507,15 @@ mod tests {
                             type_: ConfigValueType::Bool,
                             default: None,
                             source_dictionary: ".".parse().unwrap(),
+                        }),
+                        #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                        UseDecl::Dictionary(UseDictionaryDecl {
+                            dependency_type: DependencyType::Strong,
+                            source: UseSource::Parent,
+                            source_name: "dictionary".parse().unwrap(),
+                            source_dictionary: "other_dictionary".parse().unwrap(),
+                            target_path: "/svc".parse().unwrap(),
+                            availability: Availability::Optional,
                         }),
                     ]),
                     exposes: Box::from([

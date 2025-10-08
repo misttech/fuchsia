@@ -869,6 +869,23 @@ impl<'a> ValidationContext<'a> {
                     u.availability.as_ref(),
                 );
             }
+            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            fdecl::Use::Dictionary(u) => {
+                let decl = DeclType::UseDictionary;
+                self.validate_use_fields(
+                    decl,
+                    Self::dictionary_checker,
+                    u.source.as_ref(),
+                    u.source_name.as_ref(),
+                    u.source_dictionary.as_ref(),
+                    u.target_path.as_ref(),
+                    u.dependency_type.as_ref(),
+                    u.availability.as_ref(),
+                );
+                if u.dependency_type.is_none() {
+                    self.errors.push(Error::missing_field(decl, "dependency_type"));
+                }
+            }
             fdecl::UseUnknown!() => {
                 self.errors.push(Error::invalid_field(DeclType::Component, "use"));
             }
@@ -919,48 +936,41 @@ impl<'a> ValidationContext<'a> {
         }
         let mut used_paths = HashMap::new();
         for use_ in uses.iter() {
-            match use_ {
-                fdecl::Use::Service(fdecl::UseService { target_path: Some(path), .. })
-                | fdecl::Use::Protocol(fdecl::UseProtocol { target_path: Some(path), .. })
-                | fdecl::Use::Directory(fdecl::UseDirectory { target_path: Some(path), .. })
-                | fdecl::Use::Storage(fdecl::UseStorage { target_path: Some(path), .. }) => {
-                    let capability = match use_ {
-                        fdecl::Use::Service(_) => {
-                            let dir = match Path::new(path).parent() {
-                                Some(p) => p,
-                                None => continue, // Invalid path, validated elsewhere
-                            };
-                            PathCapability { decl: DeclType::UseService, dir, use_ }
-                        }
-                        fdecl::Use::Protocol(_) => {
-                            let dir = match Path::new(path).parent() {
-                                Some(p) => p,
-                                None => continue, // Invalid path, validated elsewhere
-                            };
-                            PathCapability { decl: DeclType::UseProtocol, dir, use_ }
-                        }
-                        fdecl::Use::Directory(_) => PathCapability {
-                            decl: DeclType::UseDirectory,
-                            dir: Path::new(path),
-                            use_,
-                        },
-                        fdecl::Use::Storage(_) => PathCapability {
-                            decl: DeclType::UseStorage,
-                            dir: Path::new(path),
-                            use_,
-                        },
-                        _ => unreachable!(),
+            let (capability, path) = match use_ {
+                fdecl::Use::Service(fdecl::UseService { target_path: Some(path), .. }) => {
+                    let dir = match Path::new(path).parent() {
+                        Some(p) => p,
+                        None => continue, // Invalid path, validated elsewhere
                     };
-                    if used_paths.insert(path, capability).is_some() {
-                        // Disallow multiple capabilities for the same path.
-                        self.errors.push(Error::duplicate_field(
-                            capability.decl,
-                            "target_path",
-                            path,
-                        ));
-                    }
+                    (PathCapability { decl: DeclType::UseService, dir, use_ }, path)
                 }
-                _ => {}
+                fdecl::Use::Protocol(fdecl::UseProtocol { target_path: Some(path), .. }) => {
+                    let dir = match Path::new(path).parent() {
+                        Some(p) => p,
+                        None => continue, // Invalid path, validated elsewhere
+                    };
+                    (PathCapability { decl: DeclType::UseProtocol, dir, use_ }, path)
+                }
+                fdecl::Use::Directory(fdecl::UseDirectory { target_path: Some(path), .. }) => (
+                    PathCapability { decl: DeclType::UseDirectory, dir: Path::new(path), use_ },
+                    path,
+                ),
+                fdecl::Use::Storage(fdecl::UseStorage { target_path: Some(path), .. }) => (
+                    PathCapability { decl: DeclType::UseStorage, dir: Path::new(path), use_ },
+                    path,
+                ),
+                #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                fdecl::Use::Dictionary(fdecl::UseDictionary {
+                    target_path: Some(path), ..
+                }) => (
+                    PathCapability { decl: DeclType::UseDictionary, dir: Path::new(path), use_ },
+                    path,
+                ),
+                _ => continue,
+            };
+            if used_paths.insert(path, capability).is_some() {
+                // Disallow multiple capabilities for the same path.
+                self.errors.push(Error::duplicate_field(capability.decl, "target_path", path));
             }
         }
         for ((&path_a, capability_a), (&path_b, capability_b)) in
@@ -977,14 +987,27 @@ impl<'a> ValidationContext<'a> {
                         || capability_a.dir.starts_with(capability_b.dir)
                 }
 
-                // Protocols and Services can't overlap with Directories.
+                // Protocols, services, and dictionaries can't overlap with Directories.
                 (_, fdecl::Use::Directory(_)) | (fdecl::Use::Directory(_), _) => {
                     capability_b.dir == capability_a.dir
                         || capability_b.dir.starts_with(capability_a.dir)
                         || capability_a.dir.starts_with(capability_b.dir)
                 }
 
-                // Protocols and Services containing directories may be same, but
+                // Dictionary capabilities can be prefixes of protocols and services, but not the
+                // other way around.
+                #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                (fdecl::Use::Dictionary(_), _) => {
+                    capability_b.dir != capability_a.dir
+                        && capability_b.dir.starts_with(capability_a.dir)
+                }
+                #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                (_, fdecl::Use::Dictionary(_)) => {
+                    capability_b.dir != capability_a.dir
+                        && capability_a.dir.starts_with(capability_b.dir)
+                }
+
+                // Protocols and services containing directories may be same, but
                 // partial overlap is disallowed.
                 (_, _) => {
                     capability_b.dir != capability_a.dir
@@ -3197,6 +3220,183 @@ mod tests {
                 Err(ErrorList::new(vec![
                     Error::invalid_field(DeclType::ConfigField, "foo"),
                 ])),
+            ],
+        },
+    }
+
+    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+    test_validate_any_result! {
+        test_validate_use_dictionary => {
+            input = {
+                let mut decl = new_component_decl();
+                decl.uses = Some(vec![
+                    fdecl::Use::Dictionary(fdecl::UseDictionary {
+                        dependency_type: Some(fdecl::DependencyType::Strong),
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        source_name: Some("toolbox".to_string()),
+                        target_path: Some("/svc".to_string()),
+                        availability: Some(fdecl::Availability::Required),
+                        ..Default::default()
+                    }),
+                ]);
+                decl
+            },
+            results = vec![
+                Ok(()),
+            ],
+        },
+        test_validate_use_dictionary_invalid_name => {
+            input = {
+                let mut decl = new_component_decl();
+                decl.uses = Some(vec![
+                    fdecl::Use::Dictionary(fdecl::UseDictionary {
+                        dependency_type: Some(fdecl::DependencyType::Strong),
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        source_name: Some("toolbox@".to_string()),
+                        target_path: Some("/svc".to_string()),
+                        availability: Some(fdecl::Availability::Required),
+                        ..Default::default()
+                    }),
+                ]);
+                decl
+            },
+            results = vec![
+                Err(ErrorList::new(vec![Error::invalid_field(DeclType::UseDictionary, "source_name")])),
+            ],
+        },
+        test_validate_use_dictionary_invalid_path => {
+            input = {
+                let mut decl = new_component_decl();
+                decl.uses = Some(vec![
+                    fdecl::Use::Dictionary(fdecl::UseDictionary {
+                        dependency_type: Some(fdecl::DependencyType::Strong),
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        source_name: Some("toolbox".to_string()),
+                        target_path: Some("/svc@".to_string()),
+                        availability: Some(fdecl::Availability::Required),
+                        ..Default::default()
+                    }),
+                ]);
+                decl
+            },
+            results = vec![
+                Err(ErrorList::new(vec![Error::field_invalid_segment(DeclType::UseDictionary, "target_path")])),
+            ],
+        },
+        test_validate_use_dictionary_disallows_pkg_overlap => {
+            input = {
+                let mut decl = new_component_decl();
+                decl.uses = Some(vec![
+                    fdecl::Use::Dictionary(fdecl::UseDictionary {
+                        dependency_type: Some(fdecl::DependencyType::Strong),
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        source_name: Some("toolbox".to_string()),
+                        target_path: Some("/pkg/toolbox".to_string()),
+                        availability: Some(fdecl::Availability::Required),
+                        ..Default::default()
+                    }),
+                ]);
+                decl
+            },
+            results = vec![
+                Err(ErrorList::new(vec![
+                    Error::pkg_path_overlap(DeclType::UseDictionary, "/pkg/toolbox"),
+                ])),
+            ],
+        },
+        test_validate_use_dictionary_path_overlap_directory => {
+            input = {
+                let mut decl = new_component_decl();
+                decl.uses = Some(vec![
+                    fdecl::Use::Dictionary(fdecl::UseDictionary {
+                        dependency_type: Some(fdecl::DependencyType::Strong),
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        source_name: Some("toolbox".to_string()),
+                        target_path: Some("/foo/bar".to_string()),
+                        availability: Some(fdecl::Availability::Required),
+                        ..Default::default()
+                    }),
+                    fdecl::Use::Directory(fdecl::UseDirectory {
+                        dependency_type: Some(fdecl::DependencyType::Strong),
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        source_name: Some("data".to_string()),
+                        target_path: Some("/foo".to_string()),
+                        rights: Some(fio::Operations::CONNECT),
+                        subdir: None,
+                        ..Default::default()
+                    }),
+                ]);
+                decl
+            },
+            results = vec![
+                Err(ErrorList::new(vec![
+                    Error::invalid_path_overlap(
+                        DeclType::UseDirectory,
+                        "/foo",
+                        DeclType::UseDictionary,
+                        "/foo/bar",
+                    ),
+                ])),
+                Err(ErrorList::new(vec![
+                    Error::invalid_path_overlap(
+                        DeclType::UseDictionary,
+                        "/foo/bar",
+                        DeclType::UseDirectory,
+                        "/foo",
+                    ),
+                ])),
+            ],
+        },
+        test_validate_use_dictionary_path_overlap_protocol => {
+            input = {
+                let mut decl = new_component_decl();
+                decl.uses = Some(vec![
+                    fdecl::Use::Dictionary(fdecl::UseDictionary {
+                        dependency_type: Some(fdecl::DependencyType::Strong),
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        source_name: Some("toolbox".to_string()),
+                        target_path: Some("/svc/toolbox".to_string()),
+                        availability: Some(fdecl::Availability::Required),
+                        ..Default::default()
+                    }),
+                    fdecl::Use::Protocol(fdecl::UseProtocol {
+                        dependency_type: Some(fdecl::DependencyType::Strong),
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        source_name: Some("fuchsia.examples.Echo".to_string()),
+                        target_path: Some("/svc/fuchsia.examples.Echo".to_string()),
+                        ..Default::default()
+                    }),
+                ]);
+                decl
+            },
+            results = vec![
+                Ok(()),
+            ],
+        },
+        test_validate_use_dictionary_path_overlap_protocol_2 => {
+            input = {
+                let mut decl = new_component_decl();
+                decl.uses = Some(vec![
+                    fdecl::Use::Dictionary(fdecl::UseDictionary {
+                        dependency_type: Some(fdecl::DependencyType::Strong),
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        source_name: Some("toolbox".to_string()),
+                        target_path: Some("/svc".to_string()),
+                        availability: Some(fdecl::Availability::Required),
+                        ..Default::default()
+                    }),
+                    fdecl::Use::Protocol(fdecl::UseProtocol {
+                        dependency_type: Some(fdecl::DependencyType::Strong),
+                        source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
+                        source_name: Some("fuchsia.examples.Echo".to_string()),
+                        target_path: Some("/svc/fuchsia.examples.Echo".to_string()),
+                        ..Default::default()
+                    }),
+                ]);
+                decl
+            },
+            results = vec![
+                Ok(()),
             ],
         },
     }

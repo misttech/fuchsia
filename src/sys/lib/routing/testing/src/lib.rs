@@ -286,6 +286,7 @@ macro_rules! instantiate_common_routing_tests {
         instantiate_common_routing_tests! {
             $builder_impl,
             test_use_from_parent,
+            test_use_dictionary_from_parent,
             test_use_from_child,
             test_use_from_self,
             test_use_from_grandchild,
@@ -440,6 +441,80 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
             )
             .await;
         model.check_open_node(["b"].try_into().unwrap(), "/svc/device".parse().unwrap()).await;
+    }
+
+    ///   a
+    ///    \
+    ///     b
+    ///
+    /// a: declares dictionary my_dictionary
+    /// a: offers directory /data/foo from self as /data/bar to my_dictionary
+    /// a: offers protocol /svc/foo from self as /svc/bar to my_dictionary
+    /// a: offers dictionary my_dictionary to b
+    /// b: uses dictionary my_dictionary at path /dictionary
+    pub async fn test_use_dictionary_from_parent(&self) {
+        let components = vec![
+            (
+                "a",
+                ComponentDeclBuilder::new()
+                    .capability(CapabilityBuilder::directory().name("foo_data").path("/data/foo"))
+                    .protocol_default("foo")
+                    .dictionary_default("my_dictionary")
+                    .offer(
+                        OfferBuilder::directory()
+                            .name("foo_data")
+                            .target_name("bar_data")
+                            .source(OfferSource::Self_)
+                            .target_capability("my_dictionary")
+                            .rights(fio::R_STAR_DIR),
+                    )
+                    .offer(
+                        OfferBuilder::protocol()
+                            .name("foo")
+                            .target_name("bar")
+                            .source(OfferSource::Self_)
+                            .target_capability("my_dictionary"),
+                    )
+                    .offer(
+                        OfferBuilder::dictionary()
+                            .name("my_dictionary")
+                            .source(OfferSource::Self_)
+                            .target_static_child("b"),
+                    )
+                    .child_default("b")
+                    .build(),
+            ),
+            (
+                "b",
+                ComponentDeclBuilder::new()
+                    .use_(UseBuilder::dictionary().name("my_dictionary").path("/my_dictionary"))
+                    .build(),
+            ),
+        ];
+        let model = T::new("a", components).build().await;
+        model
+            .create_static_file(Path::new("foo/example_file"), "hello")
+            .await
+            .expect("failed to create file");
+        model
+            .check_use(
+                ["b"].try_into().unwrap(),
+                CheckUse::Protocol {
+                    path: "/my_dictionary/bar".parse().unwrap(),
+                    expected_res: ExpectedResult::Ok,
+                },
+            )
+            .await;
+        model
+            .check_use(
+                ["b"].try_into().unwrap(),
+                CheckUse::Directory {
+                    path: "/my_dictionary".parse().unwrap(),
+                    file: PathBuf::from("bar_data/example_file"),
+                    expected_res: ExpectedResult::Ok,
+                },
+            )
+            .await;
     }
 
     ///   a

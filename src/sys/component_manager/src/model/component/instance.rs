@@ -774,22 +774,11 @@ impl ResolvedInstanceState {
     ) {
         let uses = Self::deduplicate_event_stream(decl.uses.iter());
         for use_ in uses {
-            let path: cm_types::Path = match use_ {
-                cm_rust::UseDecl::Protocol(d) => {
-                    let path = d.target_path.as_ref();
-                    let Some(path) = path else {
-                        return;
-                    };
-                    path.clone()
-                }
-                cm_rust::UseDecl::Service(d) => d.target_path.clone(),
-                cm_rust::UseDecl::Directory(d) => d.target_path.clone(),
-                cm_rust::UseDecl::Storage(d) => d.target_path.clone(),
-                cm_rust::UseDecl::EventStream(d) => d.target_path.clone(),
-                cm_rust::UseDecl::Runner(d) => format!("/{}", d.source_name).parse().unwrap(),
-                cm_rust::UseDecl::Config(d) => format!("/{}", d.target_name).parse().unwrap(),
-            };
             if !sandbox_construction::is_supported_use(&use_) {
+                let path: cm_types::Path = match use_ {
+                    cm_rust::UseDecl::Storage(d) => d.target_path.clone(),
+                    other_use => unreachable!("all other uses are non-legacy: {other_use:?}"),
+                };
                 // Legacy capability.
                 let request = RouteRequest::from(use_.clone());
                 let Some(capability) = request.into_capability(component) else {

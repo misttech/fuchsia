@@ -634,6 +634,10 @@ impl UseBuilder {
         Self::new(CapabilityTypeName::Config)
     }
 
+    pub fn dictionary() -> Self {
+        Self::new(CapabilityTypeName::Dictionary)
+    }
+
     fn new(type_: CapabilityTypeName) -> Self {
         Self {
             type_,
@@ -674,8 +678,10 @@ impl UseBuilder {
             CapabilityTypeName::Runner | CapabilityTypeName::Config => {
                 self.target_name = self.source_name.clone();
             }
-            CapabilityTypeName::Storage | CapabilityTypeName::Directory => {}
-            CapabilityTypeName::Dictionary | CapabilityTypeName::Resolver => unreachable!(),
+            CapabilityTypeName::Dictionary
+            | CapabilityTypeName::Storage
+            | CapabilityTypeName::Directory => {}
+            CapabilityTypeName::Resolver => unreachable!(),
         }
         self
     }
@@ -688,6 +694,7 @@ impl UseBuilder {
                 | CapabilityTypeName::Directory
                 | CapabilityTypeName::EventStream
                 | CapabilityTypeName::Storage
+                | CapabilityTypeName::Dictionary
         );
         self.target_path = Some(path.parse().unwrap());
         self
@@ -851,7 +858,17 @@ impl UseBuilder {
                 default: None,
                 source_dictionary: self.source_dictionary,
             }),
-            CapabilityTypeName::Resolver | CapabilityTypeName::Dictionary => unreachable!(),
+            CapabilityTypeName::Dictionary => {
+                cm_rust::UseDecl::Dictionary(cm_rust::UseDictionaryDecl {
+                    source: self.source,
+                    source_name: self.source_name.expect("name not set"),
+                    source_dictionary: self.source_dictionary,
+                    target_path: self.target_path.expect("path not set"),
+                    dependency_type: self.dependency_type,
+                    availability: self.availability,
+                })
+            }
+            CapabilityTypeName::Resolver => unreachable!(),
         }
     }
 }
@@ -1200,6 +1217,10 @@ impl OfferBuilder {
 
     pub fn target_static_child(self, target: &str) -> Self {
         self.target(offer_target_static_child(target))
+    }
+
+    pub fn target_capability(self, target: &str) -> Self {
+        self.target(cm_rust::OfferTarget::Capability(target.parse().unwrap()))
     }
 
     pub fn availability(mut self, availability: cm_rust::Availability) -> Self {

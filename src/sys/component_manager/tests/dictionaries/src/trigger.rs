@@ -9,8 +9,10 @@
 use fidl::endpoints;
 use fuchsia_component::client;
 use fuchsia_component::server::ServiceFs;
+use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
 use log::info;
+use std::sync::Arc;
 use {
     fidl_fidl_examples_routing_echo as fecho, fidl_fidl_test_components as ftest,
     fidl_fuchsia_component_sandbox as fsandbox, fuchsia_async as fasync,
@@ -49,11 +51,13 @@ async fn main() {
     let _receiver_task =
         fasync::Task::local(async move { handle_receiver(trigger_receiver_stream).await });
 
+    let next_dict_id = Arc::new(Mutex::new(1));
     let mut fs = ServiceFs::new_local();
     fs.dir("svc").add_fidl_service(IncomingRequest::Trigger);
     fs.dir("svc").add_fidl_service(IncomingRequest::Router);
     fs.take_and_serve_directory_handle().expect("failed to serve outgoing directory");
     fs.for_each_concurrent(None, move |request: IncomingRequest| {
+        let next_dict_id = next_dict_id.clone();
         let store = store.clone();
         async move {
             match request {
@@ -64,9 +68,13 @@ async fn main() {
                     while let Ok(Some(request)) = stream.try_next().await {
                         match request {
                             fsandbox::DictionaryRouterRequest::Route { payload: _, responder } => {
-                                let dup_dict_id = dict_id + 1;
-                                store.duplicate(dict_id, dup_dict_id).await.unwrap().unwrap();
-                                let capability = store.export(dup_dict_id).await.unwrap().unwrap();
+                                let dict_id_2 = {
+                                    let mut guard = next_dict_id.lock().await;
+                                    *guard += 1;
+                                    *guard
+                                };
+                                store.duplicate(dict_id, dict_id_2).await.unwrap().unwrap();
+                                let capability = store.export(dict_id_2).await.unwrap().unwrap();
                                 let fsandbox::Capability::Dictionary(dict) = capability else {
                                     panic!("capability was not a dictionary? {capability:?}");
                                 };

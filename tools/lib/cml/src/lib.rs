@@ -115,6 +115,8 @@ pub enum CapabilityId<'a> {
     // A configuration in a `use` declaration has a target name that matches a config.
     UsedConfiguration(&'a BorrowedName),
     UsedRunner(&'a BorrowedName),
+    // A dictionary in a `use` declaration that has a target path in the component's namespace.
+    UsedDictionary(Path),
     Storage(&'a BorrowedName),
     Runner(&'a BorrowedName),
     Resolver(&'a BorrowedName),
@@ -155,6 +157,7 @@ impl<'a> CapabilityId<'a> {
             CapabilityId::UsedEventStream(_) => "event_stream",
             CapabilityId::UsedRunner(_) => "runner",
             CapabilityId::UsedConfiguration(_) => "config",
+            CapabilityId::UsedDictionary(_) => "dictionary",
             CapabilityId::Storage(_) => "storage",
             CapabilityId::Runner(_) => "runner",
             CapabilityId::Resolver(_) => "resolver",
@@ -170,7 +173,9 @@ impl<'a> CapabilityId<'a> {
             CapabilityId::UsedService(p)
             | CapabilityId::UsedProtocol(p)
             | CapabilityId::UsedEventStream(p) => Some(p.parent()),
-            CapabilityId::UsedDirectory(p) | CapabilityId::UsedStorage(p) => Some(p.clone().into()),
+            CapabilityId::UsedDirectory(p)
+            | CapabilityId::UsedStorage(p)
+            | CapabilityId::UsedDictionary(p) => Some(p.clone().into()),
             _ => None,
         }
     }
@@ -229,6 +234,12 @@ impl<'a> CapabilityId<'a> {
                 None => Err(Error::validate("\"key\" should be present for `use config`.")),
                 Some(name) => Ok(vec![CapabilityId::UsedConfiguration(name)]),
             };
+        } else if let Some(n) = use_.dictionary() {
+            return Ok(Self::used_dictionaries_from(Self::get_one_or_many_svc_paths(
+                n,
+                alias,
+                use_.capability_type().unwrap(),
+            )?));
         }
         // Unsupported capability type.
         let supported_keywords = use_
@@ -467,6 +478,7 @@ impl<'a> CapabilityId<'a> {
     capability_ids_from_names!(configurations_from, CapabilityId::Configuration);
     capability_ids_from_paths!(used_services_from, CapabilityId::UsedService);
     capability_ids_from_paths!(used_protocols_from, CapabilityId::UsedProtocol);
+    capability_ids_from_paths!(used_dictionaries_from, CapabilityId::UsedDictionary);
 }
 
 impl fmt::Display for CapabilityId<'_> {
@@ -486,7 +498,8 @@ impl fmt::Display for CapabilityId<'_> {
             | CapabilityId::UsedProtocol(p)
             | CapabilityId::UsedDirectory(p)
             | CapabilityId::UsedStorage(p)
-            | CapabilityId::UsedEventStream(p) => write!(f, "{}", p),
+            | CapabilityId::UsedEventStream(p)
+            | CapabilityId::UsedDictionary(p) => write!(f, "{}", p),
             CapabilityId::Protocol(p) | CapabilityId::Directory(p) => write!(f, "{}", p),
         }
     }
@@ -2870,6 +2883,11 @@ pub struct Use {
     #[reference_doc(skip = true)]
     pub config: Option<Name>,
 
+    /// When using a dictionary capability, the [name](#name) of a [dictionary capability][doc-dictionary].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[reference_doc(skip = true)]
+    pub dictionary: Option<OneOrMany<Name>>,
+
     /// The source of the capability. Defaults to `parent`.  One of:
     /// - `parent`: The component's parent.
     /// - `debug`: One of [`debug_capabilities`][fidl-environment-decl] in the
@@ -3873,7 +3891,7 @@ impl CapabilityClause for Use {
         option_one_or_many_as_ref(&self.event_stream)
     }
     fn dictionary(&self) -> Option<OneOrMany<&BorrowedName>> {
-        None
+        option_one_or_many_as_ref(&self.dictionary)
     }
     fn config(&self) -> Option<OneOrMany<&BorrowedName>> {
         self.config.as_ref().map(|n| OneOrMany::One(n.as_ref()))
@@ -3912,7 +3930,16 @@ impl CapabilityClause for Use {
         "use"
     }
     fn supported(&self) -> &[&'static str] {
-        &["service", "protocol", "directory", "storage", "event_stream", "runner", "config"]
+        &[
+            "service",
+            "protocol",
+            "directory",
+            "storage",
+            "event_stream",
+            "runner",
+            "config",
+            "dictionary",
+        ]
     }
     fn are_many_names_allowed(&self) -> bool {
         ["service", "protocol", "event_stream"].contains(&self.capability_type().unwrap())
@@ -4709,6 +4736,7 @@ mod tests {
             directory: None,
             storage: None,
             config: None,
+            dictionary: None,
             key: None,
             from: None,
             path: None,
@@ -4883,6 +4911,47 @@ mod tests {
         assert_eq!(
             CapabilityId::from_use(&Use { runner: Some("elf".parse().unwrap()), ..empty_use() })?,
             vec![CapabilityId::UsedRunner(BorrowedName::new("elf").unwrap())]
+        );
+
+        // dictionary
+        assert_eq!(
+            CapabilityId::from_offer_expose(&Offer {
+                dictionary: Some(OneOrMany::One(a.clone())),
+                ..empty_offer()
+            },)?,
+            vec![CapabilityId::Dictionary(&a)]
+        );
+        assert_eq!(
+            CapabilityId::from_offer_expose(&Offer {
+                dictionary: Some(OneOrMany::Many(vec![a.clone(), b.clone()],)),
+                ..empty_offer()
+            },)?,
+            vec![CapabilityId::Dictionary(&a), CapabilityId::Dictionary(&b)]
+        );
+        assert_eq!(
+            CapabilityId::from_use(&Use {
+                dictionary: Some(OneOrMany::One(a.clone())),
+                ..empty_use()
+            },)?,
+            vec![CapabilityId::UsedDictionary("/svc/a".parse().unwrap())]
+        );
+        assert_eq!(
+            CapabilityId::from_use(&Use {
+                dictionary: Some(OneOrMany::Many(vec![a.clone(), b.clone(),],)),
+                ..empty_use()
+            },)?,
+            vec![
+                CapabilityId::UsedDictionary("/svc/a".parse().unwrap()),
+                CapabilityId::UsedDictionary("/svc/b".parse().unwrap())
+            ]
+        );
+        assert_eq!(
+            CapabilityId::from_use(&Use {
+                dictionary: Some(OneOrMany::One(a.clone())),
+                path: Some("/b".parse().unwrap()),
+                ..empty_use()
+            },)?,
+            vec![CapabilityId::UsedDictionary("/b".parse().unwrap())]
         );
 
         // "as" aliasing.

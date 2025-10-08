@@ -2001,6 +2001,12 @@
     },
     {
         "kind": "union/member",
+        "name": "fuchsia.component.decl/Use.dictionary",
+        "ordinal": "10",
+        "type": "fuchsia.component.decl/UseDictionary"
+    },
+    {
+        "kind": "union/member",
         "name": "fuchsia.component.decl/Use.directory",
         "ordinal": "3",
         "type": "fuchsia.component.decl/UseDirectory"
@@ -2079,6 +2085,46 @@
     {
         "kind": "table",
         "name": "fuchsia.component.decl/UseConfiguration"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.component.decl/UseDictionary.availability",
+        "ordinal": "7",
+        "type": "fuchsia.component.decl/Availability"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.component.decl/UseDictionary.dependency_type",
+        "ordinal": "6",
+        "type": "fuchsia.component.decl/DependencyType"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.component.decl/UseDictionary.source",
+        "ordinal": "1",
+        "type": "fuchsia.component.decl/Ref"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.component.decl/UseDictionary.source_dictionary",
+        "ordinal": "8",
+        "type": "string:1024"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.component.decl/UseDictionary.source_name",
+        "ordinal": "2",
+        "type": "string:100"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.component.decl/UseDictionary.target_path",
+        "ordinal": "3",
+        "type": "string:1024"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.component.decl/UseDictionary"
     },
     {
         "kind": "table/member",
