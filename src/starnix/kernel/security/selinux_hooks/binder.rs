@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::TODO_DENY;
-use crate::security::selinux_hooks::{
+use super::file::todo_option_file_receive;
+use super::{
     BinderConnectionState, check_permission, check_self_permission, current_task_state,
     todo_check_permission,
 };
+use crate::TODO_DENY;
 use crate::task::CurrentTask;
+use crate::vfs::FileObject;
 use selinux::{BinderPermission, SecurityServer};
 use starnix_core::task::Task;
 use starnix_uapi::errors::Errno;
@@ -94,5 +96,22 @@ pub(in crate::security) fn binder_transfer_binder(
         target_sid,
         BinderPermission::Transfer,
         audit_context,
+    )
+}
+
+/// Checks whether `task` has permission to receive `file` in a Binder transaction.
+pub(in crate::security) fn binder_transfer_file(
+    security_server: &SecurityServer,
+    current_task: &CurrentTask,
+    subject_task: &Task,
+    file: &FileObject,
+) -> Result<(), Errno> {
+    let receiving_sid = subject_task.security_state.lock().current_sid;
+    todo_option_file_receive(
+        Some(TODO_DENY!("https://fxbug.dev/364569358", "Enforce all the time in all contexts.")),
+        security_server,
+        current_task,
+        receiving_sid,
+        file,
     )
 }

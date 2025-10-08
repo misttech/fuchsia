@@ -2,15 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use super::selinux_hooks::audit::Auditable;
 use super::{
     BinderConnectionState, BpfMapState, BpfProgState, FileObjectState, FileSystemState,
-    ResolvedElfState, SavedEffectiveState, TaskState, selinux_hooks,
+    KernelState, ResolvedElfState, SavedEffectiveState, TaskState, selinux_hooks,
 };
 use crate::bpf::BpfMap;
 use crate::bpf::program::Program;
 use crate::mm::{Mapping, MappingOptions, ProtectionFlags};
-use crate::security::KernelState;
-use crate::security::selinux_hooks::audit::Auditable;
 use crate::task::{CurrentTask, FullCredentials, Kernel, Task};
 use crate::vfs::fs_args::MountParams;
 use crate::vfs::socket::{
@@ -230,6 +229,24 @@ pub fn binder_transfer_binder(current_task: &CurrentTask, target_task: &Task) ->
     track_hook_duration!(c"security.hooks.binder_transfer_binder");
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::binder::binder_transfer_binder(security_server, current_task, target_task)
+    })
+}
+
+/// Checks whether the given `receiving_task` can receive `file` in a Binder transaction.
+/// Corresponds to the `binder_transfer_file` hook.
+pub fn binder_transfer_file(
+    current_task: &CurrentTask,
+    receiving_task: &Task,
+    file: &FileObject,
+) -> Result<(), Errno> {
+    track_hook_duration!(c"security.hooks.binder_transfer_file");
+    if_selinux_else_default_ok(current_task, |security_server| {
+        selinux_hooks::binder::binder_transfer_file(
+            security_server,
+            current_task,
+            receiving_task,
+            file,
+        )
     })
 }
 

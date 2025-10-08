@@ -5,13 +5,15 @@
 // TODO(https://github.com/rust-lang/rust/issues/39371): remove
 #![allow(non_upper_case_globals)]
 
-use super::bpf::{check_bpf_map_access, check_bpf_prog_access};
+use super::bpf::{
+    check_bpf_map_access, todo_option_check_bpf_map_access, todo_option_check_bpf_prog_access,
+};
 use super::{
     FileObjectState, FsNodeSidAndClass, NO_PERMISSIONS, PermissionFlags, check_permission,
     current_task_state, fs_node_effective_sid_and_class, has_file_ioctl_permission,
     has_file_permissions, permissions_from_flags, todo_has_fs_node_permissions,
+    todo_option_has_file_permissions,
 };
-
 use crate::TODO_DENY;
 use crate::bpf::fs::BpfHandle;
 use crate::mm::{Mapping, MappingName, MappingOptions, ProtectionFlags};
@@ -20,7 +22,8 @@ use crate::security::selinux_hooks::{
 };
 use crate::task::CurrentTask;
 use crate::vfs::{FileHandle, FileObject, FsNodeHandle, canonicalize_ioctl_request};
-use selinux::{CommonFsNodePermission, SecurityServer};
+use selinux::{CommonFsNodePermission, SecurityId, SecurityServer};
+use starnix_logging::BugRef;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserAddress;
@@ -76,8 +79,19 @@ pub(in crate::security) fn file_receive(
     current_task: &CurrentTask,
     file: &FileObject,
 ) -> Result<(), Errno> {
+    let receiving_sid = current_task_state(current_task).lock().current_sid;
+    todo_option_file_receive(None, security_server, current_task, receiving_sid, file)
+}
+
+// TODO(nathaniel): merge this back into file_receive above from which it came.
+pub(in crate::security::selinux_hooks) fn todo_option_file_receive(
+    bug: Option<BugRef>,
+    security_server: &SecurityServer,
+    current_task: &CurrentTask,
+    receiving_sid: SecurityId,
+    file: &FileObject,
+) -> Result<(), Errno> {
     let permission_check = security_server.as_permission_check();
-    let subject_sid = current_task_state(current_task).lock().current_sid;
     let fs_node_class = file.node().security_state.lock().class;
     let permission_flags = file.flags().into();
 
@@ -85,30 +99,41 @@ pub(in crate::security) fn file_receive(
     // but have a distinct set of permissions associated with the underlying objects rather
     // than on the `FsNode`.
     if let Some(bpf_handle) = file.downcast_file::<BpfHandle>() {
-        has_file_permissions(
+        todo_option_has_file_permissions(
+            bug,
             &permission_check,
             current_task,
-            subject_sid,
+            receiving_sid,
             file,
             NO_PERMISSIONS,
             current_task.into(),
         )?;
         match *bpf_handle {
-            BpfHandle::Map(ref map) => {
-                check_bpf_map_access(security_server, current_task, map, permission_flags)?
-            }
-            BpfHandle::Program(ref prog) => {
-                check_bpf_prog_access(security_server, current_task, prog)?
-            }
+            BpfHandle::Map(ref map) => todo_option_check_bpf_map_access(
+                bug,
+                security_server,
+                current_task,
+                receiving_sid,
+                map,
+                permission_flags,
+            )?,
+            BpfHandle::Program(ref prog) => todo_option_check_bpf_prog_access(
+                bug,
+                security_server,
+                current_task,
+                receiving_sid,
+                prog,
+            )?,
             _ => {}
         }
         return Ok(());
     }
 
-    has_file_permissions(
+    todo_option_has_file_permissions(
+        bug,
         &permission_check,
         current_task,
-        subject_sid,
+        receiving_sid,
         file,
         &permissions_from_flags(permission_flags, fs_node_class),
         current_task.into(),

@@ -20,8 +20,6 @@
                 "binder",
                 // TODO: https://fxbug.dev/398652722 - get passing.
                 "bounds",
-                // TODO: https://fxbug.dev/398654362 - get passing.
-                "bpf",
                 // TODO: https://fxbug.dev/398652723 - get passing.
                 "capable_file",
                 // TODO: https://fxbug.dev/398662840 - get passing.

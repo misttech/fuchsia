@@ -4720,6 +4720,7 @@ impl BinderDriver {
         locked: &mut Locked<L>,
         source: &OperationContext<'_>,
         source_files: &mut Vec<fbinder::FileHandle>,
+        target_task: &Task,
         target_resource_accessor: &'a dyn ResourceAccessor,
         fds: Vec<FdNumber>,
         add_action: &mut dyn FnMut(FdNumber),
@@ -4769,6 +4770,9 @@ impl BinderDriver {
             } else {
                 return error!(ENOENT);
             };
+
+            security::binder_transfer_file(source.current_task, target_task, &(file.0))?;
+
             target_files.push(file);
         }
         // Finally add the files to the `target_resource_accessor`.
@@ -5011,6 +5015,7 @@ impl BinderDriver {
                             locked,
                             source,
                             source_files,
+                            target_task,
                             target_resource_accessor,
                             fd_array.iter().map(|fd| FdNumber::from_raw(*fd as i32)).collect(),
                             // Close this FD if the transaction ends either by success or failure.
@@ -5031,6 +5036,7 @@ impl BinderDriver {
                 locked,
                 source,
                 source_files,
+                target_task,
                 target_resource_accessor,
                 files.iter().map(|TransientFile { fd, .. }| *fd).collect(),
                 // Close this FD if the transaction fails.
