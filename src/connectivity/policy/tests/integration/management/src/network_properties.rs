@@ -10,16 +10,16 @@ use futures::lock::Mutex;
 use futures::{FutureExt as _, SinkExt as _, StreamExt as _};
 use log::info;
 use net_declare::fidl_ip_v6;
-use netcfg::NetworkTokenExt;
 use netstack_testing_common::constants::ipv6 as ipv6_consts;
 use netstack_testing_common::ndp::send_ra_with_router_lifetime;
 use netstack_testing_common::realms::{
     self, Manager, ManagerConfig, Netstack, NetstackExt, SocketProxyType,
 };
-use netstack_testing_common::{wait_for_component_stopped, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT};
+use netstack_testing_common::{ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, wait_for_component_stopped};
 use netstack_testing_macros::netstack_test;
 use packet_formats::icmp::ndp::options::{NdpOptionBuilder, RecursiveDnsServer};
-use policy_testing_common::{with_netcfg_owned_device, NetcfgOwnedDeviceArgs};
+use policy_properties::NetworkTokenExt;
+use policy_testing_common::{NetcfgOwnedDeviceArgs, with_netcfg_owned_device};
 use pretty_assertions::assert_eq;
 use std::collections::HashSet;
 use std::pin::pin;

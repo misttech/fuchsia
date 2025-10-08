@@ -70,7 +70,6 @@ use self::interface::{
 };
 use self::masquerade::MasqueradeHandler;
 use self::socketproxy::SocketProxyState;
-pub use network::NetworkTokenExt;
 
 /// Interface Identifier
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]

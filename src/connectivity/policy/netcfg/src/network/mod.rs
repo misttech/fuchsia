@@ -7,7 +7,6 @@ use anyhow::Context as _;
 use async_utils::stream::{Tagged, WithTag as _};
 use dns_server_watcher::DnsServers;
 use fidl::endpoints::{ControlHandle as _, Responder as _};
-use fidl::HandleBased as _;
 use log::{error, info, warn};
 use std::collections::HashMap;
 
@@ -17,24 +16,6 @@ use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_name as fnet_name,
     fidl_fuchsia_net_policy_properties as fnp_properties,
 };
-
-pub trait NetworkTokenExt: Sized {
-    fn duplicate(&self) -> Result<Self, zx::Status>;
-}
-
-impl NetworkTokenExt for fnp_properties::NetworkToken {
-    fn duplicate(&self) -> Result<fnp_properties::NetworkToken, zx::Status> {
-        Ok(fnp_properties::NetworkToken {
-            value: Some(
-                self.value
-                    .as_ref()
-                    .ok_or(zx::Status::NOT_FOUND)?
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)?,
-            ),
-            ..Default::default()
-        })
-    }
-}
 
 pub(crate) struct NetworkTokenContents {
     connection_id: ConnectionId,
@@ -419,9 +400,10 @@ impl NetpolNetworksService {
                         match self.property_responders.entry(id) {
                             std::collections::hash_map::Entry::Occupied(_) => {
                                 warn!(
-                            "Only one call to fuchsia.net.policy.properties/Networks.WatchProperties \
-                             may be active per connection"
-                        );
+                                    "Only one call to \
+                                    fuchsia.net.policy.properties/Networks.WatchProperties may be \
+                                    active per connection"
+                                );
                                 responder
                                     .control_handle()
                                     .shutdown_with_epitaph(zx::Status::CONNECTION_ABORTED)
@@ -437,9 +419,9 @@ impl NetpolNetworksService {
                                     Some(network_contents) => {
                                         if network_contents.connection_id != id {
                                             warn!(
-                                            "Cannot watch a NetworkToken that was not created by \
-                                             this connection."
-                                        );
+                                                "Cannot watch a NetworkToken that was not created \
+                                                by this connection."
+                                            );
                                             responder.send(Err(
                                                 fnp_properties::WatchError::InvalidNetworkToken,
                                             ))?;

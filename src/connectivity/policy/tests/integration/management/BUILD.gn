@@ -34,7 +34,7 @@ rustc_test("management") {
     "//src/connectivity/network/testing/network-test-realm/service:controller",
     "//src/connectivity/network/tests/integration/common:netstack_testing_common",
     "//src/connectivity/network/tests/integration/macros:netstack_testing_macros",
-    "//src/connectivity/policy/netcfg:lib",
+    "//src/connectivity/policy/lib/properties",
     "//src/connectivity/policy/tests/integration:netcfg-netemul-configs",
     "//src/connectivity/policy/tests/integration/common:policy_testing_common",
     "//src/connectivity/policy/tests/integration/fidl:fidl_rust",
