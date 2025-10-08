@@ -19,14 +19,15 @@ use ebpf::convert_and_verify_cbpf;
 use ebpf_api::SOCKET_FILTER_CBPF_CONFIG;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
 use linux_uapi::{IP_MULTICAST_ALL, IP_PASSSEC};
-use starnix_logging::track_stub;
+use starnix_logging::{log_warn, track_stub};
 use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::auth::{CAP_NET_ADMIN, CAP_NET_RAW};
 use starnix_uapi::errors::{ENOTSUP, Errno, ErrnoCode};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    AF_PACKET, BPF_MAXINSNS, MSG_DONTWAIT, MSG_WAITALL, SO_ATTACH_FILTER, SO_COOKIE, c_int, errno,
-    errno_from_zxio_code, error, from_status_like_fdio, sock_filter, uapi, ucred,
+    AF_PACKET, BPF_MAXINSNS, MSG_DONTWAIT, MSG_WAITALL, SO_ATTACH_FILTER, SO_BINDTODEVICE,
+    SO_BINDTOIFINDEX, SO_COOKIE, c_int, errno, errno_from_zxio_code, error, from_status_like_fdio,
+    sock_filter, uapi, ucred,
 };
 use static_assertions::const_assert_eq;
 use std::mem::size_of;
@@ -675,19 +676,19 @@ impl SocketOps for ZxioBackedSocket {
                 }
                 let code: Vec<sock_filter> = current_task
                     .read_multi_arch_objects_to_vec(fprog.filter, fprog.len as usize)?;
-                self.attach_cbpf_filter(current_task, code)
+                return self.attach_cbpf_filter(current_task, code);
             }
             (SOL_IP, IP_RECVERR) => {
                 track_stub!(TODO("https://fxbug.dev/333060595"), "SOL_IP.IP_RECVERR");
-                Ok(())
+                return Ok(());
             }
             (SOL_IP, IP_MULTICAST_ALL) => {
                 track_stub!(TODO("https://fxbug.dev/404596095"), "SOL_IP.IP_MULTICAST_ALL");
-                Ok(())
+                return Ok(());
             }
             (SOL_IP, IP_PASSSEC) if current_task.kernel().features.selinux_test_suite => {
                 track_stub!(TODO("https://fxbug.dev/398663317"), "SOL_IP.IP_PASSSEC");
-                Ok(())
+                return Ok(());
             }
             (SOL_SOCKET, SO_MARK) => {
                 // Either `CAP_NET_RAW` or `CAP_NET_ADMIN` is required to set
@@ -702,19 +703,33 @@ impl SocketOps for ZxioBackedSocket {
                 let socket_mark = ZxioSocketMark::so_mark(mark);
                 let optval: &[u8; size_of::<zxio_socket_mark>()] =
                     zerocopy::transmute_ref!(&socket_mark);
-                self.zxio
+                return self
+                    .zxio
                     .setsockopt(SOL_SOCKET as i32, SO_FUCHSIA_MARK as i32, optval)
                     .map_err(|status| from_status_like_fdio!(status))?
-                    .map_err(|out_code| errno_from_zxio_code!(out_code))
+                    .map_err(|out_code| errno_from_zxio_code!(out_code));
             }
-            _ => {
-                let optval = optval.to_vec(current_task)?;
-                self.zxio
-                    .setsockopt(level as i32, optname as i32, &optval)
-                    .map_err(|status| from_status_like_fdio!(status))?
-                    .map_err(|out_code| errno_from_zxio_code!(out_code))
+            (SOL_SOCKET, SO_BINDTODEVICE | SO_BINDTOIFINDEX) => {
+                // Require `CAP_NET_RAW` to bind the socket to a device. This
+                // is consistent with Linux prior to 5.7. Starting from 5.7
+                // Linux allows requires this capability only if the socket
+                // is already bound to a device.
+                security::check_task_capable(current_task, CAP_NET_RAW).inspect_err(|_| {
+                    log_warn!(
+                        "setsockopt(SO_BINDTODEVICE) is called by a \
+                         process without CAP_NET_RAW: {:?}",
+                        current_task.thread_group(),
+                    )
+                })?;
             }
+            _ => {}
         }
+
+        let optval = optval.to_vec(current_task)?;
+        self.zxio
+            .setsockopt(level as i32, optname as i32, &optval)
+            .map_err(|status| from_status_like_fdio!(status))?
+            .map_err(|out_code| errno_from_zxio_code!(out_code))
     }
 
     fn getsockopt(

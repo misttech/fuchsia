@@ -1150,3 +1150,23 @@ TEST_F(IcmpPingSocket, SetInvalid) {
   gid_range_.Set(0, 4294967294);
   gid_range_.Set(4294967294, 0);
 }
+
+TEST(InetSocket, BindToDevice) {
+  if (!test_helper::HasCapability(CAP_NET_RAW)) {
+    GTEST_SKIP() << "Need CAP_NET_RAW to access SO_BINDTODEVICE";
+  }
+  if (!test_helper::IsStarnix()) {
+    GTEST_SKIP() << "This test verifies behavior specific to Starnix";
+  }
+
+  test_helper::UnsetCapabilityEffective(CAP_NET_RAW);
+
+  fbl::unique_fd sock;
+  ASSERT_TRUE(sock = fbl::unique_fd(socket(AF_INET, SOCK_STREAM, 0))) << strerror(errno);
+
+  char iface[] = "lo";
+  EXPECT_EQ(setsockopt(sock.get(), SOL_SOCKET, SO_BINDTODEVICE, iface, sizeof(iface)), -1);
+  EXPECT_EQ(errno, EPERM);
+
+  test_helper::SetCapabilityEffective(CAP_NET_RAW);
+}
