@@ -78,7 +78,7 @@ pub enum PackageSet {
     ///
     /// Note: This was previously the "universe" package set, and RFC-0212
     /// refined this as the "on-demand;[anchored|updateable]" package set. No
-    /// anchoring (merkle-pinning) is done at this time.
+    /// anchoring (Merkle-pinning) is done at this time.
     /// see: https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0212_package_sets?hl=en#change-7
     OnDemand,
 
@@ -89,6 +89,14 @@ pub enum PackageSet {
     /// https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0212_package_sets?hl=en#change-7
     /// https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0271_anchored_packages?hl=en
     AnchoredAutomatic,
+
+    /// The on-demand anchored packages are packages that are known at the time of software
+    /// assembly, but are not part of the assembled image itself. They are downloaded when first
+    /// requested. Unlike the above "OnDemand" type, this type does anchoring (Merkle-pinning).
+    /// This is described in the RFCs 0212 and 0271:
+    /// https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0212_package_sets?hl=en#change-7
+    /// https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0271_anchored_packages?hl=en
+    AnchoredOnDemand,
 }
 
 impl std::fmt::Display for PackageSet {
@@ -101,6 +109,7 @@ impl std::fmt::Display for PackageSet {
             PackageSet::Bootfs => "bootfs",
             PackageSet::OnDemand => "on_demand",
             PackageSet::AnchoredAutomatic => "anchored_automatic",
+            PackageSet::AnchoredOnDemand => "anchored_on_demand",
         })
     }
 }

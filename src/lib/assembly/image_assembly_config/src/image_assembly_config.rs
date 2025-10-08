@@ -32,15 +32,22 @@ pub struct ImageAssemblyConfig {
     #[serde(default)]
     pub cache: Vec<Utf8PathBuf>,
 
-    /// The anchored packages that are in the anchored package list, which is added
+    /// The automatic anchored packages that are in the anchored package list, which is added
     /// to the base package (data/anchored_packages.json).
     /// These packages are not part of the image itself.
     #[serde(default)]
     pub anchored_automatic: Vec<Utf8PathBuf>,
 
+    /// The on-demand anchored packages that are in the anchored package list, which is added
+    /// to the base package (data/anchored_packages.json).
+    /// These packages are not part of the image itself.
+    #[serde(default)]
+    pub anchored_on_demand: Vec<Utf8PathBuf>,
+
     /// The packages that are in the on_demand package list, which is not part
     /// of the image itself, but is to be published alongside those packages in
-    /// the image.
+    /// the image. Unlike the anchored_on_demand packages, the list of these packages is not
+    /// added to the base package in `data/`.
     #[serde(default)]
     pub on_demand: Vec<Utf8PathBuf>,
 
@@ -105,6 +112,7 @@ impl ImageAssemblyConfig {
             base: Vec::default(),
             cache: Vec::default(),
             anchored_automatic: Vec::default(),
+            anchored_on_demand: Vec::default(),
             on_demand: Vec::default(),
             boot_args: Vec::default(),
             partitions_config: None,
@@ -188,6 +196,7 @@ mod tests {
               "cache": ["package3", "package4"],
               "on_demand": ["package5", "package6"],
               "anchored_automatic": ["package7", "package8"],
+              "anchored_on_demand": ["package9", "package10"],
               "kernel": {
                 "path": "path/to/kernel",
                 "args": ["arg1", "arg2"],
@@ -224,6 +233,7 @@ mod tests {
               cache: ["package3", "package4"],
               on_demand: ["package5", "package6"],
               anchored_automatic: ["package7", "package8"],
+              "anchored_on_demand": ["package9", "package10"],
               kernel: {
                 path: "path/to/kernel",
                 args: ["arg1", "arg2"],

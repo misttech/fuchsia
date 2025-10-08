@@ -1163,6 +1163,7 @@ impl ImageAssemblyConfigBuilder {
             base: packages.package_manifest_paths(PackageSet::Base),
             cache: packages.package_manifest_paths(PackageSet::Cache),
             anchored_automatic: packages.package_manifest_paths(PackageSet::AnchoredAutomatic),
+            anchored_on_demand: packages.package_manifest_paths(PackageSet::AnchoredOnDemand),
             system: packages.package_manifest_paths(PackageSet::System),
             bootfs_packages: packages.package_manifest_paths(PackageSet::Bootfs),
             on_demand: packages.package_manifest_paths(PackageSet::OnDemand),
@@ -1303,7 +1304,8 @@ impl PackageEntry {
             | PackageSet::System
             | PackageSet::Flexible
             | PackageSet::OnDemand
-            | PackageSet::AnchoredAutomatic => PackageSetDestination::Blob(match &origin {
+            | PackageSet::AnchoredAutomatic
+            | PackageSet::AnchoredOnDemand => PackageSetDestination::Blob(match &origin {
                 PackageOrigin::AIB => PackageDestination::FromAIB(name),
                 PackageOrigin::Board => PackageDestination::FromBoard(name),
                 PackageOrigin::Product => PackageDestination::FromProduct(name),
