@@ -168,7 +168,7 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
         )
 
         asserts.assert_in("logger", root)
-        asserts.assert_in("buckets", root["logger"])
+        # Do not test for buckets. The node is absent when no capture occurred yet.
         asserts.assert_in("measurements", root["logger"])
 
         asserts.assert_in("stalls", root)
