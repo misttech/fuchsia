@@ -4,6 +4,7 @@
 
 #include "src/ui/scenic/tests/utils/utils.h"
 
+#include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/ui/scenic/cpp/id.h>
@@ -175,9 +176,29 @@ Screenshot TakeScreenshot(const fuchsia::ui::composition::ScreenshotSyncPtr& scr
   return Screenshot(response.vmo(), width, height, display_rotation, format);
 }
 
-Screenshot TakeFileScreenshot(const fuchsia::ui::composition::ScreenshotSyncPtr& screenshotter,
-                              uint64_t width, uint64_t height, ScreenshotFormat format,
-                              int display_rotation) {
+ui_testing::Screenshot TakeScreenshot(
+    const fidl::SyncClient<fuchsia_ui_composition::Screenshot>& screenshotter, uint64_t width,
+    uint64_t height, fuchsia_ui_composition::ScreenshotFormat format, int display_rotation) {
+  fuchsia_ui_composition::ScreenshotTakeRequest request;
+  request.format() = format;
+
+  auto result = screenshotter->Take(std::move(request));
+  if (result.is_error()) {
+    FX_LOGS(ERROR) << "Failed to take screenshot: " << result.error_value().FormatDescription();
+    return Screenshot();
+  }
+  FX_CHECK(result.value().vmo().has_value());
+  zx::vmo& vmo = result.value().vmo().value();
+
+  if (format == fuchsia_ui_composition::ScreenshotFormat::kPng) {
+    return Screenshot(vmo);
+  }
+  return Screenshot(vmo, width, height, display_rotation, fidl::NaturalToHLCPP(format));
+}
+
+ui_testing::Screenshot TakeFileScreenshot(
+    const fuchsia::ui::composition::ScreenshotSyncPtr& screenshotter, uint64_t width,
+    uint64_t height, ScreenshotFormat format, int display_rotation) {
   fuchsia::ui::composition::ScreenshotTakeFileRequest request;
   request.set_format(format);
   fuchsia::ui::composition::ScreenshotTakeFileResponse response;

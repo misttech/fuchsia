@@ -5,6 +5,7 @@
 #ifndef SRC_UI_TESTING_UTIL_SCREENSHOT_HELPER_H_
 #define SRC_UI_TESTING_UTIL_SCREENSHOT_HELPER_H_
 
+#include <fuchsia/ui/composition/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/vmo.h>
 #include <zircon/status.h>
@@ -12,7 +13,6 @@
 #include <map>
 #include <vector>
 
-#include "fuchsia/ui/composition/cpp/fidl.h"
 #include "src/ui/scenic/lib/utils/pixel.h"
 
 namespace ui_testing {

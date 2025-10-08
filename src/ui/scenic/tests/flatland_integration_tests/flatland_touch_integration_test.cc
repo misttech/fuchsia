@@ -73,6 +73,8 @@ std::array<float, 2> TransformPointerCoords(std::array<float, 2> pointer, const 
 
 }  // namespace
 
+// TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
+// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
 class FlatlandTouchIntegrationTest : public ScenicCtfHlcppTest {
  protected:
   static constexpr uint32_t kDeviceId = 1111;

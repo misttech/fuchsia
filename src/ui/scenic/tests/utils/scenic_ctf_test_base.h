@@ -5,6 +5,8 @@
 #ifndef SRC_UI_SCENIC_TESTS_UTILS_SCENIC_CTF_TEST_BASE_H_
 #define SRC_UI_SCENIC_TESTS_UTILS_SCENIC_CTF_TEST_BASE_H_
 
+#include <fidl/fuchsia.testing.harness/cpp/fidl.h>
+#include <fidl/fuchsia.ui.test.context/cpp/fidl.h>
 #include <fuchsia/testing/harness/cpp/fidl.h>
 #include <fuchsia/ui/test/context/cpp/fidl.h>
 #include <lib/fidl/cpp/interface_handle.h>
@@ -23,6 +25,100 @@
 
 namespace integration_tests {
 
+/// ScenicCtfTest use realm_proxy to connect scenic test realm.
+/// The scenic test realm consists of three components:
+///   * Scenic
+///   * Fake Cobalt
+///   * Fake Display Provider
+///
+/// topology as follows:
+///       test_manager
+///            |
+///     <test component>
+///            |                  <- Test realm
+/// ----------------------------  <- realm_proxy
+///     /      |     \            <- Scenic realm
+///  Scenic  Cobalt  Hdcp
+class ScenicCtfTest : public zxtest::Test, public ui_testing::LoggingEventLoop {
+ public:
+  ScenicCtfTest() = default;
+  ~ScenicCtfTest() override = default;
+
+  /// SetUp connect test realm so test can use realm_proxy_ to access.
+  void SetUp() override;
+
+  const std::shared_ptr<sys::ServiceDirectory>& LocalServiceDirectory() const;
+
+  /// Override DisplayRotation() to provide fuchsia.scenic.DisplayRotation to test realm. By
+  /// default, it returns 0.
+  virtual uint64_t DisplayRotation() const;
+
+  /// Override Renderer() to provide fuchsia.scenic.Renderer to test realm. By default, it returns
+  /// "vulkan".
+  virtual fuchsia_ui_test_context::RendererType Renderer() const;
+
+  /// Overrides DisplayDimensions() to provide `active_width_px` and `active_height_px` to
+  /// fake-display-stack-host in the test realm. If {0, 0}, the default value will be used.
+  /// By default, it returns {0, 0};
+  ///
+  /// `width` and `height` must be both non-zero or both zero.
+  virtual fuchsia_math::SizeU DisplayDimensions() const;
+
+  /// Overrides DisplayRefreshRateMillihertz() to provide `refresh_rate_millihertz` to
+  /// fake-display-stack-host. If zero, the default value will be used. By default it returns zero.
+  virtual uint32_t DisplayRefreshRateMillihertz() const;
+
+  /// Overrides DisplayMaxLayerCount() to provide `max_layer_count` to
+  /// fake-display-stack-host. If zero, the default value will be used. By default it returns zero.
+  virtual uint32_t DisplayMaxLayerCount() const;
+
+  /// Override DisplayComposition() to provide fuchsia.scenic.DisplayComposition to test realm. True
+  /// by default.
+  virtual bool DisplayComposition() const;
+
+  /// Connect to the FIDL protocol which served from the realm proxy use default served path if no
+  /// name passed in.
+  template <typename Protocol>
+  fidl::SyncClient<Protocol> ConnectSyncIntoRealm(
+      const std::string& service_path = Protocol::kDiscoverableName) {
+    return fidl::SyncClient<Protocol>(ConnectIntoRealm<Protocol>(service_path));
+  }
+
+  /// Connect to the FIDL protocol which served from the realm proxy use default served path if no
+  /// name passed in.
+  template <typename Protocol>
+  fidl::Client<Protocol> ConnectAsyncIntoRealm(
+      const std::string& service_path = Protocol::kDiscoverableName) {
+    return fidl::Client<Protocol>(ConnectIntoRealm<Protocol>(service_path));
+  }
+
+  /// Connect to the FIDL protocol which served from the realm proxy use default served path if no
+  /// name passed in.
+  template <typename Protocol>
+  fidl::ClientEnd<Protocol> ConnectIntoRealm(
+      const std::string& service_path = Protocol::kDiscoverableName) {
+    auto [client_end, server_end] = fidl::CreateEndpoints<Protocol>().value();
+
+    auto result = realm_proxy_->ConnectToNamedProtocol(
+        fuchsia_testing_harness::RealmProxyConnectToNamedProtocolRequest(service_path,
+                                                                         server_end.TakeChannel()));
+    if (result.is_error()) {
+      std::cerr << "ConnectToNamedProtocol(" << service_path << ", " << Protocol::kDiscoverableName
+                << ") failed." << std::endl;
+      std::abort();
+    }
+    return std::move(client_end);
+  }
+
+ private:
+  fidl::SyncClient<fuchsia_ui_test_context::ScenicRealmFactory> realm_factory_;
+  fidl::SyncClient<fuchsia_testing_harness::RealmProxy> realm_proxy_;
+  std::unique_ptr<sys::ComponentContext> context_;
+};
+
+// TODO(https://fxbug.dev/447603809): DO NOT USE THIS TEST BASE CLASS.
+// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
+//
 /// ScenicCtfHlcppTest use realm_proxy to connect scenic test realm.
 /// The scenic test realm consists of three components:
 ///   * Scenic
@@ -37,6 +133,9 @@ namespace integration_tests {
 /// ----------------------------  <- realm_proxy
 ///     /      |     \            <- Scenic realm
 ///  Scenic  Cobalt  Hdcp
+//
+// TODO(https://fxbug.dev/447603809): DO NOT USE THIS TEST BASE CLASS.
+// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
 class ScenicCtfHlcppTest : public zxtest::Test, public ui_testing::LoggingEventLoop {
  public:
   ScenicCtfHlcppTest() = default;

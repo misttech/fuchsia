@@ -30,6 +30,8 @@ using fuchsia::ui::composition::FlatlandPtr;
 using fuchsia::ui::composition::ParentViewportWatcher;
 using fuchsia::ui::composition::TransformId;
 
+// TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
+// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
 class CpuRendererIntegrationTest : public ScenicCtfHlcppTest {
  public:
   void SetUp() override {

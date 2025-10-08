@@ -13,6 +13,8 @@ namespace integration_tests {
 
 using fuci_DisplayOwnership = fuchsia::ui::composition::internal::DisplayOwnership;
 
+// TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
+// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
 class DisplayOwnershipIntegrationTest : public ScenicCtfHlcppTest {
  protected:
   DisplayOwnershipIntegrationTest() = default;

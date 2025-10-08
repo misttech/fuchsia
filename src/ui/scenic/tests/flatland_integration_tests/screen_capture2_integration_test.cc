@@ -38,6 +38,8 @@ using fuchsia::ui::composition::internal::ScreenCapture;
 using fuchsia::ui::composition::internal::ScreenCaptureConfig;
 using fuchsia::ui::composition::internal::ScreenCaptureError;
 
+// TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
+// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
 class ScreenCapture2IntegrationTest : public ScenicCtfHlcppTest {
  public:
   void SetUp() override {

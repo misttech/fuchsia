@@ -55,6 +55,8 @@ const fuchsia::ui::composition::TransformId kRootTransform{.value = 1};
 
 }  // namespace
 
+// TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
+// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
 class FlatlandFocusIntegrationTest : public ScenicCtfHlcppTest, public FocusChainListener {
  protected:
   FlatlandFocusIntegrationTest() : focus_chain_listener_(this) {}

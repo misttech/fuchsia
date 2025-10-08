@@ -39,6 +39,8 @@ using fuchsia::ui::composition::TransformId;
 using fuchsia::ui::composition::ViewportProperties;
 using fuchsia::ui::views::ViewRef;
 
+// TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
+// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
 class ScreenCaptureIntegrationTest : public ScenicCtfHlcppTest {
  public:
   void SetUp() override {

@@ -29,6 +29,8 @@ struct DisplayConfig {
   uint32_t refresh_rate_millihertz;
 };
 
+// TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
+// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
 class SingletonDisplayIntegrationTest : public ScenicCtfHlcppTest,
                                         public zxtest::WithParamInterface<DisplayConfig> {
  public:

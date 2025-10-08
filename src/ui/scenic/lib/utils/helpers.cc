@@ -131,7 +131,35 @@ SysmemTokensHlcpp CreateSysmemTokensHlcpp(fuchsia::sysmem2::Allocator_Sync* sysm
   FX_DCHECK(status == ZX_OK);
   FX_DCHECK(sync_result.is_response());
 
-  return {std::move(local_token), std::move(dup_token)};
+  return {.local_token = std::move(local_token), .dup_token = std::move(dup_token)};
+}
+
+SysmemTokens CreateSysmemTokens(fidl::SyncClient<fuchsia_sysmem2::Allocator>& sysmem_allocator) {
+  auto [local_token_client_end, local_token_server_end] =
+      fidl::CreateEndpoints<fuchsia_sysmem2::BufferCollectionToken>().value();
+  auto [dup_token_client_end, dup_token_server_end] =
+      fidl::CreateEndpoints<fuchsia_sysmem2::BufferCollectionToken>().value();
+
+  // Hook up the client ends.
+  fidl::SyncClient<fuchsia_sysmem2::BufferCollectionToken> local_token(
+      std::move(local_token_client_end));
+  fidl::SyncClient<fuchsia_sysmem2::BufferCollectionToken> dup_token(
+      std::move(dup_token_client_end));
+
+  // Hook up one server end to a newly allocated collection.
+  auto result = sysmem_allocator->AllocateSharedCollection(
+      {{.token_request = std::move(local_token_server_end)}});
+  FX_DCHECK(result.is_ok()) << result.error_value().FormatDescription();
+
+  // Hook up the other server end to a duplicate of the collection that was just allocated.
+  result = local_token->Duplicate({{.rights_attenuation_mask = ZX_RIGHT_SAME_RIGHTS,
+                                    .token_request = std::move(dup_token_server_end)}});
+  FX_DCHECK(result.is_ok()) << result.error_value().FormatDescription();
+
+  result = local_token->Sync();
+  FX_DCHECK(result.is_ok()) << result.error_value().FormatDescription();
+
+  return {.local_token = std::move(local_token), .dup_token = std::move(dup_token)};
 }
 
 fuchsia::sysmem2::BufferCollectionConstraints CreateDefaultConstraints(

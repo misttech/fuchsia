@@ -144,6 +144,8 @@ std::vector<fuog_ViewTreeSnapshot>::const_iterator GetFirstSnapshotWithView(
 
 // Test fixture that sets up an environment with Registry protocol we can connect to. This test
 // fixture is used for tests where the view nodes are created by Flatland instances.
+// TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
+// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
 class FlatlandObserverRegistryIntegrationTest : public ScenicCtfHlcppTest,
                                                 public fuf_FocusChainListener {
  protected:

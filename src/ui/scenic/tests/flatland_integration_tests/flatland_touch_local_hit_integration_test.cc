@@ -60,6 +60,8 @@ using TouchSourcePtr = fuchsia::ui::pointer::TouchSourcePtr;
 
 using ViewRef = fuchsia::ui::views::ViewRef;
 
+// TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
+// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
 class FlatlandTouchLocalHitIntegrationTest : public ScenicCtfHlcppTest {
  protected:
   static constexpr uint32_t kDeviceId = 1111;

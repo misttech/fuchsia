@@ -33,6 +33,8 @@ constexpr fuc::TransformId kTransformId = {1};
 constexpr fuc::ContentId kContentId = {1};
 
 // Test fixture that sets up an environment with a Scenic we can connect to.
+// TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
+// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
 class FlatlandViewIntegrationTest : public ScenicCtfHlcppTest {
  protected:
   void SetUp() override {

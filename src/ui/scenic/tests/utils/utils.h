@@ -5,6 +5,7 @@
 #ifndef SRC_UI_SCENIC_TESTS_UTILS_UTILS_H_
 #define SRC_UI_SCENIC_TESTS_UTILS_UTILS_H_
 
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
 #include <fuchsia/ui/input/cpp/fidl.h>
 
@@ -46,6 +47,13 @@ ui_testing::Screenshot TakeScreenshot(
     uint64_t height,
     fuchsia::ui::composition::ScreenshotFormat format =
         fuchsia::ui::composition::ScreenshotFormat::BGRA_RAW,
+    int display_rotation = 0);
+
+ui_testing::Screenshot TakeScreenshot(
+    const fidl::SyncClient<fuchsia_ui_composition::Screenshot>& screenshotter, uint64_t width,
+    uint64_t height,
+    fuchsia_ui_composition::ScreenshotFormat format =
+        fuchsia_ui_composition::ScreenshotFormat::kBgraRaw,
     int display_rotation = 0);
 
 ui_testing::Screenshot TakeFileScreenshot(

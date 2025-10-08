@@ -5,6 +5,7 @@
 #ifndef SRC_UI_SCENIC_LIB_UTILS_HELPERS_H_
 #define SRC_UI_SCENIC_LIB_UTILS_HELPERS_H_
 
+#include <fidl/fuchsia.sysmem/cpp/fidl.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fidl/fuchsia.ui.views/cpp/fidl.h>
 #include <fuchsia/sysmem/cpp/fidl.h>
@@ -19,6 +20,11 @@ namespace utils {
 using SysmemTokensHlcpp = struct {
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr local_token;
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr dup_token;
+};
+
+using SysmemTokens = struct {
+  fidl::SyncClient<fuchsia_sysmem2::BufferCollectionToken> local_token;
+  fidl::SyncClient<fuchsia_sysmem2::BufferCollectionToken> dup_token;
 };
 
 constexpr std::array<float, 2> kDefaultPixelScale = {1.f, 1.f};
@@ -54,6 +60,7 @@ fuchsia::sysmem2::AllocatorSyncPtr CreateSysmemAllocatorSyncPtr(
 
 // Create local and dup tokens for sysmem.
 SysmemTokensHlcpp CreateSysmemTokensHlcpp(fuchsia::sysmem2::Allocator_Sync* sysmem_allocator);
+SysmemTokens CreateSysmemTokens(fidl::SyncClient<fuchsia_sysmem2::Allocator>& sysmem_allocator);
 
 // Creates default constraints for |buffer_collection|
 fuchsia::sysmem2::BufferCollectionConstraints CreateDefaultConstraints(

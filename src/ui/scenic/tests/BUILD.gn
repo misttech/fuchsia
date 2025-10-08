@@ -93,13 +93,16 @@ source_set("common-deps-zxtest") {
   sources = [
     "utils/blocking_present.cc",
     "utils/blocking_present.h",
+    "utils/flatland_client_with_event_handler.h",
     "utils/scenic_ctf_test_base.cc",
     "utils/scenic_ctf_test_base.h",
     "utils/utils.cc",
     "utils/utils.h",
   ]
   public_deps = [
+    "//sdk/fidl/fuchsia.testing.harness:fuchsia.testing.harness_cpp",
     "//sdk/fidl/fuchsia.testing.harness:fuchsia.testing.harness_hlcpp",
+    "//sdk/fidl/fuchsia.ui.test.context:fuchsia.ui.test.context_cpp",
     "//sdk/fidl/fuchsia.ui.test.context:fuchsia.ui.test.context_hlcpp",
     "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
@@ -108,6 +111,10 @@ source_set("common-deps-zxtest") {
     "//src/ui/testing/util:loop_fixture",
     "//src/ui/testing/util:screenshot_helper",
     "//zircon/system/ulib/zxtest",
+  ]
+  deps = [
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp_hlcpp_conversion",
+    "//sdk/lib/fidl/cpp:hlcpp_conversion",
   ]
 }
 
