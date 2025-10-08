@@ -7,7 +7,7 @@ use fidl_fuchsia_update_installer_ext::{Initiator as ExtInitiator, Options};
 use std::time::{Instant, SystemTime};
 
 /// Configuration for an update attempt.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct Config {
     pub(super) initiator: Initiator,
     pub update_url: url::Url,
@@ -34,6 +34,20 @@ impl Config {
             allow_attach_to_existing_attempt: options.allow_attach_to_existing_attempt,
             signature,
         }
+    }
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field("initiator", &self.initiator)
+            .field("update_url", &self.update_url.to_string())
+            .field("should_write_recovery", &self.should_write_recovery)
+            .field("start_time", &chrono::DateTime::<chrono::Utc>::from(self.start_time))
+            .field("start_time_mono", &self.start_time_mono)
+            .field("allow_attach_to_existing_attempt", &self.allow_attach_to_existing_attempt)
+            .field("signature", &self.signature.as_ref().map(hex::encode))
+            .finish()
     }
 }
 
