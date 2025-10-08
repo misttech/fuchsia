@@ -15,6 +15,7 @@
 #include <zircon/status.h>
 
 #include "src/graphics/display/drivers/coordinator/fidl-conversion.h"
+#include "src/graphics/display/lib/api-types/cpp/power-mode.h"
 
 namespace display_coordinator {
 
@@ -214,17 +215,33 @@ zx::result<> EngineDriverClientFidl::StartCapture(
 
 zx::result<> EngineDriverClientFidl::SetDisplayPower(display::DisplayId display_id, bool power_on) {
   fdf::Arena arena(kArenaTag);
-  fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::SetDisplayPower>
-      fidl_transport_result =
-          fidl_engine_.buffer(arena)->SetDisplayPower(display_id.ToFidl(), power_on);
-  ZX_ASSERT_MSG(fidl_transport_result.ok(), "FIDL error calling SetDisplayPower: %s",
-                fidl_transport_result.FormatDescription().c_str());
+  display::PowerMode power_mode = power_on ? display::PowerMode::kOn : display::PowerMode::kOff;
+  fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::SetDisplayPowerMode>
+      set_display_power_mode_result =
+          fidl_engine_.buffer(arena)->SetDisplayPowerMode(display_id.ToFidl(), power_mode.ToFidl());
+  ZX_ASSERT_MSG(set_display_power_mode_result.ok(), "FIDL error calling SetDisplayPowerMode: %s",
+                set_display_power_mode_result.FormatDescription().c_str());
 
-  fit::result<zx_status_t>& fidl_domain_result = fidl_transport_result.value();
-  if (fidl_domain_result.is_error()) {
-    return zx::error(fidl_domain_result.error_value());
+  fit::result<zx_status_t>& fidl_domain_result = set_display_power_mode_result.value();
+  if (fidl_domain_result.is_ok()) {
+    return zx::ok();
   }
-  return zx::ok();
+  if (fidl_domain_result.error_value() == ZX_ERR_NOT_SUPPORTED) {
+    // Fallback to SetDisplayPower if SetDisplayPowerMode is not supported.
+    FDF_LOG(INFO, "SetDisplayPowerMode not supported, falling back to SetDisplayPower");
+    fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::SetDisplayPower>
+        fidl_transport_result =
+            fidl_engine_.buffer(arena)->SetDisplayPower(display_id.ToFidl(), power_on);
+    ZX_ASSERT_MSG(fidl_transport_result.ok(), "FIDL error calling SetDisplayPower: %s",
+                  fidl_transport_result.FormatDescription().c_str());
+
+    fit::result<zx_status_t>& fallback_fidl_domain_result = fidl_transport_result.value();
+    if (fallback_fidl_domain_result.is_error()) {
+      return zx::error(fallback_fidl_domain_result.error_value());
+    }
+    return zx::ok();
+  }
+  return zx::error(fidl_domain_result.error_value());
 }
 
 zx::result<> EngineDriverClientFidl::SetMinimumRgb(uint8_t minimum_rgb) {
