@@ -645,7 +645,7 @@ class AsyncMain:
         # can fail early before running a full build.
         package_server_task: asyncio.Task[typing.Any] | None = None
         package_server_event: asyncio.Event | None = None
-        if not (flags.list_runtime_deps or flags.list):
+        if not flags.list_runtime_deps:
             package_server_behavior = (
                 await self._check_if_package_server_needed(selections, exec_env)
             )

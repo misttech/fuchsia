@@ -619,7 +619,6 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
 
     @parameterized.expand(
         [
-            # TODO(https://fxbug.dev/435051200): Change the default to start a package server here.
             ("default package server behavior", [], True, True),
             (
                 "override no temporary package server",
@@ -1121,14 +1120,25 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             command_mock.call_args_list,
         )
 
-    async def test_list_command(self) -> None:
+    @parameterized.expand(
+        [
+            ("existing package server running", True),
+            ("no existing package server running", False),
+        ]
+    )
+    async def test_list_command(
+        self, _unused_name: str, existing_package_server: bool
+    ) -> None:
         """Test that we can list test cases using --list"""
 
-        command_mock = self._mock_run_commands_in_parallel(
+        command_mock = self._mock_run_command(0)
+        command_parallel_mock = self._mock_run_commands_in_parallel(
             "foo::test\nbar::test",
         )
 
-        self._mock_has_package_server_connected_to_device(True)
+        self._mock_has_package_server_connected_to_device(
+            existing_package_server
+        )
         self._mock_has_tests_in_base([])
 
         recorder = event.EventRecorder()
@@ -1139,7 +1149,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             recorder=recorder,
         )
         self.assertEqual(ret, 0)
-        self.assertEqual(command_mock.call_count, 1)
+        self.assertEqual(command_parallel_mock.call_count, 1)
 
         events = [
             e.payload.enumerate_test_cases
@@ -1156,6 +1166,20 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                 "bar::test",
             ],
         )
+
+        call_prefixes = self._make_call_args_prefix_set(
+            command_mock.call_args_list
+        )
+
+        if existing_package_server:
+            self.assertNotIn(
+                ("fx", "--dir", self.out_dir, "serve"), call_prefixes
+            )
+        else:
+            self.assertIsSubset(
+                {("fx", "--dir", self.out_dir, "serve")},
+                call_prefixes,
+            )
 
     async def test_list_failing_command(self) -> None:
         """Test that failing to list test cases using --list results in a nonzero exit code"""
