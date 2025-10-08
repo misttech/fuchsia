@@ -50,20 +50,6 @@
 		};
 	};
 
-	audio_power_elements: audio-power-elements {
-		audio-hw-element {
-			power-levels {
-				off-level {
-					level = <0>;
-				};
-				on-level {
-					level = <1>;
-					level-dependencies = <&sag_execution_active 2>;
-				};
-			};
-		};
-	};
-
 	sd_emmc_c_power_elements: sd-emmc-c-power-elements {
 		aml-sdmmc-hardware-element {
 			power-levels {
@@ -124,10 +110,6 @@
 			};
 		};
 	};
-};
-
-&audio {
-	power-elements = <&audio_power_elements>;
 };
 
 &sd_emmc_c {
