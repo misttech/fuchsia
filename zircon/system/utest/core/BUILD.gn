@@ -151,7 +151,7 @@ foreach(test_name, all_bootfs_tests) {
     deps = [ test_name ]
 
     if (is_fuchsia) {
-      deps += [ ":needs-next-hosted" ]
+      deps += [ ":standalone-hosted" ]
 
       fdio_config = [ "//build/config/fuchsia:fdio_config" ]
       if (configs + fdio_config - fdio_config != configs) {
@@ -290,12 +290,20 @@ if (is_fuchsia) {
     public_deps = [ "//zircon/system/ulib/zxtest" ]
   }
 
-  static_library("needs-next-hosted") {
+  static_library("standalone-hosted") {
     testonly = true
     visibility = [ ":*" ]
 
-    sources = [ "needs-next-hosted.cc" ]
-    deps = [ ":needs-next" ]
+    sources = [
+      "get-vmos-hosted.cc",
+      "needs-next-hosted.cc",
+    ]
+    deps = [
+      ":needs-next",
+      "//sdk/lib/fdio",
+      "//src/zircon/testing/standalone-test:headers",
+      "//zircon/system/ulib/fbl",
+    ]
   }
 }
 

@@ -9,6 +9,7 @@
 
 #include <assert.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <zircon/compiler.h>
 #include <zircon/features.h>
 
@@ -128,5 +129,7 @@ bool arm64_feature_current_is_first_in_cluster();
 
 void arm64_get_cache_info(arm64_cache_info* info);
 void arm64_dump_cache_info(cpu_num_t cpu);
+
+void arm64_print_midr_cpu_name(FILE*);
 
 #endif  // ZIRCON_KERNEL_ARCH_ARM64_INCLUDE_ARCH_ARM64_FEATURE_H_

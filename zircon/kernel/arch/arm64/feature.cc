@@ -685,3 +685,10 @@ void arm64_feature_debug(bool full) {
     }
   }
 }
+
+void arm64_print_midr_cpu_name(FILE* stream) {
+  uint64_t midr = __arm_rsr64("midr_el1");
+  char cpu_name[128];
+  midr_to_core_string(midr, cpu_name, sizeof(cpu_name));
+  stream->Write(cpu_name);
+}

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/fit/function.h>
+#include <lib/standalone-test/standalone.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/event.h>
 #include <lib/zx/job.h>
@@ -27,6 +28,7 @@
 
 #include <mini-process/mini-process.h>
 #include <zxtest/zxtest.h>
+
 namespace {
 
 #ifdef __aarch64__
@@ -38,6 +40,36 @@ constexpr auto kThreadRegister = &zx_thread_state_general_regs_t::fs_base;
 #endif
 
 const zx_duration_mono_t kTimeoutNs = ZX_MSEC(250);
+
+// TODO(https://fxbug.dev/363254896): The Cavium hardware is believed to be
+// buggy in occasional cross-socket multi-core races such that tests dependent
+// on hardware clock reads can fail.
+
+#ifdef __aarch64__
+constexpr std::string_view kCaviumMidr = "Cavium CN99XX r1p2";
+#else
+constexpr std::string_view kCaviumMidr{};
+#endif
+
+std::string ReadMidrTxt() {
+  std::string midr;
+  zx::unowned_vmo midr_vmo = standalone::GetVmo("midr.txt");
+  if (*midr_vmo) {
+    uint64_t size = 0;
+    EXPECT_OK(midr_vmo->get_prop_content_size(&size));
+    midr.resize(size);
+    EXPECT_OK(midr_vmo->read(midr.data(), 0, midr.size()));
+    EXPECT_STRNE(midr, "");
+  }
+  return midr;
+}
+
+bool CheckIsCavium() { return !kCaviumMidr.empty() && ReadMidrTxt() == kCaviumMidr; }
+
+bool SkipBug363254896() {
+  static bool is_cavium = CheckIsCavium();
+  return is_cavium;
+}
 
 TEST(ProcessTest, LongNameSucceeds) {
   // Creating a process with a super long name should succeed.
@@ -697,6 +729,10 @@ TEST(ProcessTest, SuspendWithDyingThread) {
 
 template <typename InfoT>
 static void TestProcessGetInfoRuntime(const uint32_t topic) {
+  if (SkipBug363254896()) {
+    ZXTEST_SKIP("https://fxbug.dev/363254896 skipped on buggy hardware");
+  }
+
   TestProcess test_process;
   ASSERT_NO_FAILURES(test_process.CreateProcess());
   ASSERT_NO_FAILURES(test_process.CreateThread());

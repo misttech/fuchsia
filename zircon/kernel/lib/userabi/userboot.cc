@@ -18,6 +18,7 @@
 #include <platform.h>
 #include <stdio.h>
 #include <trace.h>
+#include <zircon/assert.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
@@ -39,6 +40,10 @@
 
 #if ENABLE_ENTROPY_COLLECTOR_TEST
 #include <lib/crypto/entropy/quality_test.h>
+#endif
+
+#ifdef __aarch64__
+#include <arch/arm64/feature.h>
 #endif
 
 #include "elf.h"
@@ -370,6 +375,20 @@ void bootstrap_vmos(HandoffEnd handoff_end, ktl::span<Handle*, userboot::kHandle
                                   nullptr, &handles[userboot::kCounters]));
 
   out_userboot.emplace(ktl::move(handoff_end.userboot), ktl::move(handoff_end.vdso));
+
+  {
+    constexpr ktl::string_view kMidrTxt = "midr.txt";
+    VmoBuffer midr_txt;
+    FILE midr_txt_file{&midr_txt};
+#if defined(__aarch64__) && ZX_DEBUG_ASSERT_IMPLEMENTED
+    arm64_print_midr_cpu_name(&midr_txt_file);
+#endif
+    if (midr_txt.content_size() > 0) {
+      midr_txt.vmo()->set_name(kMidrTxt.data(), kMidrTxt.size());
+    }
+    RETURN_IF_NOT_OK(get_vmo_handle(midr_txt.vmo(), false, midr_txt.content_size(), nullptr,
+                                    &handles[userboot::kMidrTxt]));
+  }
 }
 
 class BootstrapChannel {

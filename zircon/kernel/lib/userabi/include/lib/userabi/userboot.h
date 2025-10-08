@@ -59,6 +59,8 @@ enum HandleIndex : uint32_t {
   kCounterNames,
   kCounters,
 
+  kMidrTxt,
+
   kTimeValues,
 #if ENABLE_ENTROPY_COLLECTOR_TEST
   kEntropyTestData,
