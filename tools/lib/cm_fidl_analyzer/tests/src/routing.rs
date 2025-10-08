@@ -18,7 +18,7 @@ use cm_fidl_analyzer::environment::{BOOT_RESOLVER_NAME, BOOT_SCHEME};
 use cm_fidl_analyzer::route::{TargetDecl, VerifyRouteResult};
 use cm_rust::*;
 use cm_rust_testing::*;
-use cm_types::Url;
+use cm_types::{IterablePath, Url};
 use fidl::prelude::*;
 use moniker::Moniker;
 use router_error::Explain;
@@ -399,7 +399,9 @@ impl RoutingTestForAnalyzer {
             | CheckUse::Service { path, expected_res, .. } => (
                 decl.exposes
                     .iter()
-                    .find(|e| **e.target_name() == *path.basename())
+                    .find(|e| {
+                        **e.target_name() == *path.iter_segments().next().expect("path can't be /")
+                    })
                     .cloned()
                     .ok_or(TestModelError::ExposeDeclNotFound),
                 expected_res,

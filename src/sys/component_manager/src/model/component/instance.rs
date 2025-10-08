@@ -844,7 +844,7 @@ impl ResolvedInstanceState {
             let first_expose = exposes.first().expect("invalid empty expose list");
             let request = match first_expose {
                 cm_rust::ExposeDecl::Service(_) => {
-                    Some(RouteRequest::from_expose_decls(&component.moniker, exposes).unwrap())
+                    Some(RouteRequest::from_expose_decls(exposes).unwrap())
                 }
                 // These types use bedrock routing.
                 cm_rust::ExposeDecl::Protocol(_)

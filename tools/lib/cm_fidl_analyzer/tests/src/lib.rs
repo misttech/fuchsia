@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-pub mod availability;
-pub mod rights;
-pub mod routing;
-pub mod storage;
-pub mod storage_admin;
+mod availability;
+mod dictionary;
+mod rights;
+mod routing;
+mod storage;
+mod storage_admin;

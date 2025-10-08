@@ -43,6 +43,7 @@ rustc_test("tests") {
   ]
   sources = [
     "src/availability.rs",
+    "src/dictionary.rs",
     "src/lib.rs",
     "src/rights.rs",
     "src/routing.rs",

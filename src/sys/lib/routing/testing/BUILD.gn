@@ -45,6 +45,7 @@ rustc_library("routing_test_helpers") {
   sources = [
     "src/availability.rs",
     "src/component_id_index.rs",
+    "src/dictionary.rs",
     "src/lib.rs",
     "src/policy.rs",
     "src/rights.rs",

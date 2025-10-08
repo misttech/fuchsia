@@ -37,6 +37,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 use thiserror::Error;
+use zx_status::Status;
 use {fidl_fuchsia_sys2 as fsys, zx_status};
 
 /// Errors that may occur when building a `ComponentModelForAnalyzer` from
@@ -822,10 +823,10 @@ impl ComponentModelForAnalyzer {
                     panic!("unexpected capability in namespace: {other_capability:?}")
                 }
             };
-            current_capability = dictionary
-                .get(item)
-                .expect("missing path in namespace")
-                .expect("missing path in namesapce");
+
+            current_capability = dictionary.get(item).expect("lookup failed").ok_or_else(|| {
+                RouterError::NotFound(Arc::new(AnalyzerNotFound::Namespace { item: item.into() }))
+            })?;
         }
         let data = match current_capability {
             Capability::ConnectorRouter(router) => {
@@ -1255,6 +1256,9 @@ impl ComponentModelForAnalyzer {
             ExposeDecl::Service(expose_service_decl) => Some(RouteRequest::ExposeService(
                 RouteBundle::from_expose(expose_service_decl.clone()),
             )),
+            ExposeDecl::Dictionary(expose_dictionary_decl) => {
+                Some(RouteRequest::ExposeDictionary(expose_dictionary_decl.clone()))
+            }
             _ => None,
         }
     }
@@ -1428,6 +1432,20 @@ impl ComponentModelForAnalyzer {
             configs.insert(instance.url().to_string(), fields.clone());
         }
         Ok(configs)
+    }
+}
+
+#[derive(Debug, Error, Clone)]
+enum AnalyzerNotFound {
+    #[error("{item} not found in component's namespace")]
+    Namespace { item: Name },
+}
+
+impl Explain for AnalyzerNotFound {
+    fn as_zx_status(&self) -> Status {
+        match self {
+            Self::Namespace { .. } => Status::NOT_FOUND,
+        }
     }
 }
 

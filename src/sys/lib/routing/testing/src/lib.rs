@@ -4,6 +4,7 @@
 
 pub mod availability;
 pub mod component_id_index;
+pub mod dictionary;
 pub mod policy;
 pub mod rights;
 pub mod storage;

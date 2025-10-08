@@ -170,7 +170,7 @@ impl RouteValidatorCapabilityProvider {
                     name: target_name.to_string(),
                     decl_type: fsys::DeclType::Expose,
                 };
-                let request = RouteRequest::from_expose_decls(resolved.moniker(), e).unwrap();
+                let request = RouteRequest::from_expose_decls(e).unwrap();
                 (target, request)
             }));
             Ok(requests)
@@ -243,8 +243,7 @@ impl RouteValidatorCapabilityProvider {
                                     name: target_name.to_string(),
                                     decl_type: target.decl_type,
                                 };
-                                let request =
-                                    RouteRequest::from_expose_decls(resolved.moniker(), e).unwrap();
+                                let request = RouteRequest::from_expose_decls(e).unwrap();
                                 Some(Ok((target, request)))
                             })
                             .collect();
@@ -479,13 +478,10 @@ impl RouteRequest {
         })
     }
 
-    pub fn from_expose_decls(
-        moniker: &Moniker,
-        exposes: Vec<&ExposeDecl>,
-    ) -> Result<Self, RoutingError> {
+    pub fn from_expose_decls(exposes: Vec<&ExposeDecl>) -> Result<Self, RoutingError> {
         match BedrockRouteRequest::try_from(&exposes) {
             Ok(r) => Ok(Self::Bedrock(r)),
-            Err(()) => Ok(Self::Legacy(LegacyRouteRequest::from_expose_decls(moniker, exposes)?)),
+            Err(()) => Ok(Self::Legacy(LegacyRouteRequest::from_expose_decls(exposes)?)),
         }
     }
 }
@@ -592,7 +588,7 @@ async fn validate_exposes(
     for ((target_name, _target), e) in exposes {
         let capability = Some(target_name.to_string());
         let decl_type = Some(fsys::DeclType::Expose);
-        let report = match RouteRequest::from_expose_decls(&instance.moniker, e) {
+        let report = match RouteRequest::from_expose_decls(e) {
             Ok(route_request) => {
                 let (availability, res) = route_request.route(instance).await;
                 match res {

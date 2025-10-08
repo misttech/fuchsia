@@ -39,14 +39,14 @@ use crate::rights::RightsWalker;
 use crate::walk_state::WalkState;
 use cm_rust::{
     Availability, CapabilityTypeName, ExposeConfigurationDecl, ExposeDecl, ExposeDeclCommon,
-    ExposeDirectoryDecl, ExposeProtocolDecl, ExposeResolverDecl, ExposeRunnerDecl,
-    ExposeServiceDecl, ExposeSource, ExposeTarget, OfferConfigurationDecl, OfferDeclCommon,
-    OfferDictionaryDecl, OfferDirectoryDecl, OfferEventStreamDecl, OfferProtocolDecl,
-    OfferResolverDecl, OfferRunnerDecl, OfferServiceDecl, OfferSource, OfferStorageDecl,
-    OfferTarget, RegistrationDeclCommon, RegistrationSource, ResolverRegistration,
-    RunnerRegistration, SourceName, StorageDecl, StorageDirectorySource, UseConfigurationDecl,
-    UseDecl, UseDeclCommon, UseDictionaryDecl, UseDirectoryDecl, UseEventStreamDecl,
-    UseProtocolDecl, UseRunnerDecl, UseServiceDecl, UseSource, UseStorageDecl,
+    ExposeDictionaryDecl, ExposeDirectoryDecl, ExposeProtocolDecl, ExposeResolverDecl,
+    ExposeRunnerDecl, ExposeServiceDecl, ExposeSource, ExposeTarget, OfferConfigurationDecl,
+    OfferDeclCommon, OfferDictionaryDecl, OfferDirectoryDecl, OfferEventStreamDecl,
+    OfferProtocolDecl, OfferResolverDecl, OfferRunnerDecl, OfferServiceDecl, OfferSource,
+    OfferStorageDecl, OfferTarget, RegistrationDeclCommon, RegistrationSource,
+    ResolverRegistration, RunnerRegistration, SourceName, StorageDecl, StorageDirectorySource,
+    UseConfigurationDecl, UseDecl, UseDeclCommon, UseDictionaryDecl, UseDirectoryDecl,
+    UseEventStreamDecl, UseProtocolDecl, UseRunnerDecl, UseServiceDecl, UseSource, UseStorageDecl,
 };
 use cm_types::{IterablePath, Name, RelativePath};
 use from_enum::FromEnum;
@@ -79,6 +79,7 @@ pub enum RouteRequest {
     ExposeRunner(ExposeRunnerDecl),
     ExposeResolver(ExposeResolverDecl),
     ExposeConfig(ExposeConfigurationDecl),
+    ExposeDictionary(ExposeDictionaryDecl),
 
     // Route a capability from a realm's environment.
     Resolver(ResolverRegistration),
@@ -124,10 +125,7 @@ impl From<UseDecl> for RouteRequest {
 }
 
 impl RouteRequest {
-    pub fn from_expose_decls(
-        moniker: &Moniker,
-        exposes: Vec<&ExposeDecl>,
-    ) -> Result<Self, RoutingError> {
+    pub fn from_expose_decls(exposes: Vec<&ExposeDecl>) -> Result<Self, RoutingError> {
         let first_expose = exposes.first().expect("invalid empty expose list");
         let first_type_name = CapabilityTypeName::from(*first_expose);
         assert!(
@@ -171,12 +169,9 @@ impl RouteRequest {
                 assert!(exposes.len() == 1, "multiple exposes");
                 Ok(Self::ExposeConfig(e.clone()))
             }
-            ExposeDecl::Dictionary(_) => {
-                // Only bedrock routing supports dictionaries, the legacy RouteRequest does not.
-                Err(RoutingError::unsupported_capability_type(
-                    moniker.clone(),
-                    CapabilityTypeName::Dictionary,
-                ))
+            ExposeDecl::Dictionary(e) => {
+                assert!(exposes.len() == 1, "multiple exposes");
+                Ok(Self::ExposeDictionary(e.clone()))
             }
         }
     }
@@ -199,6 +194,7 @@ impl RouteRequest {
             ExposeRunner(decl) => Some(*decl.availability()),
             ExposeResolver(decl) => Some(*decl.availability()),
             ExposeConfig(decl) => Some(*decl.availability()),
+            ExposeDictionary(decl) => Some(*decl.availability()),
 
             OfferRunner(decl) => Some(*decl.availability()),
             OfferResolver(decl) => Some(*decl.availability()),
@@ -234,6 +230,9 @@ impl std::fmt::Display for RouteRequest {
             }
             Self::ExposeConfig(e) => {
                 write!(f, "config `{}`", e.target_name)
+            }
+            Self::ExposeDictionary(e) => {
+                write!(f, "dictionary `{}`", e.target_name)
             }
             Self::Resolver(r) => {
                 write!(f, "resolver `{}`", r.resolver)
@@ -397,6 +396,20 @@ where
                 &dictionary,
                 &expose_resolver_decl.target_name,
                 resolver_metadata(Availability::Required),
+                target,
+            )
+            .await
+        }
+        RouteRequest::ExposeDictionary(expose_dictionary_decl) => {
+            let sandbox = target.component_sandbox().await?;
+            let dictionary = match &expose_dictionary_decl.target {
+                ExposeTarget::Parent => sandbox.component_output.capabilities(),
+                ExposeTarget::Framework => sandbox.component_output.framework(),
+            };
+            route_capability_inner::<Dict, _>(
+                &dictionary,
+                &expose_dictionary_decl.target_name,
+                dictionary_metadata(expose_dictionary_decl.availability),
                 target,
             )
             .await
