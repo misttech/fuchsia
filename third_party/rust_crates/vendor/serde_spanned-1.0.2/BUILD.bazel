@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "serde_spanned",
     package_url = "https://github.com/toml-rs/toml",
-    package_version = "1.0.0",
+    package_version = "1.0.2",
 )
 
 license(
@@ -77,8 +77,8 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.0.0",
+    version = "1.0.2",
     deps = [
-        "//third_party/rust_crates/vendor/serde-1.0.228:serde",
+        "//third_party/rust_crates/vendor/serde_core-1.0.228:serde_core",
     ],
 )

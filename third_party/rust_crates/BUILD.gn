@@ -16596,33 +16596,33 @@ rustc_macro("serde_repr-v0_1_7") {
   applicable_licenses = [ ":serde_repr-v0_1_7.license" ]
 }
 
-license("serde_spanned-v1_0_0.license") {
+license("serde_spanned-v1_0_2.license") {
   public_package_name = "serde_spanned"
   license_files = [
-    "//third_party/rust_crates/vendor/serde_spanned-1.0.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/serde_spanned-1.0.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/serde_spanned-1.0.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/serde_spanned-1.0.2/LICENSE-MIT",
   ]
 }
 
-rustc_library("serde_spanned-v1_0_0") {
+rustc_library("serde_spanned-v1_0_2") {
   crate_name = "serde_spanned"
   source_root =
-      "//third_party/rust_crates/vendor/serde_spanned-1.0.0/src/lib.rs"
-  output_name = "serde_spanned-7f531e7bd8e2b116"
+      "//third_party/rust_crates/vendor/serde_spanned-1.0.2/src/lib.rs"
+  output_name = "serde_spanned-7fece5760fb5c04d"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde_core-v1_0_228" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=7f531e7bd8e2b116",
-    "-Cextra-filename=-7f531e7bd8e2b116",
+    "-Cmetadata=7fece5760fb5c04d",
+    "-Cextra-filename=-7fece5760fb5c04d",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"serde\"",
     "--cfg=feature=\"std\"",
@@ -16630,7 +16630,7 @@ rustc_library("serde_spanned-v1_0_0") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":serde_spanned-v1_0_0.license" ]
+  applicable_licenses = [ ":serde_spanned-v1_0_2.license" ]
 }
 
 license("serde_yaml-v0_9_14.license") {
@@ -18999,7 +18999,7 @@ rustc_library("toml-v0_9_5") {
   deps = []
   deps += [ ":indexmap-v2_11_0" ]
   deps += [ ":serde-v1_0_228" ]
-  deps += [ ":serde_spanned-v1_0_0" ]
+  deps += [ ":serde_spanned-v1_0_2" ]
   deps += [ ":toml_datetime-v0_7_0" ]
   deps += [ ":toml_parser-v1_0_2" ]
   deps += [ ":toml_writer-v1_0_2" ]
