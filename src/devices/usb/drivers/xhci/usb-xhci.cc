@@ -1033,7 +1033,7 @@ fpromise::promise<void, zx_status_t> UsbXhci::UsbHciResetEndpointAsync(uint32_t 
     FDF_LOG(ERROR, "%s expects that slot is in use. state should not be nullptr", __func__);
     return fpromise::make_error_promise<zx_status_t>(ZX_ERR_IO_NOT_PRESENT);
   }
-  ResetEndpoint reset_command;
+  struct ResetEndpoint reset_command;
   {
     fbl::AutoLock _(&state->transaction_lock());
     if (state->IsDisconnecting()) {

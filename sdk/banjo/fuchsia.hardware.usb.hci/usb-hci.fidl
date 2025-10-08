@@ -7,7 +7,6 @@ library fuchsia.hardware.usb.hci;
 using zx;
 using fuchsia.hardware.usb.bus;
 using fuchsia.hardware.usb.descriptor;
-using fuchsia.hardware.usb.hubdescriptor;
 using fuchsia.hardware.usb.request;
 
 /// The UsbHci protocol is implemented by a USB Host Controller driver.
@@ -49,7 +48,7 @@ closed protocol UsbHci {
     strict ConfigureHub(struct {
         device_id uint32;
         speed fuchsia.hardware.usb.descriptor.UsbSpeed;
-        desc fuchsia.hardware.usb.hubdescriptor.UsbHubDescriptor;
+        desc fuchsia.hardware.usb.descriptor.UsbHubDescriptor;
         multi_tt bool;
     }) -> (struct {
         s zx.Status;

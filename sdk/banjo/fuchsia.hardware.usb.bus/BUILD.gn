@@ -8,8 +8,8 @@ fidl("fuchsia.hardware.usb.bus") {
   sources = [ "usb-bus.fidl" ]
   public_deps = [
     "//sdk/banjo/fuchsia.hardware.usb.hub",
-    "//sdk/banjo/fuchsia.hardware.usb.hubdescriptor",
     "//sdk/banjo/fuchsia.hardware.usb.request",
+    "//sdk/fidl/fuchsia.hardware.usb.descriptor",
     "//zircon/vdso/zx",
   ]
   enable_banjo = true

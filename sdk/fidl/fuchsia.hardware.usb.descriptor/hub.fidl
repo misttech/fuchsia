@@ -1,8 +1,7 @@
 // Copyright 2021 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-@available(added=HEAD)
-library fuchsia.hardware.usb.hubdescriptor;
+library fuchsia.hardware.usb.descriptor;
 
 // Hub request types.
 const USB_RECIP_HUB uint32 = 0b0000000000100000; // USB_TYPE_CLASS | USB_RECIP_DEVICE

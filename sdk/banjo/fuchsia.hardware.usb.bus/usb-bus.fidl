@@ -6,7 +6,7 @@ library fuchsia.hardware.usb.bus;
 
 using zx;
 using fuchsia.hardware.usb.hub;
-using fuchsia.hardware.usb.hubdescriptor;
+using fuchsia.hardware.usb.descriptor;
 using fuchsia.hardware.usb.request;
 
 alias UsbSpeed = uint32;
@@ -21,7 +21,7 @@ closed protocol UsbBus {
         @in_out
         hub_device uint64;
         speed UsbSpeed;
-        desc fuchsia.hardware.usb.hubdescriptor.UsbHubDescriptor;
+        desc fuchsia.hardware.usb.descriptor.UsbHubDescriptor;
         multi_tt bool;
     }) -> (struct {
         s zx.Status;

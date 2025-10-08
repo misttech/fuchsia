@@ -4,7 +4,7 @@
 
 #include "src/devices/usb/drivers/usb-hub/usb-hub.h"
 
-#include <fuchsia/hardware/usb/hubdescriptor/c/banjo.h>
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/zx/time.h>
 #include <stdlib.h>

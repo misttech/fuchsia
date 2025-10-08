@@ -4,8 +4,8 @@
 
 #include "src/devices/usb/drivers/usb-hub/usb-hub.h"
 
+#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fuchsia/hardware/usb/hub/c/banjo.h>
-#include <fuchsia/hardware/usb/hubdescriptor/c/banjo.h>
 #include <fuchsia/hardware/usb/request/c/banjo.h>
 #include <lib/fit/defer.h>
 #include <lib/stdcompat/span.h>
