@@ -1457,7 +1457,7 @@ pub struct SpannedDocument {
 
     pub environments: Option<Vec<Spanned<Environment>>>,
 
-    pub capabilities: Option<Vec<Spanned<Capability>>>,
+    pub capabilities: Option<Vec<SpannedCapability>>,
 
     pub r#use: Option<Vec<Spanned<Use>>>,
 
@@ -2717,6 +2717,147 @@ pub struct Capability {
     ///   endpoint pipelined in a connection request becomes readable.
     ///
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivery: Option<DeliveryType>,
+}
+
+#[derive(Deserialize, Debug, PartialEq, Clone, ReferenceDoc, Default)]
+#[serde(deny_unknown_fields)]
+pub struct SpannedCapability {
+    /// The [name](#name) for this service capability. Specifying `path` is valid
+    /// only when this value is a string.
+    pub service: Option<OneOrMany<Name>>,
+
+    /// The [name](#name) for this protocol capability. Specifying `path` is valid
+    /// only when this value is a string.
+    pub protocol: Option<OneOrMany<Name>>,
+
+    /// The [name](#name) for this directory capability.
+    pub directory: Option<Spanned<Name>>,
+
+    /// The [name](#name) for this storage capability.
+    pub storage: Option<Spanned<Name>>,
+
+    /// The [name](#name) for this runner capability.
+    pub runner: Option<Spanned<Name>>,
+
+    /// The [name](#name) for this resolver capability.
+    pub resolver: Option<Spanned<Name>>,
+
+    /// The [name](#name) for this event_stream capability.
+    pub event_stream: Option<OneOrMany<Name>>,
+
+    /// The [name](#name) for this dictionary capability.
+    pub dictionary: Option<Name>,
+
+    /// The [name](#name) for this configuration capability.
+    pub config: Option<Name>,
+
+    /// The path within the [outgoing directory][glossary.outgoing directory] of the component's
+    /// program to source the capability.
+    ///
+    /// For `protocol` and `service`, defaults to `/svc/${protocol}`, otherwise required.
+    ///
+    /// For `protocol`, the target of the path MUST be a channel, which tends to speak
+    /// the protocol matching the name of this capability.
+    ///
+    /// For `service`, `directory`, the target of the path MUST be a directory.
+    ///
+    /// For `runner`, the target of the path MUST be a channel and MUST speak
+    /// the protocol `fuchsia.component.runner.ComponentRunner`.
+    ///
+    /// For `resolver`, the target of the path MUST be a channel and MUST speak
+    /// the protocol `fuchsia.component.resolution.Resolver`.
+    ///
+    /// For `dictionary`, this is optional. If provided, it is a path to a
+    /// `fuchsia.component.sandbox/DictionaryRouter` served by the program which should return a
+    /// `fuchsia.component.sandbox/DictionaryRef`, by which the program may dynamically provide
+    /// a dictionary from itself. If this is set for `dictionary`, `offer` to this dictionary
+    /// is not allowed.
+    pub path: Option<Spanned<Path>>,
+
+    /// (`directory` only) The maximum [directory rights][doc-directory-rights] that may be set
+    /// when using this directory.
+    pub rights: Option<Rights>,
+
+    /// (`storage` only) The source component of an existing directory capability backing this
+    /// storage capability, one of:
+    /// - `parent`: The component's parent.
+    /// - `self`: This component.
+    /// - `#<child-name>`: A [reference](#references) to a child component
+    ///     instance.
+    pub from: Option<CapabilityFromRef>,
+
+    /// (`storage` only) The [name](#name) of the directory capability backing the storage. The
+    /// capability must be available from the component referenced in `from`.
+    pub backing_dir: Option<Name>,
+
+    /// (`storage` only) A subdirectory within `backing_dir` where per-component isolated storage
+    /// directories are created
+    pub subdir: Option<RelativePath>,
+
+    /// (`storage` only) The identifier used to isolated storage for a component, one of:
+    /// - `static_instance_id`: The instance ID in the component ID index is used
+    ///     as the key for a component's storage. Components which are not listed in
+    ///     the component ID index will not be able to use this storage capability.
+    /// - `static_instance_id_or_moniker`: If the component is listed in the
+    ///     component ID index, the instance ID is used as the key for a component's
+    ///     storage. Otherwise, the component's moniker from the storage
+    ///     capability is used.
+    pub storage_id: Option<StorageId>,
+
+    /// (`configuration` only) The type of configuration, one of:
+    /// - `bool`: Boolean type.
+    /// - `uint8`: Unsigned 8 bit type.
+    /// - `uint16`: Unsigned 16 bit type.
+    /// - `uint32`: Unsigned 32 bit type.
+    /// - `uint64`: Unsigned 64 bit type.
+    /// - `int8`: Signed 8 bit type.
+    /// - `int16`: Signed 16 bit type.
+    /// - `int32`: Signed 32 bit type.
+    /// - `int64`: Signed 64 bit type.
+    /// - `string`: ASCII string type.
+    /// - `vector`: Vector type. See `element` for the type of the element within the vector.
+    pub config_type: Option<ConfigType>,
+
+    /// (`configuration` only) Only supported if this configuration `type` is 'string'.
+    /// This is the max size of the string.
+    pub config_max_size: Option<NonZeroU32>,
+
+    /// (`configuration` only) Only supported if this configuration `type` is 'vector'.
+    /// This is the max number of elements in the vector.
+    pub config_max_count: Option<NonZeroU32>,
+
+    /// (`configuration` only) Only supported if this configuration `type` is 'vector'.
+    /// This is the type of the elements in the configuration vector.
+    ///
+    /// Example (simple type):
+    ///
+    /// ```json5
+    /// { type: "uint8" }
+    /// ```
+    ///
+    /// Example (string type):
+    ///
+    /// ```json5
+    /// {
+    ///   type: "string",
+    ///   max_size: 100,
+    /// }
+    /// ```
+    pub config_element_type: Option<ConfigNestedValueType>,
+
+    /// (`configuration` only) The value of the configuration.
+    pub value: Option<serde_json::Value>,
+
+    /// (`protocol` only) Specifies when the framework will open the protocol
+    /// from this component's outgoing directory when someone requests the
+    /// capability. Allowed values are:
+    ///
+    /// - `eager`: (default) the framework will open the capability as soon as
+    ///   some consumer component requests it.
+    /// - `on_readable`: the framework will open the capability when the server
+    ///   endpoint pipelined in a connection request becomes readable.
+    ///
     pub delivery: Option<DeliveryType>,
 }
 

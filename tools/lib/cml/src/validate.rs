@@ -9,8 +9,8 @@ use crate::{
     Collection, ConfigKey, ConfigType, ConfigValueType, DependencyType, DictionaryRef, Document,
     Environment, EnvironmentExtends, Error, EventScope, Expose, ExposeFromRef, ExposeToRef,
     FromClause, Offer, OfferFromRef, OfferToRef, OneOrMany, Program, RegistrationRef, Rights,
-    RootDictionaryRef, SourceAvailability, SpannedChild, SpannedDocument, Use, UseFromRef,
-    offer_to_all_would_duplicate,
+    RootDictionaryRef, SourceAvailability, SpannedCapability, SpannedChild, SpannedDocument, Use,
+    UseFromRef, offer_to_all_would_duplicate,
 };
 use cm_types::{BorrowedName, IterablePath, Name};
 use itertools::Either;
@@ -110,7 +110,7 @@ pub(crate) fn validate_cml_with_span(
     ctx.validate()
 }
 
-fn byte_index_to_location(source: Option<&String>, index: usize) -> Option<Location> {
+pub(crate) fn byte_index_to_location(source: Option<&String>, index: usize) -> Option<Location> {
     if let Some(source) = source {
         let mut line = 1usize;
         let mut column = 1usize;
@@ -192,6 +192,7 @@ struct ValidationContextWithSpan<'a> {
     features: &'a FeatureSet,
     current_file_path: Option<&'a Path>,
     current_file_source: Option<&'a String>,
+    all_children: HashMap<&'a BorrowedName, &'a SpannedChild>,
 }
 
 impl<'a> ValidationContextWithSpan<'a> {
@@ -204,6 +205,7 @@ impl<'a> ValidationContextWithSpan<'a> {
             features,
             current_file_path: None,
             current_file_source: None,
+            all_children: HashMap::new(),
         }
     }
 
@@ -215,6 +217,13 @@ impl<'a> ValidationContextWithSpan<'a> {
             if let Some(children) = &document.children {
                 for child in children {
                     self.validate_child(&child)?;
+                    self.all_children.insert(&child.name, child);
+                }
+            }
+
+            if let Some(capabilities) = &document.capabilities {
+                for capability in capabilities {
+                    self.validate_capability(capability)?;
                 }
             }
 
@@ -243,6 +252,130 @@ which is almost certainly a mistake: {}",
                     self.current_file_path,
                 ));
             }
+        }
+
+        Ok(())
+    }
+
+    fn validate_capability(&mut self, capability: &'a SpannedCapability) -> Result<(), Error> {
+        if capability.directory.is_some() && capability.path.is_none() {
+            let location = byte_index_to_location(
+                self.current_file_source,
+                capability.directory.as_ref().unwrap().span().0,
+            );
+            return Err(Error::validate_with_span(
+                "\"path\" should be present with \"directory\"",
+                location,
+                self.current_file_path,
+            ));
+        }
+        if capability.directory.is_some() && capability.rights.is_none() {
+            let location = byte_index_to_location(
+                self.current_file_source,
+                capability.directory.as_ref().unwrap().span().0,
+            );
+            return Err(Error::validate_with_span(
+                "\"rights\" should be present with \"directory\"",
+                location,
+                self.current_file_path,
+            ));
+        }
+        if capability.storage.as_ref().is_some() {
+            if capability.from.is_none() {
+                let location = byte_index_to_location(
+                    self.current_file_source,
+                    capability.storage.as_ref().unwrap().span().0,
+                );
+                return Err(Error::validate_with_span(
+                    "\"from\" should be present with \"storage\"",
+                    location,
+                    self.current_file_path,
+                ));
+            }
+            if capability.path.is_some() {
+                let location = byte_index_to_location(
+                    self.current_file_source,
+                    capability.storage.as_ref().unwrap().span().0,
+                );
+                return Err(Error::validate_with_span(
+                    "\"path\" cannot be present with \"storage\", use \"backing_dir\"",
+                    location,
+                    self.current_file_path,
+                ));
+            }
+            if capability.backing_dir.is_none() {
+                let location = byte_index_to_location(
+                    self.current_file_source,
+                    capability.storage.as_ref().unwrap().span().0,
+                );
+                return Err(Error::validate_with_span(
+                    "\"backing_dir\" should be present with \"storage\"",
+                    location,
+                    self.current_file_path,
+                ));
+            }
+            if capability.storage_id.is_none() {
+                let location = byte_index_to_location(
+                    self.current_file_source,
+                    capability.storage.as_ref().unwrap().span().0,
+                );
+                return Err(Error::validate_with_span(
+                    "\"storage_id\" should be present with \"storage\"",
+                    location,
+                    self.current_file_path,
+                ));
+            }
+        }
+        if capability.runner.is_some() && capability.from.is_some() {
+            let location = byte_index_to_location(
+                self.current_file_source,
+                capability.runner.as_ref().unwrap().span().0,
+            );
+            return Err(Error::validate_with_span(
+                "\"from\" should not be present with \"runner\"",
+                location,
+                self.current_file_path,
+            ));
+        }
+        if capability.runner.is_some() && capability.path.is_none() {
+            let location = byte_index_to_location(
+                self.current_file_source,
+                capability.runner.as_ref().unwrap().span().0,
+            );
+            return Err(Error::validate_with_span(
+                "\"path\" should be present with \"runner\"",
+                location,
+                self.current_file_path,
+            ));
+        }
+        if capability.resolver.is_some() && capability.from.is_some() {
+            let location = byte_index_to_location(
+                self.current_file_source,
+                capability.resolver.as_ref().unwrap().span().0,
+            );
+            return Err(Error::validate_with_span(
+                "\"from\" should not be present with \"resolver\"",
+                location,
+                self.current_file_path,
+            ));
+        }
+        if capability.resolver.is_some() && capability.path.is_none() {
+            let location = byte_index_to_location(
+                self.current_file_source,
+                capability.resolver.as_ref().unwrap().span().0,
+            );
+            return Err(Error::validate_with_span(
+                "\"path\" should be present with \"resolver\"",
+                location,
+                self.current_file_path,
+            ));
+        }
+
+        if capability.dictionary.as_ref().is_some() && capability.path.is_some() {
+            self.features.check(Feature::DynamicDictionaries)?;
+        }
+        if capability.delivery.is_some() {
+            self.features.check(Feature::DeliveryType)?;
         }
 
         Ok(())
@@ -537,7 +670,7 @@ which is almost certainly a mistake: {}",
             }
             if capability.path.is_some() {
                 return Err(Error::validate(
-                    "\"path\" can not be present with \"storage\", use \"backing_dir\"",
+                    "\"path\" cannot be present with \"storage\", use \"backing_dir\"",
                 ));
             }
             if capability.backing_dir.is_none() {
@@ -2967,6 +3100,135 @@ mod tests {
             }),
             Err(Error::RestrictedFeature(s)) if s == "allow_long_names"
         ),
+
+        test_cml_directory_missing_path(
+            r##"{
+                "capabilities": [
+                    {
+                        "directory": "dir",
+                        "rights": ["connect"]
+                    }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location,  .. }) if &err == "\"path\" should be present with \"directory\"" &&
+                location == Some(Location {line: 4, column: 38})
+        ),
+        test_cml_directory_missing_rights(
+            r##"{
+                "capabilities": [
+                    {
+                        "directory": "dir",
+                        "path": "/dir"
+                    }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"rights\" should be present with \"directory\"" &&
+                location == Some(Location {line: 4, column: 38})
+        ),
+
+        test_cml_storage_missing_from(
+                r##"{
+                "capabilities": [
+                    {
+                        "storage": "data-storage",
+                        "backing_dir": "minfs",
+                        "storage_id": "static_instance_id_or_moniker"
+                    }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"from\" should be present with \"storage\"" &&
+                location == Some(Location {line: 4, column: 36})
+        ),
+
+        test_cml_storage_path(
+            r##"{
+                    "capabilities": [ {
+                        "storage": "minfs",
+                        "from": "self",
+                        "path": "/minfs",
+                        "storage_id": "static_instance_id_or_moniker"
+                    } ]
+                }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"path\" cannot be present with \"storage\", use \"backing_dir\"" &&
+             location == Some(Location {line: 3, column: 36})
+        ),
+
+        test_cml_storage_missing_path_or_backing_dir(
+            r##"{
+                    "capabilities": [ {
+                        "storage": "minfs",
+                        "from": "self",
+                        "storage_id": "static_instance_id_or_moniker"
+                    } ]
+                }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"backing_dir\" should be present with \"storage\"" &&
+                location == Some(Location {line: 3, column: 36})
+
+        ),
+
+        test_cml_storage_missing_storage_id(
+            r##"{
+                    "capabilities": [ {
+                        "storage": "minfs",
+                        "from": "self",
+                        "backing_dir": "storage"
+                    } ]
+                }"##,
+            Err(Error::ValidateWithSpan{ err, location, .. }) if &err == "\"storage_id\" should be present with \"storage\"" &&
+                location == Some(Location {line: 3, column: 36})
+        ),
+
+        test_cml_capabilities_extraneous_resolver_from(
+            r##"{
+                "capabilities": [
+                    {
+                        "resolver": "pkg_resolver",
+                        "path": "/svc/fuchsia.component.resolution.Resolver",
+                        "from": "self"
+                    }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"from\" should not be present with \"resolver\"" &&
+                location == Some(Location {line: 4, column: 37})
+        ),
+
+        test_cml_resolver_missing_path(
+            r##"{
+                "capabilities": [
+                    {
+                        "resolver": "pkg_resolver"
+                    }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"path\" should be present with \"resolver\"" &&
+                location == Some(Location {line: 4, column: 37})
+        ),
+
+        test_cml_runner_missing_path(
+            r##"{
+                "capabilities": [
+                    {
+                        "runner": "runrun"
+                    }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"path\" should be present with \"runner\"" &&
+                location == Some(Location {line: 4, column: 35})
+        ),
+
+        test_cml_runner_extraneous_from(
+            r##"{
+                "capabilities": [
+                    {
+                        "runner": "a",
+                        "path": "/example",
+                        "from": "self"
+                    }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"from\" should not be present with \"runner\"" &&
+                location == Some(Location {line: 4, column: 35})
+        ),
     }
 
     test_validate_cml! {
@@ -5226,7 +5488,7 @@ mod tests {
             }),
             Ok(())
         ),
-        test_cml_directory_missing_path(
+        test_cml_directory_missing_path_no_span(
             json!({
                 "capabilities": [
                     {
@@ -5237,7 +5499,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "\"path\" should be present with \"directory\""
         ),
-        test_cml_directory_missing_rights(
+        test_cml_directory_missing_rights_no_span(
             json!({
                 "capabilities": [
                     {
@@ -5309,7 +5571,7 @@ mod tests {
                 }),
             Err(Error::Validate { err, .. }) if &err == "\"capabilities\" source \"#missing\" does not appear in \"children\""
         ),
-        test_cml_storage_missing_path_or_backing_dir(
+        test_cml_storage_missing_path_or_backing_dir_no_span(
             json!({
                     "capabilities": [ {
                         "storage": "minfs",
@@ -5320,7 +5582,7 @@ mod tests {
             Err(Error::Validate { err, .. }) if &err == "\"backing_dir\" should be present with \"storage\""
 
         ),
-        test_cml_storage_missing_storage_id(
+        test_cml_storage_missing_storage_id_no_span(
             json!({
                     "capabilities": [ {
                         "storage": "minfs",
@@ -5330,7 +5592,7 @@ mod tests {
                 }),
             Err(Error::Validate { err, .. }) if &err == "\"storage_id\" should be present with \"storage\""
         ),
-        test_cml_storage_path(
+        test_cml_storage_path_no_span(
             json!({
                     "capabilities": [ {
                         "storage": "minfs",
@@ -5339,7 +5601,7 @@ mod tests {
                         "storage_id": "static_instance_id_or_moniker",
                     } ]
                 }),
-            Err(Error::Validate { err, .. }) if &err == "\"path\" can not be present with \"storage\", use \"backing_dir\""
+            Err(Error::Validate { err, .. }) if &err == "\"path\" cannot be present with \"storage\", use \"backing_dir\""
         ),
         test_cml_runner(
             json!({
@@ -5369,7 +5631,7 @@ mod tests {
             }),
             Ok(())
         ),
-        test_cml_runner_extraneous_from(
+        test_cml_runner_extraneous_from_no_span(
             json!({
                 "capabilities": [
                     {
@@ -5381,7 +5643,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "\"from\" should not be present with \"runner\""
         ),
-        test_cml_capability_missing_name(
+        test_cml_capability_missing_name_no_span(
             json!({
                 "capabilities": [
                     {
@@ -5391,7 +5653,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "`capability` declaration is missing a capability keyword, one of: \"service\", \"protocol\", \"directory\", \"storage\", \"runner\", \"resolver\", \"event_stream\", \"dictionary\", \"config\""
         ),
-        test_cml_resolver_missing_path(
+        test_cml_resolver_missing_path_no_span(
             json!({
                 "capabilities": [
                     {
@@ -5401,7 +5663,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "\"path\" should be present with \"resolver\""
         ),
-        test_cml_capabilities_extraneous_from(
+        test_cml_capabilities_extraneous_from_no_span(
             json!({
                 "capabilities": [
                     {
