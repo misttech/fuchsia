@@ -1075,6 +1075,52 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             command_mock.call_args_list,
         )
 
+    async def test_no_fail_by_group(self) -> None:
+        """Test that we continue running the rest of the tests in a --count group if one fails and --no-fail-by-group is passed."""
+
+        command_mock = self._mock_run_command(1)
+        command_mock.return_value = command.CommandOutput(
+            "", "", 1, 10, None, was_timeout=True
+        )
+
+        self._mock_has_package_server_connected_to_device(True)
+        self._mock_has_tests_in_base([])
+
+        # Run each test 3 times, no parallel to better match behavior of failure case test.
+        ret = await main.async_main_wrapper(
+            args.parse_args(
+                [
+                    "--simple",
+                    "--no-build",
+                    "--count=3",
+                    "--parallel=1",
+                    "--no-fail-by-group",
+                ]
+            )
+        )
+        self.assertEqual(ret, 1)
+
+        self.assertEqual(
+            3,
+            sum(["bar_test" in v[0][0] for v in command_mock.call_args_list]),
+            command_mock.call_args_list,
+        )
+        self.assertEqual(
+            3,
+            sum(["baz_test" in v[0][0] for v in command_mock.call_args_list]),
+            command_mock.call_args_list,
+        )
+        self.assertEqual(
+            3,
+            sum(
+                [
+                    "foo-test?hash=" in " ".join(v[0])
+                    for v in command_mock.call_args_list
+                ]
+            ),
+            command_mock.call_args_list,
+        )
+
     async def test_list_command(self) -> None:
         """Test that we can list test cases using --list"""
 

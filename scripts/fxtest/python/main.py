@@ -1470,8 +1470,6 @@ class AsyncMain:
         run_state = RunState()
 
         for test in tests.selected:
-            abort_group = asyncio.Event()
-
             execs = [
                 execution.TestExecution(
                     test,
@@ -1485,7 +1483,18 @@ class AsyncMain:
                 for i in range(flags.count)
             ]
 
+            # Shared event group for all repetitions of a test.
+            abort_group = asyncio.Event()
+
             for exec in execs:
+                if not flags.fail_by_group:
+                    # The --fail-by-group flag ensures that all execution of a test will
+                    # fail if a single execution fails.
+                    #
+                    # If it is not set, ensure that each execution has its own abort_group, allowing
+                    # other runs to keep going.
+
+                    abort_group = asyncio.Event()
                 if exec.is_hermetic():
                     run_state.hermetic_test_queue.put_nowait(
                         ExecEntry(exec, abort_group)

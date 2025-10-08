@@ -90,6 +90,7 @@ class Flags:
     timeout: float | None
     test_filter: typing.List[str]
     fail: bool
+    fail_by_group: bool
     use_package_hash: bool
     restrict_logs: bool
     also_run_disabled_tests: bool
@@ -501,6 +502,12 @@ def parse_args(
         action="store_true",
         help="Stop running tests after the first failed test suite. This will abort all tests in progress and end with a failure code.",
         default=False,
+    )
+    execution.add_argument(
+        "--fail-by-group",
+        action=argparse.BooleanOptionalAction,
+        help="When repeating tests with --count, stop repeating if any execution fails. If --no-fail-by-group is sets, continue repeating test executions despite failures to identify flakes.",
+        default=True,
     )
     execution.add_argument(
         "--restrict-logs",

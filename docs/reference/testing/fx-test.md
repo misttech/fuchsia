@@ -332,6 +332,9 @@ those tests is "non-hermetic" (as determined by `test-list.json`).**
   - Use `--timeout N` to wait at most `N` seconds per test.
 - **Each test runs one time.**
   - Use `--count N` to run each test `N` times.
+- **If any execution of a test is failed, the rest of the repeats will be skipped.**
+  - Use `--no-fail-by-group` to continue running up to the limit specified
+    by `--count`.
 - **All test cases are run from each test.**
   - Use `--test-filter` to run only specifically named test cases.
 - **Failed tests are recorded and execution continues with the next selected test.**
