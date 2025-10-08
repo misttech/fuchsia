@@ -64,6 +64,11 @@ def create_bundle(args: argparse.Namespace) -> None:
             aib_creator, args.anchored_automatic_pkg_list, "anchored_automatic"
         )
 
+    if args.anchored_on_demand_pkg_list:
+        add_pkg_list_from_file(
+            aib_creator, args.anchored_on_demand_pkg_list, "anchored_on_demand"
+        )
+
     if args.shell_cmds_list:
         add_shell_commands_from_file(aib_creator, args.shell_cmds_list)
 
@@ -481,6 +486,11 @@ def main() -> int:
         "--anchored-automatic-pkg-list",
         type=argparse.FileType("r"),
         help="Path to a json list of package manifests for the 'anchored automatic' package set",
+    )
+    bundle_creation_parser.add_argument(
+        "--anchored-on-demand-pkg-list",
+        type=argparse.FileType("r"),
+        help="Path to a json list of package manifests for the 'anchored on-demand' package set",
     )
     bundle_creation_parser.add_argument(
         "--kernel-cmdline",
