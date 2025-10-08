@@ -31,7 +31,9 @@ void SetMixDispatcherThreadProfile(const MixProfileConfig& mix_profile_config,
     // arguments.
     auto result = AcquireSchedulerRole(zx::thread::self(), "fuchsia.media.audio.core.mixer");
     if (result.is_error()) {
-      FX_PLOGS(ERROR, result.status_value())
+      // Failing to apply a Scheduler Profile is not fatal (e.g. it may happen in tests),
+      // but we warn because performance may suffer.
+      FX_PLOGS(WARNING, result.status_value())
           << "Unable to set scheduler role; mix threads will run at normal priority";
     }
   });

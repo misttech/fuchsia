@@ -9,6 +9,7 @@
 #include <sstream>
 
 #include "src/media/audio/audio_core/mix_profile_config.h"
+#include "src/media/audio/audio_core/reporter.h"
 
 namespace media::audio {
 
@@ -34,47 +35,50 @@ void ProfileProvider::RegisterHandlerWithCapacity(zx::thread thread_handle,
           .set_target(fuchsia::scheduler::RoleTarget::WithThread(std::move(thread_handle)))
           .set_role(fuchsia::scheduler::RoleName{role_name}));
 
-  role_manager_->SetRole(std::move(request),
-                         [interval, capacity, callback = std::move(callback),
-                          role_name](fuchsia::scheduler::RoleManager_SetRole_Result result) {
-                           if (result.is_response()) {
-                             callback(interval.get(), capacity.get());
-                           } else if (result.is_err()) {
-                             FX_PLOGS(WARNING, result.err())
-                                 << "Failed to set role \"" << role_name << "\" for thread";
-                             callback(0, 0);
-                           } else {
-                             // This case should never happen, as it can only happen on an unknown
-                             // method call or an invalid fidl message tag.
-                             callback(0, 0);
-                           }
-                         });
+  role_manager_->SetRole(
+      std::move(request), [interval, capacity, callback = std::move(callback),
+                           role_name](fuchsia::scheduler::RoleManager_SetRole_Result result) {
+        if (result.is_response()) {
+          callback(interval.get(), capacity.get());
+          return;
+        }
+        if (result.is_err()) {
+          // Failing to apply a Scheduler Profile is not fatal (e.g. it may happen in tests),
+          // but we warn because performance may suffer.
+          FX_PLOGS(WARNING, result.err()) << "Failed to set thread role '" << role_name << "'";
+          Reporter::Singleton().FailedToApplySchedulerProfile(role_name, result.err());
+        } else {
+          // This should never happen (unknown method call or invalid fidl message tag).
+          FX_LOGS(ERROR) << "Unknown response when setting thread role '" << role_name << "'";
+        }
+        callback(0, 0);
+      });
 }
 
-void ProfileProvider::UnregisterHandler(zx::thread thread_handle, const std::string name,
+void ProfileProvider::UnregisterHandler(zx::thread thread_handle, const std::string role_name,
                                         UnregisterHandlerCallback callback) {
   if (!role_manager_) {
     role_manager_ = context_.svc()->Connect<fuchsia::scheduler::RoleManager>();
   }
 
-  const std::string role_name = "fuchsia.default";
+  const std::string role_name_for_unset = "fuchsia.default";
   auto request = std::move(
       fuchsia::scheduler::RoleManagerSetRoleRequest()
           .set_target(fuchsia::scheduler::RoleTarget::WithThread(std::move(thread_handle)))
-          .set_role(fuchsia::scheduler::RoleName{role_name}));
+          .set_role(fuchsia::scheduler::RoleName{role_name_for_unset}));
 
   role_manager_->SetRole(
-      std::move(request), [callback = std::move(callback), &role_name,
-                           &name](fuchsia::scheduler::RoleManager_SetRole_Result result) {
+      std::move(request), [callback = std::move(callback), &role_name, &role_name_for_unset](
+                              fuchsia::scheduler::RoleManager_SetRole_Result result) {
         if (result.is_err()) {
-          FX_PLOGS(WARNING, result.err())
-              << "Failed to set role \"" << role_name << "\" for thread \"" << name << "\"";
+          FX_PLOGS(WARNING, result.err()) << "Failed to unset thread role '" << role_name << "'";
+          Reporter::Singleton().FailedToApplySchedulerProfile(role_name_for_unset, result.err());
         }
         callback();
       });
 }
 
-void ProfileProvider::RegisterMemoryRange(zx::vmar vmar_handle, std::string name,
+void ProfileProvider::RegisterMemoryRange(zx::vmar vmar_handle, std::string role_name,
                                           RegisterMemoryRangeCallback callback) {
   if (!role_manager_) {
     role_manager_ = context_.svc()->Connect<fuchsia::scheduler::RoleManager>();
@@ -83,13 +87,16 @@ void ProfileProvider::RegisterMemoryRange(zx::vmar vmar_handle, std::string name
   auto request =
       std::move(fuchsia::scheduler::RoleManagerSetRoleRequest()
                     .set_target(fuchsia::scheduler::RoleTarget::WithVmar(std::move(vmar_handle)))
-                    .set_role(fuchsia::scheduler::RoleName{name}));
+                    .set_role(fuchsia::scheduler::RoleName{role_name}));
 
   role_manager_->SetRole(
       std::move(request), [callback = std::move(callback),
-                           &name](fuchsia::scheduler::RoleManager_SetRole_Result result) {
+                           &role_name](fuchsia::scheduler::RoleManager_SetRole_Result result) {
         if (result.is_err()) {
-          FX_PLOGS(WARNING, result.err()) << "Failed to set memory role \"" << name << "\"";
+          // Failing to apply a Memory Profile is not fatal (e.g. it may happen in tests),
+          // but we warn because performance may suffer.
+          FX_PLOGS(WARNING, result.err()) << "Failed to set memory role '" << role_name << "'";
+          Reporter::Singleton().FailedToApplyMemoryProfile(role_name, result.err());
         }
         callback();
       });
@@ -101,17 +108,18 @@ void ProfileProvider::UnregisterMemoryRange(zx::vmar vmar_handle,
     role_manager_ = context_.svc()->Connect<fuchsia::scheduler::RoleManager>();
   }
 
-  const std::string role_name = "fuchsia.default";
+  const std::string role_name_for_unset = "fuchsia.default";
   auto request =
       std::move(fuchsia::scheduler::RoleManagerSetRoleRequest()
                     .set_target(fuchsia::scheduler::RoleTarget::WithVmar(std::move(vmar_handle)))
-                    .set_role(fuchsia::scheduler::RoleName{role_name}));
+                    .set_role(fuchsia::scheduler::RoleName{role_name_for_unset}));
 
   role_manager_->SetRole(
-      std::move(request), [callback = std::move(callback),
-                           &role_name](fuchsia::scheduler::RoleManager_SetRole_Result result) {
+      std::move(request), [callback = std::move(callback), &role_name_for_unset](
+                              fuchsia::scheduler::RoleManager_SetRole_Result result) {
         if (result.is_err()) {
-          FX_PLOGS(WARNING, result.err()) << "Failed to set memory role \"" << role_name << "\"";
+          FX_PLOGS(WARNING, result.err()) << "Failed to unset memory role";
+          Reporter::Singleton().FailedToApplyMemoryProfile(role_name_for_unset, result.err());
         }
         callback();
       });

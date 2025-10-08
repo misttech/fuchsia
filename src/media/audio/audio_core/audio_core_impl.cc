@@ -27,7 +27,9 @@ AudioCoreImpl::AudioCoreImpl(Context* context) : context_(*context) {
   // will take more significant restructuring, when we can deal with realtime requirements in place.
   auto result = AcquireSchedulerRole(zx::thread::self(), "fuchsia.media.audio.core.dispatch");
   if (result.is_error()) {
-    FX_PLOGS(ERROR, result.status_value())
+    // Failing to apply a Scheduler Profile is not fatal (e.g. it may happen in tests),
+    // but we warn because performance may suffer.
+    FX_PLOGS(WARNING, result.status_value())
         << "Unable to set scheduler role for the audio_core FIDL thread";
   }
 

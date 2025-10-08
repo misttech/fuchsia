@@ -262,6 +262,10 @@ class Reporter {
   // Mixer events which are not easily tied to a specific device or client.
   void MixerClockSkewDiscontinuity(zx::duration abs_clock_error);
 
+  // Failures when calling RoleManager (to set thread priority or pin processwide memory).
+  void FailedToApplySchedulerProfile(const std::string& profile, zx_status_t status);
+  void FailedToApplyMemoryProfile(const std::string& profile, zx_status_t status);
+
   // Exported for tests.
   const inspect::Inspector& inspector() {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -308,6 +312,8 @@ class Reporter {
     inspect::UintProperty failed_to_connect_to_device_count;
     inspect::UintProperty failed_to_obtain_stream_channel_count;
     inspect::UintProperty failed_to_start_device_count;
+    inspect::UintProperty failed_to_apply_scheduler_profile_count;
+    inspect::UintProperty failed_to_apply_memory_profile_count;
     inspect::LinearIntHistogram mixer_clock_skew_discontinuities;
     inspect::Node outputs_node;
     inspect::Node inputs_node;

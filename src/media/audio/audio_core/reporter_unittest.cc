@@ -88,6 +88,8 @@ TEST_F(ReporterTest, InitialState) {
                                     UintIs("count of failures to connect to device", 0),
                                     UintIs("count of failures to obtain device stream channel", 0),
                                     UintIs("count of failures to start a device", 0),
+                                    UintIs("count of failures to apply a Scheduler Profile", 0),
+                                    UintIs("count of failures to apply a Memory Profile", 0),
                                 })))));
 
   // Expect empty child nodes for devices and client ports.
@@ -136,9 +138,14 @@ TEST_F(ReporterTest, RootMetrics) {
   under_test_.FailedToConnectToDevice("", false, 0);
   under_test_.FailedToObtainStreamChannel("", false, 0);
   under_test_.FailedToObtainStreamChannel("", false, 0);
+
   under_test_.FailedToStartDevice("");
   under_test_.FailedToStartDevice("");
   under_test_.FailedToStartDevice("");
+
+  under_test_.FailedToApplySchedulerProfile("unused profile name", /* unused error status */ 0);
+  under_test_.FailedToApplySchedulerProfile("unused profile name", /* unused error status */ 0);
+  under_test_.FailedToApplyMemoryProfile("unused profile name", /* unused error status */ 0);
 
   EXPECT_THAT(GetHierarchy(),
               NodeMatches(AllOf(NameMatches("root"),
@@ -146,6 +153,8 @@ TEST_F(ReporterTest, RootMetrics) {
                                     UintIs("count of failures to connect to device", 1),
                                     UintIs("count of failures to obtain device stream channel", 2u),
                                     UintIs("count of failures to start a device", 3u),
+                                    UintIs("count of failures to apply a Scheduler Profile", 2u),
+                                    UintIs("count of failures to apply a Memory Profile", 1u),
                                 })))));
 }
 
