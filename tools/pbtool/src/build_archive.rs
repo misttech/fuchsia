@@ -13,7 +13,7 @@ use product_bundle::ProductBundle;
 
 use flate2::read::GzDecoder;
 use std::fs::File;
-use std::io::{BufReader, copy};
+use std::io::{copy, BufReader};
 use std::os::unix::fs::PermissionsExt;
 
 const FLASH_SCRIPT_TEMPLATE: &str = r#"#!/bin/sh
@@ -170,6 +170,7 @@ impl GenerateBuildArchive {
                     Image::ZBI { path, signed: _ } => Some((path, "zircon-a.zbi")),
                     Image::VBMeta(path) => Some((path, "zircon-a.vbmeta")),
                     Image::FVM(path) => Some((path, "storage-full.blk")),
+                    Image::Fxfs(path) => Some((path, "fxfs.blk")),
                     Image::QemuKernel(path) => Some((path, "qemu-kernel.kernel")),
                     Image::FVMFastboot(path) => Some((path, "fvm.fastboot.blk")),
                     Image::FxfsSparse { path, .. } => Some((path, "fxfs.sparse.blk")),
@@ -307,6 +308,10 @@ mod tests {
                     {
                         type: "FVM",
                         name: "fvm",
+                    },
+                    {
+                        type: "Fxfs",
+                        name: "fxfs",
                     },
                 ],
                 hardware_revision: "hw",

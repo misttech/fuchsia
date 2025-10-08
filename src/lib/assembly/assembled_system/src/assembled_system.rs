@@ -120,49 +120,47 @@ impl AssembledSystem {
             assembly_images_config::Image::Fxfs(fxfs) => Some(fxfs),
             _ => None,
         });
-        // create a disk image that has a non-sparse fxfs image to avoid adding it to the system image.
-        let constructed_disk_image_path: Option<Utf8PathBuf> =
-        // Create all the filesystems and FVMs.
-            if let Some(fvm_config) = fvm_config {
-                // Determine whether blobfs should be compressed.
-                // We refrain from compressing blobfs if the FVM is destined for the ZBI, because the ZBI
-                // compression will be more optimized.
-                let compress_blobfs = !matches!(&mode, FilesystemImageMode::Ramdisk);
 
-                // TODO: warn if bootfs_only mode
-                if let Some(base_package) = &base_package {
-                    construct_fvm(
-                        gendir,
-                        tools,
-                        &mut system,
-                        &image_assembly_config,
-                        fvm_config.clone(),
-                        compress_blobfs,
-                        include_account,
-                        base_package,
-                    )?
-                } else {
-                    None
-                }
-            } else if let Some(fxfs_config) = fxfs_config {
-                info!("Constructing Fxfs image");
-                if let Some(base_package) = &base_package {
-                    let ConstructedFxfs { image_path, sparse_image_path, contents } =
-                        construct_fxfs(gendir, &image_assembly_config, base_package, fxfs_config)
-                            .await?;
-                    system.images.push(Image::FxfsSparse { path: sparse_image_path, contents });
-                    Some(image_path)
-                } else {
-                    None
-                }
-            } else {
-                info!("Skipping fvm creation");
-                None
-            };
+        // Create all the filesystems and FVMs.
+        if let Some(fvm_config) = fvm_config {
+            // Determine whether blobfs should be compressed.
+            // We refrain from compressing blobfs if the FVM is destined for the ZBI, because the ZBI
+            // compression will be more optimized.
+            let compress_blobfs = !matches!(&mode, FilesystemImageMode::Ramdisk);
+
+            // TODO: warn if bootfs_only mode
+            if let Some(base_package) = &base_package {
+                construct_fvm(
+                    gendir,
+                    tools,
+                    &mut system,
+                    &image_assembly_config,
+                    fvm_config.clone(),
+                    compress_blobfs,
+                    include_account,
+                    base_package,
+                )?;
+            }
+        } else if let Some(fxfs_config) = fxfs_config {
+            info!("Constructing Fxfs image <EXPERIMENTAL!>");
+            if let Some(base_package) = &base_package {
+                let ConstructedFxfs { image_path, sparse_image_path, contents } =
+                    construct_fxfs(gendir, &image_assembly_config, base_package, fxfs_config)
+                        .await?;
+                system.images.push(Image::Fxfs(image_path));
+                system.images.push(Image::FxfsSparse { path: sparse_image_path, contents });
+            }
+        } else {
+            info!("Skipping fvm creation");
+        };
 
         // Find the first standard disk image that was generated.
         let disk_image_for_zbi: Option<Utf8PathBuf> = match &mode {
-            FilesystemImageMode::Ramdisk => constructed_disk_image_path,
+            FilesystemImageMode::Ramdisk => system.images.iter().find_map(|i| match i {
+                Image::FVM(path) => Some(path.clone()),
+                Image::Fxfs(path) => Some(path.clone()),
+                _ => None,
+            }),
             _ => None,
         };
 
