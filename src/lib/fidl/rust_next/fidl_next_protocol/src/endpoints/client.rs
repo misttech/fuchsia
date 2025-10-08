@@ -35,8 +35,8 @@ pub struct Client<T: Transport> {
 impl<T: Transport> Drop for Client<T> {
     fn drop(&mut self) {
         if Arc::strong_count(&self.inner) == 2 {
-            // This was the last client other than the one in the dispatcher
-            // itself. Stop the connection.
+            // This was the last reference to the connection other than the one
+            // in the dispatcher itself. Stop the connection.
             self.close();
         }
     }
@@ -215,7 +215,7 @@ pub trait ClientHandler<T: Transport> {
 /// dispatcher is not [`run`](ClientDispatcher::run) concurrently, then events will not be received
 /// and two-way message futures will not receive their responses.
 pub struct ClientDispatcher<T: Transport> {
-    client: Client<T>,
+    inner: Arc<ClientInner<T>>,
     exclusive: T::Exclusive,
     is_terminated: bool,
 }
@@ -235,8 +235,7 @@ impl<T: Transport> ClientDispatcher<T> {
     /// Creates a new client from a transport.
     pub fn new(transport: T) -> Self {
         let (shared, exclusive) = transport.split();
-        let inner = Arc::new(ClientInner::new(shared));
-        Self { client: Client { inner }, exclusive, is_terminated: false }
+        Self { inner: Arc::new(ClientInner::new(shared)), exclusive, is_terminated: false }
     }
 
     /// # Safety
@@ -245,14 +244,16 @@ impl<T: Transport> ClientDispatcher<T> {
     unsafe fn terminate(&mut self, error: ProtocolError<T::Error>) {
         // SAFETY: We checked that the connection has not been terminated.
         unsafe {
-            self.client.inner.connection.terminate(error);
+            self.inner.connection.terminate(error);
         }
-        self.client.inner.responses.lock().unwrap().wake_all();
+        self.inner.responses.lock().unwrap().wake_all();
     }
 
-    /// Returns the dispatcher's client.
-    pub fn client(&self) -> &Client<T> {
-        &self.client
+    /// Returns a client for the dispatcher.
+    ///
+    /// When the last `Client` is dropped, the dispatcher will be stopped.
+    pub fn client(&self) -> Client<T> {
+        Client { inner: self.inner.clone() }
     }
 
     /// Runs the client with the provided handler.
@@ -297,7 +298,7 @@ impl<T: Transport> ClientDispatcher<T> {
         H: ClientHandler<T>,
     {
         // SAFETY: The caller guaranteed that the connection is not terminated.
-        let mut buffer = unsafe { self.client.inner.connection.recv(&mut self.exclusive).await? };
+        let mut buffer = unsafe { self.inner.connection.recv(&mut self.exclusive).await? };
 
         let (txid, ordinal) =
             decode_header::<T>(&mut buffer).map_err(ProtocolError::InvalidMessageHeader)?;
@@ -309,7 +310,7 @@ impl<T: Transport> ClientDispatcher<T> {
         } else if txid == 0 {
             handler.on_event(ordinal, buffer).await?;
         } else {
-            let mut responses = self.client.inner.responses.lock().unwrap();
+            let mut responses = self.inner.responses.lock().unwrap();
             let locker = responses
                 .get(txid - 1)
                 .ok_or_else(|| ProtocolError::UnrequestedResponse { txid })?;

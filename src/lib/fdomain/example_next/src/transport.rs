@@ -134,7 +134,7 @@ pub fn exec_server(quiet: bool) -> LocalFDomainTransport {
         let endpoint = ServerEnd::<EchoLauncher, _>::from_untyped(channel.into_zx_channel());
         let server_dispatcher = ServerDispatcher::new(endpoint);
         scope.spawn(async move {
-            let server = server_dispatcher.server().clone();
+            let server = server_dispatcher.server();
             let ret = server_dispatcher
                 .run(EchoLauncherServer { server, quiet, scope: fuchsia_async::Scope::new() })
                 .await;

@@ -51,7 +51,7 @@ impl EchoLauncherServer {
         self.scope.spawn(async move {
             println!("Running echo server with prefix {echo_prefix}");
             let dispatcher = fidl_next::ServerDispatcher::new(server);
-            let server = dispatcher.server().clone();
+            let server = dispatcher.server();
 
             let result = dispatcher.run(EchoServer { server, prefix: echo_prefix }).await;
             if let Err(result) = result {
@@ -96,7 +96,7 @@ async fn run_server(
     server_end: fidl_next::ServerEnd<EchoLauncher, Channel>,
 ) -> anyhow::Result<()> {
     let dispatcher = fidl_next::ServerDispatcher::new(server_end);
-    let server = dispatcher.server().clone();
+    let server = dispatcher.server();
     let fut = dispatcher.run(EchoLauncherServer {
         server,
         client: Arc::clone(&client),

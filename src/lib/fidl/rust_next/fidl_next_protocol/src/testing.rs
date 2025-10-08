@@ -62,7 +62,7 @@ where
 
     let (client_end, server_end) = make_ends();
     let client_dispatcher = ClientDispatcher::new(client_end);
-    let client = client_dispatcher.client().clone();
+    let client = client_dispatcher.client();
     let client_task = Task::spawn(client_dispatcher.run_client());
     let server_task = Task::spawn(ServerDispatcher::new(server_end).run(TestServer));
 
@@ -115,7 +115,7 @@ where
 
     let (client_end, server_end) = make_ends();
     let client_dispatcher = ClientDispatcher::new(client_end);
-    let client = client_dispatcher.client().clone();
+    let client = client_dispatcher.client();
     let client_task = Task::spawn(client_dispatcher.run_client());
     let server_task = Task::spawn(ServerDispatcher::new(server_end).run(TestServer));
 
@@ -168,7 +168,7 @@ where
 
     let (client_end, server_end) = make_ends();
     let client_dispatcher = ClientDispatcher::new(client_end);
-    let client = client_dispatcher.client().clone();
+    let client = client_dispatcher.client();
     let client_task = Task::spawn(client_dispatcher.run_client());
     let server_task = Task::spawn(ServerDispatcher::new(server_end).run(TestServer));
 
@@ -233,7 +233,7 @@ where
 
     let (client_end, server_end) = make_ends();
     let client_dispatcher = ClientDispatcher::new(client_end);
-    let client = client_dispatcher.client().clone();
+    let client = client_dispatcher.client();
     let client_task = Task::spawn(client_dispatcher.run_client());
     let server_task = Task::spawn(ServerDispatcher::new(server_end).run(TestServer));
 
@@ -326,10 +326,10 @@ where
 
     let (client_end, server_end) = make_ends();
     let client_dispatcher = ClientDispatcher::new(client_end);
-    let client = client_dispatcher.client().clone();
+    let client = client_dispatcher.client();
     let client_task = Task::spawn(client_dispatcher.run(TestClient { client }));
     let server_dispatcher = ServerDispatcher::new(server_end);
-    let server = server_dispatcher.server().clone();
+    let server = server_dispatcher.server();
     let server_task = Task::spawn(server_dispatcher.run(TestServer));
 
     server
@@ -373,7 +373,7 @@ where
 
     let (client_end, server_end) = make_ends();
     let client_dispatcher = ClientDispatcher::new(client_end);
-    let client = client_dispatcher.client().clone();
+    let client = client_dispatcher.client();
     let client_task = Task::spawn(client_dispatcher.run_client());
     let server_task = Task::spawn(ServerDispatcher::new(server_end).run(TestServer));
 

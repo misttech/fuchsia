@@ -55,7 +55,7 @@ fn close_on_drop() {
     loom().check(|| {
         let (client_end, server_end) = Mpsc::new();
         let client_dispatcher = ClientDispatcher::new(client_end);
-        let client = client_dispatcher.client().clone();
+        let client = client_dispatcher.client();
         let client_task = spawn(|| block_on(client_dispatcher.run_client()));
         let server_task = spawn(|| block_on(ServerDispatcher::new(server_end).run(TestServer)));
 
@@ -112,7 +112,7 @@ fn send_one_way() {
     loom().check(|| {
         let (client_end, server_end) = Mpsc::new();
         let client_dispatcher = ClientDispatcher::new(client_end);
-        let client = client_dispatcher.client().clone();
+        let client = client_dispatcher.client();
         let client_task = spawn(|| block_on(client_dispatcher.run_client()));
         let server_task = spawn(|| block_on(ServerDispatcher::new(server_end).run(TestServer)));
 
@@ -168,7 +168,7 @@ fn two_way() {
     loom().check(|| {
         let (client_end, server_end) = Mpsc::new();
         let client_dispatcher = ClientDispatcher::new(client_end);
-        let client = client_dispatcher.client().clone();
+        let client = client_dispatcher.client();
         let client_task = spawn(|| block_on(client_dispatcher.run_client()));
         let server_task = spawn(|| block_on(ServerDispatcher::new(server_end).run(TestServer)));
 
@@ -231,7 +231,7 @@ fn multiple_two_way() {
     loom().check(|| {
         let (client_end, server_end) = Mpsc::new();
         let client_dispatcher = ClientDispatcher::new(client_end);
-        let client = client_dispatcher.client().clone();
+        let client = client_dispatcher.client();
         let client_task = spawn(|| block_on(client_dispatcher.run_client()));
         let server_task = spawn(|| block_on(ServerDispatcher::new(server_end).run(TestServer)));
 
@@ -319,10 +319,10 @@ fn event() {
     loom().check(|| {
         let (client_end, server_end) = Mpsc::new();
         let client_dispatcher = ClientDispatcher::new(client_end);
-        let client = client_dispatcher.client().clone();
+        let client = client_dispatcher.client();
         let client_task = spawn(|| block_on(client_dispatcher.run(TestClient { client })));
         let server_dispatcher = ServerDispatcher::new(server_end);
-        let server = server_dispatcher.server().clone();
+        let server = server_dispatcher.server();
         let server_task = spawn(|| block_on(server_dispatcher.run(TestServer)));
 
         block_on(server.send_event(10, "Surprise!").expect("server failed to encode response"))
@@ -363,7 +363,7 @@ fn one_way_nonblocking() {
     loom().check(|| {
         let (client_end, server_end) = Mpsc::new();
         let client_dispatcher = ClientDispatcher::new(client_end);
-        let client = client_dispatcher.client().clone();
+        let client = client_dispatcher.client();
         let client_task = spawn(|| block_on(client_dispatcher.run_client()));
         let server_task = spawn(|| block_on(ServerDispatcher::new(server_end).run(TestServer)));
 

@@ -277,7 +277,7 @@ impl<P, T: Transport> ClientEnd<P, T> {
     /// Returns the client and a join handle for the spawned task.
     pub fn spawn_handler_full_on_with<H, E>(
         self,
-        create_handler: impl FnOnce(&Client<P, T>) -> H,
+        create_handler: impl FnOnce(Client<P, T>) -> H,
         executor: &E,
     ) -> (Client<P, T>, HandlerTask<T, H, E>)
     where
@@ -287,8 +287,8 @@ impl<P, T: Transport> ClientEnd<P, T> {
         E: Executor,
     {
         let dispatcher = ClientDispatcher::new(self);
-        let client = dispatcher.client().clone();
-        let handler = create_handler(&client);
+        let client = dispatcher.client();
+        let handler = create_handler(client.clone());
         (client, executor.spawn(dispatcher.run(handler)))
     }
 
@@ -316,7 +316,7 @@ impl<P, T: Transport> ClientEnd<P, T> {
     /// Returns the client.
     pub fn spawn_handler_on_with<H, E>(
         self,
-        create_handler: impl FnOnce(&Client<P, T>) -> H,
+        create_handler: impl FnOnce(Client<P, T>) -> H,
         executor: &E,
     ) -> Client<P, T>
     where
@@ -350,7 +350,7 @@ impl<P, T: Transport> ClientEnd<P, T> {
     /// Returns the client and a join handle for the spawned task.
     pub fn spawn_handler_full_with<H>(
         self,
-        create_handler: impl FnOnce(&Client<P, T>) -> H,
+        create_handler: impl FnOnce(Client<P, T>) -> H,
     ) -> (Client<P, T>, HandlerTask<T, H>)
     where
         P: DispatchClientMessage<H, T>,
@@ -380,7 +380,7 @@ impl<P, T: Transport> ClientEnd<P, T> {
     /// Returns the client.
     pub fn spawn_handler_with<H>(
         self,
-        create_handler: impl FnOnce(&Client<P, T>) -> H,
+        create_handler: impl FnOnce(Client<P, T>) -> H,
     ) -> Client<P, T>
     where
         P: DispatchClientMessage<H, T>,
@@ -415,7 +415,7 @@ impl<P, T: Transport> ClientEnd<P, T> {
         E: Executor,
     {
         let dispatcher = ClientDispatcher::new(self);
-        let client = dispatcher.client().clone();
+        let client = dispatcher.client();
         (client, executor.spawn(dispatcher.run_client()))
     }
 
@@ -470,7 +470,7 @@ impl<P, T: Transport> ServerEnd<P, T> {
     /// Returns the join handle for the spawned task and the server.
     pub fn spawn_full_on_with<H, E>(
         self,
-        create_handler: impl FnOnce(&Server<P, T>) -> H,
+        create_handler: impl FnOnce(Server<P, T>) -> H,
         executor: &E,
     ) -> (HandlerTask<T, H, E>, Server<P, T>)
     where
@@ -480,8 +480,8 @@ impl<P, T: Transport> ServerEnd<P, T> {
         E: Executor,
     {
         let dispatcher = ServerDispatcher::new(self);
-        let server = dispatcher.server().clone();
-        let handler = create_handler(&server);
+        let server = dispatcher.server();
+        let handler = create_handler(server.clone());
         (executor.spawn(dispatcher.run(handler)), server)
     }
 
@@ -509,7 +509,7 @@ impl<P, T: Transport> ServerEnd<P, T> {
     /// Returns the join handle for the spawned task.
     pub fn spawn_on_with<H, E>(
         self,
-        create_handler: impl FnOnce(&Server<P, T>) -> H,
+        create_handler: impl FnOnce(Server<P, T>) -> H,
         executor: &E,
     ) -> HandlerTask<T, H, E>
     where
@@ -543,7 +543,7 @@ impl<P, T: Transport> ServerEnd<P, T> {
     /// Returns the join handle for the spawned task and the server.
     pub fn spawn_full_with<H>(
         self,
-        create_handler: impl FnOnce(&Server<P, T>) -> H,
+        create_handler: impl FnOnce(Server<P, T>) -> H,
     ) -> (HandlerTask<T, H>, Server<P, T>)
     where
         P: DispatchServerMessage<H, T>,
@@ -571,7 +571,7 @@ impl<P, T: Transport> ServerEnd<P, T> {
     /// from a closure on the default executor for the transport.
     ///
     /// Returns the join handle for the spawned task.
-    pub fn spawn_with<H>(self, create_handler: impl FnOnce(&Server<P, T>) -> H) -> HandlerTask<T, H>
+    pub fn spawn_with<H>(self, create_handler: impl FnOnce(Server<P, T>) -> H) -> HandlerTask<T, H>
     where
         P: DispatchServerMessage<H, T>,
         T: HasExecutor + 'static,

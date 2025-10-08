@@ -14,8 +14,8 @@ struct MyCalculatorClient<T: Transport> {
 }
 
 impl<T: Transport> MyCalculatorClient<T> {
-    fn with_client(client: &Client<Calculator, T>) -> Self {
-        Self { client: client.clone(), error: None }
+    fn with_client(client: Client<Calculator, T>) -> Self {
+        Self { client, error: None }
     }
 }
 

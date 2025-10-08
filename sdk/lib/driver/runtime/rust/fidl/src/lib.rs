@@ -516,7 +516,7 @@ mod test {
                 ServerEnd::from_untyped(DriverChannel::new(server_chan));
             let client_dispatcher = ClientDispatcher::new(client_end);
             let server_dispatcher = ServerDispatcher::new(server_end);
-            let client = client_dispatcher.client().clone();
+            let client = client_dispatcher.client();
 
             CurrentDispatcher
                 .spawn_task(async {

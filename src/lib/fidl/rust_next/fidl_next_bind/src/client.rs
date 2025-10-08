@@ -29,9 +29,9 @@ where
 }
 
 impl<P, T: Transport> Client<P, T> {
-    /// Wraps an untyped client reference, returning a typed client reference.
-    pub fn wrap_untyped(client: &protocol::Client<T>) -> &Self {
-        unsafe { &*(client as *const protocol::Client<T>).cast() }
+    /// Creates a new client handle from an untyped client handle.
+    pub fn from_untyped(client: protocol::Client<T>) -> Self {
+        Self { client, _protocol: PhantomData }
     }
 
     /// Closes the channel from the client end.
@@ -127,8 +127,8 @@ impl<P, T: Transport> ClientDispatcher<P, T> {
     }
 
     /// Returns the dispatcher's client.
-    pub fn client(&self) -> &Client<P, T> {
-        Client::wrap_untyped(self.dispatcher.client())
+    pub fn client(&self) -> Client<P, T> {
+        Client::from_untyped(self.dispatcher.client())
     }
 
     /// Creates a new client from an untyped client.

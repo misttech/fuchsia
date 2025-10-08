@@ -30,9 +30,9 @@ where
 }
 
 impl<P, T: Transport> Server<P, T> {
-    /// Wraps an untyped server reference, returning a typed server reference.
-    pub fn wrap_untyped(client: &protocol::Server<T>) -> &Self {
-        unsafe { &*(client as *const protocol::Server<T>).cast() }
+    /// Creates a new server handle from an untyped server handle.
+    pub fn from_untyped(server: protocol::Server<T>) -> Self {
+        Self { server, _protocol: PhantomData }
     }
 
     /// Closes the channel from the server end.
@@ -150,8 +150,8 @@ impl<P, T: Transport> ServerDispatcher<P, T> {
     }
 
     /// Returns the dispatcher's server.
-    pub fn server(&self) -> &Server<P, T> {
-        Server::wrap_untyped(self.dispatcher.server())
+    pub fn server(&self) -> Server<P, T> {
+        Server::from_untyped(self.dispatcher.server())
     }
 
     /// Creates a new server dispatcher from an untyped server dispatcher.

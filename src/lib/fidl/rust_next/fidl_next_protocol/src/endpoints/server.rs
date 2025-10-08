@@ -116,7 +116,7 @@ pub trait ServerHandler<T: Transport> {
 /// The dispatcher must be actively polled to receive requests. If the dispatcher is not
 /// [`run`](ServerDispatcher::run), then requests will not be received.
 pub struct ServerDispatcher<T: Transport> {
-    server: Server<T>,
+    inner: Arc<ServerInner<T>>,
     exclusive: T::Exclusive,
     is_terminated: bool,
 }
@@ -126,7 +126,7 @@ impl<T: Transport> Drop for ServerDispatcher<T> {
         if !self.is_terminated {
             // SAFETY: We checked that the connection has not been terminated.
             unsafe {
-                self.server.inner.connection.terminate(ProtocolError::Stopped);
+                self.inner.connection.terminate(ProtocolError::Stopped);
             }
         }
     }
@@ -136,16 +136,12 @@ impl<T: Transport> ServerDispatcher<T> {
     /// Creates a new server from a transport.
     pub fn new(transport: T) -> Self {
         let (shared, exclusive) = transport.split();
-        Self {
-            server: Server { inner: Arc::new(ServerInner::new(shared)) },
-            exclusive,
-            is_terminated: false,
-        }
+        Self { inner: Arc::new(ServerInner::new(shared)), exclusive, is_terminated: false }
     }
 
     /// Returns the dispatcher's server.
-    pub fn server(&self) -> &Server<T> {
-        &self.server
+    pub fn server(&self) -> Server<T> {
+        Server { inner: self.inner.clone() }
     }
 
     /// Runs the server with the provided handler.
@@ -169,18 +165,18 @@ impl<T: Transport> ServerDispatcher<T> {
         // If we closed locally, we may have an epitaph to send before
         // terminating the connection.
         if matches!(error, ProtocolError::Stopped) {
-            if let Some(epitaph) = self.server.inner.epitaph() {
+            if let Some(epitaph) = self.inner.epitaph() {
                 // Note that we don't care whether sending the epitaph succeeds
                 // or fails; it's best-effort.
 
                 // SAFETY: The connection has not been terminated.
-                let _ = unsafe { self.server.inner.connection.send_epitaph(epitaph).await };
+                let _ = unsafe { self.inner.connection.send_epitaph(epitaph).await };
             }
         }
 
         // SAFETY: The connection has not been terminated.
         unsafe {
-            self.server.inner.connection.terminate(error.clone());
+            self.inner.connection.terminate(error.clone());
         }
         self.is_terminated = true;
 
@@ -202,12 +198,12 @@ impl<T: Transport> ServerDispatcher<T> {
         H: ServerHandler<T>,
     {
         // SAFETY: The caller guaranteed that the connection is not terminated.
-        let mut buffer = unsafe { self.server.inner.connection.recv(&mut self.exclusive).await? };
+        let mut buffer = unsafe { self.inner.connection.recv(&mut self.exclusive).await? };
 
         let (txid, ordinal) =
             decode_header::<T>(&mut buffer).map_err(ProtocolError::InvalidMessageHeader)?;
         if let Some(txid) = NonZeroU32::new(txid) {
-            let responder = Responder { server: self.server.clone(), txid };
+            let responder = Responder { server: self.server(), txid };
             handler.on_two_way(ordinal, buffer, responder).await?;
         } else {
             handler.on_one_way(ordinal, buffer).await?;
