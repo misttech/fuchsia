@@ -76,6 +76,7 @@
 #include "src/graphics/display/lib/api-types/cpp/mode-id.h"
 #include "src/graphics/display/lib/api-types/cpp/mode.h"
 #include "src/graphics/display/lib/api-types/cpp/pixel-format.h"
+#include "src/graphics/display/lib/api-types/cpp/power-mode.h"
 #include "src/graphics/display/lib/api-types/cpp/rectangle.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
@@ -716,13 +717,18 @@ zx::result<> DisplayEngine::SetBufferCollectionConstraints(
   return zx::ok();
 }
 
-zx::result<> DisplayEngine::SetDisplayPower(display::DisplayId display_id, bool power_on) {
+zx::result<> DisplayEngine::SetDisplayPowerMode(display::DisplayId display_id,
+                                                display::PowerMode power_mode) {
   fbl::AutoLock lock(&display_mutex_);
   if (display_id != display_id_ || !display_attached_) {
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
-  fdf::info("Powering {} Display {}", power_on ? "on" : "off", display_id);
+  fdf::info("Setting display {} power mode to {}", display_id.value(), power_mode.ToString());
+  if (power_mode != display::PowerMode::kOn && power_mode != display::PowerMode::kOff) {
+    return zx::error(ZX_ERR_NOT_SUPPORTED);
+  }
+  bool power_on = power_mode == display::PowerMode::kOn;
 
   if (vout_->type() == VoutType::kHdmi) {
     // TODO(https://fxbug.dev/335303016): This is a workaround to not trigger
