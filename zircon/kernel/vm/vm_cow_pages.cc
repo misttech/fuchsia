@@ -2721,16 +2721,17 @@ zx_status_t VmCowPages::CloneCowContentAsZeroLocked(uint64_t offset, ScopedPageF
   // a user pager, and such nodes don't have parents so cannot be the target of a forked page.
   DEBUG_ASSERT(!is_source_preserving_page_content());
 
+  // Performing a cow zero of a parent content marker would require clearing a slot in |this| page
+  // list, which is a problem for our caller who might be iterating that same page list. As such
+  // this method may not be used if there might be parent content markers.
+  DEBUG_ASSERT(!node_has_parent_content_markers());
+
   if (owner_content->IsMarker()) {
     // Markers do not have ref counts so nothing else to do, this will already see this as zero.
     return ZX_OK;
   }
   // Only other valid items should be pages or references.
   DEBUG_ASSERT(owner_content->IsPageOrRef());
-  // Performing a cow zero of a parent content marker would require clearing a slot in |this| page
-  // list, which is a problem for our caller who might be iterating that some page list. As such
-  // this method may not be used if there might be parent content markers.
-  DEBUG_ASSERT(!node_has_parent_content_markers());
 
   // Go ahead and insert the new zero marker into the target. We don't have anything to rollback
   // if this fails so we can just bail immediately.
@@ -5073,7 +5074,7 @@ int64_t PriorityChanger::ChangeSingleHighPriorityCountLockedHelper(
       VmCowRange current_page_range(offset, PAGE_SIZE);
       DEBUG_ASSERT(root_deferred);
       current.RangeChangeUpdateLocked(current_page_range, VmCowPages::RangeChangeOp::Unmap,
-                                       &*root_deferred);
+                                      &*root_deferred);
       // we're about to remove it, so it better not be pinned
       DEBUG_ASSERT(page->object.pin_count == 0);
       page_remover->Push(page_or_marker->ReleasePage());
