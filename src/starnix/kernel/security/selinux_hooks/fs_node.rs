@@ -24,7 +24,7 @@ use selinux::{
     FileSystemLabelingScheme, FileSystemPermission, ForClass, FsNodeClass, InitialSid, KernelClass,
     SecurityId, SecurityServer, SocketClass,
 };
-use starnix_logging::{log_debug, log_warn, track_stub};
+use starnix_logging::{CATEGORY_STARNIX_SECURITY, log_debug, log_warn, trace_duration, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::device_type::DeviceType;
@@ -940,6 +940,8 @@ pub(in crate::security) fn has_dontaudit_access(
     current_task: &CurrentTask,
     fs_node: &FsNode,
 ) -> bool {
+    trace_duration!(CATEGORY_STARNIX_SECURITY, c"security.selinux.has_dontaudit_access");
+
     let FsNodeSidAndClass { sid, class } = fs_node_effective_sid_and_class(fs_node);
     let permission_check = security_server.as_permission_check();
     if let Some(audit_access) = security_server

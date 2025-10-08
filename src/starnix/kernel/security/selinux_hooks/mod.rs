@@ -220,6 +220,8 @@ fn has_fs_node_permissions_dontaudit(
     fs_node: &FsNode,
     permissions: &[impl ForClass<FsNodeClass>],
 ) -> Result<(), Errno> {
+    trace_duration!(CATEGORY_STARNIX_SECURITY, c"security.selinux.has_fs_node_permissions_dontaudit");
+
     if Anon::is_private(fs_node) {
         return Ok(());
     }
@@ -246,6 +248,8 @@ fn has_fs_node_permissions(
     permissions: &[impl ForClass<FsNodeClass>],
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
+    trace_duration!(CATEGORY_STARNIX_SECURITY, c"security.selinux.has_fs_node_permissions");
+
     if Anon::is_private(fs_node) {
         return Ok(());
     }
@@ -278,6 +282,8 @@ fn todo_has_fs_node_permissions(
     permissions: &[impl ForClass<FsNodeClass>],
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
+    trace_duration!(CATEGORY_STARNIX_SECURITY, c"security.selinux.todo_has_fs_node_permissions");
+
     if Anon::is_private(fs_node) {
         return Ok(());
     }
