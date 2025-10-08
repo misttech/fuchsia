@@ -6,22 +6,43 @@
 
 use std::mem::MaybeUninit;
 use std::ptr::NonNull;
+use std::sync::Arc;
 use zx::AsHandleRef;
 
 const DEFAULT_VMO_NAME: zx::Name = zx::Name::from_bytes_lossy(b"starnix_page_buf");
 
 /// A buffer backed by a VMO mapped into the root VMAR.
+///
+/// Optionally maps the buffer into a second VMAR as read-only to allow pinning memory in advance
+/// of support for partial VMAR profiles or a similar feature.
 #[derive(Debug)]
 pub struct PageBuf<T> {
     vmo: zx::Vmo,
     base: NonNull<MaybeUninit<u8>>,
     mapped_len: usize,
+    extra_vmar_and_base: Option<(Arc<zx::Vmar>, usize)>,
     _ty: std::marker::PhantomData<T>,
 }
 
 impl<T> PageBuf<T> {
     /// Create a new `PageBuf` in the calling process' root VMAR.
     pub fn new(capacity: usize) -> Result<Self, zx::Status> {
+        Self::new_internal(capacity, None)
+    }
+
+    /// Create a new `PageBuf` in the calling process' root VMAR and also map the VMO into the
+    /// provided "extra" VMAR. If the extra VMAR has a memory profile this will
+    pub fn new_with_extra_vmar(
+        capacity: usize,
+        extra_vmar: Arc<zx::Vmar>,
+    ) -> Result<Self, zx::Status> {
+        Self::new_internal(capacity, Some(extra_vmar))
+    }
+
+    fn new_internal(
+        capacity: usize,
+        extra_vmar: Option<Arc<zx::Vmar>>,
+    ) -> Result<Self, zx::Status> {
         let capacity_bytes = capacity * std::mem::size_of::<T>();
         let vmo = zx::Vmo::create(capacity_bytes as u64)?;
 
@@ -36,7 +57,15 @@ impl<T> PageBuf<T> {
         let base =
             NonNull::new(std::ptr::with_exposed_provenance_mut::<MaybeUninit<u8>>(addr)).unwrap();
 
-        let this = Self { vmo, base, mapped_len, _ty: std::marker::PhantomData };
+        let extra_vmar_and_base = if let Some(extra_vmar) = extra_vmar {
+            let extra_base = extra_vmar.map(0, &vmo, 0, mapped_len, zx::VmarFlags::PERM_READ)?;
+            Some((extra_vmar, extra_base))
+        } else {
+            None
+        };
+
+        let this =
+            Self { vmo, base, mapped_len, extra_vmar_and_base, _ty: std::marker::PhantomData };
         this.set_name(&DEFAULT_VMO_NAME);
         Ok(this)
     }
@@ -83,6 +112,13 @@ impl<T> Drop for PageBuf<T> {
                 .unmap(self.base.addr().into(), self.mapped_len)
                 .unwrap();
         }
+
+        if let Some((extra_vmar, extra_base)) = &self.extra_vmar_and_base {
+            // SAFETY: the extra vmar mapping is also "owned" by this BufMapping
+            unsafe {
+                extra_vmar.unmap(*extra_base, self.mapped_len).unwrap();
+            }
+        }
     }
 }
 
@@ -90,7 +126,7 @@ impl<T> Drop for PageBuf<T> {
 mod tests {
     use super::*;
     use fuchsia_runtime::vmar_root_self;
-    use zx::AsHandleRef;
+    use zx::{AsHandleRef, HandleBased};
 
     #[track_caller]
     fn fill_buf(buf: &mut PageBuf<[u8; 16]>) {
@@ -184,5 +220,38 @@ mod tests {
         let vmo_size = buf.vmo.get_size().unwrap();
         assert!(vmo_size >= 100 * 16);
         assert_eq!(buf.vmo.set_size(vmo_size * 2), Err(zx::Status::UNAVAILABLE));
+    }
+
+    #[fuchsia::test]
+    fn extra_vmar_is_mapped() {
+        let extra_vmar = Arc::new(
+            fuchsia_runtime::vmar_root_self().duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+        );
+        let buf = PageBuf::<[u8; 16]>::new_with_extra_vmar(100, extra_vmar).unwrap();
+        let extra_base = buf.extra_vmar_and_base.as_ref().unwrap().1;
+        let expected_range = extra_base..extra_base + buf.mapped_len;
+        let maps = fuchsia_runtime::vmar_root_self().info_maps_vec().unwrap();
+
+        let (_name, observed_range, details) = &find_zx_mappings(&maps, expected_range.clone())[0];
+        assert!(observed_range.contains(&expected_range.start));
+        assert!(
+            observed_range.contains(&expected_range.end)
+                || observed_range.end == expected_range.end
+        );
+        assert_eq!(details.vmo_koid, buf.vmo.get_koid().unwrap());
+        assert_eq!(details.vmo_offset, 0);
+        assert_eq!(
+            details.mmu_flags,
+            zx::VmarFlagsExtended::PERM_READ,
+            "extra mapping must not be writeable",
+        );
+
+        drop(buf);
+        let maps = fuchsia_runtime::vmar_root_self().info_maps_vec().unwrap();
+        assert_eq!(
+            find_zx_mappings(&maps, expected_range),
+            vec![],
+            "extra mapping must be dropped too"
+        );
     }
 }
