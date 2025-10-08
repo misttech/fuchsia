@@ -3644,12 +3644,6 @@ pub fn with_tls_encoded<T: TypeMarker, D: ResourceDialect, Out>(
 
 #[cfg(test)]
 mod test {
-    // Silence dead code errors from unused functions produced by macros like
-    // `fidl_bits!`, `fidl_union!`, etc. To the compiler, it's as if we defined
-    // a pub fn in a private mod and never used it. Unfortunately placing this
-    // attribute directly on the macro invocations does not work.
-    #![allow(dead_code)]
-
     use super::*;
     use crate::handle::{AsHandleRef, convert_handle_dispositions_to_infos};
     use crate::time::{BootInstant, BootTicks, MonotonicInstant, MonotonicTicks};
