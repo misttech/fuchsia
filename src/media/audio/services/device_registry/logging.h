@@ -37,6 +37,8 @@ namespace media_audio {
 
 inline constexpr bool kLogMain = true;
 
+inline constexpr bool kLogRoleManager = false;
+
 // Device detection and initialization
 inline constexpr bool kLogDeviceDetection = false;
 inline constexpr bool kLogDeviceInitializationProgress = false;

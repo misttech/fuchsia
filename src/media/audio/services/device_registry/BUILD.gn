@@ -64,6 +64,7 @@ executable("device_registry_bin") {
     ":device_registry_lib",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
+    "//sdk/lib/scheduler/cpp",
   ]
 }
 

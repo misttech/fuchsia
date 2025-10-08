@@ -4,6 +4,7 @@
 
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/scheduler/role.h>
 #include <lib/syslog/cpp/log_settings.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace-provider/provider.h>
@@ -26,6 +27,17 @@ int main(int argc, const char** argv) {
 
   // Create a loop, and use it to create our AudioDeviceRegistry singleton...
   auto loop = std::make_shared<async::Loop>(&kAsyncLoopConfigAttachToCurrentThread);
+
+  // Set a Scheduler Profile for our main thread.
+  //
+  // Failing to apply a Scheduler Profile is not fatal (e.g., it may happen in tests), but warn
+  // because performance may suffer.
+  if (auto role_status = fuchsia_scheduler::SetRoleForThisThread(media_audio::kAdrSchedulerRole);
+      role_status != ZX_OK) {
+    FX_LOGS(WARNING) << "Failed to apply Scheduler Profile: " << role_status;
+  } else {
+    ADR_LOG(media_audio::kLogRoleManager) << "********** Applied Scheduler Profile *******";
+  }
 
   auto adr_thread = media_audio::FidlThread::CreateFromCurrentThread(media_audio::kAdrThreadName,
                                                                      loop->dispatcher());

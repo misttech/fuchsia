@@ -4,6 +4,13 @@
 {
     offer: [
         {
+            protocol: [ "fuchsia.scheduler.RoleManager" ],
+            from: "parent",
+            to: "#audio_device_registry",
+            availability: "optional",
+            source_availability: "unknown",
+        },
+        {
             // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have been
             // migrated to services. The service capability has been added below.
             directory: "dev-class",
