@@ -16,7 +16,7 @@ use starnix_sync::{
 use starnix_types::ownership::debug_assert_no_local_temp_ref;
 use starnix_uapi::error;
 use starnix_uapi::errors::{EINTR, Errno};
-use starnix_uapi::signals::{SigSet, Signal};
+use starnix_uapi::signals::{SIGKILL, SigSet, Signal};
 use starnix_uapi::vfs::FdEvents;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Weak};
@@ -610,6 +610,10 @@ impl Waiter {
             )
             .is_err()
         {
+            // Avoid attempting to freeze the task if there is a pending SIGKILL.
+            if current_task.read().has_signal_pending(SIGKILL) {
+                break;
+            }
             // Ignore spurious wakeups from the [`PortEvent.futex`]
         }
     }
@@ -1138,12 +1142,15 @@ impl<T: Into<u64>> TypedWaitQueue<T> {
 mod tests {
     use super::*;
     use crate::fs::fuchsia::create_fuchsia_pipe;
+    use crate::signals::SignalInfo;
+    use crate::task::TaskFlags;
     use crate::testing::spawn_kernel_and_run;
     use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
     use crate::vfs::eventfd::{EventFdType, new_eventfd};
     use assert_matches::assert_matches;
     use starnix_sync::Unlocked;
     use starnix_uapi::open_flags::OpenFlags;
+    use starnix_uapi::signals::SIGUSR1;
 
     const KEY: ReadyItemKey = ReadyItemKey::Usize(1234);
 
@@ -1328,6 +1335,47 @@ mod tests {
             });
 
             assert_eq!(output, Ok(()));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn freeze_with_pending_sigusr1() {
+        spawn_kernel_and_run(|_locked, current_task| {
+            {
+                let mut task_state = current_task.task.write();
+                let siginfo = SignalInfo::default(SIGUSR1);
+                task_state.enqueue_signal(siginfo);
+                task_state.set_flags(TaskFlags::SIGNALS_AVAILABLE, true);
+            }
+
+            let output: Result<(), Errno> = current_task
+                .run_in_state(RunState::Event(InterruptibleEvent::new()), move || {
+                    unreachable!("callback should not be called")
+                });
+            assert_eq!(output, error!(EINTR));
+
+            let output = current_task.run_in_state(RunState::Frozen(Waiter::new()), move || Ok(()));
+            assert_eq!(output, Ok(()));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn freeze_with_pending_sigkill() {
+        spawn_kernel_and_run(|_locked, current_task| {
+            {
+                let mut task_state = current_task.task.write();
+                let siginfo = SignalInfo::default(SIGKILL);
+                task_state.enqueue_signal(siginfo);
+                task_state.set_flags(TaskFlags::SIGNALS_AVAILABLE, true);
+            }
+
+            let output: Result<(), _> = current_task
+                .run_in_state(RunState::Frozen(Waiter::new()), move || {
+                    unreachable!("callback should not be called")
+                });
+            assert_eq!(output, error!(EINTR));
         })
         .await;
     }

@@ -42,7 +42,7 @@ use starnix_uapi::errors::{Errno, ErrnoCode};
 use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::{
-    SIGBUS, SIGCHLD, SIGCONT, SIGILL, SIGSEGV, SIGTRAP, SigSet, Signal, UncheckedSignal,
+    SIGBUS, SIGCHLD, SIGCONT, SIGILL, SIGKILL, SIGSEGV, SIGTRAP, SigSet, Signal, UncheckedSignal,
 };
 use starnix_uapi::user_address::{ArchSpecific, UserAddress, UserRef};
 use starnix_uapi::vfs::ResolveFlags;
@@ -523,9 +523,16 @@ impl CurrentTask {
         {
             let mut state = self.write();
             assert!(!state.is_blocked());
-            // A note on PTRACE_LISTEN - the thread cannot be scheduled
-            // regardless of pending signals.
-            if state.is_any_signal_pending() && !state.is_ptrace_listening() {
+
+            if matches!(run_state, RunState::Frozen(_)) {
+                // Freeze is a kernel signal and is handled before other user signals. A frozen task
+                // ignores all other signals except SIGKILL until it is thawed.
+                if state.has_signal_pending(SIGKILL) {
+                    return error!(EINTR);
+                }
+            } else if state.is_any_signal_pending() && !state.is_ptrace_listening() {
+                // A note on PTRACE_LISTEN - the thread cannot be scheduled
+                // regardless of pending signals.
                 return error!(EINTR);
             }
             state.set_run_state(run_state.clone());
