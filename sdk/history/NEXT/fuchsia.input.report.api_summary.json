@@ -427,13 +427,12 @@
     },
     {
         "kind": "struct",
-        "name": "fuchsia.input.report/InputDevice_GetInputReport_Response",
-        "resourceness": "resource"
+        "name": "fuchsia.input.report/InputDevice_GetInputReport_Response"
     },
     {
         "kind": "table/member",
         "name": "fuchsia.input.report/InputReport.consumer_control",
-        "ordinal": "6",
+        "ordinal": "7",
         "type": "fuchsia.input.report/ConsumerControlInputReport"
     },
     {
@@ -445,7 +444,7 @@
     {
         "kind": "table/member",
         "name": "fuchsia.input.report/InputReport.keyboard",
-        "ordinal": "5",
+        "ordinal": "6",
         "type": "fuchsia.input.report/KeyboardInputReport"
     },
     {
@@ -463,31 +462,24 @@
     {
         "kind": "table/member",
         "name": "fuchsia.input.report/InputReport.sensor",
-        "ordinal": "3",
+        "ordinal": "4",
         "type": "fuchsia.input.report/SensorInputReport"
     },
     {
         "kind": "table/member",
         "name": "fuchsia.input.report/InputReport.touch",
-        "ordinal": "4",
+        "ordinal": "5",
         "type": "fuchsia.input.report/TouchInputReport"
     },
     {
         "kind": "table/member",
         "name": "fuchsia.input.report/InputReport.trace_id",
-        "ordinal": "7",
+        "ordinal": "3",
         "type": "uint64"
     },
     {
-        "kind": "table/member",
-        "name": "fuchsia.input.report/InputReport.wake_lease",
-        "ordinal": "9",
-        "type": "zx/Handle:EVENTPAIR"
-    },
-    {
         "kind": "table",
-        "name": "fuchsia.input.report/InputReport",
-        "resourceness": "resource"
+        "name": "fuchsia.input.report/InputReport"
     },
     {
         "kind": "protocol/member",
@@ -512,8 +504,7 @@
     },
     {
         "kind": "struct",
-        "name": "fuchsia.input.report/InputReportsReader_ReadInputReports_Response",
-        "resourceness": "resource"
+        "name": "fuchsia.input.report/InputReportsReader_ReadInputReports_Response"
     },
     {
         "kind": "const",

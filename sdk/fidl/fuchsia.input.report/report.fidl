@@ -6,7 +6,7 @@ library fuchsia.input.report;
 using zx;
 
 /// `InputReport` is a single report that is created by an input device.
-@available(replaced=NEXT)
+@available(replaced=HEAD)
 type InputReport = table {
     /// `event_time` is in nanoseconds when the event was recorded.
     1: event_time zx.Time;
@@ -33,7 +33,7 @@ type InputReport = table {
 /// An `InputReport` can contain one of many different report types. The report
 /// types are not mutually exclusive. The `event_time` is the time in
 /// nanoseconds when the report was generated.
-@available(added=NEXT)
+@available(added=HEAD)
 type InputReport = resource table {
     /// `event_time` is in nanoseconds when the event was recorded.
     1: event_time zx.Time;
