@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -18,7 +19,7 @@ namespace usb_peripheral {
 namespace {
 
 struct FunctionDefinition {
-  uint16_t product_id;
+  uint8_t tag_mask;
   fuchsia_hardware_usb_peripheral::wire::FunctionDescriptor descriptor;
   std::string_view description;
 };
@@ -26,43 +27,43 @@ struct FunctionDefinition {
 const std::map<std::string_view, FunctionDefinition> all_functions = {
     {"cdc",
      {
-         .product_id = GOOGLE_USB_CDC_PID,
+         .tag_mask = kCdcMask,
          .descriptor = kCDCFunctionDescriptor,
          .description = kCDCProductDescription,
      }},
     {"ums",
      {
-         .product_id = GOOGLE_USB_UMS_PID,
+         .tag_mask = kUmsMask,
          .descriptor = kUMSFunctionDescriptor,
          .description = kUMSProductDescription,
      }},
     {"rndis",
      {
-         .product_id = GOOGLE_USB_RNDIS_PID,
+         .tag_mask = kRndisMask,
          .descriptor = kRNDISFunctionDescriptor,
          .description = kRNDISProductDescription,
      }},
     {"adb",
      {
-         .product_id = GOOGLE_USB_ADB_PID,
+         .tag_mask = kAdbMask,
          .descriptor = kADBFunctionDescriptor,
          .description = kADBProductDescription,
      }},
     {"fastboot",
      {
-         .product_id = GOOGLE_USB_FASTBOOT_PID,
+         .tag_mask = kFastbootMask,
          .descriptor = kFastbootFunctionDescriptor,
          .description = kFastbootProductDescription,
      }},
     {"test",
      {
-         .product_id = GOOGLE_USB_FUNCTION_TEST_PID,
+         .tag_mask = kTestMask,
          .descriptor = kTestFunctionDescriptor,
          .description = kTestProductDescription,
      }},
     {"vsock_bridge",
      {
-         .product_id = GOOGLE_USB_VSOCK_BRIDGE_PID,
+         .tag_mask = kVsockBridgeMask,
          .descriptor = kFfxFunctionDescriptor,
          .description = kVsockBridgeProductDescription,
      }},
@@ -82,23 +83,28 @@ zx_status_t PeripheralConfigParser::AddFunctions(const std::vector<std::string>&
   for (const auto& function : functions) {
     auto function_def = all_functions.find(function);
     if (function_def != all_functions.end()) {
+      if (!kPidLookup.contains(function_def->second.tag_mask)) {
+        fdf::error("No supported USB PID for function {}", function);
+        return ZX_ERR_INVALID_ARGS;
+      }
       function_defs.push_back(function_def->second);
-
     } else {
-      fdf::error("Function not supported: {}", function.c_str());
+      fdf::error("Function not supported: {}", function);
       return ZX_ERR_INVALID_ARGS;
     }
   }
-  std::ranges::sort(function_defs,
-                    [](auto& left, auto& right) { return left.product_id < right.product_id; });
+
+  std::ranges::sort(function_defs, [](FunctionDefinition& left, FunctionDefinition& right) {
+    return kPidLookup.at(left.tag_mask) < kPidLookup.at(right.tag_mask);
+  });
 
   zx_status_t status = ZX_OK;
   for (const auto& function : function_defs) {
     function_configs_.push_back(function.descriptor);
-    status = SetCompositeProductDescription(function.product_id, function.description);
+    status = SetCompositeProductDescription(function.tag_mask, function.description);
 
     if (status != ZX_OK) {
-      fdf::error("Failed to set product description for {:#x}", function.product_id);
+      fdf::error("Failed to set product description for function: {}", function.description);
       return status;
     }
   }
@@ -106,31 +112,29 @@ zx_status_t PeripheralConfigParser::AddFunctions(const std::vector<std::string>&
   return ZX_OK;
 }
 
-zx_status_t PeripheralConfigParser::SetCompositeProductDescription(uint16_t pid,
+zx_status_t PeripheralConfigParser::SetCompositeProductDescription(uint8_t tag_mask,
                                                                    const std::string_view& desc) {
-  if (pid_ == 0) {
-    product_desc_ = desc;
-    pid_ = pid;
+  if (tag_ & tag_mask) {
+    fdf::error("Duplicate function for {}", desc);
+    return ZX_ERR_WRONG_TYPE;
+  }
+
+  tag_ |= tag_mask;
+
+  if (!kPidLookup.contains(tag_)) {
+    fdf::error("No matching pid for this combination of functions: {:#x}", tag_);
+    return ZX_ERR_WRONG_TYPE;
+  }
+
+  pid_ = kPidLookup.at(tag_);
+
+  if (product_desc_.empty()) {
+    product_desc_ += desc;
   } else {
-    if (pid_ == GOOGLE_USB_CDC_PID && pid == GOOGLE_USB_FUNCTION_TEST_PID) {
-      pid_ = GOOGLE_USB_CDC_AND_FUNCTION_TEST_PID;
-    } else if (pid_ == GOOGLE_USB_CDC_PID && pid == GOOGLE_USB_ADB_PID) {
-      pid_ = GOOGLE_USB_CDC_AND_ADB_PID;
-    } else if (pid_ == GOOGLE_USB_ADB_PID && pid == GOOGLE_USB_VSOCK_BRIDGE_PID) {
-      pid_ = GOOGLE_USB_ADB_AND_VSOCK_BRIDGE_PID;
-    } else if (pid_ == GOOGLE_USB_CDC_PID && pid == GOOGLE_USB_VSOCK_BRIDGE_PID) {
-      pid_ = GOOGLE_USB_CDC_AND_VSOCK_BRIDGE_PID;
-    } else if (pid_ == GOOGLE_USB_CDC_AND_ADB_PID && pid == GOOGLE_USB_VSOCK_BRIDGE_PID) {
-      pid_ = GOOGLE_USB_CDC_AND_ADB_AND_VSOCK_BRIDGE_PID;
-    } else if (pid_ == GOOGLE_USB_FASTBOOT_PID && pid == GOOGLE_USB_CDC_PID) {
-      pid_ = GOOGLE_USB_CDC_AND_FASTBOOT_PID;
-    } else {
-      fdf::error("No matching pid for this combination: {:#x} + {:#x}", pid_, pid);
-      return ZX_ERR_WRONG_TYPE;
-    }
     product_desc_ += kCompositeDeviceConnector;
     product_desc_ += desc;
   }
+
   return ZX_OK;
 }
 
