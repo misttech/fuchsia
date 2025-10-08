@@ -108,6 +108,7 @@ inline constexpr std::string_view kCreateThreadSymbolsDriversAllowlist[] = {
     "#meta/machina.cm",
     "#meta/max98373.cm",
     "#meta/mock-device.cm",
+    "#meta/monaco-cpu.cm",
     "#meta/motmot.cm",
     "#meta/msd_arm.cm",
     "#meta/msd_arm_dfv2.cm",
