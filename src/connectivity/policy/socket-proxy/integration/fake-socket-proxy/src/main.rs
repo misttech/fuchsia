@@ -6,10 +6,10 @@ use std::sync::Arc;
 
 use anyhow::Context as _;
 use fuchsia_component::server::ServiceFs;
+use futures::SinkExt as _;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::stream::{StreamExt as _, TryStreamExt as _};
-use futures::SinkExt as _;
 use log::{debug, error};
 use {
     fidl_fuchsia_net_policy_properties as fnp_properties,

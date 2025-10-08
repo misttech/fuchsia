@@ -9,11 +9,12 @@ import("//build/testing/environments.gni")
 rustc_binary("fake_socket_proxy_svc") {
   edition = "2021"
   with_unit_tests = true
+  testonly = true
 
   deps = [
     "//sdk/fidl/fuchsia.net.policy.properties:fuchsia.net.policy.properties_rust",
     "//sdk/fidl/fuchsia.net.policy.socketproxy:fuchsia.net.policy.socketproxy_rust",
-    "//src/connectivity/policy/socket-proxy/integration/fidl:fidl_rust",
+    "//src/connectivity/policy/tests/integration/fidl:fidl_rust",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:anyhow",

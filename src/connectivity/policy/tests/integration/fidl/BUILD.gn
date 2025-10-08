@@ -6,6 +6,10 @@ import("//build/fidl/fidl.gni")
 
 fidl("fidl") {
   name = "fuchsia.net.policy.testing"
-  sources = [ "fake_socket_proxy.fidl" ]
+  testonly = true
+  sources = [
+    "fake_socket_proxy.fidl",
+    "policy_testing.fidl",
+  ]
   public_deps = [ "//sdk/fidl/fuchsia.net.policy.properties" ]
 }
