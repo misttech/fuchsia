@@ -238,6 +238,9 @@ template("sdk_prebuilt_library_impl") {
 
   output_name = target_name
   if (defined(invoker.output_name)) {
+    assert(prebuilt_library_type != "static",
+           "`output_name` is not supported for static libraries.")
+
     assert(
         invoker.output_name != output_name,
         "The specified `output_name` (`${invoker.output_name}`) matches the default. `output_name` only needs to be specified when overriding the default.")
