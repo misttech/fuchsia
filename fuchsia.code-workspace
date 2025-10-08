@@ -60,8 +60,8 @@
       "ms-python.black-formatter",
       "ms-python.vscode-pylance",
 
-      // The GN language server from Microsoft
-      "msedge-dev.gnls",
+      // The GN language server from Google
+      "google.gn",
 
       // The official Clang LSP for C/C++.
       "llvm-vs-code-extensions.vscode-clangd",
@@ -85,10 +85,9 @@
       // preferred C++ extension.
       "ms-vscode.cpptools",
 
-      // Redundant and conflicts with gnls, which is preferred.
+      // Redudant and conflict with the Google GN extension, which is preferred.
+      "msedge-dev.gnls",
       "npclaudiu.vscode-gn",
-
-      // Redundant and conflicts with gnls, which is preferred.
       "persidskiy.vscode-gnformat",
 
       // Superseded by vscode-fuchsia, which provides zxdb support.
