@@ -413,8 +413,7 @@ pub(in crate::security) fn check_socket_sendmsg_access(
         return Ok(());
     };
     let current_sid = current_task_state(current_task).lock().current_sid;
-    todo_has_socket_permission(
-        TODO_DENY!("https://fxbug.dev/411396154", "Enforce socket_sendmsg checks."),
+    has_socket_permission(
         &security_server.as_permission_check(),
         current_task,
         current_sid,
@@ -438,8 +437,7 @@ pub(in crate::security) fn check_socket_recvmsg_access(
         return Ok(());
     };
     let current_sid = current_task_state(current_task).lock().current_sid;
-    todo_has_socket_permission(
-        TODO_DENY!("https://fxbug.dev/411396154", "Enforce socket_recvmsg checks."),
+    has_socket_permission(
         &security_server.as_permission_check(),
         current_task,
         current_sid,
