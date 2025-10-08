@@ -107,10 +107,8 @@ type ElementSchema = resource table {
     /// List of dependencies for this element's power levels.
     /// Note: dependencies UPON this element's levels cannot be added here.
     4: dependencies vector<LevelDependency>:MAX_DEPENDENCIES_IN_ADD_ELEMENT;
-    /// DEPRECATED. Channels on which Power Broker will send required power
-    /// levels and receive current level updates.
-    @available(deprecated=HEAD, note="Use element_runner instead")
-    7: level_control_channels LevelControlChannels;
+    /// REMOVED: 7: level_control_channels, use `element_runner` instead (see below).
+    ///
     /// Optional. If passed, this will be treated as a consumer element and
     /// Leases for this element can be requested via this channel.
     8: lessor_channel server_end:Lessor;
@@ -120,20 +118,10 @@ type ElementSchema = resource table {
     /// closed and all tokens registered to this element will be
     /// unregistered.
     9: element_control server_end:ElementControl;
-    /// If passed, Power Broker will use this instead of
-    /// `level_control_channels` for the required level control loop.
+    /// The client-end that Power Broker should use to set the power level of this element.
     /// The server_end of this should be retained and the ElementRunner
     /// protocol implemented by the element's runner.
     10: element_runner client_end:ElementRunner;
-};
-
-type LevelControlChannels = resource struct {
-    /// Channel on which Power Broker will receive current level updates
-    /// for this element.
-    current server_end:CurrentLevel;
-    /// Channel on which Power Broker will send required power levels
-    /// for this element.
-    required server_end:RequiredLevel;
 };
 
 // Limitations on vector length for the sake of bounding request size.
@@ -212,45 +200,6 @@ type Permissions = strict bits : uint32 {
     MODIFY_ASSERTIVE_DEPENDENT = 0b00000001;
     MODIFY_OPPORTUNISTIC_DEPENDENT = 0b0000010;
     MODIFY_DEPENDENCY = 0b00000100;
-};
-
-/// CurrentLevel and RequiredLevel must both be used by all managed
-/// Power Elements as part of the power level handshake with Power Broker:
-/// * The element operator calls RequiredLevel.Watch to receive the next
-///   required level from Power Broker.
-/// * The operator makes the changes necessary to transition to the new
-///   required level.
-/// * The operator calls CurrentLevel.Update to inform Power Broker
-///   that it has completed the transition to the new level.
-/// Established via Topology.AddElement.
-open protocol CurrentLevel {
-    /// Sent by the element on initial startup and whenever there is a change
-    /// in power level.
-    flexible Update(resource struct {
-        current_level PowerLevel;
-    }) -> () error CurrentLevelError;
-};
-
-type CurrentLevelError = flexible enum {
-    NOT_AUTHORIZED = 1;
-};
-
-/// Part of the power level handshake with Power Broker used for receiving
-/// required levels from Power Broker. See above note on CurrentLevel.
-/// Established via Topology.AddElement.
-open protocol RequiredLevel {
-    /// Returns the required power level for this element. The first call on
-    /// this channel will return immediately. Subsequent calls will block until
-    /// the required power level has changed.
-    flexible Watch() -> (resource struct {
-        required_level PowerLevel;
-    }) error RequiredLevelError;
-};
-
-type RequiredLevelError = flexible enum {
-    INTERNAL = 1;
-    NOT_AUTHORIZED = 2;
-    UNKNOWN = 3;
 };
 
 /// Provides element-scoped access to request leases to raise the levels of an

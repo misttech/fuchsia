@@ -6,18 +6,16 @@ use anyhow::{Context as _, Error};
 use async_utils::event::Event;
 use fidl::endpoints::{ClientEnd, ServerEnd};
 use fidl_fuchsia_power_broker::{
-    self as fpb, CurrentLevelRequest, CurrentLevelRequestStream, ElementControlRequest,
-    ElementControlRequestStream, LeaseControlMarker, LeaseControlRequest,
-    LeaseControlRequestStream, LeaseError, LeaseStatus, LessorRequest, LessorRequestStream,
-    RequiredLevelRequest, RequiredLevelRequestStream, StatusRequest, StatusRequestStream,
-    TopologyRequest, TopologyRequestStream,
+    self as fpb, ElementControlRequest, ElementControlRequestStream, LeaseControlMarker,
+    LeaseControlRequest, LeaseControlRequestStream, LeaseError, LeaseStatus, LessorRequest,
+    LessorRequestStream, StatusRequest, StatusRequestStream, TopologyRequest,
+    TopologyRequestStream,
 };
 use fpb::ElementSchema;
 use fuchsia_async::Task;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::component;
 use fuchsia_inspect::health::Reporter;
-use futures::channel::mpsc::UnboundedReceiver;
 use futures::prelude::*;
 use futures::select;
 use inspect_format::constants::DEFAULT_VMO_SIZE_BYTES as DEFAULT_INSPECT_VMO;
@@ -42,14 +40,12 @@ enum IncomingRequest {
 
 struct ElementHandlers {
     runner: Option<ElementRunnerHandler>,
-    current: Option<Rc<CurrentLevelHandler>>,
-    required: Option<RequiredLevelHandler>,
     status: Vec<StatusChannelHandler>,
 }
 
 impl ElementHandlers {
     fn new() -> Self {
-        Self { runner: None, current: None, required: None, status: Vec::new() }
+        Self { runner: None, status: Vec::new() }
     }
 }
 
@@ -265,10 +261,9 @@ impl BrokerSvc {
             u8,
             Vec<u8>,
             Vec<fpb::LevelDependency>,
-            Option<fpb::LevelControlChannels>,
             Option<ServerEnd<fpb::LessorMarker>>,
             Option<ServerEnd<fpb::ElementControlMarker>>,
-            Option<ClientEnd<fpb::ElementRunnerMarker>>,
+            ClientEnd<fpb::ElementRunnerMarker>,
         ),
         fpb::AddElementError,
     > {
@@ -281,19 +276,18 @@ impl BrokerSvc {
         let Some(valid_levels) = payload.valid_levels else {
             return Err(fpb::AddElementError::Invalid);
         };
-        if payload.level_control_channels.is_some() && payload.element_runner.is_some() {
+        let Some(element_runner) = payload.element_runner else {
             return Err(fpb::AddElementError::Invalid);
-        }
+        };
         let level_dependencies = payload.dependencies.unwrap_or(vec![]);
         Ok((
             element_name,
             initial_current_level,
             valid_levels,
             level_dependencies,
-            payload.level_control_channels,
             payload.lessor_channel,
             payload.element_control,
-            payload.element_runner,
+            element_runner,
         ))
     }
 
@@ -309,7 +303,6 @@ impl BrokerSvc {
                             initial_current_level,
                             valid_levels,
                             level_dependencies,
-                            level_control_channels,
                             lessor_channel,
                             element_control,
                             element_runner,
@@ -322,7 +315,7 @@ impl BrokerSvc {
                         let res = {
                             let mut broker = self.broker.borrow_mut();
                             broker.add_element(
-                                &element_name.clone(),
+                                &element_name,
                                 initial_current_level,
                                 valid_levels,
                                 level_dependencies,
@@ -334,39 +327,17 @@ impl BrokerSvc {
                                 self.element_handlers
                                     .borrow_mut()
                                     .insert(element_id.clone(), ElementHandlers::new());
-                                if let Some(element_runner) = element_runner {
-                                    let mut runner = ElementRunnerHandler::new(
-                                        element_id.clone(),
-                                        element_name.clone(),
-                                    );
-                                    runner.start(self.broker.clone(), element_runner.into_proxy());
-                                    self.element_handlers
-                                        .borrow_mut()
-                                        .entry(element_id.clone())
-                                        .and_modify(|e| {
-                                            e.runner = Some(runner);
-                                        });
-                                } else if let Some(level_control) = level_control_channels {
-                                    let current = self
-                                        .create_current_level_handler(
-                                            element_id.clone(),
-                                            level_control.current,
-                                        )
-                                        .await;
-                                    let required = self
-                                        .create_required_level_handler(
-                                            element_id.clone(),
-                                            level_control.required,
-                                        )
-                                        .await;
-                                    self.element_handlers
-                                        .borrow_mut()
-                                        .entry(element_id.clone())
-                                        .and_modify(|e| {
-                                            e.current = Some(current);
-                                            e.required = Some(required);
-                                        });
-                                }
+                                let mut runner = ElementRunnerHandler::new(
+                                    element_id.clone(),
+                                    element_name.clone(),
+                                );
+                                runner.start(self.broker.clone(), element_runner.into_proxy());
+                                self.element_handlers
+                                    .borrow_mut()
+                                    .entry(element_id.clone())
+                                    .and_modify(|e| {
+                                        e.runner = Some(runner);
+                                    });
                                 if let Some(element_control) = element_control {
                                     let element_control_stream = element_control.into_stream();
                                     log::debug!(
@@ -428,32 +399,6 @@ impl BrokerSvc {
                 }
             })
             .await
-    }
-
-    async fn create_required_level_handler(
-        &self,
-        element_id: ElementID,
-        server_end: ServerEnd<fpb::RequiredLevelMarker>,
-    ) -> RequiredLevelHandler {
-        let receiver = {
-            let mut broker = self.broker.borrow_mut();
-            broker.watch_required_level(&element_id)
-        };
-        let mut handler = RequiredLevelHandler::new(element_id);
-        let stream = server_end.into_stream();
-        handler.start(stream, receiver);
-        handler
-    }
-
-    async fn create_current_level_handler(
-        &self,
-        element_id: ElementID,
-        server_end: ServerEnd<fpb::CurrentLevelMarker>,
-    ) -> Rc<CurrentLevelHandler> {
-        let handler = Rc::new(CurrentLevelHandler::new(self.broker.clone(), element_id));
-        let stream = server_end.into_stream();
-        handler.clone().start(stream);
-        handler
     }
 
     async fn create_status_channel_handler(
@@ -524,137 +469,6 @@ impl ElementRunnerHandler {
             }
             log::debug!("{debug_info} shutdown.");
         }).detach();
-    }
-}
-
-struct RequiredLevelHandler {
-    element_id: ElementID,
-    shutdown: Event,
-}
-
-impl RequiredLevelHandler {
-    fn new(element_id: ElementID) -> Self {
-        Self { element_id, shutdown: Event::new() }
-    }
-
-    fn start(
-        &mut self,
-        mut stream: RequiredLevelRequestStream,
-        mut receiver: UnboundedReceiver<Option<IndexedPowerLevel>>,
-    ) {
-        let element_id = self.element_id.clone();
-        let mut shutdown = self.shutdown.wait_or_dropped();
-        log::debug!("Starting new RequiredLevelHandler for {:?}", &self.element_id);
-        Task::local(async move {
-            loop {
-                select! {
-                    _ = shutdown => {
-                        break;
-                    }
-                    next = stream.next() => {
-                        if next.is_none() {
-                            break;
-                        }
-                        // If there are newer required levels available, send the last one.
-                        let mut last = next;
-                        while let Some(maybe_next) = stream.next().now_or_never() {
-                            if maybe_next.is_none() {
-                                break;
-                            }
-                            log::debug!("skipping {:?}, newer required level available: {:?}", last, maybe_next);
-                            last = maybe_next;
-                        }
-                        if let Some(Ok(request)) = last {
-                            if let Err(err) = RequiredLevelHandler::handle_request(element_id.clone(), request, &mut receiver).await {
-                                log::debug!("handle_request error: {:?}", err);
-                            }
-                        } else {
-                            break;
-                        }
-                    }
-                }
-            }
-            log::debug!("Closed RequiredLevel channel for {:?}.", &element_id);
-        }).detach();
-    }
-
-    async fn handle_request(
-        element_id: ElementID,
-        request: RequiredLevelRequest,
-        receiver: &mut UnboundedReceiver<Option<IndexedPowerLevel>>,
-    ) -> Result<(), Error> {
-        match request {
-            RequiredLevelRequest::Watch { responder } => {
-                if let Some(Some(power_level)) = receiver.next().await {
-                    log::debug!("RequiredLevel.Watch: send({:?})", &power_level);
-                    responder.send(Ok(power_level.level)).context("response failed")
-                } else {
-                    log::info!(
-                        "RequiredLevel.Watch: receiver closed, element {:?} is no longer available.",
-                        &element_id
-                    );
-                    Ok(())
-                }
-            }
-            RequiredLevelRequest::_UnknownMethod { ordinal, .. } => {
-                log::warn!("Received unknown RequiredLevelRequest: {ordinal}");
-                Err(anyhow::anyhow!("Received unknown RequiredLevelRequest: {ordinal}"))
-            }
-        }
-    }
-}
-
-struct CurrentLevelHandler {
-    broker: Rc<RefCell<Broker>>,
-    element_id: ElementID,
-}
-
-impl CurrentLevelHandler {
-    fn new(broker: Rc<RefCell<Broker>>, element_id: ElementID) -> Self {
-        Self { broker, element_id }
-    }
-
-    async fn handle_current_level_stream(
-        &self,
-        element_id: ElementID,
-        stream: CurrentLevelRequestStream,
-    ) -> Result<(), Error> {
-        stream
-            .map(|result| result.context("failed request"))
-            .try_for_each(|request| async {
-                match request {
-                    CurrentLevelRequest::Update { current_level, responder } => {
-                        log::debug!("CurrentLevel.Update({:?}, {:?})", &element_id, &current_level);
-                        let mut broker = self.broker.borrow_mut();
-                        fuchsia_trace::counter!(
-                            c"power-broker", c"CurrentLevel.Update.Received", 0,
-                            broker.lookup_name(&element_id).into_owned() => current_level as u32
-                        );
-
-                        let current_level =
-                            broker.get_level_index(&element_id, &current_level).unwrap().clone();
-                        broker.update_current_level(&element_id, current_level);
-                        responder.send(Ok(())).context("send failed")
-                    }
-                    CurrentLevelRequest::_UnknownMethod { ordinal, .. } => {
-                        log::warn!("Received unknown CurrentLevelRequest: {ordinal}");
-                        Err(anyhow::anyhow!("Received unknown CurrentLevelRequest: {ordinal}"))
-                    }
-                }
-            })
-            .await
-    }
-
-    fn start(self: Rc<Self>, stream: CurrentLevelRequestStream) {
-        let element_id = self.element_id.clone();
-        log::debug!("Starting new CurrentLevelHandler for {:?}", &self.element_id);
-        Task::local(async move {
-            if let Err(err) = self.handle_current_level_stream(element_id.clone(), stream).await {
-                log::error!("handle_current_level_control_stream error: {:?}", err);
-            }
-            log::debug!("Closed CurrentLevel channel for {:?}.", &element_id);
-        })
-        .detach();
     }
 }
 
