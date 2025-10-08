@@ -10,6 +10,11 @@ Run on Starnix with:
 fx test sestarnix_userspace_tests
 ```
 
+Or use `#meta/<test_name>.cm` to only execute a specific test. E.g.
+```
+fx test sestarnix_userspace_tests#meta/socketpipes.cm
+```
+
 For running the tests on Linux please see [//vendor/google/starnix/tests/selinux/userspace/README.md](../../../../../vendor/google/starnix/tests/selinux/userspace/README.md).
 
 
