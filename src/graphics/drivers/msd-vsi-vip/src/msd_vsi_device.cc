@@ -57,6 +57,7 @@ bool MsdVsiDevice::Shutdown() {
     DLOG("joining device thread");
     device_thread_.join();
     DLOG("joined");
+    device_thread_id_ = nullptr;
   }
 
   // Ensure hardware is idle.
@@ -468,7 +469,6 @@ int MsdVsiDevice::InterruptThreadLoop() {
 
 magma::Status MsdVsiDevice::ProcessInterrupt(registers::IrqAck irq_status) {
   CHECK_THREAD_IS_CURRENT(device_thread_id_);
-
   auto mmu_exception = irq_status.mmu_exception();
   auto bus_error = irq_status.bus_error();
   auto value = irq_status.value();
@@ -750,6 +750,20 @@ bool MsdVsiDevice::HardwareReset() {
   while (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
                                                                start)
              .count() < kResetTimeoutMs) {
+    // Power on is needed to write to pulse-eater.
+    PowerOn();
+
+    // Disable clock gating
+    registers::PowerModule::Get().FromValue(0x0).WriteTo(register_io());
+
+    // Disable pulse eater.
+    {
+      auto pulse = registers::PulseEater::Get().FromValue(0x15b0880);
+      pulse.WriteTo(register_io());
+      pulse.set_disable(1);
+      pulse.WriteTo(register_io());
+    }
+
     auto clock_control = registers::ClockControl::Get().FromValue(0);
     clock_control.set_isolate_gpu(1);
     clock_control.WriteTo(register_io_.get());

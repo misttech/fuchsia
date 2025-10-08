@@ -337,7 +337,7 @@ class MsdVsiDevice : public msd::Device,
   std::unique_ptr<Sequencer> sequencer_;
   std::unique_ptr<GpuProgress> progress_;
 
-  enum RequestType : uint8_t { kBatchRequest, kDumpRequest, kInterruptRequest };
+  enum RequestType : uint8_t { kBatchRequest, kDumpRequest, kInterruptRequest, kResetRequest };
 
   class BatchRequest : public DeviceRequest {
    public:
@@ -387,6 +387,17 @@ class MsdVsiDevice : public msd::Device,
 
    private:
     const registers::IrqAck irq_status_;
+  };
+
+  class ResetRequest : public DeviceRequest {
+   public:
+    ResetRequest() = default;
+
+    static constexpr uint8_t kRequestType = kResetRequest;
+    uint8_t RequestType() override { return kRequestType; }
+
+   protected:
+    magma::Status Process(MsdVsiDevice* device) override { return device->HardwareReset(); }
   };
 
   // Thread-shared data members

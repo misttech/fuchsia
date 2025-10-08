@@ -46,7 +46,7 @@ TEST_F(TestExec, ResetAfterSubmit) {
     ASSERT_NO_FATAL_FAILURE();
     ASSERT_FALSE(default_context()->killed());
 
-    EXPECT_TRUE(device_->HardwareReset());
+    device_->EnqueueDeviceRequest(std::make_unique<MsdVsiDevice::ResetRequest>());
 
     Release();
     ASSERT_NO_FATAL_FAILURE(SetUp());

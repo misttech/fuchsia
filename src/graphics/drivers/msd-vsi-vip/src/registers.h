@@ -188,8 +188,14 @@ class Specs4 : public hwreg::RegisterBase<Specs4, uint32_t> {
   static auto Get() { return hwreg::RegisterAddr<Specs4>(0x9C); }
 };
 
+class PowerModule : public hwreg::RegisterBase<PowerModule, uint32_t> {
+ public:
+  static auto Get() { return hwreg::RegisterAddr<PowerModule>(0x108); }
+};
+
 class PulseEater : public hwreg::RegisterBase<PulseEater, uint32_t> {
  public:
+  DEF_BIT(0, disable);
   DEF_BIT(18, disable_internal_dfs);
 
   static auto Get() { return hwreg::RegisterAddr<PulseEater>(0x10c); }
