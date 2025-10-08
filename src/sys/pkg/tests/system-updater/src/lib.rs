@@ -11,7 +11,7 @@ use ::update_package::manifest::{self, OtaManifestV1};
 use anyhow::{Context as _, Error, anyhow};
 use assert_matches::assert_matches;
 use blobfs_ramdisk::BlobfsRamdisk;
-use fidl::endpoints::DiscoverableProtocolMarker as _;
+use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
 use fidl_fuchsia_hardware_power_statecontrol::{RebootOptions, RebootReason2};
 use fidl_fuchsia_update_installer_ext::{
     Initiator, Options, UpdateAttempt, UpdateAttemptError, start_update,
@@ -66,6 +66,13 @@ mod writes_images;
 
 const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 const MATCHING_SHA256: &str = "e0705e68b0468289858b543f8a57f375a3b4f46391a72f94a28d82d6a3dacaa7";
+// Generated with `openssl genpkey -algorithm ed25519 -out ed25519.pem`
+// openssl pkey -in ed25519.pem -outform DER | tail -c 32 | xxd -p -c 32
+const MANIFEST_PRIVATE_KEY: &str =
+    "d450f0c0c1a70b89dbe023ec577420cf18c0a0ca27e79a1b9b8ae38d9045250e";
+// openssl pkey -in ed25519.pem -pubout -outform DER | tail -c 32 | xxd -p -c 32
+const MANIFEST_PUBLIC_KEY: &str =
+    "1104bf9d6a201bc5c319573a80def62f826cc21e4cd99f43e52e9ee171463fd7";
 
 pub fn make_images_json_zbi() -> String {
     serde_json::to_string(
@@ -579,6 +586,14 @@ impl TestEnvBuilder {
             .set_config_value(&system_updater, "allow_packageless_update", true.into())
             .await
             .unwrap();
+        builder
+            .set_config_value(
+                &system_updater,
+                "manifest_public_keys",
+                vec![MANIFEST_PUBLIC_KEY].into(),
+            )
+            .await
+            .unwrap();
 
         let realm_instance = builder.build().await.unwrap();
 
@@ -701,19 +716,40 @@ impl TestEnv {
     }
 
     async fn start_update(&self) -> Result<UpdateAttempt, UpdateAttemptError> {
-        self.start_update_with_options(UPDATE_PKG_URL, default_options()).await
+        self.start_update_with_options(UPDATE_PKG_URL, default_options(), None).await
     }
 
     async fn start_packageless_update(&self) -> Result<UpdateAttempt, UpdateAttemptError> {
-        self.start_update_with_options(MANIFEST_URL, default_options()).await
+        self.start_update_with_options(MANIFEST_URL, default_options(), None).await
     }
 
     async fn start_update_with_options(
         &self,
         url: &str,
         options: Options,
+        reboot_controller_server_end: Option<ServerEnd<finstaller::RebootControllerMarker>>,
     ) -> Result<UpdateAttempt, UpdateAttemptError> {
-        start_update(&url.parse().unwrap(), options, &self.installer_proxy(), None, None).await
+        let url: url::Url = url.parse().unwrap();
+        let signature = match url.scheme() {
+            "http" | "https" => {
+                let key_bytes = hex::decode(MANIFEST_PRIVATE_KEY).unwrap();
+                let key_pair =
+                    ring::signature::Ed25519KeyPair::from_seed_unchecked(&key_bytes).unwrap();
+                self.http_loader_service
+                    .manifest
+                    .as_ref()
+                    .map(|manifest| key_pair.sign(manifest.as_bytes()))
+            }
+            _ => None,
+        };
+        start_update(
+            &url,
+            options,
+            &self.installer_proxy(),
+            reboot_controller_server_end,
+            signature.as_ref().map(|s| s.as_ref()),
+        )
+        .await
     }
 
     async fn run_update(&self) -> Result<(), Error> {
@@ -725,7 +761,7 @@ impl TestEnv {
     }
 
     async fn run_update_with_options(&self, url: &str, options: Options) -> Result<(), Error> {
-        let mut update_attempt = self.start_update_with_options(url, options).await?;
+        let mut update_attempt = self.start_update_with_options(url, options, None).await?;
 
         while let Some(state) =
             update_attempt.try_next().await.context("fetching next update state")?

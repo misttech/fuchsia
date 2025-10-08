@@ -437,7 +437,8 @@ async fn test_fetch_failure_reason(
         .add_file("images.json", make_images_json_zbi());
     env.resolver.mock_resolve_failure(SYSTEM_IMAGE_URL, resolve_error);
 
-    let mut attempt = env.start_update_with_options(update_url, default_options()).await.unwrap();
+    let mut attempt =
+        env.start_update_with_options(update_url, default_options(), None).await.unwrap();
 
     let info = UpdateInfo::builder().download_size(0).build();
     let progress = Progress::builder()

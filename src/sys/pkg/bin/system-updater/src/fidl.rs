@@ -87,13 +87,13 @@ impl FidlServer {
                 options,
                 monitor,
                 reboot_controller,
-                signature: _,
+                signature,
                 responder,
             } => {
                 let mut install_manager_ch = self.install_manager_ch.clone();
 
                 // Transform FIDL request params into types the install manager can understand.
-                let config = Config::from_url_and_options(url.url.parse()?, options.try_into()?);
+                let config = Config::new(url.url.parse()?, options.try_into()?, signature);
                 let notifier = UpdateStateNotifier::new(monitor.into_proxy());
 
                 // If a reboot controller is specified, set up a task that fowards reboot controller

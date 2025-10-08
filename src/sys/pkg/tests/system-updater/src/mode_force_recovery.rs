@@ -101,15 +101,10 @@ async fn reboots_regardless_of_reboot_controller(update_url: &str) {
 
     // Start the system update.
     let (reboot_proxy, server_end) = fidl::endpoints::create_proxy();
-    let attempt = start_update(
-        &update_url.parse().unwrap(),
-        default_options(),
-        &env.installer_proxy(),
-        Some(server_end),
-        None,
-    )
-    .await
-    .unwrap();
+    let attempt = env
+        .start_update_with_options(update_url, default_options(), Some(server_end))
+        .await
+        .unwrap();
     let () = reboot_proxy.detach().unwrap();
 
     // Ensure the update attempt has completed.

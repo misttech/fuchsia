@@ -219,7 +219,8 @@ async fn monitor_connects_to_existing_attempt(update_url: &str) {
     let handle_ota_manifest = env.http_loader_service.block_once();
 
     // Start the system update.
-    let attempt0 = env.start_update_with_options(update_url, default_options()).await.unwrap();
+    let attempt0 =
+        env.start_update_with_options(update_url, default_options(), None).await.unwrap();
 
     // Attach monitor.
     let attempt1 =
@@ -272,7 +273,8 @@ async fn succeed_additional_start_requests_when_compatible(update_url: &str) {
 
     // Start the system update, making 2 start_update requests. The second start_update request
     // is essentially just a monitor_update request in this case.
-    let attempt0 = env.start_update_with_options(update_url, default_options()).await.unwrap();
+    let attempt0 =
+        env.start_update_with_options(update_url, default_options(), None).await.unwrap();
     let attempt1 = env
         .start_update_with_options(
             update_url,
@@ -281,6 +283,7 @@ async fn succeed_additional_start_requests_when_compatible(update_url: &str) {
                 allow_attach_to_existing_attempt: true,
                 should_write_recovery: true,
             },
+            None,
         )
         .await
         .unwrap();
@@ -332,14 +335,15 @@ async fn fail_additional_start_requests_when_not_compatible(
     let _handle_ota_manifest = env.http_loader_service.block_once();
 
     // Start the system update.
-    let installer_proxy = env.installer_proxy();
     let compatible_options = Options {
         initiator: Initiator::User,
         allow_attach_to_existing_attempt: true,
         should_write_recovery: true,
     };
-    let _attempt =
-        env.start_update_with_options(compatible_url, compatible_options.clone()).await.unwrap();
+    let _attempt = env
+        .start_update_with_options(compatible_url, compatible_options.clone(), None)
+        .await
+        .unwrap();
 
     // Define incompatible options and url.
     let incompatible_options0 = Options {
@@ -355,21 +359,21 @@ async fn fail_additional_start_requests_when_not_compatible(
 
     // Show that start_update requests fail with AlreadyInProgress errors.
     assert_matches!(
-        env.start_update_with_options(compatible_url, incompatible_options0)
+        env.start_update_with_options(compatible_url, incompatible_options0, None)
             .await
             .map(|_| ())
             .unwrap_err(),
         UpdateAttemptError::InstallInProgress
     );
     assert_matches!(
-        env.start_update_with_options(compatible_url, incompatible_options1)
+        env.start_update_with_options(compatible_url, incompatible_options1, None)
             .await
             .map(|_| ())
             .unwrap_err(),
         UpdateAttemptError::InstallInProgress
     );
     assert_matches!(
-        env.start_update_with_options(incompatible_url, compatible_options.clone())
+        env.start_update_with_options(incompatible_url, compatible_options.clone(), None)
             .await
             .map(|_| ())
             .unwrap_err(),
@@ -377,16 +381,10 @@ async fn fail_additional_start_requests_when_not_compatible(
     );
     let (_, server_end) = fidl::endpoints::create_endpoints();
     assert_matches!(
-        start_update(
-            &compatible_url.parse().unwrap(),
-            compatible_options,
-            &installer_proxy,
-            Some(server_end),
-            None,
-        )
-        .await
-        .map(|_| ())
-        .unwrap_err(),
+        env.start_update_with_options(compatible_url, compatible_options, Some(server_end))
+            .await
+            .map(|_| ())
+            .unwrap_err(),
         UpdateAttemptError::InstallInProgress
     );
 }

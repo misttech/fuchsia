@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 use super::*;
+use fidl_fuchsia_update_installer_ext::{PrepareFailureReason, State};
+use pretty_assertions::assert_eq;
 use test_case::test_case;
 
 #[test_case("blobs"; "relative")]
@@ -67,4 +69,31 @@ async fn packageless_update_with_relative_blob_base_url(blob_base_url: &str) {
         Paver(PaverEvent::BootManagerFlush),
         Reboot,
     ]));
+}
+
+#[fasync::run_singlethreaded(test)]
+async fn packageless_update_fails_with_wrong_signature() {
+    let env = TestEnv::builder().ota_manifest(make_manifest([])).build().await;
+
+    let key_pair = ring::signature::Ed25519KeyPair::from_seed_unchecked(&[1; 32]).unwrap();
+    let signature = key_pair.sign(env.http_loader_service.manifest.as_ref().unwrap().as_bytes());
+
+    let mut attempt = start_update(
+        &MANIFEST_URL.parse().unwrap(),
+        default_options(),
+        &env.installer_proxy(),
+        None,
+        Some(signature.as_ref()),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(attempt.next().await.unwrap().unwrap(), State::Prepare);
+    assert_eq!(
+        attempt.next().await.unwrap().unwrap(),
+        State::FailPrepare(PrepareFailureReason::Internal)
+    );
+    assert_matches!(attempt.try_next().await, Ok(None));
+
+    env.assert_interactions(initial_interactions());
 }

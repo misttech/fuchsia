@@ -40,7 +40,8 @@ async fn invalid_epoch(update_url: &str) {
             .to_string(),
         );
 
-    let mut attempt = env.start_update_with_options(update_url, default_options()).await.unwrap();
+    let mut attempt =
+        env.start_update_with_options(update_url, default_options(), None).await.unwrap();
 
     assert_eq!(attempt.next().await.unwrap().unwrap(), State::Prepare);
     assert_eq!(
@@ -63,7 +64,8 @@ async fn unsupported_downgrade(update_url: &str) {
         .add_file("packages.json", make_packages_json([]))
         .add_file("epoch.json", make_epoch_json(SOURCE_EPOCH - 1));
 
-    let mut attempt = env.start_update_with_options(update_url, default_options()).await.unwrap();
+    let mut attempt =
+        env.start_update_with_options(update_url, default_options(), None).await.unwrap();
 
     assert_eq!(attempt.next().await.unwrap().unwrap(), State::Prepare);
     assert_eq!(

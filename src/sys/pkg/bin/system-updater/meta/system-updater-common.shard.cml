@@ -60,5 +60,16 @@
 
         // Whether to allow the new package-less update attempt flow.
         allow_packageless_update: { type: "bool" },
+
+        // The list of public Ed25519 keys used to verify manifest signature for packageless updates.
+        // The manifest will pass verification if the signature matches any of the public keys.
+        manifest_public_keys: {
+            type: "vector",
+            max_count: 10,
+            element: {
+                type: "string",
+                max_size: 64, // hex encoded 32 bytes key
+            },
+        },
     },
 }

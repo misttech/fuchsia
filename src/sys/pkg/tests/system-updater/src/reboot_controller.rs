@@ -21,15 +21,10 @@ async fn reboot_controller_detach_causes_deferred_reboot(update_url: &str) {
 
     // Start the system update.
     let (reboot_proxy, server_end) = fidl::endpoints::create_proxy();
-    let attempt = start_update(
-        &update_url.parse().unwrap(),
-        default_options(),
-        &env.installer_proxy(),
-        Some(server_end),
-        None,
-    )
-    .await
-    .unwrap();
+    let attempt = env
+        .start_update_with_options(update_url, default_options(), Some(server_end))
+        .await
+        .unwrap();
 
     // When we call detach, we should observe DeferReboot at the end.
     let () = reboot_proxy.detach().unwrap();
@@ -56,15 +51,10 @@ async fn reboot_controller_unblock_causes_reboot(update_url: &str) {
 
     // Start the system update.
     let (reboot_proxy, server_end) = fidl::endpoints::create_proxy();
-    let attempt = start_update(
-        &update_url.parse().unwrap(),
-        default_options(),
-        &env.installer_proxy(),
-        Some(server_end),
-        None,
-    )
-    .await
-    .unwrap();
+    let attempt = env
+        .start_update_with_options(update_url, default_options(), Some(server_end))
+        .await
+        .unwrap();
 
     // When we call unblock, we should observe Reboot at the end.
     let () = reboot_proxy.unblock().unwrap();
@@ -91,15 +81,10 @@ async fn reboot_controller_dropped_causes_reboot(update_url: &str) {
 
     // Start the system update.
     let (reboot_proxy, server_end) = fidl::endpoints::create_proxy();
-    let attempt = start_update(
-        &update_url.parse().unwrap(),
-        default_options(),
-        &env.installer_proxy(),
-        Some(server_end),
-        None,
-    )
-    .await
-    .unwrap();
+    let attempt = env
+        .start_update_with_options(update_url, default_options(), Some(server_end))
+        .await
+        .unwrap();
 
     // When we drop the reboot controller, we should observe Reboot at the end.
     drop(reboot_proxy);

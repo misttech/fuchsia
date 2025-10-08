@@ -15,11 +15,12 @@ pub struct Config {
     pub(super) start_time: SystemTime,
     pub(super) start_time_mono: Instant,
     pub allow_attach_to_existing_attempt: bool,
+    pub signature: Option<Vec<u8>>,
 }
 
 impl Config {
-    /// Constructs update configuration from AbsolutePackageUrl and Options.
-    pub fn from_url_and_options(update_url: url::Url, options: Options) -> Self {
+    /// Constructs update configuration from url, options and signature.
+    pub fn new(update_url: url::Url, options: Options, signature: Option<Vec<u8>>) -> Self {
         let start_time = SystemTime::now();
         let start_time_mono =
             metrics::system_time_to_monotonic_time(start_time).unwrap_or_else(Instant::now);
@@ -31,6 +32,7 @@ impl Config {
             start_time,
             start_time_mono,
             allow_attach_to_existing_attempt: options.allow_attach_to_existing_attempt,
+            signature,
         }
     }
 }
@@ -91,13 +93,14 @@ impl<'a> ConfigBuilder<'a> {
         self
     }
     pub fn build(self) -> Result<Config, anyhow::Error> {
-        Ok(Config::from_url_and_options(
+        Ok(Config::new(
             self.update_url.parse()?,
             Options {
                 allow_attach_to_existing_attempt: self.allow_attach_to_existing_attempt,
                 should_write_recovery: self.should_write_recovery,
                 initiator: ExtInitiator::User,
             },
+            None,
         ))
     }
 }
@@ -107,7 +110,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn config_from_url_and_options() {
+    fn config_new() {
         let options = Options {
             initiator: ExtInitiator::User,
             allow_attach_to_existing_attempt: true,
@@ -115,7 +118,7 @@ mod tests {
         };
         let update_url = "fuchsia-pkg://fuchsia.test/foo".parse().unwrap();
 
-        let config = Config::from_url_and_options(update_url, options);
+        let config = Config::new(update_url, options, Some(vec![1, 2, 3]));
 
         assert_matches::assert_matches!(
             config,
@@ -124,8 +127,9 @@ mod tests {
                 update_url: url,
                 should_write_recovery: true,
                 allow_attach_to_existing_attempt: true,
+                signature,
                 ..
-            } if url == "fuchsia-pkg://fuchsia.test/foo".parse().unwrap()
+            } if url == "fuchsia-pkg://fuchsia.test/foo".parse().unwrap() && signature == Some(vec![1, 2, 3])
         );
     }
 }

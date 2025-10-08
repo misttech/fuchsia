@@ -62,8 +62,10 @@ rustc_binary("bin") {
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:chrono",
     "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:hex",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:pin-project",
+    "//third_party/rust_crates:ring",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:sha2",
@@ -134,6 +136,7 @@ structured_config_values = {
   concurrent_package_resolves = 5
   concurrent_blob_fetches = 5
   allow_packageless_update = false
+  manifest_public_keys = []
 }
 
 fuchsia_structured_config_values("config_values_from_gn") {
