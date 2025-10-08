@@ -41,13 +41,13 @@ zx::result<> PostInit::InitBacklight() {
                {{.address = 0x01, .value = 0x85}},
 
                // CFG2
-               {{.address = 0xa2, .value = 0x30}},
+               {{.address = 0xa2, .value = 0x20}},
 
                // CFG3
                {{.address = 0xa3, .value = 0x32}},
 
                // CFG5
-               {{.address = 0xa5, .value = 0x54}},
+               {{.address = 0xa5, .value = 0x04}},
 
                // CFG7
                {{.address = 0xa7, .value = 0xf4}},
