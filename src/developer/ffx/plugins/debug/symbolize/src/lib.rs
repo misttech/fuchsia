@@ -25,12 +25,11 @@ impl FfxMain for SymbolizeTool {
     type Writer = SimpleWriter;
 
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
-        let sdk = self.context.get_sdk()?;
         if let Err(e) = symbol_index::ensure_symbol_index_registered(&self.context) {
             eprintln!("ensure_symbol_index_registered failed, error was: {:#?}", e);
         }
 
-        let symbolizer_path = ffx_config::get_host_tool(&sdk, "symbolizer")?;
+        let symbolizer_path = ffx_config::get_host_tool(&self.context, "symbolizer")?;
         let mut args = self.cmd.symbolizer_args;
         if self.cmd.auth {
             args.push("--auth".to_owned());

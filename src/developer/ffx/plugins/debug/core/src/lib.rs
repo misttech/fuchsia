@@ -37,7 +37,6 @@ fho::embedded_plugin!(CoreTool);
 impl FfxMain for CoreTool {
     type Writer = SimpleWriter;
     async fn main(self, _writer: SimpleWriter) -> fho::Result<()> {
-        let sdk = self.context.get_sdk()?;
         if let Err(e) = symbol_index::ensure_symbol_index_registered(&self.context) {
             eprintln!("ensure_symbol_index_registered failed, error was: {:#?}", e);
         }
@@ -52,7 +51,7 @@ impl FfxMain for CoreTool {
             }
         };
 
-        let zxdb_path = ffx_config::get_host_tool(&sdk, "zxdb")?;
+        let zxdb_path = ffx_config::get_host_tool(&self.context, "zxdb")?;
         let mut args = vec!["--core=".to_owned() + &minidump];
         args.extend(self.cmd.zxdb_args);
 

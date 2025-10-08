@@ -5,7 +5,6 @@
 use anyhow::{Context, Result, anyhow};
 use assembly_tool::{Tool, ToolCommand, ToolCommandLog, ToolProvider};
 use ffx_config::EnvironmentContext;
-use ffx_config::sdk::Sdk;
 use std::path::PathBuf;
 use std::process::Command;
 use utf8_path::PathToStringExt;
@@ -13,8 +12,8 @@ use utf8_path::PathToStringExt;
 /// Implementation of ToolProvider that fetches tools from the SDK.
 #[derive(Clone)]
 pub struct SdkToolProvider {
-    /// The SDK object that can find the tools based on a manifest.
-    sdk: Sdk,
+    /// The EnvironmentContext that uses the SDK object that can find the tools based on a manifest.
+    context: EnvironmentContext,
 
     /// The log of the commands run.
     log: ToolCommandLog,
@@ -24,13 +23,13 @@ impl SdkToolProvider {
     /// Attempt to create a new SdkToolProvider. This will return an Err if the manifest cannot be
     /// found, parsed, or is invalid.
     pub fn try_new(ctx: &EnvironmentContext) -> Result<Self> {
-        Ok(Self { sdk: ctx.get_sdk().context("Reading the SDK")?, log: ToolCommandLog::default() })
+        Ok(Self { context: ctx.clone(), log: ToolCommandLog::default() })
     }
 }
 
 impl ToolProvider for SdkToolProvider {
     fn get_tool(&self, name: &str) -> Result<Box<dyn Tool>> {
-        let path = ffx_config::get_host_tool(&self.sdk, name.as_ref())
+        let path = ffx_config::get_host_tool(&self.context, name.as_ref())
             .context(format!("Getting host tool from the SDK: {}", name))?;
         self.get_tool_with_path(path)
     }

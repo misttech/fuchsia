@@ -40,14 +40,12 @@ use tempfile::NamedTempFile;
 use vbmeta::{HashDescriptor, Key, Salt, VBMeta};
 
 pub(crate) fn get_host_tool(context: &EnvironmentContext, name: &str) -> Result<PathBuf> {
-    let sdk = context.get_sdk()?;
-
     // Attempts to get a host tool from the SDK manifest. If it fails, falls
     // back to attempting to derive the path to the host tool binary by simply checking
     // for its existence in `ffx`'s directory.
     // TODO(https://fxbug.dev/42181753): When issues around including aemu in the sdk are resolved, this
     // hack can be removed.
-    match ffx_config::get_host_tool(&sdk, name) {
+    match ffx_config::get_host_tool(context, name) {
         Ok(path) => Ok(path),
         Err(error) => {
             log::warn!(

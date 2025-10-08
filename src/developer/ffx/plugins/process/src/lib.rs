@@ -294,13 +294,12 @@ fn write_symbolized_stack_traces(
     ctx: &EnvironmentContext,
     stack_trace: String,
 ) -> Result<()> {
-    let sdk = ctx.get_sdk()?;
     if let Err(e) = symbol_index::ensure_symbol_index_registered(ctx) {
         log::warn!("ensure_symbol_index_registered failed, error was: {:#?}", e);
     }
 
     let path =
-        ffx_config::get_host_tool(&sdk, "symbolizer").context("getting symbolizer binary path")?;
+        ffx_config::get_host_tool(ctx, "symbolizer").context("getting symbolizer binary path")?;
     let mut cmd = Command::new(path)
         .args(vec![
             "--symbol-server",

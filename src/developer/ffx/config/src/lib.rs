@@ -149,28 +149,16 @@ pub fn init(context: &EnvironmentContext) -> Result<()> {
     Ok(())
 }
 
-/// Creates a [`ConfigQuery`] against the global config cache and environment,
-/// using the provided value converted in to a base query.
-///
-/// Example:
-///
-/// ```no_run
-/// ffx_config::query("a_key").get();
-/// ffx_config::query(ffx_config::ConfigLevel::User).get();
-/// ```
-pub(crate) fn query<'a>(with: impl Into<ConfigQuery<'a>>) -> ConfigQuery<'a> {
-    with.into()
-}
-
 pub const SDK_OVERRIDE_KEY_PREFIX: &str = "sdk.overrides";
 
 /// Returns the path to the tool with the given name by first
 /// checking for configured override with the key of `sdk.override.{name}`,
 /// and no override is found, sdk.get_host_tool() is called.
-pub fn get_host_tool(sdk: &Sdk, name: &str) -> Result<PathBuf> {
+pub fn get_host_tool(ctx: &EnvironmentContext, name: &str) -> Result<PathBuf> {
     // Check for configured override for the host tool.
+    let sdk = ctx.get_sdk()?;
     let override_key = format!("{SDK_OVERRIDE_KEY_PREFIX}.{name}");
-    let override_result: Result<PathBuf, ConfigError> = query(&override_key).get();
+    let override_result: Result<PathBuf, ConfigError> = ctx.query(&override_key).get();
 
     if let Ok(tool_path) = override_result {
         if tool_path.exists() {
@@ -514,9 +502,7 @@ mod test {
             .set(override_path.to_string_lossy().into())
             .expect("setting override");
 
-        let sdk = env.context.get_sdk().expect("test sdk");
-
-        let result = get_host_tool(&sdk, "a_host_tool").expect("a_host_tool");
+        let result = get_host_tool(&env.context, "a_host_tool").expect("a_host_tool");
         assert_eq!(result, override_path);
     }
 
@@ -544,9 +530,7 @@ mod test {
             .set(override_path.to_string_lossy().into())
             .expect("setting override");
 
-        let sdk = env.context.get_sdk().expect("test sdk");
-
-        let result = get_host_tool(&sdk, "a_host_tool");
+        let result = get_host_tool(&env.context, "a_host_tool");
         assert_eq!(
             result.err().unwrap().to_string(),
             format!("Override path for a_host_tool set to {override_path:?}, but does not exist")

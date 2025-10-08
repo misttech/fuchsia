@@ -66,13 +66,12 @@ impl FfxMain for FidlTool {
 
     async fn main(self, _writer: SimpleWriter) -> fho::Result<()> {
         let Self { cmd, context, launcher_proxy } = self;
-        let sdk = context.get_sdk().user_message("Could not load currently active SDK")?;
 
         if let Err(e) = symbol_index::ensure_symbol_index_registered(&context) {
             log::warn!("ensure_symbol_index_registered failed, error was: {:#?}", e);
         }
 
-        let fidlcat_path = ffx_config::get_host_tool(&sdk, "fidlcat")?;
+        let fidlcat_path = ffx_config::get_host_tool(&context, "fidlcat")?;
         let mut arguments = ProcessArguments::new();
         let mut debug_agent_socket: Option<DebugAgentSocket> = None;
 
@@ -110,6 +109,7 @@ impl FfxMain for FidlTool {
             arguments.add_values("--extra-component", &cmd.extra_component);
         }
 
+        let sdk = context.get_sdk().user_message("Could not load currently active SDK")?;
         if sdk.get_version() == &SdkVersion::InTree {
             // When ffx is used in tree, uses the JSON IR files listed in all_fidl_json.txt.
             let ir_file = format!("@{}/all_fidl_json.txt", sdk.get_path_prefix().to_str().unwrap());

@@ -32,12 +32,11 @@ impl Debugger {
 
     /// Create a debugger from an existing socket connection to a debug agent.
     pub async fn from_socket(socket: DebugAgentSocket, ctx: &EnvironmentContext) -> Result<Self> {
-        let sdk = ctx.get_sdk()?;
         if let Err(e) = symbol_index::ensure_symbol_index_registered(ctx) {
             eprintln!("ensure_symbol_index_registered failed, error was: {:#?}", e);
         }
 
-        let path = ffx_config::get_host_tool(&sdk, "zxdb")?;
+        let path = ffx_config::get_host_tool(ctx, "zxdb")?;
 
         let mut command = CommandBuilder::new(path.clone());
         command.connect(&socket);

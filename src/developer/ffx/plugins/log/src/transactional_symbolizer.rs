@@ -258,10 +258,6 @@ pub struct RealSymbolizerProcess {
 impl RealSymbolizerProcess {
     /// Constructs a new symbolizer.
     pub fn new(ctx: &EnvironmentContext, enable_prettification: bool) -> Result<Self, LogError> {
-        let sdk = ctx.get_sdk().map_err(|err| {
-            log::warn!("Failed to get SDK. {}", err);
-            LogError::SdkNotAvailable { msg: "not found" }
-        })?;
         if let Err(e) = ensure_symbol_index_registered(ctx) {
             log::warn!("ensure_symbol_index_registered failed, error was: {:#?}", e);
         }
@@ -276,7 +272,7 @@ impl RealSymbolizerProcess {
         if enable_prettification {
             args.push("--prettify-backtrace");
         }
-        let path = ffx_config::get_host_tool(&sdk, "symbolizer").map_err(|err| {
+        let path = ffx_config::get_host_tool(ctx, "symbolizer").map_err(|err| {
             log::warn!("Failed to get symbolizer binary {}", err);
             LogError::SdkNotAvailable { msg: "symbolizer not found" }
         })?;
