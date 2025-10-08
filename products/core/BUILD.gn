@@ -14,6 +14,10 @@ assert(
 _platform_configuration_base = {
   build_type = "eng"
 
+  kernel = {
+    scheduler_enable_new_wakeup_accounting = true
+  }
+
   bluetooth = {
     type = "standard"
     snoop = "lazy"
