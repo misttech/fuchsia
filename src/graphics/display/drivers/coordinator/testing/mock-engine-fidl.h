@@ -56,6 +56,9 @@ class MockEngineFidl final : public fdf::WireServer<fuchsia_hardware_display_eng
   using SetDisplayPowerChecker = fit::function<void(
       fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerRequest* request,
       fdf::Arena& arena, SetDisplayPowerCompleter::Sync& completer)>;
+  using SetDisplayPowerModeChecker = fit::function<void(
+      fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerModeRequest* request,
+      fdf::Arena& arena, SetDisplayPowerModeCompleter::Sync& completer)>;
   using SetMinimumRgbChecker =
       fit::function<void(fuchsia_hardware_display_engine::wire::EngineSetMinimumRgbRequest* request,
                          fdf::Arena& arena, SetMinimumRgbCompleter::Sync& completer)>;
@@ -83,6 +86,7 @@ class MockEngineFidl final : public fdf::WireServer<fuchsia_hardware_display_eng
   void ExpectApplyConfiguration(ApplyConfigurationChecker checker);
   void ExpectSetBufferCollectionConstraints(SetBufferCollectionConstraintsChecker checker);
   void ExpectSetDisplayPower(SetDisplayPowerChecker checker);
+  void ExpectSetDisplayPowerMode(SetDisplayPowerModeChecker checker);
   void ExpectSetMinimumRgb(SetMinimumRgbChecker checker);
   void ExpectStartCapture(StartCaptureChecker checker);
   void ExpectReleaseCapture(ReleaseCaptureChecker checker);
@@ -122,6 +126,9 @@ class MockEngineFidl final : public fdf::WireServer<fuchsia_hardware_display_eng
       fdf::Arena& arena, SetBufferCollectionConstraintsCompleter::Sync& completer) override;
   void SetDisplayPower(fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerRequest* request,
                        fdf::Arena& arena, SetDisplayPowerCompleter::Sync& completer) override;
+  void SetDisplayPowerMode(
+      fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerModeRequest* request,
+      fdf::Arena& arena, SetDisplayPowerModeCompleter::Sync& completer) override;
   void SetMinimumRgb(fuchsia_hardware_display_engine::wire::EngineSetMinimumRgbRequest* request,
                      fdf::Arena& arena, SetMinimumRgbCompleter::Sync& completer) override;
   void StartCapture(fuchsia_hardware_display_engine::wire::EngineStartCaptureRequest* request,

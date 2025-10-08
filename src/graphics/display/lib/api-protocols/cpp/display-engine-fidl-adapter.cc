@@ -232,6 +232,18 @@ void DisplayEngineFidlAdapter::SetDisplayPower(
   completer.buffer(arena).ReplySuccess();
 }
 
+void DisplayEngineFidlAdapter::SetDisplayPowerMode(
+    fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerModeRequest* request,
+    fdf::Arena& arena, SetDisplayPowerModeCompleter::Sync& completer) {
+  zx::result<> result = engine_.SetDisplayPowerMode(display::DisplayId(request->display_id),
+                                                    display::PowerMode(request->power_mode));
+  if (result.is_error()) {
+    completer.buffer(arena).ReplyError(result.error_value());
+    return;
+  }
+  completer.buffer(arena).ReplySuccess();
+}
+
 void DisplayEngineFidlAdapter::SetMinimumRgb(
     fuchsia_hardware_display_engine::wire::EngineSetMinimumRgbRequest* request, fdf::Arena& arena,
     SetMinimumRgbCompleter::Sync& completer) {

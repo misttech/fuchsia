@@ -726,6 +726,46 @@ TEST_F(DisplayEngineFidlAdapterTest, SetDisplayPowerEngineError) {
   EXPECT_STATUS(zx::error(ZX_ERR_INTERNAL), fidl_domain_result);
 }
 
+TEST_F(DisplayEngineFidlAdapterTest, SetDisplayPowerModeSuccess) {
+  static constexpr display::DisplayId kDisplayId(42);
+  static constexpr display::PowerMode kPowerMode = display::PowerMode::kOff;
+
+  mock_.ExpectSetDisplayPowerMode(
+      [&](display::DisplayId display_id, display::PowerMode power_mode) {
+        EXPECT_EQ(kDisplayId, display_id);
+        EXPECT_EQ(kPowerMode, power_mode);
+        return zx::ok();
+      });
+
+  fdf::Arena arena('TEST');
+  fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::SetDisplayPowerMode>
+      fidl_transport_result =
+          fidl_client_.buffer(arena)->SetDisplayPowerMode(kDisplayId.ToFidl(), kPowerMode.ToFidl());
+  ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
+
+  fit::result<zx_status_t>& fidl_domain_result = fidl_transport_result.value();
+  EXPECT_OK(fidl_domain_result);
+}
+
+TEST_F(DisplayEngineFidlAdapterTest, SetDisplayPowerModeEngineError) {
+  static constexpr display::DisplayId kDisplayId(42);
+  static constexpr display::PowerMode kPowerMode = display::PowerMode::kOff;
+
+  mock_.ExpectSetDisplayPowerMode(
+      [&](display::DisplayId display_id, display::PowerMode power_mode) {
+        return zx::error(ZX_ERR_INTERNAL);
+      });
+
+  fdf::Arena arena('TEST');
+  fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::SetDisplayPowerMode>
+      fidl_transport_result =
+          fidl_client_.buffer(arena)->SetDisplayPowerMode(kDisplayId.ToFidl(), kPowerMode.ToFidl());
+  ASSERT_TRUE(fidl_transport_result.ok()) << fidl_transport_result.FormatDescription();
+
+  fit::result<zx_status_t>& fidl_domain_result = fidl_transport_result.value();
+  EXPECT_STATUS(zx::error(ZX_ERR_INTERNAL), fidl_domain_result);
+}
+
 TEST_F(DisplayEngineFidlAdapterTest, StartCaptureSuccess) {
   static constexpr display::DriverCaptureImageId kCaptureImageId(42);
 

@@ -67,6 +67,9 @@ class DisplayEngineFidlAdapter : public fdf::WireServer<fuchsia_hardware_display
       fdf::Arena& arena, SetBufferCollectionConstraintsCompleter::Sync& completer) override;
   void SetDisplayPower(fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerRequest* request,
                        fdf::Arena& arena, SetDisplayPowerCompleter::Sync& completer) override;
+  void SetDisplayPowerMode(
+      fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerModeRequest* request,
+      fdf::Arena& arena, SetDisplayPowerModeCompleter::Sync& completer) override;
   void SetMinimumRgb(fuchsia_hardware_display_engine::wire::EngineSetMinimumRgbRequest* request,
                      fdf::Arena& arena, SetMinimumRgbCompleter::Sync& completer) override;
   void StartCapture(fuchsia_hardware_display_engine::wire::EngineStartCaptureRequest* request,

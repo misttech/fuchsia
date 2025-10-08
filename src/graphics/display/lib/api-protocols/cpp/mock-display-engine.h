@@ -63,6 +63,8 @@ class MockDisplayEngine : public display::DisplayEngineInterface {
                                  display::DriverBufferCollectionId buffer_collection_id)>;
   using SetDisplayPowerChecker =
       fit::function<zx::result<>(display::DisplayId display_id, bool power_on)>;
+  using SetDisplayPowerModeChecker =
+      fit::function<zx::result<>(display::DisplayId display_id, display::PowerMode power_mode)>;
   using IsCaptureSupportedChecker = fit::function<bool()>;
   using StartCaptureChecker =
       fit::function<zx::result<>(display::DriverCaptureImageId capture_image_id)>;
@@ -86,6 +88,7 @@ class MockDisplayEngine : public display::DisplayEngineInterface {
   void ExpectApplyConfiguration(ApplyConfigurationChecker checker);
   void ExpectSetBufferCollectionConstraints(SetBufferCollectionConstraintsChecker checker);
   void ExpectSetDisplayPower(SetDisplayPowerChecker checker);
+  void ExpectSetDisplayPowerMode(SetDisplayPowerModeChecker checker);
   void ExpectIsCaptureSupported(IsCaptureSupportedChecker checker);
   void ExpectStartCapture(StartCaptureChecker checker);
   void ExpectReleaseCapture(ReleaseCaptureChecker checker);
@@ -122,6 +125,8 @@ class MockDisplayEngine : public display::DisplayEngineInterface {
       const display::ImageBufferUsage& image_buffer_usage,
       display::DriverBufferCollectionId buffer_collection_id) override;
   zx::result<> SetDisplayPower(display::DisplayId display_id, bool power_on) override;
+  zx::result<> SetDisplayPowerMode(display::DisplayId display_id,
+                                   display::PowerMode power_mode) override;
   zx::result<> StartCapture(display::DriverCaptureImageId capture_image_id) override;
   zx::result<> ReleaseCapture(display::DriverCaptureImageId capture_image_id) override;
   zx::result<> SetMinimumRgb(uint8_t minimum_rgb) override;

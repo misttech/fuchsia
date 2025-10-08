@@ -23,6 +23,7 @@
 #include "src/graphics/display/lib/api-types/cpp/image-buffer-usage.h"
 #include "src/graphics/display/lib/api-types/cpp/image-metadata.h"
 #include "src/graphics/display/lib/api-types/cpp/mode-id.h"
+#include "src/graphics/display/lib/api-types/cpp/power-mode.h"
 
 namespace display {
 
@@ -80,6 +81,9 @@ class DisplayEngineInterface {
   virtual zx::result<> SetBufferCollectionConstraints(
       const display::ImageBufferUsage& image_buffer_usage,
       display::DriverBufferCollectionId buffer_collection_id) = 0;
+
+  virtual zx::result<> SetDisplayPowerMode(display::DisplayId display_id,
+                                           display::PowerMode power_mode);
 
   // OOT drivers must use the default implementation for power management.
   // The interface is not stabilized and will change.
