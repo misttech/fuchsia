@@ -16,6 +16,8 @@ use fidl::endpoints::Proxy;
 use fuchsia_component::client::connect_to_protocol_sync;
 use fuchsia_inspect::{ArrayProperty, StringArrayProperty};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
+use futures::StreamExt;
+use futures::stream::Next;
 use itertools::Itertools;
 use starnix_logging::{log_info, log_warn};
 use starnix_sync::{
@@ -594,26 +596,40 @@ pub fn create_watcher_for_wake_events(watcher: zx::EventPair) {
         .expect("Failed to register wake watcher");
 }
 
-/// A proxy wrapper that manages a `zx::Counter` to allow the container to suspend
-/// after events are being processed.
-///
-/// When the proxy is dropped, the counter is reset to 0 to release the wake-lock.
-pub struct ContainerWakingProxy<P: Proxy> {
+pub struct MessageCounter {
     #[allow(dead_code)]
     name: String,
     counter: Option<zx::Counter>,
-    proxy: P,
 }
 
-impl<P: Proxy> Drop for ContainerWakingProxy<P> {
+impl MessageCounter {
+    pub fn new(name: &str, counter: Option<zx::Counter>) -> Self {
+        Self { name: name.to_string(), counter }
+    }
+
+    pub fn mark_handled(&self) {
+        self.counter.as_ref().map(mark_proxy_message_handled);
+    }
+}
+
+impl Drop for MessageCounter {
     fn drop(&mut self) {
         self.counter.as_ref().map(mark_all_proxy_messages_handled);
     }
 }
 
+/// A proxy wrapper that manages a `zx::Counter` to allow the container to suspend
+/// after events are being processed.
+///
+/// When the proxy is dropped, the counter is reset to 0 to release the wake-lock.
+pub struct ContainerWakingProxy<P: Proxy> {
+    counter: MessageCounter,
+    proxy: P,
+}
+
 impl<P: Proxy> ContainerWakingProxy<P> {
     pub fn new(name: &str, counter: Option<zx::Counter>, proxy: P) -> Self {
-        Self { name: name.to_string(), counter, proxy }
+        Self { counter: MessageCounter::new(name, counter), proxy }
     }
 
     /// Create a `Future` call on the proxy.
@@ -632,8 +648,33 @@ impl<P: Proxy> ContainerWakingProxy<P> {
         //
         // for allowing suspend - wake.
         let f = future(&self.proxy);
-        self.counter.as_ref().map(mark_proxy_message_handled);
+        self.counter.mark_handled();
         f
+    }
+}
+
+/// A fidl stream wrapper that manages a `zx::Counter` to allow the container to suspend
+/// after events are being processed.
+///
+/// When the stream is dropped, the counter is reset to 0 to release the wake-lock.
+pub struct ContainerWakingStream<S: fidl::endpoints::RequestStream> {
+    counter: MessageCounter,
+    stream: S,
+}
+
+impl<S: fidl::endpoints::RequestStream> ContainerWakingStream<S> {
+    pub fn new(name: &str, counter: Option<zx::Counter>, stream: S) -> Self {
+        Self { counter: MessageCounter::new(name, counter), stream }
+    }
+
+    /// Create a `Next` call on the stream.poll_next().
+    ///
+    /// The counter will be decremented as message handled after the future is created.
+    pub fn next(&mut self) -> Next<'_, S> {
+        // See `ContainerWakingProxy::call` for sequence of handling events.
+        let next = self.stream.next();
+        self.counter.mark_handled();
+        next
     }
 }
 
@@ -695,6 +736,44 @@ mod test {
 
         assert_eq!(counter.read(), Ok(4));
         drop(waking_proxy);
+        assert_eq!(counter.read(), Ok(0));
+    }
+
+    #[::fuchsia::test]
+    async fn test_container_waking_stream() {
+        let (proxy, stream) = create_proxy_and_stream::<EchoMarker>();
+        let client_task = fasync::Task::spawn(async move {
+            let response = proxy.echo_string(Some("hello")).await.unwrap();
+            assert_eq!(response.as_deref(), Some("hello"));
+        });
+
+        let counter = zx::Counter::create();
+        counter.add(5).unwrap();
+        assert_eq!(counter.read(), Ok(5));
+
+        let mut waking_stream = super::ContainerWakingStream::new(
+            "test_stream",
+            Some(counter.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+            stream,
+        );
+
+        let request_future = waking_stream.next();
+
+        // The `next` method decrements the counter.
+        assert_eq!(counter.read(), Ok(4));
+
+        let request = request_future.await.unwrap().unwrap();
+        match request {
+            EchoRequest::EchoString { value, responder } => {
+                assert_eq!(value.as_deref(), Some("hello"));
+                responder.send(value.as_deref()).unwrap();
+            }
+        }
+
+        client_task.await;
+
+        assert_eq!(counter.read(), Ok(4));
+        drop(waking_stream);
         assert_eq!(counter.read(), Ok(0));
     }
 }

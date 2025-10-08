@@ -19,7 +19,7 @@ use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use futures::channel::oneshot::{self, Sender};
 use futures::executor::block_on;
 use starnix_core::power::{
-    ContainerWakingProxy, create_proxy_for_wake_events_counter, mark_proxy_message_handled,
+    ContainerWakingProxy, ContainerWakingStream, create_proxy_for_wake_events_counter,
 };
 use starnix_core::task::{Kernel, LockedAndTask};
 use starnix_logging::{
@@ -203,15 +203,13 @@ impl InputEventsRelay {
             );
 
             // button
-            let (mut default_button_device, mut media_button_event_stream, media_button_message_counter, mut touch_button_event_stream, touch_button_message_counter) =
+            let (mut default_button_device, mut media_buttons_waking_stream, mut touch_buttons_waking_stream) =
                 setup_button_relay(
                     registry_proxy,
                     event_proxy_mode,
                     default_keyboard_device_opened_files,
                     default_keyboard_device_inspect,
                 );
-            media_button_message_counter.as_ref().map(mark_proxy_message_handled);
-            touch_button_message_counter.as_ref().map(mark_proxy_message_handled);
 
             let mut power_was_pressed = false;
             let mut function_was_pressed = false;
@@ -241,6 +239,22 @@ impl InputEventsRelay {
                             }
                         }
                     }
+                    media_buttons_res = media_buttons_waking_stream.next() => {
+                        match media_buttons_res {
+                            Some(Ok(event)) => {
+                                (power_was_pressed, function_was_pressed) = self.process_media_button_event(&mut default_button_device, event, power_was_pressed, function_was_pressed);
+                            }
+                            _ => {}
+                        }
+                    }
+                    touch_buttons_future = touch_buttons_waking_stream.next() => {
+                        match touch_buttons_future {
+                            Some(Ok(event)) => {
+                                palm_was_pressed = self.process_touch_button_event(&mut default_touch_device, event, palm_was_pressed);
+                            }
+                            _ => {}
+                        }
+                    }
                     e = keyboard_event_stream.next() => {
                         match e  {
                             Some(Ok(request)) => {
@@ -248,24 +262,6 @@ impl InputEventsRelay {
                             }
                             _ => {}
                         }
-                    }
-                    e = media_button_event_stream.next() => {
-                        match e {
-                            Some(Ok(event)) => {
-                                (power_was_pressed, function_was_pressed) = self.process_media_button_event(&mut default_button_device, event, power_was_pressed, function_was_pressed);
-                            }
-                            _ => {}
-                        }
-                        media_button_message_counter.as_ref().map(mark_proxy_message_handled);
-                    }
-                    e = touch_button_event_stream.next() => {
-                        match e {
-                            Some(Ok(event)) => {
-                                palm_was_pressed = self.process_touch_button_event(&mut default_touch_device, event, palm_was_pressed);
-                            }
-                            _ => {}
-                        }
-                        touch_button_message_counter.as_ref().map(mark_proxy_message_handled);
                     }
                     e = self.receiver.next() => {
                         match e {
@@ -772,16 +768,16 @@ fn setup_button_relay(
     device_inspect_status: Option<Arc<InputDeviceStatus>>,
 ) -> (
     DeviceState,
-    fuipolicy::MediaButtonsListenerRequestStream,
-    Option<zx::Counter>,
-    fuipolicy::TouchButtonsListenerRequestStream,
-    Option<zx::Counter>,
+    ContainerWakingStream<fuipolicy::MediaButtonsListenerRequestStream>,
+    ContainerWakingStream<fuipolicy::TouchButtonsListenerRequestStream>,
 ) {
     let default_keyboard_device = DeviceState {
         device_type: InputDeviceType::Keyboard,
         open_files: default_keyboard_device_opened_files,
         inspect_status: device_inspect_status,
     };
+    let media_buttons_name = "media buttons";
+    let touch_buttons_name = "touch buttons";
 
     let (remote_media_button_client, remote_media_button_server) =
         fidl::endpoints::create_endpoints::<fuipolicy::MediaButtonsListenerMarker>();
@@ -809,7 +805,7 @@ fn setup_button_relay(
             let (local_media_buttons_channel, media_buttons_message_counter) =
                 create_proxy_for_wake_events_counter(
                     remote_media_button_server.into_channel(),
-                    "media buttons".to_string(),
+                    media_buttons_name.to_string(),
                 );
             let local_media_buttons_listener_stream =
                 fuipolicy::MediaButtonsListenerRequestStream::from_channel(
@@ -819,7 +815,7 @@ fn setup_button_relay(
             let (local_touch_buttons_channel, touch_buttons_message_counter) =
                 create_proxy_for_wake_events_counter(
                     remote_touch_button_server.into_channel(),
-                    "touch buttons".to_string(),
+                    touch_buttons_name.to_string(),
                 );
             let local_touch_buttons_listener_stream =
                 fuipolicy::TouchButtonsListenerRequestStream::from_channel(
@@ -842,10 +838,16 @@ fn setup_button_relay(
 
     (
         default_keyboard_device,
-        local_media_buttons_listener_stream,
-        media_buttons_message_counter,
-        local_touch_buttons_listener_stream,
-        touch_buttons_message_counter,
+        ContainerWakingStream::new(
+            media_buttons_name,
+            media_buttons_message_counter,
+            local_media_buttons_listener_stream,
+        ),
+        ContainerWakingStream::new(
+            touch_buttons_name,
+            touch_buttons_message_counter,
+            local_touch_buttons_listener_stream,
+        ),
     )
 }
 
