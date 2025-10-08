@@ -37,7 +37,7 @@ class ConnectionBaseTestClass(AsyncAdapter, base_test.BaseTestClass):
         abort_class_if(
             len(fuchsia_devices) != 1, "Requires exactly one Fuchsia device"
         )
-        self.fuchsia_device = fuchsia_devices[0]
+        self.fuchsia_device: fuchsia_device.FuchsiaDevice = fuchsia_devices[0]
         abort_class_if(
             not hasattr(self.fuchsia_device, "honeydew_fd")
             or self.fuchsia_device.honeydew_fd is None,
