@@ -389,7 +389,13 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 			}
 			if experiments.Contains(botanist.UseFFXMonitor) {
 				ffx := primaryTarget.GetFFX()
-				ffx.StartFFXMonitor(ctx, os.Getenv(constants.FFXMonitorPort))
+				port := strings.TrimSpace(os.Getenv(constants.FFXMonitorPort))
+				if len(port) == 0 {
+					logger.Warningf(ctx, "%s is empty, using default port %d", constants.FFXMonitorPort, constants.DefaultFFXMonitorPort)
+					port = constants.DefaultFFXMonitorPort
+				}
+
+				ffx.StartFFXMonitor(ctx, port)
 				// Stop the ffx monitor when done
 				defer ffx.StopFFXMonitor(ctx)
 			}
