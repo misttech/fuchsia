@@ -46,6 +46,7 @@ use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
     fidl_fuchsia_diagnostics as fdiagnostics, fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys,
     fidl_fuchsia_test as ftest, fidl_fuchsia_test_manager as ftest_manager,
+    fidl_fuchsia_tracing_provider as ftracing_provider,
 };
 
 const DEBUG_DATA_REALM_NAME: &'static str = "debug-data";
@@ -987,6 +988,15 @@ async fn get_realm(
                     Capability::event_stream("capability_requested").with_scope(test_root.clone()),
                 )
                 .from(Ref::parent())
+                .to(&archivist),
+        )
+        .await?;
+
+    wrapper_realm
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol::<ftracing_provider::RegistryMarker>().optional())
+                .from(Ref::void())
                 .to(&archivist),
         )
         .await?;

@@ -62,6 +62,7 @@ rustc_library("lib") {
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
     "//sdk/fidl/fuchsia.test:fuchsia.test_rust",
     "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_rust",
+    "//sdk/fidl/fuchsia.tracing.provider:fuchsia.tracing.provider_rust",
     "//sdk/rust/zx",
     "//src/lib/async-utils",
     "//src/lib/diagnostics/inspect/rust",
