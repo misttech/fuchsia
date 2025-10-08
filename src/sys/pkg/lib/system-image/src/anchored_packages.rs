@@ -5,7 +5,7 @@
 use crate::errors::AnchoredPackagesError;
 use fuchsia_pkg::package_sets::{AnchoredPackageMap, AnchoredPackageSetType, PackageProperties};
 use fuchsia_url::PinnedAbsolutePackageUrl;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AnchoredPackages {
@@ -44,7 +44,7 @@ impl AnchoredPackages {
             map.insert(u, PackageProperties { hash: h });
         } else {
             self.contents
-                .insert(package_set_type, HashMap::from([(u, PackageProperties { hash: h })]));
+                .insert(package_set_type, BTreeMap::from([(u, PackageProperties { hash: h })]));
         }
         Ok(())
     }
@@ -120,9 +120,9 @@ mod tests {
             }
          }"#;
 
-        let mut anchored_packages_map = HashMap::new();
-        anchored_packages_map.insert(AnchoredPackageSetType::OnDemand, HashMap::new());
-        anchored_packages_map.insert(AnchoredPackageSetType::Permanent, HashMap::new());
+        let mut anchored_packages_map = BTreeMap::new();
+        anchored_packages_map.insert(AnchoredPackageSetType::OnDemand, BTreeMap::new());
+        anchored_packages_map.insert(AnchoredPackageSetType::Permanent, BTreeMap::new());
         anchored_packages_map.get_mut(&AnchoredPackageSetType::OnDemand).unwrap().insert(
             UnpinnedAbsolutePackageUrl::from_str("fuchsia-pkg://fuchsia.com/package1").unwrap(),
             PackageProperties {

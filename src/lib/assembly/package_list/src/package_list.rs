@@ -8,7 +8,7 @@ use fuchsia_pkg::package_sets::{PackageMap, PackageProperties, PackageSetType};
 use fuchsia_pkg::{PackageManifest, PackagePath};
 use fuchsia_url::{PinnedAbsolutePackageUrl, RepositoryUrl};
 use serde_json::json;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -253,7 +253,7 @@ impl WritablePackageList for PackageSetMap {
         let package_set_type =
             package_set_type.context(format!("No package set type given for {}", &url))?;
         let (u, h) = url.into_unpinned_and_hash();
-        let map = self.packages.entry(package_set_type).or_insert_with(HashMap::new);
+        let map = self.packages.entry(package_set_type).or_insert_with(BTreeMap::new);
         if map.contains_key(&u) {
             return Err(anyhow!(
                 "Duplicate insert is not supported. Offending package URL: {}",

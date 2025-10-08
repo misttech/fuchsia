@@ -5,11 +5,11 @@
 use fuchsia_hash::Hash;
 use fuchsia_url::UnpinnedAbsolutePackageUrl;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// Package Set Types as specified in RFC-212
 /// https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0212_package_sets
-#[derive(Clone, Copy, Hash, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Hash, Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(untagged)]
 pub enum PackageSetType {
     /// Anchored packages
@@ -20,7 +20,7 @@ pub enum PackageSetType {
     Discoverable(DiscoverablePackageSetType),
 }
 
-#[derive(Clone, Copy, Hash, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Hash, Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AnchoredPackageSetType {
     /// Anchored, permanent packages, also known as static packages
     #[serde(rename = "anchored_permanent")]
@@ -33,13 +33,13 @@ pub enum AnchoredPackageSetType {
     OnDemand,
 }
 
-#[derive(Clone, Copy, Hash, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Hash, Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DiscoverablePackageSetType {
     #[serde(rename = "discoverable")]
     Discoverable,
 }
 
-#[derive(Clone, Copy, Hash, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Hash, Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum UpgradablePackageSetType {
     /// Upgradable, permanent packages
     #[serde(rename = "upgradable_permanent")]
@@ -67,12 +67,12 @@ pub struct PackageProperties {
 
 /// PackageSet encapsulates one set of packages (e.g. the "automatic anchored set")
 /// as a map of its package URL to the package's properties.
-pub type PackageSet = HashMap<UnpinnedAbsolutePackageUrl, PackageProperties>;
+pub type PackageSet = BTreeMap<UnpinnedAbsolutePackageUrl, PackageProperties>;
 
 /// PackageMap is the high level map of packages, containing maps to all the sets
 /// referenced by its set type (e.g. the "on demand upgradable set").
-pub type PackageMap = HashMap<PackageSetType, PackageSet>;
+pub type PackageMap = BTreeMap<PackageSetType, PackageSet>;
 
 /// AnchoredPackageMap is a high level map of packages, similar to the PackageMap type, but
 /// limited to the sets of anchored packages types.
-pub type AnchoredPackageMap = HashMap<AnchoredPackageSetType, PackageSet>;
+pub type AnchoredPackageMap = BTreeMap<AnchoredPackageSetType, PackageSet>;
