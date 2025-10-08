@@ -152,8 +152,8 @@ mod key_linux_fuchsia_tests {
     ) {
         let mut linux_keyboard_event_parser = LinuxKeyboardEventParser::create();
         let res = linux_keyboard_event_parser.handle(e);
-        pretty_assertions::assert_eq!(res, Ok(None));
-        pretty_assertions::assert_eq!(
+        assert_eq!(res, Ok(None));
+        assert_eq!(
             linux_keyboard_event_parser,
             LinuxKeyboardEventParser { cached_event: Some(e), pressing_keys: vec![] },
         );
@@ -197,12 +197,12 @@ mod key_linux_fuchsia_tests {
     ) {
         let mut linux_keyboard_event_parser = LinuxKeyboardEventParser::create();
         let res = linux_keyboard_event_parser.handle(cached);
-        pretty_assertions::assert_eq!(res, Ok(None));
+        assert_eq!(res, Ok(None));
 
         let e = uapi_input_event(uapi::EV_SYN, uapi::SYN_REPORT, 0);
         let res = linux_keyboard_event_parser.handle(e);
-        pretty_assertions::assert_eq!(res, error!(EINVAL));
-        pretty_assertions::assert_eq!(
+        assert_eq!(res, error!(EINVAL));
+        assert_eq!(
             linux_keyboard_event_parser,
             LinuxKeyboardEventParser { cached_event: None, pressing_keys: vec![] },
         );
@@ -213,12 +213,12 @@ mod key_linux_fuchsia_tests {
         let mut linux_keyboard_event_parser = LinuxKeyboardEventParser::create();
         let e = uapi_input_event(uapi::EV_KEY, uapi::KEY_A, 1);
         let res = linux_keyboard_event_parser.handle(e);
-        pretty_assertions::assert_eq!(res, Ok(None));
+        assert_eq!(res, Ok(None));
 
         let e = uapi_input_event(uapi::EV_KEY, uapi::KEY_B, 1);
         let res = linux_keyboard_event_parser.handle(e);
-        pretty_assertions::assert_eq!(res, error!(EINVAL));
-        pretty_assertions::assert_eq!(
+        assert_eq!(res, error!(EINVAL));
+        assert_eq!(
             linux_keyboard_event_parser,
             LinuxKeyboardEventParser { cached_event: None, pressing_keys: vec![] },
         );

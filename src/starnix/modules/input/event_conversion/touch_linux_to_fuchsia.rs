@@ -446,8 +446,8 @@ mod touchscreen_linux_fuchsia_tests {
     #[test_case(input_event(uapi::EV_ABS, uapi::ABS_MT_POSITION_Y, 1); "ABS_MT_POSITION_Y")]
     fn handle_input_event_ok_does_not_produce_input_report(e: uapi::input_event) {
         let mut parser = LinuxTouchEventParser::create();
-        pretty_assertions::assert_eq!(parser.handle(e), Ok(None));
-        pretty_assertions::assert_eq!(
+        assert_eq!(parser.handle(e), Ok(None));
+        assert_eq!(
             parser,
             LinuxTouchEventParser {
                 cached_events: vec![e],
@@ -463,8 +463,8 @@ mod touchscreen_linux_fuchsia_tests {
     #[test_case(input_event(uapi::EV_SYN, uapi::SYN_CONFIG, 1); "unsupported SYN event")]
     fn handle_input_event_error(e: uapi::input_event) {
         let mut parser = LinuxTouchEventParser::create();
-        pretty_assertions::assert_eq!(parser.handle(e), error!(EINVAL));
-        pretty_assertions::assert_eq!(
+        assert_eq!(parser.handle(e), error!(EINVAL));
+        assert_eq!(
             parser,
             LinuxTouchEventParser {
                 cached_events: vec![],
@@ -487,8 +487,8 @@ mod touchscreen_linux_fuchsia_tests {
     #[test_case(input_event(uapi::EV_ABS, uapi::ABS_MT_TOOL_Y , 1); "ignore ABS_MT_TOOL_Y event")]
     fn handle_input_event_ignore(e: uapi::input_event) {
         let mut parser = LinuxTouchEventParser::create();
-        pretty_assertions::assert_eq!(parser.handle(e), Ok(None));
-        pretty_assertions::assert_eq!(
+        assert_eq!(parser.handle(e), Ok(None));
+        assert_eq!(
             parser,
             LinuxTouchEventParser {
                 cached_events: vec![],
@@ -503,18 +503,9 @@ mod touchscreen_linux_fuchsia_tests {
         let syn = input_event(uapi::EV_SYN, uapi::SYN_REPORT, 0);
 
         let mut parser = LinuxTouchEventParser::create();
-        pretty_assertions::assert_eq!(
-            parser.handle(input_event(uapi::EV_ABS, uapi::ABS_MT_TRACKING_ID, 1)),
-            Ok(None)
-        );
-        pretty_assertions::assert_eq!(
-            parser.handle(input_event(uapi::EV_ABS, uapi::ABS_MT_POSITION_X, 2)),
-            Ok(None)
-        );
-        pretty_assertions::assert_eq!(
-            parser.handle(input_event(uapi::EV_ABS, uapi::ABS_MT_POSITION_Y, 3)),
-            Ok(None)
-        );
+        assert_eq!(parser.handle(input_event(uapi::EV_ABS, uapi::ABS_MT_TRACKING_ID, 1)), Ok(None));
+        assert_eq!(parser.handle(input_event(uapi::EV_ABS, uapi::ABS_MT_POSITION_X, 2)), Ok(None));
+        assert_eq!(parser.handle(input_event(uapi::EV_ABS, uapi::ABS_MT_POSITION_Y, 3)), Ok(None));
         assert_eq!(
             parser.handle(syn),
             Ok(Some(fir::InputReport {
