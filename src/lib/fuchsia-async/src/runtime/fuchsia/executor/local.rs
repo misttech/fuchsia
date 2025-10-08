@@ -41,17 +41,13 @@ impl fmt::Debug for LocalExecutor {
 }
 
 impl Default for LocalExecutor {
+    /// Create a new single-threaded executor running with actual time.
     fn default() -> Self {
-        Self::new()
+        Self::new_with_port(zx::Port::create(), None)
     }
 }
 
 impl LocalExecutor {
-    /// Create a new single-threaded executor running with actual time.
-    pub fn new() -> Self {
-        Self::new_with_port(zx::Port::create(), None)
-    }
-
     /// Create a new single-threaded executor running with actual time, with a port
     /// and instrumentation.
     pub(crate) fn new_with_port(
