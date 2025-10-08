@@ -1923,14 +1923,9 @@ mod tests {
     use super::*;
     use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fidl_fuchsia_power_broker::{BinaryPowerLevel, DependencyToken};
-    use lazy_static::lazy_static;
+
     use power_broker_client::BINARY_POWER_LEVELS;
     use zx::{self as zx, HandleBased};
-
-    lazy_static! {
-        static ref TOPOLOGY_UNSATISFIABLE_MAX_LEVEL: String =
-            format!("{}p", IndexedPowerLevel::MAX.to_string());
-    }
 
     // Convenience aliases.
     const OFF: IndexedPowerLevel =

@@ -65,7 +65,6 @@ lazy_static_visibility = [
   "//src/lib/webpki-roots-fuchsia:*",
   "//src/media/stream_processors/test:*",
   "//src/performance/memory/heapdump/instrumentation:*",
-  "//src/power/broker:*",
   "//src/sys/pkg/lib/tuf:*",
   "//src/virtualization/bin/vmm/device/virtio_input:*",
   "//tools/clidoc:*",
