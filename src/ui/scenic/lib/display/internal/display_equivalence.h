@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_UI_SCENIC_LIB_DISPLAY_DISPLAY_EQUIVALENCE_H_
-#define SRC_UI_SCENIC_LIB_DISPLAY_DISPLAY_EQUIVALENCE_H_
+#ifndef SRC_UI_SCENIC_LIB_DISPLAY_INTERNAL_DISPLAY_EQUIVALENCE_H_
+#define SRC_UI_SCENIC_LIB_DISPLAY_INTERNAL_DISPLAY_EQUIVALENCE_H_
 
-#include "src/ui/scenic/lib/display/layer_equivalence.h"
+#include "src/ui/scenic/lib/display/internal/layer_equivalence.h"
 #include "src/ui/scenic/lib/types/display_mode.h"
 
 namespace display::internal {
@@ -72,4 +72,4 @@ struct hash<display::internal::DisplayEquivalence> {
 
 }  // namespace std
 
-#endif  // SRC_UI_SCENIC_LIB_DISPLAY_DISPLAY_EQUIVALENCE_H_
+#endif  // SRC_UI_SCENIC_LIB_DISPLAY_INTERNAL_DISPLAY_EQUIVALENCE_H_

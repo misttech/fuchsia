@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_UI_SCENIC_LIB_DISPLAY_LAYER_EQUIVALENCE_H_
-#define SRC_UI_SCENIC_LIB_DISPLAY_LAYER_EQUIVALENCE_H_
+#ifndef SRC_UI_SCENIC_LIB_DISPLAY_INTERNAL_LAYER_EQUIVALENCE_H_
+#define SRC_UI_SCENIC_LIB_DISPLAY_INTERNAL_LAYER_EQUIVALENCE_H_
 
 #include <fidl/fuchsia.hardware.display.types/cpp/fidl.h>
 #include <fidl/fuchsia.math/cpp/fidl.h>
@@ -167,4 +167,4 @@ struct hash<display::internal::LayerEquivalence> {
 
 }  // namespace std
 
-#endif  // SRC_UI_SCENIC_LIB_DISPLAY_LAYER_EQUIVALENCE_H_
+#endif  // SRC_UI_SCENIC_LIB_DISPLAY_INTERNAL_LAYER_EQUIVALENCE_H_

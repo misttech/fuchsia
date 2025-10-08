@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_UI_SCENIC_LIB_DISPLAY_LAYER_H_
-#define SRC_UI_SCENIC_LIB_DISPLAY_LAYER_H_
+#ifndef SRC_UI_SCENIC_LIB_DISPLAY_INTERNAL_LAYER_H_
+#define SRC_UI_SCENIC_LIB_DISPLAY_INTERNAL_LAYER_H_
 
 #include "src/ui/scenic/lib/display/fidl_id_types.h"
-#include "src/ui/scenic/lib/display/layer_equivalence.h"
+#include "src/ui/scenic/lib/display/internal/layer_equivalence.h"
 
 namespace display::internal {
 
@@ -93,4 +93,4 @@ class Layer {
 
 }  // namespace display::internal
 
-#endif  // SRC_UI_SCENIC_LIB_DISPLAY_LAYER_H_
+#endif  // SRC_UI_SCENIC_LIB_DISPLAY_INTERNAL_LAYER_H_

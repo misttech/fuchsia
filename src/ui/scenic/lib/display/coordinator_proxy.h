@@ -16,10 +16,11 @@
 #include <unordered_set>
 #include <vector>
 
-#include "src/ui/scenic/lib/display/display_equivalence.h"
 #include "src/ui/scenic/lib/display/fidl_id_types.h"
 #include "src/ui/scenic/lib/display/fidl_typedefs.h"
-#include "src/ui/scenic/lib/display/layer.h"
+#include "src/ui/scenic/lib/display/internal/check_config_cache.h"
+#include "src/ui/scenic/lib/display/internal/display_equivalence.h"
+#include "src/ui/scenic/lib/display/internal/layer.h"
 #include "src/ui/scenic/lib/display/typedefs.h"
 #include "src/ui/scenic/lib/types/blend_mode.h"
 #include "src/ui/scenic/lib/types/display_mode.h"
@@ -278,10 +279,7 @@ class CoordinatorProxy {
   // config has not been seen before, and a FIDL `CheckConfig()` call is necessary.  Otherwise
   // the stored boolean indicates whether a FIDL `CheckConfig()` call would succeed or fail
   // (true indicates success, and false indicates failure).
-  //
-  // TODO(https://fxbug.dev/446042966): the size of the cache is unbounded; we may want to implement
-  // a pruning strategy.
-  std::unordered_map<internal::DisplayEquivalence, bool> check_config_cache_;
+  internal::CheckConfigCache check_config_cache_;
 
   // Track the number of state-setting methods called on `CoordinatorProxy`, and the number of
   // corresponding FIDL methods sent to the `fuchsia.hardware.display/Coordinator` service.

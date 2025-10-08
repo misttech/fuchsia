@@ -14,6 +14,8 @@
 // Allows us to manually change this to enable logging without *all* Flatland verbose logging.
 #define CP_VERBOSE_LOG FLATLAND_VERBOSE_LOG
 
+static constexpr size_t kCheckConfigCacheSize = 5;
+
 namespace display {
 
 CoordinatorProxy::CoordinatorProxy(
@@ -26,7 +28,9 @@ CoordinatorProxy::CoordinatorProxy(
 CoordinatorProxy::CoordinatorProxy(
     fidl::WireSharedClient<fuchsia_hardware_display::Coordinator> coordinator,
     inspect::Node inspect_node)
-    : coordinator_(std::move(coordinator)), inspect_node_(std::move(inspect_node)) {
+    : coordinator_(std::move(coordinator)),
+      check_config_cache_(kCheckConfigCacheSize),
+      inspect_node_(std::move(inspect_node)) {
   FX_DCHECK(coordinator_);
   inspect_api_calls_received_ = inspect_node_.CreateUint("API Calls Received", 0);
   inspect_api_calls_sent_ = inspect_node_.CreateUint("API Calls Sent", 0);
@@ -246,10 +250,10 @@ zx::result<> CoordinatorProxy::ApplyConfig(const WireConfigStamp& config_stamp) 
   UpdateDisplayEquivalenceForApplyConfig();
 
   // If an equivalent equiv is already in `check_config_cache_` we can skip calling the FIDL method.
-  const auto check_config_it = check_config_cache_.find(temp_display_equivalence_);
-  const bool has_cached_check_config = check_config_it != check_config_cache_.end();
+  const auto check_config_result = check_config_cache_.Get(temp_display_equivalence_);
+  const bool has_cached_check_config = check_config_result.has_value();
 
-  if (has_cached_check_config && !check_config_it->second) {
+  if (has_cached_check_config && !check_config_result.value()) {
     // Check config would fail, so we can return immediately.
     IncrementCheckConfigCallSkipped();
     ResetDraftState();
@@ -436,7 +440,7 @@ WireConfigResult CoordinatorProxy::FidlCheckConfig() {
 }
 
 void CoordinatorProxy::CacheCheckConfigResult(bool success) {
-  check_config_cache_[temp_display_equivalence_] = success;
+  check_config_cache_.Put(temp_display_equivalence_, success);
   inspect_check_config_cache_size_.Set(check_config_cache_.size());
 }
 

@@ -15,6 +15,7 @@ cc_test_executable("unittests") {
   output_name = "display_unittests"
   testonly = true
   sources = [
+    "check_config_cache_unittest.cc",
     "coordinator_proxy_unittest.cc",
     "display_coordinator_listener_unittest.cc",
     "display_equivalence_unittest.cc",
