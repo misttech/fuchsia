@@ -25,7 +25,7 @@ use std::pin::{Pin, pin};
 use std::str::FromStr;
 use std::{fs, io, path};
 
-use fidl::endpoints::{RequestStream as _, Responder as _};
+use fidl::endpoints::{ProtocolMarker, RequestStream as _, Responder as _};
 use fidl_fuchsia_net_ext::{self as fnet_ext, DisplayExt as _, IpExt as _};
 use fidl_fuchsia_net_interfaces_ext::{self as fnet_interfaces_ext, Update as _};
 use fuchsia_component::client::{clone_namespace_svc, new_protocol_connector_in_dir};
@@ -39,11 +39,13 @@ use {
     fidl_fuchsia_net_filter_deprecated as fnet_filter_deprecated,
     fidl_fuchsia_net_interfaces as fnet_interfaces,
     fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_masquerade as fnet_masquerade, fidl_fuchsia_net_name as fnet_name,
+    fidl_fuchsia_net_masquerade as fnet_masquerade,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_name as fnet_name,
     fidl_fuchsia_net_ndp as fnet_ndp, fidl_fuchsia_net_policy_properties as fnp_properties,
     fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
     fidl_fuchsia_net_resources as fnet_resources,
-    fidl_fuchsia_net_routes_admin as fnet_routes_admin, fidl_fuchsia_net_stack as fnet_stack,
+    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
+    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_net_stack as fnet_stack,
     fidl_fuchsia_net_virtualization as fnet_virtualization, fuchsia_async as fasync,
 };
 
@@ -57,7 +59,7 @@ use futures::{FutureExt, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
 use log::{debug, error, info, trace, warn};
 use net_declare::fidl_ip_v4;
 use net_declare::net::prefix_length_v4;
-use net_types::ip::{IpAddress as _, Ipv4, PrefixLength};
+use net_types::ip::{IpAddress as _, Ipv4, Ipv6, PrefixLength};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -644,6 +646,8 @@ pub struct NetCfg<'a> {
     route_set_v4_provider: fnet_routes_admin::RouteTableV4Proxy,
 
     socket_proxy_state: Option<SocketProxyState>,
+    locally_provisioned_network_rule_set:
+        Option<(fnet_routes_admin::RuleSetV4Proxy, fnet_routes_admin::RuleSetV6Proxy)>,
 
     filter_enabled_state: FilterEnabledState,
 
@@ -987,6 +991,7 @@ impl<'a> NetCfg<'a> {
             dhcpv6_client_provider,
             route_set_v4_provider,
             socket_proxy_state,
+            locally_provisioned_network_rule_set: None,
             interface_naming_config,
             filter_enabled_state: FilterEnabledState::new(filter_enabled_interface_types),
             interface_properties: Default::default(),
@@ -2874,6 +2879,24 @@ impl<'a> NetCfg<'a> {
                     .map_err(errors::Error::NonFatal)?;
             }
 
+            if self.socket_proxy_state.is_some()
+                && provisioning_type == interface::ProvisioningType::Local
+            {
+                if self.locally_provisioned_network_rule_set.is_none() {
+                    self.locally_provisioned_network_rule_set = futures::try_join!(
+                        install_locally_provisioned_network_rule_set::<Ipv4>(),
+                        install_locally_provisioned_network_rule_set::<Ipv6>(),
+                    )
+                    .inspect_err(|err| {
+                        log::error!(
+                            "failed to create route rules for locally provisioined networks: {:?}",
+                            err
+                        );
+                    })
+                    .ok();
+                }
+            }
+
             let _did_enable: bool = control
                 .enable()
                 .await
@@ -3822,6 +3845,57 @@ pub(crate) fn exit_with_fidl_error(cause: fidl::Error) -> ! {
     std::process::exit(1);
 }
 
+/// Installs the rule that directs all unmarked sockets to lookup the main table
+/// where all the locally-provisioned network related routes live.
+///
+/// This needs to have a high priority so that it is not overridden later.
+async fn install_locally_provisioned_network_rule_set<
+    I: fnet_routes_ext::rules::FidlRuleIpExt
+        + fnet_routes_ext::rules::FidlRuleAdminIpExt
+        + fnet_routes_ext::FidlRouteIpExt
+        + fnet_routes_ext::admin::FidlRouteAdminIpExt,
+>() -> Result<<I::RuleSetMarker as ProtocolMarker>::Proxy, anyhow::Error> {
+    let rule_table = fuchsia_component::client::connect_to_protocol::<I::RuleTableMarker>()?;
+    // The `RouteTableV{4,6}` protocol provides access to the main table.
+    let main_route_table = fuchsia_component::client::connect_to_protocol::<I::RouteTableMarker>()?;
+
+    let fidl_fuchsia_net_routes_admin::GrantForRouteTableAuthorization { table_id, token } =
+        fnet_routes_ext::admin::get_authorization_for_route_table::<I>(&main_route_table)
+            .await
+            .context("failed to get authorization for the main table")?;
+
+    const LOCALLY_PROVISIONED_NETWORK_RULE_SET_PRIORITY: u32 = 0;
+    let rule_set = fnet_routes_ext::rules::new_rule_set::<I>(
+        &rule_table,
+        fnet_routes_ext::rules::RuleSetPriority::from(
+            LOCALLY_PROVISIONED_NETWORK_RULE_SET_PRIORITY,
+        ),
+    )
+    .context("failed to create a new rule set")?;
+
+    fnet_routes_ext::rules::authenticate_for_route_table::<I>(&rule_set, table_id, token)
+        .await
+        .context("fidl error authenticating for route table")?
+        .map_err(|err| anyhow::anyhow!("failed to authenticate for the route table: {err:?}"))?;
+
+    const LOCALLY_PROVISIONED_NETWORK_RULE_INDEX: u32 = 0;
+    fnet_routes_ext::rules::add_rule::<I>(
+        &rule_set,
+        fnet_routes_ext::rules::RuleIndex::from(LOCALLY_PROVISIONED_NETWORK_RULE_INDEX),
+        fnet_routes_ext::rules::RuleMatcher {
+            mark_1: Some(fnet_matchers_ext::Mark::Unmarked),
+            mark_2: Some(fnet_matchers_ext::Mark::Unmarked),
+            ..Default::default()
+        },
+        fnet_routes_ext::rules::RuleAction::Lookup(fnet_routes_ext::TableId::new(table_id)),
+    )
+    .await
+    .context("fidl error adding rule")?
+    .map_err(|err| anyhow::anyhow!("failed to add the rule: {err:?}"))?;
+
+    Ok(rule_set)
+}
+
 #[cfg(test)]
 mod tests {
     use fidl_fuchsia_net_ext::FromExt as _;
@@ -3930,6 +4004,7 @@ mod tests {
                 socket_proxy_state: args
                     .with_fuchsia_networks
                     .then_some(SocketProxyState::new(fuchsia_networks)),
+                locally_provisioned_network_rule_set: None,
                 filter_enabled_state: Default::default(),
                 interface_properties: Default::default(),
                 interface_states: Default::default(),

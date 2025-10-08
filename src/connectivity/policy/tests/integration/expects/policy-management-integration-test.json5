@@ -24,6 +24,11 @@
 
                 // NB: Netcfg logs an error when the DHCPv4 client exits.
                 "dhcpv4_client_restarts_after_delay",
+
+                // TODO(https://issues.fuchsia.dev/372466789): Netstack2 does
+                // not support rules.
+                "network_properties::test_track_socket_marks_ns2*",
+                "network_properties::test_track_dns_changes_ns2*",
             ],
         },
         {

@@ -227,17 +227,12 @@ pub(super) fn fidl_rule_from_rule_message<I: Ip>(
             (action == Action::Unreachable)
                 .then_some(fnet_matchers_ext::BoundInterface::Unbound));
 
-    let mark_1 = fwmark
-        .map(|fwmark| fnet_matchers_ext::Mark::Marked {
-            // If no mask is specified, default to checking the entire mark.
-            mask: fwmask.unwrap_or(!0),
-            between: fwmark..=fwmark,
-            invert: false,
-        })
-        // If no mark selector is specified, default to checking that a mark is present.
-        // TODO(https://fxbug.dev/418849362): Remove this once we fully support PBR such that
-        // Fuchsia components can acquire marked sockets that comply with the routing rules.
-        .or(Some(fnet_matchers_ext::Mark::Marked { mask: 0, between: 0..=0, invert: false }));
+    let mark_1 = fwmark.map(|fwmark| fnet_matchers_ext::Mark::Marked {
+        // If no mask is specified, default to checking the entire mark.
+        mask: fwmask.unwrap_or(!0),
+        between: fwmark..=fwmark,
+        invert: false,
+    });
 
     // Fuchsia doesn't have a concept of a `uid`, so netlink and starnix have to agree on using
     // `mark_2` to encode this.
@@ -404,12 +399,8 @@ mod test {
                     from: None,
                     locally_generated: None,
                     bound_device: Some(fnet_matchers_ext::BoundInterface::Unbound),
-                    mark_1: Some(fnet_matchers_ext::Mark::Marked {
-                        mask: 0,
-                        between: 0..=0,
-                        invert: false
-                    }),
-                    mark_2: None
+                    mark_1: None,
+                    mark_2: None,
                 },
                 action: Action::Unreachable
             })
@@ -582,16 +573,10 @@ mod test {
         between: 1234..=1234,
         invert: false,
     }))]
-    #[test_case(None, Some(5678) => Some(fnet_matchers_ext::Mark::Marked {
-        mask: 0,
-        between: 0..=0,
-        invert: false,
-    }); "defaults to checking mark is set (if mark is unset and mask is set)")]
-    #[test_case(None, None => Some(fnet_matchers_ext::Mark::Marked {
-        mask: 0,
-        between: 0..=0,
-        invert: false,
-    }); "defaults to checking mark is set (if mark is unset and mask is unset)")]
+    #[test_case(None, Some(5678) => None;
+        "defaults to checking mark is set (if mark is unset and mask is set)")]
+    #[test_case(None, None => None;
+        "defaults to checking mark is set (if mark is unset and mask is unset)")]
     fn mark_1_is_fwmark<I: Ip>(
         fwmark: Option<u32>,
         fwmask: Option<u32>,
