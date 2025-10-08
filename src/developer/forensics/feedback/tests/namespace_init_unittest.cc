@@ -83,31 +83,22 @@ TEST_F(NamespaceInitTest, TestAndSetNotAFdr) {
 TEST_F(NamespaceInitTest, MovePreviousRebootReason) {
   const std::string to = MakeFilepath(RootdDir(), "to.txt");
   const std::string from = MakeFilepath(RootdDir(), "from.txt");
-  const std::string legacy_from = MakeFilepath(RootdDir(), "legacy_from.txt");
 
-  // Neither |from| not |legacy_from| exists.
-  MovePreviousRebootReason(from, legacy_from, to);
+  // |from| doesn't exist.
+  MovePreviousRebootReason(from, to);
   EXPECT_FALSE(files::IsFile(to));
 
   // |to| can't be written to.
   WriteFile(from, "reboot_reason");
-  MovePreviousRebootReason(from, legacy_from, "/bad_path/to.txt");
+  MovePreviousRebootReason(from, "/bad_path/to.txt");
   EXPECT_FALSE(files::IsFile("/bad_path/to.txt"));
   EXPECT_TRUE(files::IsFile(from));
   EXPECT_EQ(ReadFile(from), "reboot_reason");
 
   // |from| works!
   WriteFile(from, "reboot_reason");
-  MovePreviousRebootReason(from, legacy_from, to);
+  MovePreviousRebootReason(from, to);
   EXPECT_FALSE(files::IsFile(from));
-  EXPECT_TRUE(files::IsFile(to));
-  EXPECT_EQ(ReadFile(to), "reboot_reason");
-
-  // |legacy_from| works!
-  DeleteFile(from);
-  WriteFile(legacy_from, "reboot_reason");
-  MovePreviousRebootReason(from, legacy_from, to);
-  EXPECT_FALSE(files::IsFile(legacy_from));
   EXPECT_TRUE(files::IsFile(to));
   EXPECT_EQ(ReadFile(to), "reboot_reason");
 }
