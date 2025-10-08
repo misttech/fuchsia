@@ -93,6 +93,7 @@
 #include "src/graphics/display/lib/api-types/cpp/image-tiling-type.h"
 #include "src/graphics/display/lib/api-types/cpp/mode-id.h"
 #include "src/graphics/display/lib/api-types/cpp/pixel-format.h"
+#include "src/graphics/display/lib/api-types/cpp/power-mode.h"
 #include "src/graphics/display/lib/driver-utils/poll-until.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
@@ -1907,6 +1908,11 @@ zx::result<> Controller::SetBufferCollectionConstraints(
   }
 
   return zx::ok();
+}
+
+zx::result<> Controller::SetDisplayPowerMode(display::DisplayId display_id,
+                                             display::PowerMode power_mode) {
+  return zx::error(ZX_ERR_NOT_SUPPORTED);
 }
 
 // Intel GPU core methods

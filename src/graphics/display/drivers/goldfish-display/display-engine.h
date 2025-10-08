@@ -79,7 +79,8 @@ class DisplayEngine final : public display::DisplayEngineInterface {
   zx::result<> SetBufferCollectionConstraints(
       const display::ImageBufferUsage& image_buffer_usage,
       display::DriverBufferCollectionId buffer_collection_id) override;
-  zx::result<> SetDisplayPower(display::DisplayId display_id, bool power_on) override;
+  zx::result<> SetDisplayPowerMode(display::DisplayId display_id,
+                                   display::PowerMode power_mode) override;
   zx::result<> StartCapture(display::DriverCaptureImageId capture_image_id) override;
   zx::result<> ReleaseCapture(display::DriverCaptureImageId capture_image_id) override;
   zx::result<> SetMinimumRgb(uint8_t minimum_rgb) override;

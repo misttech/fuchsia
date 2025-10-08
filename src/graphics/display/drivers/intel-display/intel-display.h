@@ -131,6 +131,8 @@ class Controller final : public display::DisplayEngineInterface,
   zx::result<> SetBufferCollectionConstraints(
       const display::ImageBufferUsage& image_buffer_usage,
       display::DriverBufferCollectionId buffer_collection_id) override;
+  zx::result<> SetDisplayPowerMode(display::DisplayId display_id,
+                                   display::PowerMode power_mode) override;
 
   // gpu core ops
   zx_status_t IntelGpuCoreReadPciConfig16(uint16_t addr, uint16_t* value_out);

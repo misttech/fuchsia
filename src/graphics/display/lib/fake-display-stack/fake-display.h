@@ -86,8 +86,8 @@ class FakeDisplay : public display::DisplayEngineInterface {
   zx::result<> SetBufferCollectionConstraints(
       const display::ImageBufferUsage& image_buffer_usage,
       display::DriverBufferCollectionId buffer_collection_id) override __TA_EXCLUDES(mutex_);
-  zx::result<> SetDisplayPower(display::DisplayId display_id, bool power_on) override
-      __TA_EXCLUDES(mutex_);
+  zx::result<> SetDisplayPowerMode(display::DisplayId display_id,
+                                   display::PowerMode power_mode) override __TA_EXCLUDES(mutex_);
   zx::result<> StartCapture(display::DriverCaptureImageId capture_image_id) override
       __TA_EXCLUDES(mutex_);
   zx::result<> ReleaseCapture(display::DriverCaptureImageId capture_image_id) override

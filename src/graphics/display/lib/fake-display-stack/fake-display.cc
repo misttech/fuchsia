@@ -634,7 +634,8 @@ zx::result<> FakeDisplay::SetBufferCollectionConstraints(
   return zx::ok();
 }
 
-zx::result<> FakeDisplay::SetDisplayPower(display::DisplayId display_id, bool power_on) {
+zx::result<> FakeDisplay::SetDisplayPowerMode(display::DisplayId display_id,
+                                              display::PowerMode power_mode) {
   return zx::error(ZX_ERR_NOT_SUPPORTED);
 }
 

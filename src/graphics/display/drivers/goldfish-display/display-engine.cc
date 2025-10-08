@@ -38,6 +38,7 @@
 #include "src/graphics/display/lib/api-types/cpp/mode-id.h"
 #include "src/graphics/display/lib/api-types/cpp/mode.h"
 #include "src/graphics/display/lib/api-types/cpp/pixel-format.h"
+#include "src/graphics/display/lib/api-types/cpp/power-mode.h"
 
 namespace goldfish {
 namespace {
@@ -648,7 +649,8 @@ zx::result<> DisplayEngine::SetBufferCollectionConstraints(
   return zx::ok();
 }
 
-zx::result<> DisplayEngine::SetDisplayPower(display::DisplayId display_id, bool power_on) {
+zx::result<> DisplayEngine::SetDisplayPowerMode(display::DisplayId display_id,
+                                                display::PowerMode power_mode) {
   return zx::error(ZX_ERR_NOT_SUPPORTED);
 }
 
