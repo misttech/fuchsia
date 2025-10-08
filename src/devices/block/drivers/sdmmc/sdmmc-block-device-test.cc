@@ -144,47 +144,6 @@ class FakeCpuElementManager
   fidl::ServerBindingGroup<fuchsia_power_system::CpuElementManager> bindings_;
   zx::event dependency_token_;
 };
-
-class FakeSystemActivityGovernor
-    : public fidl::testing::TestBase<fuchsia_power_system::ActivityGovernor> {
- public:
-  FakeSystemActivityGovernor(zx::event exec_state_opportunistic, zx::event wake_handling_assertive)
-      : exec_state_opportunistic_(std::move(exec_state_opportunistic)),
-        wake_handling_assertive_(std::move(wake_handling_assertive)) {}
-
-  fidl::ProtocolHandler<fuchsia_power_system::ActivityGovernor> CreateHandler() {
-    return bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                                   fidl::kIgnoreBindingClosure);
-  }
-
-  void GetPowerElements(GetPowerElementsCompleter::Sync& completer) override {
-    fuchsia_power_system::PowerElements elements;
-    zx::event execution_element, wake_handling_element;
-    exec_state_opportunistic_.duplicate(ZX_RIGHT_SAME_RIGHTS, &execution_element);
-    wake_handling_assertive_.duplicate(ZX_RIGHT_SAME_RIGHTS, &wake_handling_element);
-
-    fuchsia_power_system::ExecutionState exec_state = {
-        {.opportunistic_dependency_token = std::move(execution_element)}};
-
-    elements = {{.execution_state = std::move(exec_state)}};
-
-    completer.Reply({{std::move(elements)}});
-  }
-
-  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
-    ADD_FAILURE("%s is not implemented", name.c_str());
-  }
-
-  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_system::ActivityGovernor> md,
-                             fidl::UnknownMethodCompleter::Sync& completer) override {}
-
- private:
-  fidl::ServerBindingGroup<fuchsia_power_system::ActivityGovernor> bindings_;
-
-  zx::event exec_state_opportunistic_;
-  zx::event wake_handling_assertive_;
-};
-
 class FakeLessor : public fidl::Server<fuchsia_power_broker::Lessor> {
  public:
   fidl::ServerEnd<fuchsia_power_broker::LeaseControl> TakeLeaseControlServerEnd() {
@@ -304,21 +263,9 @@ class FakePowerTokenProvider : public fidl::Server<fuchsia_hardware_power::Power
 };
 
 struct IncomingNamespace {
-  IncomingNamespace() {
-    zx::event::create(0, &exec_opportunistic);
-    zx::event::create(0, &wake_assertive);
-    zx::event exec_opportunistic_dupe, wake_assertive_dupe;
-    ASSERT_OK(exec_opportunistic.duplicate(ZX_RIGHT_SAME_RIGHTS, &exec_opportunistic_dupe));
-    ASSERT_OK(wake_assertive.duplicate(ZX_RIGHT_SAME_RIGHTS, &wake_assertive_dupe));
-    system_activity_governor.emplace(std::move(exec_opportunistic_dupe),
-                                     std::move(wake_assertive_dupe));
-  }
-
   fdf_testing::TestNode node{"root"};
   fdf_testing::internal::TestEnvironment env{fdf::Dispatcher::GetCurrent()->get()};
   fdf_metadata::MetadataServer<fuchsia_hardware_sdmmc::SdmmcMetadata> metadata_server;
-  zx::event exec_opportunistic, wake_assertive;
-  std::optional<FakeSystemActivityGovernor> system_activity_governor;
   FakePowerBroker power_broker;
   FakePowerTokenProvider power_token_provider;
   FakeCpuElementManager cpu_element_manager;
@@ -432,15 +379,6 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
                                                 fdf::Dispatcher::GetCurrent()->async_dispatcher()));
 
       if (supply_power_framework) {
-        // Serve (fake) system_activity_governor.
-        {
-          auto result = incoming->env.incoming_directory()
-                            .component()
-                            .AddUnmanagedProtocol<fuchsia_power_system::ActivityGovernor>(
-                                incoming->system_activity_governor->CreateHandler());
-          ASSERT_TRUE(result.is_ok());
-        }
-
         // Serve (fake) power_broker.
         {
           auto result = incoming->env.incoming_directory()
