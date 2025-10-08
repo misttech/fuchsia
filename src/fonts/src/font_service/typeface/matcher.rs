@@ -4,20 +4,18 @@
 
 use super::typeface::TypefaceAndLangScore;
 use fidl_fuchsia_fonts::{
-    self as fonts, Slant, Style2, TypefaceQuery, Width, WEIGHT_MEDIUM, WEIGHT_NORMAL,
+    self as fonts, Slant, Style2, TypefaceQuery, WEIGHT_MEDIUM, WEIGHT_NORMAL, Width,
 };
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
 
-lazy_static! {
-    /// The default style (or its individual properties) are is applied to fill any style properties
-    /// that are missing from a query passed to the matcher.
-    static ref DEFAULT_STYLE: Style2 = Style2 {
-        slant: Some(fonts::DEFAULT_SLANT),
-        weight: Some(fonts::DEFAULT_WEIGHT),
-        width: Some(fonts::DEFAULT_WIDTH),
-        ..Default::default()
-    };
-}
+/// The default style (or its individual properties) is applied to fill any style properties
+/// that are missing from a query passed to the matcher.
+static DEFAULT_STYLE: LazyLock<Style2> = LazyLock::new(|| Style2 {
+    slant: Some(fonts::DEFAULT_SLANT),
+    weight: Some(fonts::DEFAULT_WEIGHT),
+    width: Some(fonts::DEFAULT_WIDTH),
+    ..Default::default()
+});
 
 /// Selects between typefaces `a` and `b` for the `request`. Typefaces are passed in
 /// `TypefaceAndLangScore` so the language match score is calculated only once for each typeface. If
@@ -176,8 +174,8 @@ pub fn select_best_match<'a, 'b>(
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_util::*;
     use super::super::Typeface;
+    use super::super::test_util::*;
     use super::*;
     use fidl_fuchsia_fonts::{
         GenericFontFamily, TypefaceRequestFlags, WEIGHT_BOLD, WEIGHT_EXTRA_BOLD,
