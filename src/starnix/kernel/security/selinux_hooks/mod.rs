@@ -31,7 +31,7 @@ use selinux::{
     FileClass, FileSystemLabel, FileSystemLabelingScheme, FileSystemMountOptions, ForClass,
     FsNodeClass, InitialSid, KernelPermission, ProcessPermission, SecurityId, SecurityServer,
 };
-use starnix_logging::{BugRef, track_stub};
+use starnix_logging::{BugRef, CATEGORY_STARNIX_SECURITY, trace_duration, track_stub};
 use starnix_sync::{Mutex, MutexGuard};
 use starnix_types::ownership::WeakRef;
 use starnix_uapi::arc_key::WeakKey;
@@ -348,6 +348,8 @@ fn todo_check_permission<P: ClassPermission + Into<KernelPermission> + Clone + '
             audit_context,
         )
     } else {
+        trace_duration!(CATEGORY_STARNIX_SECURITY, c"security.selinux.todo_check_permission");
+
         let result = permission_check.has_permission(source_sid, target_sid, permission.clone());
 
         if result.audit {
@@ -376,6 +378,8 @@ fn check_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'stati
     permission: P,
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
+    trace_duration!(CATEGORY_STARNIX_SECURITY, c"security.selinux.check_permission");
+
     if is_internal_operation(current_task) {
         return Ok(());
     }
