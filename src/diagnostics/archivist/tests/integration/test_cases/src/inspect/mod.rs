@@ -6,4 +6,6 @@
 mod escrow;
 mod reader;
 mod recursive_glob;
+#[cfg(fuchsia_api_level_at_least = "HEAD")]
+mod sample;
 mod truncation;

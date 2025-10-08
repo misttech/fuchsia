@@ -786,7 +786,7 @@ pub struct PerformanceConfig {
 }
 
 impl PerformanceConfig {
-    fn new(
+    pub fn new(
         params: &StreamParameters,
         maximum_concurrent_snapshots_per_reader: u64,
         default_batch_timeout_seconds: BatchRetrievalTimeout,

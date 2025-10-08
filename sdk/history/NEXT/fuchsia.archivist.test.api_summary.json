@@ -154,6 +154,14 @@
         "response": "fuchsia.archivist.test/InspectWriter_SetHealthOk_Response"
     },
     {
+        "kind": "protocol/member",
+        "name": "fuchsia.archivist.test/InspectWriter.SetHealthStartingUp",
+        "strictness": "flexible",
+        "ordinal": "7673498972177375253",
+        "direction": "two_way",
+        "response": "fuchsia.archivist.test/InspectWriter_SetHealthStartingUp_Response"
+    },
+    {
         "kind": "protocol",
         "name": "fuchsia.archivist.test/InspectWriter",
         "openness": "open",
@@ -263,6 +271,14 @@
         "ordinal": "1041756844413486942",
         "direction": "two_way",
         "response": "fuchsia.archivist.test/InspectWriter_SetHealthOk_Response"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.archivist.test/LazyInspectPuppet.SetHealthStartingUp",
+        "strictness": "flexible",
+        "ordinal": "7673498972177375253",
+        "direction": "two_way",
+        "response": "fuchsia.archivist.test/InspectWriter_SetHealthStartingUp_Response"
     },
     {
         "kind": "protocol",

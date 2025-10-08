@@ -72,6 +72,9 @@ pub struct Archivist {
 
     /// Freeze server.
     freeze_server: LogFreezeServer,
+
+    /// The server handling fuchsia.diagnostics.Sample
+    sample_server: Arc<SampleServer>,
 }
 
 impl Archivist {
@@ -135,6 +138,14 @@ impl Archivist {
         let inspect_sink_server = Arc::new(InspectSinkServer::new(
             Arc::clone(&inspect_repo),
             servers_scope.new_child_with_name("InspectSink"),
+        ));
+
+        let sample_server = Arc::new(SampleServer::new(
+            Arc::clone(&inspect_repo),
+            zx::MonotonicDuration::from_seconds(
+                config.fuchsia_diagnostics_sample_min_period_seconds,
+            ),
+            servers_scope.new_child_with_name("SampleServer"),
         ));
 
         // Initialize our FIDL servers. This doesn't start serving yet.
@@ -218,6 +229,7 @@ impl Archivist {
             servers_scope,
             freeze_server,
             incoming_events_scope,
+            sample_server,
         }
     }
 
@@ -291,6 +303,7 @@ impl Archivist {
             servers_scope,
             event_router,
             flush_server: _flush_server,
+            sample_server: _sample_server,
         } = self;
 
         // Start ingesting events.
@@ -358,6 +371,11 @@ impl Archivist {
             debug!("fuchsia.diagnostics.system.LogFlush connection");
             flush_server.spawn(stream);
         });
+
+        // Install sample server to the accessors dictionary and start serving.
+        // Note that the await is not awaiting on the request stream or anything like that;
+        // the server spawns onto its owned Scope.
+        self.sample_server.install_and_serve(*accessors_dict_id, &id_gen, &mut store).await;
 
         let server = self.freeze_server.clone();
         let scope = self.general_scope.clone();

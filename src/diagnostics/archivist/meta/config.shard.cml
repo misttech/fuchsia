@@ -72,6 +72,9 @@
         //
         // By convention, -1 is treated as the max timeout.
         per_component_batch_timeout_seconds: { type: "int64" },
+
+        // Number of seconds for the minimum sampling period for fuchsia.diagnostics.Sample
+        fuchsia_diagnostics_sample_min_period_seconds: { type: "int64" },
     },
 }
 

@@ -195,6 +195,10 @@ impl StaticHierarchyAllowlist {
         Self(StaticHierarchyAllowlistState::FilteringDisabled)
     }
 
+    pub const fn new_disabled() -> Self {
+        Self(StaticHierarchyAllowlistState::FilteringDisabled)
+    }
+
     pub fn remove_component(&mut self, moniker: &ExtendedMoniker) {
         match &mut self.0 {
             StaticHierarchyAllowlistState::FilteringEnabled { component_allowlists, .. } => {
@@ -247,10 +251,6 @@ impl StaticHierarchyAllowlist {
             }
             StaticHierarchyAllowlistState::FilteringDisabled => false,
         }
-    }
-
-    pub fn new_disabled() -> Self {
-        Self(StaticHierarchyAllowlistState::FilteringDisabled)
     }
 }
 

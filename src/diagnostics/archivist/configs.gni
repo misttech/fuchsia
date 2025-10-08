@@ -22,6 +22,7 @@ default_config = {
   deny_serial_log_tags = []
   component_initial_interests = []
   per_component_batch_timeout_seconds = 10
+  fuchsia_diagnostics_sample_min_period_seconds = 60
 }
 
 embedded_config = {
@@ -30,4 +31,5 @@ embedded_config = {
   bind_services = []
   enable_klog = false
   per_component_batch_timeout_seconds = -1
+  fuchsia_diagnostics_sample_min_period_seconds = 1
 }

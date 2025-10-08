@@ -17,6 +17,7 @@ fidl("fuchsia.diagnostics") {
     "log_stream.fidl",
     "overview.fidl",
     "reader.fidl",
+    "sample.fidl",
     "selector.fidl",
     "severity.fidl",
   ]

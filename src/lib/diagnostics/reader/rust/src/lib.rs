@@ -599,7 +599,8 @@ where
     }
 }
 
-fn drain_batch_iterator<T>(
+/// Drain a batch iterator.
+pub fn drain_batch_iterator<T>(
     iterator: Arc<BatchIteratorProxy>,
 ) -> impl Stream<Item = Result<T, Error>>
 where

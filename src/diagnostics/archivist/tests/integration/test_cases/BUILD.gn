@@ -66,7 +66,10 @@ rustc_test("bin") {
 
   if (current_build_target_api_level == "PLATFORM" ||
       current_build_target_api_level == "HEAD") {
-    sources += [ "src/inspect/escrow.rs" ]
+    sources += [
+      "src/inspect/escrow.rs",
+      "src/inspect/sample.rs",
+    ]
 
     deps += [
       "//src/lib/diagnostics/inspect/rust",

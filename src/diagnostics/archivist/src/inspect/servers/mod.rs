@@ -3,5 +3,7 @@
 // found in the LICENSE file.
 
 mod inspect_sink;
+mod sample;
 
 pub use inspect_sink::InspectSinkServer;
+pub use sample::SampleServer;

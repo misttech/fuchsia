@@ -85,6 +85,10 @@ open protocol InspectWriter {
     /// Emits a health inspect node with OK status.
     flexible SetHealthOk() -> ();
 
+    /// Emits a health inspect node with STARTING_UP status.
+    @available(added=NEXT)
+    flexible SetHealthStartingUp() -> ();
+
     /// Records a string inspect property.
     flexible RecordString(struct {
         key string:MAX;
