@@ -56,6 +56,18 @@ zx_status_t UsbBus::Init() {
 
   hci_.SetBusInterface(this, &usb_bus_interface_protocol_ops_);
 
+  auto client = DdkConnectFidlProtocol<fuchsia_hardware_usb_hci::UsbHciService::Device>();
+  if (!client.is_error()) {
+    auto [client_end, server_end] =
+        fidl::Endpoints<fuchsia_hardware_usb_hci::UsbHciInterface>::Create();
+    bindings_.AddBinding(fdf::Dispatcher::GetCurrent()->async_dispatcher(), std::move(server_end),
+                         this, fidl::kIgnoreBindingClosure);
+    auto result = fidl::WireCall(*client)->SetInterface(std::move(client_end));
+    if (!result.ok()) {
+      zxlogf(WARNING, "Failed to call HCI %s", result.status_string());
+    }
+  }
+
   return ZX_OK;
 }
 
@@ -76,19 +88,30 @@ zx_status_t UsbBus::UsbBusInterfaceAddDevice(uint32_t device_id, uint32_t hub_id
 
   // devices_[device_id] must be set before usb_device_add() creates the interface devices
   // so we pass pointer to it here rather than setting it after usb_device_add() returns.
-  sync_completion_t wait;
   zx_status_t status = ZX_OK;
-  async::PostTask(dispatcher_, [&]() {
+  if (dispatcher_ == fdf::Dispatcher::GetCurrent()->async_dispatcher()) {
     status = UsbDevice::Create(zxdev(), hci_, std::move(*client), device_id, hub_id, speed,
                                dispatcher_, &devices_[device_id]);
-    sync_completion_signal(&wait);
-  });
-  sync_completion_wait(&wait, ZX_TIME_INFINITE);
-  if (status == ZX_OK) {
-    // Add an entry into the remove completion list for the new UsbDevice.
-    remove_completion_[devices_[device_id].get()] = {};
+  } else {
+    sync_completion_t wait;
+    async::PostTask(dispatcher_, [&]() {
+      status = UsbDevice::Create(zxdev(), hci_, std::move(*client), device_id, hub_id, speed,
+                                 dispatcher_, &devices_[device_id]);
+      sync_completion_signal(&wait);
+    });
+    sync_completion_wait(&wait, ZX_TIME_INFINITE);
   }
   return status;
+}
+
+void UsbBus::AddDevice(AddDeviceRequest& request, AddDeviceCompleter::Sync& completer) {
+  zx_status_t status = UsbBusInterfaceAddDevice(request.device_id(), request.hub_id(),
+                                                static_cast<usb_speed_t>(request.speed()));
+  if (status == ZX_OK) {
+    completer.Reply(zx::ok());
+    return;
+  }
+  completer.Reply(zx::error(status));
 }
 
 zx_status_t UsbBus::UsbBusInterfaceRemoveDevice(uint32_t device_id) {
@@ -101,21 +124,26 @@ zx_status_t UsbBus::UsbBusInterfaceRemoveDevice(uint32_t device_id) {
   if (device == nullptr) {
     return ZX_ERR_BAD_STATE;
   }
-  sync_completion_t wait;
-  async::PostTask(dispatcher_, [&]() {
+  if (dispatcher_ == fdf::Dispatcher::GetCurrent()->async_dispatcher()) {
     device->DdkAsyncRemove();
-    sync_completion_signal(&wait);
-  });
-  sync_completion_wait(&wait, ZX_TIME_INFINITE);
-  remove_completion_[device.get()].Wait();
-  remove_completion_.erase(device.get());
-  sync_completion_reset(&wait);
-  async::PostTask(dispatcher_, [&]() {
-    device.reset();
-    sync_completion_signal(&wait);
-  });
-  sync_completion_wait(&wait, ZX_TIME_INFINITE);
+  } else {
+    sync_completion_t wait;
+    async::PostTask(dispatcher_, [&]() {
+      device->DdkAsyncRemove();
+      sync_completion_signal(&wait);
+    });
+    sync_completion_wait(&wait, ZX_TIME_INFINITE);
+  }
   return ZX_OK;
+}
+
+void UsbBus::RemoveDevice(RemoveDeviceRequest& request, RemoveDeviceCompleter::Sync& completer) {
+  zx_status_t status = UsbBusInterfaceRemoveDevice(request.device_id());
+  if (status == ZX_OK) {
+    completer.Reply(zx::ok());
+    return;
+  }
+  completer.Reply(zx::error(status));
 }
 
 zx_status_t UsbBus::UsbBusInterfaceResetPort(uint32_t hub_id, uint32_t port, bool enumerating) {
@@ -137,6 +165,16 @@ zx_status_t UsbBus::UsbBusInterfaceResetPort(uint32_t hub_id, uint32_t port, boo
     status = hci_.HubDeviceReset(hub_id, port);
   }
   return status;
+}
+
+void UsbBus::ResetPort(ResetPortRequest& request, ResetPortCompleter::Sync& completer) {
+  zx_status_t status =
+      UsbBusInterfaceResetPort(request.hub_id(), request.port(), request.enumerating());
+  if (status == ZX_OK) {
+    completer.Reply(zx::ok());
+    return;
+  }
+  completer.Reply(zx::error(status));
 }
 
 zx_status_t UsbBus::UsbBusInterfaceReinitializeDevice(uint32_t device_id) {
@@ -189,6 +227,16 @@ zx_status_t UsbBus::UsbBusInterfaceReinitializeDevice(uint32_t device_id) {
   }
 
   return device->Reinitialize();
+}
+
+void UsbBus::ReinitializeDevice(ReinitializeDeviceRequest& request,
+                                ReinitializeDeviceCompleter::Sync& completer) {
+  zx_status_t status = UsbBusInterfaceReinitializeDevice(request.device_id());
+  if (status == ZX_OK) {
+    completer.Reply(zx::ok());
+    return;
+  }
+  completer.Reply(zx::error(status));
 }
 
 zx_status_t UsbBus::GetDeviceId(/* zx_device_t* */ uint64_t device, uint32_t* out) {
@@ -249,12 +297,7 @@ zx_status_t UsbBus::UsbBusSetHubInterface(/* zx_device_t* */ uint64_t usb_device
 }
 
 void UsbBus::DdkChildPreRelease(void* child_ctx) {
-  auto it = remove_completion_.find(reinterpret_cast<UsbDevice*>(child_ctx));
-  if (it == remove_completion_.end()) {
-    zxlogf(ERROR, "Cannot find device %p in the device list.", child_ctx);
-    return;
-  }
-  it->second.Signal();
+  devices_[reinterpret_cast<UsbDevice*>(child_ctx)->device_id()].reset();
 }
 
 void UsbBus::DdkUnbind(ddk::UnbindTxn txn) {

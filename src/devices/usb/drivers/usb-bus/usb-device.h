@@ -152,6 +152,8 @@ class UsbDevice : public UsbDeviceType,
   inline usb_speed_t GetSpeed() const { return speed_; }
   zx_status_t Init(async_dispatcher_t* dispatcher);
 
+  uint32_t device_id() const { return device_id_; }
+
  private:
   DISALLOW_COPY_ASSIGN_AND_MOVE(UsbDevice);
 

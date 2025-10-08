@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_USB_DRIVERS_USB_BUS_USB_BUS_H_
 #define SRC_DEVICES_USB_DRIVERS_USB_BUS_USB_BUS_H_
 
+#include <fidl/fuchsia.hardware.usb.hci/cpp/fidl.h>
 #include <fuchsia/hardware/usb/bus/cpp/banjo.h>
 #include <fuchsia/hardware/usb/hci/cpp/banjo.h>
 #include <lib/sync/cpp/completion.h>
@@ -23,7 +24,8 @@ using UsbBusType = ddk::Device<UsbBus, ddk::Unbindable, ddk::ChildPreReleaseable
 
 class UsbBus : public UsbBusType,
                public ddk::UsbBusProtocol<UsbBus, ddk::base_protocol>,
-               public ddk::UsbBusInterfaceProtocol<UsbBus> {
+               public ddk::UsbBusInterfaceProtocol<UsbBus>,
+               public fidl::Server<fuchsia_hardware_usb_hci::UsbHciInterface> {
  public:
   UsbBus(zx_device_t* parent) : UsbBusType(parent), hci_(parent) {}
 
@@ -53,6 +55,13 @@ class UsbBus : public UsbBusType,
   zx_status_t UsbBusInterfaceResetPort(uint32_t hub_id, uint32_t port, bool enumerating);
   zx_status_t UsbBusInterfaceReinitializeDevice(uint32_t device_id);
 
+  // fuchsia_hardware_usb_hci.UsbHciInterface methods.
+  void AddDevice(AddDeviceRequest& request, AddDeviceCompleter::Sync& completer) override;
+  void RemoveDevice(RemoveDeviceRequest& request, RemoveDeviceCompleter::Sync& completer) override;
+  void ResetPort(ResetPortRequest& request, ResetPortCompleter::Sync& completer) override;
+  void ReinitializeDevice(ReinitializeDeviceRequest& request,
+                          ReinitializeDeviceCompleter::Sync& completer) override;
+
  private:
   DISALLOW_COPY_ASSIGN_AND_MOVE(UsbBus);
 
@@ -64,12 +73,10 @@ class UsbBus : public UsbBusType,
   const ddk::UsbHciProtocolClient hci_;
   // Array of all our USB devices.
   fbl::Array<fbl::RefPtr<UsbDevice>> devices_;
-  // Map for storing sync completion objects for all USB devices.
-  // This will be used to signal USB device remove completion.
-  // The USBDevice* is used just as a key and will not be dereferenced.
-  std::map<UsbDevice*, libsync::Completion> remove_completion_;
 
   async_dispatcher_t* dispatcher_;
+
+  fidl::ServerBindingGroup<fuchsia_hardware_usb_hci::UsbHciInterface> bindings_;
 };
 
 }  // namespace usb_bus
