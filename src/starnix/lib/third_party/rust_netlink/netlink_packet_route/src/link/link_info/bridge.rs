@@ -357,11 +357,11 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for InfoBridge {
                 parse_u16(payload).context("invalid IFLA_BR_GROUP_FWD_MASK value")?,
             ),
             IFLA_BR_ROOT_ID => Self::RootId(
-                BridgeId::parse(&BridgeIdBuffer::new(payload))
+                BridgeId::parse(&BridgeIdBuffer::new(payload)?)
                     .context("invalid IFLA_BR_ROOT_ID value")?,
             ),
             IFLA_BR_BRIDGE_ID => Self::BridgeId(
-                BridgeId::parse(&BridgeIdBuffer::new(payload))
+                BridgeId::parse(&BridgeIdBuffer::new(payload)?)
                     .context("invalid IFLA_BR_BRIDGE_ID value")?,
             ),
             IFLA_BR_GROUP_ADDR => {
@@ -471,7 +471,7 @@ impl Emitable for BridgeId {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = BridgeIdBuffer::new(buffer);
+        let mut buffer = BridgeIdBuffer::new_unchecked(buffer);
         buffer.set_priority(self.priority.to_be());
         buffer.address_mut().copy_from_slice(&self.address[..]);
     }

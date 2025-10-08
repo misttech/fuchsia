@@ -47,7 +47,7 @@ impl Emitable for RuleHeader {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut packet = RuleMessageBuffer::new(buffer);
+        let mut packet = RuleMessageBuffer::new_unchecked(buffer);
         packet.set_family(self.family.into());
         packet.set_dst_len(self.dst_len);
         packet.set_src_len(self.src_len);

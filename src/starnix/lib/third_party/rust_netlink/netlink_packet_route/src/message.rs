@@ -138,7 +138,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<RouteNetlinkMessageBuffe
         let message = match message_type {
             // Link messages
             RTM_NEWLINK | RTM_GETLINK | RTM_DELLINK | RTM_SETLINK => {
-                let msg = match LinkMessageBuffer::new_checked(&buf.inner()) {
+                let msg = match LinkMessageBuffer::new(&buf.inner()) {
                     Ok(buf) => LinkMessage::parse(&buf)
                         .map_err(RouteNetlinkMessageParseError::InvalidLinkMessage)?,
                     // HACK: iproute2 sends invalid RTM_GETLINK message, where
@@ -165,7 +165,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<RouteNetlinkMessageBuffe
 
             // Address messages
             RTM_NEWADDR | RTM_GETADDR | RTM_DELADDR => {
-                let msg = match AddressMessageBuffer::new_checked(&buf.inner()) {
+                let msg = match AddressMessageBuffer::new(&buf.inner()) {
                     Ok(buf) => AddressMessage::parse(&buf)?,
                     // HACK: iproute2 sends invalid RTM_GETADDR message, where
                     // the header is limited to the
@@ -196,7 +196,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<RouteNetlinkMessageBuffe
             // Neighbour messages
             RTM_NEWNEIGH | RTM_GETNEIGH | RTM_DELNEIGH => {
                 let buf_inner = buf.inner();
-                let buffer = NeighbourMessageBuffer::new_checked(&buf_inner)
+                let buffer = NeighbourMessageBuffer::new(&buf_inner)
                     .map_err(RouteNetlinkMessageParseError::ParseBuffer)?;
                 let msg = NeighbourMessage::parse(&buffer)?;
                 match message_type {
@@ -210,7 +210,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<RouteNetlinkMessageBuffe
             // Neighbour table messages
             RTM_NEWNEIGHTBL | RTM_GETNEIGHTBL | RTM_SETNEIGHTBL => {
                 let buf_inner = buf.inner();
-                let buffer = NeighbourTableMessageBuffer::new_checked(&buf_inner)
+                let buffer = NeighbourTableMessageBuffer::new(&buf_inner)
                     .map_err(RouteNetlinkMessageParseError::ParseBuffer)?;
                 let msg = NeighbourTableMessage::parse(&buffer)
                     .map_err(RouteNetlinkMessageParseError::InvalidNeighbourTableMessage)?;
@@ -232,7 +232,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<RouteNetlinkMessageBuffe
 
             // Route messages
             RTM_NEWROUTE | RTM_GETROUTE | RTM_DELROUTE => {
-                let msg = match RouteMessageBuffer::new_checked(&buf.inner()) {
+                let msg = match RouteMessageBuffer::new(&buf.inner()) {
                     Ok(buf) => RouteMessage::parse(&buf)?,
                     // HACK: iproute2 sends invalid RTM_GETROUTE message, where
                     // the header is limited to the
@@ -269,13 +269,13 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<RouteNetlinkMessageBuffe
             // Prefix messages
             RTM_NEWPREFIX => {
                 let buf_inner = buf.inner();
-                let buffer = PrefixMessageBuffer::new_checked(&buf_inner)
+                let buffer = PrefixMessageBuffer::new(&buf_inner)
                     .map_err(RouteNetlinkMessageParseError::ParseBuffer)?;
                 RouteNetlinkMessage::NewPrefix(PrefixMessage::parse(&buffer)?)
             }
             RTM_NEWRULE | RTM_GETRULE | RTM_DELRULE => {
                 let buf_inner = buf.inner();
-                let buffer = RuleMessageBuffer::new_checked(&buf_inner)
+                let buffer = RuleMessageBuffer::new(&buf_inner)
                     .map_err(RouteNetlinkMessageParseError::ParseBuffer)?;
                 let msg = RuleMessage::parse(&buffer)?;
                 match message_type {
@@ -290,7 +290,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<RouteNetlinkMessageBuffe
             | RTM_GETTCLASS | RTM_NEWTFILTER | RTM_DELTFILTER | RTM_GETTFILTER | RTM_NEWCHAIN
             | RTM_DELCHAIN | RTM_GETCHAIN => {
                 let buf_inner = buf.inner();
-                let buffer = TcMessageBuffer::new_checked(&buf_inner)
+                let buffer = TcMessageBuffer::new(&buf_inner)
                     .map_err(RouteNetlinkMessageParseError::ParseBuffer)?;
                 let msg = TcMessage::parse(&buffer)?;
                 match message_type {
@@ -313,7 +313,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<RouteNetlinkMessageBuffe
             // ND ID Messages
             RTM_NEWNSID | RTM_GETNSID | RTM_DELNSID => {
                 let buf_inner = buf.inner();
-                let buffer = NsidMessageBuffer::new_checked(&buf_inner)
+                let buffer = NsidMessageBuffer::new(&buf_inner)
                     .map_err(RouteNetlinkMessageParseError::ParseBuffer)?;
                 let msg = NsidMessage::parse(&buffer)?;
                 match message_type {

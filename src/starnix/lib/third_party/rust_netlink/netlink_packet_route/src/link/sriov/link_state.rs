@@ -35,7 +35,7 @@ impl Emitable for VfInfoLinkState {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = VfInfoLinkStateBuffer::new(buffer);
+        let mut buffer = VfInfoLinkStateBuffer::new_unchecked(buffer);
         buffer.set_vf_id(self.vf_id);
         buffer.set_state(self.state.into());
     }

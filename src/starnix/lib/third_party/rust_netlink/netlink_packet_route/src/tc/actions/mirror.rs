@@ -69,9 +69,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for TcActionMirror
         let payload = buf.value();
         Ok(match buf.kind() {
             TCA_MIRRED_TM => Self::Tm(payload.to_vec()),
-            TCA_MIRRED_PARMS => {
-                Self::Parms(TcMirror::parse(&TcMirrorBuffer::new_checked(payload)?)?)
-            }
+            TCA_MIRRED_PARMS => Self::Parms(TcMirror::parse(&TcMirrorBuffer::new(payload)?)?),
             _ => Self::Other(DefaultNla::parse(buf)?),
         })
     }
@@ -104,7 +102,7 @@ impl Emitable for TcMirror {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut packet = TcMirrorBuffer::new(buffer);
+        let mut packet = TcMirrorBuffer::new_unchecked(buffer);
         self.generic.emit(packet.generic_mut());
         packet.set_eaction(self.eaction.into());
         packet.set_ifindex(self.ifindex);
@@ -115,7 +113,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<TcMirrorBuffer<&'a T>> for TcMirror 
     type Error = DecodeError;
     fn parse(buf: &TcMirrorBuffer<&T>) -> Result<Self, DecodeError> {
         Ok(Self {
-            generic: TcActionGeneric::parse(&TcActionGenericBuffer::new(buf.generic()))?,
+            generic: TcActionGeneric::parse(&TcActionGenericBuffer::new(buf.generic())?)?,
             eaction: buf.eaction().into(),
             ifindex: buf.ifindex(),
         })

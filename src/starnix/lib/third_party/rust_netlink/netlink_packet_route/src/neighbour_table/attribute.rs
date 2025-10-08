@@ -90,22 +90,18 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for NeighbourTable
                 })?)
             }
             NDTA_CONFIG => Self::Config(
-                NeighbourTableConfig::parse(
-                    &NeighbourTableConfigBuffer::new_checked(payload).map_err(|error| {
-                        NeighbourTableError::InvalidValue { kind: "NDTA_CONFIG", error }
-                    })?,
-                )
+                NeighbourTableConfig::parse(&NeighbourTableConfigBuffer::new(payload).map_err(
+                    |error| NeighbourTableError::InvalidValue { kind: "NDTA_CONFIG", error },
+                )?)
                 .map_err(|error| NeighbourTableError::InvalidValue {
                     kind: "NDTA_CONFIG",
                     error,
                 })?,
             ),
             NDTA_STATS => Self::Stats(
-                NeighbourTableStats::parse(
-                    &NeighbourTableStatsBuffer::new_checked(payload).map_err(|error| {
-                        NeighbourTableError::InvalidValue { kind: "NDTA_STATS", error }
-                    })?,
-                )
+                NeighbourTableStats::parse(&NeighbourTableStatsBuffer::new(payload).map_err(
+                    |error| NeighbourTableError::InvalidValue { kind: "NDTA_STATS", error },
+                )?)
                 .map_err(|error| NeighbourTableError::InvalidValue { kind: "NDTA_STATS", error })?,
             ),
             NDTA_PARMS => {

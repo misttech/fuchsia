@@ -48,7 +48,7 @@ impl Emitable for TcStatsQueue {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = TcStatsQueueBuffer::new(buffer);
+        let mut buffer = TcStatsQueueBuffer::new_unchecked(buffer);
         buffer.set_qlen(self.qlen);
         buffer.set_backlog(self.backlog);
         buffer.set_drops(self.drops);

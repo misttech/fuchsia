@@ -156,7 +156,7 @@ where
 {
     type Error = DecodeError;
     fn deserialize(header: &NetlinkHeader, payload: &[u8]) -> Result<Self, Self::Error> {
-        let buffer = GenlBuffer::new_checked(payload)?;
+        let buffer = GenlBuffer::new(payload)?;
         GenlMessage::parse_with_param(&buffer, header.message_type)
     }
 }

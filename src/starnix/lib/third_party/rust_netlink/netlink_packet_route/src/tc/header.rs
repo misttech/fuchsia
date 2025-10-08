@@ -46,7 +46,7 @@ impl Emitable for TcHeader {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut packet = TcMessageBuffer::new(buffer);
+        let mut packet = TcMessageBuffer::new_unchecked(buffer);
         packet.set_family(self.family.into());
         packet.set_index(self.index);
         packet.set_handle(self.handle.into());

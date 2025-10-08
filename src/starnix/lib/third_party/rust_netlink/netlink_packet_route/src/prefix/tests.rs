@@ -30,8 +30,8 @@ fn test_new_prefix() {
         0xff, 0xff, 0xff, 0xfa,
         0xff, 0xff, 0xff, 0xff,
     ];
-    let actual =
-        PrefixMessage::parse(&PrefixMessageBuffer::new(&data)).expect("Generated PrefixMessage");
+    let actual = PrefixMessage::parse(&PrefixMessageBuffer::new(&data).unwrap())
+        .expect("Generated PrefixMessage");
 
     let expected = PrefixMessage {
         header: PrefixHeader {

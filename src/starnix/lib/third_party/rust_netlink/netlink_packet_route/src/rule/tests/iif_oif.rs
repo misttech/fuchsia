@@ -47,7 +47,7 @@ fn test_ipv4_iif_oif_prohibit() {
             RuleAttribute::Source(Ipv4Addr::from_str("192.0.2.1").unwrap().into()),
         ],
     };
-    assert_eq!(expected, RuleMessage::parse(&RuleMessageBuffer::new(&raw)).unwrap());
+    assert_eq!(expected, RuleMessage::parse(&RuleMessageBuffer::new(&raw).unwrap()).unwrap());
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -91,7 +91,7 @@ fn test_ipv6_iif_oif_ipproto() {
             RuleAttribute::IpProtocol(IpProtocol::Icmp),
         ],
     };
-    assert_eq!(expected, RuleMessage::parse(&RuleMessageBuffer::new(&raw)).unwrap());
+    assert_eq!(expected, RuleMessage::parse(&RuleMessageBuffer::new(&raw).unwrap()).unwrap());
 
     let mut buf = vec![0; expected.buffer_len()];
 

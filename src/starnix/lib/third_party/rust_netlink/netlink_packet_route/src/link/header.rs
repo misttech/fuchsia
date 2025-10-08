@@ -73,7 +73,7 @@ impl Emitable for LinkHeader {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut packet = LinkMessageBuffer::new(buffer);
+        let mut packet = LinkMessageBuffer::new_unchecked(buffer);
         packet.set_interface_family(u8::from(self.interface_family));
         packet.set_link_index(self.index);
         packet.set_change_mask(self.change_mask.bits());

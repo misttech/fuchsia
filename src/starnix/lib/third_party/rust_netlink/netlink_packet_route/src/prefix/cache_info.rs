@@ -30,7 +30,7 @@ impl Emitable for CacheInfo {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = CacheInfoBuffer::new(buffer);
+        let mut buffer = CacheInfoBuffer::new_unchecked(buffer);
         buffer.set_preferred_time(self.preferred_time);
         buffer.set_valid_time(self.valid_time);
     }

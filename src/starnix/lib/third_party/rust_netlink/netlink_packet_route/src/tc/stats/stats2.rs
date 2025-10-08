@@ -66,15 +66,24 @@ where
             TCA_STATS_APP => Self::App(TcXstats::parse_with_param(buf, kind)?),
             TCA_STATS_BASIC => Self::Basic(
                 // unwrap: TCStatsBasic doesn't fail to parse.
-                TcStatsBasic::parse(&TcStatsBasicBuffer::new(payload)).unwrap(),
+                TcStatsBasic::parse(&TcStatsBasicBuffer::new(payload).map_err(|error| {
+                    TcError::ParseTcaStats2Attribute { kind: "TCA_STATS_BASIC", error }
+                })?)
+                .unwrap(),
             ),
             TCA_STATS_QUEUE => Self::Queue(
                 // unwrap: TCStatsQueue doesn't fail to parse.
-                TcStatsQueue::parse(&TcStatsQueueBuffer::new(payload)).unwrap(),
+                TcStatsQueue::parse(&TcStatsQueueBuffer::new(payload).map_err(|error| {
+                    TcError::ParseTcaStats2Attribute { kind: "TCA_STATS_QUEUE", error }
+                })?)
+                .unwrap(),
             ),
             TCA_STATS_BASIC_HW => Self::BasicHw(
                 // unwrap: TCStatsBasic doesn't fail to parse.
-                TcStatsBasic::parse(&TcStatsBasicBuffer::new(payload)).unwrap(),
+                TcStatsBasic::parse(&TcStatsBasicBuffer::new(payload).map_err(|error| {
+                    TcError::ParseTcaStats2Attribute { kind: "TCA_STATS_BASIC_HW", error }
+                })?)
+                .unwrap(),
             ),
             kind => Self::Other(
                 DefaultNla::parse(buf).map_err(|error| TcError::UnknownNla { kind, error })?,

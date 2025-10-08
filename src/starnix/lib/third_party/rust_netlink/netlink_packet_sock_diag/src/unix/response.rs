@@ -59,7 +59,7 @@ impl Emitable for UnixResponseHeader {
     }
 
     fn emit(&self, buf: &mut [u8]) {
-        let mut buf = UnixResponseBuffer::new(buf);
+        let mut buf = UnixResponseBuffer::new_unchecked(buf);
         buf.set_family(AF_UNIX);
         buf.set_kind(self.kind);
         buf.set_state(self.state);

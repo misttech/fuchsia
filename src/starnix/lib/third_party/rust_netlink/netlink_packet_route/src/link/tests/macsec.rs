@@ -56,7 +56,7 @@ fn test_macsec_link_info() {
         ])],
     };
 
-    assert_eq!(expected, LinkMessage::parse(&LinkMessageBuffer::new(&raw)).unwrap());
+    assert_eq!(expected, LinkMessage::parse(&LinkMessageBuffer::new(&raw).unwrap()).unwrap());
 
     let mut buf = vec![0; expected.buffer_len()];
 

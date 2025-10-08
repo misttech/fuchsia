@@ -110,7 +110,7 @@ impl<'a, T: AsRef<[u8]> + 'a> Parseable<InetRequestBuffer<&'a T>> for InetReques
     fn parse(buf: &InetRequestBuffer<&'a T>) -> Result<Self, DecodeError> {
         let err = "invalid socket_id value";
         let socket_id = SocketId::parse_with_param(
-            &SocketIdBuffer::new_checked(&buf.socket_id()).context(err)?,
+            &SocketIdBuffer::new(&buf.socket_id()).context(err)?,
             buf.family(),
         )
         .context(err)?;
@@ -131,7 +131,7 @@ impl Emitable for InetRequest {
     }
 
     fn emit(&self, buf: &mut [u8]) {
-        let mut buf = InetRequestBuffer::new(buf);
+        let mut buf = InetRequestBuffer::new_unchecked(buf);
         buf.set_family(self.family);
         buf.set_protocol(self.protocol);
         buf.set_extensions(self.extensions.bits());

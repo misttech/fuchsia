@@ -366,7 +366,7 @@ fn test_parsing_link_statistics_on_kernel_4_18() {
         ],
     };
 
-    assert_eq!(expected, LinkMessage::parse(&LinkMessageBuffer::new(&raw)).unwrap());
+    assert_eq!(expected, LinkMessage::parse(&LinkMessageBuffer::new(&raw).unwrap()).unwrap());
     // We do not test emit here as old kernel has smaller buffer size of stats
 }
 
@@ -679,7 +679,7 @@ fn test_parsing_link_statistics() {
         ],
     };
 
-    assert_eq!(expected, LinkMessage::parse(&LinkMessageBuffer::new(&raw)).unwrap());
+    assert_eq!(expected, LinkMessage::parse(&LinkMessageBuffer::new(&raw).unwrap()).unwrap());
 
     let mut buf = vec![0; expected.buffer_len()];
 

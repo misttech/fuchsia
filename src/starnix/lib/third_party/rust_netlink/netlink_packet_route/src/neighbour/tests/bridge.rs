@@ -29,7 +29,10 @@ fn test_bridge_neighbour_show() {
         attributes: vec![NeighbourAttribute::LinkLocalAddress(vec![1, 0, 94, 0, 0, 1])],
     };
 
-    assert_eq!(expected, NeighbourMessage::parse(&NeighbourMessageBuffer::new(&raw)).unwrap());
+    assert_eq!(
+        expected,
+        NeighbourMessage::parse(&NeighbourMessageBuffer::new(&raw).unwrap()).unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 

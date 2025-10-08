@@ -90,7 +90,7 @@ impl Emitable for Vfs {
     }
 
     fn emit(&self, buf: &mut [u8]) {
-        let mut buf = VfsBuffer::new(buf);
+        let mut buf = VfsBuffer::new_unchecked(buf);
         buf.set_inode(self.inode);
         buf.set_device(self.device);
     }
@@ -225,7 +225,7 @@ impl Emitable for MemInfo {
     }
 
     fn emit(&self, buf: &mut [u8]) {
-        let mut buf = MemInfoBuffer::new(buf);
+        let mut buf = MemInfoBuffer::new_unchecked(buf);
         buf.set_unused_sk_rmem_alloc(0);
         buf.set_so_rcvbuf(self.so_rcvbuf);
         buf.set_unused_sk_wmem_queued(0);
@@ -304,7 +304,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for Nla {
             }
             UNIX_DIAG_VFS => {
                 let err = "invalid UNIX_DIAG_VFS value";
-                let buf = VfsBuffer::new_checked(payload).context(err)?;
+                let buf = VfsBuffer::new(payload).context(err)?;
                 Self::Vfs(Vfs::parse(&buf).context(err)?)
             }
             UNIX_DIAG_PEER => {
@@ -327,7 +327,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for Nla {
             }
             UNIX_DIAG_MEMINFO => {
                 let err = "invalid UNIX_DIAG_MEMINFO value";
-                let buf = MemInfoBuffer::new_checked(payload).context(err)?;
+                let buf = MemInfoBuffer::new(payload).context(err)?;
                 Self::MemInfo(MemInfo::parse(&buf).context(err)?)
             }
             UNIX_DIAG_SHUTDOWN => {

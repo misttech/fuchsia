@@ -40,7 +40,7 @@ fn test_ipv4_l3mdev() {
             RuleAttribute::L3MDev(true),
         ],
     };
-    assert_eq!(expected, RuleMessage::parse(&RuleMessageBuffer::new(&raw)).unwrap());
+    assert_eq!(expected, RuleMessage::parse(&RuleMessageBuffer::new(&raw).unwrap()).unwrap());
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -82,7 +82,7 @@ fn test_ipv6_l3mdev_uid() {
             RuleAttribute::UidRange(RuleUidRange { start: 1000, end: 1999 }),
         ],
     };
-    assert_eq!(expected, RuleMessage::parse(&RuleMessageBuffer::new(&raw)).unwrap());
+    assert_eq!(expected, RuleMessage::parse(&RuleMessageBuffer::new(&raw).unwrap()).unwrap());
 
     let mut buf = vec![0; expected.buffer_len()];
 

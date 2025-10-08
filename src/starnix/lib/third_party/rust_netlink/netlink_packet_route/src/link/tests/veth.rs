@@ -40,7 +40,7 @@ fn test_veth_get_link_info() {
         attributes: vec![LinkAttribute::LinkInfo(vec![LinkInfo::Kind(InfoKind::Veth)])],
     };
 
-    assert_eq!(expected, LinkMessage::parse(&LinkMessageBuffer::new(&raw)).unwrap());
+    assert_eq!(expected, LinkMessage::parse(&LinkMessageBuffer::new(&raw).unwrap()).unwrap());
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -102,7 +102,7 @@ fn test_crate_veth() {
         ..Default::default()
     };
 
-    assert_eq!(expected, LinkMessage::parse(&LinkMessageBuffer::new(&raw)).unwrap());
+    assert_eq!(expected, LinkMessage::parse(&LinkMessageBuffer::new(&raw).unwrap()).unwrap());
 
     let mut buf = vec![0; expected.buffer_len()];
 

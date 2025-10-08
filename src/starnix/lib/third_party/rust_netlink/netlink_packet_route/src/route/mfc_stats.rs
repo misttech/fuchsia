@@ -32,7 +32,7 @@ impl Emitable for RouteMfcStats {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = RouteMfcStatsBuffer::new(buffer);
+        let mut buffer = RouteMfcStatsBuffer::new_unchecked(buffer);
         buffer.set_packets(self.packets);
         buffer.set_bytes(self.bytes);
         buffer.set_wrong_if(self.wrong_if);

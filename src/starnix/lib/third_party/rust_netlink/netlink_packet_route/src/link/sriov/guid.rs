@@ -35,7 +35,7 @@ impl Emitable for VfInfoGuid {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = VfInfoGuidBuffer::new(buffer);
+        let mut buffer = VfInfoGuidBuffer::new_unchecked(buffer);
         buffer.set_vf_id(self.vf_id);
         buffer.set_guid(self.guid);
     }

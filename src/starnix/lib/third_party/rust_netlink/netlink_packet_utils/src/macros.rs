@@ -145,12 +145,16 @@ macro_rules! setter {
 #[macro_export(local_inner_macros)]
 macro_rules! buffer {
     ($name:ident($buffer_len:expr) { $($field:ident : ($ty:tt, $offset:expr)),* $(,)? }) => {
-        buffer!($name { $($field: ($ty, $offset),)* });
+        buffer_common!($name);
+        fields!($name {
+            $($field: ($ty, $offset),)*
+        });
         buffer_check_length!($name($buffer_len));
     };
 
     ($name:ident { $($field:ident : ($ty:tt, $offset:expr)),* $(,)? }) => {
         buffer_common!($name);
+        buffer_no_length!($name);
         fields!($name {
             $($field: ($ty, $offset),)*
         });
@@ -163,6 +167,7 @@ macro_rules! buffer {
 
     ($name:ident) => {
         buffer_common!($name);
+        buffer_no_length!($name);
     };
 }
 
@@ -183,10 +188,14 @@ macro_rules! fields {
 macro_rules! buffer_check_length {
     ($name:ident($buffer_len:expr)) => {
         impl<T: AsRef<[u8]>> $name<T> {
-            pub fn new_checked(buffer: T) -> Result<Self, DecodeError> {
-                let packet = Self::new(buffer);
+            pub fn new(buffer: T) -> Result<Self, DecodeError> {
+                let packet = Self::new_unchecked(buffer);
                 packet.check_buffer_length()?;
                 Ok(packet)
+            }
+
+            pub fn new_unchecked(buffer: T) -> Self {
+                Self { buffer }
             }
 
             fn check_buffer_length(&self) -> Result<(), DecodeError> {
@@ -206,6 +215,17 @@ macro_rules! buffer_check_length {
 }
 
 #[macro_export]
+macro_rules! buffer_no_length {
+    ($name:ident) => {
+        impl<T: AsRef<[u8]>> $name<T> {
+            pub fn new(buffer: T) -> Self {
+                Self { buffer }
+            }
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! buffer_common {
     ($name:ident) => {
         #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -214,10 +234,6 @@ macro_rules! buffer_common {
         }
 
         impl<T: AsRef<[u8]>> $name<T> {
-            pub fn new(buffer: T) -> Self {
-                Self { buffer }
-            }
-
             pub fn into_inner(self) -> T {
                 self.buffer
             }

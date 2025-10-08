@@ -53,7 +53,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for InfoVeth {
         Ok(match buf.kind() {
             VETH_INFO_PEER => {
                 let err = "failed to parse veth link info";
-                let buffer = LinkMessageBuffer::new_checked(&payload).context(err)?;
+                let buffer = LinkMessageBuffer::new(&payload).context(err)?;
                 Peer(LinkMessage::parse(&buffer).context(err)?)
             }
             kind => Other(DefaultNla::parse(buf).context(format!("unknown NLA type {kind}"))?),

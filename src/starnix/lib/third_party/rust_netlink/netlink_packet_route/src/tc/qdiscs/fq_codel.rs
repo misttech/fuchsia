@@ -44,15 +44,29 @@ impl<T: AsRef<[u8]> + ?Sized> Parseable<T> for TcFqCodelXstats {
             TCA_FQ_CODEL_XSTATS_QDISC => {
                 // unwrap: we never fail below to parse TcFqCodelQdStats.
                 Ok(Self::Qdisc(
-                    TcFqCodelQdStats::parse(&TcFqCodelQdStatsBuffer::new(&buf.as_ref()[4..]))
-                        .unwrap(),
+                    TcFqCodelQdStats::parse(
+                        &TcFqCodelQdStatsBuffer::new(&buf.as_ref()[4..]).map_err(|error| {
+                            TcError::ParseFqCodelXstatsOption {
+                                kind: "TCA_FQ_CODEL_XSTATS_QDISC",
+                                error,
+                            }
+                        })?,
+                    )
+                    .unwrap(),
                 ))
             }
             TCA_FQ_CODEL_XSTATS_CLASS => {
                 // unwrap: we never fail below to parse TcFqCodelQdStats.
                 Ok(Self::Class(
-                    TcFqCodelClStats::parse(&TcFqCodelClStatsBuffer::new(&buf.as_ref()[4..]))
-                        .unwrap(),
+                    TcFqCodelClStats::parse(
+                        &TcFqCodelClStatsBuffer::new(&buf.as_ref()[4..]).map_err(|error| {
+                            TcError::ParseFqCodelXstatsOption {
+                                kind: "TCA_FQ_CODEL_XSTATS_CLASS",
+                                error,
+                            }
+                        })?,
+                    )
+                    .unwrap(),
                 ))
             }
             _ => Ok(Self::Other(buf.as_ref().to_vec())),
@@ -133,7 +147,7 @@ impl Emitable for TcFqCodelQdStats {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = TcFqCodelQdStatsBuffer::new(buffer);
+        let mut buffer = TcFqCodelQdStatsBuffer::new_unchecked(buffer);
         buffer.set_maxpacket(self.maxpacket);
         buffer.set_drop_overlimit(self.drop_overlimit);
         buffer.set_ecn_mark(self.ecn_mark);
@@ -186,7 +200,7 @@ impl Emitable for TcFqCodelClStats {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = TcFqCodelClStatsBuffer::new(buffer);
+        let mut buffer = TcFqCodelClStatsBuffer::new_unchecked(buffer);
         buffer.set_deficit(self.deficit);
         buffer.set_ldelay(self.ldelay);
         buffer.set_count(self.count);

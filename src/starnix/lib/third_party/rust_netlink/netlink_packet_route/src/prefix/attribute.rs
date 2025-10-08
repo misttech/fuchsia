@@ -57,8 +57,10 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for PrefixAttribut
                 }
             }
             PREFIX_CACHEINFO => Ok(Self::CacheInfo(
-                CacheInfo::parse(&CacheInfoBuffer::new(payload))
-                    .map_err(PrefixError::InvalidPrefixCacheInfo)?,
+                CacheInfo::parse(
+                    &CacheInfoBuffer::new(payload).map_err(PrefixError::InvalidPrefixCacheInfo)?,
+                )
+                .map_err(PrefixError::InvalidPrefixCacheInfo)?,
             )),
             _ => Ok(Self::Other(DefaultNla::parse(buf).map_err(PrefixError::Other)?)),
         }

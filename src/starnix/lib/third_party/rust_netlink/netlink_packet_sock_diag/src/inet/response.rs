@@ -77,7 +77,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<InetResponseBuffer<&'a T>> for InetR
     fn parse(buf: &InetResponseBuffer<&'a T>) -> Result<Self, DecodeError> {
         let err = "invalid socket_id value";
         let socket_id = SocketId::parse_with_param(
-            &SocketIdBuffer::new_checked(&buf.socket_id()).context(err)?,
+            &SocketIdBuffer::new(&buf.socket_id()).context(err)?,
             buf.family(),
         )
         .context(err)?;
@@ -119,7 +119,7 @@ impl Emitable for InetResponseHeader {
     }
 
     fn emit(&self, buf: &mut [u8]) {
-        let mut buf = InetResponseBuffer::new(buf);
+        let mut buf = InetResponseBuffer::new_unchecked(buf);
         buf.set_family(self.family);
         buf.set_state(self.state);
         match self.timer {

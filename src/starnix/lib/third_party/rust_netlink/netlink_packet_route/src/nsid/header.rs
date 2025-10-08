@@ -29,7 +29,7 @@ impl Emitable for NsidHeader {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut packet = NsidMessageBuffer::new(buffer);
+        let mut packet = NsidMessageBuffer::new_unchecked(buffer);
         packet.set_family(self.family.into());
     }
 }

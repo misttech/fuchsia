@@ -210,7 +210,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized>
             ),
             RTA_VIA => Self::Via(
                 RouteVia::parse(
-                    &RouteViaBuffer::new_checked(payload)
+                    &RouteViaBuffer::new(payload)
                         .map_err(|error| RouteError::InvalidValue { kind: "RTA_VIA", error })?,
                 )
                 .map_err(|error| RouteError::InvalidValue { kind: "RTA_VIA", error })?,
@@ -274,7 +274,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized>
 
             RTA_CACHEINFO => {
                 Self::CacheInfo(
-                    RouteCacheInfo::parse(&RouteCacheInfoBuffer::new_checked(payload).map_err(
+                    RouteCacheInfo::parse(&RouteCacheInfoBuffer::new(payload).map_err(
                         |error| RouteError::InvalidValue { kind: "RTA_CACHEINFO", error },
                     )?)
                     .map_err(|error| RouteError::InvalidValue { kind: "RTA_CACHEINFO", error })?,
@@ -282,9 +282,9 @@ impl<'a, T: AsRef<[u8]> + ?Sized>
             }
             RTA_MFC_STATS => {
                 Self::MfcStats(
-                    RouteMfcStats::parse(&RouteMfcStatsBuffer::new_checked(payload).map_err(
-                        |error| RouteError::InvalidValue { kind: "RTA_MFC_STATS", error },
-                    )?)
+                    RouteMfcStats::parse(&RouteMfcStatsBuffer::new(payload).map_err(|error| {
+                        RouteError::InvalidValue { kind: "RTA_MFC_STATS", error }
+                    })?)
                     .map_err(|error| RouteError::InvalidValue { kind: "RTA_MFC_STATS", error })?,
                 )
             }

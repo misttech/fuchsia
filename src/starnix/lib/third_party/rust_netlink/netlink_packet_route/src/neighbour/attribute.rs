@@ -113,7 +113,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<NlaBuffer<&'a T>, Addres
             ),
             NDA_LLADDR => Self::LinkLocalAddress(payload.to_vec()),
             NDA_CACHEINFO => Self::CacheInfo(
-                NeighbourCacheInfoBuffer::new_checked(payload)
+                NeighbourCacheInfoBuffer::new(payload)
                     .and_then(|buffer| NeighbourCacheInfo::parse(&buffer))
                     .map_err(|error| NeighbourError::InvalidValue {
                         kind: "NDA_CACHEINFO",

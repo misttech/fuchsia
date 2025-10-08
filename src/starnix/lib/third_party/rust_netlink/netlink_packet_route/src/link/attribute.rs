@@ -530,20 +530,20 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<NlaBuffer<&'a T>, Addres
             IFLA_MAP => {
                 let err = |payload| format!("Invalid IFLA_MAP value {:?}", payload);
                 Self::Map(
-                    super::Map::parse(&MapBuffer::new_checked(payload).context(err(payload))?)
+                    super::Map::parse(&MapBuffer::new(payload).context(err(payload))?)
                         .context(err(payload))?,
                 )
             }
             IFLA_STATS => Self::Stats(
                 super::Stats::parse(&StatsBuffer::new(
                     expand_buffer_if_small(payload, LINK_STATS_LEN, "IFLA_STATS").as_slice(),
-                ))
+                )?)
                 .context(format!("Invalid IFLA_STATS value {:?}", payload))?,
             ),
             IFLA_STATS64 => {
                 let payload = expand_buffer_if_small(payload, LINK_STATS64_LEN, "IFLA_STATS64");
                 Self::Stats64(
-                    super::Stats64::parse(&Stats64Buffer::new(payload.as_slice()))
+                    super::Stats64::parse(&Stats64Buffer::new(payload.as_slice())?)
                         .context(format!("Invalid IFLA_STATS64 value {:?}", payload))?,
                 )
             }

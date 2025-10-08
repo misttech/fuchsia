@@ -308,11 +308,11 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for InfoBridgePort
                     > 0,
             ),
             IFLA_BRPORT_ROOT_ID => Self::RootId(
-                BridgeId::parse(&BridgeIdBuffer::new(payload))
+                BridgeId::parse(&BridgeIdBuffer::new(payload)?)
                     .with_context(|| format!("invalid IFLA_BRPORT_ROOT_ID {payload:?}"))?,
             ),
             IFLA_BRPORT_BRIDGE_ID => Self::BridgeId(
-                BridgeId::parse(&BridgeIdBuffer::new(payload))
+                BridgeId::parse(&BridgeIdBuffer::new(payload)?)
                     .with_context(|| format!("invalid IFLA_BRPORT_BRIDGE_ID {payload:?}"))?,
             ),
             IFLA_BRPORT_DESIGNATED_PORT => InfoBridgePort::DesignatedPort(

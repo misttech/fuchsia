@@ -109,7 +109,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<NlaBuffer<&'a T>, &str> 
             TCA_OPTIONS => TcAttribute::Options(VecTcOption::parse_with_param(buf, kind)?.0),
             TCA_STATS => TcAttribute::Stats(
                 TcStats::parse(
-                    &TcStatsBuffer::new_checked(payload)
+                    &TcStatsBuffer::new(payload)
                         .map_err(|error| TcError::InvalidValue { kind: "TCA_STATS", error })?,
                 )
                 .map_err(|error| TcError::InvalidValue { kind: "TCA_STATS", error })?,

@@ -35,7 +35,7 @@ impl Emitable for VfInfoTxRate {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = VfInfoTxRateBuffer::new(buffer);
+        let mut buffer = VfInfoTxRateBuffer::new_unchecked(buffer);
         buffer.set_vf_id(self.vf_id);
         buffer.set_rate(self.rate);
     }

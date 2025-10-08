@@ -44,8 +44,7 @@ const REQ_UDP_BUF: [u8; 56] = [
 
 #[test]
 fn parse_udp_req() {
-    let parsed =
-        InetRequest::parse(&InetRequestBuffer::new_checked(&&REQ_UDP_BUF[..]).unwrap()).unwrap();
+    let parsed = InetRequest::parse(&InetRequestBuffer::new(&&REQ_UDP_BUF[..]).unwrap()).unwrap();
     assert_eq!(parsed, *REQ_UDP);
 }
 
@@ -113,7 +112,7 @@ const RESP_TCP_BUF: [u8; 80] = [
 #[test]
 fn parse_tcp_resp() {
     let parsed =
-        InetResponse::parse(&InetResponseBuffer::new_checked(&&RESP_TCP_BUF[..]).unwrap()).unwrap();
+        InetResponse::parse(&InetResponseBuffer::new(&&RESP_TCP_BUF[..]).unwrap()).unwrap();
     assert_eq!(parsed, *RESP_TCP);
 }
 

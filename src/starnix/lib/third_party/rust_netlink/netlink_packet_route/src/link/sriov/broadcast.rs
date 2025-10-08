@@ -39,7 +39,7 @@ impl Emitable for VfInfoBroadcast {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = VfInfoBroadcastBuffer::new(buffer);
+        let mut buffer = VfInfoBroadcastBuffer::new_unchecked(buffer);
         buffer.addr_mut().copy_from_slice(&self.addr);
     }
 }

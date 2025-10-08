@@ -40,7 +40,7 @@ impl Emitable for CacheInfo {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = CacheInfoBuffer::new(buffer);
+        let mut buffer = CacheInfoBuffer::new_unchecked(buffer);
         buffer.set_ifa_preferred(self.ifa_preferred);
         buffer.set_ifa_valid(self.ifa_valid);
         buffer.set_cstamp(self.cstamp);

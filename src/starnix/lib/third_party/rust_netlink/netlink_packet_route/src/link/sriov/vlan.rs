@@ -37,7 +37,7 @@ impl Emitable for VfInfoVlan {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = VfInfoVlanBuffer::new(buffer);
+        let mut buffer = VfInfoVlanBuffer::new_unchecked(buffer);
         buffer.set_vf_id(self.vf_id);
         buffer.set_vlan_id(self.vlan_id);
         buffer.set_qos(self.qos);

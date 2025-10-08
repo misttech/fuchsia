@@ -229,7 +229,7 @@ impl Emitable for TcActionGeneric {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut packet = TcActionGenericBuffer::new(buffer);
+        let mut packet = TcActionGenericBuffer::new_unchecked(buffer);
         packet.set_index(self.index);
         packet.set_capab(self.capab);
         packet.set_action(self.action.into());

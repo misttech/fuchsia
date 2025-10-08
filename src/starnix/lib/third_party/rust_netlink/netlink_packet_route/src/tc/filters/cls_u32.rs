@@ -231,7 +231,7 @@ impl<T: AsRef<[u8]> + ?Sized> Parseable<TcU32SelectorBuffer<&T>> for TcU32Select
         let key_payload = buf.keys();
         for i in 0..nkeys {
             let i = i as usize;
-            let keybuf = TcU32KeyBuffer::new_checked(
+            let keybuf = TcU32KeyBuffer::new(
                 &key_payload[(i * TC_U32_KEY_BUF_LEN)..(i + 1) * TC_U32_KEY_BUF_LEN],
             )
             .map_err(|error| TcError::InvalidU32Key(error))?;
@@ -274,7 +274,7 @@ impl Emitable for TcU32Key {
         TC_U32_KEY_BUF_LEN
     }
     fn emit(&self, buffer: &mut [u8]) {
-        let mut packet = TcU32KeyBuffer::new(buffer);
+        let mut packet = TcU32KeyBuffer::new_unchecked(buffer);
         packet.set_mask(self.mask);
         packet.set_val(self.val);
         packet.set_off(self.off);

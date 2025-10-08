@@ -45,7 +45,7 @@ impl Emitable for Map {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = MapBuffer::new(buffer);
+        let mut buffer = MapBuffer::new_unchecked(buffer);
         buffer.set_memory_start(self.memory_start);
         buffer.set_memory_end(self.memory_end);
         buffer.set_base_address(self.base_address);

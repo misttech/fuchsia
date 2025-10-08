@@ -125,7 +125,7 @@ impl Emitable for Stats64 {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = Stats64Buffer::new(buffer);
+        let mut buffer = Stats64Buffer::new_unchecked(buffer);
         buffer.set_rx_packets(self.rx_packets);
         buffer.set_tx_packets(self.tx_packets);
         buffer.set_rx_bytes(self.rx_bytes);

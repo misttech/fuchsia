@@ -38,7 +38,7 @@ impl Emitable for PrefixHeader {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut packet = PrefixMessageBuffer::new(buffer);
+        let mut packet = PrefixMessageBuffer::new_unchecked(buffer);
         packet.set_prefix_family(self.prefix_family);
         packet.set_ifindex(self.ifindex);
         packet.set_prefix_type(self.prefix_type);

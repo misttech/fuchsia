@@ -60,7 +60,7 @@ fn test_ipv4_route_realm() {
         ],
     };
 
-    assert_eq!(expected, RouteMessage::parse(&RouteMessageBuffer::new(&raw)).unwrap());
+    assert_eq!(expected, RouteMessage::parse(&RouteMessageBuffer::new(&raw).unwrap()).unwrap());
 
     let mut buf = vec![0; expected.buffer_len()];
 

@@ -18,7 +18,7 @@ impl Emitable for GenlHeader {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut packet = GenlBuffer::new(buffer);
+        let mut packet = GenlBuffer::new_unchecked(buffer);
         packet.set_cmd(self.cmd);
         packet.set_version(self.version);
     }

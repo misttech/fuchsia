@@ -59,7 +59,7 @@ impl Emitable for NeighbourTableStats {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = NeighbourTableStatsBuffer::new(buffer);
+        let mut buffer = NeighbourTableStatsBuffer::new_unchecked(buffer);
         buffer.set_allocs(self.allocs);
         buffer.set_destroys(self.destroys);
         buffer.set_hash_grows(self.hash_grows);

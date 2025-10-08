@@ -135,7 +135,7 @@ impl Emitable for Inet6Stats {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = Inet6StatsBuffer::new(buffer);
+        let mut buffer = Inet6StatsBuffer::new_unchecked(buffer);
         buffer.set_num(self.num);
         buffer.set_in_pkts(self.in_pkts);
         buffer.set_in_octets(self.in_octets);

@@ -35,7 +35,7 @@ impl Emitable for VfInfoTrust {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = VfInfoTrustBuffer::new(buffer);
+        let mut buffer = VfInfoTrustBuffer::new_unchecked(buffer);
         buffer.set_vf_id(self.vf_id);
         buffer.set_setting(self.enabled as u32);
     }

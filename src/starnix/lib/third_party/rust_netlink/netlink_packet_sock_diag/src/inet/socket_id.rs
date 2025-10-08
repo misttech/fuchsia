@@ -104,7 +104,7 @@ impl Emitable for SocketId {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = SocketIdBuffer::new(buffer);
+        let mut buffer = SocketIdBuffer::new_unchecked(buffer);
 
         BigEndian::write_u16(buffer.source_port_mut(), self.source_port);
         BigEndian::write_u16(buffer.destination_port_mut(), self.destination_port);

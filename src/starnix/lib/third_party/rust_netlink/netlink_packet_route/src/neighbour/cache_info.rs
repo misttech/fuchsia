@@ -39,7 +39,7 @@ impl Emitable for NeighbourCacheInfo {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = NeighbourCacheInfoBuffer::new(buffer);
+        let mut buffer = NeighbourCacheInfoBuffer::new_unchecked(buffer);
         buffer.set_confirmed(self.confirmed);
         buffer.set_used(self.used);
         buffer.set_updated(self.updated);

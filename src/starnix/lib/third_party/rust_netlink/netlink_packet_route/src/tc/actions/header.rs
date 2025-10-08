@@ -34,7 +34,7 @@ impl Emitable for TcActionMessageHeader {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut packet = TcActionMessageBuffer::new(buffer);
+        let mut packet = TcActionMessageBuffer::new_unchecked(buffer);
         packet.set_family(self.family.into());
     }
 }

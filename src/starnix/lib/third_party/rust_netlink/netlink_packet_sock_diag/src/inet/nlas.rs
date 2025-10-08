@@ -52,7 +52,7 @@ impl Emitable for LegacyMemInfo {
     }
 
     fn emit(&self, buf: &mut [u8]) {
-        let mut buf = LegacyMemInfoBuffer::new(buf);
+        let mut buf = LegacyMemInfoBuffer::new_unchecked(buf);
         buf.set_receive_queue(self.receive_queue);
         buf.set_bottom_send_queue(self.bottom_send_queue);
         buf.set_cache(self.cache);
@@ -204,7 +204,7 @@ impl Emitable for MemInfo {
     }
 
     fn emit(&self, buf: &mut [u8]) {
-        let mut buf = MemInfoBuffer::new(buf);
+        let mut buf = MemInfoBuffer::new_unchecked(buf);
         buf.set_receive_queue(self.receive_queue);
         buf.set_receive_queue_max(self.receive_queue_max);
         buf.set_bottom_send_queues(self.bottom_send_queues);
@@ -315,13 +315,13 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for Nla {
         Ok(match buf.kind() {
             INET_DIAG_MEMINFO => {
                 let err = "invalid INET_DIAG_MEMINFO value";
-                let buf = LegacyMemInfoBuffer::new_checked(payload).context(err)?;
+                let buf = LegacyMemInfoBuffer::new(payload).context(err)?;
                 Self::LegacyMemInfo(LegacyMemInfo::parse(&buf).context(err)?)
             }
             #[cfg(feature = "rich_nlas")]
             INET_DIAG_INFO => {
                 let err = "invalid INET_DIAG_INFO value";
-                let buf = TcpInfoBuffer::new_checked(payload).context(err)?;
+                let buf = TcpInfoBuffer::new(payload).context(err)?;
                 Self::TcpInfo(TcpInfo::parse(&buf).context(err)?)
             }
             #[cfg(not(feature = "rich_nlas"))]
@@ -335,7 +335,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for Nla {
             }
             INET_DIAG_SKMEMINFO => {
                 let err = "invalid INET_DIAG_SKMEMINFO value";
-                let buf = MemInfoBuffer::new_checked(payload).context(err)?;
+                let buf = MemInfoBuffer::new(payload).context(err)?;
                 Self::MemInfo(MemInfo::parse(&buf).context(err)?)
             }
             INET_DIAG_SHUTDOWN => {

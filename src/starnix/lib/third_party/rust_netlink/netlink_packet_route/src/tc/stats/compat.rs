@@ -60,7 +60,7 @@ impl Emitable for TcStats {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = TcStatsBuffer::new(buffer);
+        let mut buffer = TcStatsBuffer::new_unchecked(buffer);
         buffer.set_bytes(self.bytes);
         buffer.set_packets(self.packets);
         buffer.set_drops(self.drops);

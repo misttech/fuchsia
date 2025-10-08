@@ -40,7 +40,7 @@ fn test_ipv6_add_route_onlink() {
         ],
     };
 
-    assert_eq!(expected, RouteMessage::parse(&RouteMessageBuffer::new(&raw)).unwrap());
+    assert_eq!(expected, RouteMessage::parse(&RouteMessageBuffer::new(&raw).unwrap()).unwrap());
 
     let mut buf = vec![0; expected.buffer_len()];
 

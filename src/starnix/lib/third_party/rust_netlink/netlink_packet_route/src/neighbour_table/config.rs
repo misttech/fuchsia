@@ -54,7 +54,7 @@ impl Emitable for NeighbourTableConfig {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = NeighbourTableConfigBuffer::new(buffer);
+        let mut buffer = NeighbourTableConfigBuffer::new_unchecked(buffer);
         buffer.set_key_len(self.key_len);
         buffer.set_entry_size(self.entry_size);
         buffer.set_entries(self.entries);

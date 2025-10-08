@@ -176,7 +176,7 @@ fn test_get_qdisc_fq_codel() {
         ],
     };
 
-    assert_eq!(expected, TcMessage::parse(&TcMessageBuffer::new(&raw)).unwrap());
+    assert_eq!(expected, TcMessage::parse(&TcMessageBuffer::new(&raw).unwrap()).unwrap());
 
     let mut buf = vec![0; expected.buffer_len()];
 

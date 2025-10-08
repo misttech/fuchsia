@@ -67,7 +67,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for TcActionNatOpt
         let payload = buf.value();
         Ok(match buf.kind() {
             TCA_NAT_TM => Self::Tm(payload.to_vec()),
-            TCA_NAT_PARMS => Self::Parms(TcNat::parse(&TcNatBuffer::new_checked(payload)?)?),
+            TCA_NAT_PARMS => Self::Parms(TcNat::parse(&TcNatBuffer::new(payload)?)?),
             _ => Self::Other(DefaultNla::parse(buf)?),
         })
     }
@@ -117,7 +117,7 @@ impl Emitable for TcNat {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut packet = TcNatBuffer::new(buffer);
+        let mut packet = TcNatBuffer::new_unchecked(buffer);
         self.generic.emit(packet.generic_mut());
         packet.old_addr_mut().copy_from_slice(&self.old_addr.octets());
         packet.new_addr_mut().copy_from_slice(&self.new_addr.octets());
@@ -130,7 +130,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<TcNatBuffer<&'a T>> for TcNat {
     type Error = DecodeError;
     fn parse(buf: &TcNatBuffer<&T>) -> Result<Self, DecodeError> {
         Ok(Self {
-            generic: TcActionGeneric::parse(&TcActionGenericBuffer::new(buf.generic()))?,
+            generic: TcActionGeneric::parse(&TcActionGenericBuffer::new(buf.generic())?)?,
             old_addr: parse_ipv4(buf.old_addr())?,
             new_addr: parse_ipv4(buf.new_addr())?,
             mask: parse_ipv4(buf.mask())?,

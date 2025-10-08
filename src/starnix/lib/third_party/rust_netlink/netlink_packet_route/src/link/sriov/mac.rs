@@ -43,7 +43,7 @@ impl Emitable for VfInfoMac {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = VfInfoMacBuffer::new(buffer);
+        let mut buffer = VfInfoMacBuffer::new_unchecked(buffer);
         buffer.set_vf_id(self.vf_id);
         buffer.mac_mut().copy_from_slice(&self.mac);
     }

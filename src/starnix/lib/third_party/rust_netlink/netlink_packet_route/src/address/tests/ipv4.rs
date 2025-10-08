@@ -43,7 +43,7 @@ fn test_ipv4_get_loopback_address() {
         ],
     };
 
-    assert_eq!(expected, AddressMessage::parse(&AddressMessageBuffer::new(&raw)).unwrap());
+    assert_eq!(expected, AddressMessage::parse(&AddressMessageBuffer::new(&raw).unwrap()).unwrap());
 
     let mut buf = vec![0; expected.buffer_len()];
 

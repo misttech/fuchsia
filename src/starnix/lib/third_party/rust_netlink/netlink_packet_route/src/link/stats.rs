@@ -121,7 +121,7 @@ impl Emitable for Stats {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = StatsBuffer::new(buffer);
+        let mut buffer = StatsBuffer::new_unchecked(buffer);
         buffer.set_rx_packets(self.rx_packets);
         buffer.set_tx_packets(self.tx_packets);
         buffer.set_rx_bytes(self.rx_bytes);

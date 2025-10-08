@@ -74,7 +74,7 @@ impl Emitable for NeighbourHeader {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut packet = NeighbourMessageBuffer::new(buffer);
+        let mut packet = NeighbourMessageBuffer::new_unchecked(buffer);
         packet.set_family(self.family.into());
         packet.set_ifindex(self.ifindex);
         packet.set_state(self.state.into());

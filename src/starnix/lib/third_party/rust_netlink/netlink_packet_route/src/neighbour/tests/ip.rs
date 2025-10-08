@@ -45,7 +45,10 @@ fn test_ipv4_neighbour_show() {
         ],
     };
 
-    assert_eq!(expected, NeighbourMessage::parse(&NeighbourMessageBuffer::new(&raw)).unwrap());
+    assert_eq!(
+        expected,
+        NeighbourMessage::parse(&NeighbourMessageBuffer::new(&raw).unwrap()).unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -89,7 +92,10 @@ fn test_ipv6_neighbour_show() {
         ],
     };
 
-    assert_eq!(expected, NeighbourMessage::parse(&NeighbourMessageBuffer::new(&raw)).unwrap());
+    assert_eq!(
+        expected,
+        NeighbourMessage::parse(&NeighbourMessageBuffer::new(&raw).unwrap()).unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -135,7 +141,10 @@ fn test_ipv4_neighbour_protocol_show() {
         ],
     };
 
-    assert_eq!(expected, NeighbourMessage::parse(&NeighbourMessageBuffer::new(&raw)).unwrap());
+    assert_eq!(
+        expected,
+        NeighbourMessage::parse(&NeighbourMessageBuffer::new(&raw).unwrap()).unwrap()
+    );
 
     let mut buf = vec![0; expected.buffer_len()];
 

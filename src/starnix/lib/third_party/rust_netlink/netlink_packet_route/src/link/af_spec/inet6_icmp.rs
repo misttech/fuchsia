@@ -45,7 +45,7 @@ impl Emitable for Icmp6Stats {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = Icmp6StatsBuffer::new(buffer);
+        let mut buffer = Icmp6StatsBuffer::new_unchecked(buffer);
         buffer.set_num(self.num);
         buffer.set_in_msgs(self.in_msgs);
         buffer.set_in_errors(self.in_errors);

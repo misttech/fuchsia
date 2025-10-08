@@ -19,7 +19,7 @@ fn test_ip_netns_query_reply() {
         attributes: vec![NsidAttribute::Id(99)],
     };
 
-    assert_eq!(expected, NsidMessage::parse(&NsidMessageBuffer::new(&raw)).unwrap());
+    assert_eq!(expected, NsidMessage::parse(&NsidMessageBuffer::new(&raw).unwrap()).unwrap());
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -42,7 +42,7 @@ fn test_ip_netns_query() {
         attributes: vec![NsidAttribute::Fd(6)],
     };
 
-    assert_eq!(expected, NsidMessage::parse(&NsidMessageBuffer::new(&raw)).unwrap());
+    assert_eq!(expected, NsidMessage::parse(&NsidMessageBuffer::new(&raw).unwrap()).unwrap());
 
     let mut buf = vec![0; expected.buffer_len()];
 
@@ -62,7 +62,7 @@ fn test_ip_netns_query_target_ns_id() {
         attributes: vec![NsidAttribute::TargetNsid(99)],
     };
 
-    assert_eq!(expected, NsidMessage::parse(&NsidMessageBuffer::new(&raw)).unwrap());
+    assert_eq!(expected, NsidMessage::parse(&NsidMessageBuffer::new(&raw).unwrap()).unwrap());
 
     let mut buf = vec![0; expected.buffer_len()];
 

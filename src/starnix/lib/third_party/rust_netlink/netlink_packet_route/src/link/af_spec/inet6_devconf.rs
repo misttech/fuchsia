@@ -142,7 +142,7 @@ impl Emitable for Inet6DevConf {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = Inet6DevConfBuffer::new(buffer);
+        let mut buffer = Inet6DevConfBuffer::new_unchecked(buffer);
         buffer.set_forwarding(self.forwarding);
         buffer.set_hoplimit(self.hoplimit);
         buffer.set_mtu6(self.mtu6);

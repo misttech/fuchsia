@@ -81,7 +81,7 @@ impl Emitable for RouteHeader {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = RouteMessageBuffer::new(buffer);
+        let mut buffer = RouteMessageBuffer::new_unchecked(buffer);
         buffer.set_address_family(self.address_family.into());
         buffer.set_destination_prefix_length(self.destination_prefix_length);
         buffer.set_source_prefix_length(self.source_prefix_length);

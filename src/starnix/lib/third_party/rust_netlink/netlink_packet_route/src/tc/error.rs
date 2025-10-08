@@ -75,6 +75,20 @@ pub enum TcError {
         error: DecodeError,
     },
 
+    #[error("failed to parse TCA_STATS2 attribute {kind}")]
+    ParseTcaStats2Attribute {
+        kind: &'static str,
+        #[source]
+        error: DecodeError,
+    },
+
+    #[error("failed to parse TC_FQ_CODEL_QD_STATS option {kind}")]
+    ParseFqCodelXstatsOption {
+        kind: &'static str,
+        #[source]
+        error: DecodeError,
+    },
+
     #[error("Invalid u32 key")]
     InvalidU32Key(#[source] DecodeError),
 

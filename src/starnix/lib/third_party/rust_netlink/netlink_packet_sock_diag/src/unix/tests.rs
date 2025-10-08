@@ -72,8 +72,7 @@ const LISTENING_BUF: [u8; 60] = [
 #[test]
 fn parse_listening() {
     let parsed =
-        UnixResponse::parse(&UnixResponseBuffer::new_checked(&&LISTENING_BUF[..]).unwrap())
-            .unwrap();
+        UnixResponse::parse(&UnixResponseBuffer::new(&&LISTENING_BUF[..]).unwrap()).unwrap();
     assert_eq!(parsed, *LISTENING);
 }
 
@@ -137,8 +136,7 @@ const ESTABLISHED_BUF: [u8; 68] = [
 #[test]
 fn parse_established() {
     let parsed =
-        UnixResponse::parse(&UnixResponseBuffer::new_checked(&&ESTABLISHED_BUF[..]).unwrap())
-            .unwrap();
+        UnixResponse::parse(&UnixResponseBuffer::new(&&ESTABLISHED_BUF[..]).unwrap()).unwrap();
     assert_eq!(parsed, *ESTABLISHED);
 }
 

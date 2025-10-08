@@ -34,7 +34,7 @@ static LINK_MSG: [u8; 96] = [
 
 #[test]
 fn link_message_packet_header_read() {
-    let packet = LinkMessageBuffer::new(&LINK_MSG[0..16]);
+    let packet = LinkMessageBuffer::new(&LINK_MSG[0..16]).unwrap();
     assert_eq!(packet.interface_family(), AddressFamily::Unspec.into());
     assert_eq!(packet.reserved_1(), 0);
     assert_eq!(packet.link_layer_type(), LinkLayerType::Loopback.into());
@@ -50,7 +50,7 @@ fn link_message_packet_header_read() {
 fn link_message_packet_header_build() {
     let mut buf = vec![0xff; 16];
     {
-        let mut packet = LinkMessageBuffer::new(&mut buf);
+        let mut packet = LinkMessageBuffer::new(&mut buf).unwrap();
         packet.set_interface_family(AddressFamily::Unspec.into());
         packet.set_reserved_1(0);
         packet.set_link_layer_type(LinkLayerType::Loopback.into());
@@ -65,7 +65,7 @@ fn link_message_packet_header_build() {
 
 #[test]
 fn link_mssage_packet_attributes_read() {
-    let packet = LinkMessageBuffer::new(&LINK_MSG[..]);
+    let packet = LinkMessageBuffer::new(&LINK_MSG[..]).unwrap();
     assert_eq!(packet.attributes().count(), 10);
     let mut attributes = packet.attributes();
 

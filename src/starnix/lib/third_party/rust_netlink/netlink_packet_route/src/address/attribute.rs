@@ -168,7 +168,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for AddressAttribu
             }
             IFA_CACHEINFO => {
                 Self::CacheInfo(
-                    CacheInfo::parse(&CacheInfoBuffer::new_checked(payload).map_err(|err| {
+                    CacheInfo::parse(&CacheInfoBuffer::new(payload).map_err(|err| {
                         AddressError::ParseAttribute { kind: "IFA_CACHEINFO", err }
                     })?)
                     .map_err(|err| AddressError::ParseAttribute { kind: "IFA_CACHEINFO", err })?,

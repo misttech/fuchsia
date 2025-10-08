@@ -55,7 +55,7 @@ impl Emitable for RouteVia {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = RouteViaBuffer::new(buffer);
+        let mut buffer = RouteViaBuffer::new_unchecked(buffer);
         let (address_family, addr) = match self {
             Self::Inet(ip) => (AddressFamily::Inet, ip.octets().to_vec()),
             Self::Inet6(ip) => (AddressFamily::Inet6, ip.octets().to_vec()),

@@ -45,7 +45,7 @@ impl Emitable for AddressHeader {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut packet = AddressMessageBuffer::new(buffer);
+        let mut packet = AddressMessageBuffer::new_unchecked(buffer);
         packet.set_family(self.family.into());
         packet.set_prefix_len(self.prefix_len);
         packet.set_flags(self.flags.bits());

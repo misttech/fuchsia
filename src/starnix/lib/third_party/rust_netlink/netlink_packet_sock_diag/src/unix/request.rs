@@ -104,7 +104,7 @@ impl Emitable for UnixRequest {
     }
 
     fn emit(&self, buf: &mut [u8]) {
-        let mut buffer = UnixRequestBuffer::new(buf);
+        let mut buffer = UnixRequestBuffer::new_unchecked(buf);
         buffer.set_family(AF_UNIX);
         buffer.set_protocol(0);
         buffer.set_state_flags(self.state_flags.bits());

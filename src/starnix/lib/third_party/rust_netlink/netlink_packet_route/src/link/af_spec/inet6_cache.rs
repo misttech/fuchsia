@@ -39,7 +39,7 @@ impl Emitable for Inet6CacheInfo {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = Inet6CacheInfoBuffer::new(buffer);
+        let mut buffer = Inet6CacheInfoBuffer::new_unchecked(buffer);
         buffer.set_max_reasm_len(self.max_reasm_len);
         buffer.set_tstamp(self.tstamp);
         buffer.set_reachable_time(self.reachable_time);

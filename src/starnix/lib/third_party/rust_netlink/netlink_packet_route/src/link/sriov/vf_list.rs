@@ -164,47 +164,47 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for VfInfo {
         let payload = buf.value();
         Ok(match buf.kind() {
             IFLA_VF_MAC => Self::Mac(
-                VfInfoMac::parse(&VfInfoMacBuffer::new(payload))
+                VfInfoMac::parse(&VfInfoMacBuffer::new(payload)?)
                     .context(format!("invalid IFLA_VF_MAC {payload:?}"))?,
             ),
             IFLA_VF_VLAN => Self::Vlan(
-                VfInfoVlan::parse(&VfInfoVlanBuffer::new(payload))
+                VfInfoVlan::parse(&VfInfoVlanBuffer::new(payload)?)
                     .context(format!("invalid IFLA_VF_VLAN {payload:?}"))?,
             ),
             IFLA_VF_BROADCAST => Self::Broadcast(
-                VfInfoBroadcast::parse(&VfInfoBroadcastBuffer::new(payload))
+                VfInfoBroadcast::parse(&VfInfoBroadcastBuffer::new(payload)?)
                     .context(format!("invalid IFLA_VF_BROADCAST {payload:?}"))?,
             ),
             IFLA_VF_RATE => Self::Rate(
-                VfInfoRate::parse(&VfInfoRateBuffer::new(payload))
+                VfInfoRate::parse(&VfInfoRateBuffer::new(payload)?)
                     .context(format!("invalid IFLA_VF_RATE {payload:?}"))?,
             ),
             IFLA_VF_TX_RATE => Self::TxRate(
-                VfInfoTxRate::parse(&VfInfoTxRateBuffer::new(payload))
+                VfInfoTxRate::parse(&VfInfoTxRateBuffer::new(payload)?)
                     .context(format!("invalid IFLA_VF_TX_RATE {payload:?}"))?,
             ),
             IFLA_VF_SPOOFCHK => Self::SpoofCheck(
-                VfInfoSpoofCheck::parse(&VfInfoSpoofCheckBuffer::new(payload))
+                VfInfoSpoofCheck::parse(&VfInfoSpoofCheckBuffer::new(payload)?)
                     .context(format!("invalid IFLA_VF_SPOOFCHK {payload:?}"))?,
             ),
             IFLA_VF_LINK_STATE => Self::LinkState(
-                VfInfoLinkState::parse(&VfInfoLinkStateBuffer::new(payload))
+                VfInfoLinkState::parse(&VfInfoLinkStateBuffer::new(payload)?)
                     .context(format!("invalid IFLA_VF_LINK_STATE {payload:?}"))?,
             ),
             IFLA_VF_RSS_QUERY_EN => Self::RssQueryEn(
-                VfInfoRssQueryEn::parse(&VfInfoRssQueryEnBuffer::new(payload))
+                VfInfoRssQueryEn::parse(&VfInfoRssQueryEnBuffer::new(payload)?)
                     .context(format!("invalid IFLA_VF_RSS_QUERY_EN {payload:?}"))?,
             ),
             IFLA_VF_TRUST => Self::Trust(
-                VfInfoTrust::parse(&VfInfoTrustBuffer::new(payload))
+                VfInfoTrust::parse(&VfInfoTrustBuffer::new(payload)?)
                     .context(format!("invalid IFLA_VF_TRUST {payload:?}"))?,
             ),
             IFLA_VF_IB_NODE_GUID => Self::IbNodeGuid(
-                VfInfoGuid::parse(&VfInfoGuidBuffer::new(payload))
+                VfInfoGuid::parse(&VfInfoGuidBuffer::new(payload)?)
                     .context(format!("invalid IFLA_VF_IB_NODE_GUID {payload:?}"))?,
             ),
             IFLA_VF_IB_PORT_GUID => Self::IbPortGuid(
-                VfInfoGuid::parse(&VfInfoGuidBuffer::new(payload))
+                VfInfoGuid::parse(&VfInfoGuidBuffer::new(payload)?)
                     .context(format!("invalid IFLA_VF_IB_PORT_GUID {payload:?}"))?,
             ),
             IFLA_VF_VLAN_LIST => {

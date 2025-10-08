@@ -70,7 +70,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for AfSpecInet {
         Ok(match buf.kind() {
             IFLA_INET_CONF => DevConf(InetDevConf::parse(&InetDevConfBuffer::new(
                 expand_buffer_if_small(payload, DEV_CONF_LEN, "IFLA_INET_CONF").as_slice(),
-            ))?),
+            )?)?),
             kind => Other(
                 DefaultNla::parse(buf)
                     .context(format!("Unknown NLA type {kind} for IFLA_AF_SPEC(inet)"))?,
@@ -200,7 +200,7 @@ impl Emitable for InetDevConf {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = InetDevConfBuffer::new(buffer);
+        let mut buffer = InetDevConfBuffer::new_unchecked(buffer);
         buffer.set_forwarding(self.forwarding);
         buffer.set_mc_forwarding(self.mc_forwarding);
         buffer.set_proxy_arp(self.proxy_arp);

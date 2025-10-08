@@ -38,7 +38,7 @@ impl Emitable for NeighbourTableHeader {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut packet = NeighbourTableMessageBuffer::new(buffer);
+        let mut packet = NeighbourTableMessageBuffer::new_unchecked(buffer);
         packet.set_family(self.family.into());
     }
 }

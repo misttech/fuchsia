@@ -51,7 +51,7 @@ impl Emitable for RouteCacheInfo {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = RouteCacheInfoBuffer::new(buffer);
+        let mut buffer = RouteCacheInfoBuffer::new_unchecked(buffer);
         buffer.set_clntref(self.clntref);
         buffer.set_last_use(self.last_use);
         buffer.set_expires(self.expires);

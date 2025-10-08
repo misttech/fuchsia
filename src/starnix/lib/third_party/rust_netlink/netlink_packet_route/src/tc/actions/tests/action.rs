@@ -18,8 +18,7 @@ fn tc_action_generic_parse_back() {
     };
     let mut buffer = vec![0; orig.buffer_len()];
     orig.emit(&mut buffer);
-    let parsed =
-        TcActionGeneric::parse(&TcActionGenericBuffer::new_checked(buffer).unwrap()).unwrap();
+    let parsed = TcActionGeneric::parse(&TcActionGenericBuffer::new(buffer).unwrap()).unwrap();
     assert_eq!(orig, parsed);
 }
 
