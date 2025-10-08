@@ -32,6 +32,13 @@ namespace display::internal {
 //     revert the draft state back to the last known good applied state.
 class Layer {
  public:
+  // Values that are not directly held in a `LayerEquivalence`.  For example, the specific alpha
+  // value is irrelevant from the POV of a `LayerEquivalence`, which only cares if the value is one,
+  // zero, or between the two.
+  struct ConfigValues {
+    float alpha_value = 1.f;
+  };
+
   Layer() = default;
 
   // Corresponds to `fuchsia.hardware.display.Coordinator/SetLayerPrimaryConfig()`.
@@ -83,10 +90,12 @@ class Layer {
       fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& coordinator);
 
   LayerEquivalence applied_equiv_;
+  ConfigValues applied_values_;
   ImageId applied_image_ = kInvalidImageId;
   EventId applied_wait_event_ = kInvalidEventId;
 
   LayerEquivalence draft_equiv_;
+  ConfigValues draft_values_;
   ImageId draft_image_ = kInvalidImageId;
   EventId draft_wait_event_ = kInvalidEventId;
 };

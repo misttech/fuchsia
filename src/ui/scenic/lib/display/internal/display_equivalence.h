@@ -38,6 +38,8 @@ struct DisplayEquivalence {
   };
 };
 
+std::ostream& operator<<(std::ostream& str, const DisplayEquivalence& e);
+
 }  // namespace display::internal
 
 namespace std {

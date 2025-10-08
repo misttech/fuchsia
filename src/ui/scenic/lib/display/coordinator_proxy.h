@@ -309,6 +309,9 @@ class CoordinatorProxy {
   inspect::UintProperty inspect_current_image_count_;
   inspect::UintProperty inspect_import_event_count_;
   inspect::UintProperty inspect_current_event_count_;
+#ifndef NDEBUG
+  inspect::LazyNode inspect_config_cache_dump_;
+#endif
 };
 
 }  // namespace display

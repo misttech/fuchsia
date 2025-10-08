@@ -43,6 +43,25 @@ CoordinatorProxy::CoordinatorProxy(
   inspect_current_image_count_ = inspect_node_.CreateUint("Imported Images (current)", 0);
   inspect_import_event_count_ = inspect_node_.CreateUint("Imported Events (total)", 0);
   inspect_current_event_count_ = inspect_node_.CreateUint("Imported Events (current)", 0);
+
+// Nobody cares about the specific cache values except when debugging.
+#ifndef NDEBUG
+  inspect_config_cache_dump_ =
+      inspect_node_.CreateLazyValues("CheckConfig Cache values (DEBUG only)", [this] {
+        inspect::Inspector inspector;
+
+        std::ostringstream str;
+        size_t i = 0;
+        for (const auto& kv : check_config_cache_) {
+          str << "\n" << i++ << (kv.value ? ": valid " : ": invalid ") << kv.key;
+        }
+        str << "\n";
+
+        inspector.GetRoot().CreateString("CheckConfig Cache Values", str.str(), &inspector);
+
+        return fpromise::make_ok_promise(std::move(inspector));
+      });
+#endif
 }
 
 zx::result<> CoordinatorProxy::ImportImage(types::Extent2 image_dimensions,
@@ -445,3 +464,79 @@ void CoordinatorProxy::CacheCheckConfigResult(bool success) {
 }
 
 }  // namespace display
+
+namespace display::internal {
+
+std::ostream& operator<<(std::ostream& str, const DisplayEquivalence& e) {
+  str << "DisplayEquivalence";
+  str << "\n\tmode = " << e.display_mode;
+  str << "\n\tcolor preoffsets = ";
+  for (auto offset : e.color_conversion_preoffsets) {
+    str << offset << ", ";
+  }
+  str << "\n\tcolor coefficients = ";
+  for (auto coef : e.color_conversion_coefficients) {
+    str << coef << ", ";
+  }
+  str << "\n\tcolor postoffsets = ";
+  for (auto offset : e.color_conversion_postoffsets) {
+    str << offset << ", ";
+  }
+  str << "\n\tlayer count = " << e.layers.size() << "\n\tlayers:";
+  for (size_t i = 0; i < e.layers.size(); ++i) {
+    str << "\n\t\t" << i << ": " << e.layers[i];
+  }
+  return str;
+}
+
+std::ostream& operator<<(std::ostream& str, const LayerEquivalence& le) {
+  if (const display::internal::ImageLayerEquivalence* image_le =
+          std::get_if<display::internal::ImageLayerEquivalence>(&le.config)) {
+    str << *image_le;
+    return str;
+  }
+  if (const display::internal::ColorLayerEquivalence* color_le =
+          std::get_if<display::internal::ColorLayerEquivalence>(&le.config)) {
+    str << *color_le;
+    return str;
+  }
+  if (const display::internal::UninitializedLayerEquivalence* uninitialized_le =
+          std::get_if<display::internal::UninitializedLayerEquivalence>(&le.config)) {
+    str << *uninitialized_le;
+    return str;
+  }
+  __UNREACHABLE;
+  return str;
+}
+
+std::ostream& operator<<(std::ostream& str, const ImageLayerEquivalence& le) {
+  str << "ImageLayerEquiv[dst=" << le.display_destination << " src=" << le.image_source
+      << " transform=" << le.image_source_transformation << " im_dims=" << le.image_dimensions
+      << " tiling=" << le.image_tiling_type << " blend=" << le.blend_mode << " alpha=";
+  if (le.alpha_range == ImageLayerEquivalence::AlphaRange::kAlphaOne) {
+    str << "1";
+  } else if (le.alpha_range == ImageLayerEquivalence::AlphaRange::kAlphaZero) {
+    str << "0";
+  } else {
+    str << "0<a<1";
+  }
+  str << "]";
+  return str;
+}
+
+std::ostream& operator<<(std::ostream& str, const ColorLayerEquivalence& le) {
+  str << "ColorLayerEquiv[color=";
+  auto& bytes = le.color.bytes;
+  str << bytes[0] << "," << bytes[1] << "," << bytes[2] << "," << bytes[3] << "," << bytes[4] << ","
+      << bytes[5] << "," << bytes[6] << "," << bytes[7];
+  str << " format=" << static_cast<uint32_t>(le.color.format) << " dst=" << le.display_destination
+      << "]";
+  return str;
+}
+
+std::ostream& operator<<(std::ostream& str, const UninitializedLayerEquivalence& e) {
+  str << "UninitializedLayerEquiv[]";
+  return str;
+}
+
+}  // namespace display::internal

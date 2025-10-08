@@ -59,12 +59,16 @@ TEST(LayerEquivalence, HashingAndEquality) {
   EXPECT_EQ(image_layer1, image_layer2);
   EXPECT_EQ(image_hasher(image_layer1), image_hasher(image_layer2));
 
-  image_layer1.alpha_value = 0.5f;
-  EXPECT_NE(image_layer1, image_layer2);
-  EXPECT_NE(image_hasher(image_layer1), image_hasher(image_layer2));
-  image_layer2.alpha_value = image_layer1.alpha_value;
+  image_layer1.alpha_range = ImageLayerEquivalence::MakeAlphaRange(0.51f);
+  image_layer2.alpha_range = ImageLayerEquivalence::MakeAlphaRange(0.49f);
   EXPECT_EQ(image_layer1, image_layer2);
   EXPECT_EQ(image_hasher(image_layer1), image_hasher(image_layer2));
+  image_layer2.alpha_range = ImageLayerEquivalence::MakeAlphaRange(0.0f);
+  EXPECT_NE(image_layer1, image_layer2);
+  EXPECT_NE(image_hasher(image_layer1), image_hasher(image_layer2));
+  image_layer2.alpha_range = ImageLayerEquivalence::MakeAlphaRange(0.0f);
+  EXPECT_NE(image_layer1, image_layer2);
+  EXPECT_NE(image_hasher(image_layer1), image_hasher(image_layer2));
 
   // Test ColorLayerEquivalence fields individually.
   ColorLayerEquivalence color_layer1, color_layer2;
@@ -136,7 +140,7 @@ TEST(DisplayEquivalence, HashingAndEquality) {
 
   // Test layers
   ImageLayerEquivalence image_layer;
-  image_layer.alpha_value = 0.5f;
+  image_layer.alpha_range = ImageLayerEquivalence::MakeAlphaRange(0.5f);
   ColorLayerEquivalence color_layer;
   color_layer.display_destination = Rectangle({.x = 10, .y = 10, .width = 20, .height = 20});
 

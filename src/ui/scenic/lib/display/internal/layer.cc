@@ -36,7 +36,9 @@ void Layer::SetPrimaryAlpha(const BlendMode& blend_mode, float alpha_value) {
   FX_DCHECK(std::holds_alternative<ImageLayerEquivalence>(draft_equiv_.config));
   auto& equiv = std::get<ImageLayerEquivalence>(draft_equiv_.config);
   equiv.blend_mode = blend_mode;
-  equiv.alpha_value = alpha_value;
+  equiv.alpha_range = ImageLayerEquivalence::MakeAlphaRange(alpha_value);
+
+  draft_values_.alpha_value = alpha_value;
 }
 
 void Layer::SetLayerImage(const ImageId& image_id, const EventId& wait_event_id) {
@@ -116,7 +118,7 @@ size_t Layer::SendImageLayerDiffsToCoordinator(
         draft_equiv.image_source != applied_equiv.image_source ||
         draft_equiv.display_destination != applied_equiv.display_destination;
     must_set_alpha = draft_equiv.blend_mode != applied_equiv.blend_mode ||
-                     draft_equiv.alpha_value != applied_equiv.alpha_value;
+                     draft_equiv.alpha_range != applied_equiv.alpha_range;
     // Setting the config clears the image in the Coordinator impl, so `must_set_config == true`
     // means that we must set the image even if it matches the already-applied image.
     must_set_image =
@@ -149,7 +151,7 @@ size_t Layer::SendImageLayerDiffsToCoordinator(
     CP_VERBOSE_LOG << "Layer::SendImageLayerDiffsToCoordinator()... setting alpha";
     ++api_calls_sent;
     const fidl::OneWayStatus status = sync->SetLayerPrimaryAlpha(
-        wire_layer_id, draft_equiv.blend_mode.ToDisplayAlphaMode(), draft_equiv.alpha_value);
+        wire_layer_id, draft_equiv.blend_mode.ToDisplayAlphaMode(), draft_values_.alpha_value);
 
     FX_DCHECK(status.ok()) << "Failed to call FIDL SetLayerPrimaryAlpha method: "
                            << status.status_string();
