@@ -36,7 +36,7 @@ pub struct Name(Box<str>);
 pub const MAX_NAME_LENGTH: usize = fio::MAX_NAME_LENGTH as usize;
 const_assert_eq!(MAX_NAME_LENGTH as u64, fio::MAX_NAME_LENGTH);
 
-#[derive(Error, Debug, Clone)]
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum ParseNameError {
     #[error("name `{0}` is too long")]
     TooLong(String),

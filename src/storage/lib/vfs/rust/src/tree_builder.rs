@@ -14,7 +14,9 @@ use crate::directory::immutable::Simple;
 
 use fidl_fuchsia_io as fio;
 use itertools::Itertools;
+use name::{Name, ParseNameError};
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::fmt;
 use std::marker::PhantomData;
 use std::slice::Iter;
@@ -82,7 +84,7 @@ where
 }
 
 pub enum TreeBuilder {
-    Directory(HashMap<String, TreeBuilder>),
+    Directory(HashMap<Name, TreeBuilder>),
     Leaf(Arc<dyn DirectoryEntry>),
 }
 
@@ -125,7 +127,7 @@ impl TreeBuilder {
                 name,
                 rest,
                 |entries, name, full_path, _traversed| match entries
-                    .insert(name.to_string(), TreeBuilder::Leaf(entry))
+                    .insert(name, TreeBuilder::Leaf(entry))
                 {
                     None => Ok(()),
                     Some(TreeBuilder::Directory(_)) => {
@@ -185,7 +187,7 @@ impl TreeBuilder {
                 name,
                 rest,
                 |entries, name, full_path, traversed| match entries
-                    .entry(name.to_string())
+                    .entry(name)
                     .or_insert_with(|| TreeBuilder::Directory(HashMap::new()))
                 {
                     TreeBuilder::Directory(_) => Ok(()),
@@ -209,44 +211,38 @@ impl TreeBuilder {
     where
         PathImpl: AsRef<[&'components str]>,
         Inserter: FnOnce(
-            &mut HashMap<String, TreeBuilder>,
-            &str,
+            &mut HashMap<Name, TreeBuilder>,
+            Name,
             &Path<'components, PathImpl>,
             Vec<&'components str>,
         ) -> Result<(), Error>,
     {
-        if name.len() as u64 >= fio::MAX_NAME_LENGTH {
-            return Err(Error::ComponentNameTooLong {
+        let parsed_name =
+            Name::try_from(name.to_string()).map_err(|error| Error::InvalidComponent {
                 path: full_path.to_string(),
                 component: name.to_string(),
-                component_len: name.len(),
-                max_len: (fio::MAX_NAME_LENGTH - 1) as usize,
-            });
-        }
-
-        if name.contains('/') {
-            return Err(Error::SlashInComponent {
-                path: full_path.to_string(),
-                component: name.to_string(),
-            });
-        }
+                error,
+            })?;
 
         match self {
             TreeBuilder::Directory(entries) => match rest.next() {
-                None => inserter(entries, name, full_path, traversed),
+                None => inserter(entries, parsed_name, full_path, traversed),
                 Some(next_component) => {
                     traversed.push(name);
-                    match entries.get_mut(name) {
-                        None => {
+                    match entries.entry(parsed_name) {
+                        Entry::Vacant(slot) => {
                             let mut child = TreeBuilder::Directory(HashMap::new());
                             child.add_path(full_path, traversed, next_component, rest, inserter)?;
-                            let existing = entries.insert(name.to_string(), child);
-                            assert!(existing.is_none());
+                            slot.insert(child);
                             Ok(())
                         }
-                        Some(children) => {
-                            children.add_path(full_path, traversed, next_component, rest, inserter)
-                        }
+                        Entry::Occupied(mut slot) => slot.get_mut().add_path(
+                            full_path,
+                            traversed,
+                            next_component,
+                            rest,
+                            inserter,
+                        ),
                     }
                 }
             },
@@ -277,11 +273,11 @@ impl TreeBuilder {
                 let res = Simple::new_with_inode(get_inode("."));
                 for (name, child) in entries.drain() {
                     let child = child.build_dyn(&name, get_inode);
-                    res.add_entry(name, child)
+                    res.add_entry_impl(name, child, /*overwrite=*/ false)
                         .map_err(|status| format!("Status: {}", status))
                         .expect(
-                            "Internal error.  We have already checked all the entry names. \
-                             There should be no collisions, nor overly long names.",
+                            "Internal error. We have already checked all the entry names. \
+                             There should be no collisions.",
                         );
                 }
                 res
@@ -321,24 +317,15 @@ pub enum Error {
     EmptyPath,
 
     #[error(
-        "Path component contains a forward slash.\n\
+        "Path component is invalid.\n\
                    Path: {}\n\
-                   Component: '{}'",
+                   Component: '{}'\n\
+                   Error: '{}'",
         path,
-        component
+        component,
+        error
     )]
-    SlashInComponent { path: String, component: String },
-
-    #[error(
-        "Path component name is too long - {} characters.  Maximum is {}.\n\
-                   Path: {}\n\
-                   Component: '{}'",
-        component_len,
-        max_len,
-        path,
-        component
-    )]
-    ComponentNameTooLong { path: String, component: String, component_len: usize, max_len: usize },
+    InvalidComponent { path: String, component: String, error: ParseNameError },
 
     #[error(
         "Trying to insert a leaf over an existing directory.\n\
@@ -641,9 +628,41 @@ mod tests {
     fn error_empty_path_in_add_entry() {
         let mut tree = TreeBuilder::empty_dir();
         let err = tree
-            .add_entry(vec![], file::read_only(b"Invalid"))
+            .add_entry(&[], file::read_only(b"Invalid"))
             .expect_err("Empty paths are not allowed.");
         assert_eq!(err, Error::EmptyPath);
+    }
+
+    #[fuchsia::test]
+    fn error_empty_first_component() {
+        let mut tree = TreeBuilder::empty_dir();
+        let err = tree
+            .add_entry(&[""], file::read_only(b"Invalid"))
+            .expect_err("Empty paths are not allowed.");
+        assert_eq!(
+            err,
+            Error::InvalidComponent {
+                path: String::new(),
+                component: String::new(),
+                error: name::ParseNameError::Empty
+            }
+        );
+    }
+
+    #[fuchsia::test]
+    fn error_empty_component() {
+        let mut tree = TreeBuilder::empty_dir();
+        let err = tree
+            .add_entry(&["a", "", "c"], file::read_only(b"Invalid"))
+            .expect_err("Empty paths are not allowed.");
+        assert_eq!(
+            err,
+            Error::InvalidComponent {
+                path: "a//c".to_string(),
+                component: String::new(),
+                error: name::ParseNameError::Empty
+            }
+        );
     }
 
     #[fuchsia::test]
@@ -654,7 +673,11 @@ mod tests {
             .expect_err("Slash in path component name.");
         assert_eq!(
             err,
-            Error::SlashInComponent { path: "a/b".to_string(), component: "a/b".to_string() }
+            Error::InvalidComponent {
+                path: "a/b".to_string(),
+                component: "a/b".to_string(),
+                error: name::ParseNameError::Slash
+            }
         );
     }
 
@@ -666,7 +689,11 @@ mod tests {
             .expect_err("Slash in path component name.");
         assert_eq!(
             err,
-            Error::SlashInComponent { path: "a/b/c".to_string(), component: "b/c".to_string() }
+            Error::InvalidComponent {
+                path: "a/b/c".to_string(),
+                component: "b/c".to_string(),
+                error: name::ParseNameError::Slash
+            }
         );
     }
 
@@ -682,11 +709,58 @@ mod tests {
             .expect_err("Individual component names may not exceed MAX_FILENAME bytes.");
         assert_eq!(
             err,
-            Error::ComponentNameTooLong {
+            Error::InvalidComponent {
                 path: format!("a/{}/b", long_component),
                 component: long_component.clone(),
-                component_len: long_component.len(),
-                max_len: (fio::MAX_NAME_LENGTH - 1) as usize,
+                error: name::ParseNameError::TooLong(long_component)
+            }
+        );
+    }
+
+    #[fuchsia::test]
+    fn error_dot_in_component() {
+        let mut tree = TreeBuilder::empty_dir();
+        let err = tree
+            .add_entry(&["a", "."], file::read_only(b"Invalid"))
+            .expect_err("Dot in path component name.");
+        assert_eq!(
+            err,
+            Error::InvalidComponent {
+                path: "a/.".to_string(),
+                component: ".".to_string(),
+                error: name::ParseNameError::Dot
+            }
+        );
+    }
+
+    #[fuchsia::test]
+    fn error_dot_dot_in_component() {
+        let mut tree = TreeBuilder::empty_dir();
+        let err = tree
+            .add_entry(&["a", ".."], file::read_only(b"Invalid"))
+            .expect_err("Dot dot in path component name.");
+        assert_eq!(
+            err,
+            Error::InvalidComponent {
+                path: "a/..".to_string(),
+                component: "..".to_string(),
+                error: name::ParseNameError::DotDot
+            }
+        );
+    }
+
+    #[fuchsia::test]
+    fn error_null_in_component() {
+        let mut tree = TreeBuilder::empty_dir();
+        let err = tree
+            .add_entry(&["a", "foo\0bar"], file::read_only(b"Invalid"))
+            .expect_err("Embedded null in component.");
+        assert_eq!(
+            err,
+            Error::InvalidComponent {
+                path: "a/foo\0bar".to_string(),
+                component: "foo\0bar".to_string(),
+                error: name::ParseNameError::EmbeddedNul
             }
         );
     }
