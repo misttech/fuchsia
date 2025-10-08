@@ -1028,15 +1028,12 @@ TEST(Serializer, ProfilerModuleRecord) {
   uint16_t module_id = 0xABCD;
   const char* name = "module_name";
   // build id: 333e89f0c175000cee9b7e201fedcd6f9b4ba8ae
-  const std::vector<std::byte> build_id{
-      std::byte{0x33}, std::byte{0x3e}, std::byte{0x89}, std::byte{0xf0}, std::byte{0xc1},
-      std::byte{0x75}, std::byte{0x00}, std::byte{0x0c}, std::byte{0xee}, std::byte{0x9b},
-      std::byte{0x7e}, std::byte{0x20}, std::byte{0x1f}, std::byte{0xed}, std::byte{0xcd},
-      std::byte{0x6f}, std::byte{0x9b}, std::byte{0x4b}, std::byte{0xa8}, std::byte{0xae}};
+  const uint8_t build_id[20] = {0x33, 0x3e, 0x89, 0xf0, 0xc1, 0x75, 0x00, 0x0c, 0xee, 0x9b,
+                                0x7e, 0x20, 0x1f, 0xed, 0xcd, 0x6f, 0x9b, 0x4b, 0xa8, 0xae};
 
   FakeWriter writer;
   EXPECT_EQ(ZX_OK, fxt::WriteProfilerModuleRecord(&writer, timestamp, thread_ref, module_id, name,
-                                                  strlen(name), build_id.data(), build_id.size()));
+                                                  strlen(name), build_id, sizeof(build_id)));
 
   // 2 words for header and timestamp, 2 for name, 3 for build_id
   EXPECT_EQ(writer.bytes.size(), fxt::WordSize(7).SizeInBytes());
@@ -1049,7 +1046,7 @@ TEST(Serializer, ProfilerModuleRecord) {
   EXPECT_EQ(fxt::ProfilerRecordFields::ThreadRef::Get<uint8_t>(header), thread_ref.id());
   EXPECT_EQ(fxt::ProfilerModuleRecordFields::ModuleId::Get<uint16_t>(header), module_id);
   EXPECT_EQ(fxt::ProfilerModuleRecordFields::NameLength::Get<size_t>(header), strlen(name));
-  EXPECT_EQ(fxt::ProfilerModuleRecordFields::BuildIdLength::Get<size_t>(header), build_id.size());
+  EXPECT_EQ(fxt::ProfilerModuleRecordFields::BuildIdLength::Get<size_t>(header), sizeof(build_id));
 
   EXPECT_EQ(words[1], timestamp);
   EXPECT_EQ(std::memcmp(words + 2, "module_n", 8), 0);

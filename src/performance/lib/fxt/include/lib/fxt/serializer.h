@@ -74,7 +74,7 @@ zx_status_t WriteProviderInfoMetadataRecord(Writer* writer, uint32_t provider_id
 template <typename Writer, internal::EnableIfWriter<Writer> = 0, RefType thread_type>
 zx_status_t WriteProfilerModuleRecord(Writer* writer, uint64_t timestamp,
                                       const ThreadRef<thread_type>& thread_ref, uint16_t module_id,
-                                      const char* name, size_t name_length, const void* build_id,
+                                      const char* name, size_t name_length, const uint8_t* build_id,
                                       size_t build_id_length) {
   const WordSize record_size = WordSize(2) /* header, timestamp */ +
                                WordSize::FromBytes(name_length) +
@@ -146,7 +146,7 @@ zx_status_t WriteProfilerMmapRecord(Writer* writer, uint64_t timestamp,
 template <typename Writer, internal::EnableIfWriter<Writer> = 0, RefType thread_type>
 zx_status_t WriteProfilerBacktraceRecord(Writer* writer, uint64_t timestamp,
                                          const ThreadRef<thread_type>& thread_ref,
-                                         const void* backtrace_data,
+                                         const uint64_t* backtrace_data,
                                          size_t backtrace_data_length_bytes) {
   const WordSize record_size = WordSize(2) /* header, timestamp */ +
                                WordSize::FromBytes(backtrace_data_length_bytes) +
