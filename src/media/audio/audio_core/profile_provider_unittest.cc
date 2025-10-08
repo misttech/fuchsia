@@ -15,21 +15,42 @@
 
 namespace media::audio {
 
-class ProfileProviderTest : public gtest::TestLoopFixture {
+class ProfileProviderTestWithoutRoleManager : public gtest::TestLoopFixture {
+ protected:
   void SetUp() override {
     TestLoopFixture::SetUp();
     profile_provider_ = std::make_unique<ProfileProvider>(*context(), mix_profile_config_);
+  }
+
+  sys::ComponentContext* context() { return context_provider_.context(); }
+  MixProfileConfig mix_profile_config_;
+  std::unique_ptr<ProfileProvider> profile_provider_;
+  sys::testing::ComponentContextProvider context_provider_;
+};
+
+TEST_F(ProfileProviderTestWithoutRoleManager, CallRegisterHandlerWithoutRoleManager) {
+  bool called = false;
+  zx::thread self;
+  ASSERT_EQ(zx::thread::self()->duplicate(ZX_RIGHT_SAME_RIGHTS, &self), ZX_OK);
+  profile_provider_->RegisterHandlerWithCapacity(
+      std::move(self), "test", zx::msec(1).to_nsecs(), 0.125, [&called](uint64_t, uint64_t) {
+        called = true;
+        FAIL() << "Unexpected callback without ProfileProvider";
+      });
+  RunLoopUntilIdle();
+  EXPECT_FALSE(called);
+}
+
+class ProfileProviderTest : public ProfileProviderTestWithoutRoleManager {
+  void SetUp() override {
+    ProfileProviderTestWithoutRoleManager::SetUp();
 
     auto svc = context_provider_.service_directory_provider();
     ASSERT_EQ(ZX_OK, svc->AddService(fake_role_manager_.GetHandler()));
   }
 
  protected:
-  sys::ComponentContext* context() { return context_provider_.context(); }
   FakeRoleManager fake_role_manager_;
-  MixProfileConfig mix_profile_config_;
-  std::unique_ptr<ProfileProvider> profile_provider_;
-  sys::testing::ComponentContextProvider context_provider_;
 };
 
 TEST_F(ProfileProviderTest, CallRegisterHandlerWithCapacity) {
@@ -45,7 +66,7 @@ TEST_F(ProfileProviderTest, CallRegisterHandlerWithCapacity) {
         called = true;
       });
   RunLoopUntilIdle();
-  ASSERT_TRUE(called);
+  EXPECT_TRUE(called);
 }
 
 TEST_F(ProfileProviderTest, CallRegisterHandlerWithCapacityDefaultPeriod) {
@@ -60,7 +81,7 @@ TEST_F(ProfileProviderTest, CallRegisterHandlerWithCapacityDefaultPeriod) {
         called = true;
       });
   RunLoopUntilIdle();
-  ASSERT_TRUE(called);
+  EXPECT_TRUE(called);
 }
 
 TEST_F(ProfileProviderTest, CallUnregisterHandler) {
@@ -69,7 +90,7 @@ TEST_F(ProfileProviderTest, CallUnregisterHandler) {
   ASSERT_EQ(zx::thread::self()->duplicate(ZX_RIGHT_SAME_RIGHTS, &self), ZX_OK);
   profile_provider_->UnregisterHandler(std::move(self), "test", [&called]() { called = true; });
   RunLoopUntilIdle();
-  ASSERT_TRUE(called);
+  EXPECT_TRUE(called);
 }
 
 }  // namespace media::audio
