@@ -4,13 +4,20 @@
 
 use crate::mm::PAGE_SIZE;
 use crate::vfs::inotify::InotifyLimits;
+use starnix_sync::Mutex;
+use std::ops::Range;
 use std::sync::atomic::{AtomicI32, AtomicUsize};
 
+#[derive(Default, Debug)]
 pub struct SocketLimits {
     /// The maximum backlog size for a socket.
     pub max_connections: AtomicI32,
+
+    // Range of GIDs that can create ICMP Ping sockets.
+    pub icmp_ping_gids: Mutex<Range<u32>>,
 }
 
+#[derive(Debug)]
 pub struct SystemLimits {
     /// Limits applied to inotify objects.
     pub inotify: InotifyLimits,
@@ -45,7 +52,10 @@ impl Default for SystemLimits {
                 max_user_instances: AtomicI32::new(128),
                 max_user_watches: AtomicI32::new(1048576),
             },
-            socket: SocketLimits { max_connections: AtomicI32::new(4096) },
+            socket: SocketLimits {
+                max_connections: AtomicI32::new(4096),
+                icmp_ping_gids: Mutex::new(1..1),
+            },
             pipe_max_size: AtomicUsize::new((*PAGE_SIZE * 256) as usize),
             io_uring_disabled: AtomicI32::new(0),
             io_uring_group: AtomicI32::new(-1),

@@ -191,9 +191,6 @@
                 // Depends on real contents in /proc/sys/kernel/perf_event_mlock_kb
                 "cve-2015-3290",
 
-                // Depends on real contents in /proc/sys/net/ipv4/ping_group_range
-                "cve-2017-2671",
-
                 // Needs working sched_getcpu()
                 "perf_event_open02",
 

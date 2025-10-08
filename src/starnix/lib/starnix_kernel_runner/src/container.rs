@@ -549,7 +549,7 @@ async fn create_container(
     let pkg_channel = start_info.container_namespace.get_namespace_channel("/pkg").unwrap();
     let pkg_dir_proxy = fio::DirectorySynchronousProxy::new(pkg_channel);
 
-    let features = parse_features(&start_info, kernel_extra_features)?;
+    let mut features = parse_features(&start_info, kernel_extra_features)?;
     log_debug!("Creating container with {:#?}", features);
     let mut kernel_cmdline = BString::from(start_info.program.kernel_cmdline.as_bytes());
     if features.android_serialno {
@@ -632,6 +632,7 @@ async fn create_container(
     let kernel = Kernel::new(
         kernel_cmdline,
         features.kernel.clone(),
+        std::mem::take(&mut features.system_limits),
         start_info.container_namespace.try_clone()?,
         scheduler_manager,
         Some(crash_reporter),

@@ -45,6 +45,7 @@ pub use kernel::*;
 pub use kernel_or_task::*;
 pub use kernel_stats::*;
 pub use kernel_threads::*;
+pub use limits::*;
 pub use pid_table::*;
 pub use process_group::*;
 pub use ptrace::*;

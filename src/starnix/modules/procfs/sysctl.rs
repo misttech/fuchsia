@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use crate::sys_net::{
-    ProcSysNetIpv4Conf, ProcSysNetIpv4Neigh, ProcSysNetIpv6Conf, ProcSysNetIpv6Neigh,
+    PingGroupRangeFile, ProcSysNetIpv4Conf, ProcSysNetIpv4Neigh, ProcSysNetIpv6Conf,
+    ProcSysNetIpv6Neigh,
 };
 use starnix_core::security;
 use starnix_core::task::{CurrentTask, SeccompAction, ptrace_get_scope, ptrace_set_scope};
@@ -595,14 +596,7 @@ fn sysctl_net_diretory(dir: &SimpleDirectoryMutator) {
             file_mode,
         );
         dir.entry("neigh", ProcSysNetIpv4Neigh, dir_mode);
-        dir.entry(
-            "ping_group_range",
-            StubBytesFile::new_node(
-                "/proc/sys/net/ipv4/ping_group_range",
-                bug_ref!("https://fxbug.dev/322874256"),
-            ),
-            file_mode,
-        );
+        dir.entry("ping_group_range", PingGroupRangeFile::new_node(), file_mode);
         dir.entry(
             "tcp_default_init_rwnd",
             StubBytesFile::new_node(

@@ -8,7 +8,7 @@ use starnix_container_structured_config::Config as ContainerStructuredConfig;
 use starnix_core::device::android::bootloader_message_store::android_bootloader_message_store_init;
 use starnix_core::device::remote_block_device::remote_block_device_init;
 use starnix_core::mm::MlockPinFlavor;
-use starnix_core::task::{CurrentTask, Kernel, KernelFeatures};
+use starnix_core::task::{CurrentTask, Kernel, KernelFeatures, SystemLimits};
 use starnix_core::vfs::FsString;
 use starnix_features::Feature;
 use starnix_logging::log_error;
@@ -47,6 +47,9 @@ pub struct Features {
 
     /// SELinux configuration.
     pub selinux: SELinuxFeature,
+
+    /// Limits value passed to the kernel during the initialization.
+    pub system_limits: SystemLimits,
 
     /// Whether to enable ashmem.
     pub ashmem: bool,
@@ -151,6 +154,7 @@ impl Features {
                         crash_report_throttling,
                         wifi,
                     },
+                system_limits: _, // FIXME
                 selinux,
                 ashmem,
                 boot_notifier,
@@ -348,6 +352,22 @@ pub fn parse_features(
             }
             (Feature::Perfetto, None) => {
                 return Err(anyhow!("Perfetto feature must contain a socket path"));
+            }
+            (Feature::PingGroupRange, Some(arg)) => {
+                let mut args = arg.split(',');
+                let (min, max) = (|| {
+                    let min = args.next()?.trim_ascii().parse::<u32>().ok()?;
+                    let max = args.next()?.trim_ascii().parse::<u32>().ok()?.checked_add(1)?;
+                    if args.next().is_some() {
+                        return None;
+                    }
+                    Some((min, max))
+                })()
+                .ok_or_else(|| anyhow!("Feature format must be: ping-group-range:0,100"))?;
+                *features.system_limits.socket.icmp_ping_gids.lock() = min..max;
+            }
+            (Feature::PingGroupRange, None) => {
+                return Err(anyhow!("Feature format must be: ping-group-range:0,100"));
             }
             (Feature::RootfsRw, _) => features.rootfs_rw = true,
             (Feature::SelfProfile, _) => features.self_profile = true,

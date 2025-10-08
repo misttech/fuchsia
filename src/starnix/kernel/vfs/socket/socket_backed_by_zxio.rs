@@ -134,6 +134,18 @@ impl ZxioBackedSocket {
             &mut [][..]
         };
 
+        match (domain, socket_type, protocol) {
+            (SocketDomain::Inet, SocketType::Datagram, SocketProtocol::ICMP)
+            | (SocketDomain::Inet6, SocketType::Datagram, SocketProtocol::ICMPV6) => {
+                let gid_range =
+                    current_task.kernel().system_limits.socket.icmp_ping_gids.lock().clone();
+                current_task.with_current_creds(|creds| {
+                    gid_range.contains(&creds.egid).then_some(()).ok_or_else(|| errno!(EACCES))
+                })?;
+            }
+            _ => (),
+        };
+
         let zxio = Zxio::new_socket::<SocketProviderServiceConnector>(
             domain.as_raw() as c_int,
             socket_type.as_raw() as c_int,

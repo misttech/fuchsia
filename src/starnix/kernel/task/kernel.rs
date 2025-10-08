@@ -365,6 +365,7 @@ impl Kernel {
     pub fn new(
         cmdline: BString,
         features: KernelFeatures,
+        system_limits: SystemLimits,
         container_namespace: ContainerNamespace,
         scheduler: SchedulerManager,
         crash_reporter_proxy: Option<CrashReporterProxy>,
@@ -424,7 +425,7 @@ impl Kernel {
             next_namespace_id: AtomicU64Counter::new(1),
             next_inotify_cookie: AtomicU32Counter::new(1),
             next_file_object_id: Default::default(),
-            system_limits: SystemLimits::default(),
+            system_limits,
             ptrace_scope: AtomicU8::new(0),
             restrict_dmesg: AtomicBool::new(false),
             disable_unprivileged_bpf: AtomicU8::new(0), // Enable unprivileged BPF by default.

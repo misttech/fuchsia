@@ -521,6 +521,7 @@ impl Kernel {
 }
 
 /// Corresponds to files in /proc/sys/fs/inotify/, but cannot be negative.
+#[derive(Debug)]
 pub struct InotifyLimits {
     // This value is used when creating an inotify instance.
     // Updating this value does not affect already-created inotify instances.

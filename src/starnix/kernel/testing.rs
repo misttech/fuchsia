@@ -14,7 +14,8 @@ use crate::mm::{MemoryAccessor, MemoryAccessorExt, PAGE_SIZE};
 use crate::security;
 use crate::task::container_namespace::ContainerNamespace;
 use crate::task::{
-    CurrentTask, ExitStatus, Kernel, KernelOrTask, SchedulerManager, Task, TaskBuilder,
+    CurrentTask, ExitStatus, Kernel, KernelFeatures, KernelOrTask, SchedulerManager, SystemLimits,
+    Task, TaskBuilder,
 };
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
@@ -169,7 +170,8 @@ fn create_test_kernel(
 ) -> Arc<Kernel> {
     Kernel::new(
         b"".into(),
-        Default::default(),
+        KernelFeatures::default(),
+        SystemLimits::default(),
         ContainerNamespace::new(),
         SchedulerManager::empty_for_tests(),
         None,

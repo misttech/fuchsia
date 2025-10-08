@@ -23,6 +23,7 @@ use starnix_uapi::file_mode::{FileMode, mode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{errno, error};
+use std::borrow::Cow;
 
 const FILE_MODE: FileMode = mode!(IFREG, 0o644);
 
@@ -523,5 +524,61 @@ impl BytesFileOps for NetworkNetlinkSysctlFile {
                 to_errno(err)
             })?;
         Ok(serialize_for_file(value).into())
+    }
+}
+
+pub struct PingGroupRangeFile;
+
+impl PingGroupRangeFile {
+    const MAX_GID: u32 = 4294967294;
+
+    pub fn new_node() -> impl FsNodeOps {
+        BytesFile::new_node(Self)
+    }
+}
+
+impl BytesFileOps for PingGroupRangeFile {
+    fn write(&self, current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
+        let mut params = std::str::from_utf8(&data)
+            .map_err(|_| errno!(EINVAL))?
+            .trim_ascii()
+            .split_ascii_whitespace();
+        let min = params
+            .next()
+            .ok_or_else(|| errno!(EINVAL))?
+            .parse::<u32>()
+            .map_err(|_| errno!(EINVAL))?;
+        if min > Self::MAX_GID {
+            return error!(EINVAL);
+        }
+
+        // Max value is optional.
+        let max = match params.next() {
+            Some(v) => {
+                let v = v.parse::<u32>().map_err(|_| errno!(EINVAL))?;
+                if v > Self::MAX_GID {
+                    return error!(EINVAL);
+                }
+                Some(v + 1)
+            }
+            None => None,
+        };
+
+        let mut range = current_task.kernel().system_limits.socket.icmp_ping_gids.lock();
+        range.start = min;
+        if let Some(max) = max {
+            range.end = max;
+        }
+        if range.is_empty() {
+            // Default to "[1, 0]" range (equivalent to "[1, 1)") to match
+            // Linux behavior.
+            *range = 1..1;
+        }
+
+        Ok(())
+    }
+    fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
+        let range = current_task.kernel().system_limits.socket.icmp_ping_gids.lock().clone();
+        Ok(format!("{}\t{}\n", range.start, range.end - 1).into_bytes().into())
     }
 }

@@ -18,6 +18,8 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include <fstream>
+#include <iostream>
 #include <thread>
 
 #include <asm-generic/socket.h>
@@ -34,6 +36,7 @@
 #include <linux/rtnetlink.h>
 
 #include "fault_test.h"
+#include "src/lib/fxl/strings/string_printf.h"
 #include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "test_helper.h"
 
@@ -990,4 +993,160 @@ TEST(IpTables, IpTablesAdminCap) {
   EXPECT_EQ(errno, EPERM);
 
   test_helper::SetCapabilityEffective(CAP_NET_ADMIN);
+}
+
+// Helper to override `/proc/sys/net/ipv4/ping_group_range`.
+class IcmpPingGidOverride {
+ public:
+  static constexpr char FILE_NAME[] = "/proc/sys/net/ipv4/ping_group_range";
+
+  IcmpPingGidOverride() {
+    {
+      // First check that the file is writable.
+      std::ofstream outfile(FILE_NAME);
+      can_override_ = outfile.is_open();
+    }
+
+    if (can_override_) {
+      std::tie(original_min_gid_, original_max_gid_) = Get();
+    }
+  }
+  ~IcmpPingGidOverride() {
+    if (can_override_) {
+      Set(original_min_gid_, original_max_gid_);
+    }
+  }
+
+  bool can_override() { return can_override_; }
+
+  std::pair<gid_t, gid_t> Get() {
+    std::ifstream ping_group_range_file(FILE_NAME);
+    EXPECT_TRUE(ping_group_range_file.is_open()) << strerror(errno);
+    gid_t min, max;
+    ping_group_range_file >> min >> max;
+    return std::make_pair(min, max);
+  }
+
+  void Set(gid_t min, gid_t max) {
+    std::ofstream ping_group_range_file(FILE_NAME);
+    ASSERT_TRUE(ping_group_range_file.is_open()) << strerror(errno);
+    ping_group_range_file << min << " " << max;
+    ping_group_range_file.close();
+    EXPECT_FALSE(ping_group_range_file.fail());
+  }
+
+  void SetMin(gid_t min) {
+    std::ofstream ping_group_range_file(FILE_NAME);
+    ASSERT_TRUE(ping_group_range_file.is_open()) << strerror(errno);
+    ping_group_range_file << min;
+    ping_group_range_file.close();
+    EXPECT_FALSE(ping_group_range_file.fail());
+  }
+
+ private:
+  bool can_override_ = false;
+  gid_t original_min_gid_ = 0;
+  gid_t original_max_gid_ = 0;
+};
+
+class IcmpPingSocket : public testing::Test {
+ protected:
+  void SetUp() override {
+    if (!test_helper::HasCapability(CAP_SETGID)) {
+      GTEST_SKIP() << "Need CAP_SET_GID to access iptables";
+    }
+
+    if (!gid_range_.can_override()) {
+      GTEST_SKIP() << "Need writable " << IcmpPingGidOverride::FILE_NAME;
+    }
+  }
+
+  int TryCreateSocket(bool use_v6 = false) {
+    fbl::unique_fd sock(
+        socket(use_v6 ? AF_INET6 : AF_INET, SOCK_DGRAM,
+               use_v6 ? static_cast<int>(IPPROTO_ICMPV6) : static_cast<int>(IPPROTO_ICMP)));
+    if (sock) {
+      return 0;
+    } else {
+      return -errno;
+    }
+  }
+
+  void TestWriteRangeFail(const char contents[]) {
+    std::ofstream ping_group_range_file(IcmpPingGidOverride::FILE_NAME);
+    ASSERT_TRUE(ping_group_range_file.is_open()) << strerror(errno);
+    ping_group_range_file << contents;
+    ping_group_range_file.close();
+    std::cerr << "++ set fail " << contents << std::endl;
+    EXPECT_TRUE(ping_group_range_file.fail());
+  }
+
+  void TryCreateSocketWithGid(gid_t gid, int expected_result, bool use_v6 = false) {
+    SCOPED_TRACE(fxl::StringPrintf("GID: %d", gid));
+    ASSERT_EQ(setegid(gid), 0) << strerror(errno);
+    ASSERT_EQ(TryCreateSocket(use_v6), expected_result);
+  }
+
+  IcmpPingGidOverride gid_range_;
+};
+
+TEST_F(IcmpPingSocket, UpdateGidRange) {
+  gid_range_.Set(10, 100);
+  ASSERT_EQ(gid_range_.Get(), std::make_pair(10, 100));
+
+  gid_range_.Set(10, 0);
+  ASSERT_EQ(gid_range_.Get(), std::make_pair(1, 0));
+
+  gid_range_.Set(10, 30);
+  ASSERT_EQ(gid_range_.Get(), std::make_pair(10, 30));
+
+  gid_range_.SetMin(20);
+  ASSERT_EQ(gid_range_.Get(), std::make_pair(20, 30));
+
+  gid_range_.SetMin(30);
+  ASSERT_EQ(gid_range_.Get(), std::make_pair(30, 30));
+
+  gid_range_.SetMin(31);
+  ASSERT_EQ(gid_range_.Get(), std::make_pair(1, 0));
+}
+
+TEST_F(IcmpPingSocket, CreateSocket) {
+  gid_t original_gid = getegid();
+
+  gid_range_.Set(10, 100);
+
+  TryCreateSocketWithGid(9, -EACCES);
+  TryCreateSocketWithGid(10, 0);
+  TryCreateSocketWithGid(50, 0);
+  TryCreateSocketWithGid(100, 0);
+  TryCreateSocketWithGid(101, -EACCES);
+
+  ASSERT_EQ(setegid(original_gid), 0) << strerror(errno);
+}
+
+TEST_F(IcmpPingSocket, CreateSocketV6) {
+  gid_t original_gid = getegid();
+
+  gid_range_.Set(10, 100);
+
+  TryCreateSocketWithGid(9, -EACCES, true);
+  TryCreateSocketWithGid(10, 0, true);
+  TryCreateSocketWithGid(50, 0, true);
+  TryCreateSocketWithGid(100, 0, true);
+  TryCreateSocketWithGid(101, -EACCES, true);
+
+  ASSERT_EQ(setegid(original_gid), 0) << strerror(errno);
+}
+
+TEST_F(IcmpPingSocket, SetInvalid) {
+  TestWriteRangeFail("---");
+  // Min and max cannot be higher than 2^32-2.
+  TestWriteRangeFail("0 4294967295");
+  TestWriteRangeFail("0 4294967296");
+  TestWriteRangeFail("4294967295 0");
+  TestWriteRangeFail("4294967296 0");
+
+  // We should be able to set both values to 2^33-2.
+  gid_range_.Set(0, 4294967294);
+  gid_range_.Set(4294967294, 0);
 }
