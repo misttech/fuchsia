@@ -71,14 +71,16 @@ impl BrokerSvc {
     async fn run_lessor(
         self: Rc<Self>,
         element_id: ElementID,
+        element_name: String,
         stream: LessorRequestStream,
     ) -> Result<(), Error> {
         stream
             .map(|result| result.context("failed request"))
             .try_for_each(|request| async {
+                let debug_info = format!("Lessor<{}:{}>", &element_name, &element_id);
                 match request {
                     LessorRequest::Lease { level, responder } => {
-                        log::debug!("Lease({:?}, {:?})", &element_id, &level);
+                        log::debug!("{debug_info}: Leasing @ {level}");
                         let (client, server_end) =
                             fidl::endpoints::create_endpoints::<LeaseControlMarker>();
                         let lease_control_koid =
@@ -96,8 +98,10 @@ impl BrokerSvc {
                         };
                         match resp {
                             Ok(lease) => {
-                                log::debug!("responder.send({:?})", &lease);
-                                log::debug!("Spawning lease control task for {:?}", &lease.id);
+                                log::debug!("{debug_info}: Lease granted: {lease:?}");
+                                let lease_id = lease.id.clone();
+                                log::debug!(
+                                    "{debug_info}: Spawning lease control task for {lease_id}");
                                 Task::local({
                                     let svc = self.clone();
                                     async move {
@@ -105,12 +109,15 @@ impl BrokerSvc {
                                             .run_lease_control(&lease.id, server_end.into_stream())
                                             .await
                                         {
-                                            log::debug!("run_lease_control err: {:?}", err);
+                                            log::debug!("{debug_info}: run_lease_control err: {:?}", err);
                                         }
                                         // When the channel is closed, drop the lease.
+                                        log::debug!(
+                                            "{debug_info}: Channel closed, dropping lease {lease_id}"
+                                        );
                                         let mut broker = svc.broker.borrow_mut();
                                         if let Err(err) = broker.drop_lease(&lease.id) {
-                                            log::error!("Lease: drop_lease failed: {:?}", err);
+                                            log::error!("{debug_info}: drop_lease {lease_id} failed: {:?}", err);
                                         }
                                     }
                                 })
@@ -121,7 +128,7 @@ impl BrokerSvc {
                         }
                     }
                     LessorRequest::_UnknownMethod { ordinal, .. } => {
-                        log::warn!("Received unknown LessorRequest: {ordinal}");
+                        log::warn!("{debug_info}: received unknown LessorRequest: {ordinal}");
                         todo!()
                     }
                 }
@@ -184,12 +191,17 @@ impl BrokerSvc {
     async fn run_element_control(
         self: Rc<Self>,
         element_id: ElementID,
+        element_name: String,
         stream: ElementControlRequestStream,
     ) -> Result<(), Error> {
         let res = stream
             .map(|result| result.context("failed request"))
             .try_for_each(|request| {
-                self.clone().handle_element_control_request(&element_id, request)
+                self.clone().handle_element_control_request(
+                    &element_id,
+                    element_name.clone(),
+                    request,
+                )
             })
             .await;
         log::debug!("ElementControl stream is closed, removing element ({element_id:?})...");
@@ -205,11 +217,13 @@ impl BrokerSvc {
     async fn handle_element_control_request(
         self: Rc<Self>,
         element_id: &ElementID,
+        element_name: String,
         request: ElementControlRequest,
     ) -> Result<(), Error> {
+        let debug_info = format!("ElementControl<{}:{}>", &element_name, &element_id);
         match request {
             ElementControlRequest::OpenStatusChannel { status_channel, .. } => {
-                log::debug!("OpenStatusChannel({:?})", element_id);
+                log::debug!("{debug_info}: OpenStatusChannel");
                 let svc = self.clone();
                 svc.create_status_channel_handler(element_id.clone(), status_channel).await
             }
@@ -218,22 +232,26 @@ impl BrokerSvc {
                 dependency_type,
                 responder,
             } => {
-                log::debug!("RegisterDependencyToken({:?}, {:?})", element_id, &token);
+                log::debug!("{debug_info}: RegisterDependencyToken({token:?})");
                 let mut broker = self.broker.borrow_mut();
                 let res =
                     broker.register_dependency_token(element_id, token.into(), dependency_type);
-                log::debug!("RegisterDependencyToken register_credentials = ({:?})", &res);
+                log::debug!(
+                    "{debug_info}: RegisterDependencyToken register_credentials = ({res:?})"
+                );
                 responder.send(res.map_err(Into::into)).context("send failed")
             }
             ElementControlRequest::UnregisterDependencyToken { token, responder } => {
-                log::debug!("UnregisterDependencyToken({:?}, {:?})", element_id, &token);
+                log::debug!("{debug_info}: UnregisterDependencyToken({token:?})");
                 let mut broker = self.broker.borrow_mut();
                 let res = broker.unregister_dependency_token(element_id, token.into());
-                log::debug!("UnregisterDependencyToken unregister_credentials = ({:?})", &res);
+                log::debug!(
+                    "{debug_info}: UnregisterDependencyToken unregister_credentials = ({res:?})"
+                );
                 responder.send(res.map_err(Into::into)).context("send failed")
             }
             ElementControlRequest::_UnknownMethod { ordinal, .. } => {
-                log::warn!("Received unknown ElementControlRequest: {ordinal}");
+                log::warn!("{debug_info}: Received unknown ElementControlRequest: {ordinal}");
                 todo!()
             }
         }
@@ -317,8 +335,10 @@ impl BrokerSvc {
                                     .borrow_mut()
                                     .insert(element_id.clone(), ElementHandlers::new());
                                 if let Some(element_runner) = element_runner {
-                                    let mut runner =
-                                        ElementRunnerHandler::new(element_id.clone(), element_name);
+                                    let mut runner = ElementRunnerHandler::new(
+                                        element_id.clone(),
+                                        element_name.clone(),
+                                    );
                                     runner.start(self.broker.clone(), element_runner.into_proxy());
                                     self.element_handlers
                                         .borrow_mut()
@@ -353,6 +373,7 @@ impl BrokerSvc {
                                         "Spawning element control task for {:?}",
                                         &element_id
                                     );
+                                    let element_name = element_name.clone();
                                     Task::local({
                                         let svc = self.clone();
                                         let element_id = element_id.clone();
@@ -360,6 +381,7 @@ impl BrokerSvc {
                                             if let Err(err) = svc
                                                 .run_element_control(
                                                     element_id,
+                                                    element_name,
                                                     element_control_stream,
                                                 )
                                                 .await
@@ -378,7 +400,11 @@ impl BrokerSvc {
                                         let element_id = element_id.clone();
                                         async move {
                                             if let Err(err) = svc
-                                                .run_lessor(element_id.clone(), lessor_stream)
+                                                .run_lessor(
+                                                    element_id.clone(),
+                                                    element_name.clone(),
+                                                    lessor_stream,
+                                                )
                                                 .await
                                             {
                                                 log::debug!(
@@ -475,12 +501,13 @@ impl ElementRunnerHandler {
                         break;
                     }
                     required_level = receiver.next() => {
-                        log::debug!("{debug_info} received required_level: {:?}", required_level);
                         match required_level {
                             Some(Some(required_level)) => {
+                                log::debug!("{debug_info} calling set_level({required_level:?})");
                                 if let Err(err) = element_runner.set_level(required_level.level).await {
                                     log::warn!("{debug_info}: set_level error: {:?}", err);
                                 } else {
+                                    log::debug!("{debug_info} set_level({required_level:?}) completed.");
                                     broker.borrow_mut().update_current_level(&element_id, required_level);
                                 }
                             },

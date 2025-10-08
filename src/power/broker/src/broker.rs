@@ -320,7 +320,7 @@ impl Broker {
                 .chain(self.catalog.opportunistic_claims.pending.for_required_element(element_id))
                 .collect();
             log::debug!(
-                "update_current_level({element_id}): claims_satisfied = {})",
+                "update_current_level({element_id}): claims_for_required_element = {}",
                 &claims_for_required_element.iter().join(", ")
             );
             // Find claims that are newly satisfied by level:
@@ -331,7 +331,7 @@ impl Broker {
                 })
                 .collect();
             log::debug!(
-                "update_current_level({element_id}): claims_satisfied = {})",
+                "update_current_level({element_id}): claims_satisfied = {}",
                 &claims_satisfied.iter().join(", ")
             );
             // Find the set of dependents for all claims satisfied:
@@ -350,7 +350,7 @@ impl Broker {
                 let pending_assertive_claims_on_dependent =
                     self.catalog.assertive_claims.pending.for_required_element(&dependent);
                 log::debug!(
-                    "update_current_level({element_id}): pending_assertive_claims_on_dependent({dependent}) = {})",
+                    "update_current_level({element_id}): pending_assertive_claims_on_dependent({dependent}) = {}",
                     &pending_assertive_claims_on_dependent.iter().join(", ")
                 );
                 self.activate_assertive_claims_if_dependencies_satisfied(
@@ -374,7 +374,7 @@ impl Broker {
                 claims_satisfied.into_iter().map(|c| c.lease_id).collect();
             // Update the status of all leases whose claims were satisfied.
             log::debug!(
-                "update_current_level({element_id}): leases_to_check_if_satisfied = {:?})",
+                "update_current_level({element_id}): leases_to_check_if_satisfied = {:?}",
                 &leases_to_check_if_satisfied
             );
             for lease_id in leases_to_check_if_satisfied {
