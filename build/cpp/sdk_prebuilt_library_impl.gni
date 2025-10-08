@@ -742,8 +742,6 @@ template("sdk_prebuilt_library_impl") {
     }
   }
 
-  # TODO(https://fxbug.dev/407083737): Merge into the `sdk_atom()` above now
-  # that there is no manifest generated.
   sdk_atom_alias(sdk_target_name) {
     atom = ":${manifest_target_name}"
 

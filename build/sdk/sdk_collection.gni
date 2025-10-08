@@ -34,7 +34,7 @@ import("sdk_molecule.gni")
 #     The name used for this collection's output directory and manifest.
 #     Defaults to `target_name`.
 #
-#   testonly (optional)
+#   testonly
 #     Usual GN meaning.
 #
 template("sdk_collection") {

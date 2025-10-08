@@ -128,12 +128,17 @@ as an `sdk_molecule()` or `sdk_collection()` dependency.
 
 ### Outputs
 
-Each SDK atom target (e.g. `foo_sdk`) generates prebuild info that is used to
-generate a manifest file:
+Each SDK atom target (e.g. `foo_sdk`) generates two manifest files:
 
 - A `meta.json` file that follows one of the standard schemas
   available under [`//sdk/meta/`](meta), which will be included
   in the final IDK output.
+
+- An internal JSON manifest file, under `gen/.../foo.sdk` which
+  describes the atom and all its transitive dependencies. Unlike
+  the `meta.json` file, this file should not be used outside of
+  a Fuchsia checkout, and its content / schema may change at
+  any time.
 
 Each `sdk_collection("foo")` target also generates sibling targets
 that other parts of the build system (and sometimes internal scripts)

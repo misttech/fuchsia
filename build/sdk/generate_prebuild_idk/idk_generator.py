@@ -1044,7 +1044,7 @@ class IdkGenerator(object):
         # performed on all of them. See the comment block at the top of
         # //sdk/fidl/BUILD.gn.
         self._prebuild_map.verify_dependency_relationships()
-        # LINT.ThenChange(//sdk/fidl/BUILD.gn:category_compatibility_checks)
+        # LINT.ThenChange(//sdk/fidl/BUILD.gn:prebuild_info_category_compatibility_checks)
 
         # Note: Due to the way the prebuild manifest is currently generated,
         # any atom in the "partner" category that is a dependency of the IDK

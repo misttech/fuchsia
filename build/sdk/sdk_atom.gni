@@ -51,6 +51,12 @@ _cross_compiled_atom_types = [
 
 # Defines an IDK element.
 #
+# Outputs
+#
+#   $target_gen_dir/$target_name.sdk
+#     An IDK build manifest describing what files pertain to the atom and which
+#     other atoms are required by this atom.
+#
 # Parameters
 #
 #   id
@@ -332,11 +338,18 @@ template("sdk_atom") {
   ]
 
   gn_deps = []
+  if (defined(invoker.non_sdk_deps)) {
+    gn_deps = invoker.non_sdk_deps
+  }
+
+  dep_manifests = []
   if (defined(invoker.deps)) {
     gn_deps += invoker.deps
-  }
-  if (defined(invoker.non_sdk_deps)) {
-    gn_deps += invoker.non_sdk_deps
+    foreach(dep, invoker.deps) {
+      gen_dir = get_label_info(dep, "target_gen_dir")
+      name = get_label_info(dep, "name")
+      dep_manifests += [ "$gen_dir/$name.sdk" ]
+    }
   }
 
   # Some elements contain only the metadata.
@@ -344,6 +357,18 @@ template("sdk_atom") {
     files = []
   } else {
     files = invoker.files
+  }
+  file_args = []
+  file_inputs = []
+  foreach(file, files) {
+    assert(defined(file.source), "File $file does not specify a source.")
+    assert(defined(file.dest), "File $file does not specify a destination.")
+    file_inputs += [ file.source ]
+    file_args += [
+      "--file",
+      file.dest,
+      rebase_path(file.source, root_build_dir),
+    ]
   }
 
   _idk_atom_prebuild_info = {
@@ -438,12 +463,58 @@ template("sdk_atom") {
     }
   }
 
-  group(target_name) {
+  # Generates an IDK build manifest representing this atom.
+  # This manifest is only used at build time to generate the IDK. The actual
+  # manifest for this atom in the IDK is generated from prebuild info.
+  python_action(target_name) {
     forward_variables_from(invoker, _default_forward_from_invoker)
+
+    build_manifest = "$target_gen_dir/$target_name.sdk"
+    areas_file = "//docs/contribute/governance/areas/_areas.yaml"
+    depfile = "$build_manifest.d"
+
+    binary_label = "//build/sdk:create_atom_manifest"
 
     public_deps = gn_deps
     if (_verify_api) {
       public_deps += [ ":$verify_api_target_name" ]
+    }
+
+    inputs = dep_manifests + file_inputs + [ areas_file ]
+
+    outputs = [ build_manifest ]
+
+    args = [
+             "--id",
+             invoker.id,
+             "--out",
+             rebase_path(build_manifest, root_build_dir),
+             "--depfile",
+             rebase_path(depfile, root_build_dir),
+             "--gn-label",
+             get_label_info(":$target_name", "label_with_toolchain"),
+             "--category",
+             category,
+             "--areas-file-path",
+             rebase_path(areas_file, root_build_dir),
+             "--meta",
+             meta.dest,
+             "--type",
+             type,
+             "--deps",
+           ] + rebase_path(dep_manifests, root_build_dir) + file_args
+
+    # Record the actual stability state for all atoms. This may not match the
+    # presence of "stable" in the meta.json file.
+    if (is_stable) {
+      args += [ "--stable" ]
+    }
+
+    if (defined(invoker.sdk_area)) {
+      args += [
+        "--area",
+        invoker.sdk_area,
+      ]
     }
 
     metadata = {
@@ -456,5 +527,8 @@ template("sdk_atom") {
       # Used by idk_prebuild_manifest() template.
       idk_atom_prebuild_info = [ _idk_atom_prebuild_info ]
     }
+
+    # The manifest output contains the output directory.
+    check_for_output_dir_leaks = false
   }
 }

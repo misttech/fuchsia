@@ -44,6 +44,7 @@ if (is_host) {
     sdk_noop_atom("aemu_internal") {
       id = "sdk://tools/$current_cpu/aemu_internal"
       category = "partner"
+      type = "companion_host_tool"
     }
   }
 
@@ -77,14 +78,17 @@ if (is_host) {
     sdk_noop_atom("qemu_internal") {
       id = "sdk://tools/$current_cpu/qemu_internal"
       category = "partner"
+      type = "companion_host_tool"
     }
     sdk_noop_atom("uefi_internal_x64") {
       id = "sdk://tools/qemu_uefi_internal/x64"
       category = "partner"
+      type = "companion_host_tool"
     }
     sdk_noop_atom("uefi_internal_arm64") {
       id = "sdk://tools/qemu_uefi_internal/arm64"
       category = "partner"
+      type = "companion_host_tool"
     }
   }
 
@@ -101,6 +105,7 @@ if (is_host) {
     sdk_noop_atom("crosvm_internal") {
       id = "sdk://tools/$current_cpu/crosvm_internal"
       category = "partner"
+      type = "companion_host_tool"
     }
   }
 

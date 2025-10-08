@@ -119,10 +119,12 @@ template("generate_idk_targets") {
     visibility = [
       # Dependencies related to template sub-targets.
       ":${main_target_name}.fuchsia_idk_atoms_for_each_api_level",
+      ":${main_target_name}.fuchsia_idk_atoms_for_each_api_level.validate",
     ]
     if (current_build_target_api_level != "PLATFORM" || !sdk_inside_sub_build) {
-      visibility +=
-          [ ":${main_target_name}.fuchsia_idk_atoms_produced_by_subbuilds" ]
+      visibility += [
+        ":${main_target_name}.fuchsia_idk_atoms_produced_by_subbuilds.manifest",
+      ]
     }
 
     non_sdk_deps = invoker.non_sdk_deps_build_tests_for_all_builds
@@ -274,10 +276,11 @@ template("generate_idk_targets") {
         # and should thus not be used elsewhere.
         visibility = []
         visibility = [
-          ":${main_target_name}.fuchsia_idk_atoms_produced_by_main_platform_build",
+          ":${main_target_name}.fuchsia_idk_atoms_produced_by_main_platform_build.manifest",
 
           # Dependencies related to template sub-targets.
           ":${main_target_name}.fuchsia_idk_atoms_built_in_main_platform_build_only",
+          ":${main_target_name}.fuchsia_idk_atoms_built_in_main_platform_build_only.validate",
         ]
         category = "partner"
 
