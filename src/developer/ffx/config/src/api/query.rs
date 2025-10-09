@@ -2,16 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use super::ConfigValue;
+use super::value::TryConvert;
 use crate::api::ConfigResult;
 use crate::mapping::env_var::env_var_strict;
 use crate::nested::RecursiveMap;
 use crate::{ConfigError, ConfigLevel, Environment, EnvironmentContext, ValueStrategy};
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Result, anyhow, bail};
 use serde_json::Value;
 use std::default::Default;
+use thiserror::Error;
 
-use super::ConfigValue;
-use super::value::TryConvert;
+#[derive(Debug, Copy, Clone, Error)]
+pub enum QueryError {
+    #[error("No EnvironmentContext set for query")]
+    ContextNotSet,
+}
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum SelectMode {
@@ -64,14 +70,14 @@ impl<'a> ConfigQuery<'a> {
     fn get_env_context(&self) -> Result<EnvironmentContext> {
         match self.ctx {
             Some(ctx) => Ok(ctx.clone()),
-            None => crate::global_env_context().context("No configured global environment"),
+            None => Err(QueryError::ContextNotSet.into()),
         }
     }
 
     fn get_env(&self) -> Result<Environment> {
         match self.ctx {
             Some(ctx) => ctx.load(),
-            None => crate::global_env().context("No configured global environment"),
+            None => Err(QueryError::ContextNotSet.into()),
         }
     }
 

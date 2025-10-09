@@ -119,23 +119,6 @@ impl argh::FromArgValue for ConfigLevel {
     }
 }
 
-pub(crate) fn global_env_context() -> Option<EnvironmentContext> {
-    ENV.lock().unwrap().clone()
-}
-
-pub(crate) fn global_env() -> Result<Environment> {
-    let context =
-        global_env_context().context("Tried to load global environment before configuration")?;
-
-    match context.load() {
-        Err(err) => {
-            log::error!("failed to load environment, reverting to default: {}", err);
-            Ok(Environment::new_empty(context))
-        }
-        Ok(ctx) => Ok(ctx),
-    }
-}
-
 /// Initialize the configuration. Only the first call in a process runtime takes effect, so users must
 /// call this early with the required values, such as in main() in the ffx binary.
 pub fn init(context: &EnvironmentContext) -> Result<()> {
