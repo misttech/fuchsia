@@ -36,7 +36,7 @@ fidl("fuchsia.fshost.fxfsprovisioner") {
 }
 
 rustc_binary("fshost") {
-  edition = "2021"
+  edition = "2024"
   deps = [
     ":fuchsia.fshost.fxfsprovisioner_rust",
     "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",

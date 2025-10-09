@@ -10,7 +10,7 @@ import("//src/storage/testing/driver_test_realm.gni")
 
 rustc_library("framework") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   name = "fuchsia_storage_benchmarks"
   sources = [
     "src/block_devices.rs",
@@ -71,7 +71,7 @@ rustc_library("framework") {
 }
 
 rustc_binary("fuchsia-storage-benchmarks") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   name = "fuchsia_storage_benchmarks"
 

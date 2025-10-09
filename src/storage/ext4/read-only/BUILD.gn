@@ -10,7 +10,7 @@ rustc_library("ext4-read-only") {
   name = "ext4-read-only"
   version = "0.1.0"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//src/lib/fuchsia-sync",

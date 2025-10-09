@@ -260,7 +260,7 @@ fvm_deps = [
 
 rustc_binary("fvm_rust") {
   name = "fvm"
-  edition = "2021"
+  edition = "2024"
   sources = fvm_sources
   deps = fvm_deps
 
@@ -274,7 +274,7 @@ rustc_binary("fvm_rust") {
 }
 
 rustc_test("fvm_rust_test") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/main.rs"
   sources = fvm_sources
   deps = fvm_deps + [

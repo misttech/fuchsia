@@ -8,7 +8,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_binary("bin") {
   name = "ext4_readonly"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = false
 
   deps = [
@@ -29,7 +29,7 @@ rustc_binary("bin") {
 
 rustc_test("ext4_server_integration_test") {
   source_root = "tests/ext4_server_test.rs"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_rust",

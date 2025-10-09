@@ -7,7 +7,7 @@ import("//build/rust/rustc_binary.gni")
 
 rustc_binary("umount") {
   sources = [ "src/main.rs" ]
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
     "//sdk/lib/fdio",

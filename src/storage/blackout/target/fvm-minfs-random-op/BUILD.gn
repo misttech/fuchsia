@@ -13,7 +13,7 @@ group("tests") {
 rustc_binary("blackout-fvm-minfs-random-op-bin") {
   output_name = "blackout_fvm_bin"
   testonly = true
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//src/lib/fuchsia",
     "//src/storage/blackout/target/lib:blackout-target",

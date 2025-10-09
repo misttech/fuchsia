@@ -33,20 +33,20 @@ lib_test_deps = [
 
 rustc_library("super_parser") {
   name = "super_parser"
-  edition = "2021"
+  edition = "2024"
   deps = lib_deps
   sources = lib_srcs
 }
 
 rustc_test("super_parser_test") {
-  edition = "2021"
+  edition = "2024"
   deps = lib_deps + lib_test_deps
   sources = lib_srcs
 }
 
 rustc_binary("super_parser_tool") {
   name = "super_parser_tool"
-  edition = "2021"
+  edition = "2024"
   deps = [
     ":super_parser",
     "//src/storage/lib/storage_device",

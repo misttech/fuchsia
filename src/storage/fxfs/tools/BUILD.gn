@@ -10,7 +10,7 @@ import("//build/testing/host_test.gni")
 if (is_host) {
   rustc_library("lib") {
     with_unit_tests = true
-    edition = "2021"
+    edition = "2024"
     deps = [
       "//build/validate:non_production_tag",
       "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
@@ -51,7 +51,7 @@ if (is_host) {
   }
 
   rustc_binary("fxfs_tool") {
-    edition = "2021"
+    edition = "2024"
     deps = [
       ":lib",
       "//src/lib/fuchsia",

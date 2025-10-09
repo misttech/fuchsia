@@ -9,7 +9,7 @@ import("//src/storage/ext4/ext4_to_pkg.gni")
 assert(is_fuchsia, "the tests are target-only")
 
 rustc_test("ext4_to_pkg_test") {
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/lib.rs" ]
   deps = [ "//src/storage/ext4/lib/metadata" ]
   test_deps = [ "//third_party/rust_crates:assert_matches" ]

@@ -9,7 +9,7 @@ import("//build/test.gni")
 template("rust_storage_trace") {
   rustc_library(target_name) {
     name = invoker.name
-    edition = "2021"
+    edition = "2024"
     sources = [ "src/lib.rs" ]
     visibility = invoker.visibility
     with_unit_tests = true

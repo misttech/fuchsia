@@ -6,7 +6,7 @@ import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
 
 rustc_library("delivery_blob") {
-  edition = "2021"
+  edition = "2024"
   name = "delivery_blob"
   version = "0.1.0"
   visibility = [

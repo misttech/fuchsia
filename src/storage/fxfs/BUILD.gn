@@ -142,7 +142,7 @@ if (is_fuchsia) {
 }
 
 rustc_macro("fxfs_macros") {
-  edition = "2021"
+  edition = "2024"
   name = "fxfs_macros"
   deps = [
     "//third_party/rust_crates:proc-macro2",
@@ -216,7 +216,7 @@ fuchsia_test_package("fxfs-tests") {
 }
 
 rustc_binary("fxfs") {
-  edition = "2021"
+  edition = "2024"
   deps = [
     ":lib",
     "//sdk/rust/zx",

@@ -11,7 +11,7 @@ group("rust") {
 }
 
 rustc_library("gpt") {
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/rust/zx",
     "//src/lib/fuchsia-sync",

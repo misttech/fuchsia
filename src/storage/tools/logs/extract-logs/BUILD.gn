@@ -5,7 +5,7 @@
 import("//build/rust/rustc_binary.gni")
 
 rustc_binary("extract-logs") {
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:byteorder",

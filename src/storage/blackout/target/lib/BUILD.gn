@@ -23,7 +23,7 @@ fuchsia_structured_config_rust_lib("blackout-config") {
 }
 
 rustc_library("blackout-target") {
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   deps = [
     "//sdk/fidl/fuchsia.device:fuchsia.device_rust",
@@ -61,7 +61,7 @@ rustc_library("blackout-target") {
 # These tests are broken out into their own components because they don't respond well when they
 # aren't the only ones with access to /dev.
 # rustc_test("blackout-target-test-no-path") {
-#   edition = "2021"
+#   edition = "2024"
 #   deps = [
 #     ":blackout-target",
 #     "//sdk/lib/device-watcher/rust",
@@ -76,7 +76,7 @@ rustc_library("blackout-target") {
 # }
 
 # rustc_test("blackout-target-test-with-path") {
-#   edition = "2021"
+#   edition = "2024"
 #   deps = [
 #     ":blackout-target",
 #     "//src/lib/fuchsia-async",

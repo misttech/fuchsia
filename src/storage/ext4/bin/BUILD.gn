@@ -7,7 +7,7 @@ import("//build/rust/rustc_binary.gni")
 assert(is_host, "ext4_to_pkg is host-only")
 
 rustc_binary("ext4_to_pkg") {
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/main.rs" ]
   deps = [
     "//src/storage/ext4/lib/ext4_extract",

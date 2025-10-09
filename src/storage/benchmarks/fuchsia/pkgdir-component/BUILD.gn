@@ -9,7 +9,7 @@ rustc_binary("bin") {
   testonly = true
   name = "pkgdir"
   visibility = [ ":*" ]
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/main.rs" ]
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",

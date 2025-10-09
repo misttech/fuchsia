@@ -7,7 +7,7 @@ import("//build/rust/rustc_library.gni")
 
 rustc_library("block_adapter_lib") {
   name = "block_adapter"
-  edition = "2021"
+  edition = "2024"
 
   sources = [ "src/lib.rs" ]
   deps = [
@@ -26,7 +26,7 @@ rustc_library("block_adapter_lib") {
 }
 
 rustc_binary("block_adapter") {
-  edition = "2021"
+  edition = "2024"
   deps = [
     ":block_adapter_lib",
     "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_rust",

@@ -7,7 +7,7 @@ import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_library.gni")
 
 rustc_library("unicode") {
-  edition = "2021"
+  edition = "2024"
   name = "fxfs-unicode"
   sources = [
     "src/lib.rs",
@@ -26,7 +26,7 @@ rustc_library("unicode") {
 
 # We compile this file into its own crate to avoid gen/ path imports from rust.
 rustc_library("unicode_gen") {
-  edition = "2021"
+  edition = "2024"
   source_root = "${target_gen_dir}/unicode_gen.rs"
   sources = [ "${target_gen_dir}/unicode_gen.rs" ]
   deps = [ ":types" ]
@@ -45,7 +45,7 @@ compiled_action("generate_unicode_gen") {
 
 if (is_host) {
   rustc_test("unicode_test") {
-    edition = "2021"
+    edition = "2024"
     name = "fxfs-unicode-test"
     sources = [
       "src/lib.rs",
@@ -73,7 +73,7 @@ if (is_host) {
 
   # This (host) binary is responsible for taking UCD.zip and creating unicode_gen.rs.
   rustc_binary("unicode_gen_builder") {
-    edition = "2021"
+    edition = "2024"
     source_root = "src/generator.rs"
     sources = [ "src/generator.rs" ]
     deps = [
@@ -88,7 +88,7 @@ if (is_host) {
 # The types that we generate are shared with the library and generator so
 # we put them in their own target.
 rustc_library("types") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/types.rs"
   sources = [ "src/types.rs" ]
   visibility = [ "//src/storage/fxfs/unicode/*" ]

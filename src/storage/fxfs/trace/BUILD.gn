@@ -8,7 +8,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_library("trace") {
   name = "fxfs_trace"
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/lib.rs" ]
   deps = [
     "//src/lib/cstringify",
@@ -19,7 +19,7 @@ rustc_library("trace") {
 }
 
 rustc_test("fxfs-trace-tests") {
-  edition = "2021"
+  edition = "2024"
   sources = [ "tests/compile_tests.rs" ]
   source_root = "tests/compile_tests.rs"
   deps = [

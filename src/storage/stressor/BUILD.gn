@@ -9,7 +9,7 @@ import("//build/rust/rustc_library.gni")
 rustc_library("lib") {
   name = "stressor_lib"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//src/lib/fdio/rust:fdio",
@@ -27,7 +27,7 @@ rustc_library("lib") {
 
 rustc_binary("stressor_bin") {
   output_name = "stressor"
-  edition = "2021"
+  edition = "2024"
   deps = [
     ":lib",
     "//src/lib/diagnostics/log/rust",

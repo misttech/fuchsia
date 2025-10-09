@@ -6,7 +6,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_test("stressor-bin") {
   name = "blobfs_stressor"
-  edition = "2021"
+  edition = "2024"
   source_root = "main.rs"
   testonly = true
 

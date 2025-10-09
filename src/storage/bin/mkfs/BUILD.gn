@@ -6,7 +6,7 @@ import("//build/rust/rustc_binary.gni")
 
 rustc_binary("mkfs") {
   sources = [ "src/main.rs" ]
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.device:fuchsia.device_rust",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",

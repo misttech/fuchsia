@@ -23,7 +23,7 @@ expect_includes("client_includes") {
 rustc_binary("bin") {
   testonly = true
   name = "storage_driver_test_realm"
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.component.test:fuchsia.component.test_rust",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",

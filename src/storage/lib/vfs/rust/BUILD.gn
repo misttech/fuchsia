@@ -19,7 +19,7 @@ declare_args() {
 common_vfs_args = {
   output_name = "vfs_rust"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/rust/zx-status",

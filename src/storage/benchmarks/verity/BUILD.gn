@@ -11,7 +11,7 @@ import("//src/starnix/kernel/starnix.gni")
 
 rustc_library("framework") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   name = "storage_verity_benchmarks_lib"
   sources = [ "src/lib.rs" ]
   deps = [
@@ -23,7 +23,7 @@ rustc_library("framework") {
 }
 
 rustc_binary("verity-storage-benchmarks") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   name = "storage_verity_benchmarks"
   sources = [ "src/main.rs" ]
@@ -52,7 +52,7 @@ fidl("fuchsia.fxfs.test") {
 
 rustc_binary("test_fxfs_bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   source_root = "src/test_fxfs.rs"
   sources = [ source_root ]
   deps = [
@@ -119,7 +119,7 @@ fuchsia_test_package("verity-benchmarks") {
 if (is_linux) {
   rustc_binary("setup_verity_bin") {
     testonly = true
-    edition = "2021"
+    edition = "2024"
     source_root = "src/setup_verity.rs"
     sources = [ source_root ]
     deps = [ ":framework" ]
@@ -128,7 +128,7 @@ if (is_linux) {
 
   rustc_binary("read_verified_file_bin") {
     testonly = true
-    edition = "2021"
+    edition = "2024"
     source_root = "src/read_verified_file.rs"
     sources = [ source_root ]
     deps = [ ":framework" ]

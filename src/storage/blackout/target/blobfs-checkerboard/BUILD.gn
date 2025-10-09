@@ -8,7 +8,7 @@ import("//build/rust/rustc_binary.gni")
 rustc_binary("blackout-blobfs-checkerboard-bin") {
   output_name = "blackout_blobfs_checkerboard_bin"
   testonly = true
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/rust/zx",

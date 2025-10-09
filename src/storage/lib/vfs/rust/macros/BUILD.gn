@@ -8,7 +8,7 @@ import("//build/rust/rustc_test.gni")
 rustc_macro("macros") {
   name = "vfs_macros"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
@@ -23,7 +23,7 @@ rustc_macro("macros") {
 if (is_host) {
   rustc_test("vfs_macro_test") {
     name = "vfs_macro_test"
-    edition = "2021"
+    edition = "2024"
     deps = [
       "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
       "//third_party/rust_crates:indoc",

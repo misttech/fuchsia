@@ -8,7 +8,7 @@ import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_library.gni")
 
 rustc_library("lib") {
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.fs:fuchsia.fs_rust",
     "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_rust",
@@ -53,7 +53,7 @@ fuchsia_unittest_component("gpt-component-test") {
 }
 
 rustc_binary("gpt2") {
-  edition = "2021"
+  edition = "2024"
   deps = [
     ":lib",
     "//src/lib/diagnostics/inspect/runtime/rust",
@@ -84,7 +84,7 @@ fuchsia_package("package") {
 }
 
 rustc_test("gpt_integration_test") {
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_rust",
     "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_rust",

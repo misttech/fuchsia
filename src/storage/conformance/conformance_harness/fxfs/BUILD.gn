@@ -7,7 +7,7 @@ import("//src/storage/conformance/storage_conformance_test.gni")
 
 rustc_binary("bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   name = "io_conformance_harness_fxfs"
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",

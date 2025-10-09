@@ -5,7 +5,7 @@
 import("//build/rust/rustc_library.gni")
 
 rustc_library("vmo-blob") {
-  edition = "2021"
+  edition = "2024"
   version = "0.1.0"
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",

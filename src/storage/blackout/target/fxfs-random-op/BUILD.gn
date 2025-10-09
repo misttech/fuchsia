@@ -13,7 +13,7 @@ group("tests") {
 rustc_binary("blackout-fxfs-allocate-bin") {
   output_name = "blackout_fxfs_allocate_bin"
   testonly = true
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
@@ -40,7 +40,7 @@ rustc_binary("blackout-fxfs-allocate-bin") {
 rustc_binary("blackout-fxfs-barriers-bin") {
   output_name = "blackout_fxfs_barriers_bin"
   testonly = true
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
