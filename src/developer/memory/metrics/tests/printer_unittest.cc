@@ -19,7 +19,7 @@
 namespace {
 void ConfirmLines(std::ostringstream& oss, const std::vector<std::string>& expected_lines) {
   auto lines = fxl::SplitStringCopy(oss.str(), "\n", fxl::kKeepWhitespace, fxl::kSplitWantNonEmpty);
-  EXPECT_THAT(expected_lines, testing::UnorderedElementsAreArray(lines));
+  EXPECT_THAT(lines, testing::UnorderedElementsAreArray(expected_lines));
 }
 
 std::string ExecuteWithSocket(fit::function<void(zx::socket)> generator) {

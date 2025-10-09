@@ -10,6 +10,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <re2/re2.h>
@@ -33,7 +34,7 @@ struct Sizes {
 class ProcessSummary {
  public:
   static const zx_koid_t kKernelKoid;
-  ProcessSummary(zx_koid_t koid, const std::string& name) : koid_(koid), name_(name) {}
+  ProcessSummary(zx_koid_t koid, std::string name) : koid_(koid), name_(std::move(name)) {}
   ProcessSummary(const zx_info_kmem_stats_t& kmem, uint64_t vmo_bytes);
 
   zx_koid_t koid() const { return koid_; }
@@ -61,7 +62,7 @@ class Namer {
  public:
   explicit Namer(const std::vector<NameMatch>& name_matches);
 
-  const std::string& NameForName(const std::string& name);
+  std::string NameForName(const std::string& name);
 
  private:
   struct RegexMatch {
@@ -77,10 +78,22 @@ class Summary {
  public:
   Summary(const Capture& capture, Namer* namer);
   explicit Summary(const Capture& capture,
-                   const std::vector<NameMatch>& name_matches = std::vector<NameMatch>());
+                   const std::vector<NameMatch>& name_matches = kNameMatches);
   Summary(const Capture& capture, Namer* namer,
           const std::unordered_set<zx_koid_t>& undigested_vmos);
-  static const std::vector<NameMatch> kNameMatches;
+  inline static const std::vector<NameMatch> kNameMatches = {
+      // To prevent the [bootfs-libraries] regex from catching ld.so.1-internal-heap,
+      // this regex must be before the [bootfs-libraries] regex.
+      {.regex = "ld\\.so\\.1-internal-heap|(^stack: msg of.*)", .name = "[process-bootstrap]"},
+      {.regex = "blob-[0-9a-f]+", .name = "[blobs]"},
+      {.regex = "inactive-blob-[0-9a-f]+", .name = "[inactive blobs]"},
+      {.regex = "thrd_t:0x.*|initial-thread|pthread_t:0x.*", .name = "[stacks]"},
+      {.regex = "data[0-9]*:.*", .name = "[data]"},
+      {.regex = "bss[0-9]*:.*", .name = "[bss]"},
+      {.regex = "relro:.*", .name = "[relro]"},
+      {.regex = "", .name = "[unnamed]"},
+      {.regex = "scudo:.*", .name = "[scudo]"},
+      {.regex = ".*\\.so.*", .name = "[bootfs-libraries]"}};
 
   void SortProcessSummaries();
   zx_instant_boot_t time() const { return time_; }

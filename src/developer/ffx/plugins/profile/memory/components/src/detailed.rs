@@ -53,7 +53,7 @@ pub fn process_snapshot_detailed(
             })
         })
         .collect::<Result<_>>()?;
-    let digest = digest::Digest::compute(
+    let digest = digest::Digest::compute_from_attribution_data_provider(
         &SnapshotAttributionDataProvider {
             resources: &resources,
             resource_names: snapshot.resource_names.as_ref().unwrap_or(&Vec::new()),

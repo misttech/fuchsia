@@ -269,7 +269,7 @@ inspect::Inspector Monitor::Inspect() {
       return fpromise::make_result_promise(fpromise::ok(inspector));
     }
 
-    Summary summary(capture, Summary::kNameMatches);
+    Summary summary(capture);
     std::ostringstream summary_stream;
     TextPrinter summary_printer(summary_stream);
     summary_printer.PrintSummary(summary, CaptureLevel::VMO, memory::SORTED);

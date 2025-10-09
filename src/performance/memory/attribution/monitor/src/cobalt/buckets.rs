@@ -4,11 +4,11 @@
 
 use crate::error_from_metrics_error;
 use anyhow::Result;
-use attribution_processing::digest::{BucketDefinition, Digest};
 use attribution_processing::AttributionDataProvider;
+use attribution_processing::digest::{BucketDefinition, Digest};
 use cobalt_client::traits::{AsEventCode, AsEventCodes};
 use futures::stream::StreamExt;
-use futures::{try_join, TryFutureExt};
+use futures::{TryFutureExt, try_join};
 use memory_metrics_registry::cobalt_registry;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -209,7 +209,7 @@ async fn collect_metrics_once(
         kernel_stats_proxy.get_memory_stats().map_err(anyhow::Error::from),
         kernel_stats_proxy.get_memory_stats_compression().map_err(anyhow::Error::from)
     )?;
-    let digest = Digest::compute(
+    let digest = Digest::compute_from_attribution_data_provider(
         &*attribution_data_service,
         &kmem_stats,
         &kmem_stats_compression,
@@ -235,8 +235,8 @@ mod tests {
         Attribution, AttributionData, Principal, PrincipalDescription, PrincipalIdentifier,
         PrincipalType, Resource, ResourceReference, ZXName,
     };
-    use futures::task::Poll;
     use futures::TryStreamExt;
+    use futures::task::Poll;
     use regex::bytes::Regex;
     use std::time::Duration;
     use {fidl_fuchsia_memory_attribution_plugin as fplugin, fuchsia_async as fasync};
@@ -618,9 +618,9 @@ mod tests {
             _ => panic!("Unexpected metric event"),
         }
 
-        assert!(exec
-            .run_until_stalled(&mut metric_event_request_stream.into_future())
-            .is_pending());
+        assert!(
+            exec.run_until_stalled(&mut metric_event_request_stream.into_future()).is_pending()
+        );
         Ok(())
     }
 }

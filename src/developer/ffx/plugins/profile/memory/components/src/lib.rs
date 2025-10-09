@@ -256,7 +256,7 @@ fn process_snapshot_summary(snapshot: fplugin::Snapshot) -> ComponentSummaryProf
             event_code: 0, // The information is unavailable client side.
         })
         .collect();
-    let digest = digest::Digest::compute(
+    let digest = digest::Digest::compute_from_attribution_data_provider(
         &SnapshotAttributionDataProvider {
             resources: &resources,
             resource_names: snapshot.resource_names.as_ref().unwrap(),

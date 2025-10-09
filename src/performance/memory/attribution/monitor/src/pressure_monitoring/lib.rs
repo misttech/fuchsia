@@ -1,15 +1,17 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
 use anyhow::{Context, Result};
-use attribution_processing::AttributionDataProvider;
 use attribution_processing::digest::{BucketDefinition, Digest};
+use attribution_processing::summary::MemorySummary;
+use attribution_processing::{AttributionDataProvider, attribute_vmos};
 use fpressure::WatcherRequest;
 use fuchsia_async::{MonotonicDuration, MonotonicInstant, WakeupTime};
 use fuchsia_inspect::{ArrayProperty, Node};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use futures::{StreamExt, TryFutureExt, TryStreamExt, select, try_join};
+use humansize::FileSize;
+use humansize::file_size_opts::{BINARY, FileSizeOpts};
 use memory_monitor2_config::Config;
 use stalls::StallProvider;
 use {fidl_fuchsia_kernel as fkernel, fidl_fuchsia_memorypressure as fpressure};
@@ -31,7 +33,6 @@ pub async fn serve_to_inspect(
         BoundedListNode::new(inspect_root.create_child("measurements"), 100);
     let buckets_names = std::cell::OnceCell::new();
     let pressure_stream = pressure_stream.map_err(anyhow::Error::from);
-
     // Get the initial, baseline pressure level.
     let (request, mut pressure_stream) = pressure_stream.into_future().await;
     let mut current_level = {
@@ -45,12 +46,12 @@ pub async fn serve_to_inspect(
     };
     let mut deadline = pressure_to_deadline(current_level, &memory_monitor2_config);
     let mut timer = Box::pin(deadline.into_timer());
+    let mut _current;
     loop {
         // Wait for either a pressure change or the timer corresponding to the current level. In
         // either case, reset the timer.
         let () = select! {
-            // When we receive a pressure change, update the current level, and if necessary do
-            // a capture.
+            // When we receive a pressure change, update the current level and the schedule.
             pressure = pressure_stream.next() =>
                 match pressure.ok_or_else(
                     || anyhow::Error::msg("Unexpectedly exhausted pressure stream"))?
@@ -60,27 +61,20 @@ pub async fn serve_to_inspect(
                         // Don't do anything if the pressure has not changed.
                         if level == current_level { continue; }
                         current_level = level;
-                        let new_deadline = pressure_to_deadline(level, memory_monitor2_config);
-                        if memory_monitor2_config.capture_on_pressure_change {
-                            // Do a capture then use new schedule
-                            deadline = new_deadline;
-                            timer = Box::pin(deadline.into_timer());
+                        deadline = if memory_monitor2_config.capture_on_pressure_change {
+                            MonotonicInstant::now()
                         } else {
-                            // Schedule the next capture if needed. Never postpone a previously
-                            // scheduled but not yet honored capture: this would risk captures
-                            // being arbitrarily delayed if pressure changes frequently.
-                            if deadline > new_deadline {
-                                deadline = new_deadline;
-                                timer = Box::pin(deadline.into_timer());
-                            }
-                            continue;
-                        }
+                            std::cmp::min(pressure_to_deadline(level, memory_monitor2_config),
+                                          deadline)
+                        };
+                        timer.as_mut().reset(deadline);
+                        continue; // Resume waiting
                     },
                 },
             // If we reached the deadline, schedule the next capture and do the current one.
             _ = timer => {
                 deadline = pressure_to_deadline(current_level, memory_monitor2_config);
-                timer = Box::pin(deadline.into_timer());
+                timer.as_mut().reset(deadline);
             },
         };
 
@@ -91,16 +85,20 @@ pub async fn serve_to_inspect(
             kernel_stats_proxy.get_memory_stats_compression().map_err(anyhow::Error::from)
         )
         .with_context(|| "Failed to get kernel memory stats")?;
-
-        // Compute the aggregation.
-        let Digest { buckets } = Digest::compute(
-            &*attribution_data_service,
-            &kmem_stats,
-            &kmem_stats_compression,
-            bucket_definitions,
-        )
-        .with_context(|| "Failed to compute the Digest")?;
-
+        let Digest { buckets } = {
+            let attribution_data = attribution_data_service.get_attribution_data().await?;
+            // Compute the aggregation.
+            let digest = Digest::compute_from_attribution_data(
+                &attribution_data,
+                &kmem_stats,
+                &kmem_stats_compression,
+                bucket_definitions,
+            );
+            let summary = attribute_vmos(attribution_data).summary();
+            _current = inspect_root
+                .create_string("current", record_summary(summary, timestamp, &kmem_stats));
+            digest
+        };
         // Initialize the inspect property containing the buckets names, if necessary.
         let _ = buckets_names.get_or_init(|| {
             // Create inspect node to store buckets related information.
@@ -146,6 +144,78 @@ fn pressure_to_deadline(level: fpressure::Level, config: &Config) -> MonotonicIn
             fpressure::Level::Warning => config.warning_capture_delay_s,
             fpressure::Level::Critical => config.critical_capture_delay_s,
         } as i64)
+}
+
+fn record_summary(
+    mut summary: MemorySummary,
+    timestamp: zx::Instant<zx::BootTimeline>,
+    kmem_stats: &fkernel::MemoryStats,
+) -> String {
+    let size_options = FileSizeOpts { space: false, ..BINARY };
+    summary.principals.sort_by_key(|p| std::cmp::Reverse(p.populated_private));
+    format!(
+        "Time: {} VMO: {} Free: {}\n{}",
+        timestamp.into_nanos(),
+        kmem_stats
+            .vmo_bytes
+            .and_then(|b| b.file_size(&size_options).ok())
+            .unwrap_or_else(|| "?".to_string()),
+        kmem_stats
+            .free_bytes
+            .and_then(|b| b.file_size(&size_options).ok())
+            .unwrap_or_else(|| "?".to_string()),
+        summary
+            .principals
+            .iter_mut()
+            .filter_map(|principal| {
+                if principal.populated_total == 0 {
+                    return None;
+                }
+                let (populated_private, populated_scaled, populated_total) = match (|| {
+                    Some((
+                        principal.populated_private.file_size(&size_options).ok()?,
+                        (principal.populated_scaled as u64).file_size(&size_options).ok()?,
+                        principal.populated_total.file_size(&size_options).ok()?,
+                    ))
+                })(
+                ) {
+                    Some(ok) => ok,
+                    None => return None,
+                };
+                let mut vmos = principal.vmos.iter().collect::<Vec<_>>();
+                vmos.sort_by_key(|(_, vmo)| {
+                    std::cmp::Reverse((vmo.committed_private, vmo.committed_scaled as u64))
+                });
+                let sizes = if populated_total == populated_private {
+                    format_args!("{}", populated_total)
+                } else {
+                    format_args!("{} {} {}", populated_private, populated_scaled, populated_total)
+                };
+                Some(format!(
+                    "{}: {}; {}",
+                    principal.name,
+                    sizes,
+                    vmos.iter()
+                        .filter_map(|(name, vmo)| {
+                            if vmo.committed_total == 0 {
+                                None
+                            } else {
+                                Some(format!(
+                                    "{} {} {} {}",
+                                    name,
+                                    vmo.populated_private.file_size(&size_options).ok()?,
+                                    (vmo.populated_scaled as u64).file_size(&size_options).ok()?,
+                                    vmo.populated_total.file_size(&size_options).ok()?
+                                ))
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                ))
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    )
 }
 
 #[cfg(test)]
@@ -407,6 +477,7 @@ mod tests {
                         },
                     },
                 },
+                current: regex::Regex::new(r"^Time: \d+ VMO: 6B Free: 2B\nprincipal: 2KiB; resource 2KiB 2KiB 2KiB")?,
             },
         });
         Ok(())
@@ -523,7 +594,8 @@ mod tests {
                             full_ms: 20u64,
                         },
                     },
-            },
+                },
+                current: regex::Regex::new(r"^Time: \d+ VMO: 6B Free: 2B\nprincipal: 2KiB; resource 2KiB 2KiB 2KiB")?,
             },
         });
         Ok(())
@@ -651,8 +723,8 @@ mod tests {
                             full_ms: 20u64,
                         },
                     },
-            },
-            },
+                },
+                current: regex::Regex::new(r"^Time: \d+ VMO: 6B Free: 2B\nprincipal: 2KiB; resource 2KiB 2KiB 2KiB")?,             },
         });
         Ok(())
     }
@@ -802,6 +874,7 @@ mod tests {
                         },
                     },
                 },
+                current: regex::Regex::new(r"^Time: \d+ VMO: 6B Free: 2B\nprincipal: 2KiB; resource 2KiB 2KiB 2KiB")?,
             },
         });
         Ok(())

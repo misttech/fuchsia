@@ -195,10 +195,12 @@ rustc_library("pressure_monitoring") {
     "//src/performance/memory/attribution/processing",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:humansize",
   ]
   test_deps = [
     "//sdk/fidl/fuchsia.memory.attribution.plugin:fuchsia.memory.attribution.plugin_rust",
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+    "//third_party/rust_crates:regex",
   ]
 }
 

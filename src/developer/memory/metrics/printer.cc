@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <numeric>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -159,8 +160,7 @@ rapidjson::Document DocumentFromCapture(const memory::Capture& capture) {
 
   TRACE_DURATION_BEGIN("memory_metrics", "JsonPrinter::DocumentFromCapture::Names");
   std::vector<NameCount> sorted_counts(name_count.begin(), name_count.end());
-  std::sort(sorted_counts.begin(), sorted_counts.end(),
-            [](const NameCount& kc1, const NameCount& kc2) { return kc1.count > kc2.count; });
+  std::ranges::sort(sorted_counts, std::ranges::greater(), &NameCount::count);
   size_t index = 0;
   std::unordered_map<std::string_view, size_t> name_to_index(sorted_counts.size());
   for (const auto& kc : sorted_counts) {
@@ -297,11 +297,8 @@ void TextPrinter::PrintSummary(const Summary& summary, CaptureLevel level, Sorte
   }
 
   if (sorted == SORTED) {
-    std::sort(summary_order.begin(), summary_order.end(), [&summaries](uint32_t ai, uint32_t bi) {
-      const auto& a = summaries[ai];
-      const auto& b = summaries[bi];
-      return a.sizes().private_bytes > b.sizes().private_bytes;
-    });
+    std::ranges::sort(summary_order, std::ranges::greater(),
+                      [&summaries](uint32_t i) { return summaries[i].sizes().private_bytes; });
   }
   for (auto i : summary_order) {
     const auto& s = summaries[i];
@@ -318,13 +315,10 @@ void TextPrinter::PrintSummary(const Summary& summary, CaptureLevel level, Sorte
       names.push_back(name);
     }
     if (sorted == SORTED) {
-      std::sort(names.begin(), names.end(),
-                [&name_to_sizes](const std::string& a, const std::string& b) {
-                  const auto& sa = name_to_sizes.at(a);
-                  const auto& sb = name_to_sizes.at(b);
-                  return sa.private_bytes == sb.private_bytes ? sa.scaled_bytes > sb.scaled_bytes
-                                                              : sa.private_bytes > sb.private_bytes;
-                });
+      std::ranges::sort(names, std::ranges::greater(), [&name_to_sizes](const std::string& name) {
+        auto& sizes = name_to_sizes.at(name);
+        return std::tie(sizes.private_bytes, sizes.scaled_bytes);
+      });
     }
     for (const auto& name : names) {
       const auto& n_sizes = name_to_sizes.at(name);
@@ -344,10 +338,8 @@ void TextPrinter::OutputSummary(const Summary& summary, Sorted sorted, zx_koid_t
   std::vector<ProcessSummary> sorted_summaries;
   if (sorted == SORTED) {
     sorted_summaries = summaries;
-    std::sort(sorted_summaries.begin(), sorted_summaries.end(),
-              [](const ProcessSummary& a, const ProcessSummary& b) {
-                return a.sizes().private_bytes > b.sizes().private_bytes;
-              });
+    std::ranges::sort(sorted_summaries, std::ranges::greater(),
+                      [](const ProcessSummary& ps) { return ps.sizes().private_bytes; });
   }
   const auto time = summary.time() / 1000000000;
   for (const auto& s : sorted == SORTED ? sorted_summaries : summaries) {
@@ -362,14 +354,10 @@ void TextPrinter::OutputSummary(const Summary& summary, Sorted sorted, zx_koid_t
         names.push_back(name);
       }
       if (sorted == SORTED) {
-        std::sort(names.begin(), names.end(),
-                  [&name_to_sizes](const std::string& a, const std::string& b) {
-                    const auto& sa = name_to_sizes.at(a);
-                    const auto& sb = name_to_sizes.at(b);
-                    return sa.private_bytes == sb.private_bytes
-                               ? sa.scaled_bytes > sb.scaled_bytes
-                               : sa.private_bytes > sb.private_bytes;
-                  });
+        std::ranges::sort(names, std::ranges::greater(), [&name_to_sizes](const std::string& name) {
+          auto& sizes = name_to_sizes.at(name);
+          return std::tie(sizes.private_bytes, sizes.scaled_bytes);
+        });
       }
       for (const auto& name : names) {
         const auto& sizes = name_to_sizes.at(name);
@@ -391,7 +379,7 @@ void TextPrinter::OutputSummary(const Summary& summary, Sorted sorted, zx_koid_t
 void TextPrinter::PrintDigest(const Digest& digest) {
   TRACE_DURATION("memory_metrics", "TextPrinter::PrintDigest");
   std::vector<Bucket> buckets = digest.buckets();
-  std::ranges::sort(buckets, [](const Bucket& a, const Bucket& b) { return a.size() > b.size(); });
+  std::ranges::sort(buckets, std::ranges::greater(), &Bucket::size);
 
   for (auto const& bucket : buckets) {
     char size_buf[kMaxFormattedStringSize];
@@ -404,7 +392,7 @@ void TextPrinter::OutputDigest(const Digest& digest) {
   TRACE_DURATION("memory_metrics", "TextPrinter::OutputDigest");
   auto const time = digest.time() / 1000000000;
   std::vector<Bucket> buckets = digest.buckets();
-  std::ranges::sort(buckets, [](const Bucket& a, const Bucket& b) { return a.size() > b.size(); });
+  std::ranges::sort(buckets, std::ranges::greater(), &Bucket::size);
 
   for (auto const& bucket : buckets) {
     os_ << time << "," << bucket.name() << "," << bucket.size() << "\n";

@@ -10,29 +10,15 @@
 
 namespace memory {
 
-const std::vector<NameMatch> Summary::kNameMatches = {
-    // To prevent the [bootfs-libraries] regex from catching ld.so.1-internal-heap,
-    // this regex must be before the [bootfs-libraries] regex.
-    {.regex = "ld\\.so\\.1-internal-heap|(^stack: msg of.*)", .name = "[process-bootstrap]"},
-    {.regex = "blob-[0-9a-f]+", .name = "[blobs]"},
-    {.regex = "inactive-blob-[0-9a-f]+", .name = "[inactive blobs]"},
-    {.regex = "thrd_t:0x.*|initial-thread|pthread_t:0x.*", .name = "[stacks]"},
-    {.regex = "data[0-9]*:.*", .name = "[data]"},
-    {.regex = "bss[0-9]*:.*", .name = "[bss]"},
-    {.regex = "relro:.*", .name = "[relro]"},
-    {.regex = "", .name = "[unnamed]"},
-    {.regex = "scudo:.*", .name = "[scudo]"},
-    {.regex = ".*\\.so.*", .name = "[bootfs-libraries]"}};
-
 Namer::Namer(const std::vector<NameMatch>& name_matches) {
   regex_matches_.reserve(name_matches.size());
-  for (size_t i = 0; i < name_matches.size(); i++) {
-    regex_matches_.push_back(RegexMatch{.regex = std::make_unique<re2::RE2>(name_matches[i].regex),
-                                        .name = name_matches[i].name});
+  for (auto& name_match : name_matches) {
+    regex_matches_.push_back(
+        RegexMatch{.regex = std::make_unique<re2::RE2>(name_match.regex), .name = name_match.name});
   }
 }
 
-const std::string& Namer::NameForName(const std::string& name) {
+std::string Namer::NameForName(const std::string& name) {
   const auto& found_name = name_to_name_.find(name);
   if (found_name != name_to_name_.end()) {
     return found_name->second;
@@ -76,7 +62,7 @@ void Summary::Init(const Capture& capture, Namer* namer,
   for (const auto& [process_koid, process] : capture.koid_to_process()) {
     auto& s = process_summaries_.emplace_back(process_koid, process.name);
     for (auto vmo_koid : process.vmos) {
-      if (!check_undigested || undigested_vmos.find(vmo_koid) != undigested_vmos.end()) {
+      if (!check_undigested || undigested_vmos.contains(vmo_koid)) {
         vmo_to_processes[vmo_koid].insert(process_koid);
         s.vmos_.insert(vmo_koid);
       }

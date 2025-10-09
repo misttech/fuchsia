@@ -163,7 +163,7 @@ async fn main() -> Result<()> {
                     metric_event_logger,
                     bucket_definitions,
                 )
-                .map(|_| Ok(()))
+                .map(Ok)
             },
         )
     })
