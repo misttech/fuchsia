@@ -887,11 +887,15 @@ func (f *FFXInstance) TestRun(
 			"--show-full-moniker-in-logs",
 		},
 		args...)
-	if err := f.invoker(args).setTarget(f.target).setTimeout(0).setStrict().setMachineFormat(MachineRaw).run(ctx); err != nil {
-		return nil, err
-	}
+	err := f.invoker(args).setTarget(f.target).setTimeout(0).setStrict().setMachineFormat(MachineRaw).run(ctx)
 
-	return GetRunResult(testOutputDir)
+	// ffx test run returns a non-zero exit code if the test fails, so try to get the runResult anyway
+	// and return it along with the error.
+	runResult, runResultErr := GetRunResult(testOutputDir)
+	if err == nil {
+		err = runResultErr
+	}
+	return runResult, err
 }
 
 // Snapshot takes a snapshot of the target's state and saves it to outDir/snapshotFilename.
