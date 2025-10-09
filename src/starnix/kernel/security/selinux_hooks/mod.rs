@@ -199,36 +199,37 @@ fn has_file_ioctl_permission(
         &[audit_context, file.into(), fs_node.into(), Auditable::IoctlCommand(ioctl)];
 
     // Check the `ioctl` permission and extended permission on the underlying node.
-    check_ioctl_permission(
+    check_permission_and_xperms(
         permission_check,
         current_task,
         subject_sid,
         target_sid,
-        target_class,
+        CommonFsNodePermission::Ioctl.for_class(target_class),
+        XpermsKind::Ioctl,
         ioctl,
         audit_context.into(),
     )
 }
 
-fn check_ioctl_permission(
+fn check_permission_and_xperms(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     subject_sid: SecurityId,
     target_sid: SecurityId,
-    target_class: FsNodeClass,
-    ioctl: u16,
+    permission: KernelPermission,
+    xperms_kind: XpermsKind,
+    xperm: u16,
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
     if is_internal_operation(current_task) {
         return Ok(());
     }
-    let ioctl_permission = CommonFsNodePermission::Ioctl.for_class(target_class);
     let result = permission_check.has_extended_permission(
-        XpermsKind::Ioctl,
+        xperms_kind,
         subject_sid,
         target_sid,
-        ioctl_permission.clone(),
-        ioctl,
+        permission.clone(),
+        xperm,
     );
 
     if result.audit {
@@ -249,7 +250,7 @@ fn check_ioctl_permission(
             result.clone(),
             subject_sid,
             target_sid,
-            ioctl_permission.into(),
+            permission.into(),
             audit_context.into(),
         );
     }
@@ -265,7 +266,10 @@ fn has_fs_node_permissions_dontaudit(
     fs_node: &FsNode,
     permissions: &[impl ForClass<FsNodeClass>],
 ) -> Result<(), Errno> {
-    trace_duration!(CATEGORY_STARNIX_SECURITY, c"security.selinux.has_fs_node_permissions_dontaudit");
+    trace_duration!(
+        CATEGORY_STARNIX_SECURITY,
+        c"security.selinux.has_fs_node_permissions_dontaudit"
+    );
 
     if Anon::is_private(fs_node) {
         return Ok(());
