@@ -290,6 +290,7 @@ impl Injector for Injection {
             }
         })?;
 
+        ffx_target::emit_daemon_rcs_proxy_event("overnet").await;
         proxy
     }
 
@@ -297,6 +298,7 @@ impl Injector for Injection {
         let rcs = self.remote_factory().await?;
         let toolbox = rcs::toolbox::open_toolbox(&rcs).await?;
 
+        ffx_target::emit_daemon_rcs_proxy_event("fdomain").await;
         self.remote_factory_fdomain_inner(toolbox).await
     }
 }

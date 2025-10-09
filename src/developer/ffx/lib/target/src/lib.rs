@@ -58,6 +58,11 @@ pub use fidl_fuchsia_developer_ffx::TargetProxy;
 
 pub use target_errors::{UNKNOWN_TARGET_NAME, UNSPECIFIED_TARGET_NAME};
 
+/// Emit an analytics event indicating an RCS proxy was created via the daemon.
+pub async fn emit_daemon_rcs_proxy_event(ty: &str) {
+    connection::emit_rcs_proxy_event(ty, Some(true), true).await
+}
+
 /// Attempt to connect to RemoteControl on a target device using a connection to a daemon.
 ///
 /// The optional |target| is a string matcher as defined in fuchsia.developer.ffx.TargetQuery

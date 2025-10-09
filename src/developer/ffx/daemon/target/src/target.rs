@@ -1399,6 +1399,7 @@ impl Target {
                     }
                 }
 
+                emit_host_pipe_connection_event(conn_type).await;
                 if let Some(host) = host {
                     let _ = &host;
                     Box::pin(spawn_usb(host, cid, node)).await;
@@ -1414,6 +1415,8 @@ impl Target {
                 });
                 return;
             }
+
+            emit_host_pipe_connection_event("SSH").await;
 
             if !context_clone.get(CONFIG_ENABLE_NETWORK).unwrap_or(true) {
                 log::debug!("Networking disabled, quitting host pipe");
@@ -1808,6 +1811,16 @@ impl Drop for KeepAliveHandle {
             target.expire_state();
         }
     }
+}
+
+async fn emit_host_pipe_connection_event(ty: &str) {
+    let _ = analytics::add_custom_event(
+        Some("ffx_daemon_host_pipe"),
+        Some(ty),
+        None,
+        [].into_iter().collect(),
+    )
+    .await;
 }
 
 #[cfg(test)]

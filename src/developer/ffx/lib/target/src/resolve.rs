@@ -839,6 +839,7 @@ impl Resolution {
                     netext::ScopedSocketAddr::from_socket_addr(*socket_addr)?,
                     context,
                 )?;
+                emit_target_connection_event("SSH").await;
                 Connection::new(connector)
                     .await
                     .map_err(|e| crate::KnockError::CriticalError(e.into()))?
@@ -848,6 +849,7 @@ impl Resolution {
                     bail!("USB connections are disabled");
                 }
                 let connector = UsbConnector::new(*cid, context).await?;
+                emit_target_connection_event("USB").await;
                 Connection::new(connector)
                     .await
                     .map_err(|e| crate::KnockError::CriticalError(e.into()))?
@@ -896,6 +898,16 @@ impl Resolution {
         // Unwrap safety: either the guard was already Some(), or we just initialized it with Some()
         Ok(identify_guard.as_ref().unwrap().clone())
     }
+}
+
+async fn emit_target_connection_event(ty: &str) {
+    let _ = analytics::add_custom_event(
+        Some("ffx_target_connection"),
+        Some(ty),
+        None,
+        [].into_iter().collect(),
+    )
+    .await;
 }
 
 impl TryFromEnvContext for Resolution {
