@@ -18,6 +18,7 @@
                 capability: "protocol",
                 target_monikers: [
                     "/bootstrap",
+                    "/bootstrap/base-drivers:dev.sys.platform.cpu-controller-f521000",
                     "/bootstrap/boot-drivers:**",
                     "/bootstrap/power_manager",
                     "/bootstrap/cpu_manager",

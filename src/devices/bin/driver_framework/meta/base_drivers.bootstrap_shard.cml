@@ -35,7 +35,10 @@
             to: [ "#base-drivers" ],
         },
         {
-            protocol: "fuchsia.kernel.InfoResource",
+            protocol: [
+                "fuchsia.kernel.CpuResource",
+                "fuchsia.kernel.InfoResource",
+            ],
             from: "parent",
             to: "#base-drivers",
         },
