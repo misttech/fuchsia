@@ -12,10 +12,21 @@
 //!
 //! Converts between a string (such as an URL’s query string)
 //! and a sequence of (name, value) pairs.
+#![no_std]
 
+// For forwards compatibility
+#[cfg(feature = "std")]
+extern crate std as _;
+
+extern crate alloc;
+
+#[cfg(not(feature = "alloc"))]
+compile_error!("the `alloc` feature must currently be enabled");
+
+use alloc::borrow::{Borrow, Cow, ToOwned};
+use alloc::string::String;
+use core::str;
 use percent_encoding::{percent_decode, percent_encode_byte};
-use std::borrow::{Borrow, Cow};
-use std::str;
 
 /// Convert a byte string in the `application/x-www-form-urlencoded` syntax
 /// into a iterator of (name, value) pairs.
@@ -93,7 +104,7 @@ pub struct ParseIntoOwned<'a> {
     inner: Parse<'a>,
 }
 
-impl<'a> Iterator for ParseIntoOwned<'a> {
+impl Iterator for ParseIntoOwned<'_> {
     type Item = (String, String);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -184,9 +195,9 @@ impl Target for String {
     type Finished = Self;
 }
 
-impl<'a> Target for &'a mut String {
+impl Target for &mut String {
     fn as_mut_string(&mut self) -> &mut String {
-        &mut **self
+        self
     }
     fn finish(self) -> Self {
         self
@@ -282,7 +293,7 @@ impl<'a, T: Target> Serializer<'a, T> {
         {
             let string = string(&mut self.target);
             for pair in iter {
-                let &(ref k, ref v) = pair.borrow();
+                let (k, v) = pair.borrow();
                 append_pair(
                     string,
                     self.start_position,
@@ -385,6 +396,9 @@ pub(crate) fn encode<'a>(encoding_override: EncodingOverride<'_>, input: &'a str
     input.as_bytes().into()
 }
 
+// std::ptr::addr_eq was stabilized in rust 1.76. Once we upgrade
+// the MSRV we can remove this lint override.
+#[allow(ambiguous_wide_pointer_comparisons)]
 pub(crate) fn decode_utf8_lossy(input: Cow<'_, [u8]>) -> Cow<'_, str> {
     // Note: This function is duplicated in `percent_encoding/lib.rs`.
     match input {
@@ -400,7 +414,7 @@ pub(crate) fn decode_utf8_lossy(input: Cow<'_, [u8]>) -> Cow<'_, str> {
 
                     // First we do a debug_assert to confirm our description above.
                     let raw_utf8: *const [u8] = utf8.as_bytes();
-                    debug_assert!(raw_utf8 == &*bytes as *const [u8]);
+                    debug_assert!(core::ptr::eq(raw_utf8, &*bytes));
 
                     // Given we know the original input bytes are valid UTF-8,
                     // and we have ownership of those bytes, we re-use them and

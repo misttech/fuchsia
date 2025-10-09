@@ -6917,19 +6917,19 @@ rustc_library("foreign-types-shared-v0_1_1") {
   applicable_licenses = [ ":foreign-types-shared-v0_1_1.license" ]
 }
 
-license("form_urlencoded-v1_1_0.license") {
+license("form_urlencoded-v1_2_2.license") {
   public_package_name = "form_urlencoded"
   license_files = [
-    "//third_party/rust_crates/vendor/form_urlencoded-1.1.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/form_urlencoded-1.1.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/form_urlencoded-1.2.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/form_urlencoded-1.2.2/LICENSE-MIT",
   ]
 }
 
-rustc_library("form_urlencoded-v1_1_0") {
+rustc_library("form_urlencoded-v1_2_2") {
   crate_name = "form_urlencoded"
   source_root =
-      "//third_party/rust_crates/vendor/form_urlencoded-1.1.0/src/lib.rs"
-  output_name = "form_urlencoded-936a3ec4100fa350"
+      "//third_party/rust_crates/vendor/form_urlencoded-1.2.2/src/lib.rs"
+  output_name = "form_urlencoded-e3550ceb1c13b3bb"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -6942,13 +6942,16 @@ rustc_library("form_urlencoded-v1_1_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=936a3ec4100fa350",
-    "-Cextra-filename=-936a3ec4100fa350",
+    "-Cmetadata=e3550ceb1c13b3bb",
+    "-Cextra-filename=-e3550ceb1c13b3bb",
+    "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":form_urlencoded-v1_1_0.license" ]
+  applicable_licenses = [ ":form_urlencoded-v1_2_2.license" ]
 }
 
 license("fragile-v1_0_0.license") {
@@ -20400,7 +20403,7 @@ rustc_library("url-v2_3_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":form_urlencoded-v1_1_0" ]
+  deps += [ ":form_urlencoded-v1_2_2" ]
   deps += [ ":idna-v0_3_0" ]
   deps += [ ":percent-encoding-v2_3_1" ]
   deps += [ ":serde-v1_0_228" ]
