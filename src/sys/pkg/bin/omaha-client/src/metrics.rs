@@ -331,14 +331,10 @@ impl MetricsReporter for CobaltMetricsReporter {
                     );
                 }
             }
-            Metrics::FailedBootAttempts(count) => {
-                self.cobalt_sender.send(
-                    MetricEvent::builder(mos_registry::FAILED_BOOT_ATTEMPTS_MIGRATED_METRIC_ID)
-                        .with_event_codes(
-                            mos_registry::FailedBootAttemptsMigratedMetricDimensionResult::Success,
-                        )
-                        .as_integer(count as i64),
-                );
+            Metrics::FailedBootAttempts(_) => {
+                // omaha-client does not monitor this, so the metric was removed from Cobalt.
+                // This enum is defined in the external omaha-client library so removing this
+                // variant will require a version bump and soft migration.
             }
             Metrics::OmahaEventLost(event) => {
                 let event_type = mos_event_type_from_event_type(event.event_type);
@@ -551,22 +547,6 @@ mod tests {
                     payload: MetricEventPayload::Count(3),
                 },
             ],
-        )
-        .await;
-    }
-
-    #[fasync::run_singlethreaded(test)]
-    async fn test_failed_boot_attempts() {
-        assert_metrics(
-            Metrics::FailedBootAttempts(42),
-            &[MetricEvent {
-                metric_id: mos_registry::FAILED_BOOT_ATTEMPTS_MIGRATED_METRIC_ID,
-                event_codes: vec![
-                    mos_registry::FailedBootAttemptsMigratedMetricDimensionResult::Success,
-                ]
-                .as_event_codes(),
-                payload: MetricEventPayload::IntegerValue(42),
-            }],
         )
         .await;
     }
