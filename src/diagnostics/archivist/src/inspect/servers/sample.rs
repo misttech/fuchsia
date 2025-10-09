@@ -19,7 +19,7 @@ use fidl_fuchsia_diagnostics::{
 use fuchsia_async::{Interval, Scope};
 use fuchsia_inspect::Node;
 use futures::{StreamExt, TryStreamExt};
-use log::{debug, error, warn};
+use log::{debug, warn};
 use selectors::{FastError, SelectorExt, ValidateExt, parse_selector};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
