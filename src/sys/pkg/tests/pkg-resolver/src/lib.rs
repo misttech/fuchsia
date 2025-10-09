@@ -575,8 +575,6 @@ where
             .unwrap();
 
         if self.tuf_metadata_timeout_seconds.is_some()
-            || self.blob_network_header_timeout_seconds.is_some()
-            || self.blob_network_body_timeout_seconds.is_some()
             || self.blob_download_resumption_attempts_limit.is_some()
             || self.blob_download_concurrency_limit.is_some()
         {
@@ -587,29 +585,6 @@ where
                         &pkg_resolver,
                         "tuf_metadata_timeout_seconds",
                         tuf_metadata_timeout_seconds.into(),
-                    )
-                    .await
-                    .unwrap();
-            }
-            if let Some(blob_network_header_timeout_seconds) =
-                self.blob_network_header_timeout_seconds
-            {
-                builder
-                    .set_config_value(
-                        &pkg_resolver,
-                        "blob_network_header_timeout_seconds",
-                        blob_network_header_timeout_seconds.into(),
-                    )
-                    .await
-                    .unwrap();
-            }
-            if let Some(blob_network_body_timeout_seconds) = self.blob_network_body_timeout_seconds
-            {
-                builder
-                    .set_config_value(
-                        &pkg_resolver,
-                        "blob_network_body_timeout_seconds",
-                        blob_network_body_timeout_seconds.into(),
                     )
                     .await
                     .unwrap();
@@ -632,6 +607,46 @@ where
                         &pkg_resolver,
                         "blob_download_concurrency_limit",
                         blob_download_concurrency_limit.into(),
+                    )
+                    .await
+                    .unwrap();
+            }
+        }
+
+        for (key, value) in [
+            (
+                "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
+                self.blob_network_header_timeout_seconds,
+            ),
+            (
+                "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
+                self.blob_network_body_timeout_seconds,
+            ),
+        ] {
+            if let Some(value) = value {
+                builder
+                    .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                        name: key.parse().unwrap(),
+                        value: value.into(),
+                    }))
+                    .await
+                    .unwrap();
+                builder
+                    .add_route(
+                        Route::new()
+                            .capability(Capability::configuration(key))
+                            .from(Ref::self_())
+                            .to(&pkg_resolver),
+                    )
+                    .await
+                    .unwrap();
+            } else {
+                builder
+                    .add_route(
+                        Route::new()
+                            .capability(Capability::configuration(key))
+                            .from(Ref::void())
+                            .to(&pkg_resolver),
                     )
                     .await
                     .unwrap();

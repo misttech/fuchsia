@@ -475,6 +475,20 @@ mod tests {
             )
             .await
             .unwrap();
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::configuration(
+                        "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
+                    ))
+                    .capability(Capability::configuration(
+                        "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
+                    ))
+                    .from(Ref::void())
+                    .to(&pkg_resolver),
+            )
+            .await
+            .unwrap();
         let _test_topo = builder.build().await.unwrap();
 
         receiver.next().await.expect("Unexpected error waiting for response").expect("error sent");

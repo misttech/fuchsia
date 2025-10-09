@@ -36,7 +36,28 @@
             url: "#meta/fake-system-update-committer.cm",
         },
     ],
+    capabilities: [
+        {
+            config: "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
+            type: "uint32",
+            value: 300,
+        },
+        {
+            config: "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
+            type: "uint32",
+            value: 300,
+        },
+    ],
     offer: [
+        {
+            config: [
+                "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
+                "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
+            ],
+            from: "self",
+            to: "#pkg-resolver",
+        },
+
         // Routes from the parent to children. All are required if you are a
         // client of this component!
         {

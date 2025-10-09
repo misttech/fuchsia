@@ -2,10 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{Context, Error, Result, anyhow};
 use cm_fidl_analyzer::component_model::{AnalyzerModelError, ComponentModelForAnalyzer};
 use cm_fidl_analyzer::route::VerifyRouteResult;
-use cm_rust::{CapabilityDecl, CapabilityTypeName, ComponentDecl, ExposeDecl, OfferDecl, UseDecl};
+use cm_rust::{
+    CapabilityDecl, CapabilityTypeName, ComponentDecl, ExposeDecl, OfferDecl, SourceName as _,
+    UseDecl,
+};
 use cm_types::{Name, Path, RelativePath};
 use futures::FutureExt;
 use moniker::Moniker;
@@ -65,7 +68,7 @@ pub struct RouteSourcesSpec {
 }
 
 /// Input query type for matching routes by target. Usually, either a `path` or
-/// a `name` is specified.
+/// a `name` or a `source_name` is specified.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct UseSpec {
     /// Route capability types.
@@ -77,10 +80,13 @@ pub struct UseSpec {
     /// Target capability name, if any.
     #[serde(rename = "use_name")]
     pub name: Option<Name>,
+    /// Target capability source name, if any.
+    #[serde(rename = "use_source_name")]
+    pub source_name: Option<Name>,
 }
 
 /// Match a `UseDecl` to a `UseSpec` when types match and spec'd `name` and/or
-/// `path` matches.
+/// `path` and/or `source_name` matches.
 impl Matches<UseDecl> for UseSpec {
     const NAME: &'static str = USE_SPEC_NAME;
     const OTHER_NAME: &'static str = USE_DECL_NAME;
@@ -88,7 +94,9 @@ impl Matches<UseDecl> for UseSpec {
     fn matches(&self, other: &UseDecl) -> Result<bool> {
         Ok(self.type_name == other.into()
             && (self.path.is_none() || self.path.as_ref() == other.path())
-            && (self.name.is_none() || self.name.as_ref() == other.name()))
+            && (self.name.is_none() || self.name.as_ref() == other.name())
+            && (self.source_name.is_none()
+                || self.source_name.as_ref().unwrap() == other.source_name()))
     }
 }
 
@@ -535,7 +543,7 @@ impl RouteSourcesController {
                 Err(routing::error::ComponentInstanceError::InstanceNotFound { .. })
                     if component_routes.skip_if_target_node_missing =>
                 {
-                    continue
+                    continue;
                 }
                 e @ Err(_) => e.context(format!(
                     "{}; target instance: {}",
@@ -577,9 +585,9 @@ impl RouteSourcesController {
 #[cfg(test)]
 mod tests {
     use super::{
-        Matches, RouteMatch, RouteSourcesConfig, RouteSourcesController, RouteSourcesSpec,
-        SourceDeclSpec, SourceSpec, UseSpec, MISSING_TARGET_INSTANCE, ROUTE_LISTS_INCOMPLETE,
-        ROUTE_LISTS_OVERLAP,
+        MISSING_TARGET_INSTANCE, Matches, ROUTE_LISTS_INCOMPLETE, ROUTE_LISTS_OVERLAP, RouteMatch,
+        RouteSourcesConfig, RouteSourcesController, RouteSourcesSpec, SourceDeclSpec, SourceSpec,
+        UseSpec,
     };
     use crate::verify::route_sources::{RouteSourceError, Source, VerifyRouteSourcesResult};
     use anyhow::Result;
@@ -592,7 +600,7 @@ mod tests {
     use cm_rust_testing::*;
     use cm_types::{Path, Url};
     use fidl_fuchsia_io as fio;
-    use fuchsia_merkle::{Hash, HASH_SIZE};
+    use fuchsia_merkle::{HASH_SIZE, Hash};
     use maplit::{hashmap, hashset};
     use moniker::Moniker;
     use routing::environment::RunnerRegistry;
@@ -613,12 +621,13 @@ mod tests {
 
     #[fuchsia::test]
     fn test_match_some_only() {
-        // Match Some(path), ignoring None name.
+        // Match Some(path), ignoring None name and source_name.
         assert!(
             UseSpec {
                 type_name: CapabilityTypeName::Storage,
                 path: Some(Path::from_str("/path").unwrap()),
                 name: None,
+                source_name: None,
             }
             .matches(
                 &UseStorageDecl {
@@ -631,12 +640,32 @@ mod tests {
             .unwrap()
                 == true
         );
-        // Match Some(name), ignoring None path.
+        // Match Some(name), ignoring None path and source_name.
         assert!(
             UseSpec {
                 type_name: CapabilityTypeName::Storage,
                 path: None,
                 name: Some("name".parse().unwrap()),
+                source_name: None,
+            }
+            .matches(
+                &UseStorageDecl {
+                    source_name: "name".parse().unwrap(),
+                    target_path: Path::from_str("/path").unwrap(),
+                    availability: Availability::Required,
+                }
+                .into()
+            )
+            .unwrap()
+                == true
+        );
+        // Match Some(source_name), ignoring None path and name.
+        assert!(
+            UseSpec {
+                type_name: CapabilityTypeName::Storage,
+                path: None,
+                name: None,
+                source_name: Some("name".parse().unwrap()),
             }
             .matches(
                 &UseStorageDecl {
@@ -991,6 +1020,7 @@ mod tests {
                             type_name: CapabilityTypeName::Directory,
                             path: Some(Path::from_str("/data/from/provider").unwrap()),
                             name: None,
+                            source_name: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -1056,11 +1086,13 @@ mod tests {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str("/data/from/provider").unwrap()),
                         name: None,
+                        source_name: None,
                     },
                     UseSpec {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str("/data/from/root").unwrap()),
                         name: None,
+                        source_name: None,
                     },
                 ],
                 routes_to_verify: vec![],
@@ -1098,16 +1130,19 @@ mod tests {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str("/data/from/provider").unwrap()),
                         name: None,
+                        source_name: None,
                     },
                     UseSpec {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str("/data/from/root").unwrap()),
                         name: None,
+                        source_name: None,
                     },
                     UseSpec {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str("/new/dir/route").unwrap()),
                         name: None,
+                        source_name: None,
                     },
                 ],
                 routes_to_verify: vec![],
@@ -1141,6 +1176,7 @@ mod tests {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str("/data/from/root").unwrap()),
                         name: None,
+                        source_name: None,
                     },
                 ],
                 routes_to_verify: vec![
@@ -1154,6 +1190,7 @@ mod tests {
                             type_name: CapabilityTypeName::Directory,
                             path: Some(Path::from_str("/data/from/provider").unwrap()),
                             name: None,
+                            source_name: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -1213,6 +1250,7 @@ mod tests {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str("/data/from/root").unwrap()),
                         name: None,
+                        source_name: None,
                     },
                 ],
                 routes_to_verify: vec![
@@ -1226,6 +1264,7 @@ mod tests {
                             type_name: CapabilityTypeName::Directory,
                             path: Some(Path::from_str("/data/from/provider").unwrap()),
                             name: None,
+                            source_name: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -1286,6 +1325,7 @@ mod tests {
                             type_name: CapabilityTypeName::Directory,
                             path: Some(Path::from_str("/data/from/root").unwrap()),
                             name: None,
+                            source_name: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::root(),
@@ -1309,6 +1349,7 @@ mod tests {
                             type_name: CapabilityTypeName::Directory,
                             path: Some(Path::from_str("/data/from/provider").unwrap()),
                             name: None,
+                            source_name: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -1390,6 +1431,7 @@ mod tests {
                                 type_name: CapabilityTypeName::Directory,
                                 path: Some(Path::from_str("/data/from/root").unwrap()),
                                 name: None,
+                                source_name: None,
                             },
                             source: SourceSpec {
                                 moniker: Moniker::root(),
@@ -1412,6 +1454,7 @@ mod tests {
                                 type_name: CapabilityTypeName::Directory,
                                 path: Some(Path::from_str("/data/from/provider").unwrap()),
                                 name: None,
+                                source_name: None,
                             },
                             source: SourceSpec {
                                 moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -1484,11 +1527,13 @@ mod tests {
                         // This is the source name of the route, but
                         // directory uses are matched by target path.
                         name: Some(source_name.parse().unwrap()),
+                        source_name: None,
                     },
                     UseSpec {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str("/data/from/root").unwrap()),
                         name: None,
+                        source_name: None,
                     },
                 ],
                 routes_to_verify: vec![],
@@ -1534,11 +1579,13 @@ mod tests {
                         // This is the source name of the route, but
                         // directory uses are matched by target path.
                         name: Some(source_name.parse().unwrap()),
+                        source_name: None,
                     },
                     UseSpec {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str("/data/from/root").unwrap()),
                         name: None,
+                        source_name: None,
                     },
                 ],
                 routes_to_verify: vec![],
@@ -1579,11 +1626,13 @@ mod tests {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str("/data/from/provider").unwrap()),
                         name: None,
+                        source_name: None,
                     },
                     UseSpec {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str("/data/from/root").unwrap()),
                         name: None,
+                        source_name: None,
                     },
                     // Unmatched `routes_to_skip` entry will be skipped; this
                     // pattern is allowed so that soft transitions that update
@@ -1593,6 +1642,7 @@ mod tests {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str(&bad_path).unwrap()),
                         name: None,
+                        source_name: None,
                     },
                 ],
                 routes_to_verify: vec![],
@@ -1621,11 +1671,13 @@ mod tests {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str("/data/from/provider").unwrap()),
                         name: None,
+                        source_name: None,
                     },
                     UseSpec {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str(dup_name).unwrap()),
                         name: None,
+                        source_name: None,
                     },
                     // Intentional error: Duplicate match for same
                     // route-to-skip.
@@ -1633,6 +1685,7 @@ mod tests {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str(dup_name).unwrap()),
                         name: None,
+                        source_name: None,
                     },
                 ],
                 routes_to_verify: vec![],
@@ -1659,6 +1712,7 @@ mod tests {
                     type_name: CapabilityTypeName::Directory,
                     path: Some(Path::from_str("/data/from/root").unwrap()),
                     name: None,
+                    source_name: None,
                 }],
                 routes_to_verify: vec![
                     RouteMatch {
@@ -1666,6 +1720,7 @@ mod tests {
                             type_name: CapabilityTypeName::Directory,
                             path: Some(Path::from_str("/data/from/provider").unwrap()),
                             name: None,
+                            source_name: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -1687,6 +1742,7 @@ mod tests {
                             type_name: CapabilityTypeName::Directory,
                             path: Some(Path::from_str("/data/from/root").unwrap()),
                             name: None,
+                            source_name: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -1722,11 +1778,13 @@ mod tests {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str(dup_name).unwrap()),
                         name: None,
+                        source_name: None,
                     },
                     UseSpec {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str("/data/from/root").unwrap()),
                         name: None,
+                        source_name: None,
                     },
                 ],
                 routes_to_verify: vec![
@@ -1737,6 +1795,7 @@ mod tests {
                             type_name: CapabilityTypeName::Directory,
                             path: Some(Path::from_str(dup_name).unwrap()),
                             name: None,
+                            source_name: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -1780,6 +1839,7 @@ mod tests {
                         type_name: CapabilityTypeName::Directory,
                         path: Some(Path::from_str(dup_name).unwrap()),
                         name: None,
+                        source_name: None,
                     },
                 ],
                 routes_to_verify: vec![
@@ -1790,6 +1850,7 @@ mod tests {
                             type_name: CapabilityTypeName::Directory,
                             path: Some(Path::from_str(dup_name).unwrap()),
                             name: None,
+                            source_name: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -1834,6 +1895,7 @@ mod tests {
                             type_name: CapabilityTypeName::Directory,
                             path: Some(Path::from_str("/data/from/root").unwrap()),
                             name: None,
+                            source_name: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::root(),
@@ -1857,6 +1919,7 @@ mod tests {
                             type_name: CapabilityTypeName::Directory,
                             path: Some(Path::from_str("/data/from/provider").unwrap()),
                             name: None,
+                            source_name: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -1916,6 +1979,7 @@ mod tests {
                             type_name: CapabilityTypeName::Directory,
                             path: Some(Path::from_str("/data/from/root").unwrap()),
                             name: None,
+                            source_name: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::root(),
@@ -1939,6 +2003,7 @@ mod tests {
                             type_name: CapabilityTypeName::Directory,
                             path: Some(Path::from_str("/data/from/provider").unwrap()),
                             name: None,
+                            source_name: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),
@@ -1998,6 +2063,7 @@ mod tests {
                             type_name: CapabilityTypeName::Directory,
                             path: Some(Path::from_str("/data/from/root").unwrap()),
                             name: None,
+                            source_name: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::root(),
@@ -2021,6 +2087,7 @@ mod tests {
                             type_name: CapabilityTypeName::Directory,
                             path: Some(Path::from_str("/data/from/provider").unwrap()),
                             name: None,
+                            source_name: None,
                         },
                         source: SourceSpec {
                             moniker: Moniker::parse_str("one_dir_provider").unwrap(),

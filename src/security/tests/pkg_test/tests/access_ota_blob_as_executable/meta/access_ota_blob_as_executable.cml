@@ -190,6 +190,15 @@
         },
         {
             config: [
+                "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
+                "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
+            ],
+            from: "void",
+            to: "#pkg-resolver",
+            availability: "optional",
+        },
+        {
+            config: [
                 "fuchsia.blobfs.CacheEvictionPolicy",
                 "fuchsia.blobfs.WriteCompressionAlgorithm",
                 "fuchsia.fshost.DisableAutomount",

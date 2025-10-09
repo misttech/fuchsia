@@ -189,6 +189,15 @@
             availability: "optional",
         },
         {
+            config: [
+                "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
+                "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
+            ],
+            from: "void",
+            to: "#pkg-resolver",
+            availability: "optional",
+        },
+        {
             directory: "blob-exec",
             from: "#fshost",
             as: "blob",

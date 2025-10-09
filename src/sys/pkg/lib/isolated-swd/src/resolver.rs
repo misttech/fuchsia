@@ -168,6 +168,21 @@ pub(crate) mod for_tests {
                 .await
                 .unwrap();
 
+            realm_builder
+                .add_route(
+                    Route::new()
+                        .capability(Capability::configuration(
+                            "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
+                        ))
+                        .capability(Capability::configuration(
+                            "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
+                        ))
+                        .from(Ref::void())
+                        .to(&pkg_resolver),
+                )
+                .await
+                .unwrap();
+
             Ok(ResolverRealm { resolver: pkg_resolver, cache: cache_ref })
         }
 

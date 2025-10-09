@@ -58,6 +58,16 @@
                     use_path: "/svc/fuchsia.pkg.PackageResolver",
                 },
 
+                // TODO(https://fxbug.dev/448149624): verify the config capabilities routes.
+                {
+                    use_type: "config",
+                    use_source_name: "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
+                },
+                {
+                    use_type: "config",
+                    use_source_name: "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
+                },
+
                 // TODO(fxbug.dev/42072443) add verification for these routes (by uncommmenting
                 // the entries in routes_to_verify) once pkg_cache_resolver is removed.
                 {

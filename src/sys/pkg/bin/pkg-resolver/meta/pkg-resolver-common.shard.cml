@@ -62,6 +62,18 @@
             rights: [ "r*" ],
             path: "/config/ssl",
         },
+        {
+            config: "fuchsia.pkgresolver.BlobNetworkHeaderTimeoutSeconds",
+            key: "blob_network_header_timeout_seconds",
+            type: "uint32",
+            availability: "optional",
+        },
+        {
+            config: "fuchsia.pkgresolver.BlobNetworkBodyTimeoutSeconds",
+            key: "blob_network_body_timeout_seconds",
+            type: "uint32",
+            availability: "optional",
+        },
 
         // Note: in an ideal world, we'd declare a storage capability here for
         // /data, but we can't *quite* do that because TestRealmBuilder doesn't
