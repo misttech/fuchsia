@@ -11,7 +11,7 @@ use std::sync::{Mutex, MutexGuard};
 use std::task::{Context, Poll};
 
 use futures::task::AtomicWaker;
-use zerocopy::{little_endian, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
+use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned, little_endian};
 
 use crate::Address;
 
@@ -192,7 +192,9 @@ impl<'a> Packet<'a> {
         let payload_len = Into::<u64>::into(header.payload_len) as usize;
         let body_len = body.len();
         if payload_len > body_len {
-            return Err(std::io::Error::other(format!("payload length on usb vsock header ({payload_len}) was larger than available in buffer {body_len}")));
+            return Err(std::io::Error::other(format!(
+                "payload length on usb vsock header ({payload_len}) was larger than available in buffer {body_len}"
+            )));
         }
 
         let (payload, remain) = body.split_at(payload_len);
@@ -391,7 +393,7 @@ impl<B: DerefMut<Target = [u8]> + Unpin> UsbPacketFiller<B> {
     pub async fn write_vsock_data(&self, address: &Address, payload: &[u8]) -> usize {
         let header = &mut Header::new(PacketType::Data);
         header.set_address(&address);
-        let mut builder = self.wait_for_fillable(1).await;
+        let mut builder = self.wait_for_fillable(Header::SIZE + 1).await;
         let builder = builder.as_mut().unwrap();
         let writing = min(payload.len(), builder.available() - Header::SIZE);
         header.payload_len.set(writing as u32);
