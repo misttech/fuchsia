@@ -19,7 +19,6 @@
 #include <unistd.h>
 
 #include <fstream>
-#include <iostream>
 #include <thread>
 
 #include <asm-generic/socket.h>
@@ -1077,7 +1076,6 @@ class IcmpPingSocket : public testing::Test {
     ASSERT_TRUE(ping_group_range_file.is_open()) << strerror(errno);
     ping_group_range_file << contents;
     ping_group_range_file.close();
-    std::cerr << "++ set fail " << contents << std::endl;
     EXPECT_TRUE(ping_group_range_file.fail());
   }
 
@@ -1138,6 +1136,11 @@ TEST_F(IcmpPingSocket, CreateSocketV6) {
   ASSERT_EQ(setegid(original_gid), 0) << strerror(errno);
 }
 
+// Verifies that attempts to write an out-of-range value to the
+// `ping_group_range` file are rejected. Starnix and current versions of Linux
+// (e.g. 6.12) allow any values in range [0, 2^32-2] (i.e. any uint32_t, except
+// UINT32_MAX). Older Linux versions (e.g. 5.15) allow only values in range
+// [0, 2^31-1] (i.e. non-negative int32_t), which will cause this test to fail.
 TEST_F(IcmpPingSocket, SetInvalid) {
   TestWriteRangeFail("---");
   // Min and max cannot be higher than 2^32-2.
@@ -1146,7 +1149,7 @@ TEST_F(IcmpPingSocket, SetInvalid) {
   TestWriteRangeFail("4294967295 0");
   TestWriteRangeFail("4294967296 0");
 
-  // We should be able to set both values to 2^33-2.
+  // We should be able to set both values to 2^32-2.
   gid_range_.Set(0, 4294967294);
   gid_range_.Set(4294967294, 0);
 }
