@@ -493,7 +493,7 @@ mod test {
     const PKG1_BIN_HASH: &str = "72e1e7a504f32edf4f23e7e8a3542c1d77d12541142261cfe272decfa75f542d";
     const PKG1_LIB_HASH: &str = "8a8a5f07f935a4e8e1fd1a1eda39da09bb2438ec0adfb149679ddd6e7e1fbb4f";
 
-    async fn setup_repo<'a>(instance_name: &'a str, path: &'a Path) -> ffx_config::TestEnv {
+    async fn setup_repo<'a>(instance_name: &'a str, path: &'a Path) -> ffx_config::TestEnv<'a> {
         test_utils::make_pm_repo_dir(path).await;
 
         let env = ffx_config::test_init().unwrap();

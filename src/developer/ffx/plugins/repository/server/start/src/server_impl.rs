@@ -959,12 +959,12 @@ mod test {
         }
     }
 
-    async fn get_test_env() -> TestEnv {
+    async fn get_test_env() -> TestEnv<'static> {
         ffx_config::test_init().expect("test initialization")
     }
 
     async fn make_fake_rcs_proxy_connector(
-        test_env: &TestEnv,
+        test_env: &TestEnv<'_>,
     ) -> Connector<RemoteControlProxyHolder> {
         let (fake_repo, _) = FakeRepositoryManager::new();
         let (fake_engine, _content) = FakeEngine::new();
@@ -997,7 +997,9 @@ mod test {
         Connector::try_from_env(&env).await.expect("Could not make RCS test connector")
     }
 
-    async fn make_no_target_connector(test_env: &TestEnv) -> Connector<RemoteControlProxyHolder> {
+    async fn make_no_target_connector(
+        test_env: &TestEnv<'_>,
+    ) -> Connector<RemoteControlProxyHolder> {
         let fake_injector = FakeInjector {
             remote_factory_closure: Box::new(|| {
                 Box::pin(async move {
@@ -1022,7 +1024,9 @@ mod test {
         Connector::try_from_env(&env).await.expect("Could not make RCS test connector")
     }
 
-    async fn make_ambiguous_connector(test_env: &TestEnv) -> Connector<RemoteControlProxyHolder> {
+    async fn make_ambiguous_connector(
+        test_env: &TestEnv<'_>,
+    ) -> Connector<RemoteControlProxyHolder> {
         let fake_injector = FakeInjector {
             remote_factory_closure: Box::new(|| {
                 Box::pin(async move {

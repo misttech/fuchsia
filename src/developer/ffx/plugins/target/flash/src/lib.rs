@@ -428,23 +428,13 @@ Reboot the Target to the bootloader and re-run this command."
                     let (client, server) = mpsc::channel(1);
                     if writer.is_machine() {
                         try_join!(
-                            from_manifest(
-                                &self.ctx,
-                                client,
-                                cmd.to_manifest(&self.ctx),
-                                &mut proxy
-                            ),
+                            from_manifest(&self.ctx, client, cmd.to_manifest(&self.ctx), &mut proxy),
                             handle_event_machine(writer, server)
                         )
                         .map_err(fho::Error::from)?;
                     } else {
                         try_join!(
-                            from_manifest(
-                                &self.ctx,
-                                client,
-                                cmd.to_manifest(&self.ctx),
-                                &mut proxy
-                            ),
+                            from_manifest(&self.ctx, client, cmd.to_manifest(&self.ctx), &mut proxy),
                             handle_event_text(writer, server)
                         )
                         .map_err(fho::Error::from)?;
@@ -477,23 +467,13 @@ Reboot the Target to the bootloader and re-run this command."
                         let (client, server) = mpsc::channel(1);
                         if writer.is_machine() {
                             try_join!(
-                                from_manifest(
-                                    &self.ctx,
-                                    client,
-                                    cmd.to_manifest(&self.ctx),
-                                    &mut proxy
-                                ),
+                                from_manifest(&self.ctx, client, cmd.to_manifest(&self.ctx), &mut proxy),
                                 handle_event_machine(writer, server)
                             )
                             .map_err(fho::Error::from)?;
                         } else {
                             try_join!(
-                                from_manifest(
-                                    &self.ctx,
-                                    client,
-                                    cmd.to_manifest(&self.ctx),
-                                    &mut proxy
-                                ),
+                                from_manifest(&self.ctx, client, cmd.to_manifest(&self.ctx), &mut proxy),
                                 handle_event_text(writer, server)
                             )
                             .map_err(fho::Error::from)?;
@@ -529,23 +509,13 @@ Reboot the Target to the bootloader and re-run this command."
                         let (client, server) = mpsc::channel(1);
                         if writer.is_machine() {
                             try_join!(
-                                from_manifest(
-                                    &self.ctx,
-                                    client,
-                                    cmd.to_manifest(&self.ctx),
-                                    &mut proxy
-                                ),
+                                from_manifest(&self.ctx, client, cmd.to_manifest(&self.ctx), &mut proxy),
                                 handle_event_machine(writer, server)
                             )
                             .map_err(fho::Error::from)?;
                         } else {
                             try_join!(
-                                from_manifest(
-                                    &self.ctx,
-                                    client,
-                                    cmd.to_manifest(&self.ctx),
-                                    &mut proxy
-                                ),
+                                from_manifest(&self.ctx, client, cmd.to_manifest(&self.ctx), &mut proxy),
                                 handle_event_text(writer, server)
                             )
                             .map_err(fho::Error::from)?;

@@ -457,7 +457,7 @@ mod tests {
     }
 
     impl FakeTestEnv {
-        async fn new(test_env: &TestEnv) -> Self {
+        async fn new(test_env: &TestEnv<'_>) -> Self {
             let fake_rcs_proxy: RemoteControlProxy =
                 fake_proxy(move |req| handle_rcs_proxy_request(req));
             let fake_injector = FakeInjector {

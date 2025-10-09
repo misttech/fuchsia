@@ -1128,7 +1128,7 @@ mod tests {
         }
     }
 
-    pub(crate) async fn make_fake_sdk(env: &TestEnv) {
+    pub(crate) async fn make_fake_sdk(env: &TestEnv<'_>) {
         env.context
             .query("sdk.root")
             .level(Some(ConfigLevel::User))

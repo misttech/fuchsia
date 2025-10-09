@@ -129,7 +129,7 @@ pub struct EmuStartTool<T: EngineOperations> {
     #[command]
     cmd: StartCommand,
     engine_operations: T,
-    context: EnvironmentContext,
+    context: EnvironmentContext
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -201,10 +201,9 @@ impl<T: EngineOperations> EmuStartTool<T> {
         // Plug through the flags needed during template processing and GPT image construction
         emulator_configuration.guest.is_gpt = self.cmd.uefi;
         emulator_configuration.guest.product_bundle_path = product_bundle_path;
-        let engine_type = EngineType::from_str(
-            &self.cmd.engine(&self.context).unwrap_or_else(|_| "femu".to_string()),
-        )
-        .context("Reading engine type from ffx config.")?;
+        let engine_type =
+            EngineType::from_str(&self.cmd.engine(&self.context).unwrap_or_else(|_| "femu".to_string()))
+                .context("Reading engine type from ffx config.")?;
 
         // Get the staged instance, if any
         let mut existing = self.engine_operations.get_engine_by_name(&mut self.cmd.name).await?;
@@ -551,10 +550,9 @@ impl<T: EngineOperations> EmuStartTool<T> {
             engine.save_to_disk().await?;
             return Ok((true, engine));
         } else {
-            let engine_type = EngineType::from_str(
-                &self.cmd.engine(&self.context).unwrap_or_else(|_| "femu".to_string()),
-            )
-            .context("Reading engine type from ffx config.")?;
+            let engine_type =
+                EngineType::from_str(&self.cmd.engine(&self.context).unwrap_or_else(|_| "femu".to_string()))
+                    .context("Reading engine type from ffx config.")?;
             engine = self.engine_operations.new_engine(&new_config, engine_type).await?;
             let config = engine.emu_config_mut();
             config.guest.zbi_hash = new_zbi.clone();
@@ -748,18 +746,11 @@ mod tests {
         })
     }
 
-    async fn make_test_emu_start_tool(
-        context: &EnvironmentContext,
-        cmd: StartCommand,
-    ) -> EmuStartTool<MockEngineOperations> {
-        EmuStartTool {
-            context: context.clone(),
-            cmd,
-            engine_operations: MockEngineOperations::new(),
-        }
+    async fn make_test_emu_start_tool(context: &EnvironmentContext, cmd: StartCommand) -> EmuStartTool<MockEngineOperations> {
+        EmuStartTool {context: context.clone(), cmd, engine_operations: MockEngineOperations::new() }
     }
 
-    async fn make_fake_sdk(env: &TestEnv) {
+    async fn make_fake_sdk(env: &TestEnv<'_>) {
         env.context
             .query("sdk.root")
             .level(Some(ConfigLevel::User))

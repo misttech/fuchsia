@@ -910,7 +910,7 @@ mod test {
         assert!(buf.lines().is_empty());
     }
 
-    async fn write_test_ssh_keys(env: &ffx_config::TestEnv) {
+    async fn write_test_ssh_keys(env: &ffx_config::TestEnv<'_>) {
         // Set the ssh key paths to something, the contents do no matter for this test.
         env.context
             .query("ssh.pub")

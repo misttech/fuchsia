@@ -2630,7 +2630,7 @@ mod test {
         )
     }
 
-    async fn setup_ssh_keys(test_env: &TestEnv) -> Result<()> {
+    async fn setup_ssh_keys(test_env: &TestEnv<'_>) -> Result<()> {
         let pub_key = test_env.isolate_root.path().join("test_authorized_keys");
         let priv_key = test_env.isolate_root.path().join("test_ed25519_key");
         // Set the paths to use for the SSH keys
@@ -3129,7 +3129,7 @@ mod test {
     }
 
     async fn test_finds_target_connects_to_rcs_setup(
-        test_env: &TestEnv,
+        test_env: &TestEnv<'_>,
         modes: RcsTestArgs,
     ) -> DoctorLedger<MockWriter> {
         let (tx, rx) = oneshot::channel::<()>();
@@ -3808,7 +3808,7 @@ mod test {
     }
 
     async fn test_finds_target_with_missing_nodename_setup(
-        test_env: &TestEnv,
+        test_env: &TestEnv<'_>,
         mode: LedgerViewMode,
     ) -> DoctorLedger<MockWriter> {
         let (tx, rx) = oneshot::channel::<()>();
