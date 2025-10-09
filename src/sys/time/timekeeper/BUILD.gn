@@ -38,7 +38,6 @@ timekeeper_deps = [
   "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
   "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
   "//sdk/fidl/fuchsia.net.reachability:fuchsia.net.reachability_rust",
-  "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
   "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
   "//sdk/fidl/fuchsia.time:fuchsia.time_rust",
   "//sdk/fidl/fuchsia.time.alarms:fuchsia.time.alarms_rust",
