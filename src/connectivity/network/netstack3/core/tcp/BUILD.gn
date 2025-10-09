@@ -28,6 +28,7 @@ rustc_library_with_features("netstack3-tcp") {
     "src/socket/generators.rs",
     "src/state.rs",
     "src/testutil.rs",
+    "src/timestamp.rs",
     "src/uninstantiable.rs",
   ]
   deps = [

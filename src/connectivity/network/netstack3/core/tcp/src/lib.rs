@@ -31,6 +31,7 @@ mod internal {
     pub(super) mod state;
     #[cfg(test)]
     pub(super) mod testutil;
+    mod timestamp;
     pub(super) mod uninstantiable;
 }
 

@@ -112,6 +112,7 @@ pub struct TimestampOption {
 
 /// Like `TimestampOption` but with units appropriate for a timestamp option
 /// sent by us.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct TxTimestampOption {
     /// The timestamp value.
     ///
@@ -123,6 +124,7 @@ pub struct TxTimestampOption {
 
 /// Like `TimestampOption` but with units appropriate for a timestamp option
 /// sent by the peer.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct RxTimestampOption {
     /// The timestamp value.
     pub ts_val: Timestamp<Unitless>,
