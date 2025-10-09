@@ -382,10 +382,10 @@ impl<I: Interface + ?Sized> Session<I> {
             device_block_offset: _,
             block_count: _,
             _unused,
-            mut options,
+            options,
             vmo_offset: _,
             ..
-        } = &request.operation
+        } = &mut request.operation
         {
             if options.flags.contains(WriteFlags::PRE_BARRIER) {
                 self.interface.barrier()?;

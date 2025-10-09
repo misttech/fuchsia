@@ -154,7 +154,7 @@ rustc_macro("fxfs_macros") {
 }
 
 rustc_library("lib") {
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   name = "fxfs"
 
@@ -172,7 +172,7 @@ rustc_library("lib") {
 # This target includes additional hooks that are useful when
 # migrating file formats, but that shouldn't otherwise generally be exposed.
 rustc_library("migration") {
-  edition = "2021"
+  edition = "2024"
   name = "fxfs"
   features = [ "migration" ]
 
@@ -357,7 +357,7 @@ _fuzzers = [
 
 foreach(fuzzer, _fuzzers) {
   rustc_fuzzer(fuzzer) {
-    edition = "2021"
+    edition = "2024"
     deps = fxfs_deps + [
              "//src/lib/fuzzing/rust:fuzz",
              "//third_party/rust_crates:arbitrary",

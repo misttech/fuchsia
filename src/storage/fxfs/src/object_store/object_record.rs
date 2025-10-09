@@ -249,8 +249,8 @@ impl OrdUpperBound for ObjectKey {
     fn cmp_upper_bound(&self, other: &ObjectKey) -> std::cmp::Ordering {
         self.object_id.cmp(&other.object_id).then_with(|| match (&self.data, &other.data) {
             (
-                ObjectKeyData::Attribute(left_attr_id, AttributeKey::Extent(ref left_extent)),
-                ObjectKeyData::Attribute(right_attr_id, AttributeKey::Extent(ref right_extent)),
+                ObjectKeyData::Attribute(left_attr_id, AttributeKey::Extent(left_extent)),
+                ObjectKeyData::Attribute(right_attr_id, AttributeKey::Extent(right_extent)),
             ) => left_attr_id.cmp(right_attr_id).then(left_extent.cmp_upper_bound(right_extent)),
             _ => self.data.cmp(&other.data),
         })
@@ -261,8 +261,8 @@ impl OrdLowerBound for ObjectKey {
     fn cmp_lower_bound(&self, other: &ObjectKey) -> std::cmp::Ordering {
         self.object_id.cmp(&other.object_id).then_with(|| match (&self.data, &other.data) {
             (
-                ObjectKeyData::Attribute(left_attr_id, AttributeKey::Extent(ref left_extent)),
-                ObjectKeyData::Attribute(right_attr_id, AttributeKey::Extent(ref right_extent)),
+                ObjectKeyData::Attribute(left_attr_id, AttributeKey::Extent(left_extent)),
+                ObjectKeyData::Attribute(right_attr_id, AttributeKey::Extent(right_extent)),
             ) => left_attr_id.cmp(right_attr_id).then(left_extent.cmp_lower_bound(right_extent)),
             _ => self.data.cmp(&other.data),
         })
@@ -800,10 +800,10 @@ impl<'a> From<ItemRef<'a, ObjectKey, ObjectValue>>
                         data:
                             ObjectKeyData::Attribute(
                                 attribute_id, //
-                                AttributeKey::Extent(ref extent_key),
+                                AttributeKey::Extent(extent_key),
                             ),
                     },
-                value: ObjectValue::Extent(ref extent_value),
+                value: ObjectValue::Extent(extent_value),
                 ..
             } => Some((*object_id, *attribute_id, extent_key, extent_value)),
             _ => None,

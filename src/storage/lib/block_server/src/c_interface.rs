@@ -412,6 +412,9 @@ type zx_handle_t = zx::sys::zx_handle_t;
 type zx_status_t = zx::sys::zx_status_t;
 
 impl PartitionInfo {
+    /// # Safety
+    ///
+    /// [`self.name`] must point to valid, null-terminated C-string, or be a nullptr.
     unsafe fn to_rust(&self) -> super::DeviceInfo {
         super::DeviceInfo::Partition(super::PartitionInfo {
             device_flags: fblock::Flag::from_bits_truncate(self.device_flags),
@@ -421,7 +424,7 @@ impl PartitionInfo {
             name: if self.name.is_null() {
                 "".to_string()
             } else {
-                String::from_utf8_lossy(CStr::from_ptr(self.name).to_bytes()).to_string()
+                String::from_utf8_lossy(unsafe { CStr::from_ptr(self.name).to_bytes() }).to_string()
             },
             flags: self.flags,
             max_transfer_blocks: if self.max_transfer_size != MAX_TRANSFER_UNBOUNDED {
@@ -436,7 +439,7 @@ impl PartitionInfo {
 /// # Safety
 ///
 /// All callbacks in `callbacks` must be safe.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn block_server_new(
     partition_info: &PartitionInfo,
     callbacks: Callbacks,
@@ -447,13 +450,15 @@ pub unsafe extern "C" fn block_server_new(
         active_requests: ActiveRequests::default(),
         condvar: Condvar::new(),
         mbox: ExecutorMailbox::new(),
-        info: partition_info.to_rust(),
+        info: unsafe { partition_info.to_rust() },
     });
 
-    (session_manager.callbacks.start_thread)(
-        session_manager.callbacks.context,
-        Arc::into_raw(session_manager.clone()) as *const c_void,
-    );
+    unsafe {
+        (session_manager.callbacks.start_thread)(
+            session_manager.callbacks.context,
+            Arc::into_raw(session_manager.clone()) as *const c_void,
+        );
+    }
 
     let mbox = &session_manager.mbox;
     let mail = {
@@ -477,9 +482,9 @@ pub unsafe extern "C" fn block_server_new(
 /// # Safety
 ///
 /// `arg` must be the value passed to the `start_thread` callback.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn block_server_thread(arg: *const c_void) {
-    let session_manager = &*(arg as *const SessionManager);
+    let session_manager = unsafe { &*(arg as *const SessionManager) };
 
     let mut executor = fasync::LocalExecutor::default();
     let (abort_handle, registration) = AbortHandle::new_pair();
@@ -495,10 +500,10 @@ pub unsafe extern "C" fn block_server_thread(arg: *const c_void) {
 /// # Safety
 ///
 /// `arg` must be the value passed to the `start_thread` callback.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn block_server_thread_delete(arg: *const c_void) {
     let mail = {
-        let session_manager = Arc::from_raw(arg as *const SessionManager);
+        let session_manager = unsafe { Arc::from_raw(arg as *const SessionManager) };
         debug_assert!(Arc::strong_count(&session_manager) > 0);
         session_manager.mbox.post(Mail::Finished)
     };
@@ -515,21 +520,21 @@ pub unsafe extern "C" fn block_server_thread_delete(arg: *const c_void) {
 /// # Safety
 ///
 /// `block_server` must be valid.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn block_server_delete(block_server: *mut BlockServer) {
-    let _ = Box::from_raw(block_server);
+    let _ = unsafe { Box::from_raw(block_server) };
 }
 
 /// # Safety
 ///
 /// `block_server` must be valid.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn block_server_delete_async(
     block_server: *mut BlockServer,
     callback: ShutdownCallback,
     arg: *mut c_void,
 ) {
-    let block_server = Box::from_raw(block_server);
+    let block_server = unsafe { Box::from_raw(block_server) };
     let session_manager = block_server.server.session_manager.clone();
     let abort_handle = block_server.abort_handle.clone();
     session_manager.mbox.post(Mail::AsyncShutdown(block_server, callback, arg));
@@ -541,11 +546,11 @@ pub unsafe extern "C" fn block_server_delete_async(
 /// # Safety
 ///
 /// `block_server` and `handle` must be valid.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn block_server_serve(block_server: *const BlockServer, handle: zx_handle_t) {
-    let block_server = &*block_server;
+    let block_server = unsafe { &*block_server };
     let ehandle = &block_server.ehandle;
-    let handle = zx::Handle::from_raw(handle);
+    let handle = unsafe { zx::Handle::from_raw(handle) };
     ehandle.global_scope().spawn(async move {
         let _ = block_server
             .server
@@ -559,9 +564,9 @@ pub unsafe extern "C" fn block_server_serve(block_server: *const BlockServer, ha
 /// # Safety
 ///
 /// `session` must be valid.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn block_server_session_run(session: &Session) {
-    let session = Arc::from_raw(session);
+    let session = unsafe { Arc::from_raw(session) };
     session.run();
     let _ = Arc::into_raw(session);
 }
@@ -569,16 +574,16 @@ pub unsafe extern "C" fn block_server_session_run(session: &Session) {
 /// # Safety
 ///
 /// `session` must be valid.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn block_server_session_release(session: &Session) {
     session.terminate();
-    Arc::from_raw(session);
+    unsafe { Arc::from_raw(session) };
 }
 
 /// # Safety
 ///
 /// `block_server` must be valid.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn block_server_send_reply(
     block_server: &BlockServer,
     request_id: RequestId,

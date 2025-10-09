@@ -406,13 +406,13 @@ mod tests {
     fn test_extended_attribute_serialization_backwards_compatibility() {
         let xattrs = [(b"a", b"b"), (b"c", b"d"), (b"e", b"f")];
         let btree_map: BTreeMap<Box<[u8]>, Box<[u8]>> =
-            xattrs.iter().map(|(&k, &v)| (k.into(), v.into())).collect();
+            xattrs.iter().map(|&(&k, &v)| (k.into(), v.into())).collect();
 
         let serialized = bincode::serialize(&btree_map).unwrap();
 
         let extended_attributes: ExtendedAttributes = bincode::deserialize(&serialized).unwrap();
         let expected_xattrs: ExtendedAttributes =
-            xattrs.iter().map(|(&k, &v)| (k.into(), v.into())).collect();
+            xattrs.iter().map(|&(&k, &v)| (k.into(), v.into())).collect();
         assert_eq!(extended_attributes, expected_xattrs);
     }
 
@@ -420,13 +420,13 @@ mod tests {
     fn test_extended_attribute_serialization_forwards_compatibility() {
         let xattrs = [(b"a", b"b"), (b"c", b"d"), (b"e", b"f")];
         let extended_attributes: ExtendedAttributes =
-            xattrs.iter().map(|(&k, &v)| (k.into(), v.into())).collect();
+            xattrs.iter().map(|&(&k, &v)| (k.into(), v.into())).collect();
 
         let serialized = bincode::serialize(&extended_attributes).unwrap();
 
         let btree_map: BTreeMap<Box<[u8]>, Box<[u8]>> = bincode::deserialize(&serialized).unwrap();
         let expected_xattrs: BTreeMap<Box<[u8]>, Box<[u8]>> =
-            xattrs.iter().map(|(&k, &v)| (k.into(), v.into())).collect();
+            xattrs.iter().map(|&(&k, &v)| (k.into(), v.into())).collect();
         assert_eq!(btree_map, expected_xattrs);
     }
 }

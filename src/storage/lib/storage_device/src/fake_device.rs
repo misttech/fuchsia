@@ -233,7 +233,7 @@ impl Device for FakeDevice {
         let bs = self.allocator.block_size();
         let mut rng = rand::rng();
         let mut guard = self.inner.lock();
-        let Inner { ref mut data, ref mut blocks_written_since_last_barrier, .. } = &mut *guard;
+        let Inner { data, blocks_written_since_last_barrier, .. } = &mut *guard;
         log::info!("Discarding from {blocks_written_since_last_barrier:?}");
         let mut discarded = Vec::new();
         for block in blocks_written_since_last_barrier.drain(..) {

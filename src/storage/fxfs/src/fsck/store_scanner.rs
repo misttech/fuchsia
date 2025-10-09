@@ -1403,7 +1403,7 @@ pub(super) async fn scan_store(
                     None,
                     store.block_size(),
                 )?;
-                if let Some(mut oid) = parent {
+                if let &Some(mut oid) = parent {
                     if attributes.in_graveyard {
                         fsck.error(FsckError::ZombieDir(store_id, *object_id, oid))?;
                     }

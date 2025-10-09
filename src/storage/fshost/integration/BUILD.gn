@@ -9,7 +9,7 @@ import("//src/storage/fshost/fshost.gni")
 import("//tools/cmc/build/cmc.gni")
 
 rustc_library("fshost_test_fixture") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   sources = [
     "src/disk_builder.rs",
@@ -107,7 +107,7 @@ template("fshost_integration_test_component") {
   _test_bin = string_replace(target_name, "-", "_")
   _test_bin = "${_test_bin}_bin"
   rustc_test(_test_bin) {
-    edition = "2021"
+    edition = "2024"
     source_root = invoker.source_root
     sources = [
       "tests/config.rs",

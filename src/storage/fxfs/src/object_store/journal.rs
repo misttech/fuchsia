@@ -1056,7 +1056,7 @@ impl Journal {
                             });
                         }
                         JournalRecord::Commit => {
-                            if let Some(JournaledTransaction {
+                            if let Some(&mut JournaledTransaction {
                                 ref checkpoint,
                                 ref root_parent_mutations,
                                 ref mut end_offset,

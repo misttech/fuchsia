@@ -563,7 +563,7 @@ impl ObjectManager {
             let checkpoint = checkpoint.earliest();
             match &mut min_checkpoint {
                 None => min_checkpoint = Some(checkpoint),
-                Some(ref mut min_checkpoint) => {
+                Some(min_checkpoint) => {
                     if checkpoint.file_offset < min_checkpoint.file_offset {
                         *min_checkpoint = checkpoint;
                     }

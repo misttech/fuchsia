@@ -139,7 +139,7 @@ impl DeviceHolder {
         assert_eq!(Arc::strong_count(&self.device), 1);
     }
 
-    pub fn take_when_dropped(&self) -> impl Future<Output = DeviceHolder> {
+    pub fn take_when_dropped(&self) -> impl Future<Output = DeviceHolder> + use<> {
         let (sender, receiver) = channel::<DeviceHolder>();
         self.on_drop
             .set(sender)

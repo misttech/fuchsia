@@ -57,8 +57,8 @@ impl FatNode {
 
     pub fn as_node(&self) -> &(dyn Node + 'static) {
         match self {
-            FatNode::Dir(ref a) => a.as_ref() as &dyn Node,
-            FatNode::File(ref b) => b.as_ref() as &dyn Node,
+            FatNode::Dir(a) => a.as_ref() as &dyn Node,
+            FatNode::File(b) => b.as_ref() as &dyn Node,
         }
     }
 }

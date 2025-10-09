@@ -54,7 +54,9 @@ mod buffer_source {
         #[allow(clippy::mut_from_ref)]
         pub(super) unsafe fn sub_slice(&self, range: &Range<usize>) -> &mut [u8] {
             assert!(range.start < self.size && range.end <= self.size);
-            std::slice::from_raw_parts_mut(self.base.add(range.start), range.end - range.start)
+            unsafe {
+                std::slice::from_raw_parts_mut(self.base.add(range.start), range.end - range.start)
+            }
         }
 
         /// Commits the range in memory to avoid future page faults.
@@ -106,7 +108,7 @@ mod buffer_source {
         #[allow(clippy::mut_from_ref)]
         pub(super) unsafe fn sub_slice(&self, range: &Range<usize>) -> &mut [u8] {
             assert!(range.start < self.size() && range.end <= self.size());
-            &mut (&mut *self.data.get())[range.start..range.end]
+            unsafe { &mut (&mut *self.data.get())[range.start..range.end] }
         }
     }
 }

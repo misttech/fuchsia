@@ -575,7 +575,7 @@ impl FatDirectory {
                 node.open_ref(filesystem)?;
                 closer.add(node.clone());
                 match node {
-                    FatNode::Dir(ref mut node_dir) => {
+                    FatNode::Dir(node_dir) => {
                         // Within `rename_internal` we will attempt to borrow the source and
                         // destination directories. This can't be the destination directory, but we
                         // must check that the directory here is not the same as the source
@@ -586,7 +586,7 @@ impl FatDirectory {
                         borrowed_dir = node_dir.borrow_dir_mut(filesystem).unwrap();
                         ExistingRef::Dir(&mut *borrowed_dir)
                     }
-                    FatNode::File(ref mut node_file) => {
+                    FatNode::File(node_file) => {
                         borrowed_file = node_file.borrow_file_mut(filesystem).unwrap();
                         ExistingRef::File(&mut *borrowed_file)
                     }

@@ -351,7 +351,7 @@ impl<SM: SessionManager> BlockServer<SM> {
     async fn handle_request(
         &self,
         request: fvolume::VolumeRequest,
-    ) -> Result<Option<impl Future<Output = Result<(), Error>> + Send>, Error> {
+    ) -> Result<Option<impl Future<Output = Result<(), Error>> + Send + use<SM>>, Error> {
         match request {
             fvolume::VolumeRequest::GetInfo { responder } => match self.device_info().await {
                 Ok(info) => {

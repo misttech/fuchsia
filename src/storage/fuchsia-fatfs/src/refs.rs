@@ -33,7 +33,7 @@ impl FatfsDirRef {
     /// Wraps and erases the lifetime. The caller assumes responsibility for
     /// ensuring the associated filesystem lives long enough and is pinned.
     pub unsafe fn from(dir: Dir<'_>) -> Self {
-        FatfsDirRef { inner: Some(std::mem::transmute(dir)), open_count: 1 }
+        FatfsDirRef { inner: Some(unsafe { std::mem::transmute(dir) }), open_count: 1 }
     }
 
     pub fn empty() -> Self {
@@ -47,7 +47,7 @@ impl FatfsDirRef {
         parent: Option<&Arc<FatDirectory>>,
         name: &str,
     ) -> Result<(), Status> {
-        if self.open_count == 0 { Ok(()) } else { self.reopen(fs, parent, name) }
+        if self.open_count == 0 { Ok(()) } else { unsafe { self.reopen(fs, parent, name) } }
     }
 
     unsafe fn reopen(
@@ -63,7 +63,7 @@ impl FatfsDirRef {
         } else {
             fs.root_dir()
         };
-        self.inner.replace(std::mem::transmute(dir));
+        self.inner.replace(unsafe { std::mem::transmute(dir) });
         Ok(())
     }
 
@@ -78,7 +78,9 @@ impl FatfsDirRef {
             Err(Status::UNAVAILABLE)
         } else {
             if self.open_count == 0 {
-                self.reopen(fs, parent, name)?;
+                unsafe {
+                    self.reopen(fs, parent, name)?;
+                }
             }
             self.open_count += 1;
             Ok(())
@@ -138,7 +140,7 @@ impl FatfsFileRef {
     /// Wraps and erases the lifetime. The caller assumes responsibility for
     /// ensuring the associated filesystem lives long enough and is pinned.
     pub unsafe fn from(file: File<'_>) -> Self {
-        FatfsFileRef { inner: Some(std::mem::transmute(file)), open_count: 1 }
+        FatfsFileRef { inner: Some(unsafe { std::mem::transmute(file) }), open_count: 1 }
     }
 
     /// Reopen the FatfsDirRef if open count > 0.
@@ -148,7 +150,7 @@ impl FatfsFileRef {
         parent: &FatDirectory,
         name: &str,
     ) -> Result<(), Status> {
-        if self.open_count == 0 { Ok(()) } else { self.reopen(fs, parent, name) }
+        if self.open_count == 0 { Ok(()) } else { unsafe { self.reopen(fs, parent, name) } }
     }
 
     unsafe fn reopen(
@@ -158,7 +160,7 @@ impl FatfsFileRef {
         name: &str,
     ) -> Result<(), Status> {
         let file = parent.find_child(fs, name)?.ok_or(Status::NOT_FOUND)?.to_file();
-        self.inner.replace(std::mem::transmute(file));
+        self.inner.replace(unsafe { std::mem::transmute(file) });
         Ok(())
     }
 
@@ -172,7 +174,9 @@ impl FatfsFileRef {
             Err(Status::UNAVAILABLE)
         } else {
             if self.open_count == 0 {
-                self.reopen(fs, parent.ok_or(Status::BAD_HANDLE)?, name)?;
+                unsafe {
+                    self.reopen(fs, parent.ok_or(Status::BAD_HANDLE)?, name)?;
+                }
             }
             self.open_count += 1;
             Ok(())

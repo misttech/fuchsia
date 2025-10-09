@@ -138,7 +138,7 @@ impl WeakNode {
     }
 
     unsafe fn is_type<T: 'static>(&self) -> bool {
-        (self.vtable.type_id)() == TypeId::of::<T>()
+        unsafe { (self.vtable.type_id)() == TypeId::of::<T>() }
     }
 }
 

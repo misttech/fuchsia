@@ -17,7 +17,7 @@ use zx::{self as zx, AsHandleRef};
 
 const FVM_DRIVER_PATH: &str = "fvm.cm";
 
-extern "C" {
+unsafe extern "C" {
     // This function initializes FVM on a fuchsia.hardware.block.Block device
     // with a given slice size.
     fn fvm_init(device: zx_handle_t, slice_size: usize) -> zx_status_t;

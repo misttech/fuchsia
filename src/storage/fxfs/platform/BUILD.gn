@@ -81,7 +81,7 @@ platform_deps = [
 ]
 
 rustc_library("platform") {
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   name = "fxfs-platform"
   deps = []
@@ -121,7 +121,7 @@ rustc_library("platform") {
 
 rustc_library("fxfs-testing") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   features = [ "testing" ]
   sources = platform_sources + [ "src/testing.rs" ]
   source_root = "src/testing.rs"

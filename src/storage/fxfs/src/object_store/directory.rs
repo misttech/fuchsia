@@ -1096,7 +1096,7 @@ impl<S: HandleOwner> Directory<S> {
         let mut mutation = self.store().txn_get_object_mutation(transaction, object_id).await?;
         if let ObjectValue::Object {
             kind: ObjectKind::Directory { sub_dirs, .. },
-            ref mut attributes,
+            attributes,
             ..
         } = &mut mutation.item.value
         {

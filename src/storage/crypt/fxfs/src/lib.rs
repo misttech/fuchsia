@@ -168,7 +168,7 @@ impl CryptService {
                         CryptRequest::CreateKey { owner, purpose, responder } => {
                             responder
                                 .send(match &self.create_key(owner, purpose) {
-                                    Ok((id, ref wrapped, ref key)) => Ok((id, wrapped, key)),
+                                    Ok((id, wrapped, key)) => Ok((id, wrapped, key)),
                                     Err(e) => Err(*e),
                                 })
                                 .unwrap_or_else(|e| {

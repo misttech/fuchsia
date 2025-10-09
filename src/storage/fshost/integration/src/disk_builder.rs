@@ -823,7 +823,7 @@ impl DiskBuilder {
 /// Helper function to return a set of the volumes found within a given `disk`, which must have a
 /// valid GPT containing an fxfs partition in the first entry.
 pub async fn list_all_fxfs_volumes(disk: &Disk) -> HashSet<String> {
-    let Disk::Prebuilt(ref vmo, _) = disk else {
+    let Disk::Prebuilt(vmo, _) = disk else {
         panic!("list_all_fxfs_volumes only supports prebuilt disks");
     };
     let server = Arc::new(VmoBackedServer::from_vmo(

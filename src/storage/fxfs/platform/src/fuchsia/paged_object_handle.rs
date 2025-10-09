@@ -254,7 +254,7 @@ impl PagedObjectHandle {
 
     // If there are keys to fetch, a future is returned that will prefetch them into the cache.
     // The caller must ensure that the object exists until this future is complete.
-    pub fn pre_fetch_keys(&self) -> Option<impl Future<Output = ()>> {
+    pub fn pre_fetch_keys(&self) -> Option<impl Future<Output = ()> + use<>> {
         self.handle.pre_fetch_keys()
     }
 

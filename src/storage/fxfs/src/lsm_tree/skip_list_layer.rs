@@ -163,7 +163,7 @@ impl<K, V> SkipListLayer<K, V> {
         node: NonNull<SkipListNode<K, V>>,
     ) -> Option<NonNull<SkipListNode<K, V>>> {
         self.allocated.fetch_sub(1, atomic::Ordering::Relaxed);
-        Box::from_raw(node.as_ptr()).pointers.get(0)
+        unsafe { Box::from_raw(node.as_ptr()).pointers.get(0) }
     }
 }
 

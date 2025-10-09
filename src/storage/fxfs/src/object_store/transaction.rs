@@ -605,8 +605,8 @@ impl AssocObj<'_> {
     pub fn map<R, F: FnOnce(&dyn AssociatedObject) -> R>(&self, f: F) -> Option<R> {
         match self {
             AssocObj::None => None,
-            AssocObj::Borrowed(ref b) => Some(f(*b)),
-            AssocObj::Owned(ref o) => Some(f(o.as_ref())),
+            AssocObj::Borrowed(b) => Some(f(*b)),
+            AssocObj::Owned(o) => Some(f(o.as_ref())),
         }
     }
 }
@@ -1452,17 +1452,17 @@ impl LockEntry {
             return;
         }
 
-        let waker = &*self.head;
+        let waker = unsafe { &*self.head };
 
         if waker.is_upgrade {
             if self.read_count > 0 {
                 return;
             }
-        } else if !self.is_allowed(waker.target_state, true) {
+        } else if !unsafe { self.is_allowed(waker.target_state, true) } {
             return;
         }
 
-        self.pop_and_wake();
+        unsafe { self.pop_and_wake() };
 
         // If the waker was a write lock, we can't wake any more up, but otherwise, we can keep
         // waking up readers.
@@ -1470,20 +1470,20 @@ impl LockEntry {
             return;
         }
 
-        while !self.head.is_null() && (*self.head).target_state == LockState::ReadLock {
-            self.pop_and_wake();
+        while !self.head.is_null() && unsafe { (*self.head).target_state } == LockState::ReadLock {
+            unsafe { self.pop_and_wake() };
         }
     }
 
     unsafe fn pop_and_wake(&mut self) {
-        let waker = &*self.head;
+        let waker = unsafe { &*self.head };
 
         // Pop the waker.
-        self.head = *waker.next.get();
+        self.head = unsafe { *waker.next.get() };
         if self.head.is_null() {
             self.tail = std::ptr::null()
         } else {
-            *(*self.head).prev.get() = std::ptr::null();
+            unsafe { *(*self.head).prev.get() = std::ptr::null() };
         }
 
         // Adjust our state accordingly.
@@ -1495,7 +1495,7 @@ impl LockEntry {
 
         // Now wake the task.
         if let WakerState::Registered(waker) =
-            std::mem::replace(&mut *waker.waker.get(), WakerState::Woken)
+            std::mem::replace(unsafe { &mut *waker.waker.get() }, WakerState::Woken)
         {
             waker.wake();
         }
@@ -1506,20 +1506,23 @@ impl LockEntry {
     }
 
     unsafe fn remove_waker(&mut self, waker: &LockWaker) {
-        let is_first = (*waker.prev.get()).is_null();
-        if is_first {
-            self.head = *waker.next.get();
-        } else {
-            *(**waker.prev.get()).next.get() = *waker.next.get();
-        }
-        if (*waker.next.get()).is_null() {
-            self.tail = *waker.prev.get();
-        } else {
-            *(**waker.next.get()).prev.get() = *waker.prev.get();
-        }
-        if is_first {
-            // We must call wake in case we erased a pending write lock and readers can now proceed.
-            self.wake();
+        unsafe {
+            let is_first = (*waker.prev.get()).is_null();
+            if is_first {
+                self.head = *waker.next.get();
+            } else {
+                *(**waker.prev.get()).next.get() = *waker.next.get();
+            }
+            if (*waker.next.get()).is_null() {
+                self.tail = *waker.prev.get();
+            } else {
+                *(**waker.next.get()).prev.get() = *waker.prev.get();
+            }
+            if is_first {
+                // We must call wake in case we erased a pending write lock and readers can now
+                // proceed.
+                self.wake();
+            }
         }
     }
 
@@ -1539,7 +1542,8 @@ impl LockEntry {
                 // Always allow reads unless there's an upgrade waiting.  We have to
                 // always allow reads in this state because tasks that have locks in
                 // the Locked state can later try and acquire ReadLock.
-                target_state == LockState::ReadLock && (is_head || !(*self.head).is_upgrade)
+                target_state == LockState::ReadLock
+                    && (is_head || unsafe { !(*self.head).is_upgrade })
             }
             LockState::WriteLock => false,
         }
@@ -1547,7 +1551,7 @@ impl LockEntry {
 
     unsafe fn downgrade_lock(&mut self) {
         assert_eq!(std::mem::replace(&mut self.state, LockState::Locked), LockState::WriteLock);
-        self.wake();
+        unsafe { self.wake() };
     }
 }
 

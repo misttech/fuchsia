@@ -433,7 +433,7 @@ impl Component {
                     info!("Debug commands are not valid unless component is started.");
                     bail!("Component not started");
                 }
-                State::Running(RunningState { ref fs, volumes, .. }) => {
+                State::Running(RunningState { fs, volumes, .. }) => {
                     (fs.deref().deref().clone(), volumes.clone())
                 }
             };
@@ -449,7 +449,7 @@ impl Component {
 
     async fn handle_volumes_requests(&self, mut stream: VolumesRequestStream) {
         let volumes =
-            if let State::Running(RunningState { ref volumes, .. }) = &*self.state.lock().await {
+            if let State::Running(RunningState { volumes, .. }) = &*self.state.lock().await {
                 volumes.clone()
             } else {
                 let _ = stream.into_inner().0.shutdown_with_epitaph(zx::Status::BAD_STATE);
@@ -519,7 +519,7 @@ impl Component {
         mut stream: VolumeInstallerRequestStream,
     ) -> Result<(), Error> {
         let volumes =
-            if let State::Running(RunningState { ref volumes, .. }) = &*self.state.lock().await {
+            if let State::Running(RunningState { volumes, .. }) = &*self.state.lock().await {
                 volumes.clone()
             } else {
                 let _ = stream.into_inner().0.shutdown_with_epitaph(zx::Status::BAD_STATE);
