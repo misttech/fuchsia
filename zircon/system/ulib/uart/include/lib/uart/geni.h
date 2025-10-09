@@ -396,6 +396,10 @@ class Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_GENI_UART, zbi_dcfg_s
 
   template <class IoProvider>
   uint32_t TxReady(IoProvider& io) {
+    if (prepared_for_suspend_) {
+      return 0;
+    }
+
     // If we have a job in progress, we need to wait until the job finishes.
     auto geni_status = GeniStatusRegister::Get().ReadFrom(io.io());
     if (geni_status.m_command_active()) {
@@ -417,6 +421,10 @@ class Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_GENI_UART, zbi_dcfg_s
 
   template <class IoProvider, typename It1, typename It2>
   auto Write(IoProvider& io, uint32_t ready_space, It1 it, const It2& end) {
+    if (prepared_for_suspend_) {
+      return it;
+    }
+
     // If we have no space, do nothing.
     if (ready_space == 0) {
       return it;
@@ -541,6 +549,20 @@ class Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_GENI_UART, zbi_dcfg_s
       using GuardType = MemberOf::template Guard<typename MemberOf::DefaultLockPolicy>;
       GuardType guard(&lock, SOURCE_TAG);
 
+      // Note, make sure we are in the lock before checking this flag.  In
+      // theory, we should have already synchronized with the interrupt handler
+      // during entry to suspend, and we would want to use an ASSERT here (not
+      // that it is possible to ASSERT in the lowest level UART driver).  Right
+      // now, there is a race condition where the IRQ handler could have (in
+      // theory) reached the point where it is draining the RX queue as the
+      // device is prepared for suspend and de-clocked.  In practice, this
+      // cannot happen today as an artifact of how the kernel enters lowest
+      // power suspend states, but in the abstract, we probably should not be
+      // relying on this externally enforced invariant.
+      if (prepared_for_suspend_) {
+        return;
+      }
+
       // Read the IRQ status registers, but mask them with the current value in
       // the IRQ Enable register.
       //
@@ -624,6 +646,10 @@ class Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_GENI_UART, zbi_dcfg_s
 
   template <typename IoProvider, typename IrqProvider>
   void PrepareForSuspend(IoProvider& io, IrqProvider& irq) {
+    if (prepared_for_suspend_) {
+      return;
+    }
+
     // Disable our top level interrupt, but leave individual device level
     // interrupts as they are. We will handle them when we resume.
     irq.SetInterruptsEnabled(false);
@@ -666,10 +692,15 @@ class Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_GENI_UART, zbi_dcfg_s
       // No operations, just spin.
     }
     SecondaryIrqStatusClearRegister::Get().FromValue(0).set_command_cancel(1).WriteTo(io.io());
+    prepared_for_suspend_ = true;
   }
 
   template <typename IoProvider, typename IrqProvider>
   void WakeupFromSuspend(IoProvider& io, IrqProvider& irq) {
+    if (!prepared_for_suspend_) {
+      return;
+    }
+
     // Did we have a TX command in progress when we suspended?  If so, re-pack
     // the FIFO from our shadow buffer and finish up the job.
     if (last_tx_job_size_ > 0) {
@@ -681,6 +712,7 @@ class Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_GENI_UART, zbi_dcfg_s
 
     // Re-enable the top level interrupt.
     irq.SetInterruptsEnabled(true);
+    prepared_for_suspend_ = false;
   }
 
  private:
@@ -726,6 +758,10 @@ class Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_GENI_UART, zbi_dcfg_s
   //
   std::array<uint8_t, kTxFifoDepth * kFifoWidth> tx_fifo_shadow_;
   uint32_t last_tx_job_size_{0};
+
+  // A flag indicating that we have prepared for suspend, and that attempts to
+  // write to the UART should be rejected for now.
+  bool prepared_for_suspend_{false};
 };
 
 }  // namespace uart::geni
