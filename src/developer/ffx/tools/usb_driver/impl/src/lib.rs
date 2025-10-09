@@ -29,6 +29,8 @@ use adapters::WrapStream;
 const CURRENT_VERSION: u32 = 0;
 
 trait WriteWithLengthPrefix: AsyncWriteExt + Unpin {
+    /// Write the entire contents of the buffer, preceded by the length of the
+    /// buffer as a 32-bit little-endian unsigned integer.
     async fn write_with_length(&mut self, message: &[u8]) -> std::io::Result<()> {
         self.write_all(&u32::try_from(message.len()).unwrap().to_le_bytes()).await?;
         self.write_all(message).await
@@ -36,6 +38,31 @@ trait WriteWithLengthPrefix: AsyncWriteExt + Unpin {
 }
 
 impl<T: AsyncWriteExt + Unpin> WriteWithLengthPrefix for T {}
+
+trait ReadWithLengthPrefix: AsyncReadExt + Unpin {
+    /// Read a parcel of bytes where the first four bytes contain the length of
+    /// the following data as a 32-bit unsigned little-endian integer. Fails if
+    /// it can't read the entire parcel.
+    async fn read_with_length(&mut self) -> std::io::Result<Option<Vec<u8>>> {
+        let mut buf = [0u8; 4];
+
+        let got = self.read(&mut buf).await?;
+
+        if got == 0 {
+            return Ok(None);
+        }
+
+        if got < buf.len() {
+            self.read_exact(&mut buf[..got]).await?;
+        }
+
+        let mut buf = vec![0u8; u32::from_le_bytes(buf) as usize];
+        self.read_exact(&mut buf).await?;
+        Ok(Some(buf))
+    }
+}
+
+impl<T: AsyncReadExt + Unpin> ReadWithLengthPrefix for T {}
 
 /// Represents an active port listen.
 struct Listener {
@@ -325,11 +352,7 @@ impl HostDriver {
 
     /// Handle a new connection from a tool on our socket.
     async fn handle_connection(&self, mut stream: UnixStream) -> anyhow::Result<()> {
-        let mut initial_message_len = [0u8; 4];
-        stream.read_exact(&mut initial_message_len).await?;
-        let initial_message_len = u32::from_le_bytes(initial_message_len);
-        let mut buf = vec![0u8; initial_message_len as usize];
-        stream.read_exact(&mut buf).await?;
+        let Some(buf) = stream.read_with_length().await? else { return Ok(()) };
 
         let (header, body) = fidl::encoding::decode_transaction_header(&buf)?;
         match header.ordinal {
@@ -547,21 +570,31 @@ impl HostDriver {
         let (write_sender, mut writes) = mpsc::unbounded::<anyhow::Result<Vec<u8>>>();
 
         loop {
-            let mut message_len = [0u8; 4];
-            let read_fut = pin!(stream.read_exact(&mut message_len));
-            match select(read_fut, writes.next()).await {
-                Either::Left((res, _)) => {
-                    res?;
+            let buf_or_msg = {
+                let read_fut = pin!(stream.read_with_length());
+                match select(read_fut, writes.next()).await {
+                    Either::Left((res, _)) => {
+                        let Some(buf) = res? else {
+                            return Ok(());
+                        };
+
+                        Either::Left(buf)
+                    }
+                    Either::Right((write, _)) => {
+                        let write =
+                            write.expect("Write sender is in this scope but somehow gone?!")?;
+                        Either::Right(write)
+                    }
                 }
-                Either::Right((write, _)) => {
-                    let write = write.expect("Write sender is in this scope but somehow gone?!")?;
+            };
+
+            let buf = match buf_or_msg {
+                Either::Left(buf) => buf,
+                Either::Right(write) => {
                     stream.write_with_length(&write).await?;
                     continue;
                 }
-            }
-            let initial_message_len = u32::from_le_bytes(message_len);
-            let mut buf = vec![0u8; initial_message_len as usize];
-            stream.read_exact(&mut buf).await?;
+            };
 
             let (header, body) = fidl::encoding::decode_transaction_header(&buf)?;
             match header.ordinal {
