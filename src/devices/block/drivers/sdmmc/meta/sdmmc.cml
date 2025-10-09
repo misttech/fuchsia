@@ -16,6 +16,7 @@
     },
     capabilities: [
         { service: "fuchsia.hardware.block.volume.Service" },
+        { service: "fuchsia.hardware.power.PowerTokenService" },
         { service: "fuchsia.hardware.rpmb.Service" },
         { service: "fuchsia.hardware.sdio.Service" },
         { service: "fuchsia.hardware.sdio.DriverService" },
@@ -56,6 +57,7 @@
         {
             service: [
                 "fuchsia.hardware.block.volume.Service",
+                "fuchsia.hardware.power.PowerTokenService",
                 "fuchsia.hardware.rpmb.Service",
                 "fuchsia.hardware.sdio.DriverService",
                 "fuchsia.hardware.sdio.Service",
