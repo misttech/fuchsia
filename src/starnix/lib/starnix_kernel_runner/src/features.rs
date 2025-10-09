@@ -154,7 +154,7 @@ impl Features {
                         crash_report_throttling,
                         wifi,
                     },
-                system_limits: _, // FIXME
+                system_limits,
                 selinux,
                 ashmem,
                 boot_notifier,
@@ -225,6 +225,10 @@ impl Features {
                 inspect_node.record_bool("thermal", *thermal);
                 inspect_node.record_bool("android_bootreason", *android_bootreason);
                 inspect_node.record_bool("hvdcp_opti", *hvdcp_opti);
+                inspect_node.record_string("ping_group_range", {
+                    let range = system_limits.socket.icmp_ping_gids.lock();
+                    std::format!("{},{}", range.start, range.end - 1)
+                });
 
                 inspect_node.record_child("kernel", |kernel_node| {
                     kernel_node.record_bool("bpf_v2", *bpf_v2);
@@ -363,11 +367,11 @@ pub fn parse_features(
                     }
                     Some((min, max))
                 })()
-                .ok_or_else(|| anyhow!("Feature format must be: ping-group-range:0,100"))?;
+                .ok_or_else(|| anyhow!("Feature format must be: ping_group_range:0,100"))?;
                 *features.system_limits.socket.icmp_ping_gids.lock() = min..max;
             }
             (Feature::PingGroupRange, None) => {
-                return Err(anyhow!("Feature format must be: ping-group-range:0,100"));
+                return Err(anyhow!("Feature format must be: ping_group_range:0,100"));
             }
             (Feature::RootfsRw, _) => features.rootfs_rw = true,
             (Feature::SelfProfile, _) => features.self_profile = true,
