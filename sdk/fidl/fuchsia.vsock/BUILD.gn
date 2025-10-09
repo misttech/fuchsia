@@ -5,7 +5,16 @@
 import("//build/fidl/fidl.gni")
 
 fidl("fuchsia.vsock") {
-  sources = [ "connector.fidl" ]
+  sources = [
+    "connector.fidl",
+    "overview.fidl",
+    "provider.fidl",
+    "stream_socket.fidl",
+    "types.fidl",
+  ]
 
-  public_deps = [ "//sdk/fidl/fuchsia.hardware.vsock" ]
+  public_deps = [
+    "//sdk/fidl/fuchsia.hardware.vsock",
+    "//sdk/fidl/fuchsia.unknown",
+  ]
 }
