@@ -20,7 +20,6 @@ use futures::future::{Either, pending};
 use futures::{Future, FutureExt, TryStreamExt, select};
 use log::{debug, info};
 use std::net::IpAddr;
-use std::sync::Arc;
 use std::time::Duration;
 use target_errors::FfxTargetError;
 use thiserror::Error;
@@ -464,22 +463,20 @@ pub async fn knock_target_daemonless(
                 } => KnockError::NonCriticalError(e.into()),
                 _ => KnockError::CriticalError(e.into()),
             })?;
-        log::debug!("daemonless knock connecting to address {}", res.addr()?);
+        log::debug!("daemonless knock connecting to resolved target {:?}", res);
         let conn = match res.get_connection_if_already_established() {
             Some(c) => c,
             None => {
-                let conn = connection::Connection::new(ssh_connector::SshConnector::new(
-                    netext::ScopedSocketAddr::from_socket_addr(res.addr()?)?,
-                    context,
-                )?)
-                .await
-                .map_err(|e| KnockError::CriticalError(e.into()))?;
+                let conn = res
+                    .get_connection(context)
+                    .await
+                    .map_err(|e| KnockError::CriticalError(e.into()))?;
                 log::debug!("daemonless knock connection established");
                 let _ = conn
                     .rcs_proxy_fdomain()
                     .await
                     .map_err(|e| KnockError::NonCriticalError(e.into()))?;
-                Arc::new(conn)
+                conn
             }
         };
         Ok(conn.compatibility_info())
