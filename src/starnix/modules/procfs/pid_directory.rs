@@ -1052,7 +1052,7 @@ impl DynamicFileSource for StatFile {
     fn generate_locked(
         &self,
         locked: &mut Locked<FileOpsCore>,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         sink: &mut DynamicFileBuf,
     ) -> Result<(), Errno> {
         let task = Task::from_weak(&self.task)?;
@@ -1154,7 +1154,7 @@ impl DynamicFileSource for StatFile {
         }
 
         if let Ok(mm) = task.mm() {
-            let mem_stats = mm.get_stats();
+            let mem_stats = mm.get_stats(current_task);
             let page_size = *PAGE_SIZE as usize;
             vsize = mem_stats.vm_size;
             rss = mem_stats.vm_rss / page_size;
@@ -1187,13 +1187,9 @@ impl StatmFile {
     }
 }
 impl DynamicFileSource for StatmFile {
-    fn generate(
-        &self,
-        _current_task: &CurrentTask,
-        sink: &mut DynamicFileBuf,
-    ) -> Result<(), Errno> {
+    fn generate(&self, current_task: &CurrentTask, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
         let mem_stats = if let Ok(mm) = Task::from_weak(&self.0)?.mm() {
-            mm.get_stats()
+            mm.get_stats(current_task)
         } else {
             Default::default()
         };
@@ -1221,11 +1217,7 @@ impl StatusFile {
     }
 }
 impl DynamicFileSource for StatusFile {
-    fn generate(
-        &self,
-        _current_task: &CurrentTask,
-        sink: &mut DynamicFileBuf,
-    ) -> Result<(), Errno> {
+    fn generate(&self, current_task: &CurrentTask, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
         let task = &self.0.upgrade();
         let (tgid, pid, creds_string) = {
             if let Some(task) = task {
@@ -1297,7 +1289,7 @@ impl DynamicFileSource for StatusFile {
 
         if let Some(task) = task {
             if let Ok(mm) = task.mm() {
-                let mem_stats = mm.get_stats();
+                let mem_stats = mm.get_stats(current_task);
                 writeln!(sink, "VmSize:\t{} kB", mem_stats.vm_size / 1024)?;
                 writeln!(sink, "VmLck:\t{} kB", mem_stats.vm_lck / 1024)?;
                 writeln!(sink, "VmRSS:\t{} kB", mem_stats.vm_rss / 1024)?;

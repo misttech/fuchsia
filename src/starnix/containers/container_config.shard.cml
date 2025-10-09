@@ -81,5 +81,14 @@
             // See https://fxbug.dev/379782290 for context.
             availability: "transitional",
         },
+        {
+            config: "fuchsia.starnix.config.container.CachedZirconMapInfoBytes",
+            key: "cached_zx_map_info_bytes",
+            type: "uint32",
+            default: 524288,
+
+            // See https://fxbug.dev/379782290 for context.
+            availability: "transitional",
+        },
     ],
 }

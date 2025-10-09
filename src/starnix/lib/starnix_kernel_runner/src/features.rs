@@ -153,6 +153,7 @@ impl Features {
                         netstack_mark,
                         crash_report_throttling,
                         wifi,
+                        cached_zx_map_info_bytes,
                     },
                 system_limits,
                 selinux,
@@ -243,6 +244,8 @@ impl Features {
                     );
                     kernel_node.record_bool("selinux_test_suite", *selinux_test_suite);
                     kernel_node.record_bool("crash_report_throttling", *crash_report_throttling);
+                    kernel_node
+                        .record_uint("cached_zx_map_info_bytes", *cached_zx_map_info_bytes as u64);
                     inspect_node.record_string(
                         "default_ns_mount_options",
                         format!("{:?}", default_ns_mount_options),
@@ -271,6 +274,7 @@ pub fn parse_features(
         crash_report_throttling,
         enable_utc_time_adjustment,
         extra_features,
+        cached_zx_map_info_bytes,
         mlock_always_onfault,
         mlock_pin_flavor,
         selinux_exceptions,
@@ -416,6 +420,7 @@ pub fn parse_features(
     features.kernel.mlock_always_onfault = *mlock_always_onfault;
     features.kernel.mlock_pin_flavor = MlockPinFlavor::parse(mlock_pin_flavor.as_str())?;
     features.kernel.crash_report_throttling = *crash_report_throttling;
+    features.kernel.cached_zx_map_info_bytes = *cached_zx_map_info_bytes;
 
     Ok(features)
 }

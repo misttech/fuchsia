@@ -76,7 +76,11 @@ impl<T> PageBuf<T> {
     }
 
     pub fn len(&self) -> usize {
-        self.mapped_len / std::mem::size_of::<T>()
+        self.len_bytes() / std::mem::size_of::<T>()
+    }
+
+    pub fn len_bytes(&self) -> usize {
+        self.mapped_len
     }
 
     /// Return a mutable reference to the underlying memory.

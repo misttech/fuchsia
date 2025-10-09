@@ -4,6 +4,7 @@
 
 mod debugger;
 mod futex_table;
+mod map_info_cache;
 mod mapping;
 pub mod memory;
 mod memory_accessor;
@@ -17,6 +18,7 @@ mod vmex_resource;
 mod vmsplice;
 
 pub use futex_table::*;
+pub use map_info_cache::*;
 pub use mapping::*;
 pub use memory_accessor::*;
 pub use memory_manager::*;

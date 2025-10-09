@@ -73,6 +73,11 @@ impl ShadowProcess {
             .map_err(|e| from_status_like_fdio!(e))?;
         Ok(Arc::new(PinnedMapping { vmar: Arc::downgrade(&self.vmar), base, length }))
     }
+
+    /// Return a handle to the VMAR where all mappings are pinned.
+    pub fn vmar(&self) -> Arc<zx::Vmar> {
+        self.vmar.clone()
+    }
 }
 
 /// A token for a region of pinned memory. Will unpin the memory when dropped.

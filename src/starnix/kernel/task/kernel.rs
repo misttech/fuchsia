@@ -120,6 +120,9 @@ pub struct KernelFeatures {
 
     /// Whether or not to serve wifi support to Android.
     pub wifi: bool,
+
+    /// The number of bytes to cache in pages for reading zx::MapInfo from VMARs.
+    pub cached_zx_map_info_bytes: u32,
 }
 
 /// Kernel command line argument structure

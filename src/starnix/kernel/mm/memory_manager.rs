@@ -7,9 +7,9 @@ use crate::mm::memory::MemoryObject;
 use crate::mm::memory_accessor::{MemoryAccessor, TaskMemoryAccessor};
 use crate::mm::private_anonymous_memory_manager::PrivateAnonymousMemoryManager;
 use crate::mm::{
-    FaultRegisterMode, FutexTable, InflightVmsplicedPayloads, Mapping, MappingBacking,
-    MappingFlags, MappingName, MlockPinFlavor, PrivateFutexKey, ProtectionFlags, UserFault,
-    VMEX_RESOURCE, VmsplicePayload, VmsplicePayloadSegment, read_to_array,
+    FaultRegisterMode, FutexTable, InflightVmsplicedPayloads, MapInfoCache, Mapping,
+    MappingBacking, MappingFlags, MappingName, MlockPinFlavor, PrivateFutexKey, ProtectionFlags,
+    UserFault, VMEX_RESOURCE, VmsplicePayload, VmsplicePayloadSegment, read_to_array,
 };
 use crate::security;
 use crate::signals::{SignalDetail, SignalInfo};
@@ -63,7 +63,7 @@ use std::ops::{Deref, DerefMut, Range, RangeBounds};
 use std::sync::{Arc, LazyLock, Weak};
 use syncio::zxio::zxio_default_maybe_faultable_copy;
 use zerocopy::IntoBytes;
-use zx::{HandleBased, MapInfo, VmarInfo};
+use zx::{HandleBased, VmarInfo};
 
 pub const ZX_VM_SPECIFIC_OVERWRITE: zx::VmarFlags =
     zx::VmarFlags::from_bits_retain(zx::VmarFlagsExtended::SPECIFIC_OVERWRITE.bits());
@@ -2069,16 +2069,23 @@ impl MemoryManagerState {
 
     // Returns details of mappings in the `user_vmar`, or an empty vector if the `user_vmar` has
     // been destroyed.
-    fn zx_mappings(&self) -> Vec<MapInfo> {
+    fn with_zx_mappings<R>(
+        &self,
+        current_task: &CurrentTask,
+        op: impl FnOnce(&[zx::MapInfo]) -> R,
+    ) -> R {
         if self.user_vmar.is_invalid_handle() {
-            return Vec::new();
+            return op(&[]);
         };
-        self.user_vmar
-            .info_maps_vec()
-            // No other https://fuchsia.dev/reference/syscalls/object_get_info?hl=en#errors
-            // are possible, because we created the VMAR and the `zx` crate ensures that the
-            // info query is well-formed.
-            .expect("must be able to query mappings for private user VMAR")
+
+        MapInfoCache::get_or_init(current_task)
+            .expect("must be able to retrieve map info cache")
+            .with_map_infos(&self.user_vmar, |infos| {
+                // No other https://fuchsia.dev/reference/syscalls/object_get_info?hl=en#errors
+                // are possible, because we created the VMAR and the `zx` crate ensures that the
+                // info query is well-formed.
+                op(infos.expect("must be able to query mappings for private user VMAR"))
+            })
     }
 
     /// Register the address space managed by this memory manager for interest in
@@ -3523,61 +3530,64 @@ impl MemoryManager {
         self.state.write().extend_growsdown_mapping_to_address(self, addr, is_write)
     }
 
-    pub fn get_stats(&self) -> MemoryStats {
+    pub fn get_stats(&self, current_task: &CurrentTask) -> MemoryStats {
         // Grab our state lock before reading zircon mappings so that the two are consistent.
         // Other Starnix threads should not make any changes to the Zircon mappings while we hold
-        // a write lock to the memory manager state.
-        let state = self.state.write();
+        // a read lock to the memory manager state.
+        let state = self.state.read();
 
         let mut stats = MemoryStats::default();
         stats.vm_stack = state.stack_size;
 
-        for zx_mapping in state.zx_mappings() {
-            // We only care about map info for actual mappings.
-            let zx_details = zx_mapping.details();
-            let Some(zx_details) = zx_details.as_mapping() else { continue };
-            let (_, mm_mapping) = state
-                .mappings
-                .get(UserAddress::from(zx_mapping.base as u64))
-                .expect("mapping bookkeeping must be consistent with zircon's");
-            debug_assert_eq!(
-                match state.get_mapping_backing(mm_mapping) {
-                    MappingBacking::Memory(m) => m.memory().get_koid(),
-                    MappingBacking::PrivateAnonymous => state.private_anonymous.backing.get_koid(),
-                },
-                zx_details.vmo_koid,
-                "MemoryManager and Zircon must agree on which VMO is mapped in this range",
-            );
+        state.with_zx_mappings(current_task, |zx_mappings| {
+            for zx_mapping in zx_mappings {
+                // We only care about map info for actual mappings.
+                let zx_details = zx_mapping.details();
+                let Some(zx_details) = zx_details.as_mapping() else { continue };
+                let (_, mm_mapping) = state
+                    .mappings
+                    .get(UserAddress::from(zx_mapping.base as u64))
+                    .expect("mapping bookkeeping must be consistent with zircon's");
+                debug_assert_eq!(
+                    match state.get_mapping_backing(mm_mapping) {
+                        MappingBacking::Memory(m) => m.memory().get_koid(),
+                        MappingBacking::PrivateAnonymous =>
+                            state.private_anonymous.backing.get_koid(),
+                    },
+                    zx_details.vmo_koid,
+                    "MemoryManager and Zircon must agree on which VMO is mapped in this range",
+                );
 
-            stats.vm_size += zx_mapping.size;
+                stats.vm_size += zx_mapping.size;
 
-            stats.vm_rss += zx_details.committed_bytes;
-            stats.vm_swap += zx_details.populated_bytes - zx_details.committed_bytes;
+                stats.vm_rss += zx_details.committed_bytes;
+                stats.vm_swap += zx_details.populated_bytes - zx_details.committed_bytes;
 
-            if mm_mapping.flags().contains(MappingFlags::SHARED) {
-                stats.rss_shared += zx_details.committed_bytes;
-            } else if mm_mapping.flags().contains(MappingFlags::ANONYMOUS) {
-                stats.rss_anonymous += zx_details.committed_bytes;
-            } else if let MappingName::File(_) = mm_mapping.name() {
-                stats.rss_file += zx_details.committed_bytes;
+                if mm_mapping.flags().contains(MappingFlags::SHARED) {
+                    stats.rss_shared += zx_details.committed_bytes;
+                } else if mm_mapping.flags().contains(MappingFlags::ANONYMOUS) {
+                    stats.rss_anonymous += zx_details.committed_bytes;
+                } else if let MappingName::File(_) = mm_mapping.name() {
+                    stats.rss_file += zx_details.committed_bytes;
+                }
+
+                if mm_mapping.flags().contains(MappingFlags::LOCKED) {
+                    stats.vm_lck += zx_details.committed_bytes;
+                }
+
+                if mm_mapping.flags().contains(MappingFlags::ELF_BINARY)
+                    && mm_mapping.flags().contains(MappingFlags::WRITE)
+                {
+                    stats.vm_data += zx_mapping.size;
+                }
+
+                if mm_mapping.flags().contains(MappingFlags::ELF_BINARY)
+                    && mm_mapping.flags().contains(MappingFlags::EXEC)
+                {
+                    stats.vm_exe += zx_mapping.size;
+                }
             }
-
-            if mm_mapping.flags().contains(MappingFlags::LOCKED) {
-                stats.vm_lck += zx_details.committed_bytes;
-            }
-
-            if mm_mapping.flags().contains(MappingFlags::ELF_BINARY)
-                && mm_mapping.flags().contains(MappingFlags::WRITE)
-            {
-                stats.vm_data += zx_mapping.size;
-            }
-
-            if mm_mapping.flags().contains(MappingFlags::ELF_BINARY)
-                && mm_mapping.flags().contains(MappingFlags::EXEC)
-            {
-                stats.vm_exe += zx_mapping.size;
-            }
-        }
+        });
 
         // TODO(https://fxbug.dev/396221597): Placeholder for now. We need kernel support to track
         // the committed bytes high water mark.
@@ -3862,11 +3872,7 @@ impl ProcSmapsFile {
 }
 
 impl DynamicFileSource for ProcSmapsFile {
-    fn generate(
-        &self,
-        _current_task: &CurrentTask,
-        sink: &mut DynamicFileBuf,
-    ) -> Result<(), Errno> {
+    fn generate(&self, current_task: &CurrentTask, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
         let page_size_kb = *PAGE_SIZE / 1024;
         let task = Task::from_weak(&self.0)?;
         // /proc/<pid>/smaps is empty for kthreads
@@ -3874,100 +3880,102 @@ impl DynamicFileSource for ProcSmapsFile {
             return Ok(());
         };
         let state = mm.state.read();
-        let zx_mappings = state.zx_mappings();
-        let mut zx_memory_info = RangeMap::<UserAddress, usize>::default();
-        for idx in 0..zx_mappings.len() {
-            let zx_mapping = zx_mappings[idx];
-            zx_memory_info.insert(
-                UserAddress::from_ptr(zx_mapping.base)
-                    ..UserAddress::from_ptr(zx_mapping.base + zx_mapping.size),
-                idx,
-            );
-        }
-
-        for (mm_range, mm_mapping) in state.mappings.iter() {
-            let mut committed_bytes = 0;
-
-            for (zx_range, zx_mapping_idx) in zx_memory_info.range(mm_range.clone()) {
-                let intersect_range = zx_range.intersect(mm_range);
-                let zx_mapping = zx_mappings[*zx_mapping_idx];
-                let zx_details = zx_mapping.details();
-                let Some(zx_details) = zx_details.as_mapping() else { continue };
-                let zx_committed_bytes = zx_details.committed_bytes;
-
-                // TODO(https://fxbug.dev/419882465): It can happen that the same Zircon mapping is
-                // covered by more than one Starnix mapping. In this case we don't have enough
-                // granularity to answer the question of how many committed bytes belong to one
-                // mapping or another. Make a best-effort approximation by dividing the committed
-                // bytes of a Zircon mapping proportionally.
-                committed_bytes += if intersect_range != *zx_range {
-                    let intersection_size = intersect_range.end.ptr() - intersect_range.start.ptr();
-                    let part = intersection_size as f32 / zx_mapping.size as f32;
-                    let prorated_committed_bytes: f32 = part * zx_committed_bytes as f32;
-                    prorated_committed_bytes as u64
-                } else {
-                    zx_committed_bytes as u64
-                };
-                assert_eq!(
-                    match state.get_mapping_backing(mm_mapping) {
-                        MappingBacking::Memory(m) => m.memory().get_koid(),
-                        MappingBacking::PrivateAnonymous =>
-                            state.private_anonymous.backing.get_koid(),
-                    },
-                    zx_details.vmo_koid,
-                    "MemoryManager and Zircon must agree on which VMO is mapped in this range",
+        state.with_zx_mappings(current_task, |zx_mappings| {
+            let mut zx_memory_info = RangeMap::<UserAddress, usize>::default();
+            for idx in 0..zx_mappings.len() {
+                let zx_mapping = zx_mappings[idx];
+                zx_memory_info.insert(
+                    UserAddress::from_ptr(zx_mapping.base)
+                        ..UserAddress::from_ptr(zx_mapping.base + zx_mapping.size),
+                    idx,
                 );
             }
 
-            write_map(&task, sink, &state, mm_range, mm_mapping)?;
+            for (mm_range, mm_mapping) in state.mappings.iter() {
+                let mut committed_bytes = 0;
 
-            let size_kb = (mm_range.end.ptr() - mm_range.start.ptr()) / 1024;
-            writeln!(sink, "Size:           {size_kb:>8} kB",)?;
-            let share_count = match state.get_mapping_backing(mm_mapping) {
-                MappingBacking::Memory(backing) => {
-                    let memory_info = backing.memory().info()?;
-                    memory_info.share_count as u64
+                for (zx_range, zx_mapping_idx) in zx_memory_info.range(mm_range.clone()) {
+                    let intersect_range = zx_range.intersect(mm_range);
+                    let zx_mapping = zx_mappings[*zx_mapping_idx];
+                    let zx_details = zx_mapping.details();
+                    let Some(zx_details) = zx_details.as_mapping() else { continue };
+                    let zx_committed_bytes = zx_details.committed_bytes;
+
+                    // TODO(https://fxbug.dev/419882465): It can happen that the same Zircon mapping
+                    // is covered by more than one Starnix mapping. In this case we don't have
+                    // enough granularity to answer the question of how many committed bytes belong
+                    // to one mapping or another. Make a best-effort approximation by dividing the
+                    // committed bytes of a Zircon mapping proportionally.
+                    committed_bytes += if intersect_range != *zx_range {
+                        let intersection_size =
+                            intersect_range.end.ptr() - intersect_range.start.ptr();
+                        let part = intersection_size as f32 / zx_mapping.size as f32;
+                        let prorated_committed_bytes: f32 = part * zx_committed_bytes as f32;
+                        prorated_committed_bytes as u64
+                    } else {
+                        zx_committed_bytes as u64
+                    };
+                    assert_eq!(
+                        match state.get_mapping_backing(mm_mapping) {
+                            MappingBacking::Memory(m) => m.memory().get_koid(),
+                            MappingBacking::PrivateAnonymous =>
+                                state.private_anonymous.backing.get_koid(),
+                        },
+                        zx_details.vmo_koid,
+                        "MemoryManager and Zircon must agree on which VMO is mapped in this range",
+                    );
                 }
-                MappingBacking::PrivateAnonymous => {
-                    1 // Private mapping
-                }
-            };
 
-            let rss_kb = committed_bytes / 1024;
-            writeln!(sink, "Rss:            {rss_kb:>8} kB")?;
+                write_map(&task, sink, &state, mm_range, mm_mapping)?;
 
-            let pss_kb = if mm_mapping.flags().contains(MappingFlags::SHARED) {
-                rss_kb / share_count
-            } else {
-                rss_kb
-            };
-            writeln!(sink, "Pss:            {pss_kb:>8} kB")?;
+                let size_kb = (mm_range.end.ptr() - mm_range.start.ptr()) / 1024;
+                writeln!(sink, "Size:           {size_kb:>8} kB",)?;
+                let share_count = match state.get_mapping_backing(mm_mapping) {
+                    MappingBacking::Memory(backing) => {
+                        let memory_info = backing.memory().info()?;
+                        memory_info.share_count as u64
+                    }
+                    MappingBacking::PrivateAnonymous => {
+                        1 // Private mapping
+                    }
+                };
 
-            track_stub!(TODO("https://fxbug.dev/322874967"), "smaps dirty pages");
-            let (shared_dirty_kb, private_dirty_kb) = (0, 0);
+                let rss_kb = committed_bytes / 1024;
+                writeln!(sink, "Rss:            {rss_kb:>8} kB")?;
 
-            let is_shared = share_count > 1;
-            let shared_clean_kb = if is_shared { rss_kb } else { 0 };
-            writeln!(sink, "Shared_Clean:   {shared_clean_kb:>8} kB")?;
-            writeln!(sink, "Shared_Dirty:   {shared_dirty_kb:>8} kB")?;
+                let pss_kb = if mm_mapping.flags().contains(MappingFlags::SHARED) {
+                    rss_kb / share_count
+                } else {
+                    rss_kb
+                };
+                writeln!(sink, "Pss:            {pss_kb:>8} kB")?;
 
-            let private_clean_kb = if is_shared { 0 } else { rss_kb };
-            writeln!(sink, "Private_Clean:  {private_clean_kb:>8} kB")?;
-            writeln!(sink, "Private_Dirty:  {private_dirty_kb:>8} kB")?;
+                track_stub!(TODO("https://fxbug.dev/322874967"), "smaps dirty pages");
+                let (shared_dirty_kb, private_dirty_kb) = (0, 0);
 
-            let anonymous_kb = if mm_mapping.private_anonymous() { rss_kb } else { 0 };
-            writeln!(sink, "Anonymous:      {anonymous_kb:>8} kB")?;
-            writeln!(sink, "KernelPageSize: {page_size_kb:>8} kB")?;
-            writeln!(sink, "MMUPageSize:    {page_size_kb:>8} kB")?;
+                let is_shared = share_count > 1;
+                let shared_clean_kb = if is_shared { rss_kb } else { 0 };
+                writeln!(sink, "Shared_Clean:   {shared_clean_kb:>8} kB")?;
+                writeln!(sink, "Shared_Dirty:   {shared_dirty_kb:>8} kB")?;
 
-            let locked_kb =
-                if mm_mapping.flags().contains(MappingFlags::LOCKED) { rss_kb } else { 0 };
-            writeln!(sink, "Locked:         {locked_kb:>8} kB")?;
-            writeln!(sink, "VmFlags: {}", mm_mapping.vm_flags())?;
+                let private_clean_kb = if is_shared { 0 } else { rss_kb };
+                writeln!(sink, "Private_Clean:  {private_clean_kb:>8} kB")?;
+                writeln!(sink, "Private_Dirty:  {private_dirty_kb:>8} kB")?;
 
-            track_stub!(TODO("https://fxbug.dev/297444691"), "optional smaps fields");
-        }
-        Ok(())
+                let anonymous_kb = if mm_mapping.private_anonymous() { rss_kb } else { 0 };
+                writeln!(sink, "Anonymous:      {anonymous_kb:>8} kB")?;
+                writeln!(sink, "KernelPageSize: {page_size_kb:>8} kB")?;
+                writeln!(sink, "MMUPageSize:    {page_size_kb:>8} kB")?;
+
+                let locked_kb =
+                    if mm_mapping.flags().contains(MappingFlags::LOCKED) { rss_kb } else { 0 };
+                writeln!(sink, "Locked:         {locked_kb:>8} kB")?;
+                writeln!(sink, "VmFlags: {}", mm_mapping.vm_flags())?;
+
+                track_stub!(TODO("https://fxbug.dev/297444691"), "optional smaps fields");
+            }
+            Ok(())
+        })
     }
 }
 
