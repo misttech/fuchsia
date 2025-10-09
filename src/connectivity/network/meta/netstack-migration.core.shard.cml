@@ -8,5 +8,11 @@
             from: "parent",
             to: "#network",
         },
+        {
+            protocol: "fuchsia.feedback.CrashReporter",
+            from: "#feedback",
+            to: "#network",
+            dependency: "weak",
+        },
     ],
 }

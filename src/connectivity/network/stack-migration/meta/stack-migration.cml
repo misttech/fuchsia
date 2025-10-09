@@ -23,11 +23,14 @@
             storage: "data",
             path: "/data",
         },
-        { protocol: "fuchsia.metrics.MetricEventLoggerFactory" },
         {
-            protocol: [ "fuchsia.power.internal.CollaborativeRebootScheduler" ],
+            protocol: [
+                "fuchsia.feedback.CrashReporter",
+                "fuchsia.metrics.MetricEventLoggerFactory",
+                "fuchsia.net.http.Loader",
+                "fuchsia.power.internal.CollaborativeRebootScheduler",
+            ],
         },
-        { protocol: "fuchsia.net.http.Loader" },
     ],
     expose: [
         {

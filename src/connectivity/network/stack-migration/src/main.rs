@@ -5,6 +5,7 @@
 mod rollback;
 
 use std::pin::{Pin, pin};
+use std::time::Duration;
 
 use cobalt_client::traits::AsEventCode as _;
 use fuchsia_async::Task;
@@ -32,6 +33,10 @@ const MAX_ROLLBACKS_PER_EPOCH: u8 = 3;
 /// Pragmatically the intention is to increment this number every time a Fuchsia
 /// Release is cut that contains a known fix to a Netstack3 bug.
 const CURRENT_EPOCH: u32 = 1;
+
+/// The number of failed healthchecks at which we begin generating crash
+/// reports.
+const HEALTHCHECK_FAILURE_THRESHOLD_FOR_CRASH_REPORTS: usize = 2;
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, Eq, PartialEq)]
 enum NetstackVersion {
@@ -224,11 +229,12 @@ enum ServiceRequest {
     State(fnet_migration::StateRequest),
 }
 
-struct Migration<P, CR> {
+struct Migration<P, CR, R> {
     current_boot: RollbackNetstackVersion,
     persisted: Persisted,
     persistence: P,
     collaborative_reboot: CollaborativeReboot<CR>,
+    crash_reporter: R,
 }
 
 trait PersistenceProvider {
@@ -340,8 +346,69 @@ impl CollaborativeRebootScheduler for Scheduler {
     }
 }
 
-impl<P: PersistenceProvider, CR: CollaborativeRebootScheduler> Migration<P, CR> {
-    fn new(mut persistence: P, cr_scheduler: CR) -> Self {
+/// The reason to file a crash report.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CrashReportReason {
+    FailedHealthcheck,
+    RolledBack,
+}
+
+/// An abstraction over the `fidl_fuchsia_feedback::CrashReporter` FIDL API.
+trait CrashReporter {
+    /// The amount of time after startup to wait before filling a rollback
+    /// induced crash report.
+    const ROLLBACK_CRASH_REPORT_DELAY: Duration;
+
+    async fn file_report(&mut self, reason: CrashReportReason);
+}
+
+/// An implementation of `CrashReporter` that connects to the API over FIDL.
+struct Reporter {}
+
+impl CrashReporter for Reporter {
+    const ROLLBACK_CRASH_REPORT_DELAY: Duration = Duration::from_secs(180);
+
+    async fn file_report(&mut self, reason: CrashReportReason) {
+        const PROGRAM_NAME: &str = "netstack_migration";
+        const FAILED_HEALTHCHECK_SIGNATURE: &str = "fuchsia-netstack3-healthcheck-failed";
+        const ROLLED_BACK_SIGNATURE: &str = "fuchsia-netstack3-rolled-back";
+
+        info!("Generating a crash report for reason: {reason:?}");
+
+        let proxy = match fuchsia_component::client::connect_to_protocol::<
+            fidl_fuchsia_feedback::CrashReporterMarker,
+        >() {
+            Ok(proxy) => proxy,
+            Err(e) => {
+                error!("Failed to connect to CrashReport proxy: {e:?}");
+                return;
+            }
+        };
+
+        let signature = match reason {
+            CrashReportReason::FailedHealthcheck => FAILED_HEALTHCHECK_SIGNATURE,
+            CrashReportReason::RolledBack => ROLLED_BACK_SIGNATURE,
+        };
+        let report = fidl_fuchsia_feedback::CrashReport {
+            program_name: Some(PROGRAM_NAME.to_string()),
+            program_uptime: Some(zx::MonotonicInstant::get().into_nanos()),
+            crash_signature: Some(signature.to_string()),
+            is_fatal: Some(false),
+            ..Default::default()
+        };
+
+        match proxy.file_report(report).await {
+            Ok(Ok(status)) => info!("Successfully filed crash report. Status={status:?}"),
+            Ok(Err(e)) => error!("Failed to file crash report: {e:?}"),
+            Err(e) => error!("Failed to request crash report: {e:?}"),
+        }
+    }
+}
+
+impl<P: PersistenceProvider, CR: CollaborativeRebootScheduler, R: CrashReporter>
+    Migration<P, CR, R>
+{
+    fn new(mut persistence: P, cr_scheduler: CR, crash_reporter: R) -> Self {
         let mut persisted = persistence.open_reader().map(Persisted::load).unwrap_or_else(|e| {
             warn!("could not open persistence reader: {e:?}. using defaults");
             Persisted::default()
@@ -405,11 +472,18 @@ impl<P: PersistenceProvider, CR: CollaborativeRebootScheduler> Migration<P, CR> 
                 scheduler: cr_scheduler,
                 scheduled_req: None,
             },
+            crash_reporter,
         }
     }
 
     fn persist(&mut self) {
-        let Self { current_boot: _, persisted, persistence, collaborative_reboot: _ } = self;
+        let Self {
+            current_boot: _,
+            persisted,
+            persistence,
+            collaborative_reboot: _,
+            crash_reporter: _,
+        } = self;
         try_persist(persistence, persisted);
     }
 
@@ -423,7 +497,13 @@ impl<P: PersistenceProvider, CR: CollaborativeRebootScheduler> Migration<P, CR> 
     }
 
     async fn update_collaborative_reboot(&mut self) {
-        let Self { current_boot, persisted, persistence: _, collaborative_reboot } = self;
+        let Self {
+            current_boot,
+            persisted,
+            persistence: _,
+            collaborative_reboot,
+            crash_reporter: _,
+        } = self;
         if persisted.desired_netstack_version().version() != current_boot.version() {
             // When the current boot differs from our desired version, schedule
             // a reboot (if there's not already one).
@@ -441,6 +521,11 @@ impl<P: PersistenceProvider, CR: CollaborativeRebootScheduler> Migration<P, CR> 
             self.update_collaborative_reboot().await;
             self.persist();
         }
+        if let rollback::Persisted::HealthcheckFailures(f) = new_state {
+            if f >= HEALTHCHECK_FAILURE_THRESHOLD_FOR_CRASH_REPORTS {
+                self.crash_reporter.file_report(CrashReportReason::FailedHealthcheck).await;
+            }
+        }
     }
 
     async fn handle_control_request(
@@ -455,6 +540,7 @@ impl<P: PersistenceProvider, CR: CollaborativeRebootScheduler> Migration<P, CR> 
                     persisted: Persisted { automated, user: _, rollback: _, rollback_history: _ },
                     persistence: _,
                     collaborative_reboot: _,
+                    crash_reporter: _,
                 } = self;
                 if version != *automated {
                     info!("automated netstack version switched to {version:?}");
@@ -471,6 +557,7 @@ impl<P: PersistenceProvider, CR: CollaborativeRebootScheduler> Migration<P, CR> 
                     persisted: Persisted { automated: _, user, rollback: _, rollback_history: _ },
                     persistence: _,
                     collaborative_reboot: _,
+                    crash_reporter: _,
                 } = self;
                 if version != *user {
                     info!("user netstack version switched to {version:?}");
@@ -489,6 +576,7 @@ impl<P: PersistenceProvider, CR: CollaborativeRebootScheduler> Migration<P, CR> 
             persisted: Persisted { user, automated, rollback: _, rollback_history: _ },
             persistence: _,
             collaborative_reboot: _,
+            crash_reporter: _,
         } = self;
         match req {
             fnet_migration::StateRequest::GetNetstackVersion { responder } => {
@@ -516,7 +604,7 @@ struct InspectNodes {
 }
 
 impl InspectNodes {
-    fn new<P, CR>(inspector: &fuchsia_inspect::Inspector, m: &Migration<P, CR>) -> Self {
+    fn new<P, CR, F>(inspector: &fuchsia_inspect::Inspector, m: &Migration<P, CR, F>) -> Self {
         let root = inspector.root();
         let Migration {
             current_boot,
@@ -546,7 +634,7 @@ impl InspectNodes {
         Self { automated_setting, user_setting, rollback_state }
     }
 
-    fn update<P, CR>(&self, m: &Migration<P, CR>) {
+    fn update<P, CR, F>(&self, m: &Migration<P, CR, F>) {
         let Migration {
             persisted: Persisted { automated, user, rollback, rollback_history: _ },
             ..
@@ -602,7 +690,7 @@ impl MetricsLogger {
     }
 
     /// Logs metrics from `migration` to the metrics server.
-    async fn log_metrics<P, CR>(&self, migration: &Migration<P, CR>) {
+    async fn log_metrics<P, CR, F>(&self, migration: &Migration<P, CR, F>) {
         let logger = if let Some(logger) = self.logger.as_ref() {
             logger
         } else {
@@ -654,8 +742,8 @@ impl MetricsLogger {
     }
 }
 
-fn compute_state_metric<P, CR>(
-    migration: &Migration<P, CR>,
+fn compute_state_metric<P, CR, F>(
+    migration: &Migration<P, CR, F>,
 ) -> metrics_registry::StackMigrationStateMetricDimensionMigrationState {
     use metrics_registry::StackMigrationStateMetricDimensionMigrationState as state_metric;
     let Migration {
@@ -663,6 +751,7 @@ fn compute_state_metric<P, CR>(
         persisted: Persisted { automated, user: _, rollback, rollback_history: _ },
         persistence: _,
         collaborative_reboot: _,
+        crash_reporter: _,
     } = migration;
 
     match (current_boot, automated, rollback) {
@@ -726,7 +815,7 @@ pub async fn main() {
     let _: &mut ServiceFs<_> =
         fs.take_and_serve_directory_handle().expect("failed to take out directory handle");
 
-    let mut migration = Migration::new(DataPersistenceProvider {}, Scheduler {});
+    let mut migration = Migration::new(DataPersistenceProvider {}, Scheduler {}, Reporter {});
     main_inner(
         &mut migration,
         fs.fuse().flatten_unordered(None),
@@ -739,11 +828,12 @@ pub async fn main() {
 async fn main_inner<
     P: PersistenceProvider,
     CR: CollaborativeRebootScheduler,
+    R: CrashReporter,
     H: rollback::HttpFetcher + Send + 'static,
     T: Stream<Item = ()> + Send + 'static,
     SR: Stream<Item = Result<ServiceRequest, fidl::Error>>,
 >(
-    migration: &mut Migration<P, CR>,
+    migration: &mut Migration<P, CR, R>,
     service_request_stream: SR,
     http_fetcher: H,
     healthcheck_tick: T,
@@ -758,6 +848,16 @@ async fn main_inner<
 
     let (desired_version_sender, desired_version_receiver) = mpsc::unbounded();
     let (rollback_state_sender, rollback_state_receiver) = mpsc::unbounded();
+
+    // NB: Check if we failed to migrate to NS3 in the previous boot.
+    //
+    // It's important to perform this check before the rollback state is reset
+    // below.
+    let current_boot_is_rollback = match migration.persisted.rollback {
+        Some(rollback::Persisted::Success) | None => false,
+        Some(rollback::Persisted::HealthcheckFailures(f)) => f >= rollback::MAX_FAILED_HEALTHCHECKS,
+    };
+
     let rollback_state =
         rollback::State::new(migration.persisted.rollback, migration.current_boot.version());
 
@@ -791,6 +891,7 @@ async fn main_inner<
         ServiceRequest(Result<ServiceRequest, fidl::Error>),
         LogMetrics,
         UpdateRollbackState(rollback::Persisted),
+        FileRollbackCrashReport,
     }
 
     let metrics_logging_interval = fuchsia_async::MonotonicDuration::from_hours(1);
@@ -807,6 +908,16 @@ async fn main_inner<
     )));
     stream.push(Box::pin(Box::new(Box::pin(service_request_stream.map(Action::ServiceRequest)))));
     stream.push(Box::pin(rollback_state_receiver.map(|state| Action::UpdateRollbackState(state))));
+
+    // If the current boot is a rollback, schedule a crash report to be filed
+    // soon. Don't file it right away, as during early boot there is not much
+    // useful diagnostics data available.
+    if current_boot_is_rollback {
+        stream.push(Box::pin(
+            futures::stream::once(fuchsia_async::Timer::new(R::ROLLBACK_CRASH_REPORT_DELAY))
+                .map(|()| Action::FileRollbackCrashReport),
+        ));
+    }
 
     while let Some(action) = stream.next().await {
         match action {
@@ -849,6 +960,9 @@ async fn main_inner<
                 // Always update inspector state when the rollback state
                 // changes.
                 inspect_nodes.update(&migration);
+            }
+            Action::FileRollbackCrashReport => {
+                migration.crash_reporter.file_report(CrashReportReason::RolledBack).await;
             }
         }
     }
@@ -940,10 +1054,60 @@ mod tests {
         }
     }
 
-    fn serve_migration<P: PersistenceProvider, CR: CollaborativeRebootScheduler>(
-        migration: Migration<P, CR>,
+    struct NoCrashReports;
+
+    impl CrashReporter for NoCrashReports {
+        const ROLLBACK_CRASH_REPORT_DELAY: Duration = Duration::ZERO;
+        async fn file_report(&mut self, reason: CrashReportReason) {
+            panic!("unexpectedly attemped to file a crash report: {reason:?}")
+        }
+    }
+
+    #[derive(Default)]
+    struct FakeCrashReporter {
+        reports: Vec<CrashReportReason>,
+    }
+
+    impl CrashReporter for FakeCrashReporter {
+        const ROLLBACK_CRASH_REPORT_DELAY: Duration = Duration::from_millis(1);
+        async fn file_report(&mut self, reason: CrashReportReason) {
+            self.reports.push(reason)
+        }
+    }
+
+    /// Signals an `EventWait` once the `target` crash reports have been filed.
+    struct AwaitCrashReports {
+        target: Vec<CrashReportReason>,
+        reports: Vec<CrashReportReason>,
+        event: Event,
+    }
+
+    impl AwaitCrashReports {
+        fn new(target: Vec<CrashReportReason>) -> (Self, EventWait) {
+            let event = Event::new();
+            let wait = event.wait();
+            (Self { target, reports: Vec::new(), event }, wait)
+        }
+    }
+
+    impl CrashReporter for AwaitCrashReports {
+        const ROLLBACK_CRASH_REPORT_DELAY: Duration = Duration::from_millis(1);
+        async fn file_report(&mut self, reason: CrashReportReason) {
+            self.reports.push(reason);
+            if self.reports == self.target {
+                assert!(self.event.signal());
+            }
+        }
+    }
+
+    fn serve_migration<
+        P: PersistenceProvider,
+        CR: CollaborativeRebootScheduler,
+        R: CrashReporter,
+    >(
+        migration: Migration<P, CR, R>,
     ) -> (
-        impl futures::Future<Output = Migration<P, CR>>,
+        impl futures::Future<Output = Migration<P, CR, R>>,
         fnet_migration::ControlProxy,
         fnet_migration::StateProxy,
     ) {
@@ -1021,12 +1185,13 @@ mod tests {
 
     #[fuchsia::test]
     fn uses_defaults_if_no_persistence() {
-        let m = Migration::new(InMemory::default(), NoCollaborativeReboot);
+        let m = Migration::new(InMemory::default(), NoCollaborativeReboot, NoCrashReports);
         let Migration {
             current_boot,
             persisted: Persisted { user, automated, rollback: _, rollback_history: _ },
             persistence: _,
             collaborative_reboot: _,
+            crash_reporter: _,
         } = m;
         assert_eq!(current_boot.version(), DEFAULT_NETSTACK);
         assert_eq!(user, None);
@@ -1100,12 +1265,14 @@ mod tests {
                 rollback_history: p_history,
             }),
             NoCollaborativeReboot,
+            NoCrashReports,
         );
         let Migration {
             current_boot,
             persisted: Persisted { user, automated, rollback: _, rollback_history: _ },
             persistence: _,
             collaborative_reboot: _,
+            crash_reporter: _,
         } = &m;
         assert_eq!(current_boot.version(), expect);
         assert_eq!(*user, p_user);
@@ -1122,7 +1289,7 @@ mod tests {
             assert_eq!(user, p_user);
             assert_eq!(automated, p_automated);
         };
-        let (_, ()): (Migration<_, _>, _) = futures::future::join(serve, fut).await;
+        let (_, ()): (Migration<_, _, _>, _) = futures::future::join(serve, fut).await;
     }
 
     #[derive(Debug, Copy, Clone)]
@@ -1140,6 +1307,7 @@ mod tests {
         let m = Migration::new(
             InMemory::with_persisted(Default::default()),
             FakeCollaborativeReboot::default(),
+            NoCrashReports,
         );
         let (serve, control, _) = serve_migration(m);
         let fut = async move {
@@ -1157,12 +1325,13 @@ mod tests {
         };
         let (migration, ()) = futures::future::join(serve, fut).await;
 
-        let validate_versions = |m: &Migration<_, _>, current| {
+        let validate_versions = |m: &Migration<_, _, _>, current| {
             let Migration {
                 current_boot,
                 persisted: Persisted { user, automated, rollback: _, rollback_history: _ },
                 persistence: _,
                 collaborative_reboot: _,
+                crash_reporter: _,
             } = m;
             assert_eq!(current_boot.version(), current);
             match mechanism {
@@ -1188,8 +1357,11 @@ mod tests {
         }
 
         // Check that the setting was properly persisted.
-        let migration =
-            Migration::new(migration.persistence, migration.collaborative_reboot.scheduler);
+        let migration = Migration::new(
+            migration.persistence,
+            migration.collaborative_reboot.scheduler,
+            migration.crash_reporter,
+        );
         validate_versions(&migration, set_version);
     }
 
@@ -1203,6 +1375,7 @@ mod tests {
                 rollback_history: None,
             }),
             FakeCollaborativeReboot::default(),
+            FakeCrashReporter::default(),
         );
 
         assert_eq!(migration.current_boot.version(), NetstackVersion::Netstack3);
@@ -1240,6 +1413,9 @@ mod tests {
             false
         );
 
+        // It should have also filed a crash report
+        assert_eq!(migration.crash_reporter.reports, vec![CrashReportReason::FailedHealthcheck]);
+
         // This emulates seeing a healthcheck success before rebooting, in which
         // case we should see the reboot get canceled.
         migration.update_rollback_state(rollback::Persisted::Success).await;
@@ -1249,8 +1425,11 @@ mod tests {
         );
 
         // Ensure that the changes were persisted successfully.
-        let migration =
-            Migration::new(migration.persistence, migration.collaborative_reboot.scheduler);
+        let migration = Migration::new(
+            migration.persistence,
+            migration.collaborative_reboot.scheduler,
+            migration.crash_reporter,
+        );
         assert_matches!(migration.persisted.rollback, Some(rollback::Persisted::Success));
     }
 
@@ -1274,6 +1453,7 @@ mod tests {
                 rollback_history: None,
             }),
             FakeCollaborativeReboot::default(),
+            NoCrashReports,
         );
 
         // Start of by updating the automated setting to Netstack2; this ensures
@@ -1335,6 +1515,7 @@ mod tests {
                 rollback_history: None,
             }),
             NoCollaborativeReboot,
+            NoCrashReports,
         );
         let (serve, control, _) = serve_migration(m);
         let fut = async move {
@@ -1351,12 +1532,13 @@ mod tests {
         };
         let (migration, ()) = futures::future::join(serve, fut).await;
 
-        let validate_versions = |m: &Migration<_, _>| {
+        let validate_versions = |m: &Migration<_, _, _>| {
             let Migration {
                 current_boot,
                 persisted: Persisted { user, automated, rollback: _, rollback_history: _ },
                 persistence: _,
                 collaborative_reboot: _,
+                crash_reporter: _,
             } = m;
             assert_eq!(current_boot.version(), PREVIOUS_VERSION);
             match mechanism {
@@ -1373,8 +1555,11 @@ mod tests {
 
         validate_versions(&migration);
         // Check that the setting was properly persisted.
-        let migration =
-            Migration::new(migration.persistence, migration.collaborative_reboot.scheduler);
+        let migration = Migration::new(
+            migration.persistence,
+            migration.collaborative_reboot.scheduler,
+            migration.crash_reporter,
+        );
         validate_versions(&migration);
     }
 
@@ -1388,6 +1573,7 @@ mod tests {
                 rollback_history: None,
             }),
             NoCollaborativeReboot,
+            NoCrashReports,
         );
         let inspector = fuchsia_inspect::component::inspector();
         let nodes = InspectNodes::new(inspector, &m);
@@ -1439,6 +1625,7 @@ mod tests {
                 rollback_history: None,
             }),
             NoCollaborativeReboot,
+            NoCrashReports,
         );
         let inspector = fuchsia_inspect::component::inspector();
         let nodes = InspectNodes::new(inspector, &m);
@@ -1504,6 +1691,7 @@ mod tests {
                 }),
             }),
             NoCollaborativeReboot,
+            NoCrashReports,
         );
         let inspector = fuchsia_inspect::component::inspector();
         let _nodes = InspectNodes::new(inspector, &m);
@@ -1567,6 +1755,7 @@ mod tests {
                 rollback_history: None,
             }),
             NoCollaborativeReboot,
+            NoCrashReports,
         );
         m.current_boot = current_boot;
         let (logger, mut logger_stream) =
@@ -1698,6 +1887,7 @@ mod tests {
                 rollback_history: None,
             }),
             NoCollaborativeReboot,
+            NoCrashReports,
         );
         migration.current_boot = current_boot;
         compute_state_metric(&migration)
@@ -1771,7 +1961,7 @@ mod tests {
         };
 
         let (persistence, mut wait) = AwaitPersisted::with_persisted(start, &target);
-        let mut migration = Migration::new(persistence, NoCollaborativeReboot);
+        let mut migration = Migration::new(persistence, NoCollaborativeReboot, NoCrashReports);
         // No service requests.
         let service_request_stream = futures::stream::pending();
         // A health check that always succeeds.
@@ -1824,7 +2014,11 @@ mod tests {
         };
 
         let (persistence, mut wait) = AwaitPersisted::with_persisted(start, &target);
-        let mut migration = Migration::new(persistence, FakeCollaborativeReboot::default());
+        let mut migration = Migration::new(
+            persistence,
+            FakeCollaborativeReboot::default(),
+            FakeCrashReporter::default(),
+        );
         // No service requests.
         let service_request_stream = futures::stream::pending();
         // A health check that always fails.
@@ -1849,14 +2043,27 @@ mod tests {
             );
         }
 
-        assert_matches!(
+        let failure_count = assert_matches!(
             migration.persisted.rollback,
-            Some(rollback::Persisted::HealthcheckFailures(f)) if
-            f >= rollback::MAX_FAILED_HEALTHCHECKS
+            Some(rollback::Persisted::HealthcheckFailures(f)) => f
         );
+        assert!(
+            failure_count >= rollback::MAX_FAILED_HEALTHCHECKS,
+            "failure_count={failure_count}"
+        );
+
         // Verify a failed migration schedules a collaborative reboot.
         let cr_req = &migration.collaborative_reboot.scheduler.req;
-        assert_eq!(Ok(false), cr_req.as_ref().expect("there should be a request").is_closed())
+        assert_eq!(Ok(false), cr_req.as_ref().expect("there should be a request").is_closed());
+
+        // Verify crash reports were filed for each failed healthcheck above
+        // the threshold.
+        let expected_num_crash_reports =
+            failure_count - HEALTHCHECK_FAILURE_THRESHOLD_FOR_CRASH_REPORTS + 1;
+        assert_eq!(
+            migration.crash_reporter.reports,
+            vec![CrashReportReason::FailedHealthcheck; expected_num_crash_reports]
+        )
     }
 
     // Regression test for https://fxbug.dev/395913604.
@@ -1886,7 +2093,11 @@ mod tests {
         };
 
         let (persistence, wait) = AwaitPersisted::with_persisted(start, &target);
-        let mut migration = Migration::new(persistence, FakeCollaborativeReboot::default());
+        let mut migration = Migration::new(
+            persistence,
+            FakeCollaborativeReboot::default(),
+            FakeCrashReporter::default(),
+        );
         // A health check that always fails.
         let mock_healthcheck = rollback::testutil::MockHttpRequester(|| {
             Ok(fnet_http::Response { error: None, status_code: Some(500), ..Default::default() })
@@ -1951,8 +2162,11 @@ mod tests {
             rollback_history: Some(RollbackHistory { epoch: CURRENT_EPOCH, count: 1 }),
         };
 
-        let (persistence, mut wait) = AwaitPersisted::with_persisted(start, &target);
-        let mut migration = Migration::new(persistence, FakeCollaborativeReboot::default());
+        let (persistence, persistence_wait) = AwaitPersisted::with_persisted(start, &target);
+        let (crash_reporter, crash_reporter_wait) =
+            AwaitCrashReports::new(vec![CrashReportReason::RolledBack]);
+        let mut migration =
+            Migration::new(persistence, FakeCollaborativeReboot::default(), crash_reporter);
         // No service requests.
         let service_request_stream = futures::stream::pending();
         // No Healthchecks.
@@ -1969,9 +2183,10 @@ mod tests {
             )
             .fuse();
             futures::pin_mut!(main_fut);
+            let mut wait = futures::future::join(persistence_wait, crash_reporter_wait);
             futures::select!(
                 () = main_fut => unreachable!("main fut should never exit"),
-                () = wait => {}
+                ((), ()) = wait => {}
             );
         }
 
@@ -1991,6 +2206,8 @@ mod tests {
         // The current_boot should reflect that we've rolled back to NS2
         // temporarily.
         assert_eq!(migration.current_boot, RollbackNetstackVersion::ForceNetstack2);
+        // A rollback crash report should have been filed.
+        assert_eq!(migration.crash_reporter.reports, vec![CrashReportReason::RolledBack],);
     }
 
     #[fuchsia::test]
@@ -2016,8 +2233,11 @@ mod tests {
             }),
         };
 
-        let (persistence, mut wait) = AwaitPersisted::with_persisted(start, &target);
-        let mut migration = Migration::new(persistence, FakeCollaborativeReboot::default());
+        let (persistence, persistence_wait) = AwaitPersisted::with_persisted(start, &target);
+        let (crash_reporter, crash_reporter_wait) =
+            AwaitCrashReports::new(vec![CrashReportReason::RolledBack]);
+        let mut migration =
+            Migration::new(persistence, FakeCollaborativeReboot::default(), crash_reporter);
         // No service requests.
         let service_request_stream = futures::stream::pending();
         // No Healthchecks.
@@ -2034,9 +2254,10 @@ mod tests {
             )
             .fuse();
             futures::pin_mut!(main_fut);
+            let mut wait = futures::future::join(persistence_wait, crash_reporter_wait);
             futures::select!(
                 () = main_fut => unreachable!("main fut should never exit"),
-                () = wait => {}
+                ((), ()) = wait => {}
             );
         }
 
@@ -2051,6 +2272,57 @@ mod tests {
         );
         // A collaborative Reboot request should NOT be scheduled. We're not
         // going to re-attempt the migration until the epoch advances.
+        assert_eq!(migration.collaborative_reboot.scheduler.req, None);
+        // The current_boot should reflect that we've rolled back to NS2
+        // indefinitely.
+        assert_eq!(migration.current_boot, RollbackNetstackVersion::ForceNetstack2Indefinitely);
+        // A rollback crash report should have been filed.
+        assert_eq!(migration.crash_reporter.reports, vec![CrashReportReason::RolledBack]);
+    }
+
+    // This test simulates the device starting up while we were already
+    // in the `ForceNetstack2Indefinitely` state. E.g. the current boot isn't
+    // a rollback, rather it's continuing to use Netstack2, as established in
+    // a previous boot.
+    #[fuchsia::test]
+    async fn startup_already_with_max_rollbacks_per_epoch() {
+        let persistence = InMemory::with_persisted(Persisted {
+            user: None,
+            automated: Some(NetstackVersion::Netstack3),
+            rollback: Some(rollback::Persisted::HealthcheckFailures(0)),
+            rollback_history: Some(RollbackHistory {
+                epoch: CURRENT_EPOCH,
+                count: MAX_ROLLBACKS_PER_EPOCH,
+            }),
+        });
+        // No crash report should get filed because this boot isn't a rollback.
+        let crash_reporter = NoCrashReports;
+        let mut migration =
+            Migration::new(persistence, FakeCollaborativeReboot::default(), crash_reporter);
+        // No service requests.
+        let service_request_stream = futures::stream::pending();
+        // No Healthchecks.
+        let healthcheck_tick = futures::stream::pending();
+        let mock_healthcheck = rollback::testutil::MockHttpRequester(|| {
+            panic!("This test isn't exercising healthchecks");
+        });
+
+        // Drive the main future for a fixed timeout. It will never exit, but
+        // we want to give the migration machinery enough time to apply any
+        // changes it wants to make (it shouldn't make any).
+        main_inner(&mut migration, service_request_stream, mock_healthcheck, healthcheck_tick)
+            .map(Err)
+            .on_timeout(Duration::from_secs(1), || Ok(()))
+            .await
+            .expect("main fut should never exit");
+
+        // None of the persisted state should have changed.
+        assert_eq!(migration.persisted.rollback, Some(rollback::Persisted::HealthcheckFailures(0)));
+        assert_eq!(
+            migration.persisted.rollback_history,
+            Some(RollbackHistory { epoch: CURRENT_EPOCH, count: MAX_ROLLBACKS_PER_EPOCH })
+        );
+        // A collaborative Reboot request should NOT be scheduled.
         assert_eq!(migration.collaborative_reboot.scheduler.req, None);
         // The current_boot should reflect that we've rolled back to NS2
         // indefinitely.
@@ -2076,7 +2348,8 @@ mod tests {
         };
 
         let (persistence, mut wait) = AwaitPersisted::with_persisted(start, &target);
-        let mut migration = Migration::new(persistence, FakeCollaborativeReboot::default());
+        let mut migration =
+            Migration::new(persistence, FakeCollaborativeReboot::default(), NoCrashReports);
         // No service requests.
         let service_request_stream = futures::stream::pending();
         // No Healthchecks.
