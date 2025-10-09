@@ -342,6 +342,121 @@ impl<'a> CapabilityId<'a> {
         )))
     }
 
+    pub fn from_spanned_capability(
+        capability: &'a Spanned<SpannedCapability>,
+        filename: Option<&std::path::Path>,
+        file_source: Option<&String>,
+    ) -> Result<Vec<Self>, Error> {
+        // TODO: Validate that exactly one of these is set.
+        if let Some(n) = capability.service() {
+            if n.is_many() && capability.path.is_some() {
+                let location = validate::byte_index_to_location(
+                    file_source,
+                    capability.path.as_ref().unwrap().span().0,
+                );
+                return Err(Error::validate_with_span(
+                    "\"path\" can only be specified when one `service` is supplied.",
+                    location,
+                    filename,
+                ));
+            }
+            return Ok(Self::services_from(Self::get_one_or_many_names(
+                n,
+                None,
+                capability.capability_type().unwrap(),
+            )?));
+        } else if let Some(n) = capability.protocol() {
+            if n.is_many() && capability.path.is_some() {
+                let location = validate::byte_index_to_location(
+                    file_source,
+                    capability.path.as_ref().unwrap().span().0,
+                );
+                return Err(Error::validate_with_span(
+                    "\"path\" can only be specified when one `protocol` is supplied.",
+                    location,
+                    filename,
+                ));
+            }
+            return Ok(Self::protocols_from(Self::get_one_or_many_names(
+                n,
+                None,
+                capability.capability_type().unwrap(),
+            )?));
+        } else if let Some(n) = capability.directory() {
+            return Ok(Self::directories_from(Self::get_one_or_many_names(
+                n,
+                None,
+                capability.capability_type().unwrap(),
+            )?));
+        } else if let Some(n) = capability.storage() {
+            if capability.storage_id.is_none() {
+                let location = validate::byte_index_to_location(
+                    file_source,
+                    capability.storage.as_ref().unwrap().span().0,
+                );
+                return Err(Error::validate_with_span(
+                    "Storage declaration is missing \"storage_id\", but is required.",
+                    location,
+                    filename,
+                ));
+            }
+            return Ok(Self::storages_from(Self::get_one_or_many_names(
+                n,
+                None,
+                capability.capability_type().unwrap(),
+            )?));
+        } else if let Some(n) = capability.runner() {
+            return Ok(Self::runners_from(Self::get_one_or_many_names(
+                n,
+                None,
+                capability.capability_type().unwrap(),
+            )?));
+        } else if let Some(n) = capability.resolver() {
+            return Ok(Self::resolvers_from(Self::get_one_or_many_names(
+                n,
+                None,
+                capability.capability_type().unwrap(),
+            )?));
+        } else if let Some(n) = capability.event_stream() {
+            return Ok(Self::event_streams_from(Self::get_one_or_many_names(
+                n,
+                None,
+                capability.capability_type().unwrap(),
+            )?));
+        } else if let Some(n) = capability.dictionary() {
+            return Ok(Self::dictionaries_from(Self::get_one_or_many_names(
+                n,
+                None,
+                capability.capability_type().unwrap(),
+            )?));
+        } else if let Some(n) = capability.config() {
+            return Ok(Self::configurations_from(Self::get_one_or_many_names(
+                n,
+                None,
+                capability.capability_type().unwrap(),
+            )?));
+        }
+
+        // Unsupported capability type.
+        let supported_keywords = capability
+            .supported()
+            .into_iter()
+            .map(|k| format!("\"{}\"", k))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let location = validate::byte_index_to_location(file_source, capability.span().0);
+
+        Err(Error::validate_with_span(
+            format!(
+                "`{}` declaration is missing a capability keyword, one of: {}",
+                capability.decl_type(),
+                supported_keywords,
+            ),
+            location,
+            filename,
+        ))
+    }
+
     /// Given an Offer or Expose clause, return the set of target identifiers.
     ///
     /// When only one capability identifier is specified, the target identifier name is derived
@@ -1457,7 +1572,7 @@ pub struct SpannedDocument {
 
     pub environments: Option<Vec<Spanned<Environment>>>,
 
-    pub capabilities: Option<Vec<SpannedCapability>>,
+    pub capabilities: Option<Vec<Spanned<SpannedCapability>>>,
 
     pub r#use: Option<Vec<Spanned<Use>>>,
 
@@ -3763,6 +3878,77 @@ pub trait CapabilityClause: Clone + PartialEq + std::fmt::Debug {
     }
 }
 
+pub trait SpannedCapabilityClause: Clone + PartialEq + std::fmt::Debug {
+    fn service(&self) -> Option<OneOrMany<&BorrowedName>>;
+    fn protocol(&self) -> Option<OneOrMany<&BorrowedName>>;
+    fn directory(&self) -> Option<OneOrMany<&BorrowedName>>;
+    fn storage(&self) -> Option<OneOrMany<&BorrowedName>>;
+    fn runner(&self) -> Option<OneOrMany<&BorrowedName>>;
+    fn resolver(&self) -> Option<OneOrMany<&BorrowedName>>;
+    fn event_stream(&self) -> Option<OneOrMany<&BorrowedName>>;
+    fn dictionary(&self) -> Option<OneOrMany<&BorrowedName>>;
+    fn config(&self) -> Option<OneOrMany<&BorrowedName>>;
+
+    /// Returns the name of the capability for display purposes.
+    /// If `service()` returns `Some`, the capability name must be "service", etc.
+    ///
+    /// Returns an error if the capability name is not set, or if there is more than one.
+    fn capability_type(&self) -> Result<&'static str, Error> {
+        let mut types = Vec::new();
+        if self.service().is_some() {
+            types.push("service");
+        }
+        if self.protocol().is_some() {
+            types.push("protocol");
+        }
+        if self.directory().is_some() {
+            types.push("directory");
+        }
+        if self.storage().is_some() {
+            types.push("storage");
+        }
+        if self.event_stream().is_some() {
+            types.push("event_stream");
+        }
+        if self.runner().is_some() {
+            types.push("runner");
+        }
+        if self.config().is_some() {
+            types.push("config");
+        }
+        if self.resolver().is_some() {
+            types.push("resolver");
+        }
+        if self.dictionary().is_some() {
+            types.push("dictionary");
+        }
+        match types.len() {
+            0 => {
+                let supported_keywords = self
+                    .supported()
+                    .into_iter()
+                    .map(|k| format!("\"{}\"", k))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                Err(Error::validate(format!(
+                    "`{}` declaration is missing a capability keyword, one of: {}",
+                    self.decl_type(),
+                    supported_keywords,
+                )))
+            }
+            1 => Ok(types[0]),
+            _ => Err(Error::validate(format!(
+                "{} declaration has multiple capability types defined: {:?}",
+                self.decl_type(),
+                types
+            ))),
+        }
+    }
+
+    fn decl_type(&self) -> &'static str;
+    fn supported(&self) -> &[&'static str];
+}
+
 trait Canonicalize {
     fn canonicalize(&mut self);
 }
@@ -3891,6 +4077,53 @@ impl CapabilityClause for Capability {
     }
     fn are_many_names_allowed(&self) -> bool {
         ["service", "protocol", "event_stream"].contains(&self.capability_type().unwrap())
+    }
+}
+
+impl SpannedCapabilityClause for SpannedCapability {
+    fn service(&self) -> Option<OneOrMany<&BorrowedName>> {
+        option_one_or_many_as_ref(&self.service)
+    }
+    fn protocol(&self) -> Option<OneOrMany<&BorrowedName>> {
+        option_one_or_many_as_ref(&self.protocol)
+    }
+    fn directory(&self) -> Option<OneOrMany<&BorrowedName>> {
+        self.directory.as_ref().map(|n| OneOrMany::One((&**n).as_ref()))
+    }
+    fn storage(&self) -> Option<OneOrMany<&BorrowedName>> {
+        self.storage.as_ref().map(|n| OneOrMany::One((&**n).as_ref()))
+    }
+    fn runner(&self) -> Option<OneOrMany<&BorrowedName>> {
+        self.runner.as_ref().map(|n| OneOrMany::One((&**n).as_ref()))
+    }
+    fn resolver(&self) -> Option<OneOrMany<&BorrowedName>> {
+        self.resolver.as_ref().map(|n| OneOrMany::One((&**n).as_ref()))
+    }
+    fn event_stream(&self) -> Option<OneOrMany<&BorrowedName>> {
+        option_one_or_many_as_ref(&self.event_stream)
+    }
+    fn dictionary(&self) -> Option<OneOrMany<&BorrowedName>> {
+        self.dictionary.as_ref().map(|n| OneOrMany::One(n.as_ref()))
+    }
+    fn config(&self) -> Option<OneOrMany<&BorrowedName>> {
+        self.config.as_ref().map(|n| OneOrMany::One(n.as_ref()))
+    }
+
+    fn decl_type(&self) -> &'static str {
+        "capability"
+    }
+    fn supported(&self) -> &[&'static str] {
+        &[
+            "service",
+            "protocol",
+            "directory",
+            "storage",
+            "runner",
+            "resolver",
+            "event_stream",
+            "dictionary",
+            "config",
+        ]
     }
 }
 

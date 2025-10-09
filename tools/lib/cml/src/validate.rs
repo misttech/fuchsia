@@ -9,8 +9,8 @@ use crate::{
     Collection, ConfigKey, ConfigType, ConfigValueType, DependencyType, DictionaryRef, Document,
     Environment, EnvironmentExtends, Error, EventScope, Expose, ExposeFromRef, ExposeToRef,
     FromClause, Offer, OfferFromRef, OfferToRef, OneOrMany, Program, RegistrationRef, Rights,
-    RootDictionaryRef, SourceAvailability, SpannedCapability, SpannedChild, SpannedDocument, Use,
-    UseFromRef, offer_to_all_would_duplicate,
+    RootDictionaryRef, SourceAvailability, Spanned, SpannedCapability, SpannedChild,
+    SpannedDocument, Use, UseFromRef, offer_to_all_would_duplicate,
 };
 use cm_types::{BorrowedName, IterablePath, Name};
 use itertools::Either;
@@ -221,15 +221,17 @@ impl<'a> ValidationContextWithSpan<'a> {
                 }
             }
 
-            if let Some(capabilities) = &document.capabilities {
-                for capability in capabilities {
-                    self.validate_capability(capability)?;
-                }
-            }
-
             if let Some(collections) = &document.collections {
                 for collection in collections {
                     self.validate_collection(&collection)?;
+                }
+            }
+
+            let mut used_ids = HashMap::new();
+
+            if let Some(capabilities) = &document.capabilities {
+                for capability in capabilities {
+                    self.validate_capability(capability, &mut used_ids)?;
                 }
             }
         }
@@ -257,7 +259,11 @@ which is almost certainly a mistake: {}",
         Ok(())
     }
 
-    fn validate_capability(&mut self, capability: &'a SpannedCapability) -> Result<(), Error> {
+    fn validate_capability(
+        &mut self,
+        capability: &'a Spanned<SpannedCapability>,
+        used_ids: &mut HashMap<String, CapabilityId<'a>>,
+    ) -> Result<(), Error> {
         if capability.directory.is_some() && capability.path.is_none() {
             let location = byte_index_to_location(
                 self.current_file_source,
@@ -376,6 +382,25 @@ which is almost certainly a mistake: {}",
         }
         if capability.delivery.is_some() {
             self.features.check(Feature::DeliveryType)?;
+        }
+
+        // Disallow multiple capability ids of the same name.
+        let capability_ids = CapabilityId::from_spanned_capability(
+            capability,
+            self.current_file_path,
+            self.current_file_source,
+        )?;
+
+        for capability_id in capability_ids {
+            if used_ids.insert(capability_id.to_string(), capability_id.clone()).is_some() {
+                let location =
+                    byte_index_to_location(self.current_file_source, capability.span().0);
+                return Err(Error::validate_with_span(
+                    format!("\"{}\" is a duplicate \"capability\" name", capability_id),
+                    location,
+                    self.current_file_path,
+                ));
+            }
         }
 
         Ok(())
@@ -3229,6 +3254,33 @@ mod tests {
             Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"from\" should not be present with \"runner\"" &&
                 location == Some(Location {line: 4, column: 35})
         ),
+
+        test_cml_service_multi_invalid_path(
+            r##"{
+                "capabilities": [
+                    {
+                        "service": ["a", "b", "c"],
+                        "path": "/minfs"
+                    }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"path\" can only be specified when one `service` is supplied." &&
+            location == Some(Location {line: 5, column: 33})
+        ),
+
+        test_cml_protocol_multi_invalid_path(
+            r##"{
+                "capabilities": [
+                    {
+                        "protocol": ["a", "b", "c"],
+                        "path": "/minfs"
+                    }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"path\" can only be specified when one `protocol` is supplied." &&
+                        location == Some(Location {line: 5, column: 33})
+
+        ),
     }
 
     test_validate_cml! {
@@ -5438,7 +5490,7 @@ mod tests {
             }),
             Ok(())
         ),
-        test_cml_protocol_multi_invalid_path(
+        test_cml_protocol_multi_invalid_path_no_span(
             json!({
                 "capabilities": [
                     {
@@ -6869,7 +6921,7 @@ mod tests {
             }),
             Ok(())
         ),
-        test_cml_service_multi_invalid_path(
+        test_cml_service_multi_invalid_path_no_span(
             json!({
                 "capabilities": [
                     {
