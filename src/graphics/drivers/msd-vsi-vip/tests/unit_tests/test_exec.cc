@@ -41,7 +41,7 @@ TEST_F(TestExec, ResetAfterSubmit) {
     ASSERT_TRUE(device_->IsIdle());
     CreateAndSubmitBufferWaitCompletion(default_context(), buffer_desc);
     if (HasFailure()) {
-      device_->ProcessDumpStatusToLog();
+      device_->DumpStatusToLog();
     }
     ASSERT_NO_FATAL_FAILURE();
     ASSERT_FALSE(default_context()->killed());
