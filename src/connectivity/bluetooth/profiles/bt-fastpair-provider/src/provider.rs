@@ -13,7 +13,7 @@ use fuchsia_inspect::{self as inspect, NumericProperty, Property};
 use fuchsia_inspect_derive::{AttachError, Inspect};
 use futures::channel::mpsc;
 use futures::stream::{FusedStream, StreamExt};
-use futures::{select, FutureExt};
+use futures::{FutureExt, select};
 use host_watcher::{HostEvent, HostWatcher};
 use log::{debug, info, trace, warn};
 use std::pin::pin;
@@ -26,34 +26,12 @@ use crate::message_stream::MessageStream;
 use crate::pairing::{PairingArgs, PairingManager, PairingType};
 use crate::types::keys::aes_from_anti_spoofing_and_public;
 use crate::types::packets::{
+    KeyBasedPairingAction, KeyBasedPairingRequest, MessageStreamPacket,
     decrypt_account_key_request, decrypt_key_based_pairing_request, decrypt_passkey_request,
     decrypt_personalized_name_request, key_based_pairing_response, parse_key_based_pairing_request,
-    passkey_response, personalized_name_response, KeyBasedPairingAction, KeyBasedPairingRequest,
-    MessageStreamPacket,
+    passkey_response, personalized_name_response,
 };
 use crate::types::{AccountKey, AccountKeyList, Error, SharedSecret};
-
-/// Logs the current pairing status to Cobalt.
-/// `success` is true if Fast Pair pairing is successful.
-fn log_pairing_status(metrics: &MetricsLogger, success: bool) {
-    let event_code = if success {
-        bt_metrics::FastpairProviderPairingStatusMetricDimensionResult::Success
-    } else {
-        bt_metrics::FastpairProviderPairingStatusMetricDimensionResult::Failure
-    };
-    metrics.log_occurrence(
-        bt_metrics::FASTPAIR_PROVIDER_PAIRING_STATUS_METRIC_ID,
-        vec![event_code as u32],
-    );
-}
-
-/// Logs the peer request to Cobalt.
-fn log_peer_request(
-    metrics: &MetricsLogger,
-    code: bt_metrics::FastpairProviderPeerRequestMetricDimensionRequestType,
-) {
-    metrics.log_occurrence(bt_metrics::FASTPAIR_PROVIDER_PEER_REQUEST_METRIC_ID, vec![code as u32]);
-}
 
 /// The types of FIDL requests that the Provider server can service.
 pub enum ServiceRequest {
@@ -291,33 +269,30 @@ impl Provider {
         // TODO(https://fxbug.dev/42178310): Track the salt in `request` to prevent replay attacks.
         debug!(peer_id:%; "Received key based pairing request: {:?}", request);
         let pairing_type = PairingType::from_action(&request.action, discoverable);
-        use bt_metrics::FastpairProviderPeerRequestMetricDimensionRequestType as PeerRequestType;
         match request.action {
             KeyBasedPairingAction::SeekerInitiatesPairing { received_provider_address }
             | KeyBasedPairingAction::PersonalizedNameWrite { received_provider_address } => {
                 // We already check the HostWatcher for the existence of an active Host.
                 let addresses = self.host_watcher.addresses().expect("active host");
                 if !addresses.iter().any(|addr| addr.bytes() == &received_provider_address) {
-                    let error = format!("Received address ({received_provider_address:?}) doesn't match any local ({addresses:?})");
+                    let error = format!(
+                        "Received address ({received_provider_address:?}) doesn't match any local ({addresses:?})"
+                    );
                     response(Err(gatt::Error::WriteRequestRejected));
                     return Err(Error::internal(&error));
                 }
 
                 if matches!(request.action, KeyBasedPairingAction::SeekerInitiatesPairing { .. }) {
                     let _ = self.inspect_node.pairing_request_count.add(1);
-                } else {
-                    log_peer_request(&self.metrics, PeerRequestType::PersonalizedNameWrite);
                 }
             }
             KeyBasedPairingAction::ProviderInitiatesPairing { .. } => {
                 // TODO(https://fxbug.dev/42071496): Use `sys.Access/Pair` to pair to peer.
-                log_peer_request(&self.metrics, PeerRequestType::ProviderInitiatesPairing);
             }
             KeyBasedPairingAction::RetroactiveWrite { seeker_address: _ } => {
                 // TODO(https://fxbug.dev/42066852): This can be improved by using a timeout after an
                 // OnPairingComplete signal is received. A retroactive write can only occur within
                 // some finite period of time.
-                log_peer_request(&self.metrics, PeerRequestType::RetroactivePairing);
             }
         }
 
@@ -382,7 +357,6 @@ impl Provider {
                 if let Some(p) = self.pairing.inner_mut() {
                     let _ = p.cancel_pairing_procedure(&peer_id);
                 }
-                log_pairing_status(&self.metrics, /* success= */ false);
             }
         }
     }
@@ -421,7 +395,6 @@ impl Provider {
                 if let Some(p) = self.pairing.inner_mut() {
                     let _ = p.cancel_pairing_procedure(&peer_id);
                 }
-                log_pairing_status(&self.metrics, /* success= */ false);
             }
         }
     }
@@ -475,7 +448,6 @@ impl Provider {
                     Ok(_) => info!(peer_id:%; "Successfully started key-based pairing"),
                     Err(e) => {
                         warn!(peer_id:%; "Couldn't start key-based pairing: {e:?}");
-                        log_pairing_status(&self.metrics, /* success= */ false);
                     }
                 }
             }
@@ -592,7 +564,6 @@ impl Provider {
                             if let Some(pairing) = self.pairing.inner_mut() {
                                 pairing.notify_pairing_complete(id);
                             }
-                            log_pairing_status(&self.metrics, /* success= */ true);
                         }
                     }
                 }
@@ -628,7 +599,7 @@ mod tests {
     use async_test_helpers::run_while;
     use async_utils::PollExt;
     use diagnostics_assertions::assert_data_tree;
-    use fidl::endpoints::{create_proxy_and_stream, ControlHandle, Proxy, RequestStream};
+    use fidl::endpoints::{ControlHandle, Proxy, RequestStream, create_proxy_and_stream};
     use fidl_fuchsia_bluetooth_gatt2::{
         Handle, LocalServiceProxy, LocalServiceWriteValueRequest as WriteValueRequest,
         ValueChangedParameters,
@@ -638,7 +609,7 @@ mod tests {
         HostWatcherRequestStream, InputCapability, OutputCapability, PairingDelegateMarker,
     };
     use fuchsia_async as fasync;
-    use fuchsia_bluetooth::types::{example_host, Address, HostId};
+    use fuchsia_bluetooth::types::{Address, HostId, example_host};
     use fuchsia_inspect_derive::WithInspect;
     use futures::SinkExt;
 
@@ -651,11 +622,11 @@ mod tests {
     use crate::pairing::tests::MockPairing;
     use crate::types::keys::tests::{encrypt_message, encrypt_message_include_public_key};
     use crate::types::packets::tests::{
-        key_based_pairing_request, random_account_key, DEVICE_ACTION_PERSONALIZED_NAME_REQUEST,
-        PASSKEY_REQUEST,
+        DEVICE_ACTION_PERSONALIZED_NAME_REQUEST, PASSKEY_REQUEST, key_based_pairing_request,
+        random_account_key,
     };
     use crate::types::tests::expect_keys_at_path;
-    use crate::types::{keys, ModelId};
+    use crate::types::{ModelId, keys};
 
     async fn setup_provider() -> (
         Provider,

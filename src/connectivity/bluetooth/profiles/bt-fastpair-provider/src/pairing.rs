@@ -325,12 +325,6 @@ impl PairingManagerInspect {
             let _ = node.adopt(&inspect_node);
             let _ = node.record(inspect_node);
         });
-        // Record the pairing time to Cobalt.
-        self.metrics.log_integer(
-            bt_metrics::FASTPAIR_PROVIDER_PAIRING_TIME_SECONDS_METRIC_ID,
-            pairing_time_seconds as i64,
-            vec![],
-        );
     }
 }
 
