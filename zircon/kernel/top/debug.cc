@@ -88,10 +88,10 @@ bool EndsWith(const char* str, char x) {
 }  // namespace
 
 void spin(uint32_t usecs) {
-  zx_instant_mono_t start = current_mono_time();
+  zx_instant_boot_t start = current_boot_time();
 
-  zx_duration_mono_t nsecs = ZX_USEC(usecs);
-  while (zx_time_sub_time(current_mono_time(), start) < nsecs)
+  zx_duration_boot_t nsecs = ZX_USEC(usecs);
+  while (zx_time_sub_time(current_boot_time(), start) < nsecs)
     ;
 }
 

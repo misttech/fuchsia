@@ -52,9 +52,6 @@ uintptr_t choose_stack_guard(void);
 /* spin the cpu for a period of (short) time */
 void spin(uint32_t usecs);
 
-/* spin the cpu for a certain number of cpu cycles */
-void spin_cycles(uint32_t usecs);
-
 // A printf-like macro which prepend's the user's message with the special
 // "ZIRCON KERNEL OOPS" tag.  zbi_test bots look for tags like this and consider
 // their presence to indicate test failures, even if the higher level test
