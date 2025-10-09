@@ -4,7 +4,7 @@
 
 use crate::common;
 use ansi_term::Colour;
-use anyhow::{anyhow, bail, format_err, Result};
+use anyhow::{Result, anyhow, bail, format_err};
 use fidl_fuchsia_driver_development as fdd;
 use itertools::Itertools;
 use std::collections::{BTreeMap, VecDeque};
@@ -41,15 +41,23 @@ impl FromStr for NodeFilter {
             filter => match filter.split_once(":") {
                 Some((function, arg)) => match function {
                     "ancestor" | "ancestors" => Ok(NodeFilter::Ancestor(arg.to_string(), false)),
-                    "primary_ancestor" | "primary_ancestors" => Ok(NodeFilter::Ancestor(arg.to_string(), true)),
+                    "primary_ancestor" | "primary_ancestors" => {
+                        Ok(NodeFilter::Ancestor(arg.to_string(), true))
+                    }
                     "descendant" | "descendants" => Ok(NodeFilter::Descendant(arg.to_string())),
                     "relative" | "relatives" => Ok(NodeFilter::Relative(arg.to_string(), false)),
-                    "primary_relative" | "primary_relatives" => Ok(NodeFilter::Relative(arg.to_string(), true)),
+                    "primary_relative" | "primary_relatives" => {
+                        Ok(NodeFilter::Relative(arg.to_string(), true))
+                    }
                     "sibling" | "siblings" => Ok(NodeFilter::Sibling(arg.to_string(), false)),
-                    "primary_sibling" | "primary_siblings" => Ok(NodeFilter::Sibling(arg.to_string(), true)),
+                    "primary_sibling" | "primary_siblings" => {
+                        Ok(NodeFilter::Sibling(arg.to_string(), true))
+                    }
                     _ => Err("unknown function for node filter."),
                 },
-                None => Err("node filter should be 'bound', 'unbound', 'ancestors:<node_name>', 'primary_ancestors:<node_name>', 'descendants:<node_name>', 'relatives:<node_name>', 'primary_relatives:<node_name>', 'siblings:<node_name>', or 'primary_siblings:<node_name>'."),
+                None => Err(
+                    "node filter should be 'bound', 'unbound', 'ancestors:<node_name>', 'primary_ancestors:<node_name>', 'descendants:<node_name>', 'relatives:<node_name>', 'primary_relatives:<node_name>', 'siblings:<node_name>', or 'primary_siblings:<node_name>'.",
+                ),
             },
         }
     }
@@ -105,11 +113,7 @@ pub async fn get_nodes_from_query(
         .into_iter()
         .partition(|i| i.moniker.as_ref().map(|s| s.as_str()) == Some(query));
 
-    if !exact_matches.is_empty() {
-        Ok(exact_matches)
-    } else {
-        Ok(others)
-    }
+    if !exact_matches.is_empty() { Ok(exact_matches) } else { Ok(others) }
 }
 
 pub async fn get_single_node_from_query(
@@ -124,7 +128,11 @@ pub async fn get_single_node_from_query(
             .map(|i| i.moniker.unwrap_or_else(|| "No moniker.".to_string()))
             .collect();
         let monikers = monikers.join("\n");
-        bail!("The query {:?} matches more than one node:\n{}\n\nTo avoid ambiguity, use one of the above monikers instead.", query, monikers);
+        bail!(
+            "The query {:?} matches more than one node:\n{}\n\nTo avoid ambiguity, use one of the above monikers instead.",
+            query,
+            monikers
+        );
     }
     if instances.is_empty() {
         bail!("No matching node found for query {:?}.", query);
@@ -163,7 +171,10 @@ pub fn filter_nodes(
             }
             NodeFilter::Sibling(filter, primary_only) => {
                 let node_map = create_node_map(&nodes)?;
-                let target = match nodes.iter().find(|n| n.moniker.as_ref() == Some(&filter)) {
+                let target = match nodes
+                    .iter()
+                    .find(|n| n.moniker.as_ref().unwrap().eq_ignore_ascii_case(&filter))
+                {
                     Some(node) => node,
                     None => return Err(anyhow!("Node with moniker {} not found", filter)),
                 };
@@ -221,10 +232,11 @@ fn filter_ancestor(
     primary_only: bool,
 ) -> Result<Vec<fdd::NodeInfo>> {
     let node_map = create_node_map(nodes)?;
-    let root = match nodes.iter().find(|n| n.moniker.as_ref() == Some(&filter)) {
-        Some(node) => node,
-        None => return Err(anyhow!("Node with moniker {} not found", filter)),
-    };
+    let root =
+        match nodes.iter().find(|n| n.moniker.as_ref().unwrap().eq_ignore_ascii_case(&filter)) {
+            Some(node) => node,
+            None => return Err(anyhow!("Node with moniker {} not found", filter)),
+        };
 
     let mut results: BTreeMap<u64, fdd::NodeInfo> = BTreeMap::new();
     let mut visit_q: VecDeque<&fdd::NodeInfo> = VecDeque::new();
@@ -259,10 +271,11 @@ fn filter_ancestor(
 
 fn filter_descendant(nodes: &Vec<fdd::NodeInfo>, filter: String) -> Result<Vec<fdd::NodeInfo>> {
     let node_map = create_node_map(&nodes)?;
-    let root = match nodes.iter().find(|n| n.moniker.as_ref() == Some(&filter)) {
-        Some(node) => node,
-        None => return Err(anyhow!("Node with moniker {} not found", filter)),
-    };
+    let root =
+        match nodes.iter().find(|n| n.moniker.as_ref().unwrap().eq_ignore_ascii_case(&filter)) {
+            Some(node) => node,
+            None => return Err(anyhow!("Node with moniker {} not found", filter)),
+        };
 
     let mut results: BTreeMap<u64, fdd::NodeInfo> = BTreeMap::new();
     let mut visit_q: VecDeque<&fdd::NodeInfo> = VecDeque::new();
@@ -293,10 +306,11 @@ fn filter_relative(
     primary_only: bool,
 ) -> Result<Vec<fdd::NodeInfo>> {
     let node_map = create_node_map(&nodes)?;
-    let root = match nodes.iter().find(|n| n.moniker.as_ref() == Some(&filter)) {
-        Some(node) => node,
-        None => return Err(anyhow!("Node with moniker {} not found", filter)),
-    };
+    let root =
+        match nodes.iter().find(|n| n.moniker.as_ref().unwrap().eq_ignore_ascii_case(&filter)) {
+            Some(node) => node,
+            None => return Err(anyhow!("Node with moniker {} not found", filter)),
+        };
 
     let mut results: BTreeMap<u64, fdd::NodeInfo> = BTreeMap::new();
     let mut visit_q: VecDeque<&fdd::NodeInfo> = VecDeque::new();
