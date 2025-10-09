@@ -36,6 +36,7 @@ group("kernel-tests") {
     "jtrace:kernel-tests",
     "kconcurrent/tests",
     "ktrace/tests",
+    "lockup_detector:kernel-tests",
     "page_cache:kernel-tests",
     "persistent-debuglog:kernel-tests",
     "pow2_range_allocator:kernel-tests",
