@@ -220,18 +220,6 @@ void DisplayEngineFidlAdapter::SetBufferCollectionConstraints(
   completer.buffer(arena).ReplySuccess();
 }
 
-void DisplayEngineFidlAdapter::SetDisplayPower(
-    fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerRequest* request, fdf::Arena& arena,
-    SetDisplayPowerCompleter::Sync& completer) {
-  zx::result<> result =
-      engine_.SetDisplayPower(display::DisplayId(request->display_id), request->power_on);
-  if (result.is_error()) {
-    completer.buffer(arena).ReplyError(result.error_value());
-    return;
-  }
-  completer.buffer(arena).ReplySuccess();
-}
-
 void DisplayEngineFidlAdapter::SetDisplayPowerMode(
     fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerModeRequest* request,
     fdf::Arena& arena, SetDisplayPowerModeCompleter::Sync& completer) {

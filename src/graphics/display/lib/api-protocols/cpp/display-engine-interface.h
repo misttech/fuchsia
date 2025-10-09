@@ -85,10 +85,6 @@ class DisplayEngineInterface {
   virtual zx::result<> SetDisplayPowerMode(display::DisplayId display_id,
                                            display::PowerMode power_mode);
 
-  // OOT drivers must use the default implementation for power management.
-  // The interface is not stabilized and will change.
-  virtual zx::result<> SetDisplayPower(display::DisplayId display_id, bool power_on);
-
   // OOT drivers must use the default implementation for the capture interface.
   // The interface is not stabilized and will change.
   virtual zx::result<> StartCapture(display::DriverCaptureImageId capture_image_id);

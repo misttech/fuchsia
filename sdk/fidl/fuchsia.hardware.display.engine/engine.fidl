@@ -503,26 +503,6 @@ open protocol Engine {
         buffer_collection_id BufferCollectionId;
     }) -> () error zx.Status;
 
-    /// Sets a display's power state.
-    //
-    // TODO(https://fxbug.dev/449896410): Replace it by `SetDisplayPowerMode`.
-    flexible SetDisplayPower(struct {
-        /// Identifies the display whose power state is changed.
-        ///
-        /// Must be a valid ID assigned to a display connected to the system.
-        ///
-        /// TODO(https://fxbug.dev/399954526): Update the contract to cover
-        /// configurations that reference an unassigned DisplayId.
-        display_id fuchsia.hardware.display.types.DisplayId;
-
-        /// The display's new power state.
-        ///
-        /// Displays are powered on when they are connected to the system.
-        ///
-        /// When a display is powered off, it does not deliver VSync events.
-        power_on bool;
-    }) -> () error zx.Status;
-
     /// Sets a display's power mode.
     ///
     /// Returns `ZX_ERR_NOT_SUPPORTED` if the display driver or hardware does

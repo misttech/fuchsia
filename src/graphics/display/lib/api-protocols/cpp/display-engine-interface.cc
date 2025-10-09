@@ -16,10 +16,6 @@ zx::result<> DisplayEngineInterface::SetDisplayPowerMode(display::DisplayId disp
   return zx::error(ZX_ERR_NOT_SUPPORTED);
 }
 
-zx::result<> DisplayEngineInterface::SetDisplayPower(display::DisplayId display_id, bool power_on) {
-  return zx::error(ZX_ERR_NOT_SUPPORTED);
-}
-
 zx::result<> DisplayEngineInterface::StartCapture(display::DriverCaptureImageId capture_image_id) {
   return zx::error(ZX_ERR_NOT_SUPPORTED);
 }

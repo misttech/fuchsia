@@ -53,9 +53,6 @@ class MockEngineFidl final : public fdf::WireServer<fuchsia_hardware_display_eng
   using SetBufferCollectionConstraintsChecker = fit::function<void(
       fuchsia_hardware_display_engine::wire::EngineSetBufferCollectionConstraintsRequest* request,
       fdf::Arena& arena, SetBufferCollectionConstraintsCompleter::Sync& completer)>;
-  using SetDisplayPowerChecker = fit::function<void(
-      fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerRequest* request,
-      fdf::Arena& arena, SetDisplayPowerCompleter::Sync& completer)>;
   using SetDisplayPowerModeChecker = fit::function<void(
       fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerModeRequest* request,
       fdf::Arena& arena, SetDisplayPowerModeCompleter::Sync& completer)>;
@@ -85,7 +82,6 @@ class MockEngineFidl final : public fdf::WireServer<fuchsia_hardware_display_eng
   void ExpectCheckConfiguration(CheckConfigurationChecker checker);
   void ExpectApplyConfiguration(ApplyConfigurationChecker checker);
   void ExpectSetBufferCollectionConstraints(SetBufferCollectionConstraintsChecker checker);
-  void ExpectSetDisplayPower(SetDisplayPowerChecker checker);
   void ExpectSetDisplayPowerMode(SetDisplayPowerModeChecker checker);
   void ExpectSetMinimumRgb(SetMinimumRgbChecker checker);
   void ExpectStartCapture(StartCaptureChecker checker);
@@ -124,8 +120,6 @@ class MockEngineFidl final : public fdf::WireServer<fuchsia_hardware_display_eng
   void SetBufferCollectionConstraints(
       fuchsia_hardware_display_engine::wire::EngineSetBufferCollectionConstraintsRequest* request,
       fdf::Arena& arena, SetBufferCollectionConstraintsCompleter::Sync& completer) override;
-  void SetDisplayPower(fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerRequest* request,
-                       fdf::Arena& arena, SetDisplayPowerCompleter::Sync& completer) override;
   void SetDisplayPowerMode(
       fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerModeRequest* request,
       fdf::Arena& arena, SetDisplayPowerModeCompleter::Sync& completer) override;
