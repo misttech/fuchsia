@@ -73,7 +73,8 @@ class UsbVirtualBus : public fdf::DriverBase,
   zx::result<> Start() override;
   void PrepareStop(fdf::PrepareStopCompleter completer) override;
 
-  void SetBusInterface(const usb_bus_interface_protocol_t* bus_intf);
+  zx::result<> SetBusInterface(
+      fidl::ClientEnd<fuchsia_hardware_usb_hci::UsbHciInterface> client_end);
   zx::result<> SetDciInterface(
       fidl::ClientEnd<fuchsia_hardware_usb_dci::UsbDciInterface> client_end);
 
@@ -141,12 +142,8 @@ class UsbVirtualBus : public fdf::DriverBase,
   // Reference to class that implements the virtual host controller protocol.
   std::unique_ptr<UsbVirtualHost> host_;
 
-  // Callbacks to the USB peripheral driver.
   fidl::Client<fuchsia_hardware_usb_dci::UsbDciInterface> dci_intf_;
-  // Callbacks to the USB bus driver. Needs to be handled on a separate thread due
-  // to differences in threading models for Banjo and FIDL.
-  fdf::SynchronizedDispatcher bus_intf_dispatcher_;
-  ddk::UsbBusInterfaceProtocolClient bus_intf_;
+  fidl::Client<fuchsia_hardware_usb_hci::UsbHciInterface> hci_intf_;
 
   UsbVirtualEp eps_[USB_MAX_EPS];
 

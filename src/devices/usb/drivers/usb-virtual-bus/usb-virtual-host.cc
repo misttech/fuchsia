@@ -37,11 +37,24 @@ void UsbVirtualHost::UsbHciRequestQueue(usb_request_t* req,
   });
 }
 
-void UsbVirtualHost::UsbHciSetBusInterface(const usb_bus_interface_protocol_t* bus_intf) {
-  bus_->SetBusInterface(bus_intf);
+void UsbVirtualHost::UsbHciSetBusInterface(const usb_bus_interface_protocol_t* bus_intf) {}
+
+void UsbVirtualHost::SetInterface(SetInterfaceRequest& request,
+                                  SetInterfaceCompleter::Sync& completer) {
+  zx::result result = bus_->SetBusInterface(std::move(request.interface()));
+  if (result.is_error()) {
+    FDF_LOG(ERROR, "Failed to set bus interface %s", result.status_string());
+    completer.Reply(result.take_error());
+    return;
+  }
+  completer.Reply(zx::ok());
 }
 
 size_t UsbVirtualHost::UsbHciGetMaxDeviceCount() { return 1; }
+
+void UsbVirtualHost::GetMaxDeviceCount(GetMaxDeviceCountCompleter::Sync& completer) {
+  completer.Reply(UsbHciGetMaxDeviceCount());
+}
 
 zx_status_t UsbVirtualHost::UsbHciEnableEndpoint(uint32_t device_id,
                                                  const usb_endpoint_descriptor_t* ep_desc,
@@ -50,11 +63,25 @@ zx_status_t UsbVirtualHost::UsbHciEnableEndpoint(uint32_t device_id,
   return ZX_OK;
 }
 
+void UsbVirtualHost::EnableEndpoint(EnableEndpointRequest& request,
+                                    EnableEndpointCompleter::Sync& completer) {
+  completer.Reply(zx::ok());
+}
+
 uint64_t UsbVirtualHost::UsbHciGetCurrentFrame() { return 0; }
+
+void UsbVirtualHost::GetCurrentFrame(GetCurrentFrameCompleter::Sync& completer) {
+  completer.Reply(UsbHciGetCurrentFrame());
+}
 
 zx_status_t UsbVirtualHost::UsbHciConfigureHub(uint32_t device_id, usb_speed_t speed,
                                                const usb_hub_descriptor_t* desc, bool multi_tt) {
   return ZX_OK;
+}
+
+void UsbVirtualHost::ConfigureHub(ConfigureHubRequest& request,
+                                  ConfigureHubCompleter::Sync& completer) {
+  completer.Reply(zx::ok());
 }
 
 zx_status_t UsbVirtualHost::UsbHciHubDeviceAdded(uint32_t device_id, uint32_t port,
@@ -62,24 +89,54 @@ zx_status_t UsbVirtualHost::UsbHciHubDeviceAdded(uint32_t device_id, uint32_t po
   return ZX_OK;
 }
 
+void UsbVirtualHost::HubDeviceAdded(HubDeviceAddedRequest& request,
+                                    HubDeviceAddedCompleter::Sync& completer) {
+  completer.Reply(zx::ok());
+}
+
 zx_status_t UsbVirtualHost::UsbHciHubDeviceRemoved(uint32_t device_id, uint32_t port) {
   return ZX_OK;
+}
+
+void UsbVirtualHost::HubDeviceRemoved(HubDeviceRemovedRequest& request,
+                                      HubDeviceRemovedCompleter::Sync& completer) {
+  completer.Reply(zx::ok());
 }
 
 zx_status_t UsbVirtualHost::UsbHciHubDeviceReset(uint32_t device_id, uint32_t port) {
   return ZX_ERR_NOT_SUPPORTED;
 }
 
+void UsbVirtualHost::HubDeviceReset(HubDeviceResetRequest& request,
+                                    HubDeviceResetCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+}
+
 zx_status_t UsbVirtualHost::UsbHciResetEndpoint(uint32_t device_id, uint8_t ep_address) {
   return ZX_ERR_NOT_SUPPORTED;
+}
+
+void UsbVirtualHost::ResetEndpoint(ResetEndpointRequest& request,
+                                   ResetEndpointCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
 }
 
 zx_status_t UsbVirtualHost::UsbHciResetDevice(uint32_t hub_address, uint32_t device_id) {
   return ZX_ERR_NOT_SUPPORTED;
 }
 
+void UsbVirtualHost::ResetDevice(ResetDeviceRequest& request,
+                                 ResetDeviceCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+}
+
 size_t UsbVirtualHost::UsbHciGetMaxTransferSize(uint32_t device_id, uint8_t ep_address) {
   return 65536;
+}
+
+void UsbVirtualHost::GetMaxTransferSize(GetMaxTransferSizeRequest& request,
+                                        GetMaxTransferSizeCompleter::Sync& completer) {
+  completer.Reply(zx::ok(UsbHciGetMaxTransferSize(request.device_id(), request.ep_address())));
 }
 
 zx_status_t UsbVirtualHost::UsbHciCancelAll(uint32_t device_id, uint8_t ep_address) {

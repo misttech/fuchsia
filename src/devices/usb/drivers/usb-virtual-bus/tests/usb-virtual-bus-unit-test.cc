@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.hardware.usb.dci/cpp/test_base.h>
+#include <fidl/fuchsia.hardware.usb.hci/cpp/test_base.h>
 #include <fuchsia/hardware/usb/bus/cpp/banjo.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/sync/completion.h>
@@ -20,25 +21,31 @@ namespace frequest = fuchsia_hardware_usb_request;
 
 const size_t kMaxPacketSize = 16;
 
-class FakeUsbBus : public ddk::UsbBusInterfaceProtocol<FakeUsbBus> {
+class FakeUsbBus : public fidl::testing::TestBase<fhci::UsbHciInterface> {
  public:
-  zx_status_t UsbBusInterfaceAddDevice(uint32_t device_id, uint32_t hub_id, usb_speed_t speed) {
-    return ZX_OK;
-  }
-  zx_status_t UsbBusInterfaceRemoveDevice(uint32_t device_id) { return ZX_OK; }
-  zx_status_t UsbBusInterfaceResetPort(uint32_t hub_id, uint32_t port, bool enumerating) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-  zx_status_t UsbBusInterfaceReinitializeDevice(uint32_t device_id) { return ZX_ERR_NOT_SUPPORTED; }
-
-  usb_bus_interface_protocol_t* get_proto() {
-    proto_.ctx = this;
-    proto_.ops = &usb_bus_interface_protocol_ops_;
-    return &proto_;
+  void Bind(fidl::ServerEnd<fhci::UsbHciInterface> server_end) {
+    bindings_.AddBinding(fdf::Dispatcher::GetCurrent()->async_dispatcher(), std::move(server_end),
+                         this, fidl::kIgnoreBindingClosure);
   }
 
  private:
-  usb_bus_interface_protocol_t proto_;
+  void AddDevice(AddDeviceRequest& request, AddDeviceCompleter::Sync& completer) override {
+    completer.Reply(zx::ok());
+  }
+  void RemoveDevice(RemoveDeviceRequest& request, RemoveDeviceCompleter::Sync& completer) override {
+    completer.Reply(zx::ok());
+  }
+  void ResetPort(ResetPortRequest& request, ResetPortCompleter::Sync& completer) override {
+    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+  }
+  void ReinitializeDevice(ReinitializeDeviceRequest& request,
+                          ReinitializeDeviceCompleter::Sync& completer) override {
+    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+  }
+
+  void NotImplemented_(const std::string& name, ::fidl::CompleterBase& completer) override {}
+
+  fidl::ServerBindingGroup<fhci::UsbHciInterface> bindings_;
 };
 
 class EndpointHandler : public fidl::SyncEventHandler<fendpoint::Endpoint> {
@@ -152,6 +159,7 @@ class TestEnvironment : public fdf_testing::Environment {
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override { return zx::ok(); }
 
   FakeDci dci_;
+  FakeUsbBus usb_bus_;
 };
 
 class UsbVirtualBusTestConfig final {
@@ -184,11 +192,17 @@ class UsbVirtualBusTest : public testing::Test {
     ASSERT_TRUE(enable_result.ok());
     ASSERT_EQ(enable_result->status, ZX_OK);
 
+    auto [client_end, server_end] = fidl::Endpoints<fhci::UsbHciInterface>::Create();
+    driver_test().RunInEnvironmentTypeContext(
+        [&](TestEnvironment& env) { env.usb_bus_.Bind(std::move(server_end)); });
     driver_test().RunInDriverContext([&](UsbVirtualBus& driver) {
-      driver.SetBusInterface(fake_usb_bus_.get_proto());
-      zx::result result = driver.SetDciInterface(
-          driver_test().RunInEnvironmentTypeContext<fidl::ClientEnd<fdci::UsbDciInterface>>(
-              [](TestEnvironment& env) { return env.dci_.Connect(); }));
+      ASSERT_TRUE(driver.SetBusInterface(std::move(client_end)).is_ok());
+    });
+    fidl::ClientEnd<fdci::UsbDciInterface> dci_client =
+        driver_test().RunInEnvironmentTypeContext<fidl::ClientEnd<fdci::UsbDciInterface>>(
+            [](TestEnvironment& env) { return env.dci_.Connect(); });
+    driver_test().RunInDriverContext([&](UsbVirtualBus& driver) {
+      zx::result result = driver.SetDciInterface(std::move(dci_client));
       ASSERT_TRUE(result.is_ok());
     });
   }
@@ -255,7 +269,6 @@ class UsbVirtualBusTest : public testing::Test {
   fdf_testing::BackgroundDriverTest<UsbVirtualBusTestConfig> driver_test_;
 
   fidl::WireSyncClient<fuchsia_hardware_usb_virtual_bus::Bus> virtual_bus_;
-  FakeUsbBus fake_usb_bus_;
 };
 
 TEST_F(UsbVirtualBusTest, LifecycleTest) {

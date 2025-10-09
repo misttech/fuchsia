@@ -6,7 +6,6 @@
 
 #include <assert.h>
 #include <lib/driver/component/cpp/driver_export.h>
-#include <lib/sync/cpp/completion.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,9 +21,10 @@
 
 namespace usb_virtual_bus {
 
-#define DEVICE_SLOT_ID 0
-#define DEVICE_HUB_ID 0
-#define DEVICE_SPEED USB_SPEED_HIGH
+const uint32_t kDeviceSlotId = 0;
+const uint32_t kDeviceHubId = 0;
+const fuchsia_hardware_usb_descriptor::UsbSpeed kDeviceSpeed =
+    fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh;
 
 template <typename T>
 zx::result<std::unique_ptr<T>> UsbVirtualBus::CreateChild() {
@@ -93,14 +93,6 @@ void UsbVirtualBus::Serve(fidl::ServerEnd<fuchsia_hardware_usb_virtual_bus::Bus>
 }
 
 zx::result<> UsbVirtualBus::Start() {
-  auto dispatcher = fdf::SynchronizedDispatcher::Create({}, "usb-virtual-bus-bus-intf",
-                                                        [&](fdf_dispatcher_t*) {});
-  if (dispatcher.is_error()) {
-    FDF_LOG(ERROR, "Failed to create dispatcher %s", dispatcher.status_string());
-    return dispatcher.take_error();
-  }
-  bus_intf_dispatcher_ = std::move(*dispatcher);
-
   zx::result connector = devfs_connector_.Bind(fdf::Dispatcher::GetCurrent()->async_dispatcher());
   if (connector.is_error()) {
     FDF_LOG(ERROR, "Error creating devfs node");
@@ -138,12 +130,14 @@ void UsbVirtualBus::SetConnected(bool connected) {
       ep.host_.CommonCancelAll();
       ep.device_.CommonCancelAll();
     }
-    async::PostTask(bus_intf_dispatcher_.async_dispatcher(), [this]() {
-      if (!bus_intf_.is_valid()) {
-        return;
-      }
-      bus_intf_.RemoveDevice(DEVICE_SLOT_ID);
-    });
+    if (hci_intf_.is_valid()) {
+      hci_intf_->RemoveDevice(kDeviceSlotId)
+          .Then([](fidl::Result<fuchsia_hardware_usb_hci::UsbHciInterface::RemoveDevice>& result) {
+            if (result.is_error()) {
+              FDF_LOG(ERROR, "Failed to remove device");
+            }
+          });
+    }
     if (dci_intf_.is_valid()) {
       dci_intf_->SetConnected(false).Then(
           [](fidl::Result<fuchsia_hardware_usb_dci::UsbDciInterface::SetConnected>& result) {
@@ -157,12 +151,15 @@ void UsbVirtualBus::SetConnected(bool connected) {
 
 void UsbVirtualBus::FinishConnect() {
   connected_ = ConnectedState::kConnected;
-  async::PostTask(bus_intf_dispatcher_.async_dispatcher(), [this]() {
-    if (!bus_intf_.is_valid()) {
-      return;
-    }
-    bus_intf_.AddDevice(DEVICE_SLOT_ID, DEVICE_HUB_ID, DEVICE_SPEED);
-  });
+  if (!hci_intf_.is_valid()) {
+    return;
+  }
+  hci_intf_->AddDevice({kDeviceSlotId, kDeviceHubId, kDeviceSpeed})
+      .Then([](fidl::Result<fuchsia_hardware_usb_hci::UsbHciInterface::AddDevice>& result) {
+        if (result.is_error()) {
+          FDF_LOG(ERROR, "Failed to add device");
+        }
+      });
 }
 
 void UsbVirtualBus::PrepareStop(fdf::PrepareStopCompleter completer) {
@@ -174,25 +171,23 @@ void UsbVirtualBus::PrepareStop(fdf::PrepareStopCompleter completer) {
   completer(zx::ok());
 }
 
-void UsbVirtualBus::SetBusInterface(const usb_bus_interface_protocol_t* bus_intf) {
-  libsync::Completion wait;
-  async::PostTask(bus_intf_dispatcher_.async_dispatcher(), [this, &bus_intf, &wait]() {
-    if (!bus_intf) {
-      // Now that we've finished using bus_intf, signal the main thread.
-      wait.Signal();
-      bus_intf_.clear();
-      return;
-    }
+zx::result<> UsbVirtualBus::SetBusInterface(
+    fidl::ClientEnd<fuchsia_hardware_usb_hci::UsbHciInterface> client_end) {
+  if (hci_intf_.is_valid()) {
+    return zx::error(ZX_ERR_ALREADY_BOUND);
+  }
 
-    bus_intf_ = ddk::UsbBusInterfaceProtocolClient(bus_intf);
-    // Now that we've finished using bus_intf, signal the main thread.
-    wait.Signal();
+  hci_intf_.Bind(std::move(client_end), fdf::Dispatcher::GetCurrent()->async_dispatcher());
 
-    if (connected_ == ConnectedState::kConnected) {
-      bus_intf_.AddDevice(DEVICE_SLOT_ID, DEVICE_HUB_ID, DEVICE_SPEED);
-    }
-  });
-  wait.Wait();
+  if (connected_ == ConnectedState::kConnected) {
+    hci_intf_->AddDevice({kDeviceSlotId, kDeviceHubId, kDeviceSpeed})
+        .Then([](fidl::Result<fuchsia_hardware_usb_hci::UsbHciInterface::AddDevice>& result) {
+          if (result.is_error()) {
+            FDF_LOG(ERROR, "Failed to add device");
+          }
+        });
+  }
+  return zx::ok();
 }
 
 zx::result<> UsbVirtualBus::SetDciInterface(
@@ -232,13 +227,8 @@ void UsbVirtualBus::Disable(DisableCompleter::Sync& completer) { completer.Reply
 
 zx_status_t UsbVirtualBus::Disable() {
   SetConnected(false);
-  libsync::Completion wait;
-  async::PostTask(bus_intf_dispatcher_.async_dispatcher(), [this, &wait]() {
-    bus_intf_.clear();
-    wait.Signal();
-  });
+  hci_intf_ = {};
   dci_intf_ = {};
-  wait.Wait();
   zx::result host_result = RemoveChild(host_);
   if (host_result.is_error()) {
     FDF_LOG(ERROR, "Failed to remove host %s", host_result.status_string());

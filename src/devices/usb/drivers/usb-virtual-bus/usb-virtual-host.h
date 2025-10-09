@@ -63,57 +63,23 @@ class UsbVirtualHost
   // fuchsia_hardware_usb_hci.UsbHci protocol implementation.
   void ConnectToEndpoint(ConnectToEndpointRequest& request,
                          ConnectToEndpointCompleter::Sync& completer) override;
-  // Stubs for FIDL HCI
-  void SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Sync& completer) override {
-    FDF_LOG(ERROR, "%s unexpected call", __func__);
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
-  void GetMaxDeviceCount(GetMaxDeviceCountCompleter::Sync& completer) override {
-    ZX_DEBUG_ASSERT_MSG(false, "%s unexpected call", __func__);
-    completer.Reply(0);
-  }
+  void SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Sync& completer) override;
+  void GetMaxDeviceCount(GetMaxDeviceCountCompleter::Sync& completer) override;
   void EnableEndpoint(EnableEndpointRequest& request,
-                      EnableEndpointCompleter::Sync& completer) override {
-    ZX_DEBUG_ASSERT_MSG(false, "%s unexpected call", __func__);
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
-  void GetCurrentFrame(GetCurrentFrameCompleter::Sync& completer) override {
-    ZX_DEBUG_ASSERT_MSG(false, "%s unexpected call", __func__);
-    completer.Reply(0);
-  }
-  void ConfigureHub(ConfigureHubRequest& request, ConfigureHubCompleter::Sync& completer) override {
-    ZX_DEBUG_ASSERT_MSG(false, "%s unexpected call", __func__);
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
+                      EnableEndpointCompleter::Sync& completer) override;
+  void GetCurrentFrame(GetCurrentFrameCompleter::Sync& completer) override;
+  void ConfigureHub(ConfigureHubRequest& request, ConfigureHubCompleter::Sync& completer) override;
   void HubDeviceAdded(HubDeviceAddedRequest& request,
-                      HubDeviceAddedCompleter::Sync& completer) override {
-    ZX_DEBUG_ASSERT_MSG(false, "%s unexpected call", __func__);
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
+                      HubDeviceAddedCompleter::Sync& completer) override;
   void HubDeviceRemoved(HubDeviceRemovedRequest& request,
-                        HubDeviceRemovedCompleter::Sync& completer) override {
-    ZX_DEBUG_ASSERT_MSG(false, "%s unexpected call", __func__);
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
+                        HubDeviceRemovedCompleter::Sync& completer) override;
   void HubDeviceReset(HubDeviceResetRequest& request,
-                      HubDeviceResetCompleter::Sync& completer) override {
-    ZX_DEBUG_ASSERT_MSG(false, "%s unexpected call", __func__);
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
+                      HubDeviceResetCompleter::Sync& completer) override;
   void ResetEndpoint(ResetEndpointRequest& request,
-                     ResetEndpointCompleter::Sync& completer) override {
-    ZX_DEBUG_ASSERT_MSG(false, "%s unexpected call", __func__);
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
-  void ResetDevice(ResetDeviceRequest& request, ResetDeviceCompleter::Sync& completer) override {
-    ZX_DEBUG_ASSERT_MSG(false, "%s unexpected call", __func__);
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
+                     ResetEndpointCompleter::Sync& completer) override;
+  void ResetDevice(ResetDeviceRequest& request, ResetDeviceCompleter::Sync& completer) override;
   void GetMaxTransferSize(GetMaxTransferSizeRequest& request,
-                          GetMaxTransferSizeCompleter::Sync& completer) override {
-    ZX_DEBUG_ASSERT_MSG(false, "%s unexpected call", __func__);
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
+                          GetMaxTransferSizeCompleter::Sync& completer) override;
 
   fuchsia_hardware_usb_hci::UsbHciService::InstanceHandler GetInstanceHandler() {
     return fuchsia_hardware_usb_hci::UsbHciService::InstanceHandler({
