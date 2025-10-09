@@ -54,8 +54,7 @@ struct UngracefulRebootTestParam {
 
 struct GracefulRebootTestParam {
   std::string test_name;
-  std::optional<std::string> graceful_reboot_log;
-
+  std::string graceful_reboot_log;
   cobalt::LastRebootReason output_last_reboot_reason;
 };
 
@@ -469,9 +468,7 @@ TEST_P(GracefulReporterTest, Succeed) {
 
   WriteZirconRebootLogContents(
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n65487494\nRUNTIME (ms)\n64208920");
-  if (param.graceful_reboot_log.has_value()) {
-    WriteGracefulRebootLogContents(param.graceful_reboot_log.value());
-  }
+  WriteGracefulRebootLogContents(param.graceful_reboot_log);
 
   SetUpCrashReporterServer(std::make_unique<stubs::CrashReporterNoFileExpected>());
   SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
