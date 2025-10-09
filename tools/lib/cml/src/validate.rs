@@ -9,8 +9,8 @@ use crate::{
     Collection, ConfigKey, ConfigType, ConfigValueType, DependencyType, DictionaryRef, Document,
     Environment, EnvironmentExtends, Error, EventScope, Expose, ExposeFromRef, ExposeToRef,
     FromClause, Offer, OfferFromRef, OfferToRef, OneOrMany, Program, RegistrationRef, Rights,
-    RootDictionaryRef, SourceAvailability, Spanned, SpannedCapability, SpannedChild,
-    SpannedDocument, Use, UseFromRef, offer_to_all_would_duplicate,
+    RootDictionaryRef, SourceAvailability, Spanned, SpannedCapability, SpannedCapabilityClause,
+    SpannedChild, SpannedDocument, SpannedUse, Use, UseFromRef, offer_to_all_would_duplicate,
 };
 use cm_types::{BorrowedName, IterablePath, Name};
 use itertools::Either;
@@ -234,6 +234,12 @@ impl<'a> ValidationContextWithSpan<'a> {
                     self.validate_capability(capability, &mut used_ids)?;
                 }
             }
+
+            if let Some(uses) = &document.r#use {
+                for use_ in uses.iter() {
+                    self.validate_use(&use_, &mut used_ids)?;
+                }
+            }
         }
 
         Ok(())
@@ -397,6 +403,197 @@ which is almost certainly a mistake: {}",
                     byte_index_to_location(self.current_file_source, capability.span().0);
                 return Err(Error::validate_with_span(
                     format!("\"{}\" is a duplicate \"capability\" name", capability_id),
+                    location,
+                    self.current_file_path,
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_use(
+        &mut self,
+        use_: &'a Spanned<SpannedUse>,
+        _used_ids: &mut HashMap<String, CapabilityId<'a>>,
+    ) -> Result<(), Error> {
+        use_.capability_type()?;
+
+        if use_.from.as_ref().map(|s| s.clone().into_inner()) == Some(UseFromRef::Debug)
+            && use_.protocol.is_none()
+        {
+            let location = byte_index_to_location(
+                self.current_file_source,
+                use_.from.as_ref().unwrap().span().0,
+            );
+            return Err(Error::validate_with_span(
+                "only \"protocol\" supports source from \"debug\"",
+                location,
+                self.current_file_path,
+            ));
+        }
+        if use_.event_stream.is_some() && use_.availability.is_some() {
+            let location = byte_index_to_location(
+                self.current_file_source,
+                use_.availability.as_ref().unwrap().span().0,
+            );
+            return Err(Error::validate_with_span(
+                "\"availability\" cannot be used with \"event_stream\"",
+                location,
+                self.current_file_path,
+            ));
+        }
+        if use_.event_stream.is_none() && use_.filter.is_some() {
+            let location = byte_index_to_location(
+                self.current_file_source,
+                use_.filter.as_ref().unwrap().span().0,
+            );
+            return Err(Error::validate_with_span(
+                "\"filter\" can only be used with \"event_stream\"",
+                location,
+                self.current_file_path,
+            ));
+        }
+        if use_.storage.is_some() && use_.from.is_some() {
+            let location = byte_index_to_location(
+                self.current_file_source,
+                use_.from.as_ref().unwrap().span().0,
+            );
+            return Err(Error::validate_with_span(
+                "\"from\" cannot be used with \"storage\"",
+                location,
+                self.current_file_path,
+            ));
+        }
+        if use_.runner.is_some() && use_.availability.is_some() {
+            let location = byte_index_to_location(
+                self.current_file_source,
+                use_.availability.as_ref().unwrap().span().0,
+            );
+            return Err(Error::validate_with_span(
+                "\"availability\" cannot be used with \"runner\"",
+                location,
+                self.current_file_path,
+            ));
+        }
+        if use_.from.as_ref().map(|s| s.clone().into_inner()) == Some(UseFromRef::Self_)
+            && use_.event_stream.is_some()
+        {
+            let location = byte_index_to_location(
+                self.current_file_source,
+                use_.from.as_ref().unwrap().span().0,
+            );
+            return Err(Error::validate_with_span(
+                "\"from: self\" cannot be used with \"event_stream\"",
+                location,
+                self.current_file_path,
+            ));
+        }
+        if use_.from.as_ref().map(|s| s.clone().into_inner()) == Some(UseFromRef::Self_)
+            && use_.runner.is_some()
+        {
+            let location = byte_index_to_location(
+                self.current_file_source,
+                use_.from.as_ref().unwrap().span().0,
+            );
+            return Err(Error::validate_with_span(
+                "\"from: self\" cannot be used with \"runner\"",
+                location,
+                self.current_file_path,
+            ));
+        }
+        if use_.availability.as_ref().map(|s| s.clone().into_inner())
+            == Some(Availability::SameAsTarget)
+        {
+            let location = byte_index_to_location(
+                self.current_file_source,
+                use_.availability.as_ref().unwrap().span().0,
+            );
+            return Err(Error::validate_with_span(
+                "\"availability: same_as_target\" cannot be used with use declarations",
+                location,
+                self.current_file_path,
+            ));
+        }
+        if use_.dictionary.is_some() {
+            self.features.check(Feature::UseDictionaries)?;
+        }
+        if let Some(UseFromRef::Dictionary(_)) = use_.from.as_ref().map(|s| s.clone().into_inner())
+        {
+            if use_.storage.is_some() {
+                let location = byte_index_to_location(
+                    self.current_file_source,
+                    use_.storage.as_ref().unwrap().span().0,
+                );
+                return Err(Error::validate_with_span(
+                    "Dictionaries do not support \"storage\" capabilities",
+                    location,
+                    self.current_file_path,
+                ));
+            }
+            if use_.event_stream.is_some() {
+                let location = byte_index_to_location(self.current_file_source, use_.span().0);
+                return Err(Error::validate_with_span(
+                    "Dictionaries do not support \"event_stream\" capabilities",
+                    location,
+                    self.current_file_path,
+                ));
+            }
+        }
+        if let Some(config) = use_.config.as_ref() {
+            if use_.key == None {
+                let location = byte_index_to_location(
+                    self.current_file_source,
+                    use_.config.as_ref().unwrap().span().0,
+                );
+                return Err(Error::validate_with_span(
+                    format!("Config '{}' missing field 'key'", config),
+                    location,
+                    self.current_file_path,
+                ));
+            }
+            let _ = use_config_to_value_type_span(
+                use_,
+                self.current_file_source,
+                self.current_file_path,
+            )?;
+            let availability = use_
+                .availability
+                .clone()
+                .unwrap_or_else(|| Availability::Required.into())
+                .into_inner();
+            if availability == Availability::Required && use_.config_default.is_some() {
+                let location = byte_index_to_location(
+                    self.current_file_source,
+                    use_.config.as_ref().unwrap().span().0,
+                );
+                return Err(Error::validate_with_span(
+                    format!("Config '{}' is required and has a default value", config),
+                    location,
+                    self.current_file_path,
+                ));
+            }
+        }
+        if use_.numbered_handle.as_ref().is_some() {
+            if use_.protocol.is_some() {
+                if use_.path.is_some() {
+                    let location = byte_index_to_location(
+                        self.current_file_source,
+                        use_.path.as_ref().unwrap().span().0,
+                    );
+                    return Err(Error::validate_with_span(
+                        format!("`path` and `numbered_handle` are incompatible"),
+                        location,
+                        self.current_file_path,
+                    ));
+                }
+            } else {
+                let location = byte_index_to_location(
+                    self.current_file_source,
+                    use_.numbered_handle.as_ref().unwrap().span().0,
+                );
+                return Err(Error::validate_with_span(
+                    format!("`numbered_handle` is only supported for `use protocol`"),
                     location,
                     self.current_file_path,
                 ));
@@ -1961,6 +2158,69 @@ pub fn use_config_to_value_type(u: &Use) -> Result<ConfigValueType, Error> {
     Ok(config_type)
 }
 
+// Construct the config type information out of a `use` for a configuration capability.
+// This will return validation errors if the `use` is missing fields.
+pub fn use_config_to_value_type_span(
+    u: &SpannedUse,
+    source: Option<&String>,
+    path: Option<&Path>,
+) -> Result<ConfigValueType, Error> {
+    let config = u.config.clone().expect("Only call use_config_to_value_type on a Config");
+    let location: Option<Location> = byte_index_to_location(source, config.span().0);
+
+    let Some(config_type) = u.config_type.as_ref() else {
+        return Err(Error::validate_with_span(
+            format!("Config '{}' is missing field 'type'", config),
+            location,
+            path,
+        ));
+    };
+
+    let config_type = match config_type {
+        ConfigType::Bool => ConfigValueType::Bool { mutability: None },
+        ConfigType::Uint8 => ConfigValueType::Uint8 { mutability: None },
+        ConfigType::Uint16 => ConfigValueType::Uint16 { mutability: None },
+        ConfigType::Uint32 => ConfigValueType::Uint32 { mutability: None },
+        ConfigType::Uint64 => ConfigValueType::Uint64 { mutability: None },
+        ConfigType::Int8 => ConfigValueType::Int8 { mutability: None },
+        ConfigType::Int16 => ConfigValueType::Int16 { mutability: None },
+        ConfigType::Int32 => ConfigValueType::Int32 { mutability: None },
+        ConfigType::Int64 => ConfigValueType::Int64 { mutability: None },
+        ConfigType::String => {
+            let Some(max_size) = u.config_max_size else {
+                return Err(Error::validate_with_span(
+                    format!("Config '{}' is type String but is missing field 'max_size'", config),
+                    location,
+                    path,
+                ));
+            };
+            ConfigValueType::String { max_size: max_size.into(), mutability: None }
+        }
+        ConfigType::Vector => {
+            let Some(ref element) = u.config_element_type else {
+                return Err(Error::validate_with_span(
+                    format!("Config '{}' is type Vector but is missing field 'element'", config),
+                    location,
+                    path,
+                ));
+            };
+            let Some(max_count) = u.config_max_count else {
+                return Err(Error::validate_with_span(
+                    format!("Config '{}' is type Vector but is missing field 'max_count'", config),
+                    location,
+                    path,
+                ));
+            };
+            ConfigValueType::Vector {
+                max_count: max_count.into(),
+                element: element.clone(),
+                mutability: None,
+            }
+        }
+    };
+    Ok(config_type)
+}
+
 /// Given an iterator with `(key, name)` tuples, ensure that `key` doesn't
 /// appear twice. `name` is used in generated error messages.
 fn ensure_no_duplicate_names<'a, I>(values: I) -> Result<(), Error>
@@ -3281,6 +3541,181 @@ mod tests {
                         location == Some(Location {line: 5, column: 33})
 
         ),
+
+        test_cml_use_invalid_from_with_service(
+            json!({
+                "use": [ { "service": "foo", "from": "debug" } ]
+            }),
+            Err(Error::ValidateWithSpan { err, .. }) if &err == "only \"protocol\" supports source from \"debug\""
+        ),
+
+        test_cml_use_runner_debug_ref(
+            r##"{
+                "use": [
+                    {
+                        "runner": "elf",
+                        "from": "debug"
+                    }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "only \"protocol\" supports source from \"debug\"" &&
+            location == Some(Location {line: 5, column: 33})
+        ),
+
+        test_cml_availability_not_supported_for_event_streams(
+            r##"{
+                "use": [
+                    {
+                        "event_stream": ["destroyed"],
+                        "from": "parent",
+                        "availability": "optional"
+                    }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"availability\" cannot be used with \"event_stream\"" &&
+            location == Some(Location {line: 6, column: 41})
+        ),
+
+        test_cml_use_disallows_filter_on_non_events(
+            json!({
+                "use": [
+                    { "directory": "foobar", "path": "/foo/bar", "rights": [ "r*" ], "filter": {"path": "/diagnostics"} },
+                ],
+            }),
+            Err(Error::ValidateWithSpan { err, .. }) if &err == "\"filter\" can only be used with \"event_stream\""
+        ),
+
+        test_cml_use_from_with_storage(
+            json!({
+                "use": [ { "storage": "cache", "from": "parent" } ]
+            }),
+            Err(Error::ValidateWithSpan { err, .. }) if &err == "\"from\" cannot be used with \"storage\""
+        ),
+
+        test_cml_availability_not_supported_for_runner(
+            r##"{
+                "use": [
+                    {
+                        "runner": "destroyed",
+                        "from": "parent",
+                        "availability": "optional"
+                    }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"availability\" cannot be used with \"runner\"" &&
+            location == Some(Location {line: 6, column: 41})
+        ),
+
+        test_cml_use_event_stream_self_ref(
+            r##"{
+                "use": [
+                    {
+                        "event_stream": ["started"],
+                        "path": "/svc/my_stream",
+                        "from": "self"
+                    }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"from: self\" cannot be used with \"event_stream\"" &&
+            location == Some(Location {line: 6, column: 33})
+        ),
+
+        test_cml_use_runner_self_ref(
+            r##"{
+                "use": [
+                    {
+                        "runner": "elf",
+                        "from": "self"
+                    }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"from: self\" cannot be used with \"runner\""  &&
+            location == Some(Location {line: 5, column: 33})
+        ),
+
+        test_cml_use_invalid_availability(
+            r##"{
+                "use": [
+                    {
+                        "protocol": "fuchsia.examples.Echo",
+                        "availability": "same_as_target"
+                    }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"availability: same_as_target\" cannot be used with use declarations"   &&
+            location == Some(Location {line: 5, column: 41})
+        ),
+        test_cml_use_config_bad_string(
+            r##"{
+                "use": [
+                    {
+                        "config": "fuchsia.config.MyConfig",
+                        "key": "my_config",
+                        "type": "string"
+                    }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location, .. })
+            if &err == "Config 'fuchsia.config.MyConfig' is type String but is missing field 'max_size'" &&
+            location == Some(Location {line: 4, column: 35})
+        ),
+
+        test_cml_use_config_bad_vector(
+            r##"{"use": [
+                {
+                    "config": "fuchsia.config.MyConfig",
+                    "key": "my_config",
+                    "type": "vector",
+                    "element": { "type": "bool"}
+                }
+            ]
+            }"##,
+            Err(Error::ValidateWithSpan {err, location, .. })
+            if &err == "Config 'fuchsia.config.MyConfig' is type Vector but is missing field 'max_count'" &&
+                        location == Some(Location {line: 3, column: 31})
+
+        ),
+
+        test_config_required_with_default(
+            r##"{"use": [
+                {
+                    "config": "fuchsia.config.MyConfig",
+                    "key": "my_config",
+                    "type": "bool",
+                    "default": "true"
+                }
+            ]}"##,
+            Err(Error::ValidateWithSpan {err, location, ..})
+            if &err == "Config 'fuchsia.config.MyConfig' is required and has a default value" &&
+                                location == Some(Location {line: 3, column: 31})
+
+        ),
+
+        test_cml_use_numbered_handle_and_path(
+            json!({
+                "use": [
+                    {
+                        "protocol": "foo",
+                    "path": "/svc/foo",
+                         "numbered_handle": 0xab
+                    }
+                ]
+        }),
+            Err(Error::ValidateWithSpan { err, .. }) if &err == "`path` and `numbered_handle` are incompatible"
+        ),
+
+        test_cml_use_numbered_handle_not_protocol(
+            json!({
+                "use": [
+                    {
+                        "runner": "foo",
+                        "numbered_handle": 0xab
+                    }
+                ]
+            }),
+            Err(Error::ValidateWithSpan { err, .. }) if &err == "`numbered_handle` is only supported for `use protocol`"
+        ),
+
     }
 
     test_validate_cml! {
@@ -3563,7 +3998,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "protocol \"foo_protocol\" is used from self, so it must be declared as a \"protocol\" in \"capabilities\""
         ),
-        test_cml_use_numbered_handle_not_protocol(
+        test_cml_use_numbered_handle_not_protocol_no_span(
             json!({
                 "use": [
                     {
@@ -3574,7 +4009,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "`numbered_handle` is only supported for `use protocol`"
         ),
-        test_cml_use_numbered_handle_and_path(
+        test_cml_use_numbered_handle_and_path_no_span(
             json!({
                 "use": [
                     {
@@ -3663,7 +4098,7 @@ mod tests {
             }),
             Err(Error::Parse { err, .. }) if &err == "invalid value: string \"my_stream\", expected a path with leading `/` and non-empty segments, where each segment is no more than fuchsia.io/MAX_NAME_LENGTH bytes in length, cannot be . or .., and cannot contain embedded NULs"
         ),
-        test_cml_use_event_stream_self_ref(
+        test_cml_use_event_stream_self_ref_no_span(
             json!({
                 "use": [
                     {
@@ -3675,7 +4110,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "\"from: self\" cannot be used with \"event_stream\""
         ),
-        test_cml_use_runner_debug_ref(
+        test_cml_use_runner_debug_ref_no_span(
             json!({
                 "use": [
                     {
@@ -3686,7 +4121,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "only \"protocol\" supports source from \"debug\""
         ),
-        test_cml_use_runner_self_ref(
+        test_cml_use_runner_self_ref_no_span(
             json!({
                 "use": [
                     {
@@ -3703,7 +4138,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "`use` declaration is missing a capability keyword, one of: \"service\", \"protocol\", \"directory\", \"storage\", \"event_stream\", \"runner\", \"config\", \"dictionary\""
         ),
-        test_cml_use_from_with_storage(
+        test_cml_use_from_with_storage_no_span(
             json!({
                 "use": [ { "storage": "cache", "from": "parent" } ]
             }),
@@ -3857,7 +4292,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "storage \"/pkg/storage\" conflicts with the protected path \"/pkg\", please use this capability with a different path"
         ),
-        test_cml_use_disallows_filter_on_non_events(
+        test_cml_use_disallows_filter_on_non_events_no_span(
             json!({
                 "use": [
                     { "directory": "foobar", "path": "/foo/bar", "rights": [ "r*" ], "filter": {"path": "/diagnostics"} },
@@ -3865,7 +4300,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "\"filter\" can only be used with \"event_stream\""
         ),
-        test_cml_availability_not_supported_for_event_streams(
+        test_cml_availability_not_supported_for_event_streams_no_span(
             json!({
                 "use": [
                     {
@@ -3888,17 +4323,6 @@ mod tests {
                 ],
             }),
             Err(Error::Validate { err, .. }) if &err == "Only `use` from children can have dependency: \"weak\""
-        ),
-        test_cml_use_numbered_handle_not_a_protocol(
-            json!({
-                "use": [
-                    {
-                        "service": "foo",
-                        "numbered_handle": 0xab,
-                    },
-                ],
-            }),
-            Err(Error::Validate { err, .. }) if &err == "`numbered_handle` is only supported for `use protocol`"
         ),
         test_cml_use_numbered_handle_not_a_number(
             json!({
@@ -6560,7 +6984,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "\"offer\" source \"#bar\" does not appear in \"children\" or \"capabilities\""
         ),
-        test_cml_use_invalid_availability(
+        test_cml_use_invalid_availability_no_span(
             json!({
                 "use": [
                     {
@@ -6748,7 +7172,7 @@ mod tests {
             }),
             Ok(())
         ),
-        test_cml_use_invalid_from_with_service(
+        test_cml_use_invalid_from_with_service_no_span(
             json!({
                 "use": [ { "service": "foo", "from": "debug" } ]
             }),
@@ -7627,7 +8051,7 @@ mod tests {
         ],}),
         Ok(())
         ),
-        test_cml_use_config_bad_vector(
+        test_cml_use_config_bad_vector_no_span(
         json!({"use": [
             {
                 "config": "fuchsia.config.MyConfig",
@@ -7640,7 +8064,7 @@ mod tests {
         Err(Error::Validate {err,  .. })
         if &err == "Config 'fuchsia.config.MyConfig' is type Vector but is missing field 'max_count'"
         ),
-        test_cml_use_config_bad_string(
+        test_cml_use_config_bad_string_no_span(
         json!({"use": [
             {
                 "config": "fuchsia.config.MyConfig",
@@ -7693,7 +8117,7 @@ mod tests {
         if &err == "Use and config block differ on type for key 'my_config'"
         ),
 
-        test_config_required_with_default(
+        test_config_required_with_default_no_span(
         json!({"use": [
             {
                 "config": "fuchsia.config.MyConfig",
