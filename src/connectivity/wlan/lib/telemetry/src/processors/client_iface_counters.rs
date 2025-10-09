@@ -7,6 +7,7 @@ use fidl_fuchsia_metrics::{MetricEvent, MetricEventPayload};
 use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_inspect_contrib::nodes::LruCacheNode;
 use fuchsia_inspect_derive::{InspectNode, Unit};
+use futures::TryFutureExt;
 use futures::lock::Mutex;
 use {fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_stats as fidl_stats};
 
@@ -32,6 +33,13 @@ const GET_SIGNAL_REPORT_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::
 enum IfaceState {
     NotAvailable,
     Created { iface_id: u16, telemetry_proxy: Option<fidl_fuchsia_wlan_sme::TelemetryProxy> },
+}
+
+#[derive(Debug)]
+enum GetIfaceStatsError {
+    FutureTimeout,
+    FidlError,
+    ResponseError,
 }
 
 type CountersTimeSeriesMap = HashMap<u16, InspectedTimeMatrix<u64>>;
@@ -192,20 +200,23 @@ impl<S: InspectSender> ClientIfaceCountersLogger<S> {
             IfaceState::NotAvailable => (),
             IfaceState::Created { telemetry_proxy, .. } => {
                 if let Some(telemetry_proxy) = &telemetry_proxy {
-                    match telemetry_proxy
+                    let result = telemetry_proxy
                         .get_iface_stats()
+                        .map_err(|_e| GetIfaceStatsError::FidlError)
+                        .map_ok(|response| response.map_err(|_e| GetIfaceStatsError::ResponseError))
                         .on_timeout(GET_IFACE_STATS_TIMEOUT, || {
-                            Ok(Err(zx::Status::TIMED_OUT.into_raw()))
+                            Err(GetIfaceStatsError::FutureTimeout)
                         })
-                        .await
-                    {
+                        .await;
+
+                    match result {
                         Ok(Ok(stats)) => {
                             self.log_iface_stats_inspect(&stats).await;
                             self.log_iface_stats_cobalt(stats, suspended_during_last_period).await;
                         }
-                        error => {
-                            warn!("Failed to get interface stats: {:?}", error);
-                            self.log_get_iface_stats_failure_cobalt().await;
+                        Ok(Err(e)) | Err(e) => {
+                            warn!("Failed to get interface stats: {:?}", e);
+                            self.log_get_iface_stats_failure_cobalt(&e).await;
                         }
                     }
 
@@ -276,12 +287,28 @@ impl<S: InspectSender> ClientIfaceCountersLogger<S> {
         *prev_connection_stats = stats.connection_stats;
     }
 
-    async fn log_get_iface_stats_failure_cobalt(&self) {
-        let metric_events = vec![MetricEvent {
+    async fn log_get_iface_stats_failure_cobalt(&self, error: &GetIfaceStatsError) {
+        let mut metric_events = vec![MetricEvent {
             metric_id: metrics::GET_IFACE_STATS_FAILURE_METRIC_ID,
             event_codes: vec![],
             payload: MetricEventPayload::Count(1),
         }];
+        match error {
+            GetIfaceStatsError::FutureTimeout => {
+                metric_events.push(MetricEvent {
+                    metric_id: metrics::GET_IFACE_STATS_TIMEOUT_METRIC_ID,
+                    event_codes: vec![],
+                    payload: MetricEventPayload::Count(1),
+                });
+            }
+            GetIfaceStatsError::FidlError | GetIfaceStatsError::ResponseError => {
+                metric_events.push(MetricEvent {
+                    metric_id: metrics::GET_IFACE_STATS_ERROR_IN_RESPONSE_METRIC_ID,
+                    event_codes: vec![],
+                    payload: MetricEventPayload::Count(1),
+                });
+            }
+        }
         log_cobalt_batch!(self.cobalt_proxy, &metric_events, "log_get_iface_stats_failure_cobalt");
     }
 
@@ -1422,7 +1449,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_handle_periodic_telemetry_get_iface_stats_failure() {
+    fn test_handle_periodic_telemetry_get_iface_stats_failure_non_timeout() {
         let mut test_helper = setup_test();
         let driver_counters_mock_matrix_client = MockTimeMatrixClient::new();
         let driver_gauges_mock_matrix_client = MockTimeMatrixClient::new();
@@ -1450,6 +1477,53 @@ mod tests {
         let metrics = test_helper.get_logged_metrics(metrics::GET_IFACE_STATS_FAILURE_METRIC_ID);
         assert_eq!(metrics.len(), 1);
         assert_eq!(metrics[0].payload, MetricEventPayload::Count(1));
+
+        // Note that even though the response is ZX_ERR_TIMED_OUT, the `get_iface_stats_timeout`
+        // metric is not logged because the metric is specifically about timeout waiting for a
+        // response to `get_iface_stats` call.
+        let metrics = test_helper.get_logged_metrics(metrics::GET_IFACE_STATS_TIMEOUT_METRIC_ID);
+        assert!(metrics.is_empty());
+
+        let metrics =
+            test_helper.get_logged_metrics(metrics::GET_IFACE_STATS_ERROR_IN_RESPONSE_METRIC_ID);
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[0].payload, MetricEventPayload::Count(1));
+    }
+
+    #[fuchsia::test]
+    fn test_handle_periodic_telemetry_get_iface_stats_timeout() {
+        let mut test_helper = setup_test();
+        let driver_counters_mock_matrix_client = MockTimeMatrixClient::new();
+        let driver_gauges_mock_matrix_client = MockTimeMatrixClient::new();
+        let logger = ClientIfaceCountersLogger::new(
+            test_helper.cobalt_proxy.clone(),
+            test_helper.monitor_svc_proxy.clone(),
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
+            &test_helper.mock_time_matrix_client,
+            driver_counters_mock_matrix_client.clone(),
+            driver_gauges_mock_matrix_client.clone(),
+        );
+
+        // Transition to IfaceCreated state
+        handle_iface_created(&mut test_helper, &logger);
+
+        let mut test_fut = pin!(logger.handle_periodic_telemetry());
+        assert_eq!(test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut), Poll::Pending);
+        test_helper.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(5_000_000_000));
+        assert_eq!(test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut), Poll::Pending);
+
+        let metrics = test_helper.get_logged_metrics(metrics::GET_IFACE_STATS_FAILURE_METRIC_ID);
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[0].payload, MetricEventPayload::Count(1));
+
+        let metrics = test_helper.get_logged_metrics(metrics::GET_IFACE_STATS_TIMEOUT_METRIC_ID);
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[0].payload, MetricEventPayload::Count(1));
+
+        let metrics =
+            test_helper.get_logged_metrics(metrics::GET_IFACE_STATS_ERROR_IN_RESPONSE_METRIC_ID);
+        assert!(metrics.is_empty());
     }
 
     #[fuchsia::test]
