@@ -23,8 +23,6 @@
 #include "src/developer/debug/debug_agent/thread_handle.h"
 #include "src/developer/debug/debug_agent/time.h"
 #include "src/developer/debug/debug_agent/watchpoint.h"
-#include "src/developer/debug/ipc/message_reader.h"
-#include "src/developer/debug/ipc/message_writer.h"
 #include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/shared/logging/logging.h"
 #include "src/developer/debug/shared/platform_message_loop.h"

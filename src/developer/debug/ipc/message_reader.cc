@@ -8,8 +8,6 @@
 
 #include <cstdint>
 
-#include "src/developer/debug/ipc/protocol.h"
-
 namespace debug_ipc {
 
 void MessageReader::SerializeBytes(void* data, uint32_t len) {
@@ -23,37 +21,5 @@ void MessageReader::SerializeBytes(void* data, uint32_t len) {
     offset_ += len;
   }
 }
-
-#define FN(msg_type)                                                                             \
-  bool Deserialize(std::vector<char> data, msg_type##Request* request, uint32_t* transaction_id, \
-                   uint32_t version) {                                                           \
-    MessageReader reader(std::move(data), version);                                              \
-    MsgHeader header;                                                                            \
-    reader | header | *request;                                                                  \
-    *transaction_id = header.transaction_id;                                                     \
-    return !reader.has_error();                                                                  \
-  }                                                                                              \
-  bool Deserialize(std::vector<char> data, msg_type##Reply* reply, uint32_t* transaction_id,     \
-                   uint32_t version) {                                                           \
-    MessageReader reader(std::move(data), version);                                              \
-    MsgHeader header;                                                                            \
-    reader | header | *reply;                                                                    \
-    *transaction_id = header.transaction_id;                                                     \
-    return !reader.has_error();                                                                  \
-  }
-
-FOR_EACH_REQUEST_TYPE(FN)
-#undef FN
-
-#define FN(msg_type)                                                             \
-  bool Deserialize(std::vector<char> data, msg_type* notify, uint32_t version) { \
-    MessageReader reader(std::move(data), version);                              \
-    MsgHeader header;                                                            \
-    reader | header | *notify;                                                   \
-    return !reader.has_error();                                                  \
-  }
-
-FOR_EACH_NOTIFICATION_TYPE(FN)
-#undef FN
 
 }  // namespace debug_ipc

@@ -16,7 +16,6 @@
 #include "src/developer/debug/debug_agent/mock_thread_handle.h"
 #include "src/developer/debug/debug_agent/test_utils.h"
 #include "src/developer/debug/ipc/filter_utils.h"
-#include "src/developer/debug/ipc/message_writer.h"
 #include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/shared/logging/debug.h"
 #include "src/developer/debug/shared/message_loop.h"

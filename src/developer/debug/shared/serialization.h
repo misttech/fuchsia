@@ -31,20 +31,25 @@ namespace debug {
 class Serializer {
  public:
   template <typename T>
-  auto operator|(T& val)
-      -> std::enable_if_t<std::is_void_v<decltype(val.Serialize(*this, 0))>, Serializer&> {
+  Serializer& operator|(T& val)
+    requires std::is_void_v<decltype(val.Serialize(*this, 0))>
+  {
     val.Serialize(*this, GetVersion());
     return *this;
   }
 
   template <typename Integer>
-  auto operator|(Integer& val) -> std::enable_if_t<std::is_integral_v<Integer>, Serializer&> {
+  Serializer& operator|(Integer& val)
+    requires std::is_integral_v<Integer>
+  {
     SerializeBytes(&val, sizeof(val));
     return *this;
   }
 
   template <typename Enum>
-  auto operator|(Enum& val) -> std::enable_if_t<std::is_enum_v<Enum>, Serializer&> {
+  Serializer& operator|(Enum& val)
+    requires std::is_enum_v<Enum>
+  {
     uint32_t v = static_cast<uint32_t>(val);
     *this | v;
     val = static_cast<Enum>(v);

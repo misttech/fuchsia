@@ -35,7 +35,7 @@ namespace debug_ipc {
 // CURRENT_SUPPORTED_API_LEVEL is equal to the numbered API level currently represented by "NEXT".
 // If not, continue reading the comments below.
 
-constexpr uint32_t kCurrentProtocolVersion = 71;
+constexpr uint32_t kCurrentProtocolVersion = 72;
 
 // How to decide kMinimumProtocolVersion
 // -------------------------------------
@@ -73,6 +73,24 @@ const uint64_t kTimestampDefault = 0x0fefffffffffffff;
 // be updated.
 static_assert(static_cast<int>(debug::Arch::kX64) == 1);
 static_assert(static_cast<int>(debug::Arch::kArm64) == 2);
+
+// The only requirement for a type to be compatible with debug_ipc is for it to contain a
+// Serialize method that serializes its own members using the provided serializer object. Use this
+// as a requirement when writing template functions for all debug_ipc message types. This concept
+// applies for both Request and Notification types. If you're only concerned about Notification
+// types, use the notification specific concept below this one.
+template <typename T>
+concept IsDebugIpcMessageType = requires(T t, Serializer& s, uint32_t ver) {
+  { t.Serialize(s, ver) };
+};
+
+// The only difference for notification types is that they also have a required timestamp parameter,
+// which is optional for request types.
+template <typename T>
+concept IsDebugIpcNotificationType = requires(T t, Serializer& s, uint32_t ver) {
+  { t.timestamp };
+  { t.Serialize(s, ver) };
+};
 
 #pragma pack(push, 8)
 
@@ -832,10 +850,20 @@ struct NotifyLog {
 struct NotifyComponentDiscovered {
   static constexpr uint32_t kSupportedSinceVersion = 63;
 
+  // This was added post-deprecation to align with other Notification types such that compile time
+  // checks can be done against Notifications separately from request types. In the future all
+  // notification types will require a timestamp member, which will be enforced at compile time.
+  uint64_t timestamp = kTimestampDefault;
+
   // The filter that the backend installed to match this realm.
   Filter filter;
 
-  void Serialize(Serializer& ser, uint32_t ver) { ser | filter; }
+  void Serialize(Serializer& ser, uint32_t ver) {
+    ser | filter;
+    if (ver >= 72) {
+      ser | timestamp;
+    }
+  }
 };
 
 // Notify that a component has started.

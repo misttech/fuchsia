@@ -42,20 +42,27 @@ class MessageReader : public Serializer {
   bool has_error_ = false;
 };
 
-// Helper functions to deserialize bytes into messages. Returns true if succeeds.
-#define FN(msg_type)                                                                             \
-  bool Deserialize(std::vector<char> data, msg_type##Request* request, uint32_t* transaction_id, \
-                   uint32_t version);                                                            \
-  bool Deserialize(std::vector<char> data, msg_type##Reply* reply, uint32_t* transaction_id,     \
-                   uint32_t version);
+// MsgType can be either Request or Reply types.
+template <typename MsgType>
+bool Deserialize(std::vector<char> data, MsgType* msg, uint32_t* transaction_id, uint32_t version)
+  requires IsDebugIpcMessageType<MsgType>
+{
+  MessageReader reader(std::move(data), version);
+  MsgHeader header;
+  reader | header | *msg;
+  *transaction_id = header.transaction_id;
+  return !reader.has_error();
+}
 
-FOR_EACH_REQUEST_TYPE(FN)
-#undef FN
-
-#define FN(msg_type) bool Deserialize(std::vector<char> data, msg_type* notify, uint32_t version);
-
-FOR_EACH_NOTIFICATION_TYPE(FN)
-#undef FN
+template <typename NotificationType>
+bool Deserialize(std::vector<char> data, NotificationType* notify, uint32_t version)
+  requires IsDebugIpcNotificationType<NotificationType>
+{
+  MessageReader reader(std::move(data), version);
+  MsgHeader header;
+  reader | header | *notify;
+  return !reader.has_error();
+}
 
 }  // namespace debug_ipc
 

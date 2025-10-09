@@ -13,7 +13,7 @@ MockDebugAgentHarness::MockDebugAgentHarness(std::unique_ptr<MockSystemInterface
     : system_interface_(system_interface.get()), agent_(std::move(system_interface)) {
   auto stream_backend = std::make_unique<MockStreamBackend>();
   stream_backend_ = stream_backend.get();
-  agent_.Connect(std::move(stream_backend));
+  agent_.TakeAndConnectRemoteAPIStream(std::move(stream_backend));
 
   // Make sure DebugAgent is initialized with the current protocol version.
   debug_ipc::HelloRequest request;

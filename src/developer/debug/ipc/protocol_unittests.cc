@@ -1157,18 +1157,21 @@ TEST(Protocol, NotifyLog) {
 
 TEST(Protocol, NotifyComponentDiscovered) {
   NotifyComponentDiscovered initial;
+  initial.timestamp = kTestTimestampDefault;
   initial.filter.pattern = "/moniker";
   initial.filter.type = debug_ipc::Filter::Type::kComponentMonikerPrefix;
 
   NotifyComponentDiscovered second;
   ASSERT_TRUE(SerializeDeserialize(initial, &second));
 
+  EXPECT_EQ(initial.timestamp, second.timestamp);
   EXPECT_EQ(initial.filter.pattern, second.filter.pattern);
   EXPECT_EQ(initial.filter.type, second.filter.type);
 }
 
 TEST(Protocol, NotifyComponentDiscoveredWithVersion) {
   NotifyComponentDiscovered initial;
+  initial.timestamp = kTestTimestampDefault;
   initial.filter.pattern = "/moniker";
   initial.filter.type = debug_ipc::Filter::Type::kComponentMonikerPrefix;
 

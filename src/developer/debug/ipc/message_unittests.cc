@@ -55,7 +55,7 @@ TEST(Message, ReadWriteBytes) {
   }
 
   // Reading one more byte should fail.
-  char one_more;
+  char one_more = 0;
   reader | one_more;
   EXPECT_TRUE(reader.has_error());
 }
@@ -94,7 +94,7 @@ TEST(Message, ReadWriteNumbers) {
   EXPECT_EQ(expected_uint64, read_uint64);
 
   // Reading one more byte should fail.
-  int64_t one_more;
+  int64_t one_more = 0;
   reader | one_more;
   EXPECT_TRUE(reader.has_error());
 }
@@ -132,7 +132,7 @@ TEST(Message, ReadWriteOptional) {
   EXPECT_EQ(read.value(), 42ull);
 
   // Reading one more byte should fail.
-  int64_t one_more;
+  int64_t one_more = 0;
   reader | one_more;
   EXPECT_TRUE(reader.has_error());
 }

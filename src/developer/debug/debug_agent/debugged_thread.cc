@@ -22,8 +22,6 @@
 #include "src/developer/debug/debug_agent/time.h"
 #include "src/developer/debug/debug_agent/unwind.h"
 #include "src/developer/debug/debug_agent/watchpoint.h"
-#include "src/developer/debug/ipc/message_reader.h"
-#include "src/developer/debug/ipc/message_writer.h"
 #include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/logging/logging.h"
