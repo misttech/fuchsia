@@ -45,24 +45,23 @@ enum MtPosition {
 /// - not follow "Type B" pattern.
 #[derive(Debug, Default, PartialEq)]
 pub struct LinuxTouchEventParser {
-    /// Store received events while conversion still ongoing.
-    cached_events: Vec<uapi::input_event>,
     /// Store slot id -> tracking id mapping for Type B protocol. Remove the
     /// mapping when contact lifted.
     slot_id_to_tracking_id: HashMap<SlotId, TrackingId>,
+    /// Store slot id -> Contact.
+    slot_id_to_contact: HashMap<SlotId, fir::ContactInputReport>,
+
+    /// Store received events while conversion still ongoing.
+    cached_events: Vec<uapi::input_event>,
 
     // Following states only when start parsing one event sequence (SYN_REPORT
     // received).
     /// There will be multiple slots in one event sequence, this field records
     /// the current parsing slot's id.
     current_slot_id: Option<SlotId>,
-    /// The contact information of current slot.
-    current_contact: Option<fir::ContactInputReport>,
     /// This record processed slots' id to check if duplicated slot id appear
     /// in one event sequence.
     processed_slots: HashSet<SlotId>,
-    /// This store parsed contacts.
-    contacts: Vec<fir::ContactInputReport>,
 
     /// Allowing single pointer sequence without leading MT_SLOT, will set the
     /// pointer to slot 0.
@@ -73,12 +72,11 @@ impl LinuxTouchEventParser {
     /// Create the LinuxTouchEventParser.
     pub fn create() -> Self {
         Self {
-            cached_events: vec![],
             slot_id_to_tracking_id: HashMap::new(),
+            slot_id_to_contact: HashMap::new(),
+            cached_events: vec![],
             current_slot_id: None,
-            current_contact: None,
             processed_slots: HashSet::new(),
-            contacts: vec![],
             single_pointer_sequence: false,
         }
     }
@@ -87,42 +85,16 @@ impl LinuxTouchEventParser {
     fn reset_state(&mut self) {
         self.cached_events = vec![];
         self.slot_id_to_tracking_id = HashMap::new();
+        self.slot_id_to_contact = HashMap::new();
+
         self.reset_sequence_state();
-        self.single_pointer_sequence = false;
     }
 
     /// Clean state for parsing sequence, call for parsing sequence begin and end.
     fn reset_sequence_state(&mut self) {
         self.current_slot_id = None;
-        self.current_contact = None;
         self.processed_slots = HashSet::new();
-        self.contacts = vec![];
         self.single_pointer_sequence = false;
-    }
-
-    /// call when input_event for current_contact is end:
-    /// - MT_SLOT: new slot begins.
-    /// - SYN_REPORT: sequence is ended.
-    ///
-    /// This checks if current_contact have enough information. If not, return errno.
-    /// If contact is lifted, don't add to the list.
-    fn add_current_contact_to_list(&mut self) -> Result<(), Errno> {
-        match &self.current_contact {
-            Some(current) => {
-                if !validate_contact_input_report(&current) {
-                    log_warn!(
-                        "current_contact does not have required information, current_contact = {:?}",
-                        current
-                    );
-                    self.reset_state();
-                    return error!(EINVAL);
-                }
-
-                self.contacts.push(current.clone());
-            }
-            None => {}
-        }
-        Ok(())
     }
 
     /// There are 2 possible state for a MT_SLOT event:
@@ -147,21 +119,18 @@ impl LinuxTouchEventParser {
             return error!(EINVAL);
         }
 
-        match self.current_slot_id {
-            // This is the first slot in the sequence.
-            None => {}
-            // Complete the previous slot.
-            Some(_) => {
-                self.add_current_contact_to_list()?;
-            }
-        }
-
         self.processed_slots.insert(new_slot_id);
         self.current_slot_id = Some(new_slot_id);
-        self.current_contact = Some(fir::ContactInputReport {
-            contact_id: self.slot_id_to_tracking_id.get(&new_slot_id).copied(),
-            ..fir::ContactInputReport::default()
-        });
+
+        if !self.slot_id_to_contact.contains_key(&new_slot_id) {
+            self.slot_id_to_contact.insert(
+                new_slot_id.clone(),
+                fir::ContactInputReport {
+                    contact_id: Some(new_slot_id as u32),
+                    ..fir::ContactInputReport::default()
+                },
+            );
+        }
 
         Ok(())
     }
@@ -191,7 +160,8 @@ impl LinuxTouchEventParser {
 
     /// MT_TRACKING_ID associate tracking id with slot id, this event is must
     /// have for a slot first appear in event sequences. Add slot id ->
-    /// tracking id mapping and add set tracking id as contact id in this case.
+    /// tracking id mapping, this only used to verify the tracking id is not
+    /// changed.
     ///
     /// Tracking id = -1 means the contact is lifted, the slot id -> tracking
     /// id mapping should also be removed after this.
@@ -211,7 +181,7 @@ impl LinuxTouchEventParser {
 
         if tracking_id == LIFTED_TRACKING_ID {
             self.slot_id_to_tracking_id.remove(&slot_id);
-            self.current_contact = None;
+            self.slot_id_to_contact.remove(&slot_id);
 
             return Ok(());
         }
@@ -235,17 +205,6 @@ impl LinuxTouchEventParser {
                 self.slot_id_to_tracking_id.insert(slot_id, tid);
             }
         }
-        match &self.current_contact {
-            Some(contact) => {
-                self.current_contact =
-                    Some(fir::ContactInputReport { contact_id: Some(tid), ..contact.clone() });
-            }
-            None => {
-                log_warn!("current_contact is None when set TRACKING_ID, this should never reach");
-                self.reset_state();
-                return error!(EINVAL);
-            }
-        }
 
         Ok(())
     }
@@ -258,22 +217,16 @@ impl LinuxTouchEventParser {
             MtPosition::X(_) => "ABS_MT_POSITION_X",
             MtPosition::Y(_) => "ABS_MT_POSITION_Y",
         };
-        let _ = self.get_current_slot_id_or_err(ty)?;
+        let slot_id = self.get_current_slot_id_or_err(ty)?;
 
-        match &self.current_contact {
+        match self.slot_id_to_contact.get_mut(&slot_id) {
             Some(contact) => {
                 match mt_position {
                     MtPosition::X(x) => {
-                        self.current_contact = Some(fir::ContactInputReport {
-                            position_x: Some(x),
-                            ..contact.clone()
-                        });
+                        contact.position_x = Some(x);
                     }
                     MtPosition::Y(y) => {
-                        self.current_contact = Some(fir::ContactInputReport {
-                            position_y: Some(y),
-                            ..contact.clone()
-                        });
+                        contact.position_y = Some(y);
                     }
                 }
                 Ok(())
@@ -292,7 +245,7 @@ impl LinuxTouchEventParser {
     ) -> Result<Option<fir::InputReport>, Errno> {
         self.reset_sequence_state();
 
-        let cached_events = self.cached_events.clone();
+        let cached_events = std::mem::take(&mut self.cached_events);
 
         for e in cached_events {
             match e.code as u32 {
@@ -316,18 +269,26 @@ impl LinuxTouchEventParser {
             }
         }
 
-        // The last event.
-        self.add_current_contact_to_list()?;
+        let mut contacts: Vec<fir::ContactInputReport> = vec![];
+        for contact in self.slot_id_to_contact.values() {
+            if validate_contact_input_report(contact) {
+                contacts.push(contact.clone());
+            } else {
+                log_warn!(
+                    "current contact does not have required information, current_contact = {:?}",
+                    contact
+                );
+                self.reset_state();
+                return error!(EINVAL);
+            }
+        }
 
-        // All events are processed
-        self.cached_events = vec![];
+        // This `unwrap` is safe because `validate_contact_input_report()` ensured `contact_id` exists.
+        contacts.sort_by(|a, b| a.contact_id.unwrap().cmp(&b.contact_id.unwrap()));
 
         let res = Ok(Some(fir::InputReport {
             event_time: Some(event_time.into_nanos()),
-            touch: Some(fir::TouchInputReport {
-                contacts: Some(self.contacts.clone()),
-                ..Default::default()
-            }),
+            touch: Some(fir::TouchInputReport { contacts: Some(contacts), ..Default::default() }),
             ..Default::default()
         }));
 
@@ -430,14 +391,7 @@ mod touchscreen_linux_fuchsia_tests {
         let e = input_event(uapi::EV_KEY, uapi::BTN_TOUCH, 1);
         let mut parser = LinuxTouchEventParser::create();
         assert_eq!(parser.handle(e), Ok(None));
-        assert_eq!(
-            parser,
-            LinuxTouchEventParser {
-                cached_events: vec![],
-                slot_id_to_tracking_id: HashMap::new(),
-                ..LinuxTouchEventParser::default()
-            }
-        );
+        assert_eq!(parser, LinuxTouchEventParser::default());
     }
 
     #[test_case(input_event(uapi::EV_ABS, uapi::ABS_MT_SLOT, 1); "ABS_MT_SLOT")]
@@ -464,14 +418,7 @@ mod touchscreen_linux_fuchsia_tests {
     fn handle_input_event_error(e: uapi::input_event) {
         let mut parser = LinuxTouchEventParser::create();
         assert_eq!(parser.handle(e), error!(EINVAL));
-        assert_eq!(
-            parser,
-            LinuxTouchEventParser {
-                cached_events: vec![],
-                slot_id_to_tracking_id: HashMap::new(),
-                ..LinuxTouchEventParser::default()
-            }
-        );
+        assert_eq!(parser, LinuxTouchEventParser::default());
     }
 
     #[test_case(input_event(uapi::EV_ABS, uapi::ABS_MT_TOUCH_MAJOR, 1); "ignore ABS_MT_TOUCH_MAJOR event")]
@@ -488,14 +435,7 @@ mod touchscreen_linux_fuchsia_tests {
     fn handle_input_event_ignore(e: uapi::input_event) {
         let mut parser = LinuxTouchEventParser::create();
         assert_eq!(parser.handle(e), Ok(None));
-        assert_eq!(
-            parser,
-            LinuxTouchEventParser {
-                cached_events: vec![],
-                slot_id_to_tracking_id: HashMap::new(),
-                ..LinuxTouchEventParser::default()
-            }
-        );
+        assert_eq!(parser, LinuxTouchEventParser::default());
     }
 
     #[test]
@@ -512,7 +452,7 @@ mod touchscreen_linux_fuchsia_tests {
                 event_time: Some(0),
                 touch: Some(fir::TouchInputReport {
                     contacts: Some(vec![fir::ContactInputReport {
-                        contact_id: Some(1),
+                        contact_id: Some(0),
                         position_x: Some(2),
                         position_y: Some(3),
                         ..fir::ContactInputReport::default()
@@ -527,6 +467,212 @@ mod touchscreen_linux_fuchsia_tests {
             LinuxTouchEventParser {
                 cached_events: vec![],
                 slot_id_to_tracking_id: HashMap::from([(0, 1)]),
+                slot_id_to_contact: HashMap::from([(
+                    0,
+                    fir::ContactInputReport {
+                        contact_id: Some(0),
+                        position_x: Some(2),
+                        position_y: Some(3),
+                        ..fir::ContactInputReport::default()
+                    }
+                )]),
+                ..LinuxTouchEventParser::default()
+            }
+        );
+    }
+
+    #[test]
+    fn single_pointer_mode_slot_does_not_have_enough_information() {
+        let syn = input_event(uapi::EV_SYN, uapi::SYN_REPORT, 0);
+
+        let mut parser = LinuxTouchEventParser::create();
+        assert_eq!(parser.handle(input_event(uapi::EV_ABS, uapi::ABS_MT_TRACKING_ID, 1)), Ok(None));
+        assert_eq!(parser.handle(input_event(uapi::EV_ABS, uapi::ABS_MT_POSITION_X, 2)), Ok(None));
+        assert_eq!(parser.handle(input_event(uapi::EV_ABS, uapi::ABS_MT_POSITION_Y, 3)), Ok(None));
+        assert_eq!(
+            parser.handle(syn),
+            Ok(Some(fir::InputReport {
+                event_time: Some(0),
+                touch: Some(fir::TouchInputReport {
+                    contacts: Some(vec![fir::ContactInputReport {
+                        contact_id: Some(0),
+                        position_x: Some(2),
+                        position_y: Some(3),
+                        ..fir::ContactInputReport::default()
+                    },]),
+                    ..fir::TouchInputReport::default()
+                }),
+                ..fir::InputReport::default()
+            }))
+        );
+        assert_eq!(
+            parser,
+            LinuxTouchEventParser {
+                cached_events: vec![],
+                slot_id_to_tracking_id: HashMap::from([(0, 1)]),
+                slot_id_to_contact: HashMap::from([(
+                    0,
+                    fir::ContactInputReport {
+                        contact_id: Some(0),
+                        position_x: Some(2),
+                        position_y: Some(3),
+                        ..fir::ContactInputReport::default()
+                    }
+                )]),
+                ..LinuxTouchEventParser::default()
+            }
+        );
+
+        // the second event does not have x.
+        assert_eq!(parser.handle(input_event(uapi::EV_ABS, uapi::ABS_MT_POSITION_Y, 4)), Ok(None));
+        assert_eq!(
+            parser.handle(syn),
+            Ok(Some(fir::InputReport {
+                event_time: Some(0),
+                touch: Some(fir::TouchInputReport {
+                    contacts: Some(vec![fir::ContactInputReport {
+                        contact_id: Some(0),
+                        position_x: Some(2),
+                        position_y: Some(4),
+                        ..fir::ContactInputReport::default()
+                    },]),
+                    ..fir::TouchInputReport::default()
+                }),
+                ..fir::InputReport::default()
+            }))
+        );
+        assert_eq!(
+            parser,
+            LinuxTouchEventParser {
+                cached_events: vec![],
+                slot_id_to_tracking_id: HashMap::from([(0, 1)]),
+                slot_id_to_contact: HashMap::from([(
+                    0,
+                    fir::ContactInputReport {
+                        contact_id: Some(0),
+                        position_x: Some(2),
+                        position_y: Some(4),
+                        ..fir::ContactInputReport::default()
+                    }
+                )]),
+                ..LinuxTouchEventParser::default()
+            }
+        );
+
+        // only contains pressure event.
+        assert_eq!(parser.handle(input_event(uapi::EV_ABS, uapi::ABS_MT_PRESSURE, 10)), Ok(None));
+        assert_eq!(
+            parser.handle(syn),
+            Ok(Some(fir::InputReport {
+                event_time: Some(0),
+                touch: Some(fir::TouchInputReport {
+                    contacts: Some(vec![fir::ContactInputReport {
+                        contact_id: Some(0),
+                        position_x: Some(2),
+                        position_y: Some(4),
+                        ..fir::ContactInputReport::default()
+                    },]),
+                    ..fir::TouchInputReport::default()
+                }),
+                ..fir::InputReport::default()
+            }))
+        );
+        assert_eq!(
+            parser,
+            LinuxTouchEventParser {
+                cached_events: vec![],
+                slot_id_to_tracking_id: HashMap::from([(0, 1)]),
+                slot_id_to_contact: HashMap::from([(
+                    0,
+                    fir::ContactInputReport {
+                        contact_id: Some(0),
+                        position_x: Some(2),
+                        position_y: Some(4),
+                        ..fir::ContactInputReport::default()
+                    }
+                )]),
+                ..LinuxTouchEventParser::default()
+            }
+        );
+    }
+
+    #[test]
+    fn slot_has_only_pressure_event() {
+        let slot_0 = input_event(uapi::EV_ABS, uapi::ABS_MT_SLOT, 0);
+        let syn = input_event(uapi::EV_SYN, uapi::SYN_REPORT, 0);
+
+        let mut parser = LinuxTouchEventParser::create();
+        assert_eq!(parser.handle(slot_0), Ok(None));
+        assert_eq!(parser.handle(input_event(uapi::EV_ABS, uapi::ABS_MT_TRACKING_ID, 1)), Ok(None));
+        assert_eq!(parser.handle(input_event(uapi::EV_ABS, uapi::ABS_MT_POSITION_X, 2)), Ok(None));
+        assert_eq!(parser.handle(input_event(uapi::EV_ABS, uapi::ABS_MT_POSITION_Y, 3)), Ok(None));
+        assert_eq!(
+            parser.handle(syn),
+            Ok(Some(fir::InputReport {
+                event_time: Some(0),
+                touch: Some(fir::TouchInputReport {
+                    contacts: Some(vec![fir::ContactInputReport {
+                        contact_id: Some(0),
+                        position_x: Some(2),
+                        position_y: Some(3),
+                        ..fir::ContactInputReport::default()
+                    },]),
+                    ..fir::TouchInputReport::default()
+                }),
+                ..fir::InputReport::default()
+            }))
+        );
+        assert_eq!(
+            parser,
+            LinuxTouchEventParser {
+                cached_events: vec![],
+                slot_id_to_tracking_id: HashMap::from([(0, 1)]),
+                slot_id_to_contact: HashMap::from([(
+                    0,
+                    fir::ContactInputReport {
+                        contact_id: Some(0),
+                        position_x: Some(2),
+                        position_y: Some(3),
+                        ..fir::ContactInputReport::default()
+                    }
+                )]),
+                ..LinuxTouchEventParser::default()
+            }
+        );
+
+        // next event only contains pressure
+        assert_eq!(parser.handle(slot_0), Ok(None));
+        assert_eq!(parser.handle(input_event(uapi::EV_ABS, uapi::ABS_MT_PRESSURE, 10)), Ok(None));
+        assert_eq!(
+            parser.handle(syn),
+            Ok(Some(fir::InputReport {
+                event_time: Some(0),
+                touch: Some(fir::TouchInputReport {
+                    contacts: Some(vec![fir::ContactInputReport {
+                        contact_id: Some(0),
+                        position_x: Some(2),
+                        position_y: Some(3),
+                        ..fir::ContactInputReport::default()
+                    },]),
+                    ..fir::TouchInputReport::default()
+                }),
+                ..fir::InputReport::default()
+            }))
+        );
+        assert_eq!(
+            parser,
+            LinuxTouchEventParser {
+                cached_events: vec![],
+                slot_id_to_tracking_id: HashMap::from([(0, 1)]),
+                slot_id_to_contact: HashMap::from([(
+                    0,
+                    fir::ContactInputReport {
+                        contact_id: Some(0),
+                        position_x: Some(2),
+                        position_y: Some(3),
+                        ..fir::ContactInputReport::default()
+                    }
+                )]),
                 ..LinuxTouchEventParser::default()
             }
         );
@@ -542,28 +688,14 @@ mod touchscreen_linux_fuchsia_tests {
         // The last slot does not have enough information.
         assert_eq!(parser.handle(slot_0), Ok(None));
         assert_eq!(parser.handle(syn), error!(EINVAL));
-        assert_eq!(
-            parser,
-            LinuxTouchEventParser {
-                cached_events: vec![],
-                slot_id_to_tracking_id: HashMap::new(),
-                ..LinuxTouchEventParser::default()
-            }
-        );
+        assert_eq!(parser, LinuxTouchEventParser::default());
 
         // The first slot does not have enough information.
         let slot_1 = input_event(uapi::EV_ABS, uapi::ABS_MT_SLOT, 1);
         assert_eq!(parser.handle(slot_0), Ok(None));
         assert_eq!(parser.handle(slot_1), Ok(None));
         assert_eq!(parser.handle(syn), error!(EINVAL));
-        assert_eq!(
-            parser,
-            LinuxTouchEventParser {
-                cached_events: vec![],
-                slot_id_to_tracking_id: HashMap::new(),
-                ..LinuxTouchEventParser::default()
-            }
-        );
+        assert_eq!(parser, LinuxTouchEventParser::default());
     }
 
     #[test]
@@ -581,14 +713,7 @@ mod touchscreen_linux_fuchsia_tests {
         assert_eq!(parser.handle(y), Ok(None));
         assert_eq!(parser.handle(slot_0), Ok(None));
         assert_eq!(parser.handle(syn), error!(EINVAL));
-        assert_eq!(
-            parser,
-            LinuxTouchEventParser {
-                cached_events: vec![],
-                slot_id_to_tracking_id: HashMap::new(),
-                ..LinuxTouchEventParser::default()
-            }
-        );
+        assert_eq!(parser, LinuxTouchEventParser::default());
     }
 
     #[test]
@@ -603,14 +728,7 @@ mod touchscreen_linux_fuchsia_tests {
         assert_eq!(parser.handle(traking_id_0), Ok(None));
         assert_eq!(parser.handle(traking_id_1), Ok(None));
         assert_eq!(parser.handle(syn), error!(EINVAL));
-        assert_eq!(
-            parser,
-            LinuxTouchEventParser {
-                cached_events: vec![],
-                slot_id_to_tracking_id: HashMap::new(),
-                ..LinuxTouchEventParser::default()
-            }
-        );
+        assert_eq!(parser, LinuxTouchEventParser::default());
     }
 
     #[test]
@@ -624,14 +742,7 @@ mod touchscreen_linux_fuchsia_tests {
         assert_eq!(parser.handle(slot_0), Ok(None));
         assert_eq!(parser.handle(traking_id_1), Ok(None));
         assert_eq!(parser.handle(syn), error!(EINVAL));
-        assert_eq!(
-            parser,
-            LinuxTouchEventParser {
-                cached_events: vec![],
-                slot_id_to_tracking_id: HashMap::new(),
-                ..LinuxTouchEventParser::default()
-            }
-        );
+        assert_eq!(parser, LinuxTouchEventParser::default());
     }
 
     #[test]
@@ -654,7 +765,7 @@ mod touchscreen_linux_fuchsia_tests {
                 event_time: Some(0),
                 touch: Some(fir::TouchInputReport {
                     contacts: Some(vec![fir::ContactInputReport {
-                        contact_id: Some(1),
+                        contact_id: Some(0),
                         position_x: Some(2),
                         position_y: Some(3),
                         ..fir::ContactInputReport::default()
@@ -669,6 +780,15 @@ mod touchscreen_linux_fuchsia_tests {
             LinuxTouchEventParser {
                 cached_events: vec![],
                 slot_id_to_tracking_id: HashMap::from([(0, 1)]),
+                slot_id_to_contact: HashMap::from([(
+                    0,
+                    fir::ContactInputReport {
+                        contact_id: Some(0),
+                        position_x: Some(2),
+                        position_y: Some(3),
+                        ..fir::ContactInputReport::default()
+                    }
+                )]),
                 ..LinuxTouchEventParser::default()
             }
         );
@@ -696,13 +816,13 @@ mod touchscreen_linux_fuchsia_tests {
                 touch: Some(fir::TouchInputReport {
                     contacts: Some(vec![
                         fir::ContactInputReport {
-                            contact_id: Some(1),
+                            contact_id: Some(0),
                             position_x: Some(4),
                             position_y: Some(5),
                             ..fir::ContactInputReport::default()
                         },
                         fir::ContactInputReport {
-                            contact_id: Some(2),
+                            contact_id: Some(1),
                             position_x: Some(10),
                             position_y: Some(11),
                             ..fir::ContactInputReport::default()
@@ -718,6 +838,26 @@ mod touchscreen_linux_fuchsia_tests {
             LinuxTouchEventParser {
                 cached_events: vec![],
                 slot_id_to_tracking_id: HashMap::from([(0, 1), (1, 2)]),
+                slot_id_to_contact: HashMap::from([
+                    (
+                        0,
+                        fir::ContactInputReport {
+                            contact_id: Some(0),
+                            position_x: Some(4),
+                            position_y: Some(5),
+                            ..fir::ContactInputReport::default()
+                        }
+                    ),
+                    (
+                        1,
+                        fir::ContactInputReport {
+                            contact_id: Some(1),
+                            position_x: Some(10),
+                            position_y: Some(11),
+                            ..fir::ContactInputReport::default()
+                        }
+                    )
+                ]),
                 ..LinuxTouchEventParser::default()
             }
         );
@@ -736,7 +876,7 @@ mod touchscreen_linux_fuchsia_tests {
                 event_time: Some(0),
                 touch: Some(fir::TouchInputReport {
                     contacts: Some(vec![fir::ContactInputReport {
-                        contact_id: Some(2),
+                        contact_id: Some(1),
                         position_x: Some(10),
                         position_y: Some(11),
                         ..fir::ContactInputReport::default()
@@ -752,6 +892,15 @@ mod touchscreen_linux_fuchsia_tests {
             LinuxTouchEventParser {
                 cached_events: vec![],
                 slot_id_to_tracking_id: HashMap::from([(1, 2)]),
+                slot_id_to_contact: HashMap::from([(
+                    1,
+                    fir::ContactInputReport {
+                        contact_id: Some(1),
+                        position_x: Some(10),
+                        position_y: Some(11),
+                        ..fir::ContactInputReport::default()
+                    }
+                )]),
                 ..LinuxTouchEventParser::default()
             }
         );
@@ -771,13 +920,6 @@ mod touchscreen_linux_fuchsia_tests {
             }))
         );
         // should remove the mapping.
-        assert_eq!(
-            parser,
-            LinuxTouchEventParser {
-                cached_events: vec![],
-                slot_id_to_tracking_id: HashMap::new(),
-                ..LinuxTouchEventParser::default()
-            }
-        );
+        assert_eq!(parser, LinuxTouchEventParser::default());
     }
 }
