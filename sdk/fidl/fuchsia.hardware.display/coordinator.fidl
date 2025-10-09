@@ -546,6 +546,8 @@ closed protocol Coordinator {
     ///
     /// Fails with ZX_ERR_NOT_SUPPORTED if the display drivers or the hardware
     /// don't support displays on and off.
+    //
+    // TODO(https://fxbug.dev/449896410): Replaced by `SetDisplayPowerMode`.
     strict SetDisplayPower(struct {
         display_id fuchsia.hardware.display.types.DisplayId;
 
@@ -566,5 +568,43 @@ closed protocol Coordinator {
         ///
         /// Newly added displays are powered on.
         power_on bool;
+    }) -> () error zx.Status;
+
+    /// Sets the display panel power mode.
+    ///
+    /// This call takes effect immediately. Clients don't need to call
+    /// [`Coordinator.ApplyConfig`].
+    ///
+    /// Fails with ZX_ERR_NOT_FOUND if `display_id` does not belong to a display
+    /// known by the Coordinator. This can happen if a client issues a call to
+    /// [`Coordinator.SetDisplayPowerMode`] before it receives a notification
+    /// that the display was removed.
+    ///
+    /// This method is not idempotent. Each [`Coordinator.SetDisplayPowerMode`]
+    /// call explicitly sets the power mode on the display hardware, though the
+    /// display hardware driver may choose to behave idempotently.
+    ///
+    /// Fails with ZX_ERR_NOT_SUPPORTED if the display drivers or the hardware
+    /// don't support the given `power_mode`.
+    strict SetDisplayPowerMode(struct {
+        display_id fuchsia.hardware.display.types.DisplayId;
+
+        /// The target power mode of the display hardware.
+        ///
+        /// Once `power_mode` is set to `OFF`, the hardware will not generate
+        /// new VSync events. However, the client should be prepared to handle
+        /// VSync events generated before the
+        /// [`Coordinator.SetDisplayPowerMode`] call reaches the hardware.
+        ///
+        /// Calls that impact draft configurations, such as
+        /// [`Coordinator.SetDisplayLayers`], still work while `power_mode` is
+        /// set to `OFF`.
+        ///
+        /// [`Coordinator.ApplyConfig`] also works while the `power_mode` is
+        /// set to `OFF`. When the display is powered back on, the display will
+        /// show the latest applied configuration.
+        ///
+        /// Newly added displays has `ON` power mode.
+        power_mode fuchsia.hardware.display.types.PowerMode;
     }) -> () error zx.Status;
 };

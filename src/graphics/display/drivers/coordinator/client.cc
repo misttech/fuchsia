@@ -998,6 +998,27 @@ void Client::SetDisplayPower(SetDisplayPowerRequestView request,
   completer.ReplySuccess();
 }
 
+void Client::SetDisplayPowerMode(SetDisplayPowerModeRequestView request,
+                                 SetDisplayPowerModeCompleter::Sync& completer) {
+  TRACE_DURATION("gfx", "Display::Client::SetDisplayPowerMode");
+
+  const display::DisplayId display_id = display::DisplayId(request->display_id);
+  auto display_configs_it = display_configs_.find(display_id);
+  if (!display_configs_it.IsValid()) {
+    fdf::warn("SetDisplayPowerMode called with unknown display ID: {}", display_id.value());
+    completer.ReplyError(ZX_ERR_NOT_FOUND);
+  }
+
+  const display::PowerMode power_mode(request->power_mode);
+  zx::result<> result =
+      controller_.engine_driver_client()->SetDisplayPowerMode(display_id, power_mode);
+  if (result.is_error()) {
+    completer.ReplyError(result.error_value());
+    return;
+  }
+  completer.ReplySuccess();
+}
+
 display::ConfigCheckResult Client::CheckConfigImpl() {
   TRACE_DURATION("gfx", "Display::Client::CheckConfig");
 
