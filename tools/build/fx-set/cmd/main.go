@@ -390,9 +390,9 @@ func parseArgsAndEnv(args []string, env map[string]string) (*setArgs, error) {
 		cpuNudge, _ := isNudgeOn(env, "cpu_cores")
 		if cores < 96 && cpuNudge {
 			if isVirtual {
-				message += "[Nudge] For faster builds, resize your machine to at least 96 cores (go/resize-ct)\n"
+				message += "[Nudge] For faster builds, resize your machine to at least 96 cores (go/launch-specialist)\n"
 			} else {
-				message += "[Nudge] For faster builds, upgrade your machine to at least 96 cores (go/fuchsia-specialist-upgrade)\n"
+				message += "[Nudge] For faster builds, upgrade your machine to at least 96 cores (go/launch-specialist)\n"
 			}
 			message += "(Silence nudge with `ffx config set ffx.ui.nudges.cpu_cores false`)\n"
 		}
