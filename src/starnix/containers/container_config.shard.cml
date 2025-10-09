@@ -24,7 +24,7 @@
             config: "fuchsia.starnix.config.container.MlockAlwaysOnFault",
             key: "mlock_always_onfault",
             type: "bool",
-            default: true,
+            default: false,
 
             // See https://fxbug.dev/379782290 for context.
             availability: "transitional",
@@ -34,7 +34,7 @@
             key: "mlock_pin_flavor",
             type: "string",
             max_size: 100,
-            default: "noop",
+            default: "shadow_process",
 
             // See https://fxbug.dev/379782290 for context.
             availability: "transitional",
