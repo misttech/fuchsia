@@ -58,6 +58,7 @@ rustc_library("starnix_kernel_runner") {
     "//src/starnix/lib/features:starnix_features",
     "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",
+    "//src/starnix/lib/starnix_syscall_loop",
     "//src/starnix/lib/starnix_types",
     "//src/starnix/lib/starnix_uapi",
     "//src/starnix/modules",

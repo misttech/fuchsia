@@ -90,6 +90,7 @@ rustc_binary("starnix_kernel_bin") {
 _starnix_core_edition = "2021"
 _starnix_core_source_root = "lib.rs"
 _starnix_core_sources = [
+  # go/keep-sorted start
   "arch/${current_cpu}/execution.rs",
   "arch/${current_cpu}/mod.rs",
   "arch/${current_cpu}/registers.rs",
@@ -116,6 +117,7 @@ _starnix_core_sources = [
   "device/terminal.rs",
   "execution/crash_reporter.rs",
   "execution/executor.rs",
+  "execution/loop_entry.rs",
   "execution/mod.rs",
   "execution/table.rs",
   "execution/task_creation.rs",
@@ -292,6 +294,8 @@ _starnix_core_sources = [
   "vfs/userfault_file.rs",
   "vfs/wd_number.rs",
   "vfs/xattr.rs",
+
+  # go/keep-sorted end
 ]
 
 _starnix_core_deps = [

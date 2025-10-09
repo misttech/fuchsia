@@ -5,6 +5,7 @@
 #![allow(non_camel_case_types)]
 
 use crate::arch::execution::new_syscall;
+use crate::execution::loop_entry::enter_syscall_loop;
 use crate::execution::table::dispatch_syscall;
 use crate::signals::{SignalInfo, deliver_signal, dequeue_signal, prepare_to_restart_syscall};
 use crate::task::{
@@ -35,6 +36,60 @@ use std::sync::mpsc::sync_channel;
 use zx::{
     AsHandleRef, {self as zx},
 };
+
+pub fn actually_enter_syscall_loop(
+    locked: &mut Locked<Unlocked>,
+    current_task: &mut CurrentTask,
+) -> ExitStatus {
+    // Allocate a VMO and bind it to this thread.
+    let mut out_vmo_handle = 0;
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
+    let status =
+        zx::Status::from_raw(unsafe { zx::sys::zx_restricted_bind_state(0, &mut out_vmo_handle) });
+    match { status } {
+        zx::Status::OK => {
+            // We've successfully attached the VMO to the current thread. This VMO will be
+            // mapped and used for the kernel to store restricted mode register state as it
+            // enters and exits restricted mode.
+        }
+        _ => panic!("zx_restricted_bind_state failed with {status}!"),
+    }
+    #[allow(
+        clippy::undocumented_unsafe_blocks,
+        reason = "Force documented unsafe blocks in Starnix"
+    )]
+    let state_vmo = unsafe { zx::Vmo::from(zx::Handle::from_raw(out_vmo_handle)) };
+
+    // Unbind when we leave this scope to avoid unnecessarily retaining the VMO via this
+    // thread's binding.  Of course, we'll still have to remove any mappings and close any
+    // handles that refer to the VMO to ensure it will be destroyed.  See note about
+    // preventing resource leaks in this function's documentation.
+    scopeguard::defer! {
+            #[allow(
+                clippy::undocumented_unsafe_blocks,
+                reason = "Force documented unsafe blocks in Starnix"
+            )]
+        unsafe { zx::sys::zx_restricted_unbind_state(0); }
+    }
+
+    // Map the restricted state VMO and arrange for it to be unmapped later.
+    match RestrictedState::from_vmo(state_vmo) {
+        Ok(restricted_state) => match run_task(locked, current_task, restricted_state) {
+            Ok(ok) => ok,
+            Err(error) => {
+                log_warn!("Died unexpectedly from {error:?}! treating as SIGKILL");
+                ExitStatus::Kill(SignalInfo::default(SIGKILL))
+            }
+        },
+        Err(error) => {
+            log_error!("failed to map mode state vmo, {error:?}! treating as SIGKILL");
+            ExitStatus::Kill(SignalInfo::default(SIGKILL))
+        }
+    }
+}
 
 extern "C" {
     fn restricted_enter_loop(
@@ -506,58 +561,7 @@ where
             // releasables.
             std::mem::drop(task_complete);
         } else {
-            // Allocate a VMO and bind it to this thread.
-            let mut out_vmo_handle = 0;
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            let status = zx::Status::from_raw(unsafe {
-                zx::sys::zx_restricted_bind_state(0, &mut out_vmo_handle)
-            });
-            match { status } {
-                zx::Status::OK => {
-                    // We've successfully attached the VMO to the current thread. This VMO will be
-                    // mapped and used for the kernel to store restricted mode register state as it
-                    // enters and exits restricted mode.
-                }
-                _ => panic!("zx_restricted_bind_state failed with {status}!"),
-            }
-            #[allow(
-                clippy::undocumented_unsafe_blocks,
-                reason = "Force documented unsafe blocks in Starnix"
-            )]
-            let state_vmo = unsafe { zx::Vmo::from(zx::Handle::from_raw(out_vmo_handle)) };
-
-            // Unbind when we leave this scope to avoid unnecessarily retaining the VMO via this
-            // thread's binding.  Of course, we'll still have to remove any mappings and close any
-            // handles that refer to the VMO to ensure it will be destroyed.  See note about
-            // preventing resource leaks in this function's documentation.
-            scopeguard::defer! {
-                #[allow(
-                    clippy::undocumented_unsafe_blocks,
-                    reason = "Force documented unsafe blocks in Starnix"
-                )]
-                unsafe { zx::sys::zx_restricted_unbind_state(0); }
-            }
-
-            // Map the restricted state VMO and arrange for it to be unmapped later.
-            let exit_status = match RestrictedState::from_vmo(state_vmo) {
-                Ok(restricted_state) => {
-                    match run_task(locked, &mut current_task, restricted_state) {
-                        Ok(ok) => ok,
-                        Err(error) => {
-                            log_warn!("Died unexpectedly from {error:?}! treating as SIGKILL");
-                            ExitStatus::Kill(SignalInfo::default(SIGKILL))
-                        }
-                    }
-                }
-                Err(error) => {
-                    log_error!("failed to map mode state vmo, {error:?}! treating as SIGKILL");
-                    ExitStatus::Kill(SignalInfo::default(SIGKILL))
-                }
-            };
-
+            let exit_status = enter_syscall_loop(locked, &mut current_task);
             current_task.write().set_exit_status(exit_status.clone());
             task_complete(Ok(exit_status));
         }

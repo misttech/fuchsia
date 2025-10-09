@@ -148,6 +148,7 @@ async fn main() -> Result<(), Error> {
     fuchsia_trace_provider::trace_provider_wait_for_init();
     trace_instant!(CATEGORY_STARNIX, NAME_START_KERNEL, fuchsia_trace::Scope::Thread);
 
+    starnix_kernel_runner::initialize();
     let container = Rc::new(OnceCell::<Container>::new());
     let _lifecycle_task = maybe_serve_lifecycle(container.clone());
 
