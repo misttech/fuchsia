@@ -17,7 +17,7 @@ var tcpAdvancedExpectations map[AnvlCaseNumber]outcome.Outcome = map[AnvlCaseNum
 	{2, 23}:  Fail,
 	{2, 24}:  Fail,
 	{2, 25}:  Fail,
-	{3, 17}:  Flaky, // TODO(https://fxbug.dev/42056370): Fix flake.
+	{3, 17}:  Flaky, // TODO(https://fxbug.dev/450348456): Fix flake.
 	{4, 17}:  Pass,
 	{5, 17}:  Fail,
 	{5, 18}:  Fail,
@@ -82,7 +82,7 @@ var tcpAdvancedExpectationsNS3 map[AnvlCaseNumber]outcome.Outcome = map[AnvlCase
 	{2, 23}:  Fail,
 	{2, 24}:  Fail,
 	{2, 25}:  Fail,
-	{3, 17}:  Flaky, // TODO(https://fxbug.dev/42056370): Fix flake.
+	{3, 17}:  Flaky, // TODO(https://fxbug.dev/450348456): Fix flake.
 	{4, 17}:  Flaky,
 	{5, 17}:  Fail,
 	{5, 18}:  Fail,

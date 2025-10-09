@@ -17,7 +17,7 @@ var tcpAdvancedV6Expectations map[AnvlCaseNumber]outcome.Outcome = map[AnvlCaseN
 	{2, 23}:  Fail,
 	{2, 24}:  Fail,
 	{2, 25}:  Fail,
-	{3, 17}:  Flaky, // TODO(https://fxbug.dev/42056374): Fix the flake.
+	{3, 17}:  Flaky, // TODO(https://fxbug.dev/450348456): Fix the flake.
 	{4, 17}:  Flaky,
 	{5, 17}:  Skip, // https://fxbug.dev/427248980: Causes ANVL exits.
 	{5, 18}:  Skip, // https://fxbug.dev/427248980: Causes ANVL exits.
@@ -82,7 +82,7 @@ var tcpAdvancedV6ExpectationsNS3 map[AnvlCaseNumber]outcome.Outcome = map[AnvlCa
 	{2, 23}:  Fail,
 	{2, 24}:  Fail,
 	{2, 25}:  Fail,
-	{3, 17}:  Pass,
+	{3, 17}:  Flaky, // TODO(https://fxbug.dev/450348456): Fix the flake.
 	{4, 17}:  Pass,
 	{5, 17}:  Skip, // TODO(https://fxbug.dev/42095226): Implement IP_MTU_DISCOVER.
 	{5, 18}:  Skip, // TODO(https://fxbug.dev/42095226): Implement IP_MTU_DISCOVER.
