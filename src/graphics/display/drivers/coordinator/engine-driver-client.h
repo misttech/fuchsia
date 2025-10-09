@@ -23,6 +23,7 @@
 #include "src/graphics/display/lib/api-types/cpp/engine-info.h"
 #include "src/graphics/display/lib/api-types/cpp/image-buffer-usage.h"
 #include "src/graphics/display/lib/api-types/cpp/image-metadata.h"
+#include "src/graphics/display/lib/api-types/cpp/power-mode.h"
 
 namespace display_coordinator {
 
@@ -66,7 +67,8 @@ class EngineDriverClient {
   virtual zx::result<> SetBufferCollectionConstraints(
       const display::ImageBufferUsage& usage, display::DriverBufferCollectionId collection_id) = 0;
   virtual zx::result<> StartCapture(display::DriverCaptureImageId driver_capture_image_id) = 0;
-  virtual zx::result<> SetDisplayPower(display::DisplayId display_id, bool power_on) = 0;
+  virtual zx::result<> SetDisplayPowerMode(display::DisplayId display_id,
+                                           display::PowerMode power_mode) = 0;
   virtual zx::result<> SetMinimumRgb(uint8_t minimum_rgb) = 0;
 };
 

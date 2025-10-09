@@ -213,9 +213,9 @@ zx::result<> EngineDriverClientFidl::StartCapture(
   return zx::ok();
 }
 
-zx::result<> EngineDriverClientFidl::SetDisplayPower(display::DisplayId display_id, bool power_on) {
+zx::result<> EngineDriverClientFidl::SetDisplayPowerMode(display::DisplayId display_id,
+                                                         display::PowerMode power_mode) {
   fdf::Arena arena(kArenaTag);
-  display::PowerMode power_mode = power_on ? display::PowerMode::kOn : display::PowerMode::kOff;
   fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::SetDisplayPowerMode>
       set_display_power_mode_result =
           fidl_engine_.buffer(arena)->SetDisplayPowerMode(display_id.ToFidl(), power_mode.ToFidl());
@@ -224,21 +224,6 @@ zx::result<> EngineDriverClientFidl::SetDisplayPower(display::DisplayId display_
 
   fit::result<zx_status_t>& fidl_domain_result = set_display_power_mode_result.value();
   if (fidl_domain_result.is_ok()) {
-    return zx::ok();
-  }
-  if (fidl_domain_result.error_value() == ZX_ERR_NOT_SUPPORTED) {
-    // Fallback to SetDisplayPower if SetDisplayPowerMode is not supported.
-    FDF_LOG(INFO, "SetDisplayPowerMode not supported, falling back to SetDisplayPower");
-    fdf::WireUnownedResult<fuchsia_hardware_display_engine::Engine::SetDisplayPower>
-        fidl_transport_result =
-            fidl_engine_.buffer(arena)->SetDisplayPower(display_id.ToFidl(), power_on);
-    ZX_ASSERT_MSG(fidl_transport_result.ok(), "FIDL error calling SetDisplayPower: %s",
-                  fidl_transport_result.FormatDescription().c_str());
-
-    fit::result<zx_status_t>& fallback_fidl_domain_result = fidl_transport_result.value();
-    if (fallback_fidl_domain_result.is_error()) {
-      return zx::error(fallback_fidl_domain_result.error_value());
-    }
     return zx::ok();
   }
   return zx::error(fidl_domain_result.error_value());

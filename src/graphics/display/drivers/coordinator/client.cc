@@ -58,6 +58,7 @@
 #include "src/graphics/display/lib/api-types/cpp/image-metadata.h"
 #include "src/graphics/display/lib/api-types/cpp/layer-id.h"
 #include "src/graphics/display/lib/api-types/cpp/mode-id.h"
+#include "src/graphics/display/lib/api-types/cpp/power-mode.h"
 #include "src/graphics/display/lib/api-types/cpp/rectangle.h"
 #include "src/graphics/display/lib/api-types/cpp/vsync-ack-cookie.h"
 
@@ -986,8 +987,10 @@ void Client::SetDisplayPower(SetDisplayPowerRequestView request,
     completer.ReplyError(ZX_ERR_NOT_FOUND);
   }
 
+  const display::PowerMode power_mode =
+      request->power_on ? display::PowerMode::kOn : display::PowerMode::kOff;
   zx::result<> result =
-      controller_.engine_driver_client()->SetDisplayPower(display_id, request->power_on);
+      controller_.engine_driver_client()->SetDisplayPowerMode(display_id, power_mode);
   if (result.is_error()) {
     completer.ReplyError(result.error_value());
     return;

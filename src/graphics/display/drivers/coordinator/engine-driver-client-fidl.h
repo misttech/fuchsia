@@ -62,7 +62,8 @@ class EngineDriverClientFidl : public EngineDriverClient {
       const display::ImageBufferUsage& usage,
       display::DriverBufferCollectionId collection_id) override;
   zx::result<> StartCapture(display::DriverCaptureImageId driver_capture_image_id) override;
-  zx::result<> SetDisplayPower(display::DisplayId display_id, bool power_on) override;
+  zx::result<> SetDisplayPowerMode(display::DisplayId display_id,
+                                   display::PowerMode power_mode) override;
   zx::result<> SetMinimumRgb(uint8_t minimum_rgb) override;
 
  private:

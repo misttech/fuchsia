@@ -495,9 +495,8 @@ TEST_F(EngineDriverClientFidlTest, StartCaptureFailure) {
   EXPECT_STATUS(result, zx::error(ZX_ERR_INVALID_ARGS));
 }
 
-TEST_F(EngineDriverClientFidlTest, SetDisplayPowerSuccess) {
+TEST_F(EngineDriverClientFidlTest, SetDisplayPowerModeSuccess) {
   static constexpr display::DisplayId kDisplayId(1);
-  static constexpr bool kPowerOn = true;
 
   mock_.ExpectSetDisplayPowerMode(
       [](fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerModeRequest* request,
@@ -508,13 +507,12 @@ TEST_F(EngineDriverClientFidlTest, SetDisplayPowerSuccess) {
         completer.buffer(arena).ReplySuccess();
       });
 
-  zx::result<> result = fidl_client_.SetDisplayPower(kDisplayId, kPowerOn);
+  zx::result<> result = fidl_client_.SetDisplayPowerMode(kDisplayId, display::PowerMode::kOn);
   EXPECT_OK(result);
 }
 
-TEST_F(EngineDriverClientFidlTest, SetDisplayPowerFailure) {
+TEST_F(EngineDriverClientFidlTest, SetDisplayPowerModeFailure) {
   static constexpr display::DisplayId kDisplayId(1);
-  static constexpr bool kPowerOn = true;
 
   mock_.ExpectSetDisplayPowerMode(
       [](fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerModeRequest* request,
@@ -525,133 +523,7 @@ TEST_F(EngineDriverClientFidlTest, SetDisplayPowerFailure) {
         completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
       });
 
-  zx::result<> result = fidl_client_.SetDisplayPower(kDisplayId, kPowerOn);
-  EXPECT_STATUS(result, zx::error(ZX_ERR_INVALID_ARGS));
-}
-
-TEST_F(EngineDriverClientFidlTest, SetDisplayPowerOnSuccessWithSetDisplayPowerMode) {
-  static constexpr display::DisplayId kDisplayId(1);
-  static constexpr bool kPowerOn = true;
-
-  mock_.ExpectSetDisplayPowerMode(
-      [](fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerModeRequest* request,
-         fdf::Arena& arena,
-         testing::MockEngineFidl::SetDisplayPowerModeCompleter::Sync& completer) {
-        EXPECT_EQ(display::DisplayId(request->display_id), kDisplayId);
-        EXPECT_EQ(request->power_mode, fuchsia_hardware_display_types::wire::PowerMode::kOn);
-        completer.buffer(arena).ReplySuccess();
-      });
-
-  zx::result<> result = fidl_client_.SetDisplayPower(kDisplayId, kPowerOn);
-  EXPECT_OK(result);
-}
-
-TEST_F(EngineDriverClientFidlTest, SetDisplayPowerOffSuccessWithSetDisplayPowerMode) {
-  static constexpr display::DisplayId kDisplayId(1);
-  static constexpr bool kPowerOn = false;
-
-  mock_.ExpectSetDisplayPowerMode(
-      [](fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerModeRequest* request,
-         fdf::Arena& arena,
-         testing::MockEngineFidl::SetDisplayPowerModeCompleter::Sync& completer) {
-        EXPECT_EQ(display::DisplayId(request->display_id), kDisplayId);
-        EXPECT_EQ(request->power_mode, fuchsia_hardware_display_types::wire::PowerMode::kOff);
-        completer.buffer(arena).ReplySuccess();
-      });
-
-  zx::result<> result = fidl_client_.SetDisplayPower(kDisplayId, kPowerOn);
-  EXPECT_OK(result);
-}
-
-TEST_F(EngineDriverClientFidlTest, SetDisplayPowerOnFailureWithSetDisplayPowerMode) {
-  static constexpr display::DisplayId kDisplayId(1);
-  static constexpr bool kPowerOn = true;
-
-  mock_.ExpectSetDisplayPowerMode(
-      [](fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerModeRequest* request,
-         fdf::Arena& arena,
-         testing::MockEngineFidl::SetDisplayPowerModeCompleter::Sync& completer) {
-        EXPECT_EQ(display::DisplayId(request->display_id), kDisplayId);
-        EXPECT_EQ(request->power_mode, fuchsia_hardware_display_types::wire::PowerMode::kOn);
-        completer.buffer(arena).ReplyError(ZX_ERR_INTERNAL);
-      });
-
-  zx::result<> result = fidl_client_.SetDisplayPower(kDisplayId, kPowerOn);
-  EXPECT_STATUS(result, zx::error(ZX_ERR_INTERNAL));
-}
-
-TEST_F(EngineDriverClientFidlTest, SetDisplayPowerOnSuccessWithFallback) {
-  static constexpr display::DisplayId kDisplayId(1);
-  static constexpr bool kPowerOn = true;
-
-  mock_.ExpectSetDisplayPowerMode(
-      [](fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerModeRequest* request,
-         fdf::Arena& arena,
-         testing::MockEngineFidl::SetDisplayPowerModeCompleter::Sync& completer) {
-        EXPECT_EQ(display::DisplayId(request->display_id), kDisplayId);
-        EXPECT_EQ(request->power_mode, fuchsia_hardware_display_types::wire::PowerMode::kOn);
-        completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
-      });
-
-  mock_.ExpectSetDisplayPower(
-      [](fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerRequest* request,
-         fdf::Arena& arena, testing::MockEngineFidl::SetDisplayPowerCompleter::Sync& completer) {
-        EXPECT_EQ(display::DisplayId(request->display_id), kDisplayId);
-        EXPECT_EQ(request->power_on, kPowerOn);
-        completer.buffer(arena).ReplySuccess();
-      });
-
-  zx::result<> result = fidl_client_.SetDisplayPower(kDisplayId, kPowerOn);
-  EXPECT_OK(result);
-}
-
-TEST_F(EngineDriverClientFidlTest, SetDisplayPowerOffSuccessWithFallback) {
-  static constexpr display::DisplayId kDisplayId(1);
-  static constexpr bool kPowerOn = false;
-
-  mock_.ExpectSetDisplayPowerMode(
-      [](fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerModeRequest* request,
-         fdf::Arena& arena,
-         testing::MockEngineFidl::SetDisplayPowerModeCompleter::Sync& completer) {
-        EXPECT_EQ(display::DisplayId(request->display_id), kDisplayId);
-        EXPECT_EQ(request->power_mode, fuchsia_hardware_display_types::wire::PowerMode::kOff);
-        completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
-      });
-
-  mock_.ExpectSetDisplayPower(
-      [](fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerRequest* request,
-         fdf::Arena& arena, testing::MockEngineFidl::SetDisplayPowerCompleter::Sync& completer) {
-        EXPECT_EQ(display::DisplayId(request->display_id), kDisplayId);
-        EXPECT_EQ(request->power_on, kPowerOn);
-        completer.buffer(arena).ReplySuccess();
-      });
-
-  zx::result<> result = fidl_client_.SetDisplayPower(kDisplayId, kPowerOn);
-  EXPECT_OK(result);
-}
-
-TEST_F(EngineDriverClientFidlTest, SetDisplayPowerOnFailureWithFallback) {
-  static constexpr display::DisplayId kDisplayId(1);
-  static constexpr bool kPowerOn = true;
-
-  mock_.ExpectSetDisplayPowerMode(
-      [](fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerModeRequest* request,
-         fdf::Arena& arena,
-         testing::MockEngineFidl::SetDisplayPowerModeCompleter::Sync& completer) {
-        EXPECT_EQ(display::DisplayId(request->display_id), kDisplayId);
-        EXPECT_EQ(request->power_mode, fuchsia_hardware_display_types::wire::PowerMode::kOn);
-        completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
-      });
-
-  mock_.ExpectSetDisplayPower(
-      [](fuchsia_hardware_display_engine::wire::EngineSetDisplayPowerRequest* request,
-         fdf::Arena& arena, testing::MockEngineFidl::SetDisplayPowerCompleter::Sync& completer) {
-        EXPECT_EQ(display::DisplayId(request->display_id), kDisplayId);
-        EXPECT_EQ(request->power_on, kPowerOn);
-        completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
-      });
-
-  zx::result<> result = fidl_client_.SetDisplayPower(kDisplayId, kPowerOn);
+  zx::result<> result = fidl_client_.SetDisplayPowerMode(kDisplayId, display::PowerMode::kOn);
   EXPECT_STATUS(result, zx::error(ZX_ERR_INVALID_ARGS));
 }
 
