@@ -244,8 +244,8 @@ mod tests {
 
     fn multi_transition(foo: u8) -> BTransition {
         match foo {
-            0 => BTransition::ToA(A),
-            _ => BTransition::ToC(C(SharedStateData::default())),
+            0 => BTransition::A(A),
+            _ => BTransition::C(C(SharedStateData::default())),
         }
     }
 

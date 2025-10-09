@@ -312,7 +312,7 @@ pub fn process(input: TokenStream) -> TokenStream {
             transition_generics.push(from);
             let transition_generics = merge_generic_args(&transition_generics[..]);
             let variants = to_list.iter().fold(quote!(), |code, to| {
-                let variant_name = format_ident!("To{}", to.name);
+            let variant_name = to.name.clone();
                 quote! {
                     #code
                     #variant_name(#to),
@@ -320,7 +320,7 @@ pub fn process(input: TokenStream) -> TokenStream {
             });
 
             let from_transitions = to_list.iter().fold(quote!(), |code, to| {
-                let variant_name = format_ident!("To{}", to.name);
+                let variant_name = to.name.clone();
                 quote! {
                     #code
                     #enum_name::#variant_name(data) => {
@@ -330,7 +330,7 @@ pub fn process(input: TokenStream) -> TokenStream {
             });
 
             let via_transitions = to_list.iter().fold(quote!(), |code, to| {
-                let variant_name = format_ident!("To{}", to.name);
+                let variant_name = to.name.clone();
                 quote! {
                     #code
                     #enum_name::#variant_name(data) => {
