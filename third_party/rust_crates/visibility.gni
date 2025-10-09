@@ -58,7 +58,6 @@ lazy_static_visibility = [
   #
   # To regenerate, run:
   # (cd $FUCHSIA_DIR && git grep  --files-with-matches '//third_party/rust_crates:lazy_static' -- '*BUILD.gn' | sed 's|\(.*\)/BUILD.gn|"//\1:*",|')
-  "//src/hwinfo/mock:*",
   "//src/lib/process_builder:*",
   "//src/lib/scoped_task:*",
   "//src/lib/test_util:*",

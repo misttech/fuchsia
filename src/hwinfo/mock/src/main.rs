@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use fidl_fuchsia_hwinfo::{
     BoardInfo, BoardRequest, BoardRequestStream, DeviceInfo, DeviceRequest, DeviceRequestStream,
     ProductInfo, ProductRequest, ProductRequestStream,
@@ -13,8 +13,7 @@ use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::component;
 use fuchsia_inspect::health::Reporter;
 use futures::prelude::*;
-use lazy_static::lazy_static;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
 enum IncomingRequest {
     Product(ProductRequestStream),
@@ -29,9 +28,8 @@ struct ReturnValues {
     device: DeviceInfo,
 }
 
-lazy_static! {
-    static ref RETURN_VALUES: Arc<Mutex<Option<ReturnValues>>> = Arc::new(Mutex::new(None));
-}
+static RETURN_VALUES: LazyLock<Arc<Mutex<Option<ReturnValues>>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(None)));
 
 #[fuchsia::main(logging = true)]
 async fn main() -> Result<()> {
