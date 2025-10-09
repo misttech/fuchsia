@@ -16,7 +16,7 @@ func AddFFXDeps(s *Shard, buildDir string, tools build.Tools) error {
 	if len(s.Tests) == 0 {
 		return fmt.Errorf("shard %s has no tests", s.Name)
 	}
-	subtools := []string{"package", "product", "test", "log", "assembly"}
+	subtools := []string{"package", "product", "test", "log", "assembly", "monitor"}
 	if s.Env.TargetsEmulator() {
 		subtools = append(subtools, "emu")
 	}
