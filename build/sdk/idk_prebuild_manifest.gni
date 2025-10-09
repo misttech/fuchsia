@@ -100,7 +100,7 @@ template("idk_prebuild_manifest") {
   #
   #   "cc_prebuilt_library"
   #
-  #   LINT.IfChange
+  #   LINT.IfChange(cc_prebuilt_library)
   #
   #     format (string)
   #       Either "static" (for static library archives) or "shared" (for ELF
@@ -151,7 +151,7 @@ template("idk_prebuild_manifest") {
   #     file_base (string)
   #       Same as "cc_source_library"
   #
-  #   LINT.ThenChange(//build/cpp/sdk_prebuilt_library_impl.gni)
+  #   LINT.ThenChange(//build/bazel/bazel_idk/private/idk_cc_prebuilt_library.bzl, //build/cpp/sdk_prebuilt_library_impl.gni)
   #
   # ----------------------------------------------------------------------------
   #

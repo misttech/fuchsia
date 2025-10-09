@@ -37,6 +37,24 @@ filegroup(
 )
 
 filegroup(
+    name = "partner_idk_cc_prebuilt_shared_library_allowlist",
+    visibility = [
+        "//build/bazel/bazel_idk/tests:__pkg__",
+        # TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
+        "//build/bazel/bazel_idk/private:__pkg__",
+    ],
+)
+
+filegroup(
+    name = "partner_idk_cc_prebuilt_static_library_allowlist",
+    visibility = [
+        "//build/bazel/bazel_idk/tests:__pkg__",
+        # TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
+        "//build/bazel/bazel_idk/private:__pkg__",
+    ],
+)
+
+filegroup(
     name = "partner_idk_data_allowlist",
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",

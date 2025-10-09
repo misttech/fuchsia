@@ -6,6 +6,7 @@
 
 load("@fuchsia_build_info//:args.bzl", "warn_on_sdk_changes")
 load("//build/bazel/bazel_idk:providers.bzl", "FuchsiaIdkAtomInfo")
+load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
 load("//build/bazel/rules:golden_files.bzl", "verify_golden_files")
 load(":idk_common.bzl", "get_allowlist_target")
 
@@ -32,6 +33,25 @@ _TYPES_NOT_REQUIRING_COMPATIBILITY = [
     "version_history",
     # LINT.ThenChange(//build/sdk/sdk_atom.gni:non_compatibility_types)
 ]
+
+def _get_current_cpu_arch(ctx):
+    """Returns the CPU architecture of the current build."""
+    current_platform = ctx.attr._current_platform[CurrentPlatformInfo]
+    return current_platform.cpu
+
+def _get_prebuilt_libraries_dir_name(cpu_arch, target_api_level):
+    """Returns the IDK directory name for prebuilt libraries."""
+    if (target_api_level == "PLATFORM"):
+        return cpu_arch
+    else:
+        return "%s-api-%s" % (cpu_arch, target_api_level)
+
+def _get_prebuilt_libraries_base_path(cpu_arch, target_api_level):
+    """Returns the base path in the IDK for prebuilt libraries."""
+    if (target_api_level == "PLATFORM"):
+        return "arch/%s" % _get_prebuilt_libraries_dir_name(cpu_arch, target_api_level)
+    else:
+        return "obj/%s" % _get_prebuilt_libraries_dir_name(cpu_arch, target_api_level)
 
 def _compute_atom_api_impl(ctx):
     args = ctx.actions.args()
@@ -85,6 +105,85 @@ _compute_atom_api = rule(
     },
 )
 
+def _get_additional_info(ctx):
+    """Adds additional fields to `files_map` and `additional_prebuild_info` if appropriate.
+
+    Some prebuild info can only be obtained inside the rule implementation. This
+    function adds such information to the `files_map` and
+    `additional_prebuild_info` attributes and returns the result.
+
+    Returns:
+        A tuple containing an updated version of `files_map` and `additional_prebuild_info`.
+    """
+
+    if ctx.attr.underlying_library:
+        # Assume the atom is a C++ prebuilt library.
+        # If changing this, also change
+        # //build/sdk/idk_prebuild_manifest.gni:cc_prebuilt_library.
+
+        # The first file in DefaultInfo is the final binary.
+        first_output_file = ctx.attr.underlying_library[DefaultInfo].files.to_list()[0]
+        lib_name = first_output_file.basename
+
+        cpu_arch = _get_current_cpu_arch(ctx)
+
+        # TODO(https://fxbug.dev/443825617): Use the build setting once available.
+        target_api_level = "PLATFORM"
+        idk_prebuilt_base = _get_prebuilt_libraries_base_path(cpu_arch, target_api_level)
+
+        binaries = {}
+        binaries["api_level"] = target_api_level
+        binaries["arch"] = cpu_arch
+
+        additional_prebuild_info = dict(ctx.attr.additional_prebuild_info)
+        files_map = dict(ctx.attr.files_map)
+        format = json.decode(additional_prebuild_info["format"])
+
+        link_lib_dest_dir = "%s/lib" % idk_prebuilt_base
+        link_lib_dest = "%s/%s" % (link_lib_dest_dir, lib_name)
+
+        if format == "shared":
+            debug_lib_dest = "%s/debug/%s" % (idk_prebuilt_base, lib_name)
+            dist_lib_dest = "%s/dist/%s" % (idk_prebuilt_base, lib_name)
+
+            # TODO(https://fxbug.dev/421888626): Once an unstripped binary is
+            # exposed, specify the correct label to `files_map`.
+            files_map[debug_lib_dest] = first_output_file
+            binaries["debug_lib"] = debug_lib_dest
+
+            # For shared libraries, the final binary is the dist_lib.
+            files_map[dist_lib_dest] = first_output_file
+            binaries["dist_lib"] = dist_lib_dest
+            binaries["dist_path"] = "lib/%s" % lib_name
+
+            # TODO(https://fxbug.dev/449812165): Once the link stub is exposed,
+            # specify the correct label to `files_map`.
+            # a link stub is exposed.
+            files_map[link_lib_dest] = first_output_file
+            binaries["link_lib"] = link_lib_dest
+
+            # TODO(https://fxbug.dev/449812165): Once the IFS file is exposed,
+            # get the `ifs_name` from it and specify the correct label to `files_map`.
+            ifs_name = lib_name[:-2] + "ifs"
+            ifs_dest = "%s/%s" % (link_lib_dest_dir, ifs_name)
+            files_map[ifs_dest] = first_output_file
+            binaries["ifs"] = ifs_dest
+
+        elif format == "static":
+            # For static libraries, the final binary is the link_lib.
+            files_map[link_lib_dest] = first_output_file
+            binaries["link_lib"] = link_lib_dest
+
+        else:
+            fail("Unrecognized `format` '%s'." % format)
+
+        additional_prebuild_info["binaries"] = json.encode(binaries)
+
+        return additional_prebuild_info, files_map
+
+    else:
+        return ctx.attr.additional_prebuild_info, ctx.attr.files_map
+
 def _create_idk_atom_impl(ctx):
     if not ctx.attr.name.endswith("_idk"):
         fail("IDK atom names must end with `_idk`.")
@@ -92,8 +191,12 @@ def _create_idk_atom_impl(ctx):
     if (not ctx.attr.api_file_path) != (not ctx.attr.api_contents_map):
         fail("`api_file_path` and `api_contents_map` must be specified together.")
 
-    all_deps_depset = depset(direct = ctx.files.idk_deps + ctx.files.atom_build_deps)
+    all_deps_depset = depset(
+        direct = ctx.files.idk_deps + ctx.files.underlying_library + ctx.files.atom_build_deps,
+    )
     idk_deps = ctx.attr.idk_deps
+
+    additional_prebuild_info, files_map = _get_additional_info(ctx)
 
     return [
         DefaultInfo(files = all_deps_depset),
@@ -108,14 +211,14 @@ def _create_idk_atom_impl(ctx):
             api_area = ctx.attr.api_area,
             api_file_path = ctx.attr.api_file_path,
             api_contents_map = ctx.attr.api_contents_map,
-            atom_files_map = ctx.attr.files_map,
+            atom_files_map = files_map,
             idk_deps = idk_deps,
             atoms_depset = depset(
                 direct = idk_deps,
                 transitive = [dep[FuchsiaIdkAtomInfo].atoms_depset for dep in idk_deps],
             ),
             atom_build_deps = ctx.attr.atom_build_deps,
-            additional_prebuild_info = ctx.attr.additional_prebuild_info,
+            additional_prebuild_info = additional_prebuild_info,
         ),
     ]
 
@@ -123,6 +226,9 @@ _create_idk_atom = rule(
     doc = """Define an IDK atom. Do not instantiate directly - use `idk_atom()` instead.
 
 `name` must end in `_idk`.
+
+If `underlying_library` is specified, information from it will be added to the
+provided `files_map` and `additional_prebuild_info`.
 
 Atoms will be checked for category and API area violations when generating the IDK (see `generate_idk`).
 """,
@@ -205,6 +311,12 @@ Possible values, from most restrictive to least restrictive:
                   "These labels must point to `_create_idk_atom` targets.",
             mandatory = False,
         ),
+        "underlying_library": attr.label(
+            providers = [DefaultInfo],
+            doc = "The underlying library (e.g., C++ prebuilt library) represented by this atom." +
+                  "Information will be extracted from it for prebuild info.",
+            mandatory = False,
+        ),
         "atom_build_deps": attr.label_list(
             providers = [DefaultInfo],
             doc = "List of dependencies related to building the atom that should not be reflected in IDKs. " +
@@ -215,6 +327,10 @@ Possible values, from most restrictive to least restrictive:
             doc = "A dictionary of type-specific prebuild info for the atom, with values encoded as JSON strings.",
             mandatory = False,
             default = {},
+        ),
+        "_current_platform": attr.label(
+            providers = [CurrentPlatformInfo],
+            default = "@//build/bazel:current_platform",
         ),
     },
 )
@@ -228,6 +344,7 @@ def _idk_atom_impl(
         atom_build_deps,
         api_file_path,
         api_contents_map,
+        prebuilt_library_format,
         **kwargs):
     if type not in _TYPES_SUPPORTING_UNSTABLE_ATOMS and not stable:
         fail("`stable` must be true unless the type ('%s') is one of %s." % (type, _TYPES_SUPPORTING_UNSTABLE_ATOMS))
@@ -242,7 +359,7 @@ def _idk_atom_impl(
     # Ensure the atom is in the appropriate allowlist.
     # The attribute is immutable, so create a mutable copy.
     atom_build_deps = list(atom_build_deps)
-    atom_build_deps.append(get_allowlist_target(type, category, stable))
+    atom_build_deps.append(get_allowlist_target(type, category, stable, prebuilt_library_format))
 
     _verify_api = bool(api_file_path)
     if _verify_api:
@@ -327,6 +444,11 @@ Atoms will be checked for category and API area violations when generating the I
             doc = "See _create_idk_atom().",
             allow_files = True,
             default = {},
+            configurable = False,
+        ),
+        "prebuilt_library_format": attr.string(
+            doc = "See get_allowlist_target().",
+            default = "",
             configurable = False,
         ),
     },

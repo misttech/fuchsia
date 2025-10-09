@@ -23,9 +23,7 @@ def _get_path(file_or_target):
         path = file_or_target.files.to_list()[0].path
 
     # Make the path relative to the GN output directory.
-    if not path.startswith("bazel-out/"):
-      return "../../" + path
-    return path
+    return "../../" + path
 
 def _files_map_to_json(files_map):
     """Converts a dict of {dest: src_file} to a list of {"dest": ..., "source": ...}."""

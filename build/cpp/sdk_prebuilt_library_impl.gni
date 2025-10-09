@@ -12,6 +12,7 @@ import("//build/sdk/plasa/plasa_fragment_cc.gni")
 import("//build/sdk/sdk_atom.gni")
 import("//build/sdk/sdk_atom_alias.gni")
 
+# LINT.IfChange(sdk_prebuilt_library_impl)
 # A library that can be exported to an SDK in binary form.
 #
 # Parameters
@@ -339,6 +340,8 @@ template("sdk_prebuilt_library_impl") {
     underlying_target_type = "shared_library"
     prebuild_format = "shared"
     allowlist = "//build/sdk:partner_idk_shared_libraries_allowlist"
+  } else {
+    assert("Unrecognized `prebuilt_library_type` '${prebuilt_library_type}'.")
   }
 
   target(underlying_target_type, main_target_name) {
@@ -620,7 +623,8 @@ template("sdk_prebuilt_library_impl") {
     runtime_deps_file = runtime_deps_file_name
   }
 
-  # LINT.IfChange
+  # If changing this, also change
+  # //build/sdk/idk_prebuild_manifest.gni:cc_prebuilt_library.
   _common_binaries = {
     api_level = "$current_build_target_api_level"
     arch = target_cpu
@@ -646,8 +650,6 @@ template("sdk_prebuilt_library_impl") {
     }
   }
 
-  # LINT.ThenChange(//build/sdk/idk_prebuild_manifest.gni)
-
   # Exempt internal libraries from pragma verification.
   should_verify_pragma = !is_internal
   if (should_verify_pragma) {
@@ -664,6 +666,8 @@ template("sdk_prebuilt_library_impl") {
     headers = all_headers
   }
 
+  # IFS files only apply to shared libraries, and we do not maintain golden IFS
+  # files for "HEAD".
   verify_public_symbols = prebuilt_library_type == "shared" &&
                           current_build_target_api_level != "HEAD"
   if (verify_public_symbols) {
@@ -752,3 +756,4 @@ template("sdk_prebuilt_library_impl") {
     }
   }
 }
+# LINT.ThenChange(//build/bazel/bazel_idk/private/idk_cc_prebuilt_library.bzl:idk_cc_prebuilt_library)
