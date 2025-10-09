@@ -14357,7 +14357,7 @@ pub struct perf_event_query_bpf {
 pub const perf_event_ioc_flags_PERF_IOC_FLAG_GROUP: perf_event_ioc_flags = 1;
 pub type perf_event_ioc_flags = crate::types::arch32::c_uint;
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy, Immutable, IntoBytes)]
 pub struct perf_event_mmap_page {
     pub version: __u32,
     pub compat_version: __u32,
@@ -14387,13 +14387,13 @@ pub struct perf_event_mmap_page {
     pub aux_size: __u64,
 }
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy, Immutable, IntoBytes)]
 pub union perf_event_mmap_page__bindgen_ty_1 {
     pub capabilities: __u64,
     pub __bindgen_anon_1: perf_event_mmap_page__bindgen_ty_1__bindgen_ty_1,
 }
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+#[derive(Clone, Copy, Debug, Default, Immutable, IntoBytes)]
 pub struct perf_event_mmap_page__bindgen_ty_1__bindgen_ty_1 {
     pub _bindgen_align: [u64; 0],
     pub _bitfield_1: __BindgenBitfieldUnit<[u8; 8usize]>,

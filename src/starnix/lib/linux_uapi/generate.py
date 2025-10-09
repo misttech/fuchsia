@@ -263,6 +263,7 @@ AUTO_DERIVE_TRAITS = [
         ["KnownLayout", "FromBytes", "Immutable"],
     ),
     (r"perf_event_attr", ["FromBytes", "Immutable"]),
+    (r"perf_event_mmap_page", ["IntoBytes", "Immutable"]),
     (r"robust_list_head", ["KnownLayout", "FromBytes", "Immutable"]),
     (r"robust_list", ["KnownLayout", "FromBytes", "Immutable"]),
     (r"sigevent", ["KnownLayout", "FromBytes", "Immutable"]),
