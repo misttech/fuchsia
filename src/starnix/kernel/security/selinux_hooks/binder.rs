@@ -3,10 +3,7 @@
 // found in the LICENSE file.
 
 use super::file::todo_option_file_receive;
-use super::{
-    BinderConnectionState, check_permission, check_self_permission, current_task_state,
-    todo_check_permission,
-};
+use super::{BinderConnectionState, check_permission, check_self_permission, current_task_state};
 use crate::TODO_DENY;
 use crate::task::CurrentTask;
 use crate::vfs::FileObject;
@@ -88,8 +85,7 @@ pub(in crate::security) fn binder_transfer_binder(
     let audit_context = current_task.into();
     let source_sid = current_task_state(current_task).lock().current_sid;
     let target_sid = target_task.security_state.lock().current_sid;
-    todo_check_permission(
-        TODO_DENY!("https://fxbug.dev/364569748", "Enforce all the time in all contexts."),
+    check_permission(
         &security_server.as_permission_check(),
         current_task,
         source_sid,
