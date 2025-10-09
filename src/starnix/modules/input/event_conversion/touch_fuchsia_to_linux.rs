@@ -7,7 +7,7 @@ use fidl_fuchsia_ui_pointer::{
 };
 use starnix_logging::log_warn;
 use starnix_types::time::timeval_from_time;
-use starnix_uapi::{error, uapi};
+use starnix_uapi::uapi;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
 type SlotId = usize;
