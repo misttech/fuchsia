@@ -79,6 +79,7 @@
 #include <linux/securebits.h>
 #include <linux/signal.h>
 #include <linux/signalfd.h>
+#include <linux/sock_diag.h>
 #include <linux/socket.h>
 #include <linux/sockios.h>
 #include <linux/stat.h>
@@ -100,6 +101,7 @@
 #include <linux/vm_sockets.h>
 #include <linux/wait.h>
 #include <linux/xattr.h>
+#include <linux/xfrm.h>
 
 #ifndef __arm__
 #include <asm/ucontext.h>

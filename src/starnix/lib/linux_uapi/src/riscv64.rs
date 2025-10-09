@@ -1959,14 +1959,6 @@ pub const NLA_F_NESTED: u32 = 32768;
 pub const NLA_F_NET_BYTEORDER: u32 = 16384;
 pub const NLA_TYPE_MASK: i32 = -49153;
 pub const NLA_ALIGNTO: u32 = 4;
-pub const SOCK_DIAG_BY_FAMILY: u32 = 20;
-pub const SOCK_DESTROY: u32 = 21;
-pub const XFRM_MSG_NEWSA: u32 = 16;
-pub const XFRM_MSG_DELSA: u32 = 17;
-pub const XFRM_MSG_GETSA: u32 = 18;
-pub const XFRM_MSG_NEWPOLICY: u32 = 19;
-pub const XFRM_MSG_DELPOLICY: u32 = 20;
-pub const XFRM_MSG_GETPOLICY: u32 = 21;
 pub const MACVLAN_FLAG_NOPROMISC: u32 = 1;
 pub const MACVLAN_FLAG_NODST: u32 = 2;
 pub const IPVLAN_F_PRIVATE: u32 = 1;
@@ -4984,6 +4976,8 @@ pub const SIOCSHWTSTAMP: u32 = 35248;
 pub const SIOCGHWTSTAMP: u32 = 35249;
 pub const SIOCDEVPRIVATE: u32 = 35312;
 pub const SIOCPROTOPRIVATE: u32 = 35296;
+pub const SOCK_DIAG_BY_FAMILY: u32 = 20;
+pub const SOCK_DESTROY: u32 = 21;
 pub const S_IFMT: u32 = 61440;
 pub const S_IFSOCK: u32 = 49152;
 pub const S_IFLNK: u32 = 40960;
@@ -5916,6 +5910,42 @@ pub const XATTR_POSIX_ACL_ACCESS: &'static std::ffi::CStr = c"posix_acl_access";
 pub const XATTR_NAME_POSIX_ACL_ACCESS: &'static std::ffi::CStr = c"system.posix_acl_access";
 pub const XATTR_POSIX_ACL_DEFAULT: &'static std::ffi::CStr = c"posix_acl_default";
 pub const XATTR_NAME_POSIX_ACL_DEFAULT: &'static std::ffi::CStr = c"system.posix_acl_default";
+pub const XFRM_SC_DOI_RESERVED: u32 = 0;
+pub const XFRM_SC_DOI_LSM: u32 = 1;
+pub const XFRM_SC_ALG_RESERVED: u32 = 0;
+pub const XFRM_SC_ALG_SELINUX: u32 = 1;
+pub const XFRMA_REPLAY_ESN_MAX: u32 = 4096;
+pub const XFRM_MODE_TRANSPORT: u32 = 0;
+pub const XFRM_MODE_TUNNEL: u32 = 1;
+pub const XFRM_MODE_ROUTEOPTIMIZATION: u32 = 2;
+pub const XFRM_MODE_IN_TRIGGER: u32 = 3;
+pub const XFRM_MODE_BEET: u32 = 4;
+pub const XFRM_MODE_MAX: u32 = 5;
+pub const XFRM_STATE_NOECN: u32 = 1;
+pub const XFRM_STATE_DECAP_DSCP: u32 = 2;
+pub const XFRM_STATE_NOPMTUDISC: u32 = 4;
+pub const XFRM_STATE_WILDRECV: u32 = 8;
+pub const XFRM_STATE_ICMP: u32 = 16;
+pub const XFRM_STATE_AF_UNSPEC: u32 = 32;
+pub const XFRM_STATE_ALIGN4: u32 = 64;
+pub const XFRM_STATE_ESN: u32 = 128;
+pub const XFRM_SA_XFLAG_DONT_ENCAP_DSCP: u32 = 1;
+pub const XFRM_SA_XFLAG_OSEQ_MAY_WRAP: u32 = 2;
+pub const XFRM_POLICY_ALLOW: u32 = 0;
+pub const XFRM_POLICY_BLOCK: u32 = 1;
+pub const XFRM_POLICY_LOCALOK: u32 = 1;
+pub const XFRM_POLICY_ICMP: u32 = 2;
+pub const XFRM_OFFLOAD_IPV6: u32 = 1;
+pub const XFRM_OFFLOAD_INBOUND: u32 = 2;
+pub const XFRM_OFFLOAD_PACKET: u32 = 4;
+pub const XFRM_USERPOLICY_UNSPEC: u32 = 0;
+pub const XFRM_USERPOLICY_BLOCK: u32 = 1;
+pub const XFRM_USERPOLICY_ACCEPT: u32 = 2;
+pub const XFRMGRP_ACQUIRE: u32 = 1;
+pub const XFRMGRP_EXPIRE: u32 = 2;
+pub const XFRMGRP_SA: u32 = 4;
+pub const XFRMGRP_POLICY: u32 = 8;
+pub const XFRMGRP_REPORT: u32 = 32;
 pub const BPF_JMP32: u32 = 6;
 pub const BPF_ALU64: u32 = 7;
 pub const BPF_DW: u32 = 24;
@@ -16446,6 +16476,44 @@ pub struct signalfd_siginfo {
 }
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct sock_diag_req {
+    pub sdiag_family: __u8,
+    pub sdiag_protocol: __u8,
+}
+pub const SK_MEMINFO_RMEM_ALLOC: _bindgen_ty_94 = 0;
+pub const SK_MEMINFO_RCVBUF: _bindgen_ty_94 = 1;
+pub const SK_MEMINFO_WMEM_ALLOC: _bindgen_ty_94 = 2;
+pub const SK_MEMINFO_SNDBUF: _bindgen_ty_94 = 3;
+pub const SK_MEMINFO_FWD_ALLOC: _bindgen_ty_94 = 4;
+pub const SK_MEMINFO_WMEM_QUEUED: _bindgen_ty_94 = 5;
+pub const SK_MEMINFO_OPTMEM: _bindgen_ty_94 = 6;
+pub const SK_MEMINFO_BACKLOG: _bindgen_ty_94 = 7;
+pub const SK_MEMINFO_DROPS: _bindgen_ty_94 = 8;
+pub const SK_MEMINFO_VARS: _bindgen_ty_94 = 9;
+pub type _bindgen_ty_94 = crate::types::c_uint;
+pub const sknetlink_groups_SKNLGRP_NONE: sknetlink_groups = 0;
+pub const sknetlink_groups_SKNLGRP_INET_TCP_DESTROY: sknetlink_groups = 1;
+pub const sknetlink_groups_SKNLGRP_INET_UDP_DESTROY: sknetlink_groups = 2;
+pub const sknetlink_groups_SKNLGRP_INET6_TCP_DESTROY: sknetlink_groups = 3;
+pub const sknetlink_groups_SKNLGRP_INET6_UDP_DESTROY: sknetlink_groups = 4;
+pub const sknetlink_groups___SKNLGRP_MAX: sknetlink_groups = 5;
+pub type sknetlink_groups = crate::types::c_uint;
+pub const SK_DIAG_BPF_STORAGE_REQ_NONE: _bindgen_ty_95 = 0;
+pub const SK_DIAG_BPF_STORAGE_REQ_MAP_FD: _bindgen_ty_95 = 1;
+pub const __SK_DIAG_BPF_STORAGE_REQ_MAX: _bindgen_ty_95 = 2;
+pub type _bindgen_ty_95 = crate::types::c_uint;
+pub const SK_DIAG_BPF_STORAGE_REP_NONE: _bindgen_ty_96 = 0;
+pub const SK_DIAG_BPF_STORAGE: _bindgen_ty_96 = 1;
+pub const __SK_DIAG_BPF_STORAGE_REP_MAX: _bindgen_ty_96 = 2;
+pub type _bindgen_ty_96 = crate::types::c_uint;
+pub const SK_DIAG_BPF_STORAGE_NONE: _bindgen_ty_97 = 0;
+pub const SK_DIAG_BPF_STORAGE_PAD: _bindgen_ty_97 = 1;
+pub const SK_DIAG_BPF_STORAGE_MAP_ID: _bindgen_ty_97 = 2;
+pub const SK_DIAG_BPF_STORAGE_MAP_VALUE: _bindgen_ty_97 = 3;
+pub const __SK_DIAG_BPF_STORAGE_MAX: _bindgen_ty_97 = 4;
+pub type _bindgen_ty_97 = crate::types::c_uint;
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
 pub struct statx_timestamp {
     pub tv_sec: __s64,
     pub tv_nsec: __u32,
@@ -16603,27 +16671,27 @@ pub struct taskstats {
     pub irq_count: __u64,
     pub irq_delay_total: __u64,
 }
-pub const TASKSTATS_CMD_UNSPEC: _bindgen_ty_94 = 0;
-pub const TASKSTATS_CMD_GET: _bindgen_ty_94 = 1;
-pub const TASKSTATS_CMD_NEW: _bindgen_ty_94 = 2;
-pub const __TASKSTATS_CMD_MAX: _bindgen_ty_94 = 3;
-pub type _bindgen_ty_94 = crate::types::c_uint;
-pub const TASKSTATS_TYPE_UNSPEC: _bindgen_ty_95 = 0;
-pub const TASKSTATS_TYPE_PID: _bindgen_ty_95 = 1;
-pub const TASKSTATS_TYPE_TGID: _bindgen_ty_95 = 2;
-pub const TASKSTATS_TYPE_STATS: _bindgen_ty_95 = 3;
-pub const TASKSTATS_TYPE_AGGR_PID: _bindgen_ty_95 = 4;
-pub const TASKSTATS_TYPE_AGGR_TGID: _bindgen_ty_95 = 5;
-pub const TASKSTATS_TYPE_NULL: _bindgen_ty_95 = 6;
-pub const __TASKSTATS_TYPE_MAX: _bindgen_ty_95 = 7;
-pub type _bindgen_ty_95 = crate::types::c_uint;
-pub const TASKSTATS_CMD_ATTR_UNSPEC: _bindgen_ty_96 = 0;
-pub const TASKSTATS_CMD_ATTR_PID: _bindgen_ty_96 = 1;
-pub const TASKSTATS_CMD_ATTR_TGID: _bindgen_ty_96 = 2;
-pub const TASKSTATS_CMD_ATTR_REGISTER_CPUMASK: _bindgen_ty_96 = 3;
-pub const TASKSTATS_CMD_ATTR_DEREGISTER_CPUMASK: _bindgen_ty_96 = 4;
-pub const __TASKSTATS_CMD_ATTR_MAX: _bindgen_ty_96 = 5;
-pub type _bindgen_ty_96 = crate::types::c_uint;
+pub const TASKSTATS_CMD_UNSPEC: _bindgen_ty_98 = 0;
+pub const TASKSTATS_CMD_GET: _bindgen_ty_98 = 1;
+pub const TASKSTATS_CMD_NEW: _bindgen_ty_98 = 2;
+pub const __TASKSTATS_CMD_MAX: _bindgen_ty_98 = 3;
+pub type _bindgen_ty_98 = crate::types::c_uint;
+pub const TASKSTATS_TYPE_UNSPEC: _bindgen_ty_99 = 0;
+pub const TASKSTATS_TYPE_PID: _bindgen_ty_99 = 1;
+pub const TASKSTATS_TYPE_TGID: _bindgen_ty_99 = 2;
+pub const TASKSTATS_TYPE_STATS: _bindgen_ty_99 = 3;
+pub const TASKSTATS_TYPE_AGGR_PID: _bindgen_ty_99 = 4;
+pub const TASKSTATS_TYPE_AGGR_TGID: _bindgen_ty_99 = 5;
+pub const TASKSTATS_TYPE_NULL: _bindgen_ty_99 = 6;
+pub const __TASKSTATS_TYPE_MAX: _bindgen_ty_99 = 7;
+pub type _bindgen_ty_99 = crate::types::c_uint;
+pub const TASKSTATS_CMD_ATTR_UNSPEC: _bindgen_ty_100 = 0;
+pub const TASKSTATS_CMD_ATTR_PID: _bindgen_ty_100 = 1;
+pub const TASKSTATS_CMD_ATTR_TGID: _bindgen_ty_100 = 2;
+pub const TASKSTATS_CMD_ATTR_REGISTER_CPUMASK: _bindgen_ty_100 = 3;
+pub const TASKSTATS_CMD_ATTR_DEREGISTER_CPUMASK: _bindgen_ty_100 = 4;
+pub const __TASKSTATS_CMD_ATTR_MAX: _bindgen_ty_100 = 5;
+pub type _bindgen_ty_100 = crate::types::c_uint;
 pub type cc_t = crate::types::c_uchar;
 pub type speed_t = crate::types::c_uint;
 pub type tcflag_t = crate::types::c_uint;
@@ -17324,10 +17392,10 @@ pub struct usb_set_sel_req {
     pub u2_sel: __le16,
     pub u2_pel: __le16,
 }
-pub const FUNCTIONFS_DESCRIPTORS_MAGIC: _bindgen_ty_97 = 1;
-pub const FUNCTIONFS_STRINGS_MAGIC: _bindgen_ty_97 = 2;
-pub const FUNCTIONFS_DESCRIPTORS_MAGIC_V2: _bindgen_ty_97 = 3;
-pub type _bindgen_ty_97 = crate::types::c_uint;
+pub const FUNCTIONFS_DESCRIPTORS_MAGIC: _bindgen_ty_101 = 1;
+pub const FUNCTIONFS_STRINGS_MAGIC: _bindgen_ty_101 = 2;
+pub const FUNCTIONFS_DESCRIPTORS_MAGIC_V2: _bindgen_ty_101 = 3;
+pub type _bindgen_ty_101 = crate::types::c_uint;
 pub const functionfs_flags_FUNCTIONFS_HAS_FS_DESC: functionfs_flags = 1;
 pub const functionfs_flags_FUNCTIONFS_HAS_HS_DESC: functionfs_flags = 2;
 pub const functionfs_flags_FUNCTIONFS_HAS_SS_DESC: functionfs_flags = 4;
@@ -17729,6 +17797,664 @@ pub struct sockaddr_vm {
     pub svm_zero: [crate::types::c_uchar; 3usize],
 }
 #[repr(C)]
+#[derive(Copy, Clone)]
+pub union xfrm_address_t {
+    pub a4: __be32,
+    pub a6: [__be32; 4usize],
+    pub in6: in6_addr,
+}
+impl Default for xfrm_address_t {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct xfrm_id {
+    pub daddr: xfrm_address_t,
+    pub spi: __be32,
+    pub proto: __u8,
+    pub __bindgen_padding_0: [u8; 3usize],
+}
+impl Default for xfrm_id {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Default)]
+pub struct xfrm_sec_ctx {
+    pub ctx_doi: __u8,
+    pub ctx_alg: __u8,
+    pub ctx_len: __u16,
+    pub ctx_sid: __u32,
+    pub ctx_str: __IncompleteArrayField<crate::types::c_char>,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct xfrm_selector {
+    pub daddr: xfrm_address_t,
+    pub saddr: xfrm_address_t,
+    pub dport: __be16,
+    pub dport_mask: __be16,
+    pub sport: __be16,
+    pub sport_mask: __be16,
+    pub family: __u16,
+    pub prefixlen_d: __u8,
+    pub prefixlen_s: __u8,
+    pub proto: __u8,
+    pub __bindgen_padding_0: [u8; 3usize],
+    pub ifindex: crate::types::c_int,
+    pub user: __kernel_uid32_t,
+}
+impl Default for xfrm_selector {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct xfrm_lifetime_cfg {
+    pub soft_byte_limit: __u64,
+    pub hard_byte_limit: __u64,
+    pub soft_packet_limit: __u64,
+    pub hard_packet_limit: __u64,
+    pub soft_add_expires_seconds: __u64,
+    pub hard_add_expires_seconds: __u64,
+    pub soft_use_expires_seconds: __u64,
+    pub hard_use_expires_seconds: __u64,
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct xfrm_lifetime_cur {
+    pub bytes: __u64,
+    pub packets: __u64,
+    pub add_time: __u64,
+    pub use_time: __u64,
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct xfrm_replay_state {
+    pub oseq: __u32,
+    pub seq: __u32,
+    pub bitmap: __u32,
+}
+#[repr(C)]
+#[derive(Debug, Default)]
+pub struct xfrm_replay_state_esn {
+    pub bmp_len: crate::types::c_uint,
+    pub oseq: __u32,
+    pub seq: __u32,
+    pub oseq_hi: __u32,
+    pub seq_hi: __u32,
+    pub replay_window: __u32,
+    pub bmp: __IncompleteArrayField<__u32>,
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct xfrm_algo {
+    pub alg_name: [crate::types::c_char; 64usize],
+    pub alg_key_len: crate::types::c_uint,
+    pub alg_key: __IncompleteArrayField<crate::types::c_char>,
+}
+impl Default for xfrm_algo {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct xfrm_algo_auth {
+    pub alg_name: [crate::types::c_char; 64usize],
+    pub alg_key_len: crate::types::c_uint,
+    pub alg_trunc_len: crate::types::c_uint,
+    pub alg_key: __IncompleteArrayField<crate::types::c_char>,
+}
+impl Default for xfrm_algo_auth {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct xfrm_algo_aead {
+    pub alg_name: [crate::types::c_char; 64usize],
+    pub alg_key_len: crate::types::c_uint,
+    pub alg_icv_len: crate::types::c_uint,
+    pub alg_key: __IncompleteArrayField<crate::types::c_char>,
+}
+impl Default for xfrm_algo_aead {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct xfrm_stats {
+    pub replay_window: __u32,
+    pub replay: __u32,
+    pub integrity_failed: __u32,
+}
+pub const XFRM_POLICY_TYPE_MAIN: _bindgen_ty_102 = 0;
+pub const XFRM_POLICY_TYPE_SUB: _bindgen_ty_102 = 1;
+pub const XFRM_POLICY_TYPE_MAX: _bindgen_ty_102 = 2;
+pub const XFRM_POLICY_TYPE_ANY: _bindgen_ty_102 = 255;
+pub type _bindgen_ty_102 = crate::types::c_uint;
+pub const XFRM_POLICY_IN: _bindgen_ty_103 = 0;
+pub const XFRM_POLICY_OUT: _bindgen_ty_103 = 1;
+pub const XFRM_POLICY_FWD: _bindgen_ty_103 = 2;
+pub const XFRM_POLICY_MASK: _bindgen_ty_103 = 3;
+pub const XFRM_POLICY_MAX: _bindgen_ty_103 = 3;
+pub type _bindgen_ty_103 = crate::types::c_uint;
+pub const xfrm_sa_dir_XFRM_SA_DIR_IN: xfrm_sa_dir = 1;
+pub const xfrm_sa_dir_XFRM_SA_DIR_OUT: xfrm_sa_dir = 2;
+pub type xfrm_sa_dir = crate::types::c_uint;
+pub const XFRM_SHARE_ANY: _bindgen_ty_104 = 0;
+pub const XFRM_SHARE_SESSION: _bindgen_ty_104 = 1;
+pub const XFRM_SHARE_USER: _bindgen_ty_104 = 2;
+pub const XFRM_SHARE_UNIQUE: _bindgen_ty_104 = 3;
+pub type _bindgen_ty_104 = crate::types::c_uint;
+pub const XFRM_MSG_BASE: _bindgen_ty_105 = 16;
+pub const XFRM_MSG_NEWSA: _bindgen_ty_105 = 16;
+pub const XFRM_MSG_DELSA: _bindgen_ty_105 = 17;
+pub const XFRM_MSG_GETSA: _bindgen_ty_105 = 18;
+pub const XFRM_MSG_NEWPOLICY: _bindgen_ty_105 = 19;
+pub const XFRM_MSG_DELPOLICY: _bindgen_ty_105 = 20;
+pub const XFRM_MSG_GETPOLICY: _bindgen_ty_105 = 21;
+pub const XFRM_MSG_ALLOCSPI: _bindgen_ty_105 = 22;
+pub const XFRM_MSG_ACQUIRE: _bindgen_ty_105 = 23;
+pub const XFRM_MSG_EXPIRE: _bindgen_ty_105 = 24;
+pub const XFRM_MSG_UPDPOLICY: _bindgen_ty_105 = 25;
+pub const XFRM_MSG_UPDSA: _bindgen_ty_105 = 26;
+pub const XFRM_MSG_POLEXPIRE: _bindgen_ty_105 = 27;
+pub const XFRM_MSG_FLUSHSA: _bindgen_ty_105 = 28;
+pub const XFRM_MSG_FLUSHPOLICY: _bindgen_ty_105 = 29;
+pub const XFRM_MSG_NEWAE: _bindgen_ty_105 = 30;
+pub const XFRM_MSG_GETAE: _bindgen_ty_105 = 31;
+pub const XFRM_MSG_REPORT: _bindgen_ty_105 = 32;
+pub const XFRM_MSG_MIGRATE: _bindgen_ty_105 = 33;
+pub const XFRM_MSG_NEWSADINFO: _bindgen_ty_105 = 34;
+pub const XFRM_MSG_GETSADINFO: _bindgen_ty_105 = 35;
+pub const XFRM_MSG_NEWSPDINFO: _bindgen_ty_105 = 36;
+pub const XFRM_MSG_GETSPDINFO: _bindgen_ty_105 = 37;
+pub const XFRM_MSG_MAPPING: _bindgen_ty_105 = 38;
+pub const XFRM_MSG_SETDEFAULT: _bindgen_ty_105 = 39;
+pub const XFRM_MSG_GETDEFAULT: _bindgen_ty_105 = 40;
+pub const __XFRM_MSG_MAX: _bindgen_ty_105 = 41;
+pub type _bindgen_ty_105 = crate::types::c_uint;
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct xfrm_user_sec_ctx {
+    pub len: __u16,
+    pub exttype: __u16,
+    pub ctx_alg: __u8,
+    pub ctx_doi: __u8,
+    pub ctx_len: __u16,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct xfrm_user_tmpl {
+    pub id: xfrm_id,
+    pub family: __u16,
+    pub __bindgen_padding_0: [u8; 2usize],
+    pub saddr: xfrm_address_t,
+    pub reqid: __u32,
+    pub mode: __u8,
+    pub share: __u8,
+    pub optional: __u8,
+    pub __bindgen_padding_1: u8,
+    pub aalgos: __u32,
+    pub ealgos: __u32,
+    pub calgos: __u32,
+}
+impl Default for xfrm_user_tmpl {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct xfrm_encap_tmpl {
+    pub encap_type: __u16,
+    pub encap_sport: __be16,
+    pub encap_dport: __be16,
+    pub __bindgen_padding_0: [u8; 2usize],
+    pub encap_oa: xfrm_address_t,
+}
+impl Default for xfrm_encap_tmpl {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+pub const xfrm_ae_ftype_t_XFRM_AE_UNSPEC: xfrm_ae_ftype_t = 0;
+pub const xfrm_ae_ftype_t_XFRM_AE_RTHR: xfrm_ae_ftype_t = 1;
+pub const xfrm_ae_ftype_t_XFRM_AE_RVAL: xfrm_ae_ftype_t = 2;
+pub const xfrm_ae_ftype_t_XFRM_AE_LVAL: xfrm_ae_ftype_t = 4;
+pub const xfrm_ae_ftype_t_XFRM_AE_ETHR: xfrm_ae_ftype_t = 8;
+pub const xfrm_ae_ftype_t_XFRM_AE_CR: xfrm_ae_ftype_t = 16;
+pub const xfrm_ae_ftype_t_XFRM_AE_CE: xfrm_ae_ftype_t = 32;
+pub const xfrm_ae_ftype_t_XFRM_AE_CU: xfrm_ae_ftype_t = 64;
+pub const xfrm_ae_ftype_t___XFRM_AE_MAX: xfrm_ae_ftype_t = 65;
+pub type xfrm_ae_ftype_t = crate::types::c_uint;
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct xfrm_userpolicy_type {
+    pub type_: __u8,
+    pub __bindgen_padding_0: u8,
+    pub reserved1: __u16,
+    pub reserved2: __u8,
+    pub __bindgen_padding_1: u8,
+}
+pub const xfrm_attr_type_t_XFRMA_UNSPEC: xfrm_attr_type_t = 0;
+pub const xfrm_attr_type_t_XFRMA_ALG_AUTH: xfrm_attr_type_t = 1;
+pub const xfrm_attr_type_t_XFRMA_ALG_CRYPT: xfrm_attr_type_t = 2;
+pub const xfrm_attr_type_t_XFRMA_ALG_COMP: xfrm_attr_type_t = 3;
+pub const xfrm_attr_type_t_XFRMA_ENCAP: xfrm_attr_type_t = 4;
+pub const xfrm_attr_type_t_XFRMA_TMPL: xfrm_attr_type_t = 5;
+pub const xfrm_attr_type_t_XFRMA_SA: xfrm_attr_type_t = 6;
+pub const xfrm_attr_type_t_XFRMA_POLICY: xfrm_attr_type_t = 7;
+pub const xfrm_attr_type_t_XFRMA_SEC_CTX: xfrm_attr_type_t = 8;
+pub const xfrm_attr_type_t_XFRMA_LTIME_VAL: xfrm_attr_type_t = 9;
+pub const xfrm_attr_type_t_XFRMA_REPLAY_VAL: xfrm_attr_type_t = 10;
+pub const xfrm_attr_type_t_XFRMA_REPLAY_THRESH: xfrm_attr_type_t = 11;
+pub const xfrm_attr_type_t_XFRMA_ETIMER_THRESH: xfrm_attr_type_t = 12;
+pub const xfrm_attr_type_t_XFRMA_SRCADDR: xfrm_attr_type_t = 13;
+pub const xfrm_attr_type_t_XFRMA_COADDR: xfrm_attr_type_t = 14;
+pub const xfrm_attr_type_t_XFRMA_LASTUSED: xfrm_attr_type_t = 15;
+pub const xfrm_attr_type_t_XFRMA_POLICY_TYPE: xfrm_attr_type_t = 16;
+pub const xfrm_attr_type_t_XFRMA_MIGRATE: xfrm_attr_type_t = 17;
+pub const xfrm_attr_type_t_XFRMA_ALG_AEAD: xfrm_attr_type_t = 18;
+pub const xfrm_attr_type_t_XFRMA_KMADDRESS: xfrm_attr_type_t = 19;
+pub const xfrm_attr_type_t_XFRMA_ALG_AUTH_TRUNC: xfrm_attr_type_t = 20;
+pub const xfrm_attr_type_t_XFRMA_MARK: xfrm_attr_type_t = 21;
+pub const xfrm_attr_type_t_XFRMA_TFCPAD: xfrm_attr_type_t = 22;
+pub const xfrm_attr_type_t_XFRMA_REPLAY_ESN_VAL: xfrm_attr_type_t = 23;
+pub const xfrm_attr_type_t_XFRMA_SA_EXTRA_FLAGS: xfrm_attr_type_t = 24;
+pub const xfrm_attr_type_t_XFRMA_PROTO: xfrm_attr_type_t = 25;
+pub const xfrm_attr_type_t_XFRMA_ADDRESS_FILTER: xfrm_attr_type_t = 26;
+pub const xfrm_attr_type_t_XFRMA_PAD: xfrm_attr_type_t = 27;
+pub const xfrm_attr_type_t_XFRMA_OFFLOAD_DEV: xfrm_attr_type_t = 28;
+pub const xfrm_attr_type_t_XFRMA_SET_MARK: xfrm_attr_type_t = 29;
+pub const xfrm_attr_type_t_XFRMA_SET_MARK_MASK: xfrm_attr_type_t = 30;
+pub const xfrm_attr_type_t_XFRMA_IF_ID: xfrm_attr_type_t = 31;
+pub const xfrm_attr_type_t_XFRMA_MTIMER_THRESH: xfrm_attr_type_t = 32;
+pub const xfrm_attr_type_t_XFRMA_SA_DIR: xfrm_attr_type_t = 33;
+pub const xfrm_attr_type_t_XFRMA_NAT_KEEPALIVE_INTERVAL: xfrm_attr_type_t = 34;
+pub const xfrm_attr_type_t___XFRMA_MAX: xfrm_attr_type_t = 35;
+pub type xfrm_attr_type_t = crate::types::c_uint;
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct xfrm_mark {
+    pub v: __u32,
+    pub m: __u32,
+}
+pub const xfrm_sadattr_type_t_XFRMA_SAD_UNSPEC: xfrm_sadattr_type_t = 0;
+pub const xfrm_sadattr_type_t_XFRMA_SAD_CNT: xfrm_sadattr_type_t = 1;
+pub const xfrm_sadattr_type_t_XFRMA_SAD_HINFO: xfrm_sadattr_type_t = 2;
+pub const xfrm_sadattr_type_t___XFRMA_SAD_MAX: xfrm_sadattr_type_t = 3;
+pub type xfrm_sadattr_type_t = crate::types::c_uint;
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct xfrmu_sadhinfo {
+    pub sadhcnt: __u32,
+    pub sadhmcnt: __u32,
+}
+pub const xfrm_spdattr_type_t_XFRMA_SPD_UNSPEC: xfrm_spdattr_type_t = 0;
+pub const xfrm_spdattr_type_t_XFRMA_SPD_INFO: xfrm_spdattr_type_t = 1;
+pub const xfrm_spdattr_type_t_XFRMA_SPD_HINFO: xfrm_spdattr_type_t = 2;
+pub const xfrm_spdattr_type_t_XFRMA_SPD_IPV4_HTHRESH: xfrm_spdattr_type_t = 3;
+pub const xfrm_spdattr_type_t_XFRMA_SPD_IPV6_HTHRESH: xfrm_spdattr_type_t = 4;
+pub const xfrm_spdattr_type_t___XFRMA_SPD_MAX: xfrm_spdattr_type_t = 5;
+pub type xfrm_spdattr_type_t = crate::types::c_uint;
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct xfrmu_spdinfo {
+    pub incnt: __u32,
+    pub outcnt: __u32,
+    pub fwdcnt: __u32,
+    pub inscnt: __u32,
+    pub outscnt: __u32,
+    pub fwdscnt: __u32,
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct xfrmu_spdhinfo {
+    pub spdhcnt: __u32,
+    pub spdhmcnt: __u32,
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct xfrmu_spdhthresh {
+    pub lbits: __u8,
+    pub rbits: __u8,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct xfrm_usersa_info {
+    pub sel: xfrm_selector,
+    pub id: xfrm_id,
+    pub saddr: xfrm_address_t,
+    pub lft: xfrm_lifetime_cfg,
+    pub curlft: xfrm_lifetime_cur,
+    pub stats: xfrm_stats,
+    pub seq: __u32,
+    pub reqid: __u32,
+    pub family: __u16,
+    pub mode: __u8,
+    pub replay_window: __u8,
+    pub flags: __u8,
+    pub __bindgen_padding_0: [u8; 7usize],
+}
+impl Default for xfrm_usersa_info {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct xfrm_usersa_id {
+    pub daddr: xfrm_address_t,
+    pub spi: __be32,
+    pub family: __u16,
+    pub proto: __u8,
+    pub __bindgen_padding_0: u8,
+}
+impl Default for xfrm_usersa_id {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct xfrm_aevent_id {
+    pub sa_id: xfrm_usersa_id,
+    pub saddr: xfrm_address_t,
+    pub flags: __u32,
+    pub reqid: __u32,
+}
+impl Default for xfrm_aevent_id {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct xfrm_userspi_info {
+    pub info: xfrm_usersa_info,
+    pub min: __u32,
+    pub max: __u32,
+}
+impl Default for xfrm_userspi_info {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct xfrm_userpolicy_info {
+    pub sel: xfrm_selector,
+    pub lft: xfrm_lifetime_cfg,
+    pub curlft: xfrm_lifetime_cur,
+    pub priority: __u32,
+    pub index: __u32,
+    pub dir: __u8,
+    pub action: __u8,
+    pub flags: __u8,
+    pub share: __u8,
+    pub __bindgen_padding_0: [u8; 4usize],
+}
+impl Default for xfrm_userpolicy_info {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct xfrm_userpolicy_id {
+    pub sel: xfrm_selector,
+    pub index: __u32,
+    pub dir: __u8,
+    pub __bindgen_padding_0: [u8; 3usize],
+}
+impl Default for xfrm_userpolicy_id {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct xfrm_user_acquire {
+    pub id: xfrm_id,
+    pub saddr: xfrm_address_t,
+    pub sel: xfrm_selector,
+    pub policy: xfrm_userpolicy_info,
+    pub aalgos: __u32,
+    pub ealgos: __u32,
+    pub calgos: __u32,
+    pub seq: __u32,
+}
+impl Default for xfrm_user_acquire {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct xfrm_user_expire {
+    pub state: xfrm_usersa_info,
+    pub hard: __u8,
+    pub __bindgen_padding_0: [u8; 7usize],
+}
+impl Default for xfrm_user_expire {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct xfrm_user_polexpire {
+    pub pol: xfrm_userpolicy_info,
+    pub hard: __u8,
+    pub __bindgen_padding_0: [u8; 7usize],
+}
+impl Default for xfrm_user_polexpire {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct xfrm_usersa_flush {
+    pub proto: __u8,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct xfrm_user_report {
+    pub proto: __u8,
+    pub __bindgen_padding_0: [u8; 3usize],
+    pub sel: xfrm_selector,
+}
+impl Default for xfrm_user_report {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct xfrm_user_kmaddress {
+    pub local: xfrm_address_t,
+    pub remote: xfrm_address_t,
+    pub reserved: __u32,
+    pub family: __u16,
+    pub __bindgen_padding_0: [u8; 2usize],
+}
+impl Default for xfrm_user_kmaddress {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct xfrm_user_migrate {
+    pub old_daddr: xfrm_address_t,
+    pub old_saddr: xfrm_address_t,
+    pub new_daddr: xfrm_address_t,
+    pub new_saddr: xfrm_address_t,
+    pub proto: __u8,
+    pub mode: __u8,
+    pub reserved: __u16,
+    pub reqid: __u32,
+    pub old_family: __u16,
+    pub new_family: __u16,
+}
+impl Default for xfrm_user_migrate {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct xfrm_user_mapping {
+    pub id: xfrm_usersa_id,
+    pub reqid: __u32,
+    pub old_saddr: xfrm_address_t,
+    pub new_saddr: xfrm_address_t,
+    pub old_sport: __be16,
+    pub new_sport: __be16,
+}
+impl Default for xfrm_user_mapping {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct xfrm_address_filter {
+    pub saddr: xfrm_address_t,
+    pub daddr: xfrm_address_t,
+    pub family: __u16,
+    pub splen: __u8,
+    pub dplen: __u8,
+}
+impl Default for xfrm_address_filter {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct xfrm_user_offload {
+    pub ifindex: crate::types::c_int,
+    pub flags: __u8,
+    pub __bindgen_padding_0: [u8; 3usize],
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct xfrm_userpolicy_default {
+    pub in_: __u8,
+    pub fwd: __u8,
+    pub out: __u8,
+}
+pub const xfrm_nlgroups_XFRMNLGRP_NONE: xfrm_nlgroups = 0;
+pub const xfrm_nlgroups_XFRMNLGRP_ACQUIRE: xfrm_nlgroups = 1;
+pub const xfrm_nlgroups_XFRMNLGRP_EXPIRE: xfrm_nlgroups = 2;
+pub const xfrm_nlgroups_XFRMNLGRP_SA: xfrm_nlgroups = 3;
+pub const xfrm_nlgroups_XFRMNLGRP_POLICY: xfrm_nlgroups = 4;
+pub const xfrm_nlgroups_XFRMNLGRP_AEVENTS: xfrm_nlgroups = 5;
+pub const xfrm_nlgroups_XFRMNLGRP_REPORT: xfrm_nlgroups = 6;
+pub const xfrm_nlgroups_XFRMNLGRP_MIGRATE: xfrm_nlgroups = 7;
+pub const xfrm_nlgroups_XFRMNLGRP_MAPPING: xfrm_nlgroups = 8;
+pub const xfrm_nlgroups___XFRMNLGRP_MAX: xfrm_nlgroups = 9;
+pub type xfrm_nlgroups = crate::types::c_uint;
+#[repr(C)]
 #[repr(align(16))]
 #[derive(Copy, Clone)]
 pub struct ucontext {
@@ -17751,19 +18477,19 @@ impl Default for ucontext {
 }
 pub const bpf_cond_pseudo_jmp_BPF_MAY_GOTO: bpf_cond_pseudo_jmp = 0;
 pub type bpf_cond_pseudo_jmp = crate::types::c_uint;
-pub const BPF_REG_0: _bindgen_ty_98 = 0;
-pub const BPF_REG_1: _bindgen_ty_98 = 1;
-pub const BPF_REG_2: _bindgen_ty_98 = 2;
-pub const BPF_REG_3: _bindgen_ty_98 = 3;
-pub const BPF_REG_4: _bindgen_ty_98 = 4;
-pub const BPF_REG_5: _bindgen_ty_98 = 5;
-pub const BPF_REG_6: _bindgen_ty_98 = 6;
-pub const BPF_REG_7: _bindgen_ty_98 = 7;
-pub const BPF_REG_8: _bindgen_ty_98 = 8;
-pub const BPF_REG_9: _bindgen_ty_98 = 9;
-pub const BPF_REG_10: _bindgen_ty_98 = 10;
-pub const __MAX_BPF_REG: _bindgen_ty_98 = 11;
-pub type _bindgen_ty_98 = crate::types::c_uint;
+pub const BPF_REG_0: _bindgen_ty_106 = 0;
+pub const BPF_REG_1: _bindgen_ty_106 = 1;
+pub const BPF_REG_2: _bindgen_ty_106 = 2;
+pub const BPF_REG_3: _bindgen_ty_106 = 3;
+pub const BPF_REG_4: _bindgen_ty_106 = 4;
+pub const BPF_REG_5: _bindgen_ty_106 = 5;
+pub const BPF_REG_6: _bindgen_ty_106 = 6;
+pub const BPF_REG_7: _bindgen_ty_106 = 7;
+pub const BPF_REG_8: _bindgen_ty_106 = 8;
+pub const BPF_REG_9: _bindgen_ty_106 = 9;
+pub const BPF_REG_10: _bindgen_ty_106 = 10;
+pub const __MAX_BPF_REG: _bindgen_ty_106 = 11;
+pub type _bindgen_ty_106 = crate::types::c_uint;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, FromBytes, Immutable, IntoBytes, KnownLayout, PartialEq)]
 pub struct bpf_insn {
@@ -18147,37 +18873,37 @@ pub const bpf_perf_event_type_BPF_PERF_EVENT_KRETPROBE: bpf_perf_event_type = 4;
 pub const bpf_perf_event_type_BPF_PERF_EVENT_TRACEPOINT: bpf_perf_event_type = 5;
 pub const bpf_perf_event_type_BPF_PERF_EVENT_EVENT: bpf_perf_event_type = 6;
 pub type bpf_perf_event_type = crate::types::c_uint;
-pub const BPF_F_KPROBE_MULTI_RETURN: _bindgen_ty_99 = 1;
-pub type _bindgen_ty_99 = crate::types::c_uint;
-pub const BPF_F_UPROBE_MULTI_RETURN: _bindgen_ty_100 = 1;
-pub type _bindgen_ty_100 = crate::types::c_uint;
+pub const BPF_F_KPROBE_MULTI_RETURN: _bindgen_ty_107 = 1;
+pub type _bindgen_ty_107 = crate::types::c_uint;
+pub const BPF_F_UPROBE_MULTI_RETURN: _bindgen_ty_108 = 1;
+pub type _bindgen_ty_108 = crate::types::c_uint;
 pub const bpf_addr_space_cast_BPF_ADDR_SPACE_CAST: bpf_addr_space_cast = 1;
 pub type bpf_addr_space_cast = crate::types::c_uint;
-pub const BPF_ANY: _bindgen_ty_101 = 0;
-pub const BPF_NOEXIST: _bindgen_ty_101 = 1;
-pub const BPF_EXIST: _bindgen_ty_101 = 2;
-pub const BPF_F_LOCK: _bindgen_ty_101 = 4;
-pub type _bindgen_ty_101 = crate::types::c_uint;
-pub const BPF_F_NO_PREALLOC: _bindgen_ty_102 = 1;
-pub const BPF_F_NO_COMMON_LRU: _bindgen_ty_102 = 2;
-pub const BPF_F_NUMA_NODE: _bindgen_ty_102 = 4;
-pub const BPF_F_RDONLY: _bindgen_ty_102 = 8;
-pub const BPF_F_WRONLY: _bindgen_ty_102 = 16;
-pub const BPF_F_STACK_BUILD_ID: _bindgen_ty_102 = 32;
-pub const BPF_F_ZERO_SEED: _bindgen_ty_102 = 64;
-pub const BPF_F_RDONLY_PROG: _bindgen_ty_102 = 128;
-pub const BPF_F_WRONLY_PROG: _bindgen_ty_102 = 256;
-pub const BPF_F_CLONE: _bindgen_ty_102 = 512;
-pub const BPF_F_MMAPABLE: _bindgen_ty_102 = 1024;
-pub const BPF_F_PRESERVE_ELEMS: _bindgen_ty_102 = 2048;
-pub const BPF_F_INNER_MAP: _bindgen_ty_102 = 4096;
-pub const BPF_F_LINK: _bindgen_ty_102 = 8192;
-pub const BPF_F_PATH_FD: _bindgen_ty_102 = 16384;
-pub const BPF_F_VTYPE_BTF_OBJ_FD: _bindgen_ty_102 = 32768;
-pub const BPF_F_TOKEN_FD: _bindgen_ty_102 = 65536;
-pub const BPF_F_SEGV_ON_FAULT: _bindgen_ty_102 = 131072;
-pub const BPF_F_NO_USER_CONV: _bindgen_ty_102 = 262144;
-pub type _bindgen_ty_102 = crate::types::c_uint;
+pub const BPF_ANY: _bindgen_ty_109 = 0;
+pub const BPF_NOEXIST: _bindgen_ty_109 = 1;
+pub const BPF_EXIST: _bindgen_ty_109 = 2;
+pub const BPF_F_LOCK: _bindgen_ty_109 = 4;
+pub type _bindgen_ty_109 = crate::types::c_uint;
+pub const BPF_F_NO_PREALLOC: _bindgen_ty_110 = 1;
+pub const BPF_F_NO_COMMON_LRU: _bindgen_ty_110 = 2;
+pub const BPF_F_NUMA_NODE: _bindgen_ty_110 = 4;
+pub const BPF_F_RDONLY: _bindgen_ty_110 = 8;
+pub const BPF_F_WRONLY: _bindgen_ty_110 = 16;
+pub const BPF_F_STACK_BUILD_ID: _bindgen_ty_110 = 32;
+pub const BPF_F_ZERO_SEED: _bindgen_ty_110 = 64;
+pub const BPF_F_RDONLY_PROG: _bindgen_ty_110 = 128;
+pub const BPF_F_WRONLY_PROG: _bindgen_ty_110 = 256;
+pub const BPF_F_CLONE: _bindgen_ty_110 = 512;
+pub const BPF_F_MMAPABLE: _bindgen_ty_110 = 1024;
+pub const BPF_F_PRESERVE_ELEMS: _bindgen_ty_110 = 2048;
+pub const BPF_F_INNER_MAP: _bindgen_ty_110 = 4096;
+pub const BPF_F_LINK: _bindgen_ty_110 = 8192;
+pub const BPF_F_PATH_FD: _bindgen_ty_110 = 16384;
+pub const BPF_F_VTYPE_BTF_OBJ_FD: _bindgen_ty_110 = 32768;
+pub const BPF_F_TOKEN_FD: _bindgen_ty_110 = 65536;
+pub const BPF_F_SEGV_ON_FAULT: _bindgen_ty_110 = 131072;
+pub const BPF_F_NO_USER_CONV: _bindgen_ty_110 = 262144;
+pub type _bindgen_ty_110 = crate::types::c_uint;
 pub const bpf_stats_type_BPF_STATS_RUN_TIME: bpf_stats_type = 0;
 pub type bpf_stats_type = crate::types::c_uint;
 pub const bpf_stack_build_id_status_BPF_STACK_BUILD_ID_EMPTY: bpf_stack_build_id_status = 0;
@@ -19060,76 +19786,76 @@ pub const bpf_func_id_BPF_FUNC_cgrp_storage_get: bpf_func_id = 210;
 pub const bpf_func_id_BPF_FUNC_cgrp_storage_delete: bpf_func_id = 211;
 pub const bpf_func_id___BPF_FUNC_MAX_ID: bpf_func_id = 212;
 pub type bpf_func_id = crate::types::c_uint;
-pub const BPF_F_RECOMPUTE_CSUM: _bindgen_ty_103 = 1;
-pub const BPF_F_INVALIDATE_HASH: _bindgen_ty_103 = 2;
-pub type _bindgen_ty_103 = crate::types::c_uint;
-pub const BPF_F_HDR_FIELD_MASK: _bindgen_ty_104 = 15;
-pub type _bindgen_ty_104 = crate::types::c_uint;
-pub const BPF_F_PSEUDO_HDR: _bindgen_ty_105 = 16;
-pub const BPF_F_MARK_MANGLED_0: _bindgen_ty_105 = 32;
-pub const BPF_F_MARK_ENFORCE: _bindgen_ty_105 = 64;
-pub type _bindgen_ty_105 = crate::types::c_uint;
-pub const BPF_F_TUNINFO_IPV6: _bindgen_ty_106 = 1;
-pub type _bindgen_ty_106 = crate::types::c_uint;
-pub const BPF_F_SKIP_FIELD_MASK: _bindgen_ty_107 = 255;
-pub const BPF_F_USER_STACK: _bindgen_ty_107 = 256;
-pub const BPF_F_FAST_STACK_CMP: _bindgen_ty_107 = 512;
-pub const BPF_F_REUSE_STACKID: _bindgen_ty_107 = 1024;
-pub const BPF_F_USER_BUILD_ID: _bindgen_ty_107 = 2048;
-pub type _bindgen_ty_107 = crate::types::c_uint;
-pub const BPF_F_ZERO_CSUM_TX: _bindgen_ty_108 = 2;
-pub const BPF_F_DONT_FRAGMENT: _bindgen_ty_108 = 4;
-pub const BPF_F_SEQ_NUMBER: _bindgen_ty_108 = 8;
-pub const BPF_F_NO_TUNNEL_KEY: _bindgen_ty_108 = 16;
-pub type _bindgen_ty_108 = crate::types::c_uint;
-pub const BPF_F_TUNINFO_FLAGS: _bindgen_ty_109 = 16;
-pub type _bindgen_ty_109 = crate::types::c_uint;
-pub const BPF_F_INDEX_MASK: _bindgen_ty_110 = 4294967295;
-pub const BPF_F_CURRENT_CPU: _bindgen_ty_110 = 4294967295;
-pub const BPF_F_CTXLEN_MASK: _bindgen_ty_110 = 4503595332403200;
-pub type _bindgen_ty_110 = crate::types::c_ulong;
-pub const BPF_F_CURRENT_NETNS: _bindgen_ty_111 = -1;
-pub type _bindgen_ty_111 = crate::types::c_int;
-pub const BPF_CSUM_LEVEL_QUERY: _bindgen_ty_112 = 0;
-pub const BPF_CSUM_LEVEL_INC: _bindgen_ty_112 = 1;
-pub const BPF_CSUM_LEVEL_DEC: _bindgen_ty_112 = 2;
-pub const BPF_CSUM_LEVEL_RESET: _bindgen_ty_112 = 3;
+pub const BPF_F_RECOMPUTE_CSUM: _bindgen_ty_111 = 1;
+pub const BPF_F_INVALIDATE_HASH: _bindgen_ty_111 = 2;
+pub type _bindgen_ty_111 = crate::types::c_uint;
+pub const BPF_F_HDR_FIELD_MASK: _bindgen_ty_112 = 15;
 pub type _bindgen_ty_112 = crate::types::c_uint;
-pub const BPF_F_ADJ_ROOM_FIXED_GSO: _bindgen_ty_113 = 1;
-pub const BPF_F_ADJ_ROOM_ENCAP_L3_IPV4: _bindgen_ty_113 = 2;
-pub const BPF_F_ADJ_ROOM_ENCAP_L3_IPV6: _bindgen_ty_113 = 4;
-pub const BPF_F_ADJ_ROOM_ENCAP_L4_GRE: _bindgen_ty_113 = 8;
-pub const BPF_F_ADJ_ROOM_ENCAP_L4_UDP: _bindgen_ty_113 = 16;
-pub const BPF_F_ADJ_ROOM_NO_CSUM_RESET: _bindgen_ty_113 = 32;
-pub const BPF_F_ADJ_ROOM_ENCAP_L2_ETH: _bindgen_ty_113 = 64;
-pub const BPF_F_ADJ_ROOM_DECAP_L3_IPV4: _bindgen_ty_113 = 128;
-pub const BPF_F_ADJ_ROOM_DECAP_L3_IPV6: _bindgen_ty_113 = 256;
+pub const BPF_F_PSEUDO_HDR: _bindgen_ty_113 = 16;
+pub const BPF_F_MARK_MANGLED_0: _bindgen_ty_113 = 32;
+pub const BPF_F_MARK_ENFORCE: _bindgen_ty_113 = 64;
 pub type _bindgen_ty_113 = crate::types::c_uint;
-pub const BPF_ADJ_ROOM_ENCAP_L2_MASK: _bindgen_ty_114 = 255;
-pub const BPF_ADJ_ROOM_ENCAP_L2_SHIFT: _bindgen_ty_114 = 56;
+pub const BPF_F_TUNINFO_IPV6: _bindgen_ty_114 = 1;
 pub type _bindgen_ty_114 = crate::types::c_uint;
-pub const BPF_F_SYSCTL_BASE_NAME: _bindgen_ty_115 = 1;
+pub const BPF_F_SKIP_FIELD_MASK: _bindgen_ty_115 = 255;
+pub const BPF_F_USER_STACK: _bindgen_ty_115 = 256;
+pub const BPF_F_FAST_STACK_CMP: _bindgen_ty_115 = 512;
+pub const BPF_F_REUSE_STACKID: _bindgen_ty_115 = 1024;
+pub const BPF_F_USER_BUILD_ID: _bindgen_ty_115 = 2048;
 pub type _bindgen_ty_115 = crate::types::c_uint;
-pub const BPF_LOCAL_STORAGE_GET_F_CREATE: _bindgen_ty_116 = 1;
-pub const BPF_SK_STORAGE_GET_F_CREATE: _bindgen_ty_116 = 1;
+pub const BPF_F_ZERO_CSUM_TX: _bindgen_ty_116 = 2;
+pub const BPF_F_DONT_FRAGMENT: _bindgen_ty_116 = 4;
+pub const BPF_F_SEQ_NUMBER: _bindgen_ty_116 = 8;
+pub const BPF_F_NO_TUNNEL_KEY: _bindgen_ty_116 = 16;
 pub type _bindgen_ty_116 = crate::types::c_uint;
-pub const BPF_F_GET_BRANCH_RECORDS_SIZE: _bindgen_ty_117 = 1;
+pub const BPF_F_TUNINFO_FLAGS: _bindgen_ty_117 = 16;
 pub type _bindgen_ty_117 = crate::types::c_uint;
-pub const BPF_RB_NO_WAKEUP: _bindgen_ty_118 = 1;
-pub const BPF_RB_FORCE_WAKEUP: _bindgen_ty_118 = 2;
-pub type _bindgen_ty_118 = crate::types::c_uint;
-pub const BPF_RB_AVAIL_DATA: _bindgen_ty_119 = 0;
-pub const BPF_RB_RING_SIZE: _bindgen_ty_119 = 1;
-pub const BPF_RB_CONS_POS: _bindgen_ty_119 = 2;
-pub const BPF_RB_PROD_POS: _bindgen_ty_119 = 3;
-pub type _bindgen_ty_119 = crate::types::c_uint;
-pub const BPF_RINGBUF_BUSY_BIT: _bindgen_ty_120 = 2147483648;
-pub const BPF_RINGBUF_DISCARD_BIT: _bindgen_ty_120 = 1073741824;
-pub const BPF_RINGBUF_HDR_SZ: _bindgen_ty_120 = 8;
+pub const BPF_F_INDEX_MASK: _bindgen_ty_118 = 4294967295;
+pub const BPF_F_CURRENT_CPU: _bindgen_ty_118 = 4294967295;
+pub const BPF_F_CTXLEN_MASK: _bindgen_ty_118 = 4503595332403200;
+pub type _bindgen_ty_118 = crate::types::c_ulong;
+pub const BPF_F_CURRENT_NETNS: _bindgen_ty_119 = -1;
+pub type _bindgen_ty_119 = crate::types::c_int;
+pub const BPF_CSUM_LEVEL_QUERY: _bindgen_ty_120 = 0;
+pub const BPF_CSUM_LEVEL_INC: _bindgen_ty_120 = 1;
+pub const BPF_CSUM_LEVEL_DEC: _bindgen_ty_120 = 2;
+pub const BPF_CSUM_LEVEL_RESET: _bindgen_ty_120 = 3;
 pub type _bindgen_ty_120 = crate::types::c_uint;
-pub const BPF_SK_LOOKUP_F_REPLACE: _bindgen_ty_121 = 1;
-pub const BPF_SK_LOOKUP_F_NO_REUSEPORT: _bindgen_ty_121 = 2;
+pub const BPF_F_ADJ_ROOM_FIXED_GSO: _bindgen_ty_121 = 1;
+pub const BPF_F_ADJ_ROOM_ENCAP_L3_IPV4: _bindgen_ty_121 = 2;
+pub const BPF_F_ADJ_ROOM_ENCAP_L3_IPV6: _bindgen_ty_121 = 4;
+pub const BPF_F_ADJ_ROOM_ENCAP_L4_GRE: _bindgen_ty_121 = 8;
+pub const BPF_F_ADJ_ROOM_ENCAP_L4_UDP: _bindgen_ty_121 = 16;
+pub const BPF_F_ADJ_ROOM_NO_CSUM_RESET: _bindgen_ty_121 = 32;
+pub const BPF_F_ADJ_ROOM_ENCAP_L2_ETH: _bindgen_ty_121 = 64;
+pub const BPF_F_ADJ_ROOM_DECAP_L3_IPV4: _bindgen_ty_121 = 128;
+pub const BPF_F_ADJ_ROOM_DECAP_L3_IPV6: _bindgen_ty_121 = 256;
 pub type _bindgen_ty_121 = crate::types::c_uint;
+pub const BPF_ADJ_ROOM_ENCAP_L2_MASK: _bindgen_ty_122 = 255;
+pub const BPF_ADJ_ROOM_ENCAP_L2_SHIFT: _bindgen_ty_122 = 56;
+pub type _bindgen_ty_122 = crate::types::c_uint;
+pub const BPF_F_SYSCTL_BASE_NAME: _bindgen_ty_123 = 1;
+pub type _bindgen_ty_123 = crate::types::c_uint;
+pub const BPF_LOCAL_STORAGE_GET_F_CREATE: _bindgen_ty_124 = 1;
+pub const BPF_SK_STORAGE_GET_F_CREATE: _bindgen_ty_124 = 1;
+pub type _bindgen_ty_124 = crate::types::c_uint;
+pub const BPF_F_GET_BRANCH_RECORDS_SIZE: _bindgen_ty_125 = 1;
+pub type _bindgen_ty_125 = crate::types::c_uint;
+pub const BPF_RB_NO_WAKEUP: _bindgen_ty_126 = 1;
+pub const BPF_RB_FORCE_WAKEUP: _bindgen_ty_126 = 2;
+pub type _bindgen_ty_126 = crate::types::c_uint;
+pub const BPF_RB_AVAIL_DATA: _bindgen_ty_127 = 0;
+pub const BPF_RB_RING_SIZE: _bindgen_ty_127 = 1;
+pub const BPF_RB_CONS_POS: _bindgen_ty_127 = 2;
+pub const BPF_RB_PROD_POS: _bindgen_ty_127 = 3;
+pub type _bindgen_ty_127 = crate::types::c_uint;
+pub const BPF_RINGBUF_BUSY_BIT: _bindgen_ty_128 = 2147483648;
+pub const BPF_RINGBUF_DISCARD_BIT: _bindgen_ty_128 = 1073741824;
+pub const BPF_RINGBUF_HDR_SZ: _bindgen_ty_128 = 8;
+pub type _bindgen_ty_128 = crate::types::c_uint;
+pub const BPF_SK_LOOKUP_F_REPLACE: _bindgen_ty_129 = 1;
+pub const BPF_SK_LOOKUP_F_NO_REUSEPORT: _bindgen_ty_129 = 2;
+pub type _bindgen_ty_129 = crate::types::c_uint;
 pub const bpf_adj_room_mode_BPF_ADJ_ROOM_NET: bpf_adj_room_mode = 0;
 pub const bpf_adj_room_mode_BPF_ADJ_ROOM_MAC: bpf_adj_room_mode = 1;
 pub type bpf_adj_room_mode = crate::types::c_uint;
@@ -19140,18 +19866,18 @@ pub const bpf_lwt_encap_mode_BPF_LWT_ENCAP_SEG6: bpf_lwt_encap_mode = 0;
 pub const bpf_lwt_encap_mode_BPF_LWT_ENCAP_SEG6_INLINE: bpf_lwt_encap_mode = 1;
 pub const bpf_lwt_encap_mode_BPF_LWT_ENCAP_IP: bpf_lwt_encap_mode = 2;
 pub type bpf_lwt_encap_mode = crate::types::c_uint;
-pub const BPF_F_BPRM_SECUREEXEC: _bindgen_ty_122 = 1;
-pub type _bindgen_ty_122 = crate::types::c_uint;
-pub const BPF_F_INGRESS: _bindgen_ty_123 = 1;
-pub const BPF_F_BROADCAST: _bindgen_ty_123 = 8;
-pub const BPF_F_EXCLUDE_INGRESS: _bindgen_ty_123 = 16;
-pub type _bindgen_ty_123 = crate::types::c_uint;
-pub const BPF_SKB_TSTAMP_UNSPEC: _bindgen_ty_124 = 0;
-pub const BPF_SKB_TSTAMP_DELIVERY_MONO: _bindgen_ty_124 = 1;
-pub const BPF_SKB_CLOCK_REALTIME: _bindgen_ty_124 = 0;
-pub const BPF_SKB_CLOCK_MONOTONIC: _bindgen_ty_124 = 1;
-pub const BPF_SKB_CLOCK_TAI: _bindgen_ty_124 = 2;
-pub type _bindgen_ty_124 = crate::types::c_uint;
+pub const BPF_F_BPRM_SECUREEXEC: _bindgen_ty_130 = 1;
+pub type _bindgen_ty_130 = crate::types::c_uint;
+pub const BPF_F_INGRESS: _bindgen_ty_131 = 1;
+pub const BPF_F_BROADCAST: _bindgen_ty_131 = 8;
+pub const BPF_F_EXCLUDE_INGRESS: _bindgen_ty_131 = 16;
+pub type _bindgen_ty_131 = crate::types::c_uint;
+pub const BPF_SKB_TSTAMP_UNSPEC: _bindgen_ty_132 = 0;
+pub const BPF_SKB_TSTAMP_DELIVERY_MONO: _bindgen_ty_132 = 1;
+pub const BPF_SKB_CLOCK_REALTIME: _bindgen_ty_132 = 0;
+pub const BPF_SKB_CLOCK_MONOTONIC: _bindgen_ty_132 = 1;
+pub const BPF_SKB_CLOCK_TAI: _bindgen_ty_132 = 2;
+pub type _bindgen_ty_132 = crate::types::c_uint;
 #[repr(C)]
 #[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct __sk_buff {
@@ -20326,61 +21052,61 @@ impl Default for bpf_sock_ops {
         }
     }
 }
-pub const BPF_SOCK_OPS_RTO_CB_FLAG: _bindgen_ty_125 = 1;
-pub const BPF_SOCK_OPS_RETRANS_CB_FLAG: _bindgen_ty_125 = 2;
-pub const BPF_SOCK_OPS_STATE_CB_FLAG: _bindgen_ty_125 = 4;
-pub const BPF_SOCK_OPS_RTT_CB_FLAG: _bindgen_ty_125 = 8;
-pub const BPF_SOCK_OPS_PARSE_ALL_HDR_OPT_CB_FLAG: _bindgen_ty_125 = 16;
-pub const BPF_SOCK_OPS_PARSE_UNKNOWN_HDR_OPT_CB_FLAG: _bindgen_ty_125 = 32;
-pub const BPF_SOCK_OPS_WRITE_HDR_OPT_CB_FLAG: _bindgen_ty_125 = 64;
-pub const BPF_SOCK_OPS_ALL_CB_FLAGS: _bindgen_ty_125 = 127;
-pub type _bindgen_ty_125 = crate::types::c_uint;
-pub const BPF_SOCK_OPS_VOID: _bindgen_ty_126 = 0;
-pub const BPF_SOCK_OPS_TIMEOUT_INIT: _bindgen_ty_126 = 1;
-pub const BPF_SOCK_OPS_RWND_INIT: _bindgen_ty_126 = 2;
-pub const BPF_SOCK_OPS_TCP_CONNECT_CB: _bindgen_ty_126 = 3;
-pub const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: _bindgen_ty_126 = 4;
-pub const BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB: _bindgen_ty_126 = 5;
-pub const BPF_SOCK_OPS_NEEDS_ECN: _bindgen_ty_126 = 6;
-pub const BPF_SOCK_OPS_BASE_RTT: _bindgen_ty_126 = 7;
-pub const BPF_SOCK_OPS_RTO_CB: _bindgen_ty_126 = 8;
-pub const BPF_SOCK_OPS_RETRANS_CB: _bindgen_ty_126 = 9;
-pub const BPF_SOCK_OPS_STATE_CB: _bindgen_ty_126 = 10;
-pub const BPF_SOCK_OPS_TCP_LISTEN_CB: _bindgen_ty_126 = 11;
-pub const BPF_SOCK_OPS_RTT_CB: _bindgen_ty_126 = 12;
-pub const BPF_SOCK_OPS_PARSE_HDR_OPT_CB: _bindgen_ty_126 = 13;
-pub const BPF_SOCK_OPS_HDR_OPT_LEN_CB: _bindgen_ty_126 = 14;
-pub const BPF_SOCK_OPS_WRITE_HDR_OPT_CB: _bindgen_ty_126 = 15;
-pub type _bindgen_ty_126 = crate::types::c_uint;
-pub const BPF_TCP_ESTABLISHED: _bindgen_ty_127 = 1;
-pub const BPF_TCP_SYN_SENT: _bindgen_ty_127 = 2;
-pub const BPF_TCP_SYN_RECV: _bindgen_ty_127 = 3;
-pub const BPF_TCP_FIN_WAIT1: _bindgen_ty_127 = 4;
-pub const BPF_TCP_FIN_WAIT2: _bindgen_ty_127 = 5;
-pub const BPF_TCP_TIME_WAIT: _bindgen_ty_127 = 6;
-pub const BPF_TCP_CLOSE: _bindgen_ty_127 = 7;
-pub const BPF_TCP_CLOSE_WAIT: _bindgen_ty_127 = 8;
-pub const BPF_TCP_LAST_ACK: _bindgen_ty_127 = 9;
-pub const BPF_TCP_LISTEN: _bindgen_ty_127 = 10;
-pub const BPF_TCP_CLOSING: _bindgen_ty_127 = 11;
-pub const BPF_TCP_NEW_SYN_RECV: _bindgen_ty_127 = 12;
-pub const BPF_TCP_BOUND_INACTIVE: _bindgen_ty_127 = 13;
-pub const BPF_TCP_MAX_STATES: _bindgen_ty_127 = 14;
-pub type _bindgen_ty_127 = crate::types::c_uint;
-pub const TCP_BPF_IW: _bindgen_ty_128 = 1001;
-pub const TCP_BPF_SNDCWND_CLAMP: _bindgen_ty_128 = 1002;
-pub const TCP_BPF_DELACK_MAX: _bindgen_ty_128 = 1003;
-pub const TCP_BPF_RTO_MIN: _bindgen_ty_128 = 1004;
-pub const TCP_BPF_SYN: _bindgen_ty_128 = 1005;
-pub const TCP_BPF_SYN_IP: _bindgen_ty_128 = 1006;
-pub const TCP_BPF_SYN_MAC: _bindgen_ty_128 = 1007;
-pub const TCP_BPF_SOCK_OPS_CB_FLAGS: _bindgen_ty_128 = 1008;
-pub type _bindgen_ty_128 = crate::types::c_uint;
-pub const BPF_LOAD_HDR_OPT_TCP_SYN: _bindgen_ty_129 = 1;
-pub type _bindgen_ty_129 = crate::types::c_uint;
-pub const BPF_WRITE_HDR_TCP_CURRENT_MSS: _bindgen_ty_130 = 1;
-pub const BPF_WRITE_HDR_TCP_SYNACK_COOKIE: _bindgen_ty_130 = 2;
-pub type _bindgen_ty_130 = crate::types::c_uint;
+pub const BPF_SOCK_OPS_RTO_CB_FLAG: _bindgen_ty_133 = 1;
+pub const BPF_SOCK_OPS_RETRANS_CB_FLAG: _bindgen_ty_133 = 2;
+pub const BPF_SOCK_OPS_STATE_CB_FLAG: _bindgen_ty_133 = 4;
+pub const BPF_SOCK_OPS_RTT_CB_FLAG: _bindgen_ty_133 = 8;
+pub const BPF_SOCK_OPS_PARSE_ALL_HDR_OPT_CB_FLAG: _bindgen_ty_133 = 16;
+pub const BPF_SOCK_OPS_PARSE_UNKNOWN_HDR_OPT_CB_FLAG: _bindgen_ty_133 = 32;
+pub const BPF_SOCK_OPS_WRITE_HDR_OPT_CB_FLAG: _bindgen_ty_133 = 64;
+pub const BPF_SOCK_OPS_ALL_CB_FLAGS: _bindgen_ty_133 = 127;
+pub type _bindgen_ty_133 = crate::types::c_uint;
+pub const BPF_SOCK_OPS_VOID: _bindgen_ty_134 = 0;
+pub const BPF_SOCK_OPS_TIMEOUT_INIT: _bindgen_ty_134 = 1;
+pub const BPF_SOCK_OPS_RWND_INIT: _bindgen_ty_134 = 2;
+pub const BPF_SOCK_OPS_TCP_CONNECT_CB: _bindgen_ty_134 = 3;
+pub const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: _bindgen_ty_134 = 4;
+pub const BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB: _bindgen_ty_134 = 5;
+pub const BPF_SOCK_OPS_NEEDS_ECN: _bindgen_ty_134 = 6;
+pub const BPF_SOCK_OPS_BASE_RTT: _bindgen_ty_134 = 7;
+pub const BPF_SOCK_OPS_RTO_CB: _bindgen_ty_134 = 8;
+pub const BPF_SOCK_OPS_RETRANS_CB: _bindgen_ty_134 = 9;
+pub const BPF_SOCK_OPS_STATE_CB: _bindgen_ty_134 = 10;
+pub const BPF_SOCK_OPS_TCP_LISTEN_CB: _bindgen_ty_134 = 11;
+pub const BPF_SOCK_OPS_RTT_CB: _bindgen_ty_134 = 12;
+pub const BPF_SOCK_OPS_PARSE_HDR_OPT_CB: _bindgen_ty_134 = 13;
+pub const BPF_SOCK_OPS_HDR_OPT_LEN_CB: _bindgen_ty_134 = 14;
+pub const BPF_SOCK_OPS_WRITE_HDR_OPT_CB: _bindgen_ty_134 = 15;
+pub type _bindgen_ty_134 = crate::types::c_uint;
+pub const BPF_TCP_ESTABLISHED: _bindgen_ty_135 = 1;
+pub const BPF_TCP_SYN_SENT: _bindgen_ty_135 = 2;
+pub const BPF_TCP_SYN_RECV: _bindgen_ty_135 = 3;
+pub const BPF_TCP_FIN_WAIT1: _bindgen_ty_135 = 4;
+pub const BPF_TCP_FIN_WAIT2: _bindgen_ty_135 = 5;
+pub const BPF_TCP_TIME_WAIT: _bindgen_ty_135 = 6;
+pub const BPF_TCP_CLOSE: _bindgen_ty_135 = 7;
+pub const BPF_TCP_CLOSE_WAIT: _bindgen_ty_135 = 8;
+pub const BPF_TCP_LAST_ACK: _bindgen_ty_135 = 9;
+pub const BPF_TCP_LISTEN: _bindgen_ty_135 = 10;
+pub const BPF_TCP_CLOSING: _bindgen_ty_135 = 11;
+pub const BPF_TCP_NEW_SYN_RECV: _bindgen_ty_135 = 12;
+pub const BPF_TCP_BOUND_INACTIVE: _bindgen_ty_135 = 13;
+pub const BPF_TCP_MAX_STATES: _bindgen_ty_135 = 14;
+pub type _bindgen_ty_135 = crate::types::c_uint;
+pub const TCP_BPF_IW: _bindgen_ty_136 = 1001;
+pub const TCP_BPF_SNDCWND_CLAMP: _bindgen_ty_136 = 1002;
+pub const TCP_BPF_DELACK_MAX: _bindgen_ty_136 = 1003;
+pub const TCP_BPF_RTO_MIN: _bindgen_ty_136 = 1004;
+pub const TCP_BPF_SYN: _bindgen_ty_136 = 1005;
+pub const TCP_BPF_SYN_IP: _bindgen_ty_136 = 1006;
+pub const TCP_BPF_SYN_MAC: _bindgen_ty_136 = 1007;
+pub const TCP_BPF_SOCK_OPS_CB_FLAGS: _bindgen_ty_136 = 1008;
+pub type _bindgen_ty_136 = crate::types::c_uint;
+pub const BPF_LOAD_HDR_OPT_TCP_SYN: _bindgen_ty_137 = 1;
+pub type _bindgen_ty_137 = crate::types::c_uint;
+pub const BPF_WRITE_HDR_TCP_CURRENT_MSS: _bindgen_ty_138 = 1;
+pub const BPF_WRITE_HDR_TCP_SYNACK_COOKIE: _bindgen_ty_138 = 2;
+pub type _bindgen_ty_138 = crate::types::c_uint;
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
 pub struct bpf_perf_event_value {
@@ -20388,13 +21114,13 @@ pub struct bpf_perf_event_value {
     pub enabled: __u64,
     pub running: __u64,
 }
-pub const BPF_DEVCG_ACC_MKNOD: _bindgen_ty_131 = 1;
-pub const BPF_DEVCG_ACC_READ: _bindgen_ty_131 = 2;
-pub const BPF_DEVCG_ACC_WRITE: _bindgen_ty_131 = 4;
-pub type _bindgen_ty_131 = crate::types::c_uint;
-pub const BPF_DEVCG_DEV_BLOCK: _bindgen_ty_132 = 1;
-pub const BPF_DEVCG_DEV_CHAR: _bindgen_ty_132 = 2;
-pub type _bindgen_ty_132 = crate::types::c_uint;
+pub const BPF_DEVCG_ACC_MKNOD: _bindgen_ty_139 = 1;
+pub const BPF_DEVCG_ACC_READ: _bindgen_ty_139 = 2;
+pub const BPF_DEVCG_ACC_WRITE: _bindgen_ty_139 = 4;
+pub type _bindgen_ty_139 = crate::types::c_uint;
+pub const BPF_DEVCG_DEV_BLOCK: _bindgen_ty_140 = 1;
+pub const BPF_DEVCG_DEV_CHAR: _bindgen_ty_140 = 2;
+pub type _bindgen_ty_140 = crate::types::c_uint;
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
 pub struct bpf_cgroup_dev_ctx {
@@ -20407,24 +21133,24 @@ pub struct bpf_cgroup_dev_ctx {
 pub struct bpf_raw_tracepoint_args {
     pub args: __IncompleteArrayField<__u64>,
 }
-pub const BPF_FIB_LOOKUP_DIRECT: _bindgen_ty_133 = 1;
-pub const BPF_FIB_LOOKUP_OUTPUT: _bindgen_ty_133 = 2;
-pub const BPF_FIB_LOOKUP_SKIP_NEIGH: _bindgen_ty_133 = 4;
-pub const BPF_FIB_LOOKUP_TBID: _bindgen_ty_133 = 8;
-pub const BPF_FIB_LOOKUP_SRC: _bindgen_ty_133 = 16;
-pub const BPF_FIB_LOOKUP_MARK: _bindgen_ty_133 = 32;
-pub type _bindgen_ty_133 = crate::types::c_uint;
-pub const BPF_FIB_LKUP_RET_SUCCESS: _bindgen_ty_134 = 0;
-pub const BPF_FIB_LKUP_RET_BLACKHOLE: _bindgen_ty_134 = 1;
-pub const BPF_FIB_LKUP_RET_UNREACHABLE: _bindgen_ty_134 = 2;
-pub const BPF_FIB_LKUP_RET_PROHIBIT: _bindgen_ty_134 = 3;
-pub const BPF_FIB_LKUP_RET_NOT_FWDED: _bindgen_ty_134 = 4;
-pub const BPF_FIB_LKUP_RET_FWD_DISABLED: _bindgen_ty_134 = 5;
-pub const BPF_FIB_LKUP_RET_UNSUPP_LWT: _bindgen_ty_134 = 6;
-pub const BPF_FIB_LKUP_RET_NO_NEIGH: _bindgen_ty_134 = 7;
-pub const BPF_FIB_LKUP_RET_FRAG_NEEDED: _bindgen_ty_134 = 8;
-pub const BPF_FIB_LKUP_RET_NO_SRC_ADDR: _bindgen_ty_134 = 9;
-pub type _bindgen_ty_134 = crate::types::c_uint;
+pub const BPF_FIB_LOOKUP_DIRECT: _bindgen_ty_141 = 1;
+pub const BPF_FIB_LOOKUP_OUTPUT: _bindgen_ty_141 = 2;
+pub const BPF_FIB_LOOKUP_SKIP_NEIGH: _bindgen_ty_141 = 4;
+pub const BPF_FIB_LOOKUP_TBID: _bindgen_ty_141 = 8;
+pub const BPF_FIB_LOOKUP_SRC: _bindgen_ty_141 = 16;
+pub const BPF_FIB_LOOKUP_MARK: _bindgen_ty_141 = 32;
+pub type _bindgen_ty_141 = crate::types::c_uint;
+pub const BPF_FIB_LKUP_RET_SUCCESS: _bindgen_ty_142 = 0;
+pub const BPF_FIB_LKUP_RET_BLACKHOLE: _bindgen_ty_142 = 1;
+pub const BPF_FIB_LKUP_RET_UNREACHABLE: _bindgen_ty_142 = 2;
+pub const BPF_FIB_LKUP_RET_PROHIBIT: _bindgen_ty_142 = 3;
+pub const BPF_FIB_LKUP_RET_NOT_FWDED: _bindgen_ty_142 = 4;
+pub const BPF_FIB_LKUP_RET_FWD_DISABLED: _bindgen_ty_142 = 5;
+pub const BPF_FIB_LKUP_RET_UNSUPP_LWT: _bindgen_ty_142 = 6;
+pub const BPF_FIB_LKUP_RET_NO_NEIGH: _bindgen_ty_142 = 7;
+pub const BPF_FIB_LKUP_RET_FRAG_NEEDED: _bindgen_ty_142 = 8;
+pub const BPF_FIB_LKUP_RET_NO_SRC_ADDR: _bindgen_ty_142 = 9;
+pub type _bindgen_ty_142 = crate::types::c_uint;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct bpf_fib_lookup {
@@ -20600,10 +21326,10 @@ pub const bpf_task_fd_type_BPF_FD_TYPE_KRETPROBE: bpf_task_fd_type = 3;
 pub const bpf_task_fd_type_BPF_FD_TYPE_UPROBE: bpf_task_fd_type = 4;
 pub const bpf_task_fd_type_BPF_FD_TYPE_URETPROBE: bpf_task_fd_type = 5;
 pub type bpf_task_fd_type = crate::types::c_uint;
-pub const BPF_FLOW_DISSECTOR_F_PARSE_1ST_FRAG: _bindgen_ty_135 = 1;
-pub const BPF_FLOW_DISSECTOR_F_STOP_AT_FLOW_LABEL: _bindgen_ty_135 = 2;
-pub const BPF_FLOW_DISSECTOR_F_STOP_AT_ENCAP: _bindgen_ty_135 = 4;
-pub type _bindgen_ty_135 = crate::types::c_uint;
+pub const BPF_FLOW_DISSECTOR_F_PARSE_1ST_FRAG: _bindgen_ty_143 = 1;
+pub const BPF_FLOW_DISSECTOR_F_STOP_AT_FLOW_LABEL: _bindgen_ty_143 = 2;
+pub const BPF_FLOW_DISSECTOR_F_STOP_AT_ENCAP: _bindgen_ty_143 = 4;
+pub type _bindgen_ty_143 = crate::types::c_uint;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct bpf_flow_keys {
@@ -20899,11 +21625,11 @@ impl Default for btf_ptr {
         }
     }
 }
-pub const BTF_F_COMPACT: _bindgen_ty_136 = 1;
-pub const BTF_F_NONAME: _bindgen_ty_136 = 2;
-pub const BTF_F_PTR_RAW: _bindgen_ty_136 = 4;
-pub const BTF_F_ZERO: _bindgen_ty_136 = 8;
-pub type _bindgen_ty_136 = crate::types::c_uint;
+pub const BTF_F_COMPACT: _bindgen_ty_144 = 1;
+pub const BTF_F_NONAME: _bindgen_ty_144 = 2;
+pub const BTF_F_PTR_RAW: _bindgen_ty_144 = 4;
+pub const BTF_F_ZERO: _bindgen_ty_144 = 8;
+pub type _bindgen_ty_144 = crate::types::c_uint;
 pub const bpf_core_relo_kind_BPF_CORE_FIELD_BYTE_OFFSET: bpf_core_relo_kind = 0;
 pub const bpf_core_relo_kind_BPF_CORE_FIELD_BYTE_SIZE: bpf_core_relo_kind = 1;
 pub const bpf_core_relo_kind_BPF_CORE_FIELD_EXISTS: bpf_core_relo_kind = 2;
@@ -20935,9 +21661,9 @@ impl Default for bpf_core_relo {
         }
     }
 }
-pub const BPF_F_TIMER_ABS: _bindgen_ty_137 = 1;
-pub const BPF_F_TIMER_CPU_PIN: _bindgen_ty_137 = 2;
-pub type _bindgen_ty_137 = crate::types::c_uint;
+pub const BPF_F_TIMER_ABS: _bindgen_ty_145 = 1;
+pub const BPF_F_TIMER_CPU_PIN: _bindgen_ty_145 = 2;
+pub type _bindgen_ty_145 = crate::types::c_uint;
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
 pub struct bpf_iter_num {
