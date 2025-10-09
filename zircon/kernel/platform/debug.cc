@@ -204,9 +204,9 @@ void platform_serial_prepare_for_suspend() {
     return;
   }
 
-#if EXPERIMENTAL_ALLOW_DEBUG_UART_SUSPEND
-  gUart.Visit([&]<typename DriverType>(DriverType& driver) { driver.PrepareForSuspend(); });
-#endif
+  if (gBootOptions->experimental_allow_debug_uart_suspend) {
+    gUart.Visit([&]<typename DriverType>(DriverType& driver) { driver.PrepareForSuspend(); });
+  }
 }
 
 void platform_serial_wakeup_from_suspend() {
@@ -214,9 +214,9 @@ void platform_serial_wakeup_from_suspend() {
     return;
   }
 
-#if EXPERIMENTAL_ALLOW_DEBUG_UART_SUSPEND
-  gUart.Visit([&]<typename DriverType>(DriverType& driver) { driver.WakeupFromSuspend(); });
-#endif
+  if (gBootOptions->experimental_allow_debug_uart_suspend) {
+    gUart.Visit([&]<typename DriverType>(DriverType& driver) { driver.WakeupFromSuspend(); });
+  }
 }
 
 void UartDriverHandoffEarly(const uart::all::Driver& serial) {
@@ -243,7 +243,7 @@ void UartDriverHandoffLate(const uart::all::Driver& serial) {
   }
 
   // Check for interrupt support or explicitly polling uart and reserve the IO regions, preventing
-  // userspace from claiming htem.
+  // userspace from claiming them.
   ktl::optional<uint32_t> uart_irq;
   bool polling_mode = false;
   gUart.Visit([&]<typename DriverType>(DriverType& driver) {

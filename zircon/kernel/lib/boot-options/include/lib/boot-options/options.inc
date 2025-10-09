@@ -953,6 +953,18 @@ loader and early boot code with the debugger attached and then interrupt the
 spin interactively in the debugger to set breakpoints or step through boot code.
 )""")
 
+DEFINE_OPTION("kernel.experimental_allow_debug_uart_suspend", bool, experimental_allow_debug_uart_suspend,
+              {false},
+              R"""(
+This option enables a current experimental feature which manages suspending and
+resuming the UART hardware and its clocks when entering deeper suspend states on
+Sorrel.  It is meant to allow CI/CQ to enable the feature on a limited number of
+builders during stabilization, as well as to allow developers working on deep
+suspend to do the same.  It is temporary and will be removed after the feature
+has been deemed to be stable and ready to roll out to all builders and users.
+)""")
+
+
 // Machine-specific options are included here for all the kernel places.
 // In the generator program, they're included separately.
 

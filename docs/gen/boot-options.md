@@ -1097,6 +1097,17 @@ continue.  This makes it easy to let the virtual boot CPU run through the boot
 loader and early boot code with the debugger attached and then interrupt the
 spin interactively in the debugger to set breakpoints or step through boot code.
 
+### kernel.experimental_allow_debug_uart_suspend=\<bool>
+
+**Default:** `false`
+
+This option enables a current experimental feature which manages suspending and
+resuming the UART hardware and its clocks when entering deeper suspend states on
+Sorrel.  It is meant to allow CI/CQ to enable the feature on a limited number of
+builders during stabilization, as well as to allow developers working on deep
+suspend to do the same.  It is temporary and will be removed after the feature
+has been deemed to be stable and ready to roll out to all builders and users.
+
 
 ## Options available only on arm64 machines
 

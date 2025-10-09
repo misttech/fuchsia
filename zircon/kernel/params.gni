@@ -134,14 +134,6 @@ declare_args() {
   # TODO(https://fxbug.dev/322207536): Stop resetting start and finish times
   # when unblocking once we solve races higher in the stack.
   experimental_force_enable_new_wakeup_accounting = false
-
-  # Allow the debug UART to be suspended and resumed by the kernel as CPUs enter
-  # a deeper suspend state.  Defaults to false, this option is present to allow
-  # developer working on stabilizing deeper suspend states to keep their UART
-  # functioning during suspend/resume cycles.  When the suspend resume path is
-  # more stable, the plan is to come back here, remove the flag, and enable the
-  # feature by default for everyone.
-  experimental_allow_debug_uart_suspend = false
 }
 
 declare_args() {
