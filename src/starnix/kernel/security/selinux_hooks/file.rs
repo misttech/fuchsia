@@ -426,8 +426,7 @@ fn file_map_prot_check(
         };
         let permissions = permissions_from_flags(flags, node_class);
         let current_sid = current_task_state(current_task).lock().current_sid;
-        todo_has_fs_node_permissions(
-            TODO_DENY!("https://fxbug.dev/405381460", "Check permissions when mapping."),
+        has_fs_node_permissions(
             &security_server.as_permission_check(),
             current_task,
             current_sid,
