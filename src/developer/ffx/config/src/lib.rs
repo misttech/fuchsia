@@ -12,7 +12,6 @@ use futures::future::LocalBoxFuture;
 use std::fmt::Debug;
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::{LazyLock, Mutex};
 
 pub mod api;
 pub mod environment;
@@ -39,8 +38,6 @@ pub use environment::{Environment, EnvironmentContext, TestEnv, test_env, test_i
 pub use paths::get_state_base as get_state_base_path;
 pub use sdk::{self, Sdk, SdkRoot};
 pub use storage::{AssertNoEnv, AssertNoEnvError, ConfigMap};
-
-static ENV: LazyLock<Mutex<Option<EnvironmentContext>>> = LazyLock::new(|| Mutex::default());
 
 #[doc(hidden)]
 pub mod macro_deps {
@@ -117,19 +114,6 @@ impl argh::FromArgValue for ConfigLevel {
             )),
         }
     }
-}
-
-/// Initialize the configuration. Only the first call in a process runtime takes effect, so users must
-/// call this early with the required values, such as in main() in the ffx binary.
-pub fn init(context: &EnvironmentContext) -> Result<()> {
-    let mut env_lock = ENV.lock().unwrap();
-    if env_lock.is_some() {
-        anyhow::bail!(
-            "Attempted to set the global environment more than once in a process invocation, outside of a test"
-        );
-    }
-    env_lock.replace(context.clone());
-    Ok(())
 }
 
 pub const SDK_OVERRIDE_KEY_PREFIX: &str = "sdk.overrides";

@@ -164,7 +164,6 @@ pub fn init_cmd(exe_kind: ExecutableKind) -> Result<InitializedCmd> {
     match ffx::FfxCommandLine::from_env() {
         Ok(c) => {
             let context = c.global.load_context(exe_kind)?;
-            ffx_config::init(&context)?;
             Ok(InitializedCmd { cmd: c, context, help_state: HelpState::None })
         }
         Err(Error::Help { command, output, code }) => {
@@ -175,7 +174,6 @@ pub fn init_cmd(exe_kind: ExecutableKind) -> Result<InitializedCmd> {
             let argv = Vec::from_iter(std::env::args());
             let c = ffx::FfxCommandLine::from_args_for_help(&argv)?;
             let context = c.global.load_context(exe_kind)?;
-            ffx_config::init(&context)?;
             if find_machine_and_help(&c).is_some() {
                 Ok(InitializedCmd { cmd: c, context, help_state: HelpState::ReturnArgsInfo })
             } else {

@@ -129,28 +129,6 @@ impl<'a> TestEnv<'a> {
     }
 }
 
-impl Drop for TestEnv<'_> {
-    fn drop(&mut self) {
-        // after the test, wipe out all the test configuration we set up. Explode if things aren't as we
-        // expect them.
-        let mut env = crate::ENV.lock().expect("Poisoned lock");
-        let env_prev = env.clone();
-        *env = None;
-        drop(env);
-
-        if let Some(env_prev) = env_prev {
-            assert_eq!(
-                env_prev,
-                self.context,
-                "environment context changed from isolated environment to {other:?} during test run somehow.",
-                other = env_prev
-            );
-        }
-
-        // since we're not running in async context during drop, we can't clear the cache unfortunately.
-    }
-}
-
 static TEST_LOCK: LazyLock<Arc<Mutex<()>>> = LazyLock::new(Arc::default);
 
 #[derive(Debug, Default)]
@@ -219,7 +197,6 @@ impl TestEnvBuilder {
         }?;
 
         // Force an overwrite of the configuration setup.
-        crate::init(&env.context)?;
 
         Ok(env)
     }
