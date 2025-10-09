@@ -22,6 +22,13 @@ config("static_lib_config") {
   # All functions should be declared in magma.h or magma_sysmem.h, so warn about unnecessary functions.
   cflags = [ "-Wmissing-prototypes" ]
 
+  # TODO(https://fxbug.dev/450424760): TUs which would be part of a hermetic static library for magma
+  # should not be instrumented, hence we disable ASan here. Ideally, we should have build rules that
+  # ensure these sources and anything which link in libmagma_static would be excluded from instrumented
+  # builds. This is not a stable solution, but it prevents libmagma_static from having a mix of ASan-
+  # instrumented and non-asan instrumented libc++ functions.
+  cflags += [ "-fno-sanitize=address" ]
+
   defines = [ "MAGMA_EXPORT=__attribute__((visibility(\"default\")))" ]
 }
 
