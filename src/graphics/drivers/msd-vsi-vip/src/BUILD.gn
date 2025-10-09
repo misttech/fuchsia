@@ -29,6 +29,8 @@ source_set("src") {
     "msd_vsi_semaphore.h",
     "page_table_arrays.cc",
     "page_table_arrays.h",
+    "registers.cc",
+    "registers.h",
     "ringbuffer.cc",
     "ringbuffer.h",
   ]

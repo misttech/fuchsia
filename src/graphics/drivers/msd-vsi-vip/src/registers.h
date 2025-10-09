@@ -8,6 +8,9 @@
 #include <lib/magma/util/short_macros.h>
 #include <lib/magma_service/util/register_io.h>
 
+#include <string>
+#include <vector>
+
 #include "hwreg/bitfields.h"
 
 namespace registers {
@@ -320,6 +323,8 @@ class DmaAddress : public hwreg::RegisterBase<DmaAddress, uint32_t> {
  public:
   static auto Get() { return hwreg::RegisterAddr<DmaAddress>(0x664); }
 };
+
+void PrintRegisters(std::vector<std::string>* dump_out, magma::RegisterIo* io);
 
 }  // namespace registers
 

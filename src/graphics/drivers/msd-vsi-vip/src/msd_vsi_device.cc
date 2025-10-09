@@ -547,6 +547,7 @@ magma::Status MsdVsiDevice::ProcessDumpStatusToLog() {
   std::vector<std::string> dump;
   // Faults are detected on the interrupt thread.
   DumpToString(&dump, false /* fault_present */);
+  registers::PrintRegisters(&dump, register_io());
   for (auto& str : dump) {
     MAGMA_LOG(INFO, "%s", str.c_str());
   }
