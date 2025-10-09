@@ -432,7 +432,6 @@ rustc_test("h264_decoder_test_bin") {
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:lazy_static",
   ]
 
   sources = [ "h264_decoder_test/lib.rs" ]

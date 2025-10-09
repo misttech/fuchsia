@@ -10,22 +10,22 @@
 #![cfg(test)]
 
 use h264_stream::*;
-use lazy_static::lazy_static;
 use std::fs::File;
 use std::io::Read;
 use std::rc::Rc;
 use std::result::Result;
+use std::sync::LazyLock;
 use stream_processor_decoder_factory::*;
 use stream_processor_test::*;
 use video_frame_hasher::*;
 
 pub const BEAR_TEST_FILE: &str = "/pkg/data/bear.h264";
 
-lazy_static! {
-    static ref BEAR_DIGEST: ExpectedDigest = ExpectedDigest::new_with_per_frame_digest(
+static BEAR_DIGEST: LazyLock<ExpectedDigest> = LazyLock::new(|| {
+    ExpectedDigest::new_with_per_frame_digest(
         "bear.h264 decoded digest",
         "1dc4d1510fc4d26173480f5e689e38dca7c1fa2df1894085f1bcee9c0d19acf7",
-        vec!(
+        vec![
             "0f1d46e5b13b0bb96b42d0c3ead24f656e3e000b3f287714be85572b11fa747f",
             "a1c64f7db1ffcc90f493494fd66a49fd90581e7b4b9cf01e44cc3d1b48f1b2ba",
             "0bce4a93ed09cda3967d193a46d3dac770852849059b63e58c59ca37ec02dae0",
@@ -56,9 +56,9 @@ lazy_static! {
             "00ddc6d257a5223a30c0d652d37cc7a37c3e65de922f10a6e8a8a5cda61c2365",
             "8c25f9fbe01f491c343d9ab7c0bd3ffb6fc7f0fed546fbf7f49ad1f661f53d50",
             "1dc4d1510fc4d26173480f5e689e38dca7c1fa2df1894085f1bcee9c0d19acf7",
-        )
-    );
-}
+        ],
+    )
+});
 
 // TODO(turnage): Add test spec for buffers released between streams.
 // TODO(turnage): Add hash validator for NV12 and YV12.
