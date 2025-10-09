@@ -16,14 +16,15 @@ use fidl::endpoints::Proxy;
 use fuchsia_component::client::connect_to_protocol_sync;
 use fuchsia_inspect::{ArrayProperty, StringArrayProperty};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
-use futures::StreamExt;
 use futures::stream::Next;
+use futures::{FutureExt, StreamExt};
 use itertools::Itertools;
 use starnix_logging::{log_info, log_warn};
 use starnix_sync::{
     EbpfSuspendLock, FileOpsCore, LockBefore, Locked, Mutex, MutexGuard, OrderedRwLock,
     RwLockReadGuard,
 };
+use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 use std::fmt;
@@ -34,10 +35,13 @@ use {
 };
 
 /// Manager for suspend and resume.
-#[derive(Default)]
 pub struct SuspendResumeManager {
     // The mutable state of [SuspendResumeManager].
     inner: Mutex<SuspendResumeManagerInner>,
+
+    /// The currently registered message counters in the system whose values are exposed to inspect
+    /// via a lazy node.
+    message_counters: Arc<Mutex<HashSet<WeakKey<MessageCounter>>>>,
 
     // The lock used to to avoid suspension while holding eBPF locks.
     ebpf_suspend_lock: OrderedRwLock<(), EbpfSuspendLock>,
@@ -213,6 +217,40 @@ impl SuspendResumeManagerInner {
 
 pub type SuspendResumeManagerHandle = Arc<SuspendResumeManager>;
 
+impl Default for SuspendResumeManager {
+    fn default() -> Self {
+        let message_counters: Arc<Mutex<HashSet<WeakKey<MessageCounter>>>> = Default::default();
+        let message_counters_clone = message_counters.clone();
+        let root = inspect::component::inspector().root();
+        root.record_lazy_values("message_counters", move || {
+            let message_counters_clone = message_counters_clone.clone();
+            async move {
+                let inspector = fuchsia_inspect::Inspector::default();
+                let root = inspector.root();
+                let mut message_counters = message_counters_clone.lock();
+                message_counters.retain(|c| c.0.upgrade().is_some());
+                let message_counters_inspect =
+                    root.create_string_array("message_counters", message_counters.len());
+                for (i, c) in message_counters.iter().enumerate() {
+                    let counter = c.0.upgrade().expect("lost counter should be retained");
+                    message_counters_inspect.set(
+                        i,
+                        format!(
+                            "Counter({}): {:?}",
+                            counter.name,
+                            counter.counter.as_ref().map(|c| c.read())
+                        ),
+                    );
+                }
+                root.record(message_counters_inspect);
+                Ok(inspector)
+            }
+            .boxed()
+        });
+        Self { message_counters, inner: Default::default(), ebpf_suspend_lock: Default::default() }
+    }
+}
+
 impl SuspendResumeManager {
     /// Locks and returns the inner state of the manager.
     pub fn lock(&self) -> MutexGuard<'_, SuspendResumeManagerInner> {
@@ -296,6 +334,18 @@ impl SuspendResumeManager {
         state.signal_wake_events();
         state.record_active_epolls();
         state.record_inactive_epolls();
+    }
+
+    pub fn add_message_counter(
+        &self,
+        name: &str,
+        counter: Option<zx::Counter>,
+    ) -> MessageCounterHandle {
+        let container_counter = MessageCounter::new(name, counter);
+        let mut message_counters = self.message_counters.lock();
+        message_counters.insert(WeakKey::from(&container_counter));
+        message_counters.retain(|c| c.0.upgrade().is_some());
+        container_counter
     }
 
     /// Returns a duplicate handle to the `EventPair` that is signaled when wake
@@ -597,14 +647,14 @@ pub fn create_watcher_for_wake_events(watcher: zx::EventPair) {
 }
 
 pub struct MessageCounter {
-    #[allow(dead_code)]
     name: String,
     counter: Option<zx::Counter>,
 }
+pub type MessageCounterHandle = Arc<MessageCounter>;
 
 impl MessageCounter {
-    pub fn new(name: &str, counter: Option<zx::Counter>) -> Self {
-        Self { name: name.to_string(), counter }
+    pub fn new(name: &str, counter: Option<zx::Counter>) -> MessageCounterHandle {
+        Arc::new(Self { name: name.to_string(), counter })
     }
 
     pub fn mark_handled(&self) {
@@ -618,18 +668,24 @@ impl Drop for MessageCounter {
     }
 }
 
+impl fmt::Display for MessageCounter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Counter({}): {:?}", self.name, self.counter.as_ref().map(|c| c.read()))
+    }
+}
+
 /// A proxy wrapper that manages a `zx::Counter` to allow the container to suspend
 /// after events are being processed.
 ///
 /// When the proxy is dropped, the counter is reset to 0 to release the wake-lock.
 pub struct ContainerWakingProxy<P: Proxy> {
-    counter: MessageCounter,
+    counter: MessageCounterHandle,
     proxy: P,
 }
 
 impl<P: Proxy> ContainerWakingProxy<P> {
-    pub fn new(name: &str, counter: Option<zx::Counter>, proxy: P) -> Self {
-        Self { counter: MessageCounter::new(name, counter), proxy }
+    pub fn new(counter: MessageCounterHandle, proxy: P) -> Self {
+        Self { counter, proxy }
     }
 
     /// Create a `Future` call on the proxy.
@@ -658,13 +714,13 @@ impl<P: Proxy> ContainerWakingProxy<P> {
 ///
 /// When the stream is dropped, the counter is reset to 0 to release the wake-lock.
 pub struct ContainerWakingStream<S: fidl::endpoints::RequestStream> {
-    counter: MessageCounter,
+    counter: MessageCounterHandle,
     stream: S,
 }
 
 impl<S: fidl::endpoints::RequestStream> ContainerWakingStream<S> {
-    pub fn new(name: &str, counter: Option<zx::Counter>, stream: S) -> Self {
-        Self { counter: MessageCounter::new(name, counter), stream }
+    pub fn new(counter: MessageCounterHandle, stream: S) -> Self {
+        Self { counter, stream }
     }
 
     /// Create a `Next` call on the stream.poll_next().
@@ -680,11 +736,13 @@ impl<S: fidl::endpoints::RequestStream> ContainerWakingStream<S> {
 
 #[cfg(test)]
 mod test {
+    use super::*;
+    use diagnostics_assertions::assert_data_tree;
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_test_placeholders::{EchoMarker, EchoRequest};
-    use fuchsia_async as fasync;
     use futures::StreamExt;
     use zx::{self, HandleBased};
+    use {fuchsia_async as fasync, fuchsia_inspect as inspect};
 
     #[::fuchsia::test]
     fn test_counter_zero_initialization() {
@@ -718,11 +776,13 @@ mod test {
         counter.add(5).unwrap();
         assert_eq!(counter.read(), Ok(5));
 
-        let waking_proxy = super::ContainerWakingProxy::new(
-            "test_proxy",
-            Some(counter.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+        let waking_proxy = ContainerWakingProxy {
+            counter: MessageCounter::new(
+                "test_proxy",
+                Some(counter.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+            ),
             proxy,
-        );
+        };
 
         let response_future = waking_proxy.call(|p| p.echo_string(Some("hello")));
 
@@ -751,11 +811,13 @@ mod test {
         counter.add(5).unwrap();
         assert_eq!(counter.read(), Ok(5));
 
-        let mut waking_stream = super::ContainerWakingStream::new(
-            "test_stream",
-            Some(counter.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+        let mut waking_stream = ContainerWakingStream {
+            counter: MessageCounter::new(
+                "test_stream",
+                Some(counter.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+            ),
             stream,
-        );
+        };
 
         let request_future = waking_stream.next();
 
@@ -775,5 +837,33 @@ mod test {
         assert_eq!(counter.read(), Ok(4));
         drop(waking_stream);
         assert_eq!(counter.read(), Ok(0));
+    }
+
+    #[::fuchsia::test]
+    async fn test_message_counters_inspect() {
+        let power_manager = SuspendResumeManager::default();
+        let inspector = inspect::component::inspector();
+
+        let zx_counter = zx::Counter::create();
+        let counter_handle = power_manager.add_message_counter(
+            "test_counter",
+            Some(zx_counter.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+        );
+
+        zx_counter.add(1).unwrap();
+
+        assert_data_tree!(inspector, root: contains {
+            message_counters: vec!["Counter(test_counter): Some(Ok(1))"],
+        });
+
+        zx_counter.add(1).unwrap();
+        assert_data_tree!(inspector, root: contains {
+            message_counters: vec!["Counter(test_counter): Some(Ok(2))"],
+        });
+
+        drop(counter_handle);
+        assert_data_tree!(inspector, root: contains {
+            message_counters: Vec::<String>::new(),
+        });
     }
 }

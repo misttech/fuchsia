@@ -170,12 +170,14 @@ impl InputEventsRelay {
         default_keyboard_device_inspect: Option<Arc<InputDeviceStatus>>,
         default_mouse_device_inspect: Option<Arc<InputDeviceStatus>>,
     ) {
-        kernel.kthreads.spawn_async_with_role(INPUT_RELAY_ROLE_NAME, async move |_: LockedAndTask<'_>| {
+        kernel.kthreads.spawn_async_with_role(INPUT_RELAY_ROLE_NAME, async move |locked_and_task: LockedAndTask<'_>| {
+            let kernel = locked_and_task.current_task().kernel();
             // touch
             let previous_touch_event_disposition: Rc<RefCell<Vec<FidlTouchResponse>>> = Default::default();
             let touch_waking_fn = |p: &fuipointer::TouchSourceProxy| p.watch(&previous_touch_event_disposition.borrow_mut());
             let (mut default_touch_device, touch_waking_proxy) =
                 setup_touch_relay(
+                    kernel,
                     event_proxy_mode,
                     touch_source_client_end,
                     default_touch_device_opened_files,
@@ -186,6 +188,7 @@ impl InputEventsRelay {
             // mouse
             let (mut default_mouse_device, mouse_waking_proxy) =
                 setup_mouse_relay(
+                    kernel,
                     event_proxy_mode,
                     mouse_source_client_end,
                     default_mouse_device_opened_files,
@@ -205,6 +208,7 @@ impl InputEventsRelay {
             // button
             let (mut default_button_device, mut media_buttons_waking_stream, mut touch_buttons_waking_stream) =
                 setup_button_relay(
+                    kernel,
                     registry_proxy,
                     event_proxy_mode,
                     default_keyboard_device_opened_files,
@@ -707,6 +711,7 @@ impl InputEventsRelay {
 }
 
 fn setup_touch_relay(
+    kernel: &Arc<Kernel>,
     event_proxy_mode: EventProxyMode,
     touch_source_client_end: ClientEnd<fuipointer::TouchSourceMarker>,
     default_touch_device_opened_files: OpenedFiles,
@@ -718,11 +723,11 @@ fn setup_touch_relay(
         open_files: default_touch_device_opened_files,
         inspect_status: device_inspect_status,
     };
-    let (touch_source_proxy, message_counter) = match event_proxy_mode {
+    let (touch_source_proxy, counter) = match event_proxy_mode {
         EventProxyMode::WakeContainer => {
             // Proxy the touch events through the Starnix runner. This allows touch events to
             // wake the container when it is suspended.
-            let (touch_source_channel, message_counter) = create_proxy_for_wake_events_counter(
+            let (touch_source_channel, counter) = create_proxy_for_wake_events_counter(
                 touch_source_client_end.into_channel(),
                 touch_counter_name.to_string(),
             );
@@ -730,14 +735,17 @@ fn setup_touch_relay(
                 fuipointer::TouchSourceProxy::new(fidl::AsyncChannel::from_channel(
                     touch_source_channel,
                 )),
-                Some(message_counter),
+                Some(counter),
             )
         }
         EventProxyMode::None => (touch_source_client_end.into_proxy(), None),
     };
     (
         default_touch_device,
-        ContainerWakingProxy::new(touch_counter_name, message_counter, touch_source_proxy),
+        ContainerWakingProxy::new(
+            kernel.suspend_resume_manager.add_message_counter(touch_counter_name, counter),
+            touch_source_proxy,
+        ),
     )
 }
 
@@ -762,6 +770,7 @@ fn setup_keyboard_relay(
 }
 
 fn setup_button_relay(
+    kernel: &Arc<Kernel>,
     registry_proxy: fuipolicy::DeviceListenerRegistrySynchronousProxy,
     event_proxy_mode: EventProxyMode,
     default_keyboard_device_opened_files: OpenedFiles,
@@ -797,12 +806,12 @@ fn setup_button_relay(
 
     let (
         local_media_buttons_listener_stream,
-        media_buttons_message_counter,
+        media_buttons_counter,
         local_touch_buttons_listener_stream,
-        touch_buttons_message_counter,
+        touch_buttons_counter,
     ) = match event_proxy_mode {
         EventProxyMode::WakeContainer => {
-            let (local_media_buttons_channel, media_buttons_message_counter) =
+            let (local_media_buttons_channel, media_buttons_counter) =
                 create_proxy_for_wake_events_counter(
                     remote_media_button_server.into_channel(),
                     media_buttons_name.to_string(),
@@ -812,7 +821,7 @@ fn setup_button_relay(
                     fidl::AsyncChannel::from_channel(local_media_buttons_channel),
                 );
 
-            let (local_touch_buttons_channel, touch_buttons_message_counter) =
+            let (local_touch_buttons_channel, touch_buttons_counter) =
                 create_proxy_for_wake_events_counter(
                     remote_touch_button_server.into_channel(),
                     touch_buttons_name.to_string(),
@@ -823,9 +832,9 @@ fn setup_button_relay(
                 );
             (
                 local_media_buttons_listener_stream,
-                Some(media_buttons_message_counter),
+                Some(media_buttons_counter),
                 local_touch_buttons_listener_stream,
-                Some(touch_buttons_message_counter),
+                Some(touch_buttons_counter),
             )
         }
         EventProxyMode::None => (
@@ -839,19 +848,22 @@ fn setup_button_relay(
     (
         default_keyboard_device,
         ContainerWakingStream::new(
-            media_buttons_name,
-            media_buttons_message_counter,
+            kernel
+                .suspend_resume_manager
+                .add_message_counter(media_buttons_name, media_buttons_counter),
             local_media_buttons_listener_stream,
         ),
         ContainerWakingStream::new(
-            touch_buttons_name,
-            touch_buttons_message_counter,
+            kernel
+                .suspend_resume_manager
+                .add_message_counter(touch_buttons_name, touch_buttons_counter),
             local_touch_buttons_listener_stream,
         ),
     )
 }
 
 fn setup_mouse_relay(
+    kernel: &Arc<Kernel>,
     event_proxy_mode: EventProxyMode,
     mouse_source_client_end: ClientEnd<fuipointer::MouseSourceMarker>,
     default_mouse_device_opened_files: OpenedFiles,
@@ -863,7 +875,7 @@ fn setup_mouse_relay(
         open_files: default_mouse_device_opened_files,
         inspect_status: device_inspect_status,
     };
-    let (mouse_source_proxy, message_counter) = match event_proxy_mode {
+    let (mouse_source_proxy, counter) = match event_proxy_mode {
         EventProxyMode::WakeContainer => {
             // Proxy the mouse events through the Starnix runner. This allows mouse events to
             // wake the container when it is suspended.
@@ -883,7 +895,10 @@ fn setup_mouse_relay(
 
     (
         default_mouse_device,
-        ContainerWakingProxy::new(mouse_counter_name, message_counter, mouse_source_proxy),
+        ContainerWakingProxy::new(
+            kernel.suspend_resume_manager.add_message_counter(mouse_counter_name, counter),
+            mouse_source_proxy,
+        ),
     )
 }
 
