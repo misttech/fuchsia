@@ -41,6 +41,7 @@ group("tests") {
     "starnix_kernel_runner:tests",
     "starnix_lifecycle:tests",
     "starnix_logging:tests",
+    "starnix_rcu:tests",
     "starnix_stack:tests",
     "starnix_sync:tests",
     "starnix_syscall_loop:tests",

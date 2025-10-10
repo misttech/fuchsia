@@ -944,13 +944,13 @@ impl ThreadGroup {
     where
         L: LockBefore<ProcessGroupState>,
     {
-        let mut pids = self.kernel.pids.write();
+        let pids = self.kernel.pids.read();
         if pids.get_process_group(self.leader).is_some() {
             return error!(EPERM);
         }
         let process_group = ProcessGroup::new(self.leader, None);
         pids.add_process_group(process_group.clone());
-        self.write().set_process_group(locked, process_group, &mut pids);
+        self.write().set_process_group(locked, process_group, &pids);
         self.check_orphans(locked, &pids);
 
         Ok(())
@@ -966,7 +966,7 @@ impl ThreadGroup {
     where
         L: LockBefore<ProcessGroupState>,
     {
-        let mut pids = self.kernel.pids.write();
+        let pids = self.kernel.pids.read();
 
         {
             let current_process_group = Arc::clone(&self.read().process_group);
@@ -1024,7 +1024,7 @@ impl ThreadGroup {
                 }
             }
 
-            target_thread_group.set_process_group(locked, new_process_group, &mut pids);
+            target_thread_group.set_process_group(locked, new_process_group, &pids);
         }
 
         target.thread_group().check_orphans(locked, &pids);
@@ -1800,7 +1800,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
         &mut self,
         locked: &mut Locked<L>,
         process_group: Arc<ProcessGroup>,
-        pids: &mut PidTable,
+        pids: &PidTable,
     ) where
         L: LockBefore<ProcessGroupState>,
     {
@@ -1812,7 +1812,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
         self.process_group.insert(locked, self.base);
     }
 
-    fn leave_process_group<L>(&mut self, locked: &mut Locked<L>, pids: &mut PidTable)
+    fn leave_process_group<L>(&mut self, locked: &mut Locked<L>, pids: &PidTable)
     where
         L: LockBefore<ProcessGroupState>,
     {

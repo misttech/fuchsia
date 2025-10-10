@@ -11,6 +11,7 @@ use fuchsia_rcu::rcu_write_scope::RcuWriteScope;
 /// `Link` is an intrusive structure in a doubly-linked list.
 ///
 /// Links are address-sensitive and cannot be moved once inserted into a list.
+#[derive(Debug)]
 struct Link {
     /// The next node in the list.
     ///
@@ -109,6 +110,7 @@ impl<T> Node<T> {
 ///
 /// To modify the list, you will need to enter a `RcuWriteScope` and use some
 /// external synchronization, such as a `Mutex`, to exclude concurrent writers.
+#[derive(Debug)]
 pub struct RcuList<T: Send + Sync + 'static> {
     /// The first element of the list, if any.
     ///

@@ -6,8 +6,7 @@
 
 use crate::rcu_array::RcuArray;
 use crate::rcu_list::RcuList;
-use fuchsia_rcu::rcu_read_scope::RcuReadScope;
-use fuchsia_rcu::rcu_write_scope::RcuWriteScope;
+use fuchsia_rcu::{RcuReadScope, RcuWriteScope};
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -15,7 +14,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 const INITIAL_SIZE: usize = 64;
 
 /// A hash map that uses read-copy-update (RCU) to manage concurrent accesses.
-pub struct RcuHashMap<K, V>
+#[derive(Debug)]
+pub struct RcuRawHashMap<K, V>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
@@ -27,7 +27,7 @@ where
     num_entries: AtomicUsize,
 }
 
-impl<K, V> Default for RcuHashMap<K, V>
+impl<K, V> Default for RcuRawHashMap<K, V>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
@@ -39,7 +39,7 @@ where
     }
 }
 
-impl<K, V> RcuHashMap<K, V>
+impl<K, V> RcuRawHashMap<K, V>
 where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn test_rcu_hash_map_insert_and_get() {
-        let map = RcuHashMap::default();
+        let map = RcuRawHashMap::default();
         let write_scope = RcuWriteScope::new();
         unsafe {
             map.insert(&write_scope, 1, 10);
@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn test_rcu_hash_map_remove() {
-        let map = RcuHashMap::default();
+        let map = RcuRawHashMap::default();
         let write_scope = RcuWriteScope::new();
         unsafe {
             map.insert(&write_scope, 1, 10);
@@ -222,7 +222,7 @@ mod tests {
 
     #[test]
     fn test_rcu_hash_map_insert_update() {
-        let map = RcuHashMap::default();
+        let map = RcuRawHashMap::default();
         let write_scope = RcuWriteScope::new();
         unsafe {
             map.insert(&write_scope, 1, 10);
@@ -241,7 +241,7 @@ mod tests {
 
     #[test]
     fn test_rcu_hash_map_grow() {
-        let map = RcuHashMap::default();
+        let map = RcuRawHashMap::default();
         let write_scope = RcuWriteScope::new();
         for i in 0..(INITIAL_SIZE * 3) {
             unsafe {

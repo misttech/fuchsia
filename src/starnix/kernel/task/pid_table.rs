@@ -5,6 +5,7 @@
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::{ProcessGroup, Task, ThreadGroup, ZombieProcess};
 use starnix_logging::track_stub;
+use starnix_rcu::{RcuHashMap, RcuReadScope};
 use starnix_types::ownership::{TempRef, WeakRef};
 use starnix_uapi::{pid_t, tid_t};
 use std::collections::HashMap;
@@ -61,7 +62,7 @@ pub struct PidTable {
     table: HashMap<pid_t, PidEntry>,
 
     /// The process groups in this table, organized by pid_t.
-    process_groups: HashMap<pid_t, Arc<ProcessGroup>>,
+    process_groups: RcuHashMap<pid_t, Arc<ProcessGroup>>,
 
     /// Used to notify thread group changes.
     thread_group_notifier: Option<std::sync::mpsc::Sender<MemoryAttributionLifecycleEvent>>,
@@ -205,15 +206,16 @@ impl PidTable {
     }
 
     pub fn get_process_group(&self, pid: pid_t) -> Option<Arc<ProcessGroup>> {
-        self.process_groups.get(&pid).cloned()
+        let scope = RcuReadScope::new();
+        self.process_groups.get(&scope, &pid).cloned()
     }
 
-    pub fn add_process_group(&mut self, process_group: Arc<ProcessGroup>) {
+    pub fn add_process_group(&self, process_group: Arc<ProcessGroup>) {
         let removed = self.process_groups.insert(process_group.leader, process_group);
         assert!(removed.is_none());
     }
 
-    pub fn remove_process_group(&mut self, pid: pid_t) {
+    pub fn remove_process_group(&self, pid: pid_t) {
         let removed = self.process_groups.remove(&pid);
         assert!(removed.is_some());
     }

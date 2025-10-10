@@ -373,6 +373,7 @@ _starnix_core_deps = [
   "//src/starnix/lib/starnix_ext",
   "//src/starnix/lib/starnix_lifecycle",
   "//src/starnix/lib/starnix_logging",
+  "//src/starnix/lib/starnix_rcu",
   "//src/starnix/lib/starnix_stack",
   "//src/starnix/lib/starnix_sync",
   "//src/starnix/lib/starnix_syscalls",

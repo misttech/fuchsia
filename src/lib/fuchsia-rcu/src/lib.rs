@@ -4,7 +4,6 @@
 
 pub mod rcu_arc;
 pub mod rcu_cell;
-pub mod rcu_lock;
 pub mod rcu_option_arc;
 pub mod rcu_ptr;
 pub mod rcu_read_scope;
@@ -12,3 +11,6 @@ pub mod rcu_write_scope;
 
 mod atomic_stack;
 mod state_machine;
+
+pub use rcu_read_scope::RcuReadScope;
+pub use rcu_write_scope::RcuWriteScope;

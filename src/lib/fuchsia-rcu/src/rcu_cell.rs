@@ -61,17 +61,6 @@ impl<T: Send + Sync + 'static> RcuCell<T> {
         }
     }
 
-    /// Write the value of the RCU Cell.
-    ///
-    /// # Safety
-    ///
-    /// The caller must defer the drop of the returned object until the RCU state machine has made
-    /// sufficient progress to ensure that no concurrent readers are holding read guards.
-    pub(crate) unsafe fn replace(&self, data: T) -> Box<T> {
-        let ptr = Box::into_raw(Box::new(data));
-        self.replace_ptr(ptr)
-    }
-
     #[must_use]
     /// Replace the pointer in the RCU Cell with a new pointer.
     ///

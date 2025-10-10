@@ -23,8 +23,8 @@ rustc_library("fuchsia-rcu-collections") {
   sources = [
     "src/lib.rs",
     "src/rcu_array.rs",
-    "src/rcu_hash_map.rs",
     "src/rcu_list.rs",
+    "src/rcu_raw_hash_map.rs",
   ]
 }
 
