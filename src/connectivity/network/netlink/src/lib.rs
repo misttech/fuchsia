@@ -43,8 +43,8 @@ use {
 
 use crate::client::{AsyncWorkItem, ClientIdGenerator, ClientTable, InternalClient};
 use crate::eventloop::EventLoop;
-use crate::logging::log_debug;
-use crate::messaging::NetlinkContext;
+use crate::logging::{log_debug, log_warn};
+use crate::messaging::{NetlinkContext, UnvalidatedNetlinkMessage as _, ValidationError};
 pub use crate::netlink_packet::errno::Errno;
 use crate::protocol_family::route::{NetlinkRoute, NetlinkRouteClient, NetlinkRouteRequestHandler};
 use crate::protocol_family::{NetlinkFamilyRequestHandler as _, ProtocolFamily};
@@ -418,10 +418,24 @@ async fn run_client_request_handler<C: NetlinkContext, F: ProtocolFamily>(
         .fold(
             FoldState { client, handler, access_control },
             |FoldState { mut client, mut handler, access_control }, req| async {
-                log_debug!("{} Received request: {:?}", client, req);
                 match req.validate_creds_and_get_message(&access_control) {
-                    Ok(req) => handler.handle_request(req, &mut client).await,
-                    Err(response) => client.send_unicast(response),
+                    Ok(req) => {
+                        log_debug!("{} Received request: {:?}", client, req);
+                        handler.handle_request(req, &mut client).await
+                    }
+                    Err(e) => {
+                        match &e {
+                            ValidationError::Parse(e) => {
+                                log_warn!("{client} failed to parse netlink message: {e:?}");
+                            }
+                            p @ ValidationError::Permission { .. } => {
+                                log_debug!("{client} permission check failed {p:?}")
+                            }
+                        }
+                        if let Some(rsp) = e.into_error_message() {
+                            client.send_unicast(rsp)
+                        }
+                    }
                 }
                 FoldState { client, handler, access_control }
             },

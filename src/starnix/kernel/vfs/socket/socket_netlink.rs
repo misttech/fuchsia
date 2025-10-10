@@ -10,7 +10,7 @@ use futures::channel::mpsc::{
 use linux_uapi::{AUDIT_GET, audit_status};
 use netlink::messaging::{
     AccessControl, MessageWithPermission, NetlinkContext, NetlinkMessageWithCreds, Permission,
-    Sender,
+    Sender, UnparsedNetlinkMessage,
 };
 use netlink::multicast_groups::{
     InvalidLegacyGroupsError, InvalidModernGroupError, LegacyGroups, ModernGroup,
@@ -19,8 +19,8 @@ use netlink::multicast_groups::{
 use netlink::protocol_family::route::NetlinkRouteClient;
 use netlink::{NETLINK_LOG_TAG, NewClientError};
 use netlink_packet_core::{
-    ErrorMessage, NETLINK_HEADER_LEN, NLMSG_ERROR, NetlinkHeader, NetlinkMessage, NetlinkPayload,
-    NetlinkSerializable,
+    ErrorMessage, NETLINK_HEADER_LEN, NLMSG_ERROR, NetlinkBuffer, NetlinkDeserializable,
+    NetlinkHeader, NetlinkMessage, NetlinkPayload, NetlinkSerializable,
 };
 use netlink_packet_route::RouteNetlinkMessage;
 use netlink_packet_utils::{DecodeError, Emitable as _};
@@ -912,8 +912,9 @@ pub struct NetlinkContextImpl;
 impl NetlinkContext for NetlinkContextImpl {
     type Creds = FullCredentials;
     type Sender<M: Clone + NetlinkSerializable + Send> = NetlinkToClientSender<M>;
-    type Receiver<M: Send + MessageWithPermission> =
-        UnboundedReceiver<NetlinkMessageWithCreds<M, Self::Creds>>;
+    type Receiver<
+        M: Send + MessageWithPermission + NetlinkDeserializable<Error: Into<DecodeError>>,
+    > = UnboundedReceiver<NetlinkMessageWithCreds<UnparsedNetlinkMessage<Vec<u8>, M>, Self::Creds>>;
     type AccessControl<'a> = NetlinkAccessControl<'a>;
 }
 
@@ -926,7 +927,12 @@ struct RouteNetlinkSocket {
     /// The sender of messages from this socket to Netlink.
     // TODO(https://issuetracker.google.com/285880057): Bound the capacity of
     // the "send buffer".
-    message_sender: UnboundedSender<NetlinkMessageWithCreds<RouteNetlinkMessage, FullCredentials>>,
+    message_sender: UnboundedSender<
+        NetlinkMessageWithCreds<
+            UnparsedNetlinkMessage<Vec<u8>, RouteNetlinkMessage>,
+            FullCredentials,
+        >,
+    >,
 }
 
 impl RouteNetlinkSocket {
@@ -1037,22 +1043,31 @@ impl SocketOps for RouteNetlinkSocket {
     ) -> Result<usize, Errno> {
         let RouteNetlinkSocket { inner: _, client: _, message_sender } = self;
         let bytes = data.peek_all()?;
-        let msg = NetlinkMessage::<RouteNetlinkMessage>::deserialize(&bytes).map_err(|e| {
-            log_warn!(
-                tag = NETLINK_LOG_TAG;
-                "Failed to process write; data could not be deserialized: {:?}",
-                e
-            );
-            match e {
-                // Unsupported type.
-                DecodeError::FailedToParseMessageWithType { .. } => errno!(EOPNOTSUPP),
-                _ => errno!(EINVAL),
+        let bytes_len = bytes.len();
+
+        // Parse only the netlink header to send it through security check.
+        match NetlinkBuffer::new_checked(&bytes) {
+            Ok(buffer) => {
+                security::check_netlink_send_access(current_task, socket, buffer.message_type())?;
             }
-        })?;
+            Err(e) => {
+                // If we can't even decode the header of the netlink message,
+                // then return early here as a stronger statement that we're not
+                // going to accidentally operate on it and violate the security
+                // check. The netlink crate would end up dropping this with no
+                // response as well.
+                log_warn!(tag = NETLINK_LOG_TAG;
+                    "Failed to parse netlink header {e:?}"
+                );
+                data.drain();
+                return Ok(bytes_len);
+            }
+        }
 
-        security::check_netlink_send_access(current_task, socket, msg.header.message_type)?;
-
-        let msg = NetlinkMessageWithCreds::new(msg, current_task.full_current_creds());
+        let msg = NetlinkMessageWithCreds::new(
+            UnparsedNetlinkMessage::new(bytes),
+            current_task.full_current_creds(),
+        );
         message_sender.unbounded_send(msg).map_err(|e| {
             log_warn!(
                 tag = NETLINK_LOG_TAG;
@@ -1061,9 +1076,8 @@ impl SocketOps for RouteNetlinkSocket {
             );
             errno!(EPIPE)
         })?;
-
         data.drain();
-        Ok(bytes.len())
+        Ok(bytes_len)
     }
 
     fn wait_async(

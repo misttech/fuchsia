@@ -33,7 +33,9 @@ mod address_family_fallback;
 pub use self::address_family_fallback::AddressFamily;
 
 pub use self::ip::IpProtocol;
-pub use self::message::{RouteNetlinkMessage, RouteNetlinkMessageBuffer};
+pub use self::message::{
+    RouteNetlinkMessage, RouteNetlinkMessageBuffer, RouteNetlinkMessageParseError,
+};
 
 /// The `netlink-packet-route` crate is designed to abstract Netlink route
 /// protocol(`rtnetlink`) packet into Rust data types. The goal of this crate is

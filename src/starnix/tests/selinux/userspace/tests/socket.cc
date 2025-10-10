@@ -385,9 +385,7 @@ TEST_P(NetlinkSocketTest, CheckNetlinkMsgPermission) {
 
   ssize_t result = sendto(sock_fd, nlh, nlh->nlmsg_len, 0, (struct sockaddr*)&sa, sizeof(sa));
 
-  if (test_helper::IsStarnix() &&
-      ((test_case.protocol == NETLINK_ROUTE && test_case.message_type == RTM_GETLINK) ||
-       test_case.protocol == NETLINK_SOCK_DIAG)) {
+  if (test_helper::IsStarnix() && test_case.protocol == NETLINK_SOCK_DIAG) {
     // Expect `ENOTSUP` for testcases currently unsupported in Starnix.
     EXPECT_THAT(result, SyscallFailsWithErrno(ENOTSUP));
   } else if (test_case.expected_result.is_ok()) {

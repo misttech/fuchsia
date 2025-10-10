@@ -4,7 +4,10 @@
 
 //! A module for managing protocol-specific aspects of Netlink.
 
-use netlink_packet_core::{NetlinkMessage, NetlinkPayload, NetlinkSerializable};
+use netlink_packet_core::{
+    NetlinkDeserializable, NetlinkMessage, NetlinkPayload, NetlinkSerializable,
+};
+use netlink_packet_utils::DecodeError;
 
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -26,7 +29,12 @@ use crate::route_tables::{NetlinkRouteTableIndex, NonZeroNetlinkRouteTableIndex}
 /// A type representing a Netlink Protocol Family.
 pub(crate) trait ProtocolFamily: MulticastCapableNetlinkFamily + Send + Sized {
     /// The message type associated with the protocol family.
-    type InnerMessage: Clone + Debug + NetlinkSerializable + MessageWithPermission + Send;
+    type InnerMessage: Clone
+        + Debug
+        + NetlinkSerializable
+        + NetlinkDeserializable<Error: Into<DecodeError>>
+        + MessageWithPermission
+        + Send;
 
     /// The implementation for handling requests from this protocol family.
     type RequestHandler<S: Sender<Self::InnerMessage>>: NetlinkFamilyRequestHandler<Self, S>;
@@ -1368,7 +1376,7 @@ pub(crate) mod testutil {
     }
 
     pub(crate) fn new_fake_netlink_message_with_creds()
-    -> NetlinkMessageWithCreds<FakeNetlinkInnerMessage, FakeCreds> {
+    -> NetlinkMessageWithCreds<NetlinkMessage<FakeNetlinkInnerMessage>, FakeCreds> {
         NetlinkMessageWithCreds::new(new_fake_netlink_message(), FakeCreds::default())
     }
 
@@ -1391,6 +1399,14 @@ pub(crate) mod testutil {
         }
 
         fn serialize(&self, _buffer: &mut [u8]) {}
+    }
+
+    impl NetlinkDeserializable for FakeNetlinkInnerMessage {
+        type Error = DecodeError;
+
+        fn deserialize(_header: &NetlinkHeader, _payload: &[u8]) -> Result<Self, Self::Error> {
+            unimplemented!()
+        }
     }
 
     /// Handler of [`FakeNetlinkInnerMessage`] requests.

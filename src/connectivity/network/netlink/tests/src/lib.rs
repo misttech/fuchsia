@@ -27,13 +27,15 @@ use netlink::messaging::{
 };
 use netlink::multicast_groups::ModernGroup;
 use netlink_packet_core::{
-    ErrorMessage, NLM_F_ACK, NetlinkMessage, NetlinkPayload, NetlinkSerializable,
+    ErrorMessage, NLM_F_ACK, NetlinkDeserializable, NetlinkMessage, NetlinkPayload,
+    NetlinkSerializable,
 };
 use netlink_packet_route::route::{
     RouteAttribute, RouteFlags, RouteHeader, RouteMessage, RouteProtocol, RouteScope, RouteType,
 };
 use netlink_packet_route::rule::{RuleAction, RuleAttribute, RuleFlags, RuleHeader, RuleMessage};
 use netlink_packet_route::{AddressFamily, RouteNetlinkMessage};
+use netlink_packet_utils::DecodeError;
 use netstack_testing_common::realms::{Netstack3, TestSandboxExt};
 use netstack_testing_common::{
     ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
@@ -157,7 +159,7 @@ pub(crate) struct FakeCreds;
 impl FakeCreds {
     fn attach<M: MessageWithPermission + NetlinkSerializable>(
         msg: NetlinkMessage<M>,
-    ) -> NetlinkMessageWithCreds<M, Self> {
+    ) -> NetlinkMessageWithCreds<NetlinkMessage<M>, Self> {
         NetlinkMessageWithCreds::new(msg, Self::default())
     }
 }
@@ -176,8 +178,9 @@ enum NetlinkContext {}
 impl netlink::messaging::NetlinkContext for NetlinkContext {
     type Creds = FakeCreds;
     type Sender<M: Clone + NetlinkSerializable + Send> = Sender<SentNetlinkMessage<M>>;
-    type Receiver<M: Send + MessageWithPermission> =
-        Receiver<NetlinkMessageWithCreds<M, FakeCreds>>;
+    type Receiver<
+        M: Send + MessageWithPermission + NetlinkDeserializable<Error: Into<DecodeError>>,
+    > = Receiver<NetlinkMessageWithCreds<NetlinkMessage<M>, FakeCreds>>;
     type AccessControl<'a> = FakeAccessControl;
 }
 
@@ -187,7 +190,7 @@ struct NetlinkClient {
     // `sender` and `receiver` do not contain the same types because the netlink worker's `Sender`
     // trait wants to be able to specify which group it's sending to, but its `Receiver` trait
     // just wants to receive messages with no group specification.
-    sender: Sender<NetlinkMessageWithCreds<RouteNetlinkMessage, FakeCreds>>,
+    sender: Sender<NetlinkMessageWithCreds<NetlinkMessage<RouteNetlinkMessage>, FakeCreds>>,
     receiver: Receiver<SentNetlinkMessage<RouteNetlinkMessage>>,
 }
 

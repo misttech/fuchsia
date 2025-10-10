@@ -579,4 +579,57 @@ TEST_F(NetlinkTest, IflaCacheInfoMissingBody) {
   CheckNetlinkAlive();
 }
 
+// Netlink messages that are malformed, are expected to generate an error
+// response, as opposed to failing the syscall.
+TEST_F(NetlinkTest, MalformedMessageCausesErrorReturn) {
+  test_helper::NetlinkEncoder encoder(RTM_GETADDR, NLM_F_REQUEST);
+  // The body should contain struct ifaddrmsg. But instead just write a single
+  // field from it.
+  ifaddrmsg ifa = {
+      .ifa_family = AF_INET6,
+  };
+  encoder.Write(ifa.ifa_family);
+  // We expect the syscall to succeed, e.g. not crash.
+  ASSERT_THAT(SendMsg(encoder), SyscallSucceeds());
+  struct {
+    nlmsghdr hdr;
+    nlmsgerr err;
+  } response;
+  ssize_t received = recv(nl_sock_.get(), &response, sizeof(response), 0);
+  ASSERT_THAT(received, SyscallSucceeds());
+  ASSERT_EQ(static_cast<size_t>(received), sizeof(response));
+  EXPECT_EQ(response.hdr.nlmsg_type, NLMSG_ERROR);
+  EXPECT_EQ(response.err.error, -EINVAL);
+}
+
+TEST_F(NetlinkTest, MessageWithIncompleteHeader) {
+  struct nlmsghdr header = {.nlmsg_len = sizeof(uint32_t)};
+  ASSERT_THAT(send(nl_sock_.get(), &header.nlmsg_len, sizeof(header.nlmsg_len), 0),
+              SyscallSucceeds());
+  // A message with an incomplete header generates no response.
+  nlmsghdr response;
+  ASSERT_THAT(recv(nl_sock_.get(), &response, sizeof(response), MSG_TRUNC | MSG_DONTWAIT),
+              SyscallFailsWithErrno(EAGAIN));
+  // Following message still works.
+  CheckNetlinkAlive();
+}
+
+TEST_F(NetlinkTest, HeaderOnlyMessageWithBadLength) {
+  struct nlmsghdr header = {
+      .nlmsg_len = sizeof(nlmsghdr) + sizeof(ifaddrmsg),
+      .nlmsg_type = RTM_GETADDR,
+      .nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK,
+      .nlmsg_seq = 123456,
+      .nlmsg_pid = static_cast<uint32_t>(getpid()),
+  };
+  ASSERT_THAT(send(nl_sock_.get(), &header.nlmsg_len, sizeof(header.nlmsg_len), 0),
+              SyscallSucceeds());
+  // This is a malformed message it should not generate a response.
+  nlmsghdr response;
+  ASSERT_THAT(recv(nl_sock_.get(), &response, sizeof(response), MSG_TRUNC | MSG_DONTWAIT),
+              SyscallFailsWithErrno(EAGAIN));
+  // Following message still works.
+  CheckNetlinkAlive();
+}
+
 }  // namespace
