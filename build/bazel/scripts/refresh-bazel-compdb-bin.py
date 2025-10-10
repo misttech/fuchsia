@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any, Sequence
 
 import bazel_compdb_utils
@@ -128,6 +129,15 @@ def main(argv: Sequence[str]) -> None:
         are not compatible with bazel queries and will fail.""",
     )
     parser.add_argument(
+        "--bazel-build-action-targets",
+        required=False,
+        help="""A build API module of all Bazel build actions in this build.
+        When specified, this argument takes precedence over --label and --dir.
+        All Fuchsia Bazel targets (i.e. non-host) from the build API module
+        file are refreshed.""",
+        type=Path,
+    )
+    parser.add_argument(
         "--optimization", required=True, help="The build level optimization"
     )
     parser.add_argument(
@@ -162,19 +172,38 @@ def main(argv: Sequence[str]) -> None:
     args = parser.parse_args(argv)
     init_logger(args.verbose)
 
-    if is_none(args.label) and is_none(args.dir):
-        fail("Either --label or --dir must be set.")
+    labels: list[str] = []
 
-    labels = []
-    if args.label:
-        label = canonicalize_label_from_arg(args.label)
-        info("Verifying label '{}' is valid".format(label))
-        assert_arg_label_is_fuchsia_package(args.bazel, label)
-        labels.append(label)
+    if args.bazel_build_action_targets:
+        with open(args.bazel_build_action_targets, "r") as f:
+            bazel_build_action_targets = json.load(f)
+            for t in bazel_build_action_targets:
+                labels += [] if t["no_sdk"] else t["bazel_targets"]
+        if not labels:
+            info(
+                "No Bazel labels to refresh from {}".format(
+                    args.bazel_build_action_targets
+                )
+            )
+            return
+    else:
+        if is_none(args.label) and is_none(args.dir):
+            fail("Either --label or --dir must be set.")
 
-    if args.dir:
-        info("Finding all labels in dir '{}'".format(args.dir))
-        labels.extend(collect_labels_from_dir(args))
+        if args.label:
+            label = canonicalize_label_from_arg(args.label)
+            info("Verifying label '{}' is valid".format(label))
+            assert_arg_label_is_fuchsia_package(args.bazel, label)
+            labels.append(label)
+
+        if args.dir:
+            info("Finding all labels in dir '{}'".format(args.dir))
+            labels.extend(collect_labels_from_dir(args))
+
+        if not labels:
+            fail("No Bazel labels found from the arguments provided")
+
+    info("Refreshing compdb for Bazel targets: {}".format(labels))
 
     new_compile_commands = bazel_compdb_utils.compdb_for_labels(
         args.build_dir,
