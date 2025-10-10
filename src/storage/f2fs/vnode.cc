@@ -110,7 +110,7 @@ zx_status_t VnodeF2fs::GetVmo(fuchsia_io::wire::VmoFlags flags, zx::vmo* out_vmo
 
 zx::result<size_t> VnodeF2fs::CreatePagedVmo(size_t size) {
   if (!paged_vmo().is_valid()) {
-    if (zx::result status = EnsureCreatePagedVmo(size, ZX_VMO_RESIZABLE | ZX_VMO_TRAP_DIRTY);
+    if (zx::result status = EnsureCreatePagedVmo(size, ZX_VMO_UNBOUNDED | ZX_VMO_TRAP_DIRTY);
         status.is_error()) {
       return status.take_error();
     }
@@ -672,8 +672,8 @@ zx_status_t VnodeF2fs::InitFileCacheUnsafe(uint64_t nbytes) {
   }
   if (IsReg()) {
     if (zx::result size = CreatePagedVmo(nbytes); size.is_ok()) {
-      zx_rights_t right = ZX_RIGHTS_BASIC | ZX_RIGHT_MAP | ZX_RIGHTS_PROPERTY | ZX_RIGHT_READ |
-                          ZX_RIGHT_WRITE | ZX_RIGHT_RESIZE;
+      zx_rights_t right =
+          ZX_RIGHTS_BASIC | ZX_RIGHT_MAP | ZX_RIGHTS_PROPERTY | ZX_RIGHT_READ | ZX_RIGHT_WRITE;
       ZX_ASSERT(paged_vmo().duplicate(right, &vmo) == ZX_OK);
       mode = VmoMode::kPaged;
       vmo_node_size = zx_system_get_page_size();
