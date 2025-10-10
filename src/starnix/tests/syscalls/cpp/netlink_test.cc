@@ -39,10 +39,6 @@ namespace {
 class NetlinkTest : public ::testing::Test {
  public:
   void SetUp() override {
-    if (!test_helper::HasCapability(CAP_NET_ADMIN)) {
-      GTEST_SKIP() << "Needs CAP_NET_ADMIN";
-    }
-
     nl_sock_.reset(socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE));
     ASSERT_TRUE(nl_sock_.is_valid()) << strerror(errno);
   }
@@ -97,6 +93,10 @@ TEST_F(NetlinkTest, RtmNewPrefixDoesntCrash) {
 }
 
 TEST_F(NetlinkTest, NoCapabilities) {
+  if (!test_helper::HasCapability(CAP_NET_ADMIN)) {
+    GTEST_SKIP() << "Needs CAP_NET_ADMIN";
+  }
+
   test_helper::UnsetCapabilityEffective(CAP_NET_ADMIN);
 
   test_helper::NetlinkEncoder encoder(RTM_NEWRULE,
