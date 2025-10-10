@@ -93,6 +93,12 @@
             availability: "optional",
         },
         {
+            config: "fuchsia.bluetooth.OverrideVendorCapabilitiesVersion",
+            from: "parent",
+            to: [ "#bt-host-collection" ],
+            availability: "optional",
+        },
+        {
             protocol: [ "fuchsia.bluetooth.host.Receiver" ],
             from: "#bt-gap",
             to: [ "#bt-host-collection" ],

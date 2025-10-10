@@ -390,11 +390,19 @@ pub struct BluetoothCoreConfig {
     /// Which index should be used when we ask SCO traffic to be offloaded.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub sco_offload_path_index: u8,
+    // TODO(https://fxbug.dev/450278813): Remove this assembly config
+    /// What we should override the Vendor Capabilities version to, if necessary
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub override_vendor_capabilities_version: u16,
 }
 
 impl Default for BluetoothCoreConfig {
     fn default() -> Self {
-        Self { legacy_pairing_enabled: Default::default(), sco_offload_path_index: 6 }
+        Self {
+            legacy_pairing_enabled: Default::default(),
+            sco_offload_path_index: 6,
+            override_vendor_capabilities_version: 0,
+        }
     }
 }
 
@@ -543,6 +551,7 @@ mod tests {
             "core": {
                 "legacy_pairing_enabled": true,
                 "sco_offload_path_index": 1,
+                "override_vendor_capabilities_version": 0x9900,
             },
         });
 
@@ -588,8 +597,11 @@ mod tests {
             },
             map: MapConfig { mce_enabled: false },
         };
-        let expected_core =
-            BluetoothCoreConfig { legacy_pairing_enabled: true, sco_offload_path_index: 1 };
+        let expected_core = BluetoothCoreConfig {
+            legacy_pairing_enabled: true,
+            sco_offload_path_index: 1,
+            override_vendor_capabilities_version: 0x9900,
+        };
         let expected = BluetoothConfig::Standard {
             profiles: expected_profiles,
             core: expected_core,
@@ -630,7 +642,11 @@ mod tests {
         };
         let expected = BluetoothConfig::Standard {
             profiles: expected_profiles,
-            core: BluetoothCoreConfig { legacy_pairing_enabled: false, sco_offload_path_index: 6 },
+            core: BluetoothCoreConfig {
+                legacy_pairing_enabled: false,
+                sco_offload_path_index: 6,
+                override_vendor_capabilities_version: 0,
+            },
             snoop: Snoop::None,
         };
 
@@ -682,7 +698,11 @@ mod tests {
         };
         let expected = BluetoothConfig::Standard {
             profiles: expected_profiles,
-            core: BluetoothCoreConfig { legacy_pairing_enabled: false, sco_offload_path_index: 6 },
+            core: BluetoothCoreConfig {
+                legacy_pairing_enabled: false,
+                sco_offload_path_index: 6,
+                override_vendor_capabilities_version: 0,
+            },
             snoop: Snoop::None,
         };
 

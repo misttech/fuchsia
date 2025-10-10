@@ -4,7 +4,7 @@
 
 use crate::emulator::EMULATOR_ROOT_DRIVER_URL;
 use crate::host_realm::mpsc::Receiver;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use cm_rust::push_box;
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_bluetooth_host::{HostMarker, ReceiverMarker, ReceiverRequestStream};
@@ -54,36 +54,32 @@ pub async fn add_host_routes(
         .await?;
     builder
         .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.bluetooth.OverrideVendorCapabilitiesVersion".parse()?,
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Uint16(0)),
+        }))
+        .await?;
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
             name: "fuchsia.power.SuspendEnabled".parse()?,
             value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(false)),
         }))
         .await?;
 
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::configuration("fuchsia.bluetooth.LegacyPairing"))
-                .from(Ref::self_())
-                .to(to.clone()),
-        )
-        .await?;
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::configuration("fuchsia.bluetooth.ScoOffloadPathIndex"))
-                .from(Ref::self_())
-                .to(to.clone()),
-        )
-        .await?;
+    macro_rules! add_capability_route {
+        ($name:expr) => {
+            builder.add_route(
+                Route::new()
+                    .capability(Capability::configuration($name))
+                    .from(Ref::self_())
+                    .to(to.clone()),
+            )
+        };
+    }
 
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::configuration("fuchsia.power.SuspendEnabled"))
-                .from(Ref::self_())
-                .to(to.clone()),
-        )
-        .await?;
+    add_capability_route!("fuchsia.bluetooth.LegacyPairing").await?;
+    add_capability_route!("fuchsia.bluetooth.ScoOffloadPathIndex").await?;
+    add_capability_route!("fuchsia.bluetooth.OverrideVendorCapabilitiesVersion").await?;
+    add_capability_route!("fuchsia.power.SuspendEnabled").await?;
 
     // Add directory routing between components within CoreRealm
     builder

@@ -76,6 +76,10 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
             "fuchsia.bluetooth.ScoOffloadPathIndex",
             Config::new(ConfigValueType::Uint8, core.sco_offload_path_index.into()),
         )?;
+        builder.set_config_capability(
+            "fuchsia.bluetooth.OverrideVendorCapabilitiesVersion",
+            Config::new(ConfigValueType::Uint16, core.override_vendor_capabilities_version.into()),
+        )?;
 
         if let A2dpConfig::Enabled(a2dp) = profiles.a2dp {
             builder.platform_bundle("bluetooth_a2dp");
