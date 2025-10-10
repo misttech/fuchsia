@@ -1537,7 +1537,7 @@ mod tests {
     #[fuchsia::test]
     async fn get_fs_relative_path_root() {
         // Verify the full path for the root entry.
-        spawn_kernel_and_run(|_, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             let dir_entry = current_task.fs().root().entry;
 
             assert_eq!(BStr::new(b"/"), get_fs_relative_path(&dir_entry));
@@ -1548,7 +1548,7 @@ mod tests {
     #[fuchsia::test]
     async fn get_fs_relative_path_simple_file() {
         // Verify the full path for a file directly under the root: "/" + [`TEST_FILE_NAME`].
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let dir_entry = &testing::create_test_file(locked, current_task).entry;
 
             let expected = format!("/{}", TEST_FILE_NAME);
@@ -1560,7 +1560,7 @@ mod tests {
     #[fuchsia::test]
     async fn get_fs_relative_path_nested_dir() {
         // Verify the full path for a nested directory: "/foo/bar".
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let dir_entry = &testing::create_directory_with_parents(
                 vec![BStr::new(b"foo"), BStr::new(b"bar")],
                 locked,

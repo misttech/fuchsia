@@ -487,7 +487,7 @@ mod tests {
     #[::fuchsia::test]
     async fn test_sys_dup2() {
         // Most tests are handled by test_sys_dup3, only test the case where both fds are equals.
-        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+        spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
             let fd = FdNumber::from_raw(42);
             assert_eq!(sys_dup2(locked, current_task, fd, fd), error!(EBADF));
             let file_handle = current_task
@@ -501,7 +501,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_sys_creat() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let path_addr = map_memory(locked, current_task, UserAddress::default(), *PAGE_SIZE);
             let path = "newfile.txt";
             current_task.write_memory(path_addr, path.as_bytes()).unwrap();
@@ -527,7 +527,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_time() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let time1 = sys_time(locked, &current_task, Default::default()).expect("time");
             assert!(time1 > 0);
             let address = map_memory(

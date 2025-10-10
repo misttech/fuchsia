@@ -2079,7 +2079,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn if_selinux_else_disabled() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             assert!(current_task.kernel().security_state.state.is_none());
 
             let check_result =
@@ -2098,7 +2098,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn if_selinux_else_without_policy() {
-        spawn_kernel_with_selinux_and_run(|_locked, current_task, _security_server| {
+        spawn_kernel_with_selinux_and_run(async |_locked, current_task, _security_server| {
             let check_result =
                 if_selinux_else_default_ok(current_task, |_| Ok(TestHookResult::WasRun));
             assert_eq!(check_result, Ok(TestHookResult::WasNotRunDefault));
@@ -2134,7 +2134,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn task_alloc_selinux_disabled() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             task_alloc(current_task, 0);
         })
         .await;
@@ -2142,7 +2142,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn task_create_access_allowed_for_selinux_disabled() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             assert!(current_task.kernel().security_state.state.is_none());
             assert_eq!(check_task_create_access(current_task), Ok(()));
         })
@@ -2162,7 +2162,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn exec_access_allowed_for_selinux_disabled() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             assert!(current_task.kernel().security_state.state.is_none());
             let executable_node = &testing::create_test_file(locked, current_task).entry.node;
             assert_eq!(
@@ -2189,7 +2189,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn no_state_update_for_selinux_disabled() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             // Without SELinux enabled and a policy loaded, only `InitialSid` values exist
             // in the system.
             let target_sid = InitialSid::Unlabeled.into();
@@ -2213,7 +2213,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn no_state_update_for_selinux_without_policy() {
-        spawn_kernel_with_selinux_and_run(|locked, current_task, _security_server| {
+        spawn_kernel_with_selinux_and_run(async |locked, current_task, _security_server| {
             // Without SELinux enabled and a policy loaded, only `InitialSid` values exist
             // in the system.
             let initial_state = current_task.security_state.lock().clone();
@@ -2254,7 +2254,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn getsched_access_allowed_for_selinux_disabled() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_getsched_access(current_task, &another_task), Ok(()));
         })
@@ -2263,7 +2263,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn getsched_access_allowed_for_permissive_mode() {
-        spawn_kernel_with_selinux_and_run(|locked, current_task, _security_server| {
+        spawn_kernel_with_selinux_and_run(async |locked, current_task, _security_server| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_getsched_access(current_task, &another_task), Ok(()));
         })
@@ -2272,7 +2272,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn setsched_access_allowed_for_selinux_disabled() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_setsched_access(current_task, &another_task), Ok(()));
         })
@@ -2281,7 +2281,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn setsched_access_allowed_for_permissive_mode() {
-        spawn_kernel_with_selinux_and_run(|locked, current_task, _security_server| {
+        spawn_kernel_with_selinux_and_run(async |locked, current_task, _security_server| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_setsched_access(current_task, &another_task), Ok(()));
         })
@@ -2290,7 +2290,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn getpgid_access_allowed_for_selinux_disabled() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_getpgid_access(current_task, &another_task), Ok(()));
         })
@@ -2299,7 +2299,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn getpgid_access_allowed_for_permissive_mode() {
-        spawn_kernel_with_selinux_and_run(|locked, current_task, _security_server| {
+        spawn_kernel_with_selinux_and_run(async |locked, current_task, _security_server| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_getpgid_access(current_task, &another_task), Ok(()));
         })
@@ -2308,7 +2308,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn setpgid_access_allowed_for_selinux_disabled() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_setpgid_access(current_task, &another_task), Ok(()));
         })
@@ -2317,7 +2317,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn setpgid_access_allowed_for_permissive_mode() {
-        spawn_kernel_with_selinux_and_run(|locked, current_task, _security_server| {
+        spawn_kernel_with_selinux_and_run(async |locked, current_task, _security_server| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_setpgid_access(current_task, &another_task), Ok(()));
         })
@@ -2326,7 +2326,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn task_getsid_allowed_for_selinux_disabled() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_task_getsid(current_task, &another_task), Ok(()));
         })
@@ -2335,7 +2335,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn task_getsid_allowed_for_permissive_mode() {
-        spawn_kernel_with_selinux_and_run(|locked, current_task, _security_server| {
+        spawn_kernel_with_selinux_and_run(async |locked, current_task, _security_server| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_task_getsid(current_task, &another_task), Ok(()));
         })
@@ -2344,7 +2344,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn signal_access_allowed_for_selinux_disabled() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_signal_access(current_task, &another_task, SIGTERM), Ok(()));
         })
@@ -2353,7 +2353,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn signal_access_allowed_for_permissive_mode() {
-        spawn_kernel_with_selinux_and_run(|locked, current_task, _security_server| {
+        spawn_kernel_with_selinux_and_run(async |locked, current_task, _security_server| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(check_signal_access(current_task, &another_task, SIGTERM), Ok(()));
         })
@@ -2362,7 +2362,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn ptrace_traceme_access_allowed_for_selinux_disabled() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(ptrace_traceme(current_task, &another_task), Ok(()));
         })
@@ -2371,7 +2371,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn ptrace_traceme_access_allowed_for_permissive_mode() {
-        spawn_kernel_with_selinux_and_run(|locked, current_task, _security_server| {
+        spawn_kernel_with_selinux_and_run(async |locked, current_task, _security_server| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(ptrace_traceme(current_task, &another_task), Ok(()));
         })
@@ -2380,7 +2380,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn ptrace_attach_access_allowed_for_selinux_disabled() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(ptrace_access_check(current_task, &another_task), Ok(()));
         })
@@ -2389,7 +2389,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn ptrace_attach_access_allowed_for_permissive_mode() {
-        spawn_kernel_with_selinux_and_run(|locked, current_task, _security_server| {
+        spawn_kernel_with_selinux_and_run(async |locked, current_task, _security_server| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(ptrace_access_check(current_task, &another_task), Ok(()));
         })
@@ -2398,7 +2398,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn task_prlimit_access_allowed_for_selinux_disabled() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(task_prlimit(current_task, &another_task, true, true), Ok(()));
         })
@@ -2407,7 +2407,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn task_prlimit_access_allowed_for_permissive_mode() {
-        spawn_kernel_with_selinux_and_run(|locked, current_task, _security_server| {
+        spawn_kernel_with_selinux_and_run(async |locked, current_task, _security_server| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
             assert_eq!(task_prlimit(current_task, &another_task, true, true), Ok(()));
         })
@@ -2416,7 +2416,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn fs_node_task_to_fs_node_noop_selinux_disabled() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let node = &testing::create_test_file(locked, current_task).entry.node;
             task_to_fs_node(current_task, &current_task.temp_task(), &node);
             assert_eq!(None, selinux_hooks::get_cached_sid(node));
@@ -2426,7 +2426,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn fs_node_setsecurity_selinux_disabled_only_sets_xattr() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let node = &testing::create_test_file(locked, current_task).entry.node;
 
             fs_node_setsecurity(
@@ -2446,7 +2446,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn fs_node_setsecurity_selinux_without_policy_only_sets_xattr() {
-        spawn_kernel_with_selinux_and_run(|locked, current_task, _security_server| {
+        spawn_kernel_with_selinux_and_run(async |locked, current_task, _security_server| {
             let node = &testing::create_test_file(locked, current_task).entry.node;
             fs_node_setsecurity(
                 locked,
@@ -2919,7 +2919,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn set_get_procattr_selinux_disabled() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             assert_eq!(
                 set_procattr(&current_task, ProcAttr::Exec, VALID_SECURITY_CONTEXT.into()),
                 error!(EINVAL)

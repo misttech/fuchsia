@@ -46,7 +46,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_create_from_invalid_handle() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             assert!(create_file_from_handle(locked, current_task, zx::Handle::invalid()).is_err());
         })
         .await;
@@ -54,7 +54,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_create_pipe_from_handle() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let (left_handle, right_handle) = zx::Socket::create_stream();
             create_file_from_handle(locked, current_task, left_handle.into_handle())
                 .expect("failed to create left FileHandle");

@@ -2096,7 +2096,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_prctl_set_vma_anon_name() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mapped_address =
                 map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
             let name_addr = (mapped_address + 128u64).unwrap();
@@ -2135,7 +2135,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_set_vma_name_special_chars() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let name_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
 
             let mapping_addr =
@@ -2174,7 +2174,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_set_vma_name_long() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let name_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
 
             let mapping_addr =
@@ -2221,7 +2221,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_set_vma_name_misaligned() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let name_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
 
             let mapping_addr =
@@ -2263,7 +2263,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_prctl_get_set_dumpable() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             sys_prctl(locked, current_task, PR_GET_DUMPABLE, 0, 0, 0, 0)
                 .expect("failed to get dumpable");
 
@@ -2283,7 +2283,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_sys_getsid() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             assert_eq!(
                 current_task.get_tid(),
@@ -2314,7 +2314,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_get_affinity_size() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mapped_address =
                 map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
             let pid = current_task.get_pid();
@@ -2340,7 +2340,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_set_affinity_size() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mapped_address =
                 map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
             current_task.write_memory(mapped_address, &[0xffu8]).expect("failed to cpumask");
@@ -2365,7 +2365,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_task_name() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mapped_address =
                 map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
             let name = "my-task-name\0";
@@ -2395,7 +2395,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_sched_get_priority_min_max() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let non_rt_min =
                 sys_sched_get_priority_min(locked, &current_task, SCHED_NORMAL).unwrap();
             assert_eq!(non_rt_min, 0);
@@ -2421,7 +2421,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_sched_setscheduler() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             current_task
                 .thread_group()
                 .limits
@@ -2455,7 +2455,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_sched_getparam() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mapped_address =
                 map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
             sys_sched_getparam(locked, &current_task, 0, mapped_address.into())
@@ -2469,7 +2469,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_setuid() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             // Test for root.
             current_task.set_creds(Credentials::root());
             sys_setuid(locked, &current_task, 42).expect("setuid");
@@ -2522,7 +2522,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_read_c_string_vector() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let arg_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
             let arg = b"test-arg\0";
             current_task.write_memory(arg_addr, arg).expect("failed to write test arg");

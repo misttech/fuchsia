@@ -172,7 +172,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_write_exec_locking() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let fs_node = create_fs_node(locked, current_task);
 
             let write_guard = FileWriteGuard::new(&fs_node, FileWriteGuardMode::WriteFile)
@@ -229,7 +229,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_seals() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let fs_node = create_fs_node(locked, current_task);
 
             {
@@ -263,7 +263,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_seals_block_when_mapped() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let fs_node = create_fs_node(locked, current_task);
             fs_node.write_guard_state.lock().enable_sealing(SealFlags::empty());
 
@@ -294,7 +294,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_seals_sealed() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let fs_node = create_fs_node(locked, current_task);
             let mut state = fs_node.write_guard_state.lock();
 

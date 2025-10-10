@@ -552,7 +552,7 @@ mod tests {
                 Arc::new(uds_impl).serve(server).await;
             });
         });
-        spawn_kernel_and_run(move |locked, current_task| {
+        spawn_kernel_and_run(async move |locked, current_task| {
             let original_file =
                 new_remote_file(locked, current_task, client.into(), OpenFlags::RDWR)
                     .expect("new_remote_file");
@@ -637,7 +637,7 @@ mod tests {
                 Arc::new(uds_impl).serve(server).await;
             });
         });
-        spawn_kernel_and_run(move |locked, current_task| {
+        spawn_kernel_and_run(async move |locked, current_task| {
             let file = new_remote_file(locked, current_task, client.into(), OpenFlags::RDWR)
                 .expect("new_remote_file");
             let socket_ops = file.downcast_file::<SocketFile>().unwrap();

@@ -2140,7 +2140,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_setsid() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             fn get_process_group(task: &Task) -> Arc<ProcessGroup> {
                 Arc::clone(&task.thread_group().read().process_group)
             }
@@ -2167,7 +2167,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_exit_status() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let child = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
             child.thread_group().exit(locked, ExitStatus::Exit(42), None);
             std::mem::drop(child);
@@ -2181,7 +2181,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_setgpid() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             assert_eq!(current_task.thread_group().setsid(locked), error!(EPERM));
 
             let child_task1 = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
@@ -2264,7 +2264,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_adopt_children() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let task1 = current_task.clone_task_for_test(locked, 0, None);
             let task2 = task1.clone_task_for_test(locked, 0, None);
             let task3 = task2.clone_task_for_test(locked, 0, None);

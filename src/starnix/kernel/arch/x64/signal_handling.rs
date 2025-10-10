@@ -565,7 +565,7 @@ mod tests {
     where
         F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) + Send + Sync + 'static,
     {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             const STACK_SIZE: usize = 0x1000;
 
             // Give the task a stack.

@@ -704,7 +704,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn cgroup_path_from_root() {
-        spawn_kernel_and_run(|_, _| {
+        spawn_kernel_and_run(async |_, _| {
             let root = CgroupRoot::new();
 
             let test_cgroup =
@@ -724,7 +724,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn cgroup_clone_task_in_frozen_cgroup() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let root = &kernel.cgroups.cgroup2;
             let cgroup = root.new_child("test".into()).expect("new_child on root cgroup succeeds");

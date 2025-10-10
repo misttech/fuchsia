@@ -564,7 +564,7 @@ mod tests {
         static WRITE_COUNT: AtomicUsizeCounter = AtomicUsizeCounter::new(0);
         const EVENT_DATA: u64 = 42;
 
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
 
@@ -616,7 +616,7 @@ mod tests {
     async fn test_epoll_ready_then_wait() {
         const EVENT_DATA: u64 = 42;
 
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             register_pipe_fs(kernel.expando.get::<FsRegistry>().as_ref());
 
@@ -660,7 +660,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_epoll_ctl_cancel() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             for do_cancel in [true, false] {
                 let event = new_eventfd(locked, &current_task, 0, EventFdType::Counter, true);
                 let waiter = Waiter::new();
@@ -726,7 +726,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_multiple_events() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let (client1, server1) = zx::Socket::create_stream();
             let (client2, server2) = zx::Socket::create_stream();
             let pipe1 = create_fuchsia_pipe(locked, &current_task, client1, OpenFlags::RDWR)
@@ -796,7 +796,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_cancel_after_notify() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let event = new_eventfd(locked, &current_task, 0, EventFdType::Counter, true);
             let epoll_file_handle = EpollFileObject::new_file(locked, &current_task);
             let epoll_file = epoll_file_handle.downcast_file::<EpollFileObject>().unwrap();
@@ -848,7 +848,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_add_then_modify() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let (socket1, _socket2) = UnixSocket::new_pair(
                 locked,
                 &current_task,
@@ -900,7 +900,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_waiter_removal() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let event = new_eventfd(locked, &current_task, 0, EventFdType::Counter, true);
             let epoll_file_handle = EpollFileObject::new_file(locked, &current_task);
             let epoll_file = epoll_file_handle.downcast_file::<EpollFileObject>().unwrap();

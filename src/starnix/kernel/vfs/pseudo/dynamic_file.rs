@@ -471,7 +471,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_sequence() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let file = anon_test_file(
                 locked,
                 &current_task,
@@ -520,7 +520,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_read() {
         let counter = Arc::new(Counter { value: Mutex::new(0) });
-        spawn_kernel_and_run(move |locked, current_task| {
+        spawn_kernel_and_run(async move |locked, current_task| {
             let file = anon_test_file(
                 locked,
                 &current_task,
@@ -554,7 +554,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_read_and_seek() {
         let counter = Arc::new(Counter { value: Mutex::new(0) });
-        spawn_kernel_and_run(move |locked, current_task| {
+        spawn_kernel_and_run(async move |locked, current_task| {
             let file = anon_test_file(
                 locked,
                 &current_task,

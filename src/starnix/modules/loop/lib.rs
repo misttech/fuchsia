@@ -851,7 +851,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn basic_read() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let fs = create_testfs(locked, &current_task.kernel());
             let expected_contents = b"hello, world!";
 
@@ -873,7 +873,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn offset_works() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let fs = create_testfs(locked, &current_task.kernel());
             let ops = PassthroughTestFile::new_node(b"hello, world!");
             let backing_node = create_fs_node_for_testing(&fs, ops);
@@ -910,7 +910,7 @@ mod tests {
                 .unwrap()
                 .into();
 
-        spawn_kernel_and_run(move |locked, current_task| {
+        spawn_kernel_and_run(async move |locked, current_task| {
             let backing_file =
                 new_remote_file(locked, current_task, txt_channel.into(), OpenFlags::RDONLY)
                     .unwrap();
@@ -946,7 +946,7 @@ mod tests {
                 .unwrap()
                 .into();
 
-        spawn_kernel_and_run(move |locked, current_task| {
+        spawn_kernel_and_run(async move |locked, current_task| {
             let backing_file =
                 new_remote_file(locked, current_task, txt_channel.into(), OpenFlags::RDONLY)
                     .unwrap();

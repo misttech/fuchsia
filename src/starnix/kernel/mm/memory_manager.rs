@@ -4051,7 +4051,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_brk() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
 
             // Look up the given addr in the mappings table.
@@ -4126,7 +4126,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_mm_exec() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
 
             let has = |addr: UserAddress| -> bool {
@@ -4167,7 +4167,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_get_contiguous_mappings_at() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
 
             // Create four one-page mappings with a hole between the third one and the fourth one.
@@ -4264,7 +4264,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_read_write_crossing_mappings() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
             let ma = current_task.deref();
 
@@ -4294,7 +4294,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_read_write_errors() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let ma = current_task.deref();
 
             let page_size = *PAGE_SIZE;
@@ -4323,7 +4323,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_read_c_string_to_vec_large() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
             let ma = current_task.deref();
 
@@ -4355,7 +4355,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_read_c_string_to_vec() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
             let ma = current_task.deref();
 
@@ -4417,7 +4417,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn can_read_argv_like_regions() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let ma = current_task.deref();
 
             // Map a page.
@@ -4461,7 +4461,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn truncate_argv_like_regions() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let ma = current_task.deref();
 
             // Map a page.
@@ -4482,7 +4482,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_read_c_string() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
             let ma = current_task.deref();
 
@@ -4545,7 +4545,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_find_next_unused_range() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
 
             let mmap_top = mm.state.read().find_next_unused_range(0).unwrap().ptr();
@@ -4592,7 +4592,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_count_placements() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
 
             // ten-page range
@@ -4643,7 +4643,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_pick_placement() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
 
             let page_size = *PAGE_SIZE as usize;
@@ -4675,7 +4675,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_find_random_unused_range() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
 
             // ten-page range
@@ -4698,7 +4698,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_grows_down_near_aspace_base() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
 
             let page_count = 10;
@@ -4725,7 +4725,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_unmap_returned_mappings() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
 
             let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE * 2);
@@ -4743,7 +4743,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_unmap_returns_multiple_mappings() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
 
             let addr = mm.state.read().find_next_unused_range(3 * *PAGE_SIZE as usize).unwrap();
@@ -4765,7 +4765,7 @@ mod tests {
     /// The second page should not be modified.
     #[::fuchsia::test]
     async fn test_map_two_unmap_one() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
 
             // reserve memory for both pages
@@ -4833,7 +4833,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_read_write_objects() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let ma = current_task.deref();
             let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
             let items_ref = UserRef::<i32>::new(addr);
@@ -4852,7 +4852,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_read_write_objects_null() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             let ma = current_task.deref();
             let items_ref = UserRef::<i32>::new(UserAddress::default());
 
@@ -4876,7 +4876,7 @@ mod tests {
             val: [i32; 4],
         }
 
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let ma = current_task.deref();
             let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
             let items_array_ref = UserRef::<i32>::new(addr);
@@ -4919,7 +4919,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_partial_read() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
             let ma = current_task.deref();
 
@@ -4961,7 +4961,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_grow_mapping_empty_mm() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             let mm = current_task.mm().unwrap();
 
             let addr = UserAddress::from(0x100000);
@@ -4973,7 +4973,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_grow_inside_mapping() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
 
             let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
@@ -4985,7 +4985,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_grow_write_fault_inside_read_only_mapping() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
 
             let addr = do_mmap(
@@ -5008,7 +5008,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_grow_fault_inside_prot_none_mapping() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
 
             let addr = do_mmap(
@@ -5031,7 +5031,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_grow_below_mapping() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
 
             let addr = map_memory_growsdown(locked, &current_task, *PAGE_SIZE) - *PAGE_SIZE;
@@ -5043,7 +5043,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_grow_above_mapping() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
 
             let addr = map_memory_growsdown(locked, &current_task, *PAGE_SIZE) + *PAGE_SIZE;
@@ -5058,7 +5058,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_grow_write_fault_below_read_only_mapping() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mm = current_task.mm().unwrap();
 
             let mapped_addr = map_memory_growsdown(locked, &current_task, *PAGE_SIZE);
@@ -5080,7 +5080,7 @@ mod tests {
     async fn test_snapshot_paged_memory() {
         use zx::sys::zx_page_request_command_t::ZX_PAGER_VMO_READ;
 
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let mm = current_task.mm().unwrap();
             let ma = current_task.deref();
@@ -5171,7 +5171,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_set_vma_name() {
-        spawn_kernel_and_run(|locked, mut current_task| {
+        spawn_kernel_and_run(async |locked, mut current_task| {
             let name_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
 
             let vma_name = "vma name";
@@ -5201,7 +5201,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_set_vma_name_adjacent_mappings() {
-        spawn_kernel_and_run(|locked, mut current_task| {
+        spawn_kernel_and_run(async |locked, mut current_task| {
             let name_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
             current_task
                 .write_memory(name_addr, CString::new("foo").unwrap().as_bytes_with_nul())
@@ -5247,7 +5247,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_set_vma_name_beyond_end() {
-        spawn_kernel_and_run(|locked, mut current_task| {
+        spawn_kernel_and_run(async |locked, mut current_task| {
             let name_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
             current_task
                 .write_memory(name_addr, CString::new("foo").unwrap().as_bytes_with_nul())
@@ -5287,7 +5287,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_set_vma_name_before_start() {
-        spawn_kernel_and_run(|locked, mut current_task| {
+        spawn_kernel_and_run(async |locked, mut current_task| {
             let name_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
             current_task
                 .write_memory(name_addr, CString::new("foo").unwrap().as_bytes_with_nul())
@@ -5328,7 +5328,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_set_vma_name_partial() {
-        spawn_kernel_and_run(|locked, mut current_task| {
+        spawn_kernel_and_run(async |locked, mut current_task| {
             let name_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
             current_task
                 .write_memory(name_addr, CString::new("foo").unwrap().as_bytes_with_nul())
@@ -5372,7 +5372,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_preserve_name_snapshot() {
-        spawn_kernel_and_run(|locked, mut current_task| {
+        spawn_kernel_and_run(async |locked, mut current_task| {
             let kernel = current_task.kernel().clone();
             let name_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
             current_task

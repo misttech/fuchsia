@@ -5887,7 +5887,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn handle_0_succeeds_when_context_manager_is_set() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let context_manager =
@@ -5903,7 +5903,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn fail_to_retrieve_non_existing_handle() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             assert!(&sender.proc.lock().handles.get(3).is_none());
@@ -5913,7 +5913,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn handle_is_not_dropped_after_transaction_finishes_if_it_already_existed() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let proc_1 = BinderProcessFixture::new(locked, current_task, &device);
             let proc_2 = BinderProcessFixture::new(locked, current_task, &device);
@@ -5967,7 +5967,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn handle_is_dropped_after_transaction_finishes() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let proc_1 = BinderProcessFixture::new(locked, current_task, &device);
             let proc_2 = BinderProcessFixture::new(locked, current_task, &device);
@@ -6010,7 +6010,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn handle_is_dropped_after_last_weak_ref_released() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let proc_1 = BinderProcessFixture::new(locked, current_task, &device);
             let proc_2 = BinderProcessFixture::new(locked, current_task, &device);
@@ -6423,7 +6423,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn binder_object_enqueues_release_command_when_dropped() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let proc = BinderProcessFixture::new(locked, current_task, &device);
 
@@ -6453,7 +6453,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn handle_table_refs() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let proc = BinderProcessFixture::new(locked, current_task, &device);
 
@@ -6803,7 +6803,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn copy_transaction_data_between_processes() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -6915,7 +6915,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn transaction_translate_binder_leaving_process() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -6995,7 +6995,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn transaction_translate_binder_handle_entering_owning_process() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -7066,7 +7066,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn transaction_translate_binder_handle_passed_between_non_owning_processes() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -7164,7 +7164,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn transaction_translate_binder_handles_with_same_address() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -7307,7 +7307,7 @@ pub mod tests {
     /// Tests that hwbinder's scatter-gather buffer-fix-up implementation is correct.
     #[fuchsia::test]
     async fn transaction_translate_buffers() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new_current(locked, current_task, &device);
@@ -7431,7 +7431,7 @@ pub mod tests {
     /// processing and fail, instead of skipping a buffer object that doesn't fit.
     #[fuchsia::test]
     async fn transaction_fails_when_sg_buffer_size_is_too_small() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -7518,7 +7518,7 @@ pub mod tests {
     /// object list, the transaction fails.
     #[fuchsia::test]
     async fn transaction_fails_when_sg_buffer_parent_is_out_of_order() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -7600,7 +7600,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn transaction_translate_fd_array() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -7799,7 +7799,7 @@ pub mod tests {
     }
     #[fuchsia::test]
     async fn transaction_receiver_exits_after_getting_fd_array() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -7923,7 +7923,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn transaction_fd_array_sender_cancels() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -8070,7 +8070,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn transaction_translation_fails_on_invalid_handle() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -8107,7 +8107,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn transaction_translation_fails_on_invalid_object_type() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -8144,7 +8144,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn transaction_drop_references_on_failed_transaction() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -8221,7 +8221,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn close_binder() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let binder_driver = BinderDevice::default();
 
             let binder_fd = open_binder_fd(locked, &current_task, &binder_driver);
@@ -8247,7 +8247,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn flush_kicks_threads() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             // Open the binder device, which creates an instance of the binder device associated
             // with the process.
@@ -8305,7 +8305,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn decrementing_refs_on_dead_binder_succeeds() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let owner = BinderProcessFixture::new(locked, current_task, &device);
             let client = BinderProcessFixture::new(locked, current_task, &device);
@@ -8383,7 +8383,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn death_notification_fires_when_process_dies() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -8427,7 +8427,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn death_notification_fires_when_request_for_death_notification_is_made_on_dead_binder() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -8473,7 +8473,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn death_notification_is_cleared_before_process_dies() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let owner = BinderProcessFixture::new(locked, current_task, &device);
             let client = BinderProcessFixture::new(locked, current_task, &device);
@@ -8541,7 +8541,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn send_fd_in_transaction() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -8624,7 +8624,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn send_fd_in_transaction_with_prefetched_files() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -8695,7 +8695,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn cleanup_fd_in_failed_transaction() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -8746,7 +8746,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn cleanup_refs_in_successful_transaction() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -8819,7 +8819,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn transaction_error_dispatch() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let proc = BinderProcessFixture::new(locked, current_task, &device);
 
@@ -8843,7 +8843,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn next_oneway_transaction_scheduled_after_buffer_freed() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -8984,7 +8984,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn synchronous_transactions_bypass_oneway_transaction_queue() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -9095,7 +9095,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn dead_reply_when_transaction_recipient_proc_dies() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -9156,7 +9156,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn dead_reply_when_transaction_recipient_proc_dies_not_top_transaction() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -9282,7 +9282,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn dead_reply_when_transaction_recipient_thread_dies() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -9342,7 +9342,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn dead_reply_when_transaction_recipient_thread_dies_while_processing_reply() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new_current(locked, current_task, &device);
@@ -9426,7 +9426,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn failed_reply_when_transaction_reply_is_too_big() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new_current(locked, current_task, &device);
@@ -9522,7 +9522,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn connect_to_multiple_binder() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let driver = BinderDevice::default();
 
             // Opening the driver twice from the same task must succeed.
@@ -9645,7 +9645,7 @@ pub mod tests {
             process_accessor_client_end.into_channel(),
         );
 
-        spawn_kernel_and_run(|locked, task| {
+        spawn_kernel_and_run(async |locked, task| {
             let process = fuchsia_runtime::process_self()
                 .duplicate(zx::Rights::SAME_RIGHTS)
                 .expect("process");
@@ -9746,7 +9746,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn no_reply_when_transaction_before_process_frozen() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -9816,7 +9816,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn frozen_reply_when_process_frozen() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let sender = BinderProcessFixture::new_current(locked, current_task, &device);
             let receiver = BinderProcessFixture::new(locked, current_task, &device);
@@ -9915,7 +9915,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn freeze_notification_fires_when_process_frozen() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let owner = BinderProcessFixture::new(locked, current_task, &device);
             let client = BinderProcessFixture::new(locked, current_task, &device);
@@ -9964,7 +9964,7 @@ pub mod tests {
 
     #[fuchsia::test]
     async fn freeze_notification_is_cleared_before_process_frozen() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let device = BinderDevice::default();
             let owner = BinderProcessFixture::new(locked, current_task, &device);
             let client = BinderProcessFixture::new(locked, current_task, &device);

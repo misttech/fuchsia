@@ -1148,7 +1148,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_socketpair_invalid_arguments() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             assert_eq!(
                 sys_socketpair(
                     locked,

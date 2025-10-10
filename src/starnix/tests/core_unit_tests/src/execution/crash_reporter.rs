@@ -8,7 +8,7 @@ use zx;
 
 #[fuchsia::test]
 async fn begin_crash_report_throttling_ends() {
-    spawn_kernel_and_run(|_, current_task| {
+    spawn_kernel_and_run(async |_, current_task| {
         let crash_reporter = CrashReporter::new(
             &fuchsia_inspect::Node::default(),
             /*proxy=*/ None,

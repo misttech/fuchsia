@@ -1154,7 +1154,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_socket_send_capacity() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let _kernel = current_task.kernel();
             let socket = Socket::new(
                 locked,

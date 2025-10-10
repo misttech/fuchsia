@@ -1692,7 +1692,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_tid_allocation() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             assert_eq!(current_task.get_tid(), 1);
             let another_current = create_task(locked, &kernel, "another-task");
@@ -1708,7 +1708,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_clone_pid_and_parent_pid() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let thread = current_task.clone_task_for_test(
                 locked,
                 (CLONE_THREAD | CLONE_VM | CLONE_SIGHAND) as u64,
@@ -1728,7 +1728,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_root_capabilities() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             assert!(security::is_task_capable_noaudit(current_task, CAP_SYS_ADMIN));
             assert_eq!(current_task.real_creds().cap_inheritable, Capabilities::empty());
 
@@ -1740,7 +1740,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_clone_rlimit() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let prev_fsize = current_task.thread_group().get_rlimit(locked, Resource::FSIZE);
             assert_ne!(prev_fsize, 10);
             current_task

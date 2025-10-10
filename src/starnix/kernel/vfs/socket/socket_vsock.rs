@@ -358,7 +358,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_vsock_socket() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let (fs1, fs2) = fidl::Socket::create_stream();
             const VSOCK_PORT: u32 = 5555;
 
@@ -424,7 +424,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_vsock_write_while_read() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let (fs1, fs2) = fidl::Socket::create_stream();
             let socket = Socket::new(
@@ -482,7 +482,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_vsock_poll() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let (client, server) = zx::Socket::create_stream();
             let pipe = create_fuchsia_pipe(locked, &current_task, client, OpenFlags::RDWR)
                 .expect("create_fuchsia_pipe");

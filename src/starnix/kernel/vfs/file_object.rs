@@ -2319,7 +2319,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_append_truncate_race() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let root_fs = TmpFs::new_fs(locked, &kernel);
             let mount = MountInfo::detached();

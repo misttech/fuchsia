@@ -161,7 +161,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_initialize_pid_map() {
         let (sender, receiver) = oneshot::channel();
-        spawn_kernel_and_run(move |locked, current_task| {
+        spawn_kernel_and_run(async move |locked, current_task| {
             let kernel = current_task.kernel();
             let pid = current_task.task.tid;
             let tkoid = current_task.thread.read().as_ref().and_then(|t| t.get_koid().ok());
@@ -211,7 +211,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_lifecycle() {
         let (sender, receiver) = oneshot::channel();
-        spawn_kernel_and_run(move |locked, current_task| {
+        spawn_kernel_and_run(async move |locked, current_task| {
             let kernel = current_task.kernel();
             let mut manager = TracePerformanceEventManager::new();
 

@@ -867,7 +867,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn registry_fails_to_add_duplicate_device() {
-        spawn_kernel_and_run(|locked, _current_task| {
+        spawn_kernel_and_run(async |locked, _current_task| {
             let registry = DeviceRegistry::default();
             registry
                 .register_major(
@@ -902,7 +902,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn registry_opens_device() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let registry = DeviceRegistry::default();
             registry
@@ -963,7 +963,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn registry_dynamic_misc() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             fn create_test_device(
                 _locked: &mut Locked<FileOpsCore>,
@@ -1006,7 +1006,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn registery_add_class() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let registry = &kernel.device_registry;
             registry
@@ -1044,7 +1044,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn registry_add_bus() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let registry = &kernel.device_registry;
             registry
@@ -1084,7 +1084,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn registry_remove_device() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let registry = &kernel.device_registry;
             registry
@@ -1129,7 +1129,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn registry_add_and_remove_numberless_device() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let registry = &kernel.device_registry;
 

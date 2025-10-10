@@ -1409,7 +1409,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_set_ptracer() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel().clone();
             let mut tracee = create_task(locked, &kernel, "tracee");
             let mut tracer = create_task(locked, &kernel, "tracer");
@@ -1471,7 +1471,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_set_ptracer_any() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel().clone();
             let mut tracee = create_task(locked, &kernel, "tracee");
             let mut tracer = create_task(locked, &kernel, "tracer");

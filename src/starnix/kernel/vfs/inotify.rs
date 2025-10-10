@@ -718,7 +718,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn notify_from_watchers() {
-        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+        spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
             let file = InotifyFileObject::new_file(locked, &current_task, true);
             let inotify =
                 file.downcast_file::<InotifyFileObject>().expect("failed to downcast to inotify");
@@ -780,7 +780,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn notify_deletion_from_watchers() {
-        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+        spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
             let file = InotifyFileObject::new_file(locked, &current_task, true);
             let inotify =
                 file.downcast_file::<InotifyFileObject>().expect("failed to downcast to inotify");
@@ -821,7 +821,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn inotify_on_same_file() {
-        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+        spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
             let file = InotifyFileObject::new_file(locked, &current_task, true);
             let file_key = WeakKey::from(&file);
             let inotify =
@@ -882,7 +882,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn coalesce_events() {
-        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+        spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
             let file = InotifyFileObject::new_file(locked, &current_task, true);
             let inotify =
                 file.downcast_file::<InotifyFileObject>().expect("failed to downcast to inotify");

@@ -540,7 +540,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_read_image() {
-        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+        spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_EXECUTABLE;
             let (server, client) = zx::Channel::create();

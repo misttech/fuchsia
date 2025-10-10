@@ -1846,7 +1846,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_namespace() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let root_fs = TmpFs::new_fs(locked, &kernel);
             let root_node = Arc::clone(root_fs.root());
@@ -1890,7 +1890,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_mount_does_not_upgrade() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let root_fs = TmpFs::new_fs(locked, &kernel);
             let root_node = Arc::clone(root_fs.root());
@@ -1931,7 +1931,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_path() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let root_fs = TmpFs::new_fs(locked, &kernel);
             let root_node = Arc::clone(root_fs.root());
@@ -1972,7 +1972,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_shadowing() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let root_fs = TmpFs::new_fs(locked, &kernel);
             let ns = Namespace::new(root_fs.clone());
@@ -2026,7 +2026,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_unlink_mounted_directory() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let root_fs = TmpFs::new_fs(locked, &kernel);
             let ns1 = Namespace::new(root_fs.clone());
@@ -2065,7 +2065,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_rename_mounted_directory() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let root_fs = TmpFs::new_fs(locked, &kernel);
             let ns1 = Namespace::new(root_fs.clone());
@@ -2158,7 +2158,7 @@ mod test {
     /// owning directories, can be tricky to get right.
     #[::fuchsia::test]
     async fn test_lookup_with_symlink_chain() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             // Set up the root filesystem
             let kernel = current_task.kernel();
             let root_fs = TmpFs::new_fs(locked, &kernel);

@@ -215,7 +215,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_block_while_stopped_stop_and_continue() {
-        spawn_kernel_and_run(|locked, task| {
+        spawn_kernel_and_run(async |locked, task| {
             // block_while_stopped must immediately returned if the task is not stopped.
             task.block_while_stopped(locked);
 
@@ -258,7 +258,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_block_while_stopped_stop_and_exit() {
-        spawn_kernel_and_run(|locked, task| {
+        spawn_kernel_and_run(async |locked, task| {
             // block_while_stopped must immediately returned if the task is neither stopped nor exited.
             task.block_while_stopped(locked);
 

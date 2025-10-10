@@ -2802,7 +2802,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn open_device_file() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             mem_device_init(locked, &*current_task).expect("mem_device_init");
 
             // Create a device file that points to the `zero` device (which is automatically
@@ -2836,7 +2836,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn node_info_is_reflected_in_stat() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             // Create a node.
             let node = &current_task
                 .fs()
@@ -2907,7 +2907,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_check_access() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mut creds = Credentials::with_ids(1, 2);
             creds.groups = vec![3, 4];
             current_task.set_creds(creds);
@@ -2984,7 +2984,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn set_security_xattr_fails_without_security_module_or_root() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mut creds = Credentials::with_ids(1, 2);
             creds.groups = vec![3, 4];
             current_task.set_creds(creds);
@@ -3020,7 +3020,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn set_non_user_xattr_fails_without_security_module_or_root() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mut creds = Credentials::with_ids(1, 2);
             creds.groups = vec![3, 4];
             current_task.set_creds(creds);
@@ -3056,7 +3056,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn get_security_xattr_succeeds_without_read_access() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let mut creds = Credentials::with_ids(1, 2);
             creds.groups = vec![3, 4];
             current_task.set_creds(creds);

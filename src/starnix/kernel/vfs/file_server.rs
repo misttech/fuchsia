@@ -764,7 +764,6 @@ mod tests {
     use crate::fs::tmpfs::TmpFs;
     use crate::testing::*;
     use crate::vfs::{FsString, Namespace};
-    use fuchsia_async as fasync;
     use starnix_uapi::auth::Capabilities;
     use std::collections::HashSet;
     use syncio::{Zxio, ZxioOpenOptions, zxio_node_attr_has_t};
@@ -780,7 +779,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn access_file_system() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let fs = TmpFs::new_fs(locked, &kernel);
 
@@ -913,7 +912,7 @@ mod tests {
             .join()
             .expect("join");
             scope.shutdown();
-            fasync::LocalExecutor::default().run_singlethreaded(scope.wait());
+            scope.wait().await;
             // This ensures fs cannot be captures in the thread.
             std::mem::drop(fs);
         })
@@ -922,7 +921,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn open() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let fs = TmpFs::new_fs(locked, &kernel);
 
@@ -1000,7 +999,7 @@ mod tests {
             .join()
             .expect("join");
             scope.shutdown();
-            fasync::LocalExecutor::default().run_singlethreaded(scope.wait());
+            scope.wait().await;
 
             // This ensures fs cannot be captured in the thread.
             std::mem::drop(fs);
@@ -1010,7 +1009,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn use_credentials() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let fs = TmpFs::new_fs(locked, &kernel);
 
@@ -1057,7 +1056,7 @@ mod tests {
             .join()
             .expect("join");
             scope.shutdown();
-            fasync::LocalExecutor::default().run_singlethreaded(scope.wait());
+            scope.wait().await;
 
             // This ensures fs cannot be captured in the thread.
             std::mem::drop(ns);

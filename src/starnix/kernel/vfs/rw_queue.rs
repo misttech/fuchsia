@@ -402,7 +402,7 @@ mod test {
             Unlocked => TestLevel
         }
 
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let queue = RwQueue::<TestLevel>::default();
             let read_guard1 = queue.read(locked, current_task).expect("shouldn't be interrupted");
             std::mem::drop(read_guard1);
@@ -418,7 +418,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_read_in_parallel() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             let kernel = current_task.kernel();
             lock_ordering! {
                 Unlocked => TestLevel
@@ -526,7 +526,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_thundering_reads_and_writes() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             let kernel = current_task.kernel();
             const THREAD_PAIRS: usize = 10;
 

@@ -72,7 +72,7 @@ where
         + Sync
         + 'static,
 {
-    spawn_kernel_with_selinux_and_run(|locked, current_task, security_server| {
+    spawn_kernel_with_selinux_and_run(async |locked, current_task, security_server| {
         let policy_bytes = HOOKS_TESTS_BINARY_POLICY.to_vec();
         security_server.set_enforcing(true);
         security_server.load_policy(policy_bytes).expect("policy load failed");

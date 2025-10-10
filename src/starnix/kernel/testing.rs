@@ -24,6 +24,7 @@ use crate::vfs::{
     FsNodeInfo, FsNodeOps, FsStr, Namespace, NamespaceNode, fileops_impl_nonseekable,
     fileops_impl_noop_sync, fs_node_impl_not_dir,
 };
+use fuchsia_async::LocalExecutor;
 use selinux::SecurityServer;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_syscalls::{SyscallArg, SyscallResult};
@@ -69,10 +70,22 @@ where
 /// your callback is called with the init process as the CurrentTask.
 pub fn spawn_kernel_and_run<F, R>(callback: F) -> impl Future<Output = R>
 where
-    F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> R + Send + Sync + 'static,
+    F: AsyncFnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> R + Send + Sync + 'static,
     R: Send + Sync + 'static,
 {
     spawn_kernel_and_run_internal(callback, None, TmpFs::new_fs)
+}
+
+/// Create a Kernel object and run the given synchronous callback in the init process for that kernel.
+///
+/// This function is useful if you want to test code that requires a CurrentTask because
+/// your callback is called with the init process as the CurrentTask.
+pub fn spawn_kernel_and_run_sync<F, R>(callback: F) -> impl Future<Output = R>
+where
+    F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> R + Send + Sync + 'static,
+    R: Send + Sync + 'static,
+{
+    spawn_kernel_and_run_internal_sync(callback, None, TmpFs::new_fs)
 }
 
 /// Create a Kernel object and run the given callback in the init process for that kernel.
@@ -82,7 +95,7 @@ where
 /// your callback is called with the init process as the CurrentTask.
 pub fn spawn_kernel_and_run_with_pkgfs<F, R>(callback: F) -> impl Future<Output = R>
 where
-    F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> R + Send + Sync + 'static,
+    F: AsyncFnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> R + Send + Sync + 'static,
     R: Send + Sync + 'static,
 {
     spawn_kernel_and_run_internal(callback, None, create_pkgfs)
@@ -93,9 +106,9 @@ where
 /// SELinux security-server.
 // TODO: https://fxbug.dev/335397745 - Only provide an admin/test API to the test, so that tests
 // must generally exercise hooks via public entrypoints.
-pub fn spawn_kernel_with_selinux_and_run<F, R>(callback: F) -> impl Future<Output = R>
+pub async fn spawn_kernel_with_selinux_and_run<F, R>(callback: F) -> R
 where
-    F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask, &Arc<SecurityServer>) -> R
+    F: AsyncFnOnce(&mut Locked<Unlocked>, &mut CurrentTask, &Arc<SecurityServer>) -> R
         + Send
         + Sync
         + 'static,
@@ -104,29 +117,51 @@ where
     let security_server = SecurityServer::new_default();
     let security_server_for_callback = security_server.clone();
     spawn_kernel_and_run_internal(
-        move |unlocked, current_task| {
+        async move |unlocked, current_task| {
             security::selinuxfs_init_null(
                 current_task,
                 &new_null_file(unlocked, current_task, OpenFlags::empty()),
             );
-            callback(unlocked, current_task, &security_server_for_callback)
+            callback(unlocked, current_task, &security_server_for_callback).await
         },
         Some(security_server),
         TmpFs::new_fs,
     )
+    .await
 }
 
 /// Create a Kernel object, with the optional caller-supplied `security_server`, and run the given
 /// callback in the init process for that kernel.
-async fn spawn_kernel_and_run_internal<F, FS, R>(
+fn spawn_kernel_and_run_internal<F, FS, R>(
     callback: F,
     security_server: Option<Arc<SecurityServer>>,
     fs_factory: FS,
-) -> R
+) -> impl Future<Output = R>
 where
+    R: Send + Sync + 'static,
+    F: AsyncFnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> R + Send + Sync + 'static,
+    FS: FnOnce(&mut Locked<Unlocked>, &Kernel) -> FileSystemHandle,
+{
+    spawn_kernel_and_run_internal_sync(
+        move |locked, current_task| {
+            LocalExecutor::default().run_singlethreaded(callback(locked, current_task))
+        },
+        security_server,
+        fs_factory,
+    )
+}
+
+/// Create a Kernel object, with the optional caller-supplied `security_server`, and run the given
+/// synchronous callback in the init process for that kernel.
+fn spawn_kernel_and_run_internal_sync<F, FS, R>(
+    callback: F,
+    security_server: Option<Arc<SecurityServer>>,
+    fs_factory: FS,
+) -> impl Future<Output = R>
+where
+    R: Send + Sync + 'static,
     F: FnOnce(&mut Locked<Unlocked>, &mut CurrentTask) -> R + Send + Sync + 'static,
     FS: FnOnce(&mut Locked<Unlocked>, &Kernel) -> FileSystemHandle,
-    R: Send + Sync + 'static,
 {
     #[allow(
         clippy::undocumented_unsafe_blocks,
@@ -155,7 +190,6 @@ where
         assert_eq!(error, errno!(EHWPOISON));
         receiver.recv().expect("recv")
     })
-    .await
 }
 
 #[deprecated = "Do not add new callers, use spawn_kernel_and_run() instead."]

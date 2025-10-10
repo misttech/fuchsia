@@ -372,7 +372,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn run_simple_task() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             let spawner = DynamicThreadSpawner::new(2, current_task.weak_task());
             spawner.spawn(|_, _| {});
         })
@@ -381,7 +381,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn run_10_tasks() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             let spawner = DynamicThreadSpawner::new(2, current_task.weak_task());
             for _ in 0..10 {
                 spawner.spawn(|_, _| {});
@@ -392,7 +392,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn blocking_task_do_not_prevent_further_processing() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             let spawner = DynamicThreadSpawner::new(1, current_task.weak_task());
 
             let pair = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
@@ -424,7 +424,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn run_spawn_and_get_result() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             let spawner = DynamicThreadSpawner::new(2, current_task.weak_task());
             assert_eq!(spawner.spawn_and_get_result_sync(|_, _| 3), Ok(3));
         })
@@ -433,7 +433,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_spawn_async() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             let spawner = DynamicThreadSpawner::new(2, current_task.weak_task());
             spawner.spawn(move |locked, current_task| {
                 let mut exec = fuchsia_async::LocalExecutor::default();

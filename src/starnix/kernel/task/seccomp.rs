@@ -1072,7 +1072,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_actions_logged_accepts_legal_string() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             let kernel = current_task.kernel();
             let mut actions = SeccompAction::get_actions_avail_file();
             // This is a test in Rust instead of a syscall test because we don't want to change the

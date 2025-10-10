@@ -461,7 +461,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_tmpfs() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let fs = TmpFs::new_fs(locked, &kernel);
             let root = fs.root();
@@ -477,7 +477,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_write_read() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let path = "test.bin";
             let _file = current_task
                 .fs()
@@ -511,7 +511,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_read_past_eof() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             // Open an empty file
             let path = "test.bin";
             let _file = current_task
@@ -540,7 +540,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_permissions() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let path = "test.bin";
             let file = current_task
                 .open_file_at(
@@ -610,7 +610,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_persistence() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             {
                 let root = &current_task.fs().root().entry;
                 let usr = root
@@ -705,7 +705,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_data() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let fs = TmpFs::new_fs_with_options(
                 locked,

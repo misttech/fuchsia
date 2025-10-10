@@ -1144,7 +1144,7 @@ mod tests {
     use crate::fs::fuchsia::create_fuchsia_pipe;
     use crate::signals::SignalInfo;
     use crate::task::TaskFlags;
-    use crate::testing::spawn_kernel_and_run;
+    use crate::testing::{spawn_kernel_and_run, spawn_kernel_and_run_sync};
     use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
     use crate::vfs::eventfd::{EventFdType, new_eventfd};
     use assert_matches::assert_matches;
@@ -1156,7 +1156,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_async_wait_exec() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let (local_socket, remote_socket) = zx::Socket::create_stream();
             let pipe =
                 create_fuchsia_pipe(locked, &current_task, remote_socket, OpenFlags::RDWR).unwrap();
@@ -1207,7 +1207,7 @@ mod tests {
     #[::fuchsia::test]
     async fn test_async_wait_cancel() {
         for do_cancel in [true, false] {
-            spawn_kernel_and_run(move |locked, current_task| {
+            spawn_kernel_and_run(async move |locked, current_task| {
                 let event = new_eventfd(locked, &current_task, 0, EventFdType::Counter, true);
                 let waiter = Waiter::new();
                 let queue: Arc<Mutex<VecDeque<ReadyItem>>> = Default::default();
@@ -1252,7 +1252,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn single_waiter_multiple_waits_cancel_one_waiter_still_notified() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let wait_queue = WaitQueue::default();
             let waiter = Waiter::new();
             let wk1 = wait_queue.wait_async(&waiter);
@@ -1266,7 +1266,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn multiple_waiters_cancel_one_other_still_notified() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let wait_queue = WaitQueue::default();
             let waiter1 = Waiter::new();
             let waiter2 = Waiter::new();
@@ -1282,7 +1282,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn test_wait_queue() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let queue = WaitQueue::default();
 
             let waiters = <[Waiter; 3]>::default();
@@ -1313,7 +1313,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn waiter_kind_abort_handle() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run_sync(|_locked, current_task| {
             let mut executor = fuchsia_async::TestExecutor::new();
             let (abort_handle, abort_registration) = futures::stream::AbortHandle::new_pair();
             let abort_handle = Arc::new(abort_handle);
@@ -1341,7 +1341,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn freeze_with_pending_sigusr1() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_locked, current_task| {
             {
                 let mut task_state = current_task.task.write();
                 let siginfo = SignalInfo::default(SIGUSR1);
@@ -1363,7 +1363,7 @@ mod tests {
 
     #[::fuchsia::test]
     async fn freeze_with_pending_sigkill() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_locked, current_task| {
             {
                 let mut task_state = current_task.task.write();
                 let siginfo = SignalInfo::default(SIGKILL);

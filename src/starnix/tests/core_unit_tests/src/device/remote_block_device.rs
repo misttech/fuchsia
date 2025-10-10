@@ -13,7 +13,7 @@ use zerocopy::FromBytes as _;
 
 #[::fuchsia::test]
 async fn test_remote_block_device_registry() {
-    spawn_kernel_and_run(|locked, current_task| {
+    spawn_kernel_and_run(async |locked, current_task| {
         let kernel = current_task.kernel();
         remote_block_device_init(locked, &current_task);
         let registry = kernel.remote_block_device_registry.clone();
@@ -61,7 +61,7 @@ async fn test_remote_block_device_registry() {
 
 #[::fuchsia::test]
 async fn test_read_write_past_eof() {
-    spawn_kernel_and_run(|locked, current_task| {
+    spawn_kernel_and_run(async |locked, current_task| {
         let kernel = current_task.kernel();
         remote_block_device_init(locked, &current_task);
         let registry = kernel.remote_block_device_registry.clone();

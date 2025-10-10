@@ -870,7 +870,7 @@ mod tests {
     fn test_data_input_buffer() {
         let mut executor = fuchsia_async::TestExecutor::new();
         executor.run_singlethreaded(async {
-            spawn_kernel_and_run(|locked, current_task| {
+            spawn_kernel_and_run(async |locked, current_task| {
                 let page_size = *PAGE_SIZE;
                 let addr =
                     map_memory(locked, &current_task, UserAddress::default(), 64 * page_size);
@@ -962,7 +962,7 @@ mod tests {
     fn test_data_output_buffer() {
         let mut executor = fuchsia_async::TestExecutor::new();
         executor.run_singlethreaded(async {
-            spawn_kernel_and_run(|locked, current_task| {
+            spawn_kernel_and_run(async |locked, current_task| {
                 let page_size = *PAGE_SIZE;
                 let addr =
                     map_memory(locked, &current_task, UserAddress::default(), 64 * page_size);

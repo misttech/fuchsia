@@ -1740,7 +1740,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_remote_uds() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let (s1, s2) = zx::Socket::create_datagram();
             s2.write(&vec![0]).expect("write");
             let file = new_remote_file(locked, &current_task, s1.into(), OpenFlags::RDWR)
@@ -1763,7 +1763,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_tree() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let rights = fio::PERM_READABLE | fio::PERM_EXECUTABLE;
             let (server, client) = zx::Channel::create();
@@ -1803,7 +1803,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_blocking_io() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let (client, server) = zx::Socket::create_stream();
             let pipe = create_fuchsia_pipe(locked, &current_task, client, OpenFlags::RDWR).unwrap();
@@ -1827,7 +1827,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_poll() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let (client, server) = zx::Socket::create_stream();
             let pipe = create_fuchsia_pipe(locked, &current_task, client, OpenFlags::RDWR)
                 .expect("create_fuchsia_pipe");
@@ -1883,7 +1883,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_new_remote_directory() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let (server, client) = zx::Channel::create();
             fdio::open("/pkg", fio::PERM_READABLE | fio::PERM_EXECUTABLE, server)
                 .expect("failed to open /pkg");
@@ -1898,7 +1898,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_new_remote_file() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let (server, client) = zx::Channel::create();
             fdio::open("/pkg/meta/contents", fio::PERM_READABLE, server)
                 .expect("failed to open /pkg/meta/contents");
@@ -1913,7 +1913,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_new_remote_counter() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let counter = zx::Counter::create();
 
             let fd = new_remote_file(locked, &current_task, counter.into(), OpenFlags::RDONLY)
@@ -1925,7 +1925,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_new_remote_vmo() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let vmo = zx::Vmo::create(*PAGE_SIZE).expect("Vmo::create");
             let fd = new_remote_file(locked, &current_task, vmo.into(), OpenFlags::RDWR)
                 .expect("new_remote_file");
@@ -1946,7 +1946,7 @@ mod test {
         const LINK_SIZE: usize = 22;
         assert_eq!(LINK_SIZE, LINK_TARGET.len());
 
-        let fixture = spawn_kernel_and_run(move |locked, current_task| {
+        let fixture = spawn_kernel_and_run(async move |locked, current_task| {
             let kernel = current_task.kernel().clone();
             let (server, client) = zx::Channel::create();
             fixture.root().clone(server.into()).expect("clone failed");
@@ -1988,7 +1988,7 @@ mod test {
         )
         .await;
 
-        let fixture = spawn_kernel_and_run(move |locked, current_task| {
+        let fixture = spawn_kernel_and_run(async move |locked, current_task| {
             let kernel = current_task.kernel().clone();
             let (server, client) = zx::Channel::create();
             fixture.root().clone(server.into()).expect("clone failed after remount");
@@ -2039,7 +2039,7 @@ mod test {
             let (server, client) = zx::Channel::create();
             fixture.root().clone(server.into()).expect("clone failed");
 
-            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
+            exec.run_singlethreaded(spawn_kernel_and_run(async move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2115,7 +2115,7 @@ mod test {
 
         let fixture = fuchsia_async::unblock(move || {
             let mut exec = fuchsia_async::LocalExecutor::default();
-            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
+            exec.run_singlethreaded(spawn_kernel_and_run(async move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 current_task
                     .kernel()
@@ -2201,7 +2201,7 @@ mod test {
 
         let fixture = fuchsia_async::unblock(move || {
             let mut exec = fuchsia_async::LocalExecutor::default();
-            exec.run_singlethreaded(spawn_kernel_and_run(|_locked, current_task| {
+            exec.run_singlethreaded(spawn_kernel_and_run(async |_, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2324,7 +2324,7 @@ mod test {
 
         let fixture = fuchsia_async::unblock(move || {
             let mut exec = fuchsia_async::LocalExecutor::default();
-            exec.run_singlethreaded(spawn_kernel_and_run(|_locked, current_task| {
+            exec.run_singlethreaded(spawn_kernel_and_run(async |_, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2410,7 +2410,7 @@ mod test {
 
         let fixture = fuchsia_async::unblock(move || {
             let mut exec = fuchsia_async::LocalExecutor::default();
-            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
+            exec.run_singlethreaded(spawn_kernel_and_run(async move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2472,7 +2472,7 @@ mod test {
 
         let fixture = fuchsia_async::unblock(move || {
             let mut exec = fuchsia_async::LocalExecutor::default();
-            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
+            exec.run_singlethreaded(spawn_kernel_and_run(async move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2524,7 +2524,7 @@ mod test {
 
         let fixture = fuchsia_async::unblock(move || {
             let mut exec = fuchsia_async::LocalExecutor::default();
-            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
+            exec.run_singlethreaded(spawn_kernel_and_run(async move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2589,7 +2589,7 @@ mod test {
 
         let fixture = fuchsia_async::unblock(move || {
             let mut exec = fuchsia_async::LocalExecutor::default();
-            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
+            exec.run_singlethreaded(spawn_kernel_and_run(async move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2636,7 +2636,7 @@ mod test {
 
         let fixture = fuchsia_async::unblock(move || {
             let mut exec = fuchsia_async::LocalExecutor::default();
-            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
+            exec.run_singlethreaded(spawn_kernel_and_run(async move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2697,7 +2697,7 @@ mod test {
 
         let fixture = fuchsia_async::unblock(move || {
             let mut exec = fuchsia_async::LocalExecutor::default();
-            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
+            exec.run_singlethreaded(spawn_kernel_and_run(async move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2743,7 +2743,7 @@ mod test {
 
         fuchsia_async::unblock(move || {
             let mut exec = fuchsia_async::LocalExecutor::default();
-            exec.run_singlethreaded(spawn_kernel_and_run(move |locked, current_task| {
+            exec.run_singlethreaded(spawn_kernel_and_run(async move |locked, current_task| {
                 let kernel = current_task.kernel();
                 let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
                 let fs = RemoteFs::new_fs(
@@ -2780,7 +2780,7 @@ mod test {
 
         let fixture = fuchsia_async::unblock(move || {
             let mut exec = fuchsia_async::LocalExecutor::default();
-            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
+            exec.run_singlethreaded(spawn_kernel_and_run(async move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2848,7 +2848,7 @@ mod test {
 
         let fixture = fuchsia_async::unblock(move || {
             let mut exec = fuchsia_async::LocalExecutor::default();
-            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
+            exec.run_singlethreaded(spawn_kernel_and_run(async move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -2918,8 +2918,8 @@ mod test {
 
         let (fixture, last_modified) = fuchsia_async::unblock(move || {
             let mut exec = fuchsia_async::LocalExecutor::default();
-            let last_modified =
-                exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
+            let last_modified = exec.run_singlethreaded(spawn_kernel_and_run(
+                async move |_locked, current_task| {
                     let kernel = current_task.kernel().clone();
                     kernel
                         .kthreads
@@ -2988,7 +2988,8 @@ mod test {
                             }
                         })
                         .expect("spawn")
-                }));
+                },
+            ));
             (fixture, last_modified)
         })
         .await;
@@ -3004,7 +3005,7 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
         let refreshed_modified_time = fuchsia_async::unblock(move || {
             let mut exec = fuchsia_async::LocalExecutor::default();
-            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
+            exec.run_singlethreaded(spawn_kernel_and_run(async move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -3058,7 +3059,7 @@ mod test {
 
         fuchsia_async::unblock(move || {
             let mut exec = fuchsia_async::LocalExecutor::default();
-            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
+            exec.run_singlethreaded(spawn_kernel_and_run(async move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -3156,7 +3157,7 @@ mod test {
 
         let fixture = fuchsia_async::unblock(move || {
             let mut exec = fuchsia_async::LocalExecutor::default();
-            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
+            exec.run_singlethreaded(spawn_kernel_and_run(async move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -3260,49 +3261,51 @@ mod test {
 
         let fixture = fuchsia_async::unblock(move || {
             let mut exec = fuchsia_async::LocalExecutor::default();
-            let _ = exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
-                let kernel = current_task.kernel().clone();
-                kernel
-                    .kthreads
-                    .spawner()
-                    .spawn_and_get_result_sync({
-                        let kernel = Arc::clone(&kernel);
-                        move |locked, current_task| {
-                            let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
-                            let fs = RemoteFs::new_fs(
-                                locked,
-                                &kernel,
-                                client,
-                                FileSystemOptions {
-                                    source: FlyByteStr::new(b"/"),
-                                    ..Default::default()
-                                },
-                                rights,
-                            )
-                            .expect("new_fs failed");
-                            let ns: Arc<Namespace> = Namespace::new(fs);
-                            let child = ns
-                                .root()
-                                .create_node(
+            let _ = exec.run_singlethreaded(spawn_kernel_and_run(
+                async move |_locked, current_task| {
+                    let kernel = current_task.kernel().clone();
+                    kernel
+                        .kthreads
+                        .spawner()
+                        .spawn_and_get_result_sync({
+                            let kernel = Arc::clone(&kernel);
+                            move |locked, current_task| {
+                                let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
+                                let fs = RemoteFs::new_fs(
                                     locked,
-                                    &current_task,
-                                    "dir".into(),
-                                    FileMode::ALLOW_ALL.with_type(FileMode::IFDIR),
-                                    DeviceType::NONE,
+                                    &kernel,
+                                    client,
+                                    FileSystemOptions {
+                                        source: FlyByteStr::new(b"/"),
+                                        ..Default::default()
+                                    },
+                                    rights,
                                 )
-                                .expect("create_node failed");
-                            child
-                                .entry
-                                .node
-                                .update_attributes(locked, &current_task, |info| {
-                                    info.casefold = true;
-                                    Ok(())
-                                })
-                                .expect("enable casefold")
-                        }
-                    })
-                    .expect("spawn")
-            }));
+                                .expect("new_fs failed");
+                                let ns: Arc<Namespace> = Namespace::new(fs);
+                                let child = ns
+                                    .root()
+                                    .create_node(
+                                        locked,
+                                        &current_task,
+                                        "dir".into(),
+                                        FileMode::ALLOW_ALL.with_type(FileMode::IFDIR),
+                                        DeviceType::NONE,
+                                    )
+                                    .expect("create_node failed");
+                                child
+                                    .entry
+                                    .node
+                                    .update_attributes(locked, &current_task, |info| {
+                                        info.casefold = true;
+                                        Ok(())
+                                    })
+                                    .expect("enable casefold")
+                            }
+                        })
+                        .expect("spawn")
+                },
+            ));
             fixture
         })
         .await;
@@ -3317,7 +3320,7 @@ mod test {
         fixture.root().clone(server.into()).expect("clone failed");
         let casefold = fuchsia_async::unblock(move || {
             let mut exec = fuchsia_async::LocalExecutor::default();
-            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
+            exec.run_singlethreaded(spawn_kernel_and_run(async move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads
@@ -3374,8 +3377,8 @@ mod test {
             // Set up file.
             let (fixture, info_after_read) = fuchsia_async::unblock(move || {
                 let mut exec = fuchsia_async::LocalExecutor::default();
-                let info_after_read =
-                    exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
+                let info_after_read = exec.run_singlethreaded(spawn_kernel_and_run(
+                    async move |_locked, current_task| {
                         let kernel = current_task.kernel().clone();
                         kernel
                             .kthreads
@@ -3435,7 +3438,8 @@ mod test {
                                 }
                             })
                             .expect("spawn failed")
-                    }));
+                    },
+                ));
                 (fixture, info_after_read)
             })
             .await;
@@ -3455,51 +3459,56 @@ mod test {
 
             let fixture = fuchsia_async::unblock(move || {
                 let mut exec = fuchsia_async::LocalExecutor::default();
-                exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
-                    let kernel = current_task.kernel().clone();
-                    kernel
-                        .kthreads
-                        .spawner()
-                        .spawn_and_get_result_sync({
-                            let kernel = Arc::clone(&kernel);
-                            move |locked, current_task| {
-                                let fs = RemoteFs::new_fs(
-                                    locked,
-                                    &kernel,
-                                    client,
-                                    FileSystemOptions {
-                                        source: FlyByteStr::new(b"/"),
-                                        flags: MountFlags::RELATIME,
-                                        ..Default::default()
-                                    },
-                                    fio::PERM_READABLE | fio::PERM_WRITABLE,
-                                )
-                                .expect("new_fs failed");
-                                let ns = Namespace::new_with_flags(fs, MountFlags::RELATIME);
-                                let mut context = LookupContext::new(SymlinkMode::NoFollow);
-                                let child = ns
-                                    .root()
-                                    .lookup_child(
+                exec.run_singlethreaded(spawn_kernel_and_run(
+                    async move |_locked, current_task| {
+                        let kernel = current_task.kernel().clone();
+                        kernel
+                            .kthreads
+                            .spawner()
+                            .spawn_and_get_result_sync({
+                                let kernel = Arc::clone(&kernel);
+                                move |locked, current_task| {
+                                    let fs = RemoteFs::new_fs(
                                         locked,
-                                        &current_task,
-                                        &mut context,
-                                        TEST_FILE.into(),
+                                        &kernel,
+                                        client,
+                                        FileSystemOptions {
+                                            source: FlyByteStr::new(b"/"),
+                                            flags: MountFlags::RELATIME,
+                                            ..Default::default()
+                                        },
+                                        fio::PERM_READABLE | fio::PERM_WRITABLE,
                                     )
-                                    .expect("lookup_child failed");
+                                    .expect("new_fs failed");
+                                    let ns = Namespace::new_with_flags(fs, MountFlags::RELATIME);
+                                    let mut context = LookupContext::new(SymlinkMode::NoFollow);
+                                    let child = ns
+                                        .root()
+                                        .lookup_child(
+                                            locked,
+                                            &current_task,
+                                            &mut context,
+                                            TEST_FILE.into(),
+                                        )
+                                        .expect("lookup_child failed");
 
-                                // Get info - this should be refreshed with info that was persisted before
-                                // we tore down the kernel.
-                                let persisted_info = child
-                                    .entry
-                                    .node
-                                    .fetch_and_refresh_info(locked, &current_task)
-                                    .expect("fetch_and_refresh_info failed")
-                                    .clone();
-                                assert_eq!(info_after_read.time_access, persisted_info.time_access);
-                            }
-                        })
-                        .expect("spawn failed")
-                }));
+                                    // Get info - this should be refreshed with info that was persisted before
+                                    // we tore down the kernel.
+                                    let persisted_info = child
+                                        .entry
+                                        .node
+                                        .fetch_and_refresh_info(locked, &current_task)
+                                        .expect("fetch_and_refresh_info failed")
+                                        .clone();
+                                    assert_eq!(
+                                        info_after_read.time_access,
+                                        persisted_info.time_access
+                                    );
+                                }
+                            })
+                            .expect("spawn failed")
+                    },
+                ));
                 fixture
             })
             .await;
@@ -3519,7 +3528,7 @@ mod test {
 
         let fixture = fuchsia_async::unblock(move || {
             let mut exec = fuchsia_async::LocalExecutor::default();
-            exec.run_singlethreaded(spawn_kernel_and_run(move |_locked, current_task| {
+            exec.run_singlethreaded(spawn_kernel_and_run(async move |_locked, current_task| {
                 let kernel = current_task.kernel().clone();
                 kernel
                     .kthreads

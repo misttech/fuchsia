@@ -675,7 +675,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_nanosleep_without_remainder() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let thread = std::thread::spawn({
                 let task = current_task.weak_task();
                 move || {
@@ -712,7 +712,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_clock_nanosleep_relative_to_slow_clock() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let test_clock = UtcClock::create(zx::ClockOpts::AUTO_START, None).unwrap();
             let _test_clock_guard = UtcClockOverrideGuard::new(
                 test_clock.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
@@ -744,7 +744,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_clock_nanosleep_interrupted_relative_to_fast_utc_clock() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let test_clock = UtcClock::create(zx::ClockOpts::AUTO_START, None).unwrap();
             let _test_clock_guard = UtcClockOverrideGuard::new(
                 test_clock.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),

@@ -879,7 +879,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_load_hello_starnix() {
-        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+        spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
             exec_hello_starnix(locked, current_task).expect("failed to load executable");
             assert!(current_task.mm().unwrap().get_mapping_count() > 0);
         })
@@ -889,7 +889,7 @@ mod tests {
     // TODO(https://fxbug.dev/42072654): Figure out why this snapshot fails.
     #[fuchsia::test]
     async fn test_snapshot_hello_starnix() {
-        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+        spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
             exec_hello_starnix(locked, current_task).expect("failed to load executable");
 
             let current2 = create_task(locked, current_task.kernel(), "another-task");

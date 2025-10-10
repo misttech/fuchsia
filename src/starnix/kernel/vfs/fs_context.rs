@@ -189,7 +189,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_umask() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let kernel = current_task.kernel();
             let fs = FsContext::new(Namespace::new(TmpFs::new_fs(locked, &kernel)));
 
@@ -203,7 +203,7 @@ mod test {
 
     #[::fuchsia::test]
     async fn test_chdir() {
-        spawn_kernel_and_run_with_pkgfs(|locked, current_task| {
+        spawn_kernel_and_run_with_pkgfs(async |locked, current_task| {
             assert_eq!("/", current_task.fs().cwd().path_escaping_chroot());
 
             let bin = current_task

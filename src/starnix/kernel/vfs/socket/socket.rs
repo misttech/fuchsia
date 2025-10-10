@@ -810,7 +810,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_dgram_socket() {
-        spawn_kernel_and_run(|locked, current_task| {
+        spawn_kernel_and_run(async |locked, current_task| {
             let bind_address = SocketAddress::Unix(b"dgram_test".into());
             let rec_dgram = Socket::new(
                 locked,

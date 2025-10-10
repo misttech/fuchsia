@@ -1169,7 +1169,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_triggering() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             let (manager, counter) = init_hr_timer_manager(current_task, Response::Immediate);
 
             let timer1 = HrTimer::new();
@@ -1195,7 +1195,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_triggering_utc() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             let (manager, counter) = init_hr_timer_manager(current_task, Response::Immediate);
 
             let timer1 = HrTimer::new();
@@ -1222,7 +1222,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_delayed_response() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             let (manager, counter) = init_hr_timer_manager(current_task, Response::Immediate);
 
             let timer = HrTimer::new();
@@ -1240,7 +1240,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_protocol_error_response() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             let (manager, counter) = init_hr_timer_manager(current_task, Response::Error);
 
             let timer = HrTimer::new();
@@ -1256,7 +1256,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn reschedule_same_timer() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             let (manager, counter) = init_hr_timer_manager(current_task, Response::Delayed);
 
             let timer = HrTimer::new();
@@ -1281,7 +1281,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn rescheduling_interval_timers_forbids_suspend() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             let (hrtimer_manager, counter) = init_hr_timer_manager(current_task, Response::Delayed);
 
             // Schedule an interval timer and let it expire.
@@ -1313,7 +1313,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn canceling_interval_timer_allows_suspend() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             let (hrtimer_manager, counter) = init_hr_timer_manager(current_task, Response::Delayed);
 
             let timer1 = HrTimer::new();
@@ -1349,7 +1349,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn canceling_interval_timer_allows_suspend_with_flake() {
-        spawn_kernel_and_run(|_locked, current_task| {
+        spawn_kernel_and_run(async |_, current_task| {
             let (hrtimer_manager, counter) = init_hr_timer_manager(current_task, Response::Delayed);
 
             let timer1 = HrTimer::new();
