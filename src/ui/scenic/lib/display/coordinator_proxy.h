@@ -44,12 +44,21 @@ namespace display {
 // Thread-safety: This class is thread-unsafe; concurrent access must be externally synchronized.
 class CoordinatorProxy {
  public:
-  explicit CoordinatorProxy(fidl::ClientEnd<fuchsia_hardware_display::Coordinator> coordinator,
-                            async_dispatcher_t* dispatcher,
-                            inspect::Node inspect_node = inspect::Node());
+  // Configure which checks are enabled within `HeuristicsSayThatCheckConfigWouldFail()`.
+  struct CheckConfigHeuristics {
+    // Currently, enabling heuristics is all-or-nothing.
+    bool enable_heuristics = false;
+  };
+
+  explicit CoordinatorProxy(
+      fidl::ClientEnd<fuchsia_hardware_display::Coordinator> coordinator,
+      async_dispatcher_t* dispatcher,
+      CheckConfigHeuristics check_config_heuristics = {.enable_heuristics = false},
+      inspect::Node inspect_node = inspect::Node());
 
   explicit CoordinatorProxy(
       fidl::WireSharedClient<fuchsia_hardware_display::Coordinator> coordinator,
+      CheckConfigHeuristics check_config_heuristics = {.enable_heuristics = false},
       inspect::Node inspect_node = inspect::Node());
 
   // Corresponds to `fuchsia.hardware.display.Coordinator/ImportImage()`.
@@ -205,6 +214,20 @@ class CoordinatorProxy {
   // Caches the result of a CheckConfig call.
   void CacheCheckConfigResult(bool success);
 
+  // Used by `ApplyConfig()` to detect invalid configurations, without invoking `CheckConfig()`.
+  //
+  // The equivalence classes defined by `DisplayEquivalence` and `LayerEquivalence` are based on
+  // guarantees made by the `Coordinator` FIDL protocol.  These equivalence classes MAY NOT make use
+  // of additional knowledge that is not guaranteed by the FIDL API (as intended/understood by the
+  // display team).
+  //
+  // For example, at the time of writing, all existing driver implementations require full-screen
+  // layers.  A heuristic based on this fact allows us to avoid thrashing the cache with
+  // almost-identical configs that we cannot put in the same equivalence class.
+  //
+  // See the implementation for the specific checks that are used.
+  bool HeuristicsSayThatCheckConfigWouldFail();
+
   // Each of these increments a count variable and the corresponding Inspect property.
   void IncrementApiCallsReceived() { inspect_api_calls_received_.Set(++api_calls_received_); }
   void IncrementApiCallsSent(uint64_t count = 1) {
@@ -280,6 +303,9 @@ class CoordinatorProxy {
   // the stored boolean indicates whether a FIDL `CheckConfig()` call would succeed or fail
   // (true indicates success, and false indicates failure).
   internal::CheckConfigCache check_config_cache_;
+
+  // Specifies which heuristics should be enabled in `HeuristicsSayThatCheckConfigWouldFail()`.
+  const CheckConfigHeuristics check_config_heuristics_;
 
   // Track the number of state-setting methods called on `CoordinatorProxy`, and the number of
   // corresponding FIDL methods sent to the `fuchsia.hardware.display/Coordinator` service.

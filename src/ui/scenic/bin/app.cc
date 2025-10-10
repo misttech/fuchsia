@@ -57,7 +57,7 @@ constexpr zx::duration kEscherCleanupRetryInterval{10'000'000};  // 10 milliseco
 
 // The maximum number of "layers" that can be passed to the display hardware in a single frame,
 // per display.
-constexpr uint32_t kMaxDisplayLayers = 4;
+constexpr uint32_t kMaxDisplayLayers = 2;
 
 // See "Config for Fuchsia Visual Debugging": go/config-fuchsia-visual-debugging
 constexpr uint8_t VISUAL_DEBUGGING_LEVEL_INFO = 2;

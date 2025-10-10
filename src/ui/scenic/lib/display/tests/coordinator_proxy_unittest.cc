@@ -33,10 +33,12 @@ class CoordinatorProxyTest : public gtest::RealLoopFixture {
                                                  .refresh_rate_millihertz = 60000,
                                                  .flags = {}}};
 
-  void SetUp() override {
-    gtest::RealLoopFixture::SetUp();
-    sysmem_allocator_ = utils::CreateSysmemAllocatorSyncPtr("CoordinatorProxyTest");
-
+  // Used to construct the default `mock_coordinator_` that is available in all tests.  It is also
+  // available to tests that need to create their own mock coordinator (and `CoordinatorProxy`).
+  std::pair<std::unique_ptr<testing::StrictMock<MockDisplayCoordinator>>,
+            std::unique_ptr<CoordinatorProxy>>
+  MakeMockDisplayCoordinatorAndCoordinatorProxy(
+      CoordinatorProxy::CheckConfigHeuristics check_conifg_heuristics = {}) {
     zx::result endpoints_result = fidl::CreateEndpoints<fuchsia_hardware_display::Coordinator>();
     FX_CHECK(endpoints_result.is_ok())
         << "Failed to create FIDL endpoints for the display coordinator: "
@@ -48,22 +50,35 @@ class CoordinatorProxyTest : public gtest::RealLoopFixture {
             const_cast<WireDisplayMode*>(kSupportedDisplayModes.data()),
             kSupportedDisplayModes.size())};
 
-    mock_coordinator_ = std::make_unique<testing::StrictMock<MockDisplayCoordinator>>(display_info);
+    auto mock_coordinator =
+        std::make_unique<testing::StrictMock<MockDisplayCoordinator>>(display_info);
     // The fidl::Server requires the binding and teardown to occur on the
     // same thread where the FIDL server runs.
     libsync::Completion completion;
-    async::PostTask(
-        display_coordinator_loop_.dispatcher(),
-        [this, &completion, coordinator_server = std::move(coordinator_server)]() mutable {
-          mock_coordinator_->Bind(std::move(coordinator_server), {},
-                                  display_coordinator_loop_.dispatcher());
-          completion.Signal();
-        });
-    display_coordinator_loop_.StartThread("display-coordinator-loop");
+    async::PostTask(display_coordinator_loop_.dispatcher(),
+                    [this, &mock_coordinator, &completion,
+                     coordinator_server = std::move(coordinator_server)]() mutable {
+                      mock_coordinator->Bind(std::move(coordinator_server), {},
+                                             display_coordinator_loop_.dispatcher());
+                      completion.Signal();
+                    });
     completion.Wait();
 
-    coordinator_proxy_ =
-        std::make_unique<CoordinatorProxy>(std::move(coordinator_client), dispatcher());
+    auto coordinator_proxy = std::make_unique<CoordinatorProxy>(
+        std::move(coordinator_client), dispatcher(), check_conifg_heuristics);
+
+    return std::pair{std::move(mock_coordinator), std::move(coordinator_proxy)};
+  }
+
+  void SetUp() override {
+    gtest::RealLoopFixture::SetUp();
+    sysmem_allocator_ = utils::CreateSysmemAllocatorSyncPtr("CoordinatorProxyTest");
+
+    display_coordinator_loop_.StartThread("display-coordinator-loop");
+
+    auto mock_and_proxy = MakeMockDisplayCoordinatorAndCoordinatorProxy();
+    mock_coordinator_ = std::move(mock_and_proxy.first);
+    coordinator_proxy_ = std::move(mock_and_proxy.second);
   }
 
   void TearDown() override {
@@ -102,8 +117,9 @@ class CoordinatorProxyTest : public gtest::RealLoopFixture {
   // Synchronously calls `GetLatestAppliedConfigStamp()` on the display coordinator.  When we
   // receive the response from this, we know that the coordinator has also received/processed any
   // previously-sent messages.
-  void PingMockDisplayCoordinator() {
-    auto _ = coordinator_proxy_->raw().sync()->GetLatestAppliedConfigStamp();
+  void PingMockDisplayCoordinator(CoordinatorProxy* proxy = nullptr) {
+    auto _ =
+        (proxy ? proxy : coordinator_proxy_.get())->raw().sync()->GetLatestAppliedConfigStamp();
   }
 
  protected:
@@ -637,6 +653,63 @@ TEST_F(CoordinatorProxyTest, ApplyConfig_CheckConfigCache) {
             //       to subsequently call DiscardConfig to clean up afterward.
             // TODO(https://fxbug.dev/449807074): +2 previous +2 new extra call to `SetLayerImage`.
             12U + 4U);
+}
+
+// Helper for CheckConfigHeuristics test.  Sets up the display, and a simple config with one
+// non-fullscreen layer, which triggers the "only fullscreen layers allowed" heuristic.
+static void CheckConfigHeuristicsTestSetup(CoordinatorProxy& proxy) {
+  const DisplayId display_id(1);
+  const DisplayMode display_mode({.active_area = types::Extent2({.width = 1920, .height = 1080}),
+                                  .refresh_rate_millihertz = 60000,
+                                  .mode_flags = 0});
+  proxy.SetDisplayMode(display_id, display_mode);
+
+  const LayerId layer_id = proxy.CreateLayer();
+  const ImageId kImageId(1);
+  const types::Extent2 kImageExtent({.width = 100, .height = 100});
+  const uint32_t kImageTilingType = 0;
+  proxy.SetLayerPrimaryConfig(layer_id, kImageExtent, kImageTilingType);
+
+  const RotateFlip kTransform = RotateFlip::kReflectY();
+  const Rectangle kSrcFrame({.x = 0, .y = 0, .width = 100, .height = 100});
+  const Rectangle kDestFrame({.x = 0, .y = 0, .width = 200, .height = 200});
+  proxy.SetLayerPrimaryPosition(layer_id, kTransform, kSrcFrame, kDestFrame);
+
+  const BlendMode kBlendMode = BlendMode::kStraightAlpha();
+  const float kAlpha = 0.5f;
+  proxy.SetLayerPrimaryAlpha(layer_id, kBlendMode, kAlpha);
+
+  const EventId kWaitEventId(1);
+  proxy.SetLayerImage(layer_id, kImageId, kWaitEventId);
+
+  proxy.SetDisplayLayers(display_id, std::vector{layer_id});
+}
+
+// Test that enabling "check config heuristics" gives the expected results.  In particular, they
+// should cause `ApplyConfig()` to fail without checking the `check_config_cache_`.
+TEST_F(CoordinatorProxyTest, CheckConfigHeuristics) {
+  const WireConfigStamp config_stamp{.value = 1};
+
+  // Heuristics disabled, so `ApplyConfig()` succeeds.
+  {
+    auto [mock, proxy] =
+        MakeMockDisplayCoordinatorAndCoordinatorProxy({.enable_heuristics = false});
+    CheckConfigHeuristicsTestSetup(*proxy);
+    EXPECT_EQ(proxy->ApplyConfig(config_stamp).status_value(), ZX_OK);
+
+    // Drain all calls before destroying mock/proxy.
+    PingMockDisplayCoordinator(proxy.get());
+  }
+
+  // Heuristics enabled, so `ApplyConfig()` fails.
+  {
+    auto [mock, proxy] = MakeMockDisplayCoordinatorAndCoordinatorProxy({.enable_heuristics = true});
+    CheckConfigHeuristicsTestSetup(*proxy);
+    EXPECT_EQ(proxy->ApplyConfig(config_stamp).status_value(), ZX_ERR_BAD_STATE);
+
+    // Drain all calls before destroying mock/proxy.
+    PingMockDisplayCoordinator(proxy.get());
+  }
 }
 
 }  // namespace display::test

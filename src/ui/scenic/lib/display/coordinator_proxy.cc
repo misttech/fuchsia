@@ -14,22 +14,26 @@
 // Allows us to manually change this to enable logging without *all* Flatland verbose logging.
 #define CP_VERBOSE_LOG FLATLAND_VERBOSE_LOG
 
-static constexpr size_t kCheckConfigCacheSize = 5;
+// At time of writing, `sizeof(DisplayEquivalence) == 104` and `sizeof(DisplayEquivalence) == 56`,
+// so we can estimate a 2-layer cache entry to be ~250 bytes; 20*250 == 5KB is a reasonable cost.
+static constexpr size_t kCheckConfigCacheSize = 20;
 
 namespace display {
 
 CoordinatorProxy::CoordinatorProxy(
     fidl::ClientEnd<fuchsia_hardware_display::Coordinator> coordinator,
-    async_dispatcher_t* dispatcher, inspect::Node inspect_node)
+    async_dispatcher_t* dispatcher, CheckConfigHeuristics check_config_heuristics,
+    inspect::Node inspect_node)
     : CoordinatorProxy(fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>(
                            std::move(coordinator), dispatcher),
-                       std::move(inspect_node)) {}
+                       check_config_heuristics, std::move(inspect_node)) {}
 
 CoordinatorProxy::CoordinatorProxy(
     fidl::WireSharedClient<fuchsia_hardware_display::Coordinator> coordinator,
-    inspect::Node inspect_node)
+    CheckConfigHeuristics check_config_heuristics, inspect::Node inspect_node)
     : coordinator_(std::move(coordinator)),
       check_config_cache_(kCheckConfigCacheSize),
+      check_config_heuristics_(check_config_heuristics),
       inspect_node_(std::move(inspect_node)) {
   FX_DCHECK(coordinator_);
   inspect_api_calls_received_ = inspect_node_.CreateUint("API Calls Received", 0);
@@ -268,6 +272,14 @@ zx::result<> CoordinatorProxy::ApplyConfig(const WireConfigStamp& config_stamp) 
   // Set `temp_display_equivalence_` to have the values we need.
   UpdateDisplayEquivalenceForApplyConfig();
 
+  // Avoid thrashing the cache with small variations of failing configs.
+  if (HeuristicsSayThatCheckConfigWouldFail()) {
+    // Check config would fail, so we can return immediately.
+    IncrementCheckConfigCallSkipped();
+    ResetDraftState();
+    return zx::error(ZX_ERR_BAD_STATE);
+  }
+
   // If an equivalent equiv is already in `check_config_cache_` we can skip calling the FIDL method.
   const auto check_config_result = check_config_cache_.Get(temp_display_equivalence_);
   const bool has_cached_check_config = check_config_result.has_value();
@@ -461,6 +473,33 @@ WireConfigResult CoordinatorProxy::FidlCheckConfig() {
 void CoordinatorProxy::CacheCheckConfigResult(bool success) {
   check_config_cache_.Put(temp_display_equivalence_, success);
   inspect_check_config_cache_size_.Set(check_config_cache_.size());
+}
+
+bool CoordinatorProxy::HeuristicsSayThatCheckConfigWouldFail() {
+  TRACE_DURATION("gfx", "display::CoordinatorProxy::HeuristicsSayThatCheckConfigWouldFail");
+
+  if (!check_config_heuristics_.enable_heuristics) {
+    // Heuristics are disabled.
+    return false;
+  }
+
+  const Extent2& display_extent = temp_display_equivalence_.display_mode.active_area();
+  for (const auto& layer : temp_display_equivalence_.layers) {
+    // Image layer heuristics.
+    if (const display::internal::ImageLayerEquivalence* image_layer =
+            std::get_if<display::internal::ImageLayerEquivalence>(&layer.config)) {
+      // Images must be displayed at the origin and cover the entire screen.
+      // TODO(https://fxbug.dev/446042966): improve equivalences so that we don't need a heuristic.
+      auto& display_destination = image_layer->display_destination;
+      if (display_destination.x() != 0 || display_destination.y() != 0 ||
+          display_destination.width() != display_extent.width() ||
+          display_destination.height() != display_extent.height()) {
+        return true;
+      }
+    }
+  }
+  // No heuristic complained about the configuration.
+  return false;
 }
 
 }  // namespace display

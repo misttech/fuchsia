@@ -63,7 +63,9 @@ void DisplayManager::BindDefaultDisplayCoordinator(
   FX_DCHECK(coordinator.is_valid());
 
   coordinator_proxy_ = std::make_shared<CoordinatorProxy>(
-      std::move(coordinator), dispatcher, inspect_node_.CreateChild("Display Coordinator Proxy"));
+      std::move(coordinator), dispatcher,
+      CoordinatorProxy::CheckConfigHeuristics{.enable_heuristics = true},
+      inspect_node_.CreateChild("Display Coordinator Proxy"));
 
   display_coordinator_listener_ = std::make_shared<display::DisplayCoordinatorListener>(
       std::move(coordinator_listener), fit::bind_member<&DisplayManager::OnDisplaysChanged>(this),
