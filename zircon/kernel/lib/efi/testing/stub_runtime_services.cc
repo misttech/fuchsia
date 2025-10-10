@@ -109,7 +109,7 @@ efi_status StubRuntimeServices::GetNextVariableName(size_t* var_name_size, char1
   if (!vars_)
     return EFI_UNSUPPORTED;
 
-  size_t str_len_safe = StrNLength(var_name, *var_name_size);
+  size_t str_len_safe = StrNLength(var_name, *var_name_size / sizeof(*var_name));
   efi::String var_name_str({var_name, str_len_safe});
   auto it = var_it_;
   if (var_name_str == efi::kInvalidVariableName) {
