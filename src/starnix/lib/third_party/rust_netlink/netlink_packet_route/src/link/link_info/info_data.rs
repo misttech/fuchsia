@@ -140,7 +140,7 @@ impl InfoData {
                 InfoData::Tun(nlas)
             }
             InfoKind::Veth => {
-                let nla_buf = NlaBuffer::new_checked(&payload)
+                let nla_buf = NlaBuffer::new(&payload)
                     .context(format!("invalid IFLA_INFO_DATA for {kind} {payload:?}"))?;
                 let parsed = InfoVeth::parse(&nla_buf)?;
                 InfoData::Veth(parsed)

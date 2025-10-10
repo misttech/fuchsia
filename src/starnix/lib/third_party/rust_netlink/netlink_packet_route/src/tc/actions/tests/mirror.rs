@@ -56,7 +56,7 @@ fn tc_mirror_tm_default_parse_back() {
     let mirror_option = TcActionMirrorOption::Tm(vec![]);
     let mut buffer = vec![0; mirror_option.buffer_len()];
     mirror_option.emit(&mut buffer);
-    let nla_buf = NlaBuffer::new_checked(&buffer).unwrap();
+    let nla_buf = NlaBuffer::new(&buffer).unwrap();
     let parsed = TcActionMirrorOption::parse(&nla_buf).unwrap();
     assert_eq!(mirror_option, parsed);
 }
@@ -66,7 +66,7 @@ fn tc_mirror_tm_example_parse_back() {
     let mirror_option = TcActionMirrorOption::Tm(vec![1, 2, 3]);
     let mut buffer = vec![0; mirror_option.buffer_len()];
     mirror_option.emit(&mut buffer);
-    let nla_buf = NlaBuffer::new_checked(&buffer).unwrap();
+    let nla_buf = NlaBuffer::new(&buffer).unwrap();
     let parsed = TcActionMirrorOption::parse(&nla_buf).unwrap();
     assert_eq!(mirror_option, parsed);
 }

@@ -247,8 +247,7 @@ fn tc_action_message_attribute_parse_back_blank_actions() {
     let mut buffer = vec![0; orig.buffer_len()];
     orig.emit(&mut buffer);
     let parsed =
-        TcActionMessageAttribute::parse(&NlaBuffer::new_checked(buffer.as_slice()).unwrap())
-            .unwrap();
+        TcActionMessageAttribute::parse(&NlaBuffer::new(buffer.as_slice()).unwrap()).unwrap();
     assert_eq!(orig, parsed);
 }
 
@@ -258,8 +257,7 @@ fn tc_action_message_attribute_parse_back_example_action() {
     let mut buffer = vec![0; orig.buffer_len()];
     orig.emit(&mut buffer);
     let parsed =
-        TcActionMessageAttribute::parse(&NlaBuffer::new_checked(buffer.as_slice()).unwrap())
-            .unwrap();
+        TcActionMessageAttribute::parse(&NlaBuffer::new(buffer.as_slice()).unwrap()).unwrap();
     assert_eq!(orig, parsed);
 }
 
@@ -275,8 +273,7 @@ fn tc_action_message_attribute_parse_back_multiple_example_action() {
     let mut buffer = vec![0; orig.buffer_len()];
     orig.emit(&mut buffer);
     let parsed =
-        TcActionMessageAttribute::parse(&NlaBuffer::new_checked(buffer.as_slice()).unwrap())
-            .unwrap();
+        TcActionMessageAttribute::parse(&NlaBuffer::new(buffer.as_slice()).unwrap()).unwrap();
     assert_eq!(orig, parsed);
 }
 
@@ -285,10 +282,9 @@ fn tc_action_message_flags_parse_back_default() {
     let orig = TcActionMessageFlagsWithSelector::default();
     let mut buffer = vec![0; orig.buffer_len()];
     orig.emit(&mut buffer);
-    let parsed = TcActionMessageFlagsWithSelector::parse(
-        &NlaBuffer::new_checked(buffer.as_slice()).unwrap(),
-    )
-    .unwrap();
+    let parsed =
+        TcActionMessageFlagsWithSelector::parse(&NlaBuffer::new(buffer.as_slice()).unwrap())
+            .unwrap();
     assert_eq!(orig, parsed);
 }
 
@@ -300,10 +296,9 @@ fn tc_action_message_flags_parse_back_example_value() {
     };
     let mut buffer = vec![0; orig.buffer_len()];
     orig.emit(&mut buffer);
-    let parsed = TcActionMessageFlagsWithSelector::parse(
-        &NlaBuffer::new_checked(buffer.as_slice()).unwrap(),
-    )
-    .unwrap();
+    let parsed =
+        TcActionMessageFlagsWithSelector::parse(&NlaBuffer::new(buffer.as_slice()).unwrap())
+            .unwrap();
     assert_eq!(orig, parsed);
 }
 

@@ -143,11 +143,11 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for GenlCtrlAttrs 
                 Self::McastGroups(groups)
             }
             CTRL_ATTR_POLICY => Self::Policy(
-                PolicyAttr::parse(&NlaBuffer::new(payload))
+                PolicyAttr::parse(&NlaBuffer::new(payload)?)
                     .context("failed to parse CTRL_ATTR_POLICY")?,
             ),
             CTRL_ATTR_OP_POLICY => Self::OpPolicy(
-                OppolicyAttr::parse(&NlaBuffer::new(payload))
+                OppolicyAttr::parse(&NlaBuffer::new(payload)?)
                     .context("failed to parse CTRL_ATTR_OP_POLICY")?,
             ),
             CTRL_ATTR_OP => Self::Op(parse_u32(payload)?),
@@ -174,8 +174,7 @@ mod tests {
             1, 0, // Name kind
             b't', b'e', b's', b't', // Name
         ];
-        let nla_buffer =
-            NlaBuffer::new_checked(&mcast_bytes[..]).expect("Failed to create NlaBuffer");
+        let nla_buffer = NlaBuffer::new(&mcast_bytes[..]).expect("Failed to create NlaBuffer");
         let result_attr =
             GenlCtrlAttrs::parse(&nla_buffer).expect("Failed to parse encoded McastGroups");
         let expected_attr = GenlCtrlAttrs::McastGroups(vec![vec![
@@ -233,8 +232,7 @@ mod tests {
             2, 0, // Flags kind
             123, 0, 0, 0, // Flags
         ];
-        let nla_buffer =
-            NlaBuffer::new_checked(&ops_bytes[..]).expect("Failed to create NlaBuffer");
+        let nla_buffer = NlaBuffer::new(&ops_bytes[..]).expect("Failed to create NlaBuffer");
         let result_attr =
             GenlCtrlAttrs::parse(&nla_buffer).expect("Failed to parse encoded McastGroups");
         let expected_attr = GenlCtrlAttrs::Ops(vec![vec![OpAttrs::Id(1), OpAttrs::Flags(123)]]);

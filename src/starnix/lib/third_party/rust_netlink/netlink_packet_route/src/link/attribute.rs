@@ -366,7 +366,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<NlaBuffer<&'a T>, Addres
             IFLA_VFINFO_LIST => {
                 let err = |payload| format!("invalid IFLA_VFINFO_LIST {payload:?}");
                 Self::VfInfoList(
-                    VecLinkVfInfo::parse(&NlaBuffer::new_checked(payload).context(err(payload))?)
+                    VecLinkVfInfo::parse(&NlaBuffer::new(payload).context(err(payload))?)
                         .context(err(payload))?
                         .0,
                 )
@@ -374,7 +374,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<NlaBuffer<&'a T>, Addres
             IFLA_VF_PORTS => {
                 let err = |payload| format!("invalid IFLA_VF_PORTS {payload:?}");
                 Self::VfPorts(
-                    VecLinkVfPort::parse(&NlaBuffer::new_checked(payload).context(err(payload))?)
+                    VecLinkVfPort::parse(&NlaBuffer::new(payload).context(err(payload))?)
                         .context(err(payload))?
                         .0,
                 )
@@ -382,7 +382,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<NlaBuffer<&'a T>, Addres
             IFLA_PORT_SELF => {
                 let err = |payload| format!("invalid IFLA_PORT_SELF {payload:?}");
                 Self::PortSelf(
-                    LinkVfPort::parse(&NlaBuffer::new_checked(payload).context(err(payload))?)
+                    LinkVfPort::parse(&NlaBuffer::new(payload).context(err(payload))?)
                         .context(err(payload))?,
                 )
             }
@@ -403,14 +403,14 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<NlaBuffer<&'a T>, Addres
                 match interface_family {
                     AddressFamily::Inet6 => Self::ProtoInfoInet6(
                         VecLinkProtoInfoInet6::parse(
-                            &NlaBuffer::new_checked(payload).context(err(payload))?,
+                            &NlaBuffer::new(payload).context(err(payload))?,
                         )
                         .context(err(payload))?
                         .0,
                     ),
                     #[cfg(any(target_os = "linux", target_os = "fuchsia",))]
                     AddressFamily::Bridge => Self::ProtoInfoBridge(
-                        VecLinkProtoInfoBridge::parse(&NlaBuffer::new_checked(payload)?)
+                        VecLinkProtoInfoBridge::parse(&NlaBuffer::new(payload)?)
                             .context(format!("invalid IFLA_PROTINFO for AF_INET6 {payload:?}"))?
                             .0,
                     ),
@@ -551,7 +551,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<NlaBuffer<&'a T>, Addres
                 AddressFamily::Unspec => {
                     let err = "invalid IFLA_AF_SPEC value for AF_UNSPEC";
                     Self::AfSpecUnspec(
-                        VecAfSpecUnspec::parse(&NlaBuffer::new_checked(&buf.value()).context(err)?)
+                        VecAfSpecUnspec::parse(&NlaBuffer::new(&buf.value()).context(err)?)
                             .context(err)?
                             .0,
                     )
@@ -560,7 +560,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<NlaBuffer<&'a T>, Addres
                 AddressFamily::Bridge => {
                     let err = "invalid IFLA_AF_SPEC value for AF_BRIDGE";
                     Self::AfSpecBridge(
-                        VecAfSpecBridge::parse(&NlaBuffer::new_checked(&buf.value()).context(err)?)
+                        VecAfSpecBridge::parse(&NlaBuffer::new(&buf.value()).context(err)?)
                             .context(err)?
                             .0,
                     )
@@ -570,14 +570,12 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<NlaBuffer<&'a T>, Addres
             IFLA_LINKINFO => {
                 let err = "invalid IFLA_LINKINFO value";
                 Self::LinkInfo(
-                    VecLinkInfo::parse(&NlaBuffer::new_checked(&buf.value()).context(err)?)
-                        .context(err)?
-                        .0,
+                    VecLinkInfo::parse(&NlaBuffer::new(&buf.value()).context(err)?).context(err)?.0,
                 )
             }
             IFLA_XDP => {
                 let err = "invalid IFLA_XDP value";
-                let buf = NlaBuffer::new_checked(payload).context(err)?;
+                let buf = NlaBuffer::new(payload).context(err)?;
                 Self::Xdp(VecLinkXdp::parse(&buf).context(err)?.0)
             }
             kind => {

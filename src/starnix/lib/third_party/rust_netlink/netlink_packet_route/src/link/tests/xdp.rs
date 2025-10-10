@@ -35,7 +35,7 @@ static ATTACHED: [u8; 48] = [
 
 #[test]
 fn parse_xdp_attached() {
-    let nla = NlaBuffer::new_checked(&ATTACHED[..]).unwrap();
+    let nla = NlaBuffer::new(&ATTACHED[..]).unwrap();
     let parsed = VecLinkXdp::parse(&nla).unwrap().0;
     let expected = vec![
         LinkXdp::Attached(XdpAttached::None),
@@ -133,7 +133,7 @@ fn emit_xdp_attached() {
 
 #[test]
 fn parse_xdp() {
-    let nla = NlaBuffer::new_checked(&XDP[..]).unwrap();
+    let nla = NlaBuffer::new(&XDP[..]).unwrap();
     let parsed = VecLinkXdp::parse(&nla).unwrap().0;
     let expected = vec![
         LinkXdp::Fd(29856),
@@ -143,8 +143,8 @@ fn parse_xdp() {
         LinkXdp::SkbProgId(101),
         LinkXdp::HwProgId(101),
         LinkXdp::ExpectedFd(29857),
-        LinkXdp::Other(DefaultNla::parse(&NlaBuffer::new(&XDP[56..64])).unwrap()),
-        LinkXdp::Other(DefaultNla::parse(&NlaBuffer::new(&XDP[64..])).unwrap()),
+        LinkXdp::Other(DefaultNla::parse(&NlaBuffer::new(&XDP[56..64]).unwrap()).unwrap()),
+        LinkXdp::Other(DefaultNla::parse(&NlaBuffer::new(&XDP[64..]).unwrap()).unwrap()),
     ];
     assert_eq!(expected, parsed);
 }
@@ -159,8 +159,8 @@ fn emit_xdp() {
         LinkXdp::SkbProgId(101),
         LinkXdp::HwProgId(101),
         LinkXdp::ExpectedFd(29857),
-        LinkXdp::Other(DefaultNla::parse(&NlaBuffer::new(&XDP[56..64])).unwrap()),
-        LinkXdp::Other(DefaultNla::parse(&NlaBuffer::new(&XDP[64..])).unwrap()),
+        LinkXdp::Other(DefaultNla::parse(&NlaBuffer::new(&XDP[56..64]).unwrap()).unwrap()),
+        LinkXdp::Other(DefaultNla::parse(&NlaBuffer::new(&XDP[64..]).unwrap()).unwrap()),
     ];
     assert_eq!(nlas.as_slice().buffer_len(), XDP.len());
 

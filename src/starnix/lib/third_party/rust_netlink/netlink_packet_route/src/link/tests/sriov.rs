@@ -116,7 +116,8 @@ fn test_parsing_link_sriov() {
 
     assert_eq!(
         expected,
-        LinkAttribute::parse_with_param(&NlaBuffer::new(&raw), AddressFamily::Unspec).unwrap(),
+        LinkAttribute::parse_with_param(&NlaBuffer::new(&raw).unwrap(), AddressFamily::Unspec)
+            .unwrap(),
     );
 
     let mut buf = vec![0; expected.buffer_len()];

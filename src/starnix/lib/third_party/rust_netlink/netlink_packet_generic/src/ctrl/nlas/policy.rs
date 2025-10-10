@@ -43,7 +43,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for PolicyAttr {
 
         Ok(Self {
             index: buf.kind(),
-            attr_policy: AttributePolicyAttr::parse(&NlaBuffer::new(payload))
+            attr_policy: AttributePolicyAttr::parse(&NlaBuffer::new(payload)?)
                 .context("failed to parse PolicyAttr")?,
         })
     }

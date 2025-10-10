@@ -409,7 +409,7 @@ fn test_af_spec_bridge() {
         AfSpecBridge::VlanInfo(BridgeVlanInfo { flags: 16, vid: 4094 }),
     ];
 
-    assert_eq!(VecAfSpecBridge::parse(&NlaBuffer::new(&raw)).unwrap().0, expected);
+    assert_eq!(VecAfSpecBridge::parse(&NlaBuffer::new(&raw).unwrap()).unwrap().0, expected);
 }
 
 #[test]

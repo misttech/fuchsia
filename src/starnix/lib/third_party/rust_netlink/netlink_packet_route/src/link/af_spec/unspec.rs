@@ -50,12 +50,12 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for VecAfSpecUnspe
             let nla = nla.context(err)?;
             nlas.push(match nla.kind() {
                 k if k == u8::from(AddressFamily::Inet) as u16 => AfSpecUnspec::Inet(
-                    VecAfSpecInet::parse(&NlaBuffer::new_checked(&nla.value()).context(err)?)
+                    VecAfSpecInet::parse(&NlaBuffer::new(&nla.value()).context(err)?)
                         .context(err)?
                         .0,
                 ),
                 k if k == u8::from(AddressFamily::Inet6) as u16 => AfSpecUnspec::Inet6(
-                    VecAfSpecInet6::parse(&NlaBuffer::new_checked(&nla.value()).context(err)?)
+                    VecAfSpecInet6::parse(&NlaBuffer::new(&nla.value()).context(err)?)
                         .context(err)?
                         .0,
                 ),

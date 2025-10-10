@@ -58,12 +58,12 @@ pub struct NlaBuffer<T: AsRef<[u8]>> {
 }
 
 impl<T: AsRef<[u8]>> NlaBuffer<T> {
-    pub fn new(buffer: T) -> NlaBuffer<T> {
-        NlaBuffer { buffer }
+    pub fn new_unchecked(buffer: T) -> Self {
+        Self { buffer }
     }
 
-    pub fn new_checked(buffer: T) -> Result<NlaBuffer<T>, NlaError> {
-        let buffer = Self::new(buffer);
+    pub fn new(buffer: T) -> Result<NlaBuffer<T>, NlaError> {
+        let buffer = Self::new_unchecked(buffer);
         buffer.check_buffer_length()?;
         Ok(buffer)
     }
@@ -236,7 +236,7 @@ impl<T: Nla> Emitable for T {
         nla_align!(self.value_len()) + NLA_HEADER_SIZE
     }
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = NlaBuffer::new(buffer);
+        let mut buffer = NlaBuffer::new_unchecked(buffer);
         buffer.set_kind(self.kind());
 
         if self.is_network_byteorder() {
@@ -309,7 +309,7 @@ impl<'buffer, T: AsRef<[u8]> + ?Sized + 'buffer> Iterator for NlasIterator<&'buf
             return None;
         }
 
-        match NlaBuffer::new_checked(&self.buffer.as_ref()[self.position..]) {
+        match NlaBuffer::new(&self.buffer.as_ref()[self.position..]) {
             Ok(nla_buffer) => {
                 self.position += nla_align!(nla_buffer.length() as usize);
                 Some(Ok(nla_buffer))
@@ -334,7 +334,7 @@ mod tests {
         // The IPSET_ATTR_TIMEOUT attribute should have the network byte order
         // flag set. IPSET_ATTR_TIMEOUT(3600)
         static TEST_ATTRIBUTE: &[u8] = &[0x08, 0x00, 0x06, 0x40, 0x00, 0x00, 0x0e, 0x10];
-        let buffer = NlaBuffer::new(TEST_ATTRIBUTE);
+        let buffer = NlaBuffer::new(TEST_ATTRIBUTE).unwrap();
         let buffer_is_net = buffer.network_byte_order_flag();
         let buffer_is_nest = buffer.nested_flag();
 
@@ -346,7 +346,7 @@ mod tests {
         let attr_is_net = nla.is_network_byteorder();
         let attr_is_nest = nla.is_nested();
 
-        let emit = NlaBuffer::new(emitted_buffer);
+        let emit = NlaBuffer::new(emitted_buffer).unwrap();
         let emit_is_net = emit.network_byte_order_flag();
         let emit_is_nest = emit.nested_flag();
 

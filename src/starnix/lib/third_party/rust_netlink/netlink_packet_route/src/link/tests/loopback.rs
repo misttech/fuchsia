@@ -172,7 +172,7 @@ fn test_link_loopback() {
         ]),
     ];
 
-    assert_eq!(VecAfSpecUnspec::parse(&NlaBuffer::new(&raw)).unwrap().0, expected);
+    assert_eq!(VecAfSpecUnspec::parse(&NlaBuffer::new(&raw).unwrap()).unwrap().0, expected);
     let mut buffer = vec![0; expected.as_slice().buffer_len()];
     expected.as_slice().emit(&mut buffer);
     assert_eq!(buffer.as_slice(), raw);

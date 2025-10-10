@@ -208,8 +208,7 @@ fn tc_action_nat_option_parse_back_example_params() {
     for example in TC_ACTION_NAT_OPTION_PARAMS_EXAMPLES {
         let mut buffer = vec![0; example.buffer_len()];
         example.emit(&mut buffer);
-        let parsed =
-            TcActionNatOption::parse(&NlaBuffer::new_checked(buffer.as_slice()).unwrap()).unwrap();
+        let parsed = TcActionNatOption::parse(&NlaBuffer::new(buffer.as_slice()).unwrap()).unwrap();
         assert_eq!(example, parsed);
     }
 }
@@ -234,8 +233,7 @@ fn tc_action_nat_option_parse_back_example_tm() {
     for example in &tc_action_nat_option_tm_examples() {
         let mut buffer = vec![0; example.buffer_len()];
         example.emit(&mut buffer);
-        let parsed =
-            TcActionNatOption::parse(&NlaBuffer::new_checked(buffer.as_slice()).unwrap()).unwrap();
+        let parsed = TcActionNatOption::parse(&NlaBuffer::new(buffer.as_slice()).unwrap()).unwrap();
         assert_eq!(example, &parsed);
     }
 }

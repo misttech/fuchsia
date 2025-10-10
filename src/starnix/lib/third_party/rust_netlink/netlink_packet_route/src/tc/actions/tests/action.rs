@@ -27,7 +27,7 @@ fn tc_action_parse_back_minimal() {
     let orig = TcAction { tab: 1, attributes: vec![TcActionAttribute::Kind("example".into())] };
     let mut buffer = vec![0; orig.buffer_len()];
     orig.emit(&mut buffer);
-    let parsed = TcAction::parse(&NlaBuffer::new_checked(buffer.as_slice()).unwrap()).unwrap();
+    let parsed = TcAction::parse(&NlaBuffer::new(buffer.as_slice()).unwrap()).unwrap();
     assert_eq!(orig, parsed);
 }
 
@@ -49,6 +49,6 @@ fn tc_action_parse_back_example() {
     };
     let mut buffer = vec![0; orig.buffer_len()];
     orig.emit(&mut buffer);
-    let parsed = TcAction::parse(&NlaBuffer::new_checked(buffer.as_slice()).unwrap()).unwrap();
+    let parsed = TcAction::parse(&NlaBuffer::new(buffer.as_slice()).unwrap()).unwrap();
     assert_eq!(orig, parsed);
 }

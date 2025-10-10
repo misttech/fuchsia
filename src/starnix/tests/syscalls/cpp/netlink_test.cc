@@ -36,10 +36,11 @@
 
 namespace {
 
+template <int PROTOCOL>
 class NetlinkTest : public ::testing::Test {
  public:
   void SetUp() override {
-    nl_sock_.reset(socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE));
+    nl_sock_.reset(socket(AF_NETLINK, SOCK_RAW, PROTOCOL));
     ASSERT_TRUE(nl_sock_.is_valid()) << strerror(errno);
   }
 
@@ -50,6 +51,18 @@ class NetlinkTest : public ::testing::Test {
     header.msg_iov = &iov;
     header.msg_iovlen = 1;
     return sendmsg(nl_sock_.get(), &header, 0);
+  }
+
+  fbl::unique_fd nl_sock_;
+};
+
+class NetlinkRouteTest : public NetlinkTest<NETLINK_ROUTE> {
+ public:
+  void SetUp() override {
+    if (!test_helper::HasCapability(CAP_NET_ADMIN)) {
+      GTEST_SKIP() << "Needs CAP_NET_ADMIN";
+    }
+    NetlinkTest::SetUp();
   }
 
   void CheckNetlinkAlive() {
@@ -76,15 +89,15 @@ class NetlinkTest : public ::testing::Test {
     ASSERT_THAT(nlmsg->nlmsg_type,
                 testing::AnyOf(testing::Eq(RTM_NEWLINK), testing::Eq(NLMSG_DONE)));
   }
-
-  fbl::unique_fd nl_sock_;
 };
+
+class NetlinkGenericTest : public NetlinkTest<NETLINK_GENERIC> {};
 
 // Regression test for Syzkaller netlink crash in https://fxbug.dev/390646804.
 //
 // Crash was caused by the RTM_NEWPREFIX message being unimplemented and falling
 // through a panic.
-TEST_F(NetlinkTest, RtmNewPrefixDoesntCrash) {
+TEST_F(NetlinkRouteTest, RtmNewPrefixDoesntCrash) {
   test_helper::NetlinkEncoder encoder(RTM_NEWPREFIX, 0);
   struct prefixmsg pfx = {};
   encoder.Write(pfx);
@@ -92,7 +105,7 @@ TEST_F(NetlinkTest, RtmNewPrefixDoesntCrash) {
   CheckNetlinkAlive();
 }
 
-TEST_F(NetlinkTest, NoCapabilities) {
+TEST_F(NetlinkRouteTest, NoCapabilities) {
   if (!test_helper::HasCapability(CAP_NET_ADMIN)) {
     GTEST_SKIP() << "Needs CAP_NET_ADMIN";
   }
@@ -562,26 +575,34 @@ TEST(NetlinkSocket, NlctrlFamily) {
 }
 
 // Regression test for syzkaller finding on https://fxbug.dev/387599168.
-TEST_F(NetlinkTest, IflaCacheInfoMissingBody) {
+TEST_F(NetlinkRouteTest, IflaCacheInfoMissingBody) {
   // The reproducer sends a message type 0x16, which is RTM_GETADDR.
   test_helper::NetlinkEncoder encoder(RTM_GETADDR, NLM_F_DUMP);
   encoder.Write(ifaddrmsg{
       .ifa_family = AF_INET6,
   });
-  encoder.Write(nlattr{
-      // Correct size for address cache info is 16 (+4 fo header).
-      .nla_len = 4,
-      .nla_type = IFA_CACHEINFO,
-  });
 
+  // Correct size for cache info is 16.
+  uint16_t cacheinfo = 0;
+
+  encoder.AddRtAttr(IFA_CACHEINFO, cacheinfo);
   // We expect the syscall to succeed, e.g. not crash.
   ASSERT_THAT(SendMsg(encoder), SyscallSucceeds());
-  CheckNetlinkAlive();
+
+  struct {
+    nlmsghdr hdr;
+    nlmsgerr err;
+  } response;
+  ssize_t received = recv(nl_sock_.get(), &response, sizeof(response), 0);
+  ASSERT_THAT(received, SyscallSucceeds());
+  ASSERT_EQ(static_cast<size_t>(received), sizeof(response));
+  EXPECT_EQ(response.hdr.nlmsg_type, NLMSG_ERROR);
+  EXPECT_EQ(response.err.error, -EINVAL);
 }
 
 // Netlink messages that are malformed, are expected to generate an error
 // response, as opposed to failing the syscall.
-TEST_F(NetlinkTest, MalformedMessageCausesErrorReturn) {
+TEST_F(NetlinkRouteTest, MalformedMessageCausesErrorReturn) {
   test_helper::NetlinkEncoder encoder(RTM_GETADDR, NLM_F_REQUEST);
   // The body should contain struct ifaddrmsg. But instead just write a single
   // field from it.
@@ -602,7 +623,7 @@ TEST_F(NetlinkTest, MalformedMessageCausesErrorReturn) {
   EXPECT_EQ(response.err.error, -EINVAL);
 }
 
-TEST_F(NetlinkTest, MessageWithIncompleteHeader) {
+TEST_F(NetlinkRouteTest, MessageWithIncompleteHeader) {
   struct nlmsghdr header = {.nlmsg_len = sizeof(uint32_t)};
   ASSERT_THAT(send(nl_sock_.get(), &header.nlmsg_len, sizeof(header.nlmsg_len), 0),
               SyscallSucceeds());
@@ -614,7 +635,7 @@ TEST_F(NetlinkTest, MessageWithIncompleteHeader) {
   CheckNetlinkAlive();
 }
 
-TEST_F(NetlinkTest, HeaderOnlyMessageWithBadLength) {
+TEST_F(NetlinkRouteTest, HeaderOnlyMessageWithBadLength) {
   struct nlmsghdr header = {
       .nlmsg_len = sizeof(nlmsghdr) + sizeof(ifaddrmsg),
       .nlmsg_type = RTM_GETADDR,
@@ -633,7 +654,7 @@ TEST_F(NetlinkTest, HeaderOnlyMessageWithBadLength) {
 }
 
 // Regression test for syzkaller finding on https://fxbug.dev/387662319.
-TEST_F(NetlinkTest, IncompleteRouteFlow) {
+TEST_F(NetlinkRouteTest, IncompleteRouteFlow) {
   test_helper::NetlinkEncoder encoder(RTM_GETROUTE, NLM_F_REQUEST);
   encoder.Write(rtmsg{
       .rtm_family = AF_INET,
@@ -655,6 +676,24 @@ TEST_F(NetlinkTest, IncompleteRouteFlow) {
   // matters for this test is that we got an error response back and didn't
   // crash.
   ASSERT_THAT(response.err.error, testing::AnyOf(testing::Eq(-EINVAL), testing::Eq(-ERANGE)));
+}
+
+// Regression test for syzkaller finding on https://fxbug.dev/393764263.
+TEST_F(NetlinkGenericTest, PartialCtrlAttrPolicy) {
+  test_helper::NetlinkEncoder encoder(GENL_ID_CTRL, 0);
+  encoder.Write(genlmsghdr{
+      // CTRL_CMD_GET_POLICY. Not available in header.
+      .cmd = 10,
+  });
+  encoder.Write(nlattr{
+      .nla_len = 8,
+      .nla_type = 9,  // CTRL_ATTR_OP_POLICY. Not available in header.
+  });
+  encoder.Write(nlattr{
+      // Invalid length less than 4.
+      .nla_len = 2,
+  });
+  ASSERT_THAT(SendMsg(encoder), SyscallSucceeds());
 }
 
 }  // namespace

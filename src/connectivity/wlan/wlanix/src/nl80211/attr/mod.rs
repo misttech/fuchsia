@@ -333,7 +333,8 @@ mod tests {
         assert_eq!(buffer, bytes);
 
         // Test parsing the bytes.
-        let parsed_attr = Nl80211Attr::parse(&NlaBuffer::new(&bytes)).expect("Failed to parse NLA");
+        let parsed_attr = Nl80211Attr::parse(&NlaBuffer::new(&bytes).expect("failed to parse nla"))
+            .expect("Failed to parse NLA");
         assert_eq!(parsed_attr, attr);
     }
 

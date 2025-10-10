@@ -24,7 +24,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for VecLinkVfInfo 
         for nla in NlasIterator::new(buf.into_inner()) {
             let nla = &nla.context(format!("invalid IFLA_VFINFO_LIST value: {:?}", buf.value()))?;
             if nla.kind() == IFLA_VF_INFO {
-                nlas.push(LinkVfInfo::parse(&NlaBuffer::new_checked(nla.value())?)?);
+                nlas.push(LinkVfInfo::parse(&NlaBuffer::new(nla.value())?)?);
             } else {
                 log::warn!(
                     "BUG: Expecting IFLA_VF_INFO in IFLA_VFINFO_LIST, \

@@ -14,7 +14,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for VecLinkVfPort 
         for nla in NlasIterator::new(buf.into_inner()) {
             let nla = &nla.context(format!("invalid IFLA_VF_PORTS value: {:?}", buf.value()))?;
             if nla.kind() == IFLA_VF_PORT {
-                nlas.push(LinkVfPort::parse(&NlaBuffer::new_checked(nla.value())?)?);
+                nlas.push(LinkVfPort::parse(&NlaBuffer::new(nla.value())?)?);
             } else {
                 log::warn!(
                     "BUG: Expecting IFLA_VF_PORT in IFLA_VF_PORTS, \
