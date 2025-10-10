@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::endpoints::{create_endpoints, ServerEnd};
 use fidl::AsHandleRef;
+use fidl::endpoints::{ServerEnd, create_endpoints};
 use fidl_fuchsia_memory_heapdump_process as fheapdump_process;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use crate::allocations_table::AllocationsTable;
@@ -28,7 +28,7 @@ const WAIT_TIMEOUT: Duration = Duration::from_secs(120);
 /// is stored separately.
 pub struct Profiler {
     snapshot_sink: fheapdump_process::SnapshotSinkV1SynchronousProxy,
-    inner: Mutex<ProfilerInner>,
+    inner: Mutex<Option<ProfilerInner>>,
 }
 
 #[derive(Default)]
@@ -58,7 +58,7 @@ impl Default for Profiler {
         let proxy = fheapdump_process::SnapshotSinkV1SynchronousProxy::new(client.into_channel());
 
         let inner = ProfilerInner { snapshot_sink_server: Some(server), ..Default::default() };
-        Profiler { snapshot_sink: proxy, inner: Mutex::new(inner) }
+        Profiler { snapshot_sink: proxy, inner: Mutex::new(Some(inner)) }
     }
 }
 
@@ -69,7 +69,8 @@ impl Profiler {
             .expect("failed to duplicate process handle");
 
         let (snapshot_sink_server, allocations_table_dup, resources_table_dup) = {
-            let mut inner = self.inner.lock().unwrap();
+            let mut guard = self.inner.lock().unwrap();
+            let inner = guard.as_mut().expect("profiler has been torn down");
             (
                 inner.snapshot_sink_server.take(),
                 inner.allocations_table.share_vmo(),
@@ -88,22 +89,28 @@ impl Profiler {
             snapshot_sink_server,
         );
     }
-}
 
-impl Profiler {
-    pub fn get_global_stats(&self) -> HeapdumpGlobalStats {
-        self.inner.lock().unwrap().global_stats
+    pub fn teardown(&self) {
+        self.inner.lock().unwrap().take().expect("profiler has already been torn down");
     }
 
-    fn intern_and_lock(
-        &self,
+    // Returns the global stats, or None if the Profiler has been torn down.
+    pub fn get_global_stats(&self) -> Option<HeapdumpGlobalStats> {
+        let guard = self.inner.lock().unwrap();
+        match guard.as_ref() {
+            Some(inner) => Some(inner.global_stats),
+            None => None,
+        }
+    }
+
+    fn intern(
+        inner: &mut ProfilerInner,
         thread_data: &mut PerThreadData,
         compressed_stack_trace: &[u8],
-    ) -> (MutexGuard<'_, ProfilerInner>, ResourceKey, ResourceKey) {
+    ) -> (ResourceKey, ResourceKey) {
         let (thread_koid, thread_name) =
             get_current_thread_koid_and_name(&mut thread_data.cached_koid);
 
-        let mut inner = self.inner.lock().unwrap();
         let thread_info_key = match thread_data.resource_key_and_name {
             Some((resource_key, old_name)) if old_name == thread_name => {
                 // The previously generated resource key is still valid, because the name did not
@@ -120,7 +127,7 @@ impl Profiler {
         };
         let stack_trace_key = inner.resources_table.intern_stack_trace(compressed_stack_trace);
 
-        (inner, thread_info_key, stack_trace_key)
+        (thread_info_key, stack_trace_key)
     }
 
     pub fn record_allocation(
@@ -131,28 +138,46 @@ impl Profiler {
         compressed_stack_trace: &[u8],
         timestamp: zx::MonotonicInstant,
     ) {
-        let (mut inner, thread_info_key, stack_trace_key) =
-            self.intern_and_lock(thread_data, compressed_stack_trace);
+        let mut guard = self.inner.lock().unwrap();
+        let Some(inner) = guard.as_mut() else {
+            return;
+        };
+
+        let (thread_info_key, stack_trace_key) =
+            Self::intern(inner, thread_data, compressed_stack_trace);
 
         // Insert the new entry. If a duplicate is found, it means that this allocation is recycling
         // a block that was just deallocated by realloc, but for which __scudo_realloc_allocate_hook
         // (i.e. the realloc end notification) has not been executed yet.
-        while !inner.allocations_table.try_record_allocation(
-            address,
-            size,
-            thread_info_key,
-            stack_trace_key,
-            timestamp,
-        ) {
-            inner = WaiterList::wait(inner, |inner| &mut inner.waiters, address, WAIT_TIMEOUT);
-        }
+        loop {
+            let Some(inner) = guard.as_mut() else {
+                return; // The profiler has been torn down.
+            };
 
-        inner.global_stats.total_allocated_bytes += size;
-        thread_data.local_stats.total_allocated_bytes += size;
+            if inner.allocations_table.try_record_allocation(
+                address,
+                size,
+                thread_info_key,
+                stack_trace_key,
+                timestamp,
+            ) {
+                // The allocation was successfully recorded. Let's update the stats too and we're
+                // done.
+                inner.global_stats.total_allocated_bytes += size;
+                thread_data.local_stats.total_allocated_bytes += size;
+                return;
+            }
+
+            guard = WaiterList::wait(guard, |inner| &mut inner.waiters, address, WAIT_TIMEOUT);
+        }
     }
 
     pub fn forget_allocation(&self, thread_data: &mut PerThreadData, address: u64) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut guard = self.inner.lock().unwrap();
+        let Some(inner) = guard.as_mut() else {
+            return;
+        };
+
         let size = inner.allocations_table.forget_allocation(address);
 
         inner.global_stats.total_deallocated_bytes += size;
@@ -170,8 +195,13 @@ impl Profiler {
         compressed_stack_trace: &[u8],
         timestamp: zx::MonotonicInstant,
     ) {
-        let (mut inner, thread_info_key, stack_trace_key) =
-            self.intern_and_lock(thread_data, compressed_stack_trace);
+        let mut guard = self.inner.lock().unwrap();
+        let Some(inner) = guard.as_mut() else {
+            return;
+        };
+
+        let (thread_info_key, stack_trace_key) =
+            Self::intern(inner, thread_data, compressed_stack_trace);
 
         let old_size = inner.allocations_table.update_allocation(
             address,
@@ -194,7 +224,10 @@ impl Profiler {
 
     pub fn publish_named_snapshot(&self, name: &str) {
         let allocations_table_snapshot = {
-            let inner = self.inner.lock().unwrap();
+            let guard = self.inner.lock().unwrap();
+            let Some(inner) = guard.as_ref() else {
+                return;
+            };
             inner.allocations_table.snapshot_vmo()
         };
 

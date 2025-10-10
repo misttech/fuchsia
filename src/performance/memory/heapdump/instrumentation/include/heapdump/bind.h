@@ -23,12 +23,18 @@ __BEGIN_CDECLS
 // Note: Allocations and snapshots captured before calling this function are internally buffered.
 // Therefore, while it is expected that programs will call this function as early as possible, no
 // data will be lost if they start to allocate before doing so.
+//
+// Passing ZX_HANDLE_INVALID will release all the resources that were used to internally buffer
+// previous allocations and snapshots and disable tracking of future ones.
 void heapdump_bind_with_channel(zx_handle_t registry_channel);
 
 // Binds the current process to the process registry, using `fdio_service_connect` to locate it.
 //
 // This function wraps `heapdump_bind_with_channel` and implements the common case of using fdio to
 // connect to the process registry.
+//
+// If the relevant capability is not in the namespace, it becomes equivalent to
+// `heapdump_bind_with_channel(ZX_HANDLE_INVALID)`.
 void heapdump_bind_with_fdio(void);
 
 __END_CDECLS

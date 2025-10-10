@@ -4,15 +4,30 @@
 
 use heapdump_vmo::stack_trace_compression;
 use std::ffi::c_void;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::{with_profiler, PerThreadData, Profiler};
+use crate::{PerThreadData, Profiler, with_profiler};
 
 const STACK_TRACE_MAXIMUM_DEPTH: usize = 64;
 const STACK_TRACE_MAXIMUM_COMPRESSED_SIZE: usize =
     stack_trace_compression::max_compressed_size(STACK_TRACE_MAXIMUM_DEPTH);
 
+/// Makes the hooks return immediately without doing any operation.
+///
+/// It can only be set from false (initial value) to true, and it must be
+/// considered just a hint.
+///
+/// Setting this flag is inherently racy, as some other thread might have
+/// already checked the flag but not entered the main part of a hook. Therefore,
+/// the Profiler needs to duplicate the same logic, but protected by Mutex.
+static QUICK_EARLY_RETURN: AtomicBool = AtomicBool::new(false);
+
 extern "C" {
     fn __sanitizer_fast_backtrace(buffer: *mut u64, buffer_size: usize) -> usize;
+}
+
+pub fn enable_quick_early_return() {
+    QUICK_EARLY_RETURN.store(true, Ordering::Relaxed);
 }
 
 // Like `with_profiler`, but pass the current timestamp and the compressed call stack too.
@@ -45,6 +60,10 @@ fn with_profiler_and_call_site(
 // Called by Scudo after new memory has been allocated by malloc/calloc/...
 #[no_mangle]
 pub extern "C" fn __scudo_allocate_hook(ptr: *mut c_void, size: usize) {
+    if QUICK_EARLY_RETURN.load(Ordering::Relaxed) {
+        return;
+    }
+
     with_profiler_and_call_site(|profiler, thread_data, timestamp, compressed_stack_trace| {
         profiler.record_allocation(
             thread_data,
@@ -59,6 +78,10 @@ pub extern "C" fn __scudo_allocate_hook(ptr: *mut c_void, size: usize) {
 // Called by Scudo before memory is deallocated by free.
 #[no_mangle]
 pub extern "C" fn __scudo_deallocate_hook(ptr: *mut c_void) {
+    if QUICK_EARLY_RETURN.load(Ordering::Relaxed) {
+        return;
+    }
+
     with_profiler(|profiler, thread_data| {
         if ptr != std::ptr::null_mut() {
             profiler.forget_allocation(thread_data, ptr as u64);
@@ -79,6 +102,10 @@ pub extern "C" fn __scudo_realloc_allocate_hook(
     new_ptr: *mut c_void,
     size: usize,
 ) {
+    if QUICK_EARLY_RETURN.load(Ordering::Relaxed) {
+        return;
+    }
+
     with_profiler_and_call_site(|profiler, thread_data, timestamp, compressed_stack_trace| {
         // Has the memory block been reallocated in-place?
         if old_ptr == new_ptr {

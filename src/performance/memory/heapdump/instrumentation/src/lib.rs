@@ -17,6 +17,8 @@ mod waiter_list;
 // Do not include the hooks in the tests' executable, to avoid instrumenting the test framework.
 #[cfg(not(test))]
 mod hooks;
+#[cfg(not(test))]
+use crate::hooks::enable_quick_early_return;
 
 use crate::profiler::{PerThreadData, Profiler};
 use crate::recursion_guard::with_recursion_guard;
@@ -61,11 +63,15 @@ pub fn with_profiler(f: impl FnOnce(&Profiler, &mut PerThreadData)) {
 #[no_mangle]
 pub unsafe extern "C" fn heapdump_bind_with_channel(registry_channel: zx_handle_t) {
     let handle = zx::Handle::from_raw(registry_channel);
-    if !handle.is_invalid() {
-        assert_eq!(handle.basic_info().unwrap().object_type, zx::ObjectType::CHANNEL);
-    }
+    if handle.is_invalid() {
+        #[cfg(not(test))]
+        enable_quick_early_return();
 
-    PROFILER.bind(handle.into());
+        PROFILER.teardown();
+    } else {
+        assert_eq!(handle.basic_info().unwrap().object_type, zx::ObjectType::CHANNEL);
+        PROFILER.bind(handle.into());
+    }
 }
 
 /// # Safety
@@ -76,11 +82,18 @@ pub unsafe extern "C" fn heapdump_get_stats(
     local: *mut heapdump_thread_local_stats,
 ) {
     with_profiler(|profiler, thread_data| {
+        // Get real data if the profiler is still operating, or zeros if it has been torn down.
+        let (global_stats, local_stats) = if let Some(global_stats) = profiler.get_global_stats() {
+            (global_stats, thread_data.get_local_stats())
+        } else {
+            (Default::default(), Default::default())
+        };
+
         if global != std::ptr::null_mut() {
-            *global = profiler.get_global_stats();
+            *global = global_stats;
         }
         if local != std::ptr::null_mut() {
-            *local = thread_data.get_local_stats();
+            *local = local_stats;
         }
     });
 }

@@ -40,18 +40,25 @@ impl Default for WaiterList {
 impl WaiterList {
     /// Waits until a notification for the given address is received.
     ///
-    /// The caller must provide the MutexGuard that protects the WaiterList and a function to obtain
-    /// it starting from the mutex's inner type.
+    /// The caller must provide the MutexGuard of an Option<T>, where T contains the WaiterList, and
+    /// and a function to obtain the WaiterList starting from T.
+    ///
+    /// If, at any point during the wait, the option value becomes None (i.e. the WaiterList is
+    /// destroyed), the wait will immediately stop and return.
     ///
     /// Note: The mutex may be released and re-acquired multiple times while waiting.
     ///
     /// If the requested timeout is exceeded, this function will panic.
     pub fn wait<'a, T>(
-        mut guard: MutexGuard<'a, T>,
+        mut guard: MutexGuard<'a, Option<T>>,
         get_waiter_list: impl Fn(&mut T) -> &mut WaiterList,
         address: u64,
         panic_after_timeout: Duration,
-    ) -> MutexGuard<'a, T> {
+    ) -> MutexGuard<'a, Option<T>> {
+        let Some(guard_contents) = guard.as_mut() else {
+            return guard; // The WaiterList has been destroyed.
+        };
+
         let node = std::pin::pin!(Node {
             waited_address: address,
             condvar: Condvar::new(),
@@ -59,7 +66,7 @@ impl WaiterList {
         });
 
         // Insert it at the head of the list.
-        let old_head = std::mem::replace(&mut get_waiter_list(&mut guard).head, &*node);
+        let old_head = std::mem::replace(&mut get_waiter_list(guard_contents).head, &*node);
         node.next.set(Some(old_head));
 
         // When the address is notified, the node will be removed from the list and its condvar
@@ -105,21 +112,38 @@ impl WaiterList {
     }
 }
 
+// Wake up all the waiters when the WaiterList is dropped.
+impl Drop for WaiterList {
+    fn drop(&mut self) {
+        let mut it: *const Node = self.head;
+
+        // SAFETY: If `it` is not null, the object it points to is alive, because it's part of this
+        // list.
+        while let Some(node) = unsafe { it.as_ref() } {
+            // Notify the waiting thread.
+            node.condvar.notify_one();
+
+            // Move to the next node.
+            it = node.next.take().expect("node must be in the list");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, Mutex, mpsc};
 
     #[test]
     fn test_notify_waited_address() {
-        let waiter_list = Arc::new(Mutex::new(WaiterList::default()));
+        let waiter_list = Arc::new(Mutex::new(Some(WaiterList::default())));
         let guard = waiter_list.lock().unwrap();
 
         let _notifier_thread = {
             let waiter_list = waiter_list.clone();
             std::thread::spawn(move || {
                 let mut guard = waiter_list.lock().unwrap();
-                guard.notify_one(0x1234);
+                guard.as_mut().unwrap().notify_one(0x1234);
             })
         };
 
@@ -132,20 +156,51 @@ mod tests {
 
     #[test]
     fn test_notify_empty_list() {
-        let waiter_list = Mutex::new(WaiterList::default());
+        let waiter_list = Mutex::new(Some(WaiterList::default()));
         let mut guard = waiter_list.lock().unwrap();
-        guard.notify_one(0x1234);
+        guard.as_mut().unwrap().notify_one(0x1234);
     }
 
     #[test]
     #[should_panic(expected = "timed out while waiting for address 0x1234")]
     fn test_wait_timeout() {
-        let waiter_list = Mutex::new(WaiterList::default());
+        let waiter_list = Mutex::new(Some(WaiterList::default()));
         let guard = waiter_list.lock().unwrap();
 
         // Wait for an address that is never notified. This will panic due to timeout.
         let guard =
             WaiterList::wait(guard, |waiter_list| waiter_list, 0x1234, Duration::from_millis(1));
         drop(guard);
+    }
+
+    #[test]
+    fn test_wait_interrupted_by_drop() {
+        let waiter_list = Arc::new(Mutex::new(Some(WaiterList::default())));
+
+        let (sender, receiver) = mpsc::channel();
+
+        let _waiter_thread = {
+            let waiter_list = waiter_list.clone();
+            std::thread::spawn(move || {
+                let guard = waiter_list.lock().unwrap();
+                sender.send(()).unwrap();
+
+                let guard = WaiterList::wait(
+                    guard,
+                    |waiter_list| waiter_list,
+                    0x1234,
+                    Duration::from_secs(30),
+                );
+
+                // We have been waken up because of the WaiterList being destroyed.
+                assert!(guard.is_none());
+            })
+        };
+
+        // Wait for the thread to have acquired the mutex before proceeding.
+        receiver.recv().unwrap();
+
+        // Drop the WaiterList. This will make wait() return immediately.
+        *waiter_list.lock().unwrap() = None;
     }
 }

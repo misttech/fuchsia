@@ -6,6 +6,7 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/eventpair.h>
+#include <lib/zx/process.h>
 
 #include <gtest/gtest.h>
 #include <heapdump/bind.h>
@@ -19,6 +20,29 @@
 // Therefore, each test must run in isolation as a separate process. Since gtest runs death tests in
 // subprocesses, expressing each test as a death test (ASSERT_EXIT or ASSERT_DEATH) is a convenient
 // way to obtain this level of isolation.
+
+/// Tests if a VMO with the given name is mapped in the current process.
+static bool CheckVmoIsPresent(const char* name) {
+  std::vector<zx_info_maps_t> mappings;
+
+  size_t actual_count = 0;
+  size_t avail_count = 0;
+  do {
+    zx::process::self()->get_info(ZX_INFO_PROCESS_MAPS, mappings.data(),
+                                  mappings.size() * sizeof(zx_info_maps_t), &actual_count,
+                                  &avail_count);
+    mappings.resize(avail_count);
+  } while (avail_count != actual_count);
+
+  for (const zx_info_maps_t& entry : mappings) {
+    puts(entry.name);
+    if (entry.type == ZX_INFO_MAPS_TYPE_MAPPING && strcmp(entry.name, name) == 0) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 // Verify that binding to a registry given a channel results in the expected message being written.
 TEST(BindTest, Success) {
@@ -45,10 +69,25 @@ TEST(BindTest, Success) {
   ASSERT_EXIT(action(), testing::ExitedWithCode(99), "");
 }
 
-// Verify that passing an invalid handle does not make the program crash.
+// Verify that passing an invalid handle tears down the instrumentation and does not make the
+// program crash.
 TEST(BindTest, InvalidHandle) {
+  // This VMOs only exist while the instrumentation is active. They will no longer exist after the
+  // instrumentation has been torn down as a result of passing an invalid handle.
+  static const char kHeapdumpAllocationsVmoName[] = "heapdump-allocations";
+  static const char kHeapdumpResourcesVmoName[] = "heapdump-resources";
+
   const auto action = [] {
+    // Assert that the instrumentation is currently active.
+    ASSERT_TRUE(CheckVmoIsPresent(kHeapdumpAllocationsVmoName));
+    ASSERT_TRUE(CheckVmoIsPresent(kHeapdumpResourcesVmoName));
+
     heapdump_bind_with_channel(ZX_HANDLE_INVALID);
+
+    // Assert that the instrumentation has been torn down.
+    ASSERT_FALSE(CheckVmoIsPresent(kHeapdumpAllocationsVmoName));
+    ASSERT_FALSE(CheckVmoIsPresent(kHeapdumpResourcesVmoName));
+
     _exit(99);  // Test passed: exit with a known exit code.
   };
 

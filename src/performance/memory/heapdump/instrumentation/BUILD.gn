@@ -65,6 +65,7 @@ sdk_shared_library("instrumentation") {
     ":core",
     "//sdk/fidl/fuchsia.memory.heapdump.process:fuchsia.memory.heapdump.process_cpp",
     "//sdk/lib/fdio",
+    "//sdk/lib/fit",
     "//src/zircon/lib/zircon",
   ]
 
