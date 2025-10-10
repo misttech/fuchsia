@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "ppv-lite86",
     package_url = "https://github.com/cryptocorrosion/cryptocorrosion",
-    package_version = "0.2.20",
+    package_version = "0.2.21",
 )
 
 license(
@@ -76,8 +76,8 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.2.20",
+    version = "0.2.21",
     deps = [
-        "//third_party/rust_crates/vendor/zerocopy-0.7.35:zerocopy",
+        "//third_party/rust_crates/vendor/zerocopy-0.8.27:zerocopy",
     ],
 )

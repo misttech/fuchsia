@@ -12886,39 +12886,39 @@ rustc_library("portable-atomic-util-v0_2_0") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
-license("ppv-lite86-v0_2_20.license") {
+license("ppv-lite86-v0_2_21.license") {
   public_package_name = "ppv_lite86"
   license_files = [
-    "//third_party/rust_crates/vendor/ppv-lite86-0.2.20/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/ppv-lite86-0.2.20/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/ppv-lite86-0.2.21/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/ppv-lite86-0.2.21/LICENSE-MIT",
   ]
 }
 
-rustc_library("ppv-lite86-v0_2_20") {
+rustc_library("ppv-lite86-v0_2_21") {
   crate_name = "ppv_lite86"
-  source_root = "//third_party/rust_crates/vendor/ppv-lite86-0.2.20/src/lib.rs"
-  output_name = "ppv_lite86-4ce369909323233c"
+  source_root = "//third_party/rust_crates/vendor/ppv-lite86-0.2.21/src/lib.rs"
+  output_name = "ppv_lite86-c5d4f4dac6c12c45"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":zerocopy-v0_7_35" ]
+  deps += [ ":zerocopy-v0_8_27" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=4ce369909323233c",
-    "-Cextra-filename=-4ce369909323233c",
+    "-Cmetadata=c5d4f4dac6c12c45",
+    "-Cextra-filename=-c5d4f4dac6c12c45",
     "--cfg=feature=\"simd\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":ppv-lite86-v0_2_20.license" ]
+  applicable_licenses = [ ":ppv-lite86-v0_2_21.license" ]
 }
 
 license("predicates-v1_0_8.license") {
@@ -13851,7 +13851,7 @@ rustc_library("rand_chacha-v0_3_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":ppv-lite86-v0_2_20" ]
+  deps += [ ":ppv-lite86-v0_2_21" ]
   deps += [ ":rand_core-v0_6_4" ]
 
   rustenv = []
@@ -13887,7 +13887,7 @@ rustc_library("rand_chacha-v0_9_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":ppv-lite86-v0_2_20" ]
+  deps += [ ":ppv-lite86-v0_2_21" ]
   deps += [ ":rand_core-v0_9_3" ]
 
   rustenv = []
@@ -21569,7 +21569,6 @@ rustc_library("zerocopy-v0_7_35") {
     "--cfg=feature=\"byteorder\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"derive\"",
-    "--cfg=feature=\"simd\"",
     "--cfg=feature=\"zerocopy-derive\"",
   ]
 
