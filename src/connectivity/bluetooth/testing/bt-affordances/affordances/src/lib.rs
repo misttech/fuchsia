@@ -31,6 +31,7 @@ use std::thread;
 // TODO(b/414848887): Pass more descriptive errors.
 enum Request {
     ReadLocalAddress(oneshot::Sender<Result<[u8; 6], anyhow::Error>>),
+    GetActiveHost(oneshot::Sender<Result<HostInfo, anyhow::Error>>),
     GetKnownPeers(oneshot::Sender<Result<Vec<Peer>, anyhow::Error>>),
     GetPeerId(CString, oneshot::Sender<Result<PeerId, anyhow::Error>>),
     Connect(PeerId, oneshot::Sender<Result<(), anyhow::Error>>),
@@ -95,6 +96,11 @@ impl WorkThread {
                                 })
                                 .await,
                         )
+                        .unwrap();
+                }
+                Request::GetActiveHost(result_sender) => {
+                    result_sender
+                        .send(proxies.get_active_host(&mut host_cache).await.cloned())
                         .unwrap();
                 }
                 Request::GetKnownPeers(result_sender) => {
@@ -199,6 +205,13 @@ impl WorkThread {
         self.sender.clone().unbounded_send(Request::ReadLocalAddress(sender))?;
         addr_bytes_slice.clone_from_slice(&receiver.await??);
         Ok(())
+    }
+
+    // Get active host.
+    pub async fn get_active_host(&self) -> Result<HostInfo, anyhow::Error> {
+        let (sender, receiver) = oneshot::channel::<Result<HostInfo, anyhow::Error>>();
+        self.sender.clone().unbounded_send(Request::GetActiveHost(sender))?;
+        receiver.await?
     }
 
     // Get identifier of peer at `address`.

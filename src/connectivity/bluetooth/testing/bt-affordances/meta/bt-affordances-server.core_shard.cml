@@ -16,5 +16,11 @@
             to: "#bt-affordances-server",
             source_availability: "unknown",
         },
+        {
+            protocol: [ "fuchsia.bluetooth.sys.HostWatcher" ],
+            from: "#bluetooth-core",
+            to: "#bt-affordances-server",
+            source_availability: "unknown",
+        },
     ],
 }

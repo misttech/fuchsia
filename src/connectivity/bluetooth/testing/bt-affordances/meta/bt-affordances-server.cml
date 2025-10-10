@@ -9,10 +9,23 @@
     },
     capabilities: [
         { protocol: "fuchsia.bluetooth.affordances.PeerController" },
+        { protocol: "fuchsia.bluetooth.affordances.HostController" },
+    ],
+    use: [
+        {
+            protocol: [
+                "fuchsia.bluetooth.sys.Access",
+                "fuchsia.bluetooth.sys.HostWatcher",
+            ],
+        },
     ],
     expose: [
         {
             protocol: "fuchsia.bluetooth.affordances.PeerController",
+            from: "self",
+        },
+        {
+            protocol: "fuchsia.bluetooth.affordances.HostController",
             from: "self",
         },
     ],

@@ -36,6 +36,13 @@
             source_availability: "unknown",
         },
         {
+            protocol: "fuchsia.bluetooth.affordances.HostController",
+            from: "#bt-affordances-server",
+            to: "self/toolbox",
+            availability: "optional",
+            source_availability: "unknown",
+        },
+        {
             protocol: "fuchsia.bluetooth.pandora.GrpcServerController",
             from: "#bt-pandora-server",
             to: "self/toolbox",

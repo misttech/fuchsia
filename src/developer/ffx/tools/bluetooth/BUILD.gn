@@ -14,6 +14,7 @@ ffx_plugin("ffx_bluetooth") {
   with_unit_tests = false
 
   plugin_deps = [
+    "src/controller:ffx_bluetooth_controller",
     "src/pandora:ffx_bluetooth_pandora",
     "src/peer:ffx_bluetooth_peer",
   ]
