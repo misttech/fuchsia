@@ -208,34 +208,110 @@ $ ffx driver dump goldfish-control
 To graph the node topology, run the following command:
 
 ```posix-terminal
-ffx driver driver dump --graph
+ffx driver node graph
 ```
 
 This command prints output similar to the following:
 
 ```none {:.devsite-disable-click-to-copy}
-$ ffx driver driver dump --graph
+$ ffx driver node graph
 digraph {
-     forcelabels = true; splines="ortho"; ranksep = 1.2; nodesep = 0.5;
-     node [ shape = "box" color = " #2a5b4f" penwidth = 2.25 fontname = "prompt medium" fontsize = 10 margin = 0.22 ];
-     edge [ color = " #37474f" penwidth = 1 style = dashed fontname = "roboto mono" fontsize = 10 ];
-     "3675787314320" [label="dev"]
-     "3675787305008" [label="sys"]
-     "3675787315872" [label="platform"]
-     "3675787309664" [label="ram-disk"]
-     "3675787306560" [label="ram-nand"]
-     "3675787308112" [label="virtual-audio"]
-     "3675787312768" [label="bt-hci-emulator"]
-     "3675787311216" [label="fake-battery"]
-     "3675787325184" [label="pt"]
-     "3675787317424" [label="00_00_1b"]
+    forcelabels = true; splines="ortho"; ranksep = 5; nodesep = 1;
+    node [ shape = "box" color = " #0a7965" penwidth = 2.25 fontname = "prompt medium" fontsize = 10 margin = 0.22 ];
+    edge [ color = " #283238" penwidth = 1 style = solid fontname = "roboto mono" fontsize = 10 ];
+    rankdir = "TB"
+    subgraph "cluster_19434" {
+        label = "Host 19434";
+        style = "filled,rounded";
+        fillcolor = " #b1b9be";
+        subgraph "cluster_19434_virtual-audio-driver.cm" {
+            label = "virtual-audio-driver.cm";
+            style = "filled,rounded";
+            fillcolor = " #dce0e3";
+            "4358549555312" [label="virtual-audio", id = "4358549555312"]
+            "4358549791216" [label="virtual-audio", id = "4358549791216"]
+        }
+    }
 ...
 ```
+
+#### Filtering {:#graph-the-node-topology-filtering}
+
+A full Fuchsia system graph can be quite large. Use the `--only` (or `-o`)
+flag to filter the graph to specific sections. You can also use this flag
+to filter for only bound or unbound nodes.
+For example, the following command only graphs the relatives
+of the 'virtio-input' node:
+
+```posix-terminal
+ffx driver node graph -o relatives:dev.sys.platform.pt.PCI0.bus.00_03_0.00_03_0.virtio-input
+```
+
+Use the following filters with the `--only` flag
+(the plural form, i.e., `ancestors`, is also accepted and has the same effect):
+
+-   `--only bound`
+    Shows only bound nodes. A node is bound if it meets any of the following conditions:
+    -   A driver binds to it directly.
+    -   It is a parent to a composite node.
+    -   Its parent node explicitly owns it.
+-   `--only unbound`
+    Shows only unbound nodes (nodes that meet none of the bound conditions).
+-   `--only ancestor(s):dev.sys.xyz`
+    Shows only the ancestors of the specified node.
+-   `--only descendant(s):dev.sys.xyz`
+    Shows only the descendants of the specified node.
+-   `--only relative(s):dev.sys.xyz`
+    Shows only the relatives of the specified node. Relatives are both ancestors and descendants.
+-   `--only sibling(s):dev.sys.xyz`
+    Shows only the siblings of the specified node.
+-   `--only primary_ancestor(s):dev.sys.xyz`
+    Same as ancestor, but for composite nodes, it only traverses the primary parent.
+-   `--only primary_relative(s):dev.sys.xyz`
+    Same as relative, but for composite nodes, it only traverses the primary parent.
+-   `--only primary_sibling(s):dev.sys.xyz`
+    Same as sibling, but if the filter target is a composite node, this filter only
+    includes children from its primary parent.
+
+#### Showing service routes {:#graph-the-node-topology-services}
+
+You can add service routes to the graph with the `--services` flag. The graph
+displays these routes with an arrowhead to distinguish them from
+parent/child relationships.
+
+Adding service routes can create a very large graph that can overwhelm the graphic engine.
+To avoid this, always use this flag with a filter. For example:
+
+
+```posix-terminal
+ffx driver node graph --services -o relatives:dev.sys.platform.pt.PCI0.bus.00_03_0.00_03_0.virtio-input
+```
+
+#### Creating the graph image {:#graph-the-node-topology-creating}
 
 To convert this output to a `png` file, you can install the
 [`dot`][dot]{:.external} command and pass the output to generate
 the `png` file. Alternatively, you can paste the output to
 [GraphViz][graphviz]{:.external}.
+
+#### Generating an interactive graph {:#graph-the-node-topology-interactive}
+
+You can generate an interactive HTML page from the SVG output to more easily
+explore the graph. This HTML page lets you hover over and highlight service or parent/child routes.
+
+To create the HTML file with a single command, pipe the graph output through `dot`
+and then pipe the resulting SVG back into the graph command with the `--html` flag.
+
+For example:
+
+```posix-terminal
+ffx driver node graph --services -o relatives:dev.sys.platform.pt.PCI0.bus.00_03_0.00_03_0.virtio-input | \
+    dot -Tsvg | \
+    ffx driver node graph --html > local/graph.html
+```
+
+If you use `GraphViz`, you can provide an existing SVG file with the `--svg` flag
+instead of piping the output from `dot`.
 
 ## View device nodes {:#view-device-nodes}
 
@@ -243,13 +319,13 @@ To view the properties of all [device nodes][device-nodes] on your
 Fuchsia device, run the following command:
 
 ```posix-terminal
-ffx driver list-devices
+ffx driver node list
 ```
 
 This command prints output similar to the following:
 
 ```none {:.devsite-disable-click-to-copy}
-$ ffx driver list-devices
+$ ffx driver node list
 dev
 dev.sys
 dev.sys.platform
@@ -278,43 +354,92 @@ dev.sys.platform.pt.PCI0.bus.00_02_0
 ...
 ```
 
-To view the properties of device nodes with more detailed information,
-run the command with the -`v` flag:
+To view the state and owner information of device nodes, run the command with the -`v` flag:
 
 ```posix-terminal
-ffx driver list-devices -v
+ffx driver node list -v
 ```
 
 This command prints output similar to the following:
 
 ```none {:.devsite-disable-click-to-copy}
-$ ffx driver list-devices -v
+$ ffx driver node list -v
 ...
-Name     : i2c-child
-Moniker  : root.sys.platform.platform-passthrough.acpi.acpi-FWCF.i2c-child
-Driver   : None
-3 Properties
-[ 1/  3] : Key "fuchsia.hardware.i2c"          Value Enum(fuchsia.hardware.i2c.Device.ZirconTransport)
-[ 2/  3] : Key fuchsia.BIND_I2C_ADDRESS        Value 0x0000ff
-[ 3/  3] : Key "fuchsia.driver.framework.dfv2" Value true
+ State          Moniker                                                          Owner
+ Bound        dev                                                               fuchsia-boot:///platform-bus#meta/platform-bus.cm
+ Bound        dev.sys                                                           parent
+ Bound        dev.sys.platform                                                  parent
+ Bound        dev.sys.platform.pt                                               fuchsia-boot:///platform-bus-x86#meta/platform-bus-x86.cm
+ Bound        dev.sys.platform.virtual-audio                                    fuchsia-pkg://fuchsia.com/virtual-audio#meta/virtual-audio-driver.cm
+ Bound        dev.sys.platform.virtual-audio-legacy                             fuchsia-pkg://fuchsia.com/virtual-audio-legacy#meta/virtual-audio-legacy-driver.cm
+ Bound        dev.sys.platform.fake-battery                                     fuchsia-pkg://fuchsia.com/fake_battery#meta/fake_battery.cm
+ Bound        dev.sys.platform.pt.PCI0                                          fuchsia-boot:///bus-pci#meta/bus-pci.cm
+ Bound        dev.sys.platform.pt.acpi                                          parent
+ Bound        dev.sys.platform.virtual-audio.virtual-audio                      parent
+ Bound        dev.sys.platform.virtual-audio-legacy.virtual-audio-legacy        parent
+ Bound        dev.sys.platform.pt.PCI0.bus                                      parent
+ Bound        dev.sys.platform.pt.acpi._SB_                                     parent
+ Bound        dev.sys.platform.pt.acpi._TZ_                                     parent
+ Unbound      dev.sys.platform.pt.PCI0.bus.00_00_0                              none
 ...
 ```
 
-### View device nodes under a specific path {:#view-device-nodes-under-a-specific-path}
-
-To view device nodes filtered by a specific path in the node topology,
-include the exact topological path or device name to the command:
+To view the properties of a specific device node with more detailed information use `ffx driver node show`:
 
 ```posix-terminal
-ffx driver list-devices <NODE>
+ffx driver node show dev.sys.platform.virtual-audio
 ```
 
-Replace `NODE` with a topological path or device name. For example,
-the example below shows that the results are filtered by the
-topological path at `acpi`:
+This command prints output similar to the following:
 
 ```none {:.devsite-disable-click-to-copy}
-$ ffx driver list-devices acpi
+$ ffx driver node show dev.sys.platform.virtual-audio
+          Name:  virtual-audio
+       Moniker:  dev.sys.platform.virtual-audio
+         Owner:  fuchsia-pkg://fuchsia.com/virtual-audio#meta/virtual-audio-driver.cm
+    Node State:  Bound
+     Host Koid:  19434
+  Parent Count:  1
+   Child Count:  1
+
+  Bus Topology:  Bus Type  Stability  Address
+                 Platform  Stable     virtual-audio
+
+  Node Properties:  Key                                       Value
+                    fuchsia.BIND_PLATFORM_DEV_VID             0
+                    fuchsia.BIND_PLATFORM_DEV_PID             0
+                    fuchsia.BIND_PLATFORM_DEV_DID             57
+                    fuchsia.BIND_PLATFORM_DEV_INSTANCE_ID     0
+                    fuchsia.BIND_PROTOCOL                     85
+                    fuchsia.resource.MMIO_COUNT               0
+                    fuchsia.resource.INTERRUPT_COUNT          0
+                    fuchsia.resource.BTI_COUNT                0
+                    fuchsia.resource.SMC_COUNT                0
+                    fuchsia.hardware.platform.device.Service  fuchsia.hardware.platform.device.Service.ZirconTransport
+
+  Node Offers:  Service                                   Source  Instances
+                fuchsia.hardware.platform.device.Service  dev     default
+
+
+```
+
+### Filter for specific device nodes {:#view-device-nodes-filtering}
+
+You can filter the list of nodes using the same filters described in the
+[filtering](#graph-the-node-topology-filtering) section.
+
+For example, this example only lists the descendants of the specified node:
+
+```posix-terminal
+ffx driver node list -o descendants:<NODE>
+```
+
+Replace `<NODE>` with a component moniker.
+
+This example filters the results to only show the descendants of the `acpi` node:
+
+```none {:.devsite-disable-click-to-copy}
+$ ffx driver node list -o descendants:dev.sys.platform.pt.acpi
 dev.sys.platform.pt.acpi
 dev.sys.platform.pt.acpi.acpi-_SB_
 dev.sys.platform.pt.acpi.acpi-_TZ_
@@ -329,33 +454,6 @@ dev.sys.platform.pt.acpi.acpi-_SB_.acpi-GSIE
 dev.sys.platform.pt.acpi.acpi-_SB_.acpi-GSIF
 dev.sys.platform.pt.acpi.acpi-_SB_.acpi-GSIG
 dev.sys.platform.pt.acpi.acpi-_SB_.acpi-GSIH
-...
-```
-
-You can also combine this argument with the -`v` flag for
-more detailed information, for example:
-
-```none {:.devsite-disable-click-to-copy}
-$ ffx driver list-devices acpi -v
-Name     : acpi
-Moniker  : dev.sys.platform.pt.acpi
-Driver   : unbound
-1 Properties
-[ 1/  1] : Key fuchsia.BIND_PROTOCOL          Value 0x00001c
-1 Offers
-Service: fuchsia.driver.compat.Service
-  Source: dev.sys.platform.pt
-  Instances: default
-
-Name     : acpi-_SB_
-Moniker  : dev.sys.platform.pt.acpi.acpi-_SB_
-Driver   : unbound
-1 Properties
-[ 1/  1] : Key fuchsia.BIND_PROTOCOL          Value 0x00001c
-1 Offers
-Service: fuchsia.driver.compat.Service
-  Source: dev.sys.platform.pt
-  Instances: default
 ...
 ```
 
