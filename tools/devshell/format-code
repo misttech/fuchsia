@@ -294,7 +294,8 @@ for entry in "${compiled_formatter_extensions[@]}"; do
     tool_path="$( fx-command-run list-build-artifacts --expect-one --name "${tool}" tools )"
     if [[ ! -x "${FUCHSIA_BUILD_DIR}/${tool_path}" ]]; then
       fx-info "${tool} not built; building now..."
-      tool_targets+=("$tool_path")
+      tool_label="$( fx-command-run list-build-artifacts --show-label --expect-one --name "${tool}" tools )"
+      tool_targets+=("$tool_label")
     fi
   fi
 done
