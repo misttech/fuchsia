@@ -22,7 +22,7 @@ int memfd_create(const char* name, unsigned int flags) {
     return ERRNO(EINVAL);
   }
   zx::vmo vmo;
-  zx_status_t status = zx::vmo::create(0u, ZX_VMO_RESIZABLE, &vmo);
+  zx_status_t status = zx::vmo::create(0u, ZX_VMO_UNBOUNDED, &vmo);
   if (status != ZX_OK) {
     return ERROR(status);
   }

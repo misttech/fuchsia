@@ -114,7 +114,7 @@ class Vmo : public HasIo {
     return stream_.seek(static_cast<zx_stream_seek_origin_t>(start), offset, out_offset);
   }
 
-  zx_status_t Truncate(uint64_t length) { return vmo_.set_size(length); }
+  zx_status_t Truncate(uint64_t length) { return vmo_.set_stream_size(length); }
 
   zx_status_t FlagsGetDeprecated(uint32_t* out_flags) {
     zx_info_handle_basic_t info;

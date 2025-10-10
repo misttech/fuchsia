@@ -528,6 +528,7 @@ zx_vmo_op_range
 zx_vmo_read
 zx_vmo_set_cache_policy
 zx_vmo_set_size
+zx_vmo_set_stream_size
 zx_vmo_write
 
 # libsync

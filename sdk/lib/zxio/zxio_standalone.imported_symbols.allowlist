@@ -165,6 +165,7 @@ zx_vmo_create_physical
 zx_vmo_get_size
 zx_vmo_read
 zx_vmo_set_size
+zx_vmo_set_stream_size
 zx_vmo_write
 
 # zx panic
