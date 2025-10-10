@@ -13,6 +13,7 @@ rustc_binary("bin") {
   deps = [
     "//sdk/fidl/fuchsia.hardware.backlight:fuchsia.hardware.backlight_rust",
     "//sdk/fidl/fuchsia.hardware.display:fuchsia.hardware.display_rust",
+    "//sdk/fidl/fuchsia.hardware.display.types:fuchsia.hardware.display.types_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
@@ -24,10 +25,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:log",
   ]
 
-  test_deps = [
-    "//sdk/fidl/fuchsia.hardware.display.types:fuchsia.hardware.display.types_rust",
-    "//third_party/rust_crates:assert_matches",
-  ]
+  test_deps = [ "//third_party/rust_crates:assert_matches" ]
 
   sources = [
     "src/backlight.rs",

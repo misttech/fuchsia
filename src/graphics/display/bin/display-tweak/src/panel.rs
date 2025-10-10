@@ -3,14 +3,49 @@
 // found in the LICENSE file.
 
 use core::fmt;
+use std::str::FromStr;
 
-use crate::utils::{self, on_off_to_bool};
-use anyhow::{anyhow, bail, Context as _, Error};
+use crate::utils;
+use anyhow::{Context as _, Error, anyhow, bail};
 use argh::FromArgs;
-use fidl_fuchsia_hardware_display as display;
 use fuchsia_async::{DurationExt, TimeoutExt};
 use fuchsia_component::client::Service;
-use futures::{future, TryStreamExt};
+use futures::{TryStreamExt, future};
+use {
+    fidl_fuchsia_hardware_display as display, fidl_fuchsia_hardware_display_types as display_types,
+};
+
+#[derive(Clone, Debug, PartialEq)]
+enum DisplayPowerMode {
+    On,
+    Off,
+    Doze,
+    DozeSuspend,
+}
+
+impl FromStr for DisplayPowerMode {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "on" => Ok(DisplayPowerMode::On),
+            "off" => Ok(DisplayPowerMode::Off),
+            "doze" => Ok(DisplayPowerMode::Doze),
+            "doze_suspend" => Ok(DisplayPowerMode::DozeSuspend),
+            _ => bail!("Invalid power mode: {}", s),
+        }
+    }
+}
+
+impl From<DisplayPowerMode> for display_types::PowerMode {
+    fn from(power_mode: DisplayPowerMode) -> Self {
+        match power_mode {
+            DisplayPowerMode::On => display_types::PowerMode::On,
+            DisplayPowerMode::Off => display_types::PowerMode::Off,
+            DisplayPowerMode::Doze => display_types::PowerMode::Doze,
+            DisplayPowerMode::DozeSuspend => display_types::PowerMode::DozeSuspend,
+        }
+    }
+}
 
 /// Obtains a handle to the display entry point at the default hard-coded path.
 async fn open_display_provider() -> Result<display::ProviderProxy, Error> {
@@ -113,7 +148,7 @@ impl DisplayCoordinatorClient {
 }
 
 impl DisplayClient {
-    async fn set_panel_power(&mut self, power_state: bool) -> Result<(), Error> {
+    async fn set_panel_power(&mut self, power_mode: DisplayPowerMode) -> Result<(), Error> {
         if self.display_infos.is_empty() {
             bail!("fuchsia.hardware.display.Coordinator reported no connected displays");
         }
@@ -123,7 +158,7 @@ impl DisplayClient {
 
         log::trace!("Setting new power state");
         utils::flatten_zx_error(
-            self.coordinator.set_display_power(&display_id.into(), power_state).await,
+            self.coordinator.set_display_power_mode(&display_id.into(), power_mode.into()).await,
         )
         .context("Failed to set panel power state")
     }
@@ -133,9 +168,9 @@ impl DisplayClient {
 #[derive(FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "panel")]
 pub struct PanelCmd {
-    /// turn the panel's power on or off
-    #[argh(option, long = "power", from_str_fn(on_off_to_bool))]
-    set_power: Option<bool>,
+    /// sets the panel's power mode: on, off, doze or doze_suspend
+    #[argh(option, long = "power")]
+    set_power: Option<DisplayPowerMode>,
 }
 
 impl PanelCmd {
@@ -144,9 +179,7 @@ impl PanelCmd {
         let display_coordinator_client = display_provider_client.open_display_coordinator().await?;
         let mut display_client = display_coordinator_client.into_display_client().await?;
 
-        if self.set_power.is_some() {
-            display_client.set_panel_power(self.set_power.unwrap()).await?;
-        }
+        display_client.set_panel_power(self.set_power.clone().unwrap()).await?;
         Ok(())
     }
 }
@@ -167,7 +200,7 @@ mod tests {
         let test_future = async move {
             let display_coordinator = provider_client.open_display_coordinator().await.unwrap();
             let mut display_client = display_coordinator.into_display_client().await.unwrap();
-            assert_matches!(display_client.set_panel_power(true).await, Ok(()));
+            assert_matches!(display_client.set_panel_power(DisplayPowerMode::On).await, Ok(()));
         };
 
         let provider_service_future = async move {
@@ -206,8 +239,9 @@ mod tests {
             coordinator_listener_proxy.on_displays_changed(added_displays, &[]).unwrap();
 
             match coordinator_request_stream.next().await.unwrap() {
-                Ok(display::CoordinatorRequest::SetDisplayPower {
+                Ok(display::CoordinatorRequest::SetDisplayPowerMode {
                     display_id: display_types::DisplayId { value: 42 },
+                    power_mode: display_types::PowerMode::On,
                     responder,
                     ..
                 }) => {
@@ -229,7 +263,7 @@ mod tests {
             let display_coordinator = provider_client.open_display_coordinator().await.unwrap();
             let mut display_client = display_coordinator.into_display_client().await.unwrap();
 
-            let set_panel_power_result = display_client.set_panel_power(true).await;
+            let set_panel_power_result = display_client.set_panel_power(DisplayPowerMode::On).await;
             assert_matches!(set_panel_power_result, Err(_));
             assert_eq!(
                 set_panel_power_result.unwrap_err().to_string(),
