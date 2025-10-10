@@ -221,6 +221,7 @@
             ],
             from: "parent/tee-client-capabilities",
             to: "#session",
+            availability: "same_as_target",
         },
         {
             // Routed to session-manager via factory_store_providers.core_shard.cml.
@@ -584,6 +585,7 @@
             dictionary: "tee_session",
             from: "parent",
             to: "#session",
+            availability: "same_as_target",
         },
         {
             config: "fuchsia.power.cpu.BoostEnabled",

@@ -41,6 +41,7 @@ impl DefineSubsystemConfiguration<(&Tee, &Vec<GlobalPlatformTeeClient>, &Platfor
                 context,
                 transitional_tee_clients,
                 global_platform_trusted_app_guids,
+                session.enabled,
                 builder,
             ),
             Tee::GlobalPlatform(GlobalPlatformTee { clients }) => {
@@ -48,6 +49,7 @@ impl DefineSubsystemConfiguration<(&Tee, &Vec<GlobalPlatformTeeClient>, &Platfor
                     context,
                     clients,
                     global_platform_trusted_app_guids,
+                    session.enabled,
                     builder,
                 )
             }
@@ -71,6 +73,7 @@ fn define_global_platform_tee_configuration(
     context: &ConfigurationContext<'_>,
     product_config: &Vec<GlobalPlatformTeeClient>,
     tee_trusted_app_guids: &Vec<uuid::Uuid>,
+    session_enabled: bool,
     builder: &mut dyn ConfigurationBuilder,
 ) -> anyhow::Result<()> {
     match context.feature_set_level {
@@ -83,6 +86,11 @@ fn define_global_platform_tee_configuration(
     // to serve from it.
     if !tee_trusted_app_guids.is_empty() {
         create_tee_manager(tee_trusted_app_guids, context, builder)?;
+    } else {
+        builder.core_shard(&context.get_resource("no_tee_manager.core_shard.cml"));
+        if session_enabled {
+            builder.core_shard(&context.get_resource("no_tee_manager.session.core_shard.cml"));
+        }
     }
 
     // Hook up the clients of the tee_manager that the product has
@@ -461,6 +469,7 @@ mod tests {
             &context,
             &tee_client_config,
             &tee_trusted_app_guids,
+            true,
             &mut builder,
         )
         .expect("defining tee_clients configuration");
@@ -592,6 +601,7 @@ mod tests {
             &context,
             &tee_client_config,
             &tee_trusted_app_guids,
+            true,
             &mut builder,
         )
         .expect("defining tee_clients configuration");
