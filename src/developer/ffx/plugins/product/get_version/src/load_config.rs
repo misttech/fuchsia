@@ -7,16 +7,14 @@ use crate::unique_release_info::{
     from_platform_release_info, from_product_release_info,
 };
 
-use anyhow::{Context, Result};
+use anyhow::Result;
+use assembly_api::release_info;
 use assembly_partitions_config::Slot;
-use assembly_release_info::{BoardReleaseInfo, ProductReleaseInfo, ReleaseInfo, SystemReleaseInfo};
+use assembly_release_info::SystemReleaseInfo;
 use camino::Utf8Path;
 use product_bundle::ProductBundleV2;
-use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fmt;
-use std::fs::File;
-use std::io::BufReader;
 
 /// VersionInfo holds the final content that will be printed out.
 #[derive(Debug, PartialEq, Clone, Eq, serde::Serialize, serde::Deserialize, Default)]
@@ -66,29 +64,9 @@ impl Ord for VersionInfo {
     }
 }
 
-/// A helper function to read a JSON file, parse it into a `serde_json::Value`,
-/// and extract a specific field from it.
-fn get_value_from_json_file(path: &Utf8Path, field_path: &[&str]) -> Result<Value> {
-    let file = File::open(path).with_context(|| format!("Failed to open file: {}", path))?;
-    let reader = BufReader::new(file);
-    let json: Value = serde_json::from_reader(reader)
-        .with_context(|| format!("Failed to parse JSON from file: {}", path))?;
-
-    let mut current_value = &json;
-    for field in field_path {
-        current_value = current_value
-            .get(field)
-            .with_context(|| format!("Field '{}' not found in {}", field, path))?;
-    }
-    Ok(current_value.clone())
-}
-
 /// Load a Platform artifact and return the version information.
 pub fn load_platform(path: &Utf8Path) -> Result<VersionInfo> {
-    let release_info: ReleaseInfo = serde_json::from_value(get_value_from_json_file(
-        &path.join("platform_artifacts.json"),
-        &["release_info"],
-    )?)?;
+    let release_info = release_info::load_platform_release_info(path)?;
     Ok(VersionInfo {
         human: release_info.version.clone(),
         machine: vec![from_platform_release_info(&release_info, &None)],
@@ -97,10 +75,7 @@ pub fn load_platform(path: &Utf8Path) -> Result<VersionInfo> {
 
 /// Load a Product artifact and return the version information.
 pub fn load_product(path: &Utf8Path) -> Result<VersionInfo> {
-    let release_info: ProductReleaseInfo = serde_json::from_value(get_value_from_json_file(
-        &path.join("product_configuration.json"),
-        &["product", "release_info"],
-    )?)?;
+    let release_info = release_info::load_product_release_info(path)?;
     Ok(VersionInfo {
         human: release_info.info.version.clone(),
         machine: vec![from_product_release_info(&release_info, &None)],
@@ -109,10 +84,7 @@ pub fn load_product(path: &Utf8Path) -> Result<VersionInfo> {
 
 /// Load a Product Input Bundle artifact and return the version information.
 pub fn load_pibs(path: &Utf8Path) -> Result<VersionInfo> {
-    let release_info: ReleaseInfo = serde_json::from_value(get_value_from_json_file(
-        &path.join("product_input_bundle.json"),
-        &["release_info"],
-    )?)?;
+    let release_info = release_info::load_pib_release_info(path)?;
     Ok(VersionInfo {
         human: release_info.version.clone(),
         machine: vec![from_pib_release_info(&release_info, &None)],
@@ -121,10 +93,7 @@ pub fn load_pibs(path: &Utf8Path) -> Result<VersionInfo> {
 
 /// Load a Board Config artifact and return the version information.
 pub fn load_board(path: &Utf8Path) -> Result<VersionInfoWithDependencies> {
-    let release_info: BoardReleaseInfo = serde_json::from_value(get_value_from_json_file(
-        &path.join("board_configuration.json"),
-        &["release_info"],
-    )?)?;
+    let release_info = release_info::load_board_release_info(path)?;
     let mut info = VersionInfoWithDependencies {
         version: VersionInfo {
             human: release_info.info.version.clone(),
@@ -152,10 +121,7 @@ pub fn load_board(path: &Utf8Path) -> Result<VersionInfoWithDependencies> {
 
 /// Load a Board Input Bundle Set artifact and return the version information.
 pub fn load_bib_set(path: &Utf8Path) -> Result<VersionInfo> {
-    let release_info: ReleaseInfo = serde_json::from_value(get_value_from_json_file(
-        &path.join("board_input_bundle_set.json"),
-        &["release_info"],
-    )?)?;
+    let release_info = release_info::load_bib_set_release_info(path)?;
     Ok(VersionInfo {
         human: release_info.version.clone(),
         machine: vec![from_bib_set_release_info(&release_info, &None)],

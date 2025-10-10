@@ -2,23 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use assembled_system::AssembledSystem;
+use assembly_api::release_info::*;
 use assembly_artifact_cache::{ArtifactCache, ArtifactError};
 use assembly_cli_args::{ProductArgs, ValidationMode};
-use assembly_config_schema::{BoardConfig, ProductConfig};
 use assembly_container::AssemblyContainer;
-use assembly_platform_artifacts::PlatformArtifacts;
+use assembly_release_info::{BoardReleaseInfo, ProductReleaseInfo, ReleaseInfo};
 use camino::Utf8PathBuf;
 use ffx_config::EnvironmentContext;
 
 pub struct Assembly {
     pub platform_path: Utf8PathBuf,
-    pub platform: PlatformArtifacts,
+    pub platform_release_info: ReleaseInfo,
     pub product_config_path: Utf8PathBuf,
-    pub product_config: ProductConfig,
+    pub product_config_release_info: ProductReleaseInfo,
     pub board_config_path: Utf8PathBuf,
-    pub board_config: BoardConfig,
+    pub board_config_release_info: BoardReleaseInfo,
 }
 
 impl Assembly {
@@ -29,38 +29,35 @@ impl Assembly {
         board_config: String,
     ) -> Result<Self, ArtifactError> {
         let product_config_path = cache.resolve_product(product_config).await?;
-        let product_config =
-            ProductConfig::from_dir(&product_config_path).context("Reading product config")?;
+        let product_config_release_info = load_product_release_info(&product_config_path)?;
 
         let board_config_path = cache.resolve_board(board_config).await?;
-        let board_config =
-            BoardConfig::from_dir(&board_config_path).context("Reading board config")?;
+        let board_config_release_info = load_board_release_info(&board_config_path)?;
+        let arch: assembly_config_schema::board_config::Architecture =
+            load_board_arch(&board_config_path)?.parse()?;
 
-        let platform_path = cache.resolve_platform(platform, &board_config.arch).await?;
-        let platform =
-            PlatformArtifacts::from_dir_with_path(&platform_path).context("Reading platform")?;
+        let platform_path = cache.resolve_platform(platform, &arch).await?;
+        let platform_release_info = load_platform_release_info(&platform_path)?;
 
         Ok(Self {
             platform_path,
-            platform,
+            platform_release_info,
             product_config_path,
-            product_config,
+            product_config_release_info,
             board_config_path,
-            board_config,
+            board_config_release_info,
         })
     }
 
     pub fn version_string(&self) -> String {
         format!(
-            "\tplatform: {}@{}
-\tproduct_config: {}@{}
-\tboard_config: {}@{}",
-            self.platform.release_info.name,
-            self.platform.release_info.version,
-            self.product_config.product.release_info.info.name,
-            self.product_config.product.release_info.info.version,
-            self.board_config.release_info.info.name,
-            self.board_config.release_info.info.version,
+            "\tplatform: {}@{}\n\tproduct_config: {}@{}\n\tboard_config: {}@{}",
+            self.platform_release_info.name,
+            self.platform_release_info.version,
+            self.product_config_release_info.info.name,
+            self.product_config_release_info.info.version,
+            self.board_config_release_info.info.name,
+            self.board_config_release_info.info.version,
         )
     }
 

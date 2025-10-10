@@ -207,8 +207,8 @@ async fn sanitized_product_bundle_create(
         .map_err(|e| ArtifactError::new(anyhow::anyhow!("{}", e)))?;
 
     let name = cmd.output_name.unwrap_or_else(|| {
-        let product_name = assembly.product_config.product.release_info.info.name.clone();
-        let board_name = assembly.board_config.release_info.info.name.clone();
+        let product_name = assembly.product_config_release_info.info.name.clone();
+        let board_name = assembly.board_config_release_info.info.name.clone();
         format!("{}.{}", product_name, board_name)
     });
 
@@ -221,7 +221,7 @@ async fn sanitized_product_bundle_create(
 
     let version = cmd
         .output_version
-        .unwrap_or_else(|| assembly.product_config.product.release_info.info.version.clone());
+        .unwrap_or_else(|| assembly.product_config_release_info.info.version.clone());
     let update_version_file = tmp_path.join("update_version.txt");
     std::fs::write(&update_version_file, &version)
         .map_err(|e| ArtifactError::new(anyhow::anyhow!("{}", e)))?;

@@ -4,4 +4,6 @@
 
 mod api;
 
+pub mod release_info;
+
 pub use api::{assemble, create_system, product_assembly};

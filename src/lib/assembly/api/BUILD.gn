@@ -15,14 +15,17 @@ rustc_library("api") {
   deps = [
     "//src/developer/ffx/config:lib",
     "//src/lib/assembly/cli_args",
+    "//src/lib/assembly/release_info",
     "//src/lib/assembly/tool",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:camino",
+    "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:tempfile",
   ]
   sources = [
     "src/api.rs",
     "src/lib.rs",
+    "src/release_info.rs",
   ]
   test_deps = [ "//third_party/rust_crates:serde_json" ]
 }

@@ -26,6 +26,7 @@ ffx_plugin("ffx_product_get_version") {
   deps = [
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/writer:lib",
+    "//src/lib/assembly/api",
     "//src/lib/assembly/partitions_config",
     "//src/lib/assembly/product_bundle",
     "//src/lib/assembly/release_info",
