@@ -5,8 +5,8 @@
 //! Type-safe bindings for Zircon stream objects.
 
 use crate::{
-    object_get_property, object_set_property, ok, sys, AsHandleRef, Handle, HandleBased, HandleRef,
-    Property, PropertyQuery, Status, Vmo,
+    AsHandleRef, Handle, HandleBased, HandleRef, Property, PropertyQuery, Status, Vmo,
+    object_get_property, object_set_property, ok, sys,
 };
 use bitflags::bitflags;
 use std::io::SeekFrom;
@@ -473,7 +473,7 @@ mod tests {
     #[test]
     fn write() {
         const DATA: &'static [u8] = b"vmo-contents";
-        let vmo = zx::Vmo::create_with_opts(zx::VmoOptions::RESIZABLE, 0).unwrap();
+        let vmo = zx::Vmo::create_with_opts(zx::VmoOptions::UNBOUNDED, 0).unwrap();
         let stream =
             Stream::create(StreamOptions::MODE_READ | StreamOptions::MODE_WRITE, &vmo, 0).unwrap();
 
@@ -487,7 +487,7 @@ mod tests {
     #[test]
     fn write_at() {
         const DATA: &'static [u8] = b"vmo-contents";
-        let vmo = zx::Vmo::create_with_opts(zx::VmoOptions::RESIZABLE, 0).unwrap();
+        let vmo = zx::Vmo::create_with_opts(zx::VmoOptions::UNBOUNDED, 0).unwrap();
         let stream =
             Stream::create(StreamOptions::MODE_READ | StreamOptions::MODE_WRITE, &vmo, 0).unwrap();
 
@@ -506,7 +506,7 @@ mod tests {
     #[test]
     fn std_io_read_write_seek() {
         const DATA: &'static str = "stream-contents";
-        let vmo = zx::Vmo::create_with_opts(zx::VmoOptions::RESIZABLE, 0).unwrap();
+        let vmo = zx::Vmo::create_with_opts(zx::VmoOptions::UNBOUNDED, 0).unwrap();
         let mut stream =
             Stream::create(StreamOptions::MODE_READ | StreamOptions::MODE_WRITE, &vmo, 0).unwrap();
 
@@ -520,7 +520,7 @@ mod tests {
     #[test]
     fn std_io_read_vectored() {
         const DATA: &'static [u8] = b"stream-contents";
-        let vmo = zx::Vmo::create_with_opts(zx::VmoOptions::RESIZABLE, 0).unwrap();
+        let vmo = zx::Vmo::create_with_opts(zx::VmoOptions::UNBOUNDED, 0).unwrap();
         let mut stream =
             Stream::create(StreamOptions::MODE_READ | StreamOptions::MODE_WRITE, &vmo, 0).unwrap();
         assert_eq!(stream.write(StreamWriteOptions::empty(), DATA).unwrap(), DATA.len());
@@ -542,7 +542,7 @@ mod tests {
 
     #[test]
     fn std_io_write_vectored() {
-        let vmo = zx::Vmo::create_with_opts(zx::VmoOptions::RESIZABLE, 0).unwrap();
+        let vmo = zx::Vmo::create_with_opts(zx::VmoOptions::UNBOUNDED, 0).unwrap();
         let mut stream =
             Stream::create(StreamOptions::MODE_READ | StreamOptions::MODE_WRITE, &vmo, 0).unwrap();
 
