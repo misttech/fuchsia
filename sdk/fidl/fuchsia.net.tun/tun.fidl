@@ -246,7 +246,6 @@ closed protocol Device {
     /// * error `ZX_ERR_NOT_FOUND` if [`Frame.port`] references an unknown port.
     /// * error `ZX_ERR_INVALID_ARGS` if `frame` is invalid.
     /// * error `ZX_ERR_BAD_STATE` if the device is offline.
-    /// * error `ZX_ERR_BAD_STATE` if the device is offline.
     /// * error `ZX_ERR_NO_RESOURCES` if more than
     /// [`fuchsia.net.tun/MAX_PENDING_OPERATIONS`] calls to `WriteFrame` are
     /// pending.
