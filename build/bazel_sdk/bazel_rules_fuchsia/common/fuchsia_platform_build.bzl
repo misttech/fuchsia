@@ -63,9 +63,9 @@ def _get_fuchsia_source_dir_relative_to_workspace(repo_ctx):
     else:
         # Fuchsia source dir is empty (in-tree Fuchsia build). Since the workspace
         # file contains symlinks to the same file under the Fuchsia source directory,
-        # resolve the real path of $WORKSPACE/README.md then take its parent as the
+        # resolve the real path of $WORKSPACE/BUILD.bazel then take its parent as the
         # result, then relativize that.
-        fuchsia_source_dir = str((repo_ctx.workspace_root.get_child("README.md")).realpath.dirname)
+        fuchsia_source_dir = str((repo_ctx.workspace_root.get_child("BUILD.bazel")).realpath.dirname)
         return _path_relativize(str(repo_ctx.workspace_root), fuchsia_source_dir)
 
 def _get_fuchsia_source_path(repo_ctx, relative_path):
