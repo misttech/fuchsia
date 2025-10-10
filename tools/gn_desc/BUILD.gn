@@ -31,6 +31,14 @@ if (current_toolchain == default_toolchain) {
       "--depfile",
       rebase_path(depfile, root_build_dir),
     ]
+
+    # Hint to ninja that this action can take about a minute, so that it's
+    # appropriately weighted in the calculation of the critical path for a
+    # build.
+    metadata = {
+      ninja_edge_weights =
+          [ rebase_path(outputs[0], root_build_dir) + ",60000" ]
+    }
   }
 }
 

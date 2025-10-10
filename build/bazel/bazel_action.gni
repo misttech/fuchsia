@@ -873,6 +873,12 @@ template("bazel_action") {
         forward_variables_from(invoker.metadata, "*")
       }
 
+      # Hint to ninja that this action can take about a minute, so that it's
+      # appropriately weighted in the calculation of the critical path for a
+      # build.
+      ninja_edge_weights =
+          [ rebase_path(outputs[0], root_build_dir) + ",60000" ]
+
       if (invoker.command == "build") {
         # Used by //:bazel_build_events_logs Build API module.
         bazel_build_events_log = [

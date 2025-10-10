@@ -2008,6 +2008,19 @@ build_api_module("detailed_size_checker_data") {
   deps = [ "//build/images:default-images" ]
 }
 
+# File of estimated ninja build-graph edge weights (values are in milliseoncds)
+#
+# This file is passed to ninja on the command-line, and gives it estimates
+# for potentially long-running actions in the builds, so that those can be
+# scheduled earlier in the build process.
+#
+generated_file("ninja_edge_weights") {
+  testonly = true
+  data_keys = [ "ninja_edge_weights" ]
+  deps = [ ":default" ]
+  outputs = [ "${root_build_dir}/ninja_edge_weights.csv" ]
+}
+
 # Builds a list of all the product bundles in the build.
 #
 # This target will NOT build the product bundles, but will pretend to

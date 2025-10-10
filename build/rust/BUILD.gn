@@ -126,6 +126,13 @@ if (current_toolchain != default_toolchain) {
       "//build/rust:api_level_cfg_flags",
       gn_desc_label,
     ]
+    metadata = {
+      # Hint to ninja that this action takes about 30 seconds, so that it's
+      # appropriately weighted in the calculation of the critical path for
+      # a build.
+      ninja_edge_weights =
+          [ rebase_path(outputs[0], root_build_dir) + ",30000" ]
+    }
   }
 }
 

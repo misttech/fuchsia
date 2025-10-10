@@ -297,6 +297,12 @@ template("run_fuchsia_bazel_sdk_tests") {
             format = "json"
           },
         ]
+
+        # Hint to ninja that this action can take about a minute, so that it's
+        # appropriately weighted in the calculation of the critical path for a
+        # build.
+        ninja_edge_weights =
+            [ rebase_path(outputs[0], root_build_dir) + ",60000" ]
       }
 
       deps += [

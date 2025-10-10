@@ -1379,6 +1379,10 @@ function fx-run-ninja {
     FUCHSIA_BAZEL_JOB_COUNT=${concurrency}
   fi
 
+  # Tell ninja to source edge weights from a GN-generated file of estimates
+  # that come from GN metadata on the actions.
+  args=("--edge_weights_list=ninja_edge_weights.csv" "${args[@]}")
+
   fx-run-build-command "${print_full_cmd}" "ninja" "${cmd}" "${args[@]}"
 }
 
