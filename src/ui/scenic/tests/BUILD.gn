@@ -78,7 +78,6 @@ group("ctf-tests") {
     ":null-renderer-integration-test-suite_archive",
     ":screen-capture-integration-test-suite_archive",
     ":singleton-display-integration-test-suite_archive",
-    ":trusted-flatland-factory-integration-test-suite_archive",
   ]
 
   # TODO(https://fxbug.dev/42075218): Re-enable this test once zx_cache_flush is implemented on

@@ -6,7 +6,7 @@ library fuchsia.ui.composition;
 /// All arguments are optional; default values will be provided if they are absent.
 /// By default, the resulting Flatland will behave identically to connecting
 /// to the `fuchsia.ui.composition.Flatland` service instead of connecting via the factory.
-@available(added=NEXT)
+@available(added=HEAD)
 type TrustedFlatlandConfig = resource table {
     /// If true, a frame will be scheduled to be presented as soon as all acquire fences are
     /// signaled, instead of waiting for other clients to present in the same vsync. This can reduce
@@ -22,7 +22,7 @@ type TrustedFlatlandConfig = resource table {
 };
 
 /// An error that can occur when using the `TrustedFlatlandFactory`.
-@available(added=NEXT)
+@available(added=HEAD)
 type TrustedFlatlandFactoryError = flexible enum {
     /// A general error occurred during the method call. This may happen if the configuration
     /// is invalid or if the system is unable to create a new Flatland instance.
@@ -35,7 +35,7 @@ type TrustedFlatlandFactoryError = flexible enum {
 /// Flatland's behavior for performance-critical applications. It is not intended for
 /// general use. Misuse of this API can negatively impact system performance and stability.
 @discoverable
-@available(added=NEXT)
+@available(added=HEAD)
 closed protocol TrustedFlatlandFactory {
     /// Creates a new Flatland instance with the specified configuration.
     ///
