@@ -32,7 +32,7 @@ rustc_library("framebuffer") {
     "//src/lib/ui/flatland-frame-scheduling:flatland-frame-scheduling-lib",
     "//src/lib/ui/fuchsia-framebuffer",
     "//src/lib/ui/fuchsia-scenic",
-    "//src/starnix/kernel:starnix_core",
+    "//src/starnix/kernel/core",
     "//src/starnix/lib/starnix_lifecycle",
     "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",

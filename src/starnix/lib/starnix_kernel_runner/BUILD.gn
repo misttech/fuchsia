@@ -52,7 +52,7 @@ rustc_library("starnix_kernel_runner") {
     "//src/lib/ui/fuchsia-scenic",
     "//src/performance/memory/attribution/server",
     "//src/starnix/kernel:starnix_container_structured_config",
-    "//src/starnix/kernel:starnix_core",
+    "//src/starnix/kernel/core",
     "//src/starnix/lib/bootreason",
     "//src/starnix/lib/devicetree",
     "//src/starnix/lib/features:starnix_features",

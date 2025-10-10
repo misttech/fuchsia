@@ -32,7 +32,7 @@ rustc_library("modules") {
   configs += [ "//src/starnix/config:starnix_clippy_lints" ]
 
   deps = [
-    "//src/starnix/kernel:starnix_core",
+    "//src/starnix/kernel/core",
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_uapi",
     "//src/starnix/modules/binderfs",

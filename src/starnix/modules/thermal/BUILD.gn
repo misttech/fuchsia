@@ -43,7 +43,7 @@ rustc_library("thermal") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/mpmc",
-    "//src/starnix/kernel:starnix_core",
+    "//src/starnix/kernel/core",
     "//src/starnix/lib/linux_uapi",
     "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",

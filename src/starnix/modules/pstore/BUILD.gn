@@ -15,7 +15,7 @@ rustc_library("pstore") {
   configs += [ "//src/starnix/config:starnix_clippy_lints" ]
 
   deps = [
-    "//src/starnix/kernel:starnix_core",
+    "//src/starnix/kernel/core",
     "//src/starnix/lib/bootreason",
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_types",

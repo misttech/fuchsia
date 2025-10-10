@@ -29,7 +29,7 @@ rustc_library("loop") {
 
   deps = [
     "//sdk/rust/zx",
-    "//src/starnix/kernel:starnix_core",
+    "//src/starnix/kernel/core",
     "//src/starnix/lib/starnix_ext",
     "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",

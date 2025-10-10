@@ -21,7 +21,7 @@ rustc_library("starnix_syscall_loop") {
     "//src/lib/diagnostics/inspect/contrib/rust",
     "//src/lib/fuchsia-runtime",
     "//src/lib/trace/rust:trace",
-    "//src/starnix/kernel:starnix_core",
+    "//src/starnix/kernel/core",
     "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_syscalls",

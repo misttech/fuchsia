@@ -40,7 +40,7 @@ rustc_library("binderfs") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-runtime",
     "//src/lib/trace/rust:trace",
-    "//src/starnix/kernel:starnix_core",
+    "//src/starnix/kernel/core",
     "//src/starnix/lib/starnix_lifecycle",
     "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",

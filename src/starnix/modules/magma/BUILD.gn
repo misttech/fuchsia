@@ -30,7 +30,7 @@ rustc_library("magma") {
     "//src/lib/fdio/rust:fdio",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-component",
-    "//src/starnix/kernel:starnix_core",
+    "//src/starnix/kernel/core",
     "//src/starnix/lib/magma",
     "//src/starnix/lib/starnix_lifecycle",
     "//src/starnix/lib/starnix_logging",

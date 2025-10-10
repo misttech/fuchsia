@@ -39,7 +39,7 @@ rustc_library("fastrpc") {
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-component",
-    "//src/starnix/kernel:starnix_core",
+    "//src/starnix/kernel/core",
     "//src/starnix/lib/linux_uapi",
     "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",

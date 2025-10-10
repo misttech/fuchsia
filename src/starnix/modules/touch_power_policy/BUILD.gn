@@ -15,7 +15,7 @@ rustc_library("touch_power_policy") {
   configs += [ "//src/starnix/config:starnix_clippy_lints" ]
 
   deps = [
-    "//src/starnix/kernel:starnix_core",
+    "//src/starnix/kernel/core",
     "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_uapi",

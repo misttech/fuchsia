@@ -28,7 +28,7 @@ rustc_library("layeredfs") {
   configs += [ "//src/starnix/config:starnix_clippy_lints" ]
 
   deps = [
-    "//src/starnix/kernel:starnix_core",
+    "//src/starnix/kernel/core",
     "//src/starnix/lib/starnix_sync",
     "//src/starnix/lib/starnix_uapi",
   ]
