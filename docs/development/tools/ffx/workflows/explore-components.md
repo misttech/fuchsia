@@ -161,49 +161,47 @@ $ {{ '<strong>' }}cat process_id{{ '</strong>' }}
 
 ## Use a custom command-line tool in the component's shell {:#use-a-custom-command-line-tool-in-the-components-shell}
 
-To add custom command-line tools into the target component's shell environment, use
-the `--tools` flag to provide the URLs of tools packages to the `ffx component explore`
-command, for example:
+You can add custom command-line tools to a component's shell environment in the
+following ways:
+
+* [Add tools for a single session](#add-tools-for-current-session)
+* [Make tools permanently available](#make-tools-permanently-available)
+
+### Add tools for your current session {:#add-tools-for-current-session}
+
+To temporarily add tools, use the `--tools` flag to pass their package URLs
+to the `ffx component explore` command.
+
+For example, this adds the `net-cli` toolset to the `/core/network` component's
+shell for the current session:
 
 ```none {:.devsite-disable-click-to-copy}
 [host]$ ffx component explore /core/network --tools fuchsia-pkg://fuchsia.com/net-cli
 Moniker: /core/network
 $ {{ '<strong>' }}net help{{ '</strong>' }}
 Usage: net <command> [<args>]
-
-commands for net-cli
-
-Options:
-  --help            display usage information
-
-Commands:
-  filter            commands for packet filter
-  if                commands for network interfaces
-  log               commands for logging
-  neigh             commands for neighbor tables
-  route             commands for routing tables
-  dhcp              commands for an interfaces dhcp client
-  dhcpd             commands to control a dhcp server
-  dns               commands to control the dns resolver
+...
 ```
 
-If you're a component owner and you want some tools to always be
-available to users who run `ffx component explore`, you can modify
-your component manifest to tell `ffx component explore` to try to
-resolve those tools automatically:
+### Make tools permanently available {:#make-tools-permanently-available}
 
-```
+As a component owner, you can make specific tools always available to users. To
+do this, add the tool package URLs to the `fuchsia.dash.launcher-tool-urls`
+facet in your component manifest:
+
+```json
 <rest of component manifest above>
 facets: {
     "fuchsia.dash.launcher-tool-urls": [ "fuchsia-pkg://fuchsia.com/magma-debug-utils" ],
 },
 ```
 
-Each time a user runs `ffx component explore` on a component with this
-in its manifest, they'll see the following (assuming they have a
-package server running with magma-debug-utils available):
+When a user runs `ffx component explore` on this component, the command
+automatically resolves and loads the tools from the manifest. The user must have
+a package server running that can provide the specified tools, otherwise the
+user will see a warning.
 
-```
+```none {:.devsite-disable-click-to-copy}
 [host]$ ffx component explore <moniker>
 Moniker: <moniker>
 Using tool URLs from component manifest: ["fuchsia-pkg://fuchsia.com/magma-debug-utils"]
