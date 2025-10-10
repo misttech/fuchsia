@@ -255,6 +255,130 @@ impl<'a> CapabilityId<'a> {
         )))
     }
 
+    /// Given a Use clause, return the set of target identifiers.
+    ///
+    /// When only one capability identifier is specified, the target identifier name is derived
+    /// using the "path" clause. If a "path" clause is not specified, the target identifier is the
+    /// same name as the source.
+    ///
+    /// When multiple capability identifiers are specified, the target names are the same as the
+    /// source names.
+    pub fn from_spanned_use(
+        use_: &'a Spanned<SpannedUse>,
+        filename: Option<&std::path::Path>,
+        file_source: Option<&String>,
+    ) -> Result<Vec<Self>, Error> {
+        // TODO: Validate that exactly one of these is set.
+        let alias = use_.path.as_ref();
+        if let Some(n) = use_.service() {
+            return Ok(Self::used_services_from(Self::get_one_or_many_svc_paths(
+                n,
+                alias.map(|v| &**v),
+                use_.capability_type().unwrap(),
+            )?));
+        } else if let Some(n) = use_.protocol() {
+            return Ok(Self::used_protocols_from(Self::get_one_or_many_svc_paths(
+                n,
+                alias.map(|v| &**v),
+                use_.capability_type().unwrap(),
+            )?));
+        } else if let Some(_) = use_.directory.as_ref() {
+            if use_.path.is_none() {
+                let location = validate::byte_index_to_location(
+                    file_source,
+                    use_.directory.as_ref().unwrap().span().0,
+                );
+                return Err(Error::validate_with_span(
+                    "\"path\" should be present for `use directory`.",
+                    location,
+                    filename,
+                ));
+            }
+            return Ok(vec![CapabilityId::UsedDirectory(
+                use_.path.as_ref().unwrap().get_ref().clone(),
+            )]);
+        } else if let Some(_) = use_.storage.as_ref() {
+            if use_.path.is_none() {
+                let location = validate::byte_index_to_location(
+                    file_source,
+                    use_.storage.as_ref().unwrap().span().0,
+                );
+                return Err(Error::validate_with_span(
+                    "\"path\" should be present for `use storage`.",
+                    location,
+                    filename,
+                ));
+            }
+            return Ok(vec![CapabilityId::UsedStorage(
+                use_.path.as_ref().unwrap().get_ref().clone(),
+            )]);
+        } else if let Some(_) = use_.event_stream() {
+            if let Some(path) = use_.path() {
+                return Ok(vec![CapabilityId::UsedEventStream(path.clone())]);
+            }
+            return Ok(vec![CapabilityId::UsedEventStream(Path::new(
+                "/svc/fuchsia.component.EventStream",
+            )?)]);
+        } else if let Some(n) = use_.runner() {
+            match n {
+                OneOrMany::One(name) => {
+                    return Ok(vec![CapabilityId::UsedRunner(name)]);
+                }
+                OneOrMany::Many(_) => {
+                    let location = validate::byte_index_to_location(
+                        file_source,
+                        use_.runner.as_ref().unwrap().span().0,
+                    );
+                    return Err(Error::validate_with_span(
+                        "`use runner` should occur at most once.",
+                        location,
+                        filename,
+                    ));
+                }
+            }
+        } else if let Some(_) = use_.config() {
+            return match &use_.key {
+                None => {
+                    let location = validate::byte_index_to_location(
+                        file_source,
+                        use_.config.as_ref().unwrap().span().0,
+                    );
+                    Err(Error::validate_with_span(
+                        "\"key\" should be present for `use config`.",
+                        location,
+                        filename,
+                    ))
+                }
+                Some(name) => Ok(vec![CapabilityId::UsedConfiguration(name)]),
+            };
+        } else if let Some(n) = use_.dictionary() {
+            return Ok(Self::used_dictionaries_from(Self::get_one_or_many_svc_paths(
+                n,
+                alias.map(|v| &**v),
+                use_.capability_type().unwrap(),
+            )?));
+        }
+        // Unsupported capability type.
+        let supported_keywords = use_
+            .supported()
+            .into_iter()
+            .map(|k| format!("\"{}\"", k))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let location = validate::byte_index_to_location(file_source, use_.span().0);
+
+        Err(Error::validate_with_span(
+            format!(
+                "`{}` declaration is missing a capability keyword, one of: {}",
+                use_.decl_type(),
+                supported_keywords,
+            ),
+            location,
+            filename,
+        ))
+    }
+
     pub fn from_capability(capability: &'a Capability) -> Result<Vec<Self>, Error> {
         // TODO: Validate that exactly one of these is set.
         if let Some(n) = capability.service() {
@@ -3296,7 +3420,7 @@ pub struct SpannedUse {
     pub protocol: Option<OneOrMany<Name>>,
 
     /// When using a directory capability, the [name](#name) of a [directory capability][doc-directory].
-    pub directory: Option<Name>,
+    pub directory: Option<Spanned<Name>>,
 
     /// When using a storage capability, the [name](#name) of a [storage capability][doc-storage].
     pub storage: Option<Spanned<Name>>,
@@ -3305,7 +3429,7 @@ pub struct SpannedUse {
     pub event_stream: Option<OneOrMany<Name>>,
 
     /// When using a runner capability, the [name](#name) of a [runner capability][doc-runners].
-    pub runner: Option<Name>,
+    pub runner: Option<Spanned<Name>>,
 
     /// When using a configuration capability, the [name](#name) of a [configuration capability][doc-configuration].
     pub config: Option<Spanned<Name>>,
@@ -4403,13 +4527,13 @@ impl SpannedCapabilityClause for SpannedUse {
         option_one_or_many_as_ref(&self.protocol)
     }
     fn directory(&self) -> Option<OneOrMany<&BorrowedName>> {
-        self.directory.as_ref().map(|n| OneOrMany::One(n.as_ref()))
+        self.directory.as_ref().map(|n| OneOrMany::One((&**n).as_ref()))
     }
     fn storage(&self) -> Option<OneOrMany<&BorrowedName>> {
         self.storage.as_ref().map(|n| OneOrMany::One((&**n).as_ref()))
     }
     fn runner(&self) -> Option<OneOrMany<&BorrowedName>> {
-        self.runner.as_ref().map(|n| OneOrMany::One(n.as_ref()))
+        self.runner.as_ref().map(|n| OneOrMany::One((&**n).as_ref()))
     }
     fn resolver(&self) -> Option<OneOrMany<&BorrowedName>> {
         None
@@ -4528,6 +4652,15 @@ impl FilterClause for Use {
 impl PathClause for Use {
     fn path(&self) -> Option<&Path> {
         self.path.as_ref()
+    }
+}
+
+impl PathClause for SpannedUse {
+    fn path(&self) -> Option<&Path> {
+        match self.path.as_ref() {
+            None => return None,
+            Some(path) => return Some(&path.get_ref()),
+        }
     }
 }
 

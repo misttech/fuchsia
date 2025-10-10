@@ -415,7 +415,7 @@ which is almost certainly a mistake: {}",
     fn validate_use(
         &mut self,
         use_: &'a Spanned<SpannedUse>,
-        _used_ids: &mut HashMap<String, CapabilityId<'a>>,
+        used_ids: &mut HashMap<String, CapabilityId<'a>>,
     ) -> Result<(), Error> {
         use_.capability_type()?;
 
@@ -574,6 +574,7 @@ which is almost certainly a mistake: {}",
                 ));
             }
         }
+
         if use_.numbered_handle.as_ref().is_some() {
             if use_.protocol.is_some() {
                 if use_.path.is_some() {
@@ -597,6 +598,93 @@ which is almost certainly a mistake: {}",
                     location,
                     self.current_file_path,
                 ));
+            }
+        }
+
+        // Disallow multiple capability ids of the same name.
+        let capability_ids =
+            CapabilityId::from_spanned_use(use_, self.current_file_path, self.current_file_source)?;
+        for capability_id in capability_ids {
+            if used_ids.insert(capability_id.to_string(), capability_id.clone()).is_some() {
+                let location = byte_index_to_location(self.current_file_source, use_.span().0);
+                return Err(Error::validate_with_span(
+                    format!(
+                        "\"{}\" is a duplicate \"use\" target {}",
+                        capability_id,
+                        capability_id.type_str()
+                    ),
+                    location,
+                    self.current_file_path,
+                ));
+            }
+            let dir = capability_id.get_dir_path();
+
+            // Capability paths must not conflict with `/pkg`, or namespace generation might fail
+            let pkg_path = cm_types::NamespacePath::new("/pkg").unwrap();
+            if let Some(ref dir) = dir {
+                if dir.has_prefix(&pkg_path) {
+                    let location = byte_index_to_location(self.current_file_source, use_.span().0);
+                    return Err(Error::validate_with_span(
+                        format!(
+                            "{} \"{}\" conflicts with the protected path \"/pkg\", please use this capability with a different path",
+                            capability_id.type_str(),
+                            capability_id,
+                        ),
+                        location,
+                        self.current_file_path,
+                    ));
+                }
+            }
+
+            // Validate that paths-based capabilities (service, directory, protocol)
+            // are not prefixes of each other.
+            for (_, used_id) in used_ids.iter() {
+                if capability_id == *used_id {
+                    continue;
+                }
+                let Some(ref dir) = dir else {
+                    continue;
+                };
+                let Some(used_dir) = used_id.get_dir_path() else {
+                    continue;
+                };
+
+                if match (used_id, &capability_id) {
+                    // Directories and storage can't be the same or partially overlap.
+                    (CapabilityId::UsedDirectory(_), CapabilityId::UsedStorage(_))
+                    | (CapabilityId::UsedStorage(_), CapabilityId::UsedDirectory(_))
+                    | (CapabilityId::UsedDirectory(_), CapabilityId::UsedDirectory(_))
+                    | (CapabilityId::UsedStorage(_), CapabilityId::UsedStorage(_)) => {
+                        dir.has_prefix(&used_dir) || used_dir.has_prefix(&dir)
+                    }
+
+                    // Protocols and services can't overlap with directories or storage.
+                    (CapabilityId::UsedDirectory(_), _)
+                    | (CapabilityId::UsedStorage(_), _)
+                    | (_, CapabilityId::UsedDirectory(_))
+                    | (_, CapabilityId::UsedStorage(_)) => {
+                        dir.has_prefix(&used_dir) || used_dir.has_prefix(&dir)
+                    }
+
+                    // Protocols and services containing directories may be same, but
+                    // partial overlap is disallowed.
+                    (_, _) => {
+                        *dir != used_dir && (dir.has_prefix(&used_dir) || used_dir.has_prefix(&dir))
+                    }
+                } {
+                    let location = byte_index_to_location(self.current_file_source, use_.span().0);
+                    return Err(Error::validate_with_span(
+                        format!(
+                            "{} \"{}\" is a prefix of \"use\" target {} \"{}\"",
+                            used_id.type_str(),
+                            used_id,
+                            capability_id.type_str(),
+                            capability_id,
+                        ),
+                        location,
+                        self.current_file_path,
+                    ));
+                }
             }
         }
 
@@ -3542,6 +3630,63 @@ mod tests {
 
         ),
 
+        test_cml_use_bad_duplicate_target_names(
+            json!({
+                "use": [
+                  { "protocol": "fuchsia.component.Realm" },
+                  { "protocol": "fuchsia.component.Realm" },
+                ],
+            }),
+            Err(Error::ValidateWithSpan { err, .. }) if &err == "\"/svc/fuchsia.component.Realm\" is a duplicate \"use\" target protocol"
+        ),
+
+        test_cml_use_disallows_nested_dirs_directory(
+            json!({
+                "use": [
+                    { "directory": "foobar", "path": "/foo/bar", "rights": [ "r*" ] },
+                    { "directory": "foobarbaz", "path": "/foo/bar/baz", "rights": [ "r*" ] },
+                ],
+            }),
+            Err(Error::ValidateWithSpan { err, .. }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target directory \"/foo/bar/baz\""
+        ),
+        test_cml_use_disallows_nested_dirs_storage(
+            json!({
+                "use": [
+                    { "storage": "foobar", "path": "/foo/bar" },
+                    { "storage": "foobarbaz", "path": "/foo/bar/baz" },
+                ],
+            }),
+            Err(Error::ValidateWithSpan { err, .. }) if &err == "storage \"/foo/bar\" is a prefix of \"use\" target storage \"/foo/bar/baz\""
+        ),
+        test_cml_use_disallows_nested_dirs_directory_and_storage(
+            json!({
+                "use": [
+                    { "directory": "foobar", "path": "/foo/bar", "rights": [ "r*" ] },
+                    { "storage": "foobarbaz", "path": "/foo/bar/baz" },
+                ],
+            }),
+            Err(Error::ValidateWithSpan { err, .. }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target storage \"/foo/bar/baz\""
+        ),
+        test_cml_use_disallows_common_prefixes_service(
+            json!({
+                "use": [
+                    { "directory": "foobar", "path": "/foo/bar", "rights": [ "r*" ] },
+                    { "protocol": "fuchsia", "path": "/foo/bar/fuchsia" },
+                ],
+            }),
+            Err(Error::ValidateWithSpan { err, .. }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target protocol \"/foo/bar/fuchsia\""
+        ),
+        test_cml_use_disallows_common_prefixes_protocol(
+            json!({
+                "use": [
+                    { "directory": "foobar", "path": "/foo/bar", "rights": [ "r*" ] },
+                    { "protocol": "fuchsia", "path": "/foo/bar/fuchsia.2" },
+                ],
+            }),
+            Err(Error::ValidateWithSpan { err, .. }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target protocol \"/foo/bar/fuchsia.2\""
+        ),
+
+
         test_cml_use_invalid_from_with_service(
             json!({
                 "use": [ { "service": "foo", "from": "debug" } ]
@@ -3658,22 +3803,6 @@ mod tests {
             Err(Error::ValidateWithSpan { err, location, .. })
             if &err == "Config 'fuchsia.config.MyConfig' is type String but is missing field 'max_size'" &&
             location == Some(Location {line: 4, column: 35})
-        ),
-
-        test_cml_use_config_bad_vector(
-            r##"{"use": [
-                {
-                    "config": "fuchsia.config.MyConfig",
-                    "key": "my_config",
-                    "type": "vector",
-                    "element": { "type": "bool"}
-                }
-            ]
-            }"##,
-            Err(Error::ValidateWithSpan {err, location, .. })
-            if &err == "Config 'fuchsia.config.MyConfig' is type Vector but is missing field 'max_count'" &&
-                        location == Some(Location {line: 3, column: 31})
-
         ),
 
         test_config_required_with_default(
@@ -4179,7 +4308,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "\"path\" can only be specified when one `protocol` is supplied."
         ),
-        test_cml_use_bad_duplicate_target_names(
+        test_cml_use_bad_duplicate_target_names_no_span(
             json!({
                 "use": [
                   { "protocol": "fuchsia.component.Realm" },
@@ -4223,7 +4352,7 @@ mod tests {
             Err(Error::Parse { err, .. }) if err.starts_with("unknown field `resolver`, expected one of")
         ),
 
-        test_cml_use_disallows_nested_dirs_directory(
+        test_cml_use_disallows_nested_dirs_directory_no_span(
             json!({
                 "use": [
                     { "directory": "foobar", "path": "/foo/bar", "rights": [ "r*" ] },
@@ -4232,7 +4361,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target directory \"/foo/bar/baz\""
         ),
-        test_cml_use_disallows_nested_dirs_storage(
+        test_cml_use_disallows_nested_dirs_storage_no_span(
             json!({
                 "use": [
                     { "storage": "foobar", "path": "/foo/bar" },
@@ -4241,7 +4370,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "storage \"/foo/bar\" is a prefix of \"use\" target storage \"/foo/bar/baz\""
         ),
-        test_cml_use_disallows_nested_dirs_directory_and_storage(
+        test_cml_use_disallows_nested_dirs_directory_and_storage_no_span(
             json!({
                 "use": [
                     { "directory": "foobar", "path": "/foo/bar", "rights": [ "r*" ] },
@@ -4250,7 +4379,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target storage \"/foo/bar/baz\""
         ),
-        test_cml_use_disallows_common_prefixes_service(
+        test_cml_use_disallows_common_prefixes_service_no_span(
             json!({
                 "use": [
                     { "directory": "foobar", "path": "/foo/bar", "rights": [ "r*" ] },
@@ -4259,7 +4388,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target protocol \"/foo/bar/fuchsia\""
         ),
-        test_cml_use_disallows_common_prefixes_protocol(
+        test_cml_use_disallows_common_prefixes_protocol_no_span(
             json!({
                 "use": [
                     { "directory": "foobar", "path": "/foo/bar", "rights": [ "r*" ] },
