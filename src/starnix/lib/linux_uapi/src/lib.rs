@@ -50,3 +50,6 @@ mod arch32_stub;
 pub mod arch32 {
     pub use crate::arch32_stub::*;
 }
+
+#[doc(hidden)]
+pub use static_assertions as __static_assertions;

@@ -68,9 +68,9 @@ macro_rules! check_same_layout {
         }
         $($token:tt)*
     } => {
-        static_assertions::assert_eq_size!($type_name1, $type_name2);
+        $crate::__static_assertions::assert_eq_size!($type_name1, $type_name2);
         $(
-            static_assertions::const_assert_eq!(
+            $crate::__static_assertions::const_assert_eq!(
                 std::mem::offset_of!($type_name1, $($field1).+),
                 std::mem::offset_of!($type_name2, $($field2).+)
             );

@@ -57,7 +57,6 @@ rustc_library("input") {
     "//src/starnix/modules/input/event_conversion",
     "//third_party/rust_crates:bit-vec",
     "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:static_assertions",
     "//third_party/rust_crates:zerocopy",
   ]
 
