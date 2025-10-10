@@ -187,6 +187,29 @@ Commands:
   dns               commands to control the dns resolver
 ```
 
+If you're a component owner and you want some tools to always be
+available to users who run `ffx component explore`, you can modify
+your component manifest to tell `ffx component explore` to try to
+resolve those tools automatically:
+
+```
+<rest of component manifest above>
+facets: {
+    "fuchsia.dash.launcher-tool-urls": [ "fuchsia-pkg://fuchsia.com/magma-debug-utils" ],
+},
+```
+
+Each time a user runs `ffx component explore` on a component with this
+in its manifest, they'll see the following (assuming they have a
+package server running with magma-debug-utils available):
+
+```
+[host]$ ffx component explore <moniker>
+Moniker: <moniker>
+Using tool URLs from component manifest: ["fuchsia-pkg://fuchsia.com/magma-debug-utils"]
+$
+```
+
 ## Run a command on the component's shell non-interactively {:#run-a-command-on-the-components-shell-non-interactively}
 
 To run a command in the component's on-device shell non-interactively and receive

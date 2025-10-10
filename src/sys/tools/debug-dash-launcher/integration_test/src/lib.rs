@@ -12,7 +12,7 @@ pub async fn unknown_tools_package() {
     let launcher = connect_to_protocol::<fdash::LauncherMarker>().unwrap();
 
     let urls = &["fuchsia-pkg://fuchsia.com/bar".to_string()];
-    let err = launcher
+    let result = launcher
         .explore_component_over_socket(
             ".",
             stdio_server,
@@ -21,10 +21,16 @@ pub async fn unknown_tools_package() {
             fdash::DashNamespaceLayout::NestAllInstanceDirs,
         )
         .await
-        .unwrap()
-        .unwrap_err();
+        .unwrap();
 
-    assert_eq!(err, fdash::LauncherError::PackageResolver);
+    assert!(result.is_ok());
+
+    let mut buf = [0u8; 1024];
+    let bytes_read = _stdio.read(&mut buf).unwrap();
+    let output = std::str::from_utf8(&buf[..bytes_read]).unwrap();
+
+    assert!(output.contains("Failed to load at least one tool package"));
+    assert!(output.contains("fuchsia-pkg://fuchsia.com/bar"));
 }
 
 #[fuchsia::test]
@@ -76,7 +82,7 @@ pub async fn bad_url() {
     let launcher = connect_to_protocol::<fdash::LauncherMarker>().unwrap();
 
     let urls = &["#".to_string()];
-    let err = launcher
+    let result = launcher
         .explore_component_over_socket(
             ".",
             stdio_server,
@@ -85,7 +91,14 @@ pub async fn bad_url() {
             fdash::DashNamespaceLayout::NestAllInstanceDirs,
         )
         .await
-        .unwrap()
-        .unwrap_err();
-    assert_eq!(err, fdash::LauncherError::BadUrl);
+        .unwrap();
+
+    assert!(result.is_ok());
+
+    let mut buf = [0u8; 1024];
+    let bytes_read = _stdio.read(&mut buf).unwrap();
+    let output = std::str::from_utf8(&buf[..bytes_read]).unwrap();
+
+    assert!(output.contains("Failed to load at least one tool package"));
+    assert!(output.contains("while parsing tool url #"));
 }

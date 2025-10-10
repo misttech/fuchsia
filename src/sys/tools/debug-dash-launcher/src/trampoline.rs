@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use anyhow::format_err;
 use fidl_fuchsia_dash::LauncherError;
+use fidl_fuchsia_hardware_pty::DeviceProxy;
 use fuchsia_component::client::connect_to_protocol;
 use indexmap::IndexMap;
 use std::cmp::Ordering;
@@ -45,17 +47,19 @@ fn parse_url(url: &str) -> Result<(url::Url, Option<String>), LauncherError> {
 async fn get_pkg_dirs(
     package_resolver: &mut crate::package_resolver::PackageResolver,
     tool_urls: Vec<String>,
-) -> Result<Vec<PkgDir>, LauncherError> {
+) -> (Vec<PkgDir>, Vec<anyhow::Error>) {
     let mut dirs: Vec<PkgDir> = vec![];
+    let mut errs: Vec<anyhow::Error> = vec![];
     for url in tool_urls {
-        let (url, resource) = parse_url(&url)?;
-        let dir = package_resolver
-            .resolve(url.as_str())
-            .await
-            .map_err(|e| e.while_resolving_tool_package())?;
-        dirs.push(PkgDir { url, resource, dir });
+        match parse_url(&url) {
+            Ok((url, resource)) => match package_resolver.resolve(url.as_str()).await {
+                Ok(dir) => dirs.push(PkgDir { url, resource, dir }),
+                Err(e) => errs.push(format_err!("while resolving tool package {url}: {e}")),
+            },
+            Err(e) => errs.push(format_err!("while parsing tool url {url}: {e:?}")),
+        }
     }
-    Ok(dirs)
+    (dirs, errs)
 }
 
 // A Trampoline holds the resolve script contents and the name that the used to run it.
@@ -266,15 +270,29 @@ async fn make_trampoline_vfs(
 }
 
 // Given the URLs of some packages, return a directory containing their binaries as trampolines.
+// Log to the pty if there are any errors so the user can see them somewhere other than syslog.
 pub async fn create_trampolines_from_packages(
     package_resolver: &mut crate::package_resolver::PackageResolver,
     pkg_urls: Vec<String>,
+    pty_proxy: &DeviceProxy,
 ) -> Result<(Option<fio::DirectoryProxy>, Option<String>), LauncherError> {
     if pkg_urls.is_empty() {
         return Ok((None, None));
     }
 
-    let pkg_dirs = get_pkg_dirs(package_resolver, pkg_urls).await?;
+    let (pkg_dirs, errs) = get_pkg_dirs(package_resolver, pkg_urls).await;
+    if !errs.is_empty() {
+        let mut summary = "Failed to load at least one tool package: ".to_string();
+        for err in errs {
+            summary.push_str(&format!("{:?}\n", err));
+        }
+
+        log::warn!("{}", summary);
+        let _ = pty_proxy.write(summary.as_bytes()).await.unwrap_or_else(|e| {
+            log::warn!("Couldn't write to user stdout: {e:?}");
+            Ok(0u64)
+        });
+    }
     let trampolines = create_trampolines(&pkg_dirs).await?;
     make_trampoline_vfs(trampolines).await
 }
@@ -342,19 +360,21 @@ mod tests {
         let mut resolver = crate::package_resolver::PackageResolver::new_test(resolver);
 
         // Empty package list.
-        assert!(get_pkg_dirs(&mut resolver, vec![]).await.unwrap().is_empty());
+        let (dirs, errs) = get_pkg_dirs(&mut resolver, vec![]).await;
+        assert!(dirs.is_empty());
+        assert!(errs.is_empty());
 
         // Non-empty package list, but with a malformed URL.
-        assert_matches!(
-            get_pkg_dirs(&mut resolver, vec!["".to_string()]).await,
-            Err(LauncherError::BadUrl)
-        );
+        let (dirs, errs) = get_pkg_dirs(&mut resolver, vec!["".to_string()]).await;
+        assert!(dirs.is_empty());
+        assert_eq!(errs.len(), 1);
 
         // Valid package list.
-        let v = get_pkg_dirs(&mut resolver, vec!["fuchsia-pkg://h/n".to_string()]).await.unwrap();
-        assert!(v.len() == 1);
-        assert_eq!(v[0].url.as_str(), "fuchsia-pkg://h/n");
-        assert_eq!(v[0].resource, None);
+        let (dirs, errs) = get_pkg_dirs(&mut resolver, vec!["fuchsia-pkg://h/n".to_string()]).await;
+        assert!(errs.is_empty());
+        assert!(dirs.len() == 1);
+        assert_eq!(dirs[0].url.as_str(), "fuchsia-pkg://h/n");
+        assert_eq!(dirs[0].resource, None);
     }
 
     // Required for assert_matches!().
@@ -520,7 +540,10 @@ mod tests {
             "collision",
         );
         let (url, list) = pkg_trampolines.get_nth_package(1).unwrap();
-        assert_eq!(url.as_str(), "fuchsia-pkg://earth.org/spacex_pkg?hash=0000000000000000000000000000000000000000000000000000000000000000");
+        assert_eq!(
+            url.as_str(),
+            "fuchsia-pkg://earth.org/spacex_pkg?hash=0000000000000000000000000000000000000000000000000000000000000000"
+        );
         assert_eq!(list.len(), 1);
         check_trampoline(
             &list,

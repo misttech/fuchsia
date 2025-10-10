@@ -130,10 +130,6 @@ pub(crate) enum Error {
 }
 
 impl Error {
-    pub(crate) fn while_resolving_tool_package(self) -> fdash::LauncherError {
-        fdash::LauncherError::PackageResolver
-    }
-
     pub(crate) fn while_resolving_package_to_explore(self) -> fdash::LauncherError {
         match self {
             Self::Application(fpkg::ResolveError::PackageNotFound) => {

@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::{layout, trampoline};
-use fidl::endpoints::{ClientEnd, Proxy};
 use fidl::HandleBased;
+use fidl::endpoints::{ClientEnd, Proxy};
 use fidl_fuchsia_dash::LauncherError;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_runtime::{HandleInfo as HandleId, HandleType};
@@ -30,8 +30,14 @@ async fn explore_over_handles(
     process_name: String,
     package_resolver: &mut crate::package_resolver::PackageResolver,
 ) -> Result<zx::Process, LauncherError> {
+    // recreate a PTY device so we can log to it if there's an error
+    let pty_proxy =
+        fidl::endpoints::ClientEnd::<fidl_fuchsia_hardware_pty::DeviceMarker>::new(stdout.into())
+            .into_proxy();
+
     let (tools_pkg_dir, tools_path) =
-        trampoline::create_trampolines_from_packages(package_resolver, tool_urls).await?;
+        trampoline::create_trampolines_from_packages(package_resolver, tool_urls, &pty_proxy)
+            .await?;
     layout::add_tools_to_name_infos(tools_pkg_dir, &mut name_infos);
 
     // The dash-launcher can be asked to launch multiple dash processes, each of which can make
@@ -40,8 +46,11 @@ async fn explore_over_handles(
     let job =
         fuchsia_runtime::job_default().create_child_job().map_err(|_| LauncherError::Internal)?;
 
+    // dehydrate our pty back into a handle so we can pass it to the dash process
+    let stdout_recreated = pty_proxy.into_channel().unwrap().into_zx_channel().into_handle();
+
     // Add handles for the current job, stdio, library loader and UTC time.
-    let handle_infos = create_handle_infos(&job, stdin, stdout, stderr)?;
+    let handle_infos = create_handle_infos(&job, stdin, stdout_recreated, stderr)?;
 
     let launcher = connect_to_protocol::<fproc::LauncherMarker>()
         .map_err(|_| LauncherError::ProcessLauncher)?;
