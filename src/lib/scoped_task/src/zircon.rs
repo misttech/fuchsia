@@ -3,16 +3,14 @@
 // found in the LICENSE file.
 
 use fuchsia_runtime as runtime;
-use lazy_static::lazy_static;
 use log::error;
 use std::borrow::Borrow;
 use std::ffi::CStr;
 use std::ops::Deref;
 use std::panic;
+use std::sync::LazyLock;
 
-lazy_static! {
-    static ref SCOPED_JOB: Scoped<zx::Job> = initialize();
-}
+static SCOPED_JOB: LazyLock<Scoped<zx::Job>> = LazyLock::new(initialize);
 
 fn initialize() -> Scoped<zx::Job> {
     let job = runtime::job_default().create_child_job().expect("couldn't create job");
