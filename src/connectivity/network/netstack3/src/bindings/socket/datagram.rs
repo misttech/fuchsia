@@ -54,6 +54,7 @@ use crate::bindings::util::{
     RemoveResourceResultExt as _, ResultExt as _, ScopeExt as _, TryFromFidlWithContext,
     TryIntoCore, TryIntoCoreWithContext, TryIntoFidl, TryIntoFidlWithContext,
 };
+use crate::bindings::waker::WakeGroupId;
 use crate::bindings::{BindingId, BindingsCtx, Ctx};
 
 use super::{IntoErrno, IpSockAddrExt, SockAddr, SocketWorkerProperties};
@@ -1261,15 +1262,36 @@ where
     T: TransportState<I>,
 {
     /// Creates a new `BindingData`.
-    fn new(ctx: &mut Ctx, properties: SocketWorkerProperties) -> Self {
+    fn new(
+        ctx: &mut Ctx,
+        properties: SocketWorkerProperties,
+        wake_group: Option<WakeGroupId>,
+    ) -> Self {
         let (local_event, peer_event) = SocketEventPair::create();
+
+        let notifier = wake_group.as_ref().and_then(|group| {
+            if let Some(notifier) = ctx.bindings_ctx().wake_groups.get_data_notifier(&group) {
+                Some(notifier)
+            } else {
+                warn!("could not attach socket to nonexistent wake group {group:?}");
+                None
+            }
+        });
+
         let external_data = DatagramSocketExternalData {
             message_queue: CoreMutex::new(MessageQueue::new(
                 local_event.clone(),
+                notifier.clone(),
                 <T as Transport<I>>::get_rcvbuf_settings(ctx).default(),
             )),
         };
         let id = T::create_unbound(ctx, external_data, local_event);
+
+        if let Some(group) = wake_group
+            && notifier.is_some()
+        {
+            debug!("attaching socket {:?} to wake group {group:?}", id);
+        }
 
         Self {
             peer_event,
@@ -1298,15 +1320,19 @@ pub(super) fn spawn_worker(
     properties: SocketWorkerProperties,
     creation_opts: fposix_socket::SocketCreationOptions,
 ) {
+    let fposix_socket::SocketCreationOptions { marks, group, __source_breaking } = creation_opts;
+
     match (domain, proto) {
         (fposix_socket::Domain::Ipv4, fposix_socket::DatagramSocketProtocol::Udp) => {
             fasync::Scope::current().spawn_request_stream_handler(request_stream, |rs| {
                 SocketWorker::serve_stream_with(
                     ctx,
-                    BindingData::<Ipv4, Udp>::new,
+                    move |ctx, properties| {
+                        BindingData::<Ipv4, Udp>::new(ctx, properties, group.map(Into::into))
+                    },
                     properties,
                     rs,
-                    creation_opts,
+                    marks,
                 )
             })
         }
@@ -1314,10 +1340,12 @@ pub(super) fn spawn_worker(
             fasync::Scope::current().spawn_request_stream_handler(request_stream, |rs| {
                 SocketWorker::serve_stream_with(
                     ctx,
-                    BindingData::<Ipv6, Udp>::new,
+                    move |ctx, properties| {
+                        BindingData::<Ipv6, Udp>::new(ctx, properties, group.map(Into::into))
+                    },
                     properties,
                     rs,
-                    creation_opts,
+                    marks,
                 )
             })
         }
@@ -1325,10 +1353,14 @@ pub(super) fn spawn_worker(
             fasync::Scope::current().spawn_request_stream_handler(request_stream, |rs| {
                 SocketWorker::serve_stream_with(
                     ctx,
-                    BindingData::<Ipv4, IcmpEcho>::new,
+                    move |ctx, properties| {
+                        BindingData::<Ipv4, IcmpEcho>::new(
+                            ctx, properties, /* notifier */ None,
+                        )
+                    },
                     properties,
                     rs,
-                    creation_opts,
+                    marks,
                 )
             })
         }
@@ -1336,10 +1368,14 @@ pub(super) fn spawn_worker(
             fasync::Scope::current().spawn_request_stream_handler(request_stream, |rs| {
                 SocketWorker::serve_stream_with(
                     ctx,
-                    BindingData::<Ipv6, IcmpEcho>::new,
+                    move |ctx, properties| {
+                        BindingData::<Ipv6, IcmpEcho>::new(
+                            ctx, properties, /* notifier */ None,
+                        )
+                    },
                     properties,
                     rs,
-                    creation_opts,
+                    marks,
                 )
             })
         }
@@ -1365,17 +1401,9 @@ where
     type Request = fposix_socket::SynchronousDatagramSocketRequest;
     type RequestStream = fposix_socket::SynchronousDatagramSocketRequestStream;
     type CloseResponder = fposix_socket::SynchronousDatagramSocketCloseResponder;
-    type SetupArgs = fposix_socket::SocketCreationOptions;
+    type SetupArgs = Option<fidl_fuchsia_net::Marks>;
 
-    fn setup(&mut self, ctx: &mut Ctx, options: fposix_socket::SocketCreationOptions) {
-        let fposix_socket::SocketCreationOptions { marks, group, __source_breaking } = options;
-        if group.is_some() {
-            // TODO(https://fxbug.dev/434262738): support UDP sockets in wake groups.
-            warn!(
-                "datagram sockets do not support wake groups, but one was provided for {:?}",
-                self.info.id
-            );
-        }
+    fn setup(&mut self, ctx: &mut Ctx, marks: Option<fidl_fuchsia_net::Marks>) {
         for (domain, mark) in marks.into_iter().map(fidl_fuchsia_net_ext::Marks::from).flatten() {
             T::set_mark(ctx, &self.info.id, domain.into_core(), Mark(Some(mark)))
         }

@@ -211,6 +211,7 @@ impl BindingData {
         let state = SocketState {
             queue: Mutex::new(MessageQueue::new(
                 local_event,
+                None, /* notifier */
                 ctx.bindings_ctx().settings.device.read().packet_receive_buffer.default(),
             )),
             kind,

@@ -738,6 +738,25 @@ impl<'a> TestRealm<'a> {
             .context("failed to create socket")
     }
 
+    /// Creates a Datagram [`socket2::Socket`] backed by the implementation of
+    /// `fuchsia.posix.socket/Provider` in this realm and with the specified
+    /// options.
+    pub async fn datagram_socket_with_options(
+        &self,
+        domain: fposix_socket::Domain,
+        proto: fposix_socket::DatagramSocketProtocol,
+        options: fposix_socket::SocketCreationOptions,
+    ) -> Result<socket2::Socket> {
+        let socket_provider = self
+            .connect_to_protocol::<fposix_socket::ProviderMarker>()
+            .context("failed to connect to socket provider")?;
+
+        fposix_socket_ext::datagram_socket_with_options(&socket_provider, domain, proto, options)
+            .await
+            .context("failed to call socket")?
+            .context("failed to create socket")
+    }
+
     /// Creates a raw [`socket2::Socket`] backed by the implementation of
     /// `fuchsia.posix.socket.raw/Provider` in this realm.
     pub async fn raw_socket(
@@ -794,7 +813,8 @@ impl<'a> TestRealm<'a> {
     }
 
     /// Creates a Stream [`socket2::Socket`] backed by the implementation of
-    /// `fuchsia.posix.socket/Provider` in this realm.
+    /// `fuchsia.posix.socket/Provider` in this realm and with the specified
+    /// options.
     pub async fn stream_socket_with_options(
         &self,
         domain: fposix_socket::Domain,

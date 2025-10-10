@@ -30,6 +30,31 @@ pub async fn datagram_socket(
     .await)
 }
 
+/// Creates a datagram socket using the given provider and configured with the
+/// specified options.
+pub async fn datagram_socket_with_options(
+    provider: &fposix_socket::ProviderProxy,
+    domain: fposix_socket::Domain,
+    protocol: fposix_socket::DatagramSocketProtocol,
+    options: fposix_socket::SocketCreationOptions,
+) -> Result<Result<socket2::Socket, std::io::Error>, fidl::Error> {
+    let result = provider.datagram_socket_with_options(domain, protocol, options).await?;
+    Ok(async move {
+        let response =
+            result.map_err(|errno| std::io::Error::from_raw_os_error(errno.into_primitive()))?;
+        let fd = match response {
+            fposix_socket::ProviderDatagramSocketWithOptionsResponse::DatagramSocket(
+                client_end,
+            ) => fdio::create_fd(client_end.into()).map_err(zx::Status::into_io_error),
+            fposix_socket::ProviderDatagramSocketWithOptionsResponse::SynchronousDatagramSocket(
+                client_end,
+            ) => fdio::create_fd(client_end.into()).map_err(zx::Status::into_io_error),
+        }?;
+        Ok(fd.into())
+    }
+    .await)
+}
+
 /// Creates a packet socket using the given provider.
 pub async fn packet_socket(
     provider: &fpacket::ProviderProxy,

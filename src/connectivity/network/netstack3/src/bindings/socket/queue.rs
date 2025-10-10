@@ -7,9 +7,11 @@
 use std::collections::VecDeque;
 use std::num::NonZeroUsize;
 
-use log::trace;
+use log::{error, trace};
 use netstack3_core::types::BufferSizeSettings;
 use thiserror::Error;
+
+use crate::bindings::util::DataNotifier;
 
 #[derive(Copy, Clone, Debug, Error, Eq, PartialEq)]
 #[error("application buffers are full")]
@@ -26,16 +28,21 @@ pub(crate) trait QueueReadableListener {
 #[derive(Debug)]
 pub(crate) struct MessageQueue<M, L> {
     listener: L,
+    notifier: Option<DataNotifier>,
     queue: AvailableMessageQueue<M>,
 }
 
 impl<M, L: QueueReadableListener> MessageQueue<M, L> {
-    pub(crate) fn new(listener: L, max_available_messages_size: NonZeroUsize) -> Self {
-        Self { listener, queue: AvailableMessageQueue::new(max_available_messages_size) }
+    pub(crate) fn new(
+        listener: L,
+        notifier: Option<DataNotifier>,
+        max_available_messages_size: NonZeroUsize,
+    ) -> Self {
+        Self { listener, notifier, queue: AvailableMessageQueue::new(max_available_messages_size) }
     }
 
     pub(crate) fn peek(&self) -> Option<&M> {
-        let Self { queue, listener: _ } = self;
+        let Self { queue, listener: _, notifier: _ } = self;
         queue.peek()
     }
 
@@ -43,7 +50,7 @@ impl<M, L: QueueReadableListener> MessageQueue<M, L> {
     where
         M: BodyLen,
     {
-        let Self { queue, listener } = self;
+        let Self { queue, listener, notifier: _ } = self;
         let message = queue.pop();
         // NB: Only notify the listener when the queue was not empty before to
         // avoid hitting the listener twice with the same signal.
@@ -57,7 +64,7 @@ impl<M, L: QueueReadableListener> MessageQueue<M, L> {
     where
         M: BodyLen,
     {
-        let Self { queue, listener } = self;
+        let Self { queue, listener, notifier } = self;
         let body_len = message.body_len();
         let queue_was_empty = queue.is_empty();
         match queue.push(message) {
@@ -73,6 +80,9 @@ impl<M, L: QueueReadableListener> MessageQueue<M, L> {
                 if queue_was_empty {
                     listener.on_readable_changed(true);
                 }
+                if let Some(notifier) = notifier {
+                    notifier.notify();
+                }
                 Ok(())
             }
         }
@@ -83,7 +93,7 @@ impl<M, L: QueueReadableListener> MessageQueue<M, L> {
     }
 
     pub(crate) fn max_available_messages_size(&self) -> NonZeroUsize {
-        let Self { listener: _, queue } = self;
+        let Self { listener: _, notifier: _, queue } = self;
         queue.max_available_messages_size
     }
 
@@ -92,7 +102,7 @@ impl<M, L: QueueReadableListener> MessageQueue<M, L> {
         new_size: usize,
         settings: &BufferSizeSettings<NonZeroUsize>,
     ) {
-        let Self { listener: _, queue } = self;
+        let Self { listener: _, notifier: _, queue } = self;
         let new_size = NonZeroUsize::new(new_size).unwrap_or_else(|| settings.min());
         queue.max_available_messages_size = settings.clamp(new_size);
     }
@@ -101,6 +111,7 @@ impl<M, L: QueueReadableListener> MessageQueue<M, L> {
     pub(crate) fn available_messages(&self) -> impl ExactSizeIterator<Item = &M> {
         let Self {
             listener: _,
+            notifier: _,
             queue:
                 AvailableMessageQueue {
                     available_messages,

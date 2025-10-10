@@ -73,7 +73,11 @@ pub struct SocketState<I: Ip> {
 impl<I: IpExt> SocketState<I> {
     fn new(event: zx::EventPair, settings: &IpLayerSettings) -> Self {
         SocketState {
-            rx_queue: Mutex::new(MessageQueue::new(event, settings.raw_receive_buffer.default())),
+            rx_queue: Mutex::new(MessageQueue::new(
+                event,
+                None, /* notifier */
+                settings.raw_receive_buffer.default(),
+            )),
         }
     }
 
