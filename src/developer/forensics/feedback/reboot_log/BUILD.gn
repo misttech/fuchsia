@@ -32,5 +32,6 @@ source_set("reboot_log") {
     "//src/developer/forensics/feedback_data:constants",
     "//src/lib/files",
     "//src/lib/fxl",
+    "//third_party/rapidjson",
   ]
 }

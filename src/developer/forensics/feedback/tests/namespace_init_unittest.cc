@@ -80,24 +80,24 @@ TEST_F(NamespaceInitTest, TestAndSetNotAFdr) {
   EXPECT_FALSE(TestAndSetNotAFdr(path));
 }
 
-TEST_F(NamespaceInitTest, MovePreviousRebootReason) {
+TEST_F(NamespaceInitTest, MoveFile) {
   const std::string to = MakeFilepath(RootdDir(), "to.txt");
   const std::string from = MakeFilepath(RootdDir(), "from.txt");
 
   // |from| doesn't exist.
-  MovePreviousRebootReason(from, to);
+  MoveFile(from, to);
   EXPECT_FALSE(files::IsFile(to));
 
   // |to| can't be written to.
   WriteFile(from, "reboot_reason");
-  MovePreviousRebootReason(from, "/bad_path/to.txt");
+  MoveFile(from, "/bad_path/to.txt");
   EXPECT_FALSE(files::IsFile("/bad_path/to.txt"));
   EXPECT_TRUE(files::IsFile(from));
   EXPECT_EQ(ReadFile(from), "reboot_reason");
 
   // |from| works!
   WriteFile(from, "reboot_reason");
-  MovePreviousRebootReason(from, to);
+  MoveFile(from, to);
   EXPECT_FALSE(files::IsFile(from));
   EXPECT_TRUE(files::IsFile(to));
   EXPECT_EQ(ReadFile(to), "reboot_reason");

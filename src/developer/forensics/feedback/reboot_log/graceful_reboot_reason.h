@@ -49,12 +49,35 @@ std::vector<GracefulRebootReason> ToGracefulRebootReasons(
     fuchsia::hardware::power::statecontrol::ShutdownOptions options);
 
 // The input is limited to values corresponding to |power::statecontrol::ShutdownReason|.
-std::vector<GracefulRebootReason> FromFileContent(std::string content);
+std::vector<GracefulRebootReason> FromLegacyTxtFile(std::string content);
+
+// Only used for testing legacy functionality. The input is limited to GracefulRebootReasons that
+// map to |power::statecontrol::ShutdownReason|.
+std::string ToLegacyFileContentForTesting(const std::vector<GracefulRebootReason>& reasons);
+
+// The input is limited to GracefulRebootReasons that map to |power::statecontrol::ShutdownReason|.
+//
+// Note that some variants that should not be persisted (e.g. `kNotParseable`) are translated to
+// `kNotSupported`.
+std::vector<std::string> ToReasonStrings(const std::vector<GracefulRebootReason>& reasons);
 
 // The input is limited to values corresponding to |power::statecontrol::ShutdownReason|.
-std::string ToFileContent(const std::vector<GracefulRebootReason>& reasons);
+//
+// The format is expected to be:
+// {
+//   reasons: [
+//     "Reason 1",
+//     "Reason 2"
+//   ]
+// }
+std::vector<GracefulRebootReason> FromJson(const std::string& content);
 
-std::string ToLog(const std::vector<GracefulRebootReason>& reasons);
+// The input is limited to GracefulRebootReasons that map to |power::statecontrol::ShutdownReason|.
+std::string ToJson(const std::vector<GracefulRebootReason>& reasons);
+
+// Converts the list of `GracefulRebootReasons` into a single comma-separated string, like
+// "Reason 1,Reason 2,Reason 3".
+std::string ToRawStrings(const std::vector<GracefulRebootReason>& reasons);
 
 // Writes the graceful reboot reason to `path` and records metrics about the write.
 void WriteGracefulRebootReasons(const std::vector<GracefulRebootReason>& reasons,

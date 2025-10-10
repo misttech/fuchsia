@@ -43,8 +43,13 @@ constexpr char kEnableLimitInspectDataKey[] = "enable_limit_inspect_data";
 // Reboot reporting
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-constexpr char kPreviousGracefulRebootReasonFile[] = "/tmp/graceful_reboot_reason.txt";
-constexpr char kCurrentGracefulRebootReasonFile[] = "/data/graceful_reboot_reason.txt";
+// TODO(https://fxbug.dev/450904906): Stop reading from legacy file paths once it's guaranteed they
+// no longer exist.
+constexpr char kLegacyPreviousGracefulRebootReasonFile[] = "/tmp/graceful_reboot_reason.txt";
+constexpr char kLegacyCurrentGracefulRebootReasonFile[] = "/data/graceful_reboot_reason.txt";
+
+constexpr char kPreviousGracefulShutdownInfoFile[] = "/tmp/graceful_shutdown_info.json";
+constexpr char kCurrentGracefulShutdownInfoFile[] = "/data/graceful_shutdown_info.json";
 
 constexpr char kNotAFdrFile[] = "/data/not_a_fdr.txt";
 

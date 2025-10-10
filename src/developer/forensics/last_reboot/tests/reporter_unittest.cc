@@ -17,6 +17,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "src/developer/forensics/feedback/reboot_log/graceful_reboot_reason.h"
 #include "src/developer/forensics/feedback/reboot_log/reboot_log.h"
 #include "src/developer/forensics/testing/gpretty_printers.h"
 #include "src/developer/forensics/testing/stubs/cobalt_logger_factory.h"
@@ -35,6 +36,8 @@ namespace forensics {
 namespace last_reboot {
 namespace {
 
+using ::forensics::feedback::GracefulRebootReason;
+using ::forensics::feedback::ToJson;
 using testing::IsEmpty;
 using testing::UnorderedElementsAreArray;
 
@@ -60,7 +63,8 @@ struct GracefulRebootTestParam {
 
 struct GracefulRebootWithCrashTestParam {
   std::string test_name;
-  std::string graceful_reboot_log;
+  std::string graceful_reboot_file_contents;
+  std::vector<GracefulRebootReason> graceful_reboot_reasons;
   std::string reboot_reason;
 
   std::string output_crash_signature;
@@ -94,11 +98,16 @@ class ReporterTest : public UnitTestFixture, public testing::WithParamInterface<
     FX_CHECK(tmp_dir_.NewTempFileWithData(contents, &graceful_reboot_log_path_));
   }
 
+  void WriteLegacyGracefulRebootLogContents(const std::string& contents) {
+    FX_CHECK(tmp_dir_.NewTempFileWithData(contents, &legacy_graceful_reboot_log_path_));
+  }
+
   void SetAsFdr() { not_a_fdr_ = false; }
 
   void ReportOnRebootLog() {
-    const auto reboot_log = feedback::RebootLog::ParseRebootLog(
-        zircon_reboot_log_path_, graceful_reboot_log_path_, not_a_fdr_);
+    const auto reboot_log =
+        feedback::RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_reboot_log_path_,
+                                            legacy_graceful_reboot_log_path_, not_a_fdr_);
     ReportOn(reboot_log);
   }
 
@@ -110,6 +119,7 @@ class ReporterTest : public UnitTestFixture, public testing::WithParamInterface<
 
   std::string zircon_reboot_log_path_;
   std::string graceful_reboot_log_path_;
+  std::string legacy_graceful_reboot_log_path_;
   std::unique_ptr<stubs::CrashReporterBase> crash_reporter_server_;
 
  private:
@@ -445,17 +455,17 @@ INSTANTIATE_TEST_SUITE_P(WithVariousRebootLogs, GracefulReporterTest,
                          ::testing::ValuesIn(std::vector<GracefulRebootTestParam>({
                              {
                                  "UserRequest",
-                                 "USER REQUEST",
+                                 ToJson({GracefulRebootReason::kUserRequest}),
                                  cobalt::LastRebootReason::kUserRequest,
                              },
                              {
                                  "SystemUpdate",
-                                 "SYSTEM UPDATE",
+                                 ToJson({GracefulRebootReason::kSystemUpdate}),
                                  cobalt::LastRebootReason::kSystemUpdate,
                              },
                              {
                                  "ZbiSwap",
-                                 "ZBI SWAP",
+                                 ToJson({GracefulRebootReason::kZbiSwap}),
                                  cobalt::LastRebootReason::kZbiSwap,
                              },
                          })),
@@ -506,7 +516,8 @@ INSTANTIATE_TEST_SUITE_P(WithVariousRebootLogs, GracefulWithCrashReporterTest,
                          ::testing::ValuesIn(std::vector<GracefulRebootWithCrashTestParam>({
                              {
                                  "SessionFailure",
-                                 "SESSION FAILURE",
+                                 ToJson({GracefulRebootReason::kSessionFailure}),
+                                 {GracefulRebootReason::kSessionFailure},
                                  "FINAL REBOOT REASON (SESSION FAILURE)",
                                  "fuchsia-session-failure",
                                  zx::msec(65487494),
@@ -516,7 +527,8 @@ INSTANTIATE_TEST_SUITE_P(WithVariousRebootLogs, GracefulWithCrashReporterTest,
                              },
                              {
                                  "OOM",
-                                 "OUT OF MEMORY",
+                                 ToJson({GracefulRebootReason::kOutOfMemory}),
+                                 {GracefulRebootReason::kOutOfMemory},
                                  "FINAL REBOOT REASON (OOM)",
                                  "fuchsia-oom",
                                  zx::msec(65487494),
@@ -526,7 +538,8 @@ INSTANTIATE_TEST_SUITE_P(WithVariousRebootLogs, GracefulWithCrashReporterTest,
                              },
                              {
                                  "SysmgrFailure",
-                                 "SYSMGR FAILURE",
+                                 ToJson({GracefulRebootReason::kSysmgrFailure}),
+                                 {GracefulRebootReason::kSysmgrFailure},
                                  "FINAL REBOOT REASON (SYSMGR FAILURE)",
                                  "fuchsia-sysmgr-failure",
                                  zx::msec(65487494),
@@ -536,7 +549,8 @@ INSTANTIATE_TEST_SUITE_P(WithVariousRebootLogs, GracefulWithCrashReporterTest,
                              },
                              {
                                  "CriticalComponentFailure",
-                                 "CRITICAL COMPONENT FAILURE",
+                                 ToJson({GracefulRebootReason::kCriticalComponentFailure}),
+                                 {GracefulRebootReason::kCriticalComponentFailure},
                                  "FINAL REBOOT REASON (CRITICAL COMPONENT FAILURE)",
                                  "fuchsia-critical-component-failure",
                                  zx::msec(65487494),
@@ -546,7 +560,8 @@ INSTANTIATE_TEST_SUITE_P(WithVariousRebootLogs, GracefulWithCrashReporterTest,
                              },
                              {
                                  "RetrySystemUpdate",
-                                 "RETRY SYSTEM UPDATE",
+                                 ToJson({GracefulRebootReason::kRetrySystemUpdate}),
+                                 {GracefulRebootReason::kRetrySystemUpdate},
                                  "FINAL REBOOT REASON (RETRY SYSTEM UPDATE)",
                                  "fuchsia-retry-system-update",
                                  zx::msec(65487494),
@@ -556,7 +571,8 @@ INSTANTIATE_TEST_SUITE_P(WithVariousRebootLogs, GracefulWithCrashReporterTest,
                              },
                              {
                                  "HighTemperature",
-                                 "HIGH TEMPERATURE",
+                                 ToJson({GracefulRebootReason::kHighTemperature}),
+                                 {GracefulRebootReason::kHighTemperature},
                                  "FINAL REBOOT REASON (HIGH TEMPERATURE)",
                                  "fuchsia-reboot-high-temperature",
                                  zx::msec(65487494),
@@ -566,7 +582,8 @@ INSTANTIATE_TEST_SUITE_P(WithVariousRebootLogs, GracefulWithCrashReporterTest,
                              },
                              {
                                  "NotSupported",
-                                 "NOT SUPPORTED",
+                                 ToJson({GracefulRebootReason::kNotSupported}),
+                                 {GracefulRebootReason::kNotSupported},
                                  "FINAL REBOOT REASON (GENERIC GRACEFUL)",
                                  "fuchsia-undetermined-userspace-reboot",
                                  zx::msec(65487494),
@@ -576,7 +593,8 @@ INSTANTIATE_TEST_SUITE_P(WithVariousRebootLogs, GracefulWithCrashReporterTest,
                              },
                              {
                                  "NotParseable",
-                                 "NOT PARSEABLE",
+                                 R"({"reasons": [ "NOT PARSEABLE REASON" ] })",
+                                 {GracefulRebootReason::kNotParseable},
                                  "FINAL REBOOT REASON (GENERIC GRACEFUL)",
                                  "fuchsia-undetermined-userspace-reboot",
                                  zx::msec(65487494),
@@ -586,7 +604,19 @@ INSTANTIATE_TEST_SUITE_P(WithVariousRebootLogs, GracefulWithCrashReporterTest,
                              },
                              {
                                  "None",
-                                 "NONE",
+                                 ToJson({}),
+                                 {},
+                                 "FINAL REBOOT REASON (GENERIC GRACEFUL)",
+                                 "fuchsia-undetermined-userspace-reboot",
+                                 zx::msec(65487494),
+                                 zx::msec(64208920),
+                                 cobalt::LastRebootReason::kGenericGraceful,
+                                 true,
+                             },
+                             {
+                                 "InvalidSchema",
+                                 R"({ "reasons": "not-an-array" })",
+                                 {},
                                  "FINAL REBOOT REASON (GENERIC GRACEFUL)",
                                  "fuchsia-undetermined-userspace-reboot",
                                  zx::msec(65487494),
@@ -598,6 +628,7 @@ INSTANTIATE_TEST_SUITE_P(WithVariousRebootLogs, GracefulWithCrashReporterTest,
                          [](const testing::TestParamInfo<GracefulRebootWithCrashTestParam>& info) {
                            return info.param.test_name;
                          });
+
 TEST_P(GracefulWithCrashReporterTest, Succeed) {
   const auto param = GetParam();
 
@@ -606,8 +637,8 @@ TEST_P(GracefulWithCrashReporterTest, Succeed) {
                         param.output_uptime.to_msecs(), param.output_runtime.to_secs());
   WriteZirconRebootLogContents(zircon_reboot_log);
 
-  if (param.graceful_reboot_log != "NONE") {
-    WriteGracefulRebootLogContents(param.graceful_reboot_log);
+  if (!param.graceful_reboot_file_contents.empty()) {
+    WriteGracefulRebootLogContents(param.graceful_reboot_file_contents);
   }
 
   SetUpCrashReporterServer(
@@ -615,7 +646,41 @@ TEST_P(GracefulWithCrashReporterTest, Succeed) {
           .crash_signature = param.output_crash_signature,
           .reboot_log = fxl::StringPrintf(
               "%s\nGRACEFUL REBOOT REASONS: (%s)\n\n%s", zircon_reboot_log.c_str(),
-              param.graceful_reboot_log.c_str(), param.reboot_reason.c_str()),
+              feedback::ToRawStrings(param.graceful_reboot_reasons).c_str(),
+              param.reboot_reason.c_str()),
+          .uptime = param.output_uptime,
+          .runtime = param.output_runtime,
+          .is_fatal = param.output_is_fatal,
+      }));
+  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
+
+  ReportOnRebootLog();
+
+  EXPECT_THAT(ReceivedCobaltEvents(),
+              UnorderedElementsAreArray({
+                  cobalt::Event(param.output_last_reboot_reason, param.output_uptime.to_usecs()),
+              }));
+}
+
+TEST_P(GracefulWithCrashReporterTest, SucceedForLegacyFile) {
+  const GracefulRebootWithCrashTestParam& param = GetParam();
+
+  const std::string zircon_reboot_log =
+      fxl::StringPrintf("ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n%lu\nRUNTIME (ms)\n%lu",
+                        param.output_uptime.to_msecs(), param.output_runtime.to_secs());
+  WriteZirconRebootLogContents(zircon_reboot_log);
+
+  if (!param.graceful_reboot_reasons.empty()) {
+    WriteLegacyGracefulRebootLogContents(ToRawStrings(param.graceful_reboot_reasons));
+  }
+
+  SetUpCrashReporterServer(
+      std::make_unique<stubs::CrashReporter>(stubs::CrashReporter::Expectations{
+          .crash_signature = param.output_crash_signature,
+          .reboot_log = fxl::StringPrintf(
+              "%s\nGRACEFUL REBOOT REASONS: (%s)\n\n%s", zircon_reboot_log.c_str(),
+              feedback::ToRawStrings(param.graceful_reboot_reasons).c_str(),
+              param.reboot_reason.c_str()),
           .uptime = param.output_uptime,
           .runtime = param.output_runtime,
           .is_fatal = param.output_is_fatal,

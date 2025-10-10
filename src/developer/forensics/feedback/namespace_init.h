@@ -18,9 +18,8 @@ namespace forensics::feedback {
 // Return whether |not_a_fdr_path| existed in the file system and create it otherwise.
 bool TestAndSetNotAFdr(const std::string& not_a_fdr_file = kNotAFdrFile);
 
-// Moves the previous reboot reason to |to| from |from|.
-void MovePreviousRebootReason(const std::string& from = kCurrentGracefulRebootReasonFile,
-                              const std::string& to = kPreviousGracefulRebootReasonFile);
+// Moves the file to |to| from |from|.
+void MoveFile(const std::string& from, const std::string& to);
 
 // Feedback data
 //

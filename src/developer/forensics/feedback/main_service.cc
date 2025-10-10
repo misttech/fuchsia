@@ -116,7 +116,7 @@ MainService::MainService(
                                             GracefulRebootReasonSignal& signal) {
                                 const std::vector<GracefulRebootReason> reasons = signal.Reasons();
                                 FX_LOGS(INFO)
-                                    << "Received reboot reasons '" << ToFileContent(reasons) << "'";
+                                    << "Received reboot reasons '" << ToRawStrings(reasons) << "'";
 
                                 WriteGracefulRebootReasons(reasons, cobalt_, path);
                                 signal.Respond();

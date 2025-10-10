@@ -19,7 +19,9 @@ namespace feedback {
 class RebootLog {
  public:
   static RebootLog ParseRebootLog(const std::string& zircon_reboot_log_path,
-                                  const std::string& graceful_reboot_log_path, bool not_a_fdr);
+                                  const std::string& graceful_shutdown_info_path,
+                                  const std::string& legacy_graceful_reboot_log_path,
+                                  bool not_a_fdr);
 
   const std::string& RebootLogStr() const { return reboot_log_str_; }
   const std::optional<std::string>& Dlog() const { return dlog_; }

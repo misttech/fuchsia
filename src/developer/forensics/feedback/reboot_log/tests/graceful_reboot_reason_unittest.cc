@@ -4,6 +4,7 @@
 
 #include "src/developer/forensics/feedback/reboot_log/graceful_reboot_reason.h"
 
+#include <format>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -21,9 +22,9 @@ namespace forensics {
 namespace feedback {
 namespace {
 
-TEST(GracefulRebootReasonTest, VerifyContentConversion) {
-  // ToFileContent() & FromFileContent() for reboot reasons from |power::statecontrol::RebootReason|
-  // should be reversible.
+TEST(GracefulRebootReasonTest, VerifyLegacyContentConversion) {
+  // ToLegacyFileContentForTesting() & FromLegacyTxtFile() for shutdown reasons from
+  // |power::statecontrol::ShutdownReason| should be reversible.
 
   const std::vector<GracefulRebootReason> reasons = {
       GracefulRebootReason::kUserRequest,
@@ -40,13 +41,14 @@ TEST(GracefulRebootReasonTest, VerifyContentConversion) {
   };
 
   for (const auto reason : reasons) {
-    EXPECT_THAT(FromFileContent(ToFileContent({reason})), testing::ElementsAre(reason));
+    EXPECT_THAT(FromLegacyTxtFile(ToLegacyFileContentForTesting({reason})),
+                testing::ElementsAre(reason));
   }
 }
 
-TEST(GracefulRebootReasonTest, VerifyContentConversionWithMultipleReasons) {
-  // ToFileContent() & FromFileContent() for reboot reasons from |power::statecontrol::RebootReason|
-  // should be reversible when there are multiple reasons.
+TEST(GracefulRebootReasonTest, VerifyLegacyContentConversionWithMultipleReasons) {
+  // ToLegacyFileContentForTesting() & FromLegacyTxtFile() for shutdown reasons from
+  // |power::statecontrol::ShutdownReason| should be reversible when there are multiple reasons.
 
   const std::vector<GracefulRebootReason> reasons = {
       GracefulRebootReason::kUserRequest,
@@ -63,16 +65,74 @@ TEST(GracefulRebootReasonTest, VerifyContentConversionWithMultipleReasons) {
   };
 
   // Verify all reasons at once.
-  EXPECT_THAT(FromFileContent(ToFileContent(reasons)), testing::ElementsAreArray(reasons));
+  EXPECT_THAT(FromLegacyTxtFile(ToLegacyFileContentForTesting(reasons)),
+              testing::ElementsAreArray(reasons));
+}
+
+TEST(GracefulRebootReasonTest, VerifyLegacyContentConversionWithNoReasons) {
+  // ToLegacyFileContentForTesting() & FromLegacyTxtFile() for shutdown reasons from
+  // |power::statecontrol::ShutdownReason| should be reversible when there are no reasons.
+  EXPECT_TRUE(FromLegacyTxtFile(ToLegacyFileContentForTesting({})).empty());
+}
+
+TEST(GracefulRebootReasonTest, VerifyContentConversion) {
+  // ToJson() & FromJson() for shutdown reasons from
+  // |power::statecontrol::ShutdownReason| should be reversible.
+  const std::vector<GracefulRebootReason> reasons = {
+      GracefulRebootReason::kUserRequest,
+      GracefulRebootReason::kSystemUpdate,
+      GracefulRebootReason::kRetrySystemUpdate,
+      GracefulRebootReason::kHighTemperature,
+      GracefulRebootReason::kSessionFailure,
+      GracefulRebootReason::kSysmgrFailure,
+      GracefulRebootReason::kCriticalComponentFailure,
+      GracefulRebootReason::kFdr,
+      GracefulRebootReason::kZbiSwap,
+      GracefulRebootReason::kNotSupported,
+      GracefulRebootReason::kNetstackMigration,
+  };
+
+  for (const auto reason : reasons) {
+    EXPECT_THAT(FromJson(ToJson({reason})), testing::ElementsAre(reason));
+  }
+}
+
+TEST(GracefulRebootReasonTest, VerifyContentConversionWithMultipleReasons) {
+  // ToJson() & FromJson() for shutdown reasons from
+  // |power::statecontrol::ShutdownReason| should be reversible when there are multiple reasons.
+  const std::vector<GracefulRebootReason> reasons = {
+      GracefulRebootReason::kUserRequest,
+      GracefulRebootReason::kSystemUpdate,
+      GracefulRebootReason::kRetrySystemUpdate,
+      GracefulRebootReason::kHighTemperature,
+      GracefulRebootReason::kSessionFailure,
+      GracefulRebootReason::kSysmgrFailure,
+      GracefulRebootReason::kCriticalComponentFailure,
+      GracefulRebootReason::kFdr,
+      GracefulRebootReason::kZbiSwap,
+      GracefulRebootReason::kNotSupported,
+      GracefulRebootReason::kNetstackMigration,
+  };
+
+  // Verify all reasons at once.
+  EXPECT_THAT(FromJson(ToJson(reasons)), testing::ElementsAreArray(reasons));
 }
 
 TEST(GracefulRebootReasonTest, VerifyContentConversionWithNoReasons) {
-  // ToFileContent() & FromFileContent() for reboot reasons from |power::statecontrol::RebootReason|
-  // should be reversible when there are no reasons.
-  EXPECT_TRUE(FromFileContent(ToFileContent({})).empty());
+  // ToJson() & FromJson() for shutdown reasons from
+  // |power::statecontrol::ShutdownReason| should be reversible when there are no reasons.
+  EXPECT_TRUE(FromJson(ToJson({})).empty());
 }
 
-constexpr char kFilename[] = "graceful_reboot_reason.txt";
+TEST(GracefulRebootReasonTest, ReasonsIsNotAnArray) {
+  EXPECT_TRUE(FromJson(R"({ "reasons" : "not-an-array" })").empty());
+}
+
+TEST(GracefulRebootReasonTest, SpuriousField) {
+  EXPECT_TRUE(FromJson(R"({ "reasons" : [], "spurious_field": "spurious-value" })").empty());
+}
+
+constexpr char kFilename[] = "graceful_shutdown_info.json";
 
 struct TestParam {
   std::string test_name;
@@ -87,6 +147,17 @@ class WriteGracefulRebootReasonTest : public UnitTestFixture,
 
  protected:
   std::string Path() { return files::JoinPath(tmp_dir_.path(), kFilename); }
+
+  static std::string BuildJson(const std::string& reason) {
+    // Use {{ and }} to escape the curly braces for std::format.
+    return std::format(
+        R"({{
+    "reasons": [
+        "{}"
+    ]
+}})",
+        reason);
+  }
 
   timekeeper::TestClock clock_;
   cobalt::Logger cobalt_;
@@ -171,7 +242,7 @@ TEST_P(WriteGracefulRebootReasonTest, Succeed) {
 
   std::string contents;
   ASSERT_TRUE(files::ReadFileToString(Path(), &contents));
-  EXPECT_EQ(contents, param.output_reason.c_str());
+  EXPECT_EQ(contents, BuildJson(param.output_reason));
 
   RunLoopUntilIdle();
 }

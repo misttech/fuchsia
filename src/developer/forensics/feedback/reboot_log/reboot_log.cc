@@ -192,14 +192,14 @@ std::optional<std::string> ExtractDlogAndLogRebootLog(const std::string& reboot_
   return std::string(fxl::TrimString(dlog, " \f\n\r\t\v"));
 }
 
-std::vector<GracefulRebootReason> ExtractGracefulRebootInfo(
-    const std::string& graceful_reboot_log_path) {
-  if (!files::IsFile(graceful_reboot_log_path)) {
+std::vector<GracefulRebootReason> ExtractLegacyGracefulRebootInfo(
+    const std::string& legacy_graceful_reboot_log_path) {
+  if (!files::IsFile(legacy_graceful_reboot_log_path)) {
     return {};
   }
 
   std::string file_content;
-  if (!files::ReadFileToString(graceful_reboot_log_path, &file_content)) {
+  if (!files::ReadFileToString(legacy_graceful_reboot_log_path, &file_content)) {
     return {GracefulRebootReason::kNotParseable};
   }
 
@@ -207,7 +207,26 @@ std::vector<GracefulRebootReason> ExtractGracefulRebootInfo(
     return {GracefulRebootReason::kNotParseable};
   }
 
-  return FromFileContent(file_content);
+  return FromLegacyTxtFile(file_content);
+}
+
+std::vector<GracefulRebootReason> ExtractGracefulShutdownInfo(
+    const std::string& graceful_shutdown_info_path,
+    const std::string& legacy_graceful_reboot_log_path) {
+  if (!files::IsFile(graceful_shutdown_info_path)) {
+    return ExtractLegacyGracefulRebootInfo(legacy_graceful_reboot_log_path);
+  }
+
+  std::string file_content;
+  if (!files::ReadFileToString(graceful_shutdown_info_path, &file_content)) {
+    return {GracefulRebootReason::kNotParseable};
+  }
+
+  if (file_content.empty()) {
+    return {GracefulRebootReason::kNotParseable};
+  }
+
+  return FromJson(file_content);
 }
 
 RebootReason FromGracefulRebootReason(const GracefulRebootReason& reason) {
@@ -269,7 +288,8 @@ RebootReason ConsolidateGracefulRebootReasons(const std::vector<GracefulRebootRe
     return RebootReason::kSystemUpdate;
   }
 
-  FX_LOGS(WARNING) << "Unexpected combination of graceful reboot reasons: " << ToLog(reasons);
+  FX_LOGS(WARNING) << "Unexpected combination of graceful reboot reasons: "
+                   << ToRawStrings(reasons);
   return RebootReason::kUnexpectedReasonGraceful;
 }
 
@@ -316,7 +336,7 @@ std::string MakeRebootLog(const std::optional<std::string>& zircon_reboot_log,
   }
 
   lines.push_back(
-      fxl::StringPrintf("GRACEFUL REBOOT REASONS: (%s)\n", ToLog(graceful_reasons).c_str()));
+      fxl::StringPrintf("GRACEFUL REBOOT REASONS: (%s)\n", ToRawStrings(graceful_reasons).c_str()));
 
   lines.push_back(fxl::StringPrintf("FINAL REBOOT REASON (%s)", ToString(reboot_reason).c_str()));
 
@@ -327,7 +347,8 @@ std::string MakeRebootLog(const std::optional<std::string>& zircon_reboot_log,
 
 // static
 RebootLog RebootLog::ParseRebootLog(const std::string& zircon_reboot_log_path,
-                                    const std::string& graceful_reboot_log_path,
+                                    const std::string& graceful_shutdown_info_path,
+                                    const std::string& legacy_graceful_reboot_log_path,
                                     const bool not_a_fdr) {
   std::optional<std::string> zircon_reboot_log;
   std::optional<zx::duration> last_boot_uptime;
@@ -337,7 +358,8 @@ RebootLog RebootLog::ParseRebootLog(const std::string& zircon_reboot_log_path,
       ExtractZirconRebootInfo(zircon_reboot_log_path, &zircon_reboot_log, &last_boot_uptime,
                               &last_boot_runtime, &critical_process);
 
-  const auto graceful_reasons = ExtractGracefulRebootInfo(graceful_reboot_log_path);
+  const std::vector<GracefulRebootReason> graceful_reasons =
+      ExtractGracefulShutdownInfo(graceful_shutdown_info_path, legacy_graceful_reboot_log_path);
 
   const auto reboot_reason = DetermineRebootReason(zircon_reason, graceful_reasons, not_a_fdr);
   const auto reboot_log = MakeRebootLog(zircon_reboot_log, graceful_reasons, reboot_reason);

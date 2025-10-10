@@ -67,7 +67,9 @@ int main() {
                                    product_config->persisted_logs_total_size.has_value();
 
   if (component.IsFirstInstance()) {
-    MovePreviousRebootReason();
+    MoveFile(/*from=*/kLegacyCurrentGracefulRebootReasonFile,
+             /*to=*/kLegacyPreviousGracefulRebootReasonFile);
+    MoveFile(/*from=*/kCurrentGracefulShutdownInfoFile, /*to=*/kPreviousGracefulShutdownInfoFile);
     if (run_log_persistence) {
       CreatePreviousLogsFile(cobalt.get(), *product_config->persisted_logs_total_size);
     } else {
@@ -98,8 +100,9 @@ int main() {
 
   ExposeConfig(*component.InspectRoot(), *build_type_config, *product_config);
 
-  auto reboot_log = RebootLog::ParseRebootLog(
-      "/boot/log/last-panic.txt", kPreviousGracefulRebootReasonFile, TestAndSetNotAFdr());
+  RebootLog reboot_log =
+      RebootLog::ParseRebootLog("/boot/log/last-panic.txt", kPreviousGracefulShutdownInfoFile,
+                                kLegacyPreviousGracefulRebootReasonFile, TestAndSetNotAFdr());
 
   std::optional<std::string> local_device_id_path = kDeviceIdPath;
   if (files::IsFile(kUseRemoteDeviceIdProviderPath)) {
@@ -120,7 +123,7 @@ int main() {
       fidl::InterfaceRequest<fuchsia::process::lifecycle::Lifecycle>(std::move(lifecycle_channel)),
       reboot_log.Dlog(),
       MainService::Options{*build_type_config, local_device_id_path,
-                           kCurrentGracefulRebootReasonFile,
+                           kCurrentGracefulShutdownInfoFile,
                            LastReboot::Options{
                                .is_first_instance = component.IsFirstInstance(),
                                .reboot_log = reboot_log,

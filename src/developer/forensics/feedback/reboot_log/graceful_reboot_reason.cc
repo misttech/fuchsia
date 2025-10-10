@@ -14,6 +14,10 @@
 #include "src/lib/files/file_descriptor.h"
 #include "src/lib/fxl/strings/join_strings.h"
 #include "src/lib/fxl/strings/split_string.h"
+#include "third_party/rapidjson/include/rapidjson/document.h"
+#include "third_party/rapidjson/include/rapidjson/error/en.h"
+#include "third_party/rapidjson/include/rapidjson/prettywriter.h"
+#include "third_party/rapidjson/include/rapidjson/schema.h"
 
 namespace forensics {
 namespace feedback {
@@ -45,6 +49,48 @@ constexpr char kDeliminator[] = ",";
 // file. Unlike the other "reason" strings above, this is translated to an
 // empty vector rather than a `GracefulRebootReason`, when read from file.
 constexpr char kNoReasons[] = "NONE";
+
+constexpr char kReasonsKey[] = "reasons";
+
+// This schema cannot become more strict over time because future versions of Fuchsia may read json
+// written by a previous version. For example, we cannot add any more required fields because
+// "reasons" is the only field that will be written by the original version of Fuchsia that persists
+// this file to disk.
+constexpr char kJsonSchema[] = R"({
+  "type": "object",
+  "properties": {
+    "reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "reasons"
+  ],
+  "additionalProperties": false
+})";
+
+bool IsSchemaValid(const rapidjson::Document& json) {
+  rapidjson::Document schema;
+  if (const rapidjson::ParseResult result = schema.Parse(kJsonSchema); !result) {
+    FX_LOGS(ERROR) << "Error parsing shutdown info schema at offset " << result.Offset() << " "
+                   << rapidjson::GetParseError_En(result.Code());
+    return false;
+  }
+
+  rapidjson::SchemaDocument schema_doc(schema);
+  if (rapidjson::SchemaValidator validator(schema_doc); !json.Accept(validator)) {
+    rapidjson::StringBuffer buf;
+    validator.GetInvalidSchemaPointer().StringifyUriFragment(buf);
+    FX_LOGS(ERROR) << "Shutdown info json does not match schema, violating '"
+                   << validator.GetInvalidSchemaKeyword() << "' rule";
+    return false;
+  }
+
+  return true;
+}
 
 }  // namespace
 
@@ -134,12 +180,17 @@ GracefulRebootReason FromString(const std::string_view reason) {
 //
 // The format is:
 // "Reason 1,Reason 2,Reason 3"
-//
-// Note that some variants that should not be persisted (e.g. `kNotParseable`)
-// are translated to `kNotSupported`.
-std::string ToFileContent(const std::vector<GracefulRebootReason>& reasons) {
+std::string ToLegacyFileContentForTesting(const std::vector<GracefulRebootReason>& reasons) {
   if (reasons.empty()) {
     return kNoReasons;
+  }
+
+  return fxl::JoinStrings(ToReasonStrings(reasons), ",");
+}
+
+std::vector<std::string> ToReasonStrings(const std::vector<GracefulRebootReason>& reasons) {
+  if (reasons.empty()) {
+    return {};
   }
   std::vector<std::string> reason_strings;
   reason_strings.reserve(reasons.size());
@@ -178,11 +229,36 @@ std::string ToFileContent(const std::vector<GracefulRebootReason>& reasons) {
 
     reason_strings.push_back(reason_string);
   }
-  return fxl::JoinStrings(reason_strings, kDeliminator);
+
+  return reason_strings;
 }
 
-// Like `ToFileContent`, but does not perform any translation of the reasons.
-std::string ToLog(const std::vector<GracefulRebootReason>& reasons) {
+std::string ToJson(const std::vector<GracefulRebootReason>& reasons) {
+  rapidjson::Document json;
+  json.SetObject();
+  auto& allocator = json.GetAllocator();
+
+  rapidjson::Value json_reasons(rapidjson::kArrayType);
+  const std::vector<std::string> reason_strings = ToReasonStrings(reasons);
+
+  for (const std::string& reason : reason_strings) {
+    json_reasons.PushBack(rapidjson::Value(reason, allocator), allocator);
+  }
+  json.AddMember(kReasonsKey, json_reasons, allocator);
+
+  if (!IsSchemaValid(json)) {
+    FX_LOGS(ERROR) << "Failed to create json matching the schema.";
+    return "";
+  }
+
+  rapidjson::StringBuffer buffer;
+  rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer);
+  json.Accept(writer);
+
+  return buffer.GetString();
+}
+
+std::string ToRawStrings(const std::vector<GracefulRebootReason>& reasons) {
   if (reasons.empty()) {
     return kNoReasons;
   }
@@ -200,7 +276,7 @@ std::string ToLog(const std::vector<GracefulRebootReason>& reasons) {
 // "Reason 1,Reason 2,Reason 3"
 //
 // If the given string is empty, the returned list will be empty.
-std::vector<GracefulRebootReason> FromFileContent(const std::string reasons) {
+std::vector<GracefulRebootReason> FromLegacyTxtFile(const std::string reasons) {
   if (reasons == kNoReasons) {
     return {};
   }
@@ -214,6 +290,43 @@ std::vector<GracefulRebootReason> FromFileContent(const std::string reasons) {
     graceful_reasons.push_back(FromString(reason));
   }
   return graceful_reasons;
+}
+
+std::vector<GracefulRebootReason> FromJson(const std::string& content) {
+  rapidjson::Document json;
+  if (const rapidjson::ParseResult result = json.Parse(content.c_str()); !result) {
+    FX_LOGS(ERROR) << "Error parsing shutdown info as JSON at offset " << result.Offset() << " "
+                   << rapidjson::GetParseError_En(result.Code());
+    return {};
+  }
+
+  if (!IsSchemaValid(json)) {
+    FX_LOGS(ERROR) << "Failed to parse content: " << content;
+    return {};
+  }
+
+  rapidjson::Document schema;
+  if (const rapidjson::ParseResult result = schema.Parse(kJsonSchema); !result) {
+    FX_LOGS(ERROR) << "Error parsing shutdown info schema at offset " << result.Offset() << " "
+                   << rapidjson::GetParseError_En(result.Code());
+    return {};
+  }
+
+  rapidjson::SchemaDocument schema_doc(schema);
+  if (rapidjson::SchemaValidator validator(schema_doc); !json.Accept(validator)) {
+    rapidjson::StringBuffer buf;
+    validator.GetInvalidSchemaPointer().StringifyUriFragment(buf);
+    FX_LOGS(ERROR) << "Shutdown info json does not match schema, violating '"
+                   << validator.GetInvalidSchemaKeyword() << "' rule";
+    return {};
+  }
+
+  std::vector<GracefulRebootReason> reasons;
+  for (const auto& k : json[kReasonsKey].GetArray()) {
+    reasons.push_back(FromString(k.GetString()));
+  }
+
+  return reasons;
 }
 
 GracefulRebootReason FromReason(
@@ -275,9 +388,9 @@ void WriteGracefulRebootReasons(const std::vector<GracefulRebootReason>& reasons
     return;
   }
 
-  if (const std::string content = ToFileContent(reasons);
+  if (const std::string content = ToJson(reasons);
       !fxl::WriteFileDescriptor(fd.get(), content.data(), content.size())) {
-    FX_LOGS(ERROR) << "Failed to write reboot reason '" << content << "' to " << path;
+    FX_LOGS(ERROR) << "Failed to write shutdown info to: " << path;
   }
 
   // Force the flush as we want to persist the content asap and we don't have more content to

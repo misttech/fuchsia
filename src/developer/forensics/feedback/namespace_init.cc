@@ -14,7 +14,6 @@
 #include "src/lib/fxl/strings/string_printf.h"
 
 namespace forensics::feedback {
-namespace {
 
 void MoveFile(const std::string& from, const std::string& to) {
   // Bail if the file doesn't exist.
@@ -41,8 +40,6 @@ void MoveFile(const std::string& from, const std::string& to) {
   }
 }
 
-}  // namespace
-
 bool TestAndSetNotAFdr(const std::string& not_a_fdr_file) {
   if (files::IsFile(not_a_fdr_file)) {
     return true;
@@ -53,12 +50,6 @@ bool TestAndSetNotAFdr(const std::string& not_a_fdr_file) {
   }
 
   return false;
-}
-
-void MovePreviousRebootReason(const std::string& from, const std::string& to) {
-  if (files::IsFile(from)) {
-    MoveFile(from, to);
-  }
 }
 
 void CreatePreviousLogsFile(cobalt::Logger* cobalt, const StorageSize max_decompressed_size,
