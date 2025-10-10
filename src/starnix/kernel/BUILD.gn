@@ -119,7 +119,6 @@ _starnix_core_sources = [
   "execution/executor.rs",
   "execution/loop_entry.rs",
   "execution/mod.rs",
-  "execution/table.rs",
   "execution/task_creation.rs",
   "fs/devpts.rs",
   "fs/devtmpfs.rs",
@@ -301,7 +300,6 @@ _starnix_core_sources = [
 ]
 
 _starnix_core_deps = [
-  ":restricted_trampoline",
   ":vdso_data($bionic_linux_toolchain)",
   "//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo_rust",
   "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust",
@@ -340,7 +338,6 @@ _starnix_core_deps = [
   "//src/connectivity/network/netlink",
   "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_rust",
   "//src/lib/async-utils",
-  "//src/lib/debug/rust",
   "//src/lib/diagnostics/data/rust",
   "//src/lib/diagnostics/inspect/contrib/rust",
   "//src/lib/diagnostics/inspect/derive",
@@ -535,13 +532,6 @@ rustc_test("starnix_core_test") {
   _concurrent_jobs = concurrent_jobs.rust_highmem
   test_configs = _concurrent_jobs.configs
   test_vars = _concurrent_jobs.vars
-}
-
-static_library("restricted_trampoline") {
-  sources = [
-    "execution/asm.h",
-    "execution/trampoline_${current_cpu}.S",
-  ]
 }
 
 resource("starnix-test-files") {

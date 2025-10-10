@@ -2,12 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#![allow(clippy::wildcard_imports)]
-
-use crate::arch::syscalls::sys_clone;
-use crate::task::CurrentTask;
 use fuchsia_inspect_contrib::profile_duration;
 use paste::paste;
+use starnix_core::arch::syscalls::sys_clone;
+use starnix_core::task::CurrentTask;
 use starnix_sync::{Locked, Unlocked};
 use starnix_syscalls::SyscallResult;
 use starnix_syscalls::decls::Syscall;
@@ -74,31 +72,31 @@ pub fn dispatch_syscall(
     current_task: &mut CurrentTask,
     syscall: &Syscall,
 ) -> Result<SyscallResult, Errno> {
-    use crate::bpf::syscalls::sys_bpf;
-    use crate::mm::syscalls::{
+    use starnix_core::bpf::syscalls::sys_bpf;
+    use starnix_core::mm::syscalls::{
         sys_brk, sys_futex, sys_get_robust_list, sys_madvise, sys_membarrier, sys_mincore,
         sys_mlock, sys_mlock2, sys_mlockall, sys_mmap, sys_mprotect, sys_mremap, sys_msync,
         sys_munlock, sys_munlockall, sys_munmap, sys_process_madvise, sys_process_mrelease,
         sys_process_vm_readv, sys_process_vm_writev, sys_set_robust_list, sys_userfaultfd,
     };
-    use crate::perf::sys_perf_event_open;
-    use crate::signals::syscalls::{
+    use starnix_core::perf::sys_perf_event_open;
+    use starnix_core::signals::syscalls::{
         sys_kill, sys_pidfd_send_signal, sys_restart_syscall, sys_rt_sigaction, sys_rt_sigpending,
         sys_rt_sigprocmask, sys_rt_sigqueueinfo, sys_rt_sigreturn, sys_rt_sigsuspend,
         sys_rt_sigtimedwait, sys_rt_tgsigqueueinfo, sys_sigaltstack, sys_signalfd4, sys_tgkill,
         sys_tkill, sys_wait4, sys_waitid,
     };
-    use crate::syscalls::misc::{
+    use starnix_core::syscalls::misc::{
         sys_delete_module, sys_getrandom, sys_personality, sys_sched_yield, sys_setdomainname,
         sys_sethostname, sys_sysinfo, sys_uname, sys_unknown,
     };
-    use crate::syscalls::reboot::sys_reboot;
-    use crate::syscalls::time::{
+    use starnix_core::syscalls::reboot::sys_reboot;
+    use starnix_core::syscalls::time::{
         sys_clock_getres, sys_clock_gettime, sys_clock_nanosleep, sys_getitimer, sys_gettimeofday,
         sys_nanosleep, sys_setitimer, sys_settimeofday, sys_timer_create, sys_timer_delete,
         sys_timer_getoverrun, sys_timer_gettime, sys_timer_settime, sys_times,
     };
-    use crate::task::syscalls::{
+    use starnix_core::task::syscalls::{
         sys_capget, sys_capset, sys_clone3, sys_execve, sys_execveat, sys_exit, sys_exit_group,
         sys_getcpu, sys_getegid, sys_geteuid, sys_getgid, sys_getgroups, sys_getpgid, sys_getpid,
         sys_getppid, sys_getpriority, sys_getresgid, sys_getresuid, sys_getrlimit, sys_getrusage,
@@ -110,12 +108,12 @@ pub fn dispatch_syscall(
         sys_setregid, sys_setresgid, sys_setresuid, sys_setreuid, sys_setrlimit, sys_setsid,
         sys_setuid, sys_swapoff, sys_swapon, sys_syslog, sys_unshare, sys_vhangup,
     };
-    use crate::vfs::socket::syscalls::{
+    use starnix_core::vfs::socket::syscalls::{
         sys_accept, sys_accept4, sys_bind, sys_connect, sys_getpeername, sys_getsockname,
         sys_getsockopt, sys_listen, sys_recvfrom, sys_recvmmsg, sys_recvmsg, sys_sendmmsg,
         sys_sendmsg, sys_sendto, sys_setsockopt, sys_shutdown, sys_socket, sys_socketpair,
     };
-    use crate::vfs::syscalls::{
+    use starnix_core::vfs::syscalls::{
         sys_chdir, sys_chroot, sys_close, sys_close_range, sys_copy_file_range, sys_dup, sys_dup3,
         sys_epoll_create1, sys_epoll_ctl, sys_epoll_pwait, sys_epoll_pwait2, sys_eventfd2,
         sys_faccessat, sys_faccessat2, sys_fadvise64, sys_fallocate, sys_fchdir, sys_fchmod,
@@ -136,16 +134,16 @@ pub fn dispatch_syscall(
     };
 
     #[cfg(target_arch = "aarch64")]
-    use crate::arch::syscalls::sys_renameat;
+    use starnix_core::arch::syscalls::sys_renameat;
 
     #[cfg(all(target_arch = "aarch64", feature = "arch32"))]
     mod aarch64_arch32 {
-        pub use crate::arch::syscalls::{
+        pub use starnix_core::arch::syscalls::{
             sys_arch32_ARM_cacheflush, sys_arch32_ARM_set_tls, sys_arch32_vfork,
             sys_clone as sys_arch32_clone,
         };
-        pub use crate::bpf::syscalls::sys_arch32_bpf;
-        pub use crate::mm::syscalls::{
+        pub use starnix_core::bpf::syscalls::sys_arch32_bpf;
+        pub use starnix_core::mm::syscalls::{
             sys_arch32_futex, sys_arch32_madvise, sys_arch32_membarrier, sys_arch32_mincore,
             sys_arch32_mlock, sys_arch32_mlock2, sys_arch32_mlockall, sys_arch32_mmap2,
             sys_arch32_mremap, sys_arch32_msync, sys_arch32_munlock, sys_arch32_munlockall,
@@ -153,8 +151,8 @@ pub fn dispatch_syscall(
             sys_arch32_set_robust_list, sys_arch32_userfaultfd, sys_brk as sys_arch32_brk,
             sys_mprotect as sys_arch32_mprotect, sys_process_madvise as sys_arch32_process_madvise,
         };
-        pub use crate::perf::sys_arch32_perf_event_open;
-        pub use crate::signals::syscalls::{
+        pub use starnix_core::perf::sys_arch32_perf_event_open;
+        pub use starnix_core::signals::syscalls::{
             sys_arch32_pidfd_send_signal, sys_arch32_rt_sigaction, sys_arch32_rt_sigqueueinfo,
             sys_arch32_rt_sigtimedwait, sys_arch32_rt_tgsigqueueinfo, sys_arch32_sigaltstack,
             sys_arch32_signalfd, sys_arch32_signalfd4, sys_arch32_waitid,
@@ -165,19 +163,19 @@ pub fn dispatch_syscall(
             sys_rt_sigsuspend as sys_arch32_rt_sigsuspend, sys_tgkill as sys_arch32_tgkill,
             sys_wait4 as sys_arch32_wait4,
         };
-        pub use crate::syscalls::misc::{
+        pub use starnix_core::syscalls::misc::{
             sys_arch32_sysinfo, sys_arch32_uname, sys_getrandom as sys_arch32_getrandom,
             sys_personality as sys_arch32_personality, sys_sched_yield as sys_arch32_sched_yield,
         };
-        pub use crate::syscalls::reboot::sys_arch32_reboot;
-        pub use crate::syscalls::time::{
+        pub use starnix_core::syscalls::reboot::sys_arch32_reboot;
+        pub use starnix_core::syscalls::time::{
             sys_arch32_clock_getres, sys_arch32_clock_gettime, sys_arch32_clock_gettime64,
             sys_arch32_gettimeofday, sys_arch32_nanosleep, sys_arch32_setitimer,
             sys_arch32_settimeofday, sys_arch32_timer_create, sys_arch32_timer_delete,
             sys_arch32_timer_getoverrun, sys_arch32_timer_gettime, sys_arch32_timer_gettime64,
             sys_arch32_timer_settime, sys_clock_nanosleep as sys_arch32_clock_nanosleep,
         };
-        pub use crate::task::syscalls::{
+        pub use starnix_core::task::syscalls::{
             sys_arch32_execve, sys_arch32_getegid32, sys_arch32_geteuid32, sys_arch32_getgid32,
             sys_arch32_getgroups32, sys_arch32_getpgid, sys_arch32_getppid, sys_arch32_getpriority,
             sys_arch32_getresgid32, sys_arch32_getresuid32, sys_arch32_getrusage,
@@ -199,7 +197,7 @@ pub fn dispatch_syscall(
             sys_set_tid_address as sys_arch32_set_tid_address, sys_setuid as sys_arch32_setuid,
             sys_setuid as sys_arch32_setuid32,
         };
-        pub use crate::vfs::socket::syscalls::{
+        pub use starnix_core::vfs::socket::syscalls::{
             sys_arch32_accept, sys_arch32_accept4, sys_arch32_bind, sys_arch32_getpeername,
             sys_arch32_getsockname, sys_arch32_getsockopt, sys_arch32_listen, sys_arch32_recv,
             sys_arch32_recvfrom, sys_arch32_recvmmsg, sys_arch32_recvmsg, sys_arch32_send,
@@ -207,7 +205,7 @@ pub fn dispatch_syscall(
             sys_arch32_socketpair, sys_connect as sys_arch32_connect,
             sys_socket as sys_arch32_socket,
         };
-        pub use crate::vfs::syscalls::{
+        pub use starnix_core::vfs::syscalls::{
             sys_arch32__llseek, sys_arch32__newselect, sys_arch32_access,
             sys_arch32_arm_fadvise64_64, sys_arch32_chdir, sys_arch32_chmod, sys_arch32_chown32,
             sys_arch32_chroot, sys_arch32_copy_file_range, sys_arch32_creat, sys_arch32_dup2,
@@ -247,20 +245,22 @@ pub fn dispatch_syscall(
         };
     }
     #[cfg(all(target_arch = "aarch64", feature = "arch32"))]
+    #[allow(clippy::wildcard_imports)]
     use aarch64_arch32::*;
 
     #[cfg(target_arch = "x86_64")]
     mod x86_64 {
-        pub use crate::arch::syscalls::{
+        pub use starnix_core::arch::syscalls::{
             sys_access, sys_alarm, sys_arch_prctl, sys_chmod, sys_chown, sys_creat, sys_dup2,
             sys_epoll_create, sys_epoll_wait, sys_eventfd, sys_fork, sys_getdents, sys_getpgrp,
             sys_inotify_init, sys_lchown, sys_link, sys_lstat, sys_mkdir, sys_mknod, sys_open,
             sys_pause, sys_pipe, sys_poll, sys_readlink, sys_rename, sys_renameat, sys_rmdir,
             sys_signalfd, sys_stat, sys_symlink, sys_time, sys_unlink, sys_vfork,
         };
-        pub use crate::vfs::syscalls::sys_select;
+        pub use starnix_core::vfs::syscalls::sys_select;
     }
     #[cfg(target_arch = "x86_64")]
+    #[allow(clippy::wildcard_imports)]
     use x86_64::*;
 
     let args = (syscall.arg0, syscall.arg1, syscall.arg2, syscall.arg3, syscall.arg4, syscall.arg5);

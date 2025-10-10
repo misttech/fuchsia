@@ -5,7 +5,6 @@
 pub mod crash_reporter;
 mod executor;
 mod loop_entry;
-mod table;
 mod task_creation;
 
 pub use crash_reporter::*;

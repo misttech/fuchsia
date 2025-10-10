@@ -4,19 +4,49 @@
 
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
+import("//src/starnix/build/args.gni")
 
 rustc_library("starnix_syscall_loop") {
   edition = "2021"
   with_unit_tests = true
-  sources = [ "src/lib.rs" ]
+  sources = [
+    "src/lib.rs",
+    "src/table.rs",
+  ]
 
   deps = [
+    ":restricted_trampoline",
+    "//sdk/rust/zx",
+    "//src/lib/debug/rust",
+    "//src/lib/diagnostics/inspect/contrib/rust",
+    "//src/lib/fuchsia-runtime",
+    "//src/lib/trace/rust:trace",
     "//src/starnix/kernel:starnix_core",
+    "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",
+    "//src/starnix/lib/starnix_syscalls",
+    "//src/starnix/lib/starnix_uapi",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:paste",
+    "//third_party/rust_crates:scopeguard",
   ]
-  test_deps = []
+
+  features = []
+  if (starnix_enable_arch32) {
+    features += [ "arch32" ]
+  }
+  if (starnix_syscall_stats) {
+    features += [ "syscall_stats" ]
+  }
 
   configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+}
+
+static_library("restricted_trampoline") {
+  sources = [
+    "src/asm.h",
+    "src/trampoline_${current_cpu}.S",
+  ]
 }
 
 fuchsia_unittest_package("starnix_syscall_loop_tests") {

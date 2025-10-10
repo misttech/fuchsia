@@ -43,6 +43,7 @@ group("tests") {
     "starnix_logging:tests",
     "starnix_stack:tests",
     "starnix_sync:tests",
+    "starnix_syscall_loop:tests",
     "starnix_types:tests",
     "starnix_uapi:tests",
     "syncio:tests",
