@@ -4,6 +4,7 @@
 
 #include "reader_tests.h"
 
+#include <lib/trace-engine/fields.h>
 #include <stdint.h>
 
 #include <iterator>
@@ -145,6 +146,98 @@ TEST(TraceReader, InitialState) {
 }
 
 // NOTE: Most of the reader is covered by the libtrace tests.
+
+TEST(TraceReader, ProfilerRecords) {
+  std::vector<trace::Record> records;
+  std::string_view error;
+  trace::TraceReader reader(test::MakeRecordConsumer(&records), test::MakeErrorHandler(&error));
+
+  constexpr zx_koid_t kProcessKoid = 1;
+  constexpr zx_koid_t kThreadKoid = 2;
+
+  static constexpr std::byte build_id_data[] = {
+      std::byte{0x33}, std::byte{0x3e}, std::byte{0x89}, std::byte{0xf0}, std::byte{0xc1},
+      std::byte{0x75}, std::byte{0x00}, std::byte{0x0c}, std::byte{0xee}, std::byte{0x9b},
+      std::byte{0x7e}, std::byte{0x20}, std::byte{0x1f}, std::byte{0xed}, std::byte{0xcd},
+      std::byte{0x6f}, std::byte{0x9b}, std::byte{0x4b}, std::byte{0xa8}, std::byte{0xae}};
+
+  const std::vector<std::byte> new_build_id(std::begin(build_id_data), std::end(build_id_data));
+
+  uint64_t kData[21];
+
+  // Module record (8 words)
+  size_t next = 0;
+  kData[next++] = (trace::RecordFields::RecordSize::Make(8) |
+                   trace::ToUnderlyingType(trace::RecordType::kProfiler) |
+                   trace::ProfilerRecordFields::ThreadRef::Make(TRACE_ENCODED_THREAD_REF_INLINE) |
+                   trace::ProfilerRecordFields::ProfilerType::Make(
+                       trace::ToUnderlyingType(trace::ProfilerRecordType::kModule)) |
+                   trace::ProfilerModuleRecordFields::ModuleId::Make(1) |
+                   trace::ProfilerModuleRecordFields::NameLength::Make(4) |
+                   trace::ProfilerModuleRecordFields::BuildIdLength::Make(new_build_id.size()));
+  kData[next++] = 0;  // timestamp
+  kData[next++] = kProcessKoid;
+  kData[next++] = kThreadKoid;
+  memcpy(&kData[next], "test", 4);
+  next++;  // for "test"
+  memcpy(&kData[next], new_build_id.data(), new_build_id.size());
+  next += 3;  // for new_build_id
+
+  // Mmap record (7 words)
+  kData[next++] = (trace::RecordFields::RecordSize::Make(7) |
+                   trace::ToUnderlyingType(trace::RecordType::kProfiler) |
+                   trace::ProfilerRecordFields::ThreadRef::Make(TRACE_ENCODED_THREAD_REF_INLINE) |
+                   trace::ProfilerRecordFields::ProfilerType::Make(
+                       trace::ToUnderlyingType(trace::ProfilerRecordType::kMmap)) |
+                   trace::ProfilerMmapRecordFields::ModuleId::Make(1) |
+                   trace::ProfilerMmapRecordFields::Flags::Make(7));
+  kData[next++] = 0;  // timestamp
+  kData[next++] = kProcessKoid;
+  kData[next++] = kThreadKoid;
+  kData[next++] = 0x1000;  // start_address
+  kData[next++] = 0x2000;  // address_range
+  kData[next++] = 0x3000;  // vaddr
+
+  // Backtrace record (6 words)
+  kData[next++] = (trace::RecordFields::RecordSize::Make(6) |
+                   trace::ToUnderlyingType(trace::RecordType::kProfiler) |
+                   trace::ProfilerRecordFields::ThreadRef::Make(TRACE_ENCODED_THREAD_REF_INLINE) |
+                   trace::ProfilerRecordFields::ProfilerType::Make(
+                       trace::ToUnderlyingType(trace::ProfilerRecordType::kBacktrace)) |
+                   trace::ProfilerBacktraceRecordFields::BacktraceCount::Make(2));
+  kData[next++] = 0;  // timestamp
+  kData[next++] = kProcessKoid;
+  kData[next++] = kThreadKoid;
+  kData[next++] = 0x4000;  // pc 1
+  kData[next++] = 0x5000;  // pc 2
+
+  ASSERT_EQ(next, std::size(kData));
+
+  trace::Chunk chunk(kData, std::size(kData));
+  EXPECT_TRUE(reader.ReadRecords(chunk));
+  EXPECT_EQ(3, records.size());
+  EXPECT_TRUE(error.empty());
+
+  const auto& module = records[0].GetProfiler().module();
+  EXPECT_EQ(1, module.module_id);
+  EXPECT_EQ(trace::ProcessThread(1, 2), module.process_thread);
+  EXPECT_EQ("test", module.name);
+  EXPECT_TRUE(std::ranges::equal(new_build_id, module.build_id));
+
+  const auto& mmap = records[1].GetProfiler().mmap();
+  EXPECT_EQ(1, mmap.module_id);
+  EXPECT_EQ(trace::ProcessThread(1, 2), mmap.process_thread);
+  EXPECT_EQ(0x1000, mmap.start_address);
+  EXPECT_EQ(0x2000, mmap.address_range);
+  EXPECT_EQ(0x3000, mmap.vaddr);
+  EXPECT_EQ(7, mmap.flags);
+
+  const auto& backtrace = records[2].GetProfiler().backtrace();
+  EXPECT_EQ(trace::ProcessThread(1, 2), backtrace.process_thread);
+  EXPECT_EQ(2, backtrace.backtrace.size());
+  EXPECT_EQ(0x4000, backtrace.backtrace[0]);
+  EXPECT_EQ(0x5000, backtrace.backtrace[1]);
+}
 
 }  // namespace
 }  // namespace trace

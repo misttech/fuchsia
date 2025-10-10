@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 
+#include <cstddef>
 #include <sstream>
 #include <utility>
 #include <variant>
@@ -1053,6 +1054,80 @@ TEST(TraceRecords, Record) {
              << "ts: 123, pt: 4/5, {arg1: int32(11), arg2: double(-3.140000)}, "
              << "size: " << sizeof(blob) << ", preview: " << preview << "))";
     EXPECT_EQ(expected.str(), r.ToString());
+  }
+}
+
+TEST(TraceRecords, ProfilerRecord) {
+  // module
+  {
+    static constexpr std::byte build_id_data[] = {
+        std::byte{0x33}, std::byte{0x3e}, std::byte{0x89}, std::byte{0xf0}, std::byte{0xc1},
+        std::byte{0x75}, std::byte{0x00}, std::byte{0x0c}, std::byte{0xee}, std::byte{0x9b},
+        std::byte{0x7e}, std::byte{0x20}, std::byte{0x1f}, std::byte{0xed}, std::byte{0xcd},
+        std::byte{0x6f}, std::byte{0x9b}, std::byte{0x4b}, std::byte{0xa8}, std::byte{0xae}};
+
+    const std::vector<std::byte> build_id(std::begin(build_id_data), std::end(build_id_data));
+    trace::Record r(trace::Record::Profiler{
+        trace::Record::Profiler::Module{.module_id = 1,
+                                        .process_thread = trace::ProcessThread(2, 3),
+                                        .timestamp = 4,
+                                        .name = "test",
+                                        .build_id = build_id}});
+    EXPECT_EQ(trace::RecordType::kProfiler, r.type());
+    EXPECT_EQ(trace::ProfilerRecordType::kModule, r.GetProfiler().type());
+    const auto& module = r.GetProfiler().module();
+    EXPECT_EQ(1, module.module_id);
+    EXPECT_EQ(trace::ProcessThread(2, 3), module.process_thread);
+    EXPECT_EQ(4, module.timestamp);
+    EXPECT_EQ("test", module.name);
+    EXPECT_TRUE(std::ranges::equal(build_id, module.build_id));
+    EXPECT_EQ(
+        "ProfilerModule(ts: 4, pt: 2/3, module_id: 1, name: \"test\", build_id: \"333e89f0c175000cee9b7e201fedcd6f9b4ba8ae\")",
+        r.ToString());
+  }
+
+  // mmap
+  {
+    trace::Record r(trace::Record::Profiler{
+        trace::Record::Profiler::Mmap{.module_id = 1,
+                                      .process_thread = trace::ProcessThread(2, 3),
+                                      .timestamp = 4,
+                                      .start_address = 0x1000,
+                                      .address_range = 0x2000,
+                                      .vaddr = 0x3000,
+                                      .flags = 7}});
+    EXPECT_EQ(trace::RecordType::kProfiler, r.type());
+    EXPECT_EQ(trace::ProfilerRecordType::kMmap, r.GetProfiler().type());
+    const auto& mmap = r.GetProfiler().mmap();
+    EXPECT_EQ(1, mmap.module_id);
+    EXPECT_EQ(trace::ProcessThread(2, 3), mmap.process_thread);
+    EXPECT_EQ(4, mmap.timestamp);
+    EXPECT_EQ(0x1000, mmap.start_address);
+    EXPECT_EQ(0x2000, mmap.address_range);
+    EXPECT_EQ(0x3000, mmap.vaddr);
+    EXPECT_EQ(7, mmap.flags);
+    EXPECT_EQ(
+        "ProfilerMmap(ts: 4, pt: 2/3, module_id: 1, start_address: 0x1000, address_range: 0x2000, "
+        "vaddr: 0x3000, flags: 7)",
+        r.ToString());
+  }
+
+  // backtrace
+  {
+    trace::Record r(trace::Record::Profiler{
+        trace::Record::Profiler::Backtrace{.process_thread = trace::ProcessThread(2, 3),
+                                           .timestamp = 4,
+                                           .backtrace = {0x1000, 0x2000}}});
+    EXPECT_EQ(trace::RecordType::kProfiler, r.type());
+    EXPECT_EQ(trace::ProfilerRecordType::kBacktrace, r.GetProfiler().type());
+    const auto& backtrace = r.GetProfiler().backtrace();
+    EXPECT_EQ(trace::ProcessThread(2, 3), backtrace.process_thread);
+    EXPECT_EQ(4, backtrace.timestamp);
+    EXPECT_EQ(2, backtrace.backtrace.size());
+    EXPECT_EQ(0x1000, backtrace.backtrace[0]);
+    EXPECT_EQ(0x2000, backtrace.backtrace[1]);
+    EXPECT_EQ("ProfilerBacktrace(ts: 4, pt: 2/3, backtrace_count: 2, addr: 0x1000, addr: 0x2000)",
+              r.ToString());
   }
 }
 

@@ -6,8 +6,8 @@
 // Field declarations for the trace record format.
 //
 
-#ifndef ZIRCON_SYSTEM_ULIB_LIB_TRACE_ENGINE_FIELDS_H_
-#define ZIRCON_SYSTEM_ULIB_LIB_TRACE_ENGINE_FIELDS_H_
+#ifndef LIB_TRACE_ENGINE_FIELDS_H_
+#define LIB_TRACE_ENGINE_FIELDS_H_
 
 #include <lib/trace-engine/types.h>
 
@@ -180,6 +180,26 @@ struct LogRecordFields : RecordFields {
   using ThreadRef = Field<32, 39>;
 };
 
+struct ProfilerRecordFields : RecordFields {
+  using ProfilerType = Field<16, 19>;
+  using ThreadRef = Field<20, 27>;
+};
+
+struct ProfilerModuleRecordFields : ProfilerRecordFields {
+  using ModuleId = Field<28, 43>;
+  using NameLength = Field<44, 51>;
+  using BuildIdLength = Field<52, 59>;
+};
+
+struct ProfilerMmapRecordFields : ProfilerRecordFields {
+  using ModuleId = Field<28, 43>;
+  using Flags = Field<44, 46>;
+};
+
+struct ProfilerBacktraceRecordFields : ProfilerRecordFields {
+  using BacktraceCount = Field<28, 35>;
+};
+
 struct LargeBlobFields : LargeRecordFields {
   using BlobFormat = Field<40, 43>;
 };
@@ -200,4 +220,4 @@ struct BlobFormatEventFields {
 
 #endif  // __cplusplus
 
-#endif  // ZIRCON_SYSTEM_ULIB_LIB_TRACE_ENGINE_FIELDS_H_
+#endif  // LIB_TRACE_ENGINE_FIELDS_H_

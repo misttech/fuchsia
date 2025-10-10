@@ -12,6 +12,7 @@
 #include <zircon/syscalls/object.h>
 #include <zircon/types.h>
 
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <string>
@@ -717,6 +718,61 @@ class Record final {
   // Large record data.
   using Large = LargeRecordData;
 
+  // Profiler record data.
+  struct Profiler {
+    struct Module {
+      uint16_t module_id;
+      ProcessThread process_thread;
+      trace_ticks_t timestamp;
+      std::string name;
+      std::vector<std::byte> build_id;
+    };
+    struct Mmap {
+      uint16_t module_id;
+      ProcessThread process_thread;
+      trace_ticks_t timestamp;
+      uint64_t start_address;
+      uint64_t address_range;
+      uint64_t vaddr;
+      uint8_t flags;
+    };
+    struct Backtrace {
+      ProcessThread process_thread;
+      trace_ticks_t timestamp;
+      std::vector<uint64_t> backtrace;
+    };
+
+    explicit Profiler(Module record)
+        : profiler_type{ProfilerRecordType::kModule}, event{std::move(record)} {}
+    explicit Profiler(Mmap record)
+        : profiler_type{ProfilerRecordType::kMmap}, event{std::move(record)} {}
+    explicit Profiler(Backtrace record)
+        : profiler_type{ProfilerRecordType::kBacktrace}, event{std::move(record)} {}
+
+    Profiler(const Profiler&) = default;
+    Profiler& operator=(const Profiler&) = default;
+    Profiler(Profiler&&) = default;
+    Profiler& operator=(Profiler&&) = default;
+
+    ProfilerRecordType type() const { return profiler_type; }
+
+    const Module& module() const {
+      ZX_DEBUG_ASSERT(profiler_type == ProfilerRecordType::kModule);
+      return std::get<Module>(event);
+    }
+    const Mmap& mmap() const {
+      ZX_DEBUG_ASSERT(profiler_type == ProfilerRecordType::kMmap);
+      return std::get<Mmap>(event);
+    }
+    const Backtrace& backtrace() const {
+      ZX_DEBUG_ASSERT(profiler_type == ProfilerRecordType::kBacktrace);
+      return std::get<Backtrace>(event);
+    }
+
+    ProfilerRecordType profiler_type;
+    std::variant<Module, Mmap, Backtrace> event;
+  };
+
   explicit Record(Metadata record) : value_(std::move(record)) {}
   explicit Record(Initialization record) : value_(record) {}
   explicit Record(String record) : value_(std::move(record)) {}
@@ -727,6 +783,7 @@ class Record final {
   explicit Record(SchedulerEvent record) : value_(std::move(record)) {}
   explicit Record(Log record) : value_(std::move(record)) {}
   explicit Record(Large record) : value_(std::move(record)) {}
+  explicit Record(Profiler record) : value_(std::move(record)) {}
 
   Record(const Record&) = default;
   Record& operator=(const Record&) = default;
@@ -784,6 +841,11 @@ class Record final {
     return std::get<Large>(value_);
   }
 
+  const Profiler& GetProfiler() const {
+    ZX_DEBUG_ASSERT(type() == RecordType::kProfiler);
+    return std::get<Profiler>(value_);
+  }
+
   RecordType type() const {
     return std::visit(
         [](auto&& arg) -> RecordType {
@@ -808,6 +870,8 @@ class Record final {
             return RecordType::kLog;
           } else if constexpr (std::is_same_v<T, Large>) {
             return RecordType::kLargeRecord;
+          } else if constexpr (std::is_same_v<T, Profiler>) {
+            return RecordType::kProfiler;
           }
         },
         value_);
@@ -819,7 +883,7 @@ class Record final {
 
  private:
   using Variant = std::variant<Metadata, Initialization, String, Thread, Event, Blob, KernelObject,
-                               SchedulerEvent, Log, Large>;
+                               SchedulerEvent, Log, Large, Profiler>;
   Variant value_;
 };
 

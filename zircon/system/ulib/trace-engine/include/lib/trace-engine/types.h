@@ -357,9 +357,17 @@ enum class RecordType {
   kKernelObject = 7,
   kScheduler = 8,
   kLog = 9,
+  kProfiler = 10,
 
   // The kLargeRecord uses a 32-bit size field.
   kLargeRecord = 15,
+};
+
+// ProfilerRecordType enumerates all known profiler record types.
+enum class ProfilerRecordType {
+  kModule = 0,
+  kMmap = 1,
+  kBacktrace = 2,
 };
 
 enum class LargeRecordType {

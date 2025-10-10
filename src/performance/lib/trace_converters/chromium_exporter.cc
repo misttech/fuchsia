@@ -214,6 +214,8 @@ void ChromiumExporter::ExportRecord(const trace::Record& record) {
     case trace::RecordType::kLog:
       ExportLog(record.GetLog());
       break;
+    // The Chromium trace view does not support profiler records.
+    case trace::RecordType::kProfiler:
     case trace::RecordType::kScheduler:
     case trace::RecordType::kString:
     case trace::RecordType::kThread:

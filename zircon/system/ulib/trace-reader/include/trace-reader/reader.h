@@ -99,6 +99,7 @@ class TraceReader {
   bool ReadKernelObjectRecord(Chunk& record, RecordHeader header);
   bool ReadSchedulerRecord(Chunk& record, RecordHeader header);
   bool ReadLogRecord(Chunk& record, RecordHeader header);
+  bool ReadProfilerRecord(Chunk& record, RecordHeader header);
   bool ReadArguments(Chunk& record, size_t count, std::vector<Argument>* out_arguments);
 
   bool ReadLargeRecord(Chunk& record, RecordHeader header);
@@ -146,6 +147,7 @@ class Chunk final {
   std::optional<int64_t> ReadInt64();
   std::optional<double> ReadDouble();
   std::optional<std::string_view> ReadString(size_t length);
+  std::optional<std::span<const std::uint8_t>> ReadBytes(size_t length);
   std::optional<Chunk> ReadChunk(size_t num_words);
   std::optional<void const*> ReadInPlace(size_t num_words);
 

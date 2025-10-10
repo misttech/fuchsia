@@ -370,6 +370,35 @@ std::string Record::ToString() const {
     case RecordType::kLargeRecord:
       ss << "LargeRecord(" << GetLargeRecord().ToString() << ")";
       return ss.str();
+    case RecordType::kProfiler:
+      if (GetProfiler().type() == ProfilerRecordType::kModule) {
+        auto& module = GetProfiler().module();
+        ss << "ProfilerModule(ts: " << module.timestamp
+           << ", pt: " << module.process_thread.ToString() << ", module_id: " << module.module_id
+           << ", name: \"" << module.name << "\", build_id: \"";
+        for (const auto& byte : module.build_id) {
+          ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<uint32_t>(byte);
+        }
+        ss << "\")";
+      } else if (GetProfiler().type() == ProfilerRecordType::kMmap) {
+        auto& mmap = GetProfiler().mmap();
+        ss << "ProfilerMmap(ts: " << mmap.timestamp << ", pt: " << mmap.process_thread.ToString()
+           << ", module_id: " << mmap.module_id << ", start_address: 0x" << std::hex
+           << mmap.start_address << ", address_range: 0x" << std::hex << mmap.address_range
+           << ", vaddr: 0x" << std::hex << mmap.vaddr << ", flags: " << (int)mmap.flags << ")";
+      } else if (GetProfiler().type() == ProfilerRecordType::kBacktrace) {
+        auto& backtrace = GetProfiler().backtrace();
+        ss << "ProfilerBacktrace(ts: " << backtrace.timestamp
+           << ", pt: " << backtrace.process_thread.ToString()
+           << ", backtrace_count: " << backtrace.backtrace.size();
+        for (const auto& addr : backtrace.backtrace) {
+          ss << ", addr: 0x" << std::hex << addr;
+        }
+        ss << ")";
+      } else {
+        ss << "UnknownProfilerRecord(type: " << static_cast<int>(GetProfiler().type()) << ")";
+      }
+      return ss.str();
   }
   ZX_ASSERT(false);
 }
@@ -384,6 +413,7 @@ std::optional<std::string> Record::GetName() const {
     case RecordType::kScheduler:
     case RecordType::kLog:
     case RecordType::kLargeRecord:
+    case RecordType::kProfiler:
       return std::nullopt;
     case RecordType::kEvent:
       return {GetEvent().name};

@@ -4,6 +4,8 @@
 
 #include <lib/trace-engine/fields.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <sstream>
 #include <string_view>
 #include <utility>
@@ -150,6 +152,12 @@ bool TraceReader::ReadRecords(Chunk& chunk) {
       case RecordType::kLog: {
         if (!ReadLogRecord(record, pending_header_)) {
           ReportError("Failed to read log record");
+        }
+        break;
+      }
+      case RecordType::kProfiler: {
+        if (!ReadProfilerRecord(record, pending_header_)) {
+          ReportError("Failed to read profiler record");
         }
         break;
       }
@@ -611,6 +619,108 @@ bool TraceReader::ReadLogRecord(Chunk& record, RecordHeader header) {
   return true;
 }
 
+bool TraceReader::ReadProfilerRecord(Chunk& record, RecordHeader header) {
+  auto type = ProfilerRecordFields::ProfilerType::Get<ProfilerRecordType>(header);
+  auto thread_ref = ProfilerRecordFields::ThreadRef::Get<trace_encoded_thread_ref_t>(header);
+
+  std::optional timestamp_opt = record.ReadUint64();
+  if (!timestamp_opt.has_value()) {
+    return false;
+  }
+  const trace_ticks_t timestamp = timestamp_opt.value();
+
+  ProcessThread process_thread;
+  if (!DecodeThreadRef(record, thread_ref, &process_thread)) {
+    return false;
+  }
+
+  switch (type) {
+    case ProfilerRecordType::kModule: {
+      uint16_t module_id = ProfilerModuleRecordFields::ModuleId::Get<uint16_t>(header);
+      size_t name_length = ProfilerModuleRecordFields::NameLength::Get<size_t>(header);
+      size_t build_id_length = ProfilerModuleRecordFields::BuildIdLength::Get<size_t>(header);
+
+      std::optional name_view = record.ReadString(name_length);
+      if (!name_view.has_value()) {
+        return false;
+      }
+      std::string name(name_view.value());
+      std::optional<std::span<const uint8_t>> build_id_view = record.ReadBytes(build_id_length);
+
+      if (!build_id_view.has_value()) {
+        return false;
+      }
+      const auto* start_ptr = reinterpret_cast<const std::byte*>(build_id_view->data());
+      std::vector<std::byte> build_id(start_ptr, start_ptr + build_id_view->size());
+      record_consumer_(
+          Record(Record::Profiler{Record::Profiler::Module{.module_id = module_id,
+                                                           .process_thread = process_thread,
+                                                           .timestamp = timestamp,
+                                                           .name = std::move(name),
+                                                           .build_id = std::move(build_id)}}));
+      break;
+    }
+    case ProfilerRecordType::kMmap: {
+      auto module_id = ProfilerMmapRecordFields::ModuleId::Get<uint16_t>(header);
+      auto flags = ProfilerMmapRecordFields::Flags::Get<uint8_t>(header);
+
+      std::optional start_address = record.ReadUint64();
+      if (!start_address.has_value()) {
+        return false;
+      }
+      std::optional address_range = record.ReadUint64();
+      if (!address_range.has_value()) {
+        return false;
+      }
+      std::optional vaddr = record.ReadUint64();
+      if (!vaddr.has_value()) {
+        return false;
+      }
+
+      record_consumer_(
+          Record(Record::Profiler{Record::Profiler::Mmap{.module_id = module_id,
+                                                         .process_thread = process_thread,
+                                                         .timestamp = timestamp,
+                                                         .start_address = start_address.value(),
+                                                         .address_range = address_range.value(),
+                                                         .vaddr = vaddr.value(),
+                                                         .flags = flags}}));
+      break;
+    }
+    case ProfilerRecordType::kBacktrace: {
+      auto backtrace_count = ProfilerBacktraceRecordFields::BacktraceCount::Get<size_t>(header);
+
+      std::optional<void const*> backtrace_start = record.ReadInPlace(backtrace_count);
+      std::optional<void const*> backtrace_end = record.ReadInPlace(0);
+
+      if (!backtrace_start.has_value()) {
+        return false;
+      }
+      if (!backtrace_end.has_value()) {
+        return false;
+      }
+
+      const auto* start_ptr = static_cast<const uint64_t*>(backtrace_start.value());
+      const auto* end_ptr = static_cast<const uint64_t*>(backtrace_end.value());
+      std::vector<uint64_t> backtrace(start_ptr, end_ptr);
+
+      record_consumer_(
+          Record(Record::Profiler{Record::Profiler::Backtrace{.process_thread = process_thread,
+                                                              .timestamp = timestamp,
+                                                              .backtrace = std::move(backtrace)}}));
+      break;
+    }
+    default: {
+      // Ignore unknown profiler record types for forward compatibility.
+      std::stringstream ss;
+      ss << "Skipping profiler record of unknown type " << static_cast<uint32_t>(type);
+      ReportError(ss.str());
+      break;
+    }
+  }
+  return true;
+}
+
 bool TraceReader::ReadLargeRecord(trace::Chunk& record, trace::RecordHeader header) {
   auto large_type = LargeRecordFields::LargeType::Get<LargeRecordType>(header);
 
@@ -1005,6 +1115,17 @@ std::optional<std::string_view> Chunk::ReadString(size_t length) {
     return std::nullopt;
 
   std::string_view view(reinterpret_cast<const char*>(current_), length);
+  current_ += num_words;
+  return view;
+}
+
+std::optional<std::span<const std::uint8_t>> Chunk::ReadBytes(size_t length) {
+  auto num_words = BytesToWords(length);
+  if (current_ + num_words > end_) {
+    return std::nullopt;
+  }
+
+  std::span<const std::uint8_t> view(reinterpret_cast<const std::uint8_t*>(current_), length);
   current_ += num_words;
   return view;
 }
