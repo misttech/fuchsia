@@ -11,7 +11,7 @@ use fidl_fuchsia_hardware_backlight as backlight;
 use fidl_fuchsia_hardware_backlight::{DeviceProxy as BacklightProxy, State as BacklightCommand};
 use fidl_fuchsia_ui_display_singleton::{DisplayPowerMarker, DisplayPowerProxy};
 use fuchsia_async as fasync;
-use fuchsia_component::client::{connect_to_protocol, Service};
+use fuchsia_component::client::{Service, connect_to_protocol};
 use futures::channel::oneshot;
 use futures::lock::Mutex;
 use std::sync::Arc;
@@ -591,7 +591,9 @@ mod dual_state_tests {
     use fidl_fuchsia_hardware_backlight::{
         DeviceMarker as BacklightMarker, DeviceRequestStream as BacklightRequestStream,
     };
-    use fidl_fuchsia_ui_display_singleton::{DisplayPowerRequest, DisplayPowerRequestStream};
+    use fidl_fuchsia_ui_display_singleton::{
+        DisplayPowerRequest, DisplayPowerRequestStream, PowerMode,
+    };
     use fuchsia_async::{self as fasync, Task};
     use futures::prelude::future;
     use futures::{Future, TryStreamExt};
@@ -666,7 +668,9 @@ mod dual_state_tests {
     #[derive(Debug, Clone)]
     struct FakeDisplayPowerService {
         set_display_power_response: Arc<Mutex<Result<(), i32>>>,
+        set_power_mode_response: Arc<Mutex<Result<(), i32>>>,
         last_set_display_power_value: Arc<Mutex<Option<bool>>>,
+        last_set_power_mode_value: Arc<Mutex<Option<PowerMode>>>,
     }
 
     #[allow(dead_code)]
@@ -674,7 +678,9 @@ mod dual_state_tests {
         pub fn new() -> Self {
             Self {
                 set_display_power_response: Arc::new(Mutex::new(Ok(()))),
+                set_power_mode_response: Arc::new(Mutex::new(Ok(()))),
                 last_set_display_power_value: Arc::new(Mutex::new(None)),
+                last_set_power_mode_value: Arc::new(Mutex::new(None)),
             }
         }
 
@@ -696,6 +702,13 @@ mod dual_state_tests {
                         }
                         responder.send(result).expect("send SetDisplayPower");
                     }
+                    DisplayPowerRequest::SetPowerMode { power_mode, responder } => {
+                        let result = self.set_power_mode_response.lock().await.clone();
+                        if result.is_ok() {
+                            self.last_set_power_mode_value.lock().await.replace(power_mode);
+                        }
+                        responder.send(result).expect("send SetPowerMode");
+                    }
                     DisplayPowerRequest::_UnknownMethod { ordinal, .. } => {
                         panic!("Unexpected method: {}", ordinal);
                     }
@@ -708,8 +721,16 @@ mod dual_state_tests {
             (*self.set_display_power_response.lock().await) = response;
         }
 
+        pub async fn set_set_power_mode_response(&self, response: Result<(), i32>) {
+            (*self.set_power_mode_response.lock().await) = response;
+        }
+
         pub async fn last_set_display_power_value(&self) -> Option<bool> {
             self.last_set_display_power_value.lock().await.clone()
+        }
+
+        pub async fn last_set_power_mode_value(&self) -> Option<PowerMode> {
+            self.last_set_power_mode_value.lock().await.clone()
         }
     }
 

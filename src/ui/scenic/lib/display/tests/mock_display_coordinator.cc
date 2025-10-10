@@ -265,6 +265,22 @@ void MockDisplayCoordinator::SetDisplayPower(
   }
 }
 
+void MockDisplayCoordinator::SetDisplayPowerMode(
+    fuchsia_hardware_display::wire::CoordinatorSetDisplayPowerModeRequest* request,
+    SetDisplayPowerModeCompleter::Sync& completer) {
+  // ++set_display_power_mode_count_;
+  if (set_display_power_mode_fn_) {
+    set_display_power_mode_fn_(request);
+  }
+
+  if (set_display_power_mode_result_ == ZX_OK) {
+    display_power_on_ = request->power_mode == fuchsia_hardware_display_types::wire::PowerMode::kOn;
+    completer.Reply(fit::ok());
+  } else {
+    completer.Reply(fit::error(set_display_power_mode_result_));
+  }
+}
+
 void MockDisplayCoordinator::GetLatestAppliedConfigStamp(
     GetLatestAppliedConfigStampCompleter::Sync& completer) {
   completer.Reply({.value = 0});

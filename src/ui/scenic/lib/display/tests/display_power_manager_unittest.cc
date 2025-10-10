@@ -25,8 +25,10 @@ namespace display::test {
 
 namespace {
 
+using PowerMode = fuchsia_ui_display_singleton::PowerMode;
+
 struct DisplayPowerInfo {
-  bool power_on = true;
+  PowerMode power_mode = PowerMode::kOn;
   int64_t timestamp;
 };
 
@@ -54,8 +56,16 @@ class DisplayPowerManagerMockTest : public gtest::RealLoopFixture {
     }
     const auto& property = power_node.children().back().node().properties()[0];
     const auto& name = property.name();
-    EXPECT_TRUE(name == "on" || name == "off");
-    info.power_on = name == "on";
+    EXPECT_TRUE(name == "on" || name == "off" || name == "doze" || name == "doze_suspend");
+    if (name == "on") {
+      info.power_mode = PowerMode::kOn;
+    } else if (name == "off") {
+      info.power_mode = PowerMode::kOff;
+    } else if (name == "doze") {
+      info.power_mode = PowerMode::kDoze;
+    } else if (name == "doze_suspend") {
+      info.power_mode = PowerMode::kDozeSuspend;
+    }
     info.timestamp = property.Get<inspect::IntPropertyValue>().value();
     EXPECT_NE(info.timestamp, 0);
     return info;
@@ -86,25 +96,25 @@ TEST_F(DisplayPowerManagerMockTest, Ok) {
   MockDisplayCoordinator mock_display_coordinator(WireDisplayInfo{});
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client),
                                 dispatcher());
-  mock_display_coordinator.set_set_display_power_result(ZX_OK);
+  mock_display_coordinator.set_set_display_power_mode_result(ZX_OK);
 
   RunLoopUntilIdle();
   auto power_info_1 = GetLastDisplayPowerInspectValue();
-  EXPECT_TRUE(power_info_1.power_on);
+  EXPECT_EQ(power_info_1.power_mode, PowerMode::kOn);
   auto last_power_timestamp = power_info_1.timestamp;
   {
     bool callback_executed = false;
     std::thread set_display_power_thread([&callback_executed, this] {
-      display_power_manager()->SetDisplayPower(
-          /* power_on */ false, [&callback_executed](fit::result<zx_status_t> result) {
-            callback_executed = true;
-            EXPECT_TRUE(result.is_ok());
-          });
+      display_power_manager()->SetPowerMode(PowerMode::kOff,
+                                            [&callback_executed](fit::result<zx_status_t> result) {
+                                              callback_executed = true;
+                                              EXPECT_TRUE(result.is_ok());
+                                            });
     });
 
     RunLoopUntil([&callback_executed] { return callback_executed; });
     auto power_info_2 = GetLastDisplayPowerInspectValue();
-    EXPECT_FALSE(power_info_2.power_on);
+    EXPECT_EQ(power_info_2.power_mode, PowerMode::kOff);
     EXPECT_GT(power_info_2.timestamp, last_power_timestamp);
     last_power_timestamp = power_info_2.timestamp;
     set_display_power_thread.join();
@@ -114,16 +124,16 @@ TEST_F(DisplayPowerManagerMockTest, Ok) {
   {
     bool callback_executed = false;
     std::thread set_display_power_thread([&callback_executed, this] {
-      display_power_manager()->SetDisplayPower(
-          /* power_on */ true, [&callback_executed](fit::result<zx_status_t> result) {
-            callback_executed = true;
-            EXPECT_TRUE(result.is_ok());
-          });
+      display_power_manager()->SetPowerMode(PowerMode::kOn,
+                                            [&callback_executed](fit::result<zx_status_t> result) {
+                                              callback_executed = true;
+                                              EXPECT_TRUE(result.is_ok());
+                                            });
     });
 
     RunLoopUntil([&callback_executed] { return callback_executed; });
     auto power_info_3 = GetLastDisplayPowerInspectValue();
-    EXPECT_TRUE(power_info_3.power_on);
+    EXPECT_EQ(power_info_3.power_mode, PowerMode::kOn);
     EXPECT_GT(power_info_3.timestamp, last_power_timestamp);
     set_display_power_thread.join();
     EXPECT_TRUE(mock_display_coordinator.display_power_on());
@@ -150,12 +160,12 @@ TEST_F(DisplayPowerManagerMockTest, NoDisplay) {
   {
     bool callback_executed = false;
     std::thread set_display_power_thread([&callback_executed, this] {
-      display_power_manager()->SetDisplayPower(
-          /* power_on */ false, [&callback_executed](fit::result<zx_status_t> result) {
-            callback_executed = true;
-            ASSERT_TRUE(result.is_error());
-            EXPECT_EQ(result.error_value(), ZX_ERR_NOT_FOUND);
-          });
+      display_power_manager()->SetPowerMode(PowerMode::kOff,
+                                            [&callback_executed](fit::result<zx_status_t> result) {
+                                              callback_executed = true;
+                                              ASSERT_TRUE(result.is_error());
+                                              EXPECT_EQ(result.error_value(), ZX_ERR_NOT_FOUND);
+                                            });
     });
 
     RunLoopUntil([&callback_executed] { return callback_executed; });
@@ -182,19 +192,19 @@ TEST_F(DisplayPowerManagerMockTest, NotSupported) {
   MockDisplayCoordinator mock_display_coordinator(WireDisplayInfo{});
   mock_display_coordinator.Bind(std::move(coordinator_server), std::move(listener_client),
                                 dispatcher());
-  mock_display_coordinator.set_set_display_power_result(ZX_ERR_NOT_SUPPORTED);
+  mock_display_coordinator.set_set_display_power_mode_result(ZX_ERR_NOT_SUPPORTED);
 
   RunLoopUntilIdle();
 
   {
     bool callback_executed = false;
     std::thread set_display_power_thread([&callback_executed, this] {
-      display_power_manager()->SetDisplayPower(
-          /* power_on */ false, [&callback_executed](fit::result<zx_status_t> result) {
-            callback_executed = true;
-            EXPECT_TRUE(result.is_error());
-            EXPECT_EQ(result.error_value(), ZX_ERR_NOT_SUPPORTED);
-          });
+      display_power_manager()->SetPowerMode(PowerMode::kOff,
+                                            [&callback_executed](fit::result<zx_status_t> result) {
+                                              callback_executed = true;
+                                              EXPECT_TRUE(result.is_error());
+                                              EXPECT_EQ(result.error_value(), ZX_ERR_NOT_SUPPORTED);
+                                            });
     });
 
     RunLoopUntil([&callback_executed] { return callback_executed; });
