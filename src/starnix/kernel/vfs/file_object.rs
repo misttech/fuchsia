@@ -62,7 +62,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
-use syncio::zxio_node_attr_has_t;
 use zerocopy::IntoBytes;
 
 pub const MAX_LFS_FILESIZE: usize = 0x7fff_ffff_ffff_ffff;
@@ -1099,23 +1098,18 @@ pub fn default_ioctl(
                 return error!(ENOKEY);
             }
 
-            let has = zxio_node_attr_has_t { wrapping_key_id: true, ..Default::default() };
-            let attributes = file.node().ops().get_attr(has)?;
-            if attributes.has.wrapping_key_id {
-                if attributes.wrapping_key_id != policy.master_key_identifier {
+            let attributes = file.node().fetch_and_refresh_info(locked, current_task)?;
+            if let Some(wrapping_key_id) = &attributes.wrapping_key_id {
+                if wrapping_key_id != &policy.master_key_identifier {
                     return error!(EEXIST);
                 }
             } else {
-                file.node().update_info(|info| {
+                // Don't deadlock! update_attributes will also lock the attributes.
+                std::mem::drop(attributes);
+                file.node().update_attributes(locked, current_task, |info| {
                     info.wrapping_key_id = Some(policy.master_key_identifier);
-                });
-                let has = zxio_node_attr_has_t { wrapping_key_id: true, ..Default::default() };
-                file.node().ops().update_attributes(
-                    locked.cast_locked::<FileOpsCore>(),
-                    current_task,
-                    &file.node().info(),
-                    has,
-                )?;
+                    Ok(())
+                })?;
             }
             Ok(SUCCESS)
         }

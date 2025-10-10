@@ -1007,10 +1007,6 @@ impl FsNodeOps for RemoteNode {
         Ok(symlink)
     }
 
-    fn get_attr(&self, has: zxio_node_attr_has_t) -> Result<zxio_node_attributes_t, Errno> {
-        self.zxio.attr_get(has).map_err(|status| from_status_like_fdio!(status))
-    }
-
     fn create_tmpfile(
         &self,
         node: &FsNode,

@@ -55,7 +55,7 @@ use starnix_uapi::{
 };
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, OnceLock, Weak};
-use syncio::{zxio_node_attr_has_t, zxio_node_attributes_t};
+use syncio::zxio_node_attr_has_t;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FsNodeLinkBehavior {
@@ -803,11 +803,6 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         _has: zxio_node_attr_has_t,
     ) -> Result<(), Errno> {
         Ok(())
-    }
-
-    /// Get node attributes
-    fn get_attr(&self, _has: zxio_node_attr_has_t) -> Result<zxio_node_attributes_t, Errno> {
-        error!(ENOTSUP)
     }
 
     /// Get an extended attribute on the node.
@@ -2104,6 +2099,7 @@ impl FsNode {
         has.gid = info.gid != new_info.gid;
         has.rdev = info.rdev != new_info.rdev;
         has.casefold = info.casefold != new_info.casefold;
+        has.wrapping_key_id = info.wrapping_key_id != new_info.wrapping_key_id;
 
         security::check_fs_node_setattr_access(current_task, &self, &has)?;
 
@@ -2115,6 +2111,7 @@ impl FsNode {
             || has.gid
             || has.rdev
             || has.casefold
+            || has.wrapping_key_id
         {
             let locked = locked.cast_locked::<FileOpsCore>();
             self.ops().update_attributes(locked, current_task, &new_info, has)?;
