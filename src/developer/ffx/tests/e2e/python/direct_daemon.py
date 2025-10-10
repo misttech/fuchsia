@@ -12,6 +12,15 @@ from mobly import test_runner
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
+# These tests validate that "--direct" doesn't cause daemon commands to
+# break. This is important when users set connectivity.direct to true;
+# that should just mean that they want the daemon not be used when talking
+# to the target, not that all daemon-related commands should fail.
+# All we are doing is ensuring that the commands don't exist with a non-
+# zero return code.
+# These tests use `self.run_ffx()` unstead of `self.dut.ffx.run()` to
+# ensure that we have specific control of exactly the arguments we need
+# when invoking these commands.
 class FfxDirectDaemonTest(ffxtestcase.FfxTestCase):
     """FFX host tool E2E test for daemon subtools when in direct mode."""
 
@@ -30,6 +39,48 @@ class FfxDirectDaemonTest(ffxtestcase.FfxTestCase):
                 "disconnect",
             ],
         )
+
+    def test_direct_daemon_echo(self) -> None:
+        """Test `ffx --direct daemon echo` does not raise an exception."""
+        self.run_ffx(
+            [
+                "--direct",
+                "daemon",
+                "echo",
+            ],
+        )
+
+    def test_direct_daemon_stop(self) -> None:
+        """Test `ffx --direct daemon stop` does not raise an exception."""
+        self.run_ffx(
+            [
+                "--direct",
+                "daemon",
+                "stop",
+            ],
+        )
+
+    def test_direct_daemon_crash(self) -> None:
+        """Test `ffx --direct daemon crash` does not raise an exception."""
+        self.run_ffx(
+            [
+                "--direct",
+                "daemon",
+                "crash",
+            ],
+        )
+
+    # We do not test `start` because it runs indefinitely. A test
+    # is perhaps less important since we'll find out quickly if there
+    # are problems here due to quick user reporting, since this command
+    # is load-bearing.
+
+    # We do not test `hang` because it runs indefinitely. A test
+    # is perhaps less important this is an obscure command only used for
+    # testing, not by users.
+
+    # We do not test `log` or `socket` because they do not make a connection
+    # to the daemon, so "--direct" has no effect.
 
 
 if __name__ == "__main__":
