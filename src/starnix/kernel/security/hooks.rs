@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// TODO(https://github.com/rust-lang/rust/issues/39371): remove
+#![allow(non_upper_case_globals)]
+
 use super::selinux_hooks::audit::Auditable;
 use super::{
     BinderConnectionState, BpfMapState, BpfProgState, FileObjectState, FileSystemState,
@@ -23,6 +26,11 @@ use crate::vfs::{
 };
 use ebpf::MapFlags;
 use fuchsia_inspect_contrib::profile_duration;
+use linux_uapi::{
+    perf_event_attr, perf_type_id, perf_type_id_PERF_TYPE_BREAKPOINT,
+    perf_type_id_PERF_TYPE_HARDWARE, perf_type_id_PERF_TYPE_HW_CACHE, perf_type_id_PERF_TYPE_MAX,
+    perf_type_id_PERF_TYPE_SOFTWARE, perf_type_id_PERF_TYPE_TRACEPOINT,
+};
 use selinux::{FileSystemMountOptions, SecurityPermission, SecurityServer};
 use starnix_logging::{CATEGORY_STARNIX_SECURITY, log_debug, trace_duration};
 use starnix_sync::{FileOpsCore, LockBefore, LockEqualOrBefore, Locked, ThreadGroupLimits};
@@ -126,6 +134,43 @@ impl From<MapFlags> for PermissionFlags {
             PermissionFlags::READ | PermissionFlags::WRITE
         }
     }
+}
+
+/// The flags about the PerfEvent types.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PerfEventType {
+    Hardware,
+    Software,
+    Tracepoint,
+    HwCache,
+    Breakpoint,
+    Max,
+}
+
+// TODO(https://github.com/rust-lang/rust/issues/39371): remove
+#[allow(non_upper_case_globals)]
+impl From<perf_type_id> for PerfEventType {
+    fn from(type_id: perf_type_id) -> Self {
+        match type_id {
+            perf_type_id_PERF_TYPE_HARDWARE => Self::Hardware,
+            perf_type_id_PERF_TYPE_SOFTWARE => Self::Software,
+            perf_type_id_PERF_TYPE_TRACEPOINT => Self::Tracepoint,
+            perf_type_id_PERF_TYPE_HW_CACHE => Self::HwCache,
+            perf_type_id_PERF_TYPE_BREAKPOINT => Self::Breakpoint,
+            perf_type_id_PERF_TYPE_MAX => Self::Max,
+            _ => unreachable!("Unsupported perf_event type: {}", type_id),
+        }
+    }
+}
+
+/// The target task type. Used in the `check_perf_event_open_access` LSM hook.
+pub enum TargetTaskType<'a> {
+    /// Monitor all tasks/activities.
+    AllTasks,
+    /// Only monitor the current task.
+    CurrentTask,
+    /// Only monitor a specific task.
+    Task(&'a Task),
 }
 
 /// Executes the `hook` closure if SELinux is enabled, and has a policy loaded.
@@ -1839,6 +1884,27 @@ pub fn check_bpf_prog_access(
     profile_duration!("security.hooks.check_bpf_prog_access");
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::bpf::check_bpf_prog_access(security_server, current_task, bpf_program)
+    })
+}
+
+/// Checks whether `current_task` has the correct permissions to monitor the given target task or
+/// tasks.
+/// Corresponds to the `perf_event_open` LSM hook.
+pub fn check_perf_event_open_access(
+    current_task: &CurrentTask,
+    target_task_type: TargetTaskType<'_>,
+    attr: &perf_event_attr,
+    event_type: PerfEventType,
+) -> Result<(), Errno> {
+    profile_duration!("security.hooks.check_perf_event_open_access");
+    if_selinux_else_default_ok(current_task, |security_server| {
+        selinux_hooks::perf_event::check_perf_event_open_access(
+            security_server,
+            current_task,
+            target_task_type,
+            attr,
+            event_type,
+        )
     })
 }
 

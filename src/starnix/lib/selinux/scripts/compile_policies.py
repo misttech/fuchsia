@@ -108,6 +108,14 @@ _COMPOSITE_POLICY_PATHS = [
         [
             "base_policy.conf",
             "new_file/test_policy.conf",
+            "new_file/perf_event.conf",
+        ],
+        "perf_event.pp",
+    ),
+    (
+        [
+            "base_policy.conf",
+            "new_file/test_policy.conf",
             "new_file/syslog.conf",
         ],
         "syslog.pp",

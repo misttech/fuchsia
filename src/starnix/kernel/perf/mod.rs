@@ -39,6 +39,7 @@ use starnix_uapi::{
 use zx::AsHandleRef;
 use zx::sys::zx_system_get_page_size;
 
+use crate::security::{self, TargetTaskType};
 use crate::task::Kernel;
 
 static READ_FORMAT_ID_GENERATOR: AtomicU64 = AtomicU64::new(0);
@@ -772,6 +773,18 @@ pub fn sys_perf_event_open(
         track_stub!(TODO("https://fxbug.dev/409621963"), "[perf_event_open] implement tid > 0");
         return error!(ENOSYS);
     }
+
+    let target_task_type = match tid {
+        -1 => TargetTaskType::AllTasks,
+        0 => TargetTaskType::CurrentTask,
+        _ => unimplemented!("https://fxbug.dev/409621963"),
+    };
+    security::check_perf_event_open_access(
+        current_task,
+        target_task_type,
+        &perf_event_attrs,
+        perf_event_attrs.type_.into(),
+    )?;
 
     // https://fuchsia.dev/reference/syscalls/system_get_page_size#errors
     // says it cannot fail, but rust compiler needs it.

@@ -11,6 +11,7 @@ pub(super) mod bpf;
 pub(super) mod file;
 pub(super) mod fs_node;
 pub(super) mod netlink_socket;
+pub(super) mod perf_event;
 pub(super) mod selinuxfs;
 pub(super) mod socket;
 pub(super) mod superblock;

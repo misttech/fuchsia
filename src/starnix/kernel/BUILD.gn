@@ -178,6 +178,7 @@ _starnix_core_sources = [
   "security/selinux_hooks/fs_node.rs",
   "security/selinux_hooks/mod.rs",
   "security/selinux_hooks/netlink_socket.rs",
+  "security/selinux_hooks/perf_event.rs",
   "security/selinux_hooks/selinuxfs.rs",
   "security/selinux_hooks/socket.rs",
   "security/selinux_hooks/superblock.rs",

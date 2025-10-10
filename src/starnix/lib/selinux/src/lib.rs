@@ -151,6 +151,8 @@ enumerable_enum! {
         NetlinkXfrmSocket,
         /// The SELinux "packet_socket" object class.
         PacketSocket,
+        /// The SELinux "perf_event" object class.
+        PerfEvent,
         /// The SELinux "process" object class.
         Process,
         /// The SELinux "rawip_socket" object class.
@@ -216,6 +218,7 @@ impl KernelClass {
             Self::NetlinkTcpDiagSocket => "netlink_tcpdiag_socket",
             Self::NetlinkXfrmSocket => "netlink_xfrm_socket",
             Self::PacketSocket => "packet_socket",
+            Self::PerfEvent => "perf_event",
             Self::Process => "process",
             Self::RawIpSocket => "rawip_socket",
             Self::Security => "security",
@@ -555,6 +558,8 @@ permission_enum! {
         NetlinkXfrmSocket(NetlinkXfrmSocketPermission),
         /// Permissions for the well-known SELinux "packet_socket" object class.
         PacketSocket(PacketSocketPermission),
+        /// Permissions for the well-known SELinux "perf_event" object class.
+        PerfEvent(PerfEventPermission),
         /// Permissions for the well-known SELinux "process" object class.
         Process(ProcessPermission),
         /// Permissions for the well-known SELinux "rawip_socket" object class.
@@ -1260,6 +1265,28 @@ class_permission_enum! {
         ProgLoad("prog_load"),
         /// Permission to run a program.
         ProgRun("prog_run"),
+        // keep-sorted end
+    }
+}
+
+class_permission_enum! {
+    /// A well-known "perf_event" class permission in SELinux policy that has a particular meaning
+    /// in policy hooks.
+    #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+    PerfEventPermission {
+        // keep-sorted start
+        /// Permission to monitor the cpu.
+        Cpu("cpu"),
+        /// Permission to monitor the kernel.
+        Kernel("kernel"),
+        /// Permission to open a perf event.
+        Open("open"),
+        /// Permission to read a perf event.
+        Read("read"),
+        /// Permission to set tracepoints.
+        Tracepoint("tracepoint"),
+        /// Permission to write a perf event.
+        Write("write"),
         // keep-sorted end
     }
 }
