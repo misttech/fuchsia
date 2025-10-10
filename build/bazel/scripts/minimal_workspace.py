@@ -148,10 +148,9 @@ def main(argv: Sequence[str]) -> int:
         _SCRIPT_DIR / "minimal_workspace.BUILD.bazel",
     )
     force_symlink(
-        workspace_dir / "WORKSPACE.bazel",
-        _SCRIPT_DIR / "minimal_workspace.WORKSPACE.bazel",
+        workspace_dir / "MODULE.bazel",
+        _SCRIPT_DIR / "minimal_workspace.MODULE.bazel",
     )
-    write_file(workspace_dir / "MODULE.bazel", "\n")  # for bzlmod, can be empty
     force_symlink(
         workspace_dir / "expect_pwd.txt",
         _SCRIPT_DIR / "expect_pwd.txt",
@@ -176,7 +175,6 @@ def main(argv: Sequence[str]) -> int:
     bazelrc_content: str = ""
     # platform excerpt from template.bazelrc
     bazelrc_content += """
-common --enable_bzlmod=false --enable_workspace=true
 build --platforms=//build/bazel/platforms:{default_platform}
 build --host_platform=//build/bazel/platforms:{host_platform}
 import remote_services.bazelrc
