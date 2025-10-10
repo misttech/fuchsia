@@ -949,7 +949,7 @@ impl ThreadGroup {
             return error!(EPERM);
         }
         let process_group = ProcessGroup::new(self.leader, None);
-        pids.add_process_group(&process_group);
+        pids.add_process_group(process_group.clone());
         self.write().set_process_group(locked, process_group, &mut pids);
         self.check_orphans(locked, &pids);
 
@@ -1020,7 +1020,7 @@ impl ThreadGroup {
                     // Create a new process group
                     new_process_group =
                         ProcessGroup::new(target_pgid, Some(target_process_group.session.clone()));
-                    pids.add_process_group(&new_process_group);
+                    pids.add_process_group(new_process_group.clone());
                 }
             }
 

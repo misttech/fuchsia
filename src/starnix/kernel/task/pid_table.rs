@@ -8,7 +8,7 @@ use starnix_logging::track_stub;
 use starnix_types::ownership::{TempRef, WeakRef};
 use starnix_uapi::{pid_t, tid_t};
 use std::collections::HashMap;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 // The maximal pid considered.
 const PID_MAX_LIMIT: pid_t = 1 << 15;
@@ -39,12 +39,11 @@ impl ProcessEntry {
 struct PidEntry {
     task: Option<WeakRef<Task>>,
     process: ProcessEntry,
-    process_group: Option<Weak<ProcessGroup>>,
 }
 
 impl PidEntry {
     fn is_empty(&self) -> bool {
-        self.task.is_none() && self.process.is_none() && self.process_group.is_none()
+        self.task.is_none() && self.process.is_none()
     }
 }
 
@@ -60,6 +59,9 @@ pub struct PidTable {
 
     /// The tasks in this table, organized by pid_t.
     table: HashMap<pid_t, PidEntry>,
+
+    /// The process groups in this table, organized by pid_t.
+    process_groups: HashMap<pid_t, Arc<ProcessGroup>>,
 
     /// Used to notify thread group changes.
     thread_group_notifier: Option<std::sync::mpsc::Sender<MemoryAttributionLifecycleEvent>>,
@@ -203,22 +205,17 @@ impl PidTable {
     }
 
     pub fn get_process_group(&self, pid: pid_t) -> Option<Arc<ProcessGroup>> {
-        self.get_entry(pid)
-            .and_then(|entry| entry.process_group.as_ref())
-            .and_then(|process_group| process_group.upgrade())
+        self.process_groups.get(&pid).cloned()
     }
 
-    pub fn add_process_group(&mut self, process_group: &Arc<ProcessGroup>) {
-        let entry = self.get_entry_mut(process_group.leader);
-        assert!(entry.process_group.is_none());
-        entry.process_group = Some(Arc::downgrade(process_group));
+    pub fn add_process_group(&mut self, process_group: Arc<ProcessGroup>) {
+        let removed = self.process_groups.insert(process_group.leader, process_group);
+        assert!(removed.is_none());
     }
 
     pub fn remove_process_group(&mut self, pid: pid_t) {
-        self.remove_item(pid, |entry| {
-            let removed = entry.process_group.take();
-            assert!(removed.is_some())
-        });
+        let removed = self.process_groups.remove(&pid);
+        assert!(removed.is_some());
     }
 
     /// Returns the process ids for all processes, including zombies.

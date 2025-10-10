@@ -353,7 +353,7 @@ where
     debug_assert!(pids.get_task(pid).upgrade().is_none());
 
     let process_group = ProcessGroup::new(pid, None);
-    pids.add_process_group(&process_group);
+    pids.add_process_group(process_group.clone());
 
     let TaskInfo { thread, thread_group, memory_manager } =
         ReleaseGuard::take(task_info_factory(locked, pid, process_group.clone())?);
