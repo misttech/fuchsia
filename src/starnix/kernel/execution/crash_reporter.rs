@@ -362,6 +362,7 @@ fn truncate_with_ellipsis(s: &mut String, max_len: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use starnix_core::testing::spawn_kernel_and_run;
 
     const CRASH_LOOP_AGE_OUT: zx::MonotonicDuration = zx::Duration::from_minutes(8);
 
@@ -510,5 +511,26 @@ mod tests {
             zx::MonotonicInstant::from_nanos(CRASH_LOOP_AGE_OUT.into_nanos()),
             CRASH_LOOP_AGE_OUT
         ));
+    }
+
+    #[fuchsia::test]
+    async fn begin_crash_report_throttling_ends() {
+        spawn_kernel_and_run(async |_, current_task| {
+            let crash_reporter = CrashReporter::new(
+                &fuchsia_inspect::Node::default(),
+                /*proxy=*/ None,
+                zx::Duration::from_millis(200),
+                /*enable_throttling=*/ true,
+            );
+
+            for _ in 0..CRASH_LOOP_LIMIT {
+                assert!(crash_reporter.begin_crash_report(current_task).is_some());
+            }
+            assert!(crash_reporter.begin_crash_report(current_task).is_none());
+
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            assert!(crash_reporter.begin_crash_report(current_task).is_some());
+        })
+        .await;
     }
 }
