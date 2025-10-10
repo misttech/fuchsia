@@ -16,3 +16,19 @@ static_library("perfmon") {
   sources = [ "perfmon.cc" ]
   deps = [ "//zircon/kernel/vm" ]
 }
+
+group("tests") {
+  testonly = true
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
+}

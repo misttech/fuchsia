@@ -102,3 +102,22 @@ if (is_host) {
     ]
   }
 }
+
+group("tests") {
+  testonly = true
+  deps = [ "tests" ]
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+  deps = [ "tests:kernel-tests" ]
+}
+
+group("phys-tests") {
+  testonly = true
+  deps = [ "tests:phys-tests" ]
+}
+
+group("boot_tests") {
+  testonly = true
+}

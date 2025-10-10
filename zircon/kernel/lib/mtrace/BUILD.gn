@@ -6,8 +6,6 @@
 
 import("//build/cpp/library_headers.gni")
 
-assert(is_kernel)
-
 static_library("mtrace") {
   public_deps = [ ":headers" ]
 
@@ -30,4 +28,20 @@ library_headers("headers") {
     # <lib/mtrace.h> has #include <lib/user_copy/user_ptr.h>
     "//zircon/kernel/lib/user_copy:headers",
   ]
+}
+
+group("tests") {
+  testonly = true
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
 }

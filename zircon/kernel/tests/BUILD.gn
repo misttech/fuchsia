@@ -7,19 +7,32 @@
 import("//build/zircon/migrated_targets.gni")
 import("//zircon/kernel/params.gni")
 
+# See //zircon/kernel/lib/BUILD.gn for the various *tests target names and uses.
+# Each of those is provided here and in //zircon/kernel itself as well.
+
 group("tests") {
-  deps = [ ":phys" ]
-  if (toolchain_environment == "kernel") {
-    deps += [ ":kernel" ]
-  } else {  # TODO(https://fxbug.dev/42145882): testonly in kernel proper
-    testonly = true
-  }
+  testonly = true
+}
+
+group("phys-tests") {
+  testonly = true
+  deps = [
+    ":common",
+    "//zircon/kernel/lib:phys-tests",
+  ]
+}
+
+group("boot_tests") {
+  testonly = true
 }
 
 # This is the subset that's compatible with the kernel.phys environment.
-source_set("phys") {
+source_set("common") {
+  visibility = [ ":*" ]
+
   # TODO(https://fxbug.dev/42145882): testonly = true
   testonly = toolchain_environment != "kernel"
+
   cflags = [ "-fno-builtin" ]
   sources = [
     "multi_file_tests.cc",
@@ -32,7 +45,6 @@ source_set("phys") {
   ]
   deps = [
     ":zbitl",
-    "//zircon/kernel/lib:phys-tests",
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/libc",
     "//zircon/kernel/lib/unittest",
@@ -63,10 +75,11 @@ source_set("zbitl") {
 
 if (toolchain_environment == "kernel") {
   # These are only for the kernel proper.
-  source_set("kernel") {
+  source_set("kernel-tests") {
     # TODO(https://fxbug.dev/42145882): testonly = true
     cflags = [ "-fno-builtin" ]
     sources = [
+      "abi_type_validator.cc",
       "alloc_checker_tests.cc",
       "benchmarks.cc",
       "brwlock_tests.cc",
@@ -107,6 +120,7 @@ if (toolchain_environment == "kernel") {
       "wait_queue_ordering_tests.cc",
     ]
     deps = [
+      ":common",
       "//zircon/kernel/lib:kernel-tests",
       "//zircon/kernel/lib/arch",
       "//zircon/kernel/lib/boot-options",

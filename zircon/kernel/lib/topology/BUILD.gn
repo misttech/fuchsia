@@ -25,6 +25,10 @@ static_library("topology") {
   ]
 }
 
+group("tests") {
+  testonly = true
+}
+
 source_set("kernel-tests") {
   # TODO: testonly = true
   sources = [ "system-topology_test.cc" ]
@@ -32,4 +36,12 @@ source_set("kernel-tests") {
     ".",
     "//zircon/kernel/lib/unittest",
   ]
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
 }

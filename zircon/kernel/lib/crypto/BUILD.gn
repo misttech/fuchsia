@@ -51,9 +51,7 @@ static_library("crypto") {
   public_deps = [ ":headers" ]
   sources = [
     "global_prng.cc",
-    "global_prng_unittest.cc",
     "prng.cc",
-    "prng_unittest.cc",
   ]
   deps = [
     ":crypto-entropy-src",
@@ -64,8 +62,33 @@ static_library("crypto") {
     "//zircon/kernel/lib/fbl",
     "//zircon/kernel/lib/init",
     "//zircon/kernel/lib/ktl",
-    "//zircon/kernel/lib/unittest",
     "//zircon/kernel/phys:handoff",
     "//zircon/system/ulib/explicit-memory",
   ]
+}
+
+group("tests") {
+  testonly = true
+}
+
+source_set("kernel-tests") {
+  # TODO: testonly = true
+  sources = [
+    "global_prng_unittest.cc",
+    "prng_unittest.cc",
+  ]
+  deps = [
+    ":crypto",
+    "entropy:kernel-tests",
+    "//zircon/kernel/lib/unittest",
+    "//zircon/system/ulib/zircon-internal",
+  ]
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
 }

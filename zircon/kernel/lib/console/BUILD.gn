@@ -1,6 +1,5 @@
 # Copyright 2019 The Fuchsia Authors
-#
-# Use of this source code is governed by a MIT-style
+# Use  this source code is governed by a MIT-style
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
@@ -27,4 +26,20 @@ library_headers("headers") {
     # <lib/console.h> has #include <lib/special-sections/special-sections.h>.
     "//zircon/kernel/lib/special-sections:headers",
   ]
+}
+
+group("tests") {
+  testonly = true
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
 }

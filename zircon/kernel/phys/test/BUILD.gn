@@ -255,7 +255,7 @@ common_test("phys-unittests") {
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/libc",
     "//zircon/kernel/lib/unittest",
-    "//zircon/kernel/tests",
+    "//zircon/kernel/tests:phys-tests",
   ]
 }
 

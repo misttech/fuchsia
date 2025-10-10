@@ -36,7 +36,6 @@ source_set("kernel") {
     "//sdk/lib/fit",
     "//zircon/kernel/dev/interrupt",
     "//zircon/kernel/dev/pdev/hw_watchdog",
-    "//zircon/kernel/lib/abi_type_validator",
     "//zircon/kernel/lib/arch",
     "//zircon/kernel/lib/boot-options:headers",
     "//zircon/kernel/lib/console",

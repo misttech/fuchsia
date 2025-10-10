@@ -4,18 +4,20 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+all_libs = [
+  "boot-shim",
+  "memalloc",
+]
+
 group("lib") {
   testonly = true
-  deps = [
-    "boot-shim",
-    "memalloc",
-  ]
+  deps = all_libs
 }
 
 group("tests") {
   testonly = true
-  deps = [
-    "boot-shim:tests",
-    "memalloc:tests",
-  ]
+  deps = []
+  foreach(lib, all_libs) {
+    deps += [ "$lib:tests" ]
+  }
 }

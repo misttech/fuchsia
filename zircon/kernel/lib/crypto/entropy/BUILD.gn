@@ -31,7 +31,6 @@ static_library("entropy") {
   public_deps = [ ":headers" ]
   sources = [
     "collector.cc",
-    "collector_unittest.cc",
     "hw_rng_collector.cc",
     "jitterentropy_collector.cc",
     "quality_test.cc",
@@ -46,5 +45,14 @@ static_library("entropy") {
     "//zircon/kernel/lib/unittest",
     "//zircon/system/ulib/lazy_init",
     "//zircon/third_party/lib/jitterentropy",
+  ]
+}
+
+source_set("kernel-tests") {
+  # TODO: testonly = true
+  sources = [ "collector_unittest.cc" ]
+  deps = [
+    ":entropy",
+    "//zircon/kernel/lib/unittest",
   ]
 }

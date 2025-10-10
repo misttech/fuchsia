@@ -21,6 +21,8 @@ static_library("userabi") {
 }
 
 library_headers("headers") {
+  visibility = [ "//zircon/kernel/*" ]
+
   headers = [
     "lib/userabi/userboot.h",
     "lib/userabi/vdso-constants.h",
@@ -56,8 +58,6 @@ library_headers("headers") {
     }
   } else {
     # Our own embedded "user" code needs some shared headers.
-    visibility = [ "./*" ]
-
     public_configs = [ ":userabi.user.config" ]
   }
 }
@@ -240,6 +240,18 @@ if (is_kernel) {
       "//zircon/system/ulib/zircon-internal",
     ]
   }
+}
+
+group("tests") {
+  testonly = true
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+}
+
+group("phys-tests") {
+  testonly = true
 }
 
 group("boot_tests") {

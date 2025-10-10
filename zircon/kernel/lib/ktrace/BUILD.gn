@@ -5,6 +5,8 @@
 # https://opensource.org/licenses/MIT
 
 source_set("ktrace") {
+  public_deps = [ "//src/performance/lib/fxt:headers" ]
+
   sources = [ "ktrace.cc" ]
   deps = [
     "//zircon/kernel/hypervisor:headers",
@@ -15,6 +17,20 @@ source_set("ktrace") {
     "//zircon/kernel/object:headers",
     "//zircon/system/ulib/zircon-internal",
   ]
+}
 
-  public_deps = [ "//src/performance/lib/fxt:headers" ]
+group("tests") {
+  testonly = true
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
 }

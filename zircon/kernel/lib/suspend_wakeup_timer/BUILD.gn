@@ -24,3 +24,19 @@ static_library("suspend_wakeup_timer") {
     deps += [ "//zircon/kernel/dev/timer/armv7_mmio_timer" ]
   }
 }
+
+group("tests") {
+  testonly = true
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
+}

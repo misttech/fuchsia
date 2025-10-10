@@ -18,6 +18,10 @@ library_headers("headers") {
   ]
 }
 
+group("tests") {
+  testonly = true
+}
+
 source_set("kernel-tests") {
   # TODO: testonly = true
   sources = [ "id_allocator_tests.cc" ]
@@ -25,4 +29,12 @@ source_set("kernel-tests") {
     ":headers",
     "//zircon/kernel/lib/unittest",
   ]
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
 }

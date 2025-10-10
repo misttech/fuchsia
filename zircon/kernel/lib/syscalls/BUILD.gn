@@ -8,8 +8,6 @@ import("//build/cpp/library_headers.gni")
 import("//build/zircon/zircon_cpu.gni")
 import("//zircon/kernel/params.gni")
 
-assert(is_kernel, current_toolchain)
-
 library_headers("headers") {
   headers = [
     "lib/syscalls/forward.h",
@@ -111,4 +109,20 @@ source_set("dispatch") {
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/userabi:headers",
   ]
+}
+
+group("tests") {
+  testonly = true
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
 }

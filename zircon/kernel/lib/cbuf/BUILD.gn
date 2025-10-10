@@ -22,6 +22,10 @@ library_headers("headers") {
   headers = [ "lib/cbuf.h" ]
 }
 
+group("tests") {
+  testonly = true
+}
+
 source_set("kernel-tests") {
   # TODO: testonly = true
   sources = [ "cbuf_tests.cc" ]
@@ -29,4 +33,12 @@ source_set("kernel-tests") {
     ".",
     "//zircon/kernel/lib/unittest",
   ]
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
 }

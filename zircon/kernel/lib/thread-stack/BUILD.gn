@@ -19,3 +19,19 @@ library_headers("headers") {
 group("thread-stack") {
   public_deps = [ ":headers" ]
 }
+
+group("tests") {
+  testonly = true
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
+}

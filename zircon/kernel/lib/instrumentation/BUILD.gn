@@ -33,12 +33,24 @@ library_headers("headers") {
   headers = []
 }
 
-group("kernel-tests") {
-  # TODO: testonly = true
-  deps = [ "test:tests" ]
+group("tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
 }
 
 if (is_kernel) {
+  group("kernel-tests") {
+    # TODO: testonly = true
+    deps = [ "test:tests" ]
+  }
+
+  group("phys-tests") {
+    testonly = true
+  }
+
   source_set("private") {
     visibility = [ ":*" ]
     public = [ "private.h" ]
@@ -64,8 +76,10 @@ if (is_kernel) {
       "//zircon/kernel/phys:boot-constants",
       "//zircon/kernel/vm:headers",
     ]
+    defines = []
     if (is_pecoff) {
-      # TODO(https://fxbug.dev/440394989) Support calling convention predefine upstream for uefi triple.
+      # TODO(https://fxbug.dev/440394989) Support calling convention predefine
+      # upstream for uefi triple.
       defines += [ "__MSVC_X86_64_CC__" ]
     }
   }

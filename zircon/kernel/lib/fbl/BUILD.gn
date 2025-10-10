@@ -31,6 +31,10 @@ library_headers("headers") {
   ]
 }
 
+group("tests") {
+  testonly = true
+}
+
 source_set("kernel-tests") {
   #TODO: testonly = true
   visibility = [
@@ -49,4 +53,12 @@ source_set("kernel-tests") {
     ":headers",
     "//zircon/kernel/lib/unittest",
   ]
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
 }

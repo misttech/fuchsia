@@ -84,13 +84,23 @@ source_set("ctype") {
   deps = [ ":headers" ]
 }
 
-source_set("tests") {
+group("tests") {
+  testonly = true
+}
+
+source_set("kernel-tests") {
   # TODO: testonly = true
-  if (toolchain_environment == "kernel") {
-    sources = [ "atomic_tests.cc" ]
-    deps = [
-      "//zircon/kernel/lib/ktl:headers",
-      "//zircon/kernel/lib/unittest",
-    ]
-  }
+  sources = [ "atomic_tests.cc" ]
+  deps = [
+    "//zircon/kernel/lib/ktl:headers",
+    "//zircon/kernel/lib/unittest",
+  ]
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
 }

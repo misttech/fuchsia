@@ -63,3 +63,19 @@ hwreg_asm_header("case-id-asm") {
   sources = [ "gen-case-id-asm.cc" ]
   include_dirs = [ "//zircon/kernel" ]
 }
+
+group("tests") {
+  testonly = true
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
+}

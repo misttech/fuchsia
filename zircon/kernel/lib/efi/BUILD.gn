@@ -58,3 +58,15 @@ group("tests") {
     "variable:tests",
   ]
 }
+
+group("kernel-tests") {
+  # TODO: testonly = true
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
+}

@@ -20,3 +20,19 @@ static_library("wake-vector") {
     "//zircon/system/ulib/affine",
   ]
 }
+
+group("tests") {
+  testonly = true
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
+}

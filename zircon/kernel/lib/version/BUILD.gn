@@ -72,6 +72,7 @@ if (toolchain_environment != "kernel") {
   source_set("version") {
     visibility = [
       ":*",
+      "//zircon/kernel/lib",
       "//zircon/kernel/top",
     ]
 
@@ -82,4 +83,20 @@ if (toolchain_environment != "kernel") {
       "//zircon/kernel/phys:boot-constants",
     ]
   }
+}
+
+group("tests") {
+  testonly = true
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
 }

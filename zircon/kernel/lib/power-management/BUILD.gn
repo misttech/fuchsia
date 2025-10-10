@@ -58,6 +58,10 @@ group("tests") {
   deps = [ ":power-management-unittests-package" ]
 }
 
+group("boot_tests") {
+  testonly = true
+}
+
 if (is_kernel) {
   source_set("kernel-tests") {
     # TODO: testonly = true
@@ -66,6 +70,10 @@ if (is_kernel) {
       ":power-management",
       "//zircon/kernel/lib/unittest",
     ]
+  }
+
+  group("phys-tests") {
+    testonly = true
   }
 }
 

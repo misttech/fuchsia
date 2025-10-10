@@ -63,6 +63,14 @@ source_set("kernel-tests") {
   ]
 }
 
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
+}
+
 if (!is_kernel) {
   import("//build/components.gni")
   import("//build/fuzz.gni")

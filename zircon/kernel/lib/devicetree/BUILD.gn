@@ -47,3 +47,20 @@ zx_library("devicetree") {
   sdk_headers = devicetree_headers
   sdk_publishable = "internal"
 }
+
+group("tests") {
+  testonly = true
+  deps = [ "tests" ]
+}
+
+group("kernel-tests") {
+  # TODO: testonly = true
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
+}

@@ -71,6 +71,18 @@ group("tests") {
   deps = [ "test:tests" ]
 }
 
+group("kernel-tests") {
+  # TODO: testonly = true
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
+}
+
 asm_headers = [
   {
     arch = "arm64"

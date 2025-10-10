@@ -28,6 +28,10 @@ source_set("debuglog") {
   ]
 }
 
+group("tests") {
+  testonly = true
+}
+
 source_set("kernel-tests") {
   #TODO: testonly = true
 
@@ -38,4 +42,12 @@ source_set("kernel-tests") {
     "//zircon/kernel/lib/unittest",
     "//zircon/system/ulib/zircon-internal",
   ]
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
 }

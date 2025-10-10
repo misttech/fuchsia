@@ -16,10 +16,22 @@ static_library("pow2_range_allocator") {
   sources = [ "pow2_range_allocator.cc" ]
 }
 
+group("tests") {
+  testonly = true
+}
+
 source_set("kernel-tests") {
   sources = [ "pow2_range_allocator_tests.cc" ]
   deps = [
     ":pow2_range_allocator",
     "//zircon/kernel/lib/unittest",
   ]
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
 }

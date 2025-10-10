@@ -4,46 +4,125 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-import("//build/toolchain/toolchain_environment.gni")
+# Each subdirectory provides these targets:
+#
+#  * $dir
+#    - The self-named target, the library itself; used wherever the callers are.
+#
+#  * tests
+#    - Userland/host tests; used in $default_toolchain.
+#
+#  * kernel-tests
+#    - Kernel unittests; used in kernel toolchains; rolls up into kernel link.
+#
+#  * phys-tests
+#    - Phys-compatible kernel-style unittests; used in phys toolchains;
+#      rolls up into various phys-unittests executables that become boot tests.
+#
+#  * boot_tests
+#    - Standalone boot tests; used in $default_toolchain;
+#      rolls up into //bundles/boot_tests.
+#
 
+all_libs = [
+  "acpi_lite",
+  "arch",
+  "backtrace",
+  "boot-options",
+  "cbuf",
+  "code-patching",
+  "console",
+  "counters",
+  "crashlog",
+  "crypto",
+  "cxxabi-dynamic-init",
+  "debuglog",
+  "devicetree",
+  "dump",
+  "efi",
+  "fasttime",
+  "fbl",
+  "fixed_point",
+  "heap",
+  "id_allocator",
+  "init",
+  "instrumentation",
+  "io",
+  "jtrace",
+  "kconcurrent",
+  "kpci",
+  "ktl",
+  "ktrace",
+  "libc",
+  "lockdep",
+  "lockup_detector",
+  "mtrace",
+  "object_cache",
+  "page_cache",
+  "perfmon",
+  "persistent-debuglog",
+  "pow2_range_allocator",
+  "power-management",
+  "root_resource_filter",
+  "sched",
+  "special-sections",
+  "spsc_buffer",
+  "stall",
+  "suspend_wakeup_timer",
+  "syscalls",
+  "thread-stack",
+  "thread_sampler",
+  "topology",
+  "unittest",
+  "user_copy",
+  "userabi",
+  "version",
+  "virtual_alloc",
+  "wake-vector",
+]
+
+# This reaches all the main targets for users of each library, just to
+# ensure they all exist.  It's not necessarily reached by anything other
+# than kitchen-sink sorts of builds.
+group("lib") {
+  deps = all_libs
+}
+
+# This reaches tests built for userland and/or host, in $default_toolchain.
+# (Host tests down the deps graph will explicitly redirect to $host_toolchain.)
 group("tests") {
   testonly = true
-  deps = [ "power-management:tests" ]
+  deps = []
+  foreach(lib, all_libs) {
+    deps += [ "$lib:tests" ]
+  }
 }
 
-# This reaches tests built for both phys and kernel proper.
-group("phys-tests") {
-  testonly = toolchain_environment != "kernel"  # TODO: true
-  deps = [
-    "boot-options/tests:kernel-tests",
-    "libc:tests",
-  ]
-}
-
-# This reaches unittest code for the kernel proper only.
+# This reaches unittest code for the kernel proper only, in the kernel toolchain.
 group("kernel-tests") {
   # TODO: testonly = true
-  deps = [
-    "acpi_lite:kernel-tests",
-    "arch/test:kernel-tests",
-    "backtrace/tests",
-    "cbuf:kernel-tests",
-    "crashlog:kernel-tests",
-    "debuglog:kernel-tests",
-    "fbl:kernel-tests",
-    "id_allocator:kernel-tests",
-    "instrumentation:kernel-tests",
-    "jtrace:kernel-tests",
-    "kconcurrent/tests",
-    "ktrace/tests",
-    "lockup_detector:kernel-tests",
-    "page_cache:kernel-tests",
-    "persistent-debuglog:kernel-tests",
-    "pow2_range_allocator:kernel-tests",
-    "power-management:kernel-tests",
-    "spsc_buffer:kernel-tests",
-    "thread_sampler:kernel-tests",
-    "topology:kernel-tests",
-    "user_copy:kernel-tests",
-  ]
+  deps = []
+  foreach(lib, all_libs) {
+    deps += [ "$lib:kernel-tests" ]
+  }
+}
+
+# This reaches unittest code for phys, which may also be reached by kernel-tests
+# if the same tests are also built for the kernel proper.
+# It's used in phys toolchains.
+group("phys-tests") {
+  testonly = true
+  deps = []
+  foreach(lib, all_libs) {
+    deps += [ "$lib:phys-tests" ]
+  }
+}
+
+# This reaches standalone boot tests.
+group("boot_tests") {
+  testonly = true
+  deps = []
+  foreach(lib, all_libs) {
+    deps += [ "$lib:boot_tests" ]
+  }
 }

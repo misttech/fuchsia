@@ -604,7 +604,7 @@ if (is_kernel) {
     visibility = [ ":*" ]
     deps = [
       "debugcommands",
-      "tests",
+      "tests:kernel-tests",
     ]
   }
 
@@ -678,29 +678,15 @@ if (is_kernel) {
     deps = [
       "arch/$zircon_cpu/user-copy:tests",
       "dev/coresight/tests($host_toolchain)",
-      "lib/acpi_lite:tests",
-      "lib/arch:tests",
-      "lib/boot-options/tests",
-      "lib/devicetree/tests",
-      "lib/efi:tests",
-      "lib/heap/cmpctmalloc:tests",
-      "lib/power-management:tests",
-      "lib/sched:tests",
+      "lib:tests",
       "phys:tests",
       "phys/lib:tests",
+      "tests",
       "vm/phys:tests",
     ]
 
     if (current_cpu == "x64") {
       deps += [ "lib/libc/string/arch/x86:tests" ]
-    }
-
-    # TODO(https://fxbug.dev/42101573): This dependency is conditional because when built
-    # with GCC the kernel uses function scoped statics requiring dynamic
-    # initialization. Once https://fxbug.dev/42101573 is fixed, this dependency can be made
-    # unconditional.
-    if (!is_gcc) {
-      deps += [ "lib/cxxabi-dynamic-init/tests" ]
     }
 
     # Don't let any test ZBIs roll up into the overall product image.
@@ -717,8 +703,9 @@ if (!is_efi_toolchain) {
       ":kernel-as-test",
       ":kernel-unittests-boot-test",
       ":kernel-unittests-boot-test-bypass-debuglog",
+      "lib:boot_tests",
       "phys:boot_tests",
-      "//zircon/kernel/lib/userabi:boot_tests",
+      "tests:boot_tests",
     ]
     if (all_cpu_kernel_boot_tests) {
       foreach(cpu, standard_fuchsia_cpus) {

@@ -17,7 +17,19 @@ source_set("stall") {
   deps = [ "//zircon/kernel/lib/init" ]
 }
 
+group("tests") {
+  testonly = true
+}
+
 group("kernel-tests") {
   # TODO: testonly = true
   deps = [ "tests" ]
+}
+
+group("phys-tests") {
+  testonly = true
+}
+
+group("boot_tests") {
+  testonly = true
 }
