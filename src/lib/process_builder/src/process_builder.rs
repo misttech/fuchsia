@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::{elf_load, elf_parse, process_args, util};
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use fidl::endpoints::{ClientEnd, Proxy};
 use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_runtime::{HandleInfo, HandleType};
@@ -945,7 +945,7 @@ mod tests {
     use assert_matches::assert_matches;
     use fidl::prelude::*;
     use fidl_test_processbuilder::{UtilMarker, UtilProxy};
-    use lazy_static::lazy_static;
+    use std::sync::LazyLock;
     use vfs::file::vmo::read_only;
     use vfs::pseudo_directory;
     use zerocopy::Ref;
@@ -956,14 +956,12 @@ mod tests {
     }
 
     fn get_system_vdso_vmo() -> Result<zx::Vmo, ProcessBuilderError> {
-        lazy_static! {
-            static ref VDSO_VMO: zx::Vmo = {
-                zx::Vmo::from(
-                    fuchsia_runtime::take_startup_handle(HandleInfo::new(HandleType::VdsoVmo, 0))
-                        .expect("Failed to take VDSO VMO startup handle"),
-                )
-            };
-        }
+        static VDSO_VMO: LazyLock<zx::Vmo> = LazyLock::new(|| {
+            zx::Vmo::from(
+                fuchsia_runtime::take_startup_handle(HandleInfo::new(HandleType::VdsoVmo, 0))
+                    .expect("Failed to take VDSO VMO startup handle"),
+            )
+        });
 
         let vdso_dup = VDSO_VMO
             .duplicate_handle(zx::Rights::SAME_RIGHTS)

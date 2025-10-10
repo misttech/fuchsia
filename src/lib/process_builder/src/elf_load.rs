@@ -305,9 +305,9 @@ mod tests {
     use crate::elf_parse;
     use assert_matches::assert_matches;
     use fidl::HandleBased;
-    use lazy_static::lazy_static;
     use std::cell::RefCell;
     use std::mem::size_of;
+    use std::sync::LazyLock;
 
     #[test]
     fn test_vmo_name_with_prefix() {
@@ -431,24 +431,21 @@ mod tests {
         const ELF_DATA: &[u8; 8] = b"FUCHSIA!";
 
         // Contains a PT_LOAD segment where the filesz is less than memsz (BSS).
-        lazy_static! {
-            static ref PAGE_SIZE: usize = zx::system_get_page_size() as usize;
-            static ref ELF_PROGRAM_HEADER: elf_parse::Elf64ProgramHeader =
-                elf_parse::Elf64ProgramHeader {
-                    segment_type: elf_parse::SegmentType::Load as u32,
-                    flags: elf_parse::SegmentFlags::from_bits_truncate(
-                        elf_parse::SegmentFlags::READ.bits()
-                            | elf_parse::SegmentFlags::EXECUTE.bits(),
-                    )
-                    .bits(),
-                    offset: *PAGE_SIZE,
-                    vaddr: 0x10000,
-                    paddr: 0x10000,
-                    filesz: ELF_DATA.len() as u64,
-                    memsz: 0x100,
-                    align: *PAGE_SIZE as u64,
-                };
-        }
+        static PAGE_SIZE: LazyLock<usize> = LazyLock::new(|| zx::system_get_page_size() as usize);
+        static ELF_PROGRAM_HEADER: LazyLock<elf_parse::Elf64ProgramHeader> =
+            LazyLock::new(|| elf_parse::Elf64ProgramHeader {
+                segment_type: elf_parse::SegmentType::Load as u32,
+                flags: elf_parse::SegmentFlags::from_bits_truncate(
+                    elf_parse::SegmentFlags::READ.bits() | elf_parse::SegmentFlags::EXECUTE.bits(),
+                )
+                .bits(),
+                offset: *PAGE_SIZE,
+                vaddr: 0x10000,
+                paddr: 0x10000,
+                filesz: ELF_DATA.len() as u64,
+                memsz: 0x100,
+                align: *PAGE_SIZE as u64,
+            });
         let headers = elf_parse::Elf64Headers::new_for_test(
             ELF_FILE_HEADER,
             Some(std::slice::from_ref(&ELF_PROGRAM_HEADER)),
@@ -494,24 +491,21 @@ mod tests {
     #[test]
     fn map_read_only_vmo_with_page_aligned_bss() {
         // Contains a PT_LOAD segment where the BSS starts at a page boundary.
-        lazy_static! {
-            static ref PAGE_SIZE: usize = zx::system_get_page_size() as usize;
-            static ref ELF_PROGRAM_HEADER: elf_parse::Elf64ProgramHeader =
-                elf_parse::Elf64ProgramHeader {
-                    segment_type: elf_parse::SegmentType::Load as u32,
-                    flags: elf_parse::SegmentFlags::from_bits_truncate(
-                        elf_parse::SegmentFlags::READ.bits()
-                            | elf_parse::SegmentFlags::EXECUTE.bits(),
-                    )
-                    .bits(),
-                    offset: *PAGE_SIZE as usize,
-                    vaddr: 0x10000,
-                    paddr: 0x10000,
-                    filesz: *PAGE_SIZE as u64,
-                    memsz: *PAGE_SIZE as u64 * 2,
-                    align: *PAGE_SIZE as u64,
-                };
-        }
+        static PAGE_SIZE: LazyLock<usize> = LazyLock::new(|| zx::system_get_page_size() as usize);
+        static ELF_PROGRAM_HEADER: LazyLock<elf_parse::Elf64ProgramHeader> =
+            LazyLock::new(|| elf_parse::Elf64ProgramHeader {
+                segment_type: elf_parse::SegmentType::Load as u32,
+                flags: elf_parse::SegmentFlags::from_bits_truncate(
+                    elf_parse::SegmentFlags::READ.bits() | elf_parse::SegmentFlags::EXECUTE.bits(),
+                )
+                .bits(),
+                offset: *PAGE_SIZE,
+                vaddr: 0x10000,
+                paddr: 0x10000,
+                filesz: *PAGE_SIZE as u64,
+                memsz: *PAGE_SIZE as u64 * 2,
+                align: *PAGE_SIZE as u64,
+            });
         let headers = elf_parse::Elf64Headers::new_for_test(
             ELF_FILE_HEADER,
             Some(std::slice::from_ref(&ELF_PROGRAM_HEADER)),
@@ -557,24 +551,21 @@ mod tests {
     #[test]
     fn map_read_only_vmo_with_no_bss() {
         // Contains a PT_LOAD segment where there is no BSS.
-        lazy_static! {
-            static ref PAGE_SIZE: usize = zx::system_get_page_size() as usize;
-            static ref ELF_PROGRAM_HEADER: elf_parse::Elf64ProgramHeader =
-                elf_parse::Elf64ProgramHeader {
-                    segment_type: elf_parse::SegmentType::Load as u32,
-                    flags: elf_parse::SegmentFlags::from_bits_truncate(
-                        elf_parse::SegmentFlags::READ.bits()
-                            | elf_parse::SegmentFlags::EXECUTE.bits(),
-                    )
-                    .bits(),
-                    offset: *PAGE_SIZE as usize,
-                    vaddr: 0x10000,
-                    paddr: 0x10000,
-                    filesz: *PAGE_SIZE as u64,
-                    memsz: *PAGE_SIZE as u64,
-                    align: *PAGE_SIZE as u64,
-                };
-        }
+        static PAGE_SIZE: LazyLock<usize> = LazyLock::new(|| zx::system_get_page_size() as usize);
+        static ELF_PROGRAM_HEADER: LazyLock<elf_parse::Elf64ProgramHeader> =
+            LazyLock::new(|| elf_parse::Elf64ProgramHeader {
+                segment_type: elf_parse::SegmentType::Load as u32,
+                flags: elf_parse::SegmentFlags::from_bits_truncate(
+                    elf_parse::SegmentFlags::READ.bits() | elf_parse::SegmentFlags::EXECUTE.bits(),
+                )
+                .bits(),
+                offset: *PAGE_SIZE,
+                vaddr: 0x10000,
+                paddr: 0x10000,
+                filesz: *PAGE_SIZE as u64,
+                memsz: *PAGE_SIZE as u64,
+                align: *PAGE_SIZE as u64,
+            });
         let headers = elf_parse::Elf64Headers::new_for_test(
             ELF_FILE_HEADER,
             Some(std::slice::from_ref(&ELF_PROGRAM_HEADER)),
@@ -613,24 +604,21 @@ mod tests {
     #[test]
     fn map_read_only_vmo_with_write_flag() {
         // Contains a PT_LOAD segment where there is no BSS.
-        lazy_static! {
-            static ref PAGE_SIZE: usize = zx::system_get_page_size() as usize;
-            static ref ELF_PROGRAM_HEADER: elf_parse::Elf64ProgramHeader =
-                elf_parse::Elf64ProgramHeader {
-                    segment_type: elf_parse::SegmentType::Load as u32,
-                    flags: elf_parse::SegmentFlags::from_bits_truncate(
-                        elf_parse::SegmentFlags::READ.bits()
-                            | elf_parse::SegmentFlags::WRITE.bits(),
-                    )
-                    .bits(),
-                    offset: *PAGE_SIZE as usize,
-                    vaddr: 0x10000,
-                    paddr: 0x10000,
-                    filesz: *PAGE_SIZE as u64,
-                    memsz: *PAGE_SIZE as u64,
-                    align: *PAGE_SIZE as u64,
-                };
-        }
+        static PAGE_SIZE: LazyLock<usize> = LazyLock::new(|| zx::system_get_page_size() as usize);
+        static ELF_PROGRAM_HEADER: LazyLock<elf_parse::Elf64ProgramHeader> =
+            LazyLock::new(|| elf_parse::Elf64ProgramHeader {
+                segment_type: elf_parse::SegmentType::Load as u32,
+                flags: elf_parse::SegmentFlags::from_bits_truncate(
+                    elf_parse::SegmentFlags::READ.bits() | elf_parse::SegmentFlags::WRITE.bits(),
+                )
+                .bits(),
+                offset: *PAGE_SIZE,
+                vaddr: 0x10000,
+                paddr: 0x10000,
+                filesz: *PAGE_SIZE as u64,
+                memsz: *PAGE_SIZE as u64,
+                align: *PAGE_SIZE as u64,
+            });
         let headers = elf_parse::Elf64Headers::new_for_test(
             ELF_FILE_HEADER,
             Some(std::slice::from_ref(&ELF_PROGRAM_HEADER)),
@@ -663,24 +651,21 @@ mod tests {
     #[test]
     fn segment_with_zero_file_size() {
         // Contains a PT_LOAD segment whose filesz is 0.
-        lazy_static! {
-            static ref PAGE_SIZE: usize = zx::system_get_page_size() as usize;
-            static ref ELF_PROGRAM_HEADER: elf_parse::Elf64ProgramHeader =
-                elf_parse::Elf64ProgramHeader {
-                    segment_type: elf_parse::SegmentType::Load as u32,
-                    flags: elf_parse::SegmentFlags::from_bits_truncate(
-                        elf_parse::SegmentFlags::READ.bits()
-                            | elf_parse::SegmentFlags::WRITE.bits(),
-                    )
-                    .bits(),
-                    offset: *PAGE_SIZE as usize,
-                    vaddr: 0x10000,
-                    paddr: 0x10000,
-                    filesz: 0,
-                    memsz: 1,
-                    align: *PAGE_SIZE as u64,
-                };
-        }
+        static PAGE_SIZE: LazyLock<usize> = LazyLock::new(|| zx::system_get_page_size() as usize);
+        static ELF_PROGRAM_HEADER: LazyLock<elf_parse::Elf64ProgramHeader> =
+            LazyLock::new(|| elf_parse::Elf64ProgramHeader {
+                segment_type: elf_parse::SegmentType::Load as u32,
+                flags: elf_parse::SegmentFlags::from_bits_truncate(
+                    elf_parse::SegmentFlags::READ.bits() | elf_parse::SegmentFlags::WRITE.bits(),
+                )
+                .bits(),
+                offset: *PAGE_SIZE,
+                vaddr: 0x10000,
+                paddr: 0x10000,
+                filesz: 0,
+                memsz: 1,
+                align: *PAGE_SIZE as u64,
+            });
         let headers = elf_parse::Elf64Headers::new_for_test(
             ELF_FILE_HEADER,
             Some(std::slice::from_ref(&ELF_PROGRAM_HEADER)),
@@ -696,23 +681,21 @@ mod tests {
 
     #[test]
     fn map_execute_only_segment() {
-        lazy_static! {
-            static ref PAGE_SIZE: usize = zx::system_get_page_size() as usize;
-            static ref ELF_PROGRAM_HEADER: elf_parse::Elf64ProgramHeader =
-                elf_parse::Elf64ProgramHeader {
-                    segment_type: elf_parse::SegmentType::Load as u32,
-                    flags: elf_parse::SegmentFlags::from_bits_truncate(
-                        elf_parse::SegmentFlags::EXECUTE.bits(),
-                    )
-                    .bits(),
-                    offset: *PAGE_SIZE as usize,
-                    vaddr: 0x10000,
-                    paddr: 0x10000,
-                    filesz: 0x10,
-                    memsz: 0x10,
-                    align: *PAGE_SIZE as u64,
-                };
-        }
+        static PAGE_SIZE: LazyLock<usize> = LazyLock::new(|| zx::system_get_page_size() as usize);
+        static ELF_PROGRAM_HEADER: LazyLock<elf_parse::Elf64ProgramHeader> =
+            LazyLock::new(|| elf_parse::Elf64ProgramHeader {
+                segment_type: elf_parse::SegmentType::Load as u32,
+                flags: elf_parse::SegmentFlags::from_bits_truncate(
+                    elf_parse::SegmentFlags::EXECUTE.bits(),
+                )
+                .bits(),
+                offset: *PAGE_SIZE,
+                vaddr: 0x10000,
+                paddr: 0x10000,
+                filesz: 0x10,
+                memsz: 0x10,
+                align: *PAGE_SIZE as u64,
+            });
         let headers = elf_parse::Elf64Headers::new_for_test(
             ELF_FILE_HEADER,
             Some(std::slice::from_ref(&ELF_PROGRAM_HEADER)),
