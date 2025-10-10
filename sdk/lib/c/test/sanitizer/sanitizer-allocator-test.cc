@@ -205,7 +205,7 @@ zx_info_vmo_t vmos[kMaxVmos];
 constexpr size_t kMaxMaps = 8192;
 zx_info_maps_t maps[kMaxMaps];
 
-zx_status_t GetCommittedChangeEvents(zx_koid_t vmo_koid, uint64_t *committed_change_events) {
+zx_status_t GetVmoInfo(zx_koid_t vmo_koid, zx_info_vmo_t *vmo_info) {
   size_t actual, available;
   zx_status_t res =
       zx::process::self()->get_info(ZX_INFO_PROCESS_VMOS, vmos, sizeof(vmos), &actual, &available);
@@ -216,7 +216,7 @@ zx_status_t GetCommittedChangeEvents(zx_koid_t vmo_koid, uint64_t *committed_cha
 
   for (size_t i = 0; i < actual; i++) {
     if (vmos[i].koid == vmo_koid) {
-      *committed_change_events = vmos[i].committed_change_events;
+      *vmo_info = vmos[i];
       return ZX_OK;
     }
   }
@@ -276,10 +276,30 @@ TEST_F(SanitizerAllocatorTest, NoCommittedCallocPages) {
   // 3. Iterate through all process vmos until we find the one whose koid
   //    matches the koid found in (2).
   zx_koid_t vmo_koid;
-  uint64_t committed_change_events;
   ASSERT_OK(GetVmoKoid(tbi::RemoveTag(reinterpret_cast<uintptr_t>(alloc)), &vmo_koid));
-  ASSERT_OK(GetCommittedChangeEvents(vmo_koid, &committed_change_events));
-  EXPECT_EQ(committed_change_events, 0);
+
+  zx_info_vmo_t vmo_info;
+  ASSERT_OK(GetVmoInfo(vmo_koid, &vmo_info));
+
+  // Here we assume that the allocation comes from a single contiguous VMO,
+  // so we expect this VMO to at least be as large as the original allocation.
+  // Depending on the allocator, the VMO may be larger than the requested size
+  // for things like chunk headers or redzones in the case of ASan.
+  ASSERT_GE(vmo_info.size_bytes, kAllocSize);
+
+  // `populated_bytes` indicates the number of committed bytes in this VMO. This
+  // accounts for both normal committed bytes and bytes that were previously committed
+  // but have been compressed and reclaimed. Because we expect `calloc` to come
+  // from zero-inited pages which should be deduped from a singleton zero page,
+  // we should not expect the portion of the VMO backing the `calloc` to be
+  // committed. However, the remainder of the VMO could be committed for things like
+  // malloc headers or redzones, meaning fields like `committed_bytes` could report
+  // non-zero values in the unlikely event the page scanner chooses to reclaim
+  // these pages. Therefore, to assert the pages backing the `calloc` are uncommitted,
+  // we can check that the number of uncommitted bytes is at least the requested
+  // allocation size.
+  size_t uncommitted_bytes = vmo_info.size_bytes - vmo_info.populated_bytes;
+  EXPECT_GE(uncommitted_bytes, kAllocSize);
 
   free(alloc);
 }
