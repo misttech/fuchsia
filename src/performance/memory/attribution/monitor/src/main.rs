@@ -293,7 +293,7 @@ async fn provide_snapshot(
     snapshot: zx::Socket,
 ) -> Result<()> {
     duration!(CATEGORY_MEMORY_CAPTURE, c"provide_snapshot");
-    let attribution_data = attribution_data_provider.get_attribution_data().await?;
+    let attribution_data = attribution_data_provider.get_attribution_data()?;
 
     let kernel_stats = fattribution_plugin::KernelStatistics {
         memory_stats: Some(kernel_stats_proxy.get_memory_stats().await?),

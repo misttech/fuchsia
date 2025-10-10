@@ -5,7 +5,6 @@
 use core::cell::RefCell;
 use core::convert::Into;
 use fidl_fuchsia_memory_attribution_plugin as fplugin;
-use futures::future::BoxFuture;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use summary::MemorySummary;
@@ -90,7 +89,7 @@ impl Into<fplugin::PrincipalType> for PrincipalType {
 pub struct Principal {
     // These fields are initialized from [fplugin::Principal].
     pub identifier: PrincipalIdentifier,
-    pub description: PrincipalDescription,
+    pub description: Option<PrincipalDescription>,
     pub principal_type: PrincipalType,
 
     /// Principal that declared this Principal. None if this Principal is at the root of the system
@@ -105,7 +104,7 @@ impl From<fplugin::Principal> for Principal {
     fn from(value: fplugin::Principal) -> Self {
         Principal {
             identifier: value.identifier.unwrap().into(),
-            description: value.description.unwrap().into(),
+            description: value.description.map(Into::into),
             principal_type: value.principal_type.unwrap().into(),
             parent: value.parent.map(Into::into),
         }
@@ -116,7 +115,7 @@ impl Into<fplugin::Principal> for Principal {
     fn into(self) -> fplugin::Principal {
         fplugin::Principal {
             identifier: Some(self.identifier.into()),
-            description: Some(self.description.into()),
+            description: self.description.map(Into::into),
             principal_type: Some(self.principal_type.into()),
             parent: self.parent.map(Into::into),
             ..Default::default()
@@ -152,8 +151,9 @@ impl InflatedPrincipal {
 impl InflatedPrincipal {
     fn name(&self) -> &str {
         match &self.principal.description {
-            PrincipalDescription::Component(component_name) => component_name,
-            PrincipalDescription::Part(part_name) => part_name,
+            Some(PrincipalDescription::Component(component_name)) => component_name,
+            Some(PrincipalDescription::Part(part_name)) => part_name,
+            None => "?",
         }
     }
 }
@@ -449,7 +449,7 @@ pub trait ResourcesVisitor {
 
 pub trait AttributionDataProvider: Send + Sync {
     /// Collects and returns a structure with all memory resources and attribution specifications.
-    fn get_attribution_data(&self) -> BoxFuture<'_, Result<AttributionData, anyhow::Error>>;
+    fn get_attribution_data(&self) -> Result<AttributionData, anyhow::Error>;
     /// Enumerates Jobs, Processes and VMOs and call back the visitor.
     fn for_each_resource(&self, visitor: &mut impl ResourcesVisitor) -> Result<(), anyhow::Error>;
 }
@@ -678,20 +678,19 @@ pub fn attribute_vmos(attribution_data: AttributionData) -> ProcessedAttribution
 pub mod testing {
     use crate::{AttributionData, AttributionDataProvider, Resource, ResourcesVisitor};
     use fidl_fuchsia_memory_attribution_plugin::ResourceType;
-    use futures::future::{BoxFuture, ready};
 
     pub struct FakeAttributionDataProvider {
         pub attribution_data: AttributionData,
     }
 
     impl AttributionDataProvider for FakeAttributionDataProvider {
-        fn get_attribution_data(&self) -> BoxFuture<'_, Result<AttributionData, anyhow::Error>> {
-            Box::pin(ready(Ok(AttributionData {
+        fn get_attribution_data(&self) -> Result<AttributionData, anyhow::Error> {
+            Ok(AttributionData {
                 principals_vec: self.attribution_data.principals_vec.clone(),
                 resources_vec: self.attribution_data.resources_vec.clone(),
                 resource_names: self.attribution_data.resource_names.clone(),
                 attributions: self.attribution_data.attributions.clone(),
-            })))
+            })
         }
 
         fn for_each_resource(

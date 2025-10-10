@@ -226,9 +226,7 @@ impl<'a> AttributionDataProvider for SnapshotAttributionDataProvider<'a> {
         Ok(())
     }
 
-    fn get_attribution_data(
-        &self,
-    ) -> futures::future::BoxFuture<'_, std::result::Result<AttributionData, anyhow::Error>> {
+    fn get_attribution_data(&self) -> Result<AttributionData, anyhow::Error> {
         todo!()
     }
 }

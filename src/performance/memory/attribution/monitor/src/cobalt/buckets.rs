@@ -245,7 +245,7 @@ mod tests {
         let attribution_data = AttributionData {
             principals_vec: vec![Principal {
                 identifier: PrincipalIdentifier(1),
-                description: PrincipalDescription::Component("principal".to_owned()),
+                description: Some(PrincipalDescription::Component("principal".to_owned())),
                 principal_type: PrincipalType::Runnable,
                 parent: None,
             }],

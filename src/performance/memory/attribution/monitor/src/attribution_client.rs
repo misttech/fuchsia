@@ -78,7 +78,7 @@ pub struct PrincipalDefinition {
     /// attribution information for this principal.
     pub attributor: Option<GlobalPrincipalIdentifier>,
     pub id: GlobalPrincipalIdentifier,
-    pub description: PrincipalDescription,
+    pub description: Option<PrincipalDescription>,
     pub principal_type: PrincipalType,
 }
 
@@ -121,7 +121,7 @@ impl AttributionStateManager {
         let principal = PrincipalDefinition {
             attributor: None,
             id: root_identifier,
-            description: PrincipalDescription::Component(ROOT_COMPONENT_NAME.to_owned()),
+            description: Some(PrincipalDescription::Component(ROOT_COMPONENT_NAME.to_owned())),
             principal_type: PrincipalType::Runnable,
         };
         attribution_providers.0.insert(
@@ -157,7 +157,7 @@ impl AttributionStateManager {
         &mut self,
         attributor: GlobalPrincipalIdentifier,
         local: LocalPrincipalIdentifier,
-        description: PrincipalDescription,
+        description: Option<PrincipalDescription>,
         principal_type: PrincipalType,
     ) -> GlobalPrincipalIdentifier {
         let global_id = self.next_global_id.next();
@@ -274,13 +274,14 @@ impl AttributionClientImpl {
                         )
                         .await
                         {
-                            Ok(description) => description,
+                            Ok(description) => Some(description),
                             Err(AttributionClientError::FailToGetMoniker(err)) => {
-                                error!(
-                                    "Unable to get moniker for principal {:?}: {:?}",
-                                    new_principal.identifier, err
+                                log::warn!(
+                                    "Unable to get moniker for principal {:?}: {:?}. This might be a zombie principal.",
+                                    new_principal.identifier,
+                                    err
                                 );
-                                continue;
+                                None
                             }
                             Err(err) => return Err(err.into()),
                         };
@@ -480,7 +481,7 @@ mod tests {
             Some(&PrincipalDefinition {
                 attributor: Some(1.into()),
                 id: 2.into(),
-                description: PrincipalDescription::Part("part".to_owned()),
+                description: Some(PrincipalDescription::Part("part".to_owned())),
                 principal_type: PrincipalType::Runnable
             })
         );
@@ -556,7 +557,15 @@ mod tests {
         let state = attribution_client.attribution_state.lock().attribution_providers.clone();
         assert_eq!(state.0.len(), 1);
         let (_, provider) = state.0.iter().next().unwrap();
-        // Only one principal is recorded.
-        assert_eq!(provider.definitions.len(), 1);
+        // Two principals are recorded, but only one features a description.
+        assert_eq!(provider.definitions.len(), 2);
+        assert_eq!(
+            provider.definitions.get(&LocalPrincipalIdentifier(0)).unwrap().description,
+            Some(PrincipalDescription::Component("component_manager".to_string()))
+        );
+        assert_eq!(
+            provider.definitions.get(&LocalPrincipalIdentifier(2)).unwrap().description,
+            None
+        );
     }
 }

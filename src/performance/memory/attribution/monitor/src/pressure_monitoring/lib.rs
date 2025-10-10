@@ -86,7 +86,7 @@ pub async fn serve_to_inspect(
         )
         .with_context(|| "Failed to get kernel memory stats")?;
         let Digest { buckets } = {
-            let attribution_data = attribution_data_service.get_attribution_data().await?;
+            let attribution_data = attribution_data_service.get_attribution_data()?;
             // Compute the aggregation.
             let digest = Digest::compute_from_attribution_data(
                 &attribution_data,
@@ -300,7 +300,7 @@ mod tests {
         let attribution_data = AttributionData {
             principals_vec: vec![Principal {
                 identifier: PrincipalIdentifier(1),
-                description: PrincipalDescription::Component("principal".to_owned()),
+                description: Some(PrincipalDescription::Component("principal".to_owned())),
                 principal_type: PrincipalType::Runnable,
                 parent: None,
             }],

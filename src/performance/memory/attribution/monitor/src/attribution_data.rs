@@ -12,8 +12,6 @@ use attribution_processing::{
 };
 use fuchsia_sync::Mutex;
 use fuchsia_trace::duration;
-use futures::FutureExt;
-use futures::future::BoxFuture;
 use std::sync::Arc;
 use traces::CATEGORY_MEMORY_CAPTURE;
 
@@ -35,86 +33,79 @@ impl AttributionDataProviderImpl {
 }
 
 impl AttributionDataProvider for AttributionDataProviderImpl {
-    fn get_attribution_data(&self) -> BoxFuture<'_, Result<AttributionData, anyhow::Error>> {
-        async {
-            let attribution_state = self.attribution_client.get_attributions();
-            let kernel_resources =
-                KernelResources::get_resources(self.root_job.lock().as_ref(), &attribution_state)?;
+    fn get_attribution_data(&self) -> Result<AttributionData, anyhow::Error> {
+        let attribution_state = self.attribution_client.get_attributions();
+        let kernel_resources =
+            KernelResources::get_resources(self.root_job.lock().as_ref(), &attribution_state)?;
 
-            duration!(CATEGORY_MEMORY_CAPTURE, c"AttributionSnapshot::new");
-            // Compute the capacity needed for |principals| and |attributions| to avoid
-            // reallocations as we fill these vectors.
-            let (num_principals, num_attributions) = attribution_state
-                .0
-                .values()
-                .map(|provider| (provider.definitions.len(), provider.resources.len()))
-                .fold((0, 0), |(acc_p, acc_a), (p, a)| (acc_p + p, acc_a + a));
+        duration!(CATEGORY_MEMORY_CAPTURE, c"AttributionSnapshot::new");
+        // Compute the capacity needed for |principals| and |attributions| to avoid
+        // reallocations as we fill these vectors.
+        let (num_principals, num_attributions) = attribution_state
+            .0
+            .values()
+            .map(|provider| (provider.definitions.len(), provider.resources.len()))
+            .fold((0, 0), |(acc_p, acc_a), (p, a)| (acc_p + p, acc_a + a));
 
-            let mut principals = Vec::with_capacity(num_principals);
-            let mut attributions = Vec::with_capacity(num_attributions);
+        let mut principals = Vec::with_capacity(num_principals);
+        let mut attributions = Vec::with_capacity(num_attributions);
 
-            for (provider_identifier, attribution_provider) in attribution_state.0 {
-                let mut local_to_global = PrincipalIdMap::default();
-                for (local_id, definition) in attribution_provider.definitions {
-                    local_to_global.insert(local_id, definition.id);
-                    principals.push(Principal {
-                        identifier: definition.id.into(),
-                        description: match definition.description {
-                            PrincipalDescription::Component(moniker) => {
-                                attribution_processing::PrincipalDescription::Component(moniker)
-                            }
-                            PrincipalDescription::Part(part_name) => {
-                                attribution_processing::PrincipalDescription::Part(part_name)
-                            }
-                        },
-                        principal_type: match definition.principal_type {
-                            PrincipalType::Runnable => {
-                                attribution_processing::PrincipalType::Runnable
-                            }
-                            PrincipalType::Part => attribution_processing::PrincipalType::Part,
-                        },
-                        parent: definition
-                            .attributor
-                            .as_ref()
-                            .map(|&principal_identifier| principal_identifier.into()),
-                    });
-                }
-                for (subject_identifier, resources) in attribution_provider.resources {
-                    attributions.push(Attribution {
-                        source: provider_identifier.into(),
-                        subject: local_to_global
-                            .get(subject_identifier, provider_identifier)
-                            .into(),
-                        resources: resources
-                            .into_iter()
-                            .map(|r| match r {
-                                fidl_fuchsia_memory_attribution::Resource::KernelObject(koid) => {
-                                    ResourceReference::KernelObject(koid)
-                                }
-                                fidl_fuchsia_memory_attribution::Resource::ProcessMapped(
-                                    fidl_fuchsia_memory_attribution::ProcessMapped {
-                                        process,
-                                        base,
-                                        len,
-                                    },
-                                ) => ResourceReference::ProcessMapped { process, base, len },
-                                fidl_fuchsia_memory_attribution::Resource::__SourceBreaking {
-                                    unknown_ordinal: _,
-                                } => unimplemented!("Unknown Resource type"),
-                            })
-                            .collect(),
-                    });
-                }
+        for (provider_identifier, attribution_provider) in attribution_state.0 {
+            let mut local_to_global = PrincipalIdMap::default();
+            for (local_id, definition) in attribution_provider.definitions {
+                local_to_global.insert(local_id, definition.id);
+                principals.push(Principal {
+                    identifier: definition.id.into(),
+                    description: definition.description.map(|description| match description {
+                        PrincipalDescription::Component(moniker) => {
+                            attribution_processing::PrincipalDescription::Component(moniker)
+                        }
+                        PrincipalDescription::Part(part_name) => {
+                            attribution_processing::PrincipalDescription::Part(part_name)
+                        }
+                    }),
+                    principal_type: match definition.principal_type {
+                        PrincipalType::Runnable => attribution_processing::PrincipalType::Runnable,
+                        PrincipalType::Part => attribution_processing::PrincipalType::Part,
+                    },
+                    parent: definition
+                        .attributor
+                        .as_ref()
+                        .map(|&principal_identifier| principal_identifier.into()),
+                });
             }
-
-            Ok(AttributionData {
-                principals_vec: principals,
-                resources_vec: kernel_resources.resources.into_values().map(|r| r.into()).collect(),
-                resource_names: kernel_resources.resource_names,
-                attributions,
-            })
+            for (subject_identifier, resources) in attribution_provider.resources {
+                attributions.push(Attribution {
+                    source: provider_identifier.into(),
+                    subject: local_to_global.get(subject_identifier, provider_identifier).into(),
+                    resources: resources
+                        .into_iter()
+                        .map(|r| match r {
+                            fidl_fuchsia_memory_attribution::Resource::KernelObject(koid) => {
+                                ResourceReference::KernelObject(koid)
+                            }
+                            fidl_fuchsia_memory_attribution::Resource::ProcessMapped(
+                                fidl_fuchsia_memory_attribution::ProcessMapped {
+                                    process,
+                                    base,
+                                    len,
+                                },
+                            ) => ResourceReference::ProcessMapped { process, base, len },
+                            fidl_fuchsia_memory_attribution::Resource::__SourceBreaking {
+                                unknown_ordinal: _,
+                            } => unimplemented!("Unknown Resource type"),
+                        })
+                        .collect(),
+                });
+            }
         }
-        .boxed()
+
+        Ok(AttributionData {
+            principals_vec: principals,
+            resources_vec: kernel_resources.resources.into_values().map(|r| r.into()).collect(),
+            resource_names: kernel_resources.resource_names,
+            attributions,
+        })
     }
 
     fn for_each_resource(&self, visitor: &mut impl ResourcesVisitor) -> Result<(), anyhow::Error> {
@@ -139,11 +130,9 @@ mod tests {
         GlobalPrincipalIdentifier, GlobalPrincipalIdentifierFactory, LocalPrincipalIdentifier,
     };
     use crate::resources::tests::{FakeJob, FakeProcess, simple_vmo_info};
-    use fuchsia_async as fasync;
 
     #[test]
     fn test_get_capture() {
-        let mut exec = fasync::TestExecutor::new();
         let mut identifier_factory = GlobalPrincipalIdentifierFactory::default();
 
         #[derive(Default)]
@@ -167,7 +156,7 @@ mod tests {
                             PrincipalDefinition {
                                 attributor: Some(parent_id),
                                 id: principal_id,
-                                description: PrincipalDescription::Component(name.to_owned()),
+                                description: Some(PrincipalDescription::Component(name.to_owned())),
                                 principal_type: PrincipalType::Runnable,
                             },
                         )]
@@ -198,7 +187,7 @@ mod tests {
                             PrincipalDefinition {
                                 attributor: Some(parent_id),
                                 id: principal_id,
-                                description: PrincipalDescription::Part(name.to_owned()),
+                                description: Some(PrincipalDescription::Part(name.to_owned())),
                                 principal_type: PrincipalType::Part,
                             },
                         )]
@@ -288,22 +277,20 @@ mod tests {
                 [].into(),
             ))),
         );
-        let capture = exec
-            .run_singlethreaded(async { capture_provider.get_attribution_data().await })
-            .unwrap();
+        let capture = capture_provider.get_attribution_data().unwrap();
         assert_eq!(
             HashSet::from_iter(capture.principals_vec.into_iter()),
             HashSet::from([
                 Principal {
                     identifier: PrincipalIdentifier(2),
                     parent: Some(PrincipalIdentifier(1)),
-                    description: PrincipalDescription::Component("component1".to_owned()),
+                    description: Some(PrincipalDescription::Component("component1".to_owned())),
                     principal_type: PrincipalType::Runnable,
                 },
                 Principal {
                     identifier: PrincipalIdentifier(3),
                     parent: Some(PrincipalIdentifier(2)),
-                    description: PrincipalDescription::Part("part2".to_owned()),
+                    description: Some(PrincipalDescription::Part("part2".to_owned())),
                     principal_type: PrincipalType::Part,
                 }
             ])
