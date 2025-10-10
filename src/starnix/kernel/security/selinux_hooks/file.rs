@@ -11,10 +11,8 @@ use super::bpf::{
 use super::{
     FileObjectState, FsNodeSidAndClass, NO_PERMISSIONS, PermissionFlags, check_permission,
     current_task_state, fs_node_effective_sid_and_class, has_file_ioctl_permission,
-    has_file_permissions, permissions_from_flags, todo_has_fs_node_permissions,
-    todo_option_has_file_permissions,
+    has_file_permissions, permissions_from_flags, todo_option_has_file_permissions,
 };
-use crate::TODO_DENY;
 use crate::bpf::fs::BpfHandle;
 use crate::mm::{Mapping, MappingName, MappingOptions, ProtectionFlags};
 use crate::security::selinux_hooks::{
@@ -62,8 +60,7 @@ pub(in crate::security) fn file_permission(
         current_task.into(),
     )?;
 
-    todo_has_fs_node_permissions(
-        TODO_DENY!("https://fxbug.dev/385121365", "Enforce file_permission checks"),
+    has_fs_node_permissions(
         &security_server.as_permission_check(),
         current_task,
         current_sid,
