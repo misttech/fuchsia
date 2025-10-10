@@ -18,6 +18,7 @@ use std::path::PathBuf;
 use std::pin::{Pin, pin};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
+use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use usb_vsock_host::{ActiveDevice, IncomingConnection, UsbVsockHost, UsbVsockHostEvent};
@@ -206,54 +207,43 @@ impl ListenerTable {
 }
 
 /// Error returned from [`remove_and_bind_socket`]
-#[derive(Debug)]
-enum RemoveAndBindError {
-    InUse,
-    RemoveStale(std::io::Error),
-    ConnectCheck(std::io::Error),
-    Bind(std::io::Error),
-}
-
-impl RemoveAndBindError {
-    fn log(&self, socket_path: &PathBuf) {
-        match self {
-            RemoveAndBindError::InUse => {
-                log::error!("Socket already exists and is in use {}", socket_path.display())
-            }
-            RemoveAndBindError::RemoveStale(error) => {
-                log::error!("Could not remove stale socket at {}: {error}", socket_path.display())
-            }
-            RemoveAndBindError::ConnectCheck(error) => {
-                log::error!(
-                    "Unexpected error when checking for stale socket at {}: {error}",
-                    socket_path.display()
-                );
-            }
-            RemoveAndBindError::Bind(error) => {
-                log::error!("Could not listen on provided socket path: {error}");
-            }
-        }
-    }
+#[derive(Error, Debug)]
+pub enum RemoveAndBindError {
+    #[error("Socket {0} already exists and is in use")]
+    InUse(PathBuf),
+    #[error("Could not remove stale socket at {0}: {1}")]
+    RemoveStale(PathBuf, std::io::Error),
+    #[error("Unexpected error when checking for stale socket at {0}: {1}")]
+    ConnectCheck(PathBuf, std::io::Error),
+    #[error("Could not listen on socket at {0}: {1}")]
+    Bind(PathBuf, std::io::Error),
 }
 
 /// Bind a socket. If the socket already exits, check if it is in use, and if
 /// not, remove it.
-async fn remove_and_bind_socket(socket_path: &PathBuf) -> Result<UnixListener, RemoveAndBindError> {
+pub async fn remove_and_bind_socket(
+    socket_path: PathBuf,
+) -> Result<UnixListener, RemoveAndBindError> {
     match UnixStream::connect(&socket_path).await {
         Err(e) if e.kind() == ErrorKind::NotFound => (),
         Err(e) if e.kind() == ErrorKind::ConnectionRefused => {
             // The socket is stale. Try to remove it.
-            std::fs::remove_file(&socket_path).map_err(RemoveAndBindError::RemoveStale)?
+            if let Err(e) = std::fs::remove_file(&socket_path) {
+                return Err(RemoveAndBindError::RemoveStale(socket_path, e));
+            }
         }
         Ok(_) => {
-            return Err(RemoveAndBindError::InUse);
+            return Err(RemoveAndBindError::InUse(socket_path));
         }
         Err(e) => {
-            return Err(RemoveAndBindError::ConnectCheck(e));
+            return Err(RemoveAndBindError::ConnectCheck(socket_path, e));
         }
     }
 
-    UnixListener::bind(socket_path).map_err(RemoveAndBindError::Bind)
+    match UnixListener::bind(&socket_path) {
+        Ok(s) => Ok(s),
+        Err(e) => Err(RemoveAndBindError::Bind(socket_path, e)),
+    }
 }
 
 /// Hostside driver for the FFX USB interface.
@@ -267,18 +257,10 @@ pub struct HostDriver {
 
 impl HostDriver {
     /// Create a new [`HostDriver`] and listen for users at the given socket path.
-    pub async fn run(socket_path: PathBuf, log_path: String, serial: Option<String>) {
-        let listener = match remove_and_bind_socket(&socket_path).await {
-            Ok(l) => l,
-            Err(e) => {
-                e.log(&socket_path);
-                return;
-            }
-        };
-
+    pub async fn run(listener: UnixListener, log_path: String, serial: Option<String>) {
         let (sender, receiver) = mpsc::channel(1);
 
-        HostDriver::run_with_driver_and_listener(
+        HostDriver::run_with_driver(
             UsbVsockHost::new([] as [&str; 0], true, sender, serial.into_iter().collect()),
             receiver,
             listener,
@@ -287,7 +269,7 @@ impl HostDriver {
         .await;
     }
 
-    async fn run_with_driver_and_listener(
+    async fn run_with_driver(
         driver: Arc<UsbVsockHost<WrapStream>>,
         mut events: mpsc::Receiver<UsbVsockHostEvent>,
         listener: UnixListener,
@@ -340,7 +322,7 @@ impl HostDriver {
     > {
         let listener = UnixListener::bind(socket_path).expect("Could not create socket for test");
         let (host, conn) = usb_vsock_host::TestConnection::<WrapStream>::new();
-        let fut = HostDriver::run_with_driver_and_listener(
+        let fut = HostDriver::run_with_driver(
             host.host,
             host.event_receiver,
             listener,
@@ -764,30 +746,30 @@ mod test {
     async fn remove_and_bind_removes() {
         let dir = tempfile::tempdir().unwrap();
         let sock_path = dir.path().join("test_sock");
-        let sock = remove_and_bind_socket(&sock_path).await.unwrap();
+        let sock = remove_and_bind_socket(sock_path.clone()).await.unwrap();
         std::mem::drop(sock);
-        let _ = remove_and_bind_socket(&sock_path).await.unwrap();
+        let _ = remove_and_bind_socket(sock_path).await.unwrap();
     }
 
     #[fuchsia::test]
     async fn remove_and_bind_respects_in_use() {
         let dir = tempfile::tempdir().unwrap();
         let sock_path = dir.path().join("test_sock");
-        let _sock = remove_and_bind_socket(&sock_path).await.unwrap();
-        let e = remove_and_bind_socket(&sock_path).await.unwrap_err();
-        assert!(matches!(e, RemoveAndBindError::InUse));
+        let _sock = remove_and_bind_socket(sock_path.clone()).await.unwrap();
+        let e = remove_and_bind_socket(sock_path).await.unwrap_err();
+        assert!(matches!(e, RemoveAndBindError::InUse(_)));
     }
 
     #[fuchsia::test]
     async fn remove_and_bind_permission_fail() {
         let dir = tempfile::tempdir().unwrap();
         let sock_path = dir.path().join("test_sock");
-        let sock = remove_and_bind_socket(&sock_path).await.unwrap();
+        let sock = remove_and_bind_socket(sock_path.clone()).await.unwrap();
         std::mem::drop(sock);
         let mut permissions = dir.path().metadata().unwrap().permissions();
         permissions.set_readonly(true);
         std::fs::set_permissions(dir.path(), permissions).unwrap();
-        let e = remove_and_bind_socket(&sock_path).await.unwrap_err();
-        assert!(matches!(e, RemoveAndBindError::RemoveStale(_)), "Unexpected failure: {e:?}");
+        let e = remove_and_bind_socket(sock_path).await.unwrap_err();
+        assert!(matches!(e, RemoveAndBindError::RemoveStale(_, _)), "Unexpected failure: {e:?}");
     }
 }

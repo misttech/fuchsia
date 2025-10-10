@@ -183,6 +183,10 @@ async fn implementation(
         )));
     }
 
+    let listener = usb_driver_impl::remove_and_bind_socket(socket_path.to_path_buf())
+        .await
+        .map_err(anyhow::Error::from)?;
+
     if command.background {
         // daemonize(3) is deprecated on macOS 10.15. The replacement is not
         // yet clear, we may want to replace this with a manual double fork
@@ -204,6 +208,6 @@ async fn implementation(
     if let Some(serial) = &command.serial {
         log::info!("Only interacting with devices with serial {serial}");
     }
-    usb_driver_impl::HostDriver::run(socket_path.to_path_buf(), log_path, command.serial).await;
+    usb_driver_impl::HostDriver::run(listener, log_path, command.serial).await;
     Ok(ExitStatus::from_raw(0))
 }
