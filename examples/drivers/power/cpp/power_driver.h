@@ -8,6 +8,8 @@
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/power/cpp/suspend.h>
 
+#include "examples/drivers/power/cpp/component_config.h"
+
 namespace power {
 
 // Power driver that demonstrates how the Suspend() and Resume() functions are registered and
@@ -36,6 +38,9 @@ class PowerDriver final : public fdf::DriverBase, public fdf_power::Suspendable<
   void Suspend(fdf_power::SuspendCompleter cb) override;
   void Resume(fdf_power::ResumeCompleter cb) override;
   bool SuspendEnabled() override;
+
+ private:
+  component_config::Config config_;
 };
 
 }  // namespace power

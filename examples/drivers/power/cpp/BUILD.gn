@@ -13,19 +13,43 @@ driver_bind_rules("bind") {
   deps = [ "//examples/drivers/bind/bindlib:gizmo.example" ]
 }
 
+fuchsia_component_manifest("component-manifest") {
+  component_name = "power_driver"
+  manifest = "meta/power_driver.cml"
+}
+
+fuchsia_driver_component("component") {
+  cm_label = ":component-manifest"
+  deps = [
+    ":bind",
+    ":driver",
+  ]
+  info = "meta/component-info.json"
+}
+
+fuchsia_structured_config_cpp_elf_lib("component-config") {
+  cm_label = ":component-manifest"
+}
+
 fuchsia_cc_driver("driver") {
   output_name = "power_driver"
   sources = [ "power_driver.cc" ]
   deps = [
+    "//examples/fidl/fuchsia.examples:fuchsia.examples_cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/power/cpp",
     "//src/devices/lib/driver:driver_runtime",
   ]
+  public_deps = [ ":component-config" ]
 }
 
-fuchsia_driver_component("component") {
-  component_name = "power_driver"
-  manifest = "meta/power_driver.cml"
+fuchsia_component_manifest("component-manifest-suspend-disabled") {
+  component_name = "power_driver_suspend_disabled"
+  manifest = "meta/power_driver_suspend_disabled.cml"
+}
+
+fuchsia_driver_component("component-suspend-disabled") {
+  cm_label = ":component-manifest-suspend-disabled"
   deps = [
     ":bind",
     ":driver",
@@ -45,6 +69,8 @@ rustc_test("realm-test") {
   source_root = "realm_test.rs"
   sources = [ "realm_test.rs" ]
   deps = [
+    "//examples/fidl/fuchsia.examples:fuchsia.examples_rust",
+    "//sdk/fidl/fuchsia.component.test:fuchsia.component.test_rust",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
     "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
     "//sdk/lib/driver_test_realm/realm_builder/rust",
@@ -65,8 +91,9 @@ fuchsia_unittest_package("realm-test-pkg") {
     # Test component
     ":realm-test",
 
-    # The driver
+    # The drivers
     ":component",
+    ":component-suspend-disabled",
   ]
 
   # There's expected error logs that happen due to races in driver enumeration.
