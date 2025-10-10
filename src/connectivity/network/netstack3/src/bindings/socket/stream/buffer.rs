@@ -25,6 +25,7 @@ use netstack3_core::tcp::{
 };
 
 use super::TcpSocketId;
+use crate::bindings::util::DataNotifier;
 use crate::bindings::{BindingsCtx, Ctx};
 
 /// Error emitted when new buffers are instantiated but there's no send/recv
@@ -32,7 +33,13 @@ use crate::bindings::{BindingsCtx, Ctx};
 #[derive(Debug)]
 pub(super) struct TaskStoppedError;
 
-pub(crate) enum CoreReceiveBuffer {
+#[derive(Debug)]
+pub(crate) struct CoreReceiveBuffer {
+    inner: CoreReceiveBufferInner,
+    notifier: Option<DataNotifier>,
+}
+
+pub(crate) enum CoreReceiveBufferInner {
     // TODO(https://fxbug.dev/364698967): We might be able to replace the zero
     // buffer with lazy allocations so we don't have this weird variant standing
     // out because of startup races.
@@ -48,29 +55,47 @@ pub(crate) enum CoreReceiveBuffer {
 pub(super) type ReceiveBufferReader = async_ringbuf::AsyncHeapCons<u8>;
 
 impl CoreReceiveBuffer {
+    pub(super) fn zero() -> Self {
+        Self { inner: CoreReceiveBufferInner::Zero, notifier: None }
+    }
+
     pub(super) fn new_ready(
         rx_task_sender: mpsc::UnboundedSender<ReceiveBufferReader>,
         capacity: usize,
+        notifier: Option<DataNotifier>,
     ) -> Result<Self, TaskStoppedError> {
         let ring_buffer = async_ringbuf::AsyncHeapRb::new(capacity);
         let (prod, cons) = ring_buffer.split();
         rx_task_sender.unbounded_send(cons).map_err(|_: mpsc::TrySendError<_>| TaskStoppedError)?;
-        Ok(Self::Ready {
-            buffer: prod,
-            new_buffer_sender: rx_task_sender,
-            empty: true,
-            pending_capacity: None,
+        Ok(Self {
+            inner: CoreReceiveBufferInner::Ready {
+                buffer: prod,
+                new_buffer_sender: rx_task_sender,
+                empty: true,
+                pending_capacity: None,
+            },
+            notifier,
         })
     }
 
+    pub(super) fn set_notifier(&mut self, notifier: DataNotifier) {
+        assert_matches!(self.notifier.replace(notifier), None);
+    }
+
     fn maybe_update_capacity(&mut self) {
-        match self {
-            Self::Zero => (),
-            Self::Ready { buffer: _, new_buffer_sender, empty, pending_capacity } => {
+        let Self { inner, notifier } = self;
+        match inner {
+            CoreReceiveBufferInner::Zero => (),
+            CoreReceiveBufferInner::Ready {
+                buffer: _,
+                new_buffer_sender,
+                empty,
+                pending_capacity,
+            } => {
                 // When we turn to empty and we have a pending capacity request,
                 // update our buffers.
                 if let (true, Some(cap)) = (*empty, pending_capacity.as_ref()) {
-                    match Self::new_ready(new_buffer_sender.clone(), *cap) {
+                    match Self::new_ready(new_buffer_sender.clone(), *cap, notifier.clone()) {
                         Ok(r) => *self = r,
                         // If the task is stopped give up attempting to update
                         // the capacity.
@@ -84,15 +109,20 @@ impl CoreReceiveBuffer {
     }
 }
 
-impl Debug for CoreReceiveBuffer {
+impl Debug for CoreReceiveBufferInner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Zero => write!(f, "CoreReceiveBuffer::Zero"),
-            Self::Ready { buffer, new_buffer_sender: _, empty, pending_capacity } => f
+            CoreReceiveBufferInner::Zero => write!(f, "CoreReceiveBuffer::Zero"),
+            CoreReceiveBufferInner::Ready {
+                buffer,
+                new_buffer_sender: _,
+                empty,
+                pending_capacity,
+            } => f
                 .debug_struct("CoreReceiveBuffer::Ready")
                 .field("buffer_capacity", &buffer.capacity())
-                .field("empty", empty)
-                .field("pending_capacity", pending_capacity)
+                .field("empty", &empty)
+                .field("pending_capacity", &pending_capacity)
                 .finish_non_exhaustive(),
         }
     }
@@ -100,9 +130,14 @@ impl Debug for CoreReceiveBuffer {
 
 impl Buffer for CoreReceiveBuffer {
     fn limits(&self) -> BufferLimits {
-        match self {
-            Self::Zero => BufferLimits { capacity: 0, len: 0 },
-            Self::Ready { buffer, new_buffer_sender: _, empty: _, pending_capacity: _ } => {
+        match &self.inner {
+            CoreReceiveBufferInner::Zero => BufferLimits { capacity: 0, len: 0 },
+            CoreReceiveBufferInner::Ready {
+                buffer,
+                new_buffer_sender: _,
+                empty: _,
+                pending_capacity: _,
+            } => {
                 let len = buffer.occupied_len();
                 let capacity = buffer.capacity().into();
                 BufferLimits { capacity, len }
@@ -111,18 +146,21 @@ impl Buffer for CoreReceiveBuffer {
     }
 
     fn target_capacity(&self) -> usize {
-        match self {
-            Self::Zero => 0,
-            Self::Ready { buffer, new_buffer_sender: _, empty: _, pending_capacity } => {
-                pending_capacity.as_ref().copied().unwrap_or_else(|| buffer.capacity().into())
-            }
+        match &self.inner {
+            CoreReceiveBufferInner::Zero => 0,
+            CoreReceiveBufferInner::Ready {
+                buffer,
+                new_buffer_sender: _,
+                empty: _,
+                pending_capacity,
+            } => pending_capacity.as_ref().copied().unwrap_or_else(|| buffer.capacity().into()),
         }
     }
 
     fn request_capacity(&mut self, size: usize) {
-        match self {
-            Self::Zero => {}
-            Self::Ready { pending_capacity, .. } => {
+        match &mut self.inner {
+            CoreReceiveBufferInner::Zero => {}
+            CoreReceiveBufferInner::Ready { pending_capacity, .. } => {
                 *pending_capacity = Some(size);
                 self.maybe_update_capacity();
             }
@@ -155,9 +193,14 @@ fn write_payload<P: Payload>(
 
 impl ReceiveBuffer for CoreReceiveBuffer {
     fn write_at<P: Payload>(&mut self, offset: usize, data: &P) -> usize {
-        match self {
-            Self::Zero => 0,
-            Self::Ready { buffer, new_buffer_sender: _, empty, pending_capacity: _ } => {
+        match &mut self.inner {
+            CoreReceiveBufferInner::Zero => 0,
+            CoreReceiveBufferInner::Ready {
+                buffer,
+                new_buffer_sender: _,
+                empty,
+                pending_capacity: _,
+            } => {
                 let (a, b) = buffer.vacant_slices_mut();
                 let mut written = write_payload(offset, 0, a, data);
                 if let Some(offset) = (offset + written).checked_sub(a.len()) {
@@ -174,9 +217,22 @@ impl ReceiveBuffer for CoreReceiveBuffer {
     }
 
     fn make_readable(&mut self, count: usize, has_outstanding: bool) {
-        match self {
-            Self::Zero => (),
-            Self::Ready { buffer, new_buffer_sender: _, empty, pending_capacity: _ } => {
+        let Self { inner, notifier } = self;
+        match inner {
+            CoreReceiveBufferInner::Zero => (),
+            CoreReceiveBufferInner::Ready {
+                buffer,
+                new_buffer_sender: _,
+                empty,
+                pending_capacity: _,
+            } => {
+                // TODO(https://fxbug.dev/440396857): fix the race condition where incoming data
+                // may not have been written into the zircon socket before the client is
+                // notified of the data being available.
+                if let Some(notifier) = notifier {
+                    notifier.notify();
+                }
+
                 // `empty` is tracking whether the *producer* side of the buffer
                 // is empty, i.e., no outstanding bytes so we can always
                 // overwrite with what the assembler tells us. The receive task
@@ -1385,7 +1441,7 @@ mod test {
         capacity: usize,
     ) -> (CoreReceiveBuffer, mpsc::UnboundedReceiver<ReceiveBufferReader>) {
         let (snd, rcv) = mpsc::unbounded();
-        let b = CoreReceiveBuffer::new_ready(snd, capacity).unwrap();
+        let b = CoreReceiveBuffer::new_ready(snd, capacity, /* notifier */ None).unwrap();
         (b, rcv)
     }
 
@@ -1400,7 +1456,8 @@ mod test {
         reader: &mut ReceiveBufferReader,
         warm: usize,
     ) {
-        let buffer = assert_matches!(buffer, CoreReceiveBuffer::Ready { buffer, .. } => buffer);
+        let CoreReceiveBuffer { inner, .. } = buffer;
+        let buffer = assert_matches!(inner, CoreReceiveBufferInner::Ready { buffer, .. } => buffer);
         assert_eq!(buffer.push_iter(std::iter::repeat(0xAA).take(warm)), warm);
         assert_eq!(async_ringbuf::traits::Consumer::skip(reader, warm), warm);
     }

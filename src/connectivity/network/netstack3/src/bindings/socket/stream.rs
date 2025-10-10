@@ -39,10 +39,11 @@ use crate::bindings::socket::{
     ZXSIO_SIGNAL_INCOMING,
 };
 use crate::bindings::util::{
-    AllowBindingIdFromWeak, ConversionContext, ErrnoResultExt as _, IntoCore, IntoFidl,
-    IntoFidlWithContext as _, ResultExt as _, ScopeExt as _, TryIntoCoreWithContext,
+    AllowBindingIdFromWeak, ConversionContext, DataNotifier, ErrnoResultExt as _, IntoCore,
+    IntoFidl, IntoFidlWithContext as _, ResultExt as _, ScopeExt as _, TryIntoCoreWithContext,
     TryIntoFidlWithContext,
 };
+use crate::bindings::waker::WakeGroupId;
 use crate::bindings::{BindingsCtx, Ctx};
 
 mod buffer;
@@ -62,11 +63,12 @@ pub(crate) struct UnconnectedSocketData {
     zx_socket: Arc<zx::Socket>,
     rx_task_sender: mpsc::UnboundedSender<ReceiveBufferReader>,
     tx_task_sender: oneshot::Sender<SendBufferWriter>,
+    data_notifier: Option<DataNotifier>,
 }
 
 impl IntoBuffers<CoreReceiveBuffer, CoreSendBuffer> for UnconnectedSocketData {
     fn into_buffers(self, buffer_sizes: BufferSizes) -> (CoreReceiveBuffer, CoreSendBuffer) {
-        let Self { zx_socket, rx_task_sender, tx_task_sender } = self;
+        let Self { zx_socket, rx_task_sender, tx_task_sender, data_notifier } = self;
         let BufferSizes { send, receive } = buffer_sizes;
         zx_socket
             .signal_peer(zx::Signals::NONE, ZXSIO_SIGNAL_CONNECTED)
@@ -77,8 +79,8 @@ impl IntoBuffers<CoreReceiveBuffer, CoreSendBuffer> for UnconnectedSocketData {
         //
         // We can't assert here since buffer creation on active opens might race
         // with socket closure which stops the tasks.
-        let receive_buffer = CoreReceiveBuffer::new_ready(rx_task_sender, receive)
-            .unwrap_or_else(|TaskStoppedError| CoreReceiveBuffer::Zero);
+        let receive_buffer = CoreReceiveBuffer::new_ready(rx_task_sender, receive, data_notifier)
+            .unwrap_or_else(|TaskStoppedError| CoreReceiveBuffer::zero());
         let (send_buffer, send_writer) = CoreSendBuffer::new_ready(send);
         let send_buffer = match tx_task_sender.send(send_writer) {
             Ok(()) => send_buffer,
@@ -134,6 +136,7 @@ impl TcpBindingsTypes for BindingsCtx {
             zx_socket: Arc::clone(&socket),
             rx_task_sender,
             tx_task_sender,
+            data_notifier: None,
         }
         .into_buffers(buffer_sizes);
         let returned_buffers = PeerZirconSocketAndTaskData {
@@ -149,6 +152,7 @@ struct BindingData<I: IpExt> {
     peer: zx::Socket,
     task_data: Option<TaskSpawnData>,
     task_control: Option<TaskControl>,
+    data_notifier: Option<DataNotifier>,
 }
 
 #[derive(Debug)]
@@ -205,7 +209,11 @@ impl<I> BindingData<I>
 where
     I: IpExt,
 {
-    fn new(ctx: &mut Ctx, properties: SocketWorkerProperties) -> Self {
+    fn new(
+        ctx: &mut Ctx,
+        properties: SocketWorkerProperties,
+        wake_group: Option<WakeGroupId>,
+    ) -> Self {
         let (local, peer) = zx::Socket::create_stream();
         let local = Arc::new(local);
         let SocketWorkerProperties {} = properties;
@@ -213,16 +221,34 @@ where
         let (rx_task_sender, rx_task_receiver) = mpsc::unbounded();
         let (tx_task_sender, tx_task_receiver) = oneshot::channel();
 
+        let data_notifier = wake_group.as_ref().and_then(|group| {
+            if let Some(notifier) = ctx.bindings_ctx().wake_groups.get_data_notifier(&group) {
+                Some(notifier)
+            } else {
+                warn!("could not attach socket to nonexistent wake group {group:?}");
+                None
+            }
+        });
+
         let id = ctx.api().tcp::<I>().create(UnconnectedSocketData {
             zx_socket: Arc::clone(&local),
             tx_task_sender,
             rx_task_sender,
+            data_notifier: data_notifier.clone(),
         });
+
+        if let Some(group) = wake_group
+            && data_notifier.is_some()
+        {
+            debug!("attaching socket {id:?} to wake group {group:?}");
+        }
+
         Self {
             id,
             peer,
             task_data: Some(TaskSpawnData { socket: local, tx_task_receiver, rx_task_receiver }),
             task_control: None,
+            data_notifier,
         }
     }
 }
@@ -234,7 +260,7 @@ impl CloseResponder for fposix_socket::StreamSocketCloseResponder {
 }
 
 enum InitialSocketState {
-    Unbound(fposix_socket::SocketCreationOptions),
+    Unbound(Option<fidl_fuchsia_net::Marks>),
     Connected,
 }
 
@@ -247,23 +273,8 @@ impl<I: IpExt + IpSockAddrExt> worker::SocketWorkerHandler for BindingData<I> {
 
     fn setup(&mut self, ctx: &mut Ctx, args: InitialSocketState) {
         match args {
-            InitialSocketState::Unbound(fposix_socket::SocketCreationOptions {
-                marks,
-                group,
-                __source_breaking: _,
-            }) => {
+            InitialSocketState::Unbound(marks) => {
                 let Self { id, .. } = self;
-
-                if let Some(group) = group {
-                    let group = crate::bindings::waker::WakeGroupId::from(group);
-                    if let Some(notifier) = ctx.bindings_ctx().wake_groups.get_data_notifier(&group)
-                    {
-                        debug!("attaching socket {id:?} to wake group {group:?}");
-                        ctx.api().tcp().set_data_notifier(&id, notifier);
-                    } else {
-                        warn!("could not attach socket to nonexistent wake group {group:?}");
-                    }
-                }
 
                 for (domain, mark) in
                     marks.into_iter().map(fidl_fuchsia_net_ext::Marks::from).flatten()
@@ -276,7 +287,7 @@ impl<I: IpExt + IpSockAddrExt> worker::SocketWorkerHandler for BindingData<I> {
                 }
             }
             InitialSocketState::Connected => {
-                let Self { id, peer: _, task_data, task_control } = self;
+                let Self { id, peer: _, task_data, task_control, data_notifier: _ } = self;
                 let task_data =
                     task_data.take().expect("connected socket did not provide socket and watcher");
                 let control = spawn_tasks(ctx.clone(), id.clone(), task_data);
@@ -294,7 +305,7 @@ impl<I: IpExt + IpSockAddrExt> worker::SocketWorkerHandler for BindingData<I> {
     }
 
     async fn close(self, ctx: &mut Ctx) {
-        let Self { id, peer: _, task_data: _, task_control } = self;
+        let Self { id, peer: _, task_data: _, task_control, data_notifier: _ } = self;
         // We must shutdown the sender side before calling close so all the
         // pending bytes in the zircon socket are flushed and available to core
         // during the close procedure.
@@ -312,15 +323,19 @@ pub(super) fn spawn_worker(
     request_stream: fposix_socket::StreamSocketRequestStream,
     creation_opts: fposix_socket::SocketCreationOptions,
 ) {
+    let fposix_socket::SocketCreationOptions { marks, group, __source_breaking } = creation_opts;
+
     match (domain, proto) {
         (fposix_socket::Domain::Ipv4, fposix_socket::StreamSocketProtocol::Tcp) => {
             fasync::Scope::current().spawn_request_stream_handler(request_stream, |rs| {
                 SocketWorker::serve_stream_with(
                     ctx,
-                    BindingData::<Ipv4>::new,
+                    |ctx, properties| {
+                        BindingData::<Ipv4>::new(ctx, properties, group.map(Into::into))
+                    },
                     SocketWorkerProperties {},
                     rs,
-                    InitialSocketState::Unbound(creation_opts),
+                    InitialSocketState::Unbound(marks),
                 )
             })
         }
@@ -328,10 +343,12 @@ pub(super) fn spawn_worker(
             fasync::Scope::current().spawn_request_stream_handler(request_stream, |rs| {
                 SocketWorker::serve_stream_with(
                     ctx,
-                    BindingData::<Ipv6>::new,
+                    |ctx, properties| {
+                        BindingData::<Ipv6>::new(ctx, properties, group.map(Into::into))
+                    },
                     SocketWorkerProperties {},
                     rs,
-                    InitialSocketState::Unbound(creation_opts),
+                    InitialSocketState::Unbound(marks),
                 )
             })
         }
@@ -457,7 +474,10 @@ struct RequestHandler<'a, I: IpExt> {
 #[netstack3_core::context_ip_bounds(I, BindingsCtx)]
 impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
     fn bind(self, addr: fnet::SocketAddress) -> Result<(), ErrnoError> {
-        let Self { data: BindingData { id, peer: _, task_data: _, task_control: _ }, ctx } = self;
+        let Self {
+            data: BindingData { id, peer: _, task_data: _, task_control: _, data_notifier: _ },
+            ctx,
+        } = self;
         let addr = I::SocketAddress::from_sock_addr(addr)?;
         let (addr, port) =
             addr.try_into_core_with_ctx(ctx.bindings_ctx()).map_err(IntoErrno::into_errno_error)?;
@@ -469,7 +489,10 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
     }
 
     fn connect(self, addr: fnet::SocketAddress) -> Result<(), ErrnoError> {
-        let Self { data: BindingData { id, peer: _, task_data: _, task_control }, ctx } = self;
+        let Self {
+            data: BindingData { id, peer: _, task_data: _, task_control, data_notifier: _ },
+            ctx,
+        } = self;
 
         let addr = I::SocketAddress::from_sock_addr(addr)?;
         let (ip, remote_port) =
@@ -487,7 +510,10 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
     }
 
     fn listen(self, backlog: i16) -> Result<(), ErrnoError> {
-        let Self { data: BindingData { id, peer: _, task_data: _, task_control: _ }, ctx } = self;
+        let Self {
+            data: BindingData { id, peer: _, task_data: _, task_control: _, data_notifier: _ },
+            ctx,
+        } = self;
         // The POSIX specification for `listen` [1] says
         //
         //   If listen() is called with a backlog argument value that is
@@ -515,7 +541,10 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
     }
 
     fn get_sock_name(self) -> Result<fnet::SocketAddress, ErrnoError> {
-        let Self { data: BindingData { id, peer: _, task_data: _, task_control: _ }, ctx } = self;
+        let Self {
+            data: BindingData { id, peer: _, task_data: _, task_control: _, data_notifier: _ },
+            ctx,
+        } = self;
         let fidl = match ctx.api().tcp().get_info(id) {
             SocketInfo::Unbound(UnboundInfo { device: _ }) => {
                 Ok(<<I as IpSockAddrExt>::SocketAddress as SockAddr>::UNSPECIFIED)
@@ -532,7 +561,10 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
     }
 
     fn get_peer_name(self) -> Result<fnet::SocketAddress, ErrnoError> {
-        let Self { data: BindingData { id, peer: _, task_data: _, task_control: _ }, ctx } = self;
+        let Self {
+            data: BindingData { id, peer: _, task_data: _, task_control: _, data_notifier: _ },
+            ctx,
+        } = self;
         match ctx.api().tcp().get_info(id) {
             SocketInfo::Unbound(_) | SocketInfo::Bound(_) => Err(ErrnoError::new(
                 fposix::Errno::Enotconn,
@@ -554,10 +586,24 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
         (Option<fnet::SocketAddress>, ClientEnd<fposix_socket::StreamSocketMarker>),
         ErrnoError,
     > {
-        let Self { data: BindingData { id, peer: _, task_data: _, task_control: _ }, ctx } = self;
+        let Self {
+            data: BindingData { id, peer: _, task_data: _, task_control: _, data_notifier },
+            ctx,
+        } = self;
 
         let (accepted, addr, peer) =
             ctx.api().tcp().accept(id).map_err(IntoErrno::into_errno_error)?;
+
+        // Inherit the wake group notifier from the listening socket on accepting. From
+        // this point on, the accepted connected socket can signal the wake group of
+        // incoming data.
+        if let Some(notifier) = data_notifier {
+            let _: Option<()> =
+                ctx.api().tcp().with_receive_buffer(&accepted, |buffer: &mut CoreReceiveBuffer| {
+                    buffer.set_notifier(notifier.clone());
+                });
+        }
+
         let addr = addr
             .map_zone(AllowBindingIdFromWeak)
             .into_fidl_with_ctx(ctx.bindings_ctx())
@@ -571,7 +617,10 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
     }
 
     fn get_error(self) -> Result<(), ErrnoError> {
-        let Self { data: BindingData { id, peer: _, task_data: _, task_control: _ }, ctx } = self;
+        let Self {
+            data: BindingData { id, peer: _, task_data: _, task_control: _, data_notifier: _ },
+            ctx,
+        } = self;
         match ctx.api().tcp().get_socket_error(id) {
             Some(err) => Err(err.into_errno_error()),
             None => Ok(()),
@@ -579,7 +628,10 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
     }
 
     async fn shutdown(self, mode: fposix_socket::ShutdownMode) -> Result<(), ErrnoError> {
-        let Self { data: BindingData { id, peer, task_data: _, task_control }, ctx } = self;
+        let Self {
+            data: BindingData { id, peer, task_data: _, task_control, data_notifier: _ },
+            ctx,
+        } = self;
         let shutdown_recv = mode.contains(fposix_socket::ShutdownMode::READ);
         let shutdown_send = mode.contains(fposix_socket::ShutdownMode::WRITE);
         let shutdown_type = ShutdownType::from_send_receive(shutdown_send, shutdown_recv)
@@ -614,7 +666,10 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
     }
 
     fn set_bind_to_device(self, device: Option<&str>) -> Result<(), ErrnoError> {
-        let Self { data: BindingData { id, peer: _, task_data: _, task_control: _ }, ctx } = self;
+        let Self {
+            data: BindingData { id, peer: _, task_data: _, task_control: _, data_notifier: _ },
+            ctx,
+        } = self;
         let device = device
             .map(|name| {
                 ctx.bindings_ctx().devices.get_device_by_name(name).ok_or_else(|| {
@@ -627,7 +682,10 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
     }
 
     fn bind_to_device_index(self, device: u64) -> Result<(), ErrnoError> {
-        let Self { ctx, data: BindingData { id, peer: _, task_data: _, task_control: _ } } = self;
+        let Self {
+            ctx,
+            data: BindingData { id, peer: _, task_data: _, task_control: _, data_notifier: _ },
+        } = self;
 
         // If `device` is 0, then this will clear the bound device.
         let device: Option<DeviceId<_>> = NonZeroU64::new(device)
@@ -645,14 +703,20 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
     }
 
     fn set_send_buffer_size(self, new_size: u64) {
-        let Self { data: BindingData { id, peer: _, task_data: _, task_control: _ }, ctx } = self;
+        let Self {
+            data: BindingData { id, peer: _, task_data: _, task_control: _, data_notifier: _ },
+            ctx,
+        } = self;
         let new_size =
             usize::try_from(new_size).ok_checked::<TryFromIntError>().unwrap_or(usize::MAX);
         ctx.api().tcp().set_send_buffer_size(id, new_size);
     }
 
     fn send_buffer_size(self) -> u64 {
-        let Self { data: BindingData { id, peer: _, task_data: _, task_control: _ }, ctx } = self;
+        let Self {
+            data: BindingData { id, peer: _, task_data: _, task_control: _, data_notifier: _ },
+            ctx,
+        } = self;
         ctx.api()
             .tcp()
             .send_buffer_size(id)
@@ -665,14 +729,20 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
     }
 
     fn set_receive_buffer_size(self, new_size: u64) {
-        let Self { data: BindingData { id, peer: _, task_data: _, task_control: _ }, ctx } = self;
+        let Self {
+            data: BindingData { id, peer: _, task_data: _, task_control: _, data_notifier: _ },
+            ctx,
+        } = self;
         let new_size =
             usize::try_from(new_size).ok_checked::<TryFromIntError>().unwrap_or(usize::MAX);
         ctx.api().tcp().set_receive_buffer_size(id, new_size);
     }
 
     fn receive_buffer_size(self) -> u64 {
-        let Self { data: BindingData { id, peer: _, task_data: _, task_control: _ }, ctx } = self;
+        let Self {
+            data: BindingData { id, peer: _, task_data: _, task_control: _, data_notifier: _ },
+            ctx,
+        } = self;
         ctx.api()
             .tcp()
             .receive_buffer_size(id)
@@ -685,12 +755,18 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
     }
 
     fn set_reuse_address(self, value: bool) -> Result<(), ErrnoError> {
-        let Self { data: BindingData { id, peer: _, task_data: _, task_control: _ }, ctx } = self;
+        let Self {
+            data: BindingData { id, peer: _, task_data: _, task_control: _, data_notifier: _ },
+            ctx,
+        } = self;
         ctx.api().tcp().set_reuseaddr(id, value).map_err(IntoErrno::into_errno_error)
     }
 
     fn reuse_address(self) -> bool {
-        let Self { data: BindingData { id, peer: _, task_data: _, task_control: _ }, ctx } = self;
+        let Self {
+            data: BindingData { id, peer: _, task_data: _, task_control: _, data_notifier: _ },
+            ctx,
+        } = self;
         ctx.api().tcp().reuseaddr(id)
     }
 
@@ -783,8 +859,10 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
         fposix_socket::StreamSocketCloseResponder,
         Option<fposix_socket::StreamSocketRequestStream>,
     > {
-        let Self { data: BindingData { id: _, peer, task_data: _, task_control: _ }, ctx: _ } =
-            self;
+        let Self {
+            data: BindingData { id: _, peer, task_data: _, task_control: _, data_notifier: _ },
+            ctx: _,
+        } = self;
         match request {
             fposix_socket::StreamSocketRequest::Bind { addr, responder } => {
                 responder
@@ -1380,12 +1458,12 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
     }
 
     fn with_socket_options_mut<R, F: FnOnce(&mut SocketOptions) -> R>(self, f: F) -> R {
-        let Self { data: BindingData { id, peer: _, task_data: _, task_control: _ }, ctx } = self;
+        let Self { data: BindingData { id, .. }, ctx } = self;
         ctx.api().tcp().with_socket_options_mut(id, f)
     }
 
     fn with_socket_options<R, F: FnOnce(&SocketOptions) -> R>(self, f: F) -> R {
-        let Self { data: BindingData { id, peer: _, task_data: _, task_control: _ }, ctx } = self;
+        let Self { data: BindingData { id, .. }, ctx } = self;
         ctx.api().tcp().with_socket_options(id, f)
     }
 }
@@ -1406,6 +1484,7 @@ fn spawn_connected_socket_task<I: IpExt + IpSockAddrExt>(
                 peer,
                 task_data: Some(task_data),
                 task_control: None,
+                data_notifier: None,
             },
             SocketWorkerProperties {},
             rs,

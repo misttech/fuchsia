@@ -35,11 +35,10 @@ use netstack3_base::testutil::{
     WithFakeTimerContext,
 };
 use netstack3_base::{
-    AddressResolutionFailed, CtxPair, DataNotifierTypes, DeferredResourceRemovalContext,
-    EventContext, FrameDestination, InstantBindingsTypes, InstantContext, IpDeviceAddr, LinkDevice,
-    Marks, MatcherBindingsTypes, NotFoundError, ReferenceNotifiers, RemoveResourceResult,
-    RngContext, TimerBindingsTypes, TimerContext, TimerHandler, TxMetadataBindingsTypes,
-    WorkQueueReport,
+    AddressResolutionFailed, CtxPair, DeferredResourceRemovalContext, EventContext,
+    FrameDestination, InstantBindingsTypes, InstantContext, IpDeviceAddr, LinkDevice, Marks,
+    MatcherBindingsTypes, NotFoundError, ReferenceNotifiers, RemoveResourceResult, RngContext,
+    TimerBindingsTypes, TimerContext, TimerHandler, TxMetadataBindingsTypes, WorkQueueReport,
 };
 use netstack3_device::ethernet::{
     EthernetCreationProperties, EthernetDeviceEvent, EthernetDeviceId, EthernetLinkDevice,
@@ -872,10 +871,6 @@ impl<T: Into<DispatchedEvent>> EventContext<T> for FakeBindingsCtx {
     fn on_event(&mut self, event: T) {
         self.with_inner_mut(|ctx| ctx.events.on_event(event.into()))
     }
-}
-
-impl DataNotifierTypes for FakeBindingsCtx {
-    type Notifier = ();
 }
 
 impl TcpBindingsTypes for FakeBindingsCtx {

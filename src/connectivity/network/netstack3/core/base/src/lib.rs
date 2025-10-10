@@ -21,7 +21,6 @@ extern crate alloc;
 mod context;
 mod convert;
 mod counters;
-mod data_notifier;
 mod data_structures;
 mod device;
 mod error;
@@ -48,7 +47,6 @@ pub use counters::{
     Counter, CounterCollection, CounterCollectionSpec, CounterContext, CounterRepr,
     ResourceCounterContext,
 };
-pub use data_notifier::{DataNotifier, DataNotifierTypes};
 pub use data_structures::token_bucket::TokenBucket;
 pub use device::address::{
     AssignedAddrIpExt, IpAddressId, IpDeviceAddr, IpDeviceAddressIdContext, Ipv4DeviceAddr,

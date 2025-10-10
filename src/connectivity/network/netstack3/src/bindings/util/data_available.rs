@@ -11,8 +11,6 @@ use std::task::Poll;
 use futures::Future;
 use futures::task::AtomicWaker;
 
-use crate::bindings::BindingsCtx;
-
 #[derive(Debug, Default)]
 struct DataAvailable {
     available: AtomicBool,
@@ -40,16 +38,6 @@ impl DataNotifier {
         if !prev {
             waker.wake();
         }
-    }
-}
-
-impl netstack3_core::DataNotifierTypes for BindingsCtx {
-    type Notifier = DataNotifier;
-}
-
-impl netstack3_core::DataNotifier for DataNotifier {
-    fn notify(&self) {
-        self.notify();
     }
 }
 
