@@ -569,7 +569,7 @@ TEST_F(NetlinkTest, IflaCacheInfoMissingBody) {
       .ifa_family = AF_INET6,
   });
   encoder.Write(nlattr{
-      // Correct size for address cache info is 16.
+      // Correct size for address cache info is 16 (+4 fo header).
       .nla_len = 4,
       .nla_type = IFA_CACHEINFO,
   });
@@ -630,6 +630,31 @@ TEST_F(NetlinkTest, HeaderOnlyMessageWithBadLength) {
               SyscallFailsWithErrno(EAGAIN));
   // Following message still works.
   CheckNetlinkAlive();
+}
+
+// Regression test for syzkaller finding on https://fxbug.dev/387662319.
+TEST_F(NetlinkTest, IncompleteRouteFlow) {
+  test_helper::NetlinkEncoder encoder(RTM_GETROUTE, NLM_F_REQUEST);
+  encoder.Write(rtmsg{
+      .rtm_family = AF_INET,
+  });
+  // Correct size for flow info is a u32.
+  uint16_t bad_attr = 0;
+  encoder.AddRtAttr(RTA_FLOW, bad_attr);
+  ASSERT_THAT(SendMsg(encoder), SyscallSucceeds());
+  struct {
+    nlmsghdr hdr;
+    nlmsgerr err;
+  } response;
+  ssize_t received = recv(nl_sock_.get(), &response, sizeof(response), 0);
+  ASSERT_THAT(received, SyscallSucceeds());
+  ASSERT_EQ(static_cast<size_t>(received), sizeof(response));
+  EXPECT_EQ(response.hdr.nlmsg_type, NLMSG_ERROR);
+  // Be a little lax on the exact error matching here. Starnix always returns
+  // EINVAL for validation errors, but linux can return different things. What
+  // matters for this test is that we got an error response back and didn't
+  // crash.
+  ASSERT_THAT(response.err.error, testing::AnyOf(testing::Eq(-EINVAL), testing::Eq(-ERANGE)));
 }
 
 }  // namespace

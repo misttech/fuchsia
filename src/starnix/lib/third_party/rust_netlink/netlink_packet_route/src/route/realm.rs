@@ -13,8 +13,8 @@ pub struct RouteRealm {
 
 impl RouteRealm {
     pub(crate) fn parse(buf: &[u8]) -> Result<Self, RouteError> {
-        let all = u32::from_ne_bytes([buf[0], buf[1], buf[2], buf[3]]);
         if buf.len() == RULE_REALM_LEN {
+            let all = u32::from_ne_bytes([buf[0], buf[1], buf[2], buf[3]]);
             Ok(Self { source: (all >> 16) as u16, destination: (all & 0xFFFF) as u16 })
         } else {
             Err(RouteError::InvalidRulePortRange { expected: RULE_REALM_LEN, got: buf.len() })
