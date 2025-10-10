@@ -1048,7 +1048,7 @@ TEST(StreamTestCase, ReadWriteShrinkRace) {
     });
 
     // Simultaneously try to truncate.
-    std::thread truncate_thread([&] { ASSERT_OK(vmo->vmo().set_size(kTruncateToSize)); });
+    std::thread truncate_thread([&] { ASSERT_OK(vmo->vmo().set_stream_size(kTruncateToSize)); });
 
     // Create a read that intersects with the truncate.
     std::thread read_thread([&] {
@@ -1125,8 +1125,7 @@ TEST(StreamTestCase, ContentSizeUpdatedOnPartialWrite) {
   ASSERT_TRUE(pager.Init());
 
   pager_tests::Vmo* vmo;
-  ASSERT_TRUE(pager.CreateVmoWithOptions(1, ZX_VMO_RESIZABLE | ZX_VMO_TRAP_DIRTY, &vmo));
-  ASSERT_OK(vmo->vmo().set_prop_content_size(0));
+  ASSERT_TRUE(pager.CreateUnboundedVmo(0, ZX_VMO_TRAP_DIRTY, &vmo));
 
   zx::stream stream;
   ASSERT_OK(
@@ -1392,7 +1391,7 @@ TEST(StreamTestCase, PartialVmoDirty) {
   pager_tests::UserPager pager;
   ASSERT_TRUE(pager.Init());
   pager_tests::Vmo* vmo;
-  ASSERT_TRUE(pager.CreateVmoWithOptions(1, ZX_VMO_RESIZABLE | ZX_VMO_TRAP_DIRTY, &vmo));
+  ASSERT_TRUE(pager.CreateUnboundedVmo(0, ZX_VMO_TRAP_DIRTY, &vmo));
   zx::stream stream;
   ASSERT_OK(
       zx::stream::create(ZX_STREAM_MODE_READ | ZX_STREAM_MODE_WRITE, vmo->vmo(), 0u, &stream));
