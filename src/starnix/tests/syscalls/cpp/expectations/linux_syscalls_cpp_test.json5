@@ -90,6 +90,9 @@
                 // TODO(https://fxbug.dev/448145721)
                 "FuseServerPermissionCheck/FuseServerPermissionCheck.PermissionCheck/9",
 
+                // TODO(https://fxbug.dev/450310239): Linux behavior on Machina (5.10x) isn't consistent with 6.x
+                "IcmpPingSocket.SetInvalid",
+
                 // TODO(https://fxbug.dev/437164575): Test needs to be reworked.
                 "InputTest.DevicePropertiesMatchKeyboardProperties",
                 "InputTest.DevicePropertiesMatchTouchProperties",
