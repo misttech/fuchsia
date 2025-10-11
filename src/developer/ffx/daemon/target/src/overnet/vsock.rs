@@ -19,10 +19,7 @@ const BUFFER_SIZE: usize = 4096;
 pub async fn spawn_vsock(cid: u32, node: Arc<overnet_core::Router>) {
     log::debug!(cid; "Spawning VSOCK host pipe");
     let addr = VsockAddr::new(cid, OVERNET_VSOCK_PORT);
-    #[cfg(not(target_os = "macos"))]
     let flags = SockFlag::SOCK_CLOEXEC | SockFlag::SOCK_NONBLOCK;
-    #[cfg(target_os = "macos")]
-    let flags = SockFlag::empty();
 
     let socket = match socket(AddressFamily::Vsock, SockType::Stream, flags, None) {
         Ok(s) => s,
@@ -31,18 +28,6 @@ pub async fn spawn_vsock(cid: u32, node: Arc<overnet_core::Router>) {
             return;
         }
     };
-
-    #[cfg(target_os = "macos")]
-    {
-        use nix::fcntl::{FcntlArg, OFlag, fcntl};
-
-        if let Err(error) =
-            fcntl(socket.as_raw_fd(), FcntlArg::F_SETFL(OFlag::O_NONBLOCK | OFlag::O_CLOEXEC))
-        {
-            log::warn!(cid, error:?; "Could not set O_CLOEXEC|O_NONBLOCK on VSOCK socket");
-            return;
-        }
-    }
 
     let socket = match tokio::io::unix::AsyncFd::new(socket) {
         Ok(s) => s,

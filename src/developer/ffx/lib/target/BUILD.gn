@@ -68,6 +68,7 @@ rustc_library("lib") {
     "src/ssh_connector.rs",
     "src/target_connector.rs",
     "src/usb_connector.rs",
+    "src/vsock_connector.rs",
   ]
 }
 

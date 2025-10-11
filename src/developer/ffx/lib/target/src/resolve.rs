@@ -28,10 +28,12 @@ use tokio::sync::Mutex;
 use crate::connection::Connection;
 use crate::ssh_connector::SshConnector;
 use crate::usb_connector::{UsbConnector, try_daemon_autostart};
+use crate::vsock_connector::VSockConnector;
 use crate::{UNSPECIFIED_TARGET_NAME, get_target_specifier};
 
 const CONFIG_TARGET_SSH_TIMEOUT: &str = "target.host_pipe_ssh_timeout";
 const CONFIG_ENABLE_USB: &str = "connectivity.enable_usb";
+const CONFIG_ENABLE_VSOCK: &str = "connectivity.enable_vsock";
 const CONFIG_ENABLE_NETWORK: &str = "connectivity.enable_network";
 const TARGET_DEFAULT_PORT: u16 = 22;
 const DEFAULT_SSH_TIMEOUT_MS: u64 = 10000;
@@ -854,8 +856,17 @@ impl Resolution {
                     .await
                     .map_err(|e| crate::KnockError::CriticalError(e.into()))?
             }
+            ResolutionTarget::Vsock(cid) => {
+                if !context.get(CONFIG_ENABLE_VSOCK).unwrap_or(false) {
+                    bail!("VSOCK connections are disabled");
+                }
+                let connector = VSockConnector::new(*cid);
+                emit_target_connection_event("VSOCK").await;
+                Connection::new(connector)
+                    .await
+                    .map_err(|e| crate::KnockError::CriticalError(e.into()))?
+            }
             ResolutionTarget::TestMock(f) => f()?,
-            ResolutionTarget::Vsock(_) => bail!("VSOCK not yet supported"),
             ResolutionTarget::Serial(_) => bail!("target resolved to serial, not socket_addr"),
         };
 
