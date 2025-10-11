@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use compat_info::{CompatibilityInfo, CompatibilityState};
 use ffx::{TargetIpAddrInfo, TargetIpPort};
-use ffx_config::EnvironmentContext;
+use ffx_config::{EnvironmentContext, keys};
 use ffx_daemon_core::events::{self, EventSynthesizer};
 use ffx_daemon_events::{TargetConnectionState, TargetEvent};
 use ffx_fastboot_connection_factory::{
@@ -52,9 +52,6 @@ pub use self::update::{TargetUpdate, TargetUpdateBuilder};
 
 const DEFAULT_SSH_PORT: u16 = 22;
 const CONFIG_HOST_PIPE_SSH_TIMEOUT: &str = "daemon.host_pipe_ssh_timeout";
-const CONFIG_ENABLE_VSOCK: &str = "connectivity.enable_vsock";
-const CONFIG_ENABLE_USB: &str = "connectivity.enable_usb";
-const CONFIG_ENABLE_NETWORK: &str = "connectivity.enable_network";
 
 pub(crate) type SharedIdentity = Rc<Identity>;
 pub(crate) type WeakIdentity = Weak<Identity>;
@@ -368,7 +365,7 @@ impl Target {
     }
 
     pub async fn init_usb_driver(context: &EnvironmentContext) {
-        if context.get(CONFIG_ENABLE_USB).unwrap_or(false) {
+        if context.get(keys::USB_ENABLED).unwrap_or(false) {
             let socket_path =
                 context.get::<PathBuf, _>(usb_driver_api::CONFIG_USB_SOCKET_PATH).ok();
             let socket_path = if let Some(socket_path) = socket_path {
@@ -1356,7 +1353,7 @@ impl Target {
 
                 target.addrs().into_iter().find_map(|addr| {
                     if let TargetAddr::VSockCtx(cid) = addr {
-                        if context_clone.get(CONFIG_ENABLE_VSOCK).unwrap_or(false) {
+                        if context_clone.get(keys::VSOCK_ENABLED).unwrap_or(false) {
                             Some((cid, None))
                         } else {
                             None
@@ -1418,7 +1415,7 @@ impl Target {
 
             emit_host_pipe_connection_event("SSH").await;
 
-            if !context_clone.get(CONFIG_ENABLE_NETWORK).unwrap_or(true) {
+            if !context_clone.get(keys::NETWORK_ENABLED).unwrap_or(true) {
                 log::debug!("Networking disabled, quitting host pipe");
                 return;
             }

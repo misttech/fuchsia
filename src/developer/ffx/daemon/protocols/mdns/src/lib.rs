@@ -4,7 +4,7 @@
 
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
-use ffx_config::EnvironmentContext;
+use ffx_config::{EnvironmentContext, keys};
 use ffx_stream_util::TryStreamUtilExt;
 use fidl::endpoints::ProtocolMarker;
 use fidl_fuchsia_developer_ffx as ffx;
@@ -20,7 +20,6 @@ use std::rc::Rc;
 // Default port to listen on for MDNS queries
 const MDNS_PORT: u16 = 5353;
 const CONFIG_ENABLE_MDNS: &str = "discovery.mdns.enabled";
-const CONFIG_ENABLE_NETWORK: &str = "connectivity.enable_network";
 
 #[ffx_protocol]
 #[derive(Default)]
@@ -39,7 +38,7 @@ struct ConfigLoader {
 #[async_trait(?Send)]
 impl MdnsEnabledChecker for ConfigLoader {
     async fn enabled(&self) -> bool {
-        if self.context.get(CONFIG_ENABLE_NETWORK).unwrap_or(true) {
+        if self.context.get(keys::NETWORK_ENABLED).unwrap_or(true) {
             self.context.get(CONFIG_ENABLE_MDNS).unwrap_or(true)
         } else {
             false

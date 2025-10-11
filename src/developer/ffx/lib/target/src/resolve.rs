@@ -9,7 +9,7 @@ use discovery::{
     TargetHandle, TargetState,
 };
 use ffx_command_error::{NonFatalError, user_error};
-use ffx_config::{EnvironmentContext, TryFromEnvContext};
+use ffx_config::{EnvironmentContext, TryFromEnvContext, keys};
 use fidl_fuchsia_developer_ffx::{self as ffx};
 use fidl_fuchsia_developer_remotecontrol::{IdentifyHostResponse, RemoteControlProxy};
 use fuchsia_async::TimeoutExt;
@@ -32,9 +32,7 @@ use crate::vsock_connector::VSockConnector;
 use crate::{UNSPECIFIED_TARGET_NAME, get_target_specifier};
 
 const CONFIG_TARGET_SSH_TIMEOUT: &str = "target.host_pipe_ssh_timeout";
-const CONFIG_ENABLE_USB: &str = "connectivity.enable_usb";
-const CONFIG_ENABLE_VSOCK: &str = "connectivity.enable_vsock";
-const CONFIG_ENABLE_NETWORK: &str = "connectivity.enable_network";
+
 const TARGET_DEFAULT_PORT: u16 = 22;
 const DEFAULT_SSH_TIMEOUT_MS: u64 = 10000;
 const DISCOVERY_CACHE_DIR_CONFIG: &str = "target.discovery_cache_dir";
@@ -525,11 +523,11 @@ pub fn get_discovery_stream(
     if usb {
         sources = sources | DiscoverySources::USB_FASTBOOT;
 
-        if ctx.get(CONFIG_ENABLE_USB).unwrap_or(false) {
+        if ctx.get(keys::USB_ENABLED).unwrap_or(false) {
             sources = sources | DiscoverySources::USB_VSOCK;
         }
     }
-    if mdns && ctx.get(CONFIG_ENABLE_NETWORK).unwrap_or(true) {
+    if mdns && ctx.get(keys::NETWORK_ENABLED).unwrap_or(true) {
         sources = sources | DiscoverySources::MDNS;
     }
     get_discovery_stream_with_sources(query, sources, use_cache, ctx.clone())
@@ -551,11 +549,11 @@ pub async fn get_discovered_targets(
     if usb {
         sources = sources | DiscoverySources::USB_FASTBOOT;
 
-        if ctx.get(CONFIG_ENABLE_USB).unwrap_or(false) {
+        if ctx.get(keys::USB_ENABLED).unwrap_or(false) {
             sources = sources | DiscoverySources::USB_VSOCK;
         }
     }
-    if mdns && ctx.get(CONFIG_ENABLE_NETWORK).unwrap_or(true) {
+    if mdns && ctx.get(keys::NETWORK_ENABLED).unwrap_or(true) {
         sources = sources | DiscoverySources::MDNS;
     }
     // Get nodename, in case we're trying to find an exact match
@@ -570,10 +568,10 @@ impl TargetResolver for DefaultTargetResolver {
         ctx: EnvironmentContext,
     ) -> Result<Vec<TargetHandle>> {
         let mut sources = DiscoverySources::all();
-        if !ctx.get(CONFIG_ENABLE_USB).unwrap_or(false) {
+        if !ctx.get(keys::USB_ENABLED).unwrap_or(false) {
             sources.remove(DiscoverySources::USB_VSOCK);
         }
-        if !ctx.get(CONFIG_ENABLE_NETWORK).unwrap_or(true) {
+        if !ctx.get(keys::NETWORK_ENABLED).unwrap_or(true) {
             sources.remove(DiscoverySources::MDNS);
         }
         get_discovered_targets_with_sources(query, sources, self.use_cache, ctx).await
@@ -834,7 +832,7 @@ impl Resolution {
 
         let conn = match &self.target {
             ResolutionTarget::Addr(socket_addr) => {
-                if !context.get(CONFIG_ENABLE_NETWORK).unwrap_or(true) {
+                if !context.get(keys::NETWORK_ENABLED).unwrap_or(true) {
                     bail!("Network connections are disabled");
                 }
                 let connector = SshConnector::new(
@@ -847,7 +845,7 @@ impl Resolution {
                     .map_err(|e| crate::KnockError::CriticalError(e.into()))?
             }
             ResolutionTarget::Usb(cid) => {
-                if !context.get(CONFIG_ENABLE_USB).unwrap_or(false) {
+                if !context.get(keys::USB_ENABLED).unwrap_or(false) {
                     bail!("USB connections are disabled");
                 }
                 let connector = UsbConnector::new(*cid, context).await?;
@@ -857,7 +855,7 @@ impl Resolution {
                     .map_err(|e| crate::KnockError::CriticalError(e.into()))?
             }
             ResolutionTarget::Vsock(cid) => {
-                if !context.get(CONFIG_ENABLE_VSOCK).unwrap_or(false) {
+                if !context.get(keys::VSOCK_ENABLED).unwrap_or(false) {
                     bail!("VSOCK connections are disabled");
                 }
                 let connector = VSockConnector::new(*cid);
