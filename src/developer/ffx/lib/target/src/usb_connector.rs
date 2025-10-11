@@ -24,15 +24,11 @@ const CONFIG_START_DRIVER: &str = "connectivity.usb_driver_autostart";
 pub struct UsbConnector {
     driver: usb_driver_api::Driver,
     cid: u32,
-    env_context: EnvironmentContext,
 }
 
 impl Debug for UsbConnector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("UsbConnector")
-            .field("cid", &self.cid)
-            .field("env_context", &self.env_context)
-            .finish()
+        f.debug_struct("UsbConnector").field("cid", &self.cid).finish()
     }
 }
 
@@ -50,7 +46,7 @@ impl UsbConnector {
         try_daemon_autostart(&socket_path, env_context);
 
         let driver = usb_driver_api::Driver::init(socket_path).await?;
-        Ok(Self { driver, cid, env_context: env_context.clone() })
+        Ok(Self { driver, cid })
     }
 }
 
@@ -96,7 +92,7 @@ impl TryFromEnvContext for UsbConnector {
             let resolution = Resolution::try_from_env_context(env).await?;
             let cid = resolution.usb_cid().ok_or_else(|| {
                 ffx_command_error::user_error!(
-                    "query did not resolve an IP address. Resolved the following: {:?}",
+                    "query did not resolve a USB CID. Resolved the following: {:?}",
                     resolution,
                 )
             })?;
