@@ -896,6 +896,8 @@ class_permission_enum! {
     #[derive(Clone, Debug, Eq, Hash, PartialEq)]
     NetlinkRouteSocketPermission extends CommonSocketPermission {
         // keep-sorted start
+        /// Permission for nlmsg xperms.
+        Nlmsg("nlmsg"),
         /// Permission to read the kernel routing table.
         NlmsgRead("nlmsg_read"),
         /// Permission to write to the kernel routing table.
@@ -918,6 +920,8 @@ class_permission_enum! {
     #[derive(Clone, Debug, Eq, Hash, PartialEq)]
     NetlinkTcpDiagSocketPermission extends CommonSocketPermission {
         // keep-sorted start
+        /// Permission for nlmsg xperms.
+        Nlmsg("nlmsg"),
         /// Permission to request information about a protocol.
         NlmsgRead("nlmsg_read"),
         /// Permission to write netlink message.
@@ -940,6 +944,8 @@ class_permission_enum! {
     #[derive(Clone, Debug, Eq, Hash, PartialEq)]
     NetlinkXfrmSocketPermission extends CommonSocketPermission {
         // keep-sorted start
+        /// Permission for nlmsg xperms.
+        Nlmsg("nlmsg"),
         /// Permission to get IPSec configuration information.
         NlmsgRead("nlmsg_read"),
         /// Permission to set IPSec configuration information.
@@ -970,6 +976,8 @@ class_permission_enum! {
     #[derive(Clone, Debug, Eq, Hash, PartialEq)]
     NetlinkAuditSocketPermission extends CommonSocketPermission {
         // keep-sorted start
+        /// Permission for nlmsg xperms.
+        Nlmsg("nlmsg"),
         /// Permission to query status of audit service.
         NlmsgRead("nlmsg_read"),
         /// Permission to list auditing configuration rules.
