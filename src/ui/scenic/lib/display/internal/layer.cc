@@ -56,6 +56,15 @@ void Layer::SetColorConfig(const WireColor& color, const Rectangle& display_dest
   draft_wait_event_ = kInvalidEventId;
 }
 
+void Layer::UnsetImage(const ImageId& image_id) {
+  if (applied_image_ == image_id) {
+    applied_image_ = kInvalidImageId;
+  }
+  if (draft_image_ == image_id) {
+    draft_image_ = kInvalidImageId;
+  }
+}
+
 size_t Layer::SendDiffsToCoordinator(
     const LayerId& layer_id,
     fidl::WireSharedClient<fuchsia_hardware_display::Coordinator>& shared_coordinator) {

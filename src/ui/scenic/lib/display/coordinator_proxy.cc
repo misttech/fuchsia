@@ -104,6 +104,15 @@ void CoordinatorProxy::ReleaseImage(const ImageId& image_id) {
   FX_DCHECK(images_.erase(image_id)) << "Expected to find image_id=" << image_id.value();
   UpdateCurrentImageCount();
 
+  // TODO(https://fxbug.dev/449807074): this shouldn't be necessary, but due to the workaround for
+  // this issue in `Layer::SendImageLayerDiffsToCoordinator()` we can sometimes resend
+  // `SetLayerImage2()` with an `image_id` that has already been release.  This causes the
+  // coordinator to kill Scenic's connection.  Consider removing this workaround after 449807074 is
+  // fixed; we might want to leave it because it's cheap compared to the FIDL call anyway.
+  for (auto& [_, layer] : layers_) {
+    layer.UnsetImage(image_id);
+  }
+
   fidl::OneWayStatus result = coordinator_.sync()->ReleaseImage(image_id.ToFidl());
   if (!result.ok()) {
     FX_LOGS(ERROR) << "Failed to call FIDL ReleaseImage method: " << result.status_string();

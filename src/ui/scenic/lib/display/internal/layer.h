@@ -63,6 +63,9 @@ class Layer {
   // Modifies the layer's draft state; no FIDL methods are invoked.
   void SetColorConfig(const WireColor& color, const Rectangle& display_destination);
 
+  // If either the draft or applied state includes `image_id`, replace with `kInvalidImageId`.
+  void UnsetImage(const ImageId& image_id);
+
   // Compute the diffs between the draft and applied states, and make only the necessary FIDL calls
   // to make the Coordinator's draft state match this layer's draft state.  Returns the number of
   // FIDL API calls that were sent.
