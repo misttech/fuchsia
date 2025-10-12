@@ -150,7 +150,6 @@ impl Features {
                         default_ns_mount_options,
                         mlock_always_onfault,
                         mlock_pin_flavor,
-                        netstack_mark,
                         crash_report_throttling,
                         wifi,
                         cached_zx_map_info_bytes,
@@ -255,7 +254,6 @@ impl Features {
                     inspect_node.record_bool("mlock_always_onfault", *mlock_always_onfault);
                     inspect_node
                         .record_string("mlock_pin_flavor", format!("{:?}", mlock_pin_flavor));
-                    inspect_node.record_bool("netstack_mark", *netstack_mark);
                     inspect_node.record_bool("wifi", *wifi);
                 });
             }
@@ -345,7 +343,6 @@ pub fn parse_features(
             }
             (Feature::Nanohub, _) => features.nanohub = true,
             (Feature::Fastrpc, _) => features.fastrpc = true,
-            (Feature::NetstackMark, _) => features.kernel.netstack_mark = true,
             (Feature::NetworkManager, _) => features.network_manager = true,
             (Feature::Gfxstream, _) => features.gfxstream = true,
             (Feature::Bpf, Some(version)) => features.kernel.bpf_v2 = version == "v2",

@@ -16,7 +16,6 @@
             "io_uring",
             "kgsl",
             "magma_supported_vendors:0x13B5,0x5143,0x8086",
-            "netstack_mark",
             "ping_group_range:0,4294967294",
             "test_data",
 

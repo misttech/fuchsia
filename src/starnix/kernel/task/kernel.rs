@@ -112,9 +112,6 @@ pub struct KernelFeatures {
     /// Implementation of mlock() to use for this kernel instance.
     pub mlock_pin_flavor: MlockPinFlavor,
 
-    /// Allows the netstack to mark packets/sockets.
-    pub netstack_mark: bool,
-
     /// Whether excessive crash reports should be throttled.
     pub crash_report_throttling: bool,
 
@@ -392,7 +389,7 @@ impl Kernel {
         let network_manager = NetworkManagerHandle::new_with_inspect(&inspect_node);
         let hrtimer_manager = HrTimerManager::new(&inspect_node);
 
-        let iptables = OrderedRwLock::new(IpTables::new(features.netstack_mark));
+        let iptables = OrderedRwLock::new(IpTables::new(true /* allow mark target */));
 
         let this = Arc::new_cyclic(|kernel| Kernel {
             weak_self: kernel.clone(),
@@ -689,8 +686,7 @@ impl Kernel {
             // using netstack marks. In that case, the starnix has the marks
             // locally and the netstack is not aware of the marks and needs
             // to use main table for routing.
-            let feature_flags =
-                netlink::FeatureFlags { copy_routes_to_main_table: !self.features.netstack_mark };
+            let feature_flags = netlink::FeatureFlags { copy_routes_to_main_table: false };
             let kernel = self.clone();
             self.kthreads.spawn_future(async move {
                 netlink::run_netlink_worker(

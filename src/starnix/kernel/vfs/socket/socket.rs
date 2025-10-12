@@ -23,13 +23,12 @@ use starnix_uapi::errors::{ENOTTY, Errno};
 use starnix_uapi::user_address::MappingMultiArchUserRef;
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    SO_DOMAIN, SO_MARK, SO_PROTOCOL, SO_RCVTIMEO, SO_SNDTIMEO, SO_TYPE, SOL_SOCKET, errno, error,
-    uapi,
+    SO_DOMAIN, SO_PROTOCOL, SO_RCVTIMEO, SO_SNDTIMEO, SO_TYPE, SOL_SOCKET, errno, error, uapi,
 };
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use zerocopy::{FromBytes, IntoBytes};
+use zerocopy::FromBytes;
 
 pub const DEFAULT_LISTEN_BACKLOG: usize = 1024;
 
@@ -264,11 +263,6 @@ struct SocketState {
 
     /// The value for SO_SNDTIMEO.
     send_timeout: Option<zx::MonotonicDuration>,
-
-    /// The socket's mark. Can get and set with SO_MARK.
-    // TODO(https://fxbug.dev/410631890): Remove this when the netstack handles
-    // socket marks.
-    mark: u32,
 
     /// Reference to the [`crate::vfs::FsNode`] to which this `Socket` is attached.
     /// `None` until the `Socket` is wrapped into a [`crate::vfs::FileObject`] (e.g. while it is
@@ -558,12 +552,6 @@ impl Socket {
         match (level, optname) {
             (SOL_SOCKET, SO_RCVTIMEO) => self.state.lock().receive_timeout = read_timeval()?,
             (SOL_SOCKET, SO_SNDTIMEO) => self.state.lock().send_timeout = read_timeval()?,
-            // When the feature isn't enabled, we use the local state to store
-            // the mark, otherwise the default branch will let netstack handle
-            // the mark.
-            (SOL_SOCKET, SO_MARK) if !current_task.task.kernel().features.netstack_mark => {
-                self.state.lock().mark = optval.read(current_task)?
-            }
             _ => self.ops.setsockopt(locked, self, current_task, level, optname, optval)?,
         }
         Ok(())
@@ -599,12 +587,6 @@ impl Socket {
                     let duration = self.send_timeout().unwrap_or_default();
                     TimeValPtr::into_bytes(current_task, timeval_from_duration(duration))
                         .map_err(|_| errno!(EINVAL))?
-                }
-                // When the feature isn't enabled, we get the mark from the local
-                // state, otherwise the default branch will let netstack handle
-                // the mark.
-                SO_MARK if !current_task.task.kernel().features.netstack_mark => {
-                    self.state.lock().mark.as_bytes().to_owned()
                 }
                 _ => self.ops.getsockopt(locked, self, current_task, level, optname, optlen)?,
             },

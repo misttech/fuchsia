@@ -126,14 +126,10 @@ impl ZxioBackedSocket {
         socket_type: SocketType,
         protocol: SocketProtocol,
     ) -> Result<ZxioBackedSocket, Errno> {
-        let marks = if current_task.kernel().features.netstack_mark {
-            &mut [
-                ZxioSocketMark::so_mark(0),
-                ZxioSocketMark::uid(current_task.with_current_creds(|creds| creds.uid)),
-            ]
-        } else {
-            &mut [][..]
-        };
+        let marks = &mut [
+            ZxioSocketMark::so_mark(0),
+            ZxioSocketMark::uid(current_task.with_current_creds(|creds| creds.uid)),
+        ];
 
         match (domain, socket_type, protocol) {
             (SocketDomain::Inet, SocketType::Datagram, SocketProtocol::ICMP)

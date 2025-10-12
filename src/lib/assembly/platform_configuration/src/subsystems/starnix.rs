@@ -67,11 +67,7 @@ impl DefineSubsystemConfiguration<PlatformStarnixConfig> for StarnixSubsystem {
                     },
                     [
                         match socket_mark {
-                            SocketMarkTreatment::StarnixOnly => None,
-                            SocketMarkTreatment::SharedWithNetstack => Some(FeatureAndArgs {
-                                feature: Feature::NetstackMark,
-                                raw_args: None,
-                            }),
+                            SocketMarkTreatment::SharedWithNetstack => None,
                         },
                         match network_manager {
                             NetworkManagerTreatment::Disabled => None,
