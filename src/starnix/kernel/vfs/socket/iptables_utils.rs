@@ -540,15 +540,12 @@ pub struct IptReplaceParser {
 
     /// Keeps track of byte offsets of entries parsed so far. Used to check for errors.
     entry_offsets: HashSet<usize>,
-
-    /// Allows the mark target to be used.
-    allow_mark_target: bool,
 }
 
 impl IptReplaceParser {
     /// Initialize a new parser and tries to parse an `ipt_replace` struct from the buffer.
     /// The rest of the buffer is left unparsed.
-    fn new_ipv4(bytes: Vec<u8>, allow_mark_target: bool) -> Result<Self, IpTableParseError> {
+    fn new_ipv4(bytes: Vec<u8>) -> Result<Self, IpTableParseError> {
         let (ipt_replace, _) = ipt_replace::read_from_prefix(&bytes)
             .map_err(|_| IpTableParseError::BufferTooSmallForMetadata { size: bytes.len() })?;
         let replace_info = ReplaceInfo::try_from(ipt_replace)?;
@@ -566,13 +563,12 @@ impl IptReplaceParser {
             bytes,
             parse_pos: IPT_REPLACE_SIZE,
             entry_offsets: HashSet::new(),
-            allow_mark_target,
         })
     }
 
     /// Initialize a new parser and tries to parse an `ip6t_replace` struct from the buffer.
     /// The rest of the buffer is left unparsed.
-    fn new_ipv6(bytes: Vec<u8>, allow_mark_target: bool) -> Result<Self, IpTableParseError> {
+    fn new_ipv6(bytes: Vec<u8>) -> Result<Self, IpTableParseError> {
         let (ip6t_replace, _) = ip6t_replace::read_from_prefix(&bytes)
             .map_err(|_| IpTableParseError::BufferTooSmallForMetadata { size: bytes.len() })?;
         let replace_info = ReplaceInfo::try_from(ip6t_replace)?;
@@ -590,7 +586,6 @@ impl IptReplaceParser {
             bytes,
             parse_pos: IP6T_REPLACE_SIZE,
             entry_offsets: HashSet::new(),
-            allow_mark_target,
         })
     }
 
@@ -823,9 +818,7 @@ impl IptReplaceParser {
 
             (TARGET_TPROXY, 1) => self.view_as_tproxy_target(remaining_size)?,
 
-            (TARGET_MARK, 2) if self.allow_mark_target => {
-                self.view_as_mark_target(remaining_size)?
-            }
+            (TARGET_MARK, 2) => self.view_as_mark_target(remaining_size)?,
 
             (target_name, revision) => {
                 log_debug!(
@@ -972,18 +965,12 @@ pub struct IpTable {
 }
 
 impl IpTable {
-    pub fn from_ipt_replace(
-        bytes: Vec<u8>,
-        allow_mark_target: bool,
-    ) -> Result<Self, IpTableParseError> {
-        Self::from_parser(IptReplaceParser::new_ipv4(bytes, allow_mark_target)?)
+    pub fn from_ipt_replace(bytes: Vec<u8>) -> Result<Self, IpTableParseError> {
+        Self::from_parser(IptReplaceParser::new_ipv4(bytes)?)
     }
 
-    pub fn from_ip6t_replace(
-        bytes: Vec<u8>,
-        allow_mark_target: bool,
-    ) -> Result<Self, IpTableParseError> {
-        Self::from_parser(IptReplaceParser::new_ipv6(bytes, allow_mark_target)?)
+    pub fn from_ip6t_replace(bytes: Vec<u8>) -> Result<Self, IpTableParseError> {
+        Self::from_parser(IptReplaceParser::new_ipv6(bytes)?)
     }
 
     fn from_parser(mut parser: IptReplaceParser) -> Result<Self, IpTableParseError> {
@@ -2548,13 +2535,13 @@ mod tests {
     }
 
     #[test_case(
-        IpTable::from_ipt_replace(ipv4_table_with_ip_matchers(), true).unwrap(),
+        IpTable::from_ipt_replace(ipv4_table_with_ip_matchers()).unwrap(),
         filter_namespace_v4(),
         IPV4_SUBNET;
         "ipv4"
     )]
     #[test_case(
-        IpTable::from_ip6t_replace(ipv6_table_with_ip_matchers(), true).unwrap(),
+        IpTable::from_ip6t_replace(ipv6_table_with_ip_matchers()).unwrap(),
         filter_namespace_v6(),
         IPV6_SUBNET;
         "ipv6"
@@ -2783,7 +2770,7 @@ mod tests {
 
     #[fuchsia::test]
     fn parse_match_extensions_test() {
-        let table = IpTable::from_ipt_replace(table_with_match_extensions(), true).unwrap();
+        let table = IpTable::from_ipt_replace(table_with_match_extensions()).unwrap();
 
         let expected_namespace = filter_namespace_v4();
         assert_eq!(table.namespace, expected_namespace);
@@ -2999,12 +2986,12 @@ mod tests {
     }
 
     #[test_case(
-        IpTable::from_ipt_replace(ipv4_table_with_jump_target(), true).unwrap(),
+        IpTable::from_ipt_replace(ipv4_table_with_jump_target()).unwrap(),
         filter_namespace_v4();
         "ipv4"
     )]
     #[test_case(
-        IpTable::from_ip6t_replace(ipv6_table_with_jump_target(), true).unwrap(),
+        IpTable::from_ip6t_replace(ipv6_table_with_jump_target()).unwrap(),
         filter_namespace_v6();
         "ipv6"
     )]
@@ -3575,13 +3562,13 @@ mod tests {
     }
 
     #[test_case(
-        IpTable::from_ipt_replace(ipv4_table_with_redirect_and_tproxy(), true).unwrap(),
+        IpTable::from_ipt_replace(ipv4_table_with_redirect_and_tproxy()).unwrap(),
         nat_namespace_v4(),
         IPV4_ADDR;
         "ipv4"
     )]
     #[test_case(
-        IpTable::from_ip6t_replace(ipv6_table_with_redirect_and_tproxy(), true).unwrap(),
+        IpTable::from_ip6t_replace(ipv6_table_with_redirect_and_tproxy()).unwrap(),
         nat_namespace_v6(),
         IPV6_ADDR;
         "ipv6"
@@ -3868,16 +3855,17 @@ mod tests {
         mangle_namespace_v6(); "ipv6"
     )]
     fn parse_mark_test(
-        parse_fn: fn(Vec<u8>, bool) -> Result<IpTable, IpTableParseError>,
+        parse_fn: fn(Vec<u8>) -> Result<IpTable, IpTableParseError>,
         xt_entry: &[u8],
         extend_with_standard_target: fn(&mut Vec<u8>, i32),
         extend_with_error_target: fn(&mut Vec<u8>, &str),
         expected_namespace: fnet_filter_ext::Namespace,
     ) {
-        let table = parse_fn(
-            ip_table_with_mark(xt_entry, extend_with_standard_target, extend_with_error_target),
-            true,
-        )
+        let table = parse_fn(ip_table_with_mark(
+            xt_entry,
+            extend_with_standard_target,
+            extend_with_error_target,
+        ))
         .unwrap();
 
         assert_eq!(table.namespace, expected_namespace);
@@ -4176,7 +4164,7 @@ mod tests {
         "chain with no policy"
     )]
     fn parse_table_error(bytes: Vec<u8>, expected_error: IpTableParseError) {
-        assert_eq!(IpTable::from_ipt_replace(bytes, true).unwrap_err(), expected_error);
+        assert_eq!(IpTable::from_ipt_replace(bytes).unwrap_err(), expected_error);
     }
 
     #[test_case(&[], Err(AsciiConversionError::NulByteNotFound { chars: vec![] }); "empty slice")]

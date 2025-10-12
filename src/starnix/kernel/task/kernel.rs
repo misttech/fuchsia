@@ -389,7 +389,7 @@ impl Kernel {
         let network_manager = NetworkManagerHandle::new_with_inspect(&inspect_node);
         let hrtimer_manager = HrTimerManager::new(&inspect_node);
 
-        let iptables = OrderedRwLock::new(IpTables::new(true /* allow mark target */));
+        let iptables = OrderedRwLock::new(IpTables::new());
 
         let this = Arc::new_cyclic(|kernel| Kernel {
             weak_self: kernel.clone(),

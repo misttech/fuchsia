@@ -397,7 +397,6 @@ pub struct IpTables {
     ///
     /// Initialized lazily with `get_controller`.
     controller: Option<Controller>,
-    allow_mark_target: bool,
 }
 
 #[derive(Debug, Error)]
@@ -409,7 +408,7 @@ enum GetControllerError {
 }
 
 impl IpTables {
-    pub fn new(allow_mark_target: bool) -> Self {
+    pub fn new() -> Self {
         // Install default chains and policies on supported tables. These chains are expected to be
         // present on the system before `iptables` client is ran.
         // TODO(https://fxbug.dev/354766238): Propagated default rules to fuchsia.net.filter.
@@ -426,7 +425,6 @@ impl IpTables {
                 IpTable::default_ipv6_nat_table(),
                 IpTable::default_ipv6_raw_table(),
             ]),
-            allow_mark_target,
             controller: None,
         }
     }
@@ -635,11 +633,10 @@ impl IpTables {
     }
 
     fn replace_ipv4_table(&mut self, bytes: Vec<u8>) -> Result<(), Errno> {
-        let table = iptables_utils::IpTable::from_ipt_replace(bytes, self.allow_mark_target)
-            .map_err(|e| {
-                log_warn!("Iptables: encountered error while parsing rules: {e}");
-                errno!(EINVAL)
-            })?;
+        let table = iptables_utils::IpTable::from_ipt_replace(bytes).map_err(|e| {
+            log_warn!("Iptables: encountered error while parsing rules: {e}");
+            errno!(EINVAL)
+        })?;
         let entries = table.parser.entries_bytes().to_vec();
         let replace_info = table.parser.replace_info.clone();
         let mut name: IpTablesName = [0; 32usize];
@@ -662,11 +659,10 @@ impl IpTables {
     }
 
     fn replace_ipv6_table(&mut self, bytes: Vec<u8>) -> Result<(), Errno> {
-        let table = iptables_utils::IpTable::from_ip6t_replace(bytes, self.allow_mark_target)
-            .map_err(|e| {
-                log_warn!("Iptables: encountered error while parsing rules: {e}");
-                errno!(EINVAL)
-            })?;
+        let table = iptables_utils::IpTable::from_ip6t_replace(bytes).map_err(|e| {
+            log_warn!("Iptables: encountered error while parsing rules: {e}");
+            errno!(EINVAL)
+        })?;
         let entries = table.parser.entries_bytes().to_vec();
         let replace_info = table.parser.replace_info.clone();
         let mut name: IpTablesName = [0; 32usize];
