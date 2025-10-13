@@ -350,6 +350,7 @@ _starnix_core_deps = [
   "//src/lib/fuchsia-component",
   "//src/lib/fuchsia-fs",
   "//src/lib/fuchsia-rcu",
+  "//src/lib/fuchsia-rcu-collections",
   "//src/lib/fuchsia-runtime",
   "//src/lib/fuchsia-sync",
   "//src/lib/mundane",

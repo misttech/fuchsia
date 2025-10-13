@@ -41,16 +41,16 @@ impl<T: Send + Sync + 'static> RcuArray<T> {
     /// # Safety
     ///
     /// Requires external synchronization to exclude concurrent writers.
-    pub unsafe fn ensure_at_least(&self, scope: &RcuWriteScope, requested_size: usize, value: T)
+    pub unsafe fn ensure_at_least(&self, scope: &RcuWriteScope, requested_size: usize)
     where
-        T: Clone,
+        T: Clone + Default,
     {
         let array = self.inner.read();
         if array.len() >= requested_size {
             return;
         }
         let new_size = std::cmp::max(requested_size, array.len() * 2);
-        self.copy_update(scope, &array, new_size, value);
+        self.copy_update(scope, &array, new_size);
     }
 
     /// Updates the array to contain the given vector.
@@ -58,9 +58,9 @@ impl<T: Send + Sync + 'static> RcuArray<T> {
         self.inner.update(scope, new_array.into_boxed_slice());
     }
 
-    fn copy_update(&self, scope: &RcuWriteScope, array: &[T], new_size: usize, value: T)
+    fn copy_update(&self, scope: &RcuWriteScope, array: &[T], new_size: usize)
     where
-        T: Clone,
+        T: Clone + Default,
     {
         let mut new_array = Vec::new();
         new_array.reserve_exact(new_size);
@@ -68,9 +68,15 @@ impl<T: Send + Sync + 'static> RcuArray<T> {
             new_array.push(item.clone());
         }
         for _ in array.len()..new_size {
-            new_array.push(value.clone());
+            new_array.push(T::default());
         }
         self.inner.update(scope, new_array.into_boxed_slice());
+    }
+}
+
+impl<T: Clone + Sync + Send + 'static> Clone for RcuArray<T> {
+    fn clone(&self) -> Self {
+        Self { inner: self.inner.clone() }
     }
 }
 
@@ -109,19 +115,19 @@ mod tests {
         let array = RcuArray::from(vec![1, 2, 3]);
         let write_scope = RcuWriteScope::new();
 
-        unsafe { array.ensure_at_least(&write_scope, 5, 0) };
+        unsafe { array.ensure_at_least(&write_scope, 5) };
         let read_scope = RcuReadScope::new();
         // Should at least double.
         assert_eq!(array.as_slice(&read_scope), &[1, 2, 3, 0, 0, 0]);
 
-        unsafe { array.ensure_at_least(&write_scope, 2, 0) };
+        unsafe { array.ensure_at_least(&write_scope, 2) };
         let read_scope = RcuReadScope::new();
         // Should not shrink below current size.
         assert_eq!(array.as_slice(&read_scope), &[1, 2, 3, 0, 0, 0]);
 
-        unsafe { array.ensure_at_least(&write_scope, 12, 5) };
+        unsafe { array.ensure_at_least(&write_scope, 12) };
         let read_scope = RcuReadScope::new();
-        assert_eq!(array.as_slice(&read_scope), &[1, 2, 3, 0, 0, 0, 5, 5, 5, 5, 5, 5]);
+        assert_eq!(array.as_slice(&read_scope), &[1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     }
 
     #[test]
