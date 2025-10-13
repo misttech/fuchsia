@@ -77,7 +77,7 @@ pub async fn get_cipd_package_from_mos_artifact(
 #[serde(rename_all = "camelCase")]
 struct GetArtifactResponse {
     name: String,
-    cipd_uri: String,
+    cipd_uri: Option<String>,
 }
 
 /// Create a new MOSIdentifier instance from an http response from MOS.
@@ -114,9 +114,13 @@ fn new_identifier_from_http_response(response: &str) -> Result<MOSIdentifier> {
         .get(1)
         .ok_or_else(|| anyhow!("Could not extract name from final component: {}", last_part))?;
 
-    let cipd_url = format!("cipd://{}", response.cipd_uri);
-    let cipd = if let Some(Artifact::CIPD(pkg)) = crate::cipd::parse_cipd_artifact(&cipd_url)? {
-        Some(pkg)
+    let cipd = if let Some(cipd_uri) = response.cipd_uri {
+        let cipd_url = format!("cipd://{}", cipd_uri);
+        if let Some(Artifact::CIPD(pkg)) = crate::cipd::parse_cipd_artifact(&cipd_url)? {
+            Some(pkg)
+        } else {
+            None
+        }
     } else {
         None
     };
@@ -194,7 +198,11 @@ impl MOSClient {
             id.repository, id.version, id.artifact_type, id.name
         );
         let response = self.get(name).await.context("Failed to call getArtifact MOS API")?;
-        new_identifier_from_http_response(&response)
+        let mos_id = new_identifier_from_http_response(&response)?;
+        if mos_id.cipd.is_none() {
+            bail!("MOS response for artifact {:?} did not contain CIPD information", id);
+        }
+        Ok(mos_id)
     }
 
     /// Return information about a given product bundle
@@ -204,10 +212,37 @@ impl MOSClient {
         version: String,
     ) -> Result<Vec<MOSIdentifier>> {
         let uri = "productBundles:search".to_string();
-        let data = json!({ "criteria": {"name": name, "version": version}}).to_string();
-        let response =
-            self.post(uri.clone(), data).await.context("Failed to call productBundles:search")?;
+        let data = json!({ "criteria": {"product_name": name.clone(), "version": version.clone()}})
+            .to_string();
+        let response = self.post(uri.clone(), data).await?;
+        let response = if !response.contains("artifactRepositories") {
+            self.generate_mock_pb_release_info(name, version)?
+        } else {
+            response
+        };
         new_identifier_vec_from_http_response(response)
+    }
+
+    /// Generate a mock response for product bundle info.
+    fn generate_mock_pb_release_info(&self, name: String, version: String) -> Result<String> {
+        println!("    *** Generating a mock response for {}.{}", &name, &version);
+        let (product_name, board_name) = name
+            .split_once('.')
+            .context("Product name was not in the format of `product.board`")?;
+
+        let product_repository = "fuchsia".to_string();
+
+        let platform = json!({
+            "name": format!("artifactRepositories/fuchsia/versions/{}/productBundleArtifacts/platform_arm64", version),
+        });
+        let product = json!({
+            "name": format!("artifactRepositories/{}/versions/{}/productBundleArtifacts/products_{}", product_repository, version, product_name),
+        });
+        let board = json!({
+            "name": format!("artifactRepositories/fuchsia/versions/{}/productBundleArtifacts/boards_{}", version, board_name),
+        });
+
+        Ok(format!("{}\n{}\n{}", platform, product, board))
     }
 
     /// Interpolate between two versions of an assembly artifact
@@ -216,6 +251,10 @@ impl MOSClient {
         from_success: &MOSIdentifier,
         to_failure: &MOSIdentifier,
     ) -> Result<Vec<MOSIdentifier>> {
+        if from_success.version == to_failure.version {
+            return Ok(vec![from_success.clone()]);
+        }
+
         // TODO: Fix this once artifacts exist in MOS
         let uri = format!(
             "artifactRepositories/{}/versions/{}/productBundleArtifacts/{}:interpolate",
@@ -225,9 +264,33 @@ impl MOSClient {
             "{{\"target_artifact\": \"artifactRepositories/{}/versions/{}/productBundleArtifacts/{}\"}}",
             to_failure.repository, to_failure.version, to_failure.name
         );
-        let response =
-            self.post(uri.clone(), data).await.context("Failed to call interpolate API")?;
+        let response = match self.post(uri.clone(), data).await {
+            Ok(resp) => resp,
+            Err(e) => {
+                if e.to_string().contains("404 Not Found") {
+                    self.generate_mock_interpolate_response(from_success)?
+                } else {
+                    return Err(e).context("Failed to call interpolate API");
+                }
+            }
+        };
         new_identifier_vec_from_http_response(response)
+    }
+
+    /// Generate a mock response for the interpolate API.
+    fn generate_mock_interpolate_response(&self, from_success: &MOSIdentifier) -> Result<String> {
+        println!(
+            "    *** Generating a mock response for {}.{}",
+            &from_success.name, &from_success.version
+        );
+        let response = match from_success.artifact_type {
+            ArtifactType::Platform => json!({}).to_string(),
+            ArtifactType::Product => {
+                format!("{}\n{}", json!({}), json!({}))
+            }
+            ArtifactType::Board => json!({}).to_string(),
+        };
+        Ok(response)
     }
 }
 

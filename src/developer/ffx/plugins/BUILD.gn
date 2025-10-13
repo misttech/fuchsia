@@ -9,6 +9,7 @@ if (is_host) {
       "component:host_tests",
       "debug:tests",
       "emulator:host_tests",
+      "product:tests",
       "profile:host_tests",
       "target:host_tests",
     ]

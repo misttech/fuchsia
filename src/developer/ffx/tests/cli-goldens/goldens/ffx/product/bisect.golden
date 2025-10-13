@@ -1,0 +1,103 @@
+{
+  "name": "bisect",
+  "description": "Arguments to run bisection.",
+  "examples": [],
+  "flags": [
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--help",
+      "short": null,
+      "description": "display usage information",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "name"
+        }
+      },
+      "optionality": "required",
+      "long": "--name",
+      "short": null,
+      "description": "product bundle name to bisect.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "from-success"
+        }
+      },
+      "optionality": "required",
+      "long": "--from-success",
+      "short": null,
+      "description": "latest known-good version of the product bundle.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "to-failure"
+        }
+      },
+      "optionality": "required",
+      "long": "--to-failure",
+      "short": null,
+      "description": "earliest known-bad version of the product bundle.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "out-dir"
+        }
+      },
+      "optionality": "optional",
+      "long": "--out-dir",
+      "short": null,
+      "description": "directory to write assembled images and other artifacts.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "gen-dir"
+        }
+      },
+      "optionality": "optional",
+      "long": "--gen-dir",
+      "short": null,
+      "description": "directory to write intermediate files.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "auth"
+        }
+      },
+      "optionality": "optional",
+      "long": "--auth",
+      "short": null,
+      "description": "authentication method to use.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "strategy"
+        }
+      },
+      "optionality": "optional",
+      "long": "--strategy",
+      "short": null,
+      "description": "search strategy to use.",
+      "hidden": false
+    }
+  ],
+  "notes": [],
+  "commands": [],
+  "positionals": [],
+  "error_codes": []
+}

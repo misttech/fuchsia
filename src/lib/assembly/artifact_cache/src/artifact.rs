@@ -30,10 +30,6 @@ pub enum ArtifactType {
     Product,
     /// Board
     Board,
-    /// Product Input Bundle Set
-    PIB,
-    /// Board Input Bundle
-    BIB,
 }
 
 impl FromStr for ArtifactType {
@@ -44,8 +40,6 @@ impl FromStr for ArtifactType {
             "platform" => Ok(ArtifactType::Platform),
             "products" => Ok(ArtifactType::Product),
             "boards" => Ok(ArtifactType::Board),
-            "product_input_bundles" => Ok(ArtifactType::PIB),
-            "board_input_bundles" => Ok(ArtifactType::BIB),
             _ => Err(()), // Return an error for any other string
         }
     }
@@ -57,8 +51,6 @@ impl fmt::Display for ArtifactType {
             ArtifactType::Platform => write!(f, "platform"),
             ArtifactType::Product => write!(f, "products"),
             ArtifactType::Board => write!(f, "boards"),
-            ArtifactType::PIB => write!(f, "product_input_bundles"),
-            ArtifactType::BIB => write!(f, "board_input_bundles"),
         }
     }
 }
@@ -77,7 +69,7 @@ impl std::fmt::Display for CIPDPackage {
 }
 
 /// A reference to an artifact known by MOS.
-#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct MOSIdentifier {
     /// name of this resource
     pub name: String,
@@ -95,6 +87,32 @@ pub struct MOSIdentifier {
     pub cipd: Option<CIPDPackage>,
 }
 
+impl Eq for MOSIdentifier {}
+
+impl PartialEq for MOSIdentifier {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.version == other.version
+            && self.repository == other.repository
+            && self.artifact_type == other.artifact_type
+    }
+}
+
+impl fmt::Debug for MOSIdentifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut debug_struct = f.debug_struct("MOSIdentifier");
+        debug_struct
+            .field("name", &self.name)
+            .field("version", &self.version)
+            .field("repository", &self.repository)
+            .field("artifact_type", &self.artifact_type);
+        if let Some(cipd) = &self.cipd {
+            debug_struct.field("cipd", cipd);
+        }
+        debug_struct.finish()
+    }
+}
+
 impl MOSIdentifier {
     /// Return a string format representing this MOSIdentifier.
     pub fn id(&self) -> String {
@@ -105,5 +123,10 @@ impl MOSIdentifier {
             self.name.clone(),
             self.version.clone()
         )
+    }
+
+    /// Return self.id() without the final version field.
+    pub fn id_no_version(&self) -> String {
+        format!("mos://{}/{}/{}", self.repository.clone(), self.artifact_type, self.name.clone(),)
     }
 }
