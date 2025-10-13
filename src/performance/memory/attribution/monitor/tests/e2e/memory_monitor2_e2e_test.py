@@ -43,6 +43,21 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
         ) as out:
             out.write(cmd_output)
 
+    def test_memory_monitor2_does_not_log_error(self) -> None:
+        errors = self.dut.ffx.run(
+            [
+                "log",
+                "--symbolize",
+                "off",
+                "--severity",
+                "error",
+                "--component",
+                "memory_monitor2",
+                "dump",
+            ]
+        )
+        asserts.assert_equal("", errors.strip())
+
     def test_ffx_profile_memory_component_without_args(self) -> None:
         profile = self.dut.ffx.run(
             ["profile", "memory", "components"], log_output=False
@@ -81,6 +96,7 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
         )
         stdout_data, stderr_data = process.communicate(input=debug_json)
         asserts.assert_equal(debug_json.strip(), stdout_data.strip())
+        asserts.assert_equal("", stderr_data.strip())
 
     def test_ffx_profile_memory_component_with_machine_json_output(
         self,

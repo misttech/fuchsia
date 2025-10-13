@@ -23,6 +23,7 @@
                 "fuchsia.kernel.StallResource",
                 "fuchsia.kernel.Stats",
                 "fuchsia.memory.attribution.Provider",
+                "fuchsia.scheduler.RoleManager",
             ],
             from: "parent",
             to: "#memory_monitor2",

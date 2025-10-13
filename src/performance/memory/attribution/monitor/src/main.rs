@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
     info!("Starting memory_monitor 2");
 
     if let Err(e) = run_with_lower_priority() {
-        warn!("Failed to set scheduler role: {:?}", e);
+        error!("Failed to set scheduler role: {:?}", e);
     }
     fuchsia_inspect::component::health().set_starting_up();
     let mut service_fs = ServiceFs::new();

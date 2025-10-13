@@ -44,6 +44,9 @@
 
                 // Provides access to metric event logging.
                 "fuchsia.metrics.MetricEventLoggerFactory",
+
+                // Lowers thread priority.
+                "fuchsia.scheduler.RoleManager",
             ],
         },
         {

@@ -23,7 +23,6 @@ pub async fn serve_forever(
 ) {
     fuchsia_trace_provider::trace_provider_create_with_fdio();
     fuchsia_trace_provider::trace_provider_wait_for_init();
-    eprintln!("Start serving traces");
     debug!("Start serving traces");
     let trace_observer = TraceObserver::new();
     loop {
