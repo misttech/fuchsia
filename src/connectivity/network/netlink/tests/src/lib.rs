@@ -361,49 +361,22 @@ async fn add_route_in_table_and_await_installed<I: Ip>(
         test_subnet,
         interface_id,
     ));
-    let mut message: NetlinkMessage<RouteNetlinkMessage> = new_route_message.into();
+    let mut message: NetlinkMessage<RouteNetlinkMessage> = new_route_message.clone().into();
     message.finalize();
     client.sender.0.unbounded_send(FakeCreds::attach(message)).expect("should not be disconnected");
 
     let receiver = &mut client.receiver;
     // We then receive notification of the route being added to the table we actually requested.
-    let SentNetlinkMessage { message: received_msg, group } = receiver
+    let SentNetlinkMessage { message: _, group } = receiver
         .filter_map(|received| {
-            let got_table_id = match &received.message.payload {
-                NetlinkPayload::InnerMessage(RouteNetlinkMessage::NewRoute(r)) => {
-                    Some(if u32::from(r.header.table) == rt_class_t_RT_TABLE_COMPAT {
-                        r.attributes
-                            .iter()
-                            .filter_map(|attr| match attr {
-                                RouteAttribute::Table(id) => Some(*id),
-                                _ => None,
-                            })
-                            .next()
-                            .expect("must have a table ID")
-                    } else {
-                        u32::from(r.header.table)
-                    })
-                }
-                _ => None,
-            };
-            let same_table_id = got_table_id.is_some_and(|got| got == table_id);
-            futures::future::ready(same_table_id.then_some(received))
+            let msg = assert_matches!(
+                &received.message.payload, NetlinkPayload::InnerMessage(msg) => msg);
+            futures::future::ready((msg == &new_route_message).then_some(received))
         })
         .next()
         .await
         .expect("should not be disconnected");
     assert_eq!(group, Some(route_group::<I>()));
-    let received_route_message =
-        assert_matches!(received_msg.payload, NetlinkPayload::InnerMessage(message) => message);
-
-    assert_eq!(
-        received_route_message,
-        RouteNetlinkMessage::NewRoute(create_route_in_table::<I>(
-            table_id,
-            test_subnet,
-            interface_id
-        ))
-    );
 }
 
 async fn add_route_and_await_installed<I: Ip>(
