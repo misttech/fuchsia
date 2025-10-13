@@ -29,8 +29,6 @@ class Ffx:
     _path = "host-tools/ffx"
     # Automatically deleted when |self| is destructed.
     _isolate_dir = tempfile.TemporaryDirectory()
-    # The isolate args are kept separately from the rest of the FFX configuration to make adding the
-    # target in |init_isolate| simpler.
     _isolate_args = [
         "--isolate-dir",
         _isolate_dir.name,
@@ -76,26 +74,8 @@ class Ffx:
 
         return target
 
-    # Initialize the ffx isolate with the connected target device indicated by the environment
-    # variables FUCHSIA_DEVICE_ADDR and FUCHSIA_SSH_PORT.
-    def init_isolate(self, addr: str) -> None:
-        # Add the target to the isolate.
-        target_add_process = subprocess.Popen(
-            [self._path] + self._isolate_args + ["target", "add", addr],
-        )
-
-        target_add_process.wait()
-
-        if target_add_process.returncode != 0:
-            raise RuntimeError(
-                "Failed to spawn FFX isolate "
-                + str(target_add_process.returncode)
-            )
-
     # Run the requested ffx command.
     def start(self) -> None:
-        self.init_isolate(self._target[-1])
-
         self.process = subprocess.Popen(
             [self._path]
             + self._isolate_args
