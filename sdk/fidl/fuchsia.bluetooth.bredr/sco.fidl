@@ -104,7 +104,7 @@ type RxPacketStatus = strict enum : uint8 {
 /// A SCO connection. The connection is pending until the `OnConnectionComplete` event is sent,
 /// which will always arrive first. If the connection fails, the protocol will be closed after the
 /// error is delivered. If methods are called before the `OnConnectionComplete` event, they will
-/// and the protocol will be closed.
+/// fail, the protocol will be closed, and any connection will be dropped.
 open protocol ScoConnection {
     /// Read the next inbound SCO payload.
     /// Hangs until new data is received.
@@ -130,4 +130,11 @@ open protocol ScoConnection {
         /// On failure, specifies the reason connection establishment failed.
         2: error ScoErrorCode;
     });
+
+    /// Request disconnect of the current connection. The server is expected to close the
+    /// protocol once the underlying connection is disconnected. This can be used to order
+    /// events to happen after the connection is dropped. If this is not necessary, the
+    /// server will always disconnect the SCO when this protocol is closed by the client.
+    @available(added=NEXT)
+    flexible RequestDisconnect();
 };

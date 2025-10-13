@@ -1209,6 +1209,13 @@
     },
     {
         "kind": "protocol/member",
+        "name": "fuchsia.bluetooth.bredr/ScoConnection.RequestDisconnect",
+        "strictness": "flexible",
+        "ordinal": "1951769149418924631",
+        "direction": "one_way"
+    },
+    {
+        "kind": "protocol/member",
         "name": "fuchsia.bluetooth.bredr/ScoConnection.Write",
         "strictness": "flexible",
         "ordinal": "4129267801182741929",
