@@ -1334,6 +1334,7 @@ impl<B> Debug for TcpSegment<B> {
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
     use byteorder::{ByteOrder, NetworkEndian};
     use net_types::ip::{Ipv4, Ipv4Addr, Ipv6Addr};
     use packet::{Buf, ParseBuffer};
@@ -1343,6 +1344,7 @@ mod tests {
     use crate::ethernet::{EthernetFrame, EthernetFrameLengthCheck};
     use crate::ipv4::{Ipv4Header, Ipv4Packet};
     use crate::ipv6::{Ipv6Header, Ipv6Packet};
+    use crate::tcp::options::TcpSackBlock;
     use crate::testutil::benchmarks::{Bencher, black_box};
     use crate::testutil::*;
 
@@ -1739,6 +1741,30 @@ mod tests {
         // partial parsing:
         let mut buf = &bytes[0..4];
         assert!(buf.parse::<TcpSegmentRaw<_>>().is_ok());
+    }
+
+    #[test]
+    fn serialize_with_4_sack_blocks_and_timestamp_invalid() {
+        let builder = new_builder(TEST_SRC_IPV4, TEST_DST_IPV4);
+
+        // NOTE: The TCP options length is limited to 40 bytes. A SACK
+        // option with 4 blocks would take 34 bytes, and a timestamp
+        // option takes 10 bytes, for a total of 44 bytes.
+        let sack_blocks = [
+            TcpSackBlock::new(100, 200),
+            TcpSackBlock::new(300, 400),
+            TcpSackBlock::new(500, 600),
+            TcpSackBlock::new(700, 800),
+        ];
+        let options = [
+            TcpOption::Sack(&sack_blocks),
+            TcpOption::Timestamp { ts_val: 12345, ts_echo_reply: 67890 },
+        ];
+
+        assert_matches!(
+            TcpSegmentBuilderWithOptions::new(builder, &options),
+            Err(TcpOptionsTooLongError)
+        );
     }
 
     //
