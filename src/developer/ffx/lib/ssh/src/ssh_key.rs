@@ -25,6 +25,7 @@ pub enum SshKeyErrorKind {
     BadKeyFormat,
     BadUTFEncoding,
     GenerationError,
+    KeyAlreadyExists,
     IOError,
     KeyMismatch,
     FileNotFound,
@@ -62,7 +63,16 @@ impl Error for SshKeyError {}
 
 impl From<std::io::Error> for SshKeyInternalError {
     fn from(value: std::io::Error) -> Self {
-        SshKeyInternalError { kind: SshKeyErrorKind::IOError, message: format!("{value:?}") }
+        match value.kind() {
+            std::io::ErrorKind::AlreadyExists => SshKeyInternalError {
+                kind: SshKeyErrorKind::KeyAlreadyExists,
+                message: format!("{value:?}"),
+            },
+            _ => SshKeyInternalError {
+                kind: SshKeyErrorKind::IOError,
+                message: format!("{value:?}"),
+            },
+        }
     }
 }
 
@@ -200,7 +210,15 @@ impl SshKeyFiles {
                 message: format!("could not get keypair from pkcs8 document: {:?}", m),
             })?;
 
-            write_private_key(&self.private_key, &key_pair, bytes.as_ref(), &rng)?;
+            // If somehow between the check and now the key is created, return early
+            match write_private_key(&self.private_key, &key_pair, bytes.as_ref(), &rng) {
+                Ok(_) => {}
+                Err(e) if e.kind == SshKeyErrorKind::KeyAlreadyExists => {
+                    log::debug!("Key already exists in create_keys_if_needed");
+                    return Ok(());
+                }
+                Err(e) => return Err(e.into()),
+            };
             public_key = key_pair.public_key().as_ref().to_vec();
             do_write_public_key = true;
         } else if do_write_public_key || !self.authorized_keys.exists() {
