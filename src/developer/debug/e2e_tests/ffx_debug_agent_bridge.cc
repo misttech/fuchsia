@@ -144,47 +144,6 @@ std::vector<char*> GetFfxEnv() {
   return new_env;
 }
 
-Err InitFfxIsolate(const std::filesystem::path& ffx_path, const std::string& isolate_dir) {
-  // In the isolate directory, this will spawn the daemon and add the configured target.
-  std::string target_add_cmd =
-      std::filesystem::absolute(ffx_path).string() + " --isolate-dir " + isolate_dir;
-
-  target_add_cmd.append(" --config ");
-  target_add_cmd.append(kFfxCommonConfig);
-
-  char* test_outdir = std::getenv(kTestOutDir.data());
-  if (test_outdir) {
-    target_add_cmd.append(const_cast<char*>(",log.dir="));
-    target_add_cmd.append(test_outdir);
-  }
-
-  target_add_cmd.append(" target add ");
-
-  if (auto dev = std::getenv(kFuchsiaDeviceSshAddr.data()); dev != nullptr) {
-    // Don't do any special handling for ipv6 addresses. It's expected that fx test correctly
-    // populates the environment variable in the expected format.
-    target_add_cmd.append(dev);
-
-    // When running the tests locally it's likely that the ssh port is not on the default port 22.
-    // FX will fill in another environment variable for us in this case.
-    if (auto port = std::getenv(kFuchsiaDeviceSshPort.data()); port != nullptr) {
-      target_add_cmd.push_back(':');
-      target_add_cmd.append(port);
-    }
-
-    FX_LOGS(INFO) << "running ffx target add: " << target_add_cmd;
-    int result = system(target_add_cmd.data());
-    if (WEXITSTATUS(result) != 0) {
-      return Err("Target add command failed: %s.\nCommand was: %s", strerror(WEXITSTATUS(result)),
-                 target_add_cmd.c_str());
-    }
-  } else {
-    return Err("%s was not defined in the environment!", kFuchsiaDeviceSshAddr.data());
-  }
-
-  return Err();
-}
-
 }  // namespace
 
 Err FfxDebugAgentBridge::Init() {
@@ -263,13 +222,6 @@ Err FfxDebugAgentBridge::SetupPipeAndFork() {
     // terminates.
     if (dup2(pipe_write_end_, STDOUT_FILENO) < 0) {
       FX_LOGS(ERROR) << "Failed to dup child stdout to pipe write end: " << strerror(errno);
-      exit(EXIT_FAILURE);
-    }
-
-    // Initialize the isolated FFX daemon and add the target (which will not be discovered via
-    // mdns).
-    if (auto err = InitFfxIsolate(ffx_path, ffx_isolate_dir_); err.has_error()) {
-      FX_LOGS(ERROR) << "Failed to initialize the ffx isolate: " << err.msg();
       exit(EXIT_FAILURE);
     }
 
