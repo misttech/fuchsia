@@ -199,8 +199,9 @@ TEST_F(TestMsdVsiConnection, OnlyMapAllowedGpuAddresses) {
             connection_->MapBufferGpu(buffer, gpu_addr, 0, kBufferSizeInPages).get());
 
   // Test mapping at the end of the client reserved region.
-  uint32_t client_reserved_gpu_addr_end =
-      AddressSpaceLayout::client_gpu_addr_base() + AddressSpaceLayout::client_gpu_addr_size();
+  uint32_t client_reserved_gpu_addr_end = AddressSpaceLayout::client_gpu_addr_base() +
+                                          AddressSpaceLayout::client_gpu_addr_size() -
+                                          magma::page_size();
   gpu_addr = client_reserved_gpu_addr_end - (kBufferSizeInPages * magma::page_size());
   EXPECT_EQ(MAGMA_STATUS_OK,
             connection_->MapBufferGpu(buffer, gpu_addr, 0, kBufferSizeInPages).get());
