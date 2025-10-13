@@ -6,23 +6,22 @@
 Sanitizers definitions for Clang.
 """
 
-load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
+load("@rules_cc//cc:action_names.bzl", "ALL_CC_COMPILE_ACTION_NAMES", "ALL_CC_LINK_ACTION_NAMES")
 load(
-    "@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl",
+    "@rules_cc//cc:cc_toolchain_config_lib.bzl",
     "feature",
     "flag_group",
     "flag_set",
+    "with_feature_set",
 )
 
-sanitizer_feature = feature(
-    name = "sanitizer",
+# This feature should only be enabled by one of the features below
+# and will drop the optimization level and raise the debug info detail.
+_clang_sanitizer_feature = feature(
+    name = "clang_sanitizer",
     flag_sets = [
         flag_set(
-            actions = [
-                ACTION_NAMES.c_compile,
-                ACTION_NAMES.cpp_compile,
-                ACTION_NAMES.cpp_module_compile,
-            ],
+            actions = ALL_CC_COMPILE_ACTION_NAMES,
             flag_groups = [
                 flag_group(
                     flags = [
@@ -36,73 +35,103 @@ sanitizer_feature = feature(
     ],
 )
 
-def _sanitizer_feature(name, fsanitize):
+def _sanitizer_mode_feature(name, mode):
+    """Define a feature that corresponds to Clang -fsanitize=<mode>.
+
+    The flag will be added both to compile and link actions, and all
+    instances returned by this function will be mutually exclusive,
+    to reflect Clang's own constraints.
+
+    For example, when using '-fsanitize=address -fsanitize=hwaddress'
+    Clang will complain with an error stating that this is not allowed.
+    """
     return feature(
         name = name,
         flag_sets = [
             flag_set(
-                actions = [
-                    ACTION_NAMES.c_compile,
-                    ACTION_NAMES.cpp_compile,
-                    ACTION_NAMES.cpp_module_compile,
-                    ACTION_NAMES.cpp_link_executable,
-                    ACTION_NAMES.cpp_link_dynamic_library,
-                    ACTION_NAMES.cpp_link_nodeps_dynamic_library,
-                ],
-                flag_groups = [flag_group(flags = ["-fsanitize=" + fsanitize])],
+                actions = ALL_CC_COMPILE_ACTION_NAMES + ALL_CC_LINK_ACTION_NAMES,
+                flag_groups = [flag_group(flags = ["-fsanitize=" + mode])],
             ),
         ],
-        implies = ["sanitizer"],
+        implies = ["clang_sanitizer"],
+
+        # This ensures mutual exclusion between the different values returned
+        # by this function. Bazel will print an error message. For example when
+        # both `--features=asan` and `--features=hwasan` are used:
+        #
+        # ```
+        # Analyzing: target //build/bazel/host_tests/cc_tests:static_test (58 packages loaded, 9 targets configured)
+        # ERROR: ...../out/default/gen/build/bazel/workspace/build/bazel/host_tests/cc_tests/BUILD.bazel:12:11: in cc_library rule //build/bazel/host_tests/cc_tests:foo:
+        # Traceback (most recent call last):
+        #         File "/virtual_builtins_bzl/common/cc/cc_library.bzl", line 33, column 57, in _cc_library_impl
+        #         File "/virtual_builtins_bzl/common/cc/cc_common.bzl", line 184, column 49, in _configure_features
+        # Error in configure_features: Symbol clang_sanitizer_mode is provided by all of the following features: asan hwasan
+        # ```
+        provides = ["clang_sanitizer_mode"],
     )
 
-def _sanitizer_feature_ext(name, compile_fsanitize, link_fsanitize):
-    return feature(
-        name = name,
-        flag_sets = [
-            flag_set(
-                actions = [
-                    ACTION_NAMES.c_compile,
-                    ACTION_NAMES.cpp_compile,
-                    ACTION_NAMES.cpp_module_compile,
-                ],
-                flag_groups = [flag_group(flags = ["-fsanitize=" + compile_fsanitize])],
-            ),
-            flag_set(
-                actions = [
-                    ACTION_NAMES.cpp_link_executable,
-                    ACTION_NAMES.cpp_link_dynamic_library,
-                    ACTION_NAMES.cpp_link_nodeps_dynamic_library,
-                ],
-                flag_groups = [flag_group(flags = ["-fsanitize=" + link_fsanitize])],
-            ),
-        ],
-        implies = ["sanitizer"],
-    )
+# All these features correspond to mutually exclusive Clang sanitizer modes.
+_asan_feature = _sanitizer_mode_feature("asan", "address")
+_hwasan_feature = _sanitizer_mode_feature("hwasan", "hwaddress")
+_msan_feature = _sanitizer_mode_feature("msan", "memory")
+_tsan_feature = _sanitizer_mode_feature("tsan", "thread")
+
+# The lsan feature corresponds to -fsanitize=leak which is compatible
+# with either -fsanitize=address or -fsanitize=hwaddress, because their
+# respective runtime (e.g. libclang_rt.asan.so) does implement the
+# required support.
+#
+# To support this, only add the linker flag when neither asan or hwasan
+# are enabled.
+_lsan_feature = feature(
+    name = "lsan",
+    flag_sets = [
+        flag_set(
+            actions = ALL_CC_COMPILE_ACTION_NAMES,
+            flag_groups = [flag_group(flags = ["-fsanitize=leak"])],
+        ),
+        flag_set(
+            actions = ALL_CC_LINK_ACTION_NAMES,
+            flag_groups = [flag_group(flags = ["-fsanitize=leak"])],
+            with_features = [
+                with_feature_set(
+                    not_features = ["asan", "hwasan"],
+                ),
+            ],
+        ),
+    ],
+    implies = ["clang_sanitizer"],
+)
+
+# The ubsan feature corresponds to -fsanitize=undefined at compile time
+# and is also compatible with -fsanitize={address,hwaddress} for the same
+# reasons as lsan, so implement a similar scheme.
+_ubsan_feature = feature(
+    name = "ubsan",
+    flag_sets = [
+        flag_set(
+            actions = ALL_CC_COMPILE_ACTION_NAMES,
+            flag_groups = [flag_group(flags = ["-fsanitize=undefined"])],
+        ),
+        flag_set(
+            actions = ALL_CC_LINK_ACTION_NAMES,
+            flag_groups = [flag_group(flags = ["-fsanitize=undefined"])],
+            with_features = [
+                with_feature_set(
+                    not_features = ["asan", "hwasan"],
+                ),
+            ],
+        ),
+    ],
+    implies = ["clang_sanitizer"],
+)
 
 sanitizer_features = [
-    sanitizer_feature,
-    # IMPORTANT: When multiple features are enabled, their corresponding
-    # compiler/linker flags will appear in the order specified in this
-    # list.
-    #
-    # It is critical that "asan" appears before "hwasan", because the
-    # latter overrides it. The definitions of the @fuchsia_clang
-    # :asan_variant and :hwasan_variant config settings should reflect
-    # that too!
-    #
-    # In other words, using `--features=asan --features=hwasan`
-    # enables hwasan only, but so does `--features=hwasan --features=asan`
-    # since there is no way to know in which order the features were
-    # passed on the command-line.
-    #
-    # lsan is anothe special case because the compiler and linker flags
-    # are different (the lsan runtime code in provided by the asan library).
-    # Also -fsanitize=address will override -fsanitize=leak.
-    #
-    _sanitizer_feature("ubsan", "undefined"),
-    _sanitizer_feature_ext("lsan", "leak", "address"),
-    _sanitizer_feature("asan", "address"),
-    _sanitizer_feature("hwasan", "hwaddress"),
-    _sanitizer_feature("msan", "memory"),
-    _sanitizer_feature("tsan", "thread"),
+    _clang_sanitizer_feature,
+    _asan_feature,
+    _hwasan_feature,
+    _msan_feature,
+    _tsan_feature,
+    _lsan_feature,
+    _ubsan_feature,
 ]
