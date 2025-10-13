@@ -12,6 +12,7 @@ per-file cpu-stats=crjohns@google.com
 per-file crosvm.fx = file: /zircon/kernel/phys/OWNERS
 per-file dis = file: /zircon/kernel/phys/OWNERS
 per-file disk-extract-serial-log=csuter@google.com
+per-file download-rust-toolchain = file: /scripts/rust/OWNERS
 per-file dupefinder = file: /tools/dupefinder/OWNERS
 per-file exec-host-tests=joshuaseaton@google.com
 per-file extract-pprof.fx = file: /src/connectivity/network/OWNERS
