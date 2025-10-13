@@ -39,7 +39,6 @@ struct PowerElement {
     lessor: fbroker::LessorProxy,
     element_runner: RefCell<Option<ServerEnd<fbroker::ElementRunnerMarker>>>,
     assertive_dependency_token: fbroker::DependencyToken,
-    opportunistic_dependency_token: fbroker::DependencyToken,
     initial_level: fbroker::PowerLevel,
     lease: RefCell<Option<fbroker::LeaseControlProxy>>,
     component_controller: fcomponent::ControllerProxy,
@@ -83,15 +82,6 @@ impl PowerElement {
             .await?
             .map_err(|e| anyhow!("register assertive dependency token failed: {e:?}"))?;
 
-        let opportunistic_dependency_token = fbroker::DependencyToken::create();
-        element_control_proxy
-            .register_dependency_token(
-                opportunistic_dependency_token.duplicate_handle(Rights::SAME_RIGHTS)?,
-                fbroker::DependencyType::Opportunistic,
-            )
-            .await?
-            .map_err(|e| anyhow!("register opportunistic dependency token failed: {e:?}"))?;
-
         let (component_controller, controller_server_end) = fidl::endpoints::create_proxy();
         let _ = realm
             .create_child(
@@ -114,7 +104,6 @@ impl PowerElement {
             lessor: lessor_proxy,
             element_runner: RefCell::new(Some(element_runner_server)),
             assertive_dependency_token,
-            opportunistic_dependency_token,
             initial_level: initial_current_level,
             lease: RefCell::new(None),
             component_controller,
@@ -326,17 +315,10 @@ impl TopologyTestDaemon {
                 let internal_topology_elements = &self.internal_topology.elements.borrow();
                 let power_element =
                     &internal_topology_elements.get(&required_element_name).unwrap();
-                let token = if dependency.dependency_type == fpt::DependencyType::Assertive {
-                    power_element
-                        .assertive_dependency_token
-                        .duplicate_handle(Rights::SAME_RIGHTS)
-                        .expect("failed to duplicate token")
-                } else {
-                    power_element
-                        .opportunistic_dependency_token
-                        .duplicate_handle(Rights::SAME_RIGHTS)
-                        .expect("failed to duplicate token")
-                };
+                let token = power_element
+                    .assertive_dependency_token
+                    .duplicate_handle(Rights::SAME_RIGHTS)
+                    .expect("failed to duplicate token");
                 dependencies.push(fbroker::LevelDependency {
                     dependency_type: dependency.dependency_type,
                     dependent_level: dependency.dependent_level,
