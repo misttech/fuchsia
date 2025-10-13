@@ -1548,7 +1548,6 @@ pub(crate) mod testutil {
     use futures::stream::Stream;
     use net_declare::{fidl_subnet, net_addr_subnet};
 
-    use crate::FeatureFlags;
     use crate::client::AsyncWorkItem;
     use crate::eventloop::{EventLoopComponent, IncludedWorkers, Optional, Required};
     use crate::messaging::testutil::FakeSender;
@@ -1704,7 +1703,6 @@ pub(crate) mod testutil {
             ndp_option_watcher_provider: EventLoopComponent::Absent(Optional),
 
             unified_request_stream: request_stream,
-            feature_flags: FeatureFlags { copy_routes_to_main_table: false },
         };
 
         let interfaces_request_stream = interfaces.into_stream();

@@ -973,8 +973,6 @@ mod tests {
         let (own_route_table_proxy, _server_end) =
             fidl::endpoints::create_proxy::<I::RouteTableMarker>();
         let (route_set_proxy, _server_end) = fidl::endpoints::create_proxy::<I::RouteSetMarker>();
-        let (route_set_from_main_table_proxy, _server_end) =
-            fidl::endpoints::create_proxy::<I::RouteSetMarker>();
 
         let mut route_table_map = test_route_table_map::<I>();
 
@@ -984,7 +982,6 @@ mod tests {
             RouteTable::Managed(ManagedRouteTable {
                 route_table_proxy: own_route_table_proxy,
                 route_set_proxy,
-                route_set_from_main_table_proxy,
                 fidl_table_id: MANAGED_FIDL_TABLE_ID,
                 rule_set_authenticated: true,
             }),

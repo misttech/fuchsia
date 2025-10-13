@@ -682,16 +682,10 @@ impl Kernel {
             let (network_netlink, worker_params) =
                 Netlink::new(InterfacesHandlerImpl(self.weak_self.clone()));
 
-            // Only duplicate the routes in the main table when we are not
-            // using netstack marks. In that case, the starnix has the marks
-            // locally and the netstack is not aware of the marks and needs
-            // to use main table for routing.
-            let feature_flags = netlink::FeatureFlags { copy_routes_to_main_table: false };
             let kernel = self.clone();
             self.kthreads.spawn_future(async move {
                 netlink::run_netlink_worker(
                     worker_params,
-                    feature_flags,
                     NetlinkAccessControl::new(kernel.kthreads.system_task()),
                 )
                 .await;

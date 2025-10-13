@@ -29,8 +29,8 @@ use crate::netlink_packet::errno::Errno;
 use crate::protocol_family::ProtocolFamily;
 use crate::protocol_family::route::NetlinkRoute;
 use crate::{
-    FeatureFlags, NetlinkRouteNotifiedGroup, SysctlError, SysctlInterfaceSelector, interfaces,
-    route_tables, routes, rules,
+    NetlinkRouteNotifiedGroup, SysctlError, SysctlInterfaceSelector, interfaces, route_tables,
+    routes, rules,
 };
 
 #[derive(Derivative)]
@@ -256,7 +256,6 @@ pub(crate) struct EventLoopInputs<
         futures::channel::mpsc::UnboundedReceiver<AsyncWorkItem<NetlinkRouteNotifiedGroup>>,
 
     pub(crate) unified_request_stream: mpsc::Receiver<UnifiedRequest<S>>,
-    pub(crate) feature_flags: FeatureFlags,
 }
 
 impl<
@@ -288,7 +287,6 @@ impl<
             route_clients,
             async_work_receiver,
             unified_request_stream,
-            feature_flags: FeatureFlags { copy_routes_to_main_table },
         } = self;
         let (routes_v4, routes_v6, interfaces) = futures::join!(
             async {
@@ -298,7 +296,6 @@ impl<
                             v4_main_route_table.get_ref(),
                             v4_routes_state.get_ref(),
                             v4_route_table_provider.get(),
-                            copy_routes_to_main_table,
                         )
                         .await;
                         (
@@ -321,7 +318,6 @@ impl<
                             v6_main_route_table.get_ref(),
                             v6_routes_state.get_ref(),
                             v6_route_table_provider.get(),
-                            copy_routes_to_main_table,
                         )
                         .await;
                         (
@@ -927,11 +923,7 @@ impl<
     S: crate::messaging::Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
 > EventLoop<H, S>
 {
-    pub(crate) async fn run(
-        self,
-        on_initialized: Option<oneshot::Sender<()>>,
-        feature_flags: FeatureFlags,
-    ) -> Never {
+    pub(crate) async fn run(self, on_initialized: Option<oneshot::Sender<()>>) -> Never {
         let Self {
             interfaces_proxy,
             interfaces_state_proxy,
@@ -966,7 +958,6 @@ impl<
             route_clients: EventLoopComponent::Present(route_clients),
             async_work_receiver,
             unified_request_stream,
-            feature_flags,
         }
         .initialize(IncludedWorkers {
             routes_v4: EventLoopComponent::Present(()),

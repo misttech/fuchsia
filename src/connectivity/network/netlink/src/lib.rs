@@ -76,16 +76,6 @@ pub struct Netlink<C: NetlinkContext> {
     async_work_sink: mpsc::UnboundedSender<AsyncWorkItem<NetlinkRouteNotifiedGroup>>,
 }
 
-/// Flags to enable/disable certain features to allow for convenient rollbacks.
-#[derive(Copy, Clone, Debug)]
-pub struct FeatureFlags {
-    /// When this feature is enabled, the routes installed by netlink will also
-    /// be copied into the main table as a backup.
-    // TODO(https://fxbug.dev/410631890): Remove this once `netstack_mark` is
-    // enabled in starnix by default.
-    pub copy_routes_to_main_table: bool,
-}
-
 impl<C: NetlinkContext> Netlink<C> {
     /// Returns a newly instantiated [`Netlink`] and parameters used to start the
     /// asynchronous worker.
@@ -282,14 +272,12 @@ impl NetlinkWorkerDiscoverableProtocols {
 /// a FIDL error on one of the FIDL connections with the netstack.
 pub async fn run_netlink_worker<H: interfaces::InterfacesHandler, C: NetlinkContext>(
     params: NetlinkWorkerParams<H, C>,
-    feature_flags: FeatureFlags,
     access_control: C::AccessControl<'_>,
 ) {
     run_netlink_worker_with_protocols(
         params,
         NetlinkWorkerDiscoverableProtocols::from_environment(),
         None,
-        feature_flags,
         access_control,
     )
     .await;
@@ -304,7 +292,6 @@ pub async fn run_netlink_worker_with_protocols<
     params: NetlinkWorkerParams<H, C>,
     protocols: NetlinkWorkerDiscoverableProtocols,
     on_initialized: Option<oneshot::Sender<()>>,
-    feature_flags: FeatureFlags,
     access_control: C::AccessControl<'_>,
 ) {
     let NetlinkWorkerParams { interfaces_handler, route_client_receiver, async_work_receiver } =
@@ -347,7 +334,7 @@ pub async fn run_netlink_worker_with_protocols<
                 async_work_receiver,
             };
 
-            event_loop.run(on_initialized, feature_flags).await;
+            event_loop.run(on_initialized).await;
         }
     };
 

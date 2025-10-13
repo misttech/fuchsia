@@ -57,10 +57,6 @@ use {
     fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_posix_socket as fposix_socket,
 };
 
-fn test_feature_flags() -> netlink::FeatureFlags {
-    netlink::FeatureFlags { copy_routes_to_main_table: false }
-}
-
 fn connect_to_netlink_protocols_in_realm(
     realm: &TestRealm<'_>,
 ) -> netlink::NetlinkWorkerDiscoverableProtocols {
@@ -434,7 +430,6 @@ async fn start_test_netlink(
         worker_params,
         protocols,
         Some(on_initialized),
-        test_feature_flags(),
         Default::default(),
     );
     let join_handle = fasync::Task::spawn(worker);

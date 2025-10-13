@@ -60,14 +60,6 @@ pub(crate) enum GetRouteArgs {
     Dump,
 }
 
-/// This is constant for the double-written main table route. The value is chosen
-/// because of the following reasons:
-///   1. Large enough so that it will override the routes provisioned by Fuchsia.
-///   2. A fixed value so that we can track the double-written route and skip
-///      reporting them in the main table.
-// TODO(https://fxbug.dev/418849362): Remove once unused.
-const DOUBLE_WRITE_MAIN_TABLE_METRIC_DELTA: u32 = 100000000;
-
 /// Arguments for an RTM_NEWROUTE unicast route.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, GenericOverIp)]
 #[generic_over_ip(I, Ip)]
@@ -239,7 +231,6 @@ pub(crate) struct RoutesWorker<
     I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdminIpExt,
 > {
     fidl_route_map: FidlRouteMap<I>,
-    copy_routes_to_main_table: bool,
 }
 
 fn get_table_u8_and_nla_from_key(
@@ -288,7 +279,6 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
         main_route_table: &<I::RouteTableMarker as ProtocolMarker>::Proxy,
         routes_state_proxy: &<I::StateMarker as ProtocolMarker>::Proxy,
         route_table_provider: <I::RouteTableProviderMarker as ProtocolMarker>::Proxy,
-        copy_routes_to_main_table: bool,
     ) -> (
         Self,
         RouteTableMap<I>,
@@ -326,7 +316,7 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
             unmanaged_route_set_proxy,
             route_table_provider,
         );
-        (Self { fidl_route_map, copy_routes_to_main_table }, route_table_map, route_event_stream)
+        (Self { fidl_route_map }, route_table_map, route_event_stream)
     }
 
     /// Handles events observed by the route watchers by adding/removing routes
@@ -460,52 +450,25 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
             return Err(RequestError::AlreadyExists);
         }
 
-        let (real_route_set, backup_route_set) =
-            match route_tables.get(&table).expect("should have just been populated") {
-                RouteTable::Managed(ManagedRouteTable {
-                    route_set_proxy,
-                    route_set_from_main_table_proxy,
-                    ..
-                }) => (
-                    route_set_proxy,
-                    self.copy_routes_to_main_table.then_some(route_set_from_main_table_proxy),
-                ),
-                RouteTable::Unmanaged(UnmanagedTable { route_set_proxy, .. }) => {
-                    (route_set_proxy, None)
-                }
-            };
-
-        // TODO(https://fxbug.dev/418849362): Until rules are fully supported in netlink and
-        // netstack, routes are installed into BOTH the main table and the "real" table in order to
-        // be able to exercise the install-routes-in-separate-tables path as part of transitioning
-        // to full PBR support while preserving existing functionality.
-        if let Some(backup_route_set) = backup_route_set {
-            let _added_to_main_table_as_backup: bool = Self::dispatch_route_proxy_fn(
-                &create_backup_route(route)
-                    .try_into()
-                    .expect("should not have unknown route action"),
-                interface_id,
-                &interfaces_proxy,
-                backup_route_set,
-                fnet_routes_ext::admin::add_route::<I>,
-            )
-            .await?;
-        }
+        let route_set = match route_tables.get(&table).expect("should have just been populated") {
+            RouteTable::Managed(ManagedRouteTable { route_set_proxy, .. }) => route_set_proxy,
+            RouteTable::Unmanaged(UnmanagedTable { route_set_proxy, .. }) => route_set_proxy,
+        };
 
         let route: I::Route =
             route.try_into().expect("should not have constructed unknown route action");
-        let added_to_real_table: bool = Self::dispatch_route_proxy_fn(
+        let added_to_table: bool = Self::dispatch_route_proxy_fn(
             &route,
             interface_id,
             &interfaces_proxy,
-            real_route_set,
+            route_set,
             fnet_routes_ext::admin::add_route::<I>,
         )
         .await?;
 
         // When `add_route` has an `Ok(false)` response, this indicates that the
         // route already exists, which should manifest as a hard error in Linux.
-        if !added_to_real_table {
+        if !added_to_table {
             return Err(RequestError::AlreadyExists);
         };
 
@@ -541,52 +504,27 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
             .next()
             .expect("there should be exactly one Oif NLA present");
 
-        let (real_route_set, backup_route_set) = match route_tables.get(&table.into()) {
+        let route_set = match route_tables.get(&table.into()) {
             None => return Err(RequestError::NotFound),
             Some(lookup) => match lookup {
-                RouteTable::Managed(ManagedRouteTable {
-                    route_set_proxy,
-                    route_set_from_main_table_proxy,
-                    ..
-                }) => (
-                    route_set_proxy,
-                    self.copy_routes_to_main_table.then_some(route_set_from_main_table_proxy),
-                ),
-                RouteTable::Unmanaged(UnmanagedTable { route_set_proxy, .. }) => {
-                    (route_set_proxy, None)
-                }
+                RouteTable::Managed(ManagedRouteTable { route_set_proxy, .. }) => route_set_proxy,
+                RouteTable::Unmanaged(UnmanagedTable { route_set_proxy, .. }) => route_set_proxy,
             },
         };
 
         let route: fnet_routes_ext::Route<I> = route_to_delete.to_owned().into();
 
-        // TODO(https://fxbug.dev/418849362): Until rules are fully supported in netlink and
-        // netstack, routes are installed into BOTH the main table and the "real" table in order to
-        // be able to exercise both.
-        if let Some(route_set) = backup_route_set {
-            let _backup_copy_removed_from_main_table: bool = Self::dispatch_route_proxy_fn(
-                &create_backup_route(route)
-                    .try_into()
-                    .expect("should not have unknown route action"),
-                interface_id,
-                &interfaces_proxy,
-                route_set,
-                fnet_routes_ext::admin::remove_route::<I>,
-            )
-            .await?;
-        }
-
         let route: I::Route = route.try_into().expect("route should be converted");
-        let real_instance_removed: bool = Self::dispatch_route_proxy_fn(
+        let removed: bool = Self::dispatch_route_proxy_fn(
             &route,
             interface_id,
             &interfaces_proxy,
-            real_route_set,
+            route_set,
             fnet_routes_ext::admin::remove_route::<I>,
         )
         .await?;
 
-        if !real_instance_removed {
+        if !removed {
             log_error!(
                 "Route was not removed as a result of this call. Likely Linux wanted \
                 to remove a route from the global route set which is not supported  \
@@ -877,58 +815,6 @@ fn routes_conflict<I: Ip>(
     destinations_match && specified_metrics_match && tables_match
 }
 
-/// Recreates the original route from the backup route.
-///
-/// A backup route is deprioritized by [`create_backup_route`] when added to the main table.
-/// This method recreates the original route for netlink to track.
-// TODO(https://fxbug.dev/418849362): Remove once unused.
-fn maybe_fix_backup_route<I: Ip>(installed_route: &mut fnet_routes_ext::InstalledRoute<I>) {
-    let fnet_routes_ext::InstalledRoute { route, effective_properties, table_id: _ } =
-        installed_route;
-    let fnet_routes_ext::Route {
-        properties:
-            fnet_routes_ext::RouteProperties {
-                specified_properties: fnet_routes_ext::SpecifiedRouteProperties { metric },
-            },
-        destination: _,
-        action: _,
-    } = route;
-    match metric {
-        fnet_routes::SpecifiedMetric::ExplicitMetric(metric)
-            if *metric >= DOUBLE_WRITE_MAIN_TABLE_METRIC_DELTA =>
-        {
-            *metric -= DOUBLE_WRITE_MAIN_TABLE_METRIC_DELTA;
-            effective_properties.metric = *metric;
-        }
-        _ => {}
-    }
-}
-
-/// Creates a backup copy to be installed in the main table.
-///
-/// This route is deprioritized by an increased metric so that it will not take
-/// precedence over existing routes in the main table.
-/// Use [`maybe_fix_backup_route`] to recreate the original route and track in
-/// netlink.
-// TODO(https://fxbug.dev/418849362): Remove once unused.
-fn create_backup_route<I: Ip>(mut route: fnet_routes_ext::Route<I>) -> fnet_routes_ext::Route<I> {
-    let fnet_routes_ext::Route {
-        properties:
-            fnet_routes_ext::RouteProperties {
-                specified_properties: fnet_routes_ext::SpecifiedRouteProperties { metric },
-            },
-        destination: _,
-        action: _,
-    } = &mut route;
-    match metric {
-        fnet_routes::SpecifiedMetric::ExplicitMetric(metric) => {
-            *metric += DOUBLE_WRITE_MAIN_TABLE_METRIC_DELTA;
-        }
-        _ => {}
-    }
-    route
-}
-
 fn handle_route_watcher_event<
     I: Ip + fnet_routes_ext::admin::FidlRouteAdminIpExt + fnet_routes_ext::FidlRouteIpExt,
     S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
@@ -939,9 +825,7 @@ fn handle_route_watcher_event<
     event: fnet_routes_ext::Event<I>,
 ) -> Option<TableNeedsCleanup> {
     let (message_for_clients, table_no_routes) = match event {
-        fnet_routes_ext::Event::Added(mut added_installed_route) => {
-            // TODO(https://fxbug.dev/418849362): Remove once unused.
-            maybe_fix_backup_route(&mut added_installed_route);
+        fnet_routes_ext::Event::Added(added_installed_route) => {
             let fnet_routes_ext::InstalledRoute { route, table_id, effective_properties } =
                 added_installed_route;
 
@@ -977,9 +861,7 @@ fn handle_route_watcher_event<
                 ),
             }
         }
-        fnet_routes_ext::Event::Removed(mut removed_installed_route) => {
-            // TODO(https://fxbug.dev/418849362): Remove once unused.
-            maybe_fix_backup_route(&mut removed_installed_route);
+        fnet_routes_ext::Event::Removed(removed_installed_route) => {
             let fnet_routes_ext::InstalledRoute { route, table_id, effective_properties: _ } =
                 removed_installed_route;
 
@@ -1479,7 +1361,6 @@ mod tests {
     use netlink_packet_core::NetlinkPayload;
     use test_case::test_case;
 
-    use crate::FeatureFlags;
     use crate::client::AsyncWorkItem;
     use crate::eventloop::{EventLoopComponent, Optional, Required};
     use crate::interfaces::testutil::FakeInterfacesHandler;
@@ -1660,8 +1541,6 @@ mod tests {
         route_clients.add_client(right_client);
         route_clients.add_client(wrong_client);
 
-        let (route_set_from_main_table_proxy, _route_set_server_end) =
-            fidl::endpoints::create_proxy::<I::RouteSetMarker>();
         let (route_set_proxy, _route_set_server_end) =
             fidl::endpoints::create_proxy::<I::RouteSetMarker>();
         let (route_table_proxy, _route_table_server_end) =
@@ -1687,7 +1566,6 @@ mod tests {
                     RouteTable::Managed(ManagedRouteTable {
                         route_table_proxy,
                         route_set_proxy,
-                        route_set_from_main_table_proxy,
                         fidl_table_id: OTHER_FIDL_TABLE_ID,
                         rule_set_authenticated: false,
                     }),
@@ -2032,8 +1910,6 @@ mod tests {
             fidl::endpoints::create_proxy::<I::RouteTableMarker>();
         let (unmanaged_route_set_proxy, _unmanaged_route_set_server_end) =
             fidl::endpoints::create_proxy::<I::RouteSetMarker>();
-        let (route_set_from_main_table_proxy, _server_end) =
-            fidl::endpoints::create_proxy::<I::RouteSetMarker>();
         let (route_table_proxy, _route_table_server_end) =
             fidl::endpoints::create_proxy::<I::RouteTableMarker>();
         let (route_set_proxy, _server_end) = fidl::endpoints::create_proxy::<I::RouteSetMarker>();
@@ -2049,7 +1925,6 @@ mod tests {
         route_table.insert(
             MANAGED_ROUTE_TABLE_INDEX,
             RouteTable::Managed(ManagedRouteTable {
-                route_set_from_main_table_proxy,
                 route_set_proxy,
                 route_table_proxy,
                 fidl_table_id: OTHER_FIDL_TABLE_ID,
@@ -2357,7 +2232,6 @@ mod tests {
             ndp_option_watcher_provider: EventLoopComponent::Absent(Optional),
 
             unified_request_stream: request_stream,
-            feature_flags: FeatureFlags { copy_routes_to_main_table: false },
         };
 
         let (IpInvariant(inputs), server_ends) = I::map_ip_out(
@@ -2934,14 +2808,7 @@ mod tests {
         let route: fnet_routes_ext::Route<I> = route.try_into().unwrap();
 
         let metric = match route.properties.specified_properties.metric {
-            fnet_routes::SpecifiedMetric::ExplicitMetric(metric) => {
-                // The only routes written in the main table are backup routes which have
-                // very high metrics.
-                if table_id == MAIN_FIDL_TABLE_ID {
-                    assert!(metric >= DOUBLE_WRITE_MAIN_TABLE_METRIC_DELTA);
-                }
-                metric
-            }
+            fnet_routes::SpecifiedMetric::ExplicitMetric(metric) => metric,
             fnet_routes::SpecifiedMetric::InheritedFromInterface(fnet_routes::Empty) => {
                 panic!("metric should be explicit")
             }
@@ -4570,8 +4437,6 @@ mod tests {
         let (own_route_table_proxy, _server_end) =
             fidl::endpoints::create_proxy::<I::RouteTableMarker>();
         let (route_set_proxy, _server_end) = fidl::endpoints::create_proxy::<I::RouteSetMarker>();
-        let (route_set_from_main_table_proxy, _server_end) =
-            fidl::endpoints::create_proxy::<I::RouteSetMarker>();
         let (unmanaged_route_set_proxy, _unmanaged_route_set_server_end) =
             fidl::endpoints::create_proxy::<I::RouteSetMarker>();
         let (route_table_provider, _server_end) =
@@ -4589,7 +4454,6 @@ mod tests {
             RouteTable::Managed(ManagedRouteTable {
                 route_table_proxy: own_route_table_proxy,
                 route_set_proxy,
-                route_set_from_main_table_proxy,
                 fidl_table_id: OTHER_FIDL_TABLE_ID,
                 rule_set_authenticated: false,
             }),

@@ -90,13 +90,6 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
             RouteTable::Unmanaged(route_table) => route_table.fidl_table_id,
         }
     }
-
-    pub(crate) fn route_table_proxy(&self) -> &<I::RouteTableMarker as ProtocolMarker>::Proxy {
-        match self {
-            RouteTable::Managed(route_table) => &route_table.route_table_proxy,
-            RouteTable::Unmanaged(route_table) => &route_table.route_table_proxy,
-        }
-    }
 }
 
 /// State tracked for a route table managed by the netlink worker.
@@ -112,12 +105,6 @@ pub(crate) struct ManagedRouteTable<
     /// A route set derived from the corresponding FIDL route table.
     #[derivative(Debug = "ignore")]
     pub(crate) route_set_proxy: <I::RouteSetMarker as ProtocolMarker>::Proxy,
-
-    /// A route set derived from the main route table, used to install a "backup" copy of the
-    /// route in the main table to facilitate the transition to PBR rules support in netlink.
-    // TODO(https://fxbug.dev/418849362): Remove this once netlink supports PBR.
-    #[derivative(Debug = "ignore")]
-    pub(crate) route_set_from_main_table_proxy: <I::RouteSetMarker as ProtocolMarker>::Proxy,
 
     /// The ID of the corresponding FIDL route table.
     pub(crate) fidl_table_id: fnet_routes_ext::TableId,
@@ -323,18 +310,10 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
             .expect("error getting table ID");
         let route_set_proxy = fnet_routes_ext::admin::new_route_set::<I>(&route_table_proxy)
             .expect("error creating new route set");
-        let route_set_from_main_table_proxy = fnet_routes_ext::admin::new_route_set::<I>(
-            &self
-                .get(&MAIN_ROUTE_TABLE_INDEX)
-                .expect("the main table must be present")
-                .route_table_proxy(),
-        )
-        .expect("error creating new route set");
         self.insert(
             key,
             RouteTable::Managed(ManagedRouteTable {
                 route_table_proxy,
-                route_set_from_main_table_proxy,
                 route_set_proxy,
                 fidl_table_id,
                 rule_set_authenticated: false,
@@ -722,10 +701,6 @@ mod test {
                     let (route_set_proxy, _server_end) = fidl::endpoints::create_proxy::<
                         <Ipv6 as FidlRouteAdminIpExt>::RouteSetMarker,
                     >();
-                    let (route_set_from_main_table_proxy, _server_end) =
-                        fidl::endpoints::create_proxy::<
-                            <Ipv6 as FidlRouteAdminIpExt>::RouteSetMarker,
-                        >();
 
                     // It's expected that the netstack will ensure no-FIDL-ID clashes
                     // for us as long as we keep route table proxies alive.
@@ -736,7 +711,6 @@ mod test {
                         RouteTable::<Ipv6>::Managed(ManagedRouteTable {
                             route_table_proxy,
                             route_set_proxy,
-                            route_set_from_main_table_proxy,
                             fidl_table_id,
                             rule_set_authenticated: false,
                         }),
