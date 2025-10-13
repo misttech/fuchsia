@@ -236,7 +236,8 @@ mod tests {
         env.context
             .query(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
             .level(Some(ConfigLevel::User))
-            .set(env.isolate_root.path().to_string_lossy().into())
+            .build()
+            .set(&env.context, env.isolate_root.path().to_string_lossy().into())
             .expect("setting test config");
         let tool = EmuShowTool {
             cmd: ShowCommand { device: true, ..Default::default() },

@@ -94,7 +94,7 @@ fn default_log_path(ctx: &EnvironmentContext) -> Result<PathBuf> {
 }
 
 fn log_dir(ctx: &EnvironmentContext) -> Result<PathBuf> {
-    ctx.query("log.dir").get().map_err(Into::into)
+    ctx.query("log.dir").build().get(ctx).map_err(Into::into)
 }
 
 impl MultiFileLogger {

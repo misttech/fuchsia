@@ -288,7 +288,8 @@ mod test {
         env.context
             .query(CONFIG_BASE_URLS)
             .level(Some(ConfigLevel::User))
-            .set(serde_json::json!([]))
+            .build()
+            .set(&env.context, serde_json::json!([]))
             .unwrap();
 
         env

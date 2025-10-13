@@ -915,7 +915,8 @@ mod test {
         env.context
             .query("ssh.pub")
             .level(Some(ConfigLevel::User))
-            .set(json!([env.isolate_root.path().join("test_authorized_keys")]))
+            .build()
+            .set(&env.context, json!([env.isolate_root.path().join("test_authorized_keys")]))
             .expect("setting ssh pub key");
 
         let ssh_priv = env.isolate_root.path().join("test_ed25519_key");
@@ -923,7 +924,8 @@ mod test {
         env.context
             .query("ssh.priv")
             .level(Some(ConfigLevel::User))
-            .set(json!([ssh_priv.to_string_lossy()]))
+            .build()
+            .set(&env.context, json!([ssh_priv.to_string_lossy()]))
             .expect("setting ssh priv key");
     }
 
@@ -997,7 +999,8 @@ mod test {
         env.context
             .query(ffx_ssh::ssh::KEEPALIVE_TIMEOUT_CONFIG)
             .level(Some(ConfigLevel::User))
-            .set(json!(30))
+            .build()
+            .set(&env.context, json!(30))
             .expect("setting keepalive timeout key");
 
         let addr = SocketAddr::new(Ipv4Addr::new(192, 0, 2, 0).into(), 2345);

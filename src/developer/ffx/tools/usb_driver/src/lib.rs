@@ -168,7 +168,8 @@ async fn implementation(
     let (socket_path, found_config) = &ctx
         .query(usb_driver_api::CONFIG_USB_SOCKET_PATH)
         .level(Some(ffx_config::ConfigLevel::Runtime))
-        .get::<PathBuf>()
+        .build()
+        .get::<PathBuf>(&ctx)
         .map(|x| (x, true))
         .or_else(|_| -> fho::Result<_> {
             usb_driver_api::default_usb_socket_path()
@@ -176,7 +177,9 @@ async fn implementation(
                 .map_err(|e| fho::Error::Unexpected(e.into()))
         })?;
 
-    if !found_config && ctx.query(usb_driver_api::CONFIG_USB_SOCKET_PATH).get::<String>().is_ok() {
+    if !found_config
+        && ctx.query(usb_driver_api::CONFIG_USB_SOCKET_PATH).build().get::<String>(&ctx).is_ok()
+    {
         return Err(fho::Error::User(anyhow::anyhow!(
             "{} must be set on the command line",
             usb_driver_api::CONFIG_USB_SOCKET_PATH

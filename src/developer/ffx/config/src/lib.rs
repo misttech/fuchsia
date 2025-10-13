@@ -31,7 +31,7 @@ pub use aliases::{
     is_usb_discovery_disabled,
 };
 pub use api::ConfigError;
-pub use api::query::{ConfigQuery, SelectMode};
+pub use api::query::{ConfigQuery, ConfigQueryBuilder, SelectMode};
 pub use config_macros::FfxConfigBacked;
 
 pub use environment::{Environment, EnvironmentContext, TestEnv, test_env, test_init};
@@ -125,7 +125,7 @@ pub fn get_host_tool(ctx: &EnvironmentContext, name: &str) -> Result<PathBuf> {
     // Check for configured override for the host tool.
     let sdk = ctx.get_sdk()?;
     let override_key = format!("{SDK_OVERRIDE_KEY_PREFIX}.{name}");
-    let override_result: Result<PathBuf, ConfigError> = ctx.query(&override_key).get();
+    let override_result: Result<PathBuf, ConfigError> = ctx.get(&override_key);
 
     if let Ok(tool_path) = override_result {
         if tool_path.exists() {
@@ -160,7 +160,7 @@ fn get_log_dirs(ctx: &Option<EnvironmentContext>) -> Result<Vec<String>> {
                 "Failed to load host log directories from ffx config: No EnvironmentContext provided"
             )
         }
-        Some(con) => match con.query("log.dir").get() {
+        Some(con) => match con.get("log.dir") {
             Ok(log_dirs) => Ok(log_dirs),
             Err(e) => ffx_bail!("Failed to load host log directories from ffx config: {:?}", e),
         },
@@ -411,12 +411,14 @@ mod test {
         env.context
             .query("test.test.thing")
             .level(Some(ConfigLevel::User))
-            .set(Value::String("config_value_thingy".to_owned()))
+            .build()
+            .set(&env.context, Value::String("config_value_thingy".to_owned()))
             .unwrap();
         env.context
             .query("other.test.thing")
             .level(Some(ConfigLevel::User))
-            .set(Value::Number(serde_json::Number::from_f64(2f64).unwrap()))
+            .build()
+            .set(&env.context, Value::Number(serde_json::Number::from_f64(2f64).unwrap()))
             .unwrap();
 
         // If this is set, this should pop up before the config values.
@@ -428,7 +430,8 @@ mod test {
         env.context
             .query("other.test.thing")
             .level(Some(ConfigLevel::User))
-            .set(Value::String("oaiwhfoiwh".to_owned()))
+            .build()
+            .set(&env.context, Value::String("oaiwhfoiwh".to_owned()))
             .unwrap();
 
         // This should just compile and drop without panicking is all.
@@ -454,7 +457,8 @@ mod test {
         env.context
             .query("sdk.root")
             .level(Some(ConfigLevel::User))
-            .set(sdk_root.to_string_lossy().into())
+            .build()
+            .set(&env.context, sdk_root.to_string_lossy().into())
             .expect("creating temp sdk root");
 
         put_file!(sdk_root, "../test_data/sdk", "meta/manifest.json");
@@ -466,7 +470,8 @@ mod test {
         env.context
             .query(&format!("{SDK_OVERRIDE_KEY_PREFIX}.a_host_tool"))
             .level(Some(ConfigLevel::User))
-            .set(override_path.to_string_lossy().into())
+            .build()
+            .set(&env.context, override_path.to_string_lossy().into())
             .expect("setting override");
 
         let result = get_host_tool(&env.context, "a_host_tool").expect("a_host_tool");
@@ -480,7 +485,8 @@ mod test {
         env.context
             .query("sdk.root")
             .level(Some(ConfigLevel::User))
-            .set(sdk_root.to_string_lossy().into())
+            .build()
+            .set(&env.context, sdk_root.to_string_lossy().into())
             .expect("creating temp sdk root");
 
         put_file!(sdk_root, "../test_data/sdk", "meta/manifest.json");
@@ -494,7 +500,8 @@ mod test {
         env.context
             .query(&format!("{SDK_OVERRIDE_KEY_PREFIX}.a_host_tool"))
             .level(Some(ConfigLevel::User))
-            .set(override_path.to_string_lossy().into())
+            .build()
+            .set(&env.context, override_path.to_string_lossy().into())
             .expect("setting override");
 
         let result = get_host_tool(&env.context, "a_host_tool");

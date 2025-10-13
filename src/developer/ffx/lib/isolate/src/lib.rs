@@ -160,12 +160,12 @@ impl Isolate {
             target_addr = Option::Some(Cow::Owned(addr + ":0"));
             mdns_discovery = false;
         }
-        let log_target_levels = env_context.query("log.target_levels").get()?;
+        let log_target_levels = env_context.get("log.target_levels")?;
         // Propagate log configuration information to the isolate.
         // TODO(396473745): we should propagate _all_ log values,
         // except possibly log.dir (which may be set above from
         // FUCHSIA_TEST_OUTDIR)
-        let log_level = env_context.query("log.level").get()?;
+        let log_level = env_context.get("log.level")?;
 
         let user_config = UserConfig::for_test(
             log_dir.to_string_lossy(),
@@ -258,8 +258,7 @@ impl Isolate {
             std::fs::canonicalize(ffx_path).context("could not canonicalize own path")?;
 
         let sdk_root = context.get_sdk_root().ok();
-        let subtool_search_paths =
-            context.query("ffx.subtool-search-paths").get().unwrap_or_default();
+        let subtool_search_paths = context.get("ffx.subtool-search-paths").unwrap_or_default();
 
         Self::new_with_search(
             name,

@@ -480,7 +480,8 @@ mod tests {
         env.context
             .query(EMU_UPSCRIPT_FILE)
             .level(Some(ConfigLevel::User))
-            .set(json!("/path/to/upscript".to_string()))?;
+            .build()
+            .set(&env.context, json!("/path/to/upscript".to_string()))?;
 
         let opts =
             apply_command_line_options(opts, &cmd, &emulator_instances, &env.context).await?;
@@ -566,10 +567,23 @@ mod tests {
         env.context
             .query(EMU_DEFAULT_DEVICE)
             .level(Some(ConfigLevel::User))
-            .set(json!("my_device"))?;
-        env.context.query(EMU_DEFAULT_ENGINE).level(Some(ConfigLevel::User)).set(json!("qemu"))?;
-        env.context.query(EMU_DEFAULT_GPU).level(Some(ConfigLevel::User)).set(json!("host"))?;
-        env.context.query(EMU_START_TIMEOUT).level(Some(ConfigLevel::User)).set(json!(120))?;
+            .build()
+            .set(&env.context, json!("my_device"))?;
+        env.context
+            .query(EMU_DEFAULT_ENGINE)
+            .level(Some(ConfigLevel::User))
+            .build()
+            .set(&env.context, json!("qemu"))?;
+        env.context
+            .query(EMU_DEFAULT_GPU)
+            .level(Some(ConfigLevel::User))
+            .build()
+            .set(&env.context, json!("host"))?;
+        env.context
+            .query(EMU_START_TIMEOUT)
+            .level(Some(ConfigLevel::User))
+            .build()
+            .set(&env.context, json!(120))?;
 
         assert_eq!(cmd.device(&env.context).unwrap(), Some(String::from("my_device")));
         assert_eq!(cmd.engine(&env.context).unwrap(), "qemu");
@@ -606,9 +620,16 @@ mod tests {
         let file = File::create(&file_path).expect("Create temp file");
         let mut perms = file.metadata().expect("Get file metadata").permissions();
 
-        env.context.query(KVM_PATH).level(Some(ConfigLevel::User)).set(json!(
-            file_path.as_path().to_str().expect("Couldn't convert file_path to str").to_string()
-        ))?;
+        env.context.query(KVM_PATH).level(Some(ConfigLevel::User)).build().set(
+            &env.context,
+            json!(
+                file_path
+                    .as_path()
+                    .to_str()
+                    .expect("Couldn't convert file_path to str")
+                    .to_string()
+            ),
+        )?;
         let emu_instances = EmulatorInstances::new(temp_path.clone());
 
         // Set up some test data to be applied.

@@ -576,7 +576,7 @@ mod tests {
     use assembly_partitions_config::PartitionsConfig;
     use camino::{Utf8Path, Utf8PathBuf};
     use emulator_instance::{LogLevel, RuntimeConfig};
-    use ffx_config::{ConfigLevel, ConfigQuery, TestEnv};
+    use ffx_config::{ConfigLevel, ConfigQueryBuilder, TestEnv};
     use ffx_writer::TestBuffers;
     use pbms::ProductBundle;
     use product_bundle::ProductBundleV2;
@@ -763,7 +763,8 @@ mod tests {
         env.context
             .query("sdk.root")
             .level(Some(ConfigLevel::User))
-            .set(env.isolate_root.path().to_string_lossy().into())
+            .build()
+            .set(&env.context, env.isolate_root.path().to_string_lossy().into())
             .expect("sdk.root setting");
         let manifest_path = env.isolate_root.path().join("meta/manifest.json");
         fs::create_dir_all(manifest_path.parent().unwrap()).expect("temp sdk dir");
@@ -786,7 +787,8 @@ mod tests {
         env.context
             .query("sdk.overrides.uefi_internal_x64")
             .level(Some(ConfigLevel::User))
-            .set(ovmf_code.to_string_lossy().into())
+            .build()
+            .set(&env.context, ovmf_code.to_string_lossy().into())
             .expect("ovmf override");
     }
 
@@ -1082,7 +1084,11 @@ mod tests {
         let env = ffx_config::test_init().unwrap();
         make_fake_sdk(&env).await;
 
-        env.context.query("emu.name").level(Some(ConfigLevel::User)).set("".into())?;
+        env.context
+            .query("emu.name")
+            .level(Some(ConfigLevel::User))
+            .build()
+            .set(&env.context, "".into())?;
 
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
 
@@ -1997,12 +2003,14 @@ mod tests {
         env.context
             .query("emu.vbmeta.key")
             .level(Some(ConfigLevel::User))
-            .set(tmpfile.clone().into())
+            .build()
+            .set(&env.context, tmpfile.clone().into())
             .expect("emu.vbmeta.key setting");
         env.context
             .query("emu.vbmeta.metadata")
             .level(Some(ConfigLevel::User))
-            .set(tmpfile.clone().into())
+            .build()
+            .set(&env.context, tmpfile.clone().into())
             .expect("emu.vbmeta.metadata setting");
 
         let cmd = StartCommand {
@@ -2050,22 +2058,22 @@ mod tests {
         let loaded_pb = LoadedProductBundle::new(pb.clone(), "some/path/to_bundle");
 
         env.context
-            .query(ConfigQuery {
+            .query(ConfigQueryBuilder {
                 name: Some("emu.vbmeta.key"),
-                ctx: Some(&env.context),
                 level: Some(ConfigLevel::User),
                 ..Default::default()
             })
-            .set("/some/vbmeta/key".into())
+            .build()
+            .set(&env.context, "/some/vbmeta/key".into())
             .unwrap();
         env.context
-            .query(ConfigQuery {
+            .query(ConfigQueryBuilder {
                 name: Some("emu.vbmeta.metadata"),
-                ctx: Some(&env.context),
                 level: Some(ConfigLevel::User),
                 ..Default::default()
             })
-            .set("/some/vbmeta/metadata".into())
+            .build()
+            .set(&env.context, "/some/vbmeta/metadata".into())
             .unwrap();
 
         let tmp = tempfile::NamedTempFile::new().unwrap();
@@ -2118,22 +2126,22 @@ mod tests {
         let loaded_pb = LoadedProductBundle::new(pb.clone(), "some/path/to_bundle");
 
         env.context
-            .query(ConfigQuery {
+            .query(ConfigQueryBuilder {
                 name: Some("emu.vbmeta.key"),
-                ctx: Some(&env.context),
                 level: Some(ConfigLevel::User),
                 ..Default::default()
             })
-            .set("/some/vbmeta/key".into())
+            .build()
+            .set(&env.context, "/some/vbmeta/key".into())
             .unwrap();
         env.context
-            .query(ConfigQuery {
+            .query(ConfigQueryBuilder {
                 name: Some("emu.vbmeta.metadata"),
-                ctx: Some(&env.context),
                 level: Some(ConfigLevel::User),
                 ..Default::default()
             })
-            .set("/some/vbmeta/metadata".into())
+            .build()
+            .set(&env.context, "/some/vbmeta/metadata".into())
             .unwrap();
 
         let cmd = StartCommand {

@@ -89,7 +89,8 @@ impl From<&str> for SshError {
 
 pub fn get_ssh_key_paths_from_env(env: &EnvironmentContext) -> Result<Vec<String>> {
     env.query(SSH_PRIV)
-        .get_file()
+        .build()
+        .get_file(env)
         .context("getting path to an ssh private key from ssh.priv from env context")
 }
 
@@ -324,7 +325,9 @@ fn build_ssh_command_with_ssh_config_and_env(
     }
 
     let keys = get_ssh_key_paths_from_env(env)?;
-    if let Some(keepalive_timeout) = env.query(KEEPALIVE_TIMEOUT_CONFIG).get::<Option<u64>>()? {
+    if let Some(keepalive_timeout) =
+        env.query(KEEPALIVE_TIMEOUT_CONFIG).build().get::<Option<u64>>(env)?
+    {
         config.set_server_alive_count_max(keepalive_timeout as u16)?
     }
 
@@ -426,7 +429,8 @@ mod test {
         context
             .query(SSH_PRIV)
             .level(Some(ConfigLevel::User))
-            .set(format!("{}", private_path.display()).into())?;
+            .build()
+            .set(context, format!("{}", private_path.display()).into())?;
         Ok((tmp_dir, private_path))
     }
 
@@ -503,7 +507,8 @@ mod test {
         env.context
             .query("ssh.auth-sock")
             .level(Some(ConfigLevel::User))
-            .set(expect_path.clone().into())
+            .build()
+            .set(&env.context, expect_path.clone().into())
             .expect("setting auth sock config");
 
         let mut cmd = Command::new("env");
@@ -622,7 +627,8 @@ mod test {
         env.context
             .query("ssh.controlmaster.mode")
             .level(Some(ConfigLevel::User))
-            .set("none".into())
+            .build()
+            .set(&env.context, "none".into())
             .unwrap();
 
         let addr: SocketAddr = "127.0.0.1:22".parse().unwrap();
@@ -639,13 +645,15 @@ mod test {
         env.context
             .query("ssh.controlmaster.mode")
             .level(Some(ConfigLevel::User))
-            .set("explicit".into())
+            .build()
+            .set(&env.context, "explicit".into())
             .unwrap();
         let expected_path = "/tmp/test_socket";
         env.context
             .query("ssh.controlmaster.path")
             .level(Some(ConfigLevel::User))
-            .set(expected_path.into())
+            .build()
+            .set(&env.context, expected_path.into())
             .unwrap();
 
         let addr: SocketAddr = "127.0.0.1:22".parse().unwrap();
@@ -662,7 +670,8 @@ mod test {
         env.context
             .query("ssh.controlmaster.mode")
             .level(Some(ConfigLevel::User))
-            .set("explicit".into())
+            .build()
+            .set(&env.context, "explicit".into())
             .unwrap();
 
         let addr: SocketAddr = "127.0.0.1:22".parse().unwrap();
@@ -679,7 +688,8 @@ mod test {
         env.context
             .query("ssh.controlmaster.mode")
             .level(Some(ConfigLevel::User))
-            .set("managed".into())
+            .build()
+            .set(&env.context, "managed".into())
             .unwrap();
 
         let addr: SocketAddr = "127.0.0.1:22".parse().unwrap();
@@ -696,14 +706,16 @@ mod test {
         env.context
             .query("ssh.controlmaster.mode")
             .level(Some(ConfigLevel::User))
-            .set("managed".into())
+            .build()
+            .set(&env.context, "managed".into())
             .unwrap();
 
         let long_dir = "a".repeat(MAX_SOCKET_LEN);
         env.context
             .query("ssh.controlmaster.dir")
             .level(Some(ConfigLevel::User))
-            .set(long_dir.into())
+            .build()
+            .set(&env.context, long_dir.into())
             .unwrap();
 
         let addr: SocketAddr = "127.0.0.1:22".parse().unwrap();

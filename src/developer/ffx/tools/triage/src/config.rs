@@ -159,7 +159,8 @@ mod tests {
         env.context
             .query(DEFAULT_CONFIG_PATHS_VARIABLE)
             .level(Some(ffx_config::ConfigLevel::User))
-            .set(serde_json::json!(oot_test_default_configs))
+            .build()
+            .set(&env.context, serde_json::json!(oot_test_default_configs))
             .expect("Unable to set oot default config variable.");
 
         let config_files = get_or_default_config_files(&env.context, vec![], root.to_path_buf())

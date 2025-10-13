@@ -509,7 +509,6 @@ Reboot the Target to the bootloader and re-run this command."
                     if let Some(addr) = addrs.into_iter().take(1).next() {
                         let target_addr: TargetIpAddr = addr.into();
                         let socket_addr: SocketAddr = target_addr.into();
-
                         let target_name = if let Some(nodename) = &self.target_info.nodename {
                             nodename
                         } else {
@@ -824,7 +823,8 @@ mod test {
         env.context
             .query("product.path")
             .level(Some(ffx_config::ConfigLevel::User))
-            .set("foo".into())
+            .build()
+            .set(&env.context, "foo".into())
             .expect("creating temp product.path");
         let buffers = TestBuffers::default();
         let mut writer = <FlashTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);

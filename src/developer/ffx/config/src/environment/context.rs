@@ -7,7 +7,7 @@ use crate::api::ConfigError;
 use crate::api::value::{TryConvert, ValueStrategy};
 use crate::cache::Cache;
 use crate::storage::{AssertNoEnv, Config};
-use crate::{ConfigMap, ConfigQuery, Environment, is_analytics_disabled};
+use crate::{ConfigMap, ConfigQueryBuilder, Environment, is_analytics_disabled};
 use anyhow::{Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use errors::ffx_error;
@@ -395,8 +395,8 @@ impl EnvironmentContext {
     ///     .select(SelectMode::All);
     /// let value = query.get().await?;
     /// ```
-    pub fn build<'a>(&'a self) -> ConfigQuery<'a> {
-        ConfigQuery::default().context(Some(self))
+    pub fn build<'a>(&'a self) -> ConfigQueryBuilder<'a> {
+        ConfigQueryBuilder::default()
     }
 
     /// Creates a [`ConfigQuery`] against the global config cache and this
@@ -409,8 +409,8 @@ impl EnvironmentContext {
     /// ctx.query("a_key").get();
     /// ctx.query(ffx_config::ConfigLevel::User).get();
     /// ```
-    pub fn query<'a>(&'a self, with: impl Into<ConfigQuery<'a>>) -> ConfigQuery<'a> {
-        with.into().context(Some(self))
+    pub fn query<'a>(&'a self, with: impl Into<ConfigQueryBuilder<'a>>) -> ConfigQueryBuilder<'a> {
+        with.into()
     }
 
     /// A shorthand for the very common case of querying a value from the global config
@@ -418,9 +418,9 @@ impl EnvironmentContext {
     pub fn get<'a, T, U>(&'a self, with: U) -> std::result::Result<T, ConfigError>
     where
         T: TryConvert + ValueStrategy,
-        U: Into<ConfigQuery<'a>>,
+        U: Into<ConfigQueryBuilder<'a>>,
     {
-        self.query(with).get()
+        self.query(with).build().get(self)
     }
 
     /// A shorthand for the very common case of querying a value from the global config
@@ -428,9 +428,9 @@ impl EnvironmentContext {
     pub fn get_optional<'a, T, U>(&'a self, with: U) -> std::result::Result<T, ConfigError>
     where
         T: TryConvert + ValueStrategy,
-        U: Into<ConfigQuery<'a>>,
+        U: Into<ConfigQueryBuilder<'a>>,
     {
-        self.query(with).get_optional()
+        self.query(with).build().get_optional(self)
     }
 
     /// Find the appropriate sdk root for this invocation of ffx, looking at configuration
@@ -440,8 +440,7 @@ impl EnvironmentContext {
         // build directory.
         // Out of tree, we will always want to pull the config from the normal config path, which
         // we can defer to the SdkRoot's mechanisms for.
-        let runtime_root: Option<PathBuf> = self.query("sdk.root").get().ok();
-
+        let runtime_root: Option<PathBuf> = self.query("sdk.root").build().get(self).ok();
         match (&self.kind, runtime_root) {
             (EnvironmentKind::InTree { .. }, None) => Ok(SdkRoot::from_paths(None)?),
             (_, runtime_root) => SdkRoot::from_paths(runtime_root.as_deref()),

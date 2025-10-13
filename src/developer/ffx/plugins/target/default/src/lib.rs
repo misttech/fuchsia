@@ -45,7 +45,8 @@ pub async fn exec_target_default_impl<W: std::io::Write + ToolIO>(
             let target = context
                 .query(TARGET_DEFAULT_KEY)
                 .level(Some(ConfigLevel::Default))
-                .get_optional::<Option<String>>()?;
+                .build()
+                .get_optional::<Option<String>>(context)?;
             match target {
                 Some(target) if !target.is_empty() => writeln!(writer, "{}", target),
                 _ => write!(writer.stderr(), "{}", TARGET_GET_NO_TARGET_MSG),
@@ -124,17 +125,20 @@ mod test {
         env.context
             .query(TARGET_DEFAULT_KEY)
             .level(Some(ConfigLevel::User))
-            .set("distraction-target2".into())
+            .build()
+            .set(&env.context, "distraction-target2".into())
             .expect("default target setting");
         env.context
             .query(TARGET_DEFAULT_KEY)
             .level(Some(ConfigLevel::Build))
-            .set("distraction-target3".into())
+            .build()
+            .set(&env.context, "distraction-target3".into())
             .expect("default target setting");
         env.context
             .query(TARGET_DEFAULT_KEY)
             .level(Some(ConfigLevel::Global))
-            .set("distraction-target4".into())
+            .build()
+            .set(&env.context, "distraction-target4".into())
             .expect("default target setting");
 
         exec_target_default_impl(
@@ -167,17 +171,20 @@ mod test {
         env.context
             .query(TARGET_DEFAULT_KEY)
             .level(Some(ConfigLevel::User))
-            .set("distraction-target2".into())
+            .build()
+            .set(&env.context, "distraction-target2".into())
             .expect("default target setting");
         env.context
             .query(TARGET_DEFAULT_KEY)
             .level(Some(ConfigLevel::Build))
-            .set("distraction-target3".into())
+            .build()
+            .set(&env.context, "distraction-target3".into())
             .expect("default target setting");
         env.context
             .query(TARGET_DEFAULT_KEY)
             .level(Some(ConfigLevel::Global))
-            .set("distraction-target4".into())
+            .build()
+            .set(&env.context, "distraction-target4".into())
             .expect("default target setting");
 
         exec_target_default_impl(

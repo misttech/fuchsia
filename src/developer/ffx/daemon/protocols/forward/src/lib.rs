@@ -107,8 +107,8 @@ impl FidlProtocol for Forward {
                 })?;
 
                 let environment = cx_clone.environment();
-                let query = environment.query(TUNNEL_CFG).level(Some(ConfigLevel::User));
-                if let Err(e) = query.add(cfg) {
+                let query = environment.query(TUNNEL_CFG).level(Some(ConfigLevel::User)).build();
+                if let Err(e) = query.add(&environment, cfg) {
                     log::warn!("Failed to persist tunnel configuration: {:?}", e);
                 }
 

@@ -141,7 +141,8 @@ mod tests {
         env.context
             .query(EMU_INSTANCE_ROOT_DIR)
             .level(Some(ConfigLevel::User))
-            .set(json!(temp_path))
+            .build()
+            .set(&env.context, json!(temp_path))
             .expect("setting instance dir config");
 
         let emu_instances = EmulatorInstances::new(temp_path.clone());
@@ -177,7 +178,8 @@ mod tests {
         env.context
             .query(EMU_INSTANCE_ROOT_DIR)
             .level(Some(ConfigLevel::User))
-            .set(json!(temp_path))
+            .build()
+            .set(&env.context, json!(temp_path))
             .expect("setting instance dir config");
         let emu_instances = EmulatorInstances::new(temp_path.clone());
         let cmd = StopCommand::default();
@@ -204,7 +206,8 @@ mod tests {
         env.context
             .query(EMU_INSTANCE_ROOT_DIR)
             .level(Some(ConfigLevel::User))
-            .set(json!(temp_path))
+            .build()
+            .set(&env.context, json!(temp_path))
             .expect("setting instance dir config");
         let emu_instances = EmulatorInstances::new(temp_path.clone());
         let cmd = StopCommand { all: true, ..Default::default() };
@@ -227,7 +230,8 @@ mod tests {
         env.context
             .query(EMU_INSTANCE_ROOT_DIR)
             .level(Some(ConfigLevel::User))
-            .set(json!(env.isolate_root.path()))
+            .build()
+            .set(&env.context, json!(env.isolate_root.path()))
             .expect("setting instance dir config");
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
         let mut cmd = StopCommand::default();

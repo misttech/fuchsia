@@ -39,12 +39,14 @@ pub async fn exec_repository_default_impl<W: std::io::Write + ToolIO>(
         SubCommand::Set(set) => context
             .query(CONFIG_KEY_DEFAULT)
             .level(Some(set.level))
-            .set(serde_json::Value::String(set.name.clone()))?,
+            .build()
+            .set(context, serde_json::Value::String(set.name.clone()))?,
         SubCommand::Unset(unset) => {
             let _ = context
                 .query(CONFIG_KEY_DEFAULT)
                 .level(Some(unset.level))
-                .remove()
+                .build()
+                .remove(context)
                 .map_err(|e| writeln!(writer.stderr(), "warning: {}", e));
         }
     };

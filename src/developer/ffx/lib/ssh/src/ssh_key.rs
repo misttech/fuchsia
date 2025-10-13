@@ -141,7 +141,7 @@ impl SshKeyFiles {
     pub async fn load(ctx: &EnvironmentContext) -> Result<Self, SshKeyError> {
         // initialize to the first path in the list, then iterate through the list to select
         // the first file that exists.
-        let authorized_keys_files: Vec<PathBuf> = ctx.query("ssh.pub").get()?;
+        let authorized_keys_files: Vec<PathBuf> = ctx.query("ssh.pub").build().get(ctx)?;
         if authorized_keys_files.is_empty() {
             return Err(SshKeyError {
                 kind: SshKeyErrorKind::BadConfiguration,
@@ -156,7 +156,7 @@ impl SshKeyFiles {
             }
         }
 
-        let key_files: Vec<PathBuf> = ctx.query("ssh.priv").get()?;
+        let key_files: Vec<PathBuf> = ctx.query("ssh.priv").build().get(ctx)?;
         if key_files.is_empty() {
             return Err(SshKeyError {
                 kind: SshKeyErrorKind::BadConfiguration,
@@ -683,16 +683,24 @@ mod test {
         env.context
             .query("ssh.pub")
             .level(Some(ConfigLevel::User))
-            .set(json!(["$ENV_PATH_THAT_IS_NOT_SET", "/expected/default", "someother"]))
+            .build()
+            .set(
+                &env.context,
+                json!(["$ENV_PATH_THAT_IS_NOT_SET", "/expected/default", "someother"]),
+            )
             .expect("set ssh.pub");
         env.context
             .query("ssh.priv")
             .level(Some(ConfigLevel::User))
-            .set(json!([
-                "$ENV_PATH_THAT_IS_NOT_SET_2",
-                "/expected/default/private",
-                "someother/place"
-            ]))
+            .build()
+            .set(
+                &env.context,
+                json!([
+                    "$ENV_PATH_THAT_IS_NOT_SET_2",
+                    "/expected/default/private",
+                    "someother/place"
+                ]),
+            )
             .expect("set ssh.priv");
 
         // set the config

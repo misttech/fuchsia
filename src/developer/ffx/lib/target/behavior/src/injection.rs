@@ -248,8 +248,12 @@ impl Injector for Injection {
     // This could get called multiple times by the plugin system via multiple threads - so make sure
     // the spawning only happens one thread at a time.
     async fn daemon_factory(&self) -> anyhow::Result<DaemonProxy, FfxInjectorError> {
-        let should_autostart =
-            self.env_context.query(CONFIG_DAEMON_AUTOSTART).get().unwrap_or(true);
+        let should_autostart = self
+            .env_context
+            .query(CONFIG_DAEMON_AUTOSTART)
+            .build()
+            .get(&self.env_context)
+            .unwrap_or(true);
         self.daemon_factory_impl(should_autostart).await
     }
 

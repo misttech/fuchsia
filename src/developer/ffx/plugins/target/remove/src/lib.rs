@@ -227,7 +227,8 @@ mod test {
         env.context
             .query(MANUAL_TARGETS)
             .level(Some(ConfigLevel::User))
-            .set(json!({"127.0.0.1:8022": 0, "127.0.0.1:8023": 12345}))
+            .build()
+            .set(&env.context, json!({"127.0.0.1:8022": 0, "127.0.0.1:8023": 12345}))
             .unwrap();
         let server = setup_fake_target_collection_proxy(|_| true);
         let tool = RemoveTool {

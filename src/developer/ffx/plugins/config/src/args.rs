@@ -4,7 +4,7 @@
 
 use argh::{ArgsInfo, FromArgs};
 use ffx_config::api::query::SelectMode;
-use ffx_config::{ConfigLevel, ConfigQuery, EnvironmentContext};
+use ffx_config::{ConfigLevel, ConfigQuery, ConfigQueryBuilder, EnvironmentContext};
 use ffx_core::ffx_command;
 use std::path::PathBuf;
 
@@ -45,13 +45,13 @@ pub struct SetCommand {
 }
 
 impl SetCommand {
-    pub fn query<'a>(&'a self, ctx: &'a EnvironmentContext) -> ConfigQuery<'a> {
-        ConfigQuery::new(
+    pub fn query<'a>(&'a self, _ctx: &'a EnvironmentContext) -> ConfigQuery<'a> {
+        ConfigQueryBuilder::new(
             Some(self.name.as_str()),
             Some(ConfigLevel::User),
             SelectMode::default(),
-            Some(ctx),
         )
+        .build()
     }
 }
 
@@ -96,8 +96,8 @@ pub struct GetCommand {
 }
 
 impl GetCommand {
-    pub fn query<'a>(&'a self, ctx: &'a EnvironmentContext) -> ConfigQuery<'a> {
-        ConfigQuery::new(self.name.as_deref(), None, self.select, Some(ctx))
+    pub fn query<'a>(&'a self, _ctx: &'a EnvironmentContext) -> ConfigQuery<'a> {
+        ConfigQueryBuilder::new(self.name.as_deref(), None, self.select).build()
     }
 }
 
@@ -118,13 +118,13 @@ pub struct RemoveCommand {
 }
 
 impl RemoveCommand {
-    pub fn query<'a>(&'a self, ctx: &'a EnvironmentContext) -> ConfigQuery<'a> {
-        ConfigQuery::new(
+    pub fn query<'a>(&'a self, _ctx: &'a EnvironmentContext) -> ConfigQuery<'a> {
+        ConfigQueryBuilder::new(
             Some(self.name.as_str()),
             Some(ConfigLevel::User),
             SelectMode::default(),
-            Some(ctx),
         )
+        .build()
     }
 }
 
@@ -150,13 +150,13 @@ pub struct AddCommand {
 }
 
 impl AddCommand {
-    pub fn query<'a>(&'a self, ctx: &'a EnvironmentContext) -> ConfigQuery<'a> {
-        ConfigQuery::new(
+    pub fn query<'a>(&'a self, _ctx: &'a EnvironmentContext) -> ConfigQuery<'a> {
+        ConfigQueryBuilder::new(
             Some(self.name.as_str()),
             Some(ConfigLevel::User),
             SelectMode::default(),
-            Some(ctx),
         )
+        .build()
     }
 }
 

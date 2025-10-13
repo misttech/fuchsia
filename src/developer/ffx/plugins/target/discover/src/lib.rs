@@ -542,7 +542,8 @@ mod tests {
                 .context
                 .query("discovery.cache_dir")
                 .level(Some(ConfigLevel::User))
-                .set(serde_json::to_value(cache_path.to_str().unwrap()).unwrap())
+                .build()
+                .set(&test_env.context, serde_json::to_value(cache_path.to_str().unwrap()).unwrap())
                 .unwrap();
             let process_manager = Some(MockProcessManager::new());
             let discovery_runner = Some(MockDiscoveryRunner::new());

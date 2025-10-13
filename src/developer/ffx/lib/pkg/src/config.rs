@@ -82,12 +82,17 @@ pub async fn set_default_repository(context: &EnvironmentContext, repo_name: &st
     context
         .query(CONFIG_KEY_DEFAULT_REPOSITORY)
         .level(Some(ConfigLevel::User))
-        .set(repo_name.into())
+        .build()
+        .set(context, repo_name.into())
 }
 
 /// Unsets the default repository from the config.
 pub async fn unset_default_repository(context: &EnvironmentContext) -> Result<()> {
-    context.query(CONFIG_KEY_DEFAULT_REPOSITORY).level(Some(ConfigLevel::User)).remove()
+    context
+        .query(CONFIG_KEY_DEFAULT_REPOSITORY)
+        .level(Some(ConfigLevel::User))
+        .build()
+        .remove(context)
 }
 
 #[cfg(test)]
@@ -101,7 +106,12 @@ mod tests {
     #[fuchsia::test]
     async fn test_get_set_unset_default_repository() {
         let env = ffx_config::test_init().expect("test init");
-        env.context.query(CONFIG_KEY_ROOT).level(Some(ConfigLevel::User)).set(json!({})).unwrap();
+        env.context
+            .query(CONFIG_KEY_ROOT)
+            .level(Some(ConfigLevel::User))
+            .build()
+            .set(&env.context, json!({}))
+            .unwrap();
 
         // Initially there's no default.
         assert_eq!(get_default_repository(&env.context).await.unwrap(), None);

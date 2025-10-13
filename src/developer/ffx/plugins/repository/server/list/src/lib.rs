@@ -194,7 +194,8 @@ mod tests {
             .context
             .query("repository.process_dir")
             .level(Some(ConfigLevel::User))
-            .set(test_env.isolate_root.path().to_string_lossy().into())
+            .build()
+            .set(&test_env.context, test_env.isolate_root.path().to_string_lossy().into())
             .expect("Setting process dir");
 
         let tool = RepoListTool {
@@ -218,7 +219,8 @@ mod tests {
             .context
             .query("repository.process_dir")
             .level(Some(ConfigLevel::User))
-            .set(test_env.isolate_root.path().to_string_lossy().into())
+            .build()
+            .set(&test_env.context, test_env.isolate_root.path().to_string_lossy().into())
             .expect("Setting process dir");
 
         let dir = test_env.context.get("repository.process_dir").expect("process_dir");
@@ -266,7 +268,8 @@ mod tests {
             .context
             .query("repository.process_dir")
             .level(Some(ConfigLevel::User))
-            .set(test_env.isolate_root.path().to_string_lossy().into())
+            .build()
+            .set(&test_env.context, test_env.isolate_root.path().to_string_lossy().into())
             .expect("Setting process dir");
         let dir = test_env.context.get("repository.process_dir").expect("process_dir");
         let mgr = PkgServerInstances::new(dir);
@@ -380,7 +383,8 @@ mod tests {
             .context
             .query("repository.process_dir")
             .level(Some(ConfigLevel::User))
-            .set(test_env.isolate_root.path().to_string_lossy().into())
+            .build()
+            .set(&test_env.context, test_env.isolate_root.path().to_string_lossy().into())
             .expect("Setting process dir");
 
         let dir = test_env.context.get("repository.process_dir").expect("process_dir");

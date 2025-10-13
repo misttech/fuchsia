@@ -1665,7 +1665,8 @@ Triggers:
         context
             .query("log.dir")
             .level(Some(ffx_config::ConfigLevel::User))
-            .set(log_dir.into())
+            .build()
+            .set(&env.context, log_dir.into())
             .unwrap();
 
         struct Test {

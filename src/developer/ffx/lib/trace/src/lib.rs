@@ -56,7 +56,8 @@ pub fn get_category_groups(ctx: &EnvironmentContext) -> Result<HashMap<String, V
     let all_groups = ctx
         .query("trace.category_groups")
         .select(ffx_config::SelectMode::All)
-        .get::<Value>()
+        .build()
+        .get::<Value>(ctx)
         .context("could not query `trace.category_groups` in config.")?;
 
     let mut category_group_map: HashMap<String, Vec<String>> = HashMap::new();
@@ -78,7 +79,8 @@ pub async fn get_category_group_names(ctx: &EnvironmentContext) -> Result<Vec<St
     let all_groups = ctx
         .query("trace.category_groups")
         .select(ffx_config::SelectMode::All)
-        .get::<Value>()
+        .build()
+        .get::<Value>(ctx)
         .context("could not query `trace.category_groups` in config.")?;
     let mut group_names: Vec<String> = all_groups
         .as_array()
@@ -235,7 +237,8 @@ mod tests {
         env.context
             .query("trace.category_groups.birds")
             .level(Some(ffx_config::ConfigLevel::User))
-            .set(json!(birds))
+            .build()
+            .set(&env.context, json!(birds))
             .unwrap();
         assert_eq!(birds, get_category_group(&env.context, "birds").unwrap());
     }
@@ -248,17 +251,20 @@ mod tests {
         env.context
             .query("trace.category_groups.birds")
             .level(Some(ffx_config::ConfigLevel::User))
-            .set(json!(birds))
+            .build()
+            .set(&env.context, json!(birds))
             .unwrap();
         env.context
             .query("trace.category_groups.bees")
             .level(Some(ffx_config::ConfigLevel::User))
-            .set(json!(bees))
+            .build()
+            .set(&env.context, json!(bees))
             .unwrap();
         env.context
             .query("trace.category_groups.*invalid")
             .level(Some(ffx_config::ConfigLevel::User))
-            .set(json!(bees))
+            .build()
+            .set(&env.context, json!(bees))
             .unwrap();
         assert!(
             get_category_group_names(&env.context).await.unwrap().contains(&"birds".to_owned())
@@ -306,7 +312,8 @@ mod tests {
             env.context
                 .query("trace.category_groups.flawed")
                 .level(Some(ffx_config::ConfigLevel::User))
-                .set(json!(vec![invalid_category]))
+                .build()
+                .set(&env.context, json!(vec![invalid_category]))
                 .unwrap();
             let err = get_category_group(&env.context, "flawed").unwrap_err();
             let expected_message = format!("invalid category \"{}\"", invalid_category);
@@ -325,7 +332,8 @@ mod tests {
         env.context
             .query("trace.category_groups.birds")
             .level(Some(ffx_config::ConfigLevel::User))
-            .set(json!(birds))
+            .build()
+            .set(&env.context, json!(birds))
             .unwrap();
         // The result should have all groups expanded, merge duplicate categories, and sort them.
         assert_eq!(

@@ -1169,7 +1169,8 @@ mod test {
             .context
             .query(DISCOVERY_CACHE_DIR_CONFIG)
             .level(Some(ffx_config::ConfigLevel::User))
-            .set(serde_json::Value::String(cache_dir.to_string()))
+            .build()
+            .set(&test_env.context, serde_json::Value::String(cache_dir.to_string()))
             .unwrap();
 
         let result = get_discovery_cache_dir(&test_env.context);

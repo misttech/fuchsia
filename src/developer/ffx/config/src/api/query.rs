@@ -31,22 +31,23 @@ impl Default for SelectMode {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct ConfigQuery<'a> {
     pub name: Option<&'a str>,
     pub level: Option<ConfigLevel>,
     pub select: SelectMode,
-    pub ctx: Option<&'a EnvironmentContext>,
 }
 
-impl<'a> ConfigQuery<'a> {
-    pub fn new(
-        name: Option<&'a str>,
-        level: Option<ConfigLevel>,
-        select: SelectMode,
-        ctx: Option<&'a EnvironmentContext>,
-    ) -> Self {
-        Self { ctx, name, level, select }
+#[derive(Debug, Default, Clone)]
+pub struct ConfigQueryBuilder<'a> {
+    pub name: Option<&'a str>,
+    pub level: Option<ConfigLevel>,
+    pub select: SelectMode,
+}
+
+impl<'a> ConfigQueryBuilder<'a> {
+    pub fn new(name: Option<&'a str>, level: Option<ConfigLevel>, select: SelectMode) -> Self {
+        Self { name, level, select }
     }
 
     /// Adds the given name to the query and returns a new composed query.
@@ -61,26 +62,13 @@ impl<'a> ConfigQuery<'a> {
     pub fn select(self, select: SelectMode) -> Self {
         Self { select, ..self }
     }
-    /// Use the given environment context instead of the global one and returns
-    /// a new composed query.
-    pub fn context(self, ctx: Option<&'a EnvironmentContext>) -> Self {
-        Self { ctx, ..self }
-    }
 
-    fn get_env_context(&self) -> Result<EnvironmentContext> {
-        match self.ctx {
-            Some(ctx) => Ok(ctx.clone()),
-            None => Err(QueryError::ContextNotSet.into()),
-        }
+    pub fn build(self) -> ConfigQuery<'a> {
+        ConfigQuery { name: self.name, level: self.level, select: self.select }
     }
+}
 
-    fn get_env(&self) -> Result<Environment> {
-        match self.ctx {
-            Some(ctx) => ctx.load(),
-            None => Err(QueryError::ContextNotSet.into()),
-        }
-    }
-
+impl<'a> ConfigQuery<'a> {
     fn get_config(&self, env: Environment) -> ConfigResult {
         let config = env.config_from_cache()?;
         let read_guard = config.read().map_err(|_| anyhow!("config read guard"))?;
@@ -102,13 +90,12 @@ impl<'a> ConfigQuery<'a> {
         log::debug!("`{self}` => `{result:?}`");
         Ok(result)
     }
-
     /// Get a value with as little processing as possible
-    pub fn get_raw<T>(&self) -> Result<T, ConfigError>
+    pub fn get_raw<T>(&self, context: &EnvironmentContext) -> Result<T, ConfigError>
     where
         T: TryConvert + ValueStrategy,
     {
-        let ctx = self.get_env_context().map_err(|e| ConfigError::new(e))?;
+        let ctx = context;
         T::validate_query(self)?;
         let cv = self
             .get_config(ctx.load().map_err(|e| ConfigError::new(e))?)
@@ -118,11 +105,11 @@ impl<'a> ConfigQuery<'a> {
 
     /// Get an optional value, ignoring "BadKey" errors, which are only generated when in strict
     /// mode. Used to let callers choose not to report errors due to bad mappings.
-    pub fn get_optional<T>(&self) -> Result<T, ConfigError>
+    pub fn get_optional<T>(&self, context: &EnvironmentContext) -> Result<T, ConfigError>
     where
         T: TryConvert + ValueStrategy,
     {
-        self.get().or_else(|e| {
+        self.get(context).or_else(|e| {
             if matches!(e, ConfigError::BadValue { .. }) {
                 T::try_convert(ConfigValue(None))
             } else {
@@ -132,13 +119,13 @@ impl<'a> ConfigQuery<'a> {
     }
 
     /// Get a value with the normal processing of substitution strings
-    pub fn get<T>(&self) -> Result<T, ConfigError>
+    pub fn get<T>(&self, context: &EnvironmentContext) -> Result<T, ConfigError>
     where
         T: TryConvert + ValueStrategy,
     {
         use crate::mapping::*;
 
-        let ctx = self.get_env_context().map_err(|e| ConfigError::new(e))?;
+        let ctx = context;
         T::validate_query(self)?;
 
         // The use of `is_strict()` here is not ideal, because we'd like to have strict-specific
@@ -199,13 +186,12 @@ impl<'a> ConfigQuery<'a> {
     }
 
     /// Get a value with normal processing, but verifying that it's a file that exists.
-    pub fn get_file<T>(&self) -> Result<T, ConfigError>
+    pub fn get_file<T>(&self, ctx: &EnvironmentContext) -> Result<T, ConfigError>
     where
         T: TryConvert + ValueStrategy,
     {
         use crate::mapping::*;
 
-        let ctx = self.get_env_context().map_err(|e| ConfigError::new(e))?;
         T::validate_query(self)?;
         // See comments re strict checking in get() above
         if ctx.is_strict() {
@@ -266,10 +252,10 @@ impl<'a> ConfigQuery<'a> {
     }
 
     /// Set the queried location to the given Value.
-    pub fn set(&self, value: Value) -> Result<()> {
+    pub fn set(&self, context: &EnvironmentContext, value: Value) -> Result<()> {
         log::debug!("Setting config value");
         let (key, level) = self.validate_write_query()?;
-        let mut env = self.get_env()?;
+        let mut env = context.load()?;
         log::debug!("Config set got environment");
         env.populate_defaults(&level)?;
         log::debug!("Config set defaults populated");
@@ -285,9 +271,9 @@ impl<'a> ConfigQuery<'a> {
     }
 
     /// Remove the value at the queried location.
-    pub fn remove(&self) -> Result<()> {
+    pub fn remove(&self, context: &EnvironmentContext) -> Result<()> {
         let (key, level) = self.validate_write_query()?;
-        let env = self.get_env()?;
+        let env = context.load()?;
         let config = env.config_from_cache()?;
         let mut write_guard = config.write().map_err(|_| anyhow!("config write guard"))?;
         write_guard.remove(key, level)?;
@@ -296,9 +282,9 @@ impl<'a> ConfigQuery<'a> {
 
     /// Add this value at the queried location as an array item, converting the location to an array
     /// if necessary.
-    pub fn add(&self, value: Value) -> Result<()> {
+    pub fn add(&self, context: &EnvironmentContext, value: Value) -> Result<()> {
         let (key, level) = self.validate_write_query()?;
-        let mut env = self.get_env()?;
+        let mut env = context.load()?;
         env.populate_defaults(&level)?;
         let config = env.config_from_cache()?;
         let mut write_guard = config.write().map_err(|_| anyhow!("config write guard"))?;
@@ -338,23 +324,23 @@ impl<'a> std::fmt::Display for ConfigQuery<'a> {
     }
 }
 
-impl<'a> From<&'a str> for ConfigQuery<'a> {
+impl<'a> From<&'a str> for ConfigQueryBuilder<'a> {
     fn from(value: &'a str) -> Self {
         let name = Some(value);
-        ConfigQuery { name, ..Default::default() }
+        ConfigQueryBuilder { name, ..Default::default() }
     }
 }
 
-impl<'a> From<&'a String> for ConfigQuery<'a> {
+impl<'a> From<&'a String> for ConfigQueryBuilder<'a> {
     fn from(value: &'a String) -> Self {
         let name = Some(value.as_str());
-        ConfigQuery { name, ..Default::default() }
+        ConfigQueryBuilder { name, ..Default::default() }
     }
 }
 
-impl<'a> From<ConfigLevel> for ConfigQuery<'a> {
+impl<'a> From<ConfigLevel> for ConfigQueryBuilder<'a> {
     fn from(value: ConfigLevel) -> Self {
         let level = Some(value);
-        ConfigQuery { level, ..Default::default() }
+        ConfigQueryBuilder { level, ..Default::default() }
     }
 }

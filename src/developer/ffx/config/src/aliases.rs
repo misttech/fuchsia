@@ -128,7 +128,8 @@ mod test {
         env.context
             .query("ffx.isolated")
             .level(Some(ConfigLevel::User))
-            .set(Value::Bool(true))
+            .build()
+            .set(&env.context, Value::Bool(true))
             .unwrap();
 
         assert!(is_usb_discovery_disabled(&env.context));
@@ -145,14 +146,16 @@ mod test {
             .query("ffx.isolated")
             // Higher precedence
             .level(Some(ConfigLevel::User))
-            .set(Value::Bool(true))
+            .build()
+            .set(&env.context, Value::Bool(true))
             .unwrap();
 
         env.context
             .query("fastboot.usb.disabled")
             // Lower precedence
             .level(Some(ConfigLevel::Global))
-            .set(Value::Bool(false))
+            .build()
+            .set(&env.context, Value::Bool(false))
             .unwrap();
 
         // Isolation is respected, since it is set at a higher level
@@ -167,14 +170,16 @@ mod test {
             .query("ffx.isolated")
             // Higher precedence
             .level(Some(ConfigLevel::Global))
-            .set(Value::Bool(true))
+            .build()
+            .set(&env.context, Value::Bool(true))
             .unwrap();
 
         env.context
             .query("fastboot.usb.disabled")
             // Lower precedence
             .level(Some(ConfigLevel::User))
-            .set(Value::Bool(false))
+            .build()
+            .set(&env.context, Value::Bool(false))
             .unwrap();
 
         // Isolation is overridden, since it is set at a lower level

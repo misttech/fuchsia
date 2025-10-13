@@ -67,12 +67,17 @@ impl ManualTargets for Config {
         self.context
             .query(MANUAL_TARGETS)
             .level(Some(ConfigLevel::User))
-            .get()
+            .build()
+            .get(&self.context)
             .context("manual_targets::get")
     }
 
     async fn storage_set(&self, targets: Value) -> Result<()> {
-        self.context.query(MANUAL_TARGETS).level(Some(ConfigLevel::User)).set(targets.into())
+        self.context
+            .query(MANUAL_TARGETS)
+            .level(Some(ConfigLevel::User))
+            .build()
+            .set(&self.context, targets.into())
     }
 }
 
@@ -130,7 +135,8 @@ mod test {
             env.context
                 .query(MANUAL_TARGETS)
                 .level(Some(ConfigLevel::User))
-                .set(json!({"127.0.0.1:8022": 0, "127.0.0.1:8023": 12345}))
+                .build()
+                .set(&env.context, json!({"127.0.0.1:8022": 0, "127.0.0.1:8023": 12345}))
                 .unwrap();
 
             let mt = Config::new_from_context(&env.context);
@@ -163,7 +169,8 @@ mod test {
             env.context
                 .query(MANUAL_TARGETS)
                 .level(Some(ConfigLevel::User))
-                .set(json!({"127.0.0.1:8022": 0, "127.0.0.1:8023": 0}))
+                .build()
+                .set(&env.context, json!({"127.0.0.1:8022": 0, "127.0.0.1:8023": 0}))
                 .unwrap();
 
             let mt = Config::new_from_context(&env.context);

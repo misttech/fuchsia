@@ -280,16 +280,16 @@ pub fn log_file_with_info(
     name: &PathBuf,
     log_dir_handling: LogDirHandling,
 ) -> Result<(File, PathBuf)> {
-    let mut log_path: PathBuf = ctx.query(LOG_DIR).get()?;
+    let mut log_path: PathBuf = ctx.get(LOG_DIR)?;
     create_dir_all(&log_path)?;
     log_path.push(name);
 
     let mut f: Option<File> = None;
     if let LogDirHandling::WithDirWithRotate = log_dir_handling {
-        let log_rotations: Option<u64> = ctx.query(LOG_ROTATIONS).get()?;
+        let log_rotations: Option<u64> = ctx.get(LOG_ROTATIONS)?;
         let log_rotations = log_rotations.unwrap_or(0);
         if log_rotations > 0 {
-            let log_rotate_size: Option<u64> = ctx.query(LOG_ROTATE_SIZE).get()?;
+            let log_rotate_size: Option<u64> = ctx.get(LOG_ROTATE_SIZE)?;
             // rotate_file() returns Some(f) if it uses an existing file
             f = rotate_file(log_rotate_size, log_rotations, &log_path)?;
         }
@@ -317,7 +317,7 @@ fn open_log_file(path: &Path) -> Result<std::fs::File> {
 }
 
 pub fn is_enabled(ctx: &EnvironmentContext) -> bool {
-    ctx.query(LOG_ENABLED).get().unwrap_or(false)
+    ctx.get(LOG_ENABLED).unwrap_or(false)
 }
 
 pub fn debugging_on(ctx: &EnvironmentContext) -> bool {
@@ -326,8 +326,8 @@ pub fn debugging_on(ctx: &EnvironmentContext) -> bool {
 }
 
 fn filter_level(ctx: &EnvironmentContext) -> LevelFilter {
-    ctx.query(LOG_LEVEL)
-        .get::<String>()
+    ctx
+        .get::<String,_>(LOG_LEVEL)
         .ok()
         .map(|str|
             // Ideally we could log here, but there may be no log sink, so print a warning to
@@ -396,8 +396,8 @@ pub fn init(
 pub struct DisableableFilter;
 
 fn level_filter(ctx: &EnvironmentContext) -> log::LevelFilter {
-    ctx.query(LOG_LEVEL)
-        .get::<String>()
+    ctx
+        .get::<String, _>(LOG_LEVEL)
         .ok()
         .map(|str|
             // Ideally we could log here, but there may be no log sink, so print a warning to
@@ -417,7 +417,7 @@ fn level_filter(ctx: &EnvironmentContext) -> log::LevelFilter {
 pub fn target_levels_log(ctx: &EnvironmentContext) -> Vec<(String, log::LevelFilter)> {
     // Parse the targets from the config. Ideally we'd log errors, but since there might be no log
     // sink, filter out any unexpected values.
-    if let Ok(targets) = ctx.query(LOG_TARGET_LEVELS).get::<serde_json::Value>() {
+    if let Ok(targets) = ctx.get::<serde_json::Value, _>(LOG_TARGET_LEVELS) {
         if let serde_json::Value::Object(o) = targets {
             return o
                 .into_iter()

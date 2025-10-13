@@ -120,7 +120,8 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
         // Create the data directory if needed.
         let mut instance_root: PathBuf = env
             .query(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
-            .get_file()
+            .build()
+            .get_file(env)
             .map_err(|e| bug!("Error reading config for instance root: {e}"))?;
         // This should really just be part of the conversion, but the structure of the config file
         // makes it awkward to do. The `file_check` function doesn't allow for returning an error,
@@ -1132,7 +1133,8 @@ mod tests {
         env.context
             .query("sdk.root")
             .level(Some(ConfigLevel::User))
-            .set(env.isolate_root.path().to_string_lossy().into())
+            .build()
+            .set(&env.context, env.isolate_root.path().to_string_lossy().into())
             .expect("sdk.root setting");
         let manifest_path = env.isolate_root.path().join("meta/manifest.json");
         fs::create_dir_all(manifest_path.parent().unwrap()).expect("temp sdk dir");
@@ -1158,12 +1160,14 @@ mod tests {
         env.context
             .query("sdk.overrides.qemu_internal")
             .level(Some(ConfigLevel::User))
-            .set(fake_qemu.to_string_lossy().into())
+            .build()
+            .set(&env.context, fake_qemu.to_string_lossy().into())
             .expect("qemu override");
         env.context
             .query("sdk.overrides.crosvm_internal")
             .level(Some(ConfigLevel::User))
-            .set(fake_qemu.to_string_lossy().into())
+            .build()
+            .set(&env.context, fake_qemu.to_string_lossy().into())
             .expect("crosvm override");
 
         let fake_aemu = env.isolate_root.path().join("fake_aemu");
@@ -1173,7 +1177,8 @@ mod tests {
         env.context
             .query("sdk.overrides.aemu_internal")
             .level(Some(ConfigLevel::User))
-            .set(fake_qemu.to_string_lossy().into())
+            .build()
+            .set(&env.context, fake_qemu.to_string_lossy().into())
             .expect("aemu override");
 
         let fake_fvm = env.isolate_root.path().join("fake_fvm");
@@ -1183,7 +1188,8 @@ mod tests {
         env.context
             .query("sdk.overrides.fvm")
             .level(Some(ConfigLevel::User))
-            .set(fake_fvm.to_string_lossy().into())
+            .build()
+            .set(&env.context, fake_fvm.to_string_lossy().into())
             .expect("fvm override");
 
         let fake_zbi = env.isolate_root.path().join("fake_zbi");
@@ -1193,7 +1199,8 @@ mod tests {
         env.context
             .query("sdk.overrides.zbi")
             .level(Some(ConfigLevel::User))
-            .set(fake_zbi.to_string_lossy().into())
+            .build()
+            .set(&env.context, fake_zbi.to_string_lossy().into())
             .expect("zbi override");
     }
     // Note that the caller MUST initialize the ffx_config environment before calling this function
@@ -1237,7 +1244,8 @@ mod tests {
 
         env.query(config::EMU_INSTANCE_ROOT_DIR)
             .level(Some(ConfigLevel::User))
-            .set(json!(root.display().to_string()))?;
+            .build()
+            .set(&env, json!(root.display().to_string()))?;
 
         guest.kernel_image = Some(kernel_path);
         guest.ramdisk = Some(Ramdisk { path: zbi_path, kind: RamdiskKind::Zbi });
@@ -1247,10 +1255,12 @@ mod tests {
         // Set the paths to use for the SSH keys
         env.query("ssh.pub")
             .level(Some(ConfigLevel::User))
-            .set(json!([root.join("test_authorized_keys")]))?;
+            .build()
+            .set(&env, json!([root.join("test_authorized_keys")]))?;
         env.query("ssh.priv")
             .level(Some(ConfigLevel::User))
-            .set(json!([root.join("test_ed25519_key")]))?;
+            .build()
+            .set(&env, json!([root.join("test_ed25519_key")]))?;
 
         Ok(PathBuf::from(root))
     }

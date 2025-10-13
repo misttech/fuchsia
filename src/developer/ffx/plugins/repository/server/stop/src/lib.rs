@@ -185,7 +185,11 @@ mod tests {
         env.context
             .query("repository.process_dir")
             .level(Some(ConfigLevel::User))
-            .set(env.isolate_root.path().join("repo_servers").to_string_lossy().into())
+            .build()
+            .set(
+                &env.context,
+                env.isolate_root.path().join("repo_servers").to_string_lossy().into(),
+            )
             .expect("setting isolated process dir");
 
         let (_mgr, _server_proc) =
@@ -212,7 +216,11 @@ mod tests {
         env.context
             .query("repository.process_dir")
             .level(Some(ConfigLevel::User))
-            .set(env.isolate_root.path().join("repo_servers").to_string_lossy().into())
+            .build()
+            .set(
+                &env.context,
+                env.isolate_root.path().join("repo_servers").to_string_lossy().into(),
+            )
             .expect("setting isolated process dir");
 
         let product_bundle_path =

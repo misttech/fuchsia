@@ -315,7 +315,8 @@ mod test {
         env.context
             .query(PRODUCT_BUNDLE_INDEX_KEY)
             .level(Some(ConfigLevel::User))
-            .set(path.to_str().unwrap().into())
+            .build()
+            .set(&env.context, path.to_str().unwrap().into())
             .unwrap();
 
         env

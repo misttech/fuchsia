@@ -503,7 +503,8 @@ mod test {
         env.context
             .query("repository.process_dir")
             .level(Some(ConfigLevel::User))
-            .set(repo_process_dir.to_string_lossy().into())
+            .build()
+            .set(&env.context, repo_process_dir.to_string_lossy().into())
             .unwrap();
 
         // Create a test repo

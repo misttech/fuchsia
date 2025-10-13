@@ -1008,7 +1008,8 @@ mod tests {
         env.context
             .query(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
             .level(Some(ConfigLevel::User))
-            .set(json!(temp_dir.display().to_string()))
+            .build()
+            .set(&env.context, json!(temp_dir.display().to_string()))
             .unwrap();
     }
 
@@ -1022,7 +1023,8 @@ mod tests {
         env.context
             .query("discovery.mdns.autoconnect")
             .level(Some(ConfigLevel::User))
-            .set(json!(false))
+            .build()
+            .set(&env.context, json!(false))
             .unwrap();
 
         const NAME: &'static str = "foo";
@@ -1248,7 +1250,8 @@ mod tests {
         env.context
             .query("targets.manual")
             .level(Some(ConfigLevel::User))
-            .set(json!(map))
+            .build()
+            .set(&env.context, json!(map))
             .expect("Setting manual targets");
         let temp = tempdir().expect("cannot get tempdir");
         init_test_config(&env, temp.path()).await;
@@ -1379,7 +1382,7 @@ mod tests {
         assert_eq!(1, target_collection.targets(None).len());
         let mut map = Map::<String, Value>::new();
         map.insert("[fe80::1%1]:8022".to_string(), Value::Null);
-        assert_eq!(env.context.query("targets.manual").get::<Value>().unwrap(), json!(map));
+        assert_eq!(env.context.get::<Value, _>("targets.manual").unwrap(), json!(map));
     }
 
     #[fuchsia::test]
@@ -1390,7 +1393,8 @@ mod tests {
         env.context
             .query("targets.manual")
             .level(Some(ConfigLevel::User))
-            .set(json!(map))
+            .build()
+            .set(&env.context, json!(map))
             .expect("Setting manual targets");
         let temp = tempdir().expect("cannot get tempdir");
         init_test_config(&env, temp.path()).await;

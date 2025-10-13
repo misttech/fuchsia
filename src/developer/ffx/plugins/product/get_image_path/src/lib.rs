@@ -50,7 +50,8 @@ impl FfxMain for PbGetImagePathTool {
             if let Some(default_path) = self
                 .env
                 .query("product.path")
-                .get()
+                .build()
+                .get(&self.env)
                 .map(|p: PathBuf| p.into())
                 .map_err(|e| bug!(e))?
             {
@@ -545,7 +546,8 @@ mod tests {
         env.context
             .query("product.path")
             .level(Some(ConfigLevel::User))
-            .set(pb_path.to_string_lossy().into())
+            .build()
+            .set(&env.context, pb_path.to_string_lossy().into())
             .expect("setting default path");
 
         let pb = ProductBundle::V2(ProductBundleV2 {

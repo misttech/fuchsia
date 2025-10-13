@@ -1309,7 +1309,8 @@ mod test {
         env.context
             .query("repository.process_dir")
             .level(Some(ConfigLevel::User))
-            .set(instance_root.to_string_lossy().into())
+            .build()
+            .set(&env.context, instance_root.to_string_lossy().into())
             .expect("setting instance root config");
 
         let server_info = PkgServerInfo {
@@ -1542,14 +1543,16 @@ mod test {
             .context
             .query("repository.process_dir")
             .level(Some(ConfigLevel::User))
-            .set(test_env.isolate_root.path().to_string_lossy().into())
+            .build()
+            .set(&test_env.context, test_env.isolate_root.path().to_string_lossy().into())
             .expect("Setting process dir");
 
         test_env
             .context
             .query(TARGET_DEFAULT_KEY)
             .level(Some(ConfigLevel::User))
-            .set(TARGET_NODENAME.into())
+            .build()
+            .set(&test_env.context, TARGET_NODENAME.into())
             .unwrap();
 
         let (fake_repo, mut fake_repo_rx) = FakeRepositoryManager::new();
@@ -1705,13 +1708,15 @@ mod test {
             .context
             .query(TARGET_DEFAULT_KEY)
             .level(Some(ConfigLevel::User))
-            .set(TARGET_NODENAME.into())
+            .build()
+            .set(&test_env.context, TARGET_NODENAME.into())
             .unwrap();
         test_env
             .context
             .query("repository.process_dir")
             .level(Some(ConfigLevel::User))
-            .set(test_env.isolate_root.path().to_string_lossy().into())
+            .build()
+            .set(&test_env.context, test_env.isolate_root.path().to_string_lossy().into())
             .expect("Setting process dir");
 
         let (fake_repo, mut fake_repo_rx) = FakeRepositoryManager::new();
@@ -1898,7 +1903,8 @@ mod test {
             .context
             .query("repository.process_dir")
             .level(Some(ConfigLevel::User))
-            .set(test_env.isolate_root.path().to_string_lossy().into())
+            .build()
+            .set(&test_env.context, test_env.isolate_root.path().to_string_lossy().into())
             .expect("Setting process dir");
 
         let tmp_port_file = tempfile::NamedTempFile::new().unwrap();
@@ -2042,14 +2048,16 @@ mod test {
             .context
             .query(TARGET_DEFAULT_KEY)
             .level(Some(ConfigLevel::User))
-            .set(TARGET_NODENAME.into())
+            .build()
+            .set(&test_env.context, TARGET_NODENAME.into())
             .unwrap();
 
         test_env
             .context
             .query("repository.process_dir")
             .level(Some(ConfigLevel::User))
-            .set(test_env.isolate_root.path().to_string_lossy().into())
+            .build()
+            .set(&test_env.context, test_env.isolate_root.path().to_string_lossy().into())
             .expect("Setting process dir");
 
         let tmp_pb_dir = tempfile::tempdir().unwrap();
@@ -2260,7 +2268,8 @@ mod test {
             .context
             .query("repository.process_dir")
             .level(Some(ConfigLevel::User))
-            .set(test_env.isolate_root.path().to_string_lossy().into())
+            .build()
+            .set(&test_env.context, test_env.isolate_root.path().to_string_lossy().into())
             .expect("Setting process dir");
 
         let tmp_port_file = tempfile::NamedTempFile::new().unwrap();
@@ -2343,7 +2352,8 @@ mod test {
             .context
             .query("repository.process_dir")
             .level(Some(ConfigLevel::User))
-            .set(test_env.isolate_root.path().to_string_lossy().into())
+            .build()
+            .set(&test_env.context, test_env.isolate_root.path().to_string_lossy().into())
             .expect("Setting process dir");
 
         let tmp_port_file = tempfile::NamedTempFile::new().unwrap();
