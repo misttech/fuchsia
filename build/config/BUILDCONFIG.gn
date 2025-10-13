@@ -906,21 +906,6 @@ if (in_default_toolchain) {
   }
 }
 
-# Some projects expect a default value for sources_assignment_filter.
-sources_assignment_filter = []
-
-# These files are needed when enabling 'restat' behavior through this wrapper
-# script.  'restat' preserves old timestamps on unchanged outputs.
-restat_wrapper_inputs = [
-  python_exe_src,
-  restat_wrapper,
-]
-
-restat_rust_wrapper_inputs = []
-if (restat_rust) {
-  restat_rust_wrapper_inputs += restat_wrapper_inputs
-}
-
 declare_args() {
   # *This should never be set as a build argument.*
   # It exists only to be set in `toolchain_args`.
@@ -2359,6 +2344,21 @@ _built_in_target_types_without_public_wrapper -= [
   "action",
   "action_foreach",
 ]
+
+# Some projects expect a default value for sources_assignment_filter.
+sources_assignment_filter = []
+
+# These files are needed when enabling 'restat' behavior through this wrapper
+# script.  'restat' preserves old timestamps on unchanged outputs.
+restat_wrapper_inputs = [
+  python_exe_src,
+  restat_wrapper,
+]
+
+restat_rust_wrapper_inputs = []
+if (restat_rust) {
+  restat_rust_wrapper_inputs += restat_wrapper_inputs
+}
 
 # TODO(https://fxbug.dev/396658029): Remove this.
 if (include_clippy) {
