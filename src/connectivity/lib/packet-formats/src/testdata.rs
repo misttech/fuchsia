@@ -734,8 +734,8 @@ pub mod mld_router_done {
 pub mod mld_router_report_v2 {
     #![allow(missing_docs)]
 
-    use crate::icmp::mld::Mldv2MulticastRecordType;
     use crate::Ipv6Addr;
+    use crate::icmp::mld::Mldv2MulticastRecordType;
     #[rustfmt::skip]
     pub const REPORT: &[u8] = &[
         // IPv6 Header - Start

@@ -6,10 +6,10 @@
 
 use core::convert::Infallible as Never;
 
-use net_types::ip::IpAddress;
 use net_types::MulticastAddress;
-use packet::records::options::OptionParseErr;
+use net_types::ip::IpAddress;
 use packet::records::TooFewRecordsErr;
+use packet::records::options::OptionParseErr;
 use thiserror::Error;
 
 use crate::icmp::IcmpIpExt;

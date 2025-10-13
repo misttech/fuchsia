@@ -12,8 +12,8 @@ use core::num::NonZeroUsize;
 use core::time::Duration;
 use core::usize;
 
-use net_types::ip::IpAddress;
 use net_types::MulticastAddr;
+use net_types::ip::IpAddress;
 
 /// Creates a bitmask of [n] bits, [n] must be <= 31.
 /// E.g. for n = 12 yields 0xFFF.
@@ -149,11 +149,7 @@ pub(crate) trait LinExpConversion<C: Debug + PartialEq + Copy + Clone>:
     /// If the conversion is attempt is lossy, returns `Ok(None)`.
     fn exact_try_from(value: C) -> Result<Self, ExactConversionError> {
         let res = Self::lossy_try_from(value)?;
-        if value == res.into() {
-            Ok(res)
-        } else {
-            Err(ExactConversionError::NotExact)
-        }
+        if value == res.into() { Ok(res) } else { Err(ExactConversionError::NotExact) }
     }
 }
 

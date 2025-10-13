@@ -15,7 +15,7 @@ use zerocopy::byteorder::network_endian::U16;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Ref, SplitByteSlice, Unaligned};
 
 use super::{
-    peek_message_type, IgmpMessage, IgmpNonEmptyBody, IgmpResponseTimeV2, IgmpResponseTimeV3,
+    IgmpMessage, IgmpNonEmptyBody, IgmpResponseTimeV2, IgmpResponseTimeV3, peek_message_type,
 };
 use crate::error::{ParseError, UnrecognizedProtocolCode};
 use crate::gmp::{GmpReportGroupRecord, InvalidConstraintsError};
@@ -56,11 +56,7 @@ macro_rules! declare_no_body {
         where
             B: SplitByteSlice,
         {
-            if bytes.len() != 0 {
-                Err(ParseError::NotExpected)
-            } else {
-                Ok(())
-            }
+            if bytes.len() != 0 { Err(ParseError::NotExpected) } else { Ok(()) }
         }
 
         fn body_bytes(_body: &Self::VariableBody) -> &[u8]
@@ -729,8 +725,8 @@ mod tests {
     use packet::{PacketBuilder, ParseBuffer, Serializer};
 
     use super::*;
-    use crate::igmp::testdata::*;
     use crate::igmp::IgmpMaxRespCode;
+    use crate::igmp::testdata::*;
     use crate::ip::Ipv4Proto;
     use crate::ipv4::options::Ipv4Option;
     use crate::ipv4::{Ipv4Packet, Ipv4PacketBuilder, Ipv4PacketBuilderWithOptions};

@@ -796,14 +796,18 @@ impl<I: IcmpIpExt, M: IcmpMessage<I>> IcmpPacketBuilder<I, M> {
                 M::EXPECTS_BODY || message_body.is_empty(),
                 "body provided for message that doesn't take a body"
             );
-            let checksum =
-                compute_checksum_fragmented(&header, &message_body, self.src_ip, self.dst_ip)
-                    .unwrap_or_else(|| {
-                        panic!(
+            let checksum = compute_checksum_fragmented(
+                &header,
+                &message_body,
+                self.src_ip,
+                self.dst_ip,
+            )
+            .unwrap_or_else(|| {
+                panic!(
                     "total ICMP packet length of {} overflows 32-bit length field of pseudo-header",
                     Ref::bytes(&header).len() + message_body.len(),
                 )
-                    });
+            });
             header.prefix.checksum = checksum;
         }
     }
@@ -862,11 +866,7 @@ impl TryFrom<u8> for IcmpZeroCode {
     type Error = NotZeroError<u8>;
 
     fn try_from(value: u8) -> Result<Self, NotZeroError<u8>> {
-        if value == 0 {
-            Ok(Self)
-        } else {
-            Err(NotZeroError(value))
-        }
+        if value == 0 { Ok(Self) } else { Err(NotZeroError(value)) }
     }
 }
 

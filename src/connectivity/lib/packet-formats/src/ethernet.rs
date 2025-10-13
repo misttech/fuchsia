@@ -427,9 +427,11 @@ mod tests {
         let mut buf = [0u8; 1014];
         // an incorrect length results in error
         NetworkEndian::write_u16(&mut buf[ETHERNET_ETHERTYPE_BYTE_OFFSET..], 1001);
-        assert!((&mut buf[..])
-            .parse_with::<_, EthernetFrame<_>>(EthernetFrameLengthCheck::Check)
-            .is_err());
+        assert!(
+            (&mut buf[..])
+                .parse_with::<_, EthernetFrame<_>>(EthernetFrameLengthCheck::Check)
+                .is_err()
+        );
 
         // a correct length results in success
         NetworkEndian::write_u16(&mut buf[ETHERNET_ETHERTYPE_BYTE_OFFSET..], 1000);
@@ -501,16 +503,20 @@ mod tests {
     fn test_parse_error() {
         // 1 byte shorter than the minimum
         let mut buf = [0u8; ETHERNET_MIN_FRAME_LEN - 1];
-        assert!((&mut buf[..])
-            .parse_with::<_, EthernetFrame<_>>(EthernetFrameLengthCheck::Check)
-            .is_err());
+        assert!(
+            (&mut buf[..])
+                .parse_with::<_, EthernetFrame<_>>(EthernetFrameLengthCheck::Check)
+                .is_err()
+        );
 
         // 1 byte shorter than the minimum header length still fails even if
         // length checking is disabled
         let mut buf = [0u8; ETHERNET_HDR_LEN_NO_TAG - 1];
-        assert!((&mut buf[..])
-            .parse_with::<_, EthernetFrame<_>>(EthernetFrameLengthCheck::NoCheck)
-            .is_err());
+        assert!(
+            (&mut buf[..])
+                .parse_with::<_, EthernetFrame<_>>(EthernetFrameLengthCheck::NoCheck)
+                .is_err()
+        );
 
         // an ethertype of 1500 should be validated as the length of the body
         let mut buf = [0u8; ETHERNET_MIN_FRAME_LEN];
@@ -518,9 +524,11 @@ mod tests {
             &mut buf[ETHERNET_ETHERTYPE_BYTE_OFFSET..],
             ETHERNET_MIN_ILLEGAL_ETHERTYPE - 1,
         );
-        assert!((&mut buf[..])
-            .parse_with::<_, EthernetFrame<_>>(EthernetFrameLengthCheck::Check)
-            .is_err());
+        assert!(
+            (&mut buf[..])
+                .parse_with::<_, EthernetFrame<_>>(EthernetFrameLengthCheck::Check)
+                .is_err()
+        );
 
         // an ethertype of 1501 is illegal because it's in the range [1501, 1535]
         let mut buf = [0u8; ETHERNET_MIN_FRAME_LEN];
@@ -528,9 +536,11 @@ mod tests {
             &mut buf[ETHERNET_ETHERTYPE_BYTE_OFFSET..],
             ETHERNET_MIN_ILLEGAL_ETHERTYPE,
         );
-        assert!((&mut buf[..])
-            .parse_with::<_, EthernetFrame<_>>(EthernetFrameLengthCheck::Check)
-            .is_err());
+        assert!(
+            (&mut buf[..])
+                .parse_with::<_, EthernetFrame<_>>(EthernetFrameLengthCheck::Check)
+                .is_err()
+        );
 
         // an ethertype of 1535 is illegal
         let mut buf = [0u8; ETHERNET_MIN_FRAME_LEN];
@@ -538,9 +548,11 @@ mod tests {
             &mut buf[ETHERNET_ETHERTYPE_BYTE_OFFSET..],
             ETHERNET_MAX_ILLEGAL_ETHERTYPE,
         );
-        assert!((&mut buf[..])
-            .parse_with::<_, EthernetFrame<_>>(EthernetFrameLengthCheck::Check)
-            .is_err());
+        assert!(
+            (&mut buf[..])
+                .parse_with::<_, EthernetFrame<_>>(EthernetFrameLengthCheck::Check)
+                .is_err()
+        );
     }
 
     #[test]

@@ -35,15 +35,15 @@ use crate::ip::{
     DscpAndEcn, FragmentOffset, IpExt, IpPacketBuilder, IpProto, Ipv4Proto, Ipv6ExtHdrType,
     Ipv6Proto, Nat64Error, Nat64TranslationResult,
 };
-use crate::ipv4::{Ipv4PacketBuilder, HDR_PREFIX_LEN};
+use crate::ipv4::{HDR_PREFIX_LEN, Ipv4PacketBuilder};
 use crate::tcp::{TcpParseArgs, TcpSegment};
 use crate::udp::{UdpPacket, UdpParseArgs};
 
 use ext_hdrs::{
-    is_valid_next_header, is_valid_next_header_upper_layer, ExtensionHeaderOptionAction,
-    HopByHopOption, HopByHopOptionData, Ipv6ExtensionHeader, Ipv6ExtensionHeaderData,
-    Ipv6ExtensionHeaderImpl, Ipv6ExtensionHeaderParsingContext, Ipv6ExtensionHeaderParsingError,
-    IPV6_FRAGMENT_EXT_HDR_LEN,
+    ExtensionHeaderOptionAction, HopByHopOption, HopByHopOptionData, IPV6_FRAGMENT_EXT_HDR_LEN,
+    Ipv6ExtensionHeader, Ipv6ExtensionHeaderData, Ipv6ExtensionHeaderImpl,
+    Ipv6ExtensionHeaderParsingContext, Ipv6ExtensionHeaderParsingError, is_valid_next_header,
+    is_valid_next_header_upper_layer,
 };
 
 /// Length of the IPv6 fixed header.
@@ -150,7 +150,9 @@ fn ext_hdr_err_fn(hdr: &FixedHeader, err: Ipv6ExtensionHeaderParsingError) -> Ip
                         ExtensionHeaderOptionAction::SkipAndContinue => unreachable!(
                             "Should never end up here because this action should never result in an error"
                         ),
-                        ExtensionHeaderOptionAction::DiscardPacket => IpParseErrorAction::DiscardPacket,
+                        ExtensionHeaderOptionAction::DiscardPacket => {
+                            IpParseErrorAction::DiscardPacket
+                        }
                         ExtensionHeaderOptionAction::DiscardPacketSendIcmp => {
                             IpParseErrorAction::DiscardPacketSendIcmp
                         }
@@ -515,9 +517,11 @@ impl<B: SplitByteSlice> Ipv6Packet<B> {
                         // extension header.
                         Ipv6ExtensionHeaderData::HopByHopOptions { .. }
                         | Ipv6ExtensionHeaderData::DestinationOptions { .. } => {
-                            bytes[IPV6_FIXED_HDR_LEN+ext_hdr_start] = next_ext_hdr.next_header;
+                            bytes[IPV6_FIXED_HDR_LEN + ext_hdr_start] = next_ext_hdr.next_header;
                         }
-                        Ipv6ExtensionHeaderData::Fragment { .. } => unreachable!("If we had a fragment header before `ext_hdr`, we should have used that instead"),
+                        Ipv6ExtensionHeaderData::Fragment { .. } => unreachable!(
+                            "If we had a fragment header before `ext_hdr`, we should have used that instead"
+                        ),
                     }
 
                     break;
@@ -2548,8 +2552,8 @@ mod tests {
         (ipv4_builder, ipv6_builder)
     }
 
-    fn create_tcp_ipv4_and_ipv6_pkt(
-    ) -> (packet::Either<EmptyBuf, Buf<Vec<u8>>>, packet::Either<EmptyBuf, Buf<Vec<u8>>>) {
+    fn create_tcp_ipv4_and_ipv6_pkt()
+    -> (packet::Either<EmptyBuf, Buf<Vec<u8>>>, packet::Either<EmptyBuf, Buf<Vec<u8>>>) {
         use crate::tcp::TcpSegmentBuilder;
         use core::num::NonZeroU16;
 
@@ -2622,8 +2626,8 @@ mod tests {
         );
     }
 
-    fn create_udp_ipv4_and_ipv6_pkt(
-    ) -> (packet::Either<EmptyBuf, Buf<Vec<u8>>>, packet::Either<EmptyBuf, Buf<Vec<u8>>>) {
+    fn create_udp_ipv4_and_ipv6_pkt()
+    -> (packet::Either<EmptyBuf, Buf<Vec<u8>>>, packet::Either<EmptyBuf, Buf<Vec<u8>>>) {
         use crate::udp::UdpPacketBuilder;
         use core::num::NonZeroU16;
 

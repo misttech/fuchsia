@@ -16,8 +16,8 @@ use core::ops::Range;
 use internet_checksum::Checksum;
 use log::debug;
 use net_types::ip::{GenericOverIp, IpAddress, Ipv4, Ipv4Addr, Ipv4SourceAddr, Ipv6Addr};
-use packet::records::options::{OptionSequenceBuilder, OptionsRaw};
 use packet::records::RecordsIter;
+use packet::records::options::{OptionSequenceBuilder, OptionsRaw};
 use packet::{
     BufferProvider, BufferView, BufferViewMut, EmptyBuf, FragmentedBytesMut, FromRaw,
     GrowBufferMut, InnerPacketBuilder, LayoutBufferAlloc, MaybeParsed, PacketBuilder,
@@ -1155,10 +1155,10 @@ pub(crate) fn reassemble_fragmented_packet<
 /// Parsing and serialization of IPv4 options.
 pub mod options {
     use byteorder::{ByteOrder, NetworkEndian};
+    use packet::BufferViewMut;
     use packet::records::options::{
         OptionBuilder, OptionLayout, OptionParseErr, OptionParseLayout, OptionsImpl,
     };
-    use packet::BufferViewMut;
     use zerocopy::byteorder::network_endian::U16;
 
     const OPTION_KIND_EOL: u8 = 0;
@@ -1279,8 +1279,8 @@ pub mod options {
 
     #[cfg(test)]
     mod test {
-        use packet::records::options::Options;
         use packet::records::RecordBuilder;
+        use packet::records::options::Options;
 
         use super::*;
 
@@ -1328,8 +1328,8 @@ mod tests {
 
     use super::*;
     use crate::ethernet::{
-        EtherType, EthernetFrame, EthernetFrameBuilder, EthernetFrameLengthCheck,
-        ETHERNET_MIN_BODY_LEN_NO_TAG,
+        ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrame, EthernetFrameBuilder,
+        EthernetFrameLengthCheck,
     };
     use crate::testutil::*;
 
@@ -1682,8 +1682,8 @@ mod tests {
         (ipv4_builder, ipv6_builder)
     }
 
-    fn create_tcp_ipv4_and_ipv6_pkt(
-    ) -> (packet::Either<EmptyBuf, Buf<Vec<u8>>>, packet::Either<EmptyBuf, Buf<Vec<u8>>>) {
+    fn create_tcp_ipv4_and_ipv6_pkt()
+    -> (packet::Either<EmptyBuf, Buf<Vec<u8>>>, packet::Either<EmptyBuf, Buf<Vec<u8>>>) {
         use crate::tcp::TcpSegmentBuilder;
         use core::num::NonZeroU16;
 
@@ -1755,8 +1755,8 @@ mod tests {
         );
     }
 
-    fn create_udp_ipv4_and_ipv6_pkt(
-    ) -> (packet::Either<EmptyBuf, Buf<Vec<u8>>>, packet::Either<EmptyBuf, Buf<Vec<u8>>>) {
+    fn create_udp_ipv4_and_ipv6_pkt()
+    -> (packet::Either<EmptyBuf, Buf<Vec<u8>>>, packet::Either<EmptyBuf, Buf<Vec<u8>>>) {
         use crate::udp::UdpPacketBuilder;
         use core::num::NonZeroU16;
 

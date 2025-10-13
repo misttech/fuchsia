@@ -14,9 +14,9 @@ use core::time::Duration;
 
 use net_types::ip::{Ip, Ipv6, Ipv6Addr};
 use net_types::{MulticastAddr, Witness as _};
+use packet::BufferView;
 use packet::records::{ParsedRecord, RecordParseResult, Records, RecordsImpl, RecordsImplLayout};
 use packet::serialize::InnerPacketBuilder;
-use packet::BufferView;
 use zerocopy::byteorder::network_endian::U16;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Ref, SplitByteSlice, Unaligned};
 

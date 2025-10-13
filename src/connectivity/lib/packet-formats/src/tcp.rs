@@ -19,8 +19,8 @@ use core::ops::Range;
 use arrayvec::ArrayVec;
 use explicit::ResultExt as _;
 use net_types::ip::IpAddress;
-use packet::records::options::OptionsRaw;
 use packet::records::Records;
+use packet::records::options::OptionsRaw;
 use packet::{
     BufferView, BufferViewMut, ByteSliceInnerPacketBuilder, EmptyBuf, FragmentedBytesMut, FromRaw,
     InnerPacketBuilder, MaybeParsed, PacketBuilder, PacketConstraints, ParsablePacket,
@@ -92,11 +92,7 @@ impl HeaderPrefix {
     }
 
     fn ack_num(&self) -> Option<u32> {
-        if self.data_offset_reserved_flags.ack() {
-            Some(self.ack.get())
-        } else {
-            None
-        }
+        if self.data_offset_reserved_flags.ack() { Some(self.ack.get()) } else { None }
     }
 
     fn builder<A: IpAddress>(&self, src_ip: A, dst_ip: A) -> TcpSegmentBuilder<A> {
@@ -1136,10 +1132,10 @@ impl<A: IpAddress> PartialPacketBuilder for TcpSegmentBuilder<A> {
 /// Parsing and serialization of TCP options.
 pub mod options {
     use byteorder::{ByteOrder, NetworkEndian};
+    use packet::BufferViewMut as _;
     use packet::records::options::{
         OptionBuilder, OptionLayout, OptionParseErr, OptionParseLayout, OptionsImpl,
     };
-    use packet::BufferViewMut as _;
     use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
     use super::*;
@@ -1347,7 +1343,7 @@ mod tests {
     use crate::ethernet::{EthernetFrame, EthernetFrameLengthCheck};
     use crate::ipv4::{Ipv4Header, Ipv4Packet};
     use crate::ipv6::{Ipv6Header, Ipv6Packet};
-    use crate::testutil::benchmarks::{black_box, Bencher};
+    use crate::testutil::benchmarks::{Bencher, black_box};
     use crate::testutil::*;
 
     const TEST_SRC_IPV4: Ipv4Addr = Ipv4Addr::new([1, 2, 3, 4]);
@@ -1708,11 +1704,10 @@ mod tests {
         assert_eq!(options.as_ref().incomplete().unwrap(), &OPTIONS);
         assert_eq!(body, &[]);
         // validation should fail:
-        assert!(TcpSegment::try_from_raw_with(
-            packet,
-            TcpParseArgs::new(TEST_SRC_IPV4, TEST_DST_IPV4),
-        )
-        .is_err());
+        assert!(
+            TcpSegment::try_from_raw_with(packet, TcpParseArgs::new(TEST_SRC_IPV4, TEST_DST_IPV4))
+                .is_err()
+        );
 
         // Parse header partially:
         let hdr_prefix = new_hdr_prefix();
@@ -1729,11 +1724,10 @@ mod tests {
         assert_eq!(options.as_ref().incomplete().unwrap(), &[]);
         assert_eq!(body, &[]);
         // validation should fail:
-        assert!(TcpSegment::try_from_raw_with(
-            packet,
-            TcpParseArgs::new(TEST_SRC_IPV4, TEST_DST_IPV4),
-        )
-        .is_err());
+        assert!(
+            TcpSegment::try_from_raw_with(packet, TcpParseArgs::new(TEST_SRC_IPV4, TEST_DST_IPV4))
+                .is_err()
+        );
 
         let hdr_prefix = new_hdr_prefix();
         let bytes = hdr_prefix_to_bytes(hdr_prefix);

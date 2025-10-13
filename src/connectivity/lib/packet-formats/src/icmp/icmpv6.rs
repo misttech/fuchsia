@@ -17,8 +17,8 @@ use crate::error::{ParseError, ParseResult};
 
 use super::common::{IcmpDestUnreachable, IcmpEchoReply, IcmpEchoRequest, IcmpTimeExceeded};
 use super::{
-    mld, ndp, peek_message_type, HeaderPrefix, IcmpIpExt, IcmpMessageType, IcmpPacket,
-    IcmpPacketRaw, IcmpParseArgs, IcmpZeroCode, OriginalPacket,
+    HeaderPrefix, IcmpIpExt, IcmpMessageType, IcmpPacket, IcmpPacketRaw, IcmpParseArgs,
+    IcmpZeroCode, OriginalPacket, mld, ndp, peek_message_type,
 };
 
 /// Dispatches expressions to the type-safe variants of [`Icmpv6Packet`] or

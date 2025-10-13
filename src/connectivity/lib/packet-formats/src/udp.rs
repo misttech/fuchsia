@@ -645,7 +645,7 @@ mod tests {
     use crate::ethernet::{EthernetFrame, EthernetFrameLengthCheck};
     use crate::ipv4::{Ipv4Header, Ipv4Packet};
     use crate::ipv6::{Ipv6Header, Ipv6Packet};
-    use crate::testutil::benchmarks::{black_box, Bencher};
+    use crate::testutil::benchmarks::{Bencher, black_box};
     use crate::testutil::*;
 
     const TEST_SRC_IPV4: Ipv4Addr = Ipv4Addr::new([1, 2, 3, 4]);
@@ -877,11 +877,10 @@ mod tests {
         );
         assert_eq!(*rest, &buf[4..]);
         assert_eq!(body.incomplete().unwrap(), []);
-        assert!(UdpPacket::try_from_raw_with(
-            packet,
-            UdpParseArgs::new(TEST_SRC_IPV4, TEST_DST_IPV4)
-        )
-        .is_err());
+        assert!(
+            UdpPacket::try_from_raw_with(packet, UdpParseArgs::new(TEST_SRC_IPV4, TEST_DST_IPV4))
+                .is_err()
+        );
 
         // check that we fail if flow header is not retrievable:
         let mut buf = &[0, 0, 1][..];
@@ -895,11 +894,10 @@ mod tests {
         let UdpPacketRaw { header, body } = &packet;
         assert_eq!(Ref::bytes(&header.as_ref().complete().unwrap()), &buf[..8]);
         assert_eq!(body.incomplete().unwrap(), &buf[8..]);
-        assert!(UdpPacket::try_from_raw_with(
-            packet,
-            UdpParseArgs::new(TEST_SRC_IPV4, TEST_DST_IPV4)
-        )
-        .is_err());
+        assert!(
+            UdpPacket::try_from_raw_with(packet, UdpParseArgs::new(TEST_SRC_IPV4, TEST_DST_IPV4))
+                .is_err()
+        );
 
         // Incomplete empty body if total length in header is less than 8:
         let buf = [0, 0, 1, 2, 0, 6, 0, 0, 10, 20];
@@ -909,11 +907,10 @@ mod tests {
         let UdpPacketRaw { header, body } = &packet;
         assert_eq!(Ref::bytes(&header.as_ref().complete().unwrap()), &buf[..8]);
         assert_eq!(body.incomplete().unwrap(), []);
-        assert!(UdpPacket::try_from_raw_with(
-            packet,
-            UdpParseArgs::new(TEST_SRC_IPV4, TEST_DST_IPV4)
-        )
-        .is_err());
+        assert!(
+            UdpPacket::try_from_raw_with(packet, UdpParseArgs::new(TEST_SRC_IPV4, TEST_DST_IPV4))
+                .is_err()
+        );
 
         // IPv6 allows zero-length body, which will just be the rest of the
         // buffer, but only as long as it has more than 65535 bytes, otherwise

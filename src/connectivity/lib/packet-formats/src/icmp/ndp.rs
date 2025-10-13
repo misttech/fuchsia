@@ -477,12 +477,12 @@ pub mod options {
     use core::time::Duration;
 
     use byteorder::{ByteOrder, NetworkEndian};
-    use net_types::ip::{IpAddress as _, Ipv6Addr, Subnet, SubnetError};
     use net_types::UnicastAddress;
+    use net_types::ip::{IpAddress as _, Ipv6Addr, Subnet, SubnetError};
+    use packet::BufferView as _;
     use packet::records::options::{
         LengthEncoding, OptionBuilder, OptionLayout, OptionParseErr, OptionParseLayout, OptionsImpl,
     };
-    use packet::BufferView as _;
     use zerocopy::byteorder::network_endian::U32;
     use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Ref, SplitByteSlice, Unaligned};
 

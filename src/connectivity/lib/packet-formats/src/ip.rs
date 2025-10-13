@@ -23,9 +23,9 @@ use crate::error::{IpParseError, IpParseResult};
 use crate::ethernet::EthernetIpExt;
 use crate::icmp::IcmpIpExt;
 use crate::ipv4::{
-    Ipv4Header, Ipv4OnlyMeta, Ipv4Packet, Ipv4PacketBuilder, Ipv4PacketRaw, IPV4_MIN_HDR_LEN,
+    IPV4_MIN_HDR_LEN, Ipv4Header, Ipv4OnlyMeta, Ipv4Packet, Ipv4PacketBuilder, Ipv4PacketRaw,
 };
-use crate::ipv6::{Ipv6Header, Ipv6Packet, Ipv6PacketBuilder, Ipv6PacketRaw, IPV6_FIXED_HDR_LEN};
+use crate::ipv6::{IPV6_FIXED_HDR_LEN, Ipv6Header, Ipv6Packet, Ipv6PacketBuilder, Ipv6PacketRaw};
 use crate::private::Sealed;
 
 /// An [`Ip`] extension trait adding an associated type for the IP protocol
@@ -516,11 +516,7 @@ impl FragmentOffset {
     ///
     /// Returns `None` if `offset` is not smaller than `1 << 13`.
     pub const fn new(offset: u16) -> Option<Self> {
-        if offset < 1 << 13 {
-            Some(Self(offset))
-        } else {
-            None
-        }
+        if offset < 1 << 13 { Some(Self(offset)) } else { None }
     }
 
     /// Creates a new offset from a raw u16 value masking to only the lowest 13
