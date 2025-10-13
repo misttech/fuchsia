@@ -988,8 +988,7 @@ pub(in crate::security) fn fs_node_permission(
         );
     }
 
-    todo_has_fs_node_permissions(
-        TODO_DENY!("https://fxbug.dev/380855359", "Enforce fs_node_permission checks."),
+    has_fs_node_permissions(
         &security_server.as_permission_check(),
         current_task,
         current_sid,
