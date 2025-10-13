@@ -176,6 +176,7 @@ bazel_build_action("final_fuchsia_idk.exported") {
     ":final_fuchsia_idk_bazel_sdk_tests_x64",
     ":final_fuchsia_idk_manifest_golden",
     ":final_fuchsia_sdk",
+    "//:bazel_build_action_targets",
   ]
 
   # The following are implicit.

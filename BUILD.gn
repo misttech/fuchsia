@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_build_action_labels.gni")
 import("//build/board.gni")
 import("//build/compiled_action.gni")
 import("//build/config/build_api_module.gni")
@@ -2138,9 +2139,10 @@ build_api_module("nuc11_fastboot_images_location") {
 }
 
 # The bazel_build_actions_targets.json file maps GN bazel_action() targets reachable
-# from //:defaults, to the list of top-level bazel target labels they build. This is
-# used to implement `fx bazel-tool set_gn_targets <bazel_label>` as well as
-# `fx build @<bazel_target>`.
+# from //:default and those listed in extra_bazel_build_action_labels, to the list
+# of top-level bazel target labels they build. This is used to implement several
+# tools over the Bazel graph, for example `fx bazel-tool set_gn_targets <bazel_label>`
+# as well as `fx build @<bazel_target>`.
 #
 # LINT.IfChange(bazel_build_actions)
 #
@@ -2195,7 +2197,14 @@ build_api_module("nuc11_fastboot_images_location") {
 #
 generated_file("bazel_build_action_targets") {
   testonly = true
-  deps = [ ":default" ]
+  deps = [
+           ":default",
+
+           # TODO(https://fxbug.dev/450890840): Remove this hard-coded paths
+           # when our builder fint parameters files are fixed.
+           "//sdk:final_fuchsia_idk.exported",
+         ] + extra_bazel_build_action_labels
+
   data_keys = [ "bazel_build_actions" ]
   walk_keys = [ "bazel_build_actions_barrier" ]
   outputs = [ "$root_build_dir/$target_name.json" ]
