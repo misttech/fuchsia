@@ -23,6 +23,7 @@ pub struct ControllerCommand {
 #[argh(subcommand)]
 pub enum ControllerSubCommand {
     Show(ShowCommand),
+    List(ListCommand),
 }
 /// ffx bluetooth controller show
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
@@ -33,3 +34,13 @@ pub enum ControllerSubCommand {
     example = "ffx bluetooth controller show"
 )]
 pub struct ShowCommand {}
+
+/// ffx bluetooth controller list
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
+#[argh(
+    subcommand,
+    name = "list",
+    description = "List information about all Bluetooth controllers available to the system.",
+    example = "ffx bluetooth controller list"
+)]
+pub struct ListCommand {}

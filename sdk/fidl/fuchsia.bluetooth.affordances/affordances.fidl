@@ -25,10 +25,10 @@ open protocol PeerController {
 
 @discoverable
 open protocol HostController {
-    /// Get the active host.
+    /// Get all known hosts.
     ///
     /// * error Returns `INTERNAL` if the operation failed (check logs).
-    flexible GetActiveHost() -> (struct {
-        active_host sys.HostInfo;
+    flexible GetHosts() -> (struct {
+        hosts vector<sys.HostInfo>:MAX;
     }) error Error;
 };

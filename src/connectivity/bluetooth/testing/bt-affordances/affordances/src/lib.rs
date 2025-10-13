@@ -24,14 +24,14 @@ use fuchsia_bluetooth::types::Channel;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_sync::Mutex;
 use futures::channel::{mpsc, oneshot};
-use futures::{StreamExt, TryFutureExt, select};
+use futures::{StreamExt, select};
 use std::ffi::{CStr, CString};
 use std::thread;
 
 // TODO(b/414848887): Pass more descriptive errors.
 enum Request {
     ReadLocalAddress(oneshot::Sender<Result<[u8; 6], anyhow::Error>>),
-    GetActiveHost(oneshot::Sender<Result<HostInfo, anyhow::Error>>),
+    GetHosts(oneshot::Sender<Result<Vec<HostInfo>, anyhow::Error>>),
     GetKnownPeers(oneshot::Sender<Result<Vec<Peer>, anyhow::Error>>),
     GetPeerId(CString, oneshot::Sender<Result<PeerId, anyhow::Error>>),
     Connect(PeerId, oneshot::Sender<Result<(), anyhow::Error>>),
@@ -81,27 +81,36 @@ impl WorkThread {
 
         while let Some(request) = receiver.next().await {
             match request {
-                Request::ReadLocalAddress(result_sender) => {
-                    result_sender
-                        .send(
-                            proxies
-                                .get_active_host(&mut host_cache)
-                                .map_ok(|host| {
-                                    host.addresses
-                                        .clone()
-                                        .unwrap()
-                                        .first()
-                                        .expect("Host has no address")
-                                        .bytes
-                                })
-                                .await,
-                        )
-                        .unwrap();
+                Request::ReadLocalAddress(sender) => {
+                    if let Err(err) = proxies.refresh_host_cache(&mut host_cache).await {
+                        sender.send(Err(anyhow!("refresh_host_cache() error: {err}"))).unwrap();
+                        continue;
+                    }
+                    let result = host_cache
+                        .first()
+                        .ok_or_else(|| anyhow!("No hosts"))
+                        .and_then(|host| {
+                            host.addresses
+                                .clone()
+                                .ok_or_else(|| anyhow!("Host addresses field is missing"))
+                        })
+                        .and_then(|addresses| {
+                            addresses
+                                .first()
+                                .map(|address| address.bytes)
+                                .ok_or_else(|| anyhow!("Host has no address"))
+                        });
+
+                    sender.send(result).unwrap();
                 }
-                Request::GetActiveHost(result_sender) => {
-                    result_sender
-                        .send(proxies.get_active_host(&mut host_cache).await.cloned())
-                        .unwrap();
+                Request::GetHosts(result_sender) => {
+                    if let Err(err) = proxies.refresh_host_cache(&mut host_cache).await {
+                        result_sender
+                            .send(Err(anyhow!("refresh_host_cache() error: {err}")))
+                            .unwrap();
+                        continue;
+                    }
+                    result_sender.send(Ok(host_cache.clone())).unwrap();
                 }
                 Request::GetKnownPeers(result_sender) => {
                     if let Err(err) =
@@ -207,10 +216,10 @@ impl WorkThread {
         Ok(())
     }
 
-    // Get active host.
-    pub async fn get_active_host(&self) -> Result<HostInfo, anyhow::Error> {
-        let (sender, receiver) = oneshot::channel::<Result<HostInfo, anyhow::Error>>();
-        self.sender.clone().unbounded_send(Request::GetActiveHost(sender))?;
+    // Get hosts.
+    pub async fn get_hosts(&self) -> Result<Vec<HostInfo>, anyhow::Error> {
+        let (sender, receiver) = oneshot::channel::<Result<Vec<HostInfo>, anyhow::Error>>();
+        self.sender.clone().unbounded_send(Request::GetHosts(sender))?;
         receiver.await?
     }
 
@@ -429,27 +438,6 @@ impl Proxies {
         }
     }
 
-    async fn get_active_host<'a>(
-        &mut self,
-        host_cache: &'a mut Vec<HostInfo>,
-    ) -> Result<&'a HostInfo, anyhow::Error> {
-        if let Some(host_watcher_result) = self
-            .host_watcher_stream
-            .next()
-            .on_timeout(std::time::Duration::from_millis(100), || None)
-            .await
-        {
-            let Ok(new_host_list) = host_watcher_result else {
-                return Err(anyhow!(
-                    "fuchsia.bluetooth.sys.HostWatcher error: {}",
-                    host_watcher_result.unwrap_err()
-                ));
-            };
-            *host_cache = new_host_list
-        }
-        host_cache.first().ok_or_else(|| anyhow!("No hosts"))
-    }
-
     async fn refresh_peer_cache(
         &mut self,
         timeout: std::time::Duration,
@@ -506,6 +494,27 @@ impl Proxies {
             return Ok(Some(peer_cache.iter().find(|peer: &&Peer| addr_matches(peer)).unwrap()));
         }
         return Ok(None);
+    }
+
+    async fn refresh_host_cache<'a>(
+        &mut self,
+        host_cache: &'a mut Vec<HostInfo>,
+    ) -> Result<(), anyhow::Error> {
+        if let Some(host_watcher_result) = self
+            .host_watcher_stream
+            .next()
+            .on_timeout(std::time::Duration::from_millis(100), || None)
+            .await
+        {
+            let Ok(new_host_list) = host_watcher_result else {
+                return Err(anyhow!(
+                    "fuchsia.bluetooth.sys.HostWatcher error: {}",
+                    host_watcher_result.unwrap_err()
+                ));
+            };
+            *host_cache = new_host_list
+        }
+        Ok(())
     }
 
     async fn connect_l2cap(&self, peer_id: &PeerId, psm: u16) -> Result<Channel, anyhow::Error> {

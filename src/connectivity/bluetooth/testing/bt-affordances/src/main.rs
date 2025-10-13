@@ -63,19 +63,17 @@ async fn handle_host_request(
             let worker = worker.clone();
             async move {
                 match request {
-                    HostControllerRequest::GetActiveHost { responder } => {
-                        match worker.get_active_host().await {
-                            Ok(active_host) => {
-                                responder.send(Ok(&active_host))?;
-                            }
-                            Err(err) => {
-                                error!("GetActiveHost encountered error: {err}");
-                                responder.send(Err(
-                                    fidl_fuchsia_bluetooth_affordances::Error::Internal,
-                                ))?;
-                            }
+                    HostControllerRequest::GetHosts { responder } => match worker.get_hosts().await
+                    {
+                        Ok(hosts) => {
+                            responder.send(Ok(&hosts))?;
                         }
-                    }
+                        Err(err) => {
+                            error!("GetHosts encountered error: {err}");
+                            responder
+                                .send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                        }
+                    },
                     HostControllerRequest::_UnknownMethod { ordinal, .. } => {
                         error!(
                             "HostControllerRequest: unknown method received with ordinal {ordinal}"
