@@ -12,7 +12,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "src/developer/forensics/feedback/reboot_log/graceful_reboot_reason.h"
+#include "src/developer/forensics/feedback/reboot_log/graceful_shutdown_info.h"
 #include "src/developer/forensics/testing/unit_test_fixture.h"
 #include "src/lib/files/file.h"
 #include "src/lib/files/scoped_temp_dir.h"
@@ -66,20 +66,20 @@ class RebootLogTest : public UnitTestFixture, public testing::WithParamInterface
         << "Failed to create temporary Zircon reboot log";
   }
 
-  void WriteGracefulRebootLogContents(const std::string& contents) {
-    FX_CHECK(tmp_dir_.NewTempFileWithData(contents, &graceful_reboot_log_path_))
-        << "Failed to create temporary graceful reboot log";
+  void WriteGracefulShutdownInfoContents(const std::string& contents) {
+    FX_CHECK(tmp_dir_.NewTempFileWithData(contents, &graceful_shutdown_info_path_))
+        << "Failed to create temporary graceful shutdown info";
   }
 
-  void WriteGracefulRebootLogContents(
+  void WriteGracefulShutdownInfoContents(
       fuchsia::hardware::power::statecontrol::ShutdownOptions options) {
-    FX_CHECK(tmp_dir_.NewTempFileWithData("", &graceful_reboot_log_path_))
-        << "Failed to create temporary graceful reboot log";
+    FX_CHECK(tmp_dir_.NewTempFileWithData("", &graceful_shutdown_info_path_))
+        << "Failed to create temporary graceful shutdown info";
 
     cobalt::Logger cobalt(dispatcher(), services(), &clock_);
 
-    FX_CHECK(files::WriteFile(graceful_reboot_log_path_,
-                              ToJson(ToGracefulRebootReasons(std::move(options)))));
+    FX_CHECK(files::WriteFile(graceful_shutdown_info_path_,
+                              ToJson(ToGracefulShutdownReasons(std::move(options)))));
   }
 
   std::string WriteLegacyGracefulRebootLogContents(
@@ -91,12 +91,12 @@ class RebootLogTest : public UnitTestFixture, public testing::WithParamInterface
     cobalt::Logger cobalt(dispatcher(), services(), &clock_);
 
     FX_CHECK(files::WriteFile(
-        path, ToLegacyFileContentForTesting(ToGracefulRebootReasons(std::move(options)))));
+        path, ToLegacyFileContentForTesting(ToGracefulShutdownReasons(std::move(options)))));
     return path;
   }
 
   std::string zircon_reboot_log_path_;
-  std::string graceful_reboot_log_path_;
+  std::string graceful_shutdown_info_path_;
 
  private:
   timekeeper::TestClock clock_;
@@ -223,11 +223,11 @@ TEST_P(RebootLogReasonTest, Succeed) {
   }
 
   if (param.shutdown_reason.has_value()) {
-    WriteGracefulRebootLogContents(NewShutdownOptions({param.shutdown_reason.value()}));
+    WriteGracefulShutdownInfoContents(NewShutdownOptions({param.shutdown_reason.value()}));
   }
 
   const RebootLog reboot_log(
-      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_reboot_log_path_,
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
                                 /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/true));
 
   EXPECT_EQ(reboot_log.RebootReason(), param.output_reboot_reason);
@@ -246,7 +246,7 @@ TEST_P(RebootLogReasonTest, LegacyTxtFallback) {
   }
 
   const RebootLog reboot_log(
-      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_reboot_log_path_,
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
                                 legacy_graceful_reboot_log_path, /*not_a_fdr=*/true));
 
   EXPECT_EQ(reboot_log.RebootReason(), param.output_reboot_reason);
@@ -255,10 +255,10 @@ TEST_P(RebootLogReasonTest, LegacyTxtFallback) {
 TEST_F(RebootLogReasonTest, Succeed_ZirconCleanGracefulFdr) {
   WriteZirconRebootLogContents(
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098");
-  WriteGracefulRebootLogContents(NewShutdownOptions({ShutdownReason::SYSTEM_UPDATE}));
+  WriteGracefulShutdownInfoContents(NewShutdownOptions({ShutdownReason::SYSTEM_UPDATE}));
 
   const RebootLog reboot_log(
-      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_reboot_log_path_,
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
                                 /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/false));
 
   EXPECT_EQ(reboot_log.RebootReason(), RebootReason::kFdr);
@@ -267,10 +267,10 @@ TEST_F(RebootLogReasonTest, Succeed_ZirconCleanGracefulFdr) {
 TEST_F(RebootLogReasonTest, Succeed_ZirconCleanGracefulNotParseable) {
   WriteZirconRebootLogContents(
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098");
-  WriteGracefulRebootLogContents("NOT PARSEABLE");
+  WriteGracefulShutdownInfoContents("NOT PARSEABLE");
 
   const RebootLog reboot_log(
-      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_reboot_log_path_,
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
                                 /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/true));
 
   EXPECT_EQ(reboot_log.RebootReason(), RebootReason::kGenericGraceful);
@@ -286,9 +286,9 @@ TEST_F(RebootLogReasonTest, Succeed_RebootReasonsUnset) {
   WriteZirconRebootLogContents(
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098");
   fuchsia::hardware::power::statecontrol::ShutdownOptions options;
-  WriteGracefulRebootLogContents(std::move(options));
+  WriteGracefulShutdownInfoContents(std::move(options));
   const RebootLog reboot_log(
-      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_reboot_log_path_,
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
                                 /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/true));
 
   EXPECT_EQ(reboot_log.RebootReason(), RebootReason::kGenericGraceful);
@@ -297,9 +297,9 @@ TEST_F(RebootLogReasonTest, Succeed_RebootReasonsUnset) {
 TEST_F(RebootLogReasonTest, Succeed_RebootReasonsEmpty) {
   WriteZirconRebootLogContents(
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098");
-  WriteGracefulRebootLogContents(NewShutdownOptions({}));
+  WriteGracefulShutdownInfoContents(NewShutdownOptions({}));
   const RebootLog reboot_log(
-      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_reboot_log_path_,
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
                                 /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/true));
 
   EXPECT_EQ(reboot_log.RebootReason(), RebootReason::kGenericGraceful);
@@ -343,10 +343,10 @@ TEST_P(RebootLogMultiReasonTest, Succeed) {
   WriteZirconRebootLogContents(
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098");
 
-  WriteGracefulRebootLogContents(NewShutdownOptions(param.reasons));
+  WriteGracefulShutdownInfoContents(NewShutdownOptions(param.reasons));
 
   const RebootLog reboot_log(
-      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_reboot_log_path_,
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
                                 /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/true));
 
   EXPECT_EQ(reboot_log.RebootReason(), param.output_reboot_reason);
@@ -409,7 +409,7 @@ TEST_P(RebootLogTimeTest, Succeed) {
   }
 
   const RebootLog reboot_log(
-      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_reboot_log_path_,
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
                                 /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/true));
 
   if (param.output_uptime.has_value()) {
@@ -471,7 +471,7 @@ TEST_P(RebootLogCriticalProcessTest, Succeed) {
   }
 
   const RebootLog reboot_log(
-      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_reboot_log_path_,
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
                                 /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/true));
 
   if (param.output_critical_process.has_value()) {
@@ -533,11 +533,11 @@ TEST_P(RebootLogStrTest, Succeed) {
   }
 
   if (!param.shutdown_reasons.empty()) {
-    WriteGracefulRebootLogContents(NewShutdownOptions(param.shutdown_reasons));
+    WriteGracefulShutdownInfoContents(NewShutdownOptions(param.shutdown_reasons));
   }
 
   const RebootLog reboot_log(
-      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_reboot_log_path_,
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
                                 /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/true));
 
   if (param.output_reboot_log_str.has_value()) {
@@ -549,10 +549,10 @@ TEST_P(RebootLogStrTest, Succeed) {
 TEST_F(RebootLogStrTest, Succeed_SetGracefulFDR) {
   WriteZirconRebootLogContents(
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098");
-  WriteGracefulRebootLogContents(NewShutdownOptions({ShutdownReason::FACTORY_DATA_RESET}));
+  WriteGracefulShutdownInfoContents(NewShutdownOptions({ShutdownReason::FACTORY_DATA_RESET}));
 
   const RebootLog reboot_log(
-      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_reboot_log_path_,
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
                                 /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/true));
   EXPECT_EQ(reboot_log.RebootLogStr(),
             "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098\n"
@@ -565,7 +565,7 @@ TEST_F(RebootLogStrTest, Succeed_InferFDR) {
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098");
 
   const RebootLog reboot_log(
-      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_reboot_log_path_,
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
                                 /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/false));
   EXPECT_EQ(reboot_log.RebootReason(), RebootReason::kFdr);
   EXPECT_EQ(reboot_log.RebootLogStr(),
@@ -593,10 +593,11 @@ GRACEFUL REBOOT REASONS: (NONE)
 FINAL REBOOT REASON (ROOT JOB TERMINATION))";
 
   WriteZirconRebootLogContents(std::string(kContents));
-  WriteGracefulRebootLogContents(NewShutdownOptions({ShutdownReason::CRITICAL_COMPONENT_FAILURE}));
+  WriteGracefulShutdownInfoContents(
+      NewShutdownOptions({ShutdownReason::CRITICAL_COMPONENT_FAILURE}));
 
   const RebootLog reboot_log(
-      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_reboot_log_path_,
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
                                 /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/true));
   EXPECT_EQ(reboot_log.Dlog(), "test dlog dump line1\ntest dlog dump line2");
 }
@@ -618,10 +619,11 @@ TEST_F(RebootLogStrTest, Succeed_EmptyDlog) {
   FINAL REBOOT REASON (ROOT JOB TERMINATION))";
 
   WriteZirconRebootLogContents(std::string(kContents));
-  WriteGracefulRebootLogContents(NewShutdownOptions({ShutdownReason::CRITICAL_COMPONENT_FAILURE}));
+  WriteGracefulShutdownInfoContents(
+      NewShutdownOptions({ShutdownReason::CRITICAL_COMPONENT_FAILURE}));
 
   const RebootLog reboot_log(
-      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_reboot_log_path_,
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
                                 /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/true));
   EXPECT_EQ(reboot_log.Dlog(), "");
 }
@@ -640,10 +642,11 @@ TEST_F(RebootLogStrTest, Succeed_NoDlog) {
   FINAL REBOOT REASON (ROOT JOB TERMINATION))";
 
   WriteZirconRebootLogContents(std::string(kContents));
-  WriteGracefulRebootLogContents(NewShutdownOptions({ShutdownReason::CRITICAL_COMPONENT_FAILURE}));
+  WriteGracefulShutdownInfoContents(
+      NewShutdownOptions({ShutdownReason::CRITICAL_COMPONENT_FAILURE}));
 
   const RebootLog reboot_log(
-      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_reboot_log_path_,
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
                                 /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/true));
   EXPECT_EQ(reboot_log.Dlog(), std::nullopt);
 }

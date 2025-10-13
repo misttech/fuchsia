@@ -38,7 +38,7 @@ class MainService {
   struct Options {
     BuildTypeConfig build_type_config;
     std::optional<std::string> local_device_id_path;
-    std::string graceful_reboot_reason_write_path;
+    std::string graceful_shutdown_info_write_path;
     LastReboot::Options last_reboot_options;
     CrashReports::Options crash_reports_options;
     FeedbackData::Options feedback_data_options;

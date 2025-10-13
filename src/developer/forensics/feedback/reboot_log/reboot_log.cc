@@ -10,7 +10,7 @@
 #include <unordered_set>
 #include <utility>
 
-#include "src/developer/forensics/feedback/reboot_log/graceful_reboot_reason.h"
+#include "src/developer/forensics/feedback/reboot_log/graceful_shutdown_info.h"
 #include "src/developer/forensics/feedback/reboot_log/reboot_reason.h"
 #include "src/developer/forensics/feedback_data/constants.h"
 #include "src/lib/files/file.h"
@@ -192,7 +192,7 @@ std::optional<std::string> ExtractDlogAndLogRebootLog(const std::string& reboot_
   return std::string(fxl::TrimString(dlog, " \f\n\r\t\v"));
 }
 
-std::vector<GracefulRebootReason> ExtractLegacyGracefulRebootInfo(
+std::vector<GracefulShutdownReason> ExtractLegacyGracefulRebootInfo(
     const std::string& legacy_graceful_reboot_log_path) {
   if (!files::IsFile(legacy_graceful_reboot_log_path)) {
     return {};
@@ -200,17 +200,17 @@ std::vector<GracefulRebootReason> ExtractLegacyGracefulRebootInfo(
 
   std::string file_content;
   if (!files::ReadFileToString(legacy_graceful_reboot_log_path, &file_content)) {
-    return {GracefulRebootReason::kNotParseable};
+    return {GracefulShutdownReason::kNotParseable};
   }
 
   if (file_content.empty()) {
-    return {GracefulRebootReason::kNotParseable};
+    return {GracefulShutdownReason::kNotParseable};
   }
 
   return FromLegacyTxtFile(file_content);
 }
 
-std::vector<GracefulRebootReason> ExtractGracefulShutdownInfo(
+std::vector<GracefulShutdownReason> ExtractGracefulShutdownInfo(
     const std::string& graceful_shutdown_info_path,
     const std::string& legacy_graceful_reboot_log_path) {
   if (!files::IsFile(graceful_shutdown_info_path)) {
@@ -219,82 +219,83 @@ std::vector<GracefulRebootReason> ExtractGracefulShutdownInfo(
 
   std::string file_content;
   if (!files::ReadFileToString(graceful_shutdown_info_path, &file_content)) {
-    return {GracefulRebootReason::kNotParseable};
+    return {GracefulShutdownReason::kNotParseable};
   }
 
   if (file_content.empty()) {
-    return {GracefulRebootReason::kNotParseable};
+    return {GracefulShutdownReason::kNotParseable};
   }
 
   return FromJson(file_content);
 }
 
-RebootReason FromGracefulRebootReason(const GracefulRebootReason& reason) {
+RebootReason FromGracefulShutdownReason(const GracefulShutdownReason& reason) {
   switch (reason) {
-    case GracefulRebootReason::kUserRequest:
+    case GracefulShutdownReason::kUserRequest:
       return RebootReason::kUserRequest;
-    case GracefulRebootReason::kSystemUpdate:
+    case GracefulShutdownReason::kSystemUpdate:
       return RebootReason::kSystemUpdate;
-    case GracefulRebootReason::kRetrySystemUpdate:
+    case GracefulShutdownReason::kRetrySystemUpdate:
       return RebootReason::kRetrySystemUpdate;
-    case GracefulRebootReason::kHighTemperature:
+    case GracefulShutdownReason::kHighTemperature:
       return RebootReason::kHighTemperature;
-    case GracefulRebootReason::kSessionFailure:
+    case GracefulShutdownReason::kSessionFailure:
       return RebootReason::kSessionFailure;
-    case GracefulRebootReason::kSysmgrFailure:
+    case GracefulShutdownReason::kSysmgrFailure:
       return RebootReason::kSysmgrFailure;
-    case GracefulRebootReason::kCriticalComponentFailure:
+    case GracefulShutdownReason::kCriticalComponentFailure:
       return RebootReason::kCriticalComponentFailure;
-    case GracefulRebootReason::kFdr:
+    case GracefulShutdownReason::kFdr:
       return RebootReason::kFdr;
-    case GracefulRebootReason::kZbiSwap:
+    case GracefulShutdownReason::kZbiSwap:
       return RebootReason::kZbiSwap;
-    case GracefulRebootReason::kNotSupported:
-    case GracefulRebootReason::kNotParseable:
+    case GracefulShutdownReason::kNotSupported:
+    case GracefulShutdownReason::kNotParseable:
       return RebootReason::kGenericGraceful;
-    case GracefulRebootReason::kOutOfMemory:
+    case GracefulShutdownReason::kOutOfMemory:
       return RebootReason::kOOM;
-    case GracefulRebootReason::kNetstackMigration:
+    case GracefulShutdownReason::kNetstackMigration:
       return RebootReason::kNetstackMigration;
-    case GracefulRebootReason::kAndroidUnexpectedReason:
+    case GracefulShutdownReason::kAndroidUnexpectedReason:
       return RebootReason::kAndroidUnexpectedReason;
-    case GracefulRebootReason::kAndroidRescueParty:
+    case GracefulShutdownReason::kAndroidRescueParty:
       return RebootReason::kAndroidRescueParty;
-    case GracefulRebootReason::kAndroidCriticalProcessFailure:
+    case GracefulShutdownReason::kAndroidCriticalProcessFailure:
       return RebootReason::kAndroidCriticalProcessFailure;
-    case GracefulRebootReason::kDeveloperRequest:
+    case GracefulShutdownReason::kDeveloperRequest:
       return RebootReason::kDeveloperRequest;
-    case GracefulRebootReason::kNotSet:
-      FX_LOGS(FATAL) << "Graceful reboot reason must be set";
+    case GracefulShutdownReason::kNotSet:
+      FX_LOGS(FATAL) << "Graceful shutdown reason must be set";
       return RebootReason::kNotParseable;
   }
 }
 
-RebootReason ConsolidateGracefulRebootReasons(const std::vector<GracefulRebootReason>& reasons) {
+RebootReason ConsolidateGracefulShutdownReasons(
+    const std::vector<GracefulShutdownReason>& reasons) {
   if (reasons.empty()) {
     return RebootReason::kGenericGraceful;
   }
 
   // If there's only one reason, consolidation is trivial.
   if (reasons.size() == 1) {
-    return FromGracefulRebootReason(reasons[0]);
+    return FromGracefulShutdownReason(reasons[0]);
   }
 
   // Otherwise, verify it's an expected combination of reasons.
-  std::unordered_set<GracefulRebootReason> reasons_set(reasons.begin(), reasons.end());
-  if (reasons_set.size() == 2 && reasons_set.contains(GracefulRebootReason::kNetstackMigration) &&
-      reasons_set.contains(GracefulRebootReason::kSystemUpdate)) {
+  std::unordered_set<GracefulShutdownReason> reasons_set(reasons.begin(), reasons.end());
+  if (reasons_set.size() == 2 && reasons_set.contains(GracefulShutdownReason::kNetstackMigration) &&
+      reasons_set.contains(GracefulShutdownReason::kSystemUpdate)) {
     // Netstack Migration + System Update is consolidated to System Update.
     return RebootReason::kSystemUpdate;
   }
 
-  FX_LOGS(WARNING) << "Unexpected combination of graceful reboot reasons: "
+  FX_LOGS(WARNING) << "Unexpected combination of graceful shutdown reasons: "
                    << ToRawStrings(reasons);
   return RebootReason::kUnexpectedReasonGraceful;
 }
 
 RebootReason DetermineRebootReason(const ZirconRebootReason zircon_reason,
-                                   const std::vector<GracefulRebootReason>& graceful_reasons,
+                                   const std::vector<GracefulShutdownReason>& graceful_reasons,
                                    const bool not_a_fdr) {
   switch (zircon_reason) {
     case ZirconRebootReason::kCold:
@@ -319,7 +320,7 @@ RebootReason DetermineRebootReason(const ZirconRebootReason zircon_reason,
       if (!not_a_fdr) {
         return RebootReason::kFdr;
       }
-      return ConsolidateGracefulRebootReasons(graceful_reasons);
+      return ConsolidateGracefulShutdownReasons(graceful_reasons);
     case ZirconRebootReason::kNotSet:
       FX_LOGS(FATAL) << "|zircon_reason| must be set";
       return RebootReason::kNotParseable;
@@ -327,7 +328,7 @@ RebootReason DetermineRebootReason(const ZirconRebootReason zircon_reason,
 }
 
 std::string MakeRebootLog(const std::optional<std::string>& zircon_reboot_log,
-                          const std::vector<GracefulRebootReason>& graceful_reasons,
+                          const std::vector<GracefulShutdownReason>& graceful_reasons,
                           const RebootReason reboot_reason) {
   std::vector<std::string> lines;
 
@@ -335,6 +336,9 @@ std::string MakeRebootLog(const std::optional<std::string>& zircon_reboot_log,
     lines.push_back(zircon_reboot_log.value());
   }
 
+  // TODO(https://fxbug.dev/414413282): rename output to "shutdown" reasons once any
+  // dependencies are ready for the migration. To make it a cleaner break this can be done once the
+  // LastRebootInfoProvider protocol is renamed.
   lines.push_back(
       fxl::StringPrintf("GRACEFUL REBOOT REASONS: (%s)\n", ToRawStrings(graceful_reasons).c_str()));
 
@@ -358,7 +362,7 @@ RebootLog RebootLog::ParseRebootLog(const std::string& zircon_reboot_log_path,
       ExtractZirconRebootInfo(zircon_reboot_log_path, &zircon_reboot_log, &last_boot_uptime,
                               &last_boot_runtime, &critical_process);
 
-  const std::vector<GracefulRebootReason> graceful_reasons =
+  const std::vector<GracefulShutdownReason> graceful_reasons =
       ExtractGracefulShutdownInfo(graceful_shutdown_info_path, legacy_graceful_reboot_log_path);
 
   const auto reboot_reason = DetermineRebootReason(zircon_reason, graceful_reasons, not_a_fdr);

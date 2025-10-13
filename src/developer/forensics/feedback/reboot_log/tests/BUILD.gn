@@ -9,10 +9,10 @@ import("//build/testing/cc_test_executable.gni")
 ###############################################################################
 # EXECUTABLES
 ###############################################################################
-cc_test_executable("graceful_reboot_reason_unittest_exe") {
+cc_test_executable("graceful_shutdown_info_unittest_exe") {
   testonly = true
 
-  sources = [ "graceful_reboot_reason_unittest.cc" ]
+  sources = [ "graceful_shutdown_info_unittest.cc" ]
 
   deps = [
     "//src/developer/forensics/feedback/reboot_log",
@@ -66,9 +66,9 @@ cc_test_executable("reboot_reason_unittest_exe") {
 ###############################################################################
 # COMPONENTS
 ###############################################################################
-fuchsia_unittest_component("graceful_reboot_reason_unittest") {
+fuchsia_unittest_component("graceful_shutdown_info_unittest") {
   deps = [
-    ":graceful_reboot_reason_unittest_exe",
+    ":graceful_shutdown_info_unittest_exe",
     "//src/sys/test_runners:tmp_storage",
   ]
 }
@@ -97,7 +97,7 @@ fuchsia_test_package("reboot-log-tests") {
     }
   }
   test_components = [
-    ":graceful_reboot_reason_unittest",
+    ":graceful_shutdown_info_unittest",
     ":reboot_log_unittest",
     ":reboot_reason_unittest",
   ]

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/developer/forensics/feedback/reboot_log/graceful_reboot_reason.h"
+#include "src/developer/forensics/feedback/reboot_log/graceful_shutdown_info.h"
 
 #include <format>
 #include <vector>
@@ -22,22 +22,22 @@ namespace forensics {
 namespace feedback {
 namespace {
 
-TEST(GracefulRebootReasonTest, VerifyLegacyContentConversion) {
+TEST(GracefulShutdownInfoTest, VerifyLegacyContentConversion) {
   // ToLegacyFileContentForTesting() & FromLegacyTxtFile() for shutdown reasons from
   // |power::statecontrol::ShutdownReason| should be reversible.
 
-  const std::vector<GracefulRebootReason> reasons = {
-      GracefulRebootReason::kUserRequest,
-      GracefulRebootReason::kSystemUpdate,
-      GracefulRebootReason::kRetrySystemUpdate,
-      GracefulRebootReason::kHighTemperature,
-      GracefulRebootReason::kSessionFailure,
-      GracefulRebootReason::kSysmgrFailure,
-      GracefulRebootReason::kCriticalComponentFailure,
-      GracefulRebootReason::kFdr,
-      GracefulRebootReason::kZbiSwap,
-      GracefulRebootReason::kNotSupported,
-      GracefulRebootReason::kNetstackMigration,
+  const std::vector<GracefulShutdownReason> reasons = {
+      GracefulShutdownReason::kUserRequest,
+      GracefulShutdownReason::kSystemUpdate,
+      GracefulShutdownReason::kRetrySystemUpdate,
+      GracefulShutdownReason::kHighTemperature,
+      GracefulShutdownReason::kSessionFailure,
+      GracefulShutdownReason::kSysmgrFailure,
+      GracefulShutdownReason::kCriticalComponentFailure,
+      GracefulShutdownReason::kFdr,
+      GracefulShutdownReason::kZbiSwap,
+      GracefulShutdownReason::kNotSupported,
+      GracefulShutdownReason::kNetstackMigration,
   };
 
   for (const auto reason : reasons) {
@@ -46,22 +46,22 @@ TEST(GracefulRebootReasonTest, VerifyLegacyContentConversion) {
   }
 }
 
-TEST(GracefulRebootReasonTest, VerifyLegacyContentConversionWithMultipleReasons) {
+TEST(GracefulShutdownInfoTest, VerifyLegacyContentConversionWithMultipleReasons) {
   // ToLegacyFileContentForTesting() & FromLegacyTxtFile() for shutdown reasons from
   // |power::statecontrol::ShutdownReason| should be reversible when there are multiple reasons.
 
-  const std::vector<GracefulRebootReason> reasons = {
-      GracefulRebootReason::kUserRequest,
-      GracefulRebootReason::kSystemUpdate,
-      GracefulRebootReason::kRetrySystemUpdate,
-      GracefulRebootReason::kHighTemperature,
-      GracefulRebootReason::kSessionFailure,
-      GracefulRebootReason::kSysmgrFailure,
-      GracefulRebootReason::kCriticalComponentFailure,
-      GracefulRebootReason::kFdr,
-      GracefulRebootReason::kZbiSwap,
-      GracefulRebootReason::kNotSupported,
-      GracefulRebootReason::kNetstackMigration,
+  const std::vector<GracefulShutdownReason> reasons = {
+      GracefulShutdownReason::kUserRequest,
+      GracefulShutdownReason::kSystemUpdate,
+      GracefulShutdownReason::kRetrySystemUpdate,
+      GracefulShutdownReason::kHighTemperature,
+      GracefulShutdownReason::kSessionFailure,
+      GracefulShutdownReason::kSysmgrFailure,
+      GracefulShutdownReason::kCriticalComponentFailure,
+      GracefulShutdownReason::kFdr,
+      GracefulShutdownReason::kZbiSwap,
+      GracefulShutdownReason::kNotSupported,
+      GracefulShutdownReason::kNetstackMigration,
   };
 
   // Verify all reasons at once.
@@ -69,27 +69,27 @@ TEST(GracefulRebootReasonTest, VerifyLegacyContentConversionWithMultipleReasons)
               testing::ElementsAreArray(reasons));
 }
 
-TEST(GracefulRebootReasonTest, VerifyLegacyContentConversionWithNoReasons) {
+TEST(GracefulShutdownInfoTest, VerifyLegacyContentConversionWithNoReasons) {
   // ToLegacyFileContentForTesting() & FromLegacyTxtFile() for shutdown reasons from
   // |power::statecontrol::ShutdownReason| should be reversible when there are no reasons.
   EXPECT_TRUE(FromLegacyTxtFile(ToLegacyFileContentForTesting({})).empty());
 }
 
-TEST(GracefulRebootReasonTest, VerifyContentConversion) {
+TEST(GracefulShutdownInfoTest, VerifyContentConversion) {
   // ToJson() & FromJson() for shutdown reasons from
   // |power::statecontrol::ShutdownReason| should be reversible.
-  const std::vector<GracefulRebootReason> reasons = {
-      GracefulRebootReason::kUserRequest,
-      GracefulRebootReason::kSystemUpdate,
-      GracefulRebootReason::kRetrySystemUpdate,
-      GracefulRebootReason::kHighTemperature,
-      GracefulRebootReason::kSessionFailure,
-      GracefulRebootReason::kSysmgrFailure,
-      GracefulRebootReason::kCriticalComponentFailure,
-      GracefulRebootReason::kFdr,
-      GracefulRebootReason::kZbiSwap,
-      GracefulRebootReason::kNotSupported,
-      GracefulRebootReason::kNetstackMigration,
+  const std::vector<GracefulShutdownReason> reasons = {
+      GracefulShutdownReason::kUserRequest,
+      GracefulShutdownReason::kSystemUpdate,
+      GracefulShutdownReason::kRetrySystemUpdate,
+      GracefulShutdownReason::kHighTemperature,
+      GracefulShutdownReason::kSessionFailure,
+      GracefulShutdownReason::kSysmgrFailure,
+      GracefulShutdownReason::kCriticalComponentFailure,
+      GracefulShutdownReason::kFdr,
+      GracefulShutdownReason::kZbiSwap,
+      GracefulShutdownReason::kNotSupported,
+      GracefulShutdownReason::kNetstackMigration,
   };
 
   for (const auto reason : reasons) {
@@ -97,38 +97,38 @@ TEST(GracefulRebootReasonTest, VerifyContentConversion) {
   }
 }
 
-TEST(GracefulRebootReasonTest, VerifyContentConversionWithMultipleReasons) {
+TEST(GracefulShutdownInfoTest, VerifyContentConversionWithMultipleReasons) {
   // ToJson() & FromJson() for shutdown reasons from
   // |power::statecontrol::ShutdownReason| should be reversible when there are multiple reasons.
-  const std::vector<GracefulRebootReason> reasons = {
-      GracefulRebootReason::kUserRequest,
-      GracefulRebootReason::kSystemUpdate,
-      GracefulRebootReason::kRetrySystemUpdate,
-      GracefulRebootReason::kHighTemperature,
-      GracefulRebootReason::kSessionFailure,
-      GracefulRebootReason::kSysmgrFailure,
-      GracefulRebootReason::kCriticalComponentFailure,
-      GracefulRebootReason::kFdr,
-      GracefulRebootReason::kZbiSwap,
-      GracefulRebootReason::kNotSupported,
-      GracefulRebootReason::kNetstackMigration,
+  const std::vector<GracefulShutdownReason> reasons = {
+      GracefulShutdownReason::kUserRequest,
+      GracefulShutdownReason::kSystemUpdate,
+      GracefulShutdownReason::kRetrySystemUpdate,
+      GracefulShutdownReason::kHighTemperature,
+      GracefulShutdownReason::kSessionFailure,
+      GracefulShutdownReason::kSysmgrFailure,
+      GracefulShutdownReason::kCriticalComponentFailure,
+      GracefulShutdownReason::kFdr,
+      GracefulShutdownReason::kZbiSwap,
+      GracefulShutdownReason::kNotSupported,
+      GracefulShutdownReason::kNetstackMigration,
   };
 
   // Verify all reasons at once.
   EXPECT_THAT(FromJson(ToJson(reasons)), testing::ElementsAreArray(reasons));
 }
 
-TEST(GracefulRebootReasonTest, VerifyContentConversionWithNoReasons) {
+TEST(GracefulShutdownInfoTest, VerifyContentConversionWithNoReasons) {
   // ToJson() & FromJson() for shutdown reasons from
   // |power::statecontrol::ShutdownReason| should be reversible when there are no reasons.
   EXPECT_TRUE(FromJson(ToJson({})).empty());
 }
 
-TEST(GracefulRebootReasonTest, ReasonsIsNotAnArray) {
+TEST(GracefulShutdownInfoTest, ReasonsIsNotAnArray) {
   EXPECT_TRUE(FromJson(R"({ "reasons" : "not-an-array" })").empty());
 }
 
-TEST(GracefulRebootReasonTest, SpuriousField) {
+TEST(GracefulShutdownInfoTest, SpuriousField) {
   EXPECT_TRUE(FromJson(R"({ "reasons" : [], "spurious_field": "spurious-value" })").empty());
 }
 
@@ -136,14 +136,14 @@ constexpr char kFilename[] = "graceful_shutdown_info.json";
 
 struct TestParam {
   std::string test_name;
-  GracefulRebootReason input_reboot_reason;
+  GracefulShutdownReason input_shutdown_reason;
   std::string output_reason;
 };
 
-class WriteGracefulRebootReasonTest : public UnitTestFixture,
+class WriteGracefulShutdownInfoTest : public UnitTestFixture,
                                       public testing::WithParamInterface<TestParam> {
  public:
-  WriteGracefulRebootReasonTest() : cobalt_(dispatcher(), services(), &clock_) {}
+  WriteGracefulShutdownInfoTest() : cobalt_(dispatcher(), services(), &clock_) {}
 
  protected:
   std::string Path() { return files::JoinPath(tmp_dir_.path(), kFilename); }
@@ -166,66 +166,66 @@ class WriteGracefulRebootReasonTest : public UnitTestFixture,
   files::ScopedTempDir tmp_dir_;
 };
 
-INSTANTIATE_TEST_SUITE_P(WithVariousRebootReasons, WriteGracefulRebootReasonTest,
+INSTANTIATE_TEST_SUITE_P(WithVariousShutdownReasons, WriteGracefulShutdownInfoTest,
                          ::testing::ValuesIn(std::vector<TestParam>({
                              {
                                  "UserRequest",
-                                 GracefulRebootReason::kUserRequest,
+                                 GracefulShutdownReason::kUserRequest,
                                  "USER REQUEST",
                              },
                              {
                                  "SystemUpdate",
-                                 GracefulRebootReason::kSystemUpdate,
+                                 GracefulShutdownReason::kSystemUpdate,
                                  "SYSTEM UPDATE",
                              },
                              {
                                  "RetrySystemUpdate",
-                                 GracefulRebootReason::kRetrySystemUpdate,
+                                 GracefulShutdownReason::kRetrySystemUpdate,
                                  "RETRY SYSTEM UPDATE",
                              },
                              {
                                  "HighTemperature",
-                                 GracefulRebootReason::kHighTemperature,
+                                 GracefulShutdownReason::kHighTemperature,
                                  "HIGH TEMPERATURE",
                              },
                              {
                                  "SessionFailure",
-                                 GracefulRebootReason::kSessionFailure,
+                                 GracefulShutdownReason::kSessionFailure,
                                  "SESSION FAILURE",
                              },
                              {
                                  "SystemFailure",
-                                 GracefulRebootReason::kSysmgrFailure,
+                                 GracefulShutdownReason::kSysmgrFailure,
                                  "SYSMGR FAILURE",
                              },
                              {
                                  "CriticalComponentFailure",
-                                 GracefulRebootReason::kCriticalComponentFailure,
+                                 GracefulShutdownReason::kCriticalComponentFailure,
                                  "CRITICAL COMPONENT FAILURE",
                              },
                              {
                                  "FactoryDataReset",
-                                 GracefulRebootReason::kFdr,
+                                 GracefulShutdownReason::kFdr,
                                  "FACTORY DATA RESET",
                              },
                              {
                                  "ZbiSwap",
-                                 GracefulRebootReason::kZbiSwap,
+                                 GracefulShutdownReason::kZbiSwap,
                                  "ZBI SWAP",
                              },
                              {
                                  "OutOfMemory",
-                                 GracefulRebootReason::kOutOfMemory,
+                                 GracefulShutdownReason::kOutOfMemory,
                                  "OUT OF MEMORY",
                              },
                              {
                                  "NetstackMigration",
-                                 GracefulRebootReason::kNetstackMigration,
+                                 GracefulShutdownReason::kNetstackMigration,
                                  "NETSTACK MIGRATION",
                              },
                              {
                                  "NotSupported",
-                                 static_cast<GracefulRebootReason>(100u),
+                                 static_cast<GracefulShutdownReason>(100u),
                                  "NOT SUPPORTED",
                              },
                          })),
@@ -233,12 +233,12 @@ INSTANTIATE_TEST_SUITE_P(WithVariousRebootReasons, WriteGracefulRebootReasonTest
                            return info.param.test_name;
                          });
 
-TEST_P(WriteGracefulRebootReasonTest, Succeed) {
+TEST_P(WriteGracefulShutdownInfoTest, Succeed) {
   const auto param = GetParam();
 
   SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
 
-  WriteGracefulRebootReasons({param.input_reboot_reason}, &cobalt_, Path());
+  WriteGracefulShutdownInfo({param.input_shutdown_reason}, &cobalt_, Path());
 
   std::string contents;
   ASSERT_TRUE(files::ReadFileToString(Path(), &contents));

@@ -11,8 +11,8 @@ source_set("reboot_log") {
   sources = [
     "annotations.cc",
     "annotations.h",
-    "graceful_reboot_reason.cc",
-    "graceful_reboot_reason.h",
+    "graceful_shutdown_info.cc",
+    "graceful_shutdown_info.h",
     "reboot_log.cc",
     "reboot_log.h",
     "reboot_reason.cc",

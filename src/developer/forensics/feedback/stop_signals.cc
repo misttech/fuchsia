@@ -90,13 +90,13 @@ fpromise::promise<LifecycleStopSignal, Error> WaitForLifecycleStop(
 namespace {
 
 // Handles receiving the reason a shutdown is expected to occur and converting into a
-// `GracefulRebootReasonSignal`.
+// `GracefulShutdownInfoSignal`.
 class ShutdownWatcherServer : public fuchsia::hardware::power::statecontrol::ShutdownWatcher {
  public:
   ShutdownWatcherServer(
       async_dispatcher_t* dispatcher,
       fidl::InterfaceRequest<fuchsia::hardware::power::statecontrol::ShutdownWatcher> request,
-      fpromise::completer<GracefulRebootReasonSignal, Error> completer);
+      fpromise::completer<GracefulShutdownInfoSignal, Error> completer);
 
   void OnShutdown(fuchsia::hardware::power::statecontrol::ShutdownOptions options,
                   OnShutdownCallback callback) override;
@@ -107,13 +107,13 @@ class ShutdownWatcherServer : public fuchsia::hardware::power::statecontrol::Shu
 
  private:
   std::unique_ptr<fidl::Binding<fuchsia::hardware::power::statecontrol::ShutdownWatcher>> binding_;
-  fpromise::completer<GracefulRebootReasonSignal, Error> completer_;
+  fpromise::completer<GracefulShutdownInfoSignal, Error> completer_;
 };
 
 ShutdownWatcherServer::ShutdownWatcherServer(
     async_dispatcher_t* dispatcher,
     fidl::InterfaceRequest<fuchsia::hardware::power::statecontrol::ShutdownWatcher> request,
-    fpromise::completer<GracefulRebootReasonSignal, Error> completer)
+    fpromise::completer<GracefulShutdownInfoSignal, Error> completer)
     : binding_(
           std::make_unique<fidl::Binding<fuchsia::hardware::power::statecontrol::ShutdownWatcher>>(
               this, std::move(request), dispatcher)),
@@ -147,31 +147,31 @@ void ShutdownWatcherServer::OnShutdown(
     cb(fpromise::ok());
     b->Unbind();
   });
-  completer_.complete_ok(GracefulRebootReasonSignal(ToGracefulRebootReasons(std::move(options)),
+  completer_.complete_ok(GracefulShutdownInfoSignal(ToGracefulShutdownReasons(std::move(options)),
                                                     [cb = std::move(cb)]() mutable { cb.call(); }));
 }
 
 }  // namespace
 
-GracefulRebootReasonSignal::GracefulRebootReasonSignal(std::vector<GracefulRebootReason> reasons,
+GracefulShutdownInfoSignal::GracefulShutdownInfoSignal(std::vector<GracefulShutdownReason> reasons,
                                                        fit::callback<void(void)> callback)
     : reasons_(std::move(reasons)), callback_(std::move(callback)) {
   FX_CHECK(callback_ != nullptr);
 }
 
-fpromise::promise<GracefulRebootReasonSignal, Error> WaitForShutdownReason(
+fpromise::promise<GracefulShutdownInfoSignal, Error> WaitForShutdownReason(
     async_dispatcher_t* dispatcher,
     fidl::InterfaceRequest<fuchsia::hardware::power::statecontrol::ShutdownWatcher> request) {
   if (!request.is_valid()) {
-    return fpromise::make_result_promise<GracefulRebootReasonSignal, Error>(
+    return fpromise::make_result_promise<GracefulShutdownInfoSignal, Error>(
         fpromise::error(Error::kBadValue));
   }
 
-  fpromise::bridge<GracefulRebootReasonSignal, Error> bridge;
+  fpromise::bridge<GracefulShutdownInfoSignal, Error> bridge;
   auto watcher = std::make_unique<ShutdownWatcherServer>(dispatcher, std::move(request),
                                                          std::move(bridge.completer));
   return bridge.consumer.promise_or(fpromise::error(Error::kLogicError))
-      .then([w = std::move(watcher)](fpromise::result<GracefulRebootReasonSignal, Error>& result) {
+      .then([w = std::move(watcher)](fpromise::result<GracefulShutdownInfoSignal, Error>& result) {
         return std::move(result);
       });
 }

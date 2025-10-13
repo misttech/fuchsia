@@ -131,10 +131,10 @@ TEST_F(WaitForRebootReasonTest, ClientDisconnects) {
 TEST_F(WaitForRebootReasonTest, ServerDisconnectsOnCallbackExecution) {
   async::Executor executor(dispatcher());
 
-  std::optional<GracefulRebootReasonSignal> signal;
+  std::optional<GracefulShutdownInfoSignal> signal;
   fuchsia::hardware::power::statecontrol::ShutdownWatcherPtr ptr;
   executor.schedule_task(WaitForShutdownReason(dispatcher(), ptr.NewRequest(dispatcher()))
-                             .and_then([&signal](GracefulRebootReasonSignal& s) {
+                             .and_then([&signal](GracefulShutdownInfoSignal& s) {
                                signal = std::move(s);
                                return fpromise::ok();
                              }));
@@ -152,7 +152,7 @@ TEST_F(WaitForRebootReasonTest, ServerDisconnectsOnCallbackExecution) {
   RunLoopUntilIdle();
   EXPECT_TRUE(ptr.is_bound());
   ASSERT_NE(signal, std::nullopt);
-  EXPECT_THAT(signal->Reasons(), testing::ElementsAre(GracefulRebootReason::kUserRequest));
+  EXPECT_THAT(signal->Reasons(), testing::ElementsAre(GracefulShutdownReason::kUserRequest));
 
   signal->Respond();
   RunLoopUntilIdle();
@@ -163,10 +163,10 @@ TEST_F(WaitForRebootReasonTest, ServerDisconnectsOnCallbackExecution) {
 TEST_F(WaitForRebootReasonTest, ServerDisconnectsOnCallbackDeletion) {
   async::Executor executor(dispatcher());
 
-  std::optional<GracefulRebootReasonSignal> signal;
+  std::optional<GracefulShutdownInfoSignal> signal;
   fuchsia::hardware::power::statecontrol::ShutdownWatcherPtr ptr;
   executor.schedule_task(WaitForShutdownReason(dispatcher(), ptr.NewRequest(dispatcher()))
-                             .and_then([&signal](GracefulRebootReasonSignal& s) {
+                             .and_then([&signal](GracefulShutdownInfoSignal& s) {
                                signal = std::move(s);
                                return fpromise::ok();
                              }));
@@ -183,7 +183,7 @@ TEST_F(WaitForRebootReasonTest, ServerDisconnectsOnCallbackDeletion) {
 
   RunLoopUntilIdle();
   ASSERT_NE(signal, std::nullopt);
-  EXPECT_THAT(signal->Reasons(), testing::ElementsAre(GracefulRebootReason::kUserRequest));
+  EXPECT_THAT(signal->Reasons(), testing::ElementsAre(GracefulShutdownReason::kUserRequest));
 
   signal = std::nullopt;
   RunLoopUntilIdle();
@@ -194,10 +194,10 @@ TEST_F(WaitForRebootReasonTest, ServerDisconnectsOnCallbackDeletion) {
 TEST_F(WaitForRebootReasonTest, NoCompletionOnNoAction) {
   async::Executor executor(dispatcher());
 
-  std::optional<GracefulRebootReasonSignal> signal;
+  std::optional<GracefulShutdownInfoSignal> signal;
   fuchsia::hardware::power::statecontrol::ShutdownWatcherPtr ptr;
   executor.schedule_task(WaitForShutdownReason(dispatcher(), ptr.NewRequest(dispatcher()))
-                             .and_then([&signal](GracefulRebootReasonSignal& s) {
+                             .and_then([&signal](GracefulShutdownInfoSignal& s) {
                                signal = std::move(s);
                                return fpromise::ok();
                              }));
@@ -247,10 +247,10 @@ TEST_P(WaitForRebootReasonParameterizedTest, NoCompletion) {
   const auto& param = GetParam();
   async::Executor executor(dispatcher());
 
-  std::optional<GracefulRebootReasonSignal> signal;
+  std::optional<GracefulShutdownInfoSignal> signal;
   fuchsia::hardware::power::statecontrol::ShutdownWatcherPtr ptr;
   executor.schedule_task(WaitForShutdownReason(dispatcher(), ptr.NewRequest(dispatcher()))
-                             .and_then([&signal](GracefulRebootReasonSignal& s) {
+                             .and_then([&signal](GracefulShutdownInfoSignal& s) {
                                signal = std::move(s);
                                return fpromise::ok();
                              }));

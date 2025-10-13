@@ -18,7 +18,7 @@
 
 #include "src/developer/forensics/feedback/annotations/device_id_provider.h"
 #include "src/developer/forensics/feedback/annotations/provider.h"
-#include "src/developer/forensics/feedback/reboot_log/graceful_reboot_reason.h"
+#include "src/developer/forensics/feedback/reboot_log/graceful_shutdown_info.h"
 #include "src/developer/forensics/feedback/redactor_factory.h"
 #include "src/developer/forensics/feedback/stop_signals.h"
 #include "src/developer/forensics/utils/cobalt/logger.h"
@@ -111,20 +111,19 @@ MainService::MainService(
           }));
 
   fidl::InterfaceHandle<fuchsia::hardware::power::statecontrol::ShutdownWatcher> handle;
-  executor_.schedule_task(WaitForShutdownReason(dispatcher_, handle.NewRequest())
-                              .and_then([this, path = options.graceful_reboot_reason_write_path](
-                                            GracefulRebootReasonSignal& signal) {
-                                const std::vector<GracefulRebootReason> reasons = signal.Reasons();
-                                FX_LOGS(INFO)
-                                    << "Received reboot reasons '" << ToRawStrings(reasons) << "'";
+  executor_.schedule_task(
+      WaitForShutdownReason(dispatcher_, handle.NewRequest())
+          .and_then([this, path = options.graceful_shutdown_info_write_path](
+                        GracefulShutdownInfoSignal& signal) {
+            const std::vector<GracefulShutdownReason> reasons = signal.Reasons();
+            FX_LOGS(INFO) << "Received shutdown reasons '" << ToRawStrings(reasons) << "'";
 
-                                WriteGracefulRebootReasons(reasons, cobalt_, path);
-                                signal.Respond();
-                              })
-                              .or_else([](const Error& error) {
-                                FX_LOGS(ERROR)
-                                    << "Won't receive reboot reason: " << ToString(error);
-                              }));
+            WriteGracefulShutdownInfo(reasons, cobalt_, path);
+            signal.Respond();
+          })
+          .or_else([](const Error& error) {
+            FX_LOGS(ERROR) << "Won't receive shutdown reasons: " << ToString(error);
+          }));
 
   // We register ourselves with ShutdownWatcher using a fire-and-forget request that gives
   // an endpoint to a long-lived connection we maintain.
