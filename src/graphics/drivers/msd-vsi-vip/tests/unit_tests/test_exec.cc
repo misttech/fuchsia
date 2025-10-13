@@ -29,6 +29,9 @@ TEST_F(TestExec, ResetAfterSubmit) {
   for (uint32_t i = 0; i < 100; i++) {
     device_->StartDeviceThread();
 
+    ASSERT_FALSE(default_context()->killed());
+    ASSERT_TRUE(device_->IsIdle());
+
     BufferDesc buffer_desc = {
         .buffer_size = 4096,
         .map_page_count = 1,
@@ -37,14 +40,41 @@ TEST_F(TestExec, ResetAfterSubmit) {
         .batch_offset = 80,
         .gpu_addr = 0x10000,
     };
-    ASSERT_FALSE(default_context()->killed());
-    ASSERT_TRUE(device_->IsIdle());
-    CreateAndSubmitBufferWaitCompletion(default_context(), buffer_desc);
-    if (HasFailure()) {
-      device_->DumpStatusToLog();
+    std::optional<uint32_t> fault_addr = {};
+
+    std::shared_ptr<MsdVsiBuffer> buffer;
+    ASSERT_NO_FATAL_FAILURE(CreateAndMapBuffer(default_context(), buffer_desc.buffer_size,
+                                               buffer_desc.map_page_count, buffer_desc.gpu_addr,
+                                               &buffer));
+
+    if (fault_addr.has_value()) {
+      constexpr uint32_t prefetch = 16;  // arbitrary
+      WriteLinkCommand(buffer, buffer_desc.batch_offset, prefetch, fault_addr.value());
+    } else {
+      // Write a WAIT command at offset |kBatchOffset|.
+      WriteWaitCommand(buffer, buffer_desc.batch_offset);
     }
-    ASSERT_NO_FATAL_FAILURE();
-    ASSERT_FALSE(default_context()->killed());
+
+    for (uint32_t j = 0; j < 100; j++) {
+      auto semaphore = magma::PlatformSemaphore::Create();
+      ASSERT_NE(semaphore, nullptr);
+
+      std::unique_ptr<CommandBuffer> batch;
+      ASSERT_NO_FATAL_FAILURE(CreateAndPrepareBatch(default_context(), buffer,
+                                                    buffer_desc.data_size, buffer_desc.batch_offset,
+                                                    semaphore->Clone(), std::nullopt, &batch));
+      ASSERT_TRUE(default_context()->SubmitBatch(std::move(batch)).ok());
+
+      constexpr uint64_t kTimeoutMs = 1000;
+      EXPECT_EQ(MAGMA_STATUS_OK, semaphore->Wait(kTimeoutMs).get());
+
+      if (HasFailure()) {
+        printf("Failed TestExec on iterations %d %d\n", i, j);
+        device_->DumpStatusToLog();
+      }
+      ASSERT_NO_FATAL_FAILURE();
+      ASSERT_FALSE(default_context()->killed());
+    }
 
     device_->EnqueueDeviceRequest(std::make_unique<MsdVsiDevice::ResetRequest>());
 
