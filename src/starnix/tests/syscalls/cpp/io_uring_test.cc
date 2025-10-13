@@ -35,7 +35,11 @@ int io_uring_enter(int fd, int to_submit, int min_complete, int flags, sigset_t*
       syscall(__NR_io_uring_enter, fd, to_submit, min_complete, flags, sigset, sizeof(sigset_t)));
 }
 
+// TODO(b/444216805): Re-enable once debian 12 fix is implemented.
 TEST(IoUringTest, IoUringReadWrite) {
+  if (!test_helper::IsStarnix()) {
+    GTEST_SKIP() << "Test fails on debian 12 Linux, skipping.";
+  }
   test_helper::ScopedTempFD temp_fd;
   ASSERT_TRUE(temp_fd.fd() >= 0);
 

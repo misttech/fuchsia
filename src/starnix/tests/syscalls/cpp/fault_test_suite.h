@@ -11,6 +11,7 @@
 #include <gtest/gtest.h>
 
 #include "fault_test.h"
+#include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 TEST_P(FaultFileTest, Write) {
   ASSERT_EQ(write(fd().get(), faulting_ptr_, kFaultingSize_), -1);
@@ -71,7 +72,11 @@ TEST_P(FaultFileTest, ReadV) {
   EXPECT_STREQ(base2, &kWriteBuf[1]);
 }
 
+// TODO(b/444216805): Re-enable once debian 12 fix is available.
 TEST_P(FaultFileTest, WriteV) {
+  if (!test_helper::IsStarnix()) {
+    GTEST_SKIP() << "Test fails on debian 12 Linux, skipping.";
+  }
   char write_buf[] = "Hello world";
   constexpr size_t kBase0Size = 1;
   iovec iov[] = {
