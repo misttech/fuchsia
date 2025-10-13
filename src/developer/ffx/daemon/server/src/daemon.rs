@@ -885,7 +885,7 @@ mod test {
     use std::str::FromStr;
     use std::time::Instant;
 
-    async fn spawn_test_daemon(env: &TestEnv<'static>) -> (DaemonProxy, Daemon, Task<Result<()>>) {
+    async fn spawn_test_daemon(env: &TestEnv) -> (DaemonProxy, Daemon, Task<Result<()>>) {
         let tempdir = tempfile::tempdir().expect("Creating tempdir");
         let socket_path = tempdir.path().join("ascendd.sock");
         let d = Daemon::new(env.context.clone(), socket_path);

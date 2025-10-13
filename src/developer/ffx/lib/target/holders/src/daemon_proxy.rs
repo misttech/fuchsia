@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
-use ffx_command_error::{user_error, Error, FfxContext, Result};
+use ffx_command_error::{Error, FfxContext, Result, user_error};
 use fho::{FhoEnvironment, TryFromEnv, TryFromEnvWith};
 use fidl::endpoints::{Proxy, ServerEnd};
 use fidl_fuchsia_developer_ffx as ffx_fidl;

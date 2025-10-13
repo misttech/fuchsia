@@ -1004,7 +1004,7 @@ mod tests {
         }
     }
 
-    async fn init_test_config(env: &ffx_config::TestEnv<'_>, temp_dir: &Path) {
+    async fn init_test_config(env: &ffx_config::TestEnv, temp_dir: &Path) {
         env.context
             .query(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
             .level(Some(ConfigLevel::User))

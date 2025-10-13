@@ -487,7 +487,7 @@ mod test {
 
     async fn build_list_tool(
         cmd: ListCommand,
-        env: &ffx_config::TestEnv<'_>,
+        env: &ffx_config::TestEnv,
         fho_env: fho::FhoEnvironment,
     ) -> ListTool {
         ListTool {
