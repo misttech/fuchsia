@@ -19,9 +19,9 @@
 #include <fbl/condition_variable.h>
 #include <fbl/mutex.h>
 
-#include "src/graphics/drivers/misc/goldfish/pipe_device.h"
-
 namespace goldfish {
+
+class PipeDevice;
 
 // An instance of this class serves a Pipe connection.
 class Pipe : public fidl::WireServer<fuchsia_hardware_goldfish::Pipe> {

@@ -13,6 +13,7 @@
 #include <fbl/auto_lock.h>
 
 #include "src/devices/lib/goldfish/pipe_headers/include/base.h"
+#include "src/graphics/drivers/misc/goldfish/pipe_device.h"
 
 namespace goldfish {
 namespace {

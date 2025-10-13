@@ -26,6 +26,7 @@
 #include <fbl/mutex.h>
 
 #include "src/devices/lib/acpi/client.h"
+#include "src/graphics/drivers/misc/goldfish/pipe.h"
 
 namespace goldfish {
 
@@ -92,8 +93,7 @@ class PipeDevice : public DeviceType {
 
 class PipeChildDevice;
 using PipeChildDeviceType =
-    ddk::Device<PipeChildDevice, ddk::Unbindable,
-                ddk::Messageable<fuchsia_hardware_goldfish::Controller>::Mixin>;
+    ddk::Device<PipeChildDevice, ddk::Messageable<fuchsia_hardware_goldfish::PipeDevice>::Mixin>;
 
 // |PipeChildDevice| is created by |PipeDevice| and serves the
 // |fuchsia.hardware.goldfish.GoldfishPipe| FIDL protocol by forwarding all the
@@ -107,11 +107,10 @@ class PipeChildDevice : public PipeChildDeviceType,
   zx_status_t Bind(cpp20::span<const zx_device_str_prop_t> props, const char* dev_name);
 
   // Device protocol implementation.
-  void DdkUnbind(ddk::UnbindTxn txn);
   void DdkRelease();
 
   // fuchsia.hardware.goldfish.Controller APIs.
-  void OpenSession(OpenSessionRequestView request, OpenSessionCompleter::Sync& completer) override;
+  void Connect(ConnectRequestView request, ConnectCompleter::Sync& completer) override;
 
   // fuchsia.hardware.goldfish.pipe.GoldfishPipe APIs.
   void Create(CreateCompleter::Sync& completer) override;
@@ -126,8 +125,9 @@ class PipeChildDevice : public PipeChildDeviceType,
   async_dispatcher_t* const dispatcher_;
   component::OutgoingDirectory outgoing_;
 
+  std::unordered_map<Pipe*, std::unique_ptr<Pipe>> pipes_;
+
   fidl::ServerBindingGroup<fuchsia_hardware_goldfish_pipe::GoldfishPipe> pipe_bindings_;
-  fidl::ServerBindingGroup<fuchsia_hardware_goldfish::PipeDevice> bindings_;
   std::optional<ddk::UnbindTxn> unbind_txn_;
 };
 
