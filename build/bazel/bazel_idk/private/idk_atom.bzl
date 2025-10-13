@@ -4,6 +4,7 @@
 
 """Defines an IDK atom."""
 
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@fuchsia_build_info//:args.bzl", "warn_on_sdk_changes")
 load("//build/bazel/bazel_idk:providers.bzl", "FuchsiaIdkAtomInfo")
 load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
@@ -125,14 +126,12 @@ def _get_additional_info(ctx):
         first_output_file = ctx.attr.underlying_library[DefaultInfo].files.to_list()[0]
         lib_name = first_output_file.basename
 
+        api_level = ctx.attr._current_api_level[BuildSettingInfo].value
         cpu_arch = _get_current_cpu_arch(ctx)
-
-        # TODO(https://fxbug.dev/443825617): Use the build setting once available.
-        target_api_level = "PLATFORM"
-        idk_prebuilt_base = _get_prebuilt_libraries_base_path(cpu_arch, target_api_level)
+        idk_prebuilt_base = _get_prebuilt_libraries_base_path(cpu_arch, api_level)
 
         binaries = {}
-        binaries["api_level"] = target_api_level
+        binaries["api_level"] = api_level
         binaries["arch"] = cpu_arch
 
         additional_prebuild_info = dict(ctx.attr.additional_prebuild_info)
@@ -327,6 +326,9 @@ Possible values, from most restrictive to least restrictive:
             doc = "A dictionary of type-specific prebuild info for the atom, with values encoded as JSON strings.",
             mandatory = False,
             default = {},
+        ),
+        "_current_api_level": attr.label(
+            default = "@//build/bazel:fuchsia_api_level",
         ),
         "_current_platform": attr.label(
             providers = [CurrentPlatformInfo],

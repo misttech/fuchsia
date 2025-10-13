@@ -7,9 +7,9 @@ declare_args() {
   #
   # For the default platform build, the API level is "PLATFORM".
   #
-  # If this is _not_ set to "PLATFORM", then it must be set to a positive
-  # integer corresponding to a currently Supported (not Sunset) API level. In
-  # that case, the build will target the given API level.
+  # If this is _not_ set to "PLATFORM", then it must be set to "NEXT", "HEAD",
+  # or a positive integer corresponding to a currently Supported (not Sunset)
+  # API level. In that case, the build will target the given API level.
   #
   # This is intended for use with code that is included in IDK sub-builds. Not
   # all targets support the non-default value, and other uses are unsupported.

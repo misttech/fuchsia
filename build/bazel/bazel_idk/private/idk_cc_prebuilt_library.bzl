@@ -246,16 +246,16 @@ def _idk_cc_prebuilt_library_impl(
         ),
     ]
 
-    # IFS files only apply to shared libraries, and we do not maintain golden
-    # IFS files for "HEAD".
-    # TODO(https://fxbug.dev/443825617): Add this to the condition once the
-    # build setting is available:
-    # and current_build_target_api_level != "HEAD"
+    # IFS files do not apply to static libraries.
     verify_public_symbols = prebuilt_library_type != "static"
 
     if verify_public_symbols:
         atom_build_deps += [
             # TODO(https://fxbug.dev/449812165): Implement this once IFS files are generated.
+            # The rule will need to do nothing when
+            # `ctx.attr._current_api_level[BuildSettingInfo].value == HEAD`
+            # because we do not maintain golden IFS files for "HEAD".
+            #
             # create_verify_public_symbols_target()
         ]
 
