@@ -30,6 +30,7 @@
 #include <arch/arm64/mp.h>
 #include <arch/arm64/periphmap.h>
 #include <arch/mp.h>
+#include <dev/clocks_and_pmic.h>
 #include <dev/hw_rng.h>
 #include <dev/interrupt.h>
 #include <dev/power.h>
@@ -172,6 +173,7 @@ zx_status_t platform_suspend_cpu(PlatformAllowDomainPowerDown allow_domain) {
 
     if ((arch_curr_cpu_num() == BOOT_CPU_ID) && (max_scope == PsciCpuSuspendMaxScope::CpuAndMore)) {
       platform_serial_prepare_for_suspend();
+      clocks_and_pmic_prepare_for_suspend();
       did_serial_suspend = true;
     }
   }
@@ -192,6 +194,7 @@ zx_status_t platform_suspend_cpu(PlatformAllowDomainPowerDown allow_domain) {
     DEBUG_ASSERT_MSG(status == ZX_OK, "platform_resume_timer_curr_cpu: %d", status);
 
     if (did_serial_suspend) {
+      clocks_and_pmic_wakeup_from_suspend();
       platform_serial_wakeup_from_suspend();
     }
 
