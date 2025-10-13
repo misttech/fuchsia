@@ -164,6 +164,10 @@ pub struct Metadata {
 }
 
 impl Metadata {
+    pub fn header(&self) -> &MetadataHeader {
+        &self.header
+    }
+
     pub fn partitions(&self) -> &HashMap<String, MetadataPartition> {
         &self.partitions
     }

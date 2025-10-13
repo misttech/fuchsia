@@ -18,25 +18,36 @@ use storage_device::{Device, ReadOptions, WriteOptions};
 /// Struct to help interpret the deserialized "super" image.
 pub struct SuperParser {
     super_metadata: SuperMetadata,
-    used_regions: BTreeSet<SuperDeviceRange>,
+    metadata_used_regions: BTreeSet<SuperDeviceRange>,
     device: Arc<dyn Device>,
 }
 
 impl SuperParser {
     pub async fn new(device: Arc<dyn Device>) -> Result<Self, Error> {
         let super_metadata = SuperMetadata::load_from_device(device.as_ref()).await?;
-        let super_metadata_size = super_metadata.geometry.get_total_metadata_size()?;
 
-        let mut used_regions = BTreeSet::new();
-        used_regions.insert(SuperDeviceRange(0..super_metadata_size));
+        let mut metadata_used_regions = BTreeSet::new();
+        metadata_used_regions.insert(SuperDeviceRange(
+            format::PARTITION_RESERVED_BYTES as u64..format::RESERVED_AND_GEOMETRIES_SIZE,
+        ));
 
-        for metadata_slot in &super_metadata.metadata_slots {
-            used_regions.append(&mut metadata_slot.get_all_used_extents_as_byte_range()?);
+        for (i, metadata_slot) in super_metadata.metadata_slots.iter().enumerate() {
+            let size = metadata_slot.header().header_size as u64
+                + metadata_slot.header().tables_size as u64;
+            let aligned_size = round_up_to_alignment(size, device.block_size() as u64)?;
+
+            let primary_offset = super_metadata.geometry.get_primary_metadata_offset(i as u32)?;
+            metadata_used_regions
+                .insert(SuperDeviceRange(primary_offset..primary_offset + aligned_size));
+
+            let backup_offset = super_metadata.geometry.get_backup_metadata_offset(i as u32)?;
+            metadata_used_regions
+                .insert(SuperDeviceRange(backup_offset..backup_offset + aligned_size));
         }
 
         Ok(Self {
             super_metadata,
-            used_regions: into_merged_regions(used_regions),
+            metadata_used_regions: into_merged_regions(metadata_used_regions),
             device: device.clone(),
         })
     }
@@ -45,12 +56,22 @@ impl SuperParser {
         &self.super_metadata
     }
 
-    /// Returns a vector of the used regions in-order, as a half-open Range(start..end). Note that
-    /// the results would be more meaningful for extents with target type `TARGET_TYPE_LINEAR` as
-    /// it implies that the extent is a dm-linear target which are made by concatenating linear
-    /// regions (extents) of disk together. For `TARGET_TYPE_ZERO`, this would return [Range(0..0)].
-    pub fn used_regions_in_bytes(&self) -> Vec<Range<u64>> {
-        self.used_regions.iter().map(|r| (**r).clone()).collect()
+    /// Returns a vector of the used metadata regions in-order, as a half-open Range(start..end).
+    pub fn metadata_used_regions_in_bytes(&self) -> Vec<Range<u64>> {
+        self.metadata_used_regions.iter().map(|r| (**r).clone()).collect()
+    }
+
+    /// Returns a vector of the used partition regions in-order, as a half-open Range(start..end).
+    /// Note that the results would be more meaningful for extents with target type
+    /// `TARGET_TYPE_LINEAR` as it implies that the extent is a dm-linear target which are made by
+    /// concatenating linear regions (extents) of disk together. For `TARGET_TYPE_ZERO`, this would
+    /// return [Range(0..0)].
+    pub fn partition_used_regions_in_bytes(&self) -> Result<Vec<Range<u64>>, Error> {
+        let mut partition_used_regions = BTreeSet::new();
+        for metadata_slot in &self.super_metadata.metadata_slots {
+            partition_used_regions.append(&mut metadata_slot.get_all_used_extents_as_byte_range()?);
+        }
+        Ok(into_merged_regions(partition_used_regions).into_iter().map(|r| r.into()).collect())
     }
 
     /// Get a partition within super. Must specify the name of the sub-partition and which slot from
@@ -253,10 +274,15 @@ mod tests {
     async fn test_super_parser_get_used_regions() {
         let device = open_image(std::path::Path::new(IMAGE_PATH));
         let super_parser = SuperParser::new(device.clone()).await.expect("SuperParser::new failed");
-        let used_regions = super_parser.used_regions_in_bytes();
+        let metadata_used_regions = super_parser.metadata_used_regions_in_bytes();
+        assert_eq!(metadata_used_regions, vec![(4096..28672)]);
+
+        let partition_used_regions = super_parser
+            .partition_used_regions_in_bytes()
+            .expect("failed to get partition used regions");
         // This is the expected used region for this test super image. This may need to be updated
         // if the super image changes.
-        assert_eq!(used_regions, vec![(0..28672), (1048576..1056768), (2097152..2101248)]);
+        assert_eq!(partition_used_regions, vec![(1048576..1056768), (2097152..2101248)]);
         device.close().await.expect("failed to close device");
     }
 
@@ -299,9 +325,9 @@ mod tests {
         // to make sure we are reading the contents correctly.
         let super_parser =
             SuperParser::new(parent_device.clone()).await.expect("SuperParser::new failed");
-        let used_regions = super_parser.used_regions_in_bytes();
+        let used_regions = super_parser.partition_used_regions_in_bytes().expect("partitions");
         // We expect the used regions to contain [ region_of_metadata, logical_partitions... ]
-        let start_of_first_partition = used_regions[1].start;
+        let start_of_first_partition = used_regions[0].start;
         let random_buffer: Vec<u8> = (0..8192).map(|_| rand::random_range(0..100)).collect();
         let mut modified_buffer = parent_device.allocate_buffer(8192).await;
         modified_buffer.as_mut_slice().copy_from_slice(&random_buffer);
