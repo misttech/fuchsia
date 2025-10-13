@@ -4,6 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/boot-options/boot-options.h>
+
+#include <dev/clocks_and_pmic/moonflower/init.h>
 #include <dev/hdcp/amlogic_s912/init.h>
 #include <dev/hw_rng/amlogic_rng/init.h>
 #include <dev/hw_rng/qcom_rng/init.h>
@@ -57,6 +60,14 @@ void PlatformDriverHandoffEarly(const ArchPhysHandoff& arch_handoff) {
 
   if (arch_handoff.moonflower_power_driver) {
     moonflower_power_init_early();
+  }
+
+  // TODO(johngro): eventually, stop using this as the flag used to decide when
+  // to load the Moonflower Clock/PMIC control.  Instead, we will want to base this
+  // off some explicit signal that we are running on Moonflower hardware
+  // instead.
+  if (gBootOptions->experimental_allow_debug_uart_suspend) {
+    moonflower_clocks_and_pmic_init_early();
   }
 }
 

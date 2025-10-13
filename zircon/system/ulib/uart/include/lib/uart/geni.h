@@ -692,6 +692,9 @@ class Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_GENI_UART, zbi_dcfg_s
       // No operations, just spin.
     }
     SecondaryIrqStatusClearRegister::Get().FromValue(0).set_command_cancel(1).WriteTo(io.io());
+
+    SecondaryClockRegister::Get().ReadFrom(io.io()).set_enable(0).WriteTo(io.io());
+    MainClockRegister::Get().ReadFrom(io.io()).set_enable(0).WriteTo(io.io());
     prepared_for_suspend_ = true;
   }
 
@@ -700,6 +703,9 @@ class Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_GENI_UART, zbi_dcfg_s
     if (!prepared_for_suspend_) {
       return;
     }
+
+    MainClockRegister::Get().ReadFrom(io.io()).set_enable(1).WriteTo(io.io());
+    SecondaryClockRegister::Get().ReadFrom(io.io()).set_enable(1).WriteTo(io.io());
 
     // Did we have a TX command in progress when we suspended?  If so, re-pack
     // the FIFO from our shadow buffer and finish up the job.

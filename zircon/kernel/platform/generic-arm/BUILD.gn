@@ -14,6 +14,7 @@ source_set("generic-arm") {
 
   deps = [
     "//sdk/lib/zbi-format",
+    "//zircon/kernel/dev/clocks_and_pmic/moonflower",
     "//zircon/kernel/dev/hdcp/amlogic_s912",
     "//zircon/kernel/dev/hw_rng",
     "//zircon/kernel/dev/hw_rng/amlogic_rng",
