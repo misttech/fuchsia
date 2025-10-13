@@ -282,6 +282,7 @@ pub fn target_interface(env: &fho::FhoEnvironment) -> FhoTargetEnvironment {
 mod tests {
     use super::*;
     use ffx_config::environment::ExecutableKind;
+    use ffx_config::keys::DIRECT_CONNECTIONS;
     use ffx_config::{ConfigMap, test_env};
 
     #[fuchsia::test]
@@ -320,7 +321,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_direct_connection_behavior() {
         let env = test_env()
-            .runtime_config("connectivity.direct", true)
+            .runtime_config(DIRECT_CONNECTIONS, true)
             .runtime_config("target.default", "127.0.0.1")
             .build()
             .unwrap();
@@ -350,7 +351,7 @@ mod tests {
     #[fuchsia::test]
     async fn set_daemon_behavior_will_not_override_previous_direct() {
         let env = test_env()
-            .runtime_config("connectivity.direct", true)
+            .runtime_config(DIRECT_CONNECTIONS, true)
             .runtime_config("target.default", "127.0.0.1")
             .build()
             .unwrap();

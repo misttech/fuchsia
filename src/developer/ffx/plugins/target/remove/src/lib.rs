@@ -268,7 +268,7 @@ mod test {
     #[fuchsia::test]
     async fn test_error_in_direct_mode() {
         let env = ffx_config::test_env()
-            .runtime_config("connectivity.direct", true)
+            .runtime_config(ffx_config::keys::DIRECT_CONNECTIONS, true)
             .build()
             .expect("test_env build");
         let server = setup_fake_target_collection_proxy(|_| {

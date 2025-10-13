@@ -42,3 +42,6 @@ pub const USB_ENABLED: &'static str = "connectivity.enable_usb";
 
 /// Whether or not to enable network connectivity.
 pub const NETWORK_ENABLED: &'static str = "connectivity.enable_network";
+
+/// Whether to use direct mode instead of daemon mode
+pub const DIRECT_CONNECTIONS: &str = "connectivity.direct";

@@ -614,6 +614,7 @@ mod test {
 
     use assert_matches::assert_matches;
     use ffx_config::environment::EnvironmentKind;
+    use ffx_config::keys::DIRECT_CONNECTIONS;
     use std::io::Write;
     use tempfile::{TempDir, tempdir};
 
@@ -1028,14 +1029,14 @@ mod test {
         let args = ["ffx"].map(String::from);
         let cmd_line = FfxCommandLine::new(Some("ffx"), &args).expect("Command line should parse");
         let context = cmd_line.global.load_context(ExecutableKind::Test).expect("load_context");
-        let direct: Option<bool> = context.get("connectivity.direct").expect("config get");
+        let direct: Option<bool> = context.get(DIRECT_CONNECTIONS).expect("config get");
         assert!(direct.is_none());
 
         // Gets overridden to true
         let args = ["ffx", "--direct"].map(String::from);
         let cmd_line = FfxCommandLine::new(Some("ffx"), &args).expect("Command line should parse");
         let context = cmd_line.global.load_context(ExecutableKind::Test).expect("load_context");
-        let direct: bool = context.get("connectivity.direct").expect("config get");
+        let direct: bool = context.get(DIRECT_CONNECTIONS).expect("config get");
         assert!(direct);
     }
 }

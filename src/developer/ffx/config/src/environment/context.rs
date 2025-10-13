@@ -579,7 +579,7 @@ impl EnvironmentContext {
     /// not overridden on the command line with "-d"/"--direct", or with the
     /// `connectivity.direct` config option.
     pub fn get_direct_connection_mode(&self) -> bool {
-        self.get("connectivity.direct").unwrap_or(false)
+        self.get(crate::keys::DIRECT_CONNECTIONS).unwrap_or(false)
     }
 
     /// Set a specific target spec. Used in unusual circumstances (e.g. in `ffx
