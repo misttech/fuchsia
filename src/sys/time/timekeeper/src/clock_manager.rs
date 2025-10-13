@@ -624,7 +624,6 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
         let pull_delay = self.config.get_back_off_time_between_pull_samples();
 
         let utc_details = self.clock.get_details().expect("failed to get UTC clock details");
-        warn!("XXX(fmil): maintain_clock: utc clock details at entry: {utc_details:?}");
         let utc_backstop = utc_details.backstop;
         let mut clock_started = utc_backstop != utc_details.ticks_to_synthetic.synthetic_offset;
         std::mem::drop(utc_details);
