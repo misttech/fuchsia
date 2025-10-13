@@ -162,7 +162,15 @@ impl FhoTargetEnvironmentInner {
         if let Some(behavior) = self.behavior.get() {
             if let ConnectionBehavior::DirectConnector(ref dc) = **behavior {
                 if let Some(conn) = dc.get_connection_if_already_established() {
-                    return fho::Error::User(conn.wrap_connection_errors(err.into()));
+                    match err {
+                        fho::Error::User(e) => {
+                            return fho::Error::User(conn.wrap_connection_errors(e));
+                        }
+                        fho::Error::Unexpected(e) => {
+                            return fho::Error::Unexpected(conn.wrap_connection_errors(e));
+                        }
+                        _ => (),
+                    }
                 }
             }
         }
