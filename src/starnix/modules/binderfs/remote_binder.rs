@@ -14,7 +14,7 @@ use futures::{Future, Stream, StreamExt, TryStreamExt, pin_mut, select};
 use starnix_core::device::{DeviceMode, DeviceOps};
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{DesiredAddress, MappingOptions, MemoryAccessorExt, ProtectionFlags};
-use starnix_core::power::{LockSource, mark_proxy_message_handled};
+use starnix_core::power::{ContainerWakingStream, LockSource, MessageCounterHandle};
 use starnix_core::task::{CurrentTask, Kernel, LockedAndTask, ThreadGroup, WaitQueue, Waiter};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
@@ -620,13 +620,12 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
     /// Serve the ContainerPowerController protocol.
     async fn serve_container_power_controller(
         server_end: ServerEnd<fbinder::ContainerPowerControllerMarker>,
-        message_counter: zx::Counter,
+        message_counter: MessageCounterHandle,
         kernel: Arc<Kernel>,
         service_name: &str,
     ) -> Result<(), Error> {
         async fn handle_request(
             event: fbinder::ContainerPowerControllerRequest,
-            message_counter: &zx::Counter,
             kernel: &Arc<Kernel>,
             wake_lock_name: &str,
         ) -> Result<(), Error> {
@@ -666,17 +665,16 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                 }
                 unknown => log_warn!("Unknown ContainerPowerController request: {:#?}", unknown),
             };
-            mark_proxy_message_handled(&message_counter);
             Ok(())
         }
 
-        server_end
-            .into_stream()
-            .map(|result| result.context("failed fbinder::ContainerPowerControllerRequest request"))
-            .try_for_each_concurrent(None, |event| {
-                handle_request(event, &message_counter, &kernel, service_name)
-            })
-            .await
+        let mut waking_stream =
+            ContainerWakingStream::new(message_counter, server_end.into_stream());
+
+        while let Some(res) = waking_stream.next().await {
+            handle_request(res?, &kernel, service_name).await?;
+        }
+        Ok(())
     }
 
     /// Serve the LutexController protocol.
@@ -1018,10 +1016,11 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
         let (lutex_controller_server_end, lutex_controller_client_end) = zx::Channel::create();
 
         let (power_controller_server_end, power_controller_client_end) = zx::Channel::create();
-        let (power_controller_server_end, power_controller_event) =
-            starnix_core::power::create_proxy_for_wake_events_counter_zero(
+        let counter_name = format!("hal: {}", service_name);
+        let (power_controller_server_end, counter) =
+            starnix_core::power::create_proxy_for_wake_events_counter(
                 power_controller_server_end,
-                format!("hal: {}", service_name),
+                counter_name.clone(),
             );
 
         remote_controller
@@ -1048,6 +1047,10 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                     return;
                 };
 
+                let message_counter = kernel
+                    .suspend_resume_manager
+                    .add_message_counter(counter_name.as_str(), Some(counter));
+
                 // Start the 3 servers.
                 let binder_fut = handle.clone().serve_dev_binder(dev_binder_server_end.into());
                 let lutex_fut = Self::serve_lutex_controller(
@@ -1056,7 +1059,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
                 );
                 let power_fut = Self::serve_container_power_controller(
                     power_controller_server_end.into(),
-                    power_controller_event,
+                    message_counter,
                     kernel,
                     &service_name,
                 );
@@ -1178,7 +1181,7 @@ mod tests {
     use fidl::endpoints::{Proxy, create_endpoints, create_proxy};
     use rand::distr::{Alphanumeric, SampleString};
     use starnix_core::mm::MemoryAccessor;
-    use starnix_core::power::LockSource;
+    use starnix_core::power::{LockSource, MessageCounter};
     use starnix_core::testing::*;
     use starnix_core::vfs::{FileSystemOptions, WhatToMount};
     use starnix_types::PAGE_SIZE;
@@ -1519,17 +1522,18 @@ mod tests {
         spawn_kernel_and_run(async move |_locked, current_task| {
             let kernel = current_task.kernel().clone();
             let (power_controller, power_controller_server_end) = fidl::endpoints::create_proxy();
-            let message_counter = zx::Counter::create();
-            let message_counter_clone = message_counter
-                .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                .expect("Failed handle dup");
+            let counter = zx::Counter::create();
+            let message_counter = MessageCounter::new(
+                "test",
+                Some(counter.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed handle dup")),
+            );
             // Simulate the proxy incrementing the message counter.
-            message_counter.add(1).expect("Failed to add to counter");
+            counter.add(1).expect("Failed to add to counter");
 
             let _server_task = fasync::Task::local(async move {
                 let result = RemoteBinderHandle::<TestRemoteControllerConnector>::serve_container_power_controller(
                     power_controller_server_end,
-                    message_counter_clone,
+                    message_counter,
                     kernel,
                     "test",
                 ).await;
@@ -1539,7 +1543,7 @@ mod tests {
             power_controller
                 .wake(fbinder::ContainerPowerControllerWakeRequest { ..Default::default() })
                 .unwrap();
-            wait_for_message(&message_counter).await;
+            wait_for_message(&counter).await;
         }).await;
     }
 
@@ -1551,15 +1555,23 @@ mod tests {
             starnix_core::testing::create_kernel_task_and_unlocked();
 
         let (power_controller, power_controller_server_end) = fidl::endpoints::create_proxy();
-        let message_counter = zx::Counter::create();
-        let message_counter_clone =
-            message_counter.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed handle dup");
+        let counter = zx::Counter::create();
+        let message_counter = MessageCounter::new(
+            "test",
+            Some(counter.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed handle dup")),
+        );
         // Simulate the proxy incrementing the message counter.
-        message_counter.add(1).expect("Failed to add to counter");
+        counter.add(1).expect("Failed to add to counter");
 
         let kernel_clone = kernel.clone();
         let _server_task = fasync::Task::local(async move {
-            let result = RemoteBinderHandle::<TestRemoteControllerConnector>::serve_container_power_controller(power_controller_server_end, message_counter_clone, kernel_clone, "test").await;
+            let result =
+                RemoteBinderHandle::<TestRemoteControllerConnector>::serve_container_power_controller(
+                    power_controller_server_end,
+                    message_counter,
+                    kernel_clone,
+                    "test"
+                ).await;
             assert_matches::assert_matches!(result, Ok(_));
         });
 
@@ -1570,7 +1582,7 @@ mod tests {
                 ..Default::default()
             })
             .unwrap();
-        exec.run_singlethreaded(wait_for_message(&message_counter));
+        exec.run_singlethreaded(wait_for_message(&counter));
 
         // Check that the wake lock event pair has been signalled to indicate the wake lock being
         // acquired.
