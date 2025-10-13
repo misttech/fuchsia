@@ -146,12 +146,12 @@ def _get_additional_info(ctx):
             debug_lib_dest = "%s/debug/%s" % (idk_prebuilt_base, lib_name)
             dist_lib_dest = "%s/dist/%s" % (idk_prebuilt_base, lib_name)
 
-            # TODO(https://fxbug.dev/421888626): Once an unstripped binary is
-            # exposed, specify the correct label to `files_map`.
+            # For shared libraries, the final binary is the unstripped library.
             files_map[debug_lib_dest] = first_output_file
             binaries["debug_lib"] = debug_lib_dest
 
-            # For shared libraries, the final binary is the dist_lib.
+            # TODO(https://fxbug.dev/443982549): Once a stripped binary is
+            # exposed, specify the correct label to `files_map`.
             files_map[dist_lib_dest] = first_output_file
             binaries["dist_lib"] = dist_lib_dest
             binaries["dist_path"] = "lib/%s" % lib_name
