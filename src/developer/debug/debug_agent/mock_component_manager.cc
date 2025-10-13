@@ -30,6 +30,10 @@ void MockComponentManager::AddComponentInfo(zx_koid_t job_koid, debug_ipc::Compo
   moniker_to_job_.emplace(info.moniker, job_koid);
 }
 
+void MockComponentManager::AddNonElfComponentInfo(debug_ipc::ComponentInfo info) {
+  non_elf_component_info_.emplace(info.moniker, info);
+}
+
 // Simulates the given event type coming from ComponentManager in a real system. |koid| is only
 // used if the type is |kDebugStarted|, in which case it will be used to populate the known
 // component information.

@@ -15,6 +15,7 @@ class LinuxComponentManager : public ComponentManager {
 
   // ComponentManager implementation.
   std::vector<debug_ipc::ComponentInfo> FindComponentInfo(zx_koid_t job_koid) const override;
+  const std::map<std::string, debug_ipc::ComponentInfo>& GetNonElfComponentInfo() const override;
   void SetDebugAgent(DebugAgent* debug_agent) override;
   debug::Status LaunchComponent(std::string url) override;
   debug::Status LaunchTest(std::string url, std::optional<std::string> realm,

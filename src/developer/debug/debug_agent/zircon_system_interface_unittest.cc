@@ -8,11 +8,13 @@
 
 #include <gtest/gtest.h>
 
+#include "fidl/fuchsia.component/cpp/fidl.h"
 #include "src/developer/debug/debug_agent/component_manager.h"
 #include "src/developer/debug/debug_agent/system_interface.h"
 #include "src/developer/debug/debug_agent/zircon_process_handle.h"
 #include "src/developer/debug/debug_agent/zircon_utils.h"
 #include "src/developer/debug/ipc/filter_utils.h"
+#include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/test_with_loop.h"
 
 namespace debug_agent {
@@ -145,6 +147,47 @@ TEST_F(ZirconSystemInterfaceTest, FilterMatchComponents) {
   components = system_interface.GetComponentManager().FindComponentInfo(kChildJob2Koid);
   EXPECT_EQ(components.size(), 1u);
   EXPECT_TRUE(debug_ipc::FilterMatches(filter, "", components));
+}
+
+TEST_F(ZirconSystemInterfaceTest, FilterMatchComponentsNonElf) {
+  ZirconSystemInterface system_interface;
+
+  constexpr char kMoniker[] = "some/absolute/moniker";
+  constexpr char kUrl[] = "fuchsia-pkg://fuchsia.com/component2#meta/component2.cm";
+
+  // Inject a non-ELF component.
+  fuchsia_component::EventHeader header;
+  header.component_url(kUrl);
+  header.moniker(kMoniker);
+  header.event_type(fuchsia_component::EventType::kDebugStarted);
+
+  fuchsia_component::Event event;
+  event.header() = std::move(header);
+
+  fuchsia_component::DebugStartedPayload payload;
+  payload.runtime_dir() = std::nullopt;
+  event.payload() = fuchsia_component::EventPayload::WithDebugStarted(std::move(payload));
+
+  system_interface.zircon_component_manager().OnComponentEvent(std::move(event));
+
+  std::vector<debug_ipc::ComponentInfo> component_info;
+  std::ranges::transform(system_interface.GetComponentManager().GetNonElfComponentInfo(),
+                         std::back_inserter(component_info),
+                         [](const auto& pair) -> debug_ipc::ComponentInfo { return pair.second; });
+
+  ASSERT_EQ(component_info.size(), 1u);
+
+  debug_ipc::Filter moniker_filter;
+  moniker_filter.type = debug_ipc::Filter::Type::kComponentMoniker;
+  moniker_filter.pattern = kMoniker;
+
+  EXPECT_TRUE(debug_ipc::FilterMatches(moniker_filter, "", component_info));
+
+  debug_ipc::Filter url_filter;
+  url_filter.type = debug_ipc::Filter::Type::kComponentUrl;
+  url_filter.pattern = kUrl;
+
+  EXPECT_TRUE(debug_ipc::FilterMatches(url_filter, "", component_info));
 }
 
 }  // namespace debug_agent

@@ -4,11 +4,20 @@
 
 #include "src/developer/debug/debug_agent/linux_component_manager.h"
 
+#include "lib/syslog/cpp/macros.h"
+
 namespace debug_agent {
 
 std::vector<debug_ipc::ComponentInfo> LinuxComponentManager::FindComponentInfo(
     zx_koid_t job_koid) const {
   return {};
+}
+
+const std::map<std::string, debug_ipc::ComponentInfo>&
+LinuxComponentManager::GetNonElfComponentInfo() const {
+  FX_NOTIMPLEMENTED();
+  static std::map<std::string, debug_ipc::ComponentInfo> map;
+  return map;
 }
 
 void LinuxComponentManager::SetDebugAgent(DebugAgent* debug_agent) {}

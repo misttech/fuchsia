@@ -275,8 +275,8 @@ void ZirconComponentManager::OnComponentEvent(fuchsia_component::Event event) {
                        [weak_this = weak_factory_.GetWeakPtr(), moniker, url, weak_agent,
                         break_on_start = std::move(break_on_start)](zx_koid_t job_id) mutable {
                          if (weak_this && job_id != ZX_KOID_INVALID) {
-                           weak_this->running_component_info_.emplace(std::make_pair(
-                               job_id, debug_ipc::ComponentInfo{.moniker = moniker, .url = url}));
+                           weak_this->running_component_info_.emplace(
+                               job_id, debug_ipc::ComponentInfo{.moniker = moniker, .url = url});
                            DEBUG_LOG(Process) << "Component started job_id=" << job_id
                                               << " moniker=" << moniker << " url=" << url;
                          }
@@ -290,9 +290,13 @@ void ZirconComponentManager::OnComponentEvent(fuchsia_component::Event event) {
                          break_on_start.reset();
                        });
         } else {
-          // There is no runtime_dir for this component, so we can't read it's job_id and therefore
-          // won't have an entry for it in |running_component_info_|, but we can still do processing
-          // of filters based on this moniker and/or url.
+          // There is no runtime_dir for this component, so it doesn't have an associated job with
+          // it like we would have for components that use the ELF runner. Instead, we stash these
+          // away in a separate spot to be looked up later.
+          DEBUG_LOG(Process) << "Component started moniker=" << moniker << " url=" << url;
+          non_elf_component_info_.emplace(moniker,
+                                          debug_ipc::ComponentInfo{.moniker = moniker, .url = url});
+
           if (weak_agent) {
             weak_agent->OnComponentStarted(moniker, url, ZX_KOID_INVALID);
           }
@@ -311,6 +315,12 @@ void ZirconComponentManager::OnComponentEvent(fuchsia_component::Event event) {
           expected_v2_components_.erase(moniker);
           break;
         }
+      }
+
+      if (non_elf_component_info_.contains(moniker)) {
+        const auto& extracted = non_elf_component_info_.extract(moniker);
+        DEBUG_LOG(Process) << "Component stopped moniker=" << extracted.mapped().moniker
+                           << " url=" << extracted.mapped().url;
       }
       break;
     }

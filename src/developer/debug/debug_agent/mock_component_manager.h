@@ -34,9 +34,15 @@ class MockComponentManager : public ComponentManager {
   void SetDebugAgent(DebugAgent* agent) override { debug_agent_ = agent; }
 
   std::vector<debug_ipc::ComponentInfo> FindComponentInfo(zx_koid_t job_koid) const override;
+  const std::map<std::string, debug_ipc::ComponentInfo>& GetNonElfComponentInfo() const override {
+    return non_elf_component_info_;
+  }
 
   // Updates |component_info_| and |moniker_to_job_| with the given information.
   void AddComponentInfo(zx_koid_t job_koid, debug_ipc::ComponentInfo info);
+
+  // Updates |non_elf_component_info_| with the given information.
+  void AddNonElfComponentInfo(debug_ipc::ComponentInfo info);
 
   // Simulates the given event type coming from ComponentManager in a real system. |koid| is only
   // used if the type is |kDebugStarted|, in which case it will be used to populate the known
@@ -61,6 +67,7 @@ class MockComponentManager : public ComponentManager {
   MockSystemInterface* mock_system_interface_;
   std::multimap<zx_koid_t, debug_ipc::ComponentInfo> component_info_;
   std::multimap<std::string, zx_koid_t> moniker_to_job_;
+  std::map<std::string, debug_ipc::ComponentInfo> non_elf_component_info_;
 };
 
 }  // namespace debug_agent

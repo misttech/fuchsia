@@ -140,6 +140,9 @@ std::unique_ptr<MockSystemInterface> MockSystemInterface::CreateWithData() {
   system_interface->mock_component_manager().AddComponentInfo(
       job3.GetKoid(), debug_ipc::ComponentInfo{.moniker = "bootstrap/hosts:host-1",
                                                .url = "fuchsia-boot:///url#meta/host.cm"});
+  system_interface->mock_component_manager().AddNonElfComponentInfo(
+      {.moniker = "/moniker/generated/test:test_root",
+       .url = "fuchsia-pkg://devhost/root_package#meta/root_component.cm"});
   system_interface->mock_component_manager().AddComponentInfo(
       job4.GetKoid(), debug_ipc::ComponentInfo{.moniker = "/moniker/generated/root:test/driver",
                                                .url = "#meta/child.cm"});

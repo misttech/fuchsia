@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.component/cpp/fidl.h>
 #include <zircon/types.h>
 
+#include <map>
 #include <set>
 #include <string>
 
@@ -27,6 +28,9 @@ class ZirconComponentManager : public ComponentManager {
   // ComponentManager implementation.
   void SetDebugAgent(DebugAgent* debug_agent) override { debug_agent_ = debug_agent; }
   std::vector<debug_ipc::ComponentInfo> FindComponentInfo(zx_koid_t job_koid) const override;
+  const std::map<std::string, debug_ipc::ComponentInfo>& GetNonElfComponentInfo() const override {
+    return non_elf_component_info_;
+  }
   debug::Status LaunchComponent(std::string url) override;
   debug::Status LaunchTest(std::string url, std::optional<std::string> realm,
                            std::vector<std::string> case_filters) override;
@@ -58,6 +62,10 @@ class ZirconComponentManager : public ComponentManager {
   // relationship between job and and component instances is 1:n, so there can be multiple
   // component instances within a single job.
   std::multimap<zx_koid_t, debug_ipc::ComponentInfo> running_component_info_;
+  // And this contains all of the information for non-elf components that are active in the system.
+  // These are used primarily for filter matching. Unlike the above, this map is keyed by moniker,
+  // which is unique for the entire system.
+  std::map<std::string, debug_ipc::ComponentInfo> non_elf_component_info_;
   fidl::Client<fuchsia_component::EventStream> event_stream_client_;
 
   // Monikers of v2 components we're expecting.

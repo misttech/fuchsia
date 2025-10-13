@@ -32,6 +32,10 @@ class ComponentManager {
   // Find the component information if the job is the root job of an ELF component.
   virtual std::vector<debug_ipc::ComponentInfo> FindComponentInfo(zx_koid_t job_koid) const = 0;
 
+  // Returns the current set of component information in the system that is not associated with an
+  // ELF process - e.g. it doesn't have a job or a process to key the lookup off of.
+  virtual const std::map<std::string, debug_ipc::ComponentInfo>& GetNonElfComponentInfo() const = 0;
+
   // Find the component information if the process runs in the context of a component.
   std::vector<debug_ipc::ComponentInfo> FindComponentInfo(const ProcessHandle& process) const;
 
