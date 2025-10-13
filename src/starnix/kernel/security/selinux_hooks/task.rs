@@ -942,7 +942,7 @@ pub(in crate::security) fn set_procattr(
 /// Sets the sid of `fs_node` to be that of `task`.
 pub(in crate::security) fn fs_node_init_with_task(task: &TempRef<'_, Task>, fs_node: &FsNode) {
     fs_node_ensure_class(fs_node).unwrap();
-    fs_node_set_label_with_task(fs_node, task.into());
+    fs_node_set_label_with_task(fs_node, Arc::clone(&task.security_state.0));
 }
 
 #[cfg(test)]

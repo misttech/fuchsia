@@ -897,7 +897,7 @@ pub fn check_fs_node_setattr_access(
 /// Corresponds to the `task_alloc()` LSM hook, in the special case when current_task is null.
 pub fn task_alloc_for_kernel() -> TaskState {
     track_hook_duration!(c"security.hooks.task_alloc_for_kernel");
-    TaskState(selinux_hooks::TaskAttrs::for_kernel().into())
+    TaskState(Arc::new(selinux_hooks::TaskAttrs::for_kernel().into()))
 }
 
 /// Returns `TaskState` for a new `Task`, based on that of `current_task`, and the specified clone
@@ -905,7 +905,7 @@ pub fn task_alloc_for_kernel() -> TaskState {
 /// Corresponds to the `task_alloc()` LSM hook.
 pub fn task_alloc(current_task: &CurrentTask, clone_flags: u64) -> TaskState {
     track_hook_duration!(c"security.hooks.task_alloc");
-    TaskState(selinux_hooks::task::task_alloc(current_task, clone_flags).into())
+    TaskState(Arc::new(selinux_hooks::task::task_alloc(current_task, clone_flags).into()))
 }
 
 /// Labels an [`crate::vfs::FsNode`], by attaching a pseudo-label to the `fs_node`, which allows
@@ -929,14 +929,14 @@ pub fn task_to_fs_node(current_task: &CurrentTask, task: &TempRef<'_, Task>, fs_
 /// prior to a policy being loaded.
 pub fn task_for_context(task: &Task, context: &FsStr) -> Result<TaskState, Errno> {
     track_hook_duration!(c"security.hooks.task_for_context");
-    Ok(TaskState(
+    Ok(TaskState(Arc::new(
         if let Some(kernel_state) = task.kernel().security_state.state.as_ref() {
             selinux_hooks::task::task_alloc_from_context(&kernel_state.server, context)
         } else {
             Ok(selinux_hooks::TaskAttrs::for_selinux_disabled())
         }?
         .into(),
-    ))
+    )))
 }
 
 /// Saves the current SID of `current_task` for later use.

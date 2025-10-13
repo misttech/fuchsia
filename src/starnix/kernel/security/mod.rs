@@ -39,7 +39,7 @@ impl KernelState {
 
 /// Opaque structure encapsulating active security state for a `Task`.
 #[derive(Debug)]
-pub struct TaskState(Mutex<selinux_hooks::TaskAttrs>);
+pub struct TaskState(Arc<Mutex<selinux_hooks::TaskAttrs>>);
 
 impl TaskState {
     pub(in crate::security) fn lock(
@@ -51,7 +51,7 @@ impl TaskState {
 
 impl Clone for TaskState {
     fn clone(&self) -> Self {
-        TaskState(self.0.lock().clone().into())
+        TaskState(Arc::new(self.0.lock().clone().into()))
     }
 }
 

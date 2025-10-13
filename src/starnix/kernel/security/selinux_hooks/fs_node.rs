@@ -9,10 +9,7 @@ use super::{
     Auditable, FsNodeLabel, FsNodeSecurityXattr, FsNodeSidAndClass, PermissionFlags, TaskAttrs,
     check_permission, current_task_state, fs_node_effective_sid_and_class, fs_node_ensure_class,
     fs_node_set_label_with_task, has_fs_node_permissions, permissions_from_flags, set_cached_sid,
-    todo_has_fs_node_permissions,
 };
-
-use crate::TODO_DENY;
 use crate::security::selinux_hooks::has_fs_node_permissions_dontaudit;
 use crate::task::CurrentTask;
 use crate::vfs::{
@@ -111,9 +108,10 @@ pub(in crate::security) fn fs_node_init_with_dentry(
     let parent = dir_entry.read().parent().clone();
     if let Some(ref parent) = parent {
         let parent_node = &parent.node;
-        if let FsNodeLabel::FromTask { weak_task } = parent_node.security_state.lock().label.clone()
+        if let FsNodeLabel::FromTask { task_state } =
+            parent_node.security_state.lock().label.clone()
         {
-            fs_node_set_label_with_task(fs_node, weak_task);
+            fs_node_set_label_with_task(fs_node, task_state);
             return Ok(());
         }
     }
@@ -1004,8 +1002,7 @@ pub(in crate::security) fn check_fs_node_getattr_access(
     fs_node: &FsNode,
 ) -> Result<(), Errno> {
     let current_sid = current_task_state(current_task).lock().current_sid;
-    todo_has_fs_node_permissions(
-        TODO_DENY!("https://fxbug.dev/383284672", "Enable permission checks in getattr."),
+    has_fs_node_permissions(
         &security_server.as_permission_check(),
         current_task,
         current_sid,

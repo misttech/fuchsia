@@ -19,7 +19,7 @@ pub(super) mod task;
 pub(super) mod testing;
 
 use super::{FsNodeSecurityXattr, PermissionFlags, TaskState};
-use crate::task::{CurrentTask, FullCredentials, Task};
+use crate::task::{CurrentTask, FullCredentials};
 use crate::vfs::{
     Anon, DirEntry, FileHandle, FileObject, FileSystem, FileSystemOps, FsNode, OutputBuffer,
 };
@@ -34,7 +34,6 @@ use selinux::{
 };
 use starnix_logging::{BugRef, CATEGORY_STARNIX_SECURITY, trace_duration, track_stub};
 use starnix_sync::{Mutex, MutexGuard};
-use starnix_types::ownership::WeakRef;
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
@@ -769,7 +768,8 @@ impl Default for FsNodeState {
 pub(super) enum FsNodeLabel {
     Uninitialized,
     SecurityId { sid: SecurityId },
-    FromTask { weak_task: WeakRef<Task> },
+    // TODO(https://fxbug.dev/451613626): Consider replacing by a reference to a task-or-zombie.
+    FromTask { task_state: Arc<Mutex<TaskAttrs>> },
 }
 
 impl FsNodeLabel {
@@ -823,8 +823,8 @@ pub(super) fn set_cached_sid(fs_node: &FsNode, sid: SecurityId) {
 /// Sets the Task associated with `fs_node` to `task`.
 /// The effective security id of the [`FsNode`] will be that of the task, even if the security id
 /// of the task changes.
-fn fs_node_set_label_with_task(fs_node: &FsNode, task: WeakRef<Task>) {
-    fs_node.security_state.lock().label = FsNodeLabel::FromTask { weak_task: task };
+fn fs_node_set_label_with_task(fs_node: &FsNode, task_state: Arc<Mutex<TaskAttrs>>) {
+    fs_node.security_state.lock().label = FsNodeLabel::FromTask { task_state };
 }
 
 /// Ensures that the `fs_node`'s security state has an appropriate security class set.
@@ -851,13 +851,7 @@ fn get_cached_sid_and_class(fs_node: &FsNode) -> Option<FsNodeSidAndClass> {
     let state = fs_node.security_state.lock().clone();
     match state.label {
         FsNodeLabel::SecurityId { sid } => Some(sid),
-        FsNodeLabel::FromTask { weak_task } => Some(
-            weak_task
-                .upgrade()
-                .map(|t| t.security_state.lock().current_sid)
-                // If `upgrade()` fails then the `Task` has exited, so return a placeholder SID.
-                .unwrap_or_else(|| InitialSid::Unlabeled.into()),
-        ),
+        FsNodeLabel::FromTask { task_state } => Some(task_state.lock().current_sid),
         FsNodeLabel::Uninitialized => None,
     }
     .map(|sid| FsNodeSidAndClass { sid, class: state.class })
