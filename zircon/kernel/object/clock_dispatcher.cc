@@ -73,6 +73,16 @@ class UpdateArgsAccessor {
 
 }  // namespace
 
+zx_status_t ClockDispatcher::get_name(char (&out_name)[ZX_MAX_NAME_LEN]) const {
+  name_.get(ZX_MAX_NAME_LEN, out_name);
+  return ZX_OK;
+}
+
+zx_status_t ClockDispatcher::set_name(const char* name, size_t len) {
+  KTRACE_KERNEL_OBJECT("kernel:meta", get_koid(), ZX_OBJ_TYPE_CLOCK, (fxt::StringRef{name, len}));
+  return name_.set(name, len);
+}
+
 zx_status_t ClockDispatcher::Create(uint64_t options, const zx_clock_create_args_v1_t& create_args,
                                     KernelHandle<ClockDispatcher>* handle, zx_rights_t* rights) {
   // The syscall_ layer has already parsed our args version and extracted them

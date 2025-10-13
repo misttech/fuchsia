@@ -128,7 +128,8 @@ typedef uint32_t zx_rights_t;
 // Default rights applied to a created clock handle.  The creator should consider whether
 // ZX_RIGHT_SIGNAL is to be retained or removed when duplicating the clock
 // handle.
-#define ZX_DEFAULT_CLOCK_RIGHTS (ZX_RIGHTS_BASIC | ZX_RIGHTS_IO | ZX_RIGHT_SIGNAL)
+#define ZX_DEFAULT_CLOCK_RIGHTS \
+  (ZX_RIGHTS_BASIC | ZX_RIGHTS_IO | ZX_RIGHT_SIGNAL | ZX_RIGHTS_PROPERTY)
 
 #define ZX_DEFAULT_IOB_RIGHTS                                                           \
   (ZX_RIGHTS_BASIC | ZX_RIGHT_WAIT | ZX_RIGHTS_IO | ZX_RIGHTS_PROPERTY | ZX_RIGHT_MAP | \

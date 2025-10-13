@@ -429,6 +429,23 @@ TEST(KernelClocksTestCase, Create) {
                 ZX_ERR_INVALID_ARGS);
 }
 
+TEST(KernelClocksTestCase, Name) {
+  zx::clock clock;
+  char expected[ZX_MAX_NAME_LEN]{0};
+  char name[ZX_MAX_NAME_LEN]{0};
+
+  // Create a clock, initially its name should be empty.
+  ASSERT_OK(zx::clock::create(0, nullptr, &clock));
+  ASSERT_OK(clock.get_property(ZX_PROP_NAME, name, sizeof(name)));
+  EXPECT_BYTES_EQ(expected, name, sizeof(name));
+
+  // Now set a name, and make sure it sticks.
+  snprintf(expected, sizeof(expected), "Test Clock Name");
+  ASSERT_OK(clock.set_property(ZX_PROP_NAME, expected, sizeof(expected)));
+  ASSERT_OK(clock.get_property(ZX_PROP_NAME, name, sizeof(name)));
+  EXPECT_BYTES_EQ(expected, name, sizeof(name));
+}
+
 using ClockTestParamsTuple = std::tuple<ClockAdapter::Type, uint64_t, zx::time, bool>;
 std::string ClockTestParamsTupleFormatter(
     const ::zxtest::TestParamInfo<ClockTestParamsTuple>& info) {

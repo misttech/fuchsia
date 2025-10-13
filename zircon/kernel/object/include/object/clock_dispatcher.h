@@ -29,6 +29,8 @@ class ClockDispatcher final : public SoloDispatcher<ClockDispatcher, ZX_DEFAULT_
 
   ~ClockDispatcher() final;
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_CLOCK; }
+  [[nodiscard]] zx_status_t get_name(char (&out_name)[ZX_MAX_NAME_LEN]) const final;
+  [[nodiscard]] zx_status_t set_name(const char* name, size_t len) final;
 
   zx_status_t Read(zx_time_t* out_now);
   zx_status_t GetDetails(zx_clock_details_v1_t* out_details);
@@ -62,6 +64,8 @@ class ClockDispatcher final : public SoloDispatcher<ClockDispatcher, ZX_DEFAULT_
   alignas(ClockTransformationType) uint8_t local_storage_[sizeof(ClockTransformationType)];
   const fbl::RefPtr<VmObjectPaged> vmo_;
   ClockTransformationType* clock_transformation_{nullptr};
+
+  fbl::Name<ZX_MAX_NAME_LEN> name_;
 };
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_CLOCK_DISPATCHER_H_
