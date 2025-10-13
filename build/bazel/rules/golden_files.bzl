@@ -139,6 +139,7 @@ def _verify_golden_files_impl(ctx):
 
     verify_inputs.append(comparison_manifest_file)
     verify_args.add("--comparisons", comparison_manifest_file.path)
+    verify_args.add("--paths-relative-to-source-root")
 
     # Finally, verify all comparisons.
     ctx.actions.run(

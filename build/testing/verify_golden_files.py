@@ -15,13 +15,14 @@ from pathlib import Path
 
 # Verifies that the candidate golden file matches the provided golden.
 
+RUN_IN_NINJA_DIR_PREFIX = "fx run-in-build-dir "
+
 MANUAL_UPDATE_HEADER = """
 Please run the following to acknowledge this change:
 ```"""
 
-# TODO(https://fxbug.dev/427998443): Provide the proper command when run in Bazel.
 # TODO(https://fxbug.dev/384955652): Provide the proper command when run in a sub-build.
-MANUAL_UPDATE_BODY_ENTRY = """fx run-in-build-dir cp \\
+MANUAL_UPDATE_BODY_ENTRY = """{command_prefix}cp \\
     {candidate} \\
     {golden}
 """
@@ -49,13 +50,18 @@ def print_failure_msg(
     dead_goldens: list[str],
     golden_dir: Path,
     label: str,
+    run_in_ninja_dir: bool,
 ) -> None:
     if manual_updates:
         print(MANUAL_UPDATE_HEADER)
     for update in manual_updates:
         print(
             MANUAL_UPDATE_BODY_ENTRY.format(
-                candidate=update["candidate"], golden=update["golden"]
+                command_prefix=RUN_IN_NINJA_DIR_PREFIX
+                if run_in_ninja_dir
+                else "",
+                candidate=update["candidate"],
+                golden=update["golden"],
             )
         )
     if dead_goldens:
@@ -120,6 +126,11 @@ def main() -> int:
         "--golden-dir",
         type=Path,
         help="Directory to clear of unchecked files.",
+    )
+    parser.add_argument(
+        "--paths-relative-to-source-root",
+        help="The paths being compared are relative to the Fuchsia source root rather than the Ninja output directory. This affects the manual update message.",
+        action="store_true",
     )
     args = parser.parse_args()
 
@@ -219,7 +230,11 @@ def main() -> int:
     # amount of rebuilding and copy-pasting.
     if manual_updates or dead_goldens:
         print_failure_msg(
-            manual_updates, list(dead_goldens), args.golden_dir, args.label
+            manual_updates,
+            list(dead_goldens),
+            args.golden_dir,
+            args.label,
+            run_in_ninja_dir=not args.paths_relative_to_source_root,
         )
         if not args.warn:
             return 1
