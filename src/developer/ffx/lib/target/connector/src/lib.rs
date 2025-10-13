@@ -34,7 +34,8 @@ impl<T: TryFromEnv> Connector<T> {
         &self,
         mut log_target_wait: impl FnMut(&Option<String>, &Option<Error>) -> Result<()>,
     ) -> Result<T> {
-        let behavior = self.target_env.behavior()?;
+        let behavior =
+            self.target_env.init_connection_behavior(self.env.environment_context()).await?;
         match *behavior {
             ConnectionBehavior::DaemonConnector(_) => {
                 daemon_try_connect(
@@ -56,12 +57,7 @@ impl<T: TryFromEnv> Connector<T> {
 impl<T: TryFromEnv> TryFromEnv for Connector<T> {
     async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
         let target_env = target_interface(env);
-        let _behavior = target_env.init_connection_behavior(env.environment_context()).await?;
-        Ok(Connector {
-            env: env.clone(),
-            target_env: target_env.clone(),
-            _connects_to: Default::default(),
-        })
+        Ok(Connector { env: env.clone(), target_env, _connects_to: Default::default() })
     }
 }
 
