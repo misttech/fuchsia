@@ -71,6 +71,8 @@ enum CreateRealmError {
     InvalidDevfsSubdirectory(String),
     #[error("duplicate protocol '{0}' exposed by component '{1}'")]
     DuplicateProtocolExposed(String, String),
+    #[error("is_weak provided for capability that does not support it '{0}")]
+    WeakBindingUnsupported(String),
 }
 
 impl Into<zx::Status> for CreateRealmError {
@@ -85,9 +87,8 @@ impl Into<zx::Status> for CreateRealmError {
             | CreateRealmError::StorageCapabilityPathNotProvided
             | CreateRealmError::DevfsCapabilityNameNotProvided
             | CreateRealmError::InvalidDevfsSubdirectory(String { .. })
-            | CreateRealmError::DuplicateProtocolExposed(String { .. }, String { .. }) => {
-                zx::Status::INVALID_ARGS
-            }
+            | CreateRealmError::DuplicateProtocolExposed(String { .. }, String { .. })
+            | CreateRealmError::WeakBindingUnsupported(String { .. }) => zx::Status::INVALID_ARGS,
             CreateRealmError::RealmBuilderError(error) => match error {
                 // The following types of errors from the realm builder library are likely due to
                 // client error (e.g. attempting to create a realm with an invalid configuration).
@@ -387,30 +388,46 @@ async fn create_realm_instance(
                             fnetemul::Capability::ChildDep(fnetemul::ChildDep {
                                 name: source,
                                 capability,
+                                is_weak,
                                 ..
                             }) => {
                                 let source = source
                                     .map(|source| Ref::child(source))
                                     .unwrap_or_else(|| Ref::void());
+                                let is_weak = is_weak.unwrap_or(false);
                                 match capability
                                     .ok_or(CreateRealmError::CapabilityNameNotProvided)?
                                 {
                                     fnetemul::ExposedCapability::Protocol(capability) => {
                                         debug!(
-                                            "routing capability '{}' from component '{}' to '{}'",
-                                            capability, source, name
+                                            "{}routing capability '{}' from component '{}' to '{}'",
+                                            if is_weak { "weakly " } else { "" },
+                                            capability,
+                                            source,
+                                            name
                                         );
                                         let () = child_dep_routes.push(
                                             Route::new()
-                                                .capability(Capability::protocol_by_name(
-                                                    &capability,
-                                                ))
+                                                .capability({
+                                                    let cap =
+                                                        Capability::protocol_by_name(&capability);
+                                                    if is_weak { cap.weak() } else { cap }
+                                                })
                                                 .from(source)
                                                 .to(&child_ref),
                                         );
                                         UniqueCapability::Protocol { proto_name: capability.into() }
                                     }
                                     fnetemul::ExposedCapability::Configuration(capability) => {
+                                        if is_weak {
+                                            error!(
+                                                "is_weak is unsupported for capabilities of type \
+                                                Configuration"
+                                            );
+                                            return Err(CreateRealmError::WeakBindingUnsupported(
+                                                capability,
+                                            ));
+                                        }
                                         debug!(
                                             "routing capability '{}' from component '{}' to '{}'",
                                             capability, source, name
@@ -424,6 +441,15 @@ async fn create_realm_instance(
                                         UniqueCapability::Configuration { name: capability.into() }
                                     }
                                     fnetemul::ExposedCapability::Service(capability) => {
+                                        if is_weak {
+                                            error!(
+                                                "is_weak is unsupported for capabilities of type \
+                                                Service"
+                                            );
+                                            return Err(CreateRealmError::WeakBindingUnsupported(
+                                                capability,
+                                            ));
+                                        }
                                         debug!(
                                             "routing capability '{}' from component '{}' to '{}'",
                                             capability, source, name

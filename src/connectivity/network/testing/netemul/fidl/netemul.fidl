@@ -118,6 +118,12 @@ closed protocol Sandbox {
                                 /// The name of the exposed service.
                                 3: service fuchsia.component.name;
                             };
+                            /// Should the child be depended upon weakly.
+                            ///
+                            /// If not specified, assumed to be false
+                            /// NOTE: this value may only be set for [`capability`] of type
+                            ///       [`protocol`].
+                            3: is_weak bool;
                         };
 
                         /// A dependency on a storage capability offered by
