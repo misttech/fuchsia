@@ -23,10 +23,12 @@ namespace goldfish {
 class PipeAutoReader : public PipeIo {
  public:
   using PipeMessageHandler = fit::function<void(PipeIo::ReadResult<char>)>;
-  PipeAutoReader(fidl::WireSyncClient<fuchsia_hardware_goldfish_pipe::GoldfishPipe> pipe,
+  PipeAutoReader(fidl::WireSyncClient<fuchsia_hardware_goldfish_pipe::Bus> pipe_bus,
                  const char* pipe_name, async_dispatcher_t* dispatcher,
                  PipeMessageHandler handler = nullptr)
-      : PipeIo(std::move(pipe), pipe_name), dispatcher_(dispatcher), handler_(std::move(handler)) {}
+      : PipeIo(std::move(pipe_bus), pipe_name),
+        dispatcher_(dispatcher),
+        handler_(std::move(handler)) {}
 
   void SetMessageHandler(PipeMessageHandler handler) { handler_ = std::move(handler); }
 

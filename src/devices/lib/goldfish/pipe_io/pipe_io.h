@@ -26,8 +26,7 @@ namespace goldfish {
 // like goldfish sensor pipe.
 class PipeIo {
  public:
-  PipeIo(fidl::WireSyncClient<fuchsia_hardware_goldfish_pipe::GoldfishPipe> pipe,
-         const char* pipe_name);
+  PipeIo(fidl::WireSyncClient<fuchsia_hardware_goldfish_pipe::Bus> pipe_bus, const char* pipe_name);
   ~PipeIo();
 
   template <class T>
@@ -212,7 +211,7 @@ class PipeIo {
   size_t io_buffer_size_ = 0u;
   zx::event pipe_event_;
 
-  fidl::WireSyncClient<fuchsia_hardware_goldfish_pipe::GoldfishPipe> pipe_;
+  fidl::WireSyncClient<fuchsia_hardware_goldfish_pipe::Bus> pipe_bus_;
 };
 
 }  // namespace goldfish

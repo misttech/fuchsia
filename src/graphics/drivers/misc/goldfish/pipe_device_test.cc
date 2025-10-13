@@ -174,7 +174,7 @@ class PipeDeviceTest : public zxtest::Test {
     dut_ = dut.release();
 
     {
-      auto endpoints = fidl::Endpoints<fuchsia_hardware_goldfish_pipe::GoldfishPipe>::Create();
+      auto endpoints = fidl::Endpoints<fuchsia_hardware_goldfish_pipe::Bus>::Create();
 
       dut_child_ = std::make_unique<PipeChildDevice>(dut_, test_loop_.dispatcher());
       binding_ =
@@ -208,8 +208,8 @@ class PipeDeviceTest : public zxtest::Test {
   async::Loop test_loop_;
   PipeDevice* dut_;
   std::unique_ptr<PipeChildDevice> dut_child_;
-  fidl::WireClient<fuchsia_hardware_goldfish_pipe::GoldfishPipe> client_;
-  std::optional<fidl::ServerBindingRef<fuchsia_hardware_goldfish_pipe::GoldfishPipe>> binding_;
+  fidl::WireClient<fuchsia_hardware_goldfish_pipe::Bus> client_;
+  std::optional<fidl::ServerBindingRef<fuchsia_hardware_goldfish_pipe::Bus>> binding_;
 
   zx::bti acpi_bti_;
   zx::vmo vmo_control_;
@@ -354,7 +354,7 @@ TEST_F(PipeDeviceTest, GetBti) {
 
 TEST_F(PipeDeviceTest, ChildDevice) {
   // Test creating multiple child devices. Each child device can access the
-  // GoldfishPipe FIDL protocol, and they should share the same parent device.
+  // Bus FIDL protocol, and they should share the same parent device.
 
   auto child1 = std::make_unique<PipeChildDevice>(dut_, test_loop_.dispatcher());
   auto child2 = std::make_unique<PipeChildDevice>(dut_, test_loop_.dispatcher());

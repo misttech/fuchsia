@@ -126,8 +126,8 @@ cpp20::span<const uint8_t> ToByteSpan(const T& t) {
 }  // namespace
 
 zx_status_t RenderControl::InitRcPipe(
-    fidl::WireSyncClient<fuchsia_hardware_goldfish_pipe::GoldfishPipe> pipe) {
-  pipe_io_ = std::make_unique<PipeIo>(std::move(pipe), kPipeName);
+    fidl::WireSyncClient<fuchsia_hardware_goldfish_pipe::Bus> pipe_bus) {
+  pipe_io_ = std::make_unique<PipeIo>(std::move(pipe_bus), kPipeName);
   if (!pipe_io_->valid()) {
     fdf::error("PipeIo failed to initialize");
     return ZX_ERR_NOT_SUPPORTED;

@@ -49,7 +49,7 @@ constexpr inline HostDisplayId ToHostDisplayId(uint32_t render_control_host_disp
 class RenderControl {
  public:
   RenderControl() = default;
-  zx_status_t InitRcPipe(fidl::WireSyncClient<fuchsia_hardware_goldfish_pipe::GoldfishPipe>);
+  zx_status_t InitRcPipe(fidl::WireSyncClient<fuchsia_hardware_goldfish_pipe::Bus>);
 
   int32_t GetFbParam(uint32_t param, int32_t default_value);
 

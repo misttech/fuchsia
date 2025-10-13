@@ -49,8 +49,6 @@ class FakeAllocator : public fidl::testing::WireTestBase<fuchsia_sysmem2::Alloca
   void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {}
 };
 
-class FakePipe : public fidl::WireServer<fuchsia_hardware_goldfish_pipe::GoldfishPipe> {};
-
 class GoldfishDisplayEngineTest : public testing::Test {
  public:
   GoldfishDisplayEngineTest() : loop_(&kAsyncLoopConfigNeverAttachToThread) {}
@@ -68,24 +66,23 @@ class GoldfishDisplayEngineTest : public testing::Test {
   display::DisplayEngineEventsFidl engine_events_fidl_;
   std::unique_ptr<DisplayEngine> display_engine_;
 
-  std::optional<fidl::ServerBindingRef<fuchsia_hardware_goldfish_pipe::GoldfishPipe>> binding_;
+  std::optional<fidl::ServerBindingRef<fuchsia_hardware_goldfish_pipe::Bus>> binding_;
   std::optional<fidl::ServerBindingRef<fuchsia_sysmem2::Allocator>> allocator_binding_;
   async::Loop loop_;
-  FakePipe* fake_pipe_;
   FakeAllocator mock_allocator_;
 };
 
 void GoldfishDisplayEngineTest::SetUp() {
   auto [control_client, control_server] =
       fidl::Endpoints<fuchsia_hardware_goldfish::ControlDevice>::Create();
-  auto [pipe_client, pipe_server] =
-      fidl::Endpoints<fuchsia_hardware_goldfish_pipe::GoldfishPipe>::Create();
+  auto [pipe_bus_client, pipe_bus_server] =
+      fidl::Endpoints<fuchsia_hardware_goldfish_pipe::Bus>::Create();
   auto [sysmem_client, sysmem_server] = fidl::Endpoints<fuchsia_sysmem2::Allocator>::Create();
   allocator_binding_ =
       fidl::BindServer(loop_.dispatcher(), std::move(sysmem_server), &mock_allocator_);
 
   display_engine_ = std::make_unique<DisplayEngine>(
-      std::move(control_client), std::move(pipe_client), std::move(sysmem_client),
+      std::move(control_client), std::move(pipe_bus_client), std::move(sysmem_client),
       std::make_unique<RenderControl>(), display_event_dispatcher_->async_dispatcher(),
       &engine_events_fidl_);
 

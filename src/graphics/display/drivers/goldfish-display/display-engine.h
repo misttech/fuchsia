@@ -38,7 +38,7 @@ class DisplayEngine final : public display::DisplayEngineInterface {
   // `display_event_dispatcher` must be non-null and outlive `DisplayEngine`.
   // `engine_events` must not be null and must outlive `DisplayEngine`.
   explicit DisplayEngine(fidl::ClientEnd<fuchsia_hardware_goldfish::ControlDevice> control,
-                         fidl::ClientEnd<fuchsia_hardware_goldfish_pipe::GoldfishPipe> pipe,
+                         fidl::ClientEnd<fuchsia_hardware_goldfish_pipe::Bus> pipe_bus,
                          fidl::ClientEnd<fuchsia_sysmem2::Allocator> sysmem_allocator,
                          std::unique_ptr<RenderControl> render_control,
                          async_dispatcher_t* display_event_dispatcher,
@@ -155,7 +155,7 @@ class DisplayEngine final : public display::DisplayEngineInterface {
 
   fbl::Mutex lock_;
   fidl::WireSyncClient<fuchsia_hardware_goldfish::ControlDevice> control_ TA_GUARDED(lock_);
-  fidl::WireSyncClient<fuchsia_hardware_goldfish_pipe::GoldfishPipe> pipe_ TA_GUARDED(lock_);
+  fidl::WireSyncClient<fuchsia_hardware_goldfish_pipe::Bus> pipe_bus_ TA_GUARDED(lock_);
 
   // The sysmem allocator client used to bind incoming buffer collection tokens.
   fidl::WireSyncClient<fuchsia_sysmem2::Allocator> sysmem_allocator_client_;

@@ -96,10 +96,10 @@ using PipeChildDeviceType =
     ddk::Device<PipeChildDevice, ddk::Messageable<fuchsia_hardware_goldfish::PipeDevice>::Mixin>;
 
 // |PipeChildDevice| is created by |PipeDevice| and serves the
-// |fuchsia.hardware.goldfish.GoldfishPipe| FIDL protocol by forwarding all the
+// |fuchsia.hardware.goldfish.Bus| FIDL protocol by forwarding all the
 // FIDL requests to the parent device.
 class PipeChildDevice : public PipeChildDeviceType,
-                        public fidl::WireServer<fuchsia_hardware_goldfish_pipe::GoldfishPipe> {
+                        public fidl::WireServer<fuchsia_hardware_goldfish_pipe::Bus> {
  public:
   PipeChildDevice(PipeDevice* parent, async_dispatcher_t* dispatcher);
   ~PipeChildDevice() override = default;
@@ -112,7 +112,7 @@ class PipeChildDevice : public PipeChildDeviceType,
   // fuchsia.hardware.goldfish.Controller APIs.
   void Connect(ConnectRequestView request, ConnectCompleter::Sync& completer) override;
 
-  // fuchsia.hardware.goldfish.pipe.GoldfishPipe APIs.
+  // fuchsia.hardware.goldfish.pipe.Bus APIs.
   void Create(CreateCompleter::Sync& completer) override;
   void SetEvent(SetEventRequestView request, SetEventCompleter::Sync& completer) override;
   void Destroy(DestroyRequestView request, DestroyCompleter::Sync& completer) override;
@@ -127,7 +127,7 @@ class PipeChildDevice : public PipeChildDeviceType,
 
   std::unordered_map<Pipe*, std::unique_ptr<Pipe>> pipes_;
 
-  fidl::ServerBindingGroup<fuchsia_hardware_goldfish_pipe::GoldfishPipe> pipe_bindings_;
+  fidl::ServerBindingGroup<fuchsia_hardware_goldfish_pipe::Bus> pipe_bindings_;
   std::optional<ddk::UnbindTxn> unbind_txn_;
 };
 
