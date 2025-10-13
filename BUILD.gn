@@ -2138,13 +2138,13 @@ build_api_module("nuc11_fastboot_images_location") {
   }
 }
 
+# LINT.IfChange(bazel_build_actions)
+#
 # The bazel_build_actions_targets.json file maps GN bazel_action() targets reachable
 # from //:default and those listed in extra_bazel_build_action_labels, to the list
 # of top-level bazel target labels they build. This is used to implement several
 # tools over the Bazel graph, for example `fx bazel-tool set_gn_targets <bazel_label>`
 # as well as `fx build @<bazel_target>`.
-#
-# LINT.IfChange(bazel_build_actions)
 #
 # Type: list(scope)
 #
@@ -2168,6 +2168,11 @@ build_api_module("nuc11_fastboot_images_location") {
 #     - Required: Path to manifest file describing the content of @gn_targets, relative
 #         to the Ninja build directory. Rebuilding this artifact with Ninja should ensure
 #         that all files exposed by the repository are up-to-date.
+#     - Type: string
+#
+#   gn_targets_licenses_spdx
+#     - Required: Path to an SPDX JSON file describing the licenses of all @gn_targets
+#       artifacts, relative to the Ninja build directory.
 #     - Type: string
 #
 #   debug_symbols_manifest

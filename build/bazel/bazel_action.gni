@@ -901,6 +901,8 @@ template("bazel_action") {
                 rebase_path(_gn_targets_repository_path, root_build_dir)
             gn_targets_manifest =
                 rebase_path(_gn_targets_repository_manifest, root_build_dir)
+            gn_targets_licenses_spdx =
+                rebase_path(_all_licenses_spdx_file, root_build_dir)
             debug_symbols_manifest = _rebased_debug_symbols_manifest
             bazel_command_file = _rebased_bazel_command_file
             path_mapping = _rebased_path_mapping

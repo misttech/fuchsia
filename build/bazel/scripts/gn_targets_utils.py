@@ -25,6 +25,7 @@ class BazelBuildActionInfo(object):
     no_sdk: bool
     gn_targets_dir: str
     gn_targets_manifest: str
+    gn_targets_licenses_spdx: str
     debug_symbols_manifest: str
     bazel_command_file: str = ""
     path_mapping: str = ""
