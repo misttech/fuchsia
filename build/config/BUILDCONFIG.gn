@@ -32,6 +32,18 @@ declare_args() {
 
   # Controls whether we should output GSYM files for Fuchsia binaries.
   output_gsym = false
+
+  # Very unfortunately, GN never sets `current_toolchain` when executing
+  # BUILDCONFIG.gn, so this variable is used to detect when this file
+  # is executed in the context of the default toolchain.
+  #
+  # It relies on any non-default toolchain to set it to false. It should
+  # also never be set in `args.gn`.
+  #
+  # LINT.IfChange(in_default_toolchain)
+  in_default_toolchain = true
+
+  # LINT.ThenChange(//build/toolchain/basic_toolchain.gni:in_default_toolchain,//build/toolchain/clang_toolchain.gni:in_default_toolchain,//build/toolchain/zircon/zircon_toolchain.gni:in_default_toolchain)
 }
 
 if (target_os == "") {
@@ -300,19 +312,6 @@ is_ubsan =
 # Whether we are in the context of a fuzzer toolchain.
 is_fuzzer = toolchain_variant.tags + [ "fuzzer" ] - [ "fuzzer" ] !=
             toolchain_variant.tags
-
-# Very unfortunately, GN never sets `current_toolchain` when executing
-# BUILDCONFIG.gn, so the logic below is used to detect when this file
-# is executed in the context of the default toolchain.
-#
-# It relies on any non-default toolchain to set toolchain_variant.base to
-# a value different from its default value. This should be enforce by any
-# toolchain() defining template, i.e. basic_toolchain(), clang_toolchain()
-# and zircon_toolchain().
-in_default_toolchain =
-    toolchain_variant.base == target_toolchain && current_cpu == target_cpu &&
-    current_os == target_os && toolchain_variant.name == "" &&
-    !toolchain_variant.is_pic_default
 
 # Base toolchain with its variant suffix.
 variant_base_toolchain = "${toolchain_variant.base}${toolchain_variant.suffix}"

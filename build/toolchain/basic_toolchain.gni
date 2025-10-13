@@ -56,6 +56,11 @@ template("basic_toolchain") {
         clang_toolchain_info = {
         }
         clang_toolchain_info = _pass_through_clang_toolchain_info
+
+        # LINT.IfChange(in_default_toolchain)
+        in_default_toolchain = false
+
+        # LINT.ThenChange(//build/config/BUILDCONFIG.gn:in_default_toolchain)
       }
     }
   } else {

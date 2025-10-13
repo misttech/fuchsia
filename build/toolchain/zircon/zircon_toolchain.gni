@@ -925,6 +925,11 @@ template("zircon_toolchain") {
       current_cpu = invoker.cpu
       current_os = invoker.os
 
+      # LINT.IfChange(in_default_toolchain)
+      in_default_toolchain = false
+
+      # LINT.ThenChange(//build/config/BUILDCONFIG.gn:in_default_toolchain)
+
       optimize = _zircon_optimize
 
       if (defined(invoker.toolchain_args)) {

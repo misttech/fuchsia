@@ -1387,6 +1387,11 @@ template("clang_toolchain") {
       target_os = target_os
       target_cpu = target_cpu
 
+      # LINT.IfChange(in_default_toolchain)
+      in_default_toolchain = false
+
+      # LINT.ThenChange(//build/config/BUILDCONFIG.gn:in_default_toolchain)
+
       if (defined(invoker.toolchain_args)) {
         # The invoker isn't allowed to fiddle with the essential settings.
         forward_variables_from(invoker.toolchain_args,
