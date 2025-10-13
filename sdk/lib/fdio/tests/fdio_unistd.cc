@@ -47,7 +47,8 @@ class OpenCreate : public zxtest::TestWithParam<std::tuple<Existing, bool, bool>
   };
 };
 
-TEST_P(OpenCreate, DirectoryUndefinedBehavior) {
+// TDOD(b/443987944): Test fails on debian 12 Linux. Re-enable once bug is fixed.
+TEST_P(OpenCreate, DISABLED_DirectoryUndefinedBehavior) {
   const Param param(GetParam());
   const std::string base_filename = TestTempDirPath() + "/open-create";
 
