@@ -240,6 +240,8 @@ class UsbPeripheral : public fdf::DriverBase,
   bool connected_ __TA_GUARDED(lock_) = false;
   // True if we are shutting down/clearing functions
   bool shutting_down_ = false;
+  // True if we are under the PrepareStop() codepath.
+  bool stopping_driver_ = false;
   // Current configuration number selected via USB_REQ_SET_CONFIGURATION
   // (will be 0 or 1 since we currently do not support multiple configurations).
   // 0 indicates that the device is unconfigured and should not accept USB requests

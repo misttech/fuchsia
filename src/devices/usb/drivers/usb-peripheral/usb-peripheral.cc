@@ -430,7 +430,12 @@ zx_status_t UsbPeripheral::StartController() {
 }
 
 zx_status_t UsbPeripheral::StopController() {
-  CommonSetConnected(false);
+  // If the driver is stopping, drivers bound to child nodes have already stopped. This guards
+  // against upstream function drivers that forgot to call SetInterface(nullptr, nullptr) in their
+  // teardown logic.
+  if (!stopping_driver_) {
+    CommonSetConnected(false);
+  }
 
   if (dci_new_.is_valid()) {
     fidl::Arena arena;
@@ -1009,6 +1014,7 @@ void UsbPeripheral::SetStateChangeListener(SetStateChangeListenerRequestView req
 }
 
 void UsbPeripheral::PrepareStop(fdf::PrepareStopCompleter completer) {
+  stopping_driver_ = true;
   ClearFunctions();
   usb_monitor_.Stop();
 
