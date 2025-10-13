@@ -700,7 +700,9 @@ class PrebuildMap(object):
             spec_file_path = os.path.normpath(self._build_dir / spec_file)
             additional_files_read.add(str(spec_file))
             with open(spec_file_path) as spec_f:
-                manifest = yaml.safe_load(spec_f)
+                manifest: dict[str, T.Any] = yaml.safe_load(
+                    spec_f
+                )  # pyright: ignore[reportAssignmentType]
                 name = manifest["name"]
                 dep = {
                     "name": name,
