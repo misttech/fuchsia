@@ -76,6 +76,13 @@ fuchsia_component("optional-use-unoffered-component") {
   deps = [ ":use-unoffered" ]
 }
 
+fuchsia_component("optional-use-from-void-component") {
+  testonly = true
+  manifest = "meta/optional-use-from-void.cml"
+  component_name = "optional-use-from-void"
+  deps = [ ":use-unoffered" ]
+}
+
 fuchsia_component("offers-to-children-unavailable") {
   testonly = true
   manifest = "meta/offers-to-children-unavailable.cml"
@@ -100,6 +107,7 @@ group("all-components") {
     ":empty-component",
     ":offers-to-children-unavailable",
     ":offers-to-children-unavailable-but-optional",
+    ":optional-use-from-void-component",
     ":optional-use-unoffered-component",
     ":reader",
     ":routing-tests",

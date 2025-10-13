@@ -39,5 +39,21 @@
             url: "#meta/offers-to-children-unavailable-but-optional.cm",
             startup: "eager",
         },
+
+        // This child optionally uses a capability, and the parent offers it
+        // from void.
+        {
+            name: "optional-use-from-void",
+            url: "#meta/optional-use-from-void.cm",
+            startup: "eager",
+        },
+    ],
+    offer: [
+        {
+            protocol: "fidl.test.components.Trigger",
+            from: "void",
+            to: "#optional-use-from-void",
+            availability: "optional",
+        },
     ],
 }

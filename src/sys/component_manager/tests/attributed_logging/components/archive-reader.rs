@@ -135,6 +135,14 @@ async fn main() {
             }
         }
     }
+
+    // Assert that no logs were received for optional-use-from-void.
+    for log in &non_matching_logs {
+        if log.moniker == "routing-tests/optional-use-from-void".try_into().unwrap() {
+            panic!("Received unexpected log for optional-use-from-void: {:?}", log);
+        }
+    }
+
     panic!(
         "One or more logs were not found, remaining fingerprints: {:?}\n\n
         These log records were read, but did not match any fingerprints: {:?}",
