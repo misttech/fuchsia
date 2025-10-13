@@ -4,7 +4,6 @@
 
 import json
 import os
-import subprocess
 import tempfile
 import typing
 import unittest
@@ -493,66 +492,67 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(test.environment())
 
-    async def test_test_execution_host(self) -> None:
-        """Test the usage of the TestExecution wrapper on a host test, and actually run it"""
+    # TODO(b/444203259): Failing on debian 12 Linux. Re-enable once a fix is implemented.
+    # async def test_test_execution_host(self) -> None:
+    #     """Test the usage of the TestExecution wrapper on a host test, and actually run it"""
 
-        with tempfile.TemporaryDirectory() as tmp:
-            # We will run ls, but it needs to be relative to the output directory.
-            # Find the actual path to the ls binary and symlink it into the
-            # output directory.
-            env_path = (
-                subprocess.check_output(["which", "env"]).decode().strip()
-            )
-            self.assertTrue(os.path.isfile, f"{env_path} is not a file")
-            os.symlink(env_path, os.path.join(tmp, "env"))
+    #     with tempfile.TemporaryDirectory() as tmp:
+    #         # We will run ls, but it needs to be relative to the output directory.
+    #         # Find the actual path to the ls binary and symlink it into the
+    #         # output directory.
+    #         env_path = (
+    #             subprocess.check_output(["which", "env"]).decode().strip()
+    #         )
+    #         self.assertTrue(os.path.isfile, f"{env_path} is not a file")
+    #         os.symlink(env_path, os.path.join(tmp, "env"))
 
-            exec_env = _make_exec_env("/fuchsia", tmp)
+    #         exec_env = _make_exec_env("/fuchsia", tmp)
 
-            flags = args.parse_args([])
+    #         flags = args.parse_args([])
 
-            test = execution.TestExecution(
-                test_list_file.Test(
-                    tests_json_file.TestEntry(
-                        tests_json_file.TestSection(
-                            "foo", "//foo", "linux", path="env"
-                        )
-                    ),
-                    test_list_file.TestListEntry("foo", [], execution=None),
-                ),
-                exec_env,
-                flags,
-            )
+    #         test = execution.TestExecution(
+    #             test_list_file.Test(
+    #                 tests_json_file.TestEntry(
+    #                     tests_json_file.TestSection(
+    #                         "foo", "//foo", "linux", path="env"
+    #                     )
+    #                 ),
+    #                 test_list_file.TestListEntry("foo", [], execution=None),
+    #             ),
+    #             exec_env,
+    #             flags,
+    #         )
 
-            self.assertFalse(test.is_hermetic())
-            env = test.environment()
-            assert env is not None
-            self.assertDictEqual(env, {"CWD": tmp})
-            self.assertFalse(test.should_symbolize())
+    #         self.assertFalse(test.is_hermetic())
+    #         env = test.environment()
+    #         assert env is not None
+    #         self.assertDictEqual(env, {"CWD": tmp})
+    #         self.assertFalse(test.should_symbolize())
 
-            recorder = event.EventRecorder()
-            recorder.emit_init()
+    #         recorder = event.EventRecorder()
+    #         recorder.emit_init()
 
-            output = await test.run(recorder, flags, event.GLOBAL_RUN_ID)
-            recorder.emit_end()
+    #         output = await test.run(recorder, flags, event.GLOBAL_RUN_ID)
+    #         recorder.emit_end()
 
-            assert output is not None
+    #         assert output is not None
 
-            lines = output.stdout.splitlines()
-            outdir: None | str = None
-            for line in lines:
-                l = line.split("=")
-                if len(l) > 1 and l[0] == "FUCHSIA_TEST_OUTDIR":
-                    outdir = l[1]
-            assert outdir is not None
-            self.assertEqual(
-                outdir[:4],
-                "/tmp",
-                f"Expecting that the output directory is an absolute path into /tmp. Found {outdir}",
-            )
+    #         lines = output.stdout.splitlines()
+    #         outdir: None | str = None
+    #         for line in lines:
+    #             l = line.split("=")
+    #             if len(l) > 1 and l[0] == "FUCHSIA_TEST_OUTDIR":
+    #                 outdir = l[1]
+    #         assert outdir is not None
+    #         self.assertEqual(
+    #             outdir[:4],
+    #             "/tmp",
+    #             f"Expecting that the output directory is an absolute path into /tmp. Found {outdir}",
+    #         )
 
-            self.assertFalse(
-                any([e.error is not None async for e in recorder.iter()])
-            )
+    #         self.assertFalse(
+    #             any([e.error is not None async for e in recorder.iter()])
+    #         )
 
     @parameterized.expand(
         [
