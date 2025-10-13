@@ -20,6 +20,7 @@ static INSPECT_FIELD_HISTORY_DURATION: &str = "history_duration_seconds";
 static INSPECT_FIELD_HISTORY_DURATION_WHEN_FULL: &str = "at_capacity_history_duration_seconds";
 
 /// An event logged by system-activity-governor.
+#[derive(Debug)]
 pub enum SagEvent {
     /// Suspend is being attempted.
     SuspendAttempted,
@@ -47,6 +48,8 @@ pub enum SagEvent {
     WakeLeaseSatisfied { name: String },
     /// A wake lease was dropped and is no longer active.
     WakeLeaseDropped { name: String },
+    /// Reported reasons of the last wake, or prevented sleep.
+    WakeReasons { reasons: Vec<String> },
     /// Suspend callback processing started.
     SuspendCallbackPhaseStarted,
     /// Suspend callback processing ended.
@@ -182,6 +185,10 @@ impl SagEventLogger {
                 }
                 SagEvent::ResumeCallbackPhaseEnded => {
                     node.record_int(fobs::RESUME_CALLBACK_PHASE_END_AT, time);
+                }
+                SagEvent::WakeReasons { reasons } => {
+                    // TODO(b/369696446): record this info persistently.
+                    log::debug!("{reasons:?}");
                 }
             };
         });

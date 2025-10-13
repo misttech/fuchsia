@@ -30,6 +30,13 @@
             ],
         },
         {
+            // Used to resolve kernel-reported wake vector KOIDs into wake source
+            // info. Non-essential, and if not provided, clients will turn the
+            // reporting functionality off.
+            service: [ "fuchsia.hardware.platform.bus.ObservabilityService" ],
+            availability: "optional",
+        },
+        {
             service: [ "fuchsia.hardware.power.suspend.SuspendService" ],
         },
         {

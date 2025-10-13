@@ -62,6 +62,7 @@ where
         sag_event_logger: SagEventLogger,
         suspender: Option<fhsuspend::SuspenderProxy>,
         sag_factory: F,
+        observability: crate::power_observability::WakeSourceObservability,
     ) -> Rc<Self> {
         log::info!("Creating CPU power element");
         let (element_runner_client, element_runner) =
@@ -85,7 +86,8 @@ where
         let power_elements_node2 = power_elements_node.clone_weak();
         inspect_root.record(power_elements_node);
 
-        let cpu_manager = Rc::new(CpuManager::new(cpu.clone(), suspender, sag_event_logger));
+        let cpu_manager =
+            Rc::new(CpuManager::new(cpu.clone(), suspender, sag_event_logger, observability));
 
         cpu_manager.run(element_runner, &power_elements_node2);
 
@@ -138,6 +140,7 @@ where
         sag_event_logger: SagEventLogger,
         suspender: Option<fhsuspend::SuspenderProxy>,
         sag_factory: F,
+        observability: crate::power_observability::WakeSourceObservability,
     ) -> Rc<Self> {
         let manager = Self::new_wait_for_suspending_token(
             topology,
@@ -145,6 +148,7 @@ where
             sag_event_logger,
             suspender,
             sag_factory,
+            observability,
         )
         .await;
 

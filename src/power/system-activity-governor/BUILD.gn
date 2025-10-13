@@ -16,10 +16,12 @@ rustc_binary("bin") {
     "src/cpu_manager.rs",
     "src/events.rs",
     "src/main.rs",
+    "src/power_observability.rs",
     "src/system_activity_governor.rs",
   ]
   deps = [
     ":sag_config",
+    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_rust",
     "//sdk/fidl/fuchsia.hardware.power.suspend:fuchsia.hardware.power.suspend_rust",
     "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
     "//sdk/fidl/fuchsia.power.observability:fuchsia.power.observability_rust",

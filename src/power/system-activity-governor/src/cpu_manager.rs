@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::events::{SagEvent, SagEventLogger};
+use crate::power_observability::{WakeSourceObservability, WakeSourceReport};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -192,6 +193,8 @@ pub struct CpuManager {
     suspend_resume_listener: OnceCell<Rc<dyn SuspendResumeListener>>,
     /// Logger for system-wide activity governor events.
     sag_event_logger: SagEventLogger,
+    /// The power observability data collection.
+    observability: WakeSourceObservability,
 }
 
 impl CpuManager {
@@ -200,6 +203,7 @@ impl CpuManager {
         cpu: Rc<PowerElementContext>,
         suspender: Option<fhsuspend::SuspenderProxy>,
         sag_event_logger: SagEventLogger,
+        observability: WakeSourceObservability,
     ) -> Self {
         Self {
             inner: Mutex::new(CpuManagerInner {
@@ -211,6 +215,7 @@ impl CpuManager {
             }),
             suspend_resume_listener: OnceCell::new(),
             sag_event_logger,
+            observability,
         }
     }
 
@@ -252,6 +257,25 @@ impl CpuManager {
 
     pub async fn suspend_block_manager(&self) -> Rc<SuspendBlockManager> {
         self.inner.lock().await.suspend_block_manager.clone()
+    }
+
+    async fn report_wake_reason(&self, reason: Option<&fhsuspend::WakeReason>) {
+        if let Some(reason) = reason {
+            let wake_vectors_type =
+                reason.wake_vectors_type.unwrap_or(fhsuspend::WakeVectorType::Koid);
+            assert_eq!(wake_vectors_type, fhsuspend::WakeVectorType::Koid);
+            let overflow = reason.wake_vectors_overflow.unwrap_or(false);
+            if overflow {
+                log::warn!("power observability: wake vectors overflow, this is not expected");
+            }
+            let wake_vectors =
+                reason.wake_vectors.as_ref().map(|v: &Vec<_>| v.clone()).unwrap_or_default();
+            let reports = wake_vectors
+                .into_iter()
+                .map(|v| WakeSourceReport::new(zx::Koid::from_raw(v)))
+                .collect();
+            self.observability.register_wake_source_reports(reports).await;
+        }
     }
 
     /// Attempts to suspend the system.
@@ -302,17 +326,18 @@ impl CpuManager {
             log::info!(response:?; "Resuming");
             // LINT.ThenChange(//src/testing/end_to_end/honeydew/honeydew/affordances/starnix/system_power_state_controller.py)
 
-            self.sag_event_logger.log(
-                if let Some(Ok(Ok(fhsuspend::SuspenderSuspendResponse {
-                    suspend_duration: Some(suspend_duration),
-                    ..
-                }))) = response
-                {
-                    SagEvent::SuspendResumed { suspend_duration }
-                } else {
-                    SagEvent::SuspendFailed
-                },
-            );
+            if let Some(Ok(Ok(fhsuspend::SuspenderSuspendResponse {
+                suspend_duration: Some(suspend_duration),
+                ref reason,
+                ..
+            }))) = response
+            {
+                self.sag_event_logger.log(SagEvent::SuspendResumed { suspend_duration });
+                let r = reason.as_ref();
+                self.report_wake_reason(r).await;
+            } else {
+                self.sag_event_logger.log(SagEvent::SuspendFailed);
+            };
 
             listener.suspend_stats().update(Box::new(
                 |stats_opt: &mut Option<fsuspend::SuspendStats>| {

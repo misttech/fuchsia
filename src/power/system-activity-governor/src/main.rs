@@ -5,6 +5,7 @@
 mod cpu_element_manager;
 mod cpu_manager;
 mod events;
+mod power_observability;
 mod system_activity_governor;
 
 use crate::cpu_element_manager::{CpuElementManager, SystemActivityGovernorFactory};
@@ -23,8 +24,9 @@ use std::rc::Rc;
 use std::time::Duration;
 use zx::MonotonicDuration;
 use {
-    fidl_fuchsia_hardware_power_suspend as fhsuspend, fidl_fuchsia_power_broker as fbroker,
-    fidl_fuchsia_power_suspend as fsuspend, fidl_fuchsia_power_system as fsystem,
+    fidl_fuchsia_hardware_platform_bus as ffhpb, fidl_fuchsia_hardware_power_suspend as fhsuspend,
+    fidl_fuchsia_power_broker as fbroker, fidl_fuchsia_power_suspend as fsuspend,
+    fidl_fuchsia_power_system as fsystem,
 };
 
 const SUSPEND_DEVICE_TIMEOUT: MonotonicDuration = MonotonicDuration::from_seconds(10);
@@ -40,6 +42,18 @@ async fn connect_to_suspender() -> Result<fhsuspend::SuspenderProxy> {
         .await?
         .connect_to_suspender()
         .map_err(|e| anyhow::anyhow!("Failed to connect to suspender: {:?}", e))
+}
+
+async fn connect_to_interrupt_attributor() -> Result<ffhpb::InterruptAttributorProxy> {
+    Service::open(ffhpb::ObservabilityServiceMarker)?
+        .watch_for_any()
+        .on_timeout(SUSPEND_DEVICE_TIMEOUT.after_now(), || {
+            Err(anyhow::anyhow!("Timeout waiting for next watcher message."))
+        })
+        .await
+        .context("while connecting to fuchsia.hardware.platform.bus/ObservabilityService")?
+        .connect_to_interrupt()
+        .map_err(|e| anyhow::anyhow!("Failed to connect to interrupt_attributor: {:?}", e))
 }
 
 enum IncomingService {
@@ -154,6 +168,7 @@ async fn main() -> Result<()> {
 
     let topology2 = topology.clone();
     let sag_event_logger2 = sag_event_logger.clone();
+    let sag_event_logger_obs = sag_event_logger.clone();
 
     let sag_factory_fn = move |cpu_manager, execution_state_dependencies| {
         let topology = topology2.clone();
@@ -172,6 +187,16 @@ async fn main() -> Result<()> {
         .boxed_local()
     };
 
+    let interrupt_attributor = connect_to_interrupt_attributor()
+        .await
+        .context("while connecting to interrupt_attributor")
+        .inspect_err(|err| {
+            log::warn!("no interrupt attributor, wake vectors will not be resolved: {err:?}")
+        })
+        .ok();
+    let observer =
+        power_observability::WakeSourceObservability::new(interrupt_attributor, sag_event_logger_obs);
+
     let cpu_service = if config.wait_for_suspending_token {
         CpuElementManager::new_wait_for_suspending_token(
             &topology,
@@ -179,6 +204,7 @@ async fn main() -> Result<()> {
             sag_event_logger,
             suspender,
             sag_factory_fn,
+            observer,
         )
         .await
     } else {
@@ -188,6 +214,7 @@ async fn main() -> Result<()> {
             sag_event_logger,
             suspender,
             sag_factory_fn,
+            observer,
         )
         .await
     };
