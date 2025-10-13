@@ -983,6 +983,7 @@ template("bazel_action") {
     }
 
     # Forward GN C/C++ compiler optimization configuration to Bazel
+    # LINT.IfChange(comp_mode)
     if (optimize == "none" || optimize == "moderate" ||
         optimize == "sanitizer" || optimize == "coverage" ||
         optimize == "minimal") {
@@ -999,6 +1000,8 @@ template("bazel_action") {
     } else {
       assert("Unsupported mode optimize = $optimize")
     }
+
+    # LINT.ThenChange(//build/bazel/scripts/bazel_compdb_utils.py:comp_mode)
 
     # If the c++ version is 20, we overwrite the copts to use
     # c++20 in Bazel too.

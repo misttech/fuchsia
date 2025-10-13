@@ -8,7 +8,10 @@ import json
 import os
 import re
 import subprocess
+from pathlib import Path
 from typing import Any, Sequence
+
+_OPT_PATTERN = re.compile("[\W]+")
 
 _CPP_EXTENSIONS = [".cc", ".c", ".cpp"]
 
@@ -252,7 +255,7 @@ def get_action_graph_from_labels(
             bazel_bin,
             "aquery",
             "mnemonic('CppCompile',deps({}))".format(labels_set),
-            compilation_mode,
+            "--compilation_mode={}".format(compilation_mode),
             "--cpu={}".format(_map_bazel_cpu(cpu)),
             "--output=jsonproto",
             "--noinclude_artifacts",
@@ -265,13 +268,27 @@ def get_action_graph_from_labels(
     return collect_actions(action_graph)
 
 
+# LINT.IfChange(comp_mode)
+def compilation_mode(gn_args: dict[str, Any]) -> str:
+    optimization = gn_args.get("optimize", "none")
+    # Sometimes the optimization is escape quoted so we clean it up.
+    opt = _OPT_PATTERN.sub("", optimization)
+    if opt == "debug":
+        return "dbg"
+    elif opt in ("size", "speed", "profile", "size_lto", "size_thinlto"):
+        return "opt"
+    else:
+        return "fastbuild"
+
+
+# LINT.ThenChange(//build/bazel/bazel_action.gni:comp_mode)
+
+
 def compdb_for_labels(
-    build_dir: str,
+    build_dir: Path,
     bazel_bin: str,
-    compilation_mode: str,
-    cpu: str,
-    labels: Sequence[str],
-) -> Sequence[dict[str, Any]]:
+    labels: list[str],
+) -> list[dict[str, Any]]:
     """Generate compile commands for input Bazel labels.
 
     Args:
@@ -285,10 +302,13 @@ def compdb_for_labels(
         A list of compile_commands.json entries.
     """
 
+    with open(build_dir / "args.json", "r") as f:
+        gn_args = json.load(f)
+
     actions = get_action_graph_from_labels(
         bazel_bin,
-        compilation_mode,
-        cpu,
+        compilation_mode(gn_args),
+        gn_args["target_cpu"],
         labels,
     )
 
@@ -302,7 +322,7 @@ def compdb_for_labels(
     output_path = bazel_info[3]
 
     formatter = CompDBFormatter(
-        build_dir,
+        str(build_dir),
         output_base,
         output_path,
     )

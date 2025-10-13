@@ -5,7 +5,6 @@
 
 import argparse
 import json
-import os
 import re
 import subprocess
 import sys
@@ -14,22 +13,9 @@ from typing import Any, Sequence
 
 import bazel_compdb_utils
 
-_OPT_PATTERN = re.compile("[\W]+")
-
 _SHOULD_LOG = False
 
 _FUCHSIA_PACKAGE_SUFFIX = "_fuchsia_package"
-
-
-def compilation_mode(optimization: str) -> str:
-    # sometimes the optimization is escape quoted so we clean it up.
-    opt = _OPT_PATTERN.sub("", optimization)
-    if opt == "debug":
-        return "--compilation_mode=dbg"
-    elif opt in ["size", "speed", "profile", "size_lto", "size_thinlto"]:
-        return "--compilation_mode=opt"
-    else:
-        return "--compilation_mode=fastbuild"
 
 
 def canonicalize_label_from_arg(label: str) -> str:
@@ -115,7 +101,7 @@ def main(argv: Sequence[str]) -> None:
 
     parser.add_argument("--bazel", required=True, help="The bazel binary")
     parser.add_argument(
-        "--build-dir", required=True, help="The build directory"
+        "--build-dir", required=True, type=Path, help="The build directory"
     )
     parser.add_argument(
         "--label",
@@ -136,12 +122,6 @@ def main(argv: Sequence[str]) -> None:
         All Fuchsia Bazel targets (i.e. non-host) from the build API module
         file are refreshed.""",
         type=Path,
-    )
-    parser.add_argument(
-        "--optimization", required=True, help="The build level optimization"
-    )
-    parser.add_argument(
-        "--target-cpu", required=True, help="The cpu we are targeting"
     )
     parser.add_argument(
         "-v",
@@ -208,15 +188,11 @@ def main(argv: Sequence[str]) -> None:
     new_compile_commands = bazel_compdb_utils.compdb_for_labels(
         args.build_dir,
         args.bazel,
-        compilation_mode(args.optimization),
-        args.target_cpu,
         labels,
     )
 
     compile_commands_dict = {}
-    compile_commands_path = os.path.join(
-        args.build_dir, "compile_commands.json"
-    )
+    compile_commands_path = args.build_dir / "compile_commands.json"
     with open(
         compile_commands_path,
         "r",
