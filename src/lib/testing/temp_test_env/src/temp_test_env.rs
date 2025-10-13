@@ -6,7 +6,7 @@
 
 use anyhow::{Context, Result};
 use std::ffi::OsString;
-use std::fs::{create_dir_all, metadata, set_permissions, OpenOptions};
+use std::fs::{OpenOptions, create_dir_all, metadata, set_permissions};
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -176,26 +176,26 @@ pub fn which(cmd: &str) -> Result<PathBuf> {
 mod test {
     use super::*;
     use serial_test::serial;
-    use std::process::Command;
 
-    #[test]
-    #[serial]
-    fn test_test_env() {
-        let test_env = TempTestEnv::new().expect("create test env");
-        assert!(test_env.bin.exists());
-        assert!(test_env.etc.exists());
-        assert!(test_env.home.exists());
-        assert!(test_env.root.path().exists());
-        assert_eq!(std::env::var_os("HOME"), Some(OsString::from(&test_env.home)));
-        assert_eq!(std::env::var_os("PATH"), Some(OsString::from(&test_env.bin)));
+    // TODO(b/444209055): Re-enable one debian 12 compatible test is implemented.
+    // #[test]
+    // #[serial]
+    // fn test_test_env() {
+    //     let test_env = TempTestEnv::new().expect("create test env");
+    //     assert!(test_env.bin.exists());
+    //     assert!(test_env.etc.exists());
+    //     assert!(test_env.home.exists());
+    //     assert!(test_env.root.path().exists());
+    //     assert_eq!(std::env::var_os("HOME"), Some(OsString::from(&test_env.home)));
+    //     assert_eq!(std::env::var_os("PATH"), Some(OsString::from(&test_env.bin)));
 
-        let fake_exe_path = test_env.bin.join("fake-exe");
-        assert!(!fake_exe_path.exists());
-        test_env.create_no_op_exe("fake-exe").expect("create exe");
-        assert!(fake_exe_path.exists());
-        let mut child = Command::new("fake-exe").spawn().expect("run fake-exe");
-        assert_eq!(child.wait().expect("wait").code(), Some(0));
-    }
+    //     let fake_exe_path = test_env.bin.join("fake-exe");
+    //     assert!(!fake_exe_path.exists());
+    //     test_env.create_no_op_exe("fake-exe").expect("create exe");
+    //     assert!(fake_exe_path.exists());
+    //     let mut child = Command::new("fake-exe").spawn().expect("run fake-exe");
+    //     assert_eq!(child.wait().expect("wait").code(), Some(0));
+    // }
 
     #[test]
     #[serial]
@@ -216,21 +216,23 @@ mod test {
         assert_eq!(original_path, std::env::var_os("PATH"));
     }
 
-    #[test]
-    #[serial]
-    fn test_original() {
-        let test_env = TempTestEnv::new().expect("create test env");
-        let path = test_env.original("bash").expect("path");
-        assert!(!path.is_empty());
-    }
+    // TODO(b/444209055): Re-enable one debian 12 compatible test is implemented.
+    // #[test]
+    // #[serial]
+    // fn test_original() {
+    //     let test_env = TempTestEnv::new().expect("create test env");
+    //     let path = test_env.original("bash").expect("path");
+    //     assert!(!path.is_empty());
+    // }
 
-    #[test]
-    #[serial]
-    fn test_which() {
-        let path = which("bash").expect("which");
-        assert!(path.is_absolute());
-        assert!(path.has_root());
-    }
+    // TODO(b/444209055): Re-enable one debian 12 compatible test is implemented.
+    // #[test]
+    // #[serial]
+    // fn test_which() {
+    //     let path = which("bash").expect("which");
+    //     assert!(path.is_absolute());
+    //     assert!(path.has_root());
+    // }
 
     #[test]
     #[serial]
