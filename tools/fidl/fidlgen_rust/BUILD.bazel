@@ -4,7 +4,8 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
-load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "idk_host_tool", "install_host_tools")
+load("//build/bazel/bazel_idk:defs.bzl", "idk_host_tool")
+load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "install_host_tools")
 
 go_binary(
     name = "fidlgen_rust",

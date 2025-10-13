@@ -3,7 +3,8 @@
 # found in the LICENSE file.
 
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
-load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "idk_host_tool", "rustc_binary")
+load("//build/bazel/bazel_idk:defs.bzl", "idk_host_tool")
+load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "rustc_binary")
 
 rustc_binary(
     name = "fake-omaha-client",

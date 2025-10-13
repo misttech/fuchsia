@@ -18,10 +18,15 @@ load(
     _idk_cc_source_library = "idk_cc_source_library",
     _idk_cc_source_library_zx = "idk_cc_source_library_zx",
 )
+load(
+    "//build/bazel/bazel_idk/private:idk_host_tool.bzl",
+    _idk_host_tool = "idk_host_tool",
+)
 
 idk_molecule = _idk_molecule
 idk_cc_source_library = _idk_cc_source_library
 idk_cc_source_library_zx = _idk_cc_source_library_zx
+idk_host_tool = _idk_host_tool
 
 def _idk_cc_shared_library_impl(name, **kwargs):
     idk_cc_prebuilt_library(name = name, prebuilt_library_type = "shared", **kwargs)
