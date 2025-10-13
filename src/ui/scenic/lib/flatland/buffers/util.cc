@@ -70,9 +70,6 @@ void SetClientConstraintsAndWaitForAllocated(
                                                     : additional_format_modifiers[i - 1]);
     image_constraints.set_required_min_size(fuchsia::math::SizeU{.width = width, .height = height});
     image_constraints.set_required_max_size(fuchsia::math::SizeU{.width = width, .height = height});
-    image_constraints.set_max_size(
-        fuchsia::math::SizeU{.width = width * 4 /*num channels*/, .height = height});
-    image_constraints.set_max_bytes_per_row(0xffffffff);
   }
 
   status = buffer_collection->SetConstraints(std::move(set_constraints_request));
@@ -141,8 +138,6 @@ fuchsia::sysmem2::BufferCollectionSyncPtr CreateBufferCollectionSyncPtrAndSetCon
 
   image_constraints.set_required_min_size(fuchsia::math::SizeU{.width = width, .height = height});
   image_constraints.set_required_max_size(fuchsia::math::SizeU{.width = width, .height = height});
-  image_constraints.set_max_size(fuchsia::math::SizeU{.width = width * 4, .height = height});
-  image_constraints.set_max_bytes_per_row(0xffffffff);
 
   status = buffer_collection->SetConstraints(std::move(set_constraints_request));
   FX_DCHECK(status == ZX_OK);
