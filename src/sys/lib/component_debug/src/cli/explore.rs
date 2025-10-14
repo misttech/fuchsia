@@ -32,7 +32,6 @@ pub async fn explore_cmd(
                 vec![]
             });
         println!("Using tool URLs from component manifest: {urls:?}");
-	println!("Using tool URLs from component manifest: {urls:?}");
         urls
     };
 
