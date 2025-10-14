@@ -3,5 +3,6 @@
 // found in the LICENSE file.
 
 pub mod arch;
+pub mod bpf;
 pub mod device;
 pub mod execution;

@@ -91,12 +91,6 @@ _starnix_core_edition = "2021"
 _starnix_core_source_root = "lib.rs"
 _starnix_core_sources = [
   # go/keep-sorted start
-  "bpf/attachments.rs",
-  "bpf/context.rs",
-  "bpf/fs.rs",
-  "bpf/mod.rs",
-  "bpf/program.rs",
-  "bpf/syscalls.rs",
   "core/arch/${current_cpu}/execution.rs",
   "core/arch/${current_cpu}/mod.rs",
   "core/arch/${current_cpu}/registers.rs",
@@ -105,6 +99,12 @@ _starnix_core_sources = [
   "core/arch/${current_cpu}/task.rs",
   "core/arch/${current_cpu}/vdso.rs",
   "core/arch/mod.rs",
+  "core/bpf/attachments.rs",
+  "core/bpf/context.rs",
+  "core/bpf/fs.rs",
+  "core/bpf/mod.rs",
+  "core/bpf/program.rs",
+  "core/bpf/syscalls.rs",
   "core/device/android/bootloader_message_store.rs",
   "core/device/android/mod.rs",
   "core/device/kobject.rs",
