@@ -217,3 +217,9 @@ const WAKE_REASON_WAKE_SOURCES_COUNT string = "wake_reason_last_wake_sources_cou
 /// wake.
 const WAKE_REASON_WAKE_SOURCES_UNREPORTED_COUNT string
         = "wake_reason_last_wake_sources_unreported_count";
+
+/// The key for the timestamp when the wake reason was reported at.
+const WAKE_REASONS_REPORTED_AT string = "wake_reason_reported_at_ns";
+
+/// A key prefix for a wake reason.
+const WAKE_REASONS_WAKE_VECTOR_PREFIX string = "wake_reason";
