@@ -130,19 +130,8 @@ template("packaged_shared_library") {
   if (select_variant_canonical != []) {
     _selected = false
 
-    foreach(selector, select_variant_canonical) {
+    foreach(_selector, select_variant_canonical) {
       if (_variant == false) {
-        _selector = {
-        }
-        _selector = {
-          target_type = []
-          output_name = []
-          label = []
-          name = []
-          dir = []
-          forward_variables_from(selector, "*")
-        }
-
         _selected = true
         if (_selected && defined(_selector.host)) {
           _selected = _selector.host == _select.host

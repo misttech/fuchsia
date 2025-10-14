@@ -881,11 +881,22 @@ if (in_default_toolchain) {
   }
 
   # Insert a 'variant_tags' field in each selector item that corresponds to
-  # the list of tags from the variant the selector points to.
+  # the list of tags from the variant the selector points to. This also
+  # inserts default values for lists such as target_type, output_name, etc.
+
+  _selector_defaults = {
+    target_type = []
+    output_name = []
+    label = []
+    name = []
+    dir = []
+  }
+
   foreach(_variant_selectors, [ [] ]) {
     foreach(selector, select_variant_canonical) {
       _variant_selectors += [
         {
+          forward_variables_from(_selector_defaults, "*")
           forward_variables_from(selector, "*")
           variant_tags = []
           foreach(selected_tags, [ false ]) {
@@ -2719,19 +2730,6 @@ template("variant_target") {
       # The first match wins.
       # GN's loops don't have "break", so do nothing on later iterations.
       if (!selected) {
-        # Expand the selector so we don't have to do a lot of defined(...)
-        # tests below.
-        select = {
-        }
-        select = {
-          target_type = []
-          output_name = []
-          label = []
-          name = []
-          dir = []
-          forward_variables_from(selector, "*")
-        }
-
         selected = true
         if (selected && defined(selector.host)) {
           # NOTE: Do not use 'current_toolchain == host_toolchain' to verify
@@ -2752,50 +2750,50 @@ template("variant_target") {
                       target_invoker.testonly) == selector.testonly
         }
 
-        if (selected && select.target_type != []) {
+        if (selected && selector.target_type != []) {
           selected = false
           candidate = selector_target_type
-          foreach(try, select.target_type) {
+          foreach(try, selector.target_type) {
             if (try == candidate) {
               selected = true
             }
           }
         }
 
-        if (selected && select.output_name != []) {
+        if (selected && selector.output_name != []) {
           selected = false
           candidate = target_invoker.output_name
-          foreach(try, select.output_name) {
+          foreach(try, selector.output_name) {
             if (try == candidate) {
               selected = true
             }
           }
         }
 
-        if (selected && select.label != []) {
+        if (selected && selector.label != []) {
           selected = false
           candidate = target_label
-          foreach(try, select.label) {
+          foreach(try, selector.label) {
             if (try == candidate) {
               selected = true
             }
           }
         }
 
-        if (selected && select.name != []) {
+        if (selected && selector.name != []) {
           selected = false
           candidate = get_label_info(target_label, "name")
-          foreach(try, select.name) {
+          foreach(try, selector.name) {
             if (try == candidate) {
               selected = true
             }
           }
         }
 
-        if (selected && select.dir != []) {
+        if (selected && selector.dir != []) {
           selected = false
           candidate = get_label_info(target_label, "dir")
-          foreach(try, select.dir) {
+          foreach(try, selector.dir) {
             if (try == candidate) {
               selected = true
             }
@@ -2803,8 +2801,8 @@ template("variant_target") {
         }
 
         if (selected && exclude_toolchain_tags != []) {
-          if (exclude_toolchain_tags + select.variant_tags -
-              select.variant_tags != exclude_toolchain_tags) {
+          if (exclude_toolchain_tags + selector.variant_tags -
+              selector.variant_tags != exclude_toolchain_tags) {
             selected = false
             excluded_toolchain = true
           }
