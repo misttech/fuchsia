@@ -7,7 +7,6 @@
 use tracing_mutex as _;
 
 use {async_utils as _, fidl_fuchsia_power_suspend as _};
-pub mod syscalls;
 pub mod task;
 pub mod time;
 pub mod vdso;

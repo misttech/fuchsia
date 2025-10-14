@@ -13,3 +13,4 @@ pub mod perf;
 pub mod power;
 pub mod security;
 pub mod signals;
+pub mod syscalls;
