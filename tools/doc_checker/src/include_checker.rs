@@ -5,15 +5,15 @@
 //! include_checker implements the `DocCheck` trait  used to perform checks on the
 //! files included using the << >> element.
 
+use crate::DocCheckerArgs;
 use crate::checker::{DocCheck, DocCheckError};
 use crate::md_element::Element;
-use crate::DocCheckerArgs;
 use anyhow::Result;
 use async_trait::async_trait;
-use lazy_static::lazy_static;
 use pulldown_cmark::Tag;
 use regex::Regex;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 // path_help is a wrapper to allow mocking path checks
 // exists. and is_dir.
@@ -25,9 +25,8 @@ cfg_if::cfg_if! {
     }
 }
 
-lazy_static! {
-    static ref INCLUDE_REGEX: Regex = Regex::new(r"<<\s?(.+?\.md)\s?>>").unwrap();
-}
+static INCLUDE_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"<<\s?(.+?\.md)\s?>>").unwrap());
 
 pub(crate) struct IncludeChecker {}
 
@@ -115,34 +114,13 @@ mod tests {
                 PathBuf::from("/docs/README.md"),
                 "non-markdown file OK to link to docs [non-source](https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/docs/OWNERS)",
             ),
-            (
-                PathBuf::from("/docs/README.md"),
-                "have 2 << but no close",
-            ),
-            (
-                PathBuf::from("/docs/README.md"),
-                "have  << but no close\n on the same line>>",
-            ),
-            (
-                PathBuf::from("/docs/README.md"),
-                "have a non-markdown file name  <<you name here>>",
-            ),
-            (
-                PathBuf::from("/docs/README.md"),
-                "spaces   < <a-file.md> >",
-            ),
-            (
-                PathBuf::from("/docs/README.md"),
-                "spaces   <<a-file.md> >",
-            ),
-            (
-                PathBuf::from("/docs/README.md"),
-                "spaces   < <a-file.md>>",
-            ),
-            (
-                PathBuf::from("/docs/README.md"),
-                "exists <<a-file.md>>",
-            ),
+            (PathBuf::from("/docs/README.md"), "have 2 << but no close"),
+            (PathBuf::from("/docs/README.md"), "have  << but no close\n on the same line>>"),
+            (PathBuf::from("/docs/README.md"), "have a non-markdown file name  <<you name here>>"),
+            (PathBuf::from("/docs/README.md"), "spaces   < <a-file.md> >"),
+            (PathBuf::from("/docs/README.md"), "spaces   <<a-file.md> >"),
+            (PathBuf::from("/docs/README.md"), "spaces   < <a-file.md>>"),
+            (PathBuf::from("/docs/README.md"), "exists <<a-file.md>>"),
             (
                 PathBuf::from("/docs/README.md"),
                 "\n```md\nThis is a sample in codeblock to\n<<missing.md>>\n```\n",

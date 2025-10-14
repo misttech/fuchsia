@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use lazy_static::lazy_static;
 use regex::Regex;
+use std::sync::LazyLock;
 
 use std::fmt;
 use std::fs::File;
@@ -24,10 +24,8 @@ impl Owners {
     /// well as multiple-components (which are quite rare). "include" syntax
     /// currently isn't supported either, but may be handled in the future.
     pub fn from_file(filename: &Path) -> io::Result<Self> {
-        lazy_static! {
-            static ref USER: Regex = Regex::new(r"(\w+)@google.com").unwrap();
-            static ref COMP: Regex = Regex::new(r"COMPONENT: *(\S+)").unwrap();
-        }
+        static USER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\w+)@google.com").unwrap());
+        static COMP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"COMPONENT: *(\S+)").unwrap());
         let mut users = Vec::new();
         let mut component = None;
         for line in BufReader::new(File::open(filename)?).lines() {

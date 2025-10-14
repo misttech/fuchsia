@@ -4,16 +4,13 @@
 
 #![cfg(test)]
 
-use lazy_static::lazy_static;
 use std::env;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
-use tempfile::{tempdir, TempDir};
+use std::sync::{LazyLock, Mutex, MutexGuard};
+use tempfile::{TempDir, tempdir};
 
-lazy_static! {
-    static ref ENV_MUTEX: Mutex<()> = Mutex::new(());
-}
+static ENV_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 const FUCHSIA_DIR_KEY: &'static str = "FUCHSIA_DIR";
 

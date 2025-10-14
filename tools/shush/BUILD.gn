@@ -9,7 +9,6 @@ if (is_host) {
   _deps = [
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
-    "//third_party/rust_crates:lazy_static",
     "//third_party/rust_crates:once_cell",
     "//third_party/rust_crates:proc-macro2",
     "//third_party/rust_crates:regex",

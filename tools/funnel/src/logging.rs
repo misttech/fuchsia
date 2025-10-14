@@ -5,11 +5,9 @@
 use anyhow::Result;
 use log::LevelFilter;
 use logging::{FfxLog, FfxLogSink, FormatOpts, LogSinkTrait, TargetsFilter};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
-lazy_static::lazy_static! {
-    static ref LOGGING_ID: u64 = generate_id();
-}
+static LOGGING_ID: LazyLock<u64> = LazyLock::new(generate_id);
 
 fn generate_id() -> u64 {
     rand::random::<u64>()

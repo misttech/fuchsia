@@ -3,11 +3,10 @@
 // found in the LICENSE file.
 
 //! Clidoc generates documentation for host tool commands consisting of their --help output.
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use argh::FromArgs;
-use flate2::write::GzEncoder;
 use flate2::Compression;
-use lazy_static::lazy_static;
+use flate2::write::GzEncoder;
 use log::{debug, info};
 use simplelog::{Config, LevelFilter, SimpleLogger};
 use std::collections::{HashMap, HashSet};
@@ -17,7 +16,7 @@ use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Once;
+use std::sync::{LazyLock, Once};
 use tar::Builder;
 
 mod ffx_doc;
@@ -129,23 +128,20 @@ const ALLOW_LIST: &'static [&'static str] = &[
 
 // This Hashset includes all sdk tools which return stderr and non-zero error codes
 // when invoking --help.
-lazy_static! {
-    static ref IGNORE_ERR_CODE: HashSet<&'static str> = {
-        let h = HashSet::from([
-            "blobfs",
-            "blobfs_do_not_depend",  // Same tool as above.
-            "bootserver",
-            "device-finder",
-            "fvm",
-            "fssh",
-            "fuchsia-sdk-run",
-            "minfs",
-            "symbolizer",
-            "zxdb",
-        ]);
-        h
-    };
-}
+static IGNORE_ERR_CODE: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    HashSet::from([
+        "blobfs",
+        "blobfs_do_not_depend", // Same tool as above.
+        "bootserver",
+        "device-finder",
+        "fvm",
+        "fssh",
+        "fuchsia-sdk-run",
+        "minfs",
+        "symbolizer",
+        "zxdb",
+    ])
+});
 
 fn main() -> Result<()> {
     let opt: Opt = argh::from_env();
@@ -453,11 +449,7 @@ fn recurse_cmd_output<W: Write>(
         recurse_cmd_output(&cmd, &cmd_path, output_writer, &cmds_sequence)?;
     }
 
-    if cmd_level == 0 {
-        Ok(summary.into())
-    } else {
-        Ok("".into())
-    }
+    if cmd_level == 0 { Ok(summary.into()) } else { Ok("".into()) }
 }
 
 /// Write output of cmd at `cmd_path` to new cmd.md file at `output_path`.

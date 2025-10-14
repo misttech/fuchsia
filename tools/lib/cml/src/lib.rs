@@ -24,7 +24,6 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use json_spanned_value::Spanned;
 use json5format::{FormatOptions, PathOption};
-use lazy_static::lazy_static;
 use maplit::{hashmap, hashset};
 use reference_doc::ReferenceDoc;
 use serde::{Deserialize, Serialize, de, ser};
@@ -46,10 +45,6 @@ use error::Location;
 pub use crate::one_or_many::OneOrMany;
 pub use crate::translate::{CompileOptions, compile};
 pub use crate::validate::{CapabilityRequirements, MustUseRequirement, OfferToAllCapability};
-
-lazy_static! {
-    static ref DEFAULT_EVENT_STREAM_NAME: Name = "EventStream".parse().unwrap();
-}
 
 /// Parses a string `buffer` into a [Document]. `file` is used for error reporting.
 pub fn parse_one_document(buffer: &String, file: &std::path::Path) -> Result<Document, Error> {

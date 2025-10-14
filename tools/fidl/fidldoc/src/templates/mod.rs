@@ -7,11 +7,11 @@ pub mod markdown;
 use crate::fidljson::to_lower_snake_case;
 use anyhow::Error;
 use handlebars::{Context, Handlebars, Helper, JsonRender, Output, RenderContext, RenderError};
-use lazy_static::lazy_static;
 use log::debug;
 use pulldown_cmark::{Parser, html as pulldown_html};
 use regex::{Captures, Regex};
 use serde_json::Value;
+use std::sync::LazyLock;
 
 pub fn lower_snake_case(
     h: &Helper<'_, '_>,
@@ -79,10 +79,8 @@ pub fn remove_package_name(
 }
 
 fn rpn(name: &str) -> String {
-    lazy_static! {
-        static ref RE: Regex = Regex::new(r".*/").unwrap();
-    }
-    RE.replace_all(&name, "").into_owned()
+    static RPN_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r".*/").unwrap());
+    RPN_RE.replace_all(&name, "").into_owned()
 }
 
 pub fn eq(
@@ -130,13 +128,11 @@ fn pl(name: &str, base: &str) -> String {
     let package_base;
     let package_name;
 
-    lazy_static! {
-        static ref RE: Regex = Regex::new(r"(.*)/(.*)").unwrap();
-    }
+    static PL_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(.*)/(.*)").unwrap());
 
-    if RE.is_match(&name) {
+    if PL_RE.is_match(&name) {
         // e.g. "fuchsia.media/Audio"
-        let caps = RE.captures(&name).expect("Expecting base/package");
+        let caps = PL_RE.captures(&name).expect("Expecting base/package");
         package_base = caps.get(1).unwrap().as_str();
         package_name = caps.get(2).unwrap().as_str();
     } else {
@@ -193,15 +189,14 @@ fn doc_link(
 }
 
 fn dl(docstring: &str, base: &str) -> String {
-    lazy_static! {
-        static ref RE: Regex = Regex::new(r"\[`(.*?)`\]").unwrap();
-    }
-    RE.replace_all(&docstring, |caps: &Captures<'_>| {
-        let package = caps.get(1).unwrap().as_str();
-        debug!("dl captured {}", package);
-        pl(package, base)
-    })
-    .to_string()
+    static DL_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[`(.*?)`\]").unwrap());
+    DL_RE
+        .replace_all(&docstring, |caps: &Captures<'_>| {
+            let package = caps.get(1).unwrap().as_str();
+            debug!("dl captured {}", package);
+            pl(package, base)
+        })
+        .to_string()
 }
 
 pub fn remove_parent_folders(
@@ -219,10 +214,8 @@ pub fn remove_parent_folders(
 }
 
 fn rpf(path: &str) -> String {
-    lazy_static! {
-        static ref RE: Regex = Regex::new(r"^(\.\./)*").unwrap();
-    }
-    RE.replace_all(&path, "").into_owned()
+    static RPF_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\.\./)*").unwrap());
+    RPF_RE.replace_all(&path, "").into_owned()
 }
 
 fn source_link(
