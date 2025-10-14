@@ -48,6 +48,11 @@
             matchers: [
                 // TODO: https://fxbug.dev/447104596 - This test hangs rarely
                 "NetlinkAuditTest.ChildDaemonReadsParentsMessageFromNewSocket",
+
+                // TODO: https://fxbug.dev/451606455 - Wait on `PTRACE_ATTACH` to finish.
+                "PtraceTest.PtraceAttachAllowed",
+                "PtraceTest.PtraceAttachThenExecDenied",
+                "PtraceTest.PtraceAttachThenExecAllowed",
             ],
         },
     ],

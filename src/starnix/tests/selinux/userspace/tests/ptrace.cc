@@ -155,12 +155,14 @@ TEST(PtraceTest, PtraceAttachAllowed) {
       // Continue the child program and check that it exits normally.
       // This requires 2 `PTRACE_CONT` commands, one to resume from the `PTRACE_ATTACH`
       // command and one to resume from the child's self-signaled `SIGSTOP`.
-      EXPECT_THAT(ptrace(PTRACE_CONT, pid, nullptr, 0), SyscallSucceeds());
+      // Use `ASSERT_THAT` to ensure the test does not hang on a ptrace fail.
+      ASSERT_THAT(ptrace(PTRACE_CONT, pid, nullptr, 0), SyscallSucceeds());
       ASSERT_THAT(waitpid(pid, &wstatus, WUNTRACED), SyscallSucceeds());
       ASSERT_TRUE(WIFSTOPPED(wstatus));
       ASSERT_EQ(WSTOPSIG(wstatus), SIGSTOP);
 
-      EXPECT_THAT(ptrace(PTRACE_CONT, pid, nullptr, 0), SyscallSucceeds());
+      // Use `ASSERT_THAT` to ensure the test does not hang on a ptrace fail.
+      ASSERT_THAT(ptrace(PTRACE_CONT, pid, nullptr, 0), SyscallSucceeds());
       bool exited = false;
       ASSERT_THAT(waitpid(pid, &wstatus, WUNTRACED), SyscallSucceeds());
       exited = WIFEXITED(wstatus);
@@ -212,11 +214,13 @@ TEST(PtraceTest, PtraceAttachThenExecDenied) {
       // Continue the child program through its `exec` of `true_bin`.
       // This requires 2 `PTRACE_CONT` commands, one to resume from the `PTRACE_ATTACH`
       // command and one to resume from the child's self-signaled `SIGSTOP`.
+      // Use `ASSERT_THAT` to ensure the test does not hang on a ptrace fail.
       ASSERT_THAT(ptrace(PTRACE_CONT, pid, nullptr, 0), SyscallSucceeds());
       ASSERT_THAT(waitpid(pid, &wstatus, 0), SyscallSucceeds());
       ASSERT_TRUE(WIFSTOPPED(wstatus));
       ASSERT_EQ(WSTOPSIG(wstatus), SIGSTOP);
 
+      // Use `ASSERT_THAT` to ensure the test does not hang on a ptrace fail.
       ASSERT_THAT(ptrace(PTRACE_CONT, pid, nullptr, 0), SyscallSucceeds());
       // At this point, the child has failed to exec.
       // Wait for the child to stop itself again.
@@ -226,7 +230,8 @@ TEST(PtraceTest, PtraceAttachThenExecDenied) {
 
       // The parent process remains attached to the child.
       // Continue the child and observe normal exit.
-      EXPECT_THAT(ptrace(PTRACE_CONT, pid, nullptr, 0), SyscallSucceeds());
+      // Use `ASSERT_THAT` to ensure the test does not hang on a ptrace fail.
+      ASSERT_THAT(ptrace(PTRACE_CONT, pid, nullptr, 0), SyscallSucceeds());
       bool exited = false;
       ASSERT_THAT(waitpid(pid, &wstatus, WUNTRACED), SyscallSucceeds());
       exited = WIFEXITED(wstatus);
@@ -277,17 +282,20 @@ TEST(PtraceTest, PtraceAttachThenExecAllowed) {
       // This requires 3 `PTRACE_CONT` commands, one to resume from the `PTRACE_ATTACH`
       // command, one to resume from the child's self-signaled `SIGSTOP`, and one to
       // resume after the child's `execve`.
+      // Use `ASSERT_THAT` to ensure the test does not hang on a ptrace fail.
       ASSERT_THAT(ptrace(PTRACE_CONT, pid, nullptr, 0), SyscallSucceeds());
       ASSERT_THAT(waitpid(pid, &wstatus, 0), SyscallSucceeds());
       ASSERT_TRUE(WIFSTOPPED(wstatus));
       ASSERT_EQ(WSTOPSIG(wstatus), SIGSTOP);
 
+      // Use `ASSERT_THAT` to ensure the test does not hang on a ptrace fail.
       ASSERT_THAT(ptrace(PTRACE_CONT, pid, nullptr, 0), SyscallSucceeds());
       ASSERT_THAT(waitpid(pid, &wstatus, 0), SyscallSucceeds());
       ASSERT_TRUE(WIFSTOPPED(wstatus));
       ASSERT_EQ(WSTOPSIG(wstatus), SIGTRAP);
 
-      EXPECT_THAT(ptrace(PTRACE_CONT, pid, nullptr, 0), SyscallSucceeds());
+      // Use `ASSERT_THAT` to ensure the test does not hang on a ptrace fail.
+      ASSERT_THAT(ptrace(PTRACE_CONT, pid, nullptr, 0), SyscallSucceeds());
       bool exited = false;
       ASSERT_THAT(waitpid(pid, &wstatus, 0), SyscallSucceeds());
       exited = WIFEXITED(wstatus);
