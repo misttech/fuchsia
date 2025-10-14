@@ -358,8 +358,8 @@ TEST_P(NetlinkSocketTest, CheckNetlinkMsgPermission) {
   auto sockcreate = ScopedTaskAttrResetter::SetTaskAttr("sockcreate", test_case.label);
   auto enforce = ScopedEnforcement::SetEnforcing();
 
-  int sock_fd = socket(AF_NETLINK, SOCK_RAW, test_case.protocol);
-  ASSERT_THAT(sock_fd, SyscallSucceeds());
+  fbl::unique_fd sock_fd(socket(AF_NETLINK, SOCK_RAW, test_case.protocol));
+  ASSERT_THAT(sock_fd.get(), SyscallSucceeds());
 
   union {
     struct rtmsg rtmsg;
@@ -399,7 +399,7 @@ TEST_P(NetlinkSocketTest, CheckNetlinkMsgPermission) {
   memset(&sa, 0, sizeof(sa));
   sa.nl_family = AF_NETLINK;
 
-  ssize_t result = sendto(sock_fd, nlh, nlh->nlmsg_len, 0, (struct sockaddr*)&sa, sizeof(sa));
+  ssize_t result = sendto(sock_fd.get(), nlh, nlh->nlmsg_len, 0, (struct sockaddr*)&sa, sizeof(sa));
 
   if (test_helper::IsStarnix() && test_case.protocol == NETLINK_SOCK_DIAG) {
     // Expect `ENOTSUP` for testcases currently unsupported in Starnix.
