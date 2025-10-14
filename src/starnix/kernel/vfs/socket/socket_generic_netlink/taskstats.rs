@@ -113,7 +113,10 @@ impl<S: Sender<GenericMessage>> GenericNetlinkFamily<S> for TaskstatsFamily {
     ) {
         track_stub!(TODO("https://fxbug.dev/339675153"), "proper taskstats implementation");
         // Send a no-op response
-        let msg = TaskstatMsg { cmd: payload[0], nlas: vec![TaskstatNla::Null] };
+        let msg = TaskstatMsg {
+            cmd: payload.get(0).copied().unwrap_or(0),
+            nlas: vec![TaskstatNla::Null],
+        };
         let mut buffer = vec![0; msg.buffer_len()];
         msg.emit(&mut buffer);
         let mut msg = NetlinkMessage::new(

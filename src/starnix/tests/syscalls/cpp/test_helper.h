@@ -240,7 +240,9 @@ class NetlinkEncoder {
     Write(&value, sizeof(T));
   }
 
-  void WriteSpan(const std::span<uint8_t> &data) { Write(data.data(), data.size_bytes()); }
+  void WriteSpan(const std::span<const uint8_t> &data) { Write(data.data(), data.size_bytes()); }
+
+  void WriteString(const std::string_view &data) { Write(data.data(), data.size()); }
 
   // Writes a value to the buffer at a specified offset
   template <typename T>
@@ -254,6 +256,7 @@ class NetlinkEncoder {
     Read(&out, offset, sizeof(T));
   }
 
+  NetlinkEncoder() = default;
   NetlinkEncoder(__u16 type, __u16 flags) { StartMessage(type, flags); }
 
   // Starts a new netlink message
@@ -320,6 +323,8 @@ class NetlinkEncoder {
   // Clears the buffer, invalidating any iovecs that were
   // obtained from this encoder.
   void Clear() { offset_ = 0; }
+
+  uint32_t sequence() const { return sequence_; }
 
  private:
   void Write(const void *data, size_t len) {

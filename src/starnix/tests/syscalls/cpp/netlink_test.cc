@@ -91,7 +91,54 @@ class NetlinkRouteTest : public NetlinkTest<NETLINK_ROUTE> {
   }
 };
 
-class NetlinkGenericTest : public NetlinkTest<NETLINK_GENERIC> {};
+class NetlinkGenericTest : public NetlinkTest<NETLINK_GENERIC> {
+ public:
+  std::optional<uint16_t> GetFamily(test_helper::NetlinkEncoder& encoder,
+                                    const std::string_view& family_name) {
+    encoder.StartMessage(GENL_ID_CTRL, NLM_F_REQUEST);
+    const uint32_t sequence = encoder.sequence();
+    encoder.BeginGenetlinkHeader(CTRL_CMD_GETFAMILY);
+    encoder.BeginNla(CTRL_ATTR_FAMILY_NAME);
+    encoder.WriteString(family_name);
+    encoder.EndNla();
+    iovec iov = {};
+    encoder.Finalize(iov);
+    struct msghdr header = {};
+    header.msg_iov = &iov;
+    header.msg_iovlen = 1;
+
+    if (static_cast<size_t>(sendmsg(nl_sock_.get(), &header, 0)) != iov.iov_len) {
+      ADD_FAILURE() << "sendmsg failed" << strerror(errno);
+      return std::nullopt;
+    };
+
+    struct {
+      nlmsghdr hdr;
+      genlmsghdr genl;
+      // Family ID
+      nlattr id_attr;
+      uint16_t id;
+    } input;
+    iov.iov_len = sizeof(input);
+    iov.iov_base = &input;
+
+    ssize_t received = recvmsg(nl_sock_.get(), &header, MSG_TRUNC);
+    if (received < 0) {
+      ADD_FAILURE() << "recvmsg failed " << strerror(errno);
+      return std::nullopt;
+    }
+    if (static_cast<size_t>(received) < sizeof(input)) {
+      ADD_FAILURE() << " short received message " << received;
+      return std::nullopt;
+    }
+    if (input.hdr.nlmsg_seq != sequence) {
+      ADD_FAILURE() << " unexpected message sequence, " << input.hdr.nlmsg_seq << " want "
+                    << sequence;
+      return std::nullopt;
+    }
+    return input.id;
+  }
+};
 
 // Regression test for Syzkaller netlink crash in https://fxbug.dev/390646804.
 //
@@ -694,6 +741,20 @@ TEST_F(NetlinkGenericTest, PartialCtrlAttrPolicy) {
       .nla_len = 2,
   });
   ASSERT_THAT(SendMsg(encoder), SyscallSucceeds());
+}
+
+// Regression test for syzkaller finding on https://fxbug.dev/389503570.
+TEST_F(NetlinkGenericTest, ShortTaskstatsMessage) {
+  test_helper::NetlinkEncoder encoder;
+  std::optional<uint16_t> taskstats = GetFamily(encoder, TASKSTATS_GENL_NAME);
+  ASSERT_TRUE(taskstats.has_value());
+  encoder.StartMessage(*taskstats, NLM_F_DUMP | NLM_F_ACK);
+  ASSERT_THAT(SendMsg(encoder), SyscallSucceeds());
+  // This message generates a response. We're not fully asserting on it because
+  // the implementation is stubbed. Expecting a response as opposed to a starnix
+  // crash covers the regression for now. See https://fxbug.dev/339675153.
+  uint8_t buffer[10];
+  ASSERT_THAT(recv(nl_sock_.get(), &buffer, sizeof(buffer), MSG_TRUNC), SyscallSucceeds());
 }
 
 }  // namespace
