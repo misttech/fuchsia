@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use fidl_fuchsia_power_observability as fobs;
-use fuchsia_inspect::{LazyNode as ILazyNode, Node as INode};
+use fuchsia_inspect::{ArrayProperty, LazyNode as ILazyNode, Node as INode};
 use fuchsia_inspect_contrib::nodes::BoundedListNode as IRingBuffer;
 use fuchsia_sync::Mutex;
 use futures::FutureExt;
@@ -187,8 +187,13 @@ impl SagEventLogger {
                     node.record_int(fobs::RESUME_CALLBACK_PHASE_END_AT, time);
                 }
                 SagEvent::WakeReasons { reasons } => {
-                    // TODO(b/369696446): record this info persistently.
-                    log::debug!("{reasons:?}");
+                    node.record_int(fobs::WAKE_REASONS_REPORTED_AT, time);
+                    let reason_array = node
+                        .create_string_array(fobs::WAKE_REASONS_WAKE_VECTOR_PREFIX, reasons.len());
+                    reasons.iter().enumerate().for_each(|(i, reason)| {
+                        reason_array.set(i, reason);
+                    });
+                    node.record(reason_array);
                 }
             };
         });
