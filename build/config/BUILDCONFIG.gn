@@ -303,6 +303,7 @@ declare_args() {
       configs = [ "//build/config/profile:coverage" ]
       tags = [
         "coverage",
+        "coverage_clang",
         "debugdata",
         "instrumented",
         "llvm-profdata",
@@ -316,6 +317,7 @@ declare_args() {
         # Note this does not include "llvm-profdata" because that is only
         # actually used to check if C++ code will use such instrumentation.
         "coverage",
+        "coverage_rust",
         "debugdata",
         "instrumented",
         "needs-writable-globals",
@@ -326,6 +328,7 @@ declare_args() {
       configs = [ "//build/config/profile:coverage-cts" ]
       tags = [
         "coverage",
+        "coverage_clang",
         "debugdata",
         "instrumented",
         "llvm-profdata",
@@ -909,6 +912,19 @@ if (in_default_toolchain) {
               variant_tags = selected_tags
             }
           }
+
+          # As a special case, if this is a regular variant descriptor, mark is as
+          # as a candidate for the fuchsia or host toolchain. This flag is tested
+          # later to define fuchsia_toolchain_tags and host_toolchain_tags
+          if (target_type == [] && output_name == [] && label == [] &&
+              name == [] && dir == [] && !defined(kernel) &&
+              !defined(testonly)) {
+            if (defined(host) && host) {
+              host_toolchain_candidate = true
+            } else {
+              fuchsia_toolchain_candidate = true
+            }
+          }
         },
       ]
     }
@@ -975,6 +991,44 @@ if (!defined(toolchain_variant.name)) {
   toolchain_variant.source_deps = [ "//build/config/fuchsia:source_deps" ]
 
   # LINT.ThenChange(//build/toolchain/fuchsia/BUILD.gn)
+}
+
+# Compute fuchsia_toolchain_tags and host_toolchain_tags which contain the
+# list of toolchain tags that apply to the fuchsia and host
+# toolchain by default, based on the 'select_variant' value after canonicalization.
+#
+# Note that these do not depend on the current toolchain context.
+# Also, fuchsia_toolchain_tags to not apply to Zircon toolchains.
+#
+_fuchsia_toolchain_variant_name = false
+_host_toolchain_variant_name = false
+foreach(selector, select_variant_canonical) {
+  if (_fuchsia_toolchain_variant_name == false &&
+      defined(selector.fuchsia_toolchain_candidate)) {
+    _fuchsia_toolchain_variant_name = selector.variant
+  }
+  if (_host_toolchain_variant_name == false &&
+      defined(selector.host_toolchain_candidate)) {
+    _host_toolchain_variant_name = selector.variant
+  }
+}
+if (_fuchsia_toolchain_variant_name == false) {
+  fuchsia_toolchain_tags = []
+} else {
+  foreach(toolchain_variant, all_toolchain_variants) {
+    if (toolchain_variant.name == _fuchsia_toolchain_variant_name) {
+      fuchsia_toolchain_tags = toolchain_variant.tags
+    }
+  }
+}
+if (_host_toolchain_variant_name == false) {
+  host_toolchain_tags = []
+} else {
+  foreach(toolchain_variant, all_toolchain_variants) {
+    if (toolchain_variant.name == _host_toolchain_variant_name) {
+      host_toolchain_tags = toolchain_variant.tags
+    }
+  }
 }
 
 # Shared libraries built in GN toolchain() instances that implement instrumented
@@ -1110,25 +1164,33 @@ is_kernel = toolchain_variant.tags + [ "kernel" ] - [ "kernel" ] !=
 is_efi_toolchain =
     toolchain_variant.tags + [ "efi" ] - [ "efi" ] != toolchain_variant.tags
 
-# Whether we are in the context of a TSan toolchain.
-is_tsan =
+# Whether we are in the context of a TSan (thread sanitizer) toolchain.
+is_toolchain_tsan =
     toolchain_variant.tags + [ "tsan" ] - [ "tsan" ] != toolchain_variant.tags
 
-# Whether we are in the context of a Leak Sanitizer (memory leak) toolchain.
-is_lsan =
+# Deprecated alias for is_toolchain_tsan
+is_tsan = is_toolchain_tsan
+
+# Whether we are in the context of an LSan (leak sanitizer) toolchain.
+is_toolchain_lsan =
     toolchain_variant.tags + [ "lsan" ] - [ "lsan" ] != toolchain_variant.tags
 
-# Whether we are in the context of a MSan (uninitialized reads) toolchain.
-is_msan =
+# Deprecated alias for is_toolchain_lsan
+is_lsan = is_toolchain_lsan
+
+# Whether we are in the context of an MSan (memory sanitizer) toolchain.
+is_toolchain_msan =
     toolchain_variant.tags + [ "msan" ] - [ "msan" ] != toolchain_variant.tags
 
-# Whether we are in the context of an UBSan (undefined behavior) toolchain.
-is_ubsan =
+# Deprecated alias for is_toolchain_msan
+is_msan = is_toolchain_msan
+
+# Whether we are in the context of an UBSan (undefined behavior sanitizer) toolchain.
+is_toolchain_ubsan =
     toolchain_variant.tags + [ "ubsan" ] - [ "ubsan" ] != toolchain_variant.tags
 
-# Whether we are in the context of a fuzzer toolchain.
-is_fuzzer = toolchain_variant.tags + [ "fuzzer" ] - [ "fuzzer" ] !=
-            toolchain_variant.tags
+# Deprecated alias for is_toolchain_ubsan
+is_ubsan = is_toolchain_ubsan
 
 # Base toolchain with its variant suffix.
 variant_base_toolchain = "${toolchain_variant.base}${toolchain_variant.suffix}"
@@ -1226,6 +1288,91 @@ if (in_default_toolchain) {
 } else {
   shlib_toolchain_no_default_variant_redirect = shlib_toolchain
 }
+
+# TODO(https://fxbug.dev/396658029): Remove this.
+if (include_clippy) {
+  assert(
+      select_variant == [],
+      "Use of clippy is currently not compatible with variants, if you need to build with 'select_variant', disable clippy with 'fx set ... --include-clippy=false' or 'include_clippy = false' in args.gn.  See https://fxbug.dev/396658029 for more information")
+}
+
+# Whether profile instrumentation is enabled for collecting coverage over Fuchsia binaries
+is_fuchsia_coverage = fuchsia_toolchain_tags + [
+                        "coverage",
+                        "profile",
+                      ] -
+                      [
+                        "coverage",
+                        "profile",
+                      ] != fuchsia_toolchain_tags
+
+# Deprecated alias for is_fuchsia_coverage
+is_coverage = is_fuchsia_coverage
+
+# Whether Clang based coverage is enabled.
+is_fuchsia_coverage_clang = fuchsia_toolchain_tags + [ "coverage_clang" ] -
+                            [ "coverage_clang" ] != fuchsia_toolchain_tags
+
+# Deprecated alias for is_fuchsia_coverage_clang
+is_clang_coverage = is_fuchsia_coverage_clang
+
+# Whether profile instrumentation is enabled for Fuchsia and host binaries.
+is_fuchsia_profile = fuchsia_toolchain_tags + [ "profile" ] - [ "profile" ] !=
+                     fuchsia_toolchain_tags
+is_host_profile =
+    host_toolchain_tags + [ "profile" ] - [ "profile" ] != host_toolchain_tags
+
+# Deprecated alias for is_fuchsia_profile
+is_profile = is_fuchsia_profile
+
+# Whether address sanitizer instrumentation is enabled for Fuchsia and host binaries.
+# Note that this includes both asan and hwasan modes.
+is_fuchsia_asan = fuchsia_toolchain_tags + [
+                    "asan",
+                    "hwasan",
+                  ] -
+                  [
+                    "asan",
+                    "hwasan",
+                  ] != fuchsia_toolchain_tags
+is_host_asan = host_toolchain_tags + [
+                 "asan",
+                 "hwasan",
+               ] -
+               [
+                 "asan",
+                 "hwasan",
+               ] != host_toolchain_tags
+
+# Deprecated alias for is_fuchsia_asan
+is_asan = is_fuchsia_asan
+
+# Whether h/w address sanitizer instrumentation is enabled for Fuchsia and host binaries.
+is_fuchsia_hwasan = fuchsia_toolchain_tags + [ "hwasan" ] - [ "hwasan" ] !=
+                    fuchsia_toolchain_tags
+is_host_hwasan =
+    host_toolchain_tags + [ "hwasan" ] - [ "hwasan" ] != host_toolchain_tags
+
+# Deprecated alias for is_fuchsia_asan
+is_hwasan = is_fuchsia_hwasan
+
+# Whether fuzzer is enabled for Fuchsia and host binaries.
+is_fuchsia_fuzzer = fuchsia_toolchain_tags + [ "fuzzer" ] - [ "fuzzer" ] !=
+                    fuchsia_toolchain_tags
+is_host_fuzzer =
+    host_toolchain_tags + [ "fuzzer" ] - [ "fuzzer" ] != host_toolchain_tags
+
+# Deprecated alias for is_fuchsia_fuzzer
+is_fuzzer = is_fuchsia_fuzzer
+
+# Whether lto or thinlto variant is enabled for Fuchsia and host binaries.
+is_fuchsia_lto_variant =
+    fuchsia_toolchain_tags + [ "lto" ] - [ "lto" ] != fuchsia_toolchain_tags
+is_host_lto_variant =
+    host_toolchain_tags + [ "lto" ] - [ "lto" ] != host_toolchain_tags
+
+# Deprecated alias for is_fuchsia_lto_variant
+is_lto_variant = is_fuchsia_lto_variant
 
 # Prepend the prefix configs, if any, before the default ones.
 default_common_binary_configs = toolchain_variant.prefix_configs
@@ -2370,87 +2517,6 @@ restat_rust_wrapper_inputs = []
 if (restat_rust) {
   restat_rust_wrapper_inputs += restat_wrapper_inputs
 }
-
-# TODO(https://fxbug.dev/396658029): Remove this.
-if (include_clippy) {
-  assert(
-      select_variant == [],
-      "Use of clippy is currently not compatible with variants, if you need to build with 'select_variant', disable clippy with 'fx set ... --include-clippy=false' or 'include_clippy = false' in args.gn.  See https://fxbug.dev/396658029 for more information")
-}
-
-# Whether profile instrumentation is enabled for collecting coverage.
-is_coverage = select_variant + [
-                "coverage",
-                "coverage-rust",
-                "coverage-cts",
-                "profile",
-                "profile-rust",
-              ] -
-              [
-                "coverage",
-                "coverage-rust",
-                "coverage-cts",
-                "profile",
-                "profile-rust",
-              ] != select_variant
-is_clang_coverage =
-    select_variant + [ "coverage" ] - [ "coverage" ] != select_variant
-is_rust_coverage =
-    select_variant + [ "coverage-rust" ] - [ "coverage-rust" ] != select_variant
-is_cts_coverage =
-    select_variant + [ "coverage-cts" ] - [ "coverage-cts" ] != select_variant
-is_profile = select_variant + [
-               "profile",
-               "profile-rust",
-             ] -
-             [
-               "profile",
-               "profile-rust",
-             ] != select_variant
-
-# Whether sanitizer instrumentation is enabled.
-is_asan = select_variant + [
-            "asan",
-            "asan-ubsan",
-            "hwasan",
-            "hwasan-ubsan",
-          ] -
-          [
-            "asan",
-            "asan-ubsan",
-            "hwasan",
-            "hwasan-ubsan",
-          ] != select_variant
-
-# Whether h/w sanitizer instrumentation is enabled.
-is_hwasan = select_variant + [
-              "hwasan",
-              "hwasan-ubsan",
-            ] -
-            [
-              "hwasan",
-              "hwasan-ubsan",
-            ] != select_variant
-
-# Whether fuzzer is enabled.
-is_fuzzer = select_variant + [
-              "asan-fuzzer",
-              "ubsan-fuzzer",
-            ] -
-            [
-              "asan-fuzzer",
-              "ubsan-fuzzer",
-            ] != select_variant
-
-# Whether lto or thinlto variant is enabled.
-is_lto_variant = select_variant + [
-                   "lto",
-                   "thinlto",
-                 ] -
-                 [
-                   "lto",
-                   "thinlto",
-                 ] != select_variant
 
 # Internal template used to wrap a linked binary target (i.e. executable(),
 # shared_library() or loadable_module()) definition.

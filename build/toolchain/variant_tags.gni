@@ -84,8 +84,21 @@ all_variant_tags = [
   # The `profile` tag is used for profile instrumentation.
   "profile",
 
-  # The `coverage` tag is used for coverage instrumentation.
+  # The `coverage` tag is used for coverage instrumentation performed either
+  # by the Clang compiler or the Rust compiler.
   "coverage",
+
+  # The `coverage_clang` tag is used for coverage instrumentation performed
+  # by the Clang compiler. It differs from the Rust one because they currently
+  # use different LLVM backends, with distinct coverage formats.
+  # TODO(https://fxbug.dev/42060061): Remove when both compilers use same backend.
+  "coverage_clang",
+
+  # The `coverage_rust` tag is used for coverage instrumentation performed
+  # by the Rust compiler. It differs from the Clang one because they currently
+  # use different LLVM backends, with distinct coverage formats.
+  # TODO(https://fxbug.dev/42060061): Remove when both compilers use same backend.
+  "coverage_rust",
 
   # The `debugdata` tag is used for all instrumentation that publishes data via
   # the fuchsia.debugdata protocols.
