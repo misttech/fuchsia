@@ -13,6 +13,7 @@ rustc_library("f2fs_reader") {
     "src/checkpoint.rs",
     "src/crypto.rs",
     "src/dir.rs",
+    "src/fsverity.rs",
     "src/inode.rs",
     "src/lib.rs",
     "src/nat.rs",
@@ -21,6 +22,7 @@ rustc_library("f2fs_reader") {
     "src/xattr.rs",
   ]
   deps = [
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//src/storage/lib/fscrypt",
     "//src/storage/lib/storage_device",
     "//third_party/rust_crates:aes",

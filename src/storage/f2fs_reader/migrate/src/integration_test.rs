@@ -7,6 +7,7 @@ use crate::*;
 use anyhow::Context;
 use f2fs_reader::F2fsReader;
 use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
+use fxfs::object_handle::ReadObjectHandle;
 use fxfs::object_store::journal::super_block::SuperBlockInstance;
 use fxfs::object_store::volume::root_volume as fxfs_root_volume;
 use fxfs::object_store::{Directory, HandleOptions, ObjectStore};
@@ -195,10 +196,7 @@ async fn test_fxfs_read_lblk32_ino_file() {
         .expect("open object");
     if let Some(expected_data) = expected_data {
         let mut buf = fxfs_object.allocate_buffer(4096).await;
-        assert_eq!(
-            fxfs_object.read(0, 0, buf.as_mut()).await.expect("read"),
-            EXPECTED_CONTENTS.len()
-        );
+        assert_eq!(fxfs_object.read(0, buf.as_mut()).await.expect("read"), EXPECTED_CONTENTS.len());
         assert_eq!(
             &buf.as_slice()[..EXPECTED_CONTENTS.len()],
             &expected_data[..EXPECTED_CONTENTS.len()]

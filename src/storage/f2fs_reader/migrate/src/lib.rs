@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 use anyhow::{Context, Error, bail, ensure};
 use f2fs_reader::{
-    AdviseFlags, BLOCK_SIZE as F2FS_BLOCK_SIZE, F2fsReader, FileType, Flags, InlineFlags, Inode,
-    NEW_ADDR, NULL_ADDR, XattrIndex,
+    AdviseFlags, BLOCK_SIZE as F2FS_BLOCK_SIZE, F2fsReader, FileType, Flags, FsVerityDescriptor,
+    InlineFlags, Inode, NEW_ADDR, NULL_ADDR, XattrIndex,
 };
 use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
-use fxfs::object_handle::{ObjectHandle, ObjectProperties};
+use fxfs::object_handle::{ObjectHandle, ObjectProperties, ReadObjectHandle};
 use fxfs::object_store::journal::BLOCK_SIZE as FXFS_BLOCK_SIZE;
 use fxfs::object_store::journal::super_block::SuperBlockInstance;
 use fxfs::object_store::transaction::{LockKey, Mutation, Options, Transaction, lock_keys};
@@ -99,7 +99,22 @@ fn migrate_xattr(
                 // TODO(https://fxbug.dev/450498061): Support this.
             }
             XattrIndex::Verity => {
-                // TODO(https://fxbug.dev/399727919): Support this.
+                ensure!(&*xattr.name == b"v", "unexpected verity xattr {:?}", xattr.name);
+                ensure!(xattr.value.len() == 16, "Verity xattr size");
+                ensure!(
+                    u32::from_le_bytes(xattr.value[0..4].try_into().unwrap()) == 1,
+                    "Unknown verity xattr version"
+                );
+                ensure!(
+                    u32::from_le_bytes(xattr.value[4..8].try_into().unwrap()) == 256,
+                    "Expected 256 byte descriptor size."
+                );
+                // Offset of the descriptor. It should be past the start of the verity data.
+                ensure!(
+                    u64::from_le_bytes(xattr.value[8..16].try_into().unwrap())
+                        >= FsVerityDescriptor::offset_from_size(inode.header.size),
+                    "Unexpected offset for verity descriptor"
+                );
             }
             _ => {
                 panic!("Unexpected xattr {xattr:?}");
@@ -340,7 +355,7 @@ pub async fn migrate(
                                 ObjectValue::attribute(1024 * 1024 * 1024, false),
                             ),
                         );
-                        Some(inode.header.size.next_multiple_of(64 * 1024))
+                        Some(FsVerityDescriptor::offset_from_size(inode.header.size))
                     } else {
                         None
                     };
@@ -392,10 +407,19 @@ pub async fn migrate(
                     } else {
                         // Default encrypted file, data will be copied later.
                         files_to_copy.insert(object_id);
-                        // Max blocks per file is ~1B and block count is stored in a u32 so
-                        // there is basically no chance of this overflowing.
-                        allocated_size =
-                            inode.data_blocks().count() as u64 * F2FS_BLOCK_SIZE as u64;
+                        allocated_size = if verity_offset.is_some() {
+                            // Don't count the data blocks after EOF. Those are for verity.
+                            let limit = inode.header.size.div_ceil(F2FS_BLOCK_SIZE as u64);
+                            inode
+                                .data_blocks()
+                                .take_while(|(offset, _)| (*offset as u64) < limit)
+                                .count() as u64
+                                * F2FS_BLOCK_SIZE as u64
+                        } else {
+                            // Max blocks per file is ~1B and block count is stored in a u32 so
+                            // there is basically no chance of this overflowing.
+                            inode.data_blocks().count() as u64 * F2FS_BLOCK_SIZE as u64
+                        };
                     }
 
                     transaction.add(
@@ -626,7 +650,27 @@ pub async fn verify(
                     let f2fs_allocated_size = if let Some(data) = inode.inline_data.as_ref() {
                         if data.len() > 0 { F2FS_BLOCK_SIZE as u64 } else { 0 }
                     } else {
-                        inode.data_blocks().count() as u64 * F2FS_BLOCK_SIZE as u64
+                        (if let Some((options, root)) =
+                            handle.get_descriptor().expect("Requesting fsverity info")
+                        {
+                            // When fsverity is enabled, ignore the local trailing blocks for the
+                            // merkle data and descriptor. Instead compare as if they used the same
+                            // bytes for merkle storage.
+                            let descriptor = FsVerityDescriptor::from_verification_options(
+                                &options,
+                                &root,
+                                inode.header.size,
+                            )
+                            .unwrap();
+                            let limit = inode.header.size.div_ceil(F2FS_BLOCK_SIZE as u64);
+                            inode
+                                .data_blocks()
+                                .take_while(|(offset, _)| (*offset as u64) < limit)
+                                .count() as u64
+                                + descriptor.leaf_node_size_fxfs().div_ceil(FXFS_BLOCK_SIZE as u64)
+                        } else {
+                            inode.data_blocks().count() as u64
+                        }) * F2FS_BLOCK_SIZE as u64
                     };
                     let object_attributes = inode_to_object_attributes(&inode, f2fs_allocated_size);
                     let f2fs_properties = ObjectProperties {
@@ -642,13 +686,13 @@ pub async fn verify(
                         casefold,
                         wrapping_key_id: None,
                     };
-                    assert_eq!(fxfs_properties, f2fs_properties);
+                    assert_eq!(fxfs_properties, f2fs_properties, "{}", entry.filename);
 
                     if check_file_contents {
                         let inline_flags = inode.header.inline_flags;
                         if inline_flags.contains(InlineFlags::Data) {
                             let mut buffer = handle.allocate_buffer(FXFS_BLOCK_SIZE as usize).await;
-                            let len = handle.read(0, 0, buffer.as_mut()).await.context("read")?;
+                            let len = handle.read(0, buffer.as_mut()).await.context("read")?;
                             let f2fs_block = inode.inline_data.as_ref().unwrap();
                             assert_eq!(
                                 &buffer.as_slice()[..len],
@@ -663,7 +707,6 @@ pub async fn verify(
                                 if let Some(f2fs_block) = f2fs.read_data(&inode, i).await.unwrap() {
                                     let len = handle
                                         .read(
-                                            0,
                                             i as u64 * FXFS_BLOCK_SIZE as u64,
                                             fxfs_buffer.as_mut(),
                                         )
@@ -678,6 +721,27 @@ pub async fn verify(
                                 }
                             }
                         }
+                    }
+
+                    // Verify that the root digest matches when the verity bit is set.
+                    // TODO(https://fxbug.dev/399727919): Trigger this branch when the f2fs flags
+                    // are set once all the f2fs migrations are done.
+                    if let Some((fxfs_descriptor, fxfs_root)) =
+                        handle.get_descriptor().expect("Requesting descriptor")
+                    {
+                        assert!(inode.header.advise_flags.contains(AdviseFlags::Verity));
+                        let (descriptor_block, _) =
+                            inode.data_blocks().last().expect("Must have a data block for verity");
+                        let descriptor_data =
+                            f2fs.read_data(&inode, descriptor_block).await.unwrap().unwrap();
+                        let f2fs_descriptor =
+                            FsVerityDescriptor::from_bytes(descriptor_data.as_slice())
+                                .expect("Validating descriptor");
+                        assert_eq!(fxfs_root.as_slice(), f2fs_descriptor.root);
+                        assert_eq!(
+                            fxfs_descriptor.salt.unwrap_or_default().as_slice(),
+                            f2fs_descriptor.salt
+                        );
                     }
                 }
                 FileType::Symlink => {
@@ -809,20 +873,37 @@ pub async fn deep_copy_files(
             } else {
                 None
             };
-            for (mut block_offset, block_addr) in inode.data_blocks() {
-                let attr_id = match verity_block_offset {
+            let mut buffer = object.allocate_buffer(FXFS_BLOCK_SIZE as usize).await;
+            let mut blocks_iter = inode.data_blocks().peekable();
+            while let Some((block_offset, block_addr)) = blocks_iter.next() {
+                match verity_block_offset {
                     Some(verity_block_offset) if block_offset >= verity_block_offset => {
-                        block_offset -= verity_block_offset;
-                        PLACEHOLDER_VERITY_ATTR
+                        // The last block contains the fsverity descriptor.
+                        if blocks_iter.peek().is_none() {
+                            fxfs.device()
+                                .read(
+                                    offset + block_addr as u64 * F2FS_BLOCK_SIZE as u64,
+                                    buffer.as_mut(),
+                                )
+                                .await
+                                .expect("read f2fs data block");
+                            let descriptor = FsVerityDescriptor::from_bytes(buffer.as_slice())?;
+                            ensure!(
+                                descriptor.file_size == inode.header.size,
+                                "Verity file size mismatch"
+                            );
+                            // The whole data section should be finished. We can set verity here.
+                            object.enable_verity(descriptor.fio_verity_options()).await?;
+                        }
+                        continue;
                     }
-                    _ => DEFAULT_DATA_ATTRIBUTE_ID,
+                    _ => {}
                 };
 
                 if block_addr == NULL_ADDR || block_addr == NEW_ADDR {
                     // Sparse block, skip. Fxfs handles sparse files.
                     continue;
                 }
-                let mut buffer = object.allocate_buffer(FXFS_BLOCK_SIZE as usize).await;
                 fxfs.device()
                     .read(offset + block_addr as u64 * F2FS_BLOCK_SIZE as u64, buffer.as_mut())
                     .await
@@ -839,7 +920,7 @@ pub async fn deep_copy_files(
                 object
                     .raw_multi_write(
                         &mut transaction,
-                        attr_id,
+                        DEFAULT_DATA_ATTRIBUTE_ID,
                         Some(VOLUME_DATA_KEY_ID),
                         &[block_offset as u64 * FXFS_BLOCK_SIZE as u64
                             ..(block_offset as u64 + 1) * FXFS_BLOCK_SIZE as u64],

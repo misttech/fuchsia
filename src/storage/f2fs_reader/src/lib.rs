@@ -4,6 +4,7 @@
 mod checkpoint;
 mod crypto;
 mod dir;
+mod fsverity;
 mod inode;
 mod nat;
 mod reader;
@@ -12,6 +13,7 @@ mod xattr;
 
 // Explicitly re-export things we want to expose.
 pub use dir::{DirEntry, FileType};
+pub use fsverity::FsVerityDescriptor;
 pub use inode::{AdviseFlags, Flags, InlineFlags, Inode, Mode};
 pub use reader::{F2fsReader, NEW_ADDR, NULL_ADDR};
 pub use superblock::{BLOCK_SIZE, SuperBlock};
