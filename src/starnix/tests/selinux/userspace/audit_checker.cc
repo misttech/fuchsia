@@ -40,18 +40,17 @@ AuditChecker* AuditChecker::with_json_generation() {
   return checker;
 }
 
-std::optional<AuditChecker::AuditLogEntry> AuditChecker::ParseAuditLogString(
-    const std::string& line, std::string& error_str) {
+fit::result<std::string, AuditChecker::AuditLogEntry> AuditChecker::ParseAuditLogString(
+    const std::string& line) {
   std::smatch matches;
   if (std::regex_search(line, matches, kAuditLogRegex) && matches.size() == 6) {
-    return AuditChecker::AuditLogEntry{.denied = matches[1].str() == "denied",
-                                       .permission = matches[2].str(),
-                                       .scontext = matches[3].str(),
-                                       .tcontext = matches[4].str(),
-                                       .tclass = matches[5].str()};
+    return fit::ok(AuditChecker::AuditLogEntry{.denied = matches[1].str() == "denied",
+                                               .permission = matches[2].str(),
+                                               .scontext = matches[3].str(),
+                                               .tcontext = matches[4].str(),
+                                               .tclass = matches[5].str()});
   } else {
-    error_str = "Failed to parse audit log string: " + line;
-    return std::nullopt;
+    return fit::error("Failed to parse audit log string: " + line);
   }
 }
 
@@ -100,14 +99,14 @@ bool AuditChecker::ParseExpectationsFile(const std::string& file_path) {
       if (!log_str_val.IsString()) {
         return false;
       }
-      std::string error_str;
       std::string log_str = log_str_val.GetString();
       // TODO: https://fxbug.dev/449714364 - Remove after denials are generated in permissive mode.
       if (test_helper::IsStarnix() && strstr(log_str.c_str(), "permissive=1")) {
         continue;
       }
-      if (auto entry = ParseAuditLogString(log_str, error_str)) {
-        expected_logs.push_back(*entry);
+      auto parse_result = ParseAuditLogString(log_str);
+      if (parse_result.is_ok()) {
+        expected_logs.push_back(parse_result.value());
       } else {
         return false;
       }
@@ -133,12 +132,18 @@ bool AuditChecker::AuditLogEntry::operator==(const AuditChecker::AuditLogEntry& 
   return scontext == other.scontext && tcontext == other.tcontext && tclass == other.tclass;
 }
 
-std::vector<AuditChecker::AuditLogEntry> AuditChecker::ReadAuditLogs(const std::string& test_name) {
+fit::result<std::string, std::vector<AuditChecker::AuditLogEntry>> AuditChecker::ReadAuditLogs(
+    const std::string& test_name) {
   std::vector<std::string> raw_logs;
   std::vector<AuditChecker::AuditLogEntry> parsed_logs;
   fbl::unique_fd fd = OpenNetlinkAuditSocket();
-  if (!fd.is_valid() || RegisterAsAuditDaemon(fd.get(), getpid()).is_error()) {
-    return parsed_logs;
+  if (!fd.is_valid()) {
+    return fit::error("Failed to open NETLINK_AUDIT socket");
+  }
+  auto register_result = RegisterAsAuditDaemon(fd.get(), getpid());
+  if (register_result.is_error()) {
+    return fit::error("Failed to register as daemon: " +
+                      std::to_string(register_result.error_value()));
   }
 
   bool checked_start = false;
@@ -171,9 +176,10 @@ std::vector<AuditChecker::AuditLogEntry> AuditChecker::ReadAuditLogs(const std::
       break;
     }
     // Parse the audit string
-    std::string error_str;
-    if (auto entry = ParseAuditLogString(message, error_str)) {
-      if (!entry->denied) {
+    auto parse_result = ParseAuditLogString(message);
+    if (parse_result.is_ok()) {
+      auto entry = parse_result.value();
+      if (!entry.denied) {
         continue;
       }
       // If there is a AUDIT_AVC log before the start sentinel, it means
@@ -188,15 +194,15 @@ std::vector<AuditChecker::AuditLogEntry> AuditChecker::ReadAuditLogs(const std::
         raw_logs.push_back(message);
       }
       fprintf(stderr, "%s\n", message.c_str());
-      parsed_logs.push_back(*entry);
+      parsed_logs.push_back(entry);
     } else {
-      ADD_FAILURE() << "Failed to parse AUDIT_AVC message: " << error_str
+      ADD_FAILURE() << "Failed to parse AUDIT_AVC message: " << parse_result.error_value()
                     << "\nMessage: " << message;
     }
   }
   if (UnregisterAuditDaemon(fd.get()).is_error()) {
-    printf("Failed to unregister\n");
-    return parsed_logs;
+    fprintf(stderr, "Failed to unregister\n");
+    return fit::ok(parsed_logs);
   }
   if (!checked_start) {
     fprintf(stderr, "Did not find start sentinel\n");
@@ -204,7 +210,7 @@ std::vector<AuditChecker::AuditLogEntry> AuditChecker::ReadAuditLogs(const std::
   if (generate_json_) {
     current_test_suite_raw_logs_.push_back(std::make_tuple(raw_logs, std::string(test_name)));
   }
-  return parsed_logs;
+  return fit::ok(parsed_logs);
 }
 
 void AuditChecker::SendStartSentinel() {
@@ -245,7 +251,7 @@ void AuditChecker::SendEndSentinel() {
   }
 }
 
-bool AuditChecker::ShouldCheckAudits(const std::string& test_name) {
+bool AuditChecker::HasAuditExpectations(const std::string& test_name) {
   return expectations_map_.count(test_name) > 0;
 }
 
@@ -327,9 +333,6 @@ void AuditChecker::OnTestStart(const testing::TestInfo& test_info) {
   if (ShouldOnlyDrainAudits(test_name)) {
     return;
   }
-  if (!ShouldCheckAudits(test_name) && !generate_json_) {
-    return;
-  }
   SendStartSentinel();
 }
 
@@ -340,9 +343,6 @@ void AuditChecker::OnTestEnd(const testing::TestInfo& test_info) {
   // useful logs.
   if (ShouldOnlyDrainAudits(test_name)) {
     DrainAuditLog();
-    return;
-  }
-  if (!ShouldCheckAudits(test_name) && !generate_json_) {
     return;
   }
   SendEndSentinel();
@@ -403,13 +403,26 @@ std::string AuditChecker::StringifyAudit(const AuditChecker::AuditLogEntry entry
 }
 
 void AuditChecker::CheckAuditExpectations(const std::string& test_name) {
-  std::vector<AuditChecker::AuditLogEntry> actual_logs = ReadAuditLogs(test_name);
+  auto read_result = ReadAuditLogs(test_name);
   bool expect_fail = IsExpectedToFail(test_name);
+  if (read_result.is_error()) {
+    ADD_FAILURE() << read_result.error_value();
+    return;
+  }
+  std::vector<AuditChecker::AuditLogEntry> actual_logs = read_result.value();
   if (generate_json_) {
     return;
   }
-  std::vector<AuditChecker::AuditLogEntry> expected_logs = expectations_map_.at(test_name);
 
+  if (!HasAuditExpectations(test_name)) {
+    for (auto audit_log : actual_logs) {
+      std::string failure_string("Unexpected audit log: " + StringifyAudit(audit_log));
+      AddAuditFailure(failure_string, expect_fail);
+    }
+    return;
+  }
+
+  std::vector<AuditChecker::AuditLogEntry> expected_logs = expectations_map_.at(test_name.data());
   if (expected_logs.size() != actual_logs.size()) {
     std::string failure_string(
         "Audit log count mismatch. Expected: " + std::to_string(expected_logs.size()) +
@@ -417,16 +430,24 @@ void AuditChecker::CheckAuditExpectations(const std::string& test_name) {
     AddAuditFailure(failure_string, expect_fail);
   }
 
+  bool found_mismatch = false;
   size_t min_size = std::min(expected_logs.size(), actual_logs.size());
   // Check each audit log against the expectation
   for (size_t i = 0; i < min_size; ++i) {
     const auto actual = actual_logs[i];
     const auto expected = expected_logs[i];
     if (actual != expected) {
+      if (expect_fail) {
+        found_mismatch = true;
+      }
       std::string failure_string("Audit log mismatch at index " + std::to_string(i) +
                                  ":\nExpected: " + StringifyAudit(expected) +
                                  "\nActual: " + StringifyAudit(actual));
       AddAuditFailure(failure_string, expect_fail);
     }
+  }
+  if (expect_fail && expected_logs.size() == actual_logs.size() && !found_mismatch) {
+    std::string failure_string("Expected failure in test. All audit logs match.");
+    AddAuditFailure(failure_string, false);
   }
 }

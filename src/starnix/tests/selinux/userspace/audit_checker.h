@@ -5,6 +5,8 @@
 #ifndef SRC_STARNIX_TESTS_SELINUX_USERSPACE_AUDIT_CHECKER_H_
 #define SRC_STARNIX_TESTS_SELINUX_USERSPACE_AUDIT_CHECKER_H_
 
+#include <lib/fit/result.h>
+
 #include <memory>
 #include <optional>
 #include <regex>
@@ -58,17 +60,18 @@ class AuditChecker : public testing::EmptyTestEventListener {
   bool ParseExpectationsFile(const std::string& file_path);
 
   // Reads and parses all audit logs between the start and end sentinels.
-  std::vector<AuditChecker::AuditLogEntry> ReadAuditLogs(const std::string& test_name);
+  fit::result<std::string, std::vector<AuditChecker::AuditLogEntry>> ReadAuditLogs(
+      const std::string& test_name);
 
   // Parses a single audit log.
-  std::optional<AuditChecker::AuditLogEntry> ParseAuditLogString(const std::string& line,
-                                                                 std::string& error_str);
+  fit::result<std::string, AuditChecker::AuditLogEntry> ParseAuditLogString(
+      const std::string& line);
 
   // Creates a string representation of an AuditLogEntry for logging.
   std::string StringifyAudit(const AuditChecker::AuditLogEntry entry);
 
-  // Checks if a given test should be audited based on its name.
-  bool ShouldCheckAudits(const std::string& test_name);
+  // Checks if a given test has audit expectations.
+  bool HasAuditExpectations(const std::string& test_name);
   // Checks if a given test should be skipped based on its name.
   bool ShouldOnlyDrainAudits(const std::string& test_name);
   // Checks if a give test is in the expected failures.
