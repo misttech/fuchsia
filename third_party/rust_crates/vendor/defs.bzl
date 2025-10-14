@@ -469,7 +469,7 @@ _NORMAL_DEPENDENCIES = {
             "static_assertions": Label("//third_party/rust_crates/vendor/static_assertions-1.1.0:static_assertions"),
             "strsim": Label("//third_party/rust_crates/vendor/strsim-0.11.1:strsim"),
             "structopt": Label("//third_party/rust_crates/vendor/structopt-0.3.26:structopt"),
-            "strum": Label("//third_party/rust_crates/vendor/strum-0.25.0:strum"),
+            "strum": Label("//third_party/rust_crates/vendor/strum-0.27.2:strum"),
             "tempfile": Label("//third_party/rust_crates/vendor/tempfile-3.2.0:tempfile"),
             "termion": Label("//third_party/rust_crates/vendor/termion-1.5.3:termion"),
             "termtree": Label("//third_party/rust_crates/vendor/termtree-0.5.1:termtree"),
@@ -608,7 +608,7 @@ _PROC_MACRO_DEPENDENCIES = {
             "proptest-derive": Label("//third_party/rust_crates/vendor/proptest-derive-0.4.0:proptest_derive"),
             "serde_derive": Label("//third_party/rust_crates/vendor/serde_derive-1.0.228:serde_derive"),
             "serde_repr": Label("//third_party/rust_crates/vendor/serde_repr-0.1.7:serde_repr"),
-            "strum_macros": Label("//third_party/rust_crates/vendor/strum_macros-0.25.3:strum_macros"),
+            "strum_macros": Label("//third_party/rust_crates/vendor/strum_macros-0.27.2:strum_macros"),
             "typed-builder": Label("//third_party/rust_crates/vendor/typed-builder-0.10.0:typed_builder"),
         },
         "cfg(not(target_os = \"fuchsia\"))": {

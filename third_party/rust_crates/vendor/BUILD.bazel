@@ -2791,26 +2791,26 @@ alias(
 )
 
 alias(
-    name = "strum-0.25.0",
-    actual = "//third_party/rust_crates/vendor/strum-0.25.0:strum",
+    name = "strum-0.27.2",
+    actual = "//third_party/rust_crates/vendor/strum-0.27.2:strum",
     tags = ["manual"],
 )
 
 alias(
     name = "strum",
-    actual = "//third_party/rust_crates/vendor/strum-0.25.0:strum",
+    actual = "//third_party/rust_crates/vendor/strum-0.27.2:strum",
     tags = ["manual"],
 )
 
 alias(
-    name = "strum_macros-0.25.3",
-    actual = "//third_party/rust_crates/vendor/strum_macros-0.25.3:strum_macros",
+    name = "strum_macros-0.27.2",
+    actual = "//third_party/rust_crates/vendor/strum_macros-0.27.2:strum_macros",
     tags = ["manual"],
 )
 
 alias(
     name = "strum_macros",
-    actual = "//third_party/rust_crates/vendor/strum_macros-0.25.3:strum_macros",
+    actual = "//third_party/rust_crates/vendor/strum_macros-0.27.2:strum_macros",
     tags = ["manual"],
 )
 
