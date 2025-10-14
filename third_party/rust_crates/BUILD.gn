@@ -434,7 +434,7 @@ group("hashlink") {
 }
 
 group("heck") {
-  public_deps = [ ":heck-v0_4_1" ]
+  public_deps = [ ":heck-v0_5_0" ]
 }
 
 group("hex") {
@@ -8176,6 +8176,38 @@ rustc_library("heck-v0_4_1") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":heck-v0_4_1.license" ]
+}
+
+license("heck-v0_5_0.license") {
+  public_package_name = "heck"
+  license_files = [
+    "//third_party/rust_crates/vendor/heck-0.5.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/heck-0.5.0/LICENSE-MIT",
+  ]
+}
+
+rustc_library("heck-v0_5_0") {
+  crate_name = "heck"
+  source_root = "//third_party/rust_crates/vendor/heck-0.5.0/src/lib.rs"
+  output_name = "heck-9795f1d51f8ec560"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=9795f1d51f8ec560",
+    "-Cextra-filename=-9795f1d51f8ec560",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":heck-v0_5_0.license" ]
 }
 
 rustc_library("hermit-abi-v0_3_9") {

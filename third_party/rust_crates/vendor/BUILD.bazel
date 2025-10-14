@@ -1231,14 +1231,14 @@ alias(
 )
 
 alias(
-    name = "heck-0.4.1",
-    actual = "//third_party/rust_crates/vendor/heck-0.4.1:heck",
+    name = "heck-0.5.0",
+    actual = "//third_party/rust_crates/vendor/heck-0.5.0:heck",
     tags = ["manual"],
 )
 
 alias(
     name = "heck",
-    actual = "//third_party/rust_crates/vendor/heck-0.4.1:heck",
+    actual = "//third_party/rust_crates/vendor/heck-0.5.0:heck",
     tags = ["manual"],
 )
 
