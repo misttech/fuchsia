@@ -1542,7 +1542,12 @@ async fn test_element_info_provider() -> Result<()> {
     assert_eq!(bc_status.watch_power_level().await?.unwrap(), 0);
     drop(suspend_lease_control);
 
-    assert_eq!(es_status.watch_power_level().await?.unwrap(), 0);
+    // Level may drop to 1 or 0 depending on power element response order, so check the level
+    // again if it is not 0.
+    if es_status.watch_power_level().await?.unwrap() != 0 {
+        assert_eq!(es_status.watch_power_level().await?.unwrap(), 0);
+    }
+
     assert_eq!(aa_status.watch_power_level().await?.unwrap(), 0);
 
     // Check suspend is triggered and resume.
@@ -1561,7 +1566,12 @@ async fn test_element_info_provider() -> Result<()> {
     let suspend_lease_control = lease(&suspend_controller, 1).await?;
     assert_eq!(es_status.watch_power_level().await?.unwrap(), 2);
     drop(suspend_lease_control);
-    assert_eq!(es_status.watch_power_level().await?.unwrap(), 0);
+
+    // Level may drop to 1 or 0 depending on power element response order, so check the level
+    // again if it is not 0.
+    if es_status.watch_power_level().await?.unwrap() != 0 {
+        assert_eq!(es_status.watch_power_level().await?.unwrap(), 0);
+    }
 
     // Check suspend is triggered and resume.
     assert_eq!(0, suspend_device.await_suspend().await.unwrap().unwrap().state_index.unwrap());
@@ -1579,7 +1589,12 @@ async fn test_element_info_provider() -> Result<()> {
     let suspend_lease_control = lease(&suspend_controller, 1).await?;
     assert_eq!(es_status.watch_power_level().await?.unwrap(), 2);
     drop(suspend_lease_control);
-    assert_eq!(es_status.watch_power_level().await?.unwrap(), 0);
+
+    // Level may drop to 1 or 0 depending on power element response order, so check the level
+    // again if it is not 0.
+    if es_status.watch_power_level().await?.unwrap() != 0 {
+        assert_eq!(es_status.watch_power_level().await?.unwrap(), 0);
+    }
 
     // Check suspend is triggered and resume.
     assert_eq!(0, suspend_device.await_suspend().await.unwrap().unwrap().state_index.unwrap());
