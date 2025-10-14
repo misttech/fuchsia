@@ -1909,8 +1909,7 @@ mod tests {
             &data,
             FsVerityHasher::Sha256(FsVerityHasherOptions::new(vec![0xFF; 8], 4096)),
         );
-        let mut expected_root = tree.root().to_vec();
-        expected_root.extend_from_slice(&[0; 32]);
+        let expected_root = tree.root().to_vec();
 
         let expected_descriptor = fio::VerificationOptions {
             hash_algorithm: Some(fio::HashAlgorithm::Sha256),

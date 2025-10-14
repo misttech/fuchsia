@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 #include "sdk/lib/zxio/private.h"
 #include "sdk/lib/zxio/vector.h"
@@ -1592,8 +1593,14 @@ zx_status_t zxio_attr_from_wire(const fio::wire::NodeAttributes2& in, zxio_node_
     if (!out->fsverity_root_hash) {
       return ZX_ERR_INVALID_ARGS;  // Caller must provide a pointer to write root hash to.
     }
+    if (in.immutable_attributes.root_hash().size() > ZXIO_ROOT_HASH_LENGTH) {
+      return ZX_ERR_IO_INVALID;
+    }
     memcpy(out->fsverity_root_hash, in.immutable_attributes.root_hash().data(),
-           ZXIO_ROOT_HASH_LENGTH);
+           in.immutable_attributes.root_hash().size());
+    // Zero out the trailing end of the buffer.
+    memset(&out->fsverity_root_hash[in.immutable_attributes.root_hash().size()], 0,
+           ZXIO_ROOT_HASH_LENGTH - in.immutable_attributes.root_hash().size());
     out->has.fsverity_root_hash = true;
   }
 
