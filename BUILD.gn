@@ -2494,6 +2494,11 @@ group("root_targets") {
     # to build them directly without invoking Ninja.
     "//build/bazel:bazel_root_targets",
 
+    # The bazel_build_args.json collects the Bazel build arguments
+    # needed to replicate the GN build configuration. Necessary to implement
+    # `fx build @<bazel_label>` properly.
+    "//build/bazel:bazel_args_json",
+
     # It must be possible to run the versioning scripts without them being part
     # of the default build.
     "//scripts/versioning($host_toolchain)",

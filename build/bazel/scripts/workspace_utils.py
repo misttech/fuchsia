@@ -468,6 +468,8 @@ def record_fuchsia_workspace(
         execution_log_file=f"{logs_dir_from_workspace}/exec_log.pb.zstd",
     )
 
+    bazelrc_generator = BazelrcFromGnConfigGenerator()
+    bazelrc_content += "\n" + bazelrc_generator.generate_bazelrc(gn_output_dir)
     generated.record_file_content("workspace/.bazelrc", bazelrc_content)
 
     # Copy the wrapper script to topdir/bazel, and generate the configuration
@@ -1053,6 +1055,93 @@ module(name = "gn_targets", version = "1")
 
 bazel_dep(name = "rules_license", version = "1.0.0")""",
     )
+
+
+class BazelrcFromGnConfigGenerator(object):
+    """Generate a .bazelrc file fragment that contains --config=<name> definitions."""
+
+    _DEFAULT_PLATFORMS = (
+        "host",
+        "linux_x64",
+        "linux_arm64",
+        "fuchsia",
+        "fuchsia_x64",
+        "fuchsia_arm64",
+        "fuchsia_riscv64",
+        "fuchsia_platform_x64",
+        "fuchsia_platform_arm64",
+        "fuchsia_platform_riscv64",
+    )
+
+    def __init__(
+        self, platform_names: T.Iterable[str] = _DEFAULT_PLATFORMS
+    ) -> None:
+        self._platform_names = platform_names
+
+    def generate_bazelrc(self, build_dir: Path) -> str:
+        """Generate a .bazelrc file that contains platform-specific definitions.
+
+        This takes as input the GN-generated files from //build/bazel:bazel_args_json
+        and produces a .bazelrc file that contains definitions for the following:
+
+        --config=host: Matching the current host platform.
+
+        --config=fuchsia_x64, --config=fuchsia_arm64, --config=fuchsia_riscv64
+            Matching different Fuchsia platforms.
+
+        Args:
+            build_dir: The Ninja build directory.
+
+        Returns:
+            The content of the generated .bazelrc file fragment.
+        """
+        # For each config_name value, create a .bazelrc fragment that will
+        # define Bazel flags to use by default with --config=${config_name}
+        output = (
+            "# Auto-generated lists of --config=<name> settings, do not edit!\n"
+        )
+
+        def to_string(l: T.Any) -> str:
+            assert isinstance(
+                l, list
+            ), f"Expected list of strings, got {type(l)} instead!"
+            return " ".join(l)
+
+        config_names = ("host", "fuchsia")
+        config_values: dict[str, dict[str, str]] = {}
+        for config_name in config_names:
+            config_file = build_dir / f"bazel_args/{config_name}.json"
+            assert (
+                config_file.exists()
+            ), f"Missing GN-generated input file: {config_file}"
+            with config_file.open() as f:
+                config = json.load(f)
+
+            common_args = to_string(config["common"])
+            build_args = to_string(config["build"])
+            output += f"common:{config_name}_config_args {common_args}\n"
+            output += f"build:{config_name}_config_args {build_args}\n\n"
+            config_values[config_name] = config
+
+        for platform in self._platform_names:
+            config_args_name = (
+                "fuchsia_config_args"
+                if platform.startswith("fuchsia")
+                else "host_config_args"
+            )
+            if platform in config_names:
+                # As a special case:
+                # - Make "--config=host" same as "--config=linux_${host_cpu}"
+                # - Make "--config=fuchsia" same as "--config=fuchsia_${target_cpu}"
+                values = config_values[platform]
+                current_os = values["current_os"]
+                current_cpu = values["current_cpu"]
+                platform_name = f"{current_os}_{current_cpu}"
+            else:
+                platform_name = platform
+            output += f"common:{platform} --config={config_args_name} --platforms=//build/bazel/platforms:{platform_name}\n"
+
+        return output
 
 
 def check_regenerator_inputs_updates(

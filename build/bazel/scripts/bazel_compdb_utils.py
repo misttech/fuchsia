@@ -281,7 +281,7 @@ def compilation_mode(gn_args: dict[str, Any]) -> str:
         return "fastbuild"
 
 
-# LINT.ThenChange(//build/bazel/bazel_action.gni:comp_mode)
+# LINT.ThenChange(//build/bazel/bazel_action.gni:comp_mode,//build/bazel/config/bazel_args.gni:comp_mode)
 
 
 def compdb_for_labels(

@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
 import workspace_utils
-from workspace_utils import GnBuildArgs
+from workspace_utils import BazelrcFromGnConfigGenerator, GnBuildArgs
 
 
 class TestWorkspaceShouldExcludeFile(unittest.TestCase):
@@ -733,6 +733,69 @@ class RepositoryNameTest(unittest.TestCase):
                 workspace_utils.innermost_repository_name(label),
                 expected_repo_name,
             )
+
+
+class BazelrcFromGnConfigGeneratorTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._td = tempfile.TemporaryDirectory()
+        self._root = Path(self._td.name)
+
+    def tearDown(self) -> None:
+        self._td.cleanup()
+
+    def test_1(self) -> None:
+        # Generate mock version of the config JSON files.
+        bazel_args_dir = self._root / "bazel_args"
+        bazel_args_dir.mkdir()
+
+        # Create configurations and their content.
+        platforms = [
+            "host",
+            "fuchsia",
+            "linux_first_cpu",
+            "fuchsia_second_cpu",
+        ]
+
+        configs = {
+            "host": {
+                "common": ["--first_flag", "--second_flag"],
+                "build": ["--third_flag", "--fourth_flag"],
+                "remote_build": ["--remote_flag"],
+                "current_os": "linux",
+                "current_cpu": "first_cpu",
+            },
+            "fuchsia": {
+                "common": ["--common_flag"],
+                "build": ["--configured_flag"],
+                "remote_build": ["--remote_flag2"],
+                "current_os": "fuchsia",
+                "current_cpu": "second_cpu",
+            },
+        }
+        for config_name, values in configs.items():
+            config_file = bazel_args_dir / f"{config_name}.json"
+            with config_file.open("w") as f:
+                json.dump(values, f)
+
+        generator = BazelrcFromGnConfigGenerator(platforms)
+        output = generator.generate_bazelrc(self._root)
+
+        self.maxDiff = None
+        self.assertEqual(
+            output,
+            r"""# Auto-generated lists of --config=<name> settings, do not edit!
+common:host_config_args --first_flag --second_flag
+build:host_config_args --third_flag --fourth_flag
+
+common:fuchsia_config_args --common_flag
+build:fuchsia_config_args --configured_flag
+
+common:host --config=host_config_args --platforms=//build/bazel/platforms:linux_first_cpu
+common:fuchsia --config=fuchsia_config_args --platforms=//build/bazel/platforms:fuchsia_second_cpu
+common:linux_first_cpu --config=host_config_args --platforms=//build/bazel/platforms:linux_first_cpu
+common:fuchsia_second_cpu --config=fuchsia_config_args --platforms=//build/bazel/platforms:fuchsia_second_cpu
+""",
+        )
 
 
 if __name__ == "__main__":

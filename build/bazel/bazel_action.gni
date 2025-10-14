@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/bazel/bazel_inputs.gni")
+import("//build/bazel/config/bazel_args.gni")
 import("//build/bazel/config/logging.gni")
 import("//build/bazel/remote_services.gni")
 import("//build/config/clang/clang.gni")
@@ -11,12 +12,6 @@ import("//build/config/fuchsia_cxx_version.gni")
 import("//build/licenses/generated_licenses_spdx.gni")
 
 declare_args() {
-  # Suppress Bazel non-error output
-  # This is now disabled by default since bazel_action()
-  # uses the //:console pool to print its output directly
-  # to stdout/stderr during the Ninja build.
-  bazel_quiet = false
-
   # Output extra information when Bazel build actions fail.
   bazel_verbose_failures = true
 }
@@ -957,7 +952,34 @@ template("bazel_action") {
 
     # Below are extra args to Bazel
 
+    # LINT.IfChange(comp_mode)
+    _optimize_to_dbg = [ "debug" ]
+    _optimize_to_fastbuild = [
+      "coverage",
+      "minimal",
+      "moderate",
+      "none",
+      "sanitizer",
+    ]
+    _optimize_to_opt = [
+      "profile",
+      "size",
+      "size_lto",
+      "size_thinlto",
+      "speed",
+    ]
+
+    _is_compilation_mode_dbg =
+        _optimize_to_dbg + [ optimize ] - [ optimize ] != _optimize_to_dbg
+    _is_compilation_mode_fastbuild = _optimize_to_fastbuild + [ optimize ] -
+                                     [ optimize ] != _optimize_to_fastbuild
+    _is_compilation_mode_opt =
+        _optimize_to_opt + [ optimize ] - [ optimize ] != _optimize_to_opt
+
+    # LINT.ThenChange(//build/bazel/scripts/bazel_compdb_utils.py:comp_mode)
+
     # Forward GN sanitizer configuration to Bazel
+    # LINT.IfChange(bazel_config_args)
     if (_build_for_host) {
       _tags = host_toolchain_tags
     } else {
@@ -996,32 +1018,6 @@ template("bazel_action") {
     }
 
     # Forward GN C/C++ compiler optimization configuration to Bazel
-    # LINT.IfChange(comp_mode)
-    _optimize_to_dbg = [ "debug" ]
-    _optimize_to_fastbuild = [
-      "coverage",
-      "minimal",
-      "moderate",
-      "none",
-      "sanitizer",
-    ]
-    _optimize_to_opt = [
-      "profile",
-      "size",
-      "size_lto",
-      "size_thinlto",
-      "speed",
-    ]
-
-    _is_compilation_mode_dbg =
-        _optimize_to_dbg + [ optimize ] - [ optimize ] != _optimize_to_dbg
-    _is_compilation_mode_fastbuild = _optimize_to_fastbuild + [ optimize ] -
-                                     [ optimize ] != _optimize_to_fastbuild
-    _is_compilation_mode_opt =
-        _optimize_to_opt + [ optimize ] - [ optimize ] != _optimize_to_opt
-
-    # LINT.ThenChange(//build/bazel/scripts/bazel_compdb_utils.py:comp_mode)
-
     if (_is_compilation_mode_dbg) {
       args += [ "--compilation_mode=dbg" ]
     } else if (_is_compilation_mode_fastbuild) {
@@ -1043,6 +1039,8 @@ template("bazel_action") {
         "--cxxopt=-Wno-deprecated-this-capture",
       ]
     }
+
+    # LINT.ThenChange(//build/bazel/config/bazel_args.gni:bazel_config_args)
 
     if (!defined(deps)) {
       deps = []
