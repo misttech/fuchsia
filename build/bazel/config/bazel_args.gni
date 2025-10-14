@@ -77,7 +77,6 @@ _is_compilation_mode_opt =
 
 # Forward GN sanitizer configuration to Bazel
 
-# LINT.IfChange(bazel_config_args)
 if (!is_host) {
   _tags = fuchsia_toolchain_tags
 } else {
@@ -150,8 +149,6 @@ if (fuchsia_cxx_version == 20) {
     "--cxxopt=-Wno-deprecated-this-capture",
   ]
 }
-
-# LINT.ThenChange(//build/bazel/bazel_action.gni:bazel_config_args)
 
 # Arguments related to remote builds. These can be disabled per target so cannot
 # belong to _common_args.

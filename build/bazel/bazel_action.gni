@@ -6,9 +6,6 @@ import("//build/bazel/bazel_inputs.gni")
 import("//build/bazel/config/bazel_args.gni")
 import("//build/bazel/config/logging.gni")
 import("//build/bazel/remote_services.gni")
-import("//build/config/clang/clang.gni")
-import("//build/config/compiler.gni")
-import("//build/config/fuchsia_cxx_version.gni")
 import("//build/licenses/generated_licenses_spdx.gni")
 
 declare_args() {
@@ -834,33 +831,50 @@ template("bazel_action") {
     args += [ "--" ]
 
     if (_build_for_host) {
-      args += [ "--platforms=//build/bazel/platforms:host" ]
+      args += [
+        "--config=host_config_args",
+        "--platforms=//build/bazel/platforms:host",
+      ]
     } else {
       # Since this template can only be used on the default toolchain, the
       # platform is always Fuchsia.
-      args +=
-          [ "--platforms=//build/bazel/platforms:${current_os}_${current_cpu}" ]
+      args += [
+        "--config=fuchsia_config_args",
+        "--platforms=//build/bazel/platforms:fuchsia_${current_cpu}",
+      ]
     }
 
+    # When remote builds are enabled, append the right build arguments.
+    # These must appear on the Bazel command-line otherwise remote builds
+    # will fail on infra (the reason being that the Bazel wrapper script
+    # detects these options to add infra-specific proxy configuration
+    # the the final command-line).
+    if (enable_bazel_remote_rbe) {
+      _remote_build = !defined(invoker.remote_build) || invoker.remote_build
+      if (!_remote_build) {
+        # It is assumed that remote builds are enabled for both the default
+        # and host GN toolchains at the same time.
+        args += bazel_args.remote_build
+      }
+    } else {
+      # Remote builds are globally disabled, so ignore this value if it exists.
+      not_needed(invoker, [ "remote_build" ])
+    }
+
+    # Similarly, this config must appear on the command-line and cannot
+    # be part of --config=host or --config=fuchsia.
+    if (bazel_upload_build_events != "") {
+      args += [ "--config=$bazel_upload_build_events" ]
+    }
+
+    # --config=quiet is always used by default, but it is possible
+    # to disable that by setting filter_bazel_info_logs to false.
     _filter_bazel_info_logs = true
     if (defined(invoker.filter_bazel_info_logs)) {
       _filter_bazel_info_logs = invoker.filter_bazel_info_logs
     }
-
-    if (bazel_quiet) {
-      args += [ "--config=quiet" ]
-      not_needed([ "_filter_bazel_info_logs" ])
-    } else {
-      if (_filter_bazel_info_logs) {
-        # Disable INFO lines and printing results, this makes Bazel output much
-        # less chatty when invoked from Ninja. https://fxbug.dev/42077198
-        args += [ "--ui_event_filters=-info" ]
-      }
-
-      # Note that --show_result=0 is not supported by `bazel query`.
-      if (invoker.command != "query") {
-        args += [ "--show_result=0" ]
-      }
+    if (!_filter_bazel_info_logs) {
+      args += [ "--config=verbose" ]
     }
 
     metadata = {
@@ -917,130 +931,9 @@ template("bazel_action") {
       }
     }
 
-    if (bazel_execution_logs) {
-      args += [ "--config=exec_log" ]
-    }
-
-    _remote_build = enable_bazel_remote_rbe
-    if (_remote_build) {
-      if (defined(invoker.remote_build)) {
-        _remote_build = invoker.remote_build
-      }
-    } else {
-      not_needed(invoker, [ "remote_build" ])
-    }
-    if (_remote_build) {
-      if (bazel_rbe_exec_strategy == "remote") {
-        args += [ "--config=remote" ]
-      } else if (bazel_rbe_exec_strategy == "local") {
-        args += [ "--config=remote_cache_only" ]
-      } else if (bazel_rbe_exec_strategy == "nocache") {
-        args += [ "--config=nocache" ]
-      } else {
-        assert(false,
-               "Unknown bazel_rbe_exec_strategy: $bazel_rbe_exec_strategy")
-      }
-    }
-
-    if (bazel_upload_build_events != "") {
-      args += [ "--config=$bazel_upload_build_events" ]
-    }
-
     if (defined(invoker.extra_bazel_args)) {
       args += invoker.extra_bazel_args
     }
-
-    # Below are extra args to Bazel
-
-    # LINT.IfChange(comp_mode)
-    _optimize_to_dbg = [ "debug" ]
-    _optimize_to_fastbuild = [
-      "coverage",
-      "minimal",
-      "moderate",
-      "none",
-      "sanitizer",
-    ]
-    _optimize_to_opt = [
-      "profile",
-      "size",
-      "size_lto",
-      "size_thinlto",
-      "speed",
-    ]
-
-    _is_compilation_mode_dbg =
-        _optimize_to_dbg + [ optimize ] - [ optimize ] != _optimize_to_dbg
-    _is_compilation_mode_fastbuild = _optimize_to_fastbuild + [ optimize ] -
-                                     [ optimize ] != _optimize_to_fastbuild
-    _is_compilation_mode_opt =
-        _optimize_to_opt + [ optimize ] - [ optimize ] != _optimize_to_opt
-
-    # LINT.ThenChange(//build/bazel/scripts/bazel_compdb_utils.py:comp_mode)
-
-    # Forward GN sanitizer configuration to Bazel
-    # LINT.IfChange(bazel_config_args)
-    if (_build_for_host) {
-      _tags = host_toolchain_tags
-    } else {
-      _tags = fuchsia_toolchain_tags
-    }
-    _has_asan = _tags + [ "asan" ] - [ "asan" ] != _tags
-    _has_hwasan = _tags + [ "hwasan" ] - [ "hwasan" ] != _tags
-    _has_lsan = _tags + [ "lsan" ] - [ "lsan" ] != _tags
-    _has_msan = _tags + [ "msan" ] - [ "msan" ] != _tags
-    _has_tsan = _tags + [ "tsan" ] - [ "tsan" ] != _tags
-    _has_ubsan = _tags + [ "ubsan" ] - [ "ubsan" ] != _tags
-
-    # Only clang toolchain has coverage support in Bazel at the moment.
-    _has_coverage_clang =
-        _tags + [ "coverage_clang" ] - [ "coverage_clang" ] != _tags
-
-    if (_has_hwasan) {
-      args += [ "--features=hwasan" ]
-    } else if (_has_asan) {
-      args += [ "--features=asan" ]
-    }
-    if (_has_lsan) {
-      args += [ "--features=lsan" ]
-    }
-    if (_has_msan) {
-      args += [ "--features=msan" ]
-    }
-    if (_has_tsan) {
-      args += [ "--features=tsan" ]
-    }
-    if (_has_ubsan) {
-      args += [ "--features=ubsan" ]
-    }
-    if (_has_coverage_clang) {
-      args += [ "--features=coverage" ]
-    }
-
-    # Forward GN C/C++ compiler optimization configuration to Bazel
-    if (_is_compilation_mode_dbg) {
-      args += [ "--compilation_mode=dbg" ]
-    } else if (_is_compilation_mode_fastbuild) {
-      args += [ "--compilation_mode=fastbuild" ]
-    } else if (_is_compilation_mode_opt) {
-      args += [ "--compilation_mode=opt" ]
-      if (clang_ml_inliner) {
-        args += [ "--features=ml_inliner" ]
-      }
-    } else {
-      assert("Unsupported mode optimize = $optimize")
-    }
-
-    # If the c++ version is 20, we overwrite the copts to use
-    # c++20 in Bazel too.
-    if (fuchsia_cxx_version == 20) {
-      args += [
-        "--cxxopt=-std=c++20",
-        "--cxxopt=-Wno-deprecated-this-capture",
-      ]
-    }
-
-    # LINT.ThenChange(//build/bazel/config/bazel_args.gni:bazel_config_args)
 
     if (!defined(deps)) {
       deps = []
