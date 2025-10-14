@@ -7,8 +7,6 @@
 #include <lib/syslog/cpp/macros.h>
 #include <zircon/types.h>
 
-#include <string_view>
-
 #include "src/developer/debug/debug_agent/component_manager.h"
 #include "src/developer/debug/debug_agent/job_handle.h"
 #include "src/developer/debug/debug_agent/system_interface.h"
@@ -72,6 +70,33 @@ std::vector<zx_koid_t> Filter::ApplyToJob(const JobHandle& job,
   };
   visit_each_job(job);
   return res;
+}
+
+std::optional<Filter> Filter::MakeRecursiveFilter(const std::string& realm) const {
+  // Not a recursive filter, nothing to do.
+  if (!filter_.config.recursive) {
+    return std::nullopt;
+  }
+
+  debug_ipc::Filter realm_filter;
+  realm_filter.pattern = realm;
+  realm_filter.type = debug_ipc::Filter::Type::kComponentMonikerPrefix;
+  realm_filter.id = debug_ipc::Filter::Identifier(debug_ipc::GenerateFilterIdValue(),
+                                                  debug_ipc::Filter::Originator::kAgent);
+
+  if (filter_.config.job_only) {
+    realm_filter.config.never_attach = true;
+  } else {
+    // TODO(https://fxbug.dev/450924906): Consider handling conflicting filter options.
+    // For now we just let the first match win, which is good enough for the typical users of
+    // recursive filters. However this might pose a problem since the non-recursive solution for
+    // this is resolved at AttachConfig creation time, which imposes few restrictions on the filters
+    // themselves. If two or more recursive filters match the same pattern, but have conflicting
+    // |weak| options, we'll have to resolve those somehow.
+    realm_filter.config.weak = filter_.config.weak;
+  }
+
+  return Filter(realm_filter);
 }
 
 }  // namespace debug_agent

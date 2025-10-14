@@ -70,6 +70,12 @@ bool ShouldDeferSendingModules(const debug_ipc::AttachConfig& config) {
   return config.weak || config.target == debug_ipc::AttachConfig::Target::kJob;
 }
 
+bool FilterDoesNotAppearIn(const Filter& needle, const std::vector<Filter>& haystack) {
+  return std::ranges::none_of(haystack, [&needle](const auto& filter) {
+    return needle.filter().pattern == filter.filter().pattern;
+  });
+}
+
 }  // namespace
 
 DebugAgent::DebugAgent(std::unique_ptr<SystemInterface> system_interface)
@@ -549,13 +555,48 @@ void DebugAgent::OnUpdateFilter(const debug_ipc::UpdateFilterRequest& request,
   DEBUG_LOG(Agent) << "Received UpdateFilter request size=" << request.filters.size();
   filters_.clear();
   filters_.reserve(request.filters.size());
-  for (const auto& filter : request.filters) {
-    filters_.emplace_back(filter);
-    auto matched_processes =
-        filters_.back().ApplyToJob(root_job_->job_handle(), *system_interface_);
-    if (!matched_processes.empty()) {
-      reply->matched_processes_for_filter.emplace_back(filter.id, std::move(matched_processes));
+
+  for (const auto& debug_ipc_filter : request.filters) {
+    auto filter = Filter(debug_ipc_filter);
+    // Search all of the known ELF processes in the system for a match.
+    auto matched_processes = filter.ApplyToJob(root_job_->job_handle(), *system_interface_);
+    for (const auto& pid : matched_processes) {
+      std::vector<debug_ipc::ComponentInfo> component_info;
+
+      if (auto process = system_interface().GetProcess(pid)) {
+        component_info = system_interface().GetComponentManager().FindComponentInfo(*process);
+      } else if (filter.filter().config.job_only) {
+        // If this filter was configured with job_only then the koid values provided here will be
+        // the koid of the job itself.
+        component_info = system_interface().GetComponentManager().FindComponentInfo(pid);
+      }
+
+      auto result = CheckForRecursiveFilterMatches(filter, component_info);
+      filters_.insert(filters_.end(), result.new_filters.begin(), result.new_filters.end());
+      reply->matched_processes_for_filter.insert(reply->matched_processes_for_filter.end(),
+                                                 result.new_matches.begin(),
+                                                 result.new_matches.end());
     }
+
+    // Also search all of the non-ELF components that we know about for a match to resolve recursive
+    // filters.
+    for (const auto& [_moniker, component_info] :
+         system_interface_->GetComponentManager().GetNonElfComponentInfo()) {
+      if (filter.MatchesComponent(component_info.moniker, component_info.url)) {
+        auto result = CheckForRecursiveFilterMatches(filter, {component_info});
+        filters_.insert(filters_.end(), result.new_filters.begin(), result.new_filters.end());
+        reply->matched_processes_for_filter.insert(reply->matched_processes_for_filter.end(),
+                                                   result.new_matches.begin(),
+                                                   result.new_matches.end());
+      }
+    }
+
+    if (!matched_processes.empty()) {
+      reply->matched_processes_for_filter.emplace_back(filter.filter().id,
+                                                       std::move(matched_processes));
+    }
+
+    filters_.push_back(filter);
   }
 }
 
@@ -668,6 +709,47 @@ bool DebugAgent::IsAttachedToParentOrAncestorOf(zx_koid_t parent) {
 
 bool DebugAgent::IsAttachedToParentOrAncestorOf(const ProcessHandle* process) {
   return IsAttachedToParentOrAncestorOf(process->GetJobKoid());
+}
+
+DebugAgent::RecursiveFilterMatchResult DebugAgent::CheckForRecursiveFilterMatches(
+    const Filter& filter, const std::vector<debug_ipc::ComponentInfo>& component_info) {
+  // If the filter doesn't have the recursive option set then we don't have to check anything.
+  if (!filter.filter().config.recursive) {
+    return {};
+  }
+
+  RecursiveFilterMatchResult result;
+
+  // If a recursive filter matched on installation, then we also need to proactively install
+  // the corresponding prefix filter that would match any descendant components.
+  for (const auto& info : component_info) {
+    if (auto recursive_filter = filter.MakeRecursiveFilter(info.moniker)) {
+      // TODO(https://fxbug.dev/450924906): Handle conflicting filter option resolution.
+      if (FilterDoesNotAppearIn(*recursive_filter, filters_) &&
+          FilterDoesNotAppearIn(*recursive_filter, result.new_filters)) {
+        debug_ipc::NotifyFilterCreated filter_created;
+        filter_created.timestamp = GetNowTimestamp();
+        filter_created.filter = recursive_filter->filter();
+        filter_created.originating_filter_id = filter.filter().id;
+        // The clients don't need to send another UpdateFilter request because we're adding the
+        // new matches here.
+        filter_created.participated_in_matching = true;
+
+        // Tell the client(s) that we created a new filter.
+        SendNotification(filter_created);
+
+        auto new_matches =
+            recursive_filter->ApplyToJob(root_job_->job_handle(), system_interface());
+        if (!new_matches.empty()) {
+          result.new_matches.emplace_back(recursive_filter->filter().id, new_matches);
+        }
+
+        result.new_filters.push_back(*recursive_filter);
+      }
+    }
+  }
+
+  return result;
 }
 
 debug::Status DebugAgent::AddDebuggedJob(DebuggedJobCreateInfo&& create_info, DebuggedJob** added) {
@@ -987,6 +1069,7 @@ void DebugAgent::OnProcessChanged(ProcessChangedHow how,
 
   bool weak = matched_filter ? matched_filter->config.weak : false;
   bool job_only = matched_filter ? matched_filter->config.job_only : false;
+  bool never_attach = matched_filter ? matched_filter->config.never_attach : false;
 
   // If we have a job only filter then we only watch for exceptions from the parent job and do not
   // attach to the process (but we do create a DebuggedProcess object for it below).
@@ -1036,8 +1119,8 @@ void DebugAgent::OnProcessChanged(ProcessChangedHow how,
 
   DebuggedProcessCreateInfo create_info(std::move(process_handle));
   create_info.stdio = std::move(stdio);
-  create_info.weak = weak;
-  create_info.deferred_attach = job_only;
+  create_info.weak = weak || never_attach;
+  create_info.deferred_attach = job_only || never_attach;
 
   DebuggedProcess* new_process = nullptr;
   debug::Status status = AddDebuggedProcess(std::move(create_info), &new_process);
@@ -1074,41 +1157,45 @@ void DebugAgent::OnComponentStarted(const std::string& moniker, const std::strin
 
   // Install recursive filters.
   for (auto filter : matching_filters) {
-    if (filter != nullptr && filter->filter().config.recursive) {
-      // When any recursive filter matches here, we install a component moniker prefix filter so
-      // that any sub-components created as children of this one are attached implicitly. Only one
-      // filter match needs to be recursive for us to install the prefix filter for |moniker|, and
-      // we only need to install one new filter per invocation of this function. The client is
-      // notified of this filter so that it is not removed on subsequent UpdateFilter requests,
-      // which the client may do shortly after receiving this notification. Notably, we do not
-      // enable the recursive flag on this filter, which would be redundant with the parent filter.
-      auto realm_filter = debug_ipc::Filter();
-      realm_filter.type = debug_ipc::Filter::Type::kComponentMonikerPrefix;
-      realm_filter.pattern = moniker;
-      realm_filter.id = debug_ipc::Filter::Identifier(debug_ipc::GenerateFilterIdValue(),
-                                                      debug_ipc::Filter::Originator::kAgent);
-      realm_filter.config.weak = filter->filter().config.weak;
+    // When any recursive filter matches here, we install a component moniker prefix filter so
+    // that any sub-components created as children of this one are attached implicitly. Only one
+    // filter match needs to be recursive for us to install the prefix filter for |moniker|, and
+    // we only need to install one new filter per invocation of this function. The client is
+    // notified of this filter so that it is not removed on subsequent UpdateFilter requests,
+    // which the client may do shortly after receiving this notification. Notably, we do not
+    // enable the recursive flag on this filter, which would be redundant with the parent filter.
+    if (auto realm_filter = filter->MakeRecursiveFilter(moniker)) {
+      // TODO(https://fxbug.dev/450924906): Handle conflicting filter option resolution.
+      if (maybe_realm_filter) {
+        if (maybe_realm_filter->pattern == realm_filter->filter().pattern)
+          continue;
+      }
+      if (FilterDoesNotAppearIn(*realm_filter, filters_)) {
+        // Support older clients on debug_ipc version < 73.
+        component_started.filter = realm_filter->filter();
 
-      // Support older clients on debug_ipc version < 73.
-      component_started.filter = realm_filter;
+        debug_ipc::NotifyFilterCreated filter_created;
+        filter_created.timestamp = GetNowTimestamp();
+        filter_created.filter = realm_filter->filter();
+        filter_created.originating_filter_id = filter->filter().id;
+        // We aren't doing any explicit matching here, the client will need to send an UpdateFilter
+        // request for that to happen, but we will match against new ProcessStarting events with
+        // this new filter so it is also acceptable for the client(s) to delay sending an update.
+        filter_created.participated_in_matching = false;
+        SendNotification(filter_created);
 
-      debug_ipc::NotifyFilterCreated filter_created;
-      filter_created.timestamp = GetNowTimestamp();
-      filter_created.filter = realm_filter;
-      filter_created.originating_filter_id = filter->filter().id;
-      // We aren't doing any explicit matching here, the client will need to send an UpdateFilter
-      // request for that to happen, but we will match against new ProcessStarting events with this
-      // new filter so it is also acceptable for the client(s) to delay sending an update.
-      filter_created.participated_in_matching = false;
-
-      SendNotification(filter_created);
-
-      maybe_realm_filter = realm_filter;
+        // We have to be very careful to not invalidate the pointers that are being iterated over
+        // in |matching_filters|, which are owned by |filters_|, so we instead have to delay
+        // putting this into our filter list until after we're done iterating.
+        maybe_realm_filter = realm_filter->filter();
+      }
     }
 
     // All matching filters are reported in the notification.
-    component_started.matching_filters.emplace_back(filter->filter().id,
-                                                    std::vector<uint64_t>{job_koid});
+    if (job_koid != ZX_KOID_INVALID) {
+      component_started.matching_filters.emplace_back(filter->filter().id,
+                                                      std::vector<uint64_t>{job_koid});
+    }
   }
 
   // And add the component information.
@@ -1121,8 +1208,8 @@ void DebugAgent::OnComponentStarted(const std::string& moniker, const std::strin
     SendNotification(component_started);
   }
 
-  // Lastly, insert the new filter if we have one. If this causes |filters_| to reallocate, then the
-  // pointers in |matching_filters| are now invalid.
+  // Lastly, insert the new filter if we have one. If this causes |filters_| to reallocate, then
+  // the pointers in |matching_filters| are now invalid.
   if (maybe_realm_filter) {
     filters_.emplace_back(*maybe_realm_filter);
   }

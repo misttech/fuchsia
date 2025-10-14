@@ -66,7 +66,7 @@ bool FilterMatches(const Filter& filter, const std::string& process_name,
 bool FilterDefersModules(const Filter* filter) {
   if (filter == nullptr)
     return false;
-  return filter->config.weak || filter->config.job_only;
+  return filter->config.weak || filter->config.job_only || filter->config.never_attach;
 }
 
 uint32_t GenerateFilterIdValue() {
@@ -84,17 +84,15 @@ std::map<uint64_t, AttachConfig> GetAttachConfigsForFilterMatches(
 
   for (const auto& match : matches) {
     auto matched_filter = GetFilterForId(installed_filters, match.id);
+    if (matched_filter == nullptr) {
+      continue;
+    }
 
     for (uint64_t matched_pid : match.matched_pids) {
       debug_ipc::AttachConfig config;
-      if (matched_filter) {
-        config.weak = matched_filter->config.weak;
-      }
-
-      if (matched_filter) {
-        config.target = matched_filter->config.job_only ? debug_ipc::AttachConfig::Target::kJob
-                                                        : debug_ipc::AttachConfig::Target::kProcess;
-      }
+      config.weak = matched_filter->config.weak;
+      config.target = matched_filter->config.job_only ? debug_ipc::AttachConfig::Target::kJob
+                                                      : debug_ipc::AttachConfig::Target::kProcess;
 
       auto inserted = pids_to_attach.insert({matched_pid, config});
 

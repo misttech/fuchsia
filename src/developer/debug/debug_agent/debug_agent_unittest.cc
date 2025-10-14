@@ -548,14 +548,103 @@ TEST_F(DebugAgentTests, WeakFilterMatchDoesNotSendModules) {
   EXPECT_TRUE(harness.stream_backend()->modules().empty());
 }
 
+TEST_F(DebugAgentTests, RecursiveFiltersDoNotCollideUpdateFilter) {
+  MockDebugAgentHarness harness;
+  RemoteAPI* remote_api = harness.debug_agent();
+
+  debug_ipc::UpdateFilterRequest request;
+  debug_ipc::Filter filter;
+  filter.type = debug_ipc::Filter::Type::kComponentMonikerSuffix;
+  filter.pattern = "test:test_root";
+  filter.id = debug_ipc::Filter::Identifier(1, debug_ipc::Filter::Originator::kUnknown);
+  filter.config.recursive = true;
+  request.filters.push_back(filter);
+
+  debug_ipc::Filter filter2;
+  filter2.type = debug_ipc::Filter::Type::kComponentUrl;
+  filter2.pattern = "fuchsia-pkg://devhost/root_package#meta/root_component.cm";
+  filter2.id = debug_ipc::Filter::Identifier(2, debug_ipc::Filter::Originator::kUnknown);
+  filter2.config.recursive = true;
+  request.filters.push_back(filter2);
+
+  debug_ipc::UpdateFilterReply reply;
+  remote_api->OnUpdateFilter(request, &reply);
+
+  loop().RunUntilNoTasks();
+
+  // Should have a filter created message.
+  EXPECT_EQ(harness.stream_backend()->filters().size(), 1u);
+  // When creating a new filter for matching during UpdateFilter, the client does not have to send
+  // another UpdateFilter message to match against the new filter.
+  EXPECT_TRUE(harness.stream_backend()->filters()[0].participated_in_matching);
+  // The first matching filter is the creator of the new filter.
+  EXPECT_EQ(harness.stream_backend()->filters()[0].originating_filter_id, filter.id);
+  EXPECT_EQ(harness.stream_backend()->filters()[0].filter.pattern,
+            "/moniker/generated/test:test_root");
+  EXPECT_EQ(harness.stream_backend()->filters()[0].filter.type,
+            debug_ipc::Filter::Type::kComponentMonikerPrefix);
+  EXPECT_EQ(harness.stream_backend()->filters()[0].filter.config.recursive, false);
+}
+
+TEST_F(DebugAgentTests, RecursiveFiltersDoNotCollideComponentStarting) {
+  MockDebugAgentHarness harness;
+  RemoteAPI* remote_api = harness.debug_agent();
+
+  constexpr char kFakeMoniker[] = "/moniker/generated/test_some_root";
+
+  debug_ipc::UpdateFilterRequest request;
+  debug_ipc::Filter filter;
+  filter.type = debug_ipc::Filter::Type::kComponentMonikerSuffix;
+  // Intentionally does not match the components in MockSystemInterface.
+  filter.pattern = "test_some_root";
+  filter.id = debug_ipc::Filter::Identifier(1, debug_ipc::Filter::Originator::kUnknown);
+  filter.config.recursive = true;
+  request.filters.push_back(filter);
+
+  debug_ipc::Filter filter2;
+  filter2.type = debug_ipc::Filter::Type::kComponentUrl;
+  // Intentionally does not match the components in MockSystemInterface.
+  filter2.pattern = "fuchsia-pkg://devhost/some_package#meta/root_component.cm";
+  filter2.id = debug_ipc::Filter::Identifier(2, debug_ipc::Filter::Originator::kUnknown);
+  filter2.config.recursive = true;
+  request.filters.push_back(filter2);
+
+  debug_ipc::UpdateFilterReply reply;
+  remote_api->OnUpdateFilter(request, &reply);
+
+  // Shouldn't match anything yet since these component details are not specified in
+  // MockSystemInterface.
+  EXPECT_TRUE(reply.matched_processes_for_filter.empty());
+
+  // This event matches both filters created above, but we should only add a single moniker prefix
+  // filter to match this.
+  harness.system_interface()->mock_component_manager().InjectComponentEvent(
+      FakeEventType::kDebugStarted, kFakeMoniker,
+      "fuchsia-pkg://devhost/some_package#meta/root_component.cm");
+
+  loop().RunUntilNoTasks();
+
+  // Should have a filter created message.
+  EXPECT_EQ(harness.stream_backend()->filters().size(), 1u);
+  // The new filter doesn't participate in matching until the client sends it back in an
+  // UpdateFilter request.
+  EXPECT_FALSE(harness.stream_backend()->filters()[0].participated_in_matching);
+  // The first matching filter is the creator of the new filter.
+  EXPECT_EQ(harness.stream_backend()->filters()[0].originating_filter_id, filter.id);
+  EXPECT_EQ(harness.stream_backend()->filters()[0].filter.pattern, kFakeMoniker);
+  EXPECT_EQ(harness.stream_backend()->filters()[0].filter.type,
+            debug_ipc::Filter::Type::kComponentMonikerPrefix);
+  EXPECT_EQ(harness.stream_backend()->filters()[0].filter.config.recursive, false);
+}
+
 TEST_F(DebugAgentTests, RecursiveFilterAppliesImplicitFilter) {
   MockDebugAgentHarness harness;
   RemoteAPI* remote_api = harness.debug_agent();
 
   constexpr char kRootComponentUrl[] = "fuchsia-pkg://devhost/root_package#meta/root_component.cm";
-  constexpr char kRootComponentMoniker[] = "some/moniker/root:test";
-  constexpr char kSubpackageUrl[] = "#meta/child.cm";
-  constexpr char kSubpackageMoniker[] = "some/moniker/root:test/driver";
+  constexpr char kRootComponentMoniker[] = "/moniker/generated/test:test_root";
+  // From MockSystemInterface.
+  constexpr zx_koid_t kJob5P1Koid = 33;
 
   debug_ipc::UpdateFilterRequest request;
   auto& filter = request.filters.emplace_back();
@@ -566,38 +655,26 @@ TEST_F(DebugAgentTests, RecursiveFilterAppliesImplicitFilter) {
   debug_ipc::UpdateFilterReply reply;
   remote_api->OnUpdateFilter(request, &reply);
 
-  // We have two options:
-  //   1. There was a matching component at the time we received the UpdateFilter request.
-  //   2. There was no matching component at install time, but we match at component start time.
-  // In both cases we should be creating a new non-recursive filter that knows the full component
-  // moniker of the resolved component. In this test, we're testing the second option.
-
-  harness.debug_agent()->OnComponentStarted(kRootComponentMoniker, kRootComponentUrl,
-                                            ZX_KOID_INVALID);
-
   // We should have received a filter created notification.
-  EXPECT_FALSE(harness.stream_backend()->filters().empty());
+  ASSERT_FALSE(harness.stream_backend()->filters().empty());
   const auto& filters = harness.stream_backend()->filters();
-  EXPECT_EQ(filters.size(), 1u);
+  ASSERT_EQ(filters.size(), 1u);
   EXPECT_EQ(filters[0].originating_filter_id, request.filters[0].id);
   EXPECT_EQ(filters[0].filter.id.Decode().originator, debug_ipc::Filter::Originator::kAgent);
   EXPECT_EQ(filters[0].filter.pattern, kRootComponentMoniker);
   EXPECT_EQ(filters[0].filter.type, debug_ipc::Filter::Type::kComponentMonikerPrefix);
   EXPECT_FALSE(filters[0].filter.config.recursive);
+  // Matching for the new filter happens along with the rest of the new filters during the
+  // UpdateFilter request.
+  EXPECT_TRUE(filters[0].participated_in_matching);
 
-  // Now we can reuse the previous UpdateFilterRequest to install this new component moniker prefix
-  // filter to the agent.
-  request.filters.push_back(filters[0].filter);
-  harness.debug_agent()->OnUpdateFilter(request, &reply);
-
-  // Now we start the child component, which contains a program, the job's koid doesn't matter for
-  // this test. This is matched by the moniker prefix filter that was created by the agent due to
-  // the recursive flag on the original filter.
-  harness.debug_agent()->OnComponentStarted(kSubpackageMoniker, kSubpackageUrl, ZX_KOID_INVALID);
-
-  EXPECT_EQ(harness.stream_backend()->component_starts().size(), 2u);
-  EXPECT_EQ(harness.stream_backend()->component_starts()[1].component.url, kSubpackageUrl);
-  EXPECT_EQ(harness.stream_backend()->component_starts()[1].component.moniker, kSubpackageMoniker);
+  // The root component that matches the filter in our |UpdateFilterRequest| doesn't have a process
+  // associated with it, but we should match the process in that component's realm in the
+  // subpackaged component.
+  ASSERT_EQ(reply.matched_processes_for_filter.size(), 1u);
+  EXPECT_EQ(reply.matched_processes_for_filter[0].id, filters[0].filter.id);
+  EXPECT_EQ(reply.matched_processes_for_filter[0].matched_pids.size(), 1u);
+  EXPECT_EQ(reply.matched_processes_for_filter[0].matched_pids[0], kJob5P1Koid);
 }
 
 TEST_F(DebugAgentTests, AttachToExistingJob) {

@@ -144,8 +144,9 @@ std::unique_ptr<MockSystemInterface> MockSystemInterface::CreateWithData() {
       {.moniker = "/moniker/generated/test:test_root",
        .url = "fuchsia-pkg://devhost/root_package#meta/root_component.cm"});
   system_interface->mock_component_manager().AddComponentInfo(
-      job4.GetKoid(), debug_ipc::ComponentInfo{.moniker = "/moniker/generated/root:test/driver",
-                                               .url = "#meta/child.cm"});
+      job4.GetKoid(),
+      debug_ipc::ComponentInfo{.moniker = "/moniker/generated/test:test_root/driver",
+                               .url = "#meta/child.cm"});
   system_interface->mock_component_manager().AddComponentInfo(
       job5.GetKoid(),
       debug_ipc::ComponentInfo{.moniker = "/some/moniker",

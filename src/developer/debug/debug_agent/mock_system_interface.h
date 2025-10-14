@@ -36,6 +36,7 @@ class MockSystemInterface final : public SystemInterface {
                                     std::optional<debug_ipc::ComponentInfo> component_info);
 
   // Creates a default process tree:
+  // clang-format off
   //
   //  j: 1 root
   //    p: 2 root-p1
@@ -69,8 +70,8 @@ class MockSystemInterface final : public SystemInterface {
   //      p: 29 job3-p1 process-host
   //        t: 30 initial-thread
   //        t: 31 second-thread
-  //    c: /moniker/generated/test:root fuchsia-pkg://devhost/root_package#meta/root_component.cm
-  //      j: 32 job4 /moniker/generated/root:test/driver #meta/subpackage.cm
+  //    c: /moniker/generated/test:test_root fuchsia-pkg://devhost/root_package#meta/root_component.cm
+  //      j: 32 job4 /moniker/generated/test:test_root/driver #meta/subpackage.cm
   //        p: 33 job4-p1
   //          t: 34 initial-thread
   //    j: 35 job5 /some/moniker fuchsia-pkg://devhost/package#meta/component3.cm
@@ -79,6 +80,7 @@ class MockSystemInterface final : public SystemInterface {
   //      j: 38 job51 /some/other/moniker fuchsia-pkg://devhost/other_package#meta/component4.cm
   //        p: 39 job51-p1
   //          t: 40 initial-thread
+  // clang-format-on
   static std::unique_ptr<MockSystemInterface> CreateWithData();
 
  private:

@@ -160,6 +160,35 @@ class DebugAgent : public RemoteAPI, public Breakpoint::ProcessDelegate, public 
   bool IsAttachedToParentOrAncestorOf(zx_koid_t parent);
   bool IsAttachedToParentOrAncestorOf(const ProcessHandle* process);
 
+  // Given a |filter| from |filters_|, creates and matches new component moniker prefix filters
+  // based on the recursive setting of |filter| and the given |component_info|. If |filter| is not
+  // recursive, then this does nothing.
+  //
+  // This may create several filters depending on the pattern present in |filter|, which could match
+  // many components. For example, if |filter| is a moniker suffix filter with a broadly matching
+  // pattern, such as "test_root", then a new moniker *prefix* filter will be created for each
+  // unique test realm.
+  //
+  // In order to create a new filter, the pattern must not be already present in |already_added| or
+  // |filters_| to prevent collisions, see https://fxbug.dev/450924906 for why this restriction is
+  // in place.
+  //
+  // For all newly created filters:
+  //   * The pattern shall be set to the exact component moniker and the filter type will be
+  //     kComponentMonikerPrefix.
+  //   * A NotifyFilterCreated notification will be sent to the client(s).
+  //   * Eagerly check for processes matching the new filter.
+  //
+  // Returns two vectors that hold:
+  //   1. The newly created filters.
+  //   2. All matches from the filters in #1.
+  struct RecursiveFilterMatchResult {
+    std::vector<Filter> new_filters;
+    std::vector<debug_ipc::FilterMatch> new_matches;
+  };
+  RecursiveFilterMatchResult CheckForRecursiveFilterMatches(
+      const Filter& filter, const std::vector<debug_ipc::ComponentInfo>& component_info);
+
   // Attempts to attach to the given process and sends a AttachReply message
   // to the client with the result.
   debug::Status AttachToLimboProcess(zx_koid_t process_koid, debug_ipc::AttachReply* reply);

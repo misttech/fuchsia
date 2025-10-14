@@ -44,8 +44,7 @@ Arguments
         Attach directly to the highest job that matches the given filter. If the
         filter matches a process directly, this will attach to the parent job.
         For components, it will attach to the root job of that component.
-        Implies --weak. Cannot be used with --recursive
-        https://fxbug.dev/373824677.
+        Implies --weak.
 
     --exact
         Attaching to processes with an exact name. The argument will be
@@ -124,8 +123,10 @@ Attaching to the root job of a realm
   explicitly requested. This can be useful when DebugAgent should only monitor
   and report exceptions from any and all child processes, but no interactive
   debugging is needed. Since all sub-realms of this realm will report exceptions
-  through this job, we never need to attach to any child jobs. This is why
-  --recursive is disallowed when using --job-only.
+  through this job, we never need to attach to any child jobs. This can be used
+  in conjunction with --recursive to have process objects prepared and ready for
+  interactive debugging without ever reporting exceptions unless they reach the
+  given realm's root job.
 
 Attaching to processes by a process name
 
@@ -273,11 +274,6 @@ void RunVerbAttach(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context) 
   if (cmd.HasSwitch(kSwitchJobOnly)) {
     if (cmd_context->GetConsoleContext()->session()->platform() != debug::Platform::kFuchsia) {
       return cmd_context->ReportError(Err("--job-only is only available when debugging Fuchsia."));
-    }
-    if (filter->recursive()) {
-      return cmd_context->ReportError(
-          Err("--recursive and --job-only are mutually exclusive. See `help attach` for details.\n"
-              "Comment on https://fxbug.dev/373824677 if you have a desired use case."));
     }
     filter->SetJobOnly(true);
   }

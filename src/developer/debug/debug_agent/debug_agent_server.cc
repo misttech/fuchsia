@@ -111,9 +111,6 @@ debug::Result<debug_ipc::Filter, fuchsia_debugger::FilterError> ToDebugIpcFilter
   }
 
   if (request.options().recursive()) {
-    if (filter.config.job_only) {
-      return fuchsia_debugger::FilterError::kInvalidOptions;
-    }
     filter.config.recursive = *request.options().recursive();
   }
 

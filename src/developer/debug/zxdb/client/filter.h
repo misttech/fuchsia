@@ -44,6 +44,7 @@ class Filter : public ClientObject {
 
   void SetJobOnly(bool job_only);
   bool job_only() const { return filter_.config.job_only; }
+  bool never_attach() const { return filter_.config.never_attach; }
 
   bool ShouldDeferModuleLoading() const;
 

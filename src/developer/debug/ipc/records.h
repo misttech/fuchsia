@@ -591,6 +591,13 @@ struct FilterConfig {
   // matching the filter. This prevents attaching to processes directly.
   bool job_only = false;
 
+  // Indicates that we should _never_ claim an exception channel for matching processes. This is
+  // useful for cases that want to have access to things like processes and threads which can be
+  // suspended and inspected without requiring available exception channels and possibly receiving
+  // spurious exceptions that they are not interested in. This is typically only used internally and
+  // is not exposed via the command line or FIDL interfaces.
+  bool never_attach = false;
+
   void Serialize(Serializer& ser, uint32_t ver) {
     if (ver >= 64) {
       ser | weak | recursive;
@@ -598,6 +605,10 @@ struct FilterConfig {
 
     if (ver >= 66) {
       ser | job_only;
+    }
+
+    if (ver >= 74) {
+      ser | never_attach;
     }
   }
 };

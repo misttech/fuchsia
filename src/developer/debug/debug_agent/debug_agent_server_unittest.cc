@@ -46,8 +46,10 @@ class DebugAgentServerTest : public debug::TestWithLoop {
                         [](const auto& p1, const auto& p2) { return p1.first < p2.first; });
 
     if (result.ok()) {
-      // There should always be precisely one new element if the add was successful.
-      if (diff.size() != 1u) {
+      // There will only ever be 1 or 2 filter additions, depending on if the new filter is
+      // recursive or not. If it is recursive, AND it matches something immediately, then we will
+      // get two new filters instead of just one.
+      if (diff.empty() || diff.size() > 2) {
         ADD_FAILURE();
       } else {
         // Unambiguous which filter is the new one.
@@ -146,15 +148,17 @@ TEST_F(DebugAgentServerTest, AddNewFilter) {
   constexpr zx_koid_t kProcessKoid = 26;
   EXPECT_NE(agent->GetDebuggedProcess(kProcessKoid), nullptr);
 
-  // Simulate a test environment rooted in the collection "root" with name "test". A recursive
-  // moniker suffix filter on "root:test" will implicitly install a second moniker prefix filter for
-  // the entire moniker up to and including "root:test" so that any child components spawned within
-  // its realm will be attached to. We don't need to know the moniker of any child components in
-  // order to attach to any processes they contain.
-  constexpr char kFullRootMoniker[] = "/moniker/generated/root:test";
+  // Simulate a test environment rooted in the collection "test" with name "test_root". A recursive
+  // moniker suffix filter on "test:test_root" will implicitly install a second moniker prefix
+  // filter for the entire moniker up to and including "test:test_root" so that any child components
+  // spawned within its realm will be attached to. We don't need to know the moniker of any child
+  // components in order to attach to any processes they contain. This is modeled after the real
+  // moniker structure used for tests in TestManager.
+  constexpr char kFullRootMoniker[] = "/moniker/generated/test:test_root";
+  constexpr zx_koid_t kJob4Process1Koid = 33;
 
   fuchsia_debugger::Filter second;
-  second.pattern("root:test");
+  second.pattern("test:test_root");
   second.type(fuchsia_debugger::FilterType::kMonikerSuffix);
   second.options().recursive(true);
 
@@ -163,51 +167,38 @@ TEST_F(DebugAgentServerTest, AddNewFilter) {
 
   reply = result.take_value();
 
-  // Updating the filter will give us back the first match, but we need to receive a component
-  // started event to match with the routing component that doesn't have an associated ELF
-  // program. The only match should be the process that matched the first filter.
-  EXPECT_EQ(reply.matched_processes_for_filter.size(), 1u);
+  // When the recursive filter matches at installation time, then we also install and match against
+  // the moniker prefix filter that's sent to the client via NotifyFilterCreated. At this level of
+  // the interface, we can't get the filter ID for the filter moniker suffix filter, so we can't
+  // check the originating_filter_id field of the notification, but we can assert our expectations
+  // on the filter settings.
+  const auto& new_filters = harness()->stream_backend()->filters();
+  ASSERT_FALSE(new_filters.empty());
+  ASSERT_EQ(new_filters.size(), 1u);
+  // We are not required to send another UpdateFilter request to the Agent since it matched eagerly.
+  EXPECT_TRUE(new_filters[0].participated_in_matching);
+  EXPECT_EQ(new_filters[0].filter.id.Decode().originator, debug_ipc::Filter::Originator::kAgent);
+  EXPECT_EQ(new_filters[0].filter.pattern, kFullRootMoniker);
+  EXPECT_EQ(new_filters[0].filter.type, debug_ipc::Filter::Type::kComponentMonikerPrefix);
+  EXPECT_EQ(new_filters[0].filter.config.recursive, false);
+
+  // We will get back the process that we matched and attached to above with the first filter we
+  // installed, and we should also get back the process under another component in
+  // |kFullRootMoniker|'s realm.
+  EXPECT_EQ(reply.matched_processes_for_filter.size(), 2u);
   EXPECT_EQ(reply.matched_processes_for_filter[0].matched_pids.size(), 1u);
   // It should have already been attached when we previously matched.
   EXPECT_NE(agent->GetDebuggedProcess(reply.matched_processes_for_filter[0].matched_pids[0]),
             nullptr);
   EXPECT_EQ(reply.matched_processes_for_filter[0].matched_pids.size(), 1u);
   EXPECT_EQ(reply.matched_processes_for_filter[0].matched_pids[0], kProcessKoid);
+  ASSERT_EQ(reply.matched_processes_for_filter[1].matched_pids.size(), 1u);
+  EXPECT_EQ(reply.matched_processes_for_filter[1].matched_pids[0], kJob4Process1Koid);
 
-  // Inject a component starting event so the second filter attaches to the root component that
-  // doesn't have an ELF program running with it. This will install the subsequent moniker prefix
-  // filter that will be used to match a child component with an ELF process.
-  harness()->system_interface()->mock_component_manager().InjectComponentEvent(
-      FakeEventType::kDebugStarted, kFullRootMoniker,
-      "fuchsia-pkg://devhost/root_package#meta/root_component.cm");
-
-  loop().RunUntilNoTasks();
-
-  status_reply = GetAgentStatus();
-
-  // Should have an extra filter now, which is a moniker prefix filter on the given moniker above.
-  ASSERT_EQ(status_reply.filters.size(), 3u);
-  EXPECT_EQ(status_reply.filters[2].pattern, kFullRootMoniker);
-  EXPECT_EQ(status_reply.filters[2].type, debug_ipc::Filter::Type::kComponentMonikerPrefix);
-  EXPECT_EQ(status_reply.filters[2].config.recursive, false);
-
-  // Koid of job4 from MockSystemInterface.
-  constexpr zx_koid_t kJob4Koid = 32;
-  // Inject a process starting event for the ELF process running under some child component of the
-  // root component above.
-  constexpr zx_koid_t kProcess2Koid = 33;
-  auto handle = std::make_unique<MockProcessHandle>(kProcess2Koid);
-  // Set the job koid so that we can look up the corresponding component information.
-  handle->set_job_koid(kJob4Koid);
-  agent->OnProcessChanged(DebugAgent::ProcessChangedHow::kStarting, std::move(handle));
-
-  status_reply = GetAgentStatus();
-
-  // Now we should have also attached to the new process that matched the implicit moniker prefix
-  // filter that was installed above.
-  EXPECT_EQ(status_reply.processes.size(), 2u);
-
-  EXPECT_NE(agent->GetDebuggedProcess(kProcess2Koid), nullptr);
+  // We can issue an attach now. Since we're not doing any pre-filtering of koids we're already
+  // attached to, this will also return the koid 26 attached above as well as the new one.
+  EXPECT_EQ(AttachToMatchingKoids(reply), 2u);
+  EXPECT_NE(agent->GetDebuggedProcess(kJob4Process1Koid), nullptr);
 
   // Now we install a job-only filter that will attach DebugAgent directly to a matching job's
   // exception channel.
@@ -282,13 +273,12 @@ TEST_F(DebugAgentServerTest, AddFilterErrors) {
   EXPECT_TRUE(result.has_error());
   EXPECT_EQ(result.err(), fuchsia_debugger::FilterError::kUnknownType);
 
-  // recursive and job_only options are mutually exclusive.
-  f.type(fuchsia_debugger::FilterType::kMoniker);
+  // Set both recursive and job_only options.
+  f.type(fuchsia_debugger::FilterType::kMonikerPrefix);
   f.options().recursive(true);
   f.options().job_only(true);
   result = AddFilter(f);
-  EXPECT_TRUE(result.has_error());
-  EXPECT_EQ(result.err(), fuchsia_debugger::FilterError::kInvalidOptions);
+  EXPECT_TRUE(result.ok());
 }
 
 TEST_F(DebugAgentServerTest, GetMatchingProcesses) {
@@ -309,11 +299,11 @@ TEST_F(DebugAgentServerTest, GetMatchingProcesses) {
   EXPECT_TRUE(result.has_error());
   EXPECT_EQ(result.err(), fuchsia_debugger::FilterError::kUnknownType);
 
-  constexpr char kFullRootMoniker[] = "/moniker/generated/root:test";
+  constexpr char kFullRootMoniker[] = "/moniker/generated/test:test_root";
 
   // This filter is intended to match |kFullRootMoniker| and all child components.
   fuchsia_debugger::Filter f1;
-  f1.pattern("root:test");
+  f1.pattern("test:test_root");
   f1.type(fuchsia_debugger::FilterType::kMonikerSuffix);
   f1.options({{.recursive = true}});
 

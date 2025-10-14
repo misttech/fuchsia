@@ -23,6 +23,10 @@ class Filter {
 
   const debug_ipc::Filter& filter() const { return filter_; }
 
+  // Creates a new kComponentMonikerPrefix filter based on the settings of this filter and the given
+  // component |realm|.
+  std::optional<Filter> MakeRecursiveFilter(const std::string& realm) const;
+
   // Returns whether the job matches the filter. SystemInterface is needed here
   // to fetch the component info about the job.
   bool MatchesJob(const JobHandle& process, SystemInterface& system_interface) const;

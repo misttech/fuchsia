@@ -189,9 +189,8 @@ void SessionSink::UpdateFilter(const debug_ipc::UpdateFilterRequest& request,
       // Basic simulation of filtering with only support for kFuzzyProcessName.
       if (filter.type == debug_ipc::Filter::Type::kProcessNameSubstr &&
           process.first.find(filter.pattern) != std::string::npos) {
-        reply.matched_processes_for_filter.emplace_back(debug_ipc::FilterMatch(
-            debug_ipc::Filter::Identifier(0, debug_ipc::Filter::Originator::kUnknown),
-            {process.second}));
+        reply.matched_processes_for_filter.emplace_back(
+            debug_ipc::FilterMatch(filter.id, {process.second}));
       }
     }
   }

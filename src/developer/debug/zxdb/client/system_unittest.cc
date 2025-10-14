@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include "src/developer/debug/ipc/protocol.h"
+#include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/zxdb/client/mock_remote_api.h"
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/process_observer.h"
@@ -153,7 +154,13 @@ TEST_F(SystemTest, FilterMatchesAndRematching) {
   sink()->attach_replies_.push_back(
       debug_ipc::AttachReply{.koid = kProcessKoid, .name = kProcessName});
 
-  session().system().OnFilterMatches({debug_ipc::FilterMatch({}, {kProcessKoid})});
+  debug_ipc::Filter filter;
+  filter.pattern = "some-process";
+  filter.type = debug_ipc::Filter::Type::kProcessNameSubstr;
+  filter.id = debug_ipc::Filter::Identifier(1, debug_ipc::Filter::Originator::kZxdb);
+  session().system().CreateNewFilter(filter);
+
+  session().system().OnFilterMatches({debug_ipc::FilterMatch(filter.id, {kProcessKoid})});
 
   // There should be an attach request.
   auto& requests = sink()->attach_requests_;
@@ -176,7 +183,8 @@ TEST_F(SystemTest, FilterMatchesAndRematching) {
   sink()->attach_replies_.push_back(
       debug_ipc::AttachReply{.koid = kProcessKoid, .name = kProcessName});
 
-  session().system().OnFilterMatches({debug_ipc::FilterMatch({}, {kProcessKoid})});
+  session().system().OnFilterMatches({debug_ipc::FilterMatch(
+      debug_ipc::Filter::Identifier(2, debug_ipc::Filter::Originator::kZxdb), {kProcessKoid})});
 
   // The system should've reused the empty target.
   ASSERT_EQ(system_observer.target_create_count(), 0);
@@ -216,7 +224,12 @@ TEST_F(SystemTest, ExistenProcessShouldCreateTarget) {
   sink()->attach_replies_.push_back(
       debug_ipc::AttachReply{.koid = kProcessKoid2, .name = kProcessName});
 
-  session().system().OnFilterMatches({debug_ipc::FilterMatch({}, {kProcessKoid2})});
+  debug_ipc::Filter filter;
+  filter.pattern = "some-process";
+  filter.type = debug_ipc::Filter::Type::kProcessNameSubstr;
+  filter.id = debug_ipc::Filter::Identifier(1, debug_ipc::Filter::Originator::kZxdb);
+  session().system().CreateNewFilter(filter);
+  session().system().OnFilterMatches({debug_ipc::FilterMatch(filter.id, {kProcessKoid2})});
 
   // There should be an attach request.
   auto& requests = sink()->attach_requests_;
