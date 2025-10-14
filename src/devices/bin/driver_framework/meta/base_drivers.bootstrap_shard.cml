@@ -171,6 +171,7 @@
                 "fuchsia.hardware.google.nanohub.DataChannelService",
                 "fuchsia.hardware.google.nanohub.DisplayService",
                 "fuchsia.hardware.google.nanohub.Service",
+                "fuchsia.hardware.google.nanohub.StarnixDataChannelService",
                 "fuchsia.hardware.haptics.Service",
                 "fuchsia.hardware.nfc.Service",
                 "fuchsia.hardware.power.suspend.SuspendService",
