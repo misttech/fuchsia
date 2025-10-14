@@ -45,6 +45,7 @@ class DebugAgentServer : public fidl::Server<fuchsia_debugger::DebugAgent>,
   void OnNotification(const debug_ipc::NotifyProcessStarting& notify) override;
   void OnNotification(const debug_ipc::NotifyException& notify) override;
   void OnNotification(const debug_ipc::NotifyComponentStarting& notify) override;
+  void OnNotification(const debug_ipc::NotifyFilterCreated& notify) override;
 
  private:
   // The test fixture is a friend so that we can access the private methods that are doing all the
@@ -56,6 +57,10 @@ class DebugAgentServer : public fidl::Server<fuchsia_debugger::DebugAgent>,
 
   // Convert |fidl_filter| to a debug_ipc equivalent, then add that to DebugAgent's set of filters.
   AddFilterResult AddFilter(const fuchsia_debugger::Filter& fidl_filter);
+  // Adds |filter| to our list of known filters.
+  void AddDebugIpcFilter(const debug_ipc::Filter& filter);
+  // Synchronizes our internal list of filters with the DebugAgent.
+  debug_ipc::UpdateFilterReply SynchronizeDebugIpcFilters();
 
   // Attempt to attach to all given FilterMatches, some may fail, which is not reported as an error.
   // If any of the FilterMatch identifiers does not correspond to one of our filters, take no
@@ -71,8 +76,7 @@ class DebugAgentServer : public fidl::Server<fuchsia_debugger::DebugAgent>,
   GetMatchingProcessesResult GetMatchingProcesses(
       std::optional<fuchsia_debugger::Filter> filter) const;
 
-  uint32_t next_filter_id_ = 1;
-  std::map<uint32_t, debug_ipc::Filter> filters_;
+  std::map<debug_ipc::Filter::Identifier, debug_ipc::Filter> filters_;
 
   std::optional<fidl::ServerBindingRef<fuchsia_debugger::DebugAgent>> binding_ref_;
 

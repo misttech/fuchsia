@@ -13,10 +13,6 @@
 #include "src/developer/debug/zxdb/client/setting_schema.h"
 #include "src/developer/debug/zxdb/client/setting_schema_definition.h"
 
-namespace {
-uint32_t next_filter_id = 1;
-}  // namespace
-
 namespace zxdb {
 
 const char* ClientSettings::Filter::kType = "type";
@@ -92,6 +88,18 @@ debug_ipc::Filter::Type StringToType(std::string_view string) {
   return debug_ipc::Filter::Type::kUnset;
 }
 
+debug_ipc::Filter::Identifier MakeNewIdentifier() {
+  auto id = debug_ipc::Filter::Identifier(debug_ipc::GenerateFilterIdValue(),
+                                          debug_ipc::Filter::Originator::kZxdb);
+
+  // We should never overflow our 2^24 filter id value allocation.
+  FX_DCHECK(id.Decode().originator == debug_ipc::Filter::Originator::kZxdb)
+      << "Filter ID created in zxdb exceeded allocated filter IDs. Please file a bug: "
+         "https://fxbug.dev/issues/new?component=1389559&template=1849567.";
+
+  return id;
+}
+
 }  // namespace
 
 Filter::Settings::Settings(Filter* filter) : SettingStore(Filter::GetSchema()), filter_(filter) {}
@@ -135,18 +143,16 @@ Err Filter::Settings::SetStorageValue(const std::string& key, SettingValue value
 }
 
 Filter::Filter(Session* session) : ClientObject(session), settings_(this) {
-  filter_.id = next_filter_id++;
-  // The DebugAgent FIDL server reserves the highest bit to differentiate filters that it installs
-  // from the ones a zxdb user installed. In general, these two systems are not being used in the
-  // same DebugAgent instance at the same time, and 2^31 is a lot of filters, so we really should
-  // never conflict.
-  //
-  // A more robust system would have the backend provision the ids and vend them back out to the
-  // clients so this problem doesn't exist, but that would require many changes to the UpdateFilters
-  // debug_ipc method that aren't necessary for this simple usecase.
-  FX_DCHECK((filter_.id & (1 << 31)) == 0)
-      << "Filter ID created in zxdb conflicts with FIDL filters. Please file a bug: "
-         "https://fxbug.dev/issues/new?component=1389559&template=1849567.";
+  filter_.id = MakeNewIdentifier();
+}
+
+Filter::Filter(Session* session, std::optional<debug_ipc::Filter> filter)
+    : ClientObject(session), settings_(this) {
+  if (filter) {
+    filter_ = *filter;
+  } else {
+    filter_.id = MakeNewIdentifier();
+  }
 }
 
 void Filter::SetType(debug_ipc::Filter::Type type) {
@@ -176,6 +182,11 @@ void Filter::SetRecursive(bool recursive) {
 
 void Filter::SetJobOnly(bool job_only) {
   filter_.config.job_only = job_only;
+  Sync();
+}
+
+void Filter::SetFilter(const debug_ipc::Filter& filter) {
+  filter_ = filter;
   Sync();
 }
 

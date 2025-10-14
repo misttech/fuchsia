@@ -7,6 +7,8 @@
 #include <lib/fit/result.h>
 #include <lib/stdcompat/functional.h>
 
+#include <algorithm>
+
 #include "fidl/fuchsia.debugger/cpp/natural_types.h"
 #include "src/developer/debug/debug_agent/backtrace_utils.h"
 #include "src/developer/debug/debug_agent/component_manager.h"
@@ -19,6 +21,7 @@
 #include "src/developer/debug/ipc/filter_utils.h"
 #include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/ipc/records.h"
+#include "src/developer/debug/shared/message_loop.h"
 
 namespace debug_agent {
 
@@ -68,11 +71,6 @@ debug::Result<debug_ipc::Filter, fuchsia_debugger::FilterError> ToDebugIpcFilter
     const fuchsia_debugger::Filter& request, std::optional<uint32_t> id) {
   debug_ipc::Filter filter;
 
-  // Set the highest bit to 1 to differentiate filters set via this interface from filters set in
-  // the frontend. There's no communication between this interface and another debug_ipc client to
-  // this same DebugAgent, so coordination is difficult.
-  constexpr uint32_t kFilterIdBase = 1 << 31;
-
   if (request.pattern().empty()) {
     return fuchsia_debugger::FilterError::kNoPattern;
   }
@@ -96,7 +94,12 @@ debug::Result<debug_ipc::Filter, fuchsia_debugger::FilterError> ToDebugIpcFilter
 
   filter.pattern = request.pattern();
   if (id) {
-    filter.id = kFilterIdBase | *id;
+    filter.id = debug_ipc::Filter::Identifier(*id, debug_ipc::Filter::Originator::kFidlServer);
+
+    // We should never overflow our 2^24 filter id allocation.
+    FX_DCHECK(filter.id.Decode().originator == debug_ipc::Filter::Originator::kFidlServer)
+        << "Filter ID created in debug_agent_server exceeded allocated filter IDs. Please file a "
+           "bug: https://fxbug.dev/issues/new?component=1389559&template=1849567.";
   }
 
   if (!request.options().job_only()) {
@@ -177,13 +180,7 @@ void DebugAgentServer::AttachTo(AttachToRequest& request, AttachToCompleter::Syn
   completer.Reply(fit::success(AttachToFilterMatches(reply.matched_processes_for_filter)));
 }
 
-DebugAgentServer::AddFilterResult DebugAgentServer::AddFilter(
-    const fuchsia_debugger::Filter& fidl_filter) {
-  auto result = ToDebugIpcFilter(fidl_filter, next_filter_id_++);
-  if (result.has_error()) {
-    return result.err();
-  }
-
+debug_ipc::UpdateFilterReply DebugAgentServer::SynchronizeDebugIpcFilters() {
   debug_ipc::UpdateFilterRequest ipc_request;
 
   debug_ipc::StatusReply status;
@@ -192,23 +189,38 @@ DebugAgentServer::AddFilterResult DebugAgentServer::AddFilter(
   // OnUpdateFilter will clear all the filters before reinstalling the set that is present in the
   // IPC request, so we must be sure to copy all of the filters that were already there before
   // calling the method.
-  auto agent_filters = status.filters;
+  ipc_request.filters = status.filters;
 
-  // Add in the new filter.
-  agent_filters.emplace_back(result.value());
-  ipc_request.filters.reserve(agent_filters.size());
-  // Save the filter ourselves as well so that we can use the filter configuration to derive the
-  // attach configuration when there's a match.
-  filters_[agent_filters.back().id] = agent_filters.back();
-
-  for (const auto& filter : agent_filters) {
-    ipc_request.filters.push_back(filter);
-  }
+  // Add any of our filters that are not already present in |ipc_request|.
+  std::ranges::for_each(filters_, [&ipc_request](const auto& elem) {
+    if (std::ranges::none_of(
+            ipc_request.filters,
+            [filter = elem.second](const debug_ipc::Filter& f) { return filter.id == f.id; })) {
+      ipc_request.filters.push_back(elem.second);
+    }
+  });
 
   debug_ipc::UpdateFilterReply reply;
   debug_agent_->OnUpdateFilter(ipc_request, &reply);
 
   return reply;
+}
+
+void DebugAgentServer::AddDebugIpcFilter(const debug_ipc::Filter& filter) {
+  filters_[filter.id] = filter;
+}
+
+DebugAgentServer::AddFilterResult DebugAgentServer::AddFilter(
+    const fuchsia_debugger::Filter& fidl_filter) {
+  auto result = ToDebugIpcFilter(fidl_filter, debug_ipc::GenerateFilterIdValue());
+  if (result.has_error()) {
+    return result.err();
+  }
+
+  const auto& new_filter = result.value();
+
+  AddDebugIpcFilter(new_filter);
+  return SynchronizeDebugIpcFilters();
 }
 
 uint32_t DebugAgentServer::AttachToFilterMatches(
@@ -217,10 +229,10 @@ uint32_t DebugAgentServer::AttachToFilterMatches(
   // does not have support for size types.
   uint32_t attaches = 0;
 
-  std::vector<debug_ipc::Filter> ipc_filters(filters_.size());
-  for (const auto& [_id, filter] : filters_) {
-    ipc_filters.push_back(filter);
-  }
+  std::vector<debug_ipc::Filter> ipc_filters;
+  ipc_filters.reserve(filters_.size());
+  std::ranges::transform(filters_, std::back_inserter(ipc_filters),
+                         [](const auto& pair) -> debug_ipc::Filter { return pair.second; });
 
   auto pids_to_attach = debug_ipc::GetAttachConfigsForFilterMatches(filter_matches, ipc_filters);
 
@@ -326,7 +338,31 @@ void DebugAgentServer::OnNotification(const debug_ipc::NotifyComponentStarting& 
     }
   }
 
+  // NOTE: (as of IPC version 73) we ignore the notification's optional returned filter. In IPC
+  // versions prior to 73, the value was (perhaps incorrectly) ignored. Since our supported version
+  // is synchronized with DebugAgent's, we only need to add support for |NotifyFilterCreated|.
+
   AttachToFilterMatches(filter_matches);
+}
+
+void DebugAgentServer::OnNotification(const debug_ipc::NotifyFilterCreated& notify) {
+  if (notify.originating_filter_id.Decode().originator ==
+      debug_ipc::Filter::Originator::kFidlServer) {
+    AddDebugIpcFilter(notify.filter);
+    if (!notify.participated_in_matching) {
+      // This is important to send on the message loop instead of re-entrantly. This notification
+      // can come from the component starting sequence, which potentially needs to both send this
+      // notification as well as send a component starting notification. If we immediately install
+      // this filter by reentrantly calling OnUpdateFilter, then we'll unintentionally deallocate
+      // the filters the DebugAgent is currently trying to match against and send to clients via the
+      // FilterMatch instances in NotifyComponentStarting.
+      debug::MessageLoop::Current()->PostTask(FROM_HERE, [this]() {
+        AttachToFilterMatches(SynchronizeDebugIpcFilters().matched_processes_for_filter);
+      });
+    }
+  }
+
+  // Ignore new filters that were not originated by us.
 }
 
 DebugAgentServer::GetMatchingProcessesResult DebugAgentServer::GetMatchingProcesses(

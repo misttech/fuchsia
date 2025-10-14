@@ -20,6 +20,9 @@ bool FilterMatches(const Filter& filter, const std::string& process_name,
 // Returns true if the filter's configuration defers module loading.
 bool FilterDefersModules(const Filter* filter);
 
+// Shared function for clients to generate unique values for their filters.
+uint32_t GenerateFilterIdValue();
+
 // Converts a vector of FilterMatch objects and a vector of installed filters into a map of pids to
 // AttachConfigs derived from any matching filters, or the defaults if there was no matching filter.
 // Correctly takes into account filters that may match the same job or process and overlays settings

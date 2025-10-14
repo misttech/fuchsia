@@ -6,6 +6,7 @@
 #define SRC_DEVELOPER_DEBUG_DEBUG_AGENT_MOCK_STREAM_BACKEND_H_
 
 #include "src/developer/debug/debug_agent/local_stream_backend.h"
+#include "src/developer/debug/ipc/protocol.h"
 
 namespace debug_agent {
 
@@ -44,12 +45,19 @@ class MockStreamBackend : public LocalStreamBackend {
 
   const std::vector<debug_ipc::NotifyException>& exceptions() const { return exceptions_; }
 
+  void HandleNotifyFilterCreated(debug_ipc::NotifyFilterCreated filter) override {
+    filters_.push_back(filter);
+  }
+
+  const std::vector<debug_ipc::NotifyFilterCreated>& filters() const { return filters_; }
+
  private:
   std::vector<debug_ipc::AttachReply> attach_replies_;
   std::vector<debug_ipc::NotifyComponentStarting> component_starts_;
   std::vector<debug_ipc::NotifyProcessStarting> process_starts_;
   std::vector<debug_ipc::NotifyModules> modules_;
   std::vector<debug_ipc::NotifyException> exceptions_;
+  std::vector<debug_ipc::NotifyFilterCreated> filters_;
 };
 
 }  // namespace debug_agent

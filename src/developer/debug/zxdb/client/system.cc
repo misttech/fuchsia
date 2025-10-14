@@ -499,14 +499,17 @@ void System::DeleteAllBreakpoints() {
   breakpoints_.clear();
 }
 
-Filter* System::CreateNewFilter() {
-  Filter* to_return = filters_.emplace_back(std::make_unique<Filter>(session())).get();
+Filter* System::CreateNewFilter(std::optional<debug_ipc::Filter> maybe_filter) {
+  Filter* new_filter =
+      filters_.emplace_back(std::make_unique<Filter>(session(), maybe_filter)).get();
+
+  FX_DCHECK(new_filter);
 
   // Notify observers (may mutate filter list).
   for (auto& observer : observers_)
-    observer.DidCreateFilter(to_return);
+    observer.DidCreateFilter(new_filter);
 
-  return to_return;
+  return new_filter;
 }
 
 void System::DeleteFilter(Filter* filter) {
@@ -784,7 +787,7 @@ void System::OnFilterMatches(const std::vector<debug_ipc::FilterMatch>& matches)
   }
 }
 
-Filter* System::GetFilterForId(uint32_t id) const {
+Filter* System::GetFilterForId(const debug_ipc::Filter::Identifier& id) const {
   if (filters_.empty())
     return nullptr;
 

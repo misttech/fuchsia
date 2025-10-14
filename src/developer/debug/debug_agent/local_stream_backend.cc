@@ -63,6 +63,14 @@ size_t LocalStreamBackend::ConsumeStreamBufferData(const char* data, size_t len)
       HandleNotifyException(std::move(exception));
       break;
     }
+    case debug_ipc::MsgHeader::Type::kNotifyFilterCreated: {
+      debug_ipc::NotifyFilterCreated filter;
+      if (!debug_ipc::Deserialize(std::move(msg_buffer), &filter,
+                                  debug_ipc::kCurrentProtocolVersion))
+        FX_NOTREACHED();
+      HandleNotifyFilterCreated(std::move(filter));
+      break;
+    }
     case debug_ipc::MsgHeader::Type::kNotifyIO: {
       debug_ipc::NotifyIO io;
       if (!debug_ipc::Deserialize(std::move(msg_buffer), &io, debug_ipc::kCurrentProtocolVersion))

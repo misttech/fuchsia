@@ -17,6 +17,7 @@
 #include "src/developer/debug/debug_agent/test_utils.h"
 #include "src/developer/debug/ipc/filter_utils.h"
 #include "src/developer/debug/ipc/protocol.h"
+#include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/logging/debug.h"
 #include "src/developer/debug/shared/message_loop.h"
 #include "src/developer/debug/shared/test_with_loop.h"
@@ -530,7 +531,7 @@ TEST_F(DebugAgentTests, WeakFilterMatchDoesNotSendModules) {
   auto& filter = request.filters.emplace_back();
   filter.type = debug_ipc::Filter::Type::kProcessName;
   filter.pattern = kProcessName;
-  filter.id = 1;
+  filter.id = debug_ipc::Filter::Identifier(1, debug_ipc::Filter::Originator::kUnknown);
   filter.config.weak = true;
 
   debug_ipc::UpdateFilterReply reply;
@@ -565,13 +566,33 @@ TEST_F(DebugAgentTests, RecursiveFilterAppliesImplicitFilter) {
   debug_ipc::UpdateFilterReply reply;
   remote_api->OnUpdateFilter(request, &reply);
 
+  // We have two options:
+  //   1. There was a matching component at the time we received the UpdateFilter request.
+  //   2. There was no matching component at install time, but we match at component start time.
+  // In both cases we should be creating a new non-recursive filter that knows the full component
+  // moniker of the resolved component. In this test, we're testing the second option.
+
   harness.debug_agent()->OnComponentStarted(kRootComponentMoniker, kRootComponentUrl,
                                             ZX_KOID_INVALID);
 
-  // There should now be TWO filters, one of which the frontend doesn't know about.
+  // We should have received a filter created notification.
+  EXPECT_FALSE(harness.stream_backend()->filters().empty());
+  const auto& filters = harness.stream_backend()->filters();
+  EXPECT_EQ(filters.size(), 1u);
+  EXPECT_EQ(filters[0].originating_filter_id, request.filters[0].id);
+  EXPECT_EQ(filters[0].filter.id.Decode().originator, debug_ipc::Filter::Originator::kAgent);
+  EXPECT_EQ(filters[0].filter.pattern, kRootComponentMoniker);
+  EXPECT_EQ(filters[0].filter.type, debug_ipc::Filter::Type::kComponentMonikerPrefix);
+  EXPECT_FALSE(filters[0].filter.config.recursive);
+
+  // Now we can reuse the previous UpdateFilterRequest to install this new component moniker prefix
+  // filter to the agent.
+  request.filters.push_back(filters[0].filter);
+  harness.debug_agent()->OnUpdateFilter(request, &reply);
 
   // Now we start the child component, which contains a program, the job's koid doesn't matter for
-  // this test.
+  // this test. This is matched by the moniker prefix filter that was created by the agent due to
+  // the recursive flag on the original filter.
   harness.debug_agent()->OnComponentStarted(kSubpackageMoniker, kSubpackageUrl, ZX_KOID_INVALID);
 
   EXPECT_EQ(harness.stream_backend()->component_starts().size(), 2u);

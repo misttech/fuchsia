@@ -8,12 +8,10 @@
 #include <zircon/types.h>
 
 #include <optional>
-#include <string_view>
 
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/zxdb/client/client_object.h"
 #include "src/developer/debug/zxdb/client/setting_store.h"
-#include "src/lib/fxl/memory/weak_ptr.h"
 
 namespace zxdb {
 
@@ -22,6 +20,7 @@ class SettingSchema;
 class Filter : public ClientObject {
  public:
   explicit Filter(Session* session);
+  explicit Filter(Session* session, std::optional<debug_ipc::Filter> filter);
 
   bool is_valid() const {
     return filter_.type != debug_ipc::Filter::Type::kUnset &&
@@ -49,6 +48,7 @@ class Filter : public ClientObject {
   bool ShouldDeferModuleLoading() const;
 
   // Accessing the underlying filter storage.
+  void SetFilter(const debug_ipc::Filter& filter);
   const debug_ipc::Filter& filter() const { return filter_; }
   SettingStore& settings() { return settings_; }
 

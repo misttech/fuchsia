@@ -35,6 +35,7 @@ class LocalStreamBackend : public debug::BufferedStream {
   virtual void HandleNotifyComponentDiscovered(debug_ipc::NotifyComponentDiscovered) {}
   virtual void HandleNotifyComponentStarting(debug_ipc::NotifyComponentStarting) {}
   virtual void HandleNotifyException(debug_ipc::NotifyException) {}
+  virtual void HandleNotifyFilterCreated(debug_ipc::NotifyFilterCreated) {}
   virtual void HandleNotifyIO(debug_ipc::NotifyIO) {}
   virtual void HandleNotifyModules(debug_ipc::NotifyModules) {}
   virtual void HandleNotifyProcessExiting(debug_ipc::NotifyProcessExiting) {}

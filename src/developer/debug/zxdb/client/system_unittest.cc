@@ -153,8 +153,7 @@ TEST_F(SystemTest, FilterMatchesAndRematching) {
   sink()->attach_replies_.push_back(
       debug_ipc::AttachReply{.koid = kProcessKoid, .name = kProcessName});
 
-  session().system().OnFilterMatches(
-      {debug_ipc::FilterMatch(debug_ipc::kInvalidFilterId, {kProcessKoid})});
+  session().system().OnFilterMatches({debug_ipc::FilterMatch({}, {kProcessKoid})});
 
   // There should be an attach request.
   auto& requests = sink()->attach_requests_;
@@ -177,8 +176,7 @@ TEST_F(SystemTest, FilterMatchesAndRematching) {
   sink()->attach_replies_.push_back(
       debug_ipc::AttachReply{.koid = kProcessKoid, .name = kProcessName});
 
-  session().system().OnFilterMatches(
-      {debug_ipc::FilterMatch(debug_ipc::kInvalidFilterId, {kProcessKoid})});
+  session().system().OnFilterMatches({debug_ipc::FilterMatch({}, {kProcessKoid})});
 
   // The system should've reused the empty target.
   ASSERT_EQ(system_observer.target_create_count(), 0);
@@ -218,7 +216,7 @@ TEST_F(SystemTest, ExistenProcessShouldCreateTarget) {
   sink()->attach_replies_.push_back(
       debug_ipc::AttachReply{.koid = kProcessKoid2, .name = kProcessName});
 
-  session().system().OnFilterMatches({debug_ipc::FilterMatch(-1, {kProcessKoid2})});
+  session().system().OnFilterMatches({debug_ipc::FilterMatch({}, {kProcessKoid2})});
 
   // There should be an attach request.
   auto& requests = sink()->attach_requests_;

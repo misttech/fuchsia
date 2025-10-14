@@ -184,6 +184,7 @@ class Session : public SettingStoreObserver {
   void DispatchNotifyComponentStarting(const debug_ipc::NotifyComponentStarting& notify);
   void DispatchNotifyComponentExiting(const debug_ipc::NotifyComponentExiting& notify);
   void DispatchNotifyTestExited(const debug_ipc::NotifyTestExited& notify);
+  void DispatchNotifyFilterCreated(const debug_ipc::NotifyFilterCreated& notify);
 
   // Settings that control how the exception is handled in the Session before passing the
   // information along to the Thread object to decide what to actually do. This is primarily useful

@@ -37,7 +37,7 @@ TEST(FilterUtils, FilterMatches) {
 TEST(FilterUtils, GetAttachConfigsForFilterMatches) {
   // None of the filters need patterns, because they've already been determined to be a match.
   Filter filter1 = {
-      .id = 1,
+      .id = Filter::Identifier(1, Filter::Originator::kUnknown),
       .config =
           {
               .weak = true,
@@ -45,12 +45,12 @@ TEST(FilterUtils, GetAttachConfigsForFilterMatches) {
   };
 
   Filter filter2 = {
-      .id = 2,
+      .id = Filter::Identifier(2, Filter::Originator::kUnknown),
       .config = {},
   };
 
   Filter filter3 = {
-      .id = 3,
+      .id = Filter::Identifier(3, Filter::Originator::kUnknown),
       .config =
           {
               .job_only = true,

@@ -797,13 +797,10 @@ void Session::DispatchNotifyComponentDiscovered(
 
 void Session::DispatchNotifyComponentStarting(const debug_ipc::NotifyComponentStarting& notify) {
   if (notify.filter) {
+    // Handle older backends that still send us a filter along with this notification. When we get a
+    // new filter via this older mechanism, we need to be sure to update the backend.
     auto filter = system_.CreateNewFilter();
-    filter->SetPattern(notify.filter->pattern);
-    filter->SetType(notify.filter->type);
-    filter->SetJobKoid(notify.filter->job_koid);
-    filter->SetWeak(notify.filter->config.weak);
-    filter->SetRecursive(notify.filter->config.recursive);
-    filter->SetJobOnly(notify.filter->config.job_only);
+    filter->SetFilter(*notify.filter);
   }
 
   for (auto& observer : component_observers_) {
@@ -822,6 +819,12 @@ void Session::DispatchNotifyComponentExiting(const debug_ipc::NotifyComponentExi
 void Session::DispatchNotifyTestExited(const debug_ipc::NotifyTestExited& notify) {
   for (auto& observer : component_observers_) {
     observer.OnTestExited(notify.url);
+  }
+}
+
+void Session::DispatchNotifyFilterCreated(const debug_ipc::NotifyFilterCreated& notify) {
+  if (notify.originating_filter_id.Decode().originator == debug_ipc::Filter::Originator::kZxdb) {
+    system().CreateNewFilter(notify.filter);
   }
 }
 

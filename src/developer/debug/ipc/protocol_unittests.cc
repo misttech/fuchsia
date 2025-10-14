@@ -715,14 +715,38 @@ TEST(Protocol, AspaceReply) {
 
 TEST(Protocol, UpdateFilterRequest) {
   UpdateFilterRequest initial;
-  initial.filters.push_back({Filter::Type::kProcessNameSubstr, "Clock", 1234, 1, {false, false}});
-  initial.filters.push_back({Filter::Type::kProcessName, "Time", 2345, 2, {true, false}});
-  initial.filters.push_back({Filter::Type::kComponentName, "Network", 0, 3, {false, false}});
-  initial.filters.push_back({Filter::Type::kComponentUrl,
-                             "fuchsia-pkg://test.com/test#meta/test.cm",
-                             0,
-                             4,
-                             {true, true}});
+
+  auto& filter1 = initial.filters.emplace_back();
+  filter1.type = Filter::Type::kProcessNameSubstr;
+  filter1.pattern = "Clock";
+  filter1.job_koid = 1234;
+  filter1.id = Filter::Identifier(1, Filter::Originator::kUnknown);
+  filter1.config.weak = false;
+  filter1.config.recursive = false;
+
+  auto& filter2 = initial.filters.emplace_back();
+  filter2.type = Filter::Type::kProcessName;
+  filter2.pattern = "Time";
+  filter2.job_koid = 2345;
+  filter2.id = Filter::Identifier(2, Filter::Originator::kUnknown);
+  filter2.config.weak = true;
+  filter2.config.recursive = false;
+
+  auto& filter3 = initial.filters.emplace_back();
+  filter3.type = Filter::Type::kComponentName;
+  filter3.pattern = "Network";
+  filter3.job_koid = 0;
+  filter3.id = Filter::Identifier(3, Filter::Originator::kUnknown);
+  filter3.config.weak = false;
+  filter3.config.recursive = false;
+
+  auto& filter4 = initial.filters.emplace_back();
+  filter4.type = Filter::Type::kComponentUrl;
+  filter4.pattern = "fuchsia-pkg://test.com/test#meta/test.cm";
+  filter4.job_koid = 0;
+  filter4.id = Filter::Identifier(4, Filter::Originator::kUnknown);
+  filter4.config.weak = true;
+  filter4.config.recursive = true;
 
   UpdateFilterRequest second;
   ASSERT_TRUE(SerializeDeserialize(initial, &second));
@@ -739,11 +763,15 @@ TEST(Protocol, UpdateFilterRequest) {
 
 TEST(Protocol, UpdateFilterReply) {
   UpdateFilterReply initial;
-  initial.matched_processes_for_filter.emplace_back(FilterMatch(1, {1234}));
-  initial.matched_processes_for_filter.emplace_back(FilterMatch(2, {5678}));
-  initial.matched_processes_for_filter.emplace_back(FilterMatch(3, {4321, 2345}));
+
   initial.matched_processes_for_filter.emplace_back(
-      FilterMatch(debug_ipc::kInvalidFilterId, {9876}));
+      Filter::Identifier(1, Filter::Originator::kUnknown), std::vector<uint64_t>{1234});
+  initial.matched_processes_for_filter.emplace_back(
+      Filter::Identifier(2, Filter::Originator::kUnknown), std::vector<uint64_t>{5678});
+  initial.matched_processes_for_filter.emplace_back(
+      Filter::Identifier(3, Filter::Originator::kUnknown), std::vector<uint64_t>{4321, 2345});
+  initial.matched_processes_for_filter.emplace_back(
+      Filter::Identifier(4, Filter::Originator::kUnknown), std::vector<uint64_t>{9876});
 
   UpdateFilterReply second;
   ASSERT_TRUE(SerializeDeserialize(initial, &second));
@@ -1086,7 +1114,7 @@ TEST(Protocol, NotifyProcessStarting) {
   initial.name = "some_process";
   initial.timestamp = kTestTimestampDefault;
   initial.components = {ComponentInfo{.moniker = "moniker", .url = "url"}};
-  initial.filter_id = 1;
+  initial.filter_id = Filter::Identifier(1, Filter::Originator::kUnknown);
 
   NotifyProcessStarting second;
   ASSERT_TRUE(SerializeDeserialize(initial, &second));
@@ -1197,6 +1225,39 @@ TEST(Protocol, NotifyComponentExitingWithVersion) {
   NotifyComponentExiting initial;
 
   std::vector<char> serialized = Serialize(initial, 0);
+  EXPECT_TRUE(serialized.empty());
+}
+
+TEST(Protocol, NotifyFilterCreated) {
+  NotifyFilterCreated initial;
+  initial.timestamp = kTestTimestampDefault;
+  initial.filter.type = Filter::Type::kComponentMonikerPrefix;
+  initial.filter.pattern = "some/moniker";
+  initial.filter.id = Filter::Identifier(1, Filter::Originator::kAgent);
+  initial.originating_filter_id = Filter::Identifier(1, Filter::Originator::kFidlServer);
+  initial.participated_in_matching = true;
+
+  NotifyFilterCreated second;
+  ASSERT_TRUE(SerializeDeserialize(initial, &second));
+
+  EXPECT_EQ(initial.timestamp, second.timestamp);
+  EXPECT_EQ(initial.filter.pattern, second.filter.pattern);
+  EXPECT_EQ(initial.filter.id, second.filter.id);
+  EXPECT_EQ(initial.filter.type, second.filter.type);
+  EXPECT_EQ(initial.originating_filter_id, second.originating_filter_id);
+  EXPECT_EQ(initial.participated_in_matching, second.participated_in_matching);
+}
+
+TEST(Protocol, NotifyFilterCreatedWithVersion) {
+  NotifyFilterCreated initial;
+  initial.timestamp = kTestTimestampDefault;
+  initial.filter.type = Filter::Type::kComponentMonikerPrefix;
+  initial.filter.pattern = "some/moniker";
+  initial.filter.id = Filter::Identifier(1, Filter::Originator::kAgent);
+  initial.originating_filter_id = Filter::Identifier(1, Filter::Originator::kFidlServer);
+  initial.participated_in_matching = false;
+
+  auto serialized = Serialize(initial, 0);
   EXPECT_TRUE(serialized.empty());
 }
 

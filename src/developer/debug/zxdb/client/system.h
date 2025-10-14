@@ -94,7 +94,7 @@ class System : public ClientObject,
   // Returns the filter matching the given id or nullptr if not found. Similarly to |GetFilters|
   // only weak pointers should be cached from the returned pointer and checked for validity before
   // use.
-  Filter* GetFilterForId(uint32_t id) const;
+  Filter* GetFilterForId(const debug_ipc::Filter::Identifier& id) const;
 
   // Returns all symbol servers registered with this symbol instance. The returned pointers are
   // managed by the System object and should not be cached once you return to the message loop.
@@ -129,7 +129,7 @@ class System : public ClientObject,
   void DeleteAllBreakpoints();
 
   // Creates a new filter. It will have no associated pattern.
-  Filter* CreateNewFilter();
+  Filter* CreateNewFilter(std::optional<debug_ipc::Filter> maybe_filter = std::nullopt);
 
   // Delete a filter. The passed-in pointer will be invalid after this call.
   void DeleteFilter(Filter* filter);

@@ -5,6 +5,7 @@
 #include "src/developer/debug/ipc/filter_utils.h"
 
 #include <algorithm>
+#include <random>
 
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/string_util.h"
@@ -26,7 +27,7 @@ bool MatchComponentUrl(std::string_view url, std::string_view pattern) {
   return url == pattern;
 }
 
-const Filter* GetFilterForId(const std::vector<Filter>& filters, uint32_t id) {
+const Filter* GetFilterForId(const std::vector<Filter>& filters, const Filter::Identifier& id) {
   const auto& filter =
       std::ranges::find_if(filters, [id](const Filter& filter) { return id == filter.id; });
   return filter != filters.end() ? &*filter : nullptr;
@@ -66,6 +67,15 @@ bool FilterDefersModules(const Filter* filter) {
   if (filter == nullptr)
     return false;
   return filter->config.weak || filter->config.job_only;
+}
+
+uint32_t GenerateFilterIdValue() {
+  static std::independent_bits_engine<std::default_random_engine, 24, uint32_t> engine;
+
+  uint32_t value = engine();
+  FX_CHECK((value & (0xff << 24)) == 0) << "Generated filter ID value is too big!";
+
+  return value;
 }
 
 std::map<uint64_t, AttachConfig> GetAttachConfigsForFilterMatches(

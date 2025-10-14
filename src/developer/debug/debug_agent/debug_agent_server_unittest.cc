@@ -17,6 +17,7 @@
 #include "src/developer/debug/debug_agent/mock_thread.h"
 #include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/shared/message_loop.h"
+#include "src/developer/debug/shared/result.h"
 #include "src/developer/debug/shared/test_with_loop.h"
 
 namespace debug_agent {
@@ -30,7 +31,36 @@ class DebugAgentServerTest : public debug::TestWithLoop {
                 debug::MessageLoopFuchsia::Current()->dispatcher()) {}
 
   DebugAgentServer::AddFilterResult AddFilter(const fuchsia_debugger::Filter& filter) {
-    return server_.AddFilter(filter);
+    auto server_filters_before = server_.filters_;
+    auto result = server_.AddFilter(filter);
+
+    std::map<debug_ipc::Filter::Identifier, debug_ipc::Filter> diff;
+
+    // Take the previous list of filters known by the server and compare it to the new list. The
+    // resulting map of filters will contain all of the new filters that were added by this call.
+    // There should always be at least one, and potentially two, added filters, depending on the
+    // settings of |filter|.
+    std::set_difference(server_.filters_.begin(), server_.filters_.end(),
+                        server_filters_before.begin(), server_filters_before.end(),
+                        std::inserter(diff, diff.begin()),
+                        [](const auto& p1, const auto& p2) { return p1.first < p2.first; });
+
+    if (result.ok()) {
+      // There should always be precisely one new element if the add was successful.
+      if (diff.size() != 1u) {
+        ADD_FAILURE();
+      } else {
+        // Unambiguous which filter is the new one.
+        last_added_filters_.clear();
+        last_added_filters_.insert(diff.begin(), diff.end());
+      }
+    }
+
+    return result;
+  }
+
+  const std::vector<debug_ipc::NotifyFilterCreated>& notify_filter_created() {
+    return harness_.stream_backend()->filters();
   }
 
   uint32_t AttachToMatchingKoids(const debug_ipc::UpdateFilterReply& reply) {
@@ -47,11 +77,17 @@ class DebugAgentServerTest : public debug::TestWithLoop {
     return reply;
   }
 
+  const std::map<debug_ipc::Filter::Identifier, debug_ipc::Filter>& last_added_filters() const {
+    return last_added_filters_;
+  }
   MockDebugAgentHarness* harness() { return &harness_; }
   DebugAgent* GetDebugAgent() { return harness_.debug_agent(); }
   DebugAgentServer* server() { return &server_; }
 
  private:
+  // This is a map to both reflect that sending one filter in an UpdateFilter request may result in
+  // more than one filter actually being installed, and for easy lookup by filter identifier.
+  std::map<debug_ipc::Filter::Identifier, debug_ipc::Filter> last_added_filters_;
   MockDebugAgentHarness harness_;
   DebugAgentServer server_;
 };
@@ -128,7 +164,7 @@ TEST_F(DebugAgentServerTest, AddNewFilter) {
   reply = result.take_value();
 
   // Updating the filter will give us back the first match, but we need to receive a component
-  // discovered event to match with the routing component that doesn't have an associated ELF
+  // started event to match with the routing component that doesn't have an associated ELF
   // program. The only match should be the process that matched the first filter.
   EXPECT_EQ(reply.matched_processes_for_filter.size(), 1u);
   EXPECT_EQ(reply.matched_processes_for_filter[0].matched_pids.size(), 1u);
@@ -144,6 +180,8 @@ TEST_F(DebugAgentServerTest, AddNewFilter) {
   harness()->system_interface()->mock_component_manager().InjectComponentEvent(
       FakeEventType::kDebugStarted, kFullRootMoniker,
       "fuchsia-pkg://devhost/root_package#meta/root_component.cm");
+
+  loop().RunUntilNoTasks();
 
   status_reply = GetAgentStatus();
 
@@ -185,11 +223,8 @@ TEST_F(DebugAgentServerTest, AddNewFilter) {
   reply = result.take_value();
 
   auto third_filter_match = std::ranges::find_if(reply.matched_processes_for_filter,
-                                                 [](const debug_ipc::FilterMatch& match) {
-                                                   if ((match.id & 0xF) == 3)
-                                                     return true;
-
-                                                   return false;
+                                                 [this](const debug_ipc::FilterMatch& match) {
+                                                   return last_added_filters().contains(match.id);
                                                  });
 
   ASSERT_NE(third_filter_match, reply.matched_processes_for_filter.end());
@@ -289,6 +324,8 @@ TEST_F(DebugAgentServerTest, GetMatchingProcesses) {
       FakeEventType::kDebugStarted, kFullRootMoniker,
       "fuchsia-pkg://devhost/root_package#meta/root_component.cm");
 
+  loop().RunUntilNoTasks();
+
   // Koid of job4 from MockSystemInterface.
   constexpr zx_koid_t kJob4Koid = 32;
   // Inject a process starting event for the ELF process running under some child component of the
@@ -320,6 +357,8 @@ TEST_F(DebugAgentServerTest, AttachToJobOnComponentStarting) {
 
   harness()->system_interface()->mock_component_manager().InjectComponentEvent(
       FakeEventType::kDebugStarted, kComponentMoniker, kComponentUrl, kJobKoid);
+
+  loop().RunUntilNoTasks();
 
   EXPECT_NE(GetDebugAgent()->GetDebuggedJob(kJobKoid), nullptr);
 }

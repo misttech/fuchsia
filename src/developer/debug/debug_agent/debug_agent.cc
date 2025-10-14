@@ -1031,7 +1031,7 @@ void DebugAgent::OnProcessChanged(ProcessChangedHow how,
   notify.name = process_name_override.empty() ? process_handle->GetName() : process_name_override;
   notify.timestamp = GetNowTimestamp();
   notify.components = system_interface_->GetComponentManager().FindComponentInfo(*process_handle);
-  notify.filter_id = matched_filter ? matched_filter->id : debug_ipc::kInvalidFilterId;
+  notify.filter_id = matched_filter ? matched_filter->id : debug_ipc::Filter::Identifier{};
   notify.shared_address_space = process_handle->GetSharedAddressSpace();
 
   DebuggedProcessCreateInfo create_info(std::move(process_handle));
@@ -1064,11 +1064,12 @@ void DebugAgent::OnProcessChanged(ProcessChangedHow how,
 void DebugAgent::OnComponentStarted(const std::string& moniker, const std::string& url,
                                     zx_koid_t job_koid) {
   auto matching_filters = GetMatchingFiltersForComponentInfo(moniker, url);
-  debug_ipc::NotifyComponentStarting notify;
+  debug_ipc::NotifyComponentStarting component_started;
 
-  // The filter installed as a result of a matching recursive filter. There will only ever be at
-  // most one of these, since multiple recursive filters that match this component will all install
-  // identical moniker prefix filters.
+  // We have to be very careful to not invalidate the pointers that are being iterated over in
+  // |matching_filters|, which are owned by |filters_|, so we instead have to delay putting this
+  // into |filters_| until after we're done iterating. We know we'll only install a single filter
+  // for |moniker|, if any, so we don't have to worry about handling multiple additions here.
   std::optional<debug_ipc::Filter> maybe_realm_filter = std::nullopt;
 
   // Install recursive filters.
@@ -1079,30 +1080,45 @@ void DebugAgent::OnComponentStarted(const std::string& moniker, const std::strin
       // filter match needs to be recursive for us to install the prefix filter for |moniker|, and
       // we only need to install one new filter per invocation of this function. The client is
       // notified of this filter so that it is not removed on subsequent UpdateFilter requests,
-      // which the client will do shortly after receiving this notification. The new version of
-      // this filter will include a filter id and with all of the settings given here. Notably, we
-      // do not enable the recursive flag on this filter, which would be redundant with the parent
-      // filter.
-      maybe_realm_filter = debug_ipc::Filter();
-      maybe_realm_filter->type = debug_ipc::Filter::Type::kComponentMonikerPrefix;
-      maybe_realm_filter->pattern = moniker;
-      maybe_realm_filter->config.weak = filter->filter().config.weak;
+      // which the client may do shortly after receiving this notification. Notably, we do not
+      // enable the recursive flag on this filter, which would be redundant with the parent filter.
+      auto realm_filter = debug_ipc::Filter();
+      realm_filter.type = debug_ipc::Filter::Type::kComponentMonikerPrefix;
+      realm_filter.pattern = moniker;
+      realm_filter.id = debug_ipc::Filter::Identifier(debug_ipc::GenerateFilterIdValue(),
+                                                      debug_ipc::Filter::Originator::kAgent);
+      realm_filter.config.weak = filter->filter().config.weak;
 
-      notify.filter = maybe_realm_filter;
+      // Support older clients on debug_ipc version < 73.
+      component_started.filter = realm_filter;
+
+      debug_ipc::NotifyFilterCreated filter_created;
+      filter_created.timestamp = GetNowTimestamp();
+      filter_created.filter = realm_filter;
+      filter_created.originating_filter_id = filter->filter().id;
+      // We aren't doing any explicit matching here, the client will need to send an UpdateFilter
+      // request for that to happen, but we will match against new ProcessStarting events with this
+      // new filter so it is also acceptable for the client(s) to delay sending an update.
+      filter_created.participated_in_matching = false;
+
+      SendNotification(filter_created);
+
+      maybe_realm_filter = realm_filter;
     }
 
     // All matching filters are reported in the notification.
-    notify.matching_filters.emplace_back(filter->filter().id, std::vector<uint64_t>{job_koid});
+    component_started.matching_filters.emplace_back(filter->filter().id,
+                                                    std::vector<uint64_t>{job_koid});
   }
 
   // And add the component information.
   if (!matching_filters.empty()) {
-    notify.component.moniker = moniker;
-    notify.component.url = url;
-    notify.timestamp = GetNowTimestamp();
+    component_started.component.moniker = moniker;
+    component_started.component.url = url;
+    component_started.timestamp = GetNowTimestamp();
 
     // Only send the notification if something matched.
-    SendNotification(notify);
+    SendNotification(component_started);
   }
 
   // Lastly, insert the new filter if we have one. If this causes |filters_| to reallocate, then the

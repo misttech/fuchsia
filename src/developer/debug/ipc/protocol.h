@@ -35,7 +35,7 @@ namespace debug_ipc {
 // CURRENT_SUPPORTED_API_LEVEL is equal to the numbered API level currently represented by "NEXT".
 // If not, continue reading the comments below.
 
-constexpr uint32_t kCurrentProtocolVersion = 72;
+constexpr uint32_t kCurrentProtocolVersion = 73;
 
 // How to decide kMinimumProtocolVersion
 // -------------------------------------
@@ -140,7 +140,8 @@ concept IsDebugIpcNotificationType = requires(T t, Serializer& s, uint32_t ver) 
   FN(NotifyComponentExiting)           \
   FN(NotifyComponentStarting)          \
   FN(NotifyComponentDiscovered)        \
-  FN(NotifyTestExited)
+  FN(NotifyTestExited)                 \
+  FN(NotifyFilterCreated)
 
 // A message consists of a MsgHeader followed by a serialized version of
 // whatever struct is associated with that message type. Use the MessageWriter
@@ -189,6 +190,7 @@ struct MsgHeader {
     kNotifyComponentStarting = 110,
     kNotifyTestExited = 111,
     kNotifyComponentDiscovered = 112,
+    kNotifyFilterCreated = 113,
   };
   static const char* TypeToString(Type);
 
@@ -686,7 +688,7 @@ struct NotifyProcessStarting {
   std::vector<ComponentInfo> components;
 
   // The client filter id that matched this process.
-  uint32_t filter_id = kInvalidFilterId;
+  Filter::Identifier filter_id;
 
   // The shared address space if this is either a prototype process (it was created with
   // zx_process_create(ZX_PROCESS_SHARED)) or if this is a shared process (it was created with
@@ -874,7 +876,9 @@ struct NotifyComponentStarting {
   ComponentInfo component;
 
   // The filter that the backend installed to match this realm, if the matching filter had the
-  // |recursive| option set..
+  // |recursive| option set.
+  //
+  // This field is deprecated in version 73. Prefer to use NotifyFilterCreated instead.
   std::optional<Filter> filter;
 
   // Each match is guaranteed to have exactly one entry in |matched_pids| which corresponds to the
@@ -884,7 +888,7 @@ struct NotifyComponentStarting {
 
   void Serialize(Serializer& ser, uint32_t ver) {
     ser | timestamp | component;
-    if (ver >= 67) {
+    if (ver >= 67 && ver < 73) {
       ser | filter;
     }
 
@@ -914,6 +918,32 @@ struct NotifyTestExited {
   std::string url;
 
   void Serialize(Serializer& ser, uint32_t ver) { ser | timestamp | url; }
+};
+
+// Notify that the backend has created an additional filter based on some settings of another,
+// client installed, filter.
+struct NotifyFilterCreated {
+  static constexpr uint32_t kSupportedSinceVersion = 73;
+
+  uint64_t timestamp = kTimestampDefault;
+
+  // The new filter. This is already installed in the backend, and will participate in matching
+  // against new process and component events.
+  Filter filter;
+
+  // The unique identifier of the filter that caused this new filter to be created. Clients can use
+  // this to determine if they were the ones to cause the backend to create and install |filter|.
+  Filter::Identifier originating_filter_id;
+
+  // Indicates that the client will need to send an UpdateFilter request to the backend in order for
+  // |filter| to participate in matching against already running components and processes. It is not
+  // necessary to send the request if this filter is only expected to match against newly starting
+  // components and processes.
+  bool participated_in_matching = false;
+
+  void Serialize(Serializer& ser, uint32_t ver) {
+    ser | timestamp | filter | originating_filter_id | participated_in_matching;
+  }
 };
 
 #pragma pack(pop)

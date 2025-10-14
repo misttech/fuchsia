@@ -7,6 +7,8 @@
 
 #include <stdint.h>
 
+#include <algorithm>
+#include <compare>
 #include <optional>
 #include <string>
 #include <vector>
@@ -618,8 +620,100 @@ struct Filter {
   std::string pattern;
   uint64_t job_koid = 0;  // must be 0 when type is kComponent*.
 
-  // Set by the frontend. Different from the console's id for "active" filters in the ui.
-  uint32_t id = kInvalidFilterId;
+  // The originator of this filter. This is encoded in the high byte of a 32 bit integer on the
+  // wire, but logically contained separately in the |Identifier| class below.
+  enum class Originator : uint8_t {
+    kUnknown = 0,
+    // The DebugAgent originated this filter. This will only be the case for a temporary filter sent
+    // via the NotifyFilterCreated. Clients will persist the filter if they choose with their own
+    // identifier and originator value.
+    kAgent = 1 << 5,
+    // Originated by zxdb.
+    kZxdb = 1 << 6,
+    // Originated by DebugAgentServer, the provider of the "DebugAgent" FIDL API. This must be the
+    // highest bit to stay backwards compatible with the previous |kFilterIdBase| used in the server
+    // implementation.
+    kFidlServer = 1 << 7,
+    // Newly allocated filter originators can go here. Any unallocated values are reserved.
+    kInvalid = 0xff,
+  };
+
+  struct IdentifierComponents {
+    Originator originator;
+    uint32_t value;
+  };
+
+  // This class is introduced in version 73 to clarify and simplify Filter creation and
+  // identification between all entities in the system. Filters can be created by any of the
+  // entities specified in |Originator|. This is ABI compatible with the previous uint32_t id value.
+  class Identifier {
+   public:
+    Identifier() = default;
+
+    // An Identifier is created with an opaque value assigned by the originator, and the
+    // originator's ordinal from the above list.
+    explicit Identifier(uint32_t client_value, Originator originator)
+        : value_(Encode(client_value, originator)) {}
+
+    bool operator==(const Identifier& other) const { return other.value_ == value_; }
+    std::strong_ordering operator<=>(const Identifier& other) const {
+      return this->value_ <=> other.value_;
+    }
+
+    IdentifierComponents Decode() const {
+      IdentifierComponents components;
+      components.originator = static_cast<Originator>(value_ >> 24);
+      components.value = value_ & kValueMask;
+      return components;
+    }
+
+    uint32_t value() const { return value_; }
+
+    // Note: This is ABI compatible with the previous implementation, so we don't need to check the
+    // versions.
+    void Serialize(Serializer& ser, uint32_t ver) { ser | value_; }
+
+   private:
+    static constexpr uint32_t kValueMask = 0x00ffffff;
+
+    static uint32_t Encode(uint32_t client_value, Originator originator) {
+      return ((static_cast<uint32_t>(originator) & 0xff) << 24) | client_value;
+    }
+
+    uint32_t value_ = kInvalidFilterId;
+  };
+
+  // The cross-ipc-boundary identifier for this filter object. Logically, the identifier has two
+  // components, an "Originator", from a pre-allocated list of valid entities in the system which
+  // created the original filter, and an opaque 32 bit integer, assigned by the client associated
+  // with this filter.
+  //
+  // In practice, this is a 32 bit integer with the most significant byte identifying the originator
+  // of this filter. The remaining 24 bits are reserved for the clients. Clients typically never
+  // install more than a few (< 10) filters, even in extended sessions. The filter will be rejected
+  // with an error if a client attempts to use a value that would encroach on the most significant
+  // byte. The client value is never modified.
+  //
+  // This has two primary purposes:
+  //
+  //   1. Allow feed-forward flows from the clients. IDs are assigned by clients at filter creation
+  //      time.
+  //     1a. The lone exception to this is the NotifyFilterCreated event from the backend, which
+  //         will construct a filter with an originator value of kAgent. See the notification for
+  //         more details.
+  //   2. Provide uniqueness across all clients and the backend.
+  //
+  // In general, this is always needed to disambiguate which client(s) should take action based on a
+  // filter matching resulting in either a {Component,Process}Starting notification or as the result
+  // of an UpdateFilter request matching some non-zero number of processes.
+  //
+  // The NotifyFilterCreated event is typically sent as a result of a client installing a filter
+  // with the |recursive| option. When a match for this filter is found, the backend will construct
+  // a new filter with the (typically component moniker) information and send the event to all
+  // clients along with the identifier of the original filter. Clients can use this, along with
+  // their respectively allocated mask, to determine when they are responsible for keeping track of
+  // this new filter.
+  Identifier id;
 
   FilterConfig config;
 
@@ -629,6 +723,7 @@ struct Filter {
     if (ver < 64) {
       ser | id | config.weak | config.recursive;
     } else {
+      // ver >= 64 can use the config field.
       ser | id | config;
     }
   }
@@ -637,10 +732,11 @@ struct Filter {
 // Reply indicating that a filter matched one or more processes.
 struct FilterMatch {
   FilterMatch() = default;
-  FilterMatch(uint32_t id, std::vector<uint64_t> pids) : id(id), matched_pids(std::move(pids)) {}
+  FilterMatch(const Filter::Identifier& id, std::vector<uint64_t> pids)
+      : id(id), matched_pids(std::move(pids)) {}
 
-  // The frontend id of the filter that matched, -1 if invalid or unknown.
-  uint32_t id = kInvalidFilterId;
+  // See Filter::Identifier.
+  Filter::Identifier id;
 
   // All of the pids that matched this filter.
   std::vector<uint64_t> matched_pids;
