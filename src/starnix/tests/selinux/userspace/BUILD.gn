@@ -93,6 +93,7 @@ source_set("userspace_test_main") {
     "//src/lib/files",
     "//src/lib/json_parser",
     "//src/starnix/tests/syscalls/cpp:test_utils",
+    "//zircon/system/ulib/cmdline",
     "//zircon/system/ulib/fbl",
   ]
   public_deps = [

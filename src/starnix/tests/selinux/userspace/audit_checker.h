@@ -21,6 +21,8 @@ class AuditChecker : public testing::EmptyTestEventListener {
 
   // Creates an `AuditChecker` with debug prints enabled.
   static AuditChecker* for_debug();
+  // Creates an `AuditChecker` with audit log JSON generation.
+  static AuditChecker* with_json_generation();
 
   void OnTestSuiteStart(const testing::TestSuite& test_suite) override;
   void OnTestStart(const testing::TestInfo& test_info) override;
@@ -75,15 +77,14 @@ class AuditChecker : public testing::EmptyTestEventListener {
   // provided in the constructor.
   void CheckAuditExpectations(const std::string& test_name);
 
-  // Debug printing functions to format audit expectations.
-  void DebugPrintWithTab(int multiplier, const char* format, ...);
-  void DebugExpectationsToJSON(const std::vector<std::string> logs, const std::string& test_name);
+  // Printing functions to format audit expectations.
+  void PrintWithTab(int multiplier, const char* format, ...);
+  void ExpectationsToJSON(std::vector<std::string> logs, const std::string& test_name);
 
   std::unordered_map<std::string, std::vector<AuditChecker::AuditLogEntry>> expectations_map_;
   std::string current_test_suite_name_;
-  // Set to true to print the generated audit logs without any checks.
-  // Useful for extracting the expectations from tests on Linux.
-  bool debug_ = false;
+  // Set to true to generate audit log JSON objects without audit checks.
+  bool generate_json_ = false;
 };
 
 #endif  // SRC_STARNIX_TESTS_SELINUX_USERSPACE_AUDIT_CHECKER_H_

@@ -93,6 +93,10 @@ def run_test(
 ) -> bool:
     """Runs a test, returns success or failure."""
 
+    append_args = f"console=ttyS0 security=selinux debug=all audit=1 panic=-1 -- data/tests/{test_name}"
+    if args.json:
+        append_args += " --json"
+
     print(f"Running {test_name}")
     result = subprocess.run(
         [
@@ -110,8 +114,7 @@ def run_test(
             "1G",
             "-enable-kvm",
             "-append",
-            "console=ttyS0 security=selinux debug=all audit=1 panic=-1 -- data/tests/"
-            + test_name,
+            append_args,
         ],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -173,7 +176,14 @@ def main() -> None:
         help="Emit all output from tests directly, with no pretty-filtering.",
         action="store_true",
     )
+    parser.add_argument(
+        "--json",
+        help="Generate audit JSON objects for expectations.",
+        action="store_true",
+    )
     args = parser.parse_args()
+    if args.json:
+        args.all_output = True
 
     work_dir = pathlib.Path(tempfile.mkdtemp())
     try:

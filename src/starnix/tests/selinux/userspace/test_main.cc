@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/cmdline/args_parser.h>
 #include <lib/fit/defer.h>
+#include <lib/fit/result.h>
 #include <sys/mount.h>
 
 #include <cstring>
@@ -20,6 +22,10 @@
 extern std::string DoPrePolicyLoadWork();
 
 namespace {
+
+struct CommandLineOptions {
+  bool generate_json = false;
+};
 
 void LoadPolicy(const std::string& name) {
   // Ensure that no previous policy has been loaded.
@@ -81,16 +87,43 @@ class UserspaceTestEnvironment : public ::testing::Environment {
 
 }  // namespace
 
+// Parse the arguments into valid options structure.
+fit::result<std::string, CommandLineOptions> parse_args(int argc, char** argv) {
+  cmdline::ArgsParser<CommandLineOptions> parser;
+  CommandLineOptions options;
+  parser.AddSwitch("json", 'j', "--json\tGenerate audit log JSON objects for expectations.",
+                   &CommandLineOptions::generate_json);
+  std::vector<std::string> params;
+  if (auto status = parser.Parse(argc, const_cast<const char**>(argv), &options, &params);
+      status.has_error()) {
+    return fit::error("Error: " + status.error_message());
+  }
+  if (params.size()) {
+    return fit::error("Error: arguments with parameters found.");
+  }
+  return fit::ok(options);
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
+
+  auto parse_res = parse_args(argc, argv);
+  if (parse_res.is_error()) {
+    fprintf(stderr, "%s\n", parse_res.error_value().c_str());
+  }
 
   // Set up gTest to perform test environment setup at-most-once.
   GTEST_FLAG_SET(recreate_environments_when_repeating, false);
   ::testing::AddGlobalTestEnvironment(new UserspaceTestEnvironment);
 
   testing::TestEventListeners& listeners = testing::UnitTest::GetInstance()->listeners();
-  // The `for_debug()` function can be used to get an `AuditChecker` with debug enabled.
-  listeners.Append(new AuditChecker);
+  // The `with_json_generation()` function can be used to get an `AuditChecker` which will
+  // generate audit log JSON objects.
+  if (parse_res.value().generate_json) {
+    listeners.Append(AuditChecker::with_json_generation());
+  } else {
+    listeners.Append(new AuditChecker);
+  }
 
   return RUN_ALL_TESTS();
 }

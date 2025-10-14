@@ -34,10 +34,10 @@ AuditChecker::AuditChecker() {
   }
 }
 
-AuditChecker* AuditChecker::for_debug() {
-  auto debug_checker = new AuditChecker;
-  debug_checker->debug_ = true;
-  return debug_checker;
+AuditChecker* AuditChecker::with_json_generation() {
+  auto checker = new AuditChecker;
+  checker->generate_json_ = true;
+  return checker;
 }
 
 std::optional<AuditChecker::AuditLogEntry> AuditChecker::ParseAuditLogString(
@@ -108,9 +108,6 @@ std::vector<AuditChecker::AuditLogEntry> AuditChecker::ReadAuditLogs(const std::
   if (!fd.is_valid() || RegisterAsAuditDaemon(fd.get(), getpid()).is_error()) {
     return parsed_logs;
   }
-  if (debug_) {
-    printf("audit_listener: started\n");
-  }
 
   bool checked_start = false;
   char buf[kNetlinkBufSize];
@@ -155,9 +152,10 @@ std::vector<AuditChecker::AuditLogEntry> AuditChecker::ReadAuditLogs(const std::
         fprintf(stderr, "Found AUDIT_AVC log before start sentinel: %s\n", message.c_str());
         continue;
       }
-      if (debug_) {
+      if (generate_json_) {
         raw_logs.push_back(message);
       }
+      fprintf(stderr, "%s\n", message.c_str());
       parsed_logs.push_back(*entry);
     } else {
       ADD_FAILURE() << "Failed to parse AUDIT_AVC message: " << error_str
@@ -171,9 +169,8 @@ std::vector<AuditChecker::AuditLogEntry> AuditChecker::ReadAuditLogs(const std::
   if (!checked_start) {
     fprintf(stderr, "Did not find start sentinel\n");
   }
-  if (debug_) {
-    DebugExpectationsToJSON(raw_logs, test_name);
-    printf("\naudit_listener: stopped\n");
+  if (generate_json_) {
+    ExpectationsToJSON(raw_logs, test_name);
   }
   return parsed_logs;
 }
@@ -226,7 +223,7 @@ void AuditChecker::OnTestSuiteStart(const testing::TestSuite& test_suite) {
 
 void AuditChecker::OnTestStart(const testing::TestInfo& test_info) {
   std::string test_name(current_test_suite_name_ + "/" + test_info.name());
-  if (!ShouldCheckAudits(test_name) && !debug_) {
+  if (!ShouldCheckAudits(test_name) && !generate_json_) {
     return;
   }
   SendStartSentinel();
@@ -234,14 +231,14 @@ void AuditChecker::OnTestStart(const testing::TestInfo& test_info) {
 
 void AuditChecker::OnTestEnd(const testing::TestInfo& test_info) {
   std::string test_name(current_test_suite_name_ + "/" + test_info.name());
-  if (!ShouldCheckAudits(test_name) && !debug_) {
+  if (!ShouldCheckAudits(test_name) && !generate_json_) {
     return;
   }
   SendEndSentinel();
   CheckAuditExpectations(test_name);
 }
 
-void AuditChecker::DebugPrintWithTab(int multiplier, const char* format, ...) {
+void AuditChecker::PrintWithTab(int multiplier, const char* format, ...) {
   printf("%*s", multiplier * kTabSize, "");
   va_list args;
   va_start(args, format);
@@ -249,23 +246,22 @@ void AuditChecker::DebugPrintWithTab(int multiplier, const char* format, ...) {
   va_end(args);
 }
 
-void AuditChecker::DebugExpectationsToJSON(const std::vector<std::string> logs,
-                                           const std::string& test_name) {
+void AuditChecker::ExpectationsToJSON(std::vector<std::string> logs, const std::string& test_name) {
   if (!logs.size()) {
     return;
   }
 
   printf("\n{\n");
-  DebugPrintWithTab(1, "\"%s\": \"%s\",\n", kTestNameKey, test_name.c_str());
-  DebugPrintWithTab(1, "\"%s\": [\n", kTestAuditExpectationsKey);
+  PrintWithTab(1, "\"%s\": \"%s\",\n", kTestNameKey, test_name.c_str());
+  PrintWithTab(1, "\"%s\": [\n", kTestAuditExpectationsKey);
   for (int i = 0; i < (int)logs.size(); i++) {
-    DebugPrintWithTab(2, "\"%s\"", logs[i].c_str());
+    PrintWithTab(2, "\"%s\"", logs[i].c_str());
     if (i != (int)logs.size() - 1) {
       printf(",");
     }
     printf("\n");
   }
-  DebugPrintWithTab(1, "]\n");
+  PrintWithTab(1, "]\n");
   printf("}\n");
 }
 
@@ -276,7 +272,7 @@ std::string AuditChecker::StringifyAudit(const AuditChecker::AuditLogEntry entry
 
 void AuditChecker::CheckAuditExpectations(const std::string& test_name) {
   std::vector<AuditChecker::AuditLogEntry> actual_logs = ReadAuditLogs(test_name);
-  if (debug_) {
+  if (generate_json_) {
     return;
   }
   std::vector<AuditChecker::AuditLogEntry> expected_logs = expectations_map_.at(test_name);
