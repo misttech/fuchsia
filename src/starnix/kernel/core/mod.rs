@@ -7,3 +7,4 @@ pub mod bpf;
 pub mod device;
 pub mod execution;
 pub mod fs;
+pub mod mm;
