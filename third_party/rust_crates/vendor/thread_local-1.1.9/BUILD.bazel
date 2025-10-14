@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "thread_local",
     package_url = "https://github.com/Amanieu/thread_local-rs",
-    package_version = "1.1.7",
+    package_version = "1.1.9",
 )
 
 license(
@@ -72,9 +72,8 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.1.7",
+    version = "1.1.9",
     deps = [
         "//third_party/rust_crates/vendor/cfg-if-1.0.3:cfg_if",
-        "//third_party/rust_crates/vendor/once_cell-1.21.3:once_cell",
     ],
 )

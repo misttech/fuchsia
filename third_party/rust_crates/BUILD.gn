@@ -18636,18 +18636,18 @@ rustc_macro("thiserror-impl-v2_0_12") {
   applicable_licenses = [ ":thiserror-impl-v2_0_12.license" ]
 }
 
-license("thread_local-v1_1_7.license") {
+license("thread_local-v1_1_9.license") {
   public_package_name = "thread_local"
   license_files = [
-    "//third_party/rust_crates/vendor/thread_local-1.1.7/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/thread_local-1.1.7/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/thread_local-1.1.9/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/thread_local-1.1.9/LICENSE-MIT",
   ]
 }
 
-rustc_library("thread_local-v1_1_7") {
+rustc_library("thread_local-v1_1_9") {
   crate_name = "thread_local"
-  source_root = "//third_party/rust_crates/vendor/thread_local-1.1.7/src/lib.rs"
-  output_name = "thread_local-77810a8d2fa10bcb"
+  source_root = "//third_party/rust_crates/vendor/thread_local-1.1.9/src/lib.rs"
+  output_name = "thread_local-cbb280f9b66e19cc"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -18655,19 +18655,18 @@ rustc_library("thread_local-v1_1_7") {
 
   deps = []
   deps += [ ":cfg-if-v1_0_3" ]
-  deps += [ ":once_cell-v1_21_3" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=77810a8d2fa10bcb",
-    "-Cextra-filename=-77810a8d2fa10bcb",
+    "-Cmetadata=cbb280f9b66e19cc",
+    "-Cextra-filename=-cbb280f9b66e19cc",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":thread_local-v1_1_7.license" ]
+  applicable_licenses = [ ":thread_local-v1_1_9.license" ]
 }
 
 license("tinyjson-v2_5_1.license") {
@@ -19408,7 +19407,7 @@ rustc_library("tracing-subscriber-v0_3_18") {
   deps += [ ":regex-v1_7_3" ]
   deps += [ ":sharded-slab-v0_1_4" ]
   deps += [ ":smallvec-v1_15_1" ]
-  deps += [ ":thread_local-v1_1_7" ]
+  deps += [ ":thread_local-v1_1_9" ]
   deps += [ ":tracing-log-v0_2_0" ]
   deps += [ ":tracing-v0_1_40" ]
 
