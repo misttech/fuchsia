@@ -59,8 +59,8 @@ pub(super) trait Reader {
 
 pub struct F2fsReader {
     device: Arc<dyn Device>,
-    pub superblock: SuperBlock,     // 1kb, points at checkpoints
-    pub checkpoint: CheckpointPack, // pair of a/b segments (alternating versions)
+    superblock: SuperBlock,     // 1kb, points at checkpoints
+    checkpoint: CheckpointPack, // pair of a/b segments (alternating versions)
     nat: Option<Nat>,
 
     // A simple key store.
@@ -77,6 +77,14 @@ impl Drop for F2fsReader {
 }
 
 impl F2fsReader {
+    pub fn superblock(&self) -> &SuperBlock {
+        &self.superblock
+    }
+
+    pub fn checkpoint(&self) -> &CheckpointPack {
+        &self.checkpoint
+    }
+
     pub async fn open_device(device: Arc<dyn Device>) -> Result<Self, Error> {
         let (superblock, checkpoint) =
             match Self::try_from_superblock(device.as_ref(), SUPERBLOCK_OFFSET).await {
@@ -529,6 +537,31 @@ mod test {
                     name: Box::new(b"c".to_owned()),
                     value: Box::new(b"value".to_owned())
                 },
+                xattr::XattrEntry {
+                    index: xattr::Index::User,
+                    name: Box::new(b"padding_test_1".to_owned()),
+                    value: Box::new(b"v".to_owned())
+                },
+                xattr::XattrEntry {
+                    index: xattr::Index::User,
+                    name: Box::new(b"padding_test_2".to_owned()),
+                    value: Box::new(b"va".to_owned())
+                },
+                xattr::XattrEntry {
+                    index: xattr::Index::User,
+                    name: Box::new(b"padding_test_3".to_owned()),
+                    value: Box::new(b"val".to_owned())
+                },
+                xattr::XattrEntry {
+                    index: xattr::Index::User,
+                    name: Box::new(b"padding_test_4".to_owned()),
+                    value: Box::new(b"valu".to_owned())
+                },
+                xattr::XattrEntry {
+                    index: xattr::Index::User,
+                    name: Box::new(b"padding_test_5".to_owned()),
+                    value: Box::new(b"value".to_owned())
+                },
             ]
         );
     }
@@ -566,21 +599,21 @@ mod test {
         //   $ ls /mnt/fscrypt -lR
 
         // /fscrypt/<a>/<b>/<symlink>
-        let str_a = "4YcLcwAAAAD6allZAfGJFpP31ROAxIy6";
-        let str_b = "ow5mzwAAAACVD0noEySQOMXcUcZ-PLf6";
-        let str_symlink = "GpkLmwAAAABIDwEnUVhPF0d_QW1bN7ll";
-        let bytes_symlink_content = b"AAAAAAAAAAAA5y-_DtaC-ysnS51ywyqn";
+        let str_a = "2ll82QAAAADywluz1Ule7OVNBxUfa5Mw";
+        let str_b = "sttckQAAAADLBOCVVgjrZ-CXNkj5E6Cr";
+        let str_symlink = "zHAtQgAAAACRNPQYvCKuQo5F8rQUORg3";
+        let bytes_symlink_content = b"AAAAAAAAAADUsYZ_qNiiouF7e40xm65S";
 
         let mut expected : HashSet<_> = [ // files in fscrypt/ dir.
-            "4YcLcwAAAAD6allZAfGJFpP31ROAxIy6",
-            "-96hJwAAAAC2QK8ehk2GtP_81mo61N8P",
-            "hZTqlwAAAACyEkf7g28pvfSLJ6yp6qRr",
-            "LeWdQAAAAADldpVMpGHaAhzUwFGRKGfH",
-            "MTWYaAAAAACM-8awOstsx4okTPdq_7v8",
-            "nIpZJgAAAABevALynLVQJCzO6CQ0314G",
-            "rSA6ugAAAADZcEttcoXm3wfX5ixA4ugQulC9QKk0Qj1N3Mx04i_oP41jdz5GRTST1BM5BPWM_e_Qn1q376U-hXaq3ZQ3kNDdKDsGQ74ZNcnfNzaoqZU_qTR3IUi6inf7GqIjOhDEeT3LQ2qvs9hdfoULJMlSZAgv744p0Pr-vpz0vgtT1DFAT4P54P3sJUyv7puI6E8xRbZ9cOTrHiNxAKrfgm2VCBOYQhPukmBt0VftwUDEmDbESi2yajic",
-            "Tya-hQAAAAAvvou7mQ2HkhA61gVKNNSK",
-            "ZdtW8QAAAACvQHfaZ2dYAob61MEljf-t",
+            "2ll82QAAAADywluz1Ule7OVNBxUfa5Mw",
+            "65OSUQAAAADqOiZJcQ1El2dpVdYMy84l",
+            "7vcnbgAAAAAOWdQfi4wK46uRGQBD0YSy",
+            "9Gsv9QAAAADjTeJ_9WdCxZMVTiSWhsWR",
+            "FAqGXAAAAAD1jOLXaZN-o8X9PoS67GI7",
+            "Rq5qZAAAAAA3y2lvAqesYDnVJWMklWnj",
+            "S93sdgAAAABo-YmXNPKtv4wxQCcUslTu",
+            "VP8QBwAAAAATw6Ozex0N2gMYrnDsB2aH",
+            "xUNjwgAAAADB0pEx5ovwx-AS02L0d1j7VMBRXzM4YnBri2pbasOqbFLhtegXr9kDGNcYd_hyk2mOkQIqu8hk7eARlFl-bq1yLhikhIT9HVC3FMrI7vQ-ewncEjXLDP3KK6RtH3r34S89AlzJZ4DVfXrr_Q5N5mANBbGTzeO70aJHL0Ms-MgkKwjHcbIxXLwcjE2B-mssLAvXam58pSD-aazxS_J2hrxOHGoUYiVJ-rXHozmKxBdWAO6OUW65",
         ].into_iter().collect();
 
         let device = open_test_image("/pkg/testdata/f2fs.img.zst");

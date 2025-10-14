@@ -64,7 +64,7 @@ async fn test_fxfs_migration_at_offset(offset: u64) {
                 .expect("create ranged device"),
         );
         let f2fs = F2fsReader::open_device(ranged_device).await.expect("f2fs open ok");
-        f2fs.superblock
+        (*f2fs.superblock()).clone()
     };
 
     let insecure_crypt = InsecureCrypt::new();
@@ -151,7 +151,7 @@ async fn test_fxfs_read_lblk32_ino_file() {
         let inode = f2fs.read_inode(ino).await.expect("read file");
         let f2fs_data = f2fs.read_data(&inode, 0).await.expect("read data");
         let f2fs_data = f2fs_data.map(|b| b.as_slice().to_vec());
-        (f2fs.superblock.uuid, f2fs.superblock.clone(), f2fs_data, ino)
+        (f2fs.superblock().uuid, f2fs.superblock().clone(), f2fs_data, ino)
     };
 
     let device = Arc::try_unwrap(device).map_err(|_| ()).expect("only one ref to device");
@@ -233,7 +233,7 @@ async fn test_fxfs_verify_encrypted_data() {
                 .expect("create ranged device"),
         );
         let f2fs = F2fsReader::open_device(ranged_device).await.expect("f2fs open ok");
-        (f2fs.superblock.uuid, f2fs.superblock)
+        (f2fs.superblock().uuid, (*f2fs.superblock()).clone())
     };
 
     let device = Arc::try_unwrap(device).map_err(|_| ()).expect("only one ref to device");

@@ -78,6 +78,18 @@ attr -s b -V "value" ${MOUNT_PATH}/sparse.dat
 attr -s c -V "value" ${MOUNT_PATH}/sparse.dat
 attr -r b ${MOUNT_PATH}/sparse.dat
 
+# xattr padding tests
+# 1 byte value -> 3 bytes padding
+attr -s padding_test_1 -V "v" ${MOUNT_PATH}/sparse.dat
+# 2 byte value -> 2 bytes padding
+attr -s padding_test_2 -V "va" ${MOUNT_PATH}/sparse.dat
+# 3 byte value -> 1 byte padding
+attr -s padding_test_3 -V "val" ${MOUNT_PATH}/sparse.dat
+# 4 byte value -> 0 bytes padding
+attr -s padding_test_4 -V "valu" ${MOUNT_PATH}/sparse.dat
+# 5 byte value -> 3 bytes padding
+attr -s padding_test_5 -V "value" ${MOUNT_PATH}/sparse.dat
+
 VERITY_PATH=${MOUNT_PATH}/verity
 mkdir -p ${VERITY_PATH}
 #Enable verity on a file that is normally inlined, but will not be after setting verity.

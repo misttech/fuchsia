@@ -893,7 +893,7 @@ pub async fn migrate_device(
         let f2fs =
             F2fsReader::open_device(ranged_device).await.context("Failed to open f2fs image")?;
 
-        fxfs.journal().set_filesystem_uuid(&f2fs.superblock.uuid).expect("set uuid");
+        fxfs.journal().set_filesystem_uuid(&f2fs.superblock().uuid).expect("set uuid");
 
         // Create a "userdata" volume in fxfs.
         let root_volume = root_volume(fxfs.clone()).await.expect("Opening root volume");
@@ -961,7 +961,7 @@ pub async fn migrate_device(
         reserve_f2fs_metadata(
             offset,
             &f2fs,
-            f2fs.superblock.main_blkaddr,
+            f2fs.superblock().main_blkaddr,
             &f2fs_metadata_blocks,
             &files_to_copy,
             &mut transaction,
