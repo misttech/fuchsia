@@ -10,8 +10,6 @@ use {async_utils as _, fidl_fuchsia_power_suspend as _};
 pub mod vdso;
 pub mod vfs;
 
-pub mod testing;
-
 // This allows macros to use paths within this crate
 // by referring to them by the external crate name.
 extern crate self as starnix_core;
