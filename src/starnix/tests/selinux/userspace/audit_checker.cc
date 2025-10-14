@@ -114,6 +114,14 @@ bool AuditChecker::ParseExpectationsFile(const std::string& file_path) {
 }
 
 bool AuditChecker::AuditLogEntry::operator==(const AuditChecker::AuditLogEntry& other) const {
+  // If the permission can not be found in the other structure or the other structure's
+  // permission can not be found in permission, return false because of total difference.
+  if (!strstr(other.permission.c_str(), permission.c_str()) &&
+      !strstr(permission.c_str(), other.permission.c_str())) {
+    return false;
+  }
+  // If the permission field contains multiple permissions (on Linux), just print the
+  // difference.
   if (permission != other.permission) {
     printf("Notice: 'permission' field differs: '%s' vs '%s'\n", permission.c_str(),
            other.permission.c_str());
