@@ -55,9 +55,15 @@ TEST_P(VulkanImageExtensionTest, BufferCollectionRGBA) {
   ASSERT_TRUE(Exec(VK_FORMAT_R8G8B8A8_UNORM, 64, 64, GetParam(), false));
 }
 
-TEST_P(VulkanImageExtensionTest, BufferCollectionRGBA_1026) {
+// Tests non-4 pixel aligned size
+TEST_P(VulkanImageExtensionTest, BufferCollectionRGBA_1026_Width) {
   ASSERT_TRUE(Initialize());
   ASSERT_TRUE(Exec(VK_FORMAT_R8G8B8A8_UNORM, 1026, 64, GetParam(), false));
+}
+
+TEST_P(VulkanImageExtensionTest, BufferCollectionRGBA_1026) {
+  ASSERT_TRUE(Initialize());
+  ASSERT_TRUE(Exec(VK_FORMAT_R8G8B8A8_UNORM, 1026, 1026, GetParam(), false));
 }
 
 TEST_P(VulkanImageExtensionTest, BufferCollectionRGBA_1010102) {
