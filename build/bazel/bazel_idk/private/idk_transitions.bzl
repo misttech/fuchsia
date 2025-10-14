@@ -4,21 +4,26 @@
 
 """Transitions used to build the IDK."""
 
+load("@fuchsia_build_info//:args.bzl", "idk_buildable_api_levels", "idk_buildable_cpus")
+
 visibility(["//build/bazel/bazel_idk/tests/..."])
 
 def _cpu_api_level_transition_impl(_settings, _attr):
-    return [
-        {"//command_line_option:platforms": "@//build/bazel/platforms:fuchsia_platform_arm64"},
-        {"//command_line_option:platforms": "@//build/bazel/platforms:fuchsia_platform_riscv64"},
-        {"//command_line_option:platforms": "@//build/bazel/platforms:fuchsia_platform_x64"},
-    ]
+    combinations = []
+    for api_level in idk_buildable_api_levels:
+        for cpu in idk_buildable_cpus:
+            combinations.append({
+                "@//build/bazel:fuchsia_api_level": api_level,
+                "//command_line_option:platforms": "@//build/bazel/platforms:fuchsia_platform_%s" % cpu,
+            })
+    return combinations
 
 cpu_api_level_transition = transition(
     implementation = _cpu_api_level_transition_impl,
     inputs = [],
     outputs = [
+        "@//build/bazel:fuchsia_api_level",
         "//command_line_option:platforms",
-        # TODO(https://fxbug.dev/443825617): Add API level when available.
     ],
 )
 
