@@ -95,7 +95,7 @@ impl PerFileDecryptor {
     pub fn decrypt_data(&self, ino: u32, block_num: u32, buffer: &mut [u8]) {
         assert_eq!((buffer.as_ptr() as usize) % 16, 0, "Require 16-byte aligned buffers");
         assert_eq!(buffer.len() % 16, 0, "Require buffters be multiple of 16-bytes");
-        // TODO(b/406351838): Migrate to share implementation with fxfs-crypto?
+        // TODO(https://fxbug.dev/406351838): Migrate to share implementation with fxfs-crypto?
         let key1 = self.xts_key1.clone();
         let key2 = self.xts_key2.clone();
         let mut tweak: u128 = if let Some(ino_hash_key) = self.ino_hash_key {

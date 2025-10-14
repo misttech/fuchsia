@@ -76,7 +76,8 @@ pub fn decode_xattr(raw_data: &[u8]) -> Result<Vec<XattrEntry>, Error> {
                 (entry.name_len as usize + entry.value_size as usize) <= rest.len(),
                 "invalid name_len/value_size in xattr"
             );
-            let padding_len = 4 - (entry.name_len as usize + entry.value_size as usize) % 4;
+            let padding_len = 3 - (entry.name_len as usize + entry.value_size as usize + 3) % 4;
+            // TODO(https://fxbug.dev/450685631): Add a test for xattr padding.
 
             let name = rest[..entry.name_len as usize].to_owned().into_boxed_slice();
             rest = &rest[entry.name_len as usize..];

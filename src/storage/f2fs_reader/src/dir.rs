@@ -99,7 +99,7 @@ fn get_dir_entries(
             i += 1;
             continue;
         }
-        // TODO(b/404680707): Do we need to consider handling devices with badly formed filenames?
+        // TODO(https://fxbug.dev/404680707): Do we need to consider handling devices with badly formed filenames?
         let filename = if is_encrypted {
             if let Some(decryptor) = decryptor {
                 let mut hash_code = fscrypt::direntry::tea_hash_filename(&raw_filename[..name_len]);

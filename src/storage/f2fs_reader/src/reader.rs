@@ -59,8 +59,8 @@ pub(super) trait Reader {
 
 pub struct F2fsReader {
     device: Arc<dyn Device>,
-    pub superblock: SuperBlock, // 1kb, points at checkpoints
-    checkpoint: CheckpointPack, // pair of a/b segments (alternating versions)
+    pub superblock: SuperBlock,     // 1kb, points at checkpoints
+    pub checkpoint: CheckpointPack, // pair of a/b segments (alternating versions)
     nat: Option<Nat>,
 
     // A simple key store.
@@ -135,7 +135,7 @@ impl F2fsReader {
     }
 
     /// Returns the block address that the checkpoint starts at.
-    fn checkpoint_start_addr(&self) -> u32 {
+    pub fn checkpoint_start_addr(&self) -> u32 {
         self.superblock.cp_blkaddr
             + if self.checkpoint.header.checkpoint_ver % 2 == 1 {
                 0
@@ -284,6 +284,7 @@ impl F2fsReader {
     }
 
     /// Reads and returns a data block of a file.
+    /// On success, this will return Some(Buffer) containing the data or None if the file is sparse.
     pub async fn read_data(
         &self,
         inode: &Inode,

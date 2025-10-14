@@ -139,7 +139,13 @@ impl SuperBlock {
         if superblock.feature & FEATURE_CASEFOLD != 0 {
             // 1 here means 'UTF8 12.1.0' which is the version we support in Fxfs.
             ensure!(superblock.charset_encoding == 1, "Unsupported unicode charset");
-            ensure!(superblock.charset_encoding_flags == 0, "Unsupported charset_encoding_flags");
+            // We expect NO_COMPAT_FALLBACK to always be set.
+            // Without this flag, missing hashes will be handled by exhaustive search of directories.
+            const NO_COMPAT_FALLBACK: u16 = 2;
+            ensure!(
+                superblock.charset_encoding_flags == NO_COMPAT_FALLBACK,
+                "Unsupported charset_encoding_flags"
+            );
         }
 
         Ok(superblock)

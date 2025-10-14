@@ -24,7 +24,8 @@ rustc_library("insecure") {
 
   sources = [ "src/lib.rs" ]
   visibility = [
-    "//src/storage/f2fs_reader/tests/*",
+    "//src/storage/f2fs_reader/*",
     "//src/storage/fxfs/*",
+    "//vendor/google/*",
   ]
 }
