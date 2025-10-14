@@ -93,7 +93,7 @@ def run_test(
 ) -> bool:
     """Runs a test, returns success or failure."""
 
-    append_args = f"console=ttyS0 security=selinux debug=all audit=1 panic=-1 -- data/tests/{test_name}"
+    append_args = f"console=ttyS0 security=selinux debug=all audit=1 audit_backlog_limit=0 panic=-1 -- data/tests/{test_name}"
     if args.json:
         append_args += " --json"
 
