@@ -6,6 +6,7 @@
 
 import argparse
 import fnmatch
+import json
 import os
 import pathlib
 import re
@@ -13,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from typing import Any
 
 SUCCESS_RE = re.compile("TEST SUCCESS$", re.MULTILINE)
 
@@ -84,17 +86,82 @@ def build_initrd(
     return (work_dir / "initrd.img"), tests
 
 
+def parse_audit_expectations_from_output(stdout: str) -> list[dict[str, Any]]:
+    """Parses audit expectation JSON blobs from the test runner stdout."""
+    audit_expectations = []
+    json_buffer = ""
+    for line in stdout.splitlines():
+        stripped_line = line.strip()
+        if not stripped_line:
+            continue
+
+        if stripped_line.startswith("{"):
+            json_buffer = stripped_line
+        elif json_buffer:
+            json_buffer += stripped_line
+
+        if json_buffer and stripped_line.endswith("}"):
+            try:
+                data = json.loads(json_buffer)
+                audit_expectations.append(data)
+            except json.JSONDecodeError as e:
+                print(f"Failed to load JSON object: {e}")
+            finally:
+                json_buffer = ""
+    return audit_expectations
+
+
+def write_updated_expectations(
+    all_new_expectations: list[dict[str, Any]],
+    fuchsia_dir: pathlib.Path,
+) -> None:
+    """Updates the `audit_expectations.json` file with new results."""
+    if not all_new_expectations:
+        print("No new audit expectations found to update.")
+        return
+
+    expectations_file = (
+        fuchsia_dir
+        / "src/starnix/tests/selinux/userspace/expectations/audit_success.json"
+    )
+    tests_array_name = "audit_success"
+
+    try:
+        with open(expectations_file, "r") as f:
+            existing_data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"Failed to parse expectations file: {e}")
+        return
+
+    existing_tests_map = {
+        test["name"]: test for test in existing_data.get(tests_array_name, [])
+    }
+
+    for new_exp in all_new_expectations:
+        test_name = new_exp["name"]
+        print(f"Updating expectations for {test_name}")
+        existing_tests_map[test_name] = new_exp
+
+    # Convert back to a list and sort by name for consistent output.
+    updated_tests = sorted(existing_tests_map.values(), key=lambda x: x["name"])
+    final_data = {tests_array_name: updated_tests}
+    with open(expectations_file, "w") as f:
+        json.dump(final_data, f, indent=4)
+        f.write("\n")
+    print(f"Successfully updated {expectations_file}")
+
+
 def run_test(
     work_dir: pathlib.Path,
     test_name: str,
     kernel_path: pathlib.Path,
     initrd_path: pathlib.Path,
     args: argparse.Namespace,
-) -> bool:
-    """Runs a test, returns success or failure."""
+) -> tuple[bool, list[dict[str, Any]]]:
+    """Runs a test, returns success or failure and any audit expectations."""
 
     append_args = f"console=ttyS0 security=selinux debug=all audit=1 audit_backlog_limit=0 panic=-1 -- data/tests/{test_name}"
-    if args.json:
+    if args.json or args.update_audit_expectations:
         append_args += " --json"
 
     print(f"Running {test_name}")
@@ -156,15 +223,23 @@ def run_test(
             print("Failed to run any tests! See all preceding output.")
         print(f"End of output ({test_name})")
 
-    return passed
+    new_expectations = []
+    if args.update_audit_expectations:
+        new_expectations = parse_audit_expectations_from_output(result.stdout)
+
+    return passed, new_expectations
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         "run_on_linux.py",
+        description="Run SEStarnix userspace tests on Linux via QEMU.",
     )
     parser.add_argument(
-        "--test-filter", type=str, default="*", help="Test filter."
+        "--test-filter",
+        type=str,
+        default="*",
+        help="Test filter (e.g., 'Bpf*').",
     )
     parser.add_argument(
         "--preserve-work-dir",
@@ -179,6 +254,11 @@ def main() -> None:
     parser.add_argument(
         "--json",
         help="Generate audit JSON objects for expectations.",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--update-audit-expectations",
+        help="Update the audit expectation JSON file with the results from this run.",
         action="store_true",
     )
     args = parser.parse_args()
@@ -226,10 +306,20 @@ def build_and_run_tests(
     initrd_path, tests = build_initrd(work_dir, fuchsia_dir)
     matched_tests = fnmatch.filter(tests, args.test_filter)
     print(f"Matched {len(matched_tests)} tests.")
+
     failed_tests = []
+    new_audit_expectations = []
     for test_name in sorted(matched_tests):
-        if not run_test(work_dir, test_name, kernel_path, initrd_path, args):
+        passed, new_expectations = run_test(
+            work_dir, test_name, kernel_path, initrd_path, args
+        )
+        if not passed:
             failed_tests.append(test_name)
+        new_audit_expectations.extend(new_expectations)
+
+    if args.update_audit_expectations:
+        write_updated_expectations(new_audit_expectations, fuchsia_dir)
+
     if failed_tests:
         print(f"Failed tests:")
         for test_name in failed_tests:

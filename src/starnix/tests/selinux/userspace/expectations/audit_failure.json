@@ -1,3 +1,44 @@
 {
-    "audit_failure": []
+    "audit_failure": [
+        // TODO(https://fxbug.dev/409256444) - Check `execmod`.
+        "MProtectExecmod/MProtectExecmod/ExecMod/ExecmodNo_PrivateMapping_Modification_MprotectFailure",
+
+        // Fails because it logs `nlmsg_relay` and `nlmsg` for the same action on Starnix.
+        "NetlinkAuditWriteTestSuite/NetlinkAuditSendTest/Send/2",
+        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/1",
+        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/3",
+        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/5",
+        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/9",
+        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/11",
+        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/13",
+        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/15",
+        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/17",
+        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/19",
+        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/21",
+        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/23",
+        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/25",
+        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/27",
+        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/32",
+        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/33",
+        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/35",
+        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/37",
+
+        // Expect `ENOTSUP` for testcases currently unsupported in Starnix, no audit will be logged.
+        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/7",
+        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/28",
+        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/29",
+
+        // No logging is done for this on Starnix.
+        "PerfEventTest/PerfEventOpenCpuEventsOnCurrentTask",
+        "PerfEventTest/PerfEventOpenKernelEventsOnCurrentTask",
+
+        // TODO(https://fxbug.dev/451611382) - Check capabilities on `perf_event` hooks.
+        "PerfEventTest/PerfEventOpenAllTasksFailsOnUnauthorisedCurrentTask",
+        "PerfEventTest/PerfEventFailingCpuEvents/PerfEventOpenFailsOnMissingPermissions/1",
+        "PerfEventTest/PerfEventFailingKernelEvents/PerfEventOpenFailsOnMissingPermissions/1",
+        "PerfEventTest/PerfEventFailingKernelEvents/PerfEventOpenFailsOnMissingPermissions/2",
+
+        // The permission is checked correctly, but Linux adds multiple logs for the same denial.
+        "SyslogTest/ProcKmsgReadDeniedIfDroppedPermission"
+    ]
 }

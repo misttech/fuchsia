@@ -1,5 +1,8 @@
 {
     "audit_skip": [
+        // TODO(https://fxbug.dev/450257490) - Fix tests that do not use subprocesses.
+        "SocketTest/ListenAllowed",
+
         // These tests do not produce any useful audit logs.
         "NetlinkAuditTest/RegisterAuditDaemon",
         "NetlinkAuditTest/RegisterAuditDaemonWithOtherPid",
@@ -7,6 +10,9 @@
         "NetlinkAuditTest/MessageReceivedOnlyOnDaemonSocket",
         "NetlinkAuditTest/ForkedChildReadsParentsQueuedMessage",
         "NetlinkAuditTest/ChildDaemonReadsParentsMessageFromNewSocket",
-        "NetlinkAuditTest/ForkedChildUnregistersParentOnOneSocket"
+        "NetlinkAuditTest/ForkedChildUnregistersParentOnOneSocket",
+
+        // Uses `AUDIT_STATUS_PID` with `AUDIT_SET` which consumes the start sentinel.
+        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/24"
     ]
 }

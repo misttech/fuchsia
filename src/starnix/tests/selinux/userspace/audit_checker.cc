@@ -102,6 +102,10 @@ bool AuditChecker::ParseExpectationsFile(const std::string& file_path) {
       }
       std::string error_str;
       std::string log_str = log_str_val.GetString();
+      // TODO: https://fxbug.dev/449714364 - Remove after denials are generated in permissive mode.
+      if (test_helper::IsStarnix() && strstr(log_str.c_str(), "permissive=1")) {
+        continue;
+      }
       if (auto entry = ParseAuditLogString(log_str, error_str)) {
         expected_logs.push_back(*entry);
       } else {
