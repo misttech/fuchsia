@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "lib/power/state_recorder/cpp/state_recorder.h"
-
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/testing/cpp/inspect.h>
 
@@ -12,6 +10,7 @@
 #include <gtest/gtest.h>
 
 #include "gmock/gmock.h"
+#include "lib/power/state_recorder/cpp/enum_state_recorder.h"
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 #include "zircon/errors.h"
 
@@ -64,13 +63,13 @@ TEST_F(StateRecorderTest, OffOn) {
       .trace_category_literal = "power_test",
   };
 
-  auto result = StateRecorder<SwitchState>::Create(metadata, SwitchState::kOff, 10, *manager_);
+  auto result = EnumStateRecorder<SwitchState>::Create(metadata, SwitchState::kOff, 10, *manager_);
   ASSERT_TRUE(result.is_ok());
-  StateRecorder recorder(std::move(result.value()));
+  EnumStateRecorder recorder(std::move(result.value()));
 
-  recorder.RecordTransition(SwitchState::kOn);
-  recorder.RecordTransition(SwitchState::kOff);
-  recorder.RecordTransition(SwitchState::kOn);
+  recorder.Record(SwitchState::kOn);
+  recorder.Record(SwitchState::kOff);
+  recorder.Record(SwitchState::kOn);
 
   auto hierarchy = GetHierarchy();
   EXPECT_THAT(hierarchy, AllOf(NodeMatches(NameMatches("root")),
@@ -129,17 +128,20 @@ TEST_F(StateRecorderTest, CantReuseName) {
   };
 
   {
-    auto result_1 = StateRecorder<SwitchState>::Create(metadata, SwitchState::kOff, 10, *manager_);
+    auto result_1 =
+        EnumStateRecorder<SwitchState>::Create(metadata, SwitchState::kOff, 10, *manager_);
     ASSERT_TRUE(result_1.is_ok());
 
     // Reusing a name results in an error.
-    auto result_2 = StateRecorder<SwitchState>::Create(metadata, SwitchState::kOff, 10, *manager_);
+    auto result_2 =
+        EnumStateRecorder<SwitchState>::Create(metadata, SwitchState::kOff, 10, *manager_);
     ASSERT_TRUE(result_2.is_error());
     ASSERT_EQ(result_2.error_value(), ZX_ERR_ALREADY_EXISTS);
   }
 
   // After result_1 is dropped, the name is available for use again.
-  auto result_3 = StateRecorder<SwitchState>::Create(metadata, SwitchState::kOff, 10, *manager_);
+  auto result_3 =
+      EnumStateRecorder<SwitchState>::Create(metadata, SwitchState::kOff, 10, *manager_);
   ASSERT_TRUE(result_3.is_ok());
 }
 
@@ -162,17 +164,18 @@ TEST_F(StateRecorderTest, MultipleRecorders) {
       .trace_category_literal = "power_test",
   };
 
-  auto result_0 = StateRecorder<SwitchState>::Create(metadata_0, SwitchState::kOff, 10, *manager_);
+  auto result_0 =
+      EnumStateRecorder<SwitchState>::Create(metadata_0, SwitchState::kOff, 10, *manager_);
   ASSERT_TRUE(result_0.is_ok());
-  StateRecorder recorder_0 = std::move(result_0.value());
+  EnumStateRecorder recorder_0 = std::move(result_0.value());
 
-  auto result_1 =
-      StateRecorder<EnablementState>::Create(metadata_1, EnablementState::kEnabled, 10, *manager_);
+  auto result_1 = EnumStateRecorder<EnablementState>::Create(metadata_1, EnablementState::kEnabled,
+                                                             10, *manager_);
   ASSERT_TRUE(result_1.is_ok());
-  StateRecorder recorder_1 = std::move(result_1.value());
+  EnumStateRecorder recorder_1 = std::move(result_1.value());
 
-  recorder_0.RecordTransition(SwitchState::kOn);
-  recorder_1.RecordTransition(EnablementState::kDisabled);
+  recorder_0.Record(SwitchState::kOn);
+  recorder_1.Record(EnablementState::kDisabled);
 
   auto hierarchy = GetHierarchy();
   EXPECT_THAT(hierarchy, AllOf(NodeMatches(NameMatches("root")),
@@ -222,12 +225,12 @@ TEST_F(StateRecorderTest, ThreeStates) {
       .trace_category_literal = "power_test",
   };
 
-  auto result = StateRecorder<FanSpeed>::Create(metadata, FanSpeed::kOff, 10, *manager_);
+  auto result = EnumStateRecorder<FanSpeed>::Create(metadata, FanSpeed::kOff, 10, *manager_);
   ASSERT_TRUE(result.is_ok());
-  StateRecorder recorder(std::move(result.value()));
+  EnumStateRecorder recorder(std::move(result.value()));
 
-  recorder.RecordTransition(FanSpeed::kHigh);
-  recorder.RecordTransition(FanSpeed::kLow);
+  recorder.Record(FanSpeed::kHigh);
+  recorder.Record(FanSpeed::kLow);
 
   auto hierarchy = GetHierarchy();
   EXPECT_THAT(hierarchy, AllOf(NodeMatches(NameMatches("root")),

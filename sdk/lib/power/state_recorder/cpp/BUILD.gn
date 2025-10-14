@@ -11,7 +11,10 @@ sdk_source_set("cpp") {
   sdk_name = "power_state_recorder_cpp"
   include_base = "//sdk"
 
-  sources = [ "state_recorder.h" ]
+  sources = [
+    "enum_state_recorder.h",
+    "manager.h",
+  ]
 
   public_deps = [
     "//sdk/lib/fit",

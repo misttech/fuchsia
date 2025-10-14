@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef LIB_POWER_STATE_RECORDER_CPP_STATE_RECORDER_H_
-#define LIB_POWER_STATE_RECORDER_CPP_STATE_RECORDER_H_
+#ifndef LIB_POWER_STATE_RECORDER_CPP_ENUM_STATE_RECORDER_H_
+#define LIB_POWER_STATE_RECORDER_CPP_ENUM_STATE_RECORDER_H_
 
-#include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/bounded_list_node.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/syslog/cpp/macros.h>
@@ -16,13 +15,12 @@
 #include <lib/zx/result.h>
 #include <zircon/compiler.h>
 
-#include <algorithm>
 #include <map>
-#include <mutex>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
-#include <vector>
+
+#include "lib/power/state_recorder/cpp/manager.h"
 
 namespace power_observability {
 
@@ -45,36 +43,6 @@ zx_koid_t GetPid() {
 
 }  // namespace internal
 
-// Manages state associated with all StateRecorder instances linked to a particular inspector.
-//
-// Only one StateRecorderManager should be created for a given ComponentInspector instance, as
-// it corresponds to a specifically-named child of the inspector's root.
-class StateRecorderManager final {
- public:
-  explicit StateRecorderManager(inspect::ComponentInspector& inspector)
-      : recorders_root_(inspector.root().CreateChild("power_observability_state_recorders")) {}
-
-  zx::result<inspect::Node> RegisterName(std::string& name) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (std::ranges::find(names_in_use_, name) != names_in_use_.end()) {
-      return zx::error(ZX_ERR_ALREADY_EXISTS);
-    }
-    names_in_use_.push_back(name);
-    return zx::ok(recorders_root_.CreateChild(name));
-  }
-
-  void UnregisterName(std::string& name) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    std::erase(names_in_use_, name);
-  }
-
- private:
-  // Represents a set, but implemented using a vector due to expected small number of elements.
-  std::vector<std::string> names_in_use_ __TA_GUARDED(mutex_);
-  inspect::Node recorders_root_;
-  std::mutex mutex_;
-};
-
 // Metadata for an enum state.
 template <typename T>
 struct EnumStateMetadata {
@@ -96,7 +64,7 @@ struct EnumStateMetadata {
 
 // Records state changes to Inspect and trace.
 template <typename T>
-class StateRecorder final {
+class EnumStateRecorder final {
  public:
   static_assert(std::is_enum_v<T>, "T must be an enum type.");
 
@@ -105,15 +73,15 @@ class StateRecorder final {
   // Errors:
   //   - ZX_ERR_ALREADY_EXISTS: `metadata.name` is already in use by a StateRecorder exporting
   //     to the provided inspector.
-  static zx::result<StateRecorder<T>> Create(EnumStateMetadata<T> metadata, T initial_state,
-                                             size_t capacity, StateRecorderManager& manager);
+  static zx::result<EnumStateRecorder<T>> Create(EnumStateMetadata<T> metadata, T initial_state,
+                                                 size_t capacity, StateRecorderManager& manager);
 
-  void RecordTransition(T state_enum);
+  void Record(T state_enum);
 
-  StateRecorder(const StateRecorder&) = delete;
-  StateRecorder& operator=(const StateRecorder&) = delete;
+  EnumStateRecorder(const EnumStateRecorder&) = delete;
+  EnumStateRecorder& operator=(const EnumStateRecorder&) = delete;
 
-  StateRecorder& operator=(StateRecorder&& other) noexcept {
+  EnumStateRecorder& operator=(EnumStateRecorder&& other) noexcept {
     name_ = std::move(other.name_);
     trace_category_literal_ = other.trace_category_literal_;
     state_names_ = std::move(other.state_names_);
@@ -129,7 +97,7 @@ class StateRecorder final {
     return *this;
   }
 
-  StateRecorder(StateRecorder&& other) noexcept
+  EnumStateRecorder(EnumStateRecorder&& other) noexcept
       : name_(std::move(other.name_)),
         trace_category_literal_(other.trace_category_literal_),
         state_names_(std::move(other.state_names_)),
@@ -142,15 +110,15 @@ class StateRecorder final {
     other.moved_from_ = true;
   }
 
-  ~StateRecorder() {
+  ~EnumStateRecorder() {
     if (!moved_from_) {
       manager_->UnregisterName(name_);
     }
   }
 
  protected:
-  StateRecorder(EnumStateMetadata<T> metadata, T initial_state, size_t capacity,
-                StateRecorderManager& manager, inspect::Node root_node)
+  EnumStateRecorder(EnumStateMetadata<T> metadata, T initial_state, size_t capacity,
+                    StateRecorderManager& manager, inspect::Node root_node)
       : name_(metadata.name),
         trace_category_literal_(metadata.trace_category_literal),
         root_node_(std::move(root_node)),
@@ -174,7 +142,7 @@ class StateRecorder final {
       state_names_.emplace(state_enum, state_name);
     }
 
-    RecordTransition(initial_state);
+    Record(initial_state);
   }
 
  private:
@@ -218,20 +186,21 @@ class StateRecorder final {
 };
 
 template <typename T>
-zx::result<StateRecorder<T>> StateRecorder<T>::Create(EnumStateMetadata<T> metadata,
-                                                      T initial_state, size_t capacity,
-                                                      StateRecorderManager& manager) {
+zx::result<EnumStateRecorder<T>> EnumStateRecorder<T>::Create(EnumStateMetadata<T> metadata,
+                                                              T initial_state, size_t capacity,
+                                                              StateRecorderManager& manager) {
   auto result = manager.RegisterName(metadata.name);
   if (!result.is_ok()) {
     return result.take_error();
   }
 
   return zx::ok(
-      StateRecorder<T>(metadata, initial_state, capacity, manager, std::move(result.value())));
+      EnumStateRecorder<T>(metadata, initial_state, capacity, manager, std::move(result.value())));
 }
 
 template <typename T>
-const typename StateRecorder<T>::StateName* StateRecorder<T>::GetStateName(T state_enum) const {
+const typename EnumStateRecorder<T>::StateName* EnumStateRecorder<T>::GetStateName(
+    T state_enum) const {
   static const StateName UNKNOWN_STATE_NAME = StateName("<Unknown>");
 
   auto it = state_names_.find(state_enum);
@@ -242,7 +211,7 @@ const typename StateRecorder<T>::StateName* StateRecorder<T>::GetStateName(T sta
 }
 
 template <typename T>
-void StateRecorder<T>::RecordTransition(T state_enum) {
+void EnumStateRecorder<T>::Record(T state_enum) {
   // Since our event names are not literals, we're using the trace function API rather than the
   // more common macro API.
   static trace_site_t trace_site_state;
@@ -283,4 +252,4 @@ void StateRecorder<T>::RecordTransition(T state_enum) {
 
 }  // namespace power_observability
 
-#endif  // LIB_POWER_STATE_RECORDER_CPP_STATE_RECORDER_H_
+#endif  // LIB_POWER_STATE_RECORDER_CPP_ENUM_STATE_RECORDER_H_

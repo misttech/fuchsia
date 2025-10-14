@@ -22,23 +22,14 @@ fx build && fx ota
 
 ## Running
 
-To run one of the examples, define this function:
+After building and setting up your emulator, run examples using
+[`run_example.sh`](//examples/power/state_recorder/run_example.sh):
 
 ```
-function run_example() {
-  LANG=$1  # "rust" or "cpp"
-  EXAMPLE="state_recorder_${LANG}_example"
-  if ffx component list 2>/dev/null | grep -q ${EXAMPLE}$; then
-    ffx component destroy /core/ffx-laboratory:${EXAMPLE}
-  fi
-  ffx trace start --categories kernel:meta,power_example --duration 15 &
-  sleep 0.2
-  ffx component run \
-    /core/ffx-laboratory:${EXAMPLE} \
-    "fuchsia-pkg://fuchsia.com/${EXAMPLE}#meta/${EXAMPLE}.cm"
-  wait %1
-}
+./examples/power/state_recorder/run_example.sh cpp
 ```
+or
 
-Then run the example for the language of interest with either `run_example cpp`
-or `run_example rust`.
+```
+./examples/power/state_recorder/run_example.sh rust
+```

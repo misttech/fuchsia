@@ -7,7 +7,7 @@
 #include <lib/async/cpp/task.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
-#include <lib/power/state_recorder/cpp/state_recorder.h>
+#include <lib/power/state_recorder/cpp/enum_state_recorder.h>
 #include <lib/sys/cpp/component_context.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace-provider/provider.h>
@@ -19,7 +19,7 @@
 
 namespace {
 
-using power_observability::StateRecorder;
+using power_observability::EnumStateRecorder;
 
 enum class FanSpeed : uint8_t {
   kOff = 0,
@@ -47,7 +47,7 @@ class ExampleComponent {
         },
         tick_task_(this),
         transition_task_(this) {
-    auto result = StateRecorder<FanSpeed>::Create(metadata_, FanSpeed::kOff, 10, manager_);
+    auto result = EnumStateRecorder<FanSpeed>::Create(metadata_, FanSpeed::kOff, 10, manager_);
     ZX_ASSERT_MSG(result.is_ok(), "Failed with status %s", result.status_string());
     recorder_ = std::move(result.value());
   }
@@ -73,7 +73,7 @@ class ExampleComponent {
     if (status != ZX_OK) {
       return;
     }
-    recorder_->RecordTransition(static_cast<FanSpeed>(transition_counter_ % 3));
+    recorder_->Record(static_cast<FanSpeed>(transition_counter_ % 3));
     transition_counter_++;
     task->PostDelayed(dispatcher, zx::sec(1));
   }
@@ -83,7 +83,7 @@ class ExampleComponent {
   inspect::ComponentInspector inspector_;
   power_observability::StateRecorderManager manager_;
   power_observability::EnumStateMetadata<FanSpeed> metadata_;
-  std::optional<StateRecorder<FanSpeed>> recorder_;
+  std::optional<EnumStateRecorder<FanSpeed>> recorder_;
   uint32_t transition_counter_ = 1;
 
   async::TaskMethod<ExampleComponent, &ExampleComponent::Tick> tick_task_;
