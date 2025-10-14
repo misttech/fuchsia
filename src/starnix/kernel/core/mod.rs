@@ -12,3 +12,4 @@ pub mod mutable_state;
 pub mod perf;
 pub mod power;
 pub mod security;
+pub mod signals;
