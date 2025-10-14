@@ -5,6 +5,9 @@
 #ifndef SRC_TESTING_CATAPULT_CONVERTER_CONVERTER_H_
 #define SRC_TESTING_CATAPULT_CONVERTER_CONVERTER_H_
 
+#include <optional>
+#include <span>
+
 #include "rapidjson/document.h"
 
 // Generate a 128-bit (pseudo) random UUID in the form of version 4 as described
@@ -14,6 +17,10 @@
 // The hexadecimal values "a" through "f" are output as lower case characters.
 // If UUID generation fails an empty string is returned.
 std::string GenerateUuid();
+
+// Convert a fuchsiaperf unit into the corresponding catapult format. Additionally convert and
+// modify `vls` to fit the new unit.
+std::optional<std::string> ConvertUnits(std::string_view input_unit, std::span<double> vals);
 
 struct ConverterArgs {
   // These parameters are copied into the Catapult histogram file.  See the

@@ -7,7 +7,10 @@ import("//build/host.gni")
 import("//build/test.gni")
 
 source_set("converter") {
-  sources = [ "converter.cc" ]
+  sources = [
+    "converter.cc",
+    "converter.h",
+  ]
   deps = [
     "//sdk/lib/syslog/cpp",
     "//src/lib/fxl",

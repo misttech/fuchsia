@@ -10,7 +10,9 @@
 
 #include <algorithm>
 #include <map>
-#include <numeric>
+#include <span>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "rapidjson/document.h"
@@ -23,7 +25,6 @@
 #if defined(OS_FUCHSIA)
 #include <zircon/syscalls.h>
 #else
-#include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -130,60 +131,48 @@ void ComputeStatistics(const std::vector<double>& vals, rapidjson::Value* output
 //
 // The list of valid unit strings for the Catapult Histogram JSON format is
 // available at:
-// https://github.com/catapult-project/catapult/blob/8dc09eb0703647db9ca37b26f2d01a0a4dc0285c/tracing/tracing/value/histogram.py#L478
-std::string ConvertUnits(const char* input_unit, std::vector<double>* vals) {
-  if (strcmp(input_unit, "nanoseconds") == 0 || strcmp(input_unit, "ns") == 0) {
-    // Convert from nanoseconds to milliseconds.
-    for (auto& val : *vals) {
-      val /= 1e6;
-    }
-    return "ms_smallerIsBetter";
-  } else if (strcmp(input_unit, "milliseconds") == 0 || strcmp(input_unit, "ms") == 0) {
-    return "ms_smallerIsBetter";
-  } else if (strcmp(input_unit, "bytes/second") == 0) {
-    // Convert from bytes/second to mebibytes/second.
-    for (auto& val : *vals) {
-      val /= 1024 * 1024;
-    }
+// https://github.com/catapult-project/catapult/blob/0a069d4/tracing/tracing/value/histogram.py#L624C1-L624C11
 
-    // The Catapult dashboard does not yet support a "bytes per unit time"
-    // unit (of any multiple), and it rejects unknown units, so we report
-    // this as "unitless" here for now.  TODO(mseaborn): Add support for
-    // data rate units to Catapult.
-    return "unitless_biggerIsBetter";
-  } else if (strcmp(input_unit, "bits/second") == 0) {
-    // See above comment on "bytes/second" for why we report this as "unitless".
-    return "unitless_biggerIsBetter";
-  } else if (strcmp(input_unit, "bytes") == 0) {
-    return "sizeInBytes_smallerIsBetter";
-  } else if (strcmp(input_unit, "frames/second") == 0) {
-    return "Hz_biggerIsBetter";
-  } else if (strcmp(input_unit, "percent") == 0) {
-    return "n%_smallerIsBetter";
-  } else if (strcmp(input_unit, "count_smallerIsBetter") == 0) {
-    return "count_smallerIsBetter";
-  } else if (strcmp(input_unit, "count_biggerIsBetter") == 0) {
-    return "count_biggerIsBetter";
-  } else if (strcmp(input_unit, "Watts") == 0) {
-    return "W_smallerIsBetter";
-  } else {
-    fprintf(stderr, "Units not recognized: %s\n", input_unit);
-    exit(1);
-  }
-}
+// If unspecified provide a default direction to maintain compatibility with
+// previous fuchsiaperf files that don't specify a direction.
+const std::unordered_set<std::string> UNIT_NAMES = {"ms",       "msBestFitFormat", "tsMs",
+                                                    "n%",       "sizeInBytes",     "bytesPerSecond",
+                                                    "J",   // Joule
+                                                    "W",   // Watt
+                                                    "A",   // Ampere
+                                                    "Ah",  // Ampere-hours
+                                                    "V",   // Volt
+                                                    "Hz",  // Hertz
+                                                    "unitless", "count",           "sigma"};
+const std::unordered_map<std::string, std::string> DEFAULT_IMPROVEMENT_DIRECTION = {
+    {"bytesPerSecond", "biggerIsBetter"},
+    {"sizeInBytes", "smallerIsBetter"},
+    {"J", "smallerIsBetter"},
+    {"W", "smallerIsBetter"},
+    {"A", "smallerIsBetter"},
+    {"V", "smallerIsBetter"},
+    {"Hz", "biggerIsBetter"},
+    {"unitless", "biggerIsBetter"},
+    {"sigma", "smallerIsBetter"},
+    {"n%", "smallerIsBetter"},
+    {"ms", "smallerIsBetter"},
+};
 
 // Adds a Histogram to the given |output| Document.
 void AddHistogram(rapidjson::Document* output, rapidjson::Document::AllocatorType* alloc,
                   const std::string& test_name, const char* input_unit, std::vector<double>&& vals,
                   rapidjson::Value diagnostic_map, rapidjson::Value guid) {
-  std::string catapult_unit = ConvertUnits(input_unit, &vals);
+  std::optional<std::string> catapult_unit = ConvertUnits(input_unit, vals);
+  if (!catapult_unit.has_value()) {
+    exit(1);
+  }
   rapidjson::Value stats;
   ComputeStatistics(vals, &stats, alloc);
 
   rapidjson::Value histogram;
   histogram.SetObject();
   histogram.AddMember("name", test_name, *alloc);
-  histogram.AddMember("unit", catapult_unit, *alloc);
+  histogram.AddMember("unit", *catapult_unit, *alloc);
   histogram.AddMember("description", "", *alloc);
   histogram.AddMember("diagnostics", diagnostic_map, *alloc);
   histogram.AddMember("running", stats, *alloc);
@@ -235,6 +224,73 @@ void RandBytes(void* output, size_t output_length) {
 }
 
 }  // namespace
+
+std::optional<std::string> ConvertUnits(std::string_view input, std::span<double> vals) {
+  std::string_view input_unit;
+  std::string_view input_direction;
+
+  size_t underscore_pos = input.find('_');
+  if (underscore_pos != std::string_view::npos) {
+    input_direction = input.substr(underscore_pos + 1);
+    input_unit = input.substr(0, underscore_pos);
+  } else {
+    input_unit = input;
+  }
+
+  std::string unit = std::string(input_unit);
+  // Convert fuchsiaperf's idea of units to catapult's idea of units. Most units we simply pass
+  // through, but we provide a few shorthand notations.
+  if (input_unit == "nanoseconds" || input_unit == "ns") {
+    // Convert from nanoseconds to milliseconds.
+    for (double& val : vals) {
+      val /= 1e6;
+    }
+    unit = "ms";
+  } else if (input_unit == "milliseconds") {
+    unit = "ms";
+  } else if (input_unit == "bytes/second") {
+    // Fuchsiaperf dashboards reports in MiB/s, but catapult only supports bytes per second.
+    // So we report this as "unitless".
+    for (double& val : vals) {
+      val /= 1024 * 1024;
+    }
+    unit = "unitless";
+  } else if (input_unit == "bits/second") {
+    // Network perf is typically reported in bits per second but catapult only
+    // supports bytes per second. So we report this as "unitless".
+    unit = "unitless";
+  } else if (input_unit == "bytes") {
+    unit = "sizeInBytes";
+  } else if (input_unit == "frames/second") {
+    unit = "Hz";
+  } else if (input_unit == "percent") {
+    unit = "n%";
+  } else if (!UNIT_NAMES.contains(unit)) {
+    fprintf(stderr, "Unrecognized unit: %s\n", unit.c_str());
+    fprintf(stderr, "Valid units: \n");
+    for (const auto& name : UNIT_NAMES) {
+      fprintf(stderr, "- %s ", name.c_str());
+    }
+    fprintf(stderr, "\n");
+    return std::nullopt;
+  }
+
+  std::string direction;
+  if (input_direction == "biggerIsBetter" || input_direction == "smallerIsBetter") {
+    direction = input_direction;
+  } else if (input_direction.empty()) {
+    // Provide backwards compatibility with fuchsiaperf files that don't specify a direction.
+    // Otherwise, defer to catapult's default direction.
+    if (DEFAULT_IMPROVEMENT_DIRECTION.contains(unit)) {
+      direction = DEFAULT_IMPROVEMENT_DIRECTION.at(unit);
+    }
+  } else {
+    fprintf(stderr, "Invalid direction in: %s\n", std::string(input).c_str());
+    fprintf(stderr, "Valid directions: smallerIsBetter, biggerIsBetter\n");
+    return std::nullopt;
+  }
+  return direction.empty() ? unit : unit + "_" + direction;
+}
 
 // Code copied from "//src/lib/uuid/uuid.cc", however it uses our |RandBytes|
 // (which uses "/dev/urandom" when running on non-Fuchsia platforms), as

@@ -12,7 +12,6 @@
 
 #include "rapidjson/error/en.h"
 #include "rapidjson/filereadstream.h"
-#include "rapidjson/filewritestream.h"
 #include "rapidjson/prettywriter.h"
 #include "src/lib/fxl/strings/split_string.h"
 
@@ -967,6 +966,31 @@ TEST(CatapultConverter, GenerateUuid) {
     EXPECT_TRUE(IsValidUuid(uuid));
     EXPECT_TRUE(IsValidUuidOutputString(uuid));
   }
+}
+
+TEST(CatapultConverter, ConvertUnits) {
+  // Fuchsiaperf assumes defaults for some units
+  std::vector<double> vals{1.0, 2.0, 3.0};
+  EXPECT_EQ(std::optional{"unitless_biggerIsBetter"}, ConvertUnits("unitless", vals));
+
+  // But if we specify it, we should keep what we specify
+  EXPECT_EQ(std::optional{"unitless_biggerIsBetter"},
+            ConvertUnits("unitless_biggerIsBetter", vals));
+  EXPECT_EQ(std::optional{"unitless_smallerIsBetter"},
+            ConvertUnits("unitless_smallerIsBetter", vals));
+
+  // Passing a bad direction should fail
+  EXPECT_EQ(std::nullopt, ConvertUnits("unitless_mediumIsBetter", vals));
+
+  // Passing a unit should fail
+  EXPECT_EQ(std::nullopt, ConvertUnits("kg_smallerIsBetter", vals));
+
+  // Catapult uses ms, so our nanos should convert values
+  std::vector<double> ns_vals{1000000, 2000000, 3000000};
+  EXPECT_EQ(std::optional{"ms_smallerIsBetter"}, ConvertUnits("ns_smallerIsBetter", ns_vals));
+  EXPECT_DOUBLE_EQ(ns_vals[0], 1.0);
+  EXPECT_DOUBLE_EQ(ns_vals[1], 2.0);
+  EXPECT_DOUBLE_EQ(ns_vals[2], 3.0);
 }
 
 }  // namespace
