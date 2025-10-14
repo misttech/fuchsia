@@ -817,6 +817,24 @@ mod test {
     use std::path::PathBuf;
     use tempfile::NamedTempFile;
 
+    fn setup_ssh_paths(context: &EnvironmentContext) -> (NamedTempFile, NamedTempFile) {
+        let temp_ssh_priv = NamedTempFile::new().expect("creating temp file for ssh.priv");
+        context
+            .query("ssh.priv")
+            .level(Some(ffx_config::ConfigLevel::User))
+            .build()
+            .set(context, temp_ssh_priv.path().to_string_lossy().into())
+            .expect("creating temp ssh.priv");
+        let temp_ssh_pub = NamedTempFile::new().expect("creating temp file for ssh.pub");
+        context
+            .query("ssh.pub")
+            .level(Some(ffx_config::ConfigLevel::User))
+            .build()
+            .set(context, temp_ssh_pub.path().to_string_lossy().into())
+            .expect("creating temp ssh.pub");
+        (temp_ssh_priv, temp_ssh_pub)
+    }
+
     #[fuchsia::test]
     async fn test_preprocess_flash_command_infers_product_bundle() {
         let env = ffx_config::test_init().expect("Failed to initialize test env");
@@ -826,13 +844,7 @@ mod test {
             .build()
             .set(&env.context, "foo".into())
             .expect("creating temp product.path");
-        let tfile = NamedTempFile::new().expect("creating temp file for ssh.priv");
-        env.context
-            .query("ssh.priv")
-            .level(Some(ffx_config::ConfigLevel::User))
-            .build()
-            .set(&env.context, tfile.path().to_string_lossy().into())
-            .expect("creating temp product.path");
+        let (_tmp_ssh_priv, _tmp_ssh_pub) = setup_ssh_paths(&env.context);
         let buffers = TestBuffers::default();
         let mut writer = <FlashTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
         let cmd = preprocess_flash_cmd(
@@ -848,13 +860,7 @@ mod test {
     #[fuchsia::test]
     async fn test_nonexistent_file_throws_err() {
         let env = ffx_config::test_init().expect("Failed to initialize test env");
-        let tfile = NamedTempFile::new().expect("creating temp file for ssh.priv");
-        env.context
-            .query("ssh.priv")
-            .level(Some(ffx_config::ConfigLevel::User))
-            .build()
-            .set(&env.context, tfile.path().to_string_lossy().into())
-            .expect("creating temp product.path");
+        let (_tmp_ssh_priv, _tmp_ssh_pub) = setup_ssh_paths(&env.context);
         let buffers = TestBuffers::default();
         let mut writer = <FlashTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
         assert!(
@@ -874,13 +880,7 @@ mod test {
     #[fuchsia::test]
     async fn test_clean_quotes() {
         let env = ffx_config::test_init().expect("Failed to initialize test env");
-        let tfile = NamedTempFile::new().expect("creating temp file for ssh.priv");
-        env.context
-            .query("ssh.priv")
-            .level(Some(ffx_config::ConfigLevel::User))
-            .build()
-            .set(&env.context, tfile.path().to_string_lossy().into())
-            .expect("creating temp product.path");
+        let (_tmp_ssh_priv, _tmp_ssh_pub) = setup_ssh_paths(&env.context);
         let pb_tmp_file = NamedTempFile::new().expect("tmp access failed");
         let pb_tmp_file_name = pb_tmp_file.path().to_string_lossy().to_string();
         let wrapped_pb_tmp_file_name = format!("\"{}\"", pb_tmp_file_name);
@@ -908,13 +908,7 @@ mod test {
     #[fuchsia::test]
     async fn test_nonexistent_ssh_file_throws_err() {
         let env = ffx_config::test_init().expect("Failed to initialize test env");
-        let tfile = NamedTempFile::new().expect("creating temp file for ssh.priv");
-        env.context
-            .query("ssh.priv")
-            .level(Some(ffx_config::ConfigLevel::User))
-            .build()
-            .set(&env.context, tfile.path().to_string_lossy().into())
-            .expect("creating temp product.path");
+        let (_tmp_ssh_priv, _tmp_ssh_pub) = setup_ssh_paths(&env.context);
         let tmp_file = NamedTempFile::new().expect("tmp access failed");
         let tmp_file_name = tmp_file.path().to_string_lossy().to_string();
 
@@ -938,13 +932,7 @@ mod test {
     #[fuchsia::test]
     async fn test_specify_manifest_twice_throws_error() {
         let env = ffx_config::test_init().expect("Failed to initialize test env");
-        let tfile = NamedTempFile::new().expect("creating temp file for ssh.priv");
-        env.context
-            .query("ssh.priv")
-            .level(Some(ffx_config::ConfigLevel::User))
-            .build()
-            .set(&env.context, tfile.path().to_string_lossy().into())
-            .expect("creating temp product.path");
+        let (_tmp_ssh_priv, _tmp_ssh_pub) = setup_ssh_paths(&env.context);
         let tmp_file = NamedTempFile::new().expect("tmp access failed");
         let tmp_file_name = tmp_file.path().to_string_lossy().to_string();
         let buffers = TestBuffers::default();
