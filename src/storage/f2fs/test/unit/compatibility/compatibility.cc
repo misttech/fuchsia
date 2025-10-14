@@ -4,6 +4,9 @@
 
 #include <fcntl.h>
 
+#include <iomanip>
+#include <sstream>
+
 #include <gtest/gtest.h>
 
 #include "src/storage/f2fs/f2fs.h"
@@ -12,28 +15,6 @@
 
 namespace f2fs {
 namespace {
-
-class SimpleIOTest : public F2fsFakeDevTestFixture {
- public:
-  SimpleIOTest()
-      : F2fsFakeDevTestFixture(
-            TestOptions{.block_count = kSectorCount100MiB, .image_file = "simple_io.img.zst"}) {}
-};
-
-TEST_F(SimpleIOTest, SimpleIO) {
-  fbl::RefPtr<fs::Vnode> vnode;
-  FileTester::Lookup(root_dir_.get(), "test", &vnode);
-  auto test_file = fbl::RefPtr<File>::Downcast(std::move(vnode));
-
-  std::string target_string("hello");
-
-  auto r_buf = std::make_unique<char[]>(kPageSize);
-  FileTester::ReadFromFile(test_file.get(), r_buf.get(), target_string.length() + 1, 0);
-  std::string str(r_buf.get(), target_string.length());
-  ASSERT_EQ(str, target_string);
-
-  test_file->Close();
-}
 
 class DirectoryTest : public F2fsFakeDevTestFixture {
  public:
@@ -83,6 +64,131 @@ TEST_F(DirectoryTest, Directory) {
   }
 
   test_dir->Close();
+}
+
+class FileTest : public F2fsFakeDevTestFixture {
+ public:
+  FileTest()
+      : F2fsFakeDevTestFixture(
+            TestOptions{.block_count = kSectorCount100MiB, .image_file = "file_test.img.zst"}) {}
+};
+
+TEST_F(FileTest, File) {
+  fbl::RefPtr<fs::Vnode> vnode;
+
+  // File "file_write" has 64KB of data.
+  FileTester::Lookup(root_dir_.get(), "file_write", &vnode);
+  auto test_file = fbl::RefPtr<File>::Downcast(std::move(vnode));
+  ASSERT_EQ(test_file->GetSize(), static_cast<size_t>(64 * 1024));
+
+  auto r_buf = std::make_unique<char[]>(kPageSize);
+  auto verify = std::make_unique<char[]>(kPageSize);
+  for (uint32_t i = 0; i < 64 * 1024 / kPageSize; ++i) {
+    memset(verify.get(), static_cast<char>(i % 256), kPageSize);
+    FileTester::ReadFromFile(test_file.get(), r_buf.get(), kPageSize, kPageSize * i);
+    ASSERT_EQ(memcmp(r_buf.get(), verify.get(), kPageSize), 0);
+  }
+
+  test_file->Close();
+
+  // File "file_truncate" has zero-filled 16KB data.
+  FileTester::Lookup(root_dir_.get(), "file_truncate", &vnode);
+  test_file = fbl::RefPtr<File>::Downcast(std::move(vnode));
+  ASSERT_EQ(test_file->GetSize(), static_cast<size_t>(16 * 1024));
+
+  memset(verify.get(), 0, kPageSize);
+  for (uint32_t i = 0; i < 16 * 1024 / kPageSize; ++i) {
+    FileTester::ReadFromFile(test_file.get(), r_buf.get(), kPageSize, kPageSize * i);
+    ASSERT_EQ(memcmp(r_buf.get(), verify.get(), kPageSize), 0);
+  }
+
+  test_file->Close();
+
+  // File "file_truncate_shrink" has 16KB of data.
+  FileTester::Lookup(root_dir_.get(), "file_truncate_shrink", &vnode);
+  test_file = fbl::RefPtr<File>::Downcast(std::move(vnode));
+  ASSERT_EQ(test_file->GetSize(), static_cast<size_t>(16 * 1024));
+
+  for (uint32_t i = 0; i < 16 * 1024 / kPageSize; ++i) {
+    memset(verify.get(), static_cast<char>(i % 256), kPageSize);
+    FileTester::ReadFromFile(test_file.get(), r_buf.get(), kPageSize, kPageSize * i);
+    ASSERT_EQ(memcmp(r_buf.get(), verify.get(), kPageSize), 0);
+  }
+
+  test_file->Close();
+
+  // File "file_exceed" has 7KB of data.
+  FileTester::Lookup(root_dir_.get(), "file_exceed", &vnode);
+  test_file = fbl::RefPtr<File>::Downcast(std::move(vnode));
+  ASSERT_EQ(test_file->GetSize(), static_cast<size_t>(7 * 1024));
+
+  memset(verify.get(), 0, kPageSize);
+  memset(verify.get(), 1, 2 * 1024);
+  {
+    size_t actual;
+    // Read 4KB from 5KB offset, then only 2KB should be read
+    ASSERT_EQ(FileTester::Read(test_file.get(), r_buf.get(), kPageSize, kPageSize + 1024, &actual),
+              ZX_OK);
+    ASSERT_EQ(actual, static_cast<size_t>(2 * 1024));
+  }
+  ASSERT_EQ(memcmp(r_buf.get(), verify.get(), 2 * 1024), 0);
+
+  test_file->Close();
+
+  // File "file_rename" should not be exist while file "renamed_file" is exist
+  {
+    fbl::RefPtr<fs::Vnode> vn = nullptr;
+    ASSERT_EQ(root_dir_->Lookup("file_rename", &vn), ZX_ERR_NOT_FOUND);
+  }
+  FileTester::Lookup(root_dir_.get(), "renamed_file", &vnode);
+  vnode->Close();
+
+  // File "file_fallocate" has zero-filled 64KB data.
+  FileTester::Lookup(root_dir_.get(), "file_fallocate", &vnode);
+  test_file = fbl::RefPtr<File>::Downcast(std::move(vnode));
+  ASSERT_EQ(test_file->GetSize(), static_cast<size_t>(64 * 1024));
+
+  memset(verify.get(), 0, kPageSize);
+  for (uint32_t i = 0; i < 64 * 1024 / kPageSize; ++i) {
+    FileTester::ReadFromFile(test_file.get(), r_buf.get(), kPageSize, kPageSize * i);
+    ASSERT_EQ(memcmp(r_buf.get(), verify.get(), kPageSize), 0);
+  }
+
+  test_file->Close();
+
+  // File "file_fallocate_hole" has 64KB of data, with zero-filled hole from offset 8KB to 16KB.
+  FileTester::Lookup(root_dir_.get(), "file_fallocate_hole", &vnode);
+  test_file = fbl::RefPtr<File>::Downcast(std::move(vnode));
+  ASSERT_EQ(test_file->GetSize(), static_cast<size_t>(64 * 1024));
+
+  for (uint32_t i = 0; i < 64 * 1024 / kPageSize; ++i) {
+    if (i == 2 || i == 3) {  // zero fill for punch hole range
+      memset(verify.get(), 0, kPageSize);
+    } else {
+      memset(verify.get(), static_cast<char>(i % 256), kPageSize);
+    }
+    FileTester::ReadFromFile(test_file.get(), r_buf.get(), kPageSize, kPageSize * i);
+    ASSERT_EQ(memcmp(r_buf.get(), verify.get(), kPageSize), 0);
+  }
+
+  test_file->Close();
+
+  // Files "filemode_xxx" have filemode from 000 to 777
+  for (uint32_t i = 0; i <= 0777; ++i) {
+    std::ostringstream oss;
+    oss << std::setfill('0') << std::setw(3) << std::oct << i;
+    std::string filename = "filemode_" + oss.str();
+
+    FileTester::Lookup(root_dir_.get(), filename, &vnode);
+    test_file = fbl::RefPtr<File>::Downcast(std::move(vnode));
+
+    zx::result<fs::VnodeAttributes> result = test_file->GetAttributes();
+    ASSERT_TRUE(result.is_ok());
+    ASSERT_TRUE(result->mode.has_value());
+    ASSERT_EQ(*result->mode & 0777, i);
+
+    test_file->Close();
+  }
 }
 
 }  // namespace

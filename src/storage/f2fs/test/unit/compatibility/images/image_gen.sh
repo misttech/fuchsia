@@ -29,15 +29,6 @@ clean() {
   rm ${image_name}
 }
 
-simple_io_test() {
-  IMAGE="simple_io.img"
-  setup ${IMAGE}
-
-  echo "hello" > test
-
-  clean ${IMAGE}
-}
-
 directory_test() {
   IMAGE="directory_test.img"
   setup ${IMAGE}
@@ -65,7 +56,65 @@ directory_test() {
   clean ${IMAGE}
 }
 
+write_pattern() {
+    local outfile=${1}
+    local blockcount=${2}
+    blocksize=4096
+
+    : > "$outfile"
+
+    for i in $(seq 0 $(($blockcount-1))); do
+        val=$(($i % 256))
+        byte="$(printf "\\$(printf '%03o' $val)")"
+        perl -e "print pack('C', $val) x $blocksize" >> "$outfile"
+    done
+}
+
+file_test() {
+  IMAGE="file_test.img"
+  setup ${IMAGE}
+
+  FILE=file_write
+  touch ${FILE}
+  write_pattern ${FILE} 16
+
+  FILE=file_truncate
+  touch ${FILE}
+  truncate --size 16384 ${FILE}
+
+  FILE=file_truncate_shrink
+  touch ${FILE}
+  write_pattern ${FILE} 16
+  truncate --size 16384 ${FILE}
+
+  FILE=file_exceed
+  touch ${FILE}
+  write_pattern ${FILE} 2
+  truncate --size 7168 ${FILE}
+
+  FILE=file_rename
+  touch ${FILE}
+  mv ${FILE} renamed_file
+
+  FILE=file_fallocate
+  fallocate -l 65536 ${FILE}
+
+  FILE=file_fallocate_hole
+  touch ${FILE}
+  write_pattern ${FILE} 16
+  fallocate --punch-hole --keep-size -o 8192 -l 8192 ${FILE}
+
+  for i in $(seq 0 512); do # 512 decimal = 777 octal
+    mode=`printf "%03o" $i`
+    FILE=filemode_${mode}
+    touch ${FILE}
+    chmod $mode ${FILE}
+  done
+
+  clean ${IMAGE}
+}
+
 mkdir -p ${MOUNT_DIR}
-simple_io_test
 directory_test
+file_test
 rmdir ${MOUNT_DIR}

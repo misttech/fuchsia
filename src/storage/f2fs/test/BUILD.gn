@@ -133,7 +133,7 @@ fuchsia_unittest_component("f2fs-component-runner-test") {
 resource("test-images") {
   sources = [
     "unit/compatibility/images/directory_test.img.zst",
-    "unit/compatibility/images/simple_io.img.zst",
+    "unit/compatibility/images/file_test.img.zst",
   ]
   outputs = [ "data/{{source_file_part}}" ]
 }
