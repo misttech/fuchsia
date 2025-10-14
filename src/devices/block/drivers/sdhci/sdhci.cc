@@ -786,9 +786,9 @@ zx::result<fidl::Array<uint32_t, 4>> Sdhci::FinishRequest(
   }
   if (interrupt_status.command_timeout_error()) {
     // TODO(449784747): Re-enable this for cmd52 when SDIO errors can be suppressed.
-    constexpr uint32_t kCmd52AddressMask = 0x83fffe00;
+    constexpr uint32_t kCmd52AddressMask = 0x03ff'fe00;
     if (request.suppress_error_messages ||
-        (request.cmd_idx == 52 && (request.arg & kCmd52AddressMask) == 0x82003e00)) {
+        (request.cmd_idx == 52 && (request.arg & kCmd52AddressMask) == 0x0200'3e00)) {
       FDF_LOG(DEBUG, "Command timeout error cmd%u", request.cmd_idx);
     } else {
       FDF_LOG(ERROR, "Command timeout error cmd%u", request.cmd_idx);
