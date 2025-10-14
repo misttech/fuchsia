@@ -173,16 +173,14 @@ class PipeDeviceTest : public zxtest::Test {
     ASSERT_OK(dut->Bind());
     dut_ = dut.release();
 
-    {
-      auto endpoints = fidl::Endpoints<fuchsia_hardware_goldfish_pipe::Bus>::Create();
+    dut_child_ = std::make_unique<PipeChildDevice>(dut_, test_loop_.dispatcher());
 
-      dut_child_ = std::make_unique<PipeChildDevice>(dut_, test_loop_.dispatcher());
-      binding_ =
-          fidl::BindServer(test_loop_.dispatcher(), std::move(endpoints.server), dut_child_.get());
-      EXPECT_TRUE(binding_.has_value());
+    auto [bus_client, bus_server] = fidl::Endpoints<fuchsia_hardware_goldfish_pipe::Bus>::Create();
 
-      client_.Bind(std::move(endpoints.client), test_loop_.dispatcher());
-    }
+    binding_ = fidl::BindServer(test_loop_.dispatcher(), std::move(bus_server), dut_);
+    EXPECT_TRUE(binding_.has_value());
+
+    client_.Bind(std::move(bus_client), test_loop_.dispatcher());
   }
 
   // |zxtest::Test|
