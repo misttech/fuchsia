@@ -8,6 +8,7 @@ fidl("fidl") {
   name = "fuchsia.net.policy.testing"
   testonly = true
   sources = [
+    "fake_netcfg.fidl",
     "fake_socket_proxy.fidl",
     "policy_testing.fidl",
   ]

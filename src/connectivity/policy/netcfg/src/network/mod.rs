@@ -23,10 +23,10 @@ pub(crate) struct NetworkTokenContents {
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct ConnectionId(usize);
+pub struct ConnectionId(usize);
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct UpdateGeneration {
+pub struct UpdateGeneration {
     /// The current generation for `fuchsia.net.policy.properties.WatchDefault`.
     /// Incremented each time the default network changes.
     default_network: usize,
@@ -37,7 +37,7 @@ pub(crate) struct UpdateGeneration {
 }
 
 #[derive(Clone, Debug, Default)]
-pub(crate) struct UpdateGenerations(HashMap<ConnectionId, UpdateGeneration>);
+pub struct UpdateGenerations(HashMap<ConnectionId, UpdateGeneration>);
 
 impl UpdateGenerations {
     fn default_network(&self, id: &ConnectionId) -> Option<usize> {
@@ -68,8 +68,17 @@ pub(crate) struct NetworkPropertyResponder {
     responder: fnp_properties::NetworksWatchPropertiesResponder,
 }
 
+impl NetworkPropertyResponder {
+    fn respond(
+        self,
+        response: Result<&[fnp_properties::PropertyUpdate], fnp_properties::WatchError>,
+    ) -> Result<(), fidl::Error> {
+        self.responder.send(response)
+    }
+}
+
 #[derive(Default)]
-pub(crate) struct NetpolNetworksService {
+pub struct NetpolNetworksService {
     // The current generation
     current_generation: UpdateGeneration,
     // The last generation sent per connection
@@ -174,7 +183,7 @@ impl NetworkProperties {
         if updates.is_empty() {
             Some(responder)
         } else {
-            if let Err(e) = responder.responder.send(Ok(&updates)) {
+            if let Err(e) = responder.respond(Ok(&updates)) {
                 warn!("Could not send to responder: {e}");
             }
             None
@@ -274,8 +283,8 @@ impl PropertyUpdates for Vec<fnp_properties::PropertyUpdate> {
     }
 }
 
-#[derive(Default)]
-pub(crate) struct PropertyUpdate {
+#[derive(Default, Debug)]
+pub struct PropertyUpdate {
     default_network: Option<Option<InterfaceId>>,
     socket_marks: Option<(InterfaceId, fnet::Marks)>,
     dns: Option<Vec<fnet_name::DnsServer_>>,
@@ -323,7 +332,7 @@ impl PropertyUpdate {
 }
 
 impl NetpolNetworksService {
-    pub(crate) async fn handle_network_attributes_request(
+    pub async fn handle_network_attributes_request(
         &mut self,
         id: ConnectionId,
         req: Result<fnp_properties::NetworksRequest, fidl::Error>,
@@ -375,13 +384,13 @@ impl NetpolNetworksService {
                             )?;
 
                             if let Some(responder) = self.property_responders.remove(&id) {
-                                let _ = self.generations_by_connection.remove(&id);
-                                let _ = responder
-                                    .responder
-                                    .send(Err(fnp_properties::WatchError::DefaultNetworkChanged));
+                                let _: Option<_> = self.generations_by_connection.remove(&id);
+                                let _: Result<(), fidl::Error> = responder.respond(Err(
+                                    fnp_properties::WatchError::DefaultNetworkChanged,
+                                ));
                             }
                         } else {
-                            let _ = vacant_entry.insert(responder);
+                            let _: &mut _ = vacant_entry.insert(responder);
                         }
                     }
                 }
@@ -479,8 +488,8 @@ impl NetpolNetworksService {
             .into_iter()
             .filter_map(|(id, responder)| {
                 // NB: Currently all responders are for the default network.
-                let _ = generations.remove(&id);
-                let _ = responder.responder.send(Err(error));
+                let _: Option<_> = generations.remove(&id);
+                let _: Result<(), fidl::Error> = responder.respond(Err(error));
                 None
             })
             .collect::<HashMap<_, _>>();
@@ -502,9 +511,7 @@ impl NetpolNetworksService {
             };
             if network.interface_id == interface_id {
                 // Report that this interface was removed
-                if let Err(e) =
-                    responder.responder.send(Err(fnp_properties::WatchError::NetworkGone))
-                {
+                if let Err(e) = responder.respond(Err(fnp_properties::WatchError::NetworkGone)) {
                     warn!("Could not send to responder: {e}");
                 }
             } else {
@@ -515,7 +522,7 @@ impl NetpolNetworksService {
         }
     }
 
-    pub(crate) async fn update(&mut self, update: PropertyUpdate) {
+    pub async fn update(&mut self, update: PropertyUpdate) {
         self.current_generation.properties += 1;
         let updates_applied = self.network_properties.apply(update);
         let mut property_responders = HashMap::new();
@@ -605,7 +612,7 @@ impl NetpolNetworksService {
                     warn!("Re-inserted in an existing responder slot. This should be impossible.");
                 }
             } else {
-                if let Err(e) = responder.responder.send(Ok(&updates)) {
+                if let Err(e) = responder.respond(Ok(&updates)) {
                     warn!("Could not send to responder: {e}");
                 }
             }
@@ -614,7 +621,7 @@ impl NetpolNetworksService {
 }
 
 #[derive(Default)]
-pub(crate) struct NetworksRequestStreams {
+pub struct NetworksRequestStreams {
     next_id: ConnectionId,
     request_streams:
         futures::stream::SelectAll<Tagged<ConnectionId, fnp_properties::NetworksRequestStream>>,

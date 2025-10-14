@@ -12,7 +12,7 @@ mod errors;
 mod filter;
 mod interface;
 mod masquerade;
-mod network;
+pub mod network;
 mod socketproxy;
 mod virtualization;
 

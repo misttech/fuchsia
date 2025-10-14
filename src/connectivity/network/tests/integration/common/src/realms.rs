@@ -287,6 +287,7 @@ pub enum KnownServiceProvider {
     },
     FakeClock,
     FakeSocketProxy,
+    FakeNetcfg,
 }
 
 /// Constant properties of components used in networking integration tests, such
@@ -303,6 +304,9 @@ pub mod constants {
         }
         pub mod advanced {
             pub const COMPONENT_URL: &str = "#meta/netcfg-advanced.cm";
+        }
+        pub mod fake {
+            pub const COMPONENT_URL: &str = "#meta/fake_netcfg.cm";
         }
         // These capability names and filepaths should match the devfs capabilities used by netcfg
         // in its component manifest, i.e. netcfg.cml.
@@ -839,6 +843,17 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                     fnp_socketproxy::DnsServerWatcherMarker::PROTOCOL_NAME.to_string(),
                     fnp_socketproxy::FuchsiaNetworksMarker::PROTOCOL_NAME.to_string(),
                     fnp_testing::FakeSocketProxy_Marker::PROTOCOL_NAME.to_string(),
+                ]),
+                ..Default::default()
+            },
+            KnownServiceProvider::FakeNetcfg => fnetemul::ChildDef {
+                name: Some(constants::netcfg::COMPONENT_NAME.to_string()),
+                source: Some(fnetemul::ChildSource::Component(
+                    constants::netcfg::fake::COMPONENT_URL.to_string(),
+                )),
+                exposes: Some(vec![
+                    fnp_properties::NetworksMarker::PROTOCOL_NAME.to_string(),
+                    fnp_testing::FakeNetcfgMarker::PROTOCOL_NAME.to_string(),
                 ]),
                 ..Default::default()
             },

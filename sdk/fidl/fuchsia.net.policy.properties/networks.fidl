@@ -25,6 +25,18 @@ type DefaultNetworkUpdate = table {
     2: socket_marks fuchsia.net.Marks;
 };
 
+/// A single update from [`Networks.WatchProperties`].
+type PropertyUpdate = flexible union {
+    /// The socket marks associated with this network.
+    1: socket_marks fuchsia.net.Marks;
+    /// The DNS Configuration associated with this network.
+    2: dns_configuration @generated_name("DnsConfiguration") table {
+        /// A preference ordered list of [`fuchsia.net.name.DnsServer`]s.
+        /// NOTE: Required, this field must always be set.
+        1: servers vector<fuchsia.net.name.DnsServer>:MAX;
+    };
+};
+
 /// Protocol to allow `netcfg` to watch `socket-proxy` for changes in default
 /// network and its associated socket marks. Only one connection to this
 /// protocol is supported at once. If a second connection is made it will be
@@ -89,12 +101,7 @@ open protocol Networks {
         /// `WatchProperties` returned. There is no guarantee of ordering. If a
         /// property changes multiple times between updates, only the most
         /// recent version will be reported.
-        updates vector<@generated_name("PropertyUpdate") flexible union {
-            1: socket_marks fuchsia.net.Marks;
-            2: dns_configuration @generated_name("DnsConfiguration") table {
-                1: servers vector<fuchsia.net.name.DnsServer>:MAX;
-            };
-        }>:MAX;
+        updates vector<PropertyUpdate>:MAX;
     }) error @generated_name("WatchError") flexible enum : uint32 {
         /// The provided `properties` list was empty.
         NO_PROPERTIES = 1;
