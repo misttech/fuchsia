@@ -47,6 +47,7 @@ config("android_rust_config") {
     "-Aunused-imports",
     "-Aunused-must-use",
     "-Aunused-mut",
+    "-Aunused-assignments",
     "-Zallow-features=custom_inner_attributes",
   ]
 }
