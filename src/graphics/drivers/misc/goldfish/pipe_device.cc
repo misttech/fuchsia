@@ -202,7 +202,9 @@ zx_status_t PipeDevice::Bind() {
   mmio_->Write32(upper_32_bits(pa_open_command_buffer), PIPE_V2_REG_OPEN_BUFFER_HIGH);
   mmio_->Write32(lower_32_bits(pa_open_command_buffer), PIPE_V2_REG_OPEN_BUFFER);
 
-  status = DdkAdd("goldfish-pipe", DEVICE_ADD_NON_BINDABLE);
+  status = DdkAdd(ddk::DeviceAddArgs("goldfish-pipe")
+                      .set_flags(DEVICE_ADD_NON_BINDABLE)
+                      .set_proto_id(ZX_PROTOCOL_GOLDFISH_PIPE));
   if (status != ZX_OK) {
     zxlogf(ERROR, "%s: create goldfish-pipe root device failed: %d", kTag, status);
     return status;
@@ -222,6 +224,30 @@ zx_status_t PipeDevice::CreateChildDevice(cpp20::span<const zx_device_str_prop_t
 }
 
 void PipeDevice::DdkRelease() { delete this; }
+
+void PipeDevice::Connect(ConnectRequestView request, ConnectCompleter::Sync& completer) {
+  ZX_DEBUG_ASSERT(request->pipe_request.is_valid());
+
+  async::PostTask(dispatcher_, [this, pipe_request = std::move(request->pipe_request)]() mutable {
+    auto pipe = std::make_unique<PipeConnection>(
+        this, dispatcher_, /* OnBind */ nullptr,
+        /* OnClose */ [this](PipeConnection* pipe_ptr) {
+          // We know |pipe_ptr| is still alive because |pipe_ptr|
+          // is still in |pipes_|.
+          ZX_DEBUG_ASSERT(pipe_connections_.find(pipe_ptr) != pipe_connections_.end());
+          pipe_connections_.erase(pipe_ptr);
+        });
+
+    PipeConnection* pipe_ptr = pipe.get();
+    pipe_connections_.insert({pipe_ptr, std::move(pipe)});
+
+    pipe_ptr->Bind(std::move(pipe_request));
+    // Init() must be called after Bind() as it can cause an asynchronous
+    // failure. The pipe will be cleaned up later by the error handler in
+    // the event of a failure.
+    pipe_ptr->Init();
+  });
+}
 
 zx_status_t PipeDevice::Create(int32_t* out_id, zx::vmo* out_vmo) {
   TRACE_DURATION("gfx", "PipeDevice::Create");
@@ -463,37 +489,12 @@ zx_status_t PipeChildDevice::Bind(cpp20::span<const zx_device_str_prop_t> props,
   zx_status_t status = DdkAdd(ddk::DeviceAddArgs(dev_name)
                                   .set_str_props(props)
                                   .set_fidl_service_offers(offers)
-                                  .set_outgoing_dir(std::move(dir_client).TakeChannel())
-                                  .set_proto_id(ZX_PROTOCOL_GOLDFISH_PIPE));
+                                  .set_outgoing_dir(std::move(dir_client).TakeChannel()));
   if (status != ZX_OK) {
     zxlogf(ERROR, "%s: create %s device failed: %d", kTag, dev_name, status);
     return status;
   }
   return ZX_OK;
-}
-
-void PipeChildDevice::Connect(ConnectRequestView request, ConnectCompleter::Sync& completer) {
-  ZX_DEBUG_ASSERT(request->pipe_request.is_valid());
-
-  async::PostTask(dispatcher_, [this, pipe_request = std::move(request->pipe_request)]() mutable {
-    auto pipe = std::make_unique<PipeConnection>(
-        parent_, dispatcher_, /* OnBind */ nullptr,
-        /* OnClose */ [this](PipeConnection* pipe_ptr) {
-          // We know |pipe_ptr| is still alive because |pipe_ptr|
-          // is still in |pipes_|.
-          ZX_DEBUG_ASSERT(pipe_connections_.find(pipe_ptr) != pipe_connections_.end());
-          pipe_connections_.erase(pipe_ptr);
-        });
-
-    PipeConnection* pipe_ptr = pipe.get();
-    pipe_connections_.insert({pipe_ptr, std::move(pipe)});
-
-    pipe_ptr->Bind(std::move(pipe_request));
-    // Init() must be called after Bind() as it can cause an asynchronous
-    // failure. The pipe will be cleaned up later by the error handler in
-    // the event of a failure.
-    pipe_ptr->Init();
-  });
 }
 
 void PipeChildDevice::DdkRelease() { delete this; }
