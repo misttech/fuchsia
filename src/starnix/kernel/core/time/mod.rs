@@ -3,5 +3,4 @@
 // found in the LICENSE file.
 
 ///! The time module is responsible for managing the UTC clock of the kernel.
-
 pub mod utc;
