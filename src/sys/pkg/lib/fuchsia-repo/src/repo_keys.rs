@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use data_encoding::HEXLOWER;
 use mundane::public::ed25519 as mundane_ed25519;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::fs::File;
 use std::io::Write;
@@ -384,25 +383,10 @@ struct RoleKey {
 
 #[derive(Clone, Serialize, Deserialize)]
 struct KeyVal {
-    #[serde(serialize_with = "serialize_hex", deserialize_with = "deserialize_hex")]
+    #[serde(with = "hex::serde")]
     public: Vec<u8>,
-    #[serde(serialize_with = "serialize_hex", deserialize_with = "deserialize_hex")]
+    #[serde(with = "hex::serde")]
     private: Vec<u8>,
-}
-
-fn serialize_hex<S>(key: &[u8], serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(&HEXLOWER.encode(key))
-}
-
-fn deserialize_hex<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    HEXLOWER.decode(s.as_bytes()).map_err(serde::de::Error::custom)
 }
 
 #[cfg(test)]
@@ -490,16 +474,18 @@ mod tests {
             keys.root_keys(),
             &[
                 PublicKey::from_ed25519_with_keyid_hash_algorithms(
-                    HEXLOWER
-                        .decode(b"1d4c564cb8466c49f97f042f5f3f242365ffd4210a9a1a82759d7d58afd66d71")
-                        .unwrap(),
+                    hex::decode(
+                        b"1d4c564cb8466c49f97f042f5f3f242365ffd4210a9a1a82759d7d58afd66d71"
+                    )
+                    .unwrap(),
                     Some(vec!["sha256".into()]),
                 )
                 .unwrap(),
                 PublicKey::from_ed25519(
-                    HEXLOWER
-                        .decode(b"b3ef3423402006eba0775f51f1fa4b38b70297098a0f40d699e984d76a6b83fb")
-                        .unwrap(),
+                    hex::decode(
+                        b"b3ef3423402006eba0775f51f1fa4b38b70297098a0f40d699e984d76a6b83fb"
+                    )
+                    .unwrap(),
                 )
                 .unwrap(),
             ]
@@ -520,8 +506,7 @@ mod tests {
         assert_keys!(
             keys.root_keys(),
             &[PublicKey::from_ed25519_with_keyid_hash_algorithms(
-                HEXLOWER
-                    .decode(b"1d4c564cb8466c49f97f042f5f3f242365ffd4210a9a1a82759d7d58afd66d71")
+                hex::decode(b"1d4c564cb8466c49f97f042f5f3f242365ffd4210a9a1a82759d7d58afd66d71")
                     .unwrap(),
                 Some(vec!["sha256".into()]),
             )
@@ -530,8 +515,7 @@ mod tests {
         assert_keys!(
             keys.targets_keys(),
             &[PublicKey::from_ed25519_with_keyid_hash_algorithms(
-                HEXLOWER
-                    .decode(b"d18d96532e15f1f8e2e2307d23bbbfc4df90782273abcf642740642d8871a640")
+                hex::decode(b"d18d96532e15f1f8e2e2307d23bbbfc4df90782273abcf642740642d8871a640")
                     .unwrap(),
                 Some(vec!["sha256".into()]),
             )
@@ -540,8 +524,7 @@ mod tests {
         assert_keys!(
             keys.snapshot_keys(),
             &[PublicKey::from_ed25519_with_keyid_hash_algorithms(
-                HEXLOWER
-                    .decode(b"b3ef3423402006eba0775f51f1fa4b38b70297098a0f40d699e984d76a6b83fb")
+                hex::decode(b"b3ef3423402006eba0775f51f1fa4b38b70297098a0f40d699e984d76a6b83fb")
                     .unwrap(),
                 Some(vec!["sha256".into()]),
             )
@@ -550,8 +533,7 @@ mod tests {
         assert_keys!(
             keys.timestamp_keys(),
             &[PublicKey::from_ed25519_with_keyid_hash_algorithms(
-                HEXLOWER
-                    .decode(b"10dd7f1b17b379cbce30f09ffcb582b3c2bf7923b2bb99399966569867c4eeaa")
+                hex::decode(b"10dd7f1b17b379cbce30f09ffcb582b3c2bf7923b2bb99399966569867c4eeaa")
                     .unwrap(),
                 Some(vec!["sha256".into()]),
             )
@@ -573,8 +555,7 @@ mod tests {
         assert_keys!(
             keys.targets_keys(),
             &[PublicKey::from_ed25519_with_keyid_hash_algorithms(
-                HEXLOWER
-                    .decode(b"d18d96532e15f1f8e2e2307d23bbbfc4df90782273abcf642740642d8871a640")
+                hex::decode(b"d18d96532e15f1f8e2e2307d23bbbfc4df90782273abcf642740642d8871a640")
                     .unwrap(),
                 Some(vec!["sha256".into()]),
             )
@@ -583,8 +564,7 @@ mod tests {
         assert_keys!(
             keys.snapshot_keys(),
             &[PublicKey::from_ed25519_with_keyid_hash_algorithms(
-                HEXLOWER
-                    .decode(b"b3ef3423402006eba0775f51f1fa4b38b70297098a0f40d699e984d76a6b83fb")
+                hex::decode(b"b3ef3423402006eba0775f51f1fa4b38b70297098a0f40d699e984d76a6b83fb")
                     .unwrap(),
                 Some(vec!["sha256".into()]),
             )
@@ -593,8 +573,7 @@ mod tests {
         assert_keys!(
             keys.timestamp_keys(),
             &[PublicKey::from_ed25519_with_keyid_hash_algorithms(
-                HEXLOWER
-                    .decode(b"10dd7f1b17b379cbce30f09ffcb582b3c2bf7923b2bb99399966569867c4eeaa")
+                hex::decode(b"10dd7f1b17b379cbce30f09ffcb582b3c2bf7923b2bb99399966569867c4eeaa")
                     .unwrap(),
                 Some(vec!["sha256".into()]),
             )
@@ -738,13 +717,11 @@ mod tests {
             RepoKeys::builder().load_root_keys(&temp_path),
             Err(ParseError::PublicKeyDoesNotMatchPrivateKey { expected, actual })
             if expected == PublicKey::from_ed25519(
-                    HEXLOWER
-                        .decode(b"1d4c564cb8466c49f97f042f5f3f242365ffd4210a9a1a82759d7d58afd66d71")
+                    hex::decode(b"1d4c564cb8466c49f97f042f5f3f242365ffd4210a9a1a82759d7d58afd66d71")
                         .unwrap(),
             ).unwrap() && actual ==
                 PublicKey::from_ed25519(
-                    HEXLOWER
-                        .decode(b"b3ef3423402006eba0775f51f1fa4b38b70297098a0f40d699e984d76a6b83fb")
+                    hex::decode(b"b3ef3423402006eba0775f51f1fa4b38b70297098a0f40d699e984d76a6b83fb")
                         .unwrap(),
                 ).unwrap()
         );
