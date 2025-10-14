@@ -32,7 +32,7 @@ use starnix_uapi::{
 /// post-`exec` context.
 ///
 /// Corresponds to the `exec_binprm()` function described in the SELinux Notebook.
-pub(in crate::security) fn exec_binprm<L>(
+pub(in crate::core__::security) fn exec_binprm<L>(
     locked: &mut Locked<L>,
     security_server: &Arc<SecurityServer>,
     current_task: &CurrentTask,
@@ -261,12 +261,15 @@ fn maybe_reset_signal_state(
 
 /// Returns `TaskAttrs` for a new `Task`, based on the `current_task` state, and the specified clone
 /// flags.
-pub(in crate::security) fn task_alloc(current_task: &CurrentTask, _clone_flags: u64) -> TaskAttrs {
+pub(in crate::core__::security) fn task_alloc(
+    current_task: &CurrentTask,
+    _clone_flags: u64,
+) -> TaskAttrs {
     task_consistent_attrs(current_task).clone()
 }
 
 /// Returns `TaskAttrs` for a new `Task` that will run in the specified `context`.
-pub(in crate::security) fn task_alloc_from_context(
+pub(in crate::core__::security) fn task_alloc_from_context(
     security_server: &SecurityServer,
     context: &FsStr,
 ) -> Result<TaskAttrs, Errno> {
@@ -284,7 +287,7 @@ pub(in crate::security) fn task_alloc_from_context(
 }
 
 /// Checks if creating a task is allowed.
-pub(in crate::security) fn check_task_create_access(
+pub(in crate::core__::security) fn check_task_create_access(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
 ) -> Result<(), Errno> {
@@ -301,7 +304,7 @@ pub(in crate::security) fn check_task_create_access(
 
 /// Checks the SELinux permissions required for exec. Returns the SELinux state of a resolved
 /// elf if all required permissions are allowed.
-pub(in crate::security) fn check_exec_access(
+pub(in crate::core__::security) fn check_exec_access(
     security_server: &Arc<SecurityServer>,
     current_task: &CurrentTask,
     executable_node: &FsNode,
@@ -387,7 +390,7 @@ pub(in crate::security) fn check_exec_access(
 /// Checks if source with `source_sid` may exercise the "getsched" permission on target with
 /// `target_sid` according to SELinux server status `status` and permission checker
 /// `permission`.
-pub(in crate::security) fn check_getsched_access(
+pub(in crate::core__::security) fn check_getsched_access(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     target: &Task,
@@ -407,7 +410,7 @@ pub(in crate::security) fn check_getsched_access(
 
 /// Checks if the task with `source_sid` is allowed to set scheduling parameters for the task with
 /// `target_sid`.
-pub(in crate::security) fn check_setsched_access(
+pub(in crate::core__::security) fn check_setsched_access(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     target: &Task,
@@ -427,7 +430,7 @@ pub(in crate::security) fn check_setsched_access(
 
 /// Checks if the task with `source_sid` is allowed to get the process group ID of the task with
 /// `target_sid`.
-pub(in crate::security) fn check_getpgid_access(
+pub(in crate::core__::security) fn check_getpgid_access(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     target: &Task,
@@ -447,7 +450,7 @@ pub(in crate::security) fn check_getpgid_access(
 
 /// Checks if the task with `source_sid` is allowed to set the process group ID of the task with
 /// `target_sid`.
-pub(in crate::security) fn check_setpgid_access(
+pub(in crate::core__::security) fn check_setpgid_access(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     target: &Task,
@@ -467,7 +470,7 @@ pub(in crate::security) fn check_setpgid_access(
 
 /// Checks if the task with `source_sid` has permission to read the session Id from a task with `target_sid`.
 /// Corresponds to the `task_getsid` LSM hook.
-pub(in crate::security) fn check_task_getsid(
+pub(in crate::core__::security) fn check_task_getsid(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     target: &Task,
@@ -486,7 +489,7 @@ pub(in crate::security) fn check_task_getsid(
 }
 
 /// Checks if the task with `source_sid` is allowed to send `signal` to the task with `target_sid`.
-pub(in crate::security) fn check_signal_access(
+pub(in crate::core__::security) fn check_signal_access(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     target: &Task,
@@ -536,7 +539,7 @@ pub(in crate::security) fn check_signal_access(
     }
 }
 
-pub(in crate::security) fn check_syslog_access(
+pub(in crate::core__::security) fn check_syslog_access(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     action: SyslogAction,
@@ -685,7 +688,7 @@ fn permission_from_capability(capability: starnix_uapi::auth::Capabilities) -> K
     }
 }
 
-pub(in crate::security) fn is_task_capable_noaudit(
+pub(in crate::core__::security) fn is_task_capable_noaudit(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     capability: starnix_uapi::auth::Capabilities,
@@ -696,7 +699,7 @@ pub(in crate::security) fn is_task_capable_noaudit(
         || permission_check.has_permission(sid, sid, permission).permit
 }
 
-pub(in crate::security) fn check_task_capable(
+pub(in crate::core__::security) fn check_task_capable(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     capability: starnix_uapi::auth::Capabilities,
@@ -708,7 +711,7 @@ pub(in crate::security) fn check_task_capable(
 }
 
 /// Checks if the task with `source_sid` has the permission to get and/or set limits on the task with `target_sid`.
-pub(in crate::security) fn task_prlimit(
+pub(in crate::core__::security) fn task_prlimit(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     target: &Task,
@@ -742,7 +745,7 @@ pub(in crate::security) fn task_prlimit(
 }
 
 /// Check permission before setting the max resource limits of `target` from `old_limit` to `new_limit`.
-pub(in crate::security) fn task_setrlimit(
+pub(in crate::core__::security) fn task_setrlimit(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     target: &Task,
@@ -766,7 +769,7 @@ pub(in crate::security) fn task_setrlimit(
 }
 
 /// Checks if the `tracer` is allowed to trace the current task.
-pub(in crate::security) fn ptrace_traceme(
+pub(in crate::core__::security) fn ptrace_traceme(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     tracer: &Task,
@@ -785,7 +788,7 @@ pub(in crate::security) fn ptrace_traceme(
 }
 
 /// Checks if the task with `source_sid` is allowed to trace the task with `target_sid`.
-pub(in crate::security) fn ptrace_access_check(
+pub(in crate::core__::security) fn ptrace_access_check(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     tracee: &Task,
@@ -805,7 +808,7 @@ pub(in crate::security) fn ptrace_access_check(
 
 /// Returns the Security Context associated with the `name`ed entry for the specified `target` task.
 /// `source` describes the calling task, `target` the state of the task for which to return the attribute.
-pub(in crate::security) fn get_procattr(
+pub(in crate::core__::security) fn get_procattr(
     security_server: &SecurityServer,
     _current_task: &CurrentTask,
     task: &Task,
@@ -827,7 +830,7 @@ pub(in crate::security) fn get_procattr(
 }
 
 /// Sets the Security Context associated with the `attr` entry in the task security state.
-pub(in crate::security) fn set_procattr(
+pub(in crate::core__::security) fn set_procattr(
     security_server: &Arc<SecurityServer>,
     current_task: &CurrentTask,
     attr: ProcAttr,
@@ -940,7 +943,10 @@ pub(in crate::security) fn set_procattr(
 }
 
 /// Sets the sid of `fs_node` to be that of `task`.
-pub(in crate::security) fn fs_node_init_with_task(task: &TempRef<'_, Task>, fs_node: &FsNode) {
+pub(in crate::core__::security) fn fs_node_init_with_task(
+    task: &TempRef<'_, Task>,
+    fs_node: &FsNode,
+) {
     fs_node_ensure_class(fs_node).unwrap();
     fs_node_set_label_with_task(fs_node, Arc::clone(&task.security_state.0));
 }
@@ -1756,7 +1762,7 @@ mod tests {
     #[fuchsia::test]
     async fn setcurrent_bounds() {
         const BINARY_POLICY: &[u8] = include_bytes!(
-            "../../../lib/selinux/testdata/composite_policies/compiled/bounded_transition_policy.pp"
+            "../../../../lib/selinux/testdata/composite_policies/compiled/bounded_transition_policy.pp"
         );
         const BOUNDED_CONTEXT: &[u8] = b"test_u:test_r:bounded_t:s0";
         const UNBOUNDED_CONTEXT: &[u8] = b"test_u:test_r:unbounded_t:s0";

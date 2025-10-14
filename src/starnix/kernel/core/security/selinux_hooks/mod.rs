@@ -610,7 +610,7 @@ impl Deref for CurrentTaskStateHolder<'_> {
     }
 }
 
-pub(in crate::security) fn current_task_state(
+pub(in crate::core__::security) fn current_task_state(
     current_task: &CurrentTask,
 ) -> CurrentTaskStateHolder<'_> {
     if current_task.has_overridden_creds() {
@@ -621,7 +621,7 @@ pub(in crate::security) fn current_task_state(
 }
 
 /// Returns the SID of a task. Panics if the task is using overridden credentials.
-pub(in crate::security) fn task_consistent_attrs(
+pub(in crate::core__::security) fn task_consistent_attrs(
     current_task: &CurrentTask,
 ) -> MutexGuard<'_, TaskAttrs> {
     assert!(!current_task.has_overridden_creds());

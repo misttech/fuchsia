@@ -35,7 +35,7 @@ fn fs_sid(fs: &FileSystem) -> Result<SecurityId, Errno> {
 }
 
 /// Returns security state to associate with a filesystem based on the supplied mount options.
-pub(in crate::security) fn file_system_init_security(
+pub(in crate::core__::security) fn file_system_init_security(
     mount_options: &FileSystemMountOptions,
     ops: &dyn FileSystemOps,
 ) -> Result<FileSystemState, Errno> {
@@ -43,7 +43,7 @@ pub(in crate::security) fn file_system_init_security(
 }
 
 /// Resolves the labeling scheme and arguments for the `file_system`, based on the loaded policy.
-pub(in crate::security) fn file_system_resolve_security<L>(
+pub(in crate::core__::security) fn file_system_resolve_security<L>(
     locked: &mut Locked<L>,
     security_server: &SecurityServer,
     current_task: &CurrentTask,
@@ -126,7 +126,7 @@ pub(super) fn label_from_mount_options_and_name(
 
 /// Consumes the SELinux mount options from the supplied `MountParams` and returns the security
 /// mount options for the given `MountParams`.
-pub(in crate::security) fn sb_eat_lsm_opts(
+pub(in crate::core__::security) fn sb_eat_lsm_opts(
     mount_params: &mut MountParams,
 ) -> Result<FileSystemMountOptions, Errno> {
     let context = mount_params.remove(FsStr::new(b"context"));
@@ -148,7 +148,7 @@ pub(in crate::security) fn sb_eat_lsm_opts(
 }
 
 /// Checks if `current_task` has the permission to mount `fs`.
-pub(in crate::security) fn sb_kern_mount(
+pub(in crate::core__::security) fn sb_kern_mount(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     fs: &FileSystem,
@@ -167,7 +167,7 @@ pub(in crate::security) fn sb_kern_mount(
 }
 
 /// Checks if `current_task` has the permission to mount at `path` with the mounting flags `flags`.
-pub(in crate::security) fn sb_mount(
+pub(in crate::core__::security) fn sb_mount(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     path: &NamespaceNode,
@@ -207,7 +207,7 @@ pub(in crate::security) fn sb_mount(
 }
 
 /// Checks that `mount` is getting remounted with the same security state as before.
-pub(in crate::security) fn sb_remount(
+pub(in crate::core__::security) fn sb_remount(
     _security_server: &SecurityServer,
     mount: &Mount,
     new_mount_options: FileSystemMountOptions,
@@ -219,7 +219,7 @@ pub(in crate::security) fn sb_remount(
 }
 
 /// Writes the LSM mount options of `mount` to `buf`.
-pub(in crate::security) fn sb_show_options(
+pub(in crate::core__::security) fn sb_show_options(
     security_server: &SecurityServer,
     buf: &mut impl OutputBuffer,
     mount: &Mount,
@@ -228,7 +228,7 @@ pub(in crate::security) fn sb_show_options(
 }
 
 /// Checks if `current_task` has the permission to get information on `fs`.
-pub(in crate::security) fn sb_statfs(
+pub(in crate::core__::security) fn sb_statfs(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     fs: &FileSystem,
@@ -248,7 +248,7 @@ pub(in crate::security) fn sb_statfs(
 
 /// Checks if `current_task` has the permission to unmount the filesystem mounted on
 /// `node` using the unmount flags `_flags`.
-pub(in crate::security) fn sb_umount(
+pub(in crate::core__::security) fn sb_umount(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     node: &NamespaceNode,

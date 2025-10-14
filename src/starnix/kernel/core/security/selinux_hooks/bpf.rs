@@ -21,18 +21,18 @@ use zerocopy::FromBytes;
 
 /// Returns the security state to be assigned to a BPF map. This is defined as the security
 /// context of the creating task.
-pub(in crate::security) fn bpf_map_alloc(current_task: &CurrentTask) -> BpfMapState {
+pub(in crate::core__::security) fn bpf_map_alloc(current_task: &CurrentTask) -> BpfMapState {
     BpfMapState { sid: current_task_state(current_task).lock().current_sid }
 }
 
 /// Returns the security state to be assigned to a BPF program. This is defined as the
 /// security context of the creating task.
-pub(in crate::security) fn bpf_prog_alloc(current_task: &CurrentTask) -> BpfProgState {
+pub(in crate::core__::security) fn bpf_prog_alloc(current_task: &CurrentTask) -> BpfProgState {
     BpfProgState { sid: current_task_state(current_task).lock().current_sid }
 }
 
 /// Returns whether `current_task` can perform the bpf `cmd`.
-pub(in crate::security) fn check_bpf_access<Attr: FromBytes>(
+pub(in crate::core__::security) fn check_bpf_access<Attr: FromBytes>(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     cmd: bpf_cmd,
@@ -59,7 +59,7 @@ pub(in crate::security) fn check_bpf_access<Attr: FromBytes>(
 
 /// Performs necessary checks when the kernel generates and returns a file descriptor for BPF
 /// maps.
-pub(in crate::security) fn check_bpf_map_access(
+pub(in crate::core__::security) fn check_bpf_map_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     bpf_map: &BpfMap,
@@ -77,7 +77,7 @@ pub(in crate::security) fn check_bpf_map_access(
 }
 
 // TODO(nathaniel): merge this back into check_bpf_map_access above from which it came.
-pub(in crate::security::selinux_hooks) fn todo_option_check_bpf_map_access(
+pub(in crate::core__::security::selinux_hooks) fn todo_option_check_bpf_map_access(
     bug: Option<BugRef>,
     security_server: &SecurityServer,
     current_task: &CurrentTask,
@@ -121,7 +121,7 @@ pub(in crate::security::selinux_hooks) fn todo_option_check_bpf_map_access(
 
 /// Performs necessary checks when the kernel generates and returns a file descriptor for BPF
 /// programs.
-pub(in crate::security) fn check_bpf_prog_access(
+pub(in crate::core__::security) fn check_bpf_prog_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     bpf_program: &Program,
@@ -131,7 +131,7 @@ pub(in crate::security) fn check_bpf_prog_access(
 }
 
 // TODO(nathaniel): merge this back into check_bpf_prog_access above from which it came.
-pub(in crate::security::selinux_hooks) fn todo_option_check_bpf_prog_access(
+pub(in crate::core__::security::selinux_hooks) fn todo_option_check_bpf_prog_access(
     bug: Option<BugRef>,
     security_server: &SecurityServer,
     current_task: &CurrentTask,

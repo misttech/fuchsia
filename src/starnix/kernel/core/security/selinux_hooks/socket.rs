@@ -182,7 +182,7 @@ fn compute_socket_security_class(
 /// Checks that `current_task` has permission to create a socket with `domain`, `socket_type` and
 /// `protocol`.
 
-pub(in crate::security) fn check_socket_create_access<L>(
+pub(in crate::core__::security) fn check_socket_create_access<L>(
     locked: &mut Locked<L>,
     security_server: &SecurityServer,
     current_task: &CurrentTask,
@@ -230,7 +230,7 @@ where
 }
 
 /// Sets the peer security context for each socket in the pair.
-pub(in crate::security) fn socket_socketpair(
+pub(in crate::core__::security) fn socket_socketpair(
     left: DowncastedFile<'_, SocketFile>,
     right: DowncastedFile<'_, SocketFile>,
 ) -> Result<(), Errno> {
@@ -242,7 +242,7 @@ pub(in crate::security) fn socket_socketpair(
 }
 
 /// Computes and sets the security class for `socket`.
-pub(in crate::security) fn socket_post_create(socket: &Socket) {
+pub(in crate::core__::security) fn socket_post_create(socket: &Socket) {
     let socket_node = socket.fs_node().expect("socket_post_create without FsNode");
     socket_node.security_state.lock().class =
         compute_socket_security_class(socket.domain, socket.socket_type, socket.protocol).into();
@@ -250,7 +250,7 @@ pub(in crate::security) fn socket_post_create(socket: &Socket) {
 
 /// Checks that `current_task` has the right permissions to perform a bind operation on
 /// `socket`.
-pub(in crate::security) fn check_socket_bind_access(
+pub(in crate::core__::security) fn check_socket_bind_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     socket: &Socket,
@@ -277,7 +277,7 @@ pub(in crate::security) fn check_socket_bind_access(
 
 /// Checks that `current_task` has the right permissions to initiate a connection with
 /// `socket`.
-pub(in crate::security) fn check_socket_connect_access(
+pub(in crate::core__::security) fn check_socket_connect_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     socket: DowncastedFile<'_, SocketFile>,
@@ -298,7 +298,7 @@ pub(in crate::security) fn check_socket_connect_access(
 }
 
 /// Checks that `current_task` has permission to listen on `socket`.
-pub(in crate::security) fn check_socket_listen_access(
+pub(in crate::core__::security) fn check_socket_listen_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     socket: &Socket,
@@ -325,7 +325,7 @@ pub(in crate::security) fn check_socket_listen_access(
 
 /// Checks that `current_task` has permission to accept a connection on `listening_socket`, and
 /// sets the security state for `accepted_socket` to match the context of `listening_socket`.
-pub(in crate::security) fn socket_accept(
+pub(in crate::core__::security) fn socket_accept(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     listening_socket: DowncastedFile<'_, SocketFile>,
@@ -346,7 +346,7 @@ pub(in crate::security) fn socket_accept(
 }
 
 /// Checks that `current_task` has permission to get socket options on `socket`.
-pub(in crate::security) fn check_socket_getsockopt_access(
+pub(in crate::core__::security) fn check_socket_getsockopt_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     socket: &Socket,
@@ -374,7 +374,7 @@ pub(in crate::security) fn check_socket_getsockopt_access(
 }
 
 /// Checks that `current_task` has permission to set socket options on `socket`.
-pub(in crate::security) fn check_socket_setsockopt_access(
+pub(in crate::core__::security) fn check_socket_setsockopt_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     socket: &Socket,
@@ -400,7 +400,7 @@ pub(in crate::security) fn check_socket_setsockopt_access(
 }
 
 /// Checks that `current_task` has permission to send a message on `socket`.
-pub(in crate::security) fn check_socket_sendmsg_access(
+pub(in crate::core__::security) fn check_socket_sendmsg_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     socket: &Socket,
@@ -424,7 +424,7 @@ pub(in crate::security) fn check_socket_sendmsg_access(
 }
 
 /// Checks that `current_task` has permission to receive a message on `socket`.
-pub(in crate::security) fn check_socket_recvmsg_access(
+pub(in crate::core__::security) fn check_socket_recvmsg_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     socket: &Socket,
@@ -448,7 +448,7 @@ pub(in crate::security) fn check_socket_recvmsg_access(
 }
 
 /// Checks that `current_task` has permission to get the name of `socket`.
-pub(in crate::security) fn check_socket_getname_access(
+pub(in crate::core__::security) fn check_socket_getname_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     socket: &Socket,
@@ -474,7 +474,7 @@ pub(in crate::security) fn check_socket_getname_access(
 }
 
 /// Checks that `current_task` has permission to shutdown `socket`.
-pub(in crate::security) fn check_socket_shutdown_access(
+pub(in crate::core__::security) fn check_socket_shutdown_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     socket: &Socket,
@@ -500,7 +500,7 @@ pub(in crate::security) fn check_socket_shutdown_access(
 }
 
 /// Returns the Security Context with which the [`crate::vfs::Socket`]'s peer is labeled.
-pub(in crate::security) fn socket_getpeersec_stream(
+pub(in crate::core__::security) fn socket_getpeersec_stream(
     security_server: &SecurityServer,
     _current_task: &CurrentTask,
     socket: &Socket,
@@ -514,7 +514,7 @@ pub(in crate::security) fn socket_getpeersec_stream(
 
 /// Returns the Security Context with which messages sent by this [`crate::vfs::Socket`] should
 /// be labeled.
-pub(in crate::security) fn socket_getpeersec_dgram(
+pub(in crate::core__::security) fn socket_getpeersec_dgram(
     security_server: &SecurityServer,
     _current_task: &CurrentTask,
     socket: &Socket,
@@ -530,7 +530,7 @@ pub(in crate::security) fn socket_getpeersec_dgram(
 
 /// Checks if the Unix domain `sending_socket` is allowed to send a message to the
 /// `receiving_socket`.
-pub(in crate::security) fn unix_may_send(
+pub(in crate::core__::security) fn unix_may_send(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     sending_socket: &Socket,
@@ -556,7 +556,7 @@ pub(in crate::security) fn unix_may_send(
 
 /// Checks if the Unix domain `client_socket` is allowed to connect to `listening_sock`, and
 /// initializes security state for the client and server sockets.
-pub(in crate::security) fn unix_stream_connect(
+pub(in crate::core__::security) fn unix_stream_connect(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     client_socket: &Socket,

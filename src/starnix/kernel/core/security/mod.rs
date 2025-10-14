@@ -42,7 +42,7 @@ impl KernelState {
 pub struct TaskState(Arc<Mutex<selinux_hooks::TaskAttrs>>);
 
 impl TaskState {
-    pub(in crate::security) fn lock(
+    pub(in crate::core__::security) fn lock(
         &self,
     ) -> starnix_sync::MutexGuard<'_, selinux_hooks::TaskAttrs> {
         self.0.lock()
