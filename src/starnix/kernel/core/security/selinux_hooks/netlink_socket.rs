@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::TODO_DENY;
 use crate::security::selinux_hooks::{
     FsNodeSidAndClass, KernelPermission, check_permission_and_xperms, current_task_state,
     fs_node_effective_sid_and_class, socket,
@@ -153,8 +152,7 @@ pub(in crate::core__::security) fn check_netlink_send_access(
         );
         return Ok(());
     };
-    socket::todo_has_socket_permission(
-        TODO_DENY!("https://fxbug.dev/364569156", "Enforce netlink_send"),
+    socket::has_socket_permission(
         &security_server.as_permission_check(),
         current_task,
         current_sid,

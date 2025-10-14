@@ -26,7 +26,7 @@ use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::errors::Errno;
 
 /// Checks that `current_task` has the specified `permission` for the `socket_node`.
-fn has_socket_permission(
+pub(super) fn has_socket_permission(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
     subject_sid: SecurityId,
@@ -83,7 +83,7 @@ fn has_socket_permission_for_sid(
 
 /// Checks that `current_task` has the specified `permission` for the `socket_node`, with
 /// "todo_deny" on denial.
-pub(super) fn todo_has_socket_permission(
+fn todo_has_socket_permission(
     bug: BugRef,
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
