@@ -1627,14 +1627,14 @@ alias(
 )
 
 alias(
-    name = "mock-omaha-server-0.3.5",
-    actual = "//third_party/rust_crates/vendor/mock-omaha-server-0.3.5:mock_omaha_server",
+    name = "mock-omaha-server-0.3.6",
+    actual = "//third_party/rust_crates/vendor/mock-omaha-server-0.3.6:mock_omaha_server",
     tags = ["manual"],
 )
 
 alias(
     name = "mock-omaha-server",
-    actual = "//third_party/rust_crates/vendor/mock-omaha-server-0.3.5:mock_omaha_server",
+    actual = "//third_party/rust_crates/vendor/mock-omaha-server-0.3.6:mock_omaha_server",
     tags = ["manual"],
 )
 

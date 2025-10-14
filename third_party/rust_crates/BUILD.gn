@@ -589,7 +589,7 @@ if (!(current_os == "fuchsia")) {
 }
 
 group("mock-omaha-server") {
-  public_deps = [ ":mock-omaha-server-v0_3_5" ]
+  public_deps = [ ":mock-omaha-server-v0_3_6" ]
 }
 
 group("mockall") {
@@ -10301,20 +10301,20 @@ rustc_library("miow-v0_3_7") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
-license("mock-omaha-server-v0_3_5.license") {
+license("mock-omaha-server-v0_3_6.license") {
   public_package_name = "mock_omaha_server"
   license_files = [
-    "//third_party/rust_crates/vendor/mock-omaha-server-0.3.5/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/mock-omaha-server-0.3.5/LICENSE-BSD",
-    "//third_party/rust_crates/vendor/mock-omaha-server-0.3.5/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/mock-omaha-server-0.3.6/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/mock-omaha-server-0.3.6/LICENSE-BSD",
+    "//third_party/rust_crates/vendor/mock-omaha-server-0.3.6/LICENSE-MIT",
   ]
 }
 
-rustc_library("mock-omaha-server-v0_3_5") {
+rustc_library("mock-omaha-server-v0_3_6") {
   crate_name = "mock_omaha_server"
   source_root =
-      "//third_party/rust_crates/vendor/mock-omaha-server-0.3.5/src/lib.rs"
-  output_name = "mock_omaha_server-23f57be10551b77"
+      "//third_party/rust_crates/vendor/mock-omaha-server-0.3.6/src/lib.rs"
+  output_name = "mock_omaha_server-5edd4b50c1016d92"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -10333,8 +10333,8 @@ rustc_library("mock-omaha-server-v0_3_5") {
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_145" ]
   deps += [ ":sha2-v0_10_8" ]
-  deps += [ ":thiserror-v1_0_69" ]
-  deps += [ ":url-v1_7_2" ]
+  deps += [ ":thiserror-v2_0_12" ]
+  deps += [ ":url-v2_3_1" ]
   deps += [ "//src/lib/fuchsia-async" ]
   deps += [ "//src/lib/fuchsia-hyper" ]
   deps += [ "//src/lib/fuchsia-sync" ]
@@ -10347,14 +10347,14 @@ rustc_library("mock-omaha-server-v0_3_5") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=23f57be10551b77",
-    "-Cextra-filename=-23f57be10551b77",
+    "-Cmetadata=5edd4b50c1016d92",
+    "-Cextra-filename=-5edd4b50c1016d92",
     "--cfg=fasync",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":mock-omaha-server-v0_3_5.license" ]
+  applicable_licenses = [ ":mock-omaha-server-v0_3_6.license" ]
 }
 
 license("mockall-v0_9_0.license") {
