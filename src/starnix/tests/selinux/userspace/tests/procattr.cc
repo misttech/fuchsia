@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include "src/lib/files/file.h"
+#include "src/lib/fxl/strings/string_printf.h"
 #include "src/starnix/tests/selinux/userspace/util.h"
 
 extern std::string DoPrePolicyLoadWork() { return "minimal_policy.pp"; }
@@ -152,6 +153,63 @@ TEST(ProcAttrTest, WritableAttrsCanBeWrittenMoreThanOnce) {
   // Read back the context, which will now be empty.
   ASSERT_TRUE(files::ReadFileDescriptorToString(exec_attr.get(), &context));
   EXPECT_EQ(context, std::string());
+}
+
+void WaitForReadFd(int fd) {
+  fd_set read_fds;
+  FD_ZERO(&read_fds);
+  FD_SET(fd, &read_fds);
+
+  SAFE_SYSCALL(TEMP_FAILURE_RETRY(select(fd + 1, &read_fds, nullptr, nullptr, nullptr)));
+  EXPECT_TRUE(FD_ISSET(fd, &read_fds));
+}
+
+TEST(ProcAttrTest, ZombieProcPid) {
+  ASSERT_TRUE(RunSubprocessAs("unlabeled_u:unlabeled_r:unlabeled_t:s0", []() {
+    pid_t child_pid = SAFE_SYSCALL(fork());
+    if (child_pid == 0) {
+      _exit(EXIT_SUCCESS);
+    }
+
+    auto pidfd = fbl::unique_fd(test_helper::PidFdOpen(child_pid, 0));
+    WaitForReadFd(pidfd.get());
+
+    // Validate the label reported for the child's "/proc/<pid>" directory.
+    auto proc_pid_path = fxl::StringPrintf("/proc/%d", child_pid);
+    ASSERT_EQ(access(proc_pid_path.data(), F_OK), 0)
+        << "access() to " << proc_pid_path << " failed:" << strerror(errno);
+
+    auto my_label = ReadTaskAttr("current");
+    ASSERT_TRUE(my_label.is_ok()) << my_label.error_value();
+
+    EXPECT_THAT(GetLabel(proc_pid_path), IsOk(my_label.value()));
+  }));
+}
+
+TEST(ProcAttrTest, ZombieCurrentAttr) {
+  ASSERT_TRUE(RunSubprocessAs("unlabeled_u:unlabeled_r:unlabeled_t:s0", []() {
+    pid_t child_pid = SAFE_SYSCALL(fork());
+    if (child_pid == 0) {
+      _exit(EXIT_SUCCESS);
+    }
+
+    auto pidfd = fbl::unique_fd(test_helper::PidFdOpen(child_pid, 0));
+    WaitForReadFd(pidfd.get());
+
+    // Validate the label reported in the child's "/proc/<pid>/attr/current".
+    auto current_attr_path = fxl::StringPrintf("/proc/%d/attr/current", child_pid);
+    ASSERT_EQ(access(current_attr_path.data(), F_OK), 0)
+        << "access() to " << current_attr_path << " failed:" << strerror(errno);
+    auto current_attr = fbl::unique_fd(open(current_attr_path.data(), O_RDONLY));
+    ASSERT_TRUE(current_attr.is_valid()) << strerror(errno);
+    std::string context;
+    ASSERT_TRUE(files::ReadFileDescriptorToString(current_attr.get(), &context));
+
+    auto my_label = ReadTaskAttr("current");
+    ASSERT_TRUE(my_label.is_ok()) << my_label.error_value();
+
+    EXPECT_EQ(RemoveTrailingNul(context), my_label.value());
+  }));
 }
 
 }  // namespace
