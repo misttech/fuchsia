@@ -7,7 +7,6 @@
 use tracing_mutex as _;
 
 use {async_utils as _, fidl_fuchsia_power_suspend as _};
-pub mod vdso;
 pub mod vfs;
 
 // This allows macros to use paths within this crate

@@ -17,3 +17,4 @@ pub mod syscalls;
 pub mod task;
 pub mod testing;
 pub mod time;
+pub mod vdso;
