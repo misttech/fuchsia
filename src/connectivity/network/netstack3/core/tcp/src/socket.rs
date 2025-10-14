@@ -3480,14 +3480,25 @@ where
                 },
             )
             .map_err(|_: IpSockCreationError| SetDeviceError::Unroutable)?;
+        let new_address = ConnAddr { device: new_socket.device().cloned(), ..addr.clone() };
         core_ctx.with_demux_mut(|DemuxState { socketmap }| {
-            let entry = socketmap
-                .conns_mut()
-                .entry(demux_id, addr)
-                .unwrap_or_else(|| panic!("invalid listener ID {:?}", demux_id));
-            match entry
-                .try_update_addr(ConnAddr { device: new_socket.device().cloned(), ..addr.clone() })
-            {
+            let entry = match socketmap.conns_mut().entry(demux_id, addr) {
+                Some(entry) => entry,
+                None => {
+                    debug!("no demux entry for {addr:?} with {demux_id:?}");
+                    // State must be closed or timewait if we have a bound
+                    // and connected socket that is no longer present in the
+                    // demux.
+                    assert_matches!(&conn.state, State::Closed(_) | State::TimeWait(_));
+                    // If the socket has already been removed from the
+                    // demux, then we can update our address information
+                    // locally.
+                    *addr = new_address;
+                    return Ok(());
+                }
+            };
+
+            match entry.try_update_addr(new_address) {
                 Ok(entry) => {
                     *addr = entry.get_addr().clone();
                     conn.ip_sock = new_socket;
@@ -7426,6 +7437,39 @@ mod tests {
         .expect("connect should succeed");
 
         assert_matches!(api.set_device(&socket, set_device), Err(SetDeviceError::ZoneChange));
+    }
+
+    // Regression test for https://fxbug.dev/388656903.
+    #[ip_test(I)]
+    fn set_bound_to_device_after_connect_fails<I: TcpTestIpExt>()
+    where
+        TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>:
+            TcpContext<I, TcpBindingsCtx<FakeDeviceId>>,
+    {
+        set_logger_for_test();
+        let mut net = new_test_net::<I>();
+        let socket = net.with_context(LOCAL, |ctx| {
+            let mut api = ctx.tcp_api::<I>();
+            let socket = api.create(Default::default());
+            api.connect(&socket, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)), PORT_1)
+                .expect("bind should succeed");
+            socket
+        });
+
+        net.run_until_idle();
+
+        net.with_context(LOCAL, |ctx| {
+            let mut api = ctx.tcp_api::<I>();
+            assert_matches!(api.set_device(&socket, Some(FakeDeviceId)), Ok(()));
+            let ConnectionInfo { local_addr: _, remote_addr, device } =
+                assert_matches!(api.get_info(&socket), SocketInfo::Connection(c) => c);
+            assert_eq!(
+                remote_addr,
+                SocketAddr { ip: ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip), port: PORT_1 }
+            );
+            assert_eq!(device, Some(FakeWeakDeviceId(FakeDeviceId)));
+            api.close(socket);
+        });
     }
 
     #[ip_test(I)]
