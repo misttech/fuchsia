@@ -9,3 +9,4 @@ pub mod execution;
 pub mod fs;
 pub mod mm;
 pub mod perf;
+pub mod power;
