@@ -1034,7 +1034,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
         let handle = self.clone();
         current_task.kernel().kthreads.spawn_async_with_role(
             EXECUTOR_THREAD_ROLE,
-            async move |locked_and_task: LockedAndTask<'_>| {
+            async move |locked_and_task| {
                 // Retrieve the Kernel and a `DropWaiter` for the thread_group, taking care not
                 // to keep a strong reference to the thread_group itself.
                 let kernel_and_drop_waiter = handle

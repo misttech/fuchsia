@@ -7,9 +7,7 @@ use fidl_fuchsia_hardware_qcom_hvdcpopti as fhvdcpopti;
 use futures_util::StreamExt;
 use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::power::{MessageCounterHandle, create_proxy_for_wake_events_counter};
-use starnix_core::task::{
-    CurrentTask, EventHandler, LockedAndTask, WaitCanceler, WaitQueue, Waiter,
-};
+use starnix_core::task::{CurrentTask, EventHandler, WaitCanceler, WaitQueue, Waiter};
 use starnix_core::vfs::{
     FileObject, FileOps, InputBuffer, NamespaceNode, OutputBuffer, VecInputBuffer,
     fileops_impl_nonseekable, fileops_impl_noop_sync,
@@ -87,7 +85,7 @@ async fn run_qbg_device_event_loop(
 }
 
 fn spawn_qbg_device_tasks(device_state: Arc<QbgDeviceState>, current_task: &CurrentTask) {
-    current_task.kernel().kthreads.spawn_async(async move |locked_and_task: LockedAndTask<'_>| {
+    current_task.kernel().kthreads.spawn_async(async move |locked_and_task| {
         // Connect to the device on the main thread. The thread from which the task is being
         // spawned does not yet have an executor, so it cannot make an async FIDL connection.
         let channel =

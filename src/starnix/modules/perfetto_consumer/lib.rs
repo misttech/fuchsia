@@ -23,7 +23,7 @@ use perfetto_trace_protos::perfetto::protos::frame_timeline_event::{
 use perfetto_trace_protos::perfetto::protos::ftrace_event::Event::Print;
 use perfetto_trace_protos::perfetto::protos::trace_packet;
 use starnix_core::task::tracing::TracePerformanceEventManager;
-use starnix_core::task::{CurrentTask, Kernel, LockedAndTask};
+use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::FsString;
 use starnix_logging::{CATEGORY_ATRACE, NAME_PERFETTO_BLOB, log_debug, log_error};
 use starnix_perfetto_trace_decoder::{decode_read_buffers_response, decode_trace, encode_trace};
@@ -492,7 +492,7 @@ pub fn start_perfetto_consumer_thread(kernel: &Kernel, socket_path: FsString) ->
     // 2) When a trace ends, we repeatedly do blocking reads on the socket until we read and
     //    forward all the trace data. This servicing of trace data would hold the executor for
     //    several seconds. See `perfetto::Consumer::next_frame_blocking`.
-    kernel.kthreads.spawner().spawn_async(async move |locked_and_task: LockedAndTask<'_>| {
+    kernel.kthreads.spawner().spawn_async(async move |locked_and_task| {
         let current_task = locked_and_task.current_task();
         let observer = TraceObserver::new();
         let mut callback_state = CallbackState {

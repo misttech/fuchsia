@@ -21,7 +21,7 @@ use futures::executor::block_on;
 use starnix_core::power::{
     ContainerWakingProxy, ContainerWakingStream, create_proxy_for_wake_events_counter,
 };
-use starnix_core::task::{Kernel, LockedAndTask};
+use starnix_core::task::Kernel;
 use starnix_logging::{
     log_warn, trace_duration, trace_duration_begin, trace_duration_end, trace_flow_step,
 };
@@ -170,7 +170,7 @@ impl InputEventsRelay {
         default_keyboard_device_inspect: Option<Arc<InputDeviceStatus>>,
         default_mouse_device_inspect: Option<Arc<InputDeviceStatus>>,
     ) {
-        kernel.kthreads.spawn_async_with_role(INPUT_RELAY_ROLE_NAME, async move |locked_and_task: LockedAndTask<'_>| {
+        kernel.kthreads.spawn_async_with_role(INPUT_RELAY_ROLE_NAME, async move |locked_and_task| {
             let kernel = locked_and_task.current_task().kernel();
             // touch
             let previous_touch_event_disposition: Rc<RefCell<Vec<FidlTouchResponse>>> = Default::default();

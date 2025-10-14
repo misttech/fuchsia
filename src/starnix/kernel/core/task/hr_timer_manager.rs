@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::power::{OnWakeOps, create_proxy_for_wake_events_counter_zero};
-use crate::task::{CurrentTask, LockedAndTask, TargetTime};
+use crate::task::{CurrentTask, TargetTime};
 use crate::vfs::timer::{TimelineChangeObserver, TimerOps};
 use anyhow::{Context, Result};
 use fuchsia_inspect::ArrayProperty;
@@ -508,25 +508,21 @@ impl HrTimerManager {
         let setup_done = zx::Event::create();
         let setup_done_clone = duplicate_handle(&setup_done)?;
 
-        system_task.kernel().kthreads.spawn_async(
-            async move |locked_and_task: LockedAndTask<'_>| {
-                if let Err(e) = self_ref
-                    .watch_new_hrtimer_loop(
-                        locked_and_task.current_task(),
-                        start_next_receiver,
-                        wake_channel_for_test,
-                        message_counter_for_test,
-                        Some(setup_done_clone),
-                    )
-                    .await
-                {
-                    log_error!("while running watch_new_hrtimer_loop: {e:?}");
-                }
-                log_warn!(
-                    "hr_timer_manager: finished kernel thread. should never happen in prod code"
-                );
-            },
-        );
+        system_task.kernel().kthreads.spawn_async(async move |locked_and_task| {
+            if let Err(e) = self_ref
+                .watch_new_hrtimer_loop(
+                    locked_and_task.current_task(),
+                    start_next_receiver,
+                    wake_channel_for_test,
+                    message_counter_for_test,
+                    Some(setup_done_clone),
+                )
+                .await
+            {
+                log_error!("while running watch_new_hrtimer_loop: {e:?}");
+            }
+            log_warn!("hr_timer_manager: finished kernel thread. should never happen in prod code");
+        });
         wait_signaled_sync(&setup_done)
             .to_result()
             .map_err(|status| from_status_like_fdio!(status))?;

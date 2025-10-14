@@ -14,9 +14,7 @@ use futures::{AsyncReadExt, AsyncWriteExt, Future, StreamExt, TryStreamExt};
 use starnix_core::execution::{create_init_child_process, execute_task_with_prerun_result};
 use starnix_core::fs::devpts::create_main_and_replica;
 use starnix_core::fs::fuchsia::create_fuchsia_pipe;
-use starnix_core::task::{
-    CurrentTask, ExitStatus, FullCredentials, Kernel, LockedAndTask, ProcessEntryRef,
-};
+use starnix_core::task::{CurrentTask, ExitStatus, FullCredentials, Kernel, ProcessEntryRef};
 use starnix_core::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
 use starnix_core::vfs::file_server::serve_file_at;
 use starnix_core::vfs::socket::VsockSocket;
@@ -331,7 +329,7 @@ fn forward_to_pty(
     let mut rx = fuchsia_async::Socket::from_socket(console_in);
     let mut tx = fuchsia_async::Socket::from_socket(console_out);
     let pty_sink = pty.clone();
-    kernel.kthreads.spawn_async(async move |locked_and_task: LockedAndTask<'_>| {
+    kernel.kthreads.spawn_async(async move |locked_and_task| {
         let _result: Result<(), Error> = (async || {
             let mut buffer = vec![0u8; BUFFER_CAPACITY];
             loop {

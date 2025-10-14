@@ -175,13 +175,13 @@ impl DynamicThreadSpawner {
     /// responsible to start running the closure.
     pub fn spawn_async_with_role<'b, F: 'b>(&'b self, role: &'static str, f: F)
     where
-        for<'a> F: FnScopeHelper<'a>,
+        F: AsyncFnOnce(LockedAndTask<'_>) + Send + 'static,
     {
-        self.spawn_async(async move |locked_and_task: LockedAndTask<'_>| {
+        self.spawn_async(async move |locked_and_task| {
             if let Err(e) = fuchsia_scheduler::set_role_for_this_thread(role) {
                 log_debug!(e:%; "failed to set kthread role");
             }
-            f.call(locked_and_task).await;
+            f(locked_and_task).await;
             if let Err(e) = fuchsia_scheduler::set_role_for_this_thread(DEFAULT_THREAD_ROLE) {
                 log_debug!(e:%; "failed to reset kthread role to default priority");
             }
@@ -198,38 +198,15 @@ impl DynamicThreadSpawner {
     /// responsible to start running the closure.
     pub fn spawn_async<F>(&self, f: F)
     where
-        for<'a> F: FnScopeHelper<'a>,
+        F: AsyncFnOnce(LockedAndTask<'_>) + Send + 'static,
     {
         self.spawn(move |locked, current_task| {
             let mut exec = fuchsia_async::LocalExecutor::default();
             let locked_and_task = LockedAndTask::new(locked, current_task);
-            let fut = f.call(locked_and_task.clone());
+            let fut = f(locked_and_task.clone());
             let wrapped_future = WrappedSpawnedFuture::new(locked_and_task, fut);
             exec.run_singlethreaded(wrapped_future);
         });
-    }
-}
-
-/// A helper trait for `spawn_async`.
-///
-/// This trait is a workaround for the fact that it is required to constraint the lifetime of the
-/// output of the future used by `spawn_async` with the lifetime of its parameter.
-///
-/// The trait is implemented for any `FnOnce` that takes a `LockedAndTask` and returns a `Future`
-/// with the correct lifetime constraint.
-pub trait FnScopeHelper<'a>: Send + 'static {
-    type Output: Future<Output = ()> + 'a;
-    fn call(self, arg: LockedAndTask<'a>) -> Self::Output;
-}
-
-impl<'a, Fut: 'a, F> FnScopeHelper<'a> for F
-where
-    F: FnOnce(LockedAndTask<'a>) -> Fut + Send + 'static,
-    Fut: Future<Output = ()>,
-{
-    type Output = Fut;
-    fn call(self, arg: LockedAndTask<'a>) -> Fut {
-        self(arg)
     }
 }
 

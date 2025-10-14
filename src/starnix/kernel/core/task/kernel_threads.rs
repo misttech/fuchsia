@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::execution::create_kernel_thread;
-use crate::task::dynamic_thread_spawner::{DynamicThreadSpawner, FnScopeHelper};
+use crate::task::dynamic_thread_spawner::DynamicThreadSpawner;
 use crate::task::{CurrentTask, Kernel, Task, ThreadGroup};
 use fragile::Fragile;
 use fuchsia_async as fasync;
@@ -130,7 +130,7 @@ impl KernelThreads {
     /// a few idle threads around to reduce the overhead for spawning threads for short-lived work.
     pub fn spawn_async<F>(&self, f: F)
     where
-        for<'a> F: FnScopeHelper<'a>,
+        F: AsyncFnOnce(LockedAndTask<'_>) + Send + 'static,
     {
         self.spawner().spawn_async(f)
     }
@@ -144,7 +144,7 @@ impl KernelThreads {
     /// for extremely short-lived tasks.
     pub fn spawn_async_with_role<F>(&self, role: &'static str, f: F)
     where
-        for<'a> F: FnScopeHelper<'a>,
+        F: AsyncFnOnce(LockedAndTask<'_>) + Send + 'static,
     {
         self.spawner().spawn_async_with_role(role, f)
     }
