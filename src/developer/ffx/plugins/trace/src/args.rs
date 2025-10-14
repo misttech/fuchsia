@@ -30,7 +30,7 @@ pub struct TraceCommand {
     pub sub_cmd: TraceSubCommand,
 }
 
-#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
 #[argh(subcommand)]
 pub enum TraceSubCommand {
     ListCategories(ListCategories),
@@ -43,17 +43,17 @@ pub enum TraceSubCommand {
     // More commands including `record` and `convert` to follow.
 }
 
-#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
 /// List the target's known trace categories.
 #[argh(subcommand, name = "list-categories")]
 pub struct ListCategories {}
 
-#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
 /// List the target's trace providers.
 #[argh(subcommand, name = "list-providers")]
 pub struct ListProviders {}
 
-#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
 /// List the builtin and custom category groups.
 #[argh(subcommand, name = "list-category-groups")]
 pub struct ListCategoryGroups {}
@@ -63,12 +63,12 @@ pub struct ListCategoryGroups {}
 // is much more concise when dealing with a large set of categories.
 pub type TraceCategories = Vec<String>;
 
-#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
 /// Gets status of all running traces.
 #[argh(subcommand, name = "status")]
 pub struct Status {}
 
-#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
 /// Symbolizes the provided ordinal
 #[argh(subcommand, name = "symbolize")]
 pub struct Symbolize {
@@ -91,7 +91,7 @@ pub struct Symbolize {
     pub ir_path: Vec<String>,
 }
 
-#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
 /// Stops an active running trace.
 #[argh(subcommand, name = "stop")]
 pub struct Stop {
@@ -121,7 +121,7 @@ pub struct Stop {
     pub no_verify_trace: bool,
 }
 
-#[derive(ArgsInfo, FromArgs, PartialEq, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
 /// Record a trace.
 #[argh(
     subcommand,

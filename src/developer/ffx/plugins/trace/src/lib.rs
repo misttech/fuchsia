@@ -6,7 +6,7 @@ use anyhow::{Result, anyhow};
 use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
 use ffx_target::get_target_specifier;
-use ffx_trace_args::{Stop, TraceCommand, TraceSubCommand};
+use ffx_trace_args::{Start, Stop, Symbolize, TraceCommand, TraceSubCommand};
 use ffx_tracing::{self as ffx_trace, SymbolizationMap};
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{Deferred, FfxMain, FfxTool, bug, deferred};
@@ -292,279 +292,289 @@ impl FfxMain for TraceTool {
     type Writer = Writer;
 
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
-        trace(self.context, self.provisioner, self.session_manager, writer, self.cmd)
-            .await
-            .map_err(Into::into)
+        match self.cmd.sub_cmd.clone() {
+            TraceSubCommand::ListCategories(_) => self.list_categories(writer).await,
+            TraceSubCommand::ListProviders(_) => self.list_providers(writer).await,
+            TraceSubCommand::ListCategoryGroups(_) => self.list_category_groups(writer).await,
+            TraceSubCommand::Symbolize(ref opts) => self.symbolize(opts, writer).await,
+            TraceSubCommand::Start(ref opts) => self.trace_start(opts, writer).await,
+            TraceSubCommand::Stop(ref opts) => self.trace_stop(opts, writer).await,
+            TraceSubCommand::Status(_) => self.trace_status(writer).await,
+        }
     }
 }
 
-pub async fn trace(
-    context: EnvironmentContext,
-    provisioner: Deferred<ProvisionerProxy>,
-    session_manager: Deferred<SessionManagerProxy>,
-    mut writer: Writer,
-    cmd: TraceCommand,
-) -> Result<()> {
-    let trace_proxy: SessionManagerProxyType = match session_manager.await {
-        Ok(p) => p.into(),
-        Err(e) => {
-            eprintln!(
-                "Cannot connect to SessionManagerProxy, falling back to basic trace manager."
-            );
-            log::warn!(
-                "Cannot connect to SessionManagerProxy, falling back to basic trace manager: {e:?}."
-            );
-            provisioner.await?.into()
-        }
-    };
-    match cmd.sub_cmd {
-        TraceSubCommand::ListCategories(_) => {
-            let result = match trace_proxy {
-                SessionManagerProxyType::Provisioner(p) => p.get_known_categories().await,
-                SessionManagerProxyType::SessionManager(p) => p.get_known_categories().await,
-            };
-            let mut categories = handle_fidl_error(result)?;
-            categories.sort_unstable();
-            if writer.is_machine() {
-                let categories = categories
-                    .into_iter()
-                    .map(TraceKnownCategory::from)
-                    .collect::<Vec<TraceKnownCategory>>();
-
-                writer.machine(&TraceOutput::ListCategories(categories))?;
-            } else {
-                print_grid(
-                    &mut writer,
-                    categories
-                        .into_iter()
-                        .map(|category| {
-                            if !category.description.is_empty() {
-                                format!("{} ({})", category.name, category.description)
-                            } else {
-                                category.name
-                            }
-                        })
-                        .collect(),
-                )?;
+impl TraceTool {
+    async fn get_trace_proxy(self) -> Result<SessionManagerProxyType> {
+        match self.session_manager.await {
+            Ok(p) => Ok(p.into()),
+            Err(e) => {
+                eprintln!(
+                    "Cannot connect to SessionManagerProxy, falling back to basic trace manager."
+                );
+                log::warn!(
+                    "Cannot connect to SessionManagerProxy, falling back to basic trace manager: {e:?}."
+                );
+                Ok(self.provisioner.await?.into())
             }
         }
-        TraceSubCommand::ListProviders(_) => {
-            let result = match trace_proxy {
-                SessionManagerProxyType::Provisioner(p) => p.get_providers().await,
-                SessionManagerProxyType::SessionManager(p) => p.get_providers().await,
-            };
+    }
 
-            let mut providers = handle_fidl_error(result)?
+    async fn list_categories(self, mut writer: Writer) -> fho::Result<()> {
+        let trace_proxy = self.get_trace_proxy().await?;
+
+        let result = match trace_proxy {
+            SessionManagerProxyType::Provisioner(p) => p.get_known_categories().await,
+            SessionManagerProxyType::SessionManager(p) => p.get_known_categories().await,
+        };
+        let mut categories = handle_fidl_error(result)?;
+        categories.sort_unstable();
+        if writer.is_machine() {
+            let categories = categories
                 .into_iter()
-                .map(TraceProviderInfo::from)
-                .collect::<Vec<TraceProviderInfo>>();
-            providers.sort_unstable();
-            if writer.is_machine() {
-                writer.machine(&TraceOutput::ListProviders(providers))?;
-            } else {
-                writer.line("Trace providers:")?;
-                print_grid(
-                    &mut writer,
-                    providers.into_iter().map(|provider| provider.name).collect(),
-                )?;
-            }
-        }
-        TraceSubCommand::ListCategoryGroups(_) => {
-            let category_groups = ffx_trace::get_category_groups(&context)?;
+                .map(TraceKnownCategory::from)
+                .collect::<Vec<TraceKnownCategory>>();
 
-            if writer.is_machine() {
-                writer.machine(&TraceOutput::ListCategoryGroups(category_groups))?;
-                return Ok(());
-            }
-
-            let mut table = Table::new();
-            let table_format = FormatBuilder::new().padding(/*left*/ 0, /*right*/ 1).build();
-            table.set_format(table_format);
-            table.set_titles(row!("Name", "Categories"));
-
-            // Sort the names with #default being last.
-            let mut names = category_groups.keys().cloned().collect::<Vec<String>>();
-            if names.contains(&"default".to_string()) {
-                names.retain(|name| *name != "default");
-                names.sort_unstable();
-                names.push("default".to_string());
-            } else {
-                names.sort_unstable();
-            }
-
-            for name in names {
-                let values = category_groups
-                    .get(&name)
-                    .unwrap()
-                    .chunks(7)
-                    .map(|chunk| chunk.join(", "))
-                    .collect::<Vec<String>>()
-                    .join("\n");
-                table.add_row(row![format!("#{name}"), values]);
-            }
-
-            table.print(&mut writer).map_err(|e| bug!(e))?;
-        }
-        TraceSubCommand::Start(opts) => {
-            if opts.background && opts.output.is_some() {
-                ffx_bail!(
-                    "The option '--output' cannot be used with background tracing. Use `ffx trace stop --output` instead."
-                );
-            }
-            let triggers = if opts.trigger.is_empty() { None } else { Some(opts.trigger) };
-            if triggers.is_some() && !opts.background {
-                ffx_bail!(
-                    "Triggers can only be set on a background trace. \
-                     Trace should be run with the --background flag."
-                );
-            }
-            let expanded_categories =
-                ffx_trace::expand_categories(&context, opts.categories.clone())?;
-            let defer_transfer = match opts.buffering_mode {
-                BufferingMode::Oneshot | BufferingMode::Circular => false,
-                BufferingMode::Streaming => true,
-            };
-            let trace_config = TraceConfig {
-                buffer_size_megabytes_hint: Some(opts.buffer_size),
-                categories: Some(expanded_categories.clone()),
-                buffering_mode: Some(opts.buffering_mode),
-                defer_transfer: Some(defer_transfer),
-                ..ffx_trace::map_categories_to_providers(&expanded_categories)
-            };
-            let output = canonical_path(opts.output.unwrap_or_else(|| "trace.fxt".to_owned()))?;
-
-            let options = TraceOptions {
-                duration_ns: opts.duration.map(|d| Duration::from_secs(d.into()).as_nanos() as i64),
-                triggers,
-                requested_categories: Some(opts.categories.clone()),
-                ..Default::default()
-            };
-            writer.line(format!("Tracing categories: [{}]...", expanded_categories.join(","),))?;
-            // For the background we need a background task, so still use the daemon.
-            // Otherwise use a direct connection.
-            if opts.background {
-                return match trace_proxy {
-                    SessionManagerProxyType::Provisioner(_) => {
-                        ffx_bail!(
-                            "Background tracing is not supported with devices that do not support SessionManagerProxy"
-                        );
-                    }
-                    SessionManagerProxyType::SessionManager(_) => {
-                        let trace_config = TraceConfig {
-                            categories: Some(expanded_categories.clone()),
-                            ..trace_config
-                        };
-                        background_trace(trace_proxy, options, trace_config, &mut writer).await
-                    }
-                };
-            }
-
-            if opts.on_boot {
-                return match trace_proxy {
-                    SessionManagerProxyType::Provisioner(_) => {
-                        ffx_bail!(
-                            "Trace on boot is not supported with devices that do not support SessionManagerProxy"
-                        );
-                    }
-                    SessionManagerProxyType::SessionManager(_) => {
-                        let trace_config = TraceConfig {
-                            categories: Some(expanded_categories.clone()),
-                            ..trace_config
-                        };
-                        configure_on_boot_trace(trace_proxy, options, trace_config, &mut writer)
-                            .await
-                    }
-                };
-            }
-
-            let trace_config =
-                TraceConfig { categories: Some(expanded_categories.clone()), ..trace_config };
-            let task =
-                direct::trace(trace_proxy.clone(), options, trace_config.clone(), false).await?;
-
-            if opts.duration.is_none() {
-                let waiter = &mut stdin();
-                writer.line("Press <enter> to stop trace.")?;
-                waiter.wait().await;
-            }
-
-            writer.line("Trace completed! Copying trace from device...")?;
-            let trace_data = direct::stop_tracing(&context, task, trace_proxy, &output).await?;
-
-            finalize_trace(
-                &context,
-                trace_data,
-                &Stop {
-                    output: None,
-                    verbose: opts.verbose,
-                    no_symbolize: opts.no_symbolize,
-                    no_verify_trace: opts.no_verify_trace,
-                },
+            writer.machine(&TraceOutput::ListCategories(categories))?;
+        } else {
+            print_grid(
                 &mut writer,
+                categories
+                    .into_iter()
+                    .map(|category| {
+                        if !category.description.is_empty() {
+                            format!("{} ({})", category.name, category.description)
+                        } else {
+                            category.name
+                        }
+                    })
+                    .collect(),
             )?;
         }
-        TraceSubCommand::Stop(ref opts) => {
-            let output =
-                canonical_path(opts.output.clone().unwrap_or_else(|| "trace.fxt".to_owned()))?;
+        Ok(())
+    }
 
-            let trace_data = match trace_proxy {
+    async fn list_providers(self, mut writer: Writer) -> fho::Result<()> {
+        let trace_proxy = self.get_trace_proxy().await?;
+
+        let result = match trace_proxy {
+            SessionManagerProxyType::Provisioner(p) => p.get_providers().await,
+            SessionManagerProxyType::SessionManager(p) => p.get_providers().await,
+        };
+
+        let mut providers = handle_fidl_error(result)?
+            .into_iter()
+            .map(TraceProviderInfo::from)
+            .collect::<Vec<TraceProviderInfo>>();
+        providers.sort_unstable();
+        if writer.is_machine() {
+            writer.machine(&TraceOutput::ListProviders(providers))?;
+        } else {
+            writer.line("Trace providers:")?;
+            print_grid(&mut writer, providers.into_iter().map(|provider| provider.name).collect())?;
+        }
+        Ok(())
+    }
+
+    async fn list_category_groups(&self, mut writer: Writer) -> fho::Result<()> {
+        let category_groups = ffx_trace::get_category_groups(&self.context)?;
+
+        if writer.is_machine() {
+            writer.machine(&TraceOutput::ListCategoryGroups(category_groups))?;
+            return Ok(());
+        }
+
+        let mut table = Table::new();
+        let table_format = FormatBuilder::new().padding(/*left*/ 0, /*right*/ 1).build();
+        table.set_format(table_format);
+        table.set_titles(row!("Name", "Categories"));
+
+        // Sort the names with #default being last.
+        let mut names = category_groups.keys().cloned().collect::<Vec<String>>();
+        if names.contains(&"default".to_string()) {
+            names.retain(|name| *name != "default");
+            names.sort_unstable();
+            names.push("default".to_string());
+        } else {
+            names.sort_unstable();
+        }
+
+        for name in names {
+            let values = category_groups
+                .get(&name)
+                .unwrap()
+                .chunks(7)
+                .map(|chunk| chunk.join(", "))
+                .collect::<Vec<String>>()
+                .join("\n");
+            table.add_row(row![format!("#{name}"), values]);
+        }
+
+        table.print(&mut writer).map_err(|e| bug!(e))?;
+        Ok(())
+    }
+
+    async fn trace_start(self, opts: &Start, mut writer: Writer) -> fho::Result<()> {
+        if opts.background && opts.output.is_some() {
+            ffx_bail!(
+                "The option '--output' cannot be used with background tracing. Use `ffx trace stop --output` instead."
+            );
+        }
+        let triggers = if opts.trigger.is_empty() { None } else { Some(opts.trigger.clone()) };
+        if triggers.is_some() && !opts.background {
+            ffx_bail!(
+                "Triggers can only be set on a background trace. \
+                     Trace should be run with the --background flag."
+            );
+        }
+        let context = self.context.clone();
+        let trace_proxy = self.get_trace_proxy().await?;
+
+        let expanded_categories = ffx_trace::expand_categories(&context, opts.categories.clone())?;
+        let defer_transfer = match opts.buffering_mode {
+            BufferingMode::Oneshot | BufferingMode::Circular => false,
+            BufferingMode::Streaming => true,
+        };
+        let trace_config = TraceConfig {
+            buffer_size_megabytes_hint: Some(opts.buffer_size),
+            categories: Some(expanded_categories.clone()),
+            buffering_mode: Some(opts.buffering_mode),
+            defer_transfer: Some(defer_transfer),
+            ..ffx_trace::map_categories_to_providers(&expanded_categories)
+        };
+        let output = canonical_path(opts.output.clone().unwrap_or_else(|| "trace.fxt".to_owned()))?;
+
+        let options = TraceOptions {
+            duration_ns: opts.duration.map(|d| Duration::from_secs(d.into()).as_nanos() as i64),
+            triggers,
+            requested_categories: Some(opts.categories.clone()),
+            ..Default::default()
+        };
+        writer.line(format!("Tracing categories: [{}]...", expanded_categories.join(","),))?;
+        // For the background we need a background task, so still use the daemon.
+        // Otherwise use a direct connection.
+        if opts.background {
+            return match trace_proxy {
                 SessionManagerProxyType::Provisioner(_) => {
                     ffx_bail!(
-                        "Stop is not supported with devices that do not expose SessionManagerProxy"
+                        "Background tracing is not supported with devices that do not support SessionManagerProxy"
                     );
                 }
                 SessionManagerProxyType::SessionManager(_) => {
-                    direct::stop_tracing(&context, None, trace_proxy, &output).await?
+                    let trace_config = TraceConfig {
+                        categories: Some(expanded_categories.clone()),
+                        ..trace_config
+                    };
+                    background_trace(trace_proxy, options, trace_config, &mut writer)
+                        .await
+                        .map_err(Into::into)
                 }
             };
-            finalize_trace(
-                &context,
-                trace_data,
-                &Stop {
-                    output: Some(output),
-                    verbose: opts.verbose,
-                    no_symbolize: opts.no_symbolize,
-                    no_verify_trace: opts.no_verify_trace,
-                },
-                &mut writer,
-            )?;
         }
-        TraceSubCommand::Status(_opts) => match trace_proxy {
+
+        if opts.on_boot {
+            return match trace_proxy {
+                SessionManagerProxyType::Provisioner(_) => {
+                    ffx_bail!(
+                        "Trace on boot is not supported with devices that do not support SessionManagerProxy"
+                    );
+                }
+                SessionManagerProxyType::SessionManager(_) => {
+                    let trace_config = TraceConfig {
+                        categories: Some(expanded_categories.clone()),
+                        ..trace_config
+                    };
+                    configure_on_boot_trace(trace_proxy, options, trace_config, &mut writer)
+                        .await
+                        .map_err(Into::into)
+                }
+            };
+        }
+
+        let trace_config =
+            TraceConfig { categories: Some(expanded_categories.clone()), ..trace_config };
+        let task = direct::trace(trace_proxy.clone(), options, trace_config.clone(), false).await?;
+
+        if opts.duration.is_none() {
+            let waiter = &mut stdin();
+            writer.line("Press <enter> to stop trace.")?;
+            waiter.wait().await;
+        }
+
+        writer.line("Trace completed! Copying trace from device...")?;
+        let trace_data = direct::stop_tracing(&context, task, trace_proxy, &output).await?;
+
+        finalize_trace(
+            &context,
+            trace_data,
+            &Stop {
+                output: Some(output.clone()),
+                verbose: opts.verbose,
+                no_symbolize: opts.no_symbolize,
+                no_verify_trace: opts.no_verify_trace,
+            },
+            writer,
+        )?;
+        Ok(())
+    }
+
+    async fn trace_stop(self, opts: &Stop, writer: Writer) -> fho::Result<()> {
+        let context = self.context.clone();
+        let trace_proxy = self.get_trace_proxy().await?;
+        let output = canonical_path(opts.output.clone().unwrap_or_else(|| "trace.fxt".to_owned()))?;
+
+        let trace_data = match trace_proxy {
+            SessionManagerProxyType::Provisioner(_) => {
+                ffx_bail!(
+                    "Stop is not supported with devices that do not expose SessionManagerProxy"
+                );
+            }
+            SessionManagerProxyType::SessionManager(_) => {
+                direct::stop_tracing(&context, None, trace_proxy, &output).await?
+            }
+        };
+        finalize_trace(&context, trace_data, opts, writer).map_err(Into::into)
+    }
+
+    async fn trace_status(self, mut writer: Writer) -> fho::Result<()> {
+        let trace_proxy = self.get_trace_proxy().await?;
+
+        match trace_proxy {
             SessionManagerProxyType::Provisioner(_) => {
                 ffx_bail!(
                     "Status is unavailable with devices that do not support SessionManagerProxy"
                 )
             }
             SessionManagerProxyType::SessionManager(session_manager_proxy) => {
-                status(session_manager_proxy, &mut writer).await?
-            }
-        },
-        TraceSubCommand::Symbolize(opts) => {
-            if let Some(trace_file) = opts.fxt {
-                let outfile = opts.outfile.unwrap_or_else(|| trace_file.clone());
-                for warning in process_trace_file(trace_file, &outfile, true, None, &context)? {
-                    writer.line(warning)?;
-                }
-                writer.line(format!("Symbolized traces written to {outfile}"))?;
-            } else if let Some(ordinal) = opts.ordinal {
-                let mut ordinals = match SymbolizationMap::from_context(&context) {
-                    Ok(ordinals) => ordinals,
-                    Err(err) => {
-                        writer.line(format!("Unable to load FIDL symbolization map: {}", err))?;
-                        SymbolizationMap::default()
-                    }
-                };
-                for ir_file in opts.ir_path {
-                    ordinals.add_ir_file(ir_file)?;
-                }
-
-                symbolize_ordinal(ordinal, &ordinals, writer)?;
-            } else {
-                ffx_bail!("Either ordinal or trace file must be provided to symbolize");
+                status(session_manager_proxy, &mut writer).await.map_err(Into::into)
             }
         }
     }
-    Ok(())
+    async fn symbolize(self, opts: &Symbolize, mut writer: Writer) -> fho::Result<()> {
+        if let Some(ref trace_file) = opts.fxt {
+            let outfile = opts.outfile.as_ref().unwrap_or(trace_file);
+            for warning in process_trace_file(trace_file, &outfile, true, None, &self.context)? {
+                writer.line(warning)?;
+            }
+            writer.line(format!("Symbolized traces written to {outfile}"))?;
+        } else if let Some(ordinal) = opts.ordinal {
+            let mut ordinals = match SymbolizationMap::from_context(&self.context) {
+                Ok(ordinals) => ordinals,
+                Err(err) => {
+                    writer.line(format!("Unable to load FIDL symbolization map: {}", err))?;
+                    SymbolizationMap::default()
+                }
+            };
+            for ir_file in &opts.ir_path {
+                ordinals.add_ir_file(ir_file)?;
+            }
+
+            symbolize_ordinal(ordinal, &ordinals, writer)?;
+        } else {
+            ffx_bail!("Either ordinal or trace file must be provided to symbolize");
+        }
+        Ok(())
+    }
 }
 
 /// Does the final steps of capturing the trace such as, dumping the provider stats, post_processing
@@ -573,7 +583,7 @@ fn finalize_trace(
     context: &EnvironmentContext,
     trace_data: TraceData,
     opts: &Stop,
-    writer: &mut Writer,
+    mut writer: Writer,
 ) -> Result<()> {
     let verify_trace = !opts.no_verify_trace;
 
@@ -584,7 +594,13 @@ fn finalize_trace(
     }
     if verify_trace {
         let categories = if verify_trace { Some(trace_data.categories) } else { None };
-        post_process(&context, &trace_data.output_file, categories, opts.no_symbolize, writer)?;
+        post_process(
+            &context,
+            &trace_data.output_file,
+            categories,
+            opts.no_symbolize,
+            &mut writer,
+        )?;
     }
     // TODO(https://fxbug.dev/431754465): Make a clickable link that auto-uploads the trace file if possible.
     writer.line(format!("Results written to {}", trace_data.output_file))?;
@@ -1036,29 +1052,21 @@ mod tests {
         })))
     }
 
-    async fn run_trace_test(
-        ctx: EnvironmentContext,
-        cmd: TraceCommand,
-        writer: Writer,
-    ) -> Result<()> {
-        let session_manager: Deferred<SessionManagerProxy> = setup_fake_session_manager();
-
-        let controller = Deferred::from_output(Err(fho::user_error!("not found")));
-        trace(ctx, controller, session_manager, writer, cmd).await
-    }
-
     #[fuchsia::test]
     async fn test_list_categories() {
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
-        run_trace_test(
-            env.context.clone(),
-            TraceCommand { sub_cmd: TraceSubCommand::ListCategories(ListCategories {}) },
-            writer,
-        )
-        .await
-        .unwrap();
+
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::ListCategories(ListCategories {}) },
+            context: env.context.clone(),
+        };
+
+        tool.list_categories(writer).await.expect("list categories failed");
+
         let output = test_buffers.into_stdout_str();
         let want = "input (Input system)\nkernel (All kernel trace events)\nkernel:arch (Kernel arch events)\nkernel:ipc (Kernel ipc events)\n";
         assert_eq!(want, output);
@@ -1090,20 +1098,23 @@ mod tests {
         let writer = Writer::new_test(None, &test_buffers);
         let fake_ir_path =
             temp_file.path().to_str().expect("Unable to convert fake IR path to string");
-        run_trace_test(
-            env.context.clone(),
-            TraceCommand {
-                sub_cmd: TraceSubCommand::Symbolize(Symbolize {
-                    ordinal: Some(12345678),
-                    ir_path: vec![fake_ir_path.to_string()],
-                    fxt: None,
-                    outfile: None,
-                }),
-            },
-            writer,
-        )
-        .await
-        .unwrap();
+
+        let symbolize_opts = Symbolize {
+            ordinal: Some(12345678),
+            ir_path: vec![fake_ir_path.to_string()],
+            fxt: None,
+            outfile: None,
+        };
+
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: Deferred::from_output(Err(fho::user_error!("not found"))),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Symbolize(symbolize_opts.clone()) },
+        };
+
+        tool.symbolize(&symbolize_opts, writer).await.expect("symbolize failed");
+
         let output = test_buffers.into_stdout_str();
         let want = "12345678 -> fake_protocol_name.fake_method_name\n";
         assert!(output.contains(want));
@@ -1117,29 +1128,29 @@ mod tests {
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
-        assert!(
-            run_trace_test(
-                env.context.clone(),
-                TraceCommand {
-                    sub_cmd: TraceSubCommand::Start(Start {
-                        buffer_size: 2,
-                        categories: vec!["invalid_categories".to_string()],
-                        duration: Some(1),
-                        buffering_mode: tracing::BufferingMode::Oneshot,
-                        output: Some(fake_trace_file_name),
-                        background: false,
-                        verbose: false,
-                        trigger: vec![],
-                        no_symbolize: false,
-                        no_verify_trace: false,
-                        on_boot: false,
-                    }),
-                },
-                writer,
-            )
-            .await
-            .is_err()
-        );
+
+        let start_opts = Start {
+            buffer_size: 2,
+            categories: vec!["invalid_categories".to_string()],
+            duration: Some(1),
+            buffering_mode: tracing::BufferingMode::Oneshot,
+            output: Some(fake_trace_file_name),
+            background: false,
+            verbose: false,
+            trigger: vec![],
+            no_symbolize: false,
+            no_verify_trace: false,
+            on_boot: false,
+        };
+
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: Deferred::from_output(Err(fho::user_error!("not found"))),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Start(start_opts.clone()) },
+        };
+
+        assert!(tool.trace_start(&start_opts, writer).await.is_err());
     }
 
     #[fuchsia::test]
@@ -1147,20 +1158,18 @@ mod tests {
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
-        run_trace_test(
-            env.context.clone(),
-            TraceCommand {
-                sub_cmd: TraceSubCommand::Symbolize(Symbolize {
-                    ordinal: Some(12345678),
-                    ir_path: vec![],
-                    fxt: None,
-                    outfile: None,
-                }),
-            },
-            writer,
-        )
-        .await
-        .unwrap();
+
+        let symbolize_opts =
+            Symbolize { ordinal: Some(12345678), ir_path: vec![], fxt: None, outfile: None };
+
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: Deferred::from_output(Err(fho::user_error!("not found"))),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Symbolize(symbolize_opts.clone()) },
+        };
+
+        tool.symbolize(&symbolize_opts, writer).await.unwrap();
         let output = test_buffers.into_stdout_str();
         let want = "Unable to symbolize ordinal 12345678. This could be because either:\n\
                     1. The ordinal is incorrect\n\
@@ -1173,13 +1182,15 @@ mod tests {
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(Some(Format::Json), &test_buffers);
-        run_trace_test(
-            env.context.clone(),
-            TraceCommand { sub_cmd: TraceSubCommand::ListCategories(ListCategories {}) },
-            writer,
-        )
-        .await
-        .unwrap();
+
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::ListCategories(ListCategories {}) },
+        };
+
+        tool.list_categories(writer).await.unwrap();
         let output = test_buffers.into_stdout_str();
         let want = serde_json::to_string(
             &fake_known_categories()
@@ -1196,12 +1207,15 @@ mod tests {
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
-        let session_mgr_proxy = Deferred::from_output(Err(fho::user_error!("not found")));
-        let controller = setup_closed_fake_controller_proxy();
-        let cmd = TraceCommand { sub_cmd: TraceSubCommand::ListCategories(ListCategories {}) };
-        let res = trace(env.context.clone(), controller, session_mgr_proxy, writer, cmd)
-            .await
-            .unwrap_err();
+
+        let tool = TraceTool {
+            provisioner: setup_closed_fake_controller_proxy(),
+            session_manager: Deferred::from_output(Err(fho::user_error!("not found"))),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::ListCategories(ListCategories {}) },
+        };
+
+        let res = tool.list_categories(writer).await.unwrap_err();
         assert!(res.ffx_error().is_some());
         assert!(res.to_string().contains("This can happen if tracing is not"));
         assert!(test_buffers.into_stdout_str().is_empty());
@@ -1212,13 +1226,15 @@ mod tests {
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
-        run_trace_test(
-            env.context.clone(),
-            TraceCommand { sub_cmd: TraceSubCommand::ListProviders(ListProviders {}) },
-            writer,
-        )
-        .await
-        .unwrap();
+
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::ListProviders(ListProviders {}) },
+        };
+
+        tool.list_providers(writer).await.unwrap();
         let output = test_buffers.into_stdout_str();
         let want = "Trace providers:\n\
                    bar  foo  unknown\n\n"
@@ -1231,12 +1247,16 @@ mod tests {
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
-        let session_mgr_proxy = Deferred::from_output(Err(fho::user_error!("not found")));
-        let controller = setup_closed_fake_controller_proxy();
         let cmd = TraceCommand { sub_cmd: TraceSubCommand::ListProviders(ListProviders {}) };
-        let res = trace(env.context.clone(), controller, session_mgr_proxy, writer, cmd)
-            .await
-            .unwrap_err();
+
+        let tool = TraceTool {
+            provisioner: setup_closed_fake_controller_proxy(),
+            session_manager: Deferred::from_output(Err(fho::user_error!("not found"))),
+            context: env.context.clone(),
+            cmd,
+        };
+
+        let res = tool.list_providers(writer).await.unwrap_err();
         assert!(res.ffx_error().is_some());
         assert!(res.to_string().contains("This can happen if tracing is not"));
         assert!(test_buffers.into_stdout_str().is_empty());
@@ -1247,13 +1267,14 @@ mod tests {
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(Some(Format::Json), &test_buffers);
-        run_trace_test(
-            env.context.clone(),
-            TraceCommand { sub_cmd: TraceSubCommand::ListProviders(ListProviders {}) },
-            writer,
-        )
-        .await
-        .unwrap();
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::ListProviders(ListProviders {}) },
+        };
+
+        tool.list_providers(writer).await.unwrap();
         let output = test_buffers.into_stdout_str();
         let want = serde_json::to_string(&fake_trace_provider_infos()).unwrap();
         assert_eq!(want, output.trim_end());
@@ -1264,27 +1285,28 @@ mod tests {
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
-        run_trace_test(
-            env.context.clone(),
-            TraceCommand {
-                sub_cmd: TraceSubCommand::Start(Start {
-                    buffer_size: 2,
-                    categories: vec!["platypus".to_string(), "beaver".to_string()],
-                    duration: None,
-                    buffering_mode: tracing::BufferingMode::Oneshot,
-                    output: None,
-                    background: true,
-                    verbose: false,
-                    trigger: vec![],
-                    no_symbolize: false,
-                    no_verify_trace: true,
-                    on_boot: false,
-                }),
-            },
-            writer,
-        )
-        .await
-        .unwrap();
+        let start_opts = Start {
+            buffer_size: 2,
+            categories: vec!["platypus".to_string(), "beaver".to_string()],
+            duration: None,
+            buffering_mode: tracing::BufferingMode::Oneshot,
+            output: None,
+            background: true,
+            verbose: false,
+            trigger: vec![],
+            no_symbolize: false,
+            no_verify_trace: true,
+            on_boot: false,
+        };
+
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Start(start_opts.clone()) },
+        };
+
+        tool.trace_start(&start_opts, writer).await.unwrap();
         let output = test_buffers.into_stdout_str();
         // This doesn't find `/.../foo.txt` for the tracing status, since the faked
         // proxy has no state.
@@ -1307,13 +1329,15 @@ Triggers:
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
-        run_trace_test(
-            env.context.clone(),
-            TraceCommand { sub_cmd: TraceSubCommand::Status(Status {}) },
-            writer,
-        )
-        .await
-        .unwrap();
+
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Status(Status {}) },
+        };
+
+        tool.trace_status(writer).await.unwrap();
         let output = test_buffers.into_stdout_str();
         let want = "Task Id: 2468
 Total Duration: infinite
@@ -1330,20 +1354,22 @@ Triggers:
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
-        run_trace_test(
-            env.context.clone(),
-            TraceCommand {
-                sub_cmd: TraceSubCommand::Stop(Stop {
-                    output: Some("foo.txt".to_string()),
-                    verbose: false,
-                    no_symbolize: false,
-                    no_verify_trace: true,
-                }),
-            },
-            writer,
-        )
-        .await
-        .unwrap();
+
+        let stop_opts = Stop {
+            output: Some("foo.txt".to_string()),
+            verbose: false,
+            no_symbolize: false,
+            no_verify_trace: true,
+        };
+
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Stop(stop_opts.clone()) },
+        };
+
+        tool.trace_stop(&stop_opts, writer).await.unwrap();
         let output = test_buffers.into_stdout_str();
         let regex_str =
             "Results written to /([^/]+/)+?foo.txt\nUpload to https://ui.perfetto.dev/#!/ to view.";
@@ -1361,20 +1387,21 @@ Triggers:
         let tmp_dir = TempDir::new().expect("tmp");
         let dir_path = tmp_dir.path().join(long_dirname);
         std::fs::create_dir_all(&dir_path).expect("temp directory");
-        run_trace_test(
-            env.context.clone(),
-            TraceCommand {
-                sub_cmd: TraceSubCommand::Stop(Stop {
-                    output: Some(dir_path.join("trace.fxt").to_string_lossy().to_string()),
-                    verbose: false,
-                    no_symbolize: false,
-                    no_verify_trace: true,
-                }),
-            },
-            writer,
-        )
-        .await
-        .unwrap();
+
+        let stop_opts = Stop {
+            output: Some(dir_path.join("trace.fxt").to_string_lossy().to_string()),
+            verbose: false,
+            no_symbolize: false,
+            no_verify_trace: true,
+        };
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Stop(stop_opts.clone()) },
+        };
+
+        tool.trace_stop(&stop_opts, writer).await.unwrap();
         let output = test_buffers.into_stdout_str();
         let regex_str = "Results written to /([^/]+/)+?trace.fxt\nUpload to https://ui.perfetto.dev/#!/ to view.";
         let want = Regex::new(regex_str).unwrap();
@@ -1386,27 +1413,28 @@ Triggers:
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
-        run_trace_test(
-            env.context.clone(),
-            TraceCommand {
-                sub_cmd: TraceSubCommand::Start(Start {
-                    buffer_size: 2,
-                    categories: vec!["platypus".to_string(), "beaver".to_string()],
-                    duration: None,
-                    buffering_mode: tracing::BufferingMode::Oneshot,
-                    output: None,
-                    background: true,
-                    verbose: true,
-                    trigger: vec![],
-                    no_symbolize: false,
-                    no_verify_trace: true,
-                    on_boot: false,
-                }),
-            },
-            writer,
-        )
-        .await
-        .unwrap();
+
+        let start_opts = Start {
+            buffer_size: 2,
+            categories: vec!["platypus".to_string(), "beaver".to_string()],
+            duration: None,
+            buffering_mode: tracing::BufferingMode::Oneshot,
+            output: None,
+            background: true,
+            verbose: true,
+            trigger: vec![],
+            no_symbolize: false,
+            no_verify_trace: true,
+            on_boot: false,
+        };
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Start(start_opts.clone()) },
+        };
+
+        tool.trace_start(&start_opts, writer).await.unwrap();
         let output = test_buffers.into_stdout_str();
         // This doesn't find `/.../foo.txt` for the tracing status, since the faked
         // proxy has no state.
@@ -1429,20 +1457,21 @@ Triggers:
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
-        run_trace_test(
-            env.context.clone(),
-            TraceCommand {
-                sub_cmd: TraceSubCommand::Stop(Stop {
-                    output: Some("foo.txt".to_string()),
-                    verbose: true,
-                    no_symbolize: false,
-                    no_verify_trace: true,
-                }),
-            },
-            writer,
-        )
-        .await
-        .unwrap();
+
+        let stop_opts = Stop {
+            output: Some("foo.txt".to_string()),
+            verbose: true,
+            no_symbolize: false,
+            no_verify_trace: true,
+        };
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Stop(stop_opts.clone()) },
+        };
+
+        tool.trace_stop(&stop_opts, writer).await.unwrap();
         let output = test_buffers.into_stdout_str();
         let regex_str = "\"provider_bar\" \\(pid: 1234\\) trace stats\n\
             Buffer wrapped count: 10\n\
@@ -1465,27 +1494,29 @@ Triggers:
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
-        run_trace_test(
-            env.context.clone(),
-            TraceCommand {
-                sub_cmd: TraceSubCommand::Start(Start {
-                    buffer_size: 2,
-                    categories: vec![],
-                    duration: Some(5),
-                    buffering_mode: tracing::BufferingMode::Oneshot,
-                    output: Some("foober.fxt".to_owned()),
-                    background: false,
-                    verbose: false,
-                    trigger: vec![],
-                    no_symbolize: false,
-                    no_verify_trace: true,
-                    on_boot: false,
-                }),
-            },
-            writer,
-        )
-        .await
-        .unwrap();
+
+        let start_opts = Start {
+            buffer_size: 2,
+            categories: vec![],
+            duration: Some(5),
+            buffering_mode: tracing::BufferingMode::Oneshot,
+            output: Some("foober.fxt".to_owned()),
+            background: false,
+            verbose: false,
+            trigger: vec![],
+            no_symbolize: false,
+            no_verify_trace: true,
+            on_boot: false,
+        };
+
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Start(start_opts.clone()) },
+        };
+
+        tool.trace_start(&start_opts, writer).await.unwrap();
         let output = test_buffers.into_stdout_str();
         let regex_str = "Tracing categories: \\[\\]...\n";
         let want = Regex::new(regex_str).unwrap();
@@ -1497,27 +1528,29 @@ Triggers:
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
-        run_trace_test(
-            env.context.clone(),
-            TraceCommand {
-                sub_cmd: TraceSubCommand::Start(Start {
-                    buffer_size: 2,
-                    categories: vec![],
-                    duration: Some(1),
-                    buffering_mode: tracing::BufferingMode::Oneshot,
-                    output: Some("foober.fxt".to_owned()),
-                    background: false,
-                    verbose: false,
-                    trigger: vec![],
-                    no_symbolize: false,
-                    no_verify_trace: true,
-                    on_boot: false,
-                }),
-            },
-            writer,
-        )
-        .await
-        .unwrap();
+
+        let start_opts = Start {
+            buffer_size: 2,
+            categories: vec![],
+            duration: Some(1),
+            buffering_mode: tracing::BufferingMode::Oneshot,
+            output: Some("foober.fxt".to_owned()),
+            background: false,
+            verbose: false,
+            trigger: vec![],
+            no_symbolize: false,
+            no_verify_trace: true,
+            on_boot: false,
+        };
+
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Start(start_opts.clone()) },
+        };
+
+        tool.trace_start(&start_opts, writer).await.unwrap();
         let output = test_buffers.into_stdout_str();
         let regex_str = "Tracing categories: \\[\\]...\n\
             Trace completed! Copying trace from device...\n\
@@ -1532,27 +1565,28 @@ Triggers:
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
-        run_trace_test(
-            env.context.clone(),
-            TraceCommand {
-                sub_cmd: TraceSubCommand::Start(Start {
-                    buffer_size: 2,
-                    categories: vec![],
-                    buffering_mode: tracing::BufferingMode::Oneshot,
-                    duration: None,
-                    output: Some("foober.fxt".to_owned()),
-                    background: false,
-                    verbose: false,
-                    trigger: vec![],
-                    no_symbolize: false,
-                    no_verify_trace: true,
-                    on_boot: false,
-                }),
-            },
-            writer,
-        )
-        .await
-        .unwrap();
+        let start_opts = Start {
+            buffer_size: 2,
+            categories: vec![],
+            buffering_mode: tracing::BufferingMode::Oneshot,
+            duration: None,
+            output: Some("foober.fxt".to_owned()),
+            background: false,
+            verbose: false,
+            trigger: vec![],
+            no_symbolize: false,
+            no_verify_trace: true,
+            on_boot: false,
+        };
+
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Start(start_opts.clone()) },
+        };
+
+        tool.trace_start(&start_opts, writer).await.unwrap();
         let output = test_buffers.into_stdout_str();
         let regex_str = "Tracing categories: \\[\\]...\n\
             Press <enter> to stop trace.\n\
@@ -1568,27 +1602,28 @@ Triggers:
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
-        run_trace_test(
-            env.context.clone(),
-            TraceCommand {
-                sub_cmd: TraceSubCommand::Start(Start {
-                    buffer_size: 1024,
-                    categories: vec![],
-                    buffering_mode: tracing::BufferingMode::Oneshot,
-                    duration: None,
-                    output: Some("foober.fxt".to_owned()),
-                    background: false,
-                    verbose: false,
-                    trigger: vec![],
-                    no_symbolize: false,
-                    no_verify_trace: true,
-                    on_boot: false,
-                }),
-            },
-            writer,
-        )
-        .await
-        .unwrap();
+        let start_opts = Start {
+            buffer_size: 1024,
+            categories: vec![],
+            buffering_mode: tracing::BufferingMode::Oneshot,
+            duration: None,
+            output: Some("foober.fxt".to_owned()),
+            background: false,
+            verbose: false,
+            trigger: vec![],
+            no_symbolize: false,
+            no_verify_trace: true,
+            on_boot: false,
+        };
+
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Start(start_opts.clone()) },
+        };
+
+        tool.trace_start(&start_opts, writer).await.unwrap();
         let output = test_buffers.into_stdout_str();
         let regex_str = "Tracing categories: \\[\\]...\n\
             Press <enter> to stop trace.\n\
