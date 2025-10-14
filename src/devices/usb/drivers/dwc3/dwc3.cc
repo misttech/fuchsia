@@ -50,10 +50,8 @@ class QualcommExtension final : public PlatformExtension {
   static std::unique_ptr<QualcommExtension> Create(Dwc3* parent);
 
   QualcommExtension(std::unordered_map<BusPath, fidl::ClientEnd<fhi::Path>> interconnect_clients,
-                    std::unordered_map<std::string, fidl::ClientEnd<fvreg::Vreg>> regulator_clients,
                     std::unordered_map<std::string, fidl::ClientEnd<fclock::Clock>> clock_clients)
       : interconnect_clients_{std::move(interconnect_clients)},
-        regulator_clients_{std::move(regulator_clients)},
         clock_clients_{std::move(clock_clients)} {}
 
   // PlatformExtension interface implementation.
@@ -96,13 +94,6 @@ std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent) {
   static const std::vector<std::string> kClockNames{"core-clk", "iface-clk", "bus-aggr-clk",
                                                     "xo",       "sleep-clk", "utmi-clk"};
 
-  static const std::vector<std::string> kRegulatorNames = {
-      {"regulator-core"},
-      {"regulator-vdd18"},
-      // TODO(411688327): Manage the VDD33 regulator.
-      // {"regulator-vdd33"},
-  };
-
   std::unordered_map<BusPath, fidl::ClientEnd<fhi::Path>> interconnect_clients;
   for (const auto& [path, node_name] : kBusPathNames) {
     zx::result client = parent->incoming()->Connect<fhi::PathService::Path>(node_name);
@@ -111,16 +102,6 @@ std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent) {
       return nullptr;
     }
     interconnect_clients[path] = std::move(*client);
-  }
-
-  std::unordered_map<std::string, fidl::ClientEnd<fvreg::Vreg>> regulator_clients;
-  for (const auto& name : kRegulatorNames) {
-    zx::result client = parent->incoming()->Connect<fvreg::Service::Vreg>(name);
-    if (client.is_error()) {
-      fdf::info("Failed to get regulator {}, assuming not qualcomm chipset", name);
-      return nullptr;
-    }
-    regulator_clients[name] = std::move(*client);
   }
 
   std::unordered_map<std::string, fidl::ClientEnd<fclock::Clock>> clock_clients;
@@ -133,8 +114,8 @@ std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent) {
     clock_clients[name] = std::move(*client);
   }
 
-  return std::make_unique<QualcommExtension>(
-      std::move(interconnect_clients), std::move(regulator_clients), std::move(clock_clients));
+  return std::make_unique<QualcommExtension>(std::move(interconnect_clients),
+                                             std::move(clock_clients));
 }
 
 zx::result<> QualcommExtension::VoteBandwidth(State state) {
@@ -197,39 +178,7 @@ zx::result<> QualcommExtension::VoteBandwidth(State state) {
 }
 
 zx::result<> QualcommExtension::VoteVoltage(bool on) {
-  // clang-format off
-  const static std::unordered_map<std::string, uint32_t> kVoltages{
-      {"regulator-core", 904000},
-      {"regulator-vdd18", 1800000},
-      // TODO(411688327): Manage the VDD33 regulator.
-      // {"regulator-vdd33", 3080000},
-  };
-  // clang-format on
-
-  if (on) {
-    for (const auto& [name, voltage] : kVoltages) {
-      fidl::Result params = fidl::Call(regulator_clients_.at(name))->GetRegulatorParams();
-      if (params.is_error()) {
-        fdf::error("could not get regulator params for {}: {}", name, params.error_value());
-        continue;
-      }
-
-      uint32_t steps = (voltage - params->min_uv()) / params->step_size_uv();
-      if (steps > params->num_steps()) {
-        fdf::warn("{}: requesting out-of-range voltage, ignoring", name);
-        continue;
-      }
-
-      fidl::Result set =
-          fidl::Call(regulator_clients_.at(name))->SetState({{.step = steps, .enable = true}});
-      if (set.is_error()) {
-        fdf::error("failed to enable regulator {}: {}", name, set.error_value());
-      }
-    }
-    return zx::ok();
-  }
-
-  // It's possible regulator-disable logic will follow.
+  // TODO(450598006): Implement this.
   return zx::ok();
 }
 
