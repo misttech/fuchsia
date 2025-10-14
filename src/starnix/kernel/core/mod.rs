@@ -8,5 +8,6 @@ pub mod device;
 pub mod execution;
 pub mod fs;
 pub mod mm;
+pub mod mutable_state;
 pub mod perf;
 pub mod power;
