@@ -58,7 +58,7 @@ pub struct NlaBuffer<T: AsRef<[u8]>> {
 }
 
 impl<T: AsRef<[u8]>> NlaBuffer<T> {
-    pub fn new_unchecked(buffer: T) -> Self {
+    pub(crate) fn new_unchecked(buffer: T) -> Self {
         Self { buffer }
     }
 

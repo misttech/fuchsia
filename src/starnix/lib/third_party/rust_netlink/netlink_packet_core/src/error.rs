@@ -20,7 +20,7 @@ pub struct ErrorBuffer<T> {
 }
 
 impl<T: AsRef<[u8]>> ErrorBuffer<T> {
-    pub fn new(buffer: T) -> ErrorBuffer<T> {
+    pub(crate) fn new_unchecked(buffer: T) -> ErrorBuffer<T> {
         ErrorBuffer { buffer }
     }
 
@@ -29,8 +29,8 @@ impl<T: AsRef<[u8]>> ErrorBuffer<T> {
         self.buffer
     }
 
-    pub fn new_checked(buffer: T) -> Result<Self, DecodeError> {
-        let packet = Self::new(buffer);
+    pub fn new(buffer: T) -> Result<Self, DecodeError> {
+        let packet = Self::new_unchecked(buffer);
         packet.check_buffer_length()?;
         Ok(packet)
     }
@@ -111,7 +111,7 @@ impl Emitable for ErrorMessage {
         size_of::<i32>() + self.header.len()
     }
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = ErrorBuffer::new(buffer);
+        let mut buffer = ErrorBuffer::new_unchecked(buffer);
         buffer.set_code(self.raw_code());
         buffer.payload_mut().copy_from_slice(&self.header)
     }
@@ -123,7 +123,7 @@ impl<'buffer, T: AsRef<[u8]> + 'buffer> Parseable<ErrorBuffer<&'buffer T>> for E
         // FIXME: The payload of an error is basically a truncated packet, which
         // requires custom logic to parse correctly. For now we just
         // return it as a Vec<u8> let header: NetlinkHeader = {
-        //     NetlinkBuffer::new_checked(self.payload())
+        //     NetlinkBuffer::new(self.payload())
         //         .context("failed to parse netlink header")?
         //         .parse()
         //         .context("failed to parse nelink header")?
@@ -178,7 +178,7 @@ mod tests {
     #[test]
     fn parse_ack() {
         let bytes = vec![0, 0, 0, 0];
-        let msg = ErrorBuffer::new_checked(&bytes)
+        let msg = ErrorBuffer::new(&bytes)
             .and_then(|buf| ErrorMessage::parse(&buf))
             .expect("failed to parse NLMSG_ERROR");
         assert_eq!(ErrorMessage { code: None, header: Vec::new() }, msg);
@@ -191,7 +191,7 @@ mod tests {
         const ERROR_CODE: NonZeroI32 = unsafe { NonZeroI32::new_unchecked(-1234) };
         let mut bytes = vec![0, 0, 0, 0];
         NativeEndian::write_i32(&mut bytes, ERROR_CODE.get());
-        let msg = ErrorBuffer::new_checked(&bytes)
+        let msg = ErrorBuffer::new(&bytes)
             .and_then(|buf| ErrorMessage::parse(&buf))
             .expect("failed to parse NLMSG_ERROR");
         assert_eq!(ErrorMessage { code: Some(ERROR_CODE), header: Vec::new() }, msg);

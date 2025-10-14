@@ -121,7 +121,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> Parseable<NlaBuffer<&'a T>> for TcFilterU32Opt
                     .map_err(|error| TcError::InvalidValue { kind: "TCA_U32_DIVISOR", error })?,
             ),
             TCA_U32_SEL => Self::Selector(TcU32Selector::parse(
-                &TcU32SelectorBuffer::new_checked(payload)
+                &TcU32SelectorBuffer::new(payload)
                     .map_err(|error| TcError::InvalidValue { kind: "TCA_U32_SEL", error })?,
             )?),
             TCA_U32_POLICE => Self::Police(payload.to_vec()),
@@ -161,7 +161,7 @@ pub struct TcU32Selector {
     pub keys: Vec<TcU32Key>,
 }
 
-buffer!(TcU32SelectorBuffer {
+buffer!(TcU32SelectorBuffer() {
     flags: (u8, 0),
     offshift: (u8, 1),
     nkeys: (u8, 2),
@@ -175,8 +175,8 @@ buffer!(TcU32SelectorBuffer {
 });
 
 impl<T: AsRef<[u8]>> TcU32SelectorBuffer<T> {
-    pub fn new_checked(buffer: T) -> Result<Self, DecodeError> {
-        let packet = Self::new(buffer);
+    pub fn new(buffer: T) -> Result<Self, DecodeError> {
+        let packet = Self::new_unchecked(buffer);
         packet.check_buffer_length()?;
         Ok(packet)
     }
@@ -206,7 +206,7 @@ impl Emitable for TcU32Selector {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut packet = TcU32SelectorBuffer::new(buffer);
+        let mut packet = TcU32SelectorBuffer::new_unchecked(buffer);
         packet.set_flags(self.flags.bits());
         packet.set_offshift(self.offshift);
         packet.set_offmask(self.offmask);

@@ -1046,7 +1046,7 @@ impl SocketOps for RouteNetlinkSocket {
         let bytes_len = bytes.len();
 
         // Parse only the netlink header to send it through security check.
-        match NetlinkBuffer::new_checked(&bytes) {
+        match NetlinkBuffer::new(&bytes) {
             Ok(buffer) => {
                 security::check_netlink_send_access(current_task, socket, buffer.message_type())?;
             }

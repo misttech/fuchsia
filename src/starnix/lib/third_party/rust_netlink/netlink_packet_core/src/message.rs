@@ -40,7 +40,7 @@ where
 {
     /// Parse the given buffer as a netlink message
     pub fn deserialize(buffer: &[u8]) -> Result<Self, DecodeError> {
-        let netlink_buffer = NetlinkBuffer::new_checked(&buffer)?;
+        let netlink_buffer = NetlinkBuffer::new(&buffer)?;
         <Self as Parseable<NetlinkBuffer<&&[u8]>>>::parse(&netlink_buffer)
     }
 }
@@ -99,14 +99,14 @@ where
         let bytes = buf.payload();
         let payload = match header.message_type {
             NLMSG_ERROR => {
-                let msg = ErrorBuffer::new_checked(&bytes)
+                let msg = ErrorBuffer::new(&bytes)
                     .and_then(|buf| ErrorMessage::parse(&buf))
                     .map_err(|err| DecodeError::FailedToParseNlMsgError(err.into()))?;
                 Error(msg)
             }
             NLMSG_NOOP => Noop,
             NLMSG_DONE => {
-                let msg = DoneBuffer::new_checked(&bytes)
+                let msg = DoneBuffer::new(&bytes)
                     .and_then(|buf| DoneMessage::parse(&buf))
                     .map_err(|err| DecodeError::FailedToParseNlMsgDone(err.into()))?;
                 Done(msg)
@@ -217,11 +217,11 @@ mod tests {
         let mut buf = vec![1; len];
         want.emit(&mut buf);
 
-        let done_buf = DoneBuffer::new(&buf[header.buffer_len()..]);
+        let done_buf = DoneBuffer::new(&buf[header.buffer_len()..]).unwrap();
         assert_eq!(done_buf.code(), done_msg.code);
         assert_eq!(done_buf.extended_ack(), &done_msg.extended_ack);
 
-        let got = NetlinkMessage::parse(&NetlinkBuffer::new(&buf)).unwrap();
+        let got = NetlinkMessage::parse(&NetlinkBuffer::new(&buf).unwrap()).unwrap();
         assert_eq!(got, want);
     }
 
@@ -244,10 +244,10 @@ mod tests {
         let mut buf = vec![1; len];
         want.emit(&mut buf);
 
-        let error_buf = ErrorBuffer::new(&buf[header.buffer_len()..]);
+        let error_buf = ErrorBuffer::new(&buf[header.buffer_len()..]).unwrap();
         assert_eq!(error_buf.code(), error_msg.code);
 
-        let got = NetlinkMessage::parse(&NetlinkBuffer::new(&buf)).unwrap();
+        let got = NetlinkMessage::parse(&NetlinkBuffer::new(&buf).unwrap()).unwrap();
         assert_eq!(got, want);
     }
 }

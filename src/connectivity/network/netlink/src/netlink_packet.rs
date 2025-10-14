@@ -197,7 +197,9 @@ mod tests {
                 };
                 assert_eq!(code, expected_code);
                 assert_eq!(
-                    NetlinkHeader::parse(&NetlinkBuffer::new(&header)).unwrap(),
+                    // NB: The error response only contains the header, so we
+                    // must use unchecked to parse it.
+                    NetlinkHeader::parse(&NetlinkBuffer::new_unchecked(&header)).unwrap(),
                     expected_header,
                 );
             }

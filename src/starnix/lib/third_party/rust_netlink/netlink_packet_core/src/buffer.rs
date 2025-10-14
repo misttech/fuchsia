@@ -44,7 +44,7 @@ pub const NETLINK_HEADER_LEN: usize = PAYLOAD.start;
 ///         0x08, 0x00, 0x1d, 0x00, 0x01, 0x00, 0x00, 0x00];
 ///
 ///     // Wrap the storage into a NetlinkBuffer
-///     let packet = NetlinkBuffer::new_checked(&buffer[..]).unwrap();
+///     let packet = NetlinkBuffer::new(&buffer[..]).unwrap();
 ///
 ///     // Check that the different accessor return the expected values
 ///     assert_eq!(packet.length(), 40);
@@ -115,8 +115,8 @@ impl<T: AsRef<[u8]>> NetlinkBuffer<T> {
     /// Create a new `NetlinkBuffer` that uses the given buffer as storage. Note that when calling
     /// this method no check is performed, so trying to access fields may panic. If you're not sure
     /// the given buffer contains a valid netlink packet, use
-    /// [`new_checked()`](struct.NetlinkBuffer.html#method.new_checked) instead.
-    pub fn new(buffer: T) -> NetlinkBuffer<T> {
+    /// [`new()`](struct.NetlinkBuffer.html#method.new) instead.
+    pub fn new_unchecked(buffer: T) -> NetlinkBuffer<T> {
         NetlinkBuffer { buffer }
     }
 
@@ -134,12 +134,12 @@ impl<T: AsRef<[u8]>> NetlinkBuffer<T> {
     /// ```rust
     /// use netlink_packet_core::NetlinkBuffer;
     /// static BYTES: [u8; 4] = [0x28, 0x00, 0x00, 0x00];
-    /// assert!(NetlinkBuffer::new_checked(&BYTES[..]).is_err());
+    /// assert!(NetlinkBuffer::new(&BYTES[..]).is_err());
     /// ```
     ///
     /// Here is a slightly more tricky error, where technically, the buffer is big enough to
     /// contains a valid packet. Here, accessing the packet header fields would not panic but
-    /// accessing the payload would, so `new_checked` also checks the length field in the packet
+    /// accessing the payload would, so `new` also checks the length field in the packet
     /// header:
     ///
     /// ```rust
@@ -154,10 +154,10 @@ impl<T: AsRef<[u8]>> NetlinkBuffer<T> {
     ///     0x00, 0x00, 0x00, 0x00, // port id
     ///     // payload
     ///     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-    /// assert!(NetlinkBuffer::new_checked(&BYTES[..]).is_err());
+    /// assert!(NetlinkBuffer::new(&BYTES[..]).is_err());
     /// ```
-    pub fn new_checked(buffer: T) -> Result<NetlinkBuffer<T>, DecodeError> {
-        let packet = Self::new(buffer);
+    pub fn new(buffer: T) -> Result<NetlinkBuffer<T>, DecodeError> {
+        let packet = Self::new_unchecked(buffer);
         packet.check_buffer_length()?;
         Ok(packet)
     }
@@ -369,7 +369,7 @@ mod tests {
 
     #[test]
     fn packet_read() {
-        let packet = NetlinkBuffer::new(&IP_LINK_SHOW_PKT[..]);
+        let packet = NetlinkBuffer::new(&IP_LINK_SHOW_PKT[..]).unwrap();
         assert_eq!(packet.length(), 40);
         assert_eq!(packet.message_type(), RTM_GETLINK);
         assert_eq!(packet.sequence_number(), 1526271540);
@@ -387,7 +387,7 @@ mod tests {
     fn packet_build() {
         let mut buf = vec![0; 40];
         {
-            let mut packet = NetlinkBuffer::new(&mut buf);
+            let mut packet = NetlinkBuffer::new_unchecked(&mut buf);
             packet.set_length(40);
             packet.set_message_type(RTM_GETLINK);
             packet.set_sequence_number(1526271540);

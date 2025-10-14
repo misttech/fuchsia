@@ -58,7 +58,7 @@ fn test_next_hop_max_buffer_len() {
     // |-----|-----|-----|-----|-----|-----|-----|-----|-------|
     // |  length   |flags|hops |    Interface Index    |Payload|
     let buffer = [0xff, 0xff, 0, 0, 0, 0, 0, 0];
-    assert!(RouteNextHopBuffer::new_checked(buffer).is_err());
+    assert!(RouteNextHopBuffer::new(buffer).is_err());
 }
 
 #[test]
@@ -70,5 +70,5 @@ fn test_invalid_next_hop() {
         0, 0, 0, 0, // interface index
         0, 0, 0, 0, 0, 0, 0, 0, // payload
     ];
-    assert!(RouteNextHopBuffer::new_checked(buffer).is_err());
+    assert!(RouteNextHopBuffer::new(buffer).is_err());
 }

@@ -293,7 +293,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized>
                 let mut next_hops = vec![];
                 let mut buf = payload;
                 loop {
-                    match RouteNextHopBuffer::new_checked(&buf) {
+                    match RouteNextHopBuffer::new(&buf) {
                         Ok(nh_buf) => {
                             let len = nh_buf.length() as usize;
                             let nh = RouteNextHop::parse_with_param(

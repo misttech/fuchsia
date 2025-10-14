@@ -144,12 +144,12 @@ macro_rules! setter {
 
 #[macro_export(local_inner_macros)]
 macro_rules! buffer {
-    ($name:ident($buffer_len:expr) { $($field:ident : ($ty:tt, $offset:expr)),* $(,)? }) => {
+    ($name:ident($($buffer_len:expr)?) { $($field:ident : ($ty:tt, $offset:expr)),* $(,)? }) => {
         buffer_common!($name);
         fields!($name {
             $($field: ($ty, $offset),)*
         });
-        buffer_check_length!($name($buffer_len));
+        buffer_check_length!($name $(, $buffer_len)?);
     };
 
     ($name:ident { $($field:ident : ($ty:tt, $offset:expr)),* $(,)? }) => {
@@ -160,9 +160,9 @@ macro_rules! buffer {
         });
     };
 
-    ($name:ident, $buffer_len:expr) => {
+    ($name:ident, buffer_len:expr) => {
         buffer_common!($name);
-        buffer_check_length!($name($buffer_len));
+        buffer_check_length!($name, $buffer_len);
     };
 
     ($name:ident) => {
@@ -186,7 +186,14 @@ macro_rules! fields {
 
 #[macro_export]
 macro_rules! buffer_check_length {
-    ($name:ident($buffer_len:expr)) => {
+    ($name:ident) => {
+        impl<T: AsRef<[u8]>> $name<T> {
+            pub(crate) fn new_unchecked(buffer: T) -> Self {
+                Self { buffer }
+            }
+        }
+    };
+    ($name:ident, $buffer_len:expr) => {
         impl<T: AsRef<[u8]>> $name<T> {
             pub fn new(buffer: T) -> Result<Self, DecodeError> {
                 let packet = Self::new_unchecked(buffer);
@@ -194,7 +201,7 @@ macro_rules! buffer_check_length {
                 Ok(packet)
             }
 
-            pub fn new_unchecked(buffer: T) -> Self {
+            pub(crate) fn new_unchecked(buffer: T) -> Self {
                 Self { buffer }
             }
 

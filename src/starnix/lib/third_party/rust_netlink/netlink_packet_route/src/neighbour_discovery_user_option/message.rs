@@ -46,7 +46,7 @@ impl Emitable for NeighbourDiscoveryUserOptionMessage {
             attributes,
         } = self;
 
-        let mut packet = NeighbourDiscoveryUserOptionMessageBuffer::new(buffer);
+        let mut packet = NeighbourDiscoveryUserOptionMessageBuffer::new_unchecked(buffer);
 
         packet.set_address_family(icmp_type.family().into());
 

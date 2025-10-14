@@ -5,7 +5,7 @@ use netlink_packet_utils::nla::{NlaBuffer, NlasIterator};
 
 pub const NEIGHBOUR_DISCOVERY_USER_OPTION_HEADER_LEN: usize = 16;
 
-buffer!(NeighbourDiscoveryUserOptionMessageBuffer {
+buffer!(NeighbourDiscoveryUserOptionMessageBuffer() {
     address_family: (u8, 0),
     padding_1: (u8, 1),
     options_length: (u16, 2..4),
@@ -18,8 +18,8 @@ buffer!(NeighbourDiscoveryUserOptionMessageBuffer {
 });
 
 impl<T: AsRef<[u8]>> NeighbourDiscoveryUserOptionMessageBuffer<T> {
-    pub fn new_checked(buffer: T) -> Result<Self, DecodeError> {
-        let packet = Self::new(buffer);
+    pub fn new(buffer: T) -> Result<Self, DecodeError> {
+        let packet = Self::new_unchecked(buffer);
         packet.check_buffer_length()?;
         Ok(packet)
     }

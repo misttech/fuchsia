@@ -46,7 +46,7 @@ impl Emitable for NetlinkHeader {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = NetlinkBuffer::new(buffer);
+        let mut buffer = NetlinkBuffer::new_unchecked(buffer);
         buffer.set_message_type(self.message_type);
         buffer.set_length(self.length);
         buffer.set_flags(self.flags);
@@ -91,8 +91,7 @@ mod tests {
     #[test]
     fn repr_parse() {
         let repr =
-            NetlinkHeader::parse(&NetlinkBuffer::new_checked(&IP_LINK_SHOW_PKT[..]).unwrap())
-                .unwrap();
+            NetlinkHeader::parse(&NetlinkBuffer::new(&IP_LINK_SHOW_PKT[..]).unwrap()).unwrap();
         assert_eq!(repr.length, 40);
         assert_eq!(repr.message_type, RTM_GETLINK);
         assert_eq!(repr.sequence_number, 1_526_271_540);

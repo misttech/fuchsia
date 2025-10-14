@@ -14,7 +14,7 @@ pub struct SockDiagBuffer<T> {
 }
 
 impl<T: AsRef<[u8]>> SockDiagBuffer<T> {
-    pub fn new(buffer: T) -> SockDiagBuffer<T> {
+    pub(crate) fn new_unchecked(buffer: T) -> SockDiagBuffer<T> {
         SockDiagBuffer { buffer }
     }
 
@@ -22,8 +22,8 @@ impl<T: AsRef<[u8]>> SockDiagBuffer<T> {
         self.buffer.as_ref().len()
     }
 
-    pub fn new_checked(buffer: T) -> Result<Self, DecodeError> {
-        let packet = Self::new(buffer);
+    pub fn new(buffer: T) -> Result<Self, DecodeError> {
+        let packet = Self::new_unchecked(buffer);
         packet.check_len()?;
         Ok(packet)
     }

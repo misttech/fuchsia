@@ -224,7 +224,7 @@ impl<'a, T: AsRef<[u8]> + ?Sized> ParseableParametrized<RouteNetlinkMessageBuffe
 
             RTM_NEWNDUSEROPT => {
                 let msg = NeighbourDiscoveryUserOptionMessage::parse(
-                    &NeighbourDiscoveryUserOptionMessageBuffer::new_checked(&buf.inner())
+                    &NeighbourDiscoveryUserOptionMessageBuffer::new(&buf.inner())
                         .map_err(NeighbourDiscoveryUserOptionError::ParseBuffer)?,
                 )?;
                 RouteNetlinkMessage::NewNeighbourDiscoveryUserOption(msg)

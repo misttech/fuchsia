@@ -31,7 +31,7 @@ bitflags! {
 
 const PAYLOAD_OFFSET: usize = 8;
 
-buffer!(RouteNextHopBuffer {
+buffer!(RouteNextHopBuffer() {
     length: (u16, 0..2),
     flags: (u8, 2),
     hops: (u8, 3),
@@ -40,8 +40,8 @@ buffer!(RouteNextHopBuffer {
 });
 
 impl<T: AsRef<[u8]>> RouteNextHopBuffer<T> {
-    pub fn new_checked(buffer: T) -> Result<Self, DecodeError> {
-        let packet = Self::new(buffer);
+    pub fn new(buffer: T) -> Result<Self, DecodeError> {
+        let packet = Self::new_unchecked(buffer);
         packet.check_buffer_length()?;
         Ok(packet)
     }
@@ -102,7 +102,7 @@ impl<'a, T: AsRef<[u8]>>
         (address_family, route_type, encap_type): (AddressFamily, RouteType, RouteLwEnCapType),
     ) -> Result<RouteNextHop, RouteError> {
         let attributes = Vec::<RouteAttribute>::parse_with_param(
-            &RouteNextHopBuffer::new_checked(buf.buffer)?,
+            &RouteNextHopBuffer::new(buf.buffer)?,
             (address_family, route_type, encap_type),
         )?;
         Ok(RouteNextHop {
@@ -141,7 +141,7 @@ impl Emitable for RouteNextHop {
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        let mut nh_buffer = RouteNextHopBuffer::new(buffer);
+        let mut nh_buffer = RouteNextHopBuffer::new_unchecked(buffer);
         nh_buffer.set_length(self.buffer_len() as u16);
         nh_buffer.set_flags(self.flags.bits());
         nh_buffer.set_hops(self.hops);

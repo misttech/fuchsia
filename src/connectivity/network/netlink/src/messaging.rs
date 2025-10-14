@@ -126,8 +126,8 @@ where
     fn try_into_parsed(self) -> Result<NetlinkMessage<M>, ParseError> {
         let Self { data, _marker } = self;
         let data = data.as_ref();
-        let netlink_buffer = NetlinkBuffer::new_checked(&data)
-            .map_err(|error| ParseError { error, header: None })?;
+        let netlink_buffer =
+            NetlinkBuffer::new(&data).map_err(|error| ParseError { error, header: None })?;
         NetlinkMessage::<M>::parse(&netlink_buffer).map_err(|error| ParseError {
             error,
             // Silently drop the parsing error here, the error from parsing the

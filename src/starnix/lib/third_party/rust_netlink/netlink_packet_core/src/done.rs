@@ -18,7 +18,7 @@ pub struct DoneBuffer<T> {
 }
 
 impl<T: AsRef<[u8]>> DoneBuffer<T> {
-    pub fn new(buffer: T) -> DoneBuffer<T> {
+    pub(crate) fn new_unchecked(buffer: T) -> DoneBuffer<T> {
         DoneBuffer { buffer }
     }
 
@@ -27,8 +27,8 @@ impl<T: AsRef<[u8]>> DoneBuffer<T> {
         self.buffer
     }
 
-    pub fn new_checked(buffer: T) -> Result<Self, DecodeError> {
-        let packet = Self::new(buffer);
+    pub fn new(buffer: T) -> Result<Self, DecodeError> {
+        let packet = Self::new_unchecked(buffer);
         packet.check_buffer_length()?;
         Ok(packet)
     }
@@ -89,7 +89,7 @@ impl Emitable for DoneMessage {
         size_of::<i32>() + self.extended_ack.len()
     }
     fn emit(&self, buffer: &mut [u8]) {
-        let mut buffer = DoneBuffer::new(buffer);
+        let mut buffer = DoneBuffer::new(buffer).unwrap();
         buffer.set_code(self.code);
         buffer.extended_ack_mut().copy_from_slice(&self.extended_ack);
     }
@@ -116,7 +116,7 @@ mod tests {
         let mut buf = vec![0; len];
         expected.emit(&mut buf);
 
-        let done_buf = DoneBuffer::new(&buf);
+        let done_buf = DoneBuffer::new(&buf).unwrap();
         assert_eq!(done_buf.code(), expected.code);
         assert_eq!(done_buf.extended_ack(), &expected.extended_ack);
 
