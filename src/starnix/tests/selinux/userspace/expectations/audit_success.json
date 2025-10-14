@@ -1,5 +1,5 @@
 {
-    "tests": [
+    "audit_success": [
         {
             "name": "AnonInodeTest/PrivateFdIsUnchecked",
             "audit_expectations": [

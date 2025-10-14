@@ -1,0 +1,12 @@
+{
+    "audit_skip": [
+        // These tests do not produce any useful audit logs.
+        "NetlinkAuditTest/RegisterAuditDaemon",
+        "NetlinkAuditTest/RegisterAuditDaemonWithOtherPid",
+        "NetlinkAuditTest/RegisterAuditDaemonTwice",
+        "NetlinkAuditTest/MessageReceivedOnlyOnDaemonSocket",
+        "NetlinkAuditTest/ForkedChildReadsParentsQueuedMessage",
+        "NetlinkAuditTest/ChildDaemonReadsParentsMessageFromNewSocket",
+        "NetlinkAuditTest/ForkedChildUnregistersParentOnOneSocket"
+    ]
+}

@@ -33,7 +33,9 @@ class AuditChecker : public testing::EmptyTestEventListener {
   static constexpr int kNetlinkBufSize = 4096;
   static constexpr int kTabSize = 4;
 
-  static constexpr char kTestsKey[] = "tests";
+  static constexpr char kSuccessKey[] = "audit_success";
+  static constexpr char kExpectedFailureKey[] = "audit_failure";
+  static constexpr char kSkipKey[] = "audit_skip";
   static constexpr char kTestNameKey[] = "name";
   static constexpr char kTestAuditExpectationsKey[] = "audit_expectations";
   static constexpr char kExpectationsFile[] = "data/audit_expectations/audit_expectations.json";
@@ -66,6 +68,12 @@ class AuditChecker : public testing::EmptyTestEventListener {
 
   // Checks if a given test should be audited based on its name.
   bool ShouldCheckAudits(const std::string& test_name);
+  // Checks if a given test should be skipped based on its name.
+  bool ShouldOnlyDrainAudits(const std::string& test_name);
+  // Checks if a give test is in the expected failures.
+  bool IsExpectedToFail(const std::string& test_name);
+  // Drains all audit logs without any checks.
+  void DrainAuditLog();
 
   // Sends USER_AVC sentinel messages to mark the beginning and end of a test section
   // in the audit log. If the test reads the audit logs before finishing the test,
@@ -80,8 +88,11 @@ class AuditChecker : public testing::EmptyTestEventListener {
   // Printing functions to format audit expectations.
   void PrintWithTab(int multiplier, const char* format, ...);
   void ExpectationsToJSON(std::vector<std::string> logs, const std::string& test_name);
+  void AddAuditFailure(const std::string& failure, bool expected);
 
   std::unordered_map<std::string, std::vector<AuditChecker::AuditLogEntry>> expectations_map_;
+  std::vector<std::string> skipped_tests_;
+  std::vector<std::string> expected_failure_tests_;
   std::string current_test_suite_name_;
   // Set to true to generate audit log JSON objects without audit checks.
   bool generate_json_ = false;

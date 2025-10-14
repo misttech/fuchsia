@@ -62,11 +62,31 @@ bool AuditChecker::ParseExpectationsFile(const std::string& file_path) {
   if (parser.HasError()) {
     return false;
   }
-  if (!doc.IsObject() || !doc.HasMember(kTestsKey) || !doc[kTestsKey].IsArray()) {
+  if (!doc.IsObject() || !doc.HasMember(kSuccessKey) || !doc[kSuccessKey].IsArray()) {
     return false;
   }
 
-  for (const auto& test_obj : doc[kTestsKey].GetArray()) {
+  if (doc.HasMember(kExpectedFailureKey) && !doc[kExpectedFailureKey].IsArray()) {
+    return false;
+  }
+  for (const auto& failing_test : doc[kExpectedFailureKey].GetArray()) {
+    if (!failing_test.IsString()) {
+      return false;
+    }
+    expected_failure_tests_.push_back(failing_test.GetString());
+  }
+
+  if (doc.HasMember(kSkipKey) && !doc[kSkipKey].IsArray()) {
+    return false;
+  }
+  for (const auto& skipped_test : doc[kSkipKey].GetArray()) {
+    if (!skipped_test.IsString()) {
+      return false;
+    }
+    skipped_tests_.push_back(skipped_test.GetString());
+  }
+
+  for (const auto& test_obj : doc[kSuccessKey].GetArray()) {
     if (!test_obj.IsObject() || !test_obj.HasMember(kTestNameKey) ||
         !test_obj[kTestNameKey].IsString() || !test_obj.HasMember(kTestAuditExpectationsKey) ||
         !test_obj[kTestAuditExpectationsKey].IsArray()) {
@@ -217,12 +237,72 @@ bool AuditChecker::ShouldCheckAudits(const std::string& test_name) {
   return expectations_map_.count(test_name) > 0;
 }
 
+bool AuditChecker::ShouldOnlyDrainAudits(const std::string& test_name) {
+  auto found = std::find(skipped_tests_.begin(), skipped_tests_.end(), test_name);
+  if (found != skipped_tests_.end()) {
+    return true;
+  }
+  return false;
+}
+
+bool AuditChecker::IsExpectedToFail(const std::string& test_name) {
+  if (!test_helper::IsStarnix()) {
+    return false;
+  }
+
+  auto found = std::find(expected_failure_tests_.begin(), expected_failure_tests_.end(), test_name);
+  if (found != expected_failure_tests_.end()) {
+    return true;
+  }
+  return false;
+}
+
+void AuditChecker::DrainAuditLog() {
+  SendEndSentinel();
+  fbl::unique_fd fd = OpenNetlinkAuditSocket();
+  if (!fd.is_valid() || RegisterAsAuditDaemon(fd.get(), getpid()).is_error()) {
+    return;
+  }
+
+  char buf[kNetlinkBufSize];
+  // Drain the audit backlog until there is no other message.
+  while (true) {
+    auto recv_res = ReceiveNetlinkMessage(fd.get(), buf, sizeof(buf));
+    if (recv_res.is_error() && recv_res.error_value() == EINTR) {
+      continue;
+    }
+    if (recv_res.value() < NLMSG_LENGTH(0)) {
+      fprintf(stderr, "audit_drainer: message too short\n");
+      continue;
+    }
+    struct nlmsghdr* header = (struct nlmsghdr*)buf;
+    if (header->nlmsg_type != AUDIT_USER_AVC) {
+      continue;
+    }
+    std::string message((char*)NLMSG_DATA(header),
+                        (char*)NLMSG_DATA(header) + (recv_res.value() - sizeof(*header)));
+    if (header->nlmsg_type == AUDIT_USER_AVC) {
+      if (!strstr(message.c_str(), "SENTINEL_END")) {
+        continue;
+      }
+      break;
+    }
+  }
+  if (UnregisterAuditDaemon(fd.get()).is_error()) {
+    printf("Failed to unregister\n");
+    return;
+  }
+}
+
 void AuditChecker::OnTestSuiteStart(const testing::TestSuite& test_suite) {
   current_test_suite_name_ = std::string(test_suite.name());
 }
 
 void AuditChecker::OnTestStart(const testing::TestInfo& test_info) {
   std::string test_name(current_test_suite_name_ + "/" + test_info.name());
+  if (ShouldOnlyDrainAudits(test_name)) {
+    return;
+  }
   if (!ShouldCheckAudits(test_name) && !generate_json_) {
     return;
   }
@@ -231,6 +311,13 @@ void AuditChecker::OnTestStart(const testing::TestInfo& test_info) {
 
 void AuditChecker::OnTestEnd(const testing::TestInfo& test_info) {
   std::string test_name(current_test_suite_name_ + "/" + test_info.name());
+  // If the audit log checking should be skipped, drain the audit logs.
+  // This can be used for tests that fail on Starnix or do not produce any
+  // useful logs.
+  if (ShouldOnlyDrainAudits(test_name)) {
+    DrainAuditLog();
+    return;
+  }
   if (!ShouldCheckAudits(test_name) && !generate_json_) {
     return;
   }
@@ -265,6 +352,14 @@ void AuditChecker::ExpectationsToJSON(std::vector<std::string> logs, const std::
   printf("}\n");
 }
 
+void AuditChecker::AddAuditFailure(const std::string& failure, bool expected) {
+  if (expected) {
+    fprintf(stderr, "%s\n", failure.c_str());
+    return;
+  }
+  ADD_FAILURE() << failure;
+}
+
 std::string AuditChecker::StringifyAudit(const AuditChecker::AuditLogEntry entry) {
   return "permission: " + entry.permission + " | " + "scontext: " + entry.scontext + " | " +
          "tcontext: " + entry.tcontext + " | " + "tclass: " + entry.tclass;
@@ -272,14 +367,17 @@ std::string AuditChecker::StringifyAudit(const AuditChecker::AuditLogEntry entry
 
 void AuditChecker::CheckAuditExpectations(const std::string& test_name) {
   std::vector<AuditChecker::AuditLogEntry> actual_logs = ReadAuditLogs(test_name);
+  bool expect_fail = IsExpectedToFail(test_name);
   if (generate_json_) {
     return;
   }
   std::vector<AuditChecker::AuditLogEntry> expected_logs = expectations_map_.at(test_name);
 
   if (expected_logs.size() != actual_logs.size()) {
-    ADD_FAILURE() << "Audit log count mismatch. Expected: " << expected_logs.size()
-                  << ", Actual: " << actual_logs.size();
+    std::string failure_string(
+        "Audit log count mismatch. Expected: " + std::to_string(expected_logs.size()) +
+        ", Actual: " + std::to_string(actual_logs.size()));
+    AddAuditFailure(failure_string, expect_fail);
   }
 
   size_t min_size = std::min(expected_logs.size(), actual_logs.size());
@@ -288,9 +386,10 @@ void AuditChecker::CheckAuditExpectations(const std::string& test_name) {
     const auto actual = actual_logs[i];
     const auto expected = expected_logs[i];
     if (actual != expected) {
-      ADD_FAILURE() << "Audit log mismatch at index " << i
-                    << ":\nExpected: " << StringifyAudit(expected)
-                    << "\nActual: " << StringifyAudit(actual);
+      std::string failure_string("Audit log mismatch at index " + std::to_string(i) +
+                                 ":\nExpected: " + StringifyAudit(expected) +
+                                 "\nActual: " + StringifyAudit(actual));
+      AddAuditFailure(failure_string, expect_fail);
     }
   }
 }

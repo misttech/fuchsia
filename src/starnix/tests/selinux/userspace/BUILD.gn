@@ -5,6 +5,7 @@
 import("//build/components.gni")
 import("//build/config/clang/clang_cpu.gni")
 import("//build/config/sysroot.gni")
+import("//build/tools/json_merge/json_merge.gni")
 import("//src/starnix/kernel/starnix.gni")
 import("//src/starnix/tests/build/starnix_linux_test_component.gni")
 import("//src/starnix/tests/starnix_test_subpackages.gni")
@@ -169,9 +170,22 @@ resource("policies") {
   outputs = "data/policies/{{source_file_part}}"
 }
 
-# Audit expectations to be checked
+# Merge the audit expectations with skipped and expected failures.
+json_merge("audit_expectations.json") {
+  sources = [
+    "expectations/audit_failure.json",
+    "expectations/audit_skip.json",
+    "expectations/audit_success.json",
+  ]
+  minify = true
+  relaxed_input = true
+}
+
+# Audit expectations to be checked.
 resource("audit_expectations") {
-  sources = [ "expectations/audit_expectations.json" ]
+  deps = [ ":audit_expectations.json" ]
+
+  sources = [ "$target_out_dir/audit_expectations.json" ]
   outputs = "data/audit_expectations/{{source_file_part}}"
 }
 
