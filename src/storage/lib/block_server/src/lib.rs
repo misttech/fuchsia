@@ -1,11 +1,11 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::bin::Bin;
 use anyhow::{Error, anyhow};
 use block_protocol::{BlockFifoRequest, BlockFifoResponse, InlineCryptoOptions};
 use fidl_fuchsia_hardware_block::MAX_TRANSFER_UNBOUNDED;
 use fidl_fuchsia_hardware_block_driver::{BlockIoFlag, BlockOpcode};
+use fuchsia_async::epoch::{Epoch, EpochGuard};
 use fuchsia_sync::Mutex;
 use futures::{Future, FutureExt as _, TryStreamExt as _};
 use slab::Slab;
@@ -22,7 +22,6 @@ use {
 };
 
 pub mod async_interface;
-mod bin;
 pub mod c_interface;
 
 pub(crate) const FIFO_MAX_REQUESTS: usize = 64;
@@ -93,7 +92,7 @@ struct ActiveRequest<S> {
     session: S,
     group_or_request: GroupOrRequest,
     trace_flow_id: TraceFlowId,
-    vmo_bin_key: Option<usize>,
+    _epoch_guard: EpochGuard<'static>,
     status: zx::Status,
     count: u32,
     req_id: Option<u32>,
@@ -103,7 +102,7 @@ pub struct ActiveRequests<S>(Mutex<ActiveRequestsInner<S>>);
 
 impl<S> Default for ActiveRequests<S> {
     fn default() -> Self {
-        Self(Mutex::new(ActiveRequestsInner { requests: Slab::default(), vmo_bin: Bin::new() }))
+        Self(Mutex::new(ActiveRequestsInner { requests: Slab::default() }))
     }
 }
 
@@ -119,7 +118,6 @@ impl<S> ActiveRequests<S> {
 
 struct ActiveRequestsInner<S> {
     requests: Slab<ActiveRequest<S>>,
-    vmo_bin: Bin<Arc<zx::Vmo>>,
 }
 
 // Keeps track of all the requests that are currently being processed
@@ -154,9 +152,6 @@ impl<S> ActiveRequestsInner<S> {
         match group.req_id {
             Some(reqid) if group.count == 0 => {
                 let group = self.requests.remove(request_id.0);
-                if let Some(vmo_bin_key) = group.vmo_bin_key {
-                    self.vmo_bin.release(vmo_bin_key);
-                }
                 Some((
                     group.session,
                     BlockFifoResponse {
@@ -755,7 +750,10 @@ impl<SM: SessionManager> SessionHelper<SM> {
             }
             Ok(Operation::CloseVmo) => {
                 self.vmos.lock().remove(&request.vmoid).map_or(Err(zx::Status::IO), |vmo| {
-                    active_requests.vmo_bin.add(vmo.clone());
+                    let vmo_clone = vmo.clone();
+                    // Make sure the VMO is dropped after all current Epoch guards have been
+                    // dropped.
+                    Epoch::global().defer(move || drop(vmo_clone));
                     Ok(Some(vmo))
                 })
             }
@@ -768,13 +766,11 @@ impl<SM: SessionManager> SessionHelper<SM> {
 
         let trace_flow_id = NonZero::new(request.trace_flow_id);
         let request_id = request_id.unwrap_or_else(|| {
-            let vmo_bin_key =
-                if retain_vmo { Some(active_requests.vmo_bin.retain()) } else { None };
             RequestId(active_requests.requests.insert(ActiveRequest {
                 session,
                 group_or_request,
                 trace_flow_id,
-                vmo_bin_key,
+                _epoch_guard: Epoch::global().guard(),
                 status: zx::Status::OK,
                 count: 1,
                 req_id: if !flags.contains(BlockIoFlag::GROUP_ITEM)
