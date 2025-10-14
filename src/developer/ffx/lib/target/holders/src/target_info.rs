@@ -7,10 +7,13 @@ use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use std::ops::Deref;
 
+use addr::TargetIpAddr;
 use discovery::query::TargetInfoQuery;
 use ffx_command_error::{Result, user_error};
 use fho::{FfxContext, FhoEnvironment, TryFromEnv, return_user_error};
 use fidl_fuchsia_developer_ffx as ffx_fidl;
+use itertools::Itertools;
+use std::net::SocketAddr;
 
 /// Holder struct for TargetInfo. This one is a little different since
 /// it is referenced by the DeviceLookup trait, it implements a trait
@@ -56,6 +59,22 @@ impl TargetInfoHolder {
     }
 }
 
+impl std::fmt::Display for TargetInfoHolder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = self.nodename().unwrap_or_else(|| "<unknown>".to_string());
+        let serial_number = self.serial_number().unwrap_or_else(|| "<unknown>".to_string());
+        let ssh_address = match self.ssh_address() {
+            Some(addr_info) => {
+                let ssh_address: TargetIpAddr = addr_info.into();
+                let ssh_address: SocketAddr = ssh_address.into();
+                format!("{}", ssh_address)
+            }
+            None => "<unknown>".to_string(),
+        };
+        write!(f, "Name: {} Serial: {} SSH Address: {}", name, serial_number, ssh_address)
+    }
+}
+
 async fn resolve_target_query_to_info(
     query: Option<String>,
     ctx: &EnvironmentContext,
@@ -86,7 +105,13 @@ impl TryFromEnv for TargetInfoHolder {
                     ));
                 }
             }
-            _ => return Err(user_error!("Ambiguous target query. Matched multiple targets.")),
+            _ => {
+                let info_desc_list = info_list.into_iter().map(|x| format!("{}", x)).join("\n\t");
+                return Err(user_error!(
+                    "Ambiguous target query. Matched multiple targets: \n\t{}.",
+                    info_desc_list
+                ));
+            }
         }
     }
 }
