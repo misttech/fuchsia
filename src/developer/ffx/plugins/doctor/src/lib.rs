@@ -6,7 +6,9 @@ use crate::ledger_view::*;
 use anyhow::{Context, Result, anyhow};
 use async_lock::Mutex;
 use async_trait::async_trait;
-use doctor_utils::{DaemonManager, DefaultDaemonManager, DoctorCheck, DoctorRecorder, Recorder};
+use doctor_utils::{
+    CheckResult, DaemonManager, DefaultDaemonManager, DoctorCheck, DoctorRecorder, Recorder,
+};
 use errors::{ffx_bail, ffx_error};
 use ffx_build_version::VersionInfo;
 use ffx_command::{ExternalSubToolSuite, FfxCommandLine, ToolSuite};
@@ -1275,10 +1277,10 @@ async fn run_google_network_checks<W: Write>(
                                 )?;
                                 ledger.set_outcome(
                                     node,
-                                    if data.passed {
-                                        LedgerOutcome::Success
-                                    } else {
-                                        LedgerOutcome::Failure
+                                    match data.result {
+                                        CheckResult::Passed => LedgerOutcome::Success,
+                                        CheckResult::Failed => LedgerOutcome::Failure,
+                                        CheckResult::Info => LedgerOutcome::Info,
                                     },
                                 )?;
                             }
@@ -4248,8 +4250,8 @@ mod test {
             write!(
             mock_gdoctor_script,
             "#!/bin/sh\n\
-             echo '{{\"name\": \"Corp DHCP\", \"message\": \"Successfully connected\", \"passed\": true}}'\n\
-             echo '{{\"name\": \"GPN\", \"message\": \"GPN not detected\", \"passed\": false}}'\n"
+             echo '{{\"name\": \"Corp DHCP\", \"message\": \"Successfully connected\", \"result\": \"passed\"}}'\n\
+             echo '{{\"name\": \"GPN\", \"message\": \"GPN not detected\", \"result\": \"failed\"}}'\n"
         )
         .expect("Failed to write to mock script");
         }

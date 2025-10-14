@@ -15,22 +15,39 @@ mod recorder;
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "snake_case")]
-/// Message from a doctor check run by a plugin
+/// The result of the check.
+pub enum CheckResult {
+    /// The check passed.
+    Passed,
+    /// The check failed.
+    Failed,
+    /// The check is presenting info.
+    Info,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "snake_case")]
+/// Message from a doctor check run by a plugin.
 pub struct DoctorCheck {
-    // The name of the check to run
+    /// The name of the check to run
     pub name: String,
-    // Message returned by the check
+    /// Message returned by the check
     pub message: String,
-    // Did the check pass
-    pub passed: bool,
+    /// The result of the check. Info level ignores name in output.
+    pub result: CheckResult,
 }
 
 impl fmt::Display for DoctorCheck {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let check = match self.passed {
-            true => format!("[{}✓{}]", color::Fg(color::Green), style::Reset),
-            false => format!("[{}✗{}]", color::Fg(color::Red), style::Reset),
+        let preamble = match self.result {
+            CheckResult::Passed => {
+                format!("[{}✓{}] {}", color::Fg(color::Green), style::Reset, self.name)
+            }
+            CheckResult::Failed => {
+                format!("[{}✗{}] {}", color::Fg(color::Red), style::Reset, self.name)
+            }
+            CheckResult::Info => format!("[{}i{}]", color::Fg(color::Yellow), style::Reset),
         };
-        write!(f, "{} {}: {}", check, self.name, self.message)
+        write!(f, "{}: {}", preamble, self.message)
     }
 }
