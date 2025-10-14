@@ -790,7 +790,7 @@ bool MsdVsiDevice::HardwareReset() {
     clock_control = registers::ClockControl::Get().ReadFrom(register_io_.get());
 
     is_idle = IsIdle();
-    is_idle_3d = clock_control.idle_3d();
+    is_idle_3d = clock_control.IsIdle();
 
     if (is_idle && is_idle_3d) {
       DLOG("HardwareReset complete");

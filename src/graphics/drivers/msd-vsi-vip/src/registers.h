@@ -28,7 +28,10 @@ class ClockControl : public hwreg::RegisterBase<ClockControl, uint32_t> {
   DEF_BIT(9, fscale_cmd_load);
   DEF_BIT(12, soft_reset);
   DEF_BIT(16, idle_3d);
+  DEF_BIT(17, idle_2d);
   DEF_BIT(19, isolate_gpu);
+
+  bool IsIdle() { return idle_3d() && idle_2d(); }
 
   static auto Get() { return hwreg::RegisterAddr<ClockControl>(0x0); }
 };
