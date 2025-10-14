@@ -124,9 +124,6 @@
                 "MMapProcTest.SmapsRssSplitMappingsStrict",
                 "MlockProcTest.MlockOnePageIncreasesVmLck",
 
-                // TODO(https://fxbug.dev/449782856): Starnix rejects this request (-1 errno), whereas Linux handles it gracefully.
-                "NetlinkTest.IflaCacheInfoMissingBody",
-
                 // TODO(https://fxbug.dev/423010702)
                 "Task.KillZombieEPERM",
 
