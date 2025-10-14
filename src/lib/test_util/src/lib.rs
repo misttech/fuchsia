@@ -98,13 +98,11 @@ macro_rules! assert_near {
 ///
 /// ```
 ///    use test_util::Counter;
-///    use lazy_static::lazy_static;
+///    use std::sync::LazyLock;
 ///
 ///    #[test]
 ///    async fn my_test() {
-///        lazy_static! {
-///            static ref CALL_COUNT: Counter = Counter::new(0);
-///        }
+///        static CALL_COUNT: LazyLock<Counter> = LazyLock::new(|| Counter::new(0));
 ///
 ///        let handler = || {
 ///            // some async callback
@@ -174,10 +172,9 @@ impl std::fmt::Debug for Counter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lazy_static::lazy_static;
     use std::collections::BTreeSet;
-    use std::sync::mpsc;
     use std::sync::mpsc::{Receiver, Sender};
+    use std::sync::{LazyLock, mpsc};
     use std::thread;
 
     #[derive(Debug, PartialEq, PartialOrd)]
@@ -354,9 +351,7 @@ mod tests {
 
     #[test]
     fn test_inc() {
-        lazy_static! {
-            static ref CALL_COUNT: Counter = Counter::new(0);
-        }
+        static CALL_COUNT: LazyLock<Counter> = LazyLock::new(|| Counter::new(0));
 
         CALL_COUNT.inc();
 
@@ -365,9 +360,7 @@ mod tests {
 
     #[test]
     fn test_incs_from_10() {
-        lazy_static! {
-            static ref CALL_COUNT: Counter = Counter::new(10);
-        }
+        static CALL_COUNT: LazyLock<Counter> = LazyLock::new(|| Counter::new(10));
 
         CALL_COUNT.inc();
         CALL_COUNT.inc();
@@ -378,9 +371,7 @@ mod tests {
 
     #[test]
     fn async_counts() {
-        lazy_static! {
-            static ref CALL_COUNT: Counter = Counter::new(0);
-        }
+        static CALL_COUNT: LazyLock<Counter> = LazyLock::new(|| Counter::new(0));
 
         let (tx, rx): (Sender<usize>, Receiver<usize>) = mpsc::channel();
         let mut children = Vec::new();
