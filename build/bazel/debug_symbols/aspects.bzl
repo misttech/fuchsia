@@ -154,7 +154,7 @@ collect_debug_symbols_manifest_aspect = aspect(
     provides = [DebugSymbolManifestInfo],
     attrs = {
         "_current_platform": attr.label(
-            providers = [DefaultInfo, CurrentPlatformInfo],
+            providers = [CurrentPlatformInfo],
             default = "@//build/bazel:current_platform",
         ),
     },
