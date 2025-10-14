@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/graphics/drivers/misc/goldfish/pipe.h"
+#include "src/graphics/drivers/misc/goldfish/pipe_connection.h"
 
 #include <fidl/fuchsia.hardware.goldfish/cpp/wire.h>
 #include <lib/ddk/debug.h>
@@ -29,13 +29,14 @@ constexpr zx_signals_t SIGNALS = fuchsia_hardware_goldfish::wire::kSignalReadabl
 
 }  // namespace
 
-Pipe::Pipe(PipeDevice* pipe, async_dispatcher_t* dispatcher, OnBindFn on_bind, OnCloseFn on_close)
+PipeConnection::PipeConnection(PipeDevice* pipe, async_dispatcher_t* dispatcher, OnBindFn on_bind,
+                               OnCloseFn on_close)
     : on_bind_(std::move(on_bind)),
       on_close_(std::move(on_close)),
       dispatcher_(dispatcher),
       pipe_(pipe) {}
 
-Pipe::~Pipe() {
+PipeConnection::~PipeConnection() {
   fbl::AutoLock lock(&lock_);
   if (id_) {
     if (cmd_buffer_.is_valid()) {
@@ -55,7 +56,7 @@ Pipe::~Pipe() {
   }
 }
 
-void Pipe::Init() {
+void PipeConnection::Init() {
   fbl::AutoLock lock(&lock_);
 
   zx_status_t status = pipe_->GetBti(&bti_);
@@ -113,7 +114,7 @@ void Pipe::Init() {
   }
 }
 
-void Pipe::Bind(fidl::ServerEnd<fuchsia_hardware_goldfish::Pipe> server_request) {
+void PipeConnection::Bind(fidl::ServerEnd<fuchsia_hardware_goldfish::Pipe> server_request) {
   using PipeProtocol = fuchsia_hardware_goldfish::Pipe;
   using PipeServer = fidl::WireServer<PipeProtocol>;
   auto on_unbound = [this](PipeServer*, fidl::UnbindInfo info, fidl::ServerEnd<PipeProtocol>) {
@@ -137,8 +138,8 @@ void Pipe::Bind(fidl::ServerEnd<fuchsia_hardware_goldfish::Pipe> server_request)
       std::make_unique<fidl::ServerBindingRef<fuchsia_hardware_goldfish::Pipe>>(std::move(binding));
 }
 
-void Pipe::SetBufferSize(SetBufferSizeRequestView request,
-                         SetBufferSizeCompleter::Sync& completer) {
+void PipeConnection::SetBufferSize(SetBufferSizeRequestView request,
+                                   SetBufferSizeCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Pipe::SetBufferSize", "size", request->size);
 
   fbl::AutoLock lock(&lock_);
@@ -155,7 +156,7 @@ void Pipe::SetBufferSize(SetBufferSizeRequestView request,
   }
 }
 
-void Pipe::SetEvent(SetEventRequestView request, SetEventCompleter::Sync& completer) {
+void PipeConnection::SetEvent(SetEventRequestView request, SetEventCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Pipe::SetEvent");
 
   if (!request->event.is_valid()) {
@@ -174,7 +175,7 @@ void Pipe::SetEvent(SetEventRequestView request, SetEventCompleter::Sync& comple
   }
 }
 
-void Pipe::GetBuffer(GetBufferCompleter::Sync& completer) {
+void PipeConnection::GetBuffer(GetBufferCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Pipe::GetBuffer");
 
   fbl::AutoLock lock(&lock_);
@@ -190,7 +191,7 @@ void Pipe::GetBuffer(GetBufferCompleter::Sync& completer) {
   }
 }
 
-void Pipe::Read(ReadRequestView request, ReadCompleter::Sync& completer) {
+void PipeConnection::Read(ReadRequestView request, ReadCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Pipe::Read", "count", request->count);
 
   fbl::AutoLock lock(&lock_);
@@ -210,7 +211,7 @@ void Pipe::Read(ReadRequestView request, ReadCompleter::Sync& completer) {
   completer.Reply(status, actual);
 }
 
-void Pipe::Write(WriteRequestView request, WriteCompleter::Sync& completer) {
+void PipeConnection::Write(WriteRequestView request, WriteCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Pipe::Write", "count", request->count);
 
   fbl::AutoLock lock(&lock_);
@@ -230,7 +231,7 @@ void Pipe::Write(WriteRequestView request, WriteCompleter::Sync& completer) {
   completer.Reply(status, actual);
 }
 
-void Pipe::DoCall(DoCallRequestView request, DoCallCompleter::Sync& completer) {
+void PipeConnection::DoCall(DoCallRequestView request, DoCallCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Pipe::DoCall", "count", request->count, "read_count", request->read_count);
 
   fbl::AutoLock lock(&lock_);
@@ -276,9 +277,9 @@ void Pipe::DoCall(DoCallRequestView request, DoCallCompleter::Sync& completer) {
 
 // This function can be trusted to complete fairly quickly. It will cause a
 // VM exit but that should never block for a significant amount of time.
-zx_status_t Pipe::TransferLocked(int32_t cmd, int32_t wake_cmd, zx_signals_t state_clr,
-                                 zx_paddr_t paddr, size_t count, zx_paddr_t read_paddr,
-                                 size_t read_count, size_t* actual) {
+zx_status_t PipeConnection::TransferLocked(int32_t cmd, int32_t wake_cmd, zx_signals_t state_clr,
+                                           zx_paddr_t paddr, size_t count, zx_paddr_t read_paddr,
+                                           size_t read_count, size_t* actual) {
   TRACE_DURATION("gfx", "Pipe::Transfer", "count", count, "read_count", read_count);
 
   auto buffer = static_cast<PipeCmdBuffer*>(cmd_buffer_.virt());
@@ -319,7 +320,7 @@ zx_status_t Pipe::TransferLocked(int32_t cmd, int32_t wake_cmd, zx_signals_t sta
   return ZX_ERR_SHOULD_WAIT;
 }
 
-zx_status_t Pipe::SetBufferSizeLocked(size_t size) {
+zx_status_t PipeConnection::SetBufferSizeLocked(size_t size) {
   zx::vmo vmo;
   zx_status_t status = zx::vmo::create_contiguous(bti_, size, 0, &vmo);
   if (status != ZX_OK) {
@@ -341,7 +342,8 @@ zx_status_t Pipe::SetBufferSizeLocked(size_t size) {
   return ZX_OK;
 }
 
-void Pipe::FailAsync(zx_status_t epitaph, const char* file, int line, const char* format, ...) {
+void PipeConnection::FailAsync(zx_status_t epitaph, const char* file, int line, const char* format,
+                               ...) {
   if (binding_ref_) {
     binding_ref_->Close(epitaph);
   }
@@ -352,7 +354,7 @@ void Pipe::FailAsync(zx_status_t epitaph, const char* file, int line, const char
   va_end(args);
 }
 
-Pipe::Buffer& Pipe::Buffer::operator=(Pipe::Buffer&& other) noexcept {
+PipeConnection::Buffer& PipeConnection::Buffer::operator=(PipeConnection::Buffer&& other) noexcept {
   if (pmt.is_valid()) {
     pmt.unpin();
   }
@@ -363,7 +365,7 @@ Pipe::Buffer& Pipe::Buffer::operator=(Pipe::Buffer&& other) noexcept {
   return *this;
 }
 
-Pipe::Buffer::~Buffer() {
+PipeConnection::Buffer::~Buffer() {
   if (pmt.is_valid()) {
     pmt.unpin();
   }
