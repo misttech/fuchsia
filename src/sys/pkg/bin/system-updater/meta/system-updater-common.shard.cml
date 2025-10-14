@@ -44,6 +44,16 @@
             rights: [ "r*" ],
             path: "/blob",
         },
+        {
+            config: "fuchsia.system-updater.ManifestPublicKeys",
+            key: "manifest_public_keys",
+            type: "vector",
+            max_count: 10,
+            element: {
+                type: "string",
+                max_size: 64, // hex encoded 32 bytes key
+            },
+        },
     ],
     expose: [
         {

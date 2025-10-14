@@ -34,6 +34,11 @@ pub struct SwdConfig {
 
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub enable_upgradable_packages: bool,
+
+    /// The public keys used to verify ota manifest in packageless updates.
+    /// Each key must be 32 bytes and encoded as a 64 bytes hex string.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub ota_manifest_public_keys: Vec<String>,
 }
 
 /// The SWD Policies are laid out in

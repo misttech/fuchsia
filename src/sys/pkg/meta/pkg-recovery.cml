@@ -87,6 +87,11 @@
             to: "#pkg-cache",
         },
         {
+            config: "fuchsia.system-updater.ManifestPublicKeys",
+            from: "parent",
+            to: "#system-updater",
+        },
+        {
             // Needed for passing repository configs to pkg-resolver
             directory: "config-data",
             from: "parent",

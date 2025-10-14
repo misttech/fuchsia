@@ -594,6 +594,24 @@ impl TestEnvBuilder {
                 )
                 .await
                 .unwrap();
+            builder
+                .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                    name: "fuchsia.system-updater.ManifestPublicKeys".parse().unwrap(),
+                    value: Vec::<String>::new().into(),
+                }))
+                .await
+                .unwrap();
+            builder
+                .add_route(
+                    Route::new()
+                        .capability(Capability::configuration(
+                            "fuchsia.system-updater.ManifestPublicKeys",
+                        ))
+                        .from(Ref::self_())
+                        .to(&system_updater),
+                )
+                .await
+                .unwrap();
         } else {
             builder
                 .add_route(

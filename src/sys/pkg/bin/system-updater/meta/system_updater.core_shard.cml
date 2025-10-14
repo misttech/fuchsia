@@ -54,5 +54,10 @@
             from: "self",
             to: "#system-update",
         },
+        {
+            config: "fuchsia.system-updater.ManifestPublicKeys",
+            from: "parent",
+            to: "#system-update",
+        },
     ],
 }

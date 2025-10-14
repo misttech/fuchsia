@@ -105,6 +105,16 @@
             backing_dir: "tmp",
             storage_id: "static_instance_id_or_moniker",
         },
+        {
+            config: "fuchsia.system-updater.ManifestPublicKeys",
+            type: "vector",
+            max_count: 10,
+            element: {
+                type: "string",
+                max_size: 64,
+            },
+            value: [],
+        },
     ],
     use: [
         // Control storage capabilities of this realm. See
@@ -136,6 +146,7 @@
         {
             protocol: "fuchsia.update.installer.Installer",
             from: "#system-updater",
+            dependency: "weak",
         },
         {
             protocol: [
@@ -206,6 +217,11 @@
             from: "void",
             to: "#fshost",
             availability: "optional",
+        },
+        {
+            config: "fuchsia.system-updater.ManifestPublicKeys",
+            from: "self",
+            to: "#system-updater",
         },
         {
             directory: "blob-exec",

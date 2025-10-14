@@ -39,7 +39,10 @@
             to: "#system_recovery",
         },
         {
-            config: [ "fuchsia.recovery.DisplayRotation" ],
+            config: [
+                "fuchsia.recovery.DisplayRotation",
+                "fuchsia.system-updater.ManifestPublicKeys",
+            ],
             from: "parent",
             to: "#system_recovery",
             availability: "same_as_target",

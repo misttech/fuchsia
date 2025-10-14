@@ -4,7 +4,7 @@
 
 use crate::subsystems::prelude::*;
 use anyhow::{Context, Result, anyhow, bail};
-use assembly_config_capabilities::{Config, ConfigValueType};
+use assembly_config_capabilities::{Config, ConfigNestedValueType, ConfigValueType};
 use assembly_config_schema::platform_settings::swd_config::{
     OtaConfigs, PolicyConfig, PolicyLabels, SwdConfig, UpdateChecker, VerificationFailureAction,
 };
@@ -12,14 +12,13 @@ use assembly_constants::FileEntry;
 use camino::Utf8PathBuf;
 use std::fs::File;
 
-#[allow(dead_code)]
-const FUZZ_PERCENTAGE_RANGE: u32 = 25;
-#[allow(dead_code)]
-const RETRY_DELAY_SECONDS: u32 = 300;
+// openssl pkey -in src/sys/pkg/bin/system-updater/keys/manifest_dev_key.pem -pubout -outform DER | tail -c 32 | xxd -p -c 32
+const OTA_MANIFEST_DEV_PUBLIC_KEY: &str =
+    "b1d9c9414b0a97a225da46ce6ae05753fa69cf722da706132ced72ccf48213e9";
+const OTA_MANIFEST_PUBLIC_KEY_HEX_LEN: usize = 64;
 
 /// SWD Configuration implementation detail which clarifies different subsystem behavior, derived
 /// from the PolicyLabels
-#[allow(dead_code)]
 #[derive(Debug)]
 pub struct PolicyLabelDetails {
     enable_dynamic_configuration: bool,
@@ -46,19 +45,6 @@ impl PolicyLabelDetails {
                 disable_executability_restrictions: true,
                 persisted_repos_dir: true,
             },
-        }
-    }
-}
-
-impl DefaultByBuildType for SwdConfig {
-    fn default_by_build_type(build_type: &BuildType) -> Self {
-        SwdConfig {
-            policy: Some(PolicyLabels::default_by_build_type(build_type)),
-            update_checker: Some(UpdateChecker::default_by_build_type(build_type)),
-            on_verification_failure: VerificationFailureAction::default(),
-            tuf_config_paths: vec![],
-            include_configurator: false,
-            enable_upgradable_packages: false,
         }
     }
 }
@@ -126,6 +112,38 @@ impl DefineSubsystemConfiguration<SwdConfig> for SwdSubsystemConfig {
         builder.set_config_capability(
             "fuchsia.pkgcache.EnableUpgradablePackages",
             Config::new(ConfigValueType::Bool, subsystem_config.enable_upgradable_packages.into()),
+        )?;
+
+        let manifest_public_keys = if subsystem_config.ota_manifest_public_keys.is_empty()
+            && context.build_type == &BuildType::Eng
+        {
+            // Include a default dev key in eng builds.
+            [OTA_MANIFEST_DEV_PUBLIC_KEY].into()
+        } else {
+            for key in &subsystem_config.ota_manifest_public_keys {
+                if key.len() != OTA_MANIFEST_PUBLIC_KEY_HEX_LEN {
+                    bail!(
+                        "OTA manifest public key must be {} hex characters, but {:?} has {}",
+                        OTA_MANIFEST_PUBLIC_KEY_HEX_LEN,
+                        key,
+                        key.len(),
+                    );
+                }
+            }
+            (&*subsystem_config.ota_manifest_public_keys).into()
+        };
+
+        builder.set_config_capability(
+            "fuchsia.system-updater.ManifestPublicKeys",
+            Config::new(
+                ConfigValueType::Vector {
+                    nested_type: ConfigNestedValueType::String {
+                        max_size: OTA_MANIFEST_PUBLIC_KEY_HEX_LEN as u32,
+                    },
+                    max_count: 10,
+                },
+                manifest_public_keys,
+            ),
         )?;
 
         Ok(())

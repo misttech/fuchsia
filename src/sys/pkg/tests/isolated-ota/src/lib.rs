@@ -297,6 +297,25 @@ impl TestExecutor<TestResult> for IsolatedOtaTestExecutor {
             .await
             .unwrap();
 
+        realm_builder
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.system-updater.ManifestPublicKeys".parse().unwrap(),
+                value: Vec::<String>::new().into(),
+            }))
+            .await
+            .unwrap();
+        realm_builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::configuration(
+                        "fuchsia.system-updater.ManifestPublicKeys",
+                    ))
+                    .from(Ref::self_())
+                    .to(&pkg_component),
+            )
+            .await
+            .unwrap();
+
         let channel_clone = params.channel.clone();
 
         let realm_instance = realm_builder.build().await.unwrap();

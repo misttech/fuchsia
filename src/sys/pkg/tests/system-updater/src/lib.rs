@@ -586,11 +586,22 @@ impl TestEnvBuilder {
             .set_config_value(&system_updater, "allow_packageless_update", true.into())
             .await
             .unwrap();
+
         builder
-            .set_config_value(
-                &system_updater,
-                "manifest_public_keys",
-                vec![MANIFEST_PUBLIC_KEY].into(),
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.system-updater.ManifestPublicKeys".parse().unwrap(),
+                value: vec![MANIFEST_PUBLIC_KEY].into(),
+            }))
+            .await
+            .unwrap();
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::configuration(
+                        "fuchsia.system-updater.ManifestPublicKeys",
+                    ))
+                    .from(Ref::self_())
+                    .to(&system_updater),
             )
             .await
             .unwrap();

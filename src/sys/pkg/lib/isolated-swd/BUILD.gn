@@ -37,6 +37,7 @@ rustc_library("isolated-swd") {
     "//src/lib/fuchsia-component-test",
     "//src/lib/fuchsia-url",
     "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
+    "//src/sys/lib/cm_rust",
     "//src/sys/lib/fidl-fuchsia-pkg-ext",
     "//src/sys/pkg/lib/fuchsia-merkle",
     "//src/sys/pkg/lib/fuchsia-pkg-testing",

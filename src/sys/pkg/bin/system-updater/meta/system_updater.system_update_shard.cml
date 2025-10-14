@@ -63,6 +63,11 @@
             from: "parent",
             to: "#system-updater",
         },
+        {
+            config: "fuchsia.system-updater.ManifestPublicKeys",
+            from: "parent",
+            to: "#system-updater",
+        },
     ],
     expose: [
         {

@@ -111,6 +111,11 @@
             to: "#pkg-recovery",
             dependency: "weak",
         },
+        {
+            config: "fuchsia.system-updater.ManifestPublicKeys",
+            from: "parent",
+            to: "#pkg-recovery",
+        },
     ],
     expose: [
         {
