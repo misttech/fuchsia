@@ -5,10 +5,10 @@
 #ifndef SRC_STARNIX_TESTS_SELINUX_USERSPACE_AUDIT_CHECKER_H_
 #define SRC_STARNIX_TESTS_SELINUX_USERSPACE_AUDIT_CHECKER_H_
 
+#include <memory>
 #include <optional>
 #include <regex>
 #include <string>
-#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -31,12 +31,10 @@ class AuditChecker : public testing::EmptyTestEventListener {
   static constexpr int kNetlinkBufSize = 4096;
   static constexpr int kTabSize = 4;
 
-  static constexpr std::string_view kTestsKey = "tests";
-  static constexpr std::string_view kTestNameKey = "name";
-  static constexpr std::string_view kTestAuditExpectationsKey = "audit_expectations";
-  static constexpr std::string_view kExpectationsFile =
-      "data/audit_expectations/audit_expectations.json";
-  static constexpr std::string_view kDebugDelimiter = "\n<===> AUDIT_AVC <===>\n";
+  static constexpr char kTestsKey[] = "tests";
+  static constexpr char kTestNameKey[] = "name";
+  static constexpr char kTestAuditExpectationsKey[] = "audit_expectations";
+  static constexpr char kExpectationsFile[] = "data/audit_expectations/audit_expectations.json";
 
   const std::regex kAuditLogRegex = std::regex(
       R"(avc:\s+(denied|granted)\s+\{\s*([^}]+)\s*\}.*scontext=([^ ]+)\s+tcontext=([^ ]+)\s+tclass=([^ ]+).*)");
@@ -52,20 +50,20 @@ class AuditChecker : public testing::EmptyTestEventListener {
   };
 
   // Parses the JSON expectations file.
-  bool ParseExpectationsFile(const std::string_view file_path);
+  bool ParseExpectationsFile(const std::string& file_path);
 
   // Reads and parses all audit logs between the start and end sentinels.
-  std::vector<AuditChecker::AuditLogEntry> ReadAuditLogs(std::string_view test_name);
+  std::vector<AuditChecker::AuditLogEntry> ReadAuditLogs(const std::string& test_name);
 
   // Parses a single audit log.
-  std::optional<AuditChecker::AuditLogEntry> ParseAuditLogString(const std::string line,
+  std::optional<AuditChecker::AuditLogEntry> ParseAuditLogString(const std::string& line,
                                                                  std::string& error_str);
 
   // Creates a string representation of an AuditLogEntry for logging.
   std::string StringifyAudit(const AuditChecker::AuditLogEntry entry);
 
   // Checks if a given test should be audited based on its name.
-  bool ShouldCheckAudits(std::string_view test_name);
+  bool ShouldCheckAudits(const std::string& test_name);
 
   // Sends USER_AVC sentinel messages to mark the beginning and end of a test section
   // in the audit log. If the test reads the audit logs before finishing the test,
@@ -75,11 +73,11 @@ class AuditChecker : public testing::EmptyTestEventListener {
 
   // The main method to perform the audit check against the expectations file
   // provided in the constructor.
-  void CheckAuditExpectations(std::string_view test_name);
+  void CheckAuditExpectations(const std::string& test_name);
 
   // Debug printing functions to format audit expectations.
   void DebugPrintWithTab(int multiplier, const char* format, ...);
-  void DebugExpectationsToJSON(std::vector<std::string> logs, std::string_view test_name);
+  void DebugExpectationsToJSON(const std::vector<std::string> logs, const std::string& test_name);
 
   std::unordered_map<std::string, std::vector<AuditChecker::AuditLogEntry>> expectations_map_;
   std::string current_test_suite_name_;

@@ -11,7 +11,6 @@
 #include <regex>
 #include <sstream>
 #include <string>
-#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -42,7 +41,7 @@ AuditChecker* AuditChecker::for_debug() {
 }
 
 std::optional<AuditChecker::AuditLogEntry> AuditChecker::ParseAuditLogString(
-    const std::string line, std::string& error_str) {
+    const std::string& line, std::string& error_str) {
   std::smatch matches;
   if (std::regex_search(line, matches, kAuditLogRegex) && matches.size() == 6) {
     return AuditChecker::AuditLogEntry{.denied = matches[1].str() == "denied",
@@ -56,29 +55,28 @@ std::optional<AuditChecker::AuditLogEntry> AuditChecker::ParseAuditLogString(
   }
 }
 
-bool AuditChecker::ParseExpectationsFile(const std::string_view file_path) {
+bool AuditChecker::ParseExpectationsFile(const std::string& file_path) {
   json_parser::JSONParser parser;
-  rapidjson::Document doc = parser.ParseFromFile(file_path.data());
+  rapidjson::Document doc = parser.ParseFromFile(file_path);
 
   if (parser.HasError()) {
     return false;
   }
-  if (!doc.IsObject() || !doc.HasMember(kTestsKey.data()) || !doc[kTestsKey.data()].IsArray()) {
+  if (!doc.IsObject() || !doc.HasMember(kTestsKey) || !doc[kTestsKey].IsArray()) {
     return false;
   }
 
-  for (const auto& test_obj : doc[kTestsKey.data()].GetArray()) {
-    if (!test_obj.IsObject() || !test_obj.HasMember(kTestNameKey.data()) ||
-        !test_obj[kTestNameKey.data()].IsString() ||
-        !test_obj.HasMember(kTestAuditExpectationsKey.data()) ||
-        !test_obj[kTestAuditExpectationsKey.data()].IsArray()) {
+  for (const auto& test_obj : doc[kTestsKey].GetArray()) {
+    if (!test_obj.IsObject() || !test_obj.HasMember(kTestNameKey) ||
+        !test_obj[kTestNameKey].IsString() || !test_obj.HasMember(kTestAuditExpectationsKey) ||
+        !test_obj[kTestAuditExpectationsKey].IsArray()) {
       return false;
     }
 
-    std::string test_name = test_obj[kTestNameKey.data()].GetString();
+    std::string test_name = test_obj[kTestNameKey].GetString();
     std::vector<AuditLogEntry> expected_logs;
 
-    for (const auto& log_str_val : test_obj[kTestAuditExpectationsKey.data()].GetArray()) {
+    for (const auto& log_str_val : test_obj[kTestAuditExpectationsKey].GetArray()) {
       if (!log_str_val.IsString()) {
         return false;
       }
@@ -103,7 +101,7 @@ bool AuditChecker::AuditLogEntry::operator==(const AuditChecker::AuditLogEntry& 
   return scontext == other.scontext && tcontext == other.tcontext && tclass == other.tclass;
 }
 
-std::vector<AuditChecker::AuditLogEntry> AuditChecker::ReadAuditLogs(std::string_view test_name) {
+std::vector<AuditChecker::AuditLogEntry> AuditChecker::ReadAuditLogs(const std::string& test_name) {
   std::vector<std::string> raw_logs;
   std::vector<AuditChecker::AuditLogEntry> parsed_logs;
   fbl::unique_fd fd = OpenNetlinkAuditSocket();
@@ -218,8 +216,8 @@ void AuditChecker::SendEndSentinel() {
   }
 }
 
-bool AuditChecker::ShouldCheckAudits(std::string_view test_name) {
-  return expectations_map_.count(test_name.data()) > 0;
+bool AuditChecker::ShouldCheckAudits(const std::string& test_name) {
+  return expectations_map_.count(test_name) > 0;
 }
 
 void AuditChecker::OnTestSuiteStart(const testing::TestSuite& test_suite) {
@@ -227,20 +225,20 @@ void AuditChecker::OnTestSuiteStart(const testing::TestSuite& test_suite) {
 }
 
 void AuditChecker::OnTestStart(const testing::TestInfo& test_info) {
-  if (!ShouldCheckAudits(std::string_view(current_test_suite_name_ + "/" + test_info.name())) &&
-      !debug_) {
+  std::string test_name(current_test_suite_name_ + "/" + test_info.name());
+  if (!ShouldCheckAudits(test_name) && !debug_) {
     return;
   }
   SendStartSentinel();
 }
 
 void AuditChecker::OnTestEnd(const testing::TestInfo& test_info) {
-  if (!ShouldCheckAudits(std::string_view(current_test_suite_name_ + "/" + test_info.name())) &&
-      !debug_) {
+  std::string test_name(current_test_suite_name_ + "/" + test_info.name());
+  if (!ShouldCheckAudits(test_name) && !debug_) {
     return;
   }
   SendEndSentinel();
-  CheckAuditExpectations(std::string_view(current_test_suite_name_ + "/" + test_info.name()));
+  CheckAuditExpectations(test_name);
 }
 
 void AuditChecker::DebugPrintWithTab(int multiplier, const char* format, ...) {
@@ -251,15 +249,15 @@ void AuditChecker::DebugPrintWithTab(int multiplier, const char* format, ...) {
   va_end(args);
 }
 
-void AuditChecker::DebugExpectationsToJSON(std::vector<std::string> logs,
-                                           std::string_view test_name) {
+void AuditChecker::DebugExpectationsToJSON(const std::vector<std::string> logs,
+                                           const std::string& test_name) {
   if (!logs.size()) {
     return;
   }
 
   printf("\n{\n");
-  DebugPrintWithTab(1, "\"%s\": \"%s\",\n", kTestNameKey.data(), test_name.data());
-  DebugPrintWithTab(1, "\"%s\": [\n", kTestAuditExpectationsKey.data());
+  DebugPrintWithTab(1, "\"%s\": \"%s\",\n", kTestNameKey, test_name.c_str());
+  DebugPrintWithTab(1, "\"%s\": [\n", kTestAuditExpectationsKey);
   for (int i = 0; i < (int)logs.size(); i++) {
     DebugPrintWithTab(2, "\"%s\"", logs[i].c_str());
     if (i != (int)logs.size() - 1) {
@@ -276,12 +274,12 @@ std::string AuditChecker::StringifyAudit(const AuditChecker::AuditLogEntry entry
          "tcontext: " + entry.tcontext + " | " + "tclass: " + entry.tclass;
 }
 
-void AuditChecker::CheckAuditExpectations(std::string_view test_name) {
+void AuditChecker::CheckAuditExpectations(const std::string& test_name) {
   std::vector<AuditChecker::AuditLogEntry> actual_logs = ReadAuditLogs(test_name);
   if (debug_) {
     return;
   }
-  std::vector<AuditChecker::AuditLogEntry> expected_logs = expectations_map_.at(test_name.data());
+  std::vector<AuditChecker::AuditLogEntry> expected_logs = expectations_map_.at(test_name);
 
   if (expected_logs.size() != actual_logs.size()) {
     ADD_FAILURE() << "Audit log count mismatch. Expected: " << expected_logs.size()
