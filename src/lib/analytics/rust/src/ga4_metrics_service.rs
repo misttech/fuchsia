@@ -211,6 +211,33 @@ impl GA4MetricsService {
         }
     }
 
+    // Send a signal analytics only if the user is a new internal user.
+    pub(crate) async fn send_signal_if_new_internal_user(&self) {
+        if !self.metrics_state.is_new_internal_user {
+            return;
+        }
+        let uuid = self.metrics_state.uuid.unwrap();
+        // For a new user, a full functional metrics service is not ready yet.
+        // We need to send the signal with more low level functions.
+        let client = GA4AnalyticsClient::new(
+            self.metrics_state.ga4_key.clone(),
+            self.metrics_state.ga4_product_code.clone(),
+        );
+        let mut post = Post::new(
+            "new_user".into(),
+            None,
+            None,
+            vec![Event::new(
+                "new_user".into(),
+                Some(Params {
+                    items: None,
+                    params: HashMap::from([("uuid".to_owned(), uuid.to_string().into())]),
+                }),
+            )],
+        );
+        let _ = client.send(&mut post).await;
+    }
+
     /// Rewrites the batch call from ffx invoke under UA analytics
     /// to a single event under GA4 Analytics.
     /// TODO Remove this once we remove UA analtyics and the ffx client has been updated

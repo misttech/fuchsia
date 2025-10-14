@@ -291,6 +291,11 @@ function _read-other-tools-analytics-uuid {
   echo "$(cat "${base_dir}/uuid" 2>/dev/null)"
 }
 
+function _write-other-tools-analytics-uuid {
+  local base_dir="$(_get-metrics-config-dir)"
+  echo "$1" >"${base_dir}/uuid"
+}
+
 function metrics-is-internal-user {
   # Due to old bash versions on mac, we don't support internal analytics on mac.
   [[ "$HOSTNAME" =~ (".c.googlers.com"$)|(".corp.google.com"$)  && "${HOST_OS}" != "mac" ]]
@@ -978,6 +983,30 @@ function _metrics-service {
   __send-analytics-batch
 }
 
+function _send-signal-if-new-internal-user {
+  local base_dir="$(_get-metrics-config-dir)"
+  local metrics_config_internal="${base_dir}/analytics-status-internal"
+  # For internal new users, send a new user signal with only UUID
+  if metrics-is-internal-user && [[ ! -f "${metrics_config_internal}"  ]]; then
+    local uuid="$(_read-other-tools-analytics-uuid)"
+    if [[ -z "${uuid}" ]]; then
+      uuid="$(uuidgen 2>/dev/null)"
+      if [[ -z "${uuid}" ]]; then
+        # Give up when there's no existing UUID and uuidgen does not exist/fails
+        return
+      fi
+      _write-other-tools-analytics-uuid "${uuid}"
+    fi
+
+    # For a new user, metrics is not fully initialized, so we need to send the
+    # analytics with more low level functions and special treatment.
+    METRICS_UUID="new_user"
+    OTHER_TOOLS_ANALYTICS_UUID="new_user"
+    __add-to-analytics-batch "new_user" "{\"uuid\":\"${uuid}\"}"
+    __send-analytics-batch
+  fi
+}
+
 # Init metrics service by redirecting file descriptor 10 to the process
 # substitution of metrics service.
 function metrics-init {
@@ -1010,6 +1039,9 @@ function metrics-init {
 
   if [[ "${METRICS_LEVEL}" -eq 0 ]]; then
     exec 10> /dev/null
+    # The following line will NOT send any analytics for external users
+    # or explicitly opted-out users
+    _send-signal-if-new-internal-user&
   else
     exec 10> >(_metrics-service)
   fi

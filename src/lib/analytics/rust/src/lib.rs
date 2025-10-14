@@ -67,7 +67,9 @@ pub async fn initialize_ga4_metrics_service(
         disabled_by_init_failure || is_analytics_disabled_by_env(),
         invoker,
     );
-    let data = Mutex::new(GA4MetricsService::new(metrics_state));
+    let raw_svc = GA4MetricsService::new(metrics_state);
+    raw_svc.send_signal_if_new_internal_user().await;
+    let data = Mutex::new(raw_svc);
     let svc = Arc::new(data);
     if let Err(_) = GA4_METRICS_INSTANCE.set(svc.clone()) {
         bail!(INIT_ERROR)

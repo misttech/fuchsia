@@ -33,6 +33,7 @@ pub struct MetricsState {
     pub(crate) uuid: Option<Uuid>,
     metrics_dir: PathBuf,
     pub(crate) invoker: Option<String>,
+    pub(crate) is_new_internal_user: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -258,6 +259,7 @@ impl MetricsState {
             Err(_) => {
                 log::trace!("No value found in analytics-status-internal.");
                 self.status = MetricsStatus::GooglerNeedsNotice;
+                self.set_internal_new_user();
             }
         }
         // if analytics-internal-status was not found, look for older, analytics-status file
@@ -302,6 +304,11 @@ impl MetricsState {
             }
         }
     }
+
+    fn set_internal_new_user(&mut self) {
+        self.init_uuid();
+        self.is_new_internal_user = true;
+    }
 }
 
 impl Default for MetricsState {
@@ -317,6 +324,7 @@ impl Default for MetricsState {
             uuid: None,
             metrics_dir: PathBuf::from("/tmp"),
             invoker: None,
+            is_new_internal_user: false,
         }
     }
 }
@@ -448,6 +456,7 @@ mod tests {
             uuid: Some(Uuid::new_v4()),
             metrics_dir: PathBuf::from("/tmp"),
             invoker: None,
+            is_new_internal_user: false,
         };
     }
 
