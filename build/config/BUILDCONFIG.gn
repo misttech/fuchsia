@@ -1164,28 +1164,7 @@ is_kernel = toolchain_variant.tags + [ "kernel" ] - [ "kernel" ] !=
 is_efi_toolchain =
     toolchain_variant.tags + [ "efi" ] - [ "efi" ] != toolchain_variant.tags
 
-# Whether we are in the context of a TSan (thread sanitizer) toolchain.
-is_toolchain_tsan =
-    toolchain_variant.tags + [ "tsan" ] - [ "tsan" ] != toolchain_variant.tags
-
-# Deprecated alias for is_toolchain_tsan
-is_tsan = is_toolchain_tsan
-
-# Whether we are in the context of an LSan (leak sanitizer) toolchain.
-is_toolchain_lsan =
-    toolchain_variant.tags + [ "lsan" ] - [ "lsan" ] != toolchain_variant.tags
-
-# Deprecated alias for is_toolchain_lsan
-is_lsan = is_toolchain_lsan
-
-# Whether we are in the context of an MSan (memory sanitizer) toolchain.
-is_toolchain_msan =
-    toolchain_variant.tags + [ "msan" ] - [ "msan" ] != toolchain_variant.tags
-
-# Deprecated alias for is_toolchain_msan
-is_msan = is_toolchain_msan
-
-# Whether we are in the context of an UBSan (undefined behavior sanitizer) toolchain.
+# Whether we are in the context of an UBSan (undefined behavior) toolchain.
 is_toolchain_ubsan =
     toolchain_variant.tags + [ "ubsan" ] - [ "ubsan" ] != toolchain_variant.tags
 

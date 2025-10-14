@@ -958,43 +958,75 @@ template("bazel_action") {
     # Below are extra args to Bazel
 
     # Forward GN sanitizer configuration to Bazel
-    # https://fxbug.dev/417952817: For now, only do this for Fuchsia targets.
-    if (!_build_for_host) {
-      if (is_hwasan) {
-        args += [ "--features=hwasan" ]
-      } else if (is_asan) {
-        args += [ "--features=asan" ]
-      }
-      if (is_lsan) {
-        args += [ "--features=lsan" ]
-      }
-      if (is_msan) {
-        args += [ "--features=msan" ]
-      }
-      if (is_tsan) {
-        args += [ "--features=tsan" ]
-      }
-      if (is_ubsan) {
-        args += [ "--features=ubsan" ]
-      }
+    if (_build_for_host) {
+      _tags = host_toolchain_tags
+    } else {
+      _tags = fuchsia_toolchain_tags
     }
+    _has_asan = _tags + [ "asan" ] - [ "asan" ] != _tags
+    _has_hwasan = _tags + [ "hwasan" ] - [ "hwasan" ] != _tags
+    _has_lsan = _tags + [ "lsan" ] - [ "lsan" ] != _tags
+    _has_msan = _tags + [ "msan" ] - [ "msan" ] != _tags
+    _has_tsan = _tags + [ "tsan" ] - [ "tsan" ] != _tags
+    _has_ubsan = _tags + [ "ubsan" ] - [ "ubsan" ] != _tags
 
     # Only clang toolchain has coverage support in Bazel at the moment.
-    if (is_clang_coverage) {
+    _has_coverage_clang =
+        _tags + [ "coverage_clang" ] - [ "coverage_clang" ] != _tags
+
+    if (_has_hwasan) {
+      args += [ "--features=hwasan" ]
+    } else if (_has_asan) {
+      args += [ "--features=asan" ]
+    }
+    if (_has_lsan) {
+      args += [ "--features=lsan" ]
+    }
+    if (_has_msan) {
+      args += [ "--features=msan" ]
+    }
+    if (_has_tsan) {
+      args += [ "--features=tsan" ]
+    }
+    if (_has_ubsan) {
+      args += [ "--features=ubsan" ]
+    }
+    if (_has_coverage_clang) {
       args += [ "--features=coverage" ]
     }
 
     # Forward GN C/C++ compiler optimization configuration to Bazel
     # LINT.IfChange(comp_mode)
-    if (optimize == "none" || optimize == "moderate" ||
-        optimize == "sanitizer" || optimize == "coverage" ||
-        optimize == "minimal") {
-      args += [ "--compilation_mode=fastbuild" ]
-    } else if (optimize == "debug") {
+    _optimize_to_dbg = [ "debug" ]
+    _optimize_to_fastbuild = [
+      "coverage",
+      "minimal",
+      "moderate",
+      "none",
+      "sanitizer",
+    ]
+    _optimize_to_opt = [
+      "profile",
+      "size",
+      "size_lto",
+      "size_thinlto",
+      "speed",
+    ]
+
+    _is_compilation_mode_dbg =
+        _optimize_to_dbg + [ optimize ] - [ optimize ] != _optimize_to_dbg
+    _is_compilation_mode_fastbuild = _optimize_to_fastbuild + [ optimize ] -
+                                     [ optimize ] != _optimize_to_fastbuild
+    _is_compilation_mode_opt =
+        _optimize_to_opt + [ optimize ] - [ optimize ] != _optimize_to_opt
+
+    # LINT.ThenChange(//build/bazel/scripts/bazel_compdb_utils.py:comp_mode)
+
+    if (_is_compilation_mode_dbg) {
       args += [ "--compilation_mode=dbg" ]
-    } else if (optimize == "size" || optimize == "speed" ||
-               optimize == "profile" || optimize == "size_lto" ||
-               optimize == "size_thinlto") {
+    } else if (_is_compilation_mode_fastbuild) {
+      args += [ "--compilation_mode=fastbuild" ]
+    } else if (_is_compilation_mode_opt) {
       args += [ "--compilation_mode=opt" ]
       if (clang_ml_inliner) {
         args += [ "--features=ml_inliner" ]
@@ -1002,8 +1034,6 @@ template("bazel_action") {
     } else {
       assert("Unsupported mode optimize = $optimize")
     }
-
-    # LINT.ThenChange(//build/bazel/scripts/bazel_compdb_utils.py:comp_mode)
 
     # If the c++ version is 20, we overwrite the copts to use
     # c++20 in Bazel too.
