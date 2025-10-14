@@ -925,15 +925,6 @@ pub async fn migrate_device(
         )
         .await?;
 
-        // TODO(https://fxbug.dev/393448875): We are using the graveyard here to reserve the extents containing f2fs
-        // metadata until next boot. This could be avoided with a bit more work. Currently unclear
-        // if this is worth the complexity though.
-        //
-        // The Fxfs allocator caps the number of free extents it holds in its free lists in RAM.
-        // If it exhausts its memory-backed free lists, it will scan the allocator LSM tree to
-        // find more extents. In this case we're reaching in and manipulating the in-memory
-        // structure without associated LSM tree commitments so, while unlikely, there is a risk
-        // that in very large filesystems we might run into this allocator 'rebuild' behavior.
         let metadata_object_handle;
         let mut transaction = fxfs
             .clone()
@@ -958,6 +949,7 @@ pub async fn migrate_device(
                 ObjectValue::Some,
             ),
         );
+
         reserve_f2fs_metadata(
             offset,
             &f2fs,
