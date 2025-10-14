@@ -325,6 +325,18 @@ void AuditChecker::OnTestEnd(const testing::TestInfo& test_info) {
   CheckAuditExpectations(test_name);
 }
 
+void AuditChecker::EscapeAuditLog(std::string& audit_log) {
+  size_t i = 0;
+  while (i < audit_log.size()) {
+    if (audit_log.at(i) == '"') {
+      audit_log.insert(i, 1, '\\');
+      i += 2;
+      continue;
+    }
+    i += 1;
+  }
+}
+
 void AuditChecker::PrintWithTab(int multiplier, const char* format, ...) {
   printf("%*s", multiplier * kTabSize, "");
   va_list args;
@@ -342,6 +354,7 @@ void AuditChecker::ExpectationsToJSON(std::vector<std::string> logs, const std::
   PrintWithTab(1, "\"%s\": \"%s\",\n", kTestNameKey, test_name.c_str());
   PrintWithTab(1, "\"%s\": [\n", kTestAuditExpectationsKey);
   for (int i = 0; i < (int)logs.size(); i++) {
+    EscapeAuditLog(logs[i]);
     PrintWithTab(2, "\"%s\"", logs[i].c_str());
     if (i != (int)logs.size() - 1) {
       printf(",");

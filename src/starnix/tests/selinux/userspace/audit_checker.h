@@ -85,6 +85,8 @@ class AuditChecker : public testing::EmptyTestEventListener {
   // provided in the constructor.
   void CheckAuditExpectations(const std::string& test_name);
 
+  // Escapes the quotes in an audit log.
+  void EscapeAuditLog(std::string& audit_log);
   // Printing functions to format audit expectations.
   void PrintWithTab(int multiplier, const char* format, ...);
   void ExpectationsToJSON(std::vector<std::string> logs, const std::string& test_name);
