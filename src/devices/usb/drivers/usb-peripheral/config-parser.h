@@ -48,6 +48,7 @@ const std::map<uint8_t, uint16_t> kPidLookup = {
     {kCdcMask | kVsockBridgeMask, GOOGLE_USB_CDC_AND_VSOCK_BRIDGE_PID},
     {kCdcMask | kFastbootMask, GOOGLE_USB_CDC_AND_FASTBOOT_PID},
     {kCdcMask | kAdbMask | kVsockBridgeMask, GOOGLE_USB_CDC_AND_ADB_AND_VSOCK_BRIDGE_PID},
+    {kCdcMask | kAdbMask | kFastbootMask, GOOGLE_USB_CDC_AND_ADB_AND_FASTBOOT_PID},
 };
 
 constexpr std::string_view kDefaultSerialNumber = "0123456789ABCDEF";

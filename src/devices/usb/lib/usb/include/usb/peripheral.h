@@ -46,6 +46,9 @@
 // USB Product ID for CDC Ethernet, VSOCK Bridge, and ADB composite device.
 #define GOOGLE_USB_CDC_AND_ADB_AND_VSOCK_BRIDGE_PID 0xA02B
 
+// USB Product ID for CDC Ethernet, ADB, and Fastboot composite device.
+#define GOOGLE_USB_CDC_AND_ADB_AND_FASTBOOT_PID 0xA02C
+
 // USB Product ID for Fastboot function
 #define GOOGLE_USB_FASTBOOT_PID 0x4ee0
 
