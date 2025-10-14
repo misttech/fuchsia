@@ -71,11 +71,9 @@ fidl("asix-88179-test-helper") {
   name = "fuchsia.hardware.ax88179"
   sources = [ "hooks.test.fidl" ]
   public_deps = [ "//zircon/vdso/zx" ]
-  enable_hlcpp = true
 }
 
 fuchsia_cc_driver("fake-asix-88179-driver") {
-  legacy = true
   testonly = true
   output_name = "fake-asix-88179"
   configs += [
@@ -85,23 +83,22 @@ fuchsia_cc_driver("fake-asix-88179-driver") {
   sources = [ "asix-88179-function.cc" ]
   deps = [
     ":asix-88179-test-helper_cpp",
-    ":asix-88179-test-helper_hlcpp",
     ":fake_usb_ax88179_bind",
     "//sdk/banjo/fuchsia.hardware.ethernet:fuchsia.hardware.ethernet_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.usb:fuchsia.hardware.usb_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_banjo_cpp",
     "//sdk/banjo/fuchsia.hardware.usb.request:fuchsia.hardware.usb.request_banjo_cpp",
-    "//sdk/lib/async-loop:async-loop-cpp",
-    "//src/devices/lib/driver",
-    "//src/devices/usb/lib/usb",
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+    "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/devfs/cpp",
+    "//sdk/lib/driver/logging/cpp",
+    "//src/devices/lib/driver:driver_runtime",
     "//src/devices/usb/lib/usb:cdc",
-    "//src/devices/usb/lib/usb:hid",
-    "//src/devices/usb/lib/usb:peripheral",
-    "//src/lib/ddk",
-    "//src/lib/ddktl",
+    "//src/devices/usb/lib/usb:usb-dfv2-compat-logging",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zircon-internal",
+    "//zircon/system/ulib/zx",
   ]
 }
 
