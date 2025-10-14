@@ -25,6 +25,7 @@ class AuditChecker : public testing::EmptyTestEventListener {
   static AuditChecker* with_json_generation();
 
   void OnTestSuiteStart(const testing::TestSuite& test_suite) override;
+  void OnTestSuiteEnd(const testing::TestSuite& test_suite) override;
   void OnTestStart(const testing::TestInfo& test_info) override;
   void OnTestEnd(const testing::TestInfo& test_info) override;
 
@@ -96,6 +97,7 @@ class AuditChecker : public testing::EmptyTestEventListener {
   std::vector<std::string> skipped_tests_;
   std::vector<std::string> expected_failure_tests_;
   std::string current_test_suite_name_;
+  std::vector<std::tuple<std::vector<std::string>, std::string>> current_test_suite_raw_logs_;
   // Set to true to generate audit log JSON objects without audit checks.
   bool generate_json_ = false;
 };

@@ -190,7 +190,7 @@ std::vector<AuditChecker::AuditLogEntry> AuditChecker::ReadAuditLogs(const std::
     fprintf(stderr, "Did not find start sentinel\n");
   }
   if (generate_json_) {
-    ExpectationsToJSON(raw_logs, test_name);
+    current_test_suite_raw_logs_.push_back(std::make_tuple(raw_logs, std::string(test_name)));
   }
   return parsed_logs;
 }
@@ -296,6 +296,18 @@ void AuditChecker::DrainAuditLog() {
 
 void AuditChecker::OnTestSuiteStart(const testing::TestSuite& test_suite) {
   current_test_suite_name_ = std::string(test_suite.name());
+}
+
+void AuditChecker::OnTestSuiteEnd(const testing::TestSuite& test_suite) {
+  if (generate_json_) {
+    // Add a sleep to allow the Linux kernel to print syslog messages before
+    // printing any audit JSON objects.
+    sleep(1);
+    for (auto test_logs : current_test_suite_raw_logs_) {
+      ExpectationsToJSON(std::get<0>(test_logs), std::get<1>(test_logs));
+    }
+    current_test_suite_raw_logs_.clear();
+  }
 }
 
 void AuditChecker::OnTestStart(const testing::TestInfo& test_info) {
