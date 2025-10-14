@@ -376,6 +376,7 @@ template("boot_test") {
 
       name = main_target
       system_a = "$target_out_dir/$assembled_system_target"
+      system_r = "$target_out_dir/$assembled_system_target"
 
       deps = [ ":$assembled_system_target" ]
     }
