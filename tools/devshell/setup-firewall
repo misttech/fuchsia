@@ -88,7 +88,7 @@ if "$undo_all"; then
 fi
 
 for SRC_ADDR in "fe80::/10" "fc00::/7"; do
-  do_firewall_checked "$ARG" INPUT -p udp -s "$SRC_ADDR" --dport 33331:33340 -m comment --comment 'Fuchsia Netboot Protocol' -j ACCEPT
+  do_firewall_checked "$ARG" INPUT -p udp -s "$SRC_ADDR" -m multiport --dport 33331:33340 -m comment --comment 'Fuchsia Netboot Protocol' -j ACCEPT
   do_firewall_checked "$ARG" INPUT -p tcp -s "$SRC_ADDR" --dport 8083 -m comment --comment 'Fuchsia Package Server' -j ACCEPT
   do_firewall_checked "$ARG" INPUT -p udp -s "$SRC_ADDR" --sport 33340 -m comment --comment 'Fuchsia Netboot TFTP Source Port' -j ACCEPT
   do_firewall_checked "$ARG" INPUT -p udp -s "$SRC_ADDR" --sport 5353 -m comment --comment 'Fuchsia MDNS' -j ACCEPT
