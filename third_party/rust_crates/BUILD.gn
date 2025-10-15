@@ -88,7 +88,7 @@ group("async-ringbuf") {
 }
 
 group("async-stream") {
-  public_deps = [ ":async-stream-v0_3_5" ]
+  public_deps = [ ":async-stream-v0_3_6" ]
 }
 
 group("async-trait") {
@@ -2265,23 +2265,23 @@ rustc_library("async-ringbuf-v0_3_4") {
   applicable_licenses = [ ":async-ringbuf-v0_3_4.license" ]
 }
 
-license("async-stream-v0_3_5.license") {
+license("async-stream-v0_3_6.license") {
   public_package_name = "async_stream"
   license_files =
-      [ "//third_party/rust_crates/vendor/async-stream-0.3.5/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/async-stream-0.3.6/LICENSE" ]
 }
 
-rustc_library("async-stream-v0_3_5") {
+rustc_library("async-stream-v0_3_6") {
   crate_name = "async_stream"
-  source_root = "//third_party/rust_crates/vendor/async-stream-0.3.5/src/lib.rs"
-  output_name = "async_stream-f4f882ab5615681b"
-  edition = "2018"
+  source_root = "//third_party/rust_crates/vendor/async-stream-0.3.6/src/lib.rs"
+  output_name = "async_stream-1aff7bba0050a339"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":async-stream-impl-v0_3_5($host_toolchain)" ]
+  deps += [ ":async-stream-impl-v0_3_6($host_toolchain)" ]
   deps += [ ":futures-core-v0_3_31" ]
   deps += [ ":pin-project-lite-v0_2_13" ]
 
@@ -2289,27 +2289,27 @@ rustc_library("async-stream-v0_3_5") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=f4f882ab5615681b",
-    "-Cextra-filename=-f4f882ab5615681b",
+    "-Cmetadata=1aff7bba0050a339",
+    "-Cextra-filename=-1aff7bba0050a339",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":async-stream-v0_3_5.license" ]
+  applicable_licenses = [ ":async-stream-v0_3_6.license" ]
 }
 
-license("async-stream-impl-v0_3_5.license") {
+license("async-stream-impl-v0_3_6.license") {
   public_package_name = "async_stream_impl"
   license_files =
-      [ "//third_party/rust_crates/vendor/async-stream-impl-0.3.5/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/async-stream-impl-0.3.6/LICENSE" ]
 }
 
-rustc_macro("async-stream-impl-v0_3_5") {
+rustc_macro("async-stream-impl-v0_3_6") {
   crate_name = "async_stream_impl"
   source_root =
-      "//third_party/rust_crates/vendor/async-stream-impl-0.3.5/src/lib.rs"
-  output_name = "async_stream_impl-bdf5c3df77d0ae6a"
-  edition = "2018"
+      "//third_party/rust_crates/vendor/async-stream-impl-0.3.6/src/lib.rs"
+  output_name = "async_stream_impl-9573ecd848b0eb78"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -2323,13 +2323,13 @@ rustc_macro("async-stream-impl-v0_3_5") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=bdf5c3df77d0ae6a",
-    "-Cextra-filename=-bdf5c3df77d0ae6a",
+    "-Cmetadata=9573ecd848b0eb78",
+    "-Cextra-filename=-9573ecd848b0eb78",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":async-stream-impl-v0_3_5.license" ]
+  applicable_licenses = [ ":async-stream-impl-v0_3_6.license" ]
 }
 
 license("async-task-v4_0_3.license") {
