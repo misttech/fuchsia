@@ -1129,6 +1129,75 @@ TEST(PtraceTest, PtraceAttachesToParentThread) {
   EXPECT_TRUE(helper.WaitForChildren());
 }
 
+__attribute__((noinline)) __attribute__((aligned(64))) void FunctionToBreak() {
+  // Placeholder instruction to be replaced with a breakpoint by tracer.
+  asm volatile("nop");
+}
+
+// Sets a breakpoint in the child process using PTRACE_POKEDATA and expects that the child process
+// triggers the breakpoint.
+TEST(PtraceTest, PokeToSetBreakpoint) {
+  const void *breakpoint_addr = reinterpret_cast<void *>(&FunctionToBreak);
+  if (reinterpret_cast<uintptr_t>(breakpoint_addr) % sizeof(long) != 0) {
+    GTEST_SKIP() << "Breakpoint address " << std::hex << breakpoint_addr
+                 << " is not aligned to sizeof(long) " << sizeof(long);
+  }
+
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+  pid_t child_pid = helper.RunInForkedProcess([] {
+    SAFE_SYSCALL(ptrace(PTRACE_TRACEME, 0, 0, 0));
+    raise(SIGSTOP);
+    FunctionToBreak();
+  });
+  ASSERT_NE(child_pid, 0);
+
+  // Reach child stop
+  int status;
+  ASSERT_EQ(SAFE_SYSCALL(waitpid(child_pid, &status, 0)), child_pid);
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP)
+      << "status = " << status << " WIFSTOPPED = " << WIFSTOPPED(status)
+      << " WSTOPSIG = " << WSTOPSIG(status);
+
+  // Depending on the architecture and bitness, the breakpoint instruction could be smaller than
+  // word length. Read original word, and overwrite the breakpoint instruction to it but keep the
+  // rest as is.
+  errno = 0;
+  long original_data = ptrace(PTRACE_PEEKDATA, child_pid, breakpoint_addr, 0);
+  if (original_data == -1 && errno != 0) {
+    kill(child_pid, SIGKILL);
+    FAIL() << "PTRACE_PEEKDATA failed: " << strerror(errno) << "(" << errno << ")";
+  }
+
+#if defined(__x86_64__)
+  const long break_insn = 0xCC;
+  long breakpoint_data = (original_data & ~0xFFL) | break_insn;
+#elif defined(__aarch64__)
+  const long break_insn = 0xD4200000;
+  long breakpoint_data = (original_data & ~0xFFFFFFFFL) | break_insn;
+#elif defined(__arm__)
+  const long break_insn = 0xE1200070;
+  long breakpoint_data = (original_data & ~0xFFFFFFFFL) | break_insn;
+#elif defined(__riscv)
+  const long break_insn = 0x00100073;
+  long breakpoint_data = (original_data & ~0xFFFFFFFFL) | break_insn;
+#else
+#error "Unsupported architecture"
+#endif
+
+  SAFE_SYSCALL(ptrace(PTRACE_POKEDATA, child_pid, breakpoint_addr, breakpoint_data));
+  SAFE_SYSCALL(ptrace(PTRACE_CONT, child_pid, 0, 0));
+
+  // Child process should stop at the newly placed breakpoint.
+  ASSERT_EQ(SAFE_SYSCALL(waitpid(child_pid, &status, 0)), child_pid);
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGTRAP)
+      << "status = " << status << " WIFSTOPPED = " << WIFSTOPPED(status)
+      << " WSTOPSIG = " << WSTOPSIG(status);
+
+  SAFE_SYSCALL(ptrace(PTRACE_DETACH, child_pid, 0, 0));
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
 enum class BackingType {
   ANONYMOUS,
   MEMFD,
