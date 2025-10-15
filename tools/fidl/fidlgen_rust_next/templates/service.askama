@@ -49,7 +49,7 @@ where
         pub fn {{ member.name|snake }}(
             &self,
             server_end: ::fidl_next::ServerEnd<
-                {{ self.natural_id(self.member_protocol(member)) }},
+                {{ self.non_type_id(self.member_protocol(member)) }},
                 {{ self.member_transport(member) }},
             >,
         ) -> ::core::result::Result<
@@ -75,7 +75,7 @@ pub trait {{ handler_name }} {
         /// Handles an attempt to connect to the `{{ member.name.non_canonical() }}` member.
         fn {{ member.name|snake }}(
             &self,
-            server_end: ::fidl_next::ServerEnd<{{ self.natural_id(self.member_protocol(member)) }}, {{ self.member_transport(member) }}>,
+            server_end: ::fidl_next::ServerEnd<{{ self.non_type_id(self.member_protocol(member)) }}, {{ self.member_transport(member) }}>,
         );
     {% endfor %}
 }

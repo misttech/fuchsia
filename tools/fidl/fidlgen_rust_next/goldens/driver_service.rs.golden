@@ -2,6 +2,14 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
+pub mod natural {}
+
+pub mod wire {}
+
+pub mod wire_optional {}
+
+pub use self::natural::*;
+
 /// The type corresponding to the DriverOnlyService service.
 #[derive(Debug)]
 pub struct DriverOnlyService;

@@ -2,513 +2,529 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-pub type U32 = u32;
+pub mod natural {
 
-/// The wire type corresponding to [`U32`].
-pub type WireU32 = ::fidl_next::WireU32;
+    pub type U32 = u32;
 
-pub type VecOfStrings = ::std::vec::Vec<::std::string::String>;
+    pub type VecOfStrings = ::std::vec::Vec<::std::string::String>;
 
-/// The wire type corresponding to [`VecOfStrings`].
-pub type WireVecOfStrings<'de> = ::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>;
+    pub type VecOfStringsAtMost5 = ::std::vec::Vec<::std::string::String>;
 
-pub type VecOfStringsAtMost5 = ::std::vec::Vec<::std::string::String>;
+    pub type ReferenceMe = ::fidl_next_test_someotherlibrary::natural::ReferenceMe;
 
-/// The wire type corresponding to [`VecOfStringsAtMost5`].
-pub type WireVecOfStringsAtMost5<'de> = ::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>;
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[repr(u32)]
+    pub enum ObjType {
+        None = 0,
+        Channel = 4,
+    }
 
-pub type ReferenceMe = ::fidl_next_test_someotherlibrary::ReferenceMe;
+    impl ::fidl_next::Encodable for ObjType {
+        type Encoded = crate::wire::ObjType;
+    }
+    impl ::core::convert::TryFrom<u32> for ObjType {
+        type Error = ::fidl_next::UnknownStrictEnumMemberError;
+        fn try_from(
+            value: u32,
+        ) -> ::core::result::Result<Self, ::fidl_next::UnknownStrictEnumMemberError> {
+            match value {
+                0 => Ok(Self::None),
+                4 => Ok(Self::Channel),
 
-/// The wire type corresponding to [`ReferenceMe`].
-pub type WireReferenceMe = ::fidl_next_test_someotherlibrary::WireReferenceMe;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u32)]
-pub enum ObjType {
-    None = 0,
-    Channel = 4,
-}
-
-impl ::fidl_next::Encodable for ObjType {
-    type Encoded = WireObjType;
-}
-impl ::core::convert::TryFrom<u32> for ObjType {
-    type Error = ::fidl_next::UnknownStrictEnumMemberError;
-    fn try_from(
-        value: u32,
-    ) -> ::core::result::Result<Self, ::fidl_next::UnknownStrictEnumMemberError> {
-        match value {
-            0 => Ok(Self::None),
-            4 => Ok(Self::Channel),
-
-            _ => Err(::fidl_next::UnknownStrictEnumMemberError::new(value.into())),
+                _ => Err(::fidl_next::UnknownStrictEnumMemberError::new(value.into())),
+            }
         }
     }
-}
 
-unsafe impl<___E> ::fidl_next::Encode<___E> for ObjType
-where
-    ___E: ?Sized,
-{
-    #[inline]
-    fn encode(
-        self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
-    }
-}
-
-unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ObjType
-where
-    ___E: ?Sized,
-{
-    #[inline]
-    fn encode_ref(
-        &self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge!(let WireObjType { value } = out);
-        let _ = value.write(::fidl_next::WireU32::from(match *self {
-            Self::None => 0,
-
-            Self::Channel => 4,
-        }));
-
-        Ok(())
-    }
-}
-
-impl ::core::convert::From<WireObjType> for ObjType {
-    fn from(wire: WireObjType) -> Self {
-        match u32::from(wire.value) {
-            0 => Self::None,
-
-            4 => Self::Channel,
-
-            _ => unsafe { ::core::hint::unreachable_unchecked() },
+    unsafe impl<___E> ::fidl_next::Encode<___E> for ObjType
+    where
+        ___E: ?Sized,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
         }
     }
-}
 
-impl ::fidl_next::FromWire<WireObjType> for ObjType {
-    #[inline]
-    fn from_wire(wire: WireObjType) -> Self {
-        Self::from(wire)
-    }
-}
+    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ObjType
+    where
+        ___E: ?Sized,
+    {
+        #[inline]
+        fn encode_ref(
+            &self,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge!(let crate::wire::ObjType { value } = out);
+            let _ = value.write(::fidl_next::WireU32::from(match *self {
+                Self::None => 0,
 
-impl ::fidl_next::IntoNatural for WireObjType {
-    type Natural = ObjType;
-}
+                Self::Channel => 4,
+            }));
 
-impl ::fidl_next::FromWireRef<WireObjType> for ObjType {
-    #[inline]
-    fn from_wire_ref(wire: &WireObjType) -> Self {
-        Self::from(*wire)
-    }
-}
-
-/// The wire type corresponding to [`ObjType`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct WireObjType {
-    value: ::fidl_next::WireU32,
-}
-
-unsafe impl ::fidl_next::Wire for WireObjType {
-    type Decoded<'de> = Self;
-
-    #[inline]
-    fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
-        // Wire enums have no padding
-    }
-}
-
-impl WireObjType {
-    pub const NONE: WireObjType = WireObjType { value: ::fidl_next::WireU32(0) };
-
-    pub const CHANNEL: WireObjType = WireObjType { value: ::fidl_next::WireU32(4) };
-}
-
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireObjType
-where
-    ___D: ?Sized,
-{
-    fn decode(
-        slot: ::fidl_next::Slot<'_, Self>,
-        _: &mut ___D,
-    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-        ::fidl_next::munge!(let Self { value } = slot);
-
-        match u32::from(*value) {
-            0 | 4 => (),
-            unknown => return Err(::fidl_next::DecodeError::InvalidEnumOrdinal(unknown as i128)),
-        }
-
-        Ok(())
-    }
-}
-
-impl ::core::convert::From<ObjType> for WireObjType {
-    fn from(natural: ObjType) -> Self {
-        match natural {
-            ObjType::None => WireObjType::NONE,
-
-            ObjType::Channel => WireObjType::CHANNEL,
+            Ok(())
         }
     }
-}
 
-pub type Channel = ::fidl_next::fuchsia::zx::Channel;
+    impl ::core::convert::From<crate::wire::ObjType> for ObjType {
+        fn from(wire: crate::wire::ObjType) -> Self {
+            match u32::from(wire.value) {
+                0 => Self::None,
 
-/// The wire type corresponding to [`Channel`].
-pub type WireChannel = ::fidl_next::fuchsia::WireChannel;
+                4 => Self::Channel,
 
-pub type AliasOfChannel = ::fidl_next::fuchsia::zx::Channel;
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+    }
 
-/// The wire type corresponding to [`AliasOfChannel`].
-pub type WireAliasOfChannel = ::fidl_next::fuchsia::WireChannel;
+    impl ::fidl_next::FromWire<crate::wire::ObjType> for ObjType {
+        #[inline]
+        fn from_wire(wire: crate::wire::ObjType) -> Self {
+            Self::from(wire)
+        }
+    }
 
-#[derive(PartialEq, Debug)]
-pub struct ExampleOfUseOfAliases {
-    pub field_of_u32: u32,
+    impl ::fidl_next::FromWireRef<crate::wire::ObjType> for ObjType {
+        #[inline]
+        fn from_wire_ref(wire: &crate::wire::ObjType) -> Self {
+            Self::from(*wire)
+        }
+    }
 
-    pub field_of_vec_of_strings: ::std::vec::Vec<::std::string::String>,
+    pub type Channel = ::fidl_next::fuchsia::zx::Channel;
 
-    pub field_of_vec_of_strings_at_most_nine: ::std::vec::Vec<::std::string::String>,
+    pub type AliasOfChannel = ::fidl_next::fuchsia::zx::Channel;
 
-    pub field_of_vec_of_strings_at_most_5: ::std::vec::Vec<::std::string::String>,
+    #[derive(PartialEq, Debug)]
+    pub struct ExampleOfUseOfAliases {
+        pub field_of_u32: u32,
 
-    pub field_of_vec_of_ref_me_at_most_5:
-        ::std::vec::Vec<::fidl_next_test_someotherlibrary::ReferenceMe>,
+        pub field_of_vec_of_strings: ::std::vec::Vec<::std::string::String>,
 
-    pub field_of_channel: ::fidl_next::fuchsia::zx::Channel,
+        pub field_of_vec_of_strings_at_most_nine: ::std::vec::Vec<::std::string::String>,
 
-    pub field_of_client_end: ::fidl_next::fuchsia::zx::Channel,
+        pub field_of_vec_of_strings_at_most_5: ::std::vec::Vec<::std::string::String>,
 
-    pub field_of_nullable_client_end: ::core::option::Option<::fidl_next::fuchsia::zx::Channel>,
-}
+        pub field_of_vec_of_ref_me_at_most_5:
+            ::std::vec::Vec<::fidl_next_test_someotherlibrary::natural::ReferenceMe>,
 
-impl ::fidl_next::Encodable for ExampleOfUseOfAliases {
-    type Encoded = WireExampleOfUseOfAliases<'static>;
-}
+        pub field_of_channel: ::fidl_next::fuchsia::zx::Channel,
 
-unsafe impl<___E> ::fidl_next::Encode<___E> for ExampleOfUseOfAliases
-where
-    ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    ___E: ::fidl_next::Encoder,
-    ___E: ::fidl_next::fuchsia::HandleEncoder,
-{
-    #[inline]
-    fn encode(
-        self,
-        encoder_: &mut ___E,
-        out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge! {
-            let Self::Encoded {
-                field_of_u32,
+        pub field_of_client_end: ::fidl_next::fuchsia::zx::Channel,
+
+        pub field_of_nullable_client_end: ::core::option::Option<::fidl_next::fuchsia::zx::Channel>,
+    }
+
+    impl ::fidl_next::Encodable for ExampleOfUseOfAliases {
+        type Encoded = crate::wire::ExampleOfUseOfAliases<'static>;
+    }
+
+    unsafe impl<___E> ::fidl_next::Encode<___E> for ExampleOfUseOfAliases
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+                    field_of_u32,
+                    field_of_vec_of_strings,
+                    field_of_vec_of_strings_at_most_nine,
+                    field_of_vec_of_strings_at_most_5,
+                    field_of_vec_of_ref_me_at_most_5,
+                    field_of_channel,
+                    field_of_client_end,
+                    field_of_nullable_client_end,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.field_of_u32, encoder_, field_of_u32)?;
+
+            ::fidl_next::Encode::encode(
+                self.field_of_vec_of_strings,
+                encoder_,
                 field_of_vec_of_strings,
+            )?;
+
+            ::fidl_next::Encode::encode(
+                self.field_of_vec_of_strings_at_most_nine,
+                encoder_,
                 field_of_vec_of_strings_at_most_nine,
+            )?;
+
+            ::fidl_next::Encode::encode(
+                self.field_of_vec_of_strings_at_most_5,
+                encoder_,
                 field_of_vec_of_strings_at_most_5,
+            )?;
+
+            ::fidl_next::Encode::encode(
+                self.field_of_vec_of_ref_me_at_most_5,
+                encoder_,
                 field_of_vec_of_ref_me_at_most_5,
-                field_of_channel,
-                field_of_client_end,
+            )?;
+
+            ::fidl_next::Encode::encode(self.field_of_channel, encoder_, field_of_channel)?;
+
+            ::fidl_next::Encode::encode(self.field_of_client_end, encoder_, field_of_client_end)?;
+
+            ::fidl_next::Encode::encode(
+                self.field_of_nullable_client_end,
+                encoder_,
                 field_of_nullable_client_end,
+            )?;
 
-            } = out_;
+            Ok(())
         }
-
-        ::fidl_next::Encode::encode(self.field_of_u32, encoder_, field_of_u32)?;
-
-        ::fidl_next::Encode::encode(
-            self.field_of_vec_of_strings,
-            encoder_,
-            field_of_vec_of_strings,
-        )?;
-
-        ::fidl_next::Encode::encode(
-            self.field_of_vec_of_strings_at_most_nine,
-            encoder_,
-            field_of_vec_of_strings_at_most_nine,
-        )?;
-
-        ::fidl_next::Encode::encode(
-            self.field_of_vec_of_strings_at_most_5,
-            encoder_,
-            field_of_vec_of_strings_at_most_5,
-        )?;
-
-        ::fidl_next::Encode::encode(
-            self.field_of_vec_of_ref_me_at_most_5,
-            encoder_,
-            field_of_vec_of_ref_me_at_most_5,
-        )?;
-
-        ::fidl_next::Encode::encode(self.field_of_channel, encoder_, field_of_channel)?;
-
-        ::fidl_next::Encode::encode(self.field_of_client_end, encoder_, field_of_client_end)?;
-
-        ::fidl_next::Encode::encode(
-            self.field_of_nullable_client_end,
-            encoder_,
-            field_of_nullable_client_end,
-        )?;
-
-        Ok(())
     }
-}
 
-impl ::fidl_next::EncodableOption for ExampleOfUseOfAliases {
-    type EncodedOption = ::fidl_next::WireBox<'static, WireExampleOfUseOfAliases<'static>>;
-}
+    impl ::fidl_next::EncodableOption for ExampleOfUseOfAliases {
+        type EncodedOption =
+            ::fidl_next::WireBox<'static, crate::wire::ExampleOfUseOfAliases<'static>>;
+    }
 
-unsafe impl<___E> ::fidl_next::EncodeOption<___E> for ExampleOfUseOfAliases
-where
-    ___E: ::fidl_next::Encoder + ?Sized,
-    ExampleOfUseOfAliases: ::fidl_next::Encode<___E>,
-{
-    #[inline]
-    fn encode_option(
-        this: ::core::option::Option<Self>,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        if let Some(inner) = this {
-            ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-            ::fidl_next::WireBox::encode_present(out);
-        } else {
-            ::fidl_next::WireBox::encode_absent(out);
+    unsafe impl<___E> ::fidl_next::EncodeOption<___E> for ExampleOfUseOfAliases
+    where
+        ___E: ::fidl_next::Encoder + ?Sized,
+        ExampleOfUseOfAliases: ::fidl_next::Encode<___E>,
+    {
+        #[inline]
+        fn encode_option(
+            this: ::core::option::Option<Self>,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            if let Some(inner) = this {
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::WireBox::encode_present(out);
+            } else {
+                ::fidl_next::WireBox::encode_absent(out);
+            }
+
+            Ok(())
         }
-
-        Ok(())
     }
-}
 
-impl<'de> ::fidl_next::FromWire<WireExampleOfUseOfAliases<'de>> for ExampleOfUseOfAliases {
-    #[inline]
-    fn from_wire(wire: WireExampleOfUseOfAliases<'de>) -> Self {
-        Self {
-            field_of_u32: ::fidl_next::FromWire::from_wire(wire.field_of_u32),
+    impl<'de> ::fidl_next::FromWire<crate::wire::ExampleOfUseOfAliases<'de>> for ExampleOfUseOfAliases {
+        #[inline]
+        fn from_wire(wire: crate::wire::ExampleOfUseOfAliases<'de>) -> Self {
+            Self {
+                field_of_u32: ::fidl_next::FromWire::from_wire(wire.field_of_u32),
 
-            field_of_vec_of_strings: ::fidl_next::FromWire::from_wire(wire.field_of_vec_of_strings),
+                field_of_vec_of_strings: ::fidl_next::FromWire::from_wire(
+                    wire.field_of_vec_of_strings,
+                ),
 
-            field_of_vec_of_strings_at_most_nine: ::fidl_next::FromWire::from_wire(
-                wire.field_of_vec_of_strings_at_most_nine,
-            ),
+                field_of_vec_of_strings_at_most_nine: ::fidl_next::FromWire::from_wire(
+                    wire.field_of_vec_of_strings_at_most_nine,
+                ),
 
-            field_of_vec_of_strings_at_most_5: ::fidl_next::FromWire::from_wire(
-                wire.field_of_vec_of_strings_at_most_5,
-            ),
+                field_of_vec_of_strings_at_most_5: ::fidl_next::FromWire::from_wire(
+                    wire.field_of_vec_of_strings_at_most_5,
+                ),
 
-            field_of_vec_of_ref_me_at_most_5: ::fidl_next::FromWire::from_wire(
-                wire.field_of_vec_of_ref_me_at_most_5,
-            ),
+                field_of_vec_of_ref_me_at_most_5: ::fidl_next::FromWire::from_wire(
+                    wire.field_of_vec_of_ref_me_at_most_5,
+                ),
 
-            field_of_channel: ::fidl_next::FromWire::from_wire(wire.field_of_channel),
+                field_of_channel: ::fidl_next::FromWire::from_wire(wire.field_of_channel),
 
-            field_of_client_end: ::fidl_next::FromWire::from_wire(wire.field_of_client_end),
+                field_of_client_end: ::fidl_next::FromWire::from_wire(wire.field_of_client_end),
 
-            field_of_nullable_client_end: ::fidl_next::FromWire::from_wire(
-                wire.field_of_nullable_client_end,
-            ),
+                field_of_nullable_client_end: ::fidl_next::FromWire::from_wire(
+                    wire.field_of_nullable_client_end,
+                ),
+            }
         }
     }
 }
 
-impl<'de> ::fidl_next::IntoNatural for WireExampleOfUseOfAliases<'de> {
-    type Natural = ExampleOfUseOfAliases;
-}
+pub mod wire {
 
-/// The wire type corresponding to [`ExampleOfUseOfAliases`].
-#[derive(Debug)]
-#[repr(C)]
-pub struct WireExampleOfUseOfAliases<'de> {
-    pub field_of_u32: ::fidl_next::WireU32,
+    /// The wire type corresponding to [`U32`](crate::natural::U32).
+    pub type U32 = ::fidl_next::WireU32;
 
-    pub field_of_vec_of_strings: ::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>,
+    /// The wire type corresponding to [`VecOfStrings`](crate::natural::VecOfStrings).
+    pub type VecOfStrings<'de> = ::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>;
 
-    pub field_of_vec_of_strings_at_most_nine:
-        ::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>,
+    /// The wire type corresponding to [`VecOfStringsAtMost5`](crate::natural::VecOfStringsAtMost5).
+    pub type VecOfStringsAtMost5<'de> = ::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>;
 
-    pub field_of_vec_of_strings_at_most_5:
-        ::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>,
+    /// The wire type corresponding to [`ReferenceMe`](crate::natural::ReferenceMe).
+    pub type ReferenceMe = ::fidl_next_test_someotherlibrary::wire::ReferenceMe;
 
-    pub field_of_vec_of_ref_me_at_most_5:
-        ::fidl_next::WireVector<'de, ::fidl_next_test_someotherlibrary::WireReferenceMe>,
+    /// The wire type corresponding to [`ObjType`].
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[repr(transparent)]
+    pub struct ObjType {
+        pub(crate) value: ::fidl_next::WireU32,
+    }
 
-    pub field_of_channel: ::fidl_next::fuchsia::WireChannel,
+    unsafe impl ::fidl_next::Wire for ObjType {
+        type Decoded<'de> = Self;
 
-    pub field_of_client_end: ::fidl_next::fuchsia::WireChannel,
-
-    pub field_of_nullable_client_end: ::fidl_next::fuchsia::WireOptionalChannel,
-}
-static_assertions::const_assert_eq!(std::mem::size_of::<WireExampleOfUseOfAliases<'_>>(), 88);
-static_assertions::const_assert_eq!(std::mem::align_of::<WireExampleOfUseOfAliases<'_>>(), 8);
-
-static_assertions::const_assert_eq!(
-    std::mem::offset_of!(WireExampleOfUseOfAliases<'_>, field_of_u32),
-    0
-);
-
-static_assertions::const_assert_eq!(
-    std::mem::offset_of!(WireExampleOfUseOfAliases<'_>, field_of_vec_of_strings),
-    8
-);
-
-static_assertions::const_assert_eq!(
-    std::mem::offset_of!(WireExampleOfUseOfAliases<'_>, field_of_vec_of_strings_at_most_nine),
-    24
-);
-
-static_assertions::const_assert_eq!(
-    std::mem::offset_of!(WireExampleOfUseOfAliases<'_>, field_of_vec_of_strings_at_most_5),
-    40
-);
-
-static_assertions::const_assert_eq!(
-    std::mem::offset_of!(WireExampleOfUseOfAliases<'_>, field_of_vec_of_ref_me_at_most_5),
-    56
-);
-
-static_assertions::const_assert_eq!(
-    std::mem::offset_of!(WireExampleOfUseOfAliases<'_>, field_of_channel),
-    72
-);
-
-static_assertions::const_assert_eq!(
-    std::mem::offset_of!(WireExampleOfUseOfAliases<'_>, field_of_client_end),
-    76
-);
-
-static_assertions::const_assert_eq!(
-    std::mem::offset_of!(WireExampleOfUseOfAliases<'_>, field_of_nullable_client_end),
-    80
-);
-
-unsafe impl ::fidl_next::Wire for WireExampleOfUseOfAliases<'static> {
-    type Decoded<'de> = WireExampleOfUseOfAliases<'de>;
-
-    #[inline]
-    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
-        ::fidl_next::munge! {
-            let Self {
-
-                field_of_u32,
-                field_of_vec_of_strings,
-                field_of_vec_of_strings_at_most_nine,
-                field_of_vec_of_strings_at_most_5,
-                field_of_vec_of_ref_me_at_most_5,
-                field_of_channel,
-                field_of_client_end,
-                field_of_nullable_client_end,
-
-            } = &mut *out_;
+        #[inline]
+        fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
+            // Wire enums have no padding
         }
+    }
 
-        ::fidl_next::Wire::zero_padding(field_of_u32);
+    impl ObjType {
+        pub const NONE: ObjType = ObjType { value: ::fidl_next::WireU32(0) };
 
-        ::fidl_next::Wire::zero_padding(field_of_vec_of_strings);
+        pub const CHANNEL: ObjType = ObjType { value: ::fidl_next::WireU32(4) };
+    }
 
-        ::fidl_next::Wire::zero_padding(field_of_vec_of_strings_at_most_nine);
+    unsafe impl<___D> ::fidl_next::Decode<___D> for ObjType
+    where
+        ___D: ?Sized,
+    {
+        fn decode(
+            slot: ::fidl_next::Slot<'_, Self>,
+            _: &mut ___D,
+        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+            ::fidl_next::munge!(let Self { value } = slot);
 
-        ::fidl_next::Wire::zero_padding(field_of_vec_of_strings_at_most_5);
+            match u32::from(*value) {
+                0 | 4 => (),
+                unknown => {
+                    return Err(::fidl_next::DecodeError::InvalidEnumOrdinal(unknown as i128));
+                }
+            }
 
-        ::fidl_next::Wire::zero_padding(field_of_vec_of_ref_me_at_most_5);
-
-        ::fidl_next::Wire::zero_padding(field_of_channel);
-
-        ::fidl_next::Wire::zero_padding(field_of_client_end);
-
-        ::fidl_next::Wire::zero_padding(field_of_nullable_client_end);
-
-        unsafe {
-            out_.as_mut_ptr().cast::<u8>().add(84).write_bytes(0, 4);
+            Ok(())
         }
+    }
 
-        unsafe {
-            out_.as_mut_ptr().cast::<u8>().add(4).write_bytes(0, 4);
+    impl ::core::convert::From<crate::natural::ObjType> for ObjType {
+        fn from(natural: crate::natural::ObjType) -> Self {
+            match natural {
+                crate::natural::ObjType::None => ObjType::NONE,
+
+                crate::natural::ObjType::Channel => ObjType::CHANNEL,
+            }
         }
+    }
+
+    impl ::fidl_next::IntoNatural for ObjType {
+        type Natural = crate::natural::ObjType;
+    }
+
+    /// The wire type corresponding to [`Channel`](crate::natural::Channel).
+    pub type Channel = ::fidl_next::fuchsia::WireChannel;
+
+    /// The wire type corresponding to [`AliasOfChannel`](crate::natural::AliasOfChannel).
+    pub type AliasOfChannel = ::fidl_next::fuchsia::WireChannel;
+
+    /// The wire type corresponding to [`ExampleOfUseOfAliases`].
+    #[derive(Debug)]
+    #[repr(C)]
+    pub struct ExampleOfUseOfAliases<'de> {
+        pub field_of_u32: ::fidl_next::WireU32,
+
+        pub field_of_vec_of_strings: ::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>,
+
+        pub field_of_vec_of_strings_at_most_nine:
+            ::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>,
+
+        pub field_of_vec_of_strings_at_most_5:
+            ::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>,
+
+        pub field_of_vec_of_ref_me_at_most_5:
+            ::fidl_next::WireVector<'de, ::fidl_next_test_someotherlibrary::wire::ReferenceMe>,
+
+        pub field_of_channel: ::fidl_next::fuchsia::WireChannel,
+
+        pub field_of_client_end: ::fidl_next::fuchsia::WireChannel,
+
+        pub field_of_nullable_client_end: ::fidl_next::fuchsia::WireOptionalChannel,
+    }
+
+    static_assertions::const_assert_eq!(std::mem::size_of::<ExampleOfUseOfAliases<'_>>(), 88);
+    static_assertions::const_assert_eq!(std::mem::align_of::<ExampleOfUseOfAliases<'_>>(), 8);
+
+    static_assertions::const_assert_eq!(
+        std::mem::offset_of!(ExampleOfUseOfAliases<'_>, field_of_u32),
+        0
+    );
+
+    static_assertions::const_assert_eq!(
+        std::mem::offset_of!(ExampleOfUseOfAliases<'_>, field_of_vec_of_strings),
+        8
+    );
+
+    static_assertions::const_assert_eq!(
+        std::mem::offset_of!(ExampleOfUseOfAliases<'_>, field_of_vec_of_strings_at_most_nine),
+        24
+    );
+
+    static_assertions::const_assert_eq!(
+        std::mem::offset_of!(ExampleOfUseOfAliases<'_>, field_of_vec_of_strings_at_most_5),
+        40
+    );
+
+    static_assertions::const_assert_eq!(
+        std::mem::offset_of!(ExampleOfUseOfAliases<'_>, field_of_vec_of_ref_me_at_most_5),
+        56
+    );
+
+    static_assertions::const_assert_eq!(
+        std::mem::offset_of!(ExampleOfUseOfAliases<'_>, field_of_channel),
+        72
+    );
+
+    static_assertions::const_assert_eq!(
+        std::mem::offset_of!(ExampleOfUseOfAliases<'_>, field_of_client_end),
+        76
+    );
+
+    static_assertions::const_assert_eq!(
+        std::mem::offset_of!(ExampleOfUseOfAliases<'_>, field_of_nullable_client_end),
+        80
+    );
+
+    unsafe impl ::fidl_next::Wire for ExampleOfUseOfAliases<'static> {
+        type Decoded<'de> = ExampleOfUseOfAliases<'de>;
+
+        #[inline]
+        fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+            ::fidl_next::munge! {
+                let Self {
+
+                    field_of_u32,
+                    field_of_vec_of_strings,
+                    field_of_vec_of_strings_at_most_nine,
+                    field_of_vec_of_strings_at_most_5,
+                    field_of_vec_of_ref_me_at_most_5,
+                    field_of_channel,
+                    field_of_client_end,
+                    field_of_nullable_client_end,
+
+                } = &mut *out_;
+            }
+
+            ::fidl_next::Wire::zero_padding(field_of_u32);
+
+            ::fidl_next::Wire::zero_padding(field_of_vec_of_strings);
+
+            ::fidl_next::Wire::zero_padding(field_of_vec_of_strings_at_most_nine);
+
+            ::fidl_next::Wire::zero_padding(field_of_vec_of_strings_at_most_5);
+
+            ::fidl_next::Wire::zero_padding(field_of_vec_of_ref_me_at_most_5);
+
+            ::fidl_next::Wire::zero_padding(field_of_channel);
+
+            ::fidl_next::Wire::zero_padding(field_of_client_end);
+
+            ::fidl_next::Wire::zero_padding(field_of_nullable_client_end);
+
+            unsafe {
+                out_.as_mut_ptr().cast::<u8>().add(84).write_bytes(0, 4);
+            }
+
+            unsafe {
+                out_.as_mut_ptr().cast::<u8>().add(4).write_bytes(0, 4);
+            }
+        }
+    }
+
+    unsafe impl<___D> ::fidl_next::Decode<___D> for ExampleOfUseOfAliases<'static>
+    where
+        ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
+        ___D: ::fidl_next::Decoder,
+        ___D: ::fidl_next::fuchsia::HandleDecoder,
+    {
+        fn decode(
+            slot_: ::fidl_next::Slot<'_, Self>,
+            decoder_: &mut ___D,
+        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+            ::fidl_next::munge! {
+                let Self {
+
+                    mut field_of_u32,
+                    mut field_of_vec_of_strings,
+                    mut field_of_vec_of_strings_at_most_nine,
+                    mut field_of_vec_of_strings_at_most_5,
+                    mut field_of_vec_of_ref_me_at_most_5,
+                    mut field_of_channel,
+                    mut field_of_client_end,
+                    mut field_of_nullable_client_end,
+
+                } = slot_;
+            }
+
+            ::fidl_next::Decode::decode(field_of_u32.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(field_of_vec_of_strings.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(field_of_vec_of_strings_at_most_nine.as_mut(), decoder_)?;
+
+            let field_of_vec_of_strings_at_most_nine =
+                unsafe { field_of_vec_of_strings_at_most_nine.deref_unchecked() };
+
+            if field_of_vec_of_strings_at_most_nine.len() > 9 {
+                return Err(::fidl_next::DecodeError::VectorTooLong {
+                    size: field_of_vec_of_strings_at_most_nine.len() as u64,
+                    limit: 9,
+                });
+            }
+
+            ::fidl_next::Decode::decode(field_of_vec_of_strings_at_most_5.as_mut(), decoder_)?;
+
+            let field_of_vec_of_strings_at_most_5 =
+                unsafe { field_of_vec_of_strings_at_most_5.deref_unchecked() };
+
+            if field_of_vec_of_strings_at_most_5.len() > 5 {
+                return Err(::fidl_next::DecodeError::VectorTooLong {
+                    size: field_of_vec_of_strings_at_most_5.len() as u64,
+                    limit: 5,
+                });
+            }
+
+            ::fidl_next::Decode::decode(field_of_vec_of_ref_me_at_most_5.as_mut(), decoder_)?;
+
+            let field_of_vec_of_ref_me_at_most_5 =
+                unsafe { field_of_vec_of_ref_me_at_most_5.deref_unchecked() };
+
+            if field_of_vec_of_ref_me_at_most_5.len() > 5 {
+                return Err(::fidl_next::DecodeError::VectorTooLong {
+                    size: field_of_vec_of_ref_me_at_most_5.len() as u64,
+                    limit: 5,
+                });
+            }
+
+            ::fidl_next::Decode::decode(field_of_channel.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(field_of_client_end.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(field_of_nullable_client_end.as_mut(), decoder_)?;
+
+            Ok(())
+        }
+    }
+
+    impl<'de> ::fidl_next::IntoNatural for ExampleOfUseOfAliases<'de> {
+        type Natural = crate::natural::ExampleOfUseOfAliases;
     }
 }
 
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireExampleOfUseOfAliases<'static>
-where
-    ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-    ___D: ::fidl_next::Decoder,
-    ___D: ::fidl_next::fuchsia::HandleDecoder,
-{
-    fn decode(
-        slot_: ::fidl_next::Slot<'_, Self>,
-        decoder_: &mut ___D,
-    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-        ::fidl_next::munge! {
-            let Self {
+pub mod wire_optional {}
 
-                mut field_of_u32,
-                mut field_of_vec_of_strings,
-                mut field_of_vec_of_strings_at_most_nine,
-                mut field_of_vec_of_strings_at_most_5,
-                mut field_of_vec_of_ref_me_at_most_5,
-                mut field_of_channel,
-                mut field_of_client_end,
-                mut field_of_nullable_client_end,
-
-            } = slot_;
-        }
-
-        ::fidl_next::Decode::decode(field_of_u32.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(field_of_vec_of_strings.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(field_of_vec_of_strings_at_most_nine.as_mut(), decoder_)?;
-
-        let field_of_vec_of_strings_at_most_nine =
-            unsafe { field_of_vec_of_strings_at_most_nine.deref_unchecked() };
-
-        if field_of_vec_of_strings_at_most_nine.len() > 9 {
-            return Err(::fidl_next::DecodeError::VectorTooLong {
-                size: field_of_vec_of_strings_at_most_nine.len() as u64,
-                limit: 9,
-            });
-        }
-
-        ::fidl_next::Decode::decode(field_of_vec_of_strings_at_most_5.as_mut(), decoder_)?;
-
-        let field_of_vec_of_strings_at_most_5 =
-            unsafe { field_of_vec_of_strings_at_most_5.deref_unchecked() };
-
-        if field_of_vec_of_strings_at_most_5.len() > 5 {
-            return Err(::fidl_next::DecodeError::VectorTooLong {
-                size: field_of_vec_of_strings_at_most_5.len() as u64,
-                limit: 5,
-            });
-        }
-
-        ::fidl_next::Decode::decode(field_of_vec_of_ref_me_at_most_5.as_mut(), decoder_)?;
-
-        let field_of_vec_of_ref_me_at_most_5 =
-            unsafe { field_of_vec_of_ref_me_at_most_5.deref_unchecked() };
-
-        if field_of_vec_of_ref_me_at_most_5.len() > 5 {
-            return Err(::fidl_next::DecodeError::VectorTooLong {
-                size: field_of_vec_of_ref_me_at_most_5.len() as u64,
-                limit: 5,
-            });
-        }
-
-        ::fidl_next::Decode::decode(field_of_channel.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(field_of_client_end.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(field_of_nullable_client_end.as_mut(), decoder_)?;
-
-        Ok(())
-    }
-}
+pub use self::natural::*;
 
 /// Compatibility shims which mimic some API surfaces of the current Rust bindings.
 pub mod compat {

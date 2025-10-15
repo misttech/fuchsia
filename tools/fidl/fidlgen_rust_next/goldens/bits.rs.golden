@@ -2,466 +2,476 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-::fidl_next::bitflags::bitflags! {
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-    )]
-    pub struct EmptyBits: u32 {
-        const _ = !0;
-    }
-}
+pub mod natural {
 
-impl ::fidl_next::Encodable for EmptyBits {
-    type Encoded = WireEmptyBits;
-}
-
-unsafe impl<___E> ::fidl_next::Encode<___E> for EmptyBits
-where
-    ___E: ?Sized,
-{
-    #[inline]
-    fn encode(
-        self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
-    }
-}
-
-unsafe impl<___E> ::fidl_next::EncodeRef<___E> for EmptyBits
-where
-    ___E: ?Sized,
-{
-    #[inline]
-    fn encode_ref(
-        &self,
-        _: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge!(let WireEmptyBits { value } = out);
-
-        let _ = value.write(::fidl_next::WireU32::from(self.bits()));
-        Ok(())
-    }
-}
-
-impl ::core::convert::From<WireEmptyBits> for EmptyBits {
-    fn from(wire: WireEmptyBits) -> Self {
-        Self::from_bits_retain(u32::from(wire.value))
-    }
-}
-
-impl ::fidl_next::FromWire<WireEmptyBits> for EmptyBits {
-    #[inline]
-    fn from_wire(wire: WireEmptyBits) -> Self {
-        Self::from(wire)
-    }
-}
-
-impl ::fidl_next::IntoNatural for WireEmptyBits {
-    type Natural = EmptyBits;
-}
-
-impl ::fidl_next::FromWireRef<WireEmptyBits> for EmptyBits {
-    #[inline]
-    fn from_wire_ref(wire: &WireEmptyBits) -> Self {
-        Self::from(*wire)
-    }
-}
-
-/// The wire type corresponding to [`EmptyBits`].
-#[derive(Clone, Copy, Debug)]
-#[repr(transparent)]
-pub struct WireEmptyBits {
-    value: ::fidl_next::WireU32,
-}
-
-unsafe impl ::fidl_next::Wire for WireEmptyBits {
-    type Decoded<'de> = Self;
-
-    #[inline]
-    fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
-        // Wire bits have no padding
-    }
-}
-
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireEmptyBits
-where
-    ___D: ?Sized,
-{
-    fn decode(
-        slot: ::fidl_next::Slot<'_, Self>,
-        _: &mut ___D,
-    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-        Ok(())
-    }
-}
-
-impl ::core::convert::From<EmptyBits> for WireEmptyBits {
-    fn from(natural: EmptyBits) -> Self {
-        Self { value: ::fidl_next::WireU32::from(natural.bits()) }
-    }
-}
-
-::fidl_next::bitflags::bitflags! {
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-    )]
-    pub struct FlexibleBits: u64 {
-        const SMALLEST = 1;
-        const BIGGEST = 9223372036854775808;
-        const _ = !0;
-    }
-}
-
-impl ::fidl_next::Encodable for FlexibleBits {
-    type Encoded = WireFlexibleBits;
-}
-
-unsafe impl<___E> ::fidl_next::Encode<___E> for FlexibleBits
-where
-    ___E: ?Sized,
-{
-    #[inline]
-    fn encode(
-        self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
-    }
-}
-
-unsafe impl<___E> ::fidl_next::EncodeRef<___E> for FlexibleBits
-where
-    ___E: ?Sized,
-{
-    #[inline]
-    fn encode_ref(
-        &self,
-        _: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge!(let WireFlexibleBits { value } = out);
-
-        let _ = value.write(::fidl_next::WireU64::from(self.bits()));
-        Ok(())
-    }
-}
-
-impl ::core::convert::From<WireFlexibleBits> for FlexibleBits {
-    fn from(wire: WireFlexibleBits) -> Self {
-        Self::from_bits_retain(u64::from(wire.value))
-    }
-}
-
-impl ::fidl_next::FromWire<WireFlexibleBits> for FlexibleBits {
-    #[inline]
-    fn from_wire(wire: WireFlexibleBits) -> Self {
-        Self::from(wire)
-    }
-}
-
-impl ::fidl_next::IntoNatural for WireFlexibleBits {
-    type Natural = FlexibleBits;
-}
-
-impl ::fidl_next::FromWireRef<WireFlexibleBits> for FlexibleBits {
-    #[inline]
-    fn from_wire_ref(wire: &WireFlexibleBits) -> Self {
-        Self::from(*wire)
-    }
-}
-
-/// The wire type corresponding to [`FlexibleBits`].
-#[derive(Clone, Copy, Debug)]
-#[repr(transparent)]
-pub struct WireFlexibleBits {
-    value: ::fidl_next::WireU64,
-}
-
-unsafe impl ::fidl_next::Wire for WireFlexibleBits {
-    type Decoded<'de> = Self;
-
-    #[inline]
-    fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
-        // Wire bits have no padding
-    }
-}
-
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireFlexibleBits
-where
-    ___D: ?Sized,
-{
-    fn decode(
-        slot: ::fidl_next::Slot<'_, Self>,
-        _: &mut ___D,
-    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-        Ok(())
-    }
-}
-
-impl ::core::convert::From<FlexibleBits> for WireFlexibleBits {
-    fn from(natural: FlexibleBits) -> Self {
-        Self { value: ::fidl_next::WireU64::from(natural.bits()) }
-    }
-}
-
-::fidl_next::bitflags::bitflags! {
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-    )]
-    pub struct MyBits: u32 {
-        const MY_FIRST_BIT = 1;
-        const MY_OTHER_BIT = 2;
-        const MASK = 4;
-
-    }
-}
-
-impl ::fidl_next::Encodable for MyBits {
-    type Encoded = WireMyBits;
-}
-
-unsafe impl<___E> ::fidl_next::Encode<___E> for MyBits
-where
-    ___E: ?Sized,
-{
-    #[inline]
-    fn encode(
-        self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
-    }
-}
-
-unsafe impl<___E> ::fidl_next::EncodeRef<___E> for MyBits
-where
-    ___E: ?Sized,
-{
-    #[inline]
-    fn encode_ref(
-        &self,
-        _: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge!(let WireMyBits { value } = out);
-
-        if ::fidl_next::bitflags::Flags::contains_unknown_bits(self) {
-            return Err(::fidl_next::EncodeError::InvalidStrictBits);
+    ::fidl_next::bitflags::bitflags! {
+        #[derive(
+            Clone,
+            Copy,
+            Debug,
+            PartialEq,
+            Eq,
+            Hash,
+        )]
+        pub struct EmptyBits: u32 {
+            const _ = !0;
         }
-
-        let _ = value.write(::fidl_next::WireU32::from(self.bits()));
-        Ok(())
     }
-}
 
-impl ::core::convert::From<WireMyBits> for MyBits {
-    fn from(wire: WireMyBits) -> Self {
-        Self::from_bits_retain(u32::from(wire.value))
+    impl ::fidl_next::Encodable for EmptyBits {
+        type Encoded = crate::wire::EmptyBits;
     }
-}
 
-impl ::fidl_next::FromWire<WireMyBits> for MyBits {
-    #[inline]
-    fn from_wire(wire: WireMyBits) -> Self {
-        Self::from(wire)
-    }
-}
-
-impl ::fidl_next::IntoNatural for WireMyBits {
-    type Natural = MyBits;
-}
-
-impl ::fidl_next::FromWireRef<WireMyBits> for MyBits {
-    #[inline]
-    fn from_wire_ref(wire: &WireMyBits) -> Self {
-        Self::from(*wire)
-    }
-}
-
-/// The wire type corresponding to [`MyBits`].
-#[derive(Clone, Copy, Debug)]
-#[repr(transparent)]
-pub struct WireMyBits {
-    value: ::fidl_next::WireU32,
-}
-
-unsafe impl ::fidl_next::Wire for WireMyBits {
-    type Decoded<'de> = Self;
-
-    #[inline]
-    fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
-        // Wire bits have no padding
-    }
-}
-
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireMyBits
-where
-    ___D: ?Sized,
-{
-    fn decode(
-        slot: ::fidl_next::Slot<'_, Self>,
-        _: &mut ___D,
-    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-        ::fidl_next::munge!(let Self { value } = slot);
-        let set = u32::from(*value);
-        if set & !MyBits::all().bits() != 0 {
-            return Err(::fidl_next::DecodeError::InvalidBits {
-                expected: MyBits::all().bits() as usize,
-                actual: set as usize,
-            });
+    unsafe impl<___E> ::fidl_next::Encode<___E> for EmptyBits
+    where
+        ___E: ?Sized,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
         }
-
-        Ok(())
     }
-}
 
-impl ::core::convert::From<MyBits> for WireMyBits {
-    fn from(natural: MyBits) -> Self {
-        Self { value: ::fidl_next::WireU32::from(natural.bits()) }
-    }
-}
+    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for EmptyBits
+    where
+        ___E: ?Sized,
+    {
+        #[inline]
+        fn encode_ref(
+            &self,
+            _: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge!(let crate::wire::EmptyBits { value } = out);
 
-::fidl_next::bitflags::bitflags! {
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-    )]
-    pub struct StrictBits: u64 {
-        const SMALLEST = 1;
-        const BIGGEST = 9223372036854775808;
-
-    }
-}
-
-impl ::fidl_next::Encodable for StrictBits {
-    type Encoded = WireStrictBits;
-}
-
-unsafe impl<___E> ::fidl_next::Encode<___E> for StrictBits
-where
-    ___E: ?Sized,
-{
-    #[inline]
-    fn encode(
-        self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
-    }
-}
-
-unsafe impl<___E> ::fidl_next::EncodeRef<___E> for StrictBits
-where
-    ___E: ?Sized,
-{
-    #[inline]
-    fn encode_ref(
-        &self,
-        _: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge!(let WireStrictBits { value } = out);
-
-        if ::fidl_next::bitflags::Flags::contains_unknown_bits(self) {
-            return Err(::fidl_next::EncodeError::InvalidStrictBits);
+            let _ = value.write(::fidl_next::WireU32::from(self.bits()));
+            Ok(())
         }
-
-        let _ = value.write(::fidl_next::WireU64::from(self.bits()));
-        Ok(())
     }
-}
 
-impl ::core::convert::From<WireStrictBits> for StrictBits {
-    fn from(wire: WireStrictBits) -> Self {
-        Self::from_bits_retain(u64::from(wire.value))
-    }
-}
-
-impl ::fidl_next::FromWire<WireStrictBits> for StrictBits {
-    #[inline]
-    fn from_wire(wire: WireStrictBits) -> Self {
-        Self::from(wire)
-    }
-}
-
-impl ::fidl_next::IntoNatural for WireStrictBits {
-    type Natural = StrictBits;
-}
-
-impl ::fidl_next::FromWireRef<WireStrictBits> for StrictBits {
-    #[inline]
-    fn from_wire_ref(wire: &WireStrictBits) -> Self {
-        Self::from(*wire)
-    }
-}
-
-/// The wire type corresponding to [`StrictBits`].
-#[derive(Clone, Copy, Debug)]
-#[repr(transparent)]
-pub struct WireStrictBits {
-    value: ::fidl_next::WireU64,
-}
-
-unsafe impl ::fidl_next::Wire for WireStrictBits {
-    type Decoded<'de> = Self;
-
-    #[inline]
-    fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
-        // Wire bits have no padding
-    }
-}
-
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireStrictBits
-where
-    ___D: ?Sized,
-{
-    fn decode(
-        slot: ::fidl_next::Slot<'_, Self>,
-        _: &mut ___D,
-    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-        ::fidl_next::munge!(let Self { value } = slot);
-        let set = u64::from(*value);
-        if set & !StrictBits::all().bits() != 0 {
-            return Err(::fidl_next::DecodeError::InvalidBits {
-                expected: StrictBits::all().bits() as usize,
-                actual: set as usize,
-            });
+    impl ::core::convert::From<crate::wire::EmptyBits> for EmptyBits {
+        fn from(wire: crate::wire::EmptyBits) -> Self {
+            Self::from_bits_retain(u32::from(wire.value))
         }
+    }
 
-        Ok(())
+    impl ::fidl_next::FromWire<crate::wire::EmptyBits> for EmptyBits {
+        #[inline]
+        fn from_wire(wire: crate::wire::EmptyBits) -> Self {
+            Self::from(wire)
+        }
+    }
+
+    impl ::fidl_next::FromWireRef<crate::wire::EmptyBits> for EmptyBits {
+        #[inline]
+        fn from_wire_ref(wire: &crate::wire::EmptyBits) -> Self {
+            Self::from(*wire)
+        }
+    }
+
+    ::fidl_next::bitflags::bitflags! {
+        #[derive(
+            Clone,
+            Copy,
+            Debug,
+            PartialEq,
+            Eq,
+            Hash,
+        )]
+        pub struct FlexibleBits: u64 {
+            const SMALLEST = 1;
+            const BIGGEST = 9223372036854775808;
+            const _ = !0;
+        }
+    }
+
+    impl ::fidl_next::Encodable for FlexibleBits {
+        type Encoded = crate::wire::FlexibleBits;
+    }
+
+    unsafe impl<___E> ::fidl_next::Encode<___E> for FlexibleBits
+    where
+        ___E: ?Sized,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+        }
+    }
+
+    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for FlexibleBits
+    where
+        ___E: ?Sized,
+    {
+        #[inline]
+        fn encode_ref(
+            &self,
+            _: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge!(let crate::wire::FlexibleBits { value } = out);
+
+            let _ = value.write(::fidl_next::WireU64::from(self.bits()));
+            Ok(())
+        }
+    }
+
+    impl ::core::convert::From<crate::wire::FlexibleBits> for FlexibleBits {
+        fn from(wire: crate::wire::FlexibleBits) -> Self {
+            Self::from_bits_retain(u64::from(wire.value))
+        }
+    }
+
+    impl ::fidl_next::FromWire<crate::wire::FlexibleBits> for FlexibleBits {
+        #[inline]
+        fn from_wire(wire: crate::wire::FlexibleBits) -> Self {
+            Self::from(wire)
+        }
+    }
+
+    impl ::fidl_next::FromWireRef<crate::wire::FlexibleBits> for FlexibleBits {
+        #[inline]
+        fn from_wire_ref(wire: &crate::wire::FlexibleBits) -> Self {
+            Self::from(*wire)
+        }
+    }
+
+    ::fidl_next::bitflags::bitflags! {
+        #[derive(
+            Clone,
+            Copy,
+            Debug,
+            PartialEq,
+            Eq,
+            Hash,
+        )]
+        pub struct MyBits: u32 {
+            const MY_FIRST_BIT = 1;
+            const MY_OTHER_BIT = 2;
+            const MASK = 4;
+
+        }
+    }
+
+    impl ::fidl_next::Encodable for MyBits {
+        type Encoded = crate::wire::MyBits;
+    }
+
+    unsafe impl<___E> ::fidl_next::Encode<___E> for MyBits
+    where
+        ___E: ?Sized,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+        }
+    }
+
+    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for MyBits
+    where
+        ___E: ?Sized,
+    {
+        #[inline]
+        fn encode_ref(
+            &self,
+            _: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge!(let crate::wire::MyBits { value } = out);
+
+            if ::fidl_next::bitflags::Flags::contains_unknown_bits(self) {
+                return Err(::fidl_next::EncodeError::InvalidStrictBits);
+            }
+
+            let _ = value.write(::fidl_next::WireU32::from(self.bits()));
+            Ok(())
+        }
+    }
+
+    impl ::core::convert::From<crate::wire::MyBits> for MyBits {
+        fn from(wire: crate::wire::MyBits) -> Self {
+            Self::from_bits_retain(u32::from(wire.value))
+        }
+    }
+
+    impl ::fidl_next::FromWire<crate::wire::MyBits> for MyBits {
+        #[inline]
+        fn from_wire(wire: crate::wire::MyBits) -> Self {
+            Self::from(wire)
+        }
+    }
+
+    impl ::fidl_next::FromWireRef<crate::wire::MyBits> for MyBits {
+        #[inline]
+        fn from_wire_ref(wire: &crate::wire::MyBits) -> Self {
+            Self::from(*wire)
+        }
+    }
+
+    ::fidl_next::bitflags::bitflags! {
+        #[derive(
+            Clone,
+            Copy,
+            Debug,
+            PartialEq,
+            Eq,
+            Hash,
+        )]
+        pub struct StrictBits: u64 {
+            const SMALLEST = 1;
+            const BIGGEST = 9223372036854775808;
+
+        }
+    }
+
+    impl ::fidl_next::Encodable for StrictBits {
+        type Encoded = crate::wire::StrictBits;
+    }
+
+    unsafe impl<___E> ::fidl_next::Encode<___E> for StrictBits
+    where
+        ___E: ?Sized,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+        }
+    }
+
+    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for StrictBits
+    where
+        ___E: ?Sized,
+    {
+        #[inline]
+        fn encode_ref(
+            &self,
+            _: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge!(let crate::wire::StrictBits { value } = out);
+
+            if ::fidl_next::bitflags::Flags::contains_unknown_bits(self) {
+                return Err(::fidl_next::EncodeError::InvalidStrictBits);
+            }
+
+            let _ = value.write(::fidl_next::WireU64::from(self.bits()));
+            Ok(())
+        }
+    }
+
+    impl ::core::convert::From<crate::wire::StrictBits> for StrictBits {
+        fn from(wire: crate::wire::StrictBits) -> Self {
+            Self::from_bits_retain(u64::from(wire.value))
+        }
+    }
+
+    impl ::fidl_next::FromWire<crate::wire::StrictBits> for StrictBits {
+        #[inline]
+        fn from_wire(wire: crate::wire::StrictBits) -> Self {
+            Self::from(wire)
+        }
+    }
+
+    impl ::fidl_next::FromWireRef<crate::wire::StrictBits> for StrictBits {
+        #[inline]
+        fn from_wire_ref(wire: &crate::wire::StrictBits) -> Self {
+            Self::from(*wire)
+        }
     }
 }
 
-impl ::core::convert::From<StrictBits> for WireStrictBits {
-    fn from(natural: StrictBits) -> Self {
-        Self { value: ::fidl_next::WireU64::from(natural.bits()) }
+pub mod wire {
+
+    /// The wire type corresponding to [`EmptyBits`](crate::natural::EmptyBits).
+    #[derive(Clone, Copy, Debug)]
+    #[repr(transparent)]
+    pub struct EmptyBits {
+        pub(crate) value: ::fidl_next::WireU32,
+    }
+
+    unsafe impl ::fidl_next::Wire for EmptyBits {
+        type Decoded<'de> = Self;
+
+        #[inline]
+        fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
+            // Wire bits have no padding
+        }
+    }
+
+    unsafe impl<___D> ::fidl_next::Decode<___D> for EmptyBits
+    where
+        ___D: ?Sized,
+    {
+        fn decode(
+            slot: ::fidl_next::Slot<'_, Self>,
+            _: &mut ___D,
+        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+            Ok(())
+        }
+    }
+
+    impl ::core::convert::From<crate::natural::EmptyBits> for EmptyBits {
+        fn from(natural: crate::natural::EmptyBits) -> Self {
+            Self { value: ::fidl_next::WireU32::from(natural.bits()) }
+        }
+    }
+
+    impl ::fidl_next::IntoNatural for EmptyBits {
+        type Natural = crate::natural::EmptyBits;
+    }
+
+    /// The wire type corresponding to [`FlexibleBits`](crate::natural::FlexibleBits).
+    #[derive(Clone, Copy, Debug)]
+    #[repr(transparent)]
+    pub struct FlexibleBits {
+        pub(crate) value: ::fidl_next::WireU64,
+    }
+
+    unsafe impl ::fidl_next::Wire for FlexibleBits {
+        type Decoded<'de> = Self;
+
+        #[inline]
+        fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
+            // Wire bits have no padding
+        }
+    }
+
+    unsafe impl<___D> ::fidl_next::Decode<___D> for FlexibleBits
+    where
+        ___D: ?Sized,
+    {
+        fn decode(
+            slot: ::fidl_next::Slot<'_, Self>,
+            _: &mut ___D,
+        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+            Ok(())
+        }
+    }
+
+    impl ::core::convert::From<crate::natural::FlexibleBits> for FlexibleBits {
+        fn from(natural: crate::natural::FlexibleBits) -> Self {
+            Self { value: ::fidl_next::WireU64::from(natural.bits()) }
+        }
+    }
+
+    impl ::fidl_next::IntoNatural for FlexibleBits {
+        type Natural = crate::natural::FlexibleBits;
+    }
+
+    /// The wire type corresponding to [`MyBits`](crate::natural::MyBits).
+    #[derive(Clone, Copy, Debug)]
+    #[repr(transparent)]
+    pub struct MyBits {
+        pub(crate) value: ::fidl_next::WireU32,
+    }
+
+    unsafe impl ::fidl_next::Wire for MyBits {
+        type Decoded<'de> = Self;
+
+        #[inline]
+        fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
+            // Wire bits have no padding
+        }
+    }
+
+    unsafe impl<___D> ::fidl_next::Decode<___D> for MyBits
+    where
+        ___D: ?Sized,
+    {
+        fn decode(
+            slot: ::fidl_next::Slot<'_, Self>,
+            _: &mut ___D,
+        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+            ::fidl_next::munge!(let Self { value } = slot);
+            let set = u32::from(*value);
+            if set & !crate::natural::MyBits::all().bits() != 0 {
+                return Err(::fidl_next::DecodeError::InvalidBits {
+                    expected: crate::natural::MyBits::all().bits() as usize,
+                    actual: set as usize,
+                });
+            }
+
+            Ok(())
+        }
+    }
+
+    impl ::core::convert::From<crate::natural::MyBits> for MyBits {
+        fn from(natural: crate::natural::MyBits) -> Self {
+            Self { value: ::fidl_next::WireU32::from(natural.bits()) }
+        }
+    }
+
+    impl ::fidl_next::IntoNatural for MyBits {
+        type Natural = crate::natural::MyBits;
+    }
+
+    /// The wire type corresponding to [`StrictBits`](crate::natural::StrictBits).
+    #[derive(Clone, Copy, Debug)]
+    #[repr(transparent)]
+    pub struct StrictBits {
+        pub(crate) value: ::fidl_next::WireU64,
+    }
+
+    unsafe impl ::fidl_next::Wire for StrictBits {
+        type Decoded<'de> = Self;
+
+        #[inline]
+        fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
+            // Wire bits have no padding
+        }
+    }
+
+    unsafe impl<___D> ::fidl_next::Decode<___D> for StrictBits
+    where
+        ___D: ?Sized,
+    {
+        fn decode(
+            slot: ::fidl_next::Slot<'_, Self>,
+            _: &mut ___D,
+        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+            ::fidl_next::munge!(let Self { value } = slot);
+            let set = u64::from(*value);
+            if set & !crate::natural::StrictBits::all().bits() != 0 {
+                return Err(::fidl_next::DecodeError::InvalidBits {
+                    expected: crate::natural::StrictBits::all().bits() as usize,
+                    actual: set as usize,
+                });
+            }
+
+            Ok(())
+        }
+    }
+
+    impl ::core::convert::From<crate::natural::StrictBits> for StrictBits {
+        fn from(natural: crate::natural::StrictBits) -> Self {
+            Self { value: ::fidl_next::WireU64::from(natural.bits()) }
+        }
+    }
+
+    impl ::fidl_next::IntoNatural for StrictBits {
+        type Natural = crate::natural::StrictBits;
     }
 }
+
+pub mod wire_optional {}
+
+pub use self::natural::*;
 
 /// Compatibility shims which mimic some API surfaces of the current Rust bindings.
 pub mod compat {

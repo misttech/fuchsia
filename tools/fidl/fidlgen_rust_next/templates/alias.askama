@@ -1,5 +1,0 @@
-{{ self.doc_string(alias.attributes) -}}
-pub type {{ name }} = {{ natural_ty }};
-
-/// The wire type corresponding to [`{{ name }}`].
-pub type {{ wire_name }}{% if !is_static %}<'de>{% endif %} = {{ wire_ty }};

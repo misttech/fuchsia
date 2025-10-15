@@ -1,0 +1,224 @@
+{{ self.doc_string(union_.attributes) -}}
+#[derive(PartialEq,
+{% if !union_.is_resource %}
+    Clone,
+{% endif %}
+{% if self.emit_debug_impls() %}
+    Debug,
+{% endif %}
+)]
+pub enum {{ name }} {
+    {% for member in union_.members %}
+        {{ member.name|camel }}({{ self.natural_type(member.ty) }}),
+    {% endfor %}
+    {% if !union_.is_strict %}
+        UnknownOrdinal_(u64),
+    {% endif %}
+}
+
+impl ::fidl_next::Encodable for {{ name }} {
+    type Encoded = crate::wire::{{ name }}{{ static_ }};
+}
+
+unsafe impl<___E> ::fidl_next::Encode<___E> for {{ name }}
+where
+    ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+    {% if !is_static %}
+        ___E: ::fidl_next::Encoder,
+    {% endif %}
+    {% if union_.is_resource %}
+        ___E: {{ self.encode_trait_path() }},
+    {% endif %}
+{
+    #[inline]
+    fn encode(
+        self,
+        encoder: &mut ___E,
+        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+        ::fidl_next::munge!(let crate::wire::{{ name }} { raw, _phantom: _ } = out);
+
+        match self {
+            {% for member in union_.members %}
+                Self::{{ member.name|camel }}(value) => ::fidl_next::RawWireUnion::{{ encode_as }}::<
+                    ___E,
+                    {{ self.natural_type(member.ty) }},
+                >(value, {{ member.ordinal }}, encoder, raw)?,
+            {% endfor %}
+            {% if !union_.is_strict %}
+                Self::UnknownOrdinal_(ordinal) => return Err(
+                    ::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize)
+                )
+            {% endif %}
+        }
+
+        Ok(())
+    }
+}
+
+{% if !union_.is_resource %}
+unsafe impl<___E> ::fidl_next::EncodeRef<___E> for {{ name }}
+where
+    ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+    {% if !is_static %}
+        ___E: ::fidl_next::Encoder,
+    {% endif %}
+{
+    #[inline]
+    fn encode_ref(
+        &self,
+        encoder: &mut ___E,
+        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+        ::fidl_next::munge!(let crate::wire::{{ name }} { raw, _phantom: _ } = out);
+
+        match self {
+            {% for member in union_.members %}
+                Self::{{ member.name|camel }}(value) => ::fidl_next::RawWireUnion::{{ encode_as }}::<
+                    ___E,
+                    &{{ self.natural_type(member.ty) }},
+                >(value, {{ member.ordinal }}, encoder, raw)?,
+            {% endfor %}
+            {% if !union_.is_strict %}
+                Self::UnknownOrdinal_(ordinal) => return Err(
+                    ::fidl_next::EncodeError::UnknownUnionOrdinal(
+                        *ordinal as usize
+                    )
+                )
+            {% endif %}
+        }
+
+        Ok(())
+    }
+}
+{% endif %}
+
+impl ::fidl_next::EncodableOption for {{ name }} {
+    type EncodedOption = crate::wire_optional::{{ name }}{{ static_ }};
+}
+
+unsafe impl<___E> ::fidl_next::EncodeOption<___E> for {{ name }}
+where
+    ___E: ?Sized,
+    {{ name }}: ::fidl_next::Encode<___E>,
+{
+    #[inline]
+    fn encode_option(
+        this: ::core::option::Option<Self>,
+        encoder: &mut ___E,
+        out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+        ::fidl_next::munge!(let crate::wire_optional::{{ name }} { raw, _phantom: _ } = &mut *out);
+
+        if let Some(inner) = this {
+            let value_out = unsafe { &mut *out.as_mut_ptr().cast() };
+            ::fidl_next::Encode::encode(
+                inner,
+                encoder,
+                value_out,
+            )?;
+        } else {
+            ::fidl_next::RawWireUnion::encode_absent(raw);
+        }
+
+        Ok(())
+    }
+}
+
+{% if !union_.is_resource %}
+unsafe impl<___E> ::fidl_next::EncodeOptionRef<___E> for {{ name }}
+where
+    ___E: ?Sized,
+    {{ name }}: ::fidl_next::EncodeRef<___E>,
+{
+    #[inline]
+    fn encode_option_ref(
+        this: ::core::option::Option<&Self>,
+        encoder: &mut ___E,
+        out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+        ::fidl_next::munge!(let crate::wire_optional::{{ name }} { raw, _phantom: _ } = &mut *out);
+
+        if let Some(inner) = this {
+            let value_out = unsafe { &mut *out.as_mut_ptr().cast() };
+            ::fidl_next::EncodeRef::encode_ref(
+                inner,
+                encoder,
+                value_out,
+            )?;
+        } else {
+            ::fidl_next::RawWireUnion::encode_absent(raw);
+        }
+
+        Ok(())
+    }
+}
+{% endif %}
+
+impl{{ de }} ::fidl_next::FromWire<crate::wire::{{ name }}{{ de }}> for {{ name }} {
+    #[inline]
+    fn from_wire(wire: crate::wire::{{ name }}{{ de }}) -> Self {
+        let wire = ::core::mem::ManuallyDrop::new(wire);
+        match wire.raw.ordinal() {
+            {% for member in union_.members %}
+                {{ member.ordinal }} => Self::{{ member.name|camel }}(
+                    ::fidl_next::FromWire::from_wire(
+                        unsafe { wire.raw.get().read_unchecked::<{{ self.wire_type(member.ty) }}>() }
+                    )
+                ),
+            {% endfor %}
+            _ => unsafe { ::core::hint::unreachable_unchecked() },
+        }
+    }
+}
+
+{% if !union_.is_resource %}
+impl{{ de }} ::fidl_next::FromWireRef<crate::wire::{{ name }}{{ de }}> for {{ name }} {
+    #[inline]
+    fn from_wire_ref(wire: &crate::wire::{{ name }}{{ de }}) -> Self {
+        match wire.raw.ordinal() {
+            {% for member in union_.members %}
+                {{ member.ordinal }} => Self::{{ member.name|camel }}(
+                    ::fidl_next::FromWireRef::from_wire_ref(
+                        unsafe { wire.raw.get().deref_unchecked::<{{ self.wire_type(member.ty) }}>() }
+                    )
+                ),
+            {% endfor %}
+            _ => unsafe { ::core::hint::unreachable_unchecked() },
+        }
+    }
+}
+{% endif %}
+
+impl{{ de }} ::fidl_next::FromWireOption<crate::wire_optional::{{ name }}{{ de }}> for {{ name }} {
+    #[inline]
+    fn from_wire_option(wire: crate::wire_optional::{{ name }}{{ de }}) -> ::core::option::Option<Self> {
+        if let Some(inner) = wire.into_option() {
+            Some(::fidl_next::FromWire::from_wire(inner))
+        } else {
+            None
+        }
+    }
+}
+
+impl{{ de }} ::fidl_next::FromWireOption<crate::wire_optional::{{ name }}{{ de }}> for Box<{{ name }}> {
+    #[inline]
+    fn from_wire_option(wire: crate::wire_optional::{{ name }}{{ de }}) -> ::core::option::Option<Self> {
+        <
+            {{ name }} as ::fidl_next::FromWireOption<crate::wire_optional::{{ name }}{{ de }}>
+        >::from_wire_option(wire).map(Box::new)
+    }
+}
+
+{% if !union_.is_resource %}
+impl{{ de }} ::fidl_next::FromWireOptionRef<crate::wire_optional::{{ name }}{{ de }}> for Box<{{ name }}> {
+    #[inline]
+    fn from_wire_option_ref(wire: &crate::wire_optional::{{ name }}{{ de }}) -> ::core::option::Option<Self> {
+        if let Some(inner) = wire.as_ref() {
+            Some(Box::new(::fidl_next::FromWireRef::from_wire_ref(inner)))
+        } else {
+            None
+        }
+    }
+}
+{% endif %}

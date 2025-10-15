@@ -2,34 +2,65 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use core::ops::Deref;
+
 use askama::Template;
 
 use super::{Context, Contextual, filters};
-use crate::ident_ext::IdentExt as _;
-use crate::templates::reserved::escape;
+use crate::templates::filters::escape_camel;
 use fidl_ir::{Table, TypeKind};
 
-#[derive(Template)]
-#[template(path = "table.askama", whitespace = "preserve")]
 pub struct TableTemplate<'a> {
     table: &'a Table,
     context: Context<'a>,
 
     name: String,
-    wire_name: String,
 }
 
 impl<'a> TableTemplate<'a> {
     pub fn new(table: &'a Table, context: Context<'a>) -> Self {
-        let base_name = table.name.decl_name().camel();
-        let wire_name = format!("Wire{base_name}");
+        Self { table, context, name: escape_camel(table.name.decl_name()) }
+    }
 
-        Self { table, context, name: escape(base_name), wire_name: escape(wire_name) }
+    pub fn natural(self) -> NaturalTableTemplate<'a> {
+        NaturalTableTemplate { template: self }
+    }
+
+    pub fn wire(self) -> WireTableTemplate<'a> {
+        WireTableTemplate { template: self }
     }
 }
 
 impl<'a> Contextual<'a> for TableTemplate<'a> {
     fn context(&self) -> Context<'a> {
         self.context
+    }
+}
+
+#[derive(Template)]
+#[template(path = "natural/table.askama", whitespace = "preserve")]
+pub struct NaturalTableTemplate<'a> {
+    template: TableTemplate<'a>,
+}
+
+impl<'a> Deref for NaturalTableTemplate<'a> {
+    type Target = TableTemplate<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.template
+    }
+}
+
+#[derive(Template)]
+#[template(path = "wire/table.askama", whitespace = "preserve")]
+pub struct WireTableTemplate<'a> {
+    template: TableTemplate<'a>,
+}
+
+impl<'a> Deref for WireTableTemplate<'a> {
+    type Target = TableTemplate<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.template
     }
 }

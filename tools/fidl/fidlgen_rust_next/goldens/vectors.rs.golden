@@ -2,224 +2,237 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(PartialEq, Clone, Debug)]
-pub struct ExampleUseOfVectors {
-    pub vector_of_uint8: ::std::vec::Vec<u8>,
+pub mod natural {
 
-    pub vector_of_vector_of_bool: ::std::vec::Vec<::std::vec::Vec<bool>>,
-}
+    #[derive(PartialEq, Clone, Debug)]
+    pub struct ExampleUseOfVectors {
+        pub vector_of_uint8: ::std::vec::Vec<u8>,
 
-impl ::fidl_next::Encodable for ExampleUseOfVectors {
-    type Encoded = WireExampleUseOfVectors<'static>;
-}
+        pub vector_of_vector_of_bool: ::std::vec::Vec<::std::vec::Vec<bool>>,
+    }
 
-unsafe impl<___E> ::fidl_next::Encode<___E> for ExampleUseOfVectors
-where
-    ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    ___E: ::fidl_next::Encoder,
-{
-    #[inline]
-    fn encode(
-        self,
-        encoder_: &mut ___E,
-        out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge! {
-            let Self::Encoded {
-                vector_of_uint8,
+    impl ::fidl_next::Encodable for ExampleUseOfVectors {
+        type Encoded = crate::wire::ExampleUseOfVectors<'static>;
+    }
+
+    unsafe impl<___E> ::fidl_next::Encode<___E> for ExampleUseOfVectors
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+                    vector_of_uint8,
+                    vector_of_vector_of_bool,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.vector_of_uint8, encoder_, vector_of_uint8)?;
+
+            ::fidl_next::Encode::encode(
+                self.vector_of_vector_of_bool,
+                encoder_,
                 vector_of_vector_of_bool,
+            )?;
 
-            } = out_;
+            Ok(())
         }
-
-        ::fidl_next::Encode::encode(self.vector_of_uint8, encoder_, vector_of_uint8)?;
-
-        ::fidl_next::Encode::encode(
-            self.vector_of_vector_of_bool,
-            encoder_,
-            vector_of_vector_of_bool,
-        )?;
-
-        Ok(())
     }
-}
 
-unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ExampleUseOfVectors
-where
-    ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    ___E: ::fidl_next::Encoder,
-{
-    #[inline]
-    fn encode_ref(
-        &self,
-        encoder_: &mut ___E,
-        out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge! {
-            let Self::Encoded {
+    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ExampleUseOfVectors
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+    {
+        #[inline]
+        fn encode_ref(
+            &self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
 
-                vector_of_uint8,
+                    vector_of_uint8,
+                    vector_of_vector_of_bool,
+
+                } = out_;
+            }
+
+            ::fidl_next::EncodeRef::encode_ref(&self.vector_of_uint8, encoder_, vector_of_uint8)?;
+
+            ::fidl_next::EncodeRef::encode_ref(
+                &self.vector_of_vector_of_bool,
+                encoder_,
                 vector_of_vector_of_bool,
+            )?;
 
-            } = out_;
-        }
-
-        ::fidl_next::EncodeRef::encode_ref(&self.vector_of_uint8, encoder_, vector_of_uint8)?;
-
-        ::fidl_next::EncodeRef::encode_ref(
-            &self.vector_of_vector_of_bool,
-            encoder_,
-            vector_of_vector_of_bool,
-        )?;
-
-        Ok(())
-    }
-}
-
-impl ::fidl_next::EncodableOption for ExampleUseOfVectors {
-    type EncodedOption = ::fidl_next::WireBox<'static, WireExampleUseOfVectors<'static>>;
-}
-
-unsafe impl<___E> ::fidl_next::EncodeOption<___E> for ExampleUseOfVectors
-where
-    ___E: ::fidl_next::Encoder + ?Sized,
-    ExampleUseOfVectors: ::fidl_next::Encode<___E>,
-{
-    #[inline]
-    fn encode_option(
-        this: ::core::option::Option<Self>,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        if let Some(inner) = this {
-            ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-            ::fidl_next::WireBox::encode_present(out);
-        } else {
-            ::fidl_next::WireBox::encode_absent(out);
-        }
-
-        Ok(())
-    }
-}
-
-unsafe impl<___E> ::fidl_next::EncodeOptionRef<___E> for ExampleUseOfVectors
-where
-    ___E: ::fidl_next::Encoder + ?Sized,
-    ExampleUseOfVectors: ::fidl_next::EncodeRef<___E>,
-{
-    #[inline]
-    fn encode_option_ref(
-        this: ::core::option::Option<&Self>,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        if let Some(inner) = this {
-            ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-            ::fidl_next::WireBox::encode_present(out);
-        } else {
-            ::fidl_next::WireBox::encode_absent(out);
-        }
-
-        Ok(())
-    }
-}
-
-impl<'de> ::fidl_next::FromWire<WireExampleUseOfVectors<'de>> for ExampleUseOfVectors {
-    #[inline]
-    fn from_wire(wire: WireExampleUseOfVectors<'de>) -> Self {
-        Self {
-            vector_of_uint8: ::fidl_next::FromWire::from_wire(wire.vector_of_uint8),
-
-            vector_of_vector_of_bool: ::fidl_next::FromWire::from_wire(
-                wire.vector_of_vector_of_bool,
-            ),
+            Ok(())
         }
     }
-}
 
-impl<'de> ::fidl_next::IntoNatural for WireExampleUseOfVectors<'de> {
-    type Natural = ExampleUseOfVectors;
-}
+    impl ::fidl_next::EncodableOption for ExampleUseOfVectors {
+        type EncodedOption =
+            ::fidl_next::WireBox<'static, crate::wire::ExampleUseOfVectors<'static>>;
+    }
 
-impl<'de> ::fidl_next::FromWireRef<WireExampleUseOfVectors<'de>> for ExampleUseOfVectors {
-    #[inline]
-    fn from_wire_ref(wire: &WireExampleUseOfVectors<'de>) -> Self {
-        Self {
-            vector_of_uint8: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_of_uint8),
+    unsafe impl<___E> ::fidl_next::EncodeOption<___E> for ExampleUseOfVectors
+    where
+        ___E: ::fidl_next::Encoder + ?Sized,
+        ExampleUseOfVectors: ::fidl_next::Encode<___E>,
+    {
+        #[inline]
+        fn encode_option(
+            this: ::core::option::Option<Self>,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            if let Some(inner) = this {
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::WireBox::encode_present(out);
+            } else {
+                ::fidl_next::WireBox::encode_absent(out);
+            }
 
-            vector_of_vector_of_bool: ::fidl_next::FromWireRef::from_wire_ref(
-                &wire.vector_of_vector_of_bool,
-            ),
+            Ok(())
+        }
+    }
+
+    unsafe impl<___E> ::fidl_next::EncodeOptionRef<___E> for ExampleUseOfVectors
+    where
+        ___E: ::fidl_next::Encoder + ?Sized,
+        ExampleUseOfVectors: ::fidl_next::EncodeRef<___E>,
+    {
+        #[inline]
+        fn encode_option_ref(
+            this: ::core::option::Option<&Self>,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            if let Some(inner) = this {
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::WireBox::encode_present(out);
+            } else {
+                ::fidl_next::WireBox::encode_absent(out);
+            }
+
+            Ok(())
+        }
+    }
+
+    impl<'de> ::fidl_next::FromWire<crate::wire::ExampleUseOfVectors<'de>> for ExampleUseOfVectors {
+        #[inline]
+        fn from_wire(wire: crate::wire::ExampleUseOfVectors<'de>) -> Self {
+            Self {
+                vector_of_uint8: ::fidl_next::FromWire::from_wire(wire.vector_of_uint8),
+
+                vector_of_vector_of_bool: ::fidl_next::FromWire::from_wire(
+                    wire.vector_of_vector_of_bool,
+                ),
+            }
+        }
+    }
+
+    impl<'de> ::fidl_next::FromWireRef<crate::wire::ExampleUseOfVectors<'de>> for ExampleUseOfVectors {
+        #[inline]
+        fn from_wire_ref(wire: &crate::wire::ExampleUseOfVectors<'de>) -> Self {
+            Self {
+                vector_of_uint8: ::fidl_next::FromWireRef::from_wire_ref(&wire.vector_of_uint8),
+
+                vector_of_vector_of_bool: ::fidl_next::FromWireRef::from_wire_ref(
+                    &wire.vector_of_vector_of_bool,
+                ),
+            }
         }
     }
 }
 
-/// The wire type corresponding to [`ExampleUseOfVectors`].
-#[derive(Debug)]
-#[repr(C)]
-pub struct WireExampleUseOfVectors<'de> {
-    pub vector_of_uint8: ::fidl_next::WireVector<'de, u8>,
+pub mod wire {
 
-    pub vector_of_vector_of_bool: ::fidl_next::WireVector<'de, ::fidl_next::WireVector<'de, bool>>,
-}
-static_assertions::const_assert_eq!(std::mem::size_of::<WireExampleUseOfVectors<'_>>(), 32);
-static_assertions::const_assert_eq!(std::mem::align_of::<WireExampleUseOfVectors<'_>>(), 8);
+    /// The wire type corresponding to [`ExampleUseOfVectors`].
+    #[derive(Debug)]
+    #[repr(C)]
+    pub struct ExampleUseOfVectors<'de> {
+        pub vector_of_uint8: ::fidl_next::WireVector<'de, u8>,
 
-static_assertions::const_assert_eq!(
-    std::mem::offset_of!(WireExampleUseOfVectors<'_>, vector_of_uint8),
-    0
-);
+        pub vector_of_vector_of_bool:
+            ::fidl_next::WireVector<'de, ::fidl_next::WireVector<'de, bool>>,
+    }
 
-static_assertions::const_assert_eq!(
-    std::mem::offset_of!(WireExampleUseOfVectors<'_>, vector_of_vector_of_bool),
-    16
-);
+    static_assertions::const_assert_eq!(std::mem::size_of::<ExampleUseOfVectors<'_>>(), 32);
+    static_assertions::const_assert_eq!(std::mem::align_of::<ExampleUseOfVectors<'_>>(), 8);
 
-unsafe impl ::fidl_next::Wire for WireExampleUseOfVectors<'static> {
-    type Decoded<'de> = WireExampleUseOfVectors<'de>;
+    static_assertions::const_assert_eq!(
+        std::mem::offset_of!(ExampleUseOfVectors<'_>, vector_of_uint8),
+        0
+    );
 
-    #[inline]
-    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
-        ::fidl_next::munge! {
-            let Self {
+    static_assertions::const_assert_eq!(
+        std::mem::offset_of!(ExampleUseOfVectors<'_>, vector_of_vector_of_bool),
+        16
+    );
 
-                vector_of_uint8,
-                vector_of_vector_of_bool,
+    unsafe impl ::fidl_next::Wire for ExampleUseOfVectors<'static> {
+        type Decoded<'de> = ExampleUseOfVectors<'de>;
 
-            } = &mut *out_;
+        #[inline]
+        fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+            ::fidl_next::munge! {
+                let Self {
+
+                    vector_of_uint8,
+                    vector_of_vector_of_bool,
+
+                } = &mut *out_;
+            }
+
+            ::fidl_next::Wire::zero_padding(vector_of_uint8);
+
+            ::fidl_next::Wire::zero_padding(vector_of_vector_of_bool);
         }
+    }
 
-        ::fidl_next::Wire::zero_padding(vector_of_uint8);
+    unsafe impl<___D> ::fidl_next::Decode<___D> for ExampleUseOfVectors<'static>
+    where
+        ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
+        ___D: ::fidl_next::Decoder,
+    {
+        fn decode(
+            slot_: ::fidl_next::Slot<'_, Self>,
+            decoder_: &mut ___D,
+        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+            ::fidl_next::munge! {
+                let Self {
 
-        ::fidl_next::Wire::zero_padding(vector_of_vector_of_bool);
+                    mut vector_of_uint8,
+                    mut vector_of_vector_of_bool,
+
+                } = slot_;
+            }
+
+            ::fidl_next::Decode::decode(vector_of_uint8.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(vector_of_vector_of_bool.as_mut(), decoder_)?;
+
+            Ok(())
+        }
+    }
+
+    impl<'de> ::fidl_next::IntoNatural for ExampleUseOfVectors<'de> {
+        type Natural = crate::natural::ExampleUseOfVectors;
     }
 }
 
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireExampleUseOfVectors<'static>
-where
-    ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-    ___D: ::fidl_next::Decoder,
-{
-    fn decode(
-        slot_: ::fidl_next::Slot<'_, Self>,
-        decoder_: &mut ___D,
-    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-        ::fidl_next::munge! {
-            let Self {
+pub mod wire_optional {}
 
-                mut vector_of_uint8,
-                mut vector_of_vector_of_bool,
-
-            } = slot_;
-        }
-
-        ::fidl_next::Decode::decode(vector_of_uint8.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(vector_of_vector_of_bool.as_mut(), decoder_)?;
-
-        Ok(())
-    }
-}
+pub use self::natural::*;
 
 /// Compatibility shims which mimic some API surfaces of the current Rust bindings.
 pub mod compat {

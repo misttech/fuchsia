@@ -1,0 +1,119 @@
+#[repr(transparent)]
+pub struct {{ name }}{{ de }} {
+    pub(crate) raw: ::fidl_next::RawWireUnion,
+    pub(crate) _phantom: ::core::marker::PhantomData<{{ phantom }}>,
+}
+
+unsafe impl ::fidl_next::Wire for {{ name }}{{ static_ }} {
+    type Decoded<'de> = {{ name }}{{ de }};
+
+    #[inline]
+    fn zero_padding(out: &mut ::core::mem::MaybeUninit<Self>) {
+        ::fidl_next::munge!(let Self { raw, _phantom: _ } = out);
+        ::fidl_next::RawWireUnion::zero_padding(raw);
+    }
+}
+
+impl{{ de }} {{ name }}{{ de }} {
+    pub fn is_some(&self) -> bool {
+        self.raw.is_some()
+    }
+
+    pub fn is_none(&self) -> bool {
+        self.raw.is_none()
+    }
+
+    pub fn as_ref(&self) -> ::core::option::Option<&crate::wire::{{ name }}{{ de }}> {
+        if self.is_some() {
+            Some(unsafe { &*(self as *const Self).cast() })
+        } else {
+            None
+        }
+    }
+
+    pub fn into_option(self) -> ::core::option::Option<crate::wire::{{ name }}{{ de }}> {
+        if self.is_some() {
+            Some(crate::wire::{{ name }} {
+                raw: self.raw,
+                _phantom: ::core::marker::PhantomData,
+            })
+        } else {
+            None
+        }
+    }
+}
+
+{% if is_static && !union_.is_resource %}
+    impl{{ de }} Clone for {{ name }}{{ de }} {
+        fn clone(&self) -> Self {
+            if self.is_none() {
+                return {{ name }} {
+                    raw: ::fidl_next::RawWireUnion::absent(),
+                    _phantom: ::core::marker::PhantomData,
+                };
+            }
+
+            match self.raw.ordinal() {
+                {% for member in union_.members %}
+                    {{ member.ordinal }} => Self {
+                        raw: unsafe { self.raw.clone_inline_unchecked::<{{ self.wire_type(member.ty) }}>() },
+                        _phantom: ::core::marker::PhantomData,
+                    },
+                {% endfor %}
+                {% if union_.is_strict %}
+                    _ => unsafe { ::core::hint::unreachable_unchecked() },
+                {% else %}
+                    _ => Self {
+                        raw: unsafe { self.raw.clone_inline_unchecked::<()>() },
+                        _phantom: ::core::marker::PhantomData,
+                    },
+                {% endif %}
+            }
+        }
+    }
+{% endif %}
+
+unsafe impl<___D> ::fidl_next::Decode<___D> for {{ name }}{{ static_ }}
+where
+    ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
+    {% if !is_static %}
+        ___D: ::fidl_next::Decoder,
+    {% endif %}
+    {% if union_.is_resource %}
+        ___D: {{ self.decode_trait_path() }},
+    {% endif %}
+{
+    fn decode(
+        mut slot: ::fidl_next::Slot<'_, Self>,
+        decoder: &mut ___D,
+    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+        ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
+        match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
+            {% for member in union_.members %}
+                {{ member.ordinal }} => ::fidl_next::RawWireUnion::{{ decode_as }}::<___D, {{ self.static_wire_type(member.ty) }}>(raw, decoder)?,
+            {% endfor %}
+            0 => ::fidl_next::RawWireUnion::decode_absent(raw)?,
+            _ => ::fidl_next::RawWireUnion::{{ decode_unknown}}(
+                raw,
+                decoder,
+            )?,
+        }
+
+        Ok(())
+    }
+}
+
+{% if self.emit_debug_impls() %}
+    impl{{ de }} ::core::fmt::Debug for {{ name }}{{ de }} {
+        fn fmt(
+            &self,
+            f: &mut ::core::fmt::Formatter<'_>,
+        ) -> ::core::fmt::Result {
+            self.as_ref().fmt(f)
+        }
+    }
+{% endif %}
+
+impl{{ de }} ::fidl_next::IntoNatural for {{ name }}{{ de }} {
+    type Natural = ::core::option::Option<crate::natural::{{ name }}>;
+}

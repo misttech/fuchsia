@@ -2,22 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use core::ops::Deref;
+
 use askama::Template;
 
 use super::{Context, Contextual, filters};
-use crate::ident_ext::IdentExt as _;
+use crate::templates::filters::escape_camel;
 use crate::templates::prim::{NaturalIntTemplate, WireIntTemplate};
-use crate::templates::reserved::escape;
 use fidl_ir::{Enum, IntType};
 
-#[derive(Template)]
-#[template(path = "enum.askama", whitespace = "preserve")]
 pub struct EnumTemplate<'a> {
     enm: &'a Enum,
     context: Context<'a>,
 
     name: String,
-    wire_name: String,
     natural_int: NaturalIntTemplate<'a>,
     wire_int: WireIntTemplate<'a>,
     unknown_ordinal_value: i128,
@@ -25,8 +23,6 @@ pub struct EnumTemplate<'a> {
 
 impl<'a> EnumTemplate<'a> {
     pub fn new(enm: &'a Enum, context: Context<'a>) -> Self {
-        let base_name = enm.name.decl_name().camel();
-        let wire_name = format!("Wire{base_name}");
         let unknown_ordinal_value = enm
             .members
             .iter()
@@ -38,17 +34,52 @@ impl<'a> EnumTemplate<'a> {
             enm,
             context,
 
-            name: escape(base_name),
-            wire_name: escape(wire_name),
+            name: escape_camel(enm.name.decl_name()),
             natural_int: context.natural_int(&enm.ty),
             wire_int: context.wire_int(&enm.ty),
             unknown_ordinal_value,
         }
+    }
+
+    pub fn natural(self) -> NaturalEnumTemplate<'a> {
+        NaturalEnumTemplate { template: self }
+    }
+
+    pub fn wire(self) -> WireEnumTemplate<'a> {
+        WireEnumTemplate { template: self }
     }
 }
 
 impl<'a> Contextual<'a> for EnumTemplate<'a> {
     fn context(&self) -> Context<'a> {
         self.context
+    }
+}
+
+#[derive(Template)]
+#[template(path = "natural/enum.askama", whitespace = "preserve")]
+pub struct NaturalEnumTemplate<'a> {
+    template: EnumTemplate<'a>,
+}
+
+impl<'a> Deref for NaturalEnumTemplate<'a> {
+    type Target = EnumTemplate<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.template
+    }
+}
+
+#[derive(Template)]
+#[template(path = "wire/enum.askama", whitespace = "preserve")]
+pub struct WireEnumTemplate<'a> {
+    template: EnumTemplate<'a>,
+}
+
+impl<'a> Deref for WireEnumTemplate<'a> {
+    type Target = EnumTemplate<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.template
     }
 }

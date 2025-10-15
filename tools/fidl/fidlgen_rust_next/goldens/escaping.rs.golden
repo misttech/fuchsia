@@ -2,178 +2,191 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
+pub mod natural {
+
+    #[doc = " \"pleaseescapethisdocommentproperly\"\n"]
+    #[derive(PartialEq, Clone, Debug)]
+    #[repr(C)]
+    pub struct DocCommentWithQuotes {}
+
+    impl ::fidl_next::Encodable for DocCommentWithQuotes {
+        type Encoded = crate::wire::DocCommentWithQuotes;
+    }
+
+    unsafe impl<___E> ::fidl_next::Encode<___E> for DocCommentWithQuotes
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            *out_ = ::core::mem::MaybeUninit::zeroed();
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for DocCommentWithQuotes
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+    {
+        #[inline]
+        fn encode_ref(
+            &self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                        _empty,
+
+
+                } = out_;
+            }
+
+            Ok(())
+        }
+    }
+
+    impl ::fidl_next::EncodableOption for DocCommentWithQuotes {
+        type EncodedOption = ::fidl_next::WireBox<'static, crate::wire::DocCommentWithQuotes>;
+    }
+
+    unsafe impl<___E> ::fidl_next::EncodeOption<___E> for DocCommentWithQuotes
+    where
+        ___E: ::fidl_next::Encoder + ?Sized,
+        DocCommentWithQuotes: ::fidl_next::Encode<___E>,
+    {
+        #[inline]
+        fn encode_option(
+            this: ::core::option::Option<Self>,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            if let Some(inner) = this {
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::WireBox::encode_present(out);
+            } else {
+                ::fidl_next::WireBox::encode_absent(out);
+            }
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<___E> ::fidl_next::EncodeOptionRef<___E> for DocCommentWithQuotes
+    where
+        ___E: ::fidl_next::Encoder + ?Sized,
+        DocCommentWithQuotes: ::fidl_next::EncodeRef<___E>,
+    {
+        #[inline]
+        fn encode_option_ref(
+            this: ::core::option::Option<&Self>,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            if let Some(inner) = this {
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::WireBox::encode_present(out);
+            } else {
+                ::fidl_next::WireBox::encode_absent(out);
+            }
+
+            Ok(())
+        }
+    }
+
+    impl ::fidl_next::FromWire<crate::wire::DocCommentWithQuotes> for DocCommentWithQuotes {
+        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<
+            crate::wire::DocCommentWithQuotes,
+            Self,
+        > = unsafe { ::fidl_next::CopyOptimization::enable_if(true) };
+
+        #[inline]
+        fn from_wire(wire: crate::wire::DocCommentWithQuotes) -> Self {
+            Self {}
+        }
+    }
+
+    impl ::fidl_next::FromWireRef<crate::wire::DocCommentWithQuotes> for DocCommentWithQuotes {
+        #[inline]
+        fn from_wire_ref(wire: &crate::wire::DocCommentWithQuotes) -> Self {
+            Self {}
+        }
+    }
+}
+
+pub mod wire {
+
+    /// The wire type corresponding to [`DocCommentWithQuotes`].
+    #[derive(Clone, Debug)]
+    #[repr(C)]
+    pub struct DocCommentWithQuotes {
+        pub(crate) _empty: fidl_next::WireEmptyStructPlaceholder,
+    }
+
+    static_assertions::const_assert_eq!(std::mem::size_of::<DocCommentWithQuotes>(), 1);
+    static_assertions::const_assert_eq!(std::mem::align_of::<DocCommentWithQuotes>(), 1);
+
+    unsafe impl ::fidl_next::Wire for DocCommentWithQuotes {
+        type Decoded<'de> = DocCommentWithQuotes;
+
+        #[inline]
+        fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+            ::fidl_next::munge! {
+                let Self {
+
+                        _empty,
+
+
+                } = &mut *out_;
+            }
+        }
+    }
+
+    unsafe impl<___D> ::fidl_next::Decode<___D> for DocCommentWithQuotes
+    where
+        ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
+    {
+        fn decode(
+            slot_: ::fidl_next::Slot<'_, Self>,
+            decoder_: &mut ___D,
+        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+            ::fidl_next::munge! {
+                let Self {
+
+                        mut _empty,
+
+
+                } = slot_;
+            }
+
+            if _empty.as_bytes() != &[0u8] {
+                return Err(::fidl_next::DecodeError::InvalidEmptyStruct);
+            }
+
+            Ok(())
+        }
+    }
+
+    impl ::fidl_next::IntoNatural for DocCommentWithQuotes {
+        type Natural = crate::natural::DocCommentWithQuotes;
+    }
+}
+
+pub mod wire_optional {}
+
+pub use self::natural::*;
+
 pub const BASIC: &str = "\'\"\\\n\r\t";
 
 pub const DOLLAR: &str = "$";
 
 pub const DOLLAR_BRACE: &str = "${";
-
-#[doc = " \"pleaseescapethisdocommentproperly\"\n"]
-#[derive(PartialEq, Clone, Debug)]
-#[repr(C)]
-pub struct DocCommentWithQuotes {}
-
-impl ::fidl_next::Encodable for DocCommentWithQuotes {
-    type Encoded = WireDocCommentWithQuotes;
-}
-
-unsafe impl<___E> ::fidl_next::Encode<___E> for DocCommentWithQuotes
-where
-    ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-{
-    #[inline]
-    fn encode(
-        self,
-        encoder_: &mut ___E,
-        out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        *out_ = ::core::mem::MaybeUninit::zeroed();
-
-        Ok(())
-    }
-}
-
-unsafe impl<___E> ::fidl_next::EncodeRef<___E> for DocCommentWithQuotes
-where
-    ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-{
-    #[inline]
-    fn encode_ref(
-        &self,
-        encoder_: &mut ___E,
-        out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge! {
-            let Self::Encoded {
-
-                    _empty,
-
-
-            } = out_;
-        }
-
-        Ok(())
-    }
-}
-
-impl ::fidl_next::EncodableOption for DocCommentWithQuotes {
-    type EncodedOption = ::fidl_next::WireBox<'static, WireDocCommentWithQuotes>;
-}
-
-unsafe impl<___E> ::fidl_next::EncodeOption<___E> for DocCommentWithQuotes
-where
-    ___E: ::fidl_next::Encoder + ?Sized,
-    DocCommentWithQuotes: ::fidl_next::Encode<___E>,
-{
-    #[inline]
-    fn encode_option(
-        this: ::core::option::Option<Self>,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        if let Some(inner) = this {
-            ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-            ::fidl_next::WireBox::encode_present(out);
-        } else {
-            ::fidl_next::WireBox::encode_absent(out);
-        }
-
-        Ok(())
-    }
-}
-
-unsafe impl<___E> ::fidl_next::EncodeOptionRef<___E> for DocCommentWithQuotes
-where
-    ___E: ::fidl_next::Encoder + ?Sized,
-    DocCommentWithQuotes: ::fidl_next::EncodeRef<___E>,
-{
-    #[inline]
-    fn encode_option_ref(
-        this: ::core::option::Option<&Self>,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        if let Some(inner) = this {
-            ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-            ::fidl_next::WireBox::encode_present(out);
-        } else {
-            ::fidl_next::WireBox::encode_absent(out);
-        }
-
-        Ok(())
-    }
-}
-
-impl ::fidl_next::FromWire<WireDocCommentWithQuotes> for DocCommentWithQuotes {
-    const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<WireDocCommentWithQuotes, Self> =
-        unsafe { ::fidl_next::CopyOptimization::enable_if(true) };
-
-    #[inline]
-    fn from_wire(wire: WireDocCommentWithQuotes) -> Self {
-        Self {}
-    }
-}
-
-impl ::fidl_next::IntoNatural for WireDocCommentWithQuotes {
-    type Natural = DocCommentWithQuotes;
-}
-
-impl ::fidl_next::FromWireRef<WireDocCommentWithQuotes> for DocCommentWithQuotes {
-    #[inline]
-    fn from_wire_ref(wire: &WireDocCommentWithQuotes) -> Self {
-        Self {}
-    }
-}
-
-/// The wire type corresponding to [`DocCommentWithQuotes`].
-#[derive(Clone, Debug)]
-#[repr(C)]
-pub struct WireDocCommentWithQuotes {
-    _empty: fidl_next::WireEmptyStructPlaceholder,
-}
-static_assertions::const_assert_eq!(std::mem::size_of::<WireDocCommentWithQuotes>(), 1);
-static_assertions::const_assert_eq!(std::mem::align_of::<WireDocCommentWithQuotes>(), 1);
-
-unsafe impl ::fidl_next::Wire for WireDocCommentWithQuotes {
-    type Decoded<'de> = WireDocCommentWithQuotes;
-
-    #[inline]
-    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
-        ::fidl_next::munge! {
-            let Self {
-
-                    _empty,
-
-
-            } = &mut *out_;
-        }
-    }
-}
-
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireDocCommentWithQuotes
-where
-    ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-{
-    fn decode(
-        slot_: ::fidl_next::Slot<'_, Self>,
-        decoder_: &mut ___D,
-    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-        ::fidl_next::munge! {
-            let Self {
-
-                    mut _empty,
-
-
-            } = slot_;
-        }
-
-        if _empty.as_bytes() != &[0u8] {
-            return Err(::fidl_next::DecodeError::InvalidEmptyStruct);
-        }
-
-        Ok(())
-    }
-}
 
 pub const MAX: &str = "\u{10ffff}";
 

@@ -2,16 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use core::ops::Deref;
+
 use askama::Template;
 
 use super::{Context, Contextual, filters};
-use crate::ident_ext::IdentExt as _;
-use crate::templates::reserved::escape;
+use crate::templates::filters::escape_camel;
 use fidl_ir::{Struct, TypeKind};
 use fidl_ir_util::TypeShapeExt;
 
-#[derive(Template)]
-#[template(path = "struct.askama", whitespace = "preserve")]
 pub struct StructTemplate<'a> {
     strct: &'a Struct,
     context: Context<'a>,
@@ -20,7 +19,6 @@ pub struct StructTemplate<'a> {
     is_static: bool,
     has_padding: bool,
     name: String,
-    wire_name: String,
 
     de: &'static str,
     infer: &'static str,
@@ -31,8 +29,6 @@ impl<'a> StructTemplate<'a> {
     pub fn new(strct: &'a Struct, context: Context<'a>) -> Self {
         let is_empty = strct.members.is_empty();
         let is_static = strct.shape.is_static();
-        let base_name = strct.name.decl_name().camel();
-        let wire_name = format!("Wire{base_name}");
 
         let (de, infer, static_) =
             if is_static { ("", "", "") } else { ("<'de>", "<'_>", "<'static>") };
@@ -44,13 +40,20 @@ impl<'a> StructTemplate<'a> {
             is_empty,
             is_static,
             has_padding: strct.shape.has_padding,
-            name: escape(base_name),
-            wire_name: escape(wire_name),
+            name: escape_camel(strct.name.decl_name()),
 
             de,
             infer,
             static_,
         }
+    }
+
+    pub fn natural(self) -> NaturalStructTemplate<'a> {
+        NaturalStructTemplate { template: self }
+    }
+
+    pub fn wire(self) -> WireStructTemplate<'a> {
+        WireStructTemplate { template: self }
     }
 }
 
@@ -78,5 +81,33 @@ impl StructTemplate<'_> {
         }
 
         ranges
+    }
+}
+
+#[derive(Template)]
+#[template(path = "natural/struct.askama", whitespace = "preserve")]
+pub struct NaturalStructTemplate<'a> {
+    template: StructTemplate<'a>,
+}
+
+impl<'a> Deref for NaturalStructTemplate<'a> {
+    type Target = StructTemplate<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.template
+    }
+}
+
+#[derive(Template)]
+#[template(path = "wire/struct.askama", whitespace = "preserve")]
+pub struct WireStructTemplate<'a> {
+    template: StructTemplate<'a>,
+}
+
+impl<'a> Deref for WireStructTemplate<'a> {
+    type Target = StructTemplate<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.template
     }
 }

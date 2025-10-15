@@ -60,7 +60,7 @@ impl fmt::Display for NaturalTypeTemplate<'_> {
                     EndpointRole::Client => "::fidl_next::ClientEnd",
                     EndpointRole::Server => "::fidl_next::ServerEnd",
                 };
-                let protocol_id = self.natural_id(protocol);
+                let protocol_id = self.non_type_id(protocol);
                 if *nullable {
                     write!(
                         f,

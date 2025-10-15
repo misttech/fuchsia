@@ -2,558 +2,574 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u32)]
-pub enum MyEmptyFlexibleEnum {
-    UnknownOrdinal_(u32) = 0,
-}
+pub mod natural {
 
-impl ::fidl_next::Encodable for MyEmptyFlexibleEnum {
-    type Encoded = WireMyEmptyFlexibleEnum;
-}
-impl ::std::convert::From<u32> for MyEmptyFlexibleEnum {
-    fn from(value: u32) -> Self {
-        match value {
-            _ => Self::UnknownOrdinal_(value),
-        }
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[repr(u32)]
+    pub enum MyEmptyFlexibleEnum {
+        UnknownOrdinal_(u32) = 0,
     }
-}
 
-unsafe impl<___E> ::fidl_next::Encode<___E> for MyEmptyFlexibleEnum
-where
-    ___E: ?Sized,
-{
-    #[inline]
-    fn encode(
-        self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+    impl ::fidl_next::Encodable for MyEmptyFlexibleEnum {
+        type Encoded = crate::wire::MyEmptyFlexibleEnum;
     }
-}
-
-unsafe impl<___E> ::fidl_next::EncodeRef<___E> for MyEmptyFlexibleEnum
-where
-    ___E: ?Sized,
-{
-    #[inline]
-    fn encode_ref(
-        &self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge!(let WireMyEmptyFlexibleEnum { value } = out);
-        let _ = value.write(::fidl_next::WireU32::from(match *self {
-            Self::UnknownOrdinal_(value) => value,
-        }));
-
-        Ok(())
-    }
-}
-
-impl ::core::convert::From<WireMyEmptyFlexibleEnum> for MyEmptyFlexibleEnum {
-    fn from(wire: WireMyEmptyFlexibleEnum) -> Self {
-        match u32::from(wire.value) {
-            value => Self::UnknownOrdinal_(value),
-        }
-    }
-}
-
-impl ::fidl_next::FromWire<WireMyEmptyFlexibleEnum> for MyEmptyFlexibleEnum {
-    #[inline]
-    fn from_wire(wire: WireMyEmptyFlexibleEnum) -> Self {
-        Self::from(wire)
-    }
-}
-
-impl ::fidl_next::IntoNatural for WireMyEmptyFlexibleEnum {
-    type Natural = MyEmptyFlexibleEnum;
-}
-
-impl ::fidl_next::FromWireRef<WireMyEmptyFlexibleEnum> for MyEmptyFlexibleEnum {
-    #[inline]
-    fn from_wire_ref(wire: &WireMyEmptyFlexibleEnum) -> Self {
-        Self::from(*wire)
-    }
-}
-
-/// The wire type corresponding to [`MyEmptyFlexibleEnum`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct WireMyEmptyFlexibleEnum {
-    value: ::fidl_next::WireU32,
-}
-
-unsafe impl ::fidl_next::Wire for WireMyEmptyFlexibleEnum {
-    type Decoded<'de> = Self;
-
-    #[inline]
-    fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
-        // Wire enums have no padding
-    }
-}
-
-impl WireMyEmptyFlexibleEnum {}
-
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireMyEmptyFlexibleEnum
-where
-    ___D: ?Sized,
-{
-    fn decode(
-        slot: ::fidl_next::Slot<'_, Self>,
-        _: &mut ___D,
-    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-        Ok(())
-    }
-}
-
-impl ::core::convert::From<MyEmptyFlexibleEnum> for WireMyEmptyFlexibleEnum {
-    fn from(natural: MyEmptyFlexibleEnum) -> Self {
-        match natural {
-            MyEmptyFlexibleEnum::UnknownOrdinal_(value) => {
-                WireMyEmptyFlexibleEnum { value: ::fidl_next::WireU32::from(value) }
+    impl ::std::convert::From<u32> for MyEmptyFlexibleEnum {
+        fn from(value: u32) -> Self {
+            match value {
+                _ => Self::UnknownOrdinal_(value),
             }
         }
     }
-}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u32)]
-pub enum MyFlexibleEnum {
-    Foo = 1,
-    Bar = 2,
-    UnknownOrdinal_(u32) = 3,
-}
-
-impl ::fidl_next::Encodable for MyFlexibleEnum {
-    type Encoded = WireMyFlexibleEnum;
-}
-impl ::std::convert::From<u32> for MyFlexibleEnum {
-    fn from(value: u32) -> Self {
-        match value {
-            1 => Self::Foo,
-            2 => Self::Bar,
-
-            _ => Self::UnknownOrdinal_(value),
+    unsafe impl<___E> ::fidl_next::Encode<___E> for MyEmptyFlexibleEnum
+    where
+        ___E: ?Sized,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
         }
     }
-}
 
-unsafe impl<___E> ::fidl_next::Encode<___E> for MyFlexibleEnum
-where
-    ___E: ?Sized,
-{
-    #[inline]
-    fn encode(
-        self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
-    }
-}
+    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for MyEmptyFlexibleEnum
+    where
+        ___E: ?Sized,
+    {
+        #[inline]
+        fn encode_ref(
+            &self,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge!(let crate::wire::MyEmptyFlexibleEnum { value } = out);
+            let _ = value.write(::fidl_next::WireU32::from(match *self {
+                Self::UnknownOrdinal_(value) => value,
+            }));
 
-unsafe impl<___E> ::fidl_next::EncodeRef<___E> for MyFlexibleEnum
-where
-    ___E: ?Sized,
-{
-    #[inline]
-    fn encode_ref(
-        &self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge!(let WireMyFlexibleEnum { value } = out);
-        let _ = value.write(::fidl_next::WireU32::from(match *self {
-            Self::Foo => 1,
-
-            Self::Bar => 2,
-
-            Self::UnknownOrdinal_(value) => value,
-        }));
-
-        Ok(())
-    }
-}
-
-impl ::core::convert::From<WireMyFlexibleEnum> for MyFlexibleEnum {
-    fn from(wire: WireMyFlexibleEnum) -> Self {
-        match u32::from(wire.value) {
-            1 => Self::Foo,
-
-            2 => Self::Bar,
-
-            value => Self::UnknownOrdinal_(value),
+            Ok(())
         }
     }
-}
 
-impl ::fidl_next::FromWire<WireMyFlexibleEnum> for MyFlexibleEnum {
-    #[inline]
-    fn from_wire(wire: WireMyFlexibleEnum) -> Self {
-        Self::from(wire)
-    }
-}
-
-impl ::fidl_next::IntoNatural for WireMyFlexibleEnum {
-    type Natural = MyFlexibleEnum;
-}
-
-impl ::fidl_next::FromWireRef<WireMyFlexibleEnum> for MyFlexibleEnum {
-    #[inline]
-    fn from_wire_ref(wire: &WireMyFlexibleEnum) -> Self {
-        Self::from(*wire)
-    }
-}
-
-/// The wire type corresponding to [`MyFlexibleEnum`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct WireMyFlexibleEnum {
-    value: ::fidl_next::WireU32,
-}
-
-unsafe impl ::fidl_next::Wire for WireMyFlexibleEnum {
-    type Decoded<'de> = Self;
-
-    #[inline]
-    fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
-        // Wire enums have no padding
-    }
-}
-
-impl WireMyFlexibleEnum {
-    pub const FOO: WireMyFlexibleEnum = WireMyFlexibleEnum { value: ::fidl_next::WireU32(1) };
-
-    pub const BAR: WireMyFlexibleEnum = WireMyFlexibleEnum { value: ::fidl_next::WireU32(2) };
-}
-
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireMyFlexibleEnum
-where
-    ___D: ?Sized,
-{
-    fn decode(
-        slot: ::fidl_next::Slot<'_, Self>,
-        _: &mut ___D,
-    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-        Ok(())
-    }
-}
-
-impl ::core::convert::From<MyFlexibleEnum> for WireMyFlexibleEnum {
-    fn from(natural: MyFlexibleEnum) -> Self {
-        match natural {
-            MyFlexibleEnum::Foo => WireMyFlexibleEnum::FOO,
-
-            MyFlexibleEnum::Bar => WireMyFlexibleEnum::BAR,
-
-            MyFlexibleEnum::UnknownOrdinal_(value) => {
-                WireMyFlexibleEnum { value: ::fidl_next::WireU32::from(value) }
+    impl ::core::convert::From<crate::wire::MyEmptyFlexibleEnum> for MyEmptyFlexibleEnum {
+        fn from(wire: crate::wire::MyEmptyFlexibleEnum) -> Self {
+            match u32::from(wire.value) {
+                value => Self::UnknownOrdinal_(value),
             }
         }
     }
-}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u32)]
-pub enum MyFlexibleEnumWithCustomUnknown {
-    Foo = 1,
-    Bar = 2,
-    CustomUnknown = 3,
-    UnknownOrdinal_(u32) = 4,
-}
-
-impl ::fidl_next::Encodable for MyFlexibleEnumWithCustomUnknown {
-    type Encoded = WireMyFlexibleEnumWithCustomUnknown;
-}
-impl ::std::convert::From<u32> for MyFlexibleEnumWithCustomUnknown {
-    fn from(value: u32) -> Self {
-        match value {
-            1 => Self::Foo,
-            2 => Self::Bar,
-            3 => Self::CustomUnknown,
-
-            _ => Self::UnknownOrdinal_(value),
+    impl ::fidl_next::FromWire<crate::wire::MyEmptyFlexibleEnum> for MyEmptyFlexibleEnum {
+        #[inline]
+        fn from_wire(wire: crate::wire::MyEmptyFlexibleEnum) -> Self {
+            Self::from(wire)
         }
     }
-}
 
-unsafe impl<___E> ::fidl_next::Encode<___E> for MyFlexibleEnumWithCustomUnknown
-where
-    ___E: ?Sized,
-{
-    #[inline]
-    fn encode(
-        self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
-    }
-}
-
-unsafe impl<___E> ::fidl_next::EncodeRef<___E> for MyFlexibleEnumWithCustomUnknown
-where
-    ___E: ?Sized,
-{
-    #[inline]
-    fn encode_ref(
-        &self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge!(let WireMyFlexibleEnumWithCustomUnknown { value } = out);
-        let _ = value.write(::fidl_next::WireU32::from(match *self {
-            Self::Foo => 1,
-
-            Self::Bar => 2,
-
-            Self::CustomUnknown => 3,
-
-            Self::UnknownOrdinal_(value) => value,
-        }));
-
-        Ok(())
-    }
-}
-
-impl ::core::convert::From<WireMyFlexibleEnumWithCustomUnknown>
-    for MyFlexibleEnumWithCustomUnknown
-{
-    fn from(wire: WireMyFlexibleEnumWithCustomUnknown) -> Self {
-        match u32::from(wire.value) {
-            1 => Self::Foo,
-
-            2 => Self::Bar,
-
-            3 => Self::CustomUnknown,
-
-            value => Self::UnknownOrdinal_(value),
+    impl ::fidl_next::FromWireRef<crate::wire::MyEmptyFlexibleEnum> for MyEmptyFlexibleEnum {
+        #[inline]
+        fn from_wire_ref(wire: &crate::wire::MyEmptyFlexibleEnum) -> Self {
+            Self::from(*wire)
         }
     }
-}
 
-impl ::fidl_next::FromWire<WireMyFlexibleEnumWithCustomUnknown>
-    for MyFlexibleEnumWithCustomUnknown
-{
-    #[inline]
-    fn from_wire(wire: WireMyFlexibleEnumWithCustomUnknown) -> Self {
-        Self::from(wire)
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[repr(u32)]
+    pub enum MyFlexibleEnum {
+        Foo = 1,
+        Bar = 2,
+        UnknownOrdinal_(u32) = 3,
     }
-}
 
-impl ::fidl_next::IntoNatural for WireMyFlexibleEnumWithCustomUnknown {
-    type Natural = MyFlexibleEnumWithCustomUnknown;
-}
-
-impl ::fidl_next::FromWireRef<WireMyFlexibleEnumWithCustomUnknown>
-    for MyFlexibleEnumWithCustomUnknown
-{
-    #[inline]
-    fn from_wire_ref(wire: &WireMyFlexibleEnumWithCustomUnknown) -> Self {
-        Self::from(*wire)
+    impl ::fidl_next::Encodable for MyFlexibleEnum {
+        type Encoded = crate::wire::MyFlexibleEnum;
     }
-}
+    impl ::std::convert::From<u32> for MyFlexibleEnum {
+        fn from(value: u32) -> Self {
+            match value {
+                1 => Self::Foo,
+                2 => Self::Bar,
 
-/// The wire type corresponding to [`MyFlexibleEnumWithCustomUnknown`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct WireMyFlexibleEnumWithCustomUnknown {
-    value: ::fidl_next::WireU32,
-}
-
-unsafe impl ::fidl_next::Wire for WireMyFlexibleEnumWithCustomUnknown {
-    type Decoded<'de> = Self;
-
-    #[inline]
-    fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
-        // Wire enums have no padding
-    }
-}
-
-impl WireMyFlexibleEnumWithCustomUnknown {
-    pub const FOO: WireMyFlexibleEnumWithCustomUnknown =
-        WireMyFlexibleEnumWithCustomUnknown { value: ::fidl_next::WireU32(1) };
-
-    pub const BAR: WireMyFlexibleEnumWithCustomUnknown =
-        WireMyFlexibleEnumWithCustomUnknown { value: ::fidl_next::WireU32(2) };
-
-    pub const CUSTOM_UNKNOWN: WireMyFlexibleEnumWithCustomUnknown =
-        WireMyFlexibleEnumWithCustomUnknown { value: ::fidl_next::WireU32(3) };
-}
-
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireMyFlexibleEnumWithCustomUnknown
-where
-    ___D: ?Sized,
-{
-    fn decode(
-        slot: ::fidl_next::Slot<'_, Self>,
-        _: &mut ___D,
-    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-        Ok(())
-    }
-}
-
-impl ::core::convert::From<MyFlexibleEnumWithCustomUnknown>
-    for WireMyFlexibleEnumWithCustomUnknown
-{
-    fn from(natural: MyFlexibleEnumWithCustomUnknown) -> Self {
-        match natural {
-            MyFlexibleEnumWithCustomUnknown::Foo => WireMyFlexibleEnumWithCustomUnknown::FOO,
-
-            MyFlexibleEnumWithCustomUnknown::Bar => WireMyFlexibleEnumWithCustomUnknown::BAR,
-
-            MyFlexibleEnumWithCustomUnknown::CustomUnknown => {
-                WireMyFlexibleEnumWithCustomUnknown::CUSTOM_UNKNOWN
-            }
-
-            MyFlexibleEnumWithCustomUnknown::UnknownOrdinal_(value) => {
-                WireMyFlexibleEnumWithCustomUnknown { value: ::fidl_next::WireU32::from(value) }
+                _ => Self::UnknownOrdinal_(value),
             }
         }
     }
-}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u32)]
-pub enum MyStrictEnum {
-    Foo = 1,
-    Bar = 2,
-}
+    unsafe impl<___E> ::fidl_next::Encode<___E> for MyFlexibleEnum
+    where
+        ___E: ?Sized,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+        }
+    }
 
-impl ::fidl_next::Encodable for MyStrictEnum {
-    type Encoded = WireMyStrictEnum;
-}
-impl ::core::convert::TryFrom<u32> for MyStrictEnum {
-    type Error = ::fidl_next::UnknownStrictEnumMemberError;
-    fn try_from(
-        value: u32,
-    ) -> ::core::result::Result<Self, ::fidl_next::UnknownStrictEnumMemberError> {
-        match value {
-            1 => Ok(Self::Foo),
-            2 => Ok(Self::Bar),
+    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for MyFlexibleEnum
+    where
+        ___E: ?Sized,
+    {
+        #[inline]
+        fn encode_ref(
+            &self,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge!(let crate::wire::MyFlexibleEnum { value } = out);
+            let _ = value.write(::fidl_next::WireU32::from(match *self {
+                Self::Foo => 1,
 
-            _ => Err(::fidl_next::UnknownStrictEnumMemberError::new(value.into())),
+                Self::Bar => 2,
+
+                Self::UnknownOrdinal_(value) => value,
+            }));
+
+            Ok(())
+        }
+    }
+
+    impl ::core::convert::From<crate::wire::MyFlexibleEnum> for MyFlexibleEnum {
+        fn from(wire: crate::wire::MyFlexibleEnum) -> Self {
+            match u32::from(wire.value) {
+                1 => Self::Foo,
+
+                2 => Self::Bar,
+
+                value => Self::UnknownOrdinal_(value),
+            }
+        }
+    }
+
+    impl ::fidl_next::FromWire<crate::wire::MyFlexibleEnum> for MyFlexibleEnum {
+        #[inline]
+        fn from_wire(wire: crate::wire::MyFlexibleEnum) -> Self {
+            Self::from(wire)
+        }
+    }
+
+    impl ::fidl_next::FromWireRef<crate::wire::MyFlexibleEnum> for MyFlexibleEnum {
+        #[inline]
+        fn from_wire_ref(wire: &crate::wire::MyFlexibleEnum) -> Self {
+            Self::from(*wire)
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[repr(u32)]
+    pub enum MyFlexibleEnumWithCustomUnknown {
+        Foo = 1,
+        Bar = 2,
+        CustomUnknown = 3,
+        UnknownOrdinal_(u32) = 4,
+    }
+
+    impl ::fidl_next::Encodable for MyFlexibleEnumWithCustomUnknown {
+        type Encoded = crate::wire::MyFlexibleEnumWithCustomUnknown;
+    }
+    impl ::std::convert::From<u32> for MyFlexibleEnumWithCustomUnknown {
+        fn from(value: u32) -> Self {
+            match value {
+                1 => Self::Foo,
+                2 => Self::Bar,
+                3 => Self::CustomUnknown,
+
+                _ => Self::UnknownOrdinal_(value),
+            }
+        }
+    }
+
+    unsafe impl<___E> ::fidl_next::Encode<___E> for MyFlexibleEnumWithCustomUnknown
+    where
+        ___E: ?Sized,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+        }
+    }
+
+    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for MyFlexibleEnumWithCustomUnknown
+    where
+        ___E: ?Sized,
+    {
+        #[inline]
+        fn encode_ref(
+            &self,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge!(let crate::wire::MyFlexibleEnumWithCustomUnknown { value } = out);
+            let _ = value.write(::fidl_next::WireU32::from(match *self {
+                Self::Foo => 1,
+
+                Self::Bar => 2,
+
+                Self::CustomUnknown => 3,
+
+                Self::UnknownOrdinal_(value) => value,
+            }));
+
+            Ok(())
+        }
+    }
+
+    impl ::core::convert::From<crate::wire::MyFlexibleEnumWithCustomUnknown>
+        for MyFlexibleEnumWithCustomUnknown
+    {
+        fn from(wire: crate::wire::MyFlexibleEnumWithCustomUnknown) -> Self {
+            match u32::from(wire.value) {
+                1 => Self::Foo,
+
+                2 => Self::Bar,
+
+                3 => Self::CustomUnknown,
+
+                value => Self::UnknownOrdinal_(value),
+            }
+        }
+    }
+
+    impl ::fidl_next::FromWire<crate::wire::MyFlexibleEnumWithCustomUnknown>
+        for MyFlexibleEnumWithCustomUnknown
+    {
+        #[inline]
+        fn from_wire(wire: crate::wire::MyFlexibleEnumWithCustomUnknown) -> Self {
+            Self::from(wire)
+        }
+    }
+
+    impl ::fidl_next::FromWireRef<crate::wire::MyFlexibleEnumWithCustomUnknown>
+        for MyFlexibleEnumWithCustomUnknown
+    {
+        #[inline]
+        fn from_wire_ref(wire: &crate::wire::MyFlexibleEnumWithCustomUnknown) -> Self {
+            Self::from(*wire)
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[repr(u32)]
+    pub enum MyStrictEnum {
+        Foo = 1,
+        Bar = 2,
+    }
+
+    impl ::fidl_next::Encodable for MyStrictEnum {
+        type Encoded = crate::wire::MyStrictEnum;
+    }
+    impl ::core::convert::TryFrom<u32> for MyStrictEnum {
+        type Error = ::fidl_next::UnknownStrictEnumMemberError;
+        fn try_from(
+            value: u32,
+        ) -> ::core::result::Result<Self, ::fidl_next::UnknownStrictEnumMemberError> {
+            match value {
+                1 => Ok(Self::Foo),
+                2 => Ok(Self::Bar),
+
+                _ => Err(::fidl_next::UnknownStrictEnumMemberError::new(value.into())),
+            }
+        }
+    }
+
+    unsafe impl<___E> ::fidl_next::Encode<___E> for MyStrictEnum
+    where
+        ___E: ?Sized,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+        }
+    }
+
+    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for MyStrictEnum
+    where
+        ___E: ?Sized,
+    {
+        #[inline]
+        fn encode_ref(
+            &self,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge!(let crate::wire::MyStrictEnum { value } = out);
+            let _ = value.write(::fidl_next::WireU32::from(match *self {
+                Self::Foo => 1,
+
+                Self::Bar => 2,
+            }));
+
+            Ok(())
+        }
+    }
+
+    impl ::core::convert::From<crate::wire::MyStrictEnum> for MyStrictEnum {
+        fn from(wire: crate::wire::MyStrictEnum) -> Self {
+            match u32::from(wire.value) {
+                1 => Self::Foo,
+
+                2 => Self::Bar,
+
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            }
+        }
+    }
+
+    impl ::fidl_next::FromWire<crate::wire::MyStrictEnum> for MyStrictEnum {
+        #[inline]
+        fn from_wire(wire: crate::wire::MyStrictEnum) -> Self {
+            Self::from(wire)
+        }
+    }
+
+    impl ::fidl_next::FromWireRef<crate::wire::MyStrictEnum> for MyStrictEnum {
+        #[inline]
+        fn from_wire_ref(wire: &crate::wire::MyStrictEnum) -> Self {
+            Self::from(*wire)
         }
     }
 }
 
-unsafe impl<___E> ::fidl_next::Encode<___E> for MyStrictEnum
-where
-    ___E: ?Sized,
-{
-    #[inline]
-    fn encode(
-        self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+pub mod wire {
+
+    /// The wire type corresponding to [`MyEmptyFlexibleEnum`].
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[repr(transparent)]
+    pub struct MyEmptyFlexibleEnum {
+        pub(crate) value: ::fidl_next::WireU32,
     }
-}
 
-unsafe impl<___E> ::fidl_next::EncodeRef<___E> for MyStrictEnum
-where
-    ___E: ?Sized,
-{
-    #[inline]
-    fn encode_ref(
-        &self,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge!(let WireMyStrictEnum { value } = out);
-        let _ = value.write(::fidl_next::WireU32::from(match *self {
-            Self::Foo => 1,
+    unsafe impl ::fidl_next::Wire for MyEmptyFlexibleEnum {
+        type Decoded<'de> = Self;
 
-            Self::Bar => 2,
-        }));
-
-        Ok(())
-    }
-}
-
-impl ::core::convert::From<WireMyStrictEnum> for MyStrictEnum {
-    fn from(wire: WireMyStrictEnum) -> Self {
-        match u32::from(wire.value) {
-            1 => Self::Foo,
-
-            2 => Self::Bar,
-
-            _ => unsafe { ::core::hint::unreachable_unchecked() },
+        #[inline]
+        fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
+            // Wire enums have no padding
         }
     }
-}
 
-impl ::fidl_next::FromWire<WireMyStrictEnum> for MyStrictEnum {
-    #[inline]
-    fn from_wire(wire: WireMyStrictEnum) -> Self {
-        Self::from(wire)
-    }
-}
+    impl MyEmptyFlexibleEnum {}
 
-impl ::fidl_next::IntoNatural for WireMyStrictEnum {
-    type Natural = MyStrictEnum;
-}
-
-impl ::fidl_next::FromWireRef<WireMyStrictEnum> for MyStrictEnum {
-    #[inline]
-    fn from_wire_ref(wire: &WireMyStrictEnum) -> Self {
-        Self::from(*wire)
-    }
-}
-
-/// The wire type corresponding to [`MyStrictEnum`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct WireMyStrictEnum {
-    value: ::fidl_next::WireU32,
-}
-
-unsafe impl ::fidl_next::Wire for WireMyStrictEnum {
-    type Decoded<'de> = Self;
-
-    #[inline]
-    fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
-        // Wire enums have no padding
-    }
-}
-
-impl WireMyStrictEnum {
-    pub const FOO: WireMyStrictEnum = WireMyStrictEnum { value: ::fidl_next::WireU32(1) };
-
-    pub const BAR: WireMyStrictEnum = WireMyStrictEnum { value: ::fidl_next::WireU32(2) };
-}
-
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireMyStrictEnum
-where
-    ___D: ?Sized,
-{
-    fn decode(
-        slot: ::fidl_next::Slot<'_, Self>,
-        _: &mut ___D,
-    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-        ::fidl_next::munge!(let Self { value } = slot);
-
-        match u32::from(*value) {
-            1 | 2 => (),
-            unknown => return Err(::fidl_next::DecodeError::InvalidEnumOrdinal(unknown as i128)),
-        }
-
-        Ok(())
-    }
-}
-
-impl ::core::convert::From<MyStrictEnum> for WireMyStrictEnum {
-    fn from(natural: MyStrictEnum) -> Self {
-        match natural {
-            MyStrictEnum::Foo => WireMyStrictEnum::FOO,
-
-            MyStrictEnum::Bar => WireMyStrictEnum::BAR,
+    unsafe impl<___D> ::fidl_next::Decode<___D> for MyEmptyFlexibleEnum
+    where
+        ___D: ?Sized,
+    {
+        fn decode(
+            slot: ::fidl_next::Slot<'_, Self>,
+            _: &mut ___D,
+        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+            Ok(())
         }
     }
+
+    impl ::core::convert::From<crate::natural::MyEmptyFlexibleEnum> for MyEmptyFlexibleEnum {
+        fn from(natural: crate::natural::MyEmptyFlexibleEnum) -> Self {
+            match natural {
+                crate::natural::MyEmptyFlexibleEnum::UnknownOrdinal_(value) => {
+                    MyEmptyFlexibleEnum { value: ::fidl_next::WireU32::from(value) }
+                }
+            }
+        }
+    }
+
+    impl ::fidl_next::IntoNatural for MyEmptyFlexibleEnum {
+        type Natural = crate::natural::MyEmptyFlexibleEnum;
+    }
+
+    /// The wire type corresponding to [`MyFlexibleEnum`].
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[repr(transparent)]
+    pub struct MyFlexibleEnum {
+        pub(crate) value: ::fidl_next::WireU32,
+    }
+
+    unsafe impl ::fidl_next::Wire for MyFlexibleEnum {
+        type Decoded<'de> = Self;
+
+        #[inline]
+        fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
+            // Wire enums have no padding
+        }
+    }
+
+    impl MyFlexibleEnum {
+        pub const FOO: MyFlexibleEnum = MyFlexibleEnum { value: ::fidl_next::WireU32(1) };
+
+        pub const BAR: MyFlexibleEnum = MyFlexibleEnum { value: ::fidl_next::WireU32(2) };
+    }
+
+    unsafe impl<___D> ::fidl_next::Decode<___D> for MyFlexibleEnum
+    where
+        ___D: ?Sized,
+    {
+        fn decode(
+            slot: ::fidl_next::Slot<'_, Self>,
+            _: &mut ___D,
+        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+            Ok(())
+        }
+    }
+
+    impl ::core::convert::From<crate::natural::MyFlexibleEnum> for MyFlexibleEnum {
+        fn from(natural: crate::natural::MyFlexibleEnum) -> Self {
+            match natural {
+                crate::natural::MyFlexibleEnum::Foo => MyFlexibleEnum::FOO,
+
+                crate::natural::MyFlexibleEnum::Bar => MyFlexibleEnum::BAR,
+
+                crate::natural::MyFlexibleEnum::UnknownOrdinal_(value) => {
+                    MyFlexibleEnum { value: ::fidl_next::WireU32::from(value) }
+                }
+            }
+        }
+    }
+
+    impl ::fidl_next::IntoNatural for MyFlexibleEnum {
+        type Natural = crate::natural::MyFlexibleEnum;
+    }
+
+    /// The wire type corresponding to [`MyFlexibleEnumWithCustomUnknown`].
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[repr(transparent)]
+    pub struct MyFlexibleEnumWithCustomUnknown {
+        pub(crate) value: ::fidl_next::WireU32,
+    }
+
+    unsafe impl ::fidl_next::Wire for MyFlexibleEnumWithCustomUnknown {
+        type Decoded<'de> = Self;
+
+        #[inline]
+        fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
+            // Wire enums have no padding
+        }
+    }
+
+    impl MyFlexibleEnumWithCustomUnknown {
+        pub const FOO: MyFlexibleEnumWithCustomUnknown =
+            MyFlexibleEnumWithCustomUnknown { value: ::fidl_next::WireU32(1) };
+
+        pub const BAR: MyFlexibleEnumWithCustomUnknown =
+            MyFlexibleEnumWithCustomUnknown { value: ::fidl_next::WireU32(2) };
+
+        pub const CUSTOM_UNKNOWN: MyFlexibleEnumWithCustomUnknown =
+            MyFlexibleEnumWithCustomUnknown { value: ::fidl_next::WireU32(3) };
+    }
+
+    unsafe impl<___D> ::fidl_next::Decode<___D> for MyFlexibleEnumWithCustomUnknown
+    where
+        ___D: ?Sized,
+    {
+        fn decode(
+            slot: ::fidl_next::Slot<'_, Self>,
+            _: &mut ___D,
+        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+            Ok(())
+        }
+    }
+
+    impl ::core::convert::From<crate::natural::MyFlexibleEnumWithCustomUnknown>
+        for MyFlexibleEnumWithCustomUnknown
+    {
+        fn from(natural: crate::natural::MyFlexibleEnumWithCustomUnknown) -> Self {
+            match natural {
+                crate::natural::MyFlexibleEnumWithCustomUnknown::Foo => {
+                    MyFlexibleEnumWithCustomUnknown::FOO
+                }
+
+                crate::natural::MyFlexibleEnumWithCustomUnknown::Bar => {
+                    MyFlexibleEnumWithCustomUnknown::BAR
+                }
+
+                crate::natural::MyFlexibleEnumWithCustomUnknown::CustomUnknown => {
+                    MyFlexibleEnumWithCustomUnknown::CUSTOM_UNKNOWN
+                }
+
+                crate::natural::MyFlexibleEnumWithCustomUnknown::UnknownOrdinal_(value) => {
+                    MyFlexibleEnumWithCustomUnknown { value: ::fidl_next::WireU32::from(value) }
+                }
+            }
+        }
+    }
+
+    impl ::fidl_next::IntoNatural for MyFlexibleEnumWithCustomUnknown {
+        type Natural = crate::natural::MyFlexibleEnumWithCustomUnknown;
+    }
+
+    /// The wire type corresponding to [`MyStrictEnum`].
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[repr(transparent)]
+    pub struct MyStrictEnum {
+        pub(crate) value: ::fidl_next::WireU32,
+    }
+
+    unsafe impl ::fidl_next::Wire for MyStrictEnum {
+        type Decoded<'de> = Self;
+
+        #[inline]
+        fn zero_padding(_: &mut ::core::mem::MaybeUninit<Self>) {
+            // Wire enums have no padding
+        }
+    }
+
+    impl MyStrictEnum {
+        pub const FOO: MyStrictEnum = MyStrictEnum { value: ::fidl_next::WireU32(1) };
+
+        pub const BAR: MyStrictEnum = MyStrictEnum { value: ::fidl_next::WireU32(2) };
+    }
+
+    unsafe impl<___D> ::fidl_next::Decode<___D> for MyStrictEnum
+    where
+        ___D: ?Sized,
+    {
+        fn decode(
+            slot: ::fidl_next::Slot<'_, Self>,
+            _: &mut ___D,
+        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+            ::fidl_next::munge!(let Self { value } = slot);
+
+            match u32::from(*value) {
+                1 | 2 => (),
+                unknown => {
+                    return Err(::fidl_next::DecodeError::InvalidEnumOrdinal(unknown as i128));
+                }
+            }
+
+            Ok(())
+        }
+    }
+
+    impl ::core::convert::From<crate::natural::MyStrictEnum> for MyStrictEnum {
+        fn from(natural: crate::natural::MyStrictEnum) -> Self {
+            match natural {
+                crate::natural::MyStrictEnum::Foo => MyStrictEnum::FOO,
+
+                crate::natural::MyStrictEnum::Bar => MyStrictEnum::BAR,
+            }
+        }
+    }
+
+    impl ::fidl_next::IntoNatural for MyStrictEnum {
+        type Natural = crate::natural::MyStrictEnum;
+    }
 }
+
+pub mod wire_optional {}
+
+pub use self::natural::*;
 
 /// Compatibility shims which mimic some API surfaces of the current Rust bindings.
 pub mod compat {

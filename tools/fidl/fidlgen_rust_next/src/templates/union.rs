@@ -2,24 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use core::ops::Deref;
+
 use askama::Template;
 
 use super::{Context, Contextual, filters};
-use crate::ident_ext::IdentExt as _;
-use crate::templates::reserved::escape;
+use crate::templates::filters::{escape_camel, escape_snake};
 use fidl_ir::Union;
 use fidl_ir_util::TypeShapeExt;
 
-#[derive(Template)]
-#[template(path = "union.askama", whitespace = "preserve")]
 pub struct UnionTemplate<'a> {
     union_: &'a Union,
     context: Context<'a>,
 
     is_static: bool,
     name: String,
-    wire_name: String,
-    wire_optional_name: String,
     mod_name: String,
 
     de: &'static str,
@@ -33,10 +30,6 @@ pub struct UnionTemplate<'a> {
 impl<'a> UnionTemplate<'a> {
     pub fn new(union_: &'a Union, context: Context<'a>) -> Self {
         let is_static = union_.shape.is_static();
-        let base_name = union_.name.decl_name().camel();
-        let wire_name = format!("Wire{base_name}");
-        let wire_optional_name = format!("WireOptional{base_name}");
-        let mod_name = union_.name.decl_name().snake();
 
         let (de, static_, phantom, decode_unknown, decode_as, encode_as) = if is_static {
             ("", "", "()", "decode_unknown_static", "decode_as_static", "encode_as_static")
@@ -56,10 +49,8 @@ impl<'a> UnionTemplate<'a> {
             context,
 
             is_static,
-            name: escape(base_name),
-            wire_name: escape(wire_name),
-            wire_optional_name: escape(wire_optional_name),
-            mod_name: escape(mod_name),
+            name: escape_camel(union_.name.decl_name()),
+            mod_name: escape_snake(union_.name.decl_name()),
 
             de,
             static_,
@@ -73,10 +64,64 @@ impl<'a> UnionTemplate<'a> {
     fn has_only_static_members(&self) -> bool {
         self.union_.members.iter().all(|m| m.ty.shape.is_static())
     }
+
+    pub fn natural(self) -> NaturalUnionTemplate<'a> {
+        NaturalUnionTemplate { template: self }
+    }
+
+    pub fn wire(self) -> WireUnionTemplate<'a> {
+        WireUnionTemplate { template: self }
+    }
+
+    pub fn wire_optional(self) -> WireOptionalUnionTemplate<'a> {
+        WireOptionalUnionTemplate { template: self }
+    }
 }
 
 impl<'a> Contextual<'a> for UnionTemplate<'a> {
     fn context(&self) -> Context<'a> {
         self.context
+    }
+}
+
+#[derive(Template)]
+#[template(path = "natural/union.askama", whitespace = "preserve")]
+pub struct NaturalUnionTemplate<'a> {
+    template: UnionTemplate<'a>,
+}
+
+impl<'a> Deref for NaturalUnionTemplate<'a> {
+    type Target = UnionTemplate<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.template
+    }
+}
+
+#[derive(Template)]
+#[template(path = "wire/union.askama", whitespace = "preserve")]
+pub struct WireUnionTemplate<'a> {
+    template: UnionTemplate<'a>,
+}
+
+impl<'a> Deref for WireUnionTemplate<'a> {
+    type Target = UnionTemplate<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.template
+    }
+}
+
+#[derive(Template)]
+#[template(path = "wire_optional/union.askama", whitespace = "preserve")]
+pub struct WireOptionalUnionTemplate<'a> {
+    template: UnionTemplate<'a>,
+}
+
+impl<'a> Deref for WireOptionalUnionTemplate<'a> {
+    type Target = UnionTemplate<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.template
     }
 }

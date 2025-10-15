@@ -1,0 +1,81 @@
+::fidl_next::bitflags::bitflags! {
+    {{ self.doc_string(bits.attributes) -}}
+    #[derive(
+        Clone,
+        Copy,
+        {% if self.emit_debug_impls() -%}
+            Debug,
+        {%- endif %}
+        PartialEq,
+        Eq,
+        Hash,
+    )]
+    pub struct {{ name }}: {{ natural_subtype }} {
+        {% for member in bits.members -%}
+            {{ self.doc_string(member.attributes) -}}
+            const {{ member.name|screaming_snake }} = {{ member.value.value }};
+        {% endfor %}
+        {%- if !bits.is_strict -%}
+            const _ = !0;
+        {%- endif %}
+    }
+}
+
+impl ::fidl_next::Encodable for {{ name }} {
+    type Encoded = crate::wire::{{ name }};
+}
+
+unsafe impl<___E> ::fidl_next::Encode<___E> for {{ name }}
+where
+    ___E: ?Sized,
+{
+    #[inline]
+    fn encode(
+        self,
+        encoder: &mut ___E,
+        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+        ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+    }
+}
+
+unsafe impl<___E> ::fidl_next::EncodeRef<___E> for {{ name }}
+where
+    ___E: ?Sized,
+{
+    #[inline]
+    fn encode_ref(
+        &self,
+        _: &mut ___E,
+        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+        ::fidl_next::munge!(let crate::wire::{{ name }} { value } = out);
+        {% if bits.is_strict %}
+            if ::fidl_next::bitflags::Flags::contains_unknown_bits(self) {
+                return Err(::fidl_next::EncodeError::InvalidStrictBits);
+            }
+        {% endif %}
+        let _ = value.write({{ wire_subtype }}::from(self.bits()));
+        Ok(())
+    }
+}
+
+impl ::core::convert::From<crate::wire::{{ name }}> for {{ name }} {
+    fn from(wire: crate::wire::{{ name }}) -> Self {
+        Self::from_bits_retain({{ natural_subtype }}::from(wire.value))
+    }
+}
+
+impl ::fidl_next::FromWire<crate::wire::{{ name }}> for {{ name }} {
+    #[inline]
+    fn from_wire(wire: crate::wire::{{ name }}) -> Self {
+        Self::from(wire)
+    }
+}
+
+impl ::fidl_next::FromWireRef<crate::wire::{{ name}}> for {{ name }} {
+    #[inline]
+    fn from_wire_ref(wire: &crate::wire::{{ name }}) -> Self {
+        Self::from(*wire)
+    }
+}

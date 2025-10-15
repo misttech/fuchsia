@@ -56,8 +56,6 @@ if (is_host) {
     ]
     inputs = [
       "askama.toml",
-      "templates/alias.askama",
-      "templates/bits.askama",
       "templates/compat.askama",
       "templates/compat/bits.askama",
       "templates/compat/enum.askama",
@@ -66,13 +64,22 @@ if (is_host) {
       "templates/compat/table.askama",
       "templates/compat/union.askama",
       "templates/const.askama",
-      "templates/enum.askama",
       "templates/library.askama",
       "templates/protocol.askama",
       "templates/service.askama",
-      "templates/struct.askama",
-      "templates/table.askama",
-      "templates/union.askama",
+      "templates/natural/alias.askama",
+      "templates/natural/bits.askama",
+      "templates/natural/enum.askama",
+      "templates/natural/struct.askama",
+      "templates/natural/table.askama",
+      "templates/natural/union.askama",
+      "templates/wire/alias.askama",
+      "templates/wire/bits.askama",
+      "templates/wire/enum.askama",
+      "templates/wire/struct.askama",
+      "templates/wire/table.askama",
+      "templates/wire/union.askama",
+      "templates/wire_optional/union.askama",
     ]
     rustenv = [ "CARGO_MANIFEST_DIR=${cargo_manifest_dir}" ]
     with_unit_tests = true

@@ -2,6 +2,14 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
+pub mod natural {}
+
+pub mod wire {}
+
+pub mod wire_optional {}
+
+pub use self::natural::*;
+
 /// The type corresponding to the Top protocol.
 #[derive(PartialEq, Debug)]
 pub struct Top;
@@ -10,7 +18,7 @@ pub mod top {
     pub mod prelude {
         pub use crate::{Top, TopClientHandler, TopServerHandler, top};
 
-        pub use ::fidl_next_test_bottom::BottomGetFooResponse;
+        pub use ::fidl_next_test_bottom::natural::BottomGetFooResponse;
     }
 
     pub struct GetFoo;
@@ -22,7 +30,7 @@ pub mod top {
 
         type Request = ();
 
-        type Response = ::fidl_next_test_bottom::WireBottomGetFooResponse;
+        type Response = ::fidl_next_test_bottom::wire::BottomGetFooResponse;
     }
 
     mod ___detail {

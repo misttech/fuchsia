@@ -4,32 +4,44 @@
 
 use core::fmt;
 
-use super::{Context, Contextual, escape};
-use crate::ident_ext::IdentExt;
+use crate::templates::filters::{escape_camel, escape_screaming_snake};
+
+use super::{Context, Contextual};
 use fidl_ir::{CompoundIdent, DeclType};
 use fidl_ir_util::LibraryExt as _;
+
+enum Module {
+    None,
+    Natural,
+    Wire,
+    WireOptional,
+}
 
 pub struct CompoundIdentifierTemplate<'a> {
     context: Context<'a>,
     id: &'a CompoundIdent,
-    prefix: &'a str,
+    module: Module,
 }
 
 impl<'a> CompoundIdentifierTemplate<'a> {
-    fn new(id: &'a CompoundIdent, prefix: &'a str, context: Context<'a>) -> Self {
-        Self { context, id, prefix }
+    fn new(id: &'a CompoundIdent, module: Module, context: Context<'a>) -> Self {
+        Self { context, id, module }
+    }
+
+    pub fn non_type(id: &'a CompoundIdent, context: Context<'a>) -> Self {
+        Self::new(id, Module::None, context)
     }
 
     pub fn natural(id: &'a CompoundIdent, context: Context<'a>) -> Self {
-        Self::new(id, "", context)
+        Self::new(id, Module::Natural, context)
     }
 
     pub fn wire(id: &'a CompoundIdent, context: Context<'a>) -> Self {
-        Self::new(id, "Wire", context)
+        Self::new(id, Module::Wire, context)
     }
 
     pub fn wire_optional(id: &'a CompoundIdent, context: Context<'a>) -> Self {
-        Self::new(id, "WireOptional", context)
+        Self::new(id, Module::WireOptional, context)
     }
 }
 
@@ -45,22 +57,24 @@ impl fmt::Display for CompoundIdentifierTemplate<'_> {
 
         // Special case: zx::ObjType
         if lib == "zx" {
-            if self.prefix.is_empty() {
-                // Natural type
-                match ty.non_canonical() {
-                    "ObjType" => return write!(f, "::fidl_next::fuchsia::zx::ObjectType"),
-                    "Rights" => return write!(f, "::fidl_next::fuchsia::zx::Rights"),
-                    _ => (),
+            match self.module {
+                Module::None => (),
+                Module::Natural => {
+                    // Natural type
+                    match ty.non_canonical() {
+                        "ObjType" => return write!(f, "::fidl_next::fuchsia::zx::ObjectType"),
+                        "Rights" => return write!(f, "::fidl_next::fuchsia::zx::Rights"),
+                        _ => (),
+                    }
                 }
-            } else if self.prefix == "Wire" || self.prefix == "WireOptional" {
-                // Wire type
-                match ty.non_canonical() {
-                    "ObjType" => return write!(f, "::fidl_next::fuchsia::WireObjectType"),
-                    "Rights" => return write!(f, "::fidl_next::fuchsia::WireRights"),
-                    _ => (),
+                Module::Wire | Module::WireOptional => {
+                    // Wire type
+                    match ty.non_canonical() {
+                        "ObjType" => return write!(f, "::fidl_next::fuchsia::WireObjectType"),
+                        "Rights" => return write!(f, "::fidl_next::fuchsia::WireRights"),
+                        _ => (),
+                    }
                 }
-            } else {
-                panic!("Unexpected compound identifier prefix")
             }
         } else if lib == self.library().name {
             write!(f, "crate::")?;
@@ -69,16 +83,23 @@ impl fmt::Display for CompoundIdentifierTemplate<'_> {
             write!(f, "::{}_{escaped}::", self.context.crate_prefix())?;
         }
 
+        match self.module {
+            Module::None => (),
+            Module::Natural => write!(f, "natural::")?,
+            Module::Wire => write!(f, "wire::")?,
+            Module::WireOptional => write!(f, "wire_optional::")?,
+        }
+
         // Type name
-        let base_name = match self.library().get_decl_type(self.id).unwrap() {
+        let name = match self.library().get_decl_type(self.id).unwrap() {
             DeclType::Alias
             | DeclType::Bits
             | DeclType::Enum
             | DeclType::Struct
             | DeclType::Table
             | DeclType::Union
-            | DeclType::Protocol => ty.camel(),
-            DeclType::Const => ty.screaming_snake(),
+            | DeclType::Protocol => escape_camel(ty),
+            DeclType::Const => escape_screaming_snake(ty),
             DeclType::ExperimentalResource
             | DeclType::NewType
             | DeclType::Overlay
@@ -86,8 +107,6 @@ impl fmt::Display for CompoundIdentifierTemplate<'_> {
                 todo!()
             }
         };
-        let name = escape(format!("{}{base_name}", self.prefix));
-
         write!(f, "{name}")?;
 
         Ok(())

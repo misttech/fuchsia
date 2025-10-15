@@ -2,378 +2,399 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-#[derive(PartialEq, Clone, Debug)]
-#[repr(C)]
-pub struct Payload {
-    pub value: u32,
-}
+pub mod natural {
 
-impl ::fidl_next::Encodable for Payload {
-    const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<Self, WirePayload> = unsafe {
-        ::fidl_next::CopyOptimization::enable_if(
-            true && <u32 as ::fidl_next::Encodable>::COPY_OPTIMIZATION.is_enabled(),
-        )
-    };
+    #[derive(PartialEq, Clone, Debug)]
+    #[repr(C)]
+    pub struct Payload {
+        pub value: u32,
+    }
 
-    type Encoded = WirePayload;
-}
+    impl ::fidl_next::Encodable for Payload {
+        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<Self, crate::wire::Payload> = unsafe {
+            ::fidl_next::CopyOptimization::enable_if(
+                true && <u32 as ::fidl_next::Encodable>::COPY_OPTIMIZATION.is_enabled(),
+            )
+        };
 
-unsafe impl<___E> ::fidl_next::Encode<___E> for Payload
-where
-    ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-{
-    #[inline]
-    fn encode(
-        self,
-        encoder_: &mut ___E,
-        out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge! {
-            let Self::Encoded {
-                value,
+        type Encoded = crate::wire::Payload;
+    }
 
-            } = out_;
+    unsafe impl<___E> ::fidl_next::Encode<___E> for Payload
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+                    value,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.value, encoder_, value)?;
+
+            Ok(())
         }
-
-        ::fidl_next::Encode::encode(self.value, encoder_, value)?;
-
-        Ok(())
     }
-}
 
-unsafe impl<___E> ::fidl_next::EncodeRef<___E> for Payload
-where
-    ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-{
-    #[inline]
-    fn encode_ref(
-        &self,
-        encoder_: &mut ___E,
-        out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge! {
-            let Self::Encoded {
+    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for Payload
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+    {
+        #[inline]
+        fn encode_ref(
+            &self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
 
-                value,
+                    value,
 
-            } = out_;
+                } = out_;
+            }
+
+            ::fidl_next::EncodeRef::encode_ref(&self.value, encoder_, value)?;
+
+            Ok(())
         }
-
-        ::fidl_next::EncodeRef::encode_ref(&self.value, encoder_, value)?;
-
-        Ok(())
     }
-}
 
-impl ::fidl_next::EncodableOption for Payload {
-    type EncodedOption = ::fidl_next::WireBox<'static, WirePayload>;
-}
+    impl ::fidl_next::EncodableOption for Payload {
+        type EncodedOption = ::fidl_next::WireBox<'static, crate::wire::Payload>;
+    }
 
-unsafe impl<___E> ::fidl_next::EncodeOption<___E> for Payload
-where
-    ___E: ::fidl_next::Encoder + ?Sized,
-    Payload: ::fidl_next::Encode<___E>,
-{
-    #[inline]
-    fn encode_option(
-        this: ::core::option::Option<Self>,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        if let Some(inner) = this {
-            ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-            ::fidl_next::WireBox::encode_present(out);
-        } else {
-            ::fidl_next::WireBox::encode_absent(out);
+    unsafe impl<___E> ::fidl_next::EncodeOption<___E> for Payload
+    where
+        ___E: ::fidl_next::Encoder + ?Sized,
+        Payload: ::fidl_next::Encode<___E>,
+    {
+        #[inline]
+        fn encode_option(
+            this: ::core::option::Option<Self>,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            if let Some(inner) = this {
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::WireBox::encode_present(out);
+            } else {
+                ::fidl_next::WireBox::encode_absent(out);
+            }
+
+            Ok(())
         }
-
-        Ok(())
     }
-}
 
-unsafe impl<___E> ::fidl_next::EncodeOptionRef<___E> for Payload
-where
-    ___E: ::fidl_next::Encoder + ?Sized,
-    Payload: ::fidl_next::EncodeRef<___E>,
-{
-    #[inline]
-    fn encode_option_ref(
-        this: ::core::option::Option<&Self>,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        if let Some(inner) = this {
-            ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-            ::fidl_next::WireBox::encode_present(out);
-        } else {
-            ::fidl_next::WireBox::encode_absent(out);
+    unsafe impl<___E> ::fidl_next::EncodeOptionRef<___E> for Payload
+    where
+        ___E: ::fidl_next::Encoder + ?Sized,
+        Payload: ::fidl_next::EncodeRef<___E>,
+    {
+        #[inline]
+        fn encode_option_ref(
+            this: ::core::option::Option<&Self>,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            if let Some(inner) = this {
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::WireBox::encode_present(out);
+            } else {
+                ::fidl_next::WireBox::encode_absent(out);
+            }
+
+            Ok(())
         }
-
-        Ok(())
     }
-}
 
-impl ::fidl_next::FromWire<WirePayload> for Payload {
-    const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<WirePayload, Self> = unsafe {
-        ::fidl_next::CopyOptimization::enable_if(
-            true && <u32 as ::fidl_next::FromWire<::fidl_next::WireU32>>::COPY_OPTIMIZATION
-                .is_enabled(),
-        )
-    };
-
-    #[inline]
-    fn from_wire(wire: WirePayload) -> Self {
-        Self { value: ::fidl_next::FromWire::from_wire(wire.value) }
-    }
-}
-
-impl ::fidl_next::IntoNatural for WirePayload {
-    type Natural = Payload;
-}
-
-impl ::fidl_next::FromWireRef<WirePayload> for Payload {
-    #[inline]
-    fn from_wire_ref(wire: &WirePayload) -> Self {
-        Self { value: ::fidl_next::FromWireRef::from_wire_ref(&wire.value) }
-    }
-}
-
-/// The wire type corresponding to [`Payload`].
-#[derive(Clone, Debug)]
-#[repr(C)]
-pub struct WirePayload {
-    pub value: ::fidl_next::WireU32,
-}
-static_assertions::const_assert_eq!(std::mem::size_of::<WirePayload>(), 4);
-static_assertions::const_assert_eq!(std::mem::align_of::<WirePayload>(), 4);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WirePayload, value), 0);
-
-unsafe impl ::fidl_next::Wire for WirePayload {
-    type Decoded<'de> = WirePayload;
-
-    #[inline]
-    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
-        ::fidl_next::munge! {
-            let Self {
-
-                value,
-
-            } = &mut *out_;
-        }
-
-        ::fidl_next::Wire::zero_padding(value);
-    }
-}
-
-unsafe impl<___D> ::fidl_next::Decode<___D> for WirePayload
-where
-    ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-{
-    fn decode(
-        slot_: ::fidl_next::Slot<'_, Self>,
-        decoder_: &mut ___D,
-    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-        ::fidl_next::munge! {
-            let Self {
-
-                mut value,
-
-            } = slot_;
-        }
-
-        ::fidl_next::Decode::decode(value.as_mut(), decoder_)?;
-
-        Ok(())
-    }
-}
-
-#[derive(PartialEq, Clone, Debug)]
-#[repr(C)]
-pub struct OneWaySendRequest {
-    pub payload: crate::Payload,
-}
-
-impl ::fidl_next::Encodable for OneWaySendRequest {
-    const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<Self, WireOneWaySendRequest> = unsafe {
-        ::fidl_next::CopyOptimization::enable_if(
-            true && <crate::Payload as ::fidl_next::Encodable>::COPY_OPTIMIZATION.is_enabled(),
-        )
-    };
-
-    type Encoded = WireOneWaySendRequest;
-}
-
-unsafe impl<___E> ::fidl_next::Encode<___E> for OneWaySendRequest
-where
-    ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-{
-    #[inline]
-    fn encode(
-        self,
-        encoder_: &mut ___E,
-        out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge! {
-            let Self::Encoded {
-                payload,
-
-            } = out_;
-        }
-
-        ::fidl_next::Encode::encode(self.payload, encoder_, payload)?;
-
-        Ok(())
-    }
-}
-
-unsafe impl<___E> ::fidl_next::EncodeRef<___E> for OneWaySendRequest
-where
-    ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-{
-    #[inline]
-    fn encode_ref(
-        &self,
-        encoder_: &mut ___E,
-        out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge! {
-            let Self::Encoded {
-
-                payload,
-
-            } = out_;
-        }
-
-        ::fidl_next::EncodeRef::encode_ref(&self.payload, encoder_, payload)?;
-
-        Ok(())
-    }
-}
-
-impl ::fidl_next::EncodableOption for OneWaySendRequest {
-    type EncodedOption = ::fidl_next::WireBox<'static, WireOneWaySendRequest>;
-}
-
-unsafe impl<___E> ::fidl_next::EncodeOption<___E> for OneWaySendRequest
-where
-    ___E: ::fidl_next::Encoder + ?Sized,
-    OneWaySendRequest: ::fidl_next::Encode<___E>,
-{
-    #[inline]
-    fn encode_option(
-        this: ::core::option::Option<Self>,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        if let Some(inner) = this {
-            ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-            ::fidl_next::WireBox::encode_present(out);
-        } else {
-            ::fidl_next::WireBox::encode_absent(out);
-        }
-
-        Ok(())
-    }
-}
-
-unsafe impl<___E> ::fidl_next::EncodeOptionRef<___E> for OneWaySendRequest
-where
-    ___E: ::fidl_next::Encoder + ?Sized,
-    OneWaySendRequest: ::fidl_next::EncodeRef<___E>,
-{
-    #[inline]
-    fn encode_option_ref(
-        this: ::core::option::Option<&Self>,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        if let Some(inner) = this {
-            ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-            ::fidl_next::WireBox::encode_present(out);
-        } else {
-            ::fidl_next::WireBox::encode_absent(out);
-        }
-
-        Ok(())
-    }
-}
-
-impl ::fidl_next::FromWire<WireOneWaySendRequest> for OneWaySendRequest {
-    const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<WireOneWaySendRequest, Self> = unsafe {
-        ::fidl_next::CopyOptimization::enable_if(
-            true
-                && <crate::Payload as ::fidl_next::FromWire<crate::WirePayload>>::COPY_OPTIMIZATION
+    impl ::fidl_next::FromWire<crate::wire::Payload> for Payload {
+        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<crate::wire::Payload, Self> = unsafe {
+            ::fidl_next::CopyOptimization::enable_if(
+                true && <u32 as ::fidl_next::FromWire<::fidl_next::WireU32>>::COPY_OPTIMIZATION
                     .is_enabled(),
-        )
-    };
+            )
+        };
 
-    #[inline]
-    fn from_wire(wire: WireOneWaySendRequest) -> Self {
-        Self { payload: ::fidl_next::FromWire::from_wire(wire.payload) }
-    }
-}
-
-impl ::fidl_next::IntoNatural for WireOneWaySendRequest {
-    type Natural = OneWaySendRequest;
-}
-
-impl ::fidl_next::FromWireRef<WireOneWaySendRequest> for OneWaySendRequest {
-    #[inline]
-    fn from_wire_ref(wire: &WireOneWaySendRequest) -> Self {
-        Self { payload: ::fidl_next::FromWireRef::from_wire_ref(&wire.payload) }
-    }
-}
-
-/// The wire type corresponding to [`OneWaySendRequest`].
-#[derive(Clone, Debug)]
-#[repr(C)]
-pub struct WireOneWaySendRequest {
-    pub payload: crate::WirePayload,
-}
-static_assertions::const_assert_eq!(std::mem::size_of::<WireOneWaySendRequest>(), 4);
-static_assertions::const_assert_eq!(std::mem::align_of::<WireOneWaySendRequest>(), 4);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireOneWaySendRequest, payload), 0);
-
-unsafe impl ::fidl_next::Wire for WireOneWaySendRequest {
-    type Decoded<'de> = WireOneWaySendRequest;
-
-    #[inline]
-    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
-        ::fidl_next::munge! {
-            let Self {
-
-                payload,
-
-            } = &mut *out_;
+        #[inline]
+        fn from_wire(wire: crate::wire::Payload) -> Self {
+            Self { value: ::fidl_next::FromWire::from_wire(wire.value) }
         }
-
-        ::fidl_next::Wire::zero_padding(payload);
     }
-}
 
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireOneWaySendRequest
-where
-    ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-{
-    fn decode(
-        slot_: ::fidl_next::Slot<'_, Self>,
-        decoder_: &mut ___D,
-    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-        ::fidl_next::munge! {
-            let Self {
-
-                mut payload,
-
-            } = slot_;
+    impl ::fidl_next::FromWireRef<crate::wire::Payload> for Payload {
+        #[inline]
+        fn from_wire_ref(wire: &crate::wire::Payload) -> Self {
+            Self { value: ::fidl_next::FromWireRef::from_wire_ref(&wire.value) }
         }
+    }
 
-        ::fidl_next::Decode::decode(payload.as_mut(), decoder_)?;
+    #[derive(PartialEq, Clone, Debug)]
+    #[repr(C)]
+    pub struct OneWaySendRequest {
+        pub payload: crate::natural::Payload,
+    }
 
-        Ok(())
+    impl ::fidl_next::Encodable for OneWaySendRequest {
+        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<
+            Self,
+            crate::wire::OneWaySendRequest,
+        > = unsafe {
+            ::fidl_next::CopyOptimization::enable_if(
+                true && <crate::natural::Payload as ::fidl_next::Encodable>::COPY_OPTIMIZATION
+                    .is_enabled(),
+            )
+        };
+
+        type Encoded = crate::wire::OneWaySendRequest;
+    }
+
+    unsafe impl<___E> ::fidl_next::Encode<___E> for OneWaySendRequest
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+                    payload,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.payload, encoder_, payload)?;
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for OneWaySendRequest
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+    {
+        #[inline]
+        fn encode_ref(
+            &self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    payload,
+
+                } = out_;
+            }
+
+            ::fidl_next::EncodeRef::encode_ref(&self.payload, encoder_, payload)?;
+
+            Ok(())
+        }
+    }
+
+    impl ::fidl_next::EncodableOption for OneWaySendRequest {
+        type EncodedOption = ::fidl_next::WireBox<'static, crate::wire::OneWaySendRequest>;
+    }
+
+    unsafe impl<___E> ::fidl_next::EncodeOption<___E> for OneWaySendRequest
+    where
+        ___E: ::fidl_next::Encoder + ?Sized,
+        OneWaySendRequest: ::fidl_next::Encode<___E>,
+    {
+        #[inline]
+        fn encode_option(
+            this: ::core::option::Option<Self>,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            if let Some(inner) = this {
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::WireBox::encode_present(out);
+            } else {
+                ::fidl_next::WireBox::encode_absent(out);
+            }
+
+            Ok(())
+        }
+    }
+
+    unsafe impl<___E> ::fidl_next::EncodeOptionRef<___E> for OneWaySendRequest
+    where
+        ___E: ::fidl_next::Encoder + ?Sized,
+        OneWaySendRequest: ::fidl_next::EncodeRef<___E>,
+    {
+        #[inline]
+        fn encode_option_ref(
+            this: ::core::option::Option<&Self>,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            if let Some(inner) = this {
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::WireBox::encode_present(out);
+            } else {
+                ::fidl_next::WireBox::encode_absent(out);
+            }
+
+            Ok(())
+        }
+    }
+
+    impl ::fidl_next::FromWire<crate::wire::OneWaySendRequest> for OneWaySendRequest {
+        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<
+            crate::wire::OneWaySendRequest,
+            Self,
+        > =
+            unsafe {
+                ::fidl_next::CopyOptimization::enable_if(
+                    true && <crate::natural::Payload as ::fidl_next::FromWire<
+                        crate::wire::Payload,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled(),
+                )
+            };
+
+        #[inline]
+        fn from_wire(wire: crate::wire::OneWaySendRequest) -> Self {
+            Self { payload: ::fidl_next::FromWire::from_wire(wire.payload) }
+        }
+    }
+
+    impl ::fidl_next::FromWireRef<crate::wire::OneWaySendRequest> for OneWaySendRequest {
+        #[inline]
+        fn from_wire_ref(wire: &crate::wire::OneWaySendRequest) -> Self {
+            Self { payload: ::fidl_next::FromWireRef::from_wire_ref(&wire.payload) }
+        }
     }
 }
+
+pub mod wire {
+
+    /// The wire type corresponding to [`Payload`].
+    #[derive(Clone, Debug)]
+    #[repr(C)]
+    pub struct Payload {
+        pub value: ::fidl_next::WireU32,
+    }
+
+    static_assertions::const_assert_eq!(std::mem::size_of::<Payload>(), 4);
+    static_assertions::const_assert_eq!(std::mem::align_of::<Payload>(), 4);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Payload, value), 0);
+
+    unsafe impl ::fidl_next::Wire for Payload {
+        type Decoded<'de> = Payload;
+
+        #[inline]
+        fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+            ::fidl_next::munge! {
+                let Self {
+
+                    value,
+
+                } = &mut *out_;
+            }
+
+            ::fidl_next::Wire::zero_padding(value);
+        }
+    }
+
+    unsafe impl<___D> ::fidl_next::Decode<___D> for Payload
+    where
+        ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
+    {
+        fn decode(
+            slot_: ::fidl_next::Slot<'_, Self>,
+            decoder_: &mut ___D,
+        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+            ::fidl_next::munge! {
+                let Self {
+
+                    mut value,
+
+                } = slot_;
+            }
+
+            ::fidl_next::Decode::decode(value.as_mut(), decoder_)?;
+
+            Ok(())
+        }
+    }
+
+    impl ::fidl_next::IntoNatural for Payload {
+        type Natural = crate::natural::Payload;
+    }
+
+    /// The wire type corresponding to [`OneWaySendRequest`].
+    #[derive(Clone, Debug)]
+    #[repr(C)]
+    pub struct OneWaySendRequest {
+        pub payload: crate::wire::Payload,
+    }
+
+    static_assertions::const_assert_eq!(std::mem::size_of::<OneWaySendRequest>(), 4);
+    static_assertions::const_assert_eq!(std::mem::align_of::<OneWaySendRequest>(), 4);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(OneWaySendRequest, payload), 0);
+
+    unsafe impl ::fidl_next::Wire for OneWaySendRequest {
+        type Decoded<'de> = OneWaySendRequest;
+
+        #[inline]
+        fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+            ::fidl_next::munge! {
+                let Self {
+
+                    payload,
+
+                } = &mut *out_;
+            }
+
+            ::fidl_next::Wire::zero_padding(payload);
+        }
+    }
+
+    unsafe impl<___D> ::fidl_next::Decode<___D> for OneWaySendRequest
+    where
+        ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
+    {
+        fn decode(
+            slot_: ::fidl_next::Slot<'_, Self>,
+            decoder_: &mut ___D,
+        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+            ::fidl_next::munge! {
+                let Self {
+
+                    mut payload,
+
+                } = slot_;
+            }
+
+            ::fidl_next::Decode::decode(payload.as_mut(), decoder_)?;
+
+            Ok(())
+        }
+    }
+
+    impl ::fidl_next::IntoNatural for OneWaySendRequest {
+        type Natural = crate::natural::OneWaySendRequest;
+    }
+}
+
+pub mod wire_optional {}
+
+pub use self::natural::*;
 
 /// The type corresponding to the OneWay protocol.
 #[derive(PartialEq, Debug)]
@@ -383,7 +404,7 @@ pub mod one_way {
     pub mod prelude {
         pub use crate::{OneWay, OneWayClientHandler, OneWayServerHandler, one_way};
 
-        pub use crate::OneWaySendRequest;
+        pub use crate::natural::OneWaySendRequest;
     }
 
     pub struct Send;
@@ -393,7 +414,7 @@ pub mod one_way {
 
         type Protocol = crate::OneWay;
 
-        type Request = crate::WireOneWaySendRequest;
+        type Request = crate::wire::OneWaySendRequest;
 
         type Response = ::fidl_next::Never;
     }
@@ -406,15 +427,15 @@ pub mod one_way {
 
         impl<T0> ::fidl_next::Encodable for Send<T0>
         where
-            T0: ::fidl_next::Encodable<Encoded = crate::WirePayload>,
+            T0: ::fidl_next::Encodable<Encoded = crate::wire::Payload>,
         {
-            type Encoded = crate::WireOneWaySendRequest;
+            type Encoded = crate::wire::OneWaySendRequest;
         }
 
         unsafe impl<___E, T0> ::fidl_next::Encode<___E> for Send<T0>
         where
             ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-            T0: ::fidl_next::Encode<___E, Encoded = crate::WirePayload>,
+            T0: ::fidl_next::Encode<___E, Encoded = crate::wire::Payload>,
         {
             #[inline]
             fn encode(
@@ -459,7 +480,7 @@ pub mod one_way {
 
                 payload: impl ::fidl_next::Encode<
                     <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::WirePayload,
+                    Encoded = crate::wire::Payload,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
             where
@@ -473,7 +494,7 @@ pub mod one_way {
             where
                 ___R: ::fidl_next::Encode<
                         <___T as ::fidl_next::Transport>::SendBuffer,
-                        Encoded = crate::WireOneWaySendRequest,
+                        Encoded = crate::wire::OneWaySendRequest,
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(

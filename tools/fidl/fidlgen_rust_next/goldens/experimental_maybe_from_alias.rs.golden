@@ -2,44 +2,701 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-pub type AliasOfArray = [u64; 1];
+pub mod natural {
 
-/// The wire type corresponding to [`AliasOfArray`].
-pub type WireAliasOfArray = [::fidl_next::WireU64; 1];
+    pub type AliasOfArray = [u64; 1];
 
-pub type U64 = u64;
+    pub type U64 = u64;
 
-/// The wire type corresponding to [`U64`].
-pub type WireU64 = ::fidl_next::WireU64;
+    pub type AliasOfArrayContainingAliasOfArray = [u64; 2];
 
-pub type AliasOfArrayContainingAliasOfArray = [u64; 2];
+    pub type AliasOfBytes = ::std::vec::Vec<u8>;
 
-/// The wire type corresponding to [`AliasOfArrayContainingAliasOfArray`].
-pub type WireAliasOfArrayContainingAliasOfArray = [::fidl_next::WireU64; 2];
+    pub type AliasOfRequest = ::core::option::Option<
+        ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::zx::Channel>,
+    >;
 
-pub type AliasOfBytes = ::std::vec::Vec<u8>;
+    pub type AliasOfString = ::std::string::String;
 
-/// The wire type corresponding to [`AliasOfBytes`].
-pub type WireAliasOfBytes<'de> = ::fidl_next::WireVector<'de, u8>;
+    pub type AliasOfVectorContainingAliasOfVector = ::std::vec::Vec<u64>;
 
-pub type AliasOfRequest = ::core::option::Option<
-    ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::zx::Channel>,
->;
+    pub type Vector = ::core::option::Option<::std::vec::Vec<u64>>;
 
-/// The wire type corresponding to [`AliasOfRequest`].
-pub type WireAliasOfRequest =
-    ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::WireOptionalChannel>;
+    #[derive(PartialEq, Debug)]
+    pub struct Testing {
+        pub u1: u64,
 
-pub type AliasOfString = ::std::string::String;
+        pub u2: ::std::vec::Vec<u64>,
 
-/// The wire type corresponding to [`AliasOfString`].
-pub type WireAliasOfString<'de> = ::fidl_next::WireString<'de>;
+        pub u3: [u64; 1],
 
-pub type AliasOfVectorContainingAliasOfVector = ::std::vec::Vec<u64>;
+        pub u4: ::std::vec::Vec<::std::vec::Vec<u64>>,
 
-/// The wire type corresponding to [`AliasOfVectorContainingAliasOfVector`].
-pub type WireAliasOfVectorContainingAliasOfVector<'de> =
-    ::fidl_next::WireVector<'de, ::fidl_next::WireU64>;
+        pub u5: ::std::vec::Vec<[u64; 1]>,
+
+        pub u6: [::std::vec::Vec<u64>; 4],
+
+        pub u7: [[u64; 1]; 4],
+
+        pub v1: ::core::option::Option<::std::vec::Vec<u64>>,
+
+        pub v2: ::std::vec::Vec<::core::option::Option<::std::vec::Vec<u64>>>,
+
+        pub v3: [::core::option::Option<::std::vec::Vec<u64>>; 4],
+
+        pub a1: [u64; 1],
+
+        pub a2: ::std::vec::Vec<[u64; 1]>,
+
+        pub a3: [[u64; 1]; 4],
+
+        pub r1: ::core::option::Option<
+            ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::zx::Channel>,
+        >,
+
+        pub r2: ::std::vec::Vec<
+            ::core::option::Option<
+                ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::zx::Channel>,
+            >,
+        >,
+
+        pub r3: [::core::option::Option<
+            ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::zx::Channel>,
+        >; 4],
+
+        pub b1: ::std::vec::Vec<u8>,
+
+        pub b2: ::std::vec::Vec<::std::vec::Vec<u8>>,
+
+        pub b3: [::std::vec::Vec<u8>; 4],
+
+        pub s1: ::std::string::String,
+
+        pub s2: ::std::vec::Vec<::std::string::String>,
+
+        pub s3: [::std::string::String; 4],
+
+        pub vv1: ::std::vec::Vec<u64>,
+
+        pub vv2: ::std::vec::Vec<::std::vec::Vec<u64>>,
+
+        pub vv3: [::std::vec::Vec<u64>; 3],
+
+        pub aa1: [u64; 2],
+
+        pub aa2: ::std::vec::Vec<[u64; 2]>,
+
+        pub aa3: [[u64; 2]; 3],
+    }
+
+    impl ::fidl_next::Encodable for Testing {
+        type Encoded = crate::wire::Testing<'static>;
+    }
+
+    unsafe impl<___E> ::fidl_next::Encode<___E> for Testing
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+                    u1,
+                    u2,
+                    u3,
+                    u4,
+                    u5,
+                    u6,
+                    u7,
+                    v1,
+                    v2,
+                    v3,
+                    a1,
+                    a2,
+                    a3,
+                    r1,
+                    r2,
+                    r3,
+                    b1,
+                    b2,
+                    b3,
+                    s1,
+                    s2,
+                    s3,
+                    vv1,
+                    vv2,
+                    vv3,
+                    aa1,
+                    aa2,
+                    aa3,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.u1, encoder_, u1)?;
+
+            ::fidl_next::Encode::encode(self.u2, encoder_, u2)?;
+
+            ::fidl_next::Encode::encode(self.u3, encoder_, u3)?;
+
+            ::fidl_next::Encode::encode(self.u4, encoder_, u4)?;
+
+            ::fidl_next::Encode::encode(self.u5, encoder_, u5)?;
+
+            ::fidl_next::Encode::encode(self.u6, encoder_, u6)?;
+
+            ::fidl_next::Encode::encode(self.u7, encoder_, u7)?;
+
+            ::fidl_next::Encode::encode(self.v1, encoder_, v1)?;
+
+            ::fidl_next::Encode::encode(self.v2, encoder_, v2)?;
+
+            ::fidl_next::Encode::encode(self.v3, encoder_, v3)?;
+
+            ::fidl_next::Encode::encode(self.a1, encoder_, a1)?;
+
+            ::fidl_next::Encode::encode(self.a2, encoder_, a2)?;
+
+            ::fidl_next::Encode::encode(self.a3, encoder_, a3)?;
+
+            ::fidl_next::Encode::encode(self.r1, encoder_, r1)?;
+
+            ::fidl_next::Encode::encode(self.r2, encoder_, r2)?;
+
+            ::fidl_next::Encode::encode(self.r3, encoder_, r3)?;
+
+            ::fidl_next::Encode::encode(self.b1, encoder_, b1)?;
+
+            ::fidl_next::Encode::encode(self.b2, encoder_, b2)?;
+
+            ::fidl_next::Encode::encode(self.b3, encoder_, b3)?;
+
+            ::fidl_next::Encode::encode(self.s1, encoder_, s1)?;
+
+            ::fidl_next::Encode::encode(self.s2, encoder_, s2)?;
+
+            ::fidl_next::Encode::encode(self.s3, encoder_, s3)?;
+
+            ::fidl_next::Encode::encode(self.vv1, encoder_, vv1)?;
+
+            ::fidl_next::Encode::encode(self.vv2, encoder_, vv2)?;
+
+            ::fidl_next::Encode::encode(self.vv3, encoder_, vv3)?;
+
+            ::fidl_next::Encode::encode(self.aa1, encoder_, aa1)?;
+
+            ::fidl_next::Encode::encode(self.aa2, encoder_, aa2)?;
+
+            ::fidl_next::Encode::encode(self.aa3, encoder_, aa3)?;
+
+            Ok(())
+        }
+    }
+
+    impl ::fidl_next::EncodableOption for Testing {
+        type EncodedOption = ::fidl_next::WireBox<'static, crate::wire::Testing<'static>>;
+    }
+
+    unsafe impl<___E> ::fidl_next::EncodeOption<___E> for Testing
+    where
+        ___E: ::fidl_next::Encoder + ?Sized,
+        Testing: ::fidl_next::Encode<___E>,
+    {
+        #[inline]
+        fn encode_option(
+            this: ::core::option::Option<Self>,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            if let Some(inner) = this {
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::WireBox::encode_present(out);
+            } else {
+                ::fidl_next::WireBox::encode_absent(out);
+            }
+
+            Ok(())
+        }
+    }
+
+    impl<'de> ::fidl_next::FromWire<crate::wire::Testing<'de>> for Testing {
+        #[inline]
+        fn from_wire(wire: crate::wire::Testing<'de>) -> Self {
+            Self {
+                u1: ::fidl_next::FromWire::from_wire(wire.u1),
+
+                u2: ::fidl_next::FromWire::from_wire(wire.u2),
+
+                u3: ::fidl_next::FromWire::from_wire(wire.u3),
+
+                u4: ::fidl_next::FromWire::from_wire(wire.u4),
+
+                u5: ::fidl_next::FromWire::from_wire(wire.u5),
+
+                u6: ::fidl_next::FromWire::from_wire(wire.u6),
+
+                u7: ::fidl_next::FromWire::from_wire(wire.u7),
+
+                v1: ::fidl_next::FromWire::from_wire(wire.v1),
+
+                v2: ::fidl_next::FromWire::from_wire(wire.v2),
+
+                v3: ::fidl_next::FromWire::from_wire(wire.v3),
+
+                a1: ::fidl_next::FromWire::from_wire(wire.a1),
+
+                a2: ::fidl_next::FromWire::from_wire(wire.a2),
+
+                a3: ::fidl_next::FromWire::from_wire(wire.a3),
+
+                r1: ::fidl_next::FromWire::from_wire(wire.r1),
+
+                r2: ::fidl_next::FromWire::from_wire(wire.r2),
+
+                r3: ::fidl_next::FromWire::from_wire(wire.r3),
+
+                b1: ::fidl_next::FromWire::from_wire(wire.b1),
+
+                b2: ::fidl_next::FromWire::from_wire(wire.b2),
+
+                b3: ::fidl_next::FromWire::from_wire(wire.b3),
+
+                s1: ::fidl_next::FromWire::from_wire(wire.s1),
+
+                s2: ::fidl_next::FromWire::from_wire(wire.s2),
+
+                s3: ::fidl_next::FromWire::from_wire(wire.s3),
+
+                vv1: ::fidl_next::FromWire::from_wire(wire.vv1),
+
+                vv2: ::fidl_next::FromWire::from_wire(wire.vv2),
+
+                vv3: ::fidl_next::FromWire::from_wire(wire.vv3),
+
+                aa1: ::fidl_next::FromWire::from_wire(wire.aa1),
+
+                aa2: ::fidl_next::FromWire::from_wire(wire.aa2),
+
+                aa3: ::fidl_next::FromWire::from_wire(wire.aa3),
+            }
+        }
+    }
+}
+
+pub mod wire {
+
+    /// The wire type corresponding to [`AliasOfArray`](crate::natural::AliasOfArray).
+    pub type AliasOfArray = [::fidl_next::WireU64; 1];
+
+    /// The wire type corresponding to [`U64`](crate::natural::U64).
+    pub type U64 = ::fidl_next::WireU64;
+
+    /// The wire type corresponding to [`AliasOfArrayContainingAliasOfArray`](crate::natural::AliasOfArrayContainingAliasOfArray).
+    pub type AliasOfArrayContainingAliasOfArray = [::fidl_next::WireU64; 2];
+
+    /// The wire type corresponding to [`AliasOfBytes`](crate::natural::AliasOfBytes).
+    pub type AliasOfBytes<'de> = ::fidl_next::WireVector<'de, u8>;
+
+    /// The wire type corresponding to [`AliasOfRequest`](crate::natural::AliasOfRequest).
+    pub type AliasOfRequest =
+        ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::WireOptionalChannel>;
+
+    /// The wire type corresponding to [`AliasOfString`](crate::natural::AliasOfString).
+    pub type AliasOfString<'de> = ::fidl_next::WireString<'de>;
+
+    /// The wire type corresponding to [`AliasOfVectorContainingAliasOfVector`](crate::natural::AliasOfVectorContainingAliasOfVector).
+    pub type AliasOfVectorContainingAliasOfVector<'de> =
+        ::fidl_next::WireVector<'de, ::fidl_next::WireU64>;
+
+    /// The wire type corresponding to [`Vector`](crate::natural::Vector).
+    pub type Vector<'de> = ::fidl_next::WireOptionalVector<'de, ::fidl_next::WireU64>;
+
+    /// The wire type corresponding to [`Testing`].
+    #[derive(Debug)]
+    #[repr(C)]
+    pub struct Testing<'de> {
+        pub u1: ::fidl_next::WireU64,
+
+        pub u2: ::fidl_next::WireVector<'de, ::fidl_next::WireU64>,
+
+        pub u3: [::fidl_next::WireU64; 1],
+
+        pub u4: ::fidl_next::WireVector<'de, ::fidl_next::WireVector<'de, ::fidl_next::WireU64>>,
+
+        pub u5: ::fidl_next::WireVector<'de, [::fidl_next::WireU64; 1]>,
+
+        pub u6: [::fidl_next::WireVector<'de, ::fidl_next::WireU64>; 4],
+
+        pub u7: [[::fidl_next::WireU64; 1]; 4],
+
+        pub v1: ::fidl_next::WireOptionalVector<'de, ::fidl_next::WireU64>,
+
+        pub v2: ::fidl_next::WireVector<
+            'de,
+            ::fidl_next::WireOptionalVector<'de, ::fidl_next::WireU64>,
+        >,
+
+        pub v3: [::fidl_next::WireOptionalVector<'de, ::fidl_next::WireU64>; 4],
+
+        pub a1: [::fidl_next::WireU64; 1],
+
+        pub a2: ::fidl_next::WireVector<'de, [::fidl_next::WireU64; 1]>,
+
+        pub a3: [[::fidl_next::WireU64; 1]; 4],
+
+        pub r1:
+            ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::WireOptionalChannel>,
+
+        pub r2: ::fidl_next::WireVector<
+            'de,
+            ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::WireOptionalChannel>,
+        >,
+
+        pub r3:
+            [::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::WireOptionalChannel>;
+                4],
+
+        pub b1: ::fidl_next::WireVector<'de, u8>,
+
+        pub b2: ::fidl_next::WireVector<'de, ::fidl_next::WireVector<'de, u8>>,
+
+        pub b3: [::fidl_next::WireVector<'de, u8>; 4],
+
+        pub s1: ::fidl_next::WireString<'de>,
+
+        pub s2: ::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>,
+
+        pub s3: [::fidl_next::WireString<'de>; 4],
+
+        pub vv1: ::fidl_next::WireVector<'de, ::fidl_next::WireU64>,
+
+        pub vv2: ::fidl_next::WireVector<'de, ::fidl_next::WireVector<'de, ::fidl_next::WireU64>>,
+
+        pub vv3: [::fidl_next::WireVector<'de, ::fidl_next::WireU64>; 3],
+
+        pub aa1: [::fidl_next::WireU64; 2],
+
+        pub aa2: ::fidl_next::WireVector<'de, [::fidl_next::WireU64; 2]>,
+
+        pub aa3: [[::fidl_next::WireU64; 2]; 3],
+    }
+
+    static_assertions::const_assert_eq!(std::mem::size_of::<Testing<'_>>(), 704);
+    static_assertions::const_assert_eq!(std::mem::align_of::<Testing<'_>>(), 8);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, u1), 0);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, u2), 8);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, u3), 24);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, u4), 32);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, u5), 48);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, u6), 64);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, u7), 128);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, v1), 160);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, v2), 176);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, v3), 192);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, a1), 256);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, a2), 264);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, a3), 280);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, r1), 312);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, r2), 320);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, r3), 336);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, b1), 352);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, b2), 368);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, b3), 384);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, s1), 448);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, s2), 464);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, s3), 480);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, vv1), 544);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, vv2), 560);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, vv3), 576);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, aa1), 624);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, aa2), 640);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Testing<'_>, aa3), 656);
+
+    unsafe impl ::fidl_next::Wire for Testing<'static> {
+        type Decoded<'de> = Testing<'de>;
+
+        #[inline]
+        fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+            ::fidl_next::munge! {
+                let Self {
+
+                    u1,
+                    u2,
+                    u3,
+                    u4,
+                    u5,
+                    u6,
+                    u7,
+                    v1,
+                    v2,
+                    v3,
+                    a1,
+                    a2,
+                    a3,
+                    r1,
+                    r2,
+                    r3,
+                    b1,
+                    b2,
+                    b3,
+                    s1,
+                    s2,
+                    s3,
+                    vv1,
+                    vv2,
+                    vv3,
+                    aa1,
+                    aa2,
+                    aa3,
+
+                } = &mut *out_;
+            }
+
+            ::fidl_next::Wire::zero_padding(u1);
+
+            ::fidl_next::Wire::zero_padding(u2);
+
+            ::fidl_next::Wire::zero_padding(u3);
+
+            ::fidl_next::Wire::zero_padding(u4);
+
+            ::fidl_next::Wire::zero_padding(u5);
+
+            ::fidl_next::Wire::zero_padding(u6);
+
+            ::fidl_next::Wire::zero_padding(u7);
+
+            ::fidl_next::Wire::zero_padding(v1);
+
+            ::fidl_next::Wire::zero_padding(v2);
+
+            ::fidl_next::Wire::zero_padding(v3);
+
+            ::fidl_next::Wire::zero_padding(a1);
+
+            ::fidl_next::Wire::zero_padding(a2);
+
+            ::fidl_next::Wire::zero_padding(a3);
+
+            ::fidl_next::Wire::zero_padding(r1);
+
+            ::fidl_next::Wire::zero_padding(r2);
+
+            ::fidl_next::Wire::zero_padding(r3);
+
+            ::fidl_next::Wire::zero_padding(b1);
+
+            ::fidl_next::Wire::zero_padding(b2);
+
+            ::fidl_next::Wire::zero_padding(b3);
+
+            ::fidl_next::Wire::zero_padding(s1);
+
+            ::fidl_next::Wire::zero_padding(s2);
+
+            ::fidl_next::Wire::zero_padding(s3);
+
+            ::fidl_next::Wire::zero_padding(vv1);
+
+            ::fidl_next::Wire::zero_padding(vv2);
+
+            ::fidl_next::Wire::zero_padding(vv3);
+
+            ::fidl_next::Wire::zero_padding(aa1);
+
+            ::fidl_next::Wire::zero_padding(aa2);
+
+            ::fidl_next::Wire::zero_padding(aa3);
+
+            unsafe {
+                out_.as_mut_ptr().cast::<u8>().add(316).write_bytes(0, 4);
+            }
+        }
+    }
+
+    unsafe impl<___D> ::fidl_next::Decode<___D> for Testing<'static>
+    where
+        ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
+        ___D: ::fidl_next::Decoder,
+        ___D: ::fidl_next::fuchsia::HandleDecoder,
+    {
+        fn decode(
+            slot_: ::fidl_next::Slot<'_, Self>,
+            decoder_: &mut ___D,
+        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+            ::fidl_next::munge! {
+                let Self {
+
+                    mut u1,
+                    mut u2,
+                    mut u3,
+                    mut u4,
+                    mut u5,
+                    mut u6,
+                    mut u7,
+                    mut v1,
+                    mut v2,
+                    mut v3,
+                    mut a1,
+                    mut a2,
+                    mut a3,
+                    mut r1,
+                    mut r2,
+                    mut r3,
+                    mut b1,
+                    mut b2,
+                    mut b3,
+                    mut s1,
+                    mut s2,
+                    mut s3,
+                    mut vv1,
+                    mut vv2,
+                    mut vv3,
+                    mut aa1,
+                    mut aa2,
+                    mut aa3,
+
+                } = slot_;
+            }
+
+            ::fidl_next::Decode::decode(u1.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(u2.as_mut(), decoder_)?;
+
+            let u2 = unsafe { u2.deref_unchecked() };
+
+            if u2.len() > 1 {
+                return Err(::fidl_next::DecodeError::VectorTooLong {
+                    size: u2.len() as u64,
+                    limit: 1,
+                });
+            }
+
+            ::fidl_next::Decode::decode(u3.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(u4.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(u5.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(u6.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(u7.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(v1.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(v2.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(v3.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(a1.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(a2.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(a3.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(r1.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(r2.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(r3.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(b1.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(b2.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(b3.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(s1.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(s2.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(s3.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(vv1.as_mut(), decoder_)?;
+
+            let vv1 = unsafe { vv1.deref_unchecked() };
+
+            if vv1.len() > 2 {
+                return Err(::fidl_next::DecodeError::VectorTooLong {
+                    size: vv1.len() as u64,
+                    limit: 2,
+                });
+            }
+
+            ::fidl_next::Decode::decode(vv2.as_mut(), decoder_)?;
+
+            let vv2 = unsafe { vv2.deref_unchecked() };
+
+            if vv2.len() > 3 {
+                return Err(::fidl_next::DecodeError::VectorTooLong {
+                    size: vv2.len() as u64,
+                    limit: 3,
+                });
+            }
+
+            ::fidl_next::Decode::decode(vv3.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(aa1.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(aa2.as_mut(), decoder_)?;
+
+            let aa2 = unsafe { aa2.deref_unchecked() };
+
+            if aa2.len() > 3 {
+                return Err(::fidl_next::DecodeError::VectorTooLong {
+                    size: aa2.len() as u64,
+                    limit: 3,
+                });
+            }
+
+            ::fidl_next::Decode::decode(aa3.as_mut(), decoder_)?;
+
+            Ok(())
+        }
+    }
+
+    impl<'de> ::fidl_next::IntoNatural for Testing<'de> {
+        type Natural = crate::natural::Testing;
+    }
+}
+
+pub mod wire_optional {}
+
+pub use self::natural::*;
 
 /// The type corresponding to the MyProtocol protocol.
 #[derive(PartialEq, Debug)]
@@ -147,648 +804,6 @@ where
         match ordinal {
             ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
         }
-    }
-}
-
-pub type Vector = ::core::option::Option<::std::vec::Vec<u64>>;
-
-/// The wire type corresponding to [`Vector`].
-pub type WireVector<'de> = ::fidl_next::WireOptionalVector<'de, ::fidl_next::WireU64>;
-
-#[derive(PartialEq, Debug)]
-pub struct Testing {
-    pub u1: u64,
-
-    pub u2: ::std::vec::Vec<u64>,
-
-    pub u3: [u64; 1],
-
-    pub u4: ::std::vec::Vec<::std::vec::Vec<u64>>,
-
-    pub u5: ::std::vec::Vec<[u64; 1]>,
-
-    pub u6: [::std::vec::Vec<u64>; 4],
-
-    pub u7: [[u64; 1]; 4],
-
-    pub v1: ::core::option::Option<::std::vec::Vec<u64>>,
-
-    pub v2: ::std::vec::Vec<::core::option::Option<::std::vec::Vec<u64>>>,
-
-    pub v3: [::core::option::Option<::std::vec::Vec<u64>>; 4],
-
-    pub a1: [u64; 1],
-
-    pub a2: ::std::vec::Vec<[u64; 1]>,
-
-    pub a3: [[u64; 1]; 4],
-
-    pub r1: ::core::option::Option<
-        ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::zx::Channel>,
-    >,
-
-    pub r2: ::std::vec::Vec<
-        ::core::option::Option<
-            ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::zx::Channel>,
-        >,
-    >,
-
-    pub r3: [::core::option::Option<
-        ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::zx::Channel>,
-    >; 4],
-
-    pub b1: ::std::vec::Vec<u8>,
-
-    pub b2: ::std::vec::Vec<::std::vec::Vec<u8>>,
-
-    pub b3: [::std::vec::Vec<u8>; 4],
-
-    pub s1: ::std::string::String,
-
-    pub s2: ::std::vec::Vec<::std::string::String>,
-
-    pub s3: [::std::string::String; 4],
-
-    pub vv1: ::std::vec::Vec<u64>,
-
-    pub vv2: ::std::vec::Vec<::std::vec::Vec<u64>>,
-
-    pub vv3: [::std::vec::Vec<u64>; 3],
-
-    pub aa1: [u64; 2],
-
-    pub aa2: ::std::vec::Vec<[u64; 2]>,
-
-    pub aa3: [[u64; 2]; 3],
-}
-
-impl ::fidl_next::Encodable for Testing {
-    type Encoded = WireTesting<'static>;
-}
-
-unsafe impl<___E> ::fidl_next::Encode<___E> for Testing
-where
-    ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    ___E: ::fidl_next::Encoder,
-    ___E: ::fidl_next::fuchsia::HandleEncoder,
-{
-    #[inline]
-    fn encode(
-        self,
-        encoder_: &mut ___E,
-        out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge! {
-            let Self::Encoded {
-                u1,
-                u2,
-                u3,
-                u4,
-                u5,
-                u6,
-                u7,
-                v1,
-                v2,
-                v3,
-                a1,
-                a2,
-                a3,
-                r1,
-                r2,
-                r3,
-                b1,
-                b2,
-                b3,
-                s1,
-                s2,
-                s3,
-                vv1,
-                vv2,
-                vv3,
-                aa1,
-                aa2,
-                aa3,
-
-            } = out_;
-        }
-
-        ::fidl_next::Encode::encode(self.u1, encoder_, u1)?;
-
-        ::fidl_next::Encode::encode(self.u2, encoder_, u2)?;
-
-        ::fidl_next::Encode::encode(self.u3, encoder_, u3)?;
-
-        ::fidl_next::Encode::encode(self.u4, encoder_, u4)?;
-
-        ::fidl_next::Encode::encode(self.u5, encoder_, u5)?;
-
-        ::fidl_next::Encode::encode(self.u6, encoder_, u6)?;
-
-        ::fidl_next::Encode::encode(self.u7, encoder_, u7)?;
-
-        ::fidl_next::Encode::encode(self.v1, encoder_, v1)?;
-
-        ::fidl_next::Encode::encode(self.v2, encoder_, v2)?;
-
-        ::fidl_next::Encode::encode(self.v3, encoder_, v3)?;
-
-        ::fidl_next::Encode::encode(self.a1, encoder_, a1)?;
-
-        ::fidl_next::Encode::encode(self.a2, encoder_, a2)?;
-
-        ::fidl_next::Encode::encode(self.a3, encoder_, a3)?;
-
-        ::fidl_next::Encode::encode(self.r1, encoder_, r1)?;
-
-        ::fidl_next::Encode::encode(self.r2, encoder_, r2)?;
-
-        ::fidl_next::Encode::encode(self.r3, encoder_, r3)?;
-
-        ::fidl_next::Encode::encode(self.b1, encoder_, b1)?;
-
-        ::fidl_next::Encode::encode(self.b2, encoder_, b2)?;
-
-        ::fidl_next::Encode::encode(self.b3, encoder_, b3)?;
-
-        ::fidl_next::Encode::encode(self.s1, encoder_, s1)?;
-
-        ::fidl_next::Encode::encode(self.s2, encoder_, s2)?;
-
-        ::fidl_next::Encode::encode(self.s3, encoder_, s3)?;
-
-        ::fidl_next::Encode::encode(self.vv1, encoder_, vv1)?;
-
-        ::fidl_next::Encode::encode(self.vv2, encoder_, vv2)?;
-
-        ::fidl_next::Encode::encode(self.vv3, encoder_, vv3)?;
-
-        ::fidl_next::Encode::encode(self.aa1, encoder_, aa1)?;
-
-        ::fidl_next::Encode::encode(self.aa2, encoder_, aa2)?;
-
-        ::fidl_next::Encode::encode(self.aa3, encoder_, aa3)?;
-
-        Ok(())
-    }
-}
-
-impl ::fidl_next::EncodableOption for Testing {
-    type EncodedOption = ::fidl_next::WireBox<'static, WireTesting<'static>>;
-}
-
-unsafe impl<___E> ::fidl_next::EncodeOption<___E> for Testing
-where
-    ___E: ::fidl_next::Encoder + ?Sized,
-    Testing: ::fidl_next::Encode<___E>,
-{
-    #[inline]
-    fn encode_option(
-        this: ::core::option::Option<Self>,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        if let Some(inner) = this {
-            ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-            ::fidl_next::WireBox::encode_present(out);
-        } else {
-            ::fidl_next::WireBox::encode_absent(out);
-        }
-
-        Ok(())
-    }
-}
-
-impl<'de> ::fidl_next::FromWire<WireTesting<'de>> for Testing {
-    #[inline]
-    fn from_wire(wire: WireTesting<'de>) -> Self {
-        Self {
-            u1: ::fidl_next::FromWire::from_wire(wire.u1),
-
-            u2: ::fidl_next::FromWire::from_wire(wire.u2),
-
-            u3: ::fidl_next::FromWire::from_wire(wire.u3),
-
-            u4: ::fidl_next::FromWire::from_wire(wire.u4),
-
-            u5: ::fidl_next::FromWire::from_wire(wire.u5),
-
-            u6: ::fidl_next::FromWire::from_wire(wire.u6),
-
-            u7: ::fidl_next::FromWire::from_wire(wire.u7),
-
-            v1: ::fidl_next::FromWire::from_wire(wire.v1),
-
-            v2: ::fidl_next::FromWire::from_wire(wire.v2),
-
-            v3: ::fidl_next::FromWire::from_wire(wire.v3),
-
-            a1: ::fidl_next::FromWire::from_wire(wire.a1),
-
-            a2: ::fidl_next::FromWire::from_wire(wire.a2),
-
-            a3: ::fidl_next::FromWire::from_wire(wire.a3),
-
-            r1: ::fidl_next::FromWire::from_wire(wire.r1),
-
-            r2: ::fidl_next::FromWire::from_wire(wire.r2),
-
-            r3: ::fidl_next::FromWire::from_wire(wire.r3),
-
-            b1: ::fidl_next::FromWire::from_wire(wire.b1),
-
-            b2: ::fidl_next::FromWire::from_wire(wire.b2),
-
-            b3: ::fidl_next::FromWire::from_wire(wire.b3),
-
-            s1: ::fidl_next::FromWire::from_wire(wire.s1),
-
-            s2: ::fidl_next::FromWire::from_wire(wire.s2),
-
-            s3: ::fidl_next::FromWire::from_wire(wire.s3),
-
-            vv1: ::fidl_next::FromWire::from_wire(wire.vv1),
-
-            vv2: ::fidl_next::FromWire::from_wire(wire.vv2),
-
-            vv3: ::fidl_next::FromWire::from_wire(wire.vv3),
-
-            aa1: ::fidl_next::FromWire::from_wire(wire.aa1),
-
-            aa2: ::fidl_next::FromWire::from_wire(wire.aa2),
-
-            aa3: ::fidl_next::FromWire::from_wire(wire.aa3),
-        }
-    }
-}
-
-impl<'de> ::fidl_next::IntoNatural for WireTesting<'de> {
-    type Natural = Testing;
-}
-
-/// The wire type corresponding to [`Testing`].
-#[derive(Debug)]
-#[repr(C)]
-pub struct WireTesting<'de> {
-    pub u1: ::fidl_next::WireU64,
-
-    pub u2: ::fidl_next::WireVector<'de, ::fidl_next::WireU64>,
-
-    pub u3: [::fidl_next::WireU64; 1],
-
-    pub u4: ::fidl_next::WireVector<'de, ::fidl_next::WireVector<'de, ::fidl_next::WireU64>>,
-
-    pub u5: ::fidl_next::WireVector<'de, [::fidl_next::WireU64; 1]>,
-
-    pub u6: [::fidl_next::WireVector<'de, ::fidl_next::WireU64>; 4],
-
-    pub u7: [[::fidl_next::WireU64; 1]; 4],
-
-    pub v1: ::fidl_next::WireOptionalVector<'de, ::fidl_next::WireU64>,
-
-    pub v2:
-        ::fidl_next::WireVector<'de, ::fidl_next::WireOptionalVector<'de, ::fidl_next::WireU64>>,
-
-    pub v3: [::fidl_next::WireOptionalVector<'de, ::fidl_next::WireU64>; 4],
-
-    pub a1: [::fidl_next::WireU64; 1],
-
-    pub a2: ::fidl_next::WireVector<'de, [::fidl_next::WireU64; 1]>,
-
-    pub a3: [[::fidl_next::WireU64; 1]; 4],
-
-    pub r1: ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::WireOptionalChannel>,
-
-    pub r2: ::fidl_next::WireVector<
-        'de,
-        ::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::WireOptionalChannel>,
-    >,
-
-    pub r3:
-        [::fidl_next::ServerEnd<crate::MyProtocol, ::fidl_next::fuchsia::WireOptionalChannel>; 4],
-
-    pub b1: ::fidl_next::WireVector<'de, u8>,
-
-    pub b2: ::fidl_next::WireVector<'de, ::fidl_next::WireVector<'de, u8>>,
-
-    pub b3: [::fidl_next::WireVector<'de, u8>; 4],
-
-    pub s1: ::fidl_next::WireString<'de>,
-
-    pub s2: ::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>,
-
-    pub s3: [::fidl_next::WireString<'de>; 4],
-
-    pub vv1: ::fidl_next::WireVector<'de, ::fidl_next::WireU64>,
-
-    pub vv2: ::fidl_next::WireVector<'de, ::fidl_next::WireVector<'de, ::fidl_next::WireU64>>,
-
-    pub vv3: [::fidl_next::WireVector<'de, ::fidl_next::WireU64>; 3],
-
-    pub aa1: [::fidl_next::WireU64; 2],
-
-    pub aa2: ::fidl_next::WireVector<'de, [::fidl_next::WireU64; 2]>,
-
-    pub aa3: [[::fidl_next::WireU64; 2]; 3],
-}
-static_assertions::const_assert_eq!(std::mem::size_of::<WireTesting<'_>>(), 704);
-static_assertions::const_assert_eq!(std::mem::align_of::<WireTesting<'_>>(), 8);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, u1), 0);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, u2), 8);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, u3), 24);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, u4), 32);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, u5), 48);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, u6), 64);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, u7), 128);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, v1), 160);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, v2), 176);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, v3), 192);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, a1), 256);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, a2), 264);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, a3), 280);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, r1), 312);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, r2), 320);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, r3), 336);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, b1), 352);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, b2), 368);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, b3), 384);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, s1), 448);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, s2), 464);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, s3), 480);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, vv1), 544);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, vv2), 560);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, vv3), 576);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, aa1), 624);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, aa2), 640);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireTesting<'_>, aa3), 656);
-
-unsafe impl ::fidl_next::Wire for WireTesting<'static> {
-    type Decoded<'de> = WireTesting<'de>;
-
-    #[inline]
-    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
-        ::fidl_next::munge! {
-            let Self {
-
-                u1,
-                u2,
-                u3,
-                u4,
-                u5,
-                u6,
-                u7,
-                v1,
-                v2,
-                v3,
-                a1,
-                a2,
-                a3,
-                r1,
-                r2,
-                r3,
-                b1,
-                b2,
-                b3,
-                s1,
-                s2,
-                s3,
-                vv1,
-                vv2,
-                vv3,
-                aa1,
-                aa2,
-                aa3,
-
-            } = &mut *out_;
-        }
-
-        ::fidl_next::Wire::zero_padding(u1);
-
-        ::fidl_next::Wire::zero_padding(u2);
-
-        ::fidl_next::Wire::zero_padding(u3);
-
-        ::fidl_next::Wire::zero_padding(u4);
-
-        ::fidl_next::Wire::zero_padding(u5);
-
-        ::fidl_next::Wire::zero_padding(u6);
-
-        ::fidl_next::Wire::zero_padding(u7);
-
-        ::fidl_next::Wire::zero_padding(v1);
-
-        ::fidl_next::Wire::zero_padding(v2);
-
-        ::fidl_next::Wire::zero_padding(v3);
-
-        ::fidl_next::Wire::zero_padding(a1);
-
-        ::fidl_next::Wire::zero_padding(a2);
-
-        ::fidl_next::Wire::zero_padding(a3);
-
-        ::fidl_next::Wire::zero_padding(r1);
-
-        ::fidl_next::Wire::zero_padding(r2);
-
-        ::fidl_next::Wire::zero_padding(r3);
-
-        ::fidl_next::Wire::zero_padding(b1);
-
-        ::fidl_next::Wire::zero_padding(b2);
-
-        ::fidl_next::Wire::zero_padding(b3);
-
-        ::fidl_next::Wire::zero_padding(s1);
-
-        ::fidl_next::Wire::zero_padding(s2);
-
-        ::fidl_next::Wire::zero_padding(s3);
-
-        ::fidl_next::Wire::zero_padding(vv1);
-
-        ::fidl_next::Wire::zero_padding(vv2);
-
-        ::fidl_next::Wire::zero_padding(vv3);
-
-        ::fidl_next::Wire::zero_padding(aa1);
-
-        ::fidl_next::Wire::zero_padding(aa2);
-
-        ::fidl_next::Wire::zero_padding(aa3);
-
-        unsafe {
-            out_.as_mut_ptr().cast::<u8>().add(316).write_bytes(0, 4);
-        }
-    }
-}
-
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireTesting<'static>
-where
-    ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-    ___D: ::fidl_next::Decoder,
-    ___D: ::fidl_next::fuchsia::HandleDecoder,
-{
-    fn decode(
-        slot_: ::fidl_next::Slot<'_, Self>,
-        decoder_: &mut ___D,
-    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-        ::fidl_next::munge! {
-            let Self {
-
-                mut u1,
-                mut u2,
-                mut u3,
-                mut u4,
-                mut u5,
-                mut u6,
-                mut u7,
-                mut v1,
-                mut v2,
-                mut v3,
-                mut a1,
-                mut a2,
-                mut a3,
-                mut r1,
-                mut r2,
-                mut r3,
-                mut b1,
-                mut b2,
-                mut b3,
-                mut s1,
-                mut s2,
-                mut s3,
-                mut vv1,
-                mut vv2,
-                mut vv3,
-                mut aa1,
-                mut aa2,
-                mut aa3,
-
-            } = slot_;
-        }
-
-        ::fidl_next::Decode::decode(u1.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(u2.as_mut(), decoder_)?;
-
-        let u2 = unsafe { u2.deref_unchecked() };
-
-        if u2.len() > 1 {
-            return Err(::fidl_next::DecodeError::VectorTooLong {
-                size: u2.len() as u64,
-                limit: 1,
-            });
-        }
-
-        ::fidl_next::Decode::decode(u3.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(u4.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(u5.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(u6.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(u7.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(v1.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(v2.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(v3.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(a1.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(a2.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(a3.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(r1.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(r2.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(r3.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(b1.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(b2.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(b3.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(s1.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(s2.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(s3.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(vv1.as_mut(), decoder_)?;
-
-        let vv1 = unsafe { vv1.deref_unchecked() };
-
-        if vv1.len() > 2 {
-            return Err(::fidl_next::DecodeError::VectorTooLong {
-                size: vv1.len() as u64,
-                limit: 2,
-            });
-        }
-
-        ::fidl_next::Decode::decode(vv2.as_mut(), decoder_)?;
-
-        let vv2 = unsafe { vv2.deref_unchecked() };
-
-        if vv2.len() > 3 {
-            return Err(::fidl_next::DecodeError::VectorTooLong {
-                size: vv2.len() as u64,
-                limit: 3,
-            });
-        }
-
-        ::fidl_next::Decode::decode(vv3.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(aa1.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(aa2.as_mut(), decoder_)?;
-
-        let aa2 = unsafe { aa2.deref_unchecked() };
-
-        if aa2.len() > 3 {
-            return Err(::fidl_next::DecodeError::VectorTooLong {
-                size: aa2.len() as u64,
-                limit: 3,
-            });
-        }
-
-        ::fidl_next::Decode::decode(aa3.as_mut(), decoder_)?;
-
-        Ok(())
     }
 }
 

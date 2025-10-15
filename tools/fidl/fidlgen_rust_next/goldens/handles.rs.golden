@@ -2,129 +2,23 @@
 #![warn(clippy::all)]
 #![allow(unused_parens, unused_variables, unused_mut, unused_imports, unreachable_code)]
 
-/// The type corresponding to the DriverProtocol protocol.
-#[derive(PartialEq, Debug)]
-pub struct DriverProtocol;
+pub mod natural {
 
-pub mod driver_protocol {
-    pub mod prelude {
-        pub use crate::{
-            DriverProtocol, DriverProtocolClientHandler, DriverProtocolServerHandler,
-            driver_protocol,
-        };
+    #[derive(PartialEq, Debug)]
+    #[repr(C)]
+    pub struct FdfHandles {
+        pub fdf_channel_handle: ::fdf_fidl::DriverChannel,
+
+        pub client_end_driver:
+            ::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::DriverChannel>,
+
+        pub server_end_driver:
+            ::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::DriverChannel>,
     }
 
-    mod ___detail {
-
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::DriverProtocol
-        where
-            ___T: ::fidl_next::Transport,
-        {
-            type Client = DriverProtocolClient<___T>;
-            type Server = DriverProtocolServer<___T>;
-        }
-
-        /// The client for the `DriverProtocol` protocol.
-        #[repr(transparent)]
-        pub struct DriverProtocolClient<___T: ::fidl_next::Transport> {
-            #[allow(dead_code)]
-            client: ::fidl_next::protocol::Client<___T>,
-        }
-
-        impl<___T> DriverProtocolClient<___T> where ___T: ::fidl_next::Transport {}
-
-        /// The server for the `DriverProtocol` protocol.
-        #[repr(transparent)]
-        pub struct DriverProtocolServer<___T: ::fidl_next::Transport> {
-            server: ::fidl_next::protocol::Server<___T>,
-        }
-
-        impl<___T> DriverProtocolServer<___T> where ___T: ::fidl_next::Transport {}
-    }
-}
-
-/// A client handler for the DriverProtocol protocol.
-///
-/// See [`DriverProtocol`] for more details.
-pub trait DriverProtocolClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
->
-{
-}
-
-impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for DriverProtocol
-where
-    ___H: DriverProtocolClientHandler<___T> + ::core::marker::Send,
-    ___T: ::fidl_next::Transport,
-{
-    async fn on_event(
-        handler: &mut ___H,
-        ordinal: u64,
-        buffer: ___T::RecvBuffer,
-    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
-        match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
-        }
-    }
-}
-
-/// A server handler for the DriverProtocol protocol.
-///
-/// See [`DriverProtocol`] for more details.
-pub trait DriverProtocolServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
->
-{
-}
-
-impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for DriverProtocol
-where
-    ___H: DriverProtocolServerHandler<___T> + ::core::marker::Send,
-    ___T: ::fidl_next::Transport,
-{
-    async fn on_one_way(
-        handler: &mut ___H,
-        ordinal: u64,
-        buffer: ___T::RecvBuffer,
-    ) -> ::core::result::Result<
-        (),
-        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
-    > {
-        match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
-        }
-    }
-
-    async fn on_two_way(
-        handler: &mut ___H,
-        ordinal: u64,
-        buffer: ___T::RecvBuffer,
-        responder: ::fidl_next::protocol::Responder<___T>,
-    ) -> ::core::result::Result<
-        (),
-        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
-    > {
-        match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
-        }
-    }
-}
-
-#[derive(PartialEq, Debug)]
-#[repr(C)]
-pub struct FdfHandles {
-    pub fdf_channel_handle: ::fdf_fidl::DriverChannel,
-
-    pub client_end_driver: ::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::DriverChannel>,
-
-    pub server_end_driver: ::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::DriverChannel>,
-}
-
-impl ::fidl_next::Encodable for FdfHandles {
-    const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<Self, WireFdfHandles> = unsafe {
-        ::fidl_next::CopyOptimization::enable_if(
+    impl ::fidl_next::Encodable for FdfHandles {
+        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<Self, crate::wire::FdfHandles> = unsafe {
+            ::fidl_next::CopyOptimization::enable_if(
             true
 
                 && <
@@ -140,70 +34,70 @@ impl ::fidl_next::Encodable for FdfHandles {
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
-    };
+        };
 
-    type Encoded = WireFdfHandles;
-}
-
-unsafe impl<___E> ::fidl_next::Encode<___E> for FdfHandles
-where
-    ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    ___E: ::fidl_next::fuchsia::HandleEncoder,
-{
-    #[inline]
-    fn encode(
-        self,
-        encoder_: &mut ___E,
-        out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge! {
-            let Self::Encoded {
-                fdf_channel_handle,
-                client_end_driver,
-                server_end_driver,
-
-            } = out_;
-        }
-
-        ::fidl_next::Encode::encode(self.fdf_channel_handle, encoder_, fdf_channel_handle)?;
-
-        ::fidl_next::Encode::encode(self.client_end_driver, encoder_, client_end_driver)?;
-
-        ::fidl_next::Encode::encode(self.server_end_driver, encoder_, server_end_driver)?;
-
-        Ok(())
+        type Encoded = crate::wire::FdfHandles;
     }
-}
 
-impl ::fidl_next::EncodableOption for FdfHandles {
-    type EncodedOption = ::fidl_next::WireBox<'static, WireFdfHandles>;
-}
+    unsafe impl<___E> ::fidl_next::Encode<___E> for FdfHandles
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+                    fdf_channel_handle,
+                    client_end_driver,
+                    server_end_driver,
 
-unsafe impl<___E> ::fidl_next::EncodeOption<___E> for FdfHandles
-where
-    ___E: ::fidl_next::Encoder + ?Sized,
-    FdfHandles: ::fidl_next::Encode<___E>,
-{
-    #[inline]
-    fn encode_option(
-        this: ::core::option::Option<Self>,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        if let Some(inner) = this {
-            ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-            ::fidl_next::WireBox::encode_present(out);
-        } else {
-            ::fidl_next::WireBox::encode_absent(out);
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.fdf_channel_handle, encoder_, fdf_channel_handle)?;
+
+            ::fidl_next::Encode::encode(self.client_end_driver, encoder_, client_end_driver)?;
+
+            ::fidl_next::Encode::encode(self.server_end_driver, encoder_, server_end_driver)?;
+
+            Ok(())
         }
-
-        Ok(())
     }
-}
 
-impl ::fidl_next::FromWire<WireFdfHandles> for FdfHandles {
-    const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<WireFdfHandles, Self> = unsafe {
-        ::fidl_next::CopyOptimization::enable_if(
+    impl ::fidl_next::EncodableOption for FdfHandles {
+        type EncodedOption = ::fidl_next::WireBox<'static, crate::wire::FdfHandles>;
+    }
+
+    unsafe impl<___E> ::fidl_next::EncodeOption<___E> for FdfHandles
+    where
+        ___E: ::fidl_next::Encoder + ?Sized,
+        FdfHandles: ::fidl_next::Encode<___E>,
+    {
+        #[inline]
+        fn encode_option(
+            this: ::core::option::Option<Self>,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            if let Some(inner) = this {
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::WireBox::encode_present(out);
+            } else {
+                ::fidl_next::WireBox::encode_absent(out);
+            }
+
+            Ok(())
+        }
+    }
+
+    impl ::fidl_next::FromWire<crate::wire::FdfHandles> for FdfHandles {
+        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<crate::wire::FdfHandles, Self> = unsafe {
+            ::fidl_next::CopyOptimization::enable_if(
             true
 
                 && <
@@ -219,191 +113,105 @@ impl ::fidl_next::FromWire<WireFdfHandles> for FdfHandles {
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
-    };
+        };
 
-    #[inline]
-    fn from_wire(wire: WireFdfHandles) -> Self {
-        Self {
-            fdf_channel_handle: ::fidl_next::FromWire::from_wire(wire.fdf_channel_handle),
+        #[inline]
+        fn from_wire(wire: crate::wire::FdfHandles) -> Self {
+            Self {
+                fdf_channel_handle: ::fidl_next::FromWire::from_wire(wire.fdf_channel_handle),
 
-            client_end_driver: ::fidl_next::FromWire::from_wire(wire.client_end_driver),
+                client_end_driver: ::fidl_next::FromWire::from_wire(wire.client_end_driver),
 
-            server_end_driver: ::fidl_next::FromWire::from_wire(wire.server_end_driver),
+                server_end_driver: ::fidl_next::FromWire::from_wire(wire.server_end_driver),
+            }
         }
     }
-}
 
-impl ::fidl_next::IntoNatural for WireFdfHandles {
-    type Natural = FdfHandles;
-}
+    pub type AliasedPlainHandle = ::fidl_next::fuchsia::zx::Handle;
 
-/// The wire type corresponding to [`FdfHandles`].
-#[derive(Debug)]
-#[repr(C)]
-pub struct WireFdfHandles {
-    pub fdf_channel_handle: ::fdf_fidl::WireDriverChannel,
+    pub type AliasedSubtypeHandle = ::fidl_next::fuchsia::zx::Vmo;
 
-    pub client_end_driver:
-        ::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::WireDriverChannel>,
+    pub type AliasedRightsHandle = ::fidl_next::fuchsia::zx::Vmo;
 
-    pub server_end_driver:
-        ::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::WireDriverChannel>,
-}
-static_assertions::const_assert_eq!(std::mem::size_of::<WireFdfHandles>(), 12);
-static_assertions::const_assert_eq!(std::mem::align_of::<WireFdfHandles>(), 4);
+    #[derive(PartialEq, Debug)]
+    #[repr(C)]
+    pub struct Handles {
+        pub plain_handle: ::fidl_next::fuchsia::zx::Handle,
 
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireFdfHandles, fdf_channel_handle), 0);
+        pub bti_handle: ::fidl_next::fuchsia::zx::Bti,
 
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireFdfHandles, client_end_driver), 4);
+        pub channel_handle: ::fidl_next::fuchsia::zx::Channel,
 
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireFdfHandles, server_end_driver), 8);
+        pub clock_handle: ::fidl_next::fuchsia::zx::Clock,
 
-unsafe impl ::fidl_next::Wire for WireFdfHandles {
-    type Decoded<'de> = WireFdfHandles;
+        pub debuglog_handle: ::fidl_next::fuchsia::zx::DebugLog,
 
-    #[inline]
-    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
-        ::fidl_next::munge! {
-            let Self {
+        pub event_handle: ::fidl_next::fuchsia::zx::Event,
 
-                fdf_channel_handle,
-                client_end_driver,
-                server_end_driver,
+        pub eventpair_handle: ::fidl_next::fuchsia::zx::EventPair,
 
-            } = &mut *out_;
-        }
+        pub exception_handle: ::fidl_next::fuchsia::zx::Exception,
 
-        ::fidl_next::Wire::zero_padding(fdf_channel_handle);
+        pub fifo_handle: ::fidl_next::fuchsia::zx::Fifo,
 
-        ::fidl_next::Wire::zero_padding(client_end_driver);
+        pub guest_handle: ::fidl_next::fuchsia::zx::Guest,
 
-        ::fidl_next::Wire::zero_padding(server_end_driver);
+        pub interrupt_handle: ::fidl_next::fuchsia::zx::Interrupt,
+
+        pub iob_handle: ::fidl_next::fuchsia::zx::Iob,
+
+        pub iommu_handle: ::fidl_next::fuchsia::zx::Iommu,
+
+        pub job_handle: ::fidl_next::fuchsia::zx::Job,
+
+        pub msi_handle: ::fidl_next::fuchsia::zx::Handle,
+
+        pub pager_handle: ::fidl_next::fuchsia::zx::Pager,
+
+        pub pmt_handle: ::fidl_next::fuchsia::zx::Pmt,
+
+        pub port_handle: ::fidl_next::fuchsia::zx::Port,
+
+        pub process_handle: ::fidl_next::fuchsia::zx::Process,
+
+        pub profile_handle: ::fidl_next::fuchsia::zx::Profile,
+
+        pub resource_handle: ::fidl_next::fuchsia::zx::Resource,
+
+        pub socket_handle: ::fidl_next::fuchsia::zx::Socket,
+
+        pub stream_handle: ::fidl_next::fuchsia::zx::Stream,
+
+        pub suspendtoken_handle: ::fidl_next::fuchsia::zx::Handle,
+
+        pub thread_handle: ::fidl_next::fuchsia::zx::Thread,
+
+        pub timer_handle: ::fidl_next::fuchsia::zx::Timer,
+
+        pub vcpu_handle: ::fidl_next::fuchsia::zx::Vcpu,
+
+        pub vmar_handle: ::fidl_next::fuchsia::zx::Vmar,
+
+        pub vmo_handle: ::fidl_next::fuchsia::zx::Vmo,
+
+        pub rights_handle: ::fidl_next::fuchsia::zx::Vmo,
+
+        pub aliased_plain_handle_field: ::fidl_next::fuchsia::zx::Handle,
+
+        pub aliased_subtype_handle_field: ::fidl_next::fuchsia::zx::Vmo,
+
+        pub aliased_rights_handle_field: ::fidl_next::fuchsia::zx::Vmo,
+
+        pub some_protocol:
+            ::fidl_next::ClientEnd<crate::SomeProtocol, ::fidl_next::fuchsia::zx::Channel>,
+
+        pub request_some_protocol:
+            ::fidl_next::ServerEnd<crate::SomeProtocol, ::fidl_next::fuchsia::zx::Channel>,
     }
-}
 
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireFdfHandles
-where
-    ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-    ___D: ::fidl_next::fuchsia::HandleDecoder,
-{
-    fn decode(
-        slot_: ::fidl_next::Slot<'_, Self>,
-        decoder_: &mut ___D,
-    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-        ::fidl_next::munge! {
-            let Self {
-
-                mut fdf_channel_handle,
-                mut client_end_driver,
-                mut server_end_driver,
-
-            } = slot_;
-        }
-
-        ::fidl_next::Decode::decode(fdf_channel_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(client_end_driver.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(server_end_driver.as_mut(), decoder_)?;
-
-        Ok(())
-    }
-}
-
-pub type AliasedPlainHandle = ::fidl_next::fuchsia::zx::Handle;
-
-/// The wire type corresponding to [`AliasedPlainHandle`].
-pub type WireAliasedPlainHandle = ::fidl_next::fuchsia::WireHandle;
-
-pub type AliasedSubtypeHandle = ::fidl_next::fuchsia::zx::Vmo;
-
-/// The wire type corresponding to [`AliasedSubtypeHandle`].
-pub type WireAliasedSubtypeHandle = ::fidl_next::fuchsia::WireVmo;
-
-pub type AliasedRightsHandle = ::fidl_next::fuchsia::zx::Vmo;
-
-/// The wire type corresponding to [`AliasedRightsHandle`].
-pub type WireAliasedRightsHandle = ::fidl_next::fuchsia::WireVmo;
-
-#[derive(PartialEq, Debug)]
-#[repr(C)]
-pub struct Handles {
-    pub plain_handle: ::fidl_next::fuchsia::zx::Handle,
-
-    pub bti_handle: ::fidl_next::fuchsia::zx::Bti,
-
-    pub channel_handle: ::fidl_next::fuchsia::zx::Channel,
-
-    pub clock_handle: ::fidl_next::fuchsia::zx::Clock,
-
-    pub debuglog_handle: ::fidl_next::fuchsia::zx::DebugLog,
-
-    pub event_handle: ::fidl_next::fuchsia::zx::Event,
-
-    pub eventpair_handle: ::fidl_next::fuchsia::zx::EventPair,
-
-    pub exception_handle: ::fidl_next::fuchsia::zx::Exception,
-
-    pub fifo_handle: ::fidl_next::fuchsia::zx::Fifo,
-
-    pub guest_handle: ::fidl_next::fuchsia::zx::Guest,
-
-    pub interrupt_handle: ::fidl_next::fuchsia::zx::Interrupt,
-
-    pub iob_handle: ::fidl_next::fuchsia::zx::Iob,
-
-    pub iommu_handle: ::fidl_next::fuchsia::zx::Iommu,
-
-    pub job_handle: ::fidl_next::fuchsia::zx::Job,
-
-    pub msi_handle: ::fidl_next::fuchsia::zx::Handle,
-
-    pub pager_handle: ::fidl_next::fuchsia::zx::Pager,
-
-    pub pmt_handle: ::fidl_next::fuchsia::zx::Pmt,
-
-    pub port_handle: ::fidl_next::fuchsia::zx::Port,
-
-    pub process_handle: ::fidl_next::fuchsia::zx::Process,
-
-    pub profile_handle: ::fidl_next::fuchsia::zx::Profile,
-
-    pub resource_handle: ::fidl_next::fuchsia::zx::Resource,
-
-    pub socket_handle: ::fidl_next::fuchsia::zx::Socket,
-
-    pub stream_handle: ::fidl_next::fuchsia::zx::Stream,
-
-    pub suspendtoken_handle: ::fidl_next::fuchsia::zx::Handle,
-
-    pub thread_handle: ::fidl_next::fuchsia::zx::Thread,
-
-    pub timer_handle: ::fidl_next::fuchsia::zx::Timer,
-
-    pub vcpu_handle: ::fidl_next::fuchsia::zx::Vcpu,
-
-    pub vmar_handle: ::fidl_next::fuchsia::zx::Vmar,
-
-    pub vmo_handle: ::fidl_next::fuchsia::zx::Vmo,
-
-    pub rights_handle: ::fidl_next::fuchsia::zx::Vmo,
-
-    pub aliased_plain_handle_field: ::fidl_next::fuchsia::zx::Handle,
-
-    pub aliased_subtype_handle_field: ::fidl_next::fuchsia::zx::Vmo,
-
-    pub aliased_rights_handle_field: ::fidl_next::fuchsia::zx::Vmo,
-
-    pub some_protocol:
-        ::fidl_next::ClientEnd<crate::SomeProtocol, ::fidl_next::fuchsia::zx::Channel>,
-
-    pub request_some_protocol:
-        ::fidl_next::ServerEnd<crate::SomeProtocol, ::fidl_next::fuchsia::zx::Channel>,
-}
-
-impl ::fidl_next::Encodable for Handles {
-    const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<Self, WireHandles> = unsafe {
-        ::fidl_next::CopyOptimization::enable_if(
+    impl ::fidl_next::Encodable for Handles {
+        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<Self, crate::wire::Handles> = unsafe {
+            ::fidl_next::CopyOptimization::enable_if(
             true
 
                 && <
@@ -547,808 +355,1028 @@ impl ::fidl_next::Encodable for Handles {
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
-    };
+        };
 
-    type Encoded = WireHandles;
-}
+        type Encoded = crate::wire::Handles;
+    }
 
-unsafe impl<___E> ::fidl_next::Encode<___E> for Handles
-where
-    ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-    ___E: ::fidl_next::fuchsia::HandleEncoder,
-{
-    #[inline]
-    fn encode(
-        self,
-        encoder_: &mut ___E,
-        out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::munge! {
-            let Self::Encoded {
-                plain_handle,
-                bti_handle,
-                channel_handle,
-                clock_handle,
-                debuglog_handle,
-                event_handle,
-                eventpair_handle,
-                exception_handle,
-                fifo_handle,
-                guest_handle,
-                interrupt_handle,
-                iob_handle,
-                iommu_handle,
-                job_handle,
-                msi_handle,
-                pager_handle,
-                pmt_handle,
-                port_handle,
-                process_handle,
-                profile_handle,
-                resource_handle,
-                socket_handle,
-                stream_handle,
-                suspendtoken_handle,
-                thread_handle,
-                timer_handle,
-                vcpu_handle,
-                vmar_handle,
-                vmo_handle,
-                rights_handle,
+    unsafe impl<___E> ::fidl_next::Encode<___E> for Handles
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+                    plain_handle,
+                    bti_handle,
+                    channel_handle,
+                    clock_handle,
+                    debuglog_handle,
+                    event_handle,
+                    eventpair_handle,
+                    exception_handle,
+                    fifo_handle,
+                    guest_handle,
+                    interrupt_handle,
+                    iob_handle,
+                    iommu_handle,
+                    job_handle,
+                    msi_handle,
+                    pager_handle,
+                    pmt_handle,
+                    port_handle,
+                    process_handle,
+                    profile_handle,
+                    resource_handle,
+                    socket_handle,
+                    stream_handle,
+                    suspendtoken_handle,
+                    thread_handle,
+                    timer_handle,
+                    vcpu_handle,
+                    vmar_handle,
+                    vmo_handle,
+                    rights_handle,
+                    aliased_plain_handle_field,
+                    aliased_subtype_handle_field,
+                    aliased_rights_handle_field,
+                    some_protocol,
+                    request_some_protocol,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.plain_handle, encoder_, plain_handle)?;
+
+            ::fidl_next::Encode::encode(self.bti_handle, encoder_, bti_handle)?;
+
+            ::fidl_next::Encode::encode(self.channel_handle, encoder_, channel_handle)?;
+
+            ::fidl_next::Encode::encode(self.clock_handle, encoder_, clock_handle)?;
+
+            ::fidl_next::Encode::encode(self.debuglog_handle, encoder_, debuglog_handle)?;
+
+            ::fidl_next::Encode::encode(self.event_handle, encoder_, event_handle)?;
+
+            ::fidl_next::Encode::encode(self.eventpair_handle, encoder_, eventpair_handle)?;
+
+            ::fidl_next::Encode::encode(self.exception_handle, encoder_, exception_handle)?;
+
+            ::fidl_next::Encode::encode(self.fifo_handle, encoder_, fifo_handle)?;
+
+            ::fidl_next::Encode::encode(self.guest_handle, encoder_, guest_handle)?;
+
+            ::fidl_next::Encode::encode(self.interrupt_handle, encoder_, interrupt_handle)?;
+
+            ::fidl_next::Encode::encode(self.iob_handle, encoder_, iob_handle)?;
+
+            ::fidl_next::Encode::encode(self.iommu_handle, encoder_, iommu_handle)?;
+
+            ::fidl_next::Encode::encode(self.job_handle, encoder_, job_handle)?;
+
+            ::fidl_next::Encode::encode(self.msi_handle, encoder_, msi_handle)?;
+
+            ::fidl_next::Encode::encode(self.pager_handle, encoder_, pager_handle)?;
+
+            ::fidl_next::Encode::encode(self.pmt_handle, encoder_, pmt_handle)?;
+
+            ::fidl_next::Encode::encode(self.port_handle, encoder_, port_handle)?;
+
+            ::fidl_next::Encode::encode(self.process_handle, encoder_, process_handle)?;
+
+            ::fidl_next::Encode::encode(self.profile_handle, encoder_, profile_handle)?;
+
+            ::fidl_next::Encode::encode(self.resource_handle, encoder_, resource_handle)?;
+
+            ::fidl_next::Encode::encode(self.socket_handle, encoder_, socket_handle)?;
+
+            ::fidl_next::Encode::encode(self.stream_handle, encoder_, stream_handle)?;
+
+            ::fidl_next::Encode::encode(self.suspendtoken_handle, encoder_, suspendtoken_handle)?;
+
+            ::fidl_next::Encode::encode(self.thread_handle, encoder_, thread_handle)?;
+
+            ::fidl_next::Encode::encode(self.timer_handle, encoder_, timer_handle)?;
+
+            ::fidl_next::Encode::encode(self.vcpu_handle, encoder_, vcpu_handle)?;
+
+            ::fidl_next::Encode::encode(self.vmar_handle, encoder_, vmar_handle)?;
+
+            ::fidl_next::Encode::encode(self.vmo_handle, encoder_, vmo_handle)?;
+
+            ::fidl_next::Encode::encode(self.rights_handle, encoder_, rights_handle)?;
+
+            ::fidl_next::Encode::encode(
+                self.aliased_plain_handle_field,
+                encoder_,
                 aliased_plain_handle_field,
+            )?;
+
+            ::fidl_next::Encode::encode(
+                self.aliased_subtype_handle_field,
+                encoder_,
                 aliased_subtype_handle_field,
+            )?;
+
+            ::fidl_next::Encode::encode(
+                self.aliased_rights_handle_field,
+                encoder_,
                 aliased_rights_handle_field,
-                some_protocol,
+            )?;
+
+            ::fidl_next::Encode::encode(self.some_protocol, encoder_, some_protocol)?;
+
+            ::fidl_next::Encode::encode(
+                self.request_some_protocol,
+                encoder_,
                 request_some_protocol,
+            )?;
 
-            } = out_;
+            Ok(())
         }
+    }
 
-        ::fidl_next::Encode::encode(self.plain_handle, encoder_, plain_handle)?;
+    impl ::fidl_next::EncodableOption for Handles {
+        type EncodedOption = ::fidl_next::WireBox<'static, crate::wire::Handles>;
+    }
 
-        ::fidl_next::Encode::encode(self.bti_handle, encoder_, bti_handle)?;
+    unsafe impl<___E> ::fidl_next::EncodeOption<___E> for Handles
+    where
+        ___E: ::fidl_next::Encoder + ?Sized,
+        Handles: ::fidl_next::Encode<___E>,
+    {
+        #[inline]
+        fn encode_option(
+            this: ::core::option::Option<Self>,
+            encoder: &mut ___E,
+            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            if let Some(inner) = this {
+                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::WireBox::encode_present(out);
+            } else {
+                ::fidl_next::WireBox::encode_absent(out);
+            }
 
-        ::fidl_next::Encode::encode(self.channel_handle, encoder_, channel_handle)?;
+            Ok(())
+        }
+    }
 
-        ::fidl_next::Encode::encode(self.clock_handle, encoder_, clock_handle)?;
+    impl ::fidl_next::FromWire<crate::wire::Handles> for Handles {
+        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<crate::wire::Handles, Self> = unsafe {
+            ::fidl_next::CopyOptimization::enable_if(
+                true && <::fidl_next::fuchsia::zx::Handle as ::fidl_next::FromWire<
+                    ::fidl_next::fuchsia::WireHandle,
+                >>::COPY_OPTIMIZATION
+                    .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Bti as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireBti,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Channel as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireChannel,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Clock as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireClock,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::DebugLog as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireDebugLog,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Event as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireEvent,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::EventPair as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireEventPair,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Exception as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireException,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Fifo as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireFifo,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Guest as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireGuest,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Interrupt as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireInterrupt,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Iob as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireIob,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Iommu as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireIommu,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Job as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireJob,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Handle as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireHandle,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Pager as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WirePager,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Pmt as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WirePmt,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Port as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WirePort,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Process as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireProcess,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Profile as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireProfile,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Resource as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireResource,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Socket as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireSocket,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Stream as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireStream,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Handle as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireHandle,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Thread as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireThread,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Timer as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireTimer,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Vcpu as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireVcpu,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Vmar as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireVmar,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Vmo as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireVmo,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Vmo as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireVmo,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Handle as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireHandle,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Vmo as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireVmo,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::fuchsia::zx::Vmo as ::fidl_next::FromWire<
+                        ::fidl_next::fuchsia::WireVmo,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::ClientEnd<
+                        crate::SomeProtocol,
+                        ::fidl_next::fuchsia::zx::Channel,
+                    > as ::fidl_next::FromWire<
+                        ::fidl_next::ClientEnd<
+                            crate::SomeProtocol,
+                            ::fidl_next::fuchsia::WireChannel,
+                        >,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <::fidl_next::ServerEnd<
+                        crate::SomeProtocol,
+                        ::fidl_next::fuchsia::zx::Channel,
+                    > as ::fidl_next::FromWire<
+                        ::fidl_next::ServerEnd<
+                            crate::SomeProtocol,
+                            ::fidl_next::fuchsia::WireChannel,
+                        >,
+                    >>::COPY_OPTIMIZATION
+                        .is_enabled(),
+            )
+        };
 
-        ::fidl_next::Encode::encode(self.debuglog_handle, encoder_, debuglog_handle)?;
+        #[inline]
+        fn from_wire(wire: crate::wire::Handles) -> Self {
+            Self {
+                plain_handle: ::fidl_next::FromWire::from_wire(wire.plain_handle),
 
-        ::fidl_next::Encode::encode(self.event_handle, encoder_, event_handle)?;
+                bti_handle: ::fidl_next::FromWire::from_wire(wire.bti_handle),
 
-        ::fidl_next::Encode::encode(self.eventpair_handle, encoder_, eventpair_handle)?;
+                channel_handle: ::fidl_next::FromWire::from_wire(wire.channel_handle),
 
-        ::fidl_next::Encode::encode(self.exception_handle, encoder_, exception_handle)?;
+                clock_handle: ::fidl_next::FromWire::from_wire(wire.clock_handle),
 
-        ::fidl_next::Encode::encode(self.fifo_handle, encoder_, fifo_handle)?;
+                debuglog_handle: ::fidl_next::FromWire::from_wire(wire.debuglog_handle),
 
-        ::fidl_next::Encode::encode(self.guest_handle, encoder_, guest_handle)?;
+                event_handle: ::fidl_next::FromWire::from_wire(wire.event_handle),
 
-        ::fidl_next::Encode::encode(self.interrupt_handle, encoder_, interrupt_handle)?;
+                eventpair_handle: ::fidl_next::FromWire::from_wire(wire.eventpair_handle),
 
-        ::fidl_next::Encode::encode(self.iob_handle, encoder_, iob_handle)?;
+                exception_handle: ::fidl_next::FromWire::from_wire(wire.exception_handle),
 
-        ::fidl_next::Encode::encode(self.iommu_handle, encoder_, iommu_handle)?;
+                fifo_handle: ::fidl_next::FromWire::from_wire(wire.fifo_handle),
 
-        ::fidl_next::Encode::encode(self.job_handle, encoder_, job_handle)?;
+                guest_handle: ::fidl_next::FromWire::from_wire(wire.guest_handle),
 
-        ::fidl_next::Encode::encode(self.msi_handle, encoder_, msi_handle)?;
+                interrupt_handle: ::fidl_next::FromWire::from_wire(wire.interrupt_handle),
 
-        ::fidl_next::Encode::encode(self.pager_handle, encoder_, pager_handle)?;
+                iob_handle: ::fidl_next::FromWire::from_wire(wire.iob_handle),
 
-        ::fidl_next::Encode::encode(self.pmt_handle, encoder_, pmt_handle)?;
+                iommu_handle: ::fidl_next::FromWire::from_wire(wire.iommu_handle),
 
-        ::fidl_next::Encode::encode(self.port_handle, encoder_, port_handle)?;
+                job_handle: ::fidl_next::FromWire::from_wire(wire.job_handle),
 
-        ::fidl_next::Encode::encode(self.process_handle, encoder_, process_handle)?;
+                msi_handle: ::fidl_next::FromWire::from_wire(wire.msi_handle),
 
-        ::fidl_next::Encode::encode(self.profile_handle, encoder_, profile_handle)?;
+                pager_handle: ::fidl_next::FromWire::from_wire(wire.pager_handle),
 
-        ::fidl_next::Encode::encode(self.resource_handle, encoder_, resource_handle)?;
+                pmt_handle: ::fidl_next::FromWire::from_wire(wire.pmt_handle),
 
-        ::fidl_next::Encode::encode(self.socket_handle, encoder_, socket_handle)?;
+                port_handle: ::fidl_next::FromWire::from_wire(wire.port_handle),
 
-        ::fidl_next::Encode::encode(self.stream_handle, encoder_, stream_handle)?;
+                process_handle: ::fidl_next::FromWire::from_wire(wire.process_handle),
 
-        ::fidl_next::Encode::encode(self.suspendtoken_handle, encoder_, suspendtoken_handle)?;
+                profile_handle: ::fidl_next::FromWire::from_wire(wire.profile_handle),
 
-        ::fidl_next::Encode::encode(self.thread_handle, encoder_, thread_handle)?;
+                resource_handle: ::fidl_next::FromWire::from_wire(wire.resource_handle),
 
-        ::fidl_next::Encode::encode(self.timer_handle, encoder_, timer_handle)?;
+                socket_handle: ::fidl_next::FromWire::from_wire(wire.socket_handle),
 
-        ::fidl_next::Encode::encode(self.vcpu_handle, encoder_, vcpu_handle)?;
+                stream_handle: ::fidl_next::FromWire::from_wire(wire.stream_handle),
 
-        ::fidl_next::Encode::encode(self.vmar_handle, encoder_, vmar_handle)?;
+                suspendtoken_handle: ::fidl_next::FromWire::from_wire(wire.suspendtoken_handle),
 
-        ::fidl_next::Encode::encode(self.vmo_handle, encoder_, vmo_handle)?;
+                thread_handle: ::fidl_next::FromWire::from_wire(wire.thread_handle),
 
-        ::fidl_next::Encode::encode(self.rights_handle, encoder_, rights_handle)?;
+                timer_handle: ::fidl_next::FromWire::from_wire(wire.timer_handle),
 
-        ::fidl_next::Encode::encode(
-            self.aliased_plain_handle_field,
-            encoder_,
-            aliased_plain_handle_field,
-        )?;
+                vcpu_handle: ::fidl_next::FromWire::from_wire(wire.vcpu_handle),
 
-        ::fidl_next::Encode::encode(
-            self.aliased_subtype_handle_field,
-            encoder_,
-            aliased_subtype_handle_field,
-        )?;
+                vmar_handle: ::fidl_next::FromWire::from_wire(wire.vmar_handle),
 
-        ::fidl_next::Encode::encode(
-            self.aliased_rights_handle_field,
-            encoder_,
-            aliased_rights_handle_field,
-        )?;
+                vmo_handle: ::fidl_next::FromWire::from_wire(wire.vmo_handle),
 
-        ::fidl_next::Encode::encode(self.some_protocol, encoder_, some_protocol)?;
+                rights_handle: ::fidl_next::FromWire::from_wire(wire.rights_handle),
 
-        ::fidl_next::Encode::encode(self.request_some_protocol, encoder_, request_some_protocol)?;
+                aliased_plain_handle_field: ::fidl_next::FromWire::from_wire(
+                    wire.aliased_plain_handle_field,
+                ),
 
-        Ok(())
+                aliased_subtype_handle_field: ::fidl_next::FromWire::from_wire(
+                    wire.aliased_subtype_handle_field,
+                ),
+
+                aliased_rights_handle_field: ::fidl_next::FromWire::from_wire(
+                    wire.aliased_rights_handle_field,
+                ),
+
+                some_protocol: ::fidl_next::FromWire::from_wire(wire.some_protocol),
+
+                request_some_protocol: ::fidl_next::FromWire::from_wire(wire.request_some_protocol),
+            }
+        }
     }
 }
 
-impl ::fidl_next::EncodableOption for Handles {
-    type EncodedOption = ::fidl_next::WireBox<'static, WireHandles>;
+pub mod wire {
+
+    /// The wire type corresponding to [`FdfHandles`].
+    #[derive(Debug)]
+    #[repr(C)]
+    pub struct FdfHandles {
+        pub fdf_channel_handle: ::fdf_fidl::WireDriverChannel,
+
+        pub client_end_driver:
+            ::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::WireDriverChannel>,
+
+        pub server_end_driver:
+            ::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::WireDriverChannel>,
+    }
+
+    static_assertions::const_assert_eq!(std::mem::size_of::<FdfHandles>(), 12);
+    static_assertions::const_assert_eq!(std::mem::align_of::<FdfHandles>(), 4);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(FdfHandles, fdf_channel_handle), 0);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(FdfHandles, client_end_driver), 4);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(FdfHandles, server_end_driver), 8);
+
+    unsafe impl ::fidl_next::Wire for FdfHandles {
+        type Decoded<'de> = FdfHandles;
+
+        #[inline]
+        fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+            ::fidl_next::munge! {
+                let Self {
+
+                    fdf_channel_handle,
+                    client_end_driver,
+                    server_end_driver,
+
+                } = &mut *out_;
+            }
+
+            ::fidl_next::Wire::zero_padding(fdf_channel_handle);
+
+            ::fidl_next::Wire::zero_padding(client_end_driver);
+
+            ::fidl_next::Wire::zero_padding(server_end_driver);
+        }
+    }
+
+    unsafe impl<___D> ::fidl_next::Decode<___D> for FdfHandles
+    where
+        ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
+        ___D: ::fidl_next::fuchsia::HandleDecoder,
+    {
+        fn decode(
+            slot_: ::fidl_next::Slot<'_, Self>,
+            decoder_: &mut ___D,
+        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+            ::fidl_next::munge! {
+                let Self {
+
+                    mut fdf_channel_handle,
+                    mut client_end_driver,
+                    mut server_end_driver,
+
+                } = slot_;
+            }
+
+            ::fidl_next::Decode::decode(fdf_channel_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(client_end_driver.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(server_end_driver.as_mut(), decoder_)?;
+
+            Ok(())
+        }
+    }
+
+    impl ::fidl_next::IntoNatural for FdfHandles {
+        type Natural = crate::natural::FdfHandles;
+    }
+
+    /// The wire type corresponding to [`AliasedPlainHandle`](crate::natural::AliasedPlainHandle).
+    pub type AliasedPlainHandle = ::fidl_next::fuchsia::WireHandle;
+
+    /// The wire type corresponding to [`AliasedSubtypeHandle`](crate::natural::AliasedSubtypeHandle).
+    pub type AliasedSubtypeHandle = ::fidl_next::fuchsia::WireVmo;
+
+    /// The wire type corresponding to [`AliasedRightsHandle`](crate::natural::AliasedRightsHandle).
+    pub type AliasedRightsHandle = ::fidl_next::fuchsia::WireVmo;
+
+    /// The wire type corresponding to [`Handles`].
+    #[derive(Debug)]
+    #[repr(C)]
+    pub struct Handles {
+        pub plain_handle: ::fidl_next::fuchsia::WireHandle,
+
+        pub bti_handle: ::fidl_next::fuchsia::WireBti,
+
+        pub channel_handle: ::fidl_next::fuchsia::WireChannel,
+
+        pub clock_handle: ::fidl_next::fuchsia::WireClock,
+
+        pub debuglog_handle: ::fidl_next::fuchsia::WireDebugLog,
+
+        pub event_handle: ::fidl_next::fuchsia::WireEvent,
+
+        pub eventpair_handle: ::fidl_next::fuchsia::WireEventPair,
+
+        pub exception_handle: ::fidl_next::fuchsia::WireException,
+
+        pub fifo_handle: ::fidl_next::fuchsia::WireFifo,
+
+        pub guest_handle: ::fidl_next::fuchsia::WireGuest,
+
+        pub interrupt_handle: ::fidl_next::fuchsia::WireInterrupt,
+
+        pub iob_handle: ::fidl_next::fuchsia::WireIob,
+
+        pub iommu_handle: ::fidl_next::fuchsia::WireIommu,
+
+        pub job_handle: ::fidl_next::fuchsia::WireJob,
+
+        pub msi_handle: ::fidl_next::fuchsia::WireHandle,
+
+        pub pager_handle: ::fidl_next::fuchsia::WirePager,
+
+        pub pmt_handle: ::fidl_next::fuchsia::WirePmt,
+
+        pub port_handle: ::fidl_next::fuchsia::WirePort,
+
+        pub process_handle: ::fidl_next::fuchsia::WireProcess,
+
+        pub profile_handle: ::fidl_next::fuchsia::WireProfile,
+
+        pub resource_handle: ::fidl_next::fuchsia::WireResource,
+
+        pub socket_handle: ::fidl_next::fuchsia::WireSocket,
+
+        pub stream_handle: ::fidl_next::fuchsia::WireStream,
+
+        pub suspendtoken_handle: ::fidl_next::fuchsia::WireHandle,
+
+        pub thread_handle: ::fidl_next::fuchsia::WireThread,
+
+        pub timer_handle: ::fidl_next::fuchsia::WireTimer,
+
+        pub vcpu_handle: ::fidl_next::fuchsia::WireVcpu,
+
+        pub vmar_handle: ::fidl_next::fuchsia::WireVmar,
+
+        pub vmo_handle: ::fidl_next::fuchsia::WireVmo,
+
+        pub rights_handle: ::fidl_next::fuchsia::WireVmo,
+
+        pub aliased_plain_handle_field: ::fidl_next::fuchsia::WireHandle,
+
+        pub aliased_subtype_handle_field: ::fidl_next::fuchsia::WireVmo,
+
+        pub aliased_rights_handle_field: ::fidl_next::fuchsia::WireVmo,
+
+        pub some_protocol:
+            ::fidl_next::ClientEnd<crate::SomeProtocol, ::fidl_next::fuchsia::WireChannel>,
+
+        pub request_some_protocol:
+            ::fidl_next::ServerEnd<crate::SomeProtocol, ::fidl_next::fuchsia::WireChannel>,
+    }
+
+    static_assertions::const_assert_eq!(std::mem::size_of::<Handles>(), 140);
+    static_assertions::const_assert_eq!(std::mem::align_of::<Handles>(), 4);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, plain_handle), 0);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, bti_handle), 4);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, channel_handle), 8);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, clock_handle), 12);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, debuglog_handle), 16);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, event_handle), 20);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, eventpair_handle), 24);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, exception_handle), 28);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, fifo_handle), 32);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, guest_handle), 36);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, interrupt_handle), 40);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, iob_handle), 44);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, iommu_handle), 48);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, job_handle), 52);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, msi_handle), 56);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, pager_handle), 60);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, pmt_handle), 64);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, port_handle), 68);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, process_handle), 72);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, profile_handle), 76);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, resource_handle), 80);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, socket_handle), 84);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, stream_handle), 88);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, suspendtoken_handle), 92);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, thread_handle), 96);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, timer_handle), 100);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, vcpu_handle), 104);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, vmar_handle), 108);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, vmo_handle), 112);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, rights_handle), 116);
+
+    static_assertions::const_assert_eq!(
+        std::mem::offset_of!(Handles, aliased_plain_handle_field),
+        120
+    );
+
+    static_assertions::const_assert_eq!(
+        std::mem::offset_of!(Handles, aliased_subtype_handle_field),
+        124
+    );
+
+    static_assertions::const_assert_eq!(
+        std::mem::offset_of!(Handles, aliased_rights_handle_field),
+        128
+    );
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, some_protocol), 132);
+
+    static_assertions::const_assert_eq!(std::mem::offset_of!(Handles, request_some_protocol), 136);
+
+    unsafe impl ::fidl_next::Wire for Handles {
+        type Decoded<'de> = Handles;
+
+        #[inline]
+        fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
+            ::fidl_next::munge! {
+                let Self {
+
+                    plain_handle,
+                    bti_handle,
+                    channel_handle,
+                    clock_handle,
+                    debuglog_handle,
+                    event_handle,
+                    eventpair_handle,
+                    exception_handle,
+                    fifo_handle,
+                    guest_handle,
+                    interrupt_handle,
+                    iob_handle,
+                    iommu_handle,
+                    job_handle,
+                    msi_handle,
+                    pager_handle,
+                    pmt_handle,
+                    port_handle,
+                    process_handle,
+                    profile_handle,
+                    resource_handle,
+                    socket_handle,
+                    stream_handle,
+                    suspendtoken_handle,
+                    thread_handle,
+                    timer_handle,
+                    vcpu_handle,
+                    vmar_handle,
+                    vmo_handle,
+                    rights_handle,
+                    aliased_plain_handle_field,
+                    aliased_subtype_handle_field,
+                    aliased_rights_handle_field,
+                    some_protocol,
+                    request_some_protocol,
+
+                } = &mut *out_;
+            }
+
+            ::fidl_next::Wire::zero_padding(plain_handle);
+
+            ::fidl_next::Wire::zero_padding(bti_handle);
+
+            ::fidl_next::Wire::zero_padding(channel_handle);
+
+            ::fidl_next::Wire::zero_padding(clock_handle);
+
+            ::fidl_next::Wire::zero_padding(debuglog_handle);
+
+            ::fidl_next::Wire::zero_padding(event_handle);
+
+            ::fidl_next::Wire::zero_padding(eventpair_handle);
+
+            ::fidl_next::Wire::zero_padding(exception_handle);
+
+            ::fidl_next::Wire::zero_padding(fifo_handle);
+
+            ::fidl_next::Wire::zero_padding(guest_handle);
+
+            ::fidl_next::Wire::zero_padding(interrupt_handle);
+
+            ::fidl_next::Wire::zero_padding(iob_handle);
+
+            ::fidl_next::Wire::zero_padding(iommu_handle);
+
+            ::fidl_next::Wire::zero_padding(job_handle);
+
+            ::fidl_next::Wire::zero_padding(msi_handle);
+
+            ::fidl_next::Wire::zero_padding(pager_handle);
+
+            ::fidl_next::Wire::zero_padding(pmt_handle);
+
+            ::fidl_next::Wire::zero_padding(port_handle);
+
+            ::fidl_next::Wire::zero_padding(process_handle);
+
+            ::fidl_next::Wire::zero_padding(profile_handle);
+
+            ::fidl_next::Wire::zero_padding(resource_handle);
+
+            ::fidl_next::Wire::zero_padding(socket_handle);
+
+            ::fidl_next::Wire::zero_padding(stream_handle);
+
+            ::fidl_next::Wire::zero_padding(suspendtoken_handle);
+
+            ::fidl_next::Wire::zero_padding(thread_handle);
+
+            ::fidl_next::Wire::zero_padding(timer_handle);
+
+            ::fidl_next::Wire::zero_padding(vcpu_handle);
+
+            ::fidl_next::Wire::zero_padding(vmar_handle);
+
+            ::fidl_next::Wire::zero_padding(vmo_handle);
+
+            ::fidl_next::Wire::zero_padding(rights_handle);
+
+            ::fidl_next::Wire::zero_padding(aliased_plain_handle_field);
+
+            ::fidl_next::Wire::zero_padding(aliased_subtype_handle_field);
+
+            ::fidl_next::Wire::zero_padding(aliased_rights_handle_field);
+
+            ::fidl_next::Wire::zero_padding(some_protocol);
+
+            ::fidl_next::Wire::zero_padding(request_some_protocol);
+        }
+    }
+
+    unsafe impl<___D> ::fidl_next::Decode<___D> for Handles
+    where
+        ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
+        ___D: ::fidl_next::fuchsia::HandleDecoder,
+    {
+        fn decode(
+            slot_: ::fidl_next::Slot<'_, Self>,
+            decoder_: &mut ___D,
+        ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+            ::fidl_next::munge! {
+                let Self {
+
+                    mut plain_handle,
+                    mut bti_handle,
+                    mut channel_handle,
+                    mut clock_handle,
+                    mut debuglog_handle,
+                    mut event_handle,
+                    mut eventpair_handle,
+                    mut exception_handle,
+                    mut fifo_handle,
+                    mut guest_handle,
+                    mut interrupt_handle,
+                    mut iob_handle,
+                    mut iommu_handle,
+                    mut job_handle,
+                    mut msi_handle,
+                    mut pager_handle,
+                    mut pmt_handle,
+                    mut port_handle,
+                    mut process_handle,
+                    mut profile_handle,
+                    mut resource_handle,
+                    mut socket_handle,
+                    mut stream_handle,
+                    mut suspendtoken_handle,
+                    mut thread_handle,
+                    mut timer_handle,
+                    mut vcpu_handle,
+                    mut vmar_handle,
+                    mut vmo_handle,
+                    mut rights_handle,
+                    mut aliased_plain_handle_field,
+                    mut aliased_subtype_handle_field,
+                    mut aliased_rights_handle_field,
+                    mut some_protocol,
+                    mut request_some_protocol,
+
+                } = slot_;
+            }
+
+            ::fidl_next::Decode::decode(plain_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(bti_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(channel_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(clock_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(debuglog_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(event_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(eventpair_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(exception_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(fifo_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(guest_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(interrupt_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(iob_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(iommu_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(job_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(msi_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(pager_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(pmt_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(port_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(process_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(profile_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(resource_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(socket_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(stream_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(suspendtoken_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(thread_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(timer_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(vcpu_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(vmar_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(vmo_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(rights_handle.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(aliased_plain_handle_field.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(aliased_subtype_handle_field.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(aliased_rights_handle_field.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(some_protocol.as_mut(), decoder_)?;
+
+            ::fidl_next::Decode::decode(request_some_protocol.as_mut(), decoder_)?;
+
+            Ok(())
+        }
+    }
+
+    impl ::fidl_next::IntoNatural for Handles {
+        type Natural = crate::natural::Handles;
+    }
 }
 
-unsafe impl<___E> ::fidl_next::EncodeOption<___E> for Handles
-where
-    ___E: ::fidl_next::Encoder + ?Sized,
-    Handles: ::fidl_next::Encode<___E>,
+pub mod wire_optional {}
+
+pub use self::natural::*;
+
+/// The type corresponding to the DriverProtocol protocol.
+#[derive(PartialEq, Debug)]
+pub struct DriverProtocol;
+
+pub mod driver_protocol {
+    pub mod prelude {
+        pub use crate::{
+            DriverProtocol, DriverProtocolClientHandler, DriverProtocolServerHandler,
+            driver_protocol,
+        };
+    }
+
+    mod ___detail {
+
+        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::DriverProtocol
+        where
+            ___T: ::fidl_next::Transport,
+        {
+            type Client = DriverProtocolClient<___T>;
+            type Server = DriverProtocolServer<___T>;
+        }
+
+        /// The client for the `DriverProtocol` protocol.
+        #[repr(transparent)]
+        pub struct DriverProtocolClient<___T: ::fidl_next::Transport> {
+            #[allow(dead_code)]
+            client: ::fidl_next::protocol::Client<___T>,
+        }
+
+        impl<___T> DriverProtocolClient<___T> where ___T: ::fidl_next::Transport {}
+
+        /// The server for the `DriverProtocol` protocol.
+        #[repr(transparent)]
+        pub struct DriverProtocolServer<___T: ::fidl_next::Transport> {
+            server: ::fidl_next::protocol::Server<___T>,
+        }
+
+        impl<___T> DriverProtocolServer<___T> where ___T: ::fidl_next::Transport {}
+    }
+}
+
+/// A client handler for the DriverProtocol protocol.
+///
+/// See [`DriverProtocol`] for more details.
+pub trait DriverProtocolClientHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
 {
-    #[inline]
-    fn encode_option(
-        this: ::core::option::Option<Self>,
-        encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
-    ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        if let Some(inner) = this {
-            ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
-            ::fidl_next::WireBox::encode_present(out);
-        } else {
-            ::fidl_next::WireBox::encode_absent(out);
-        }
-
-        Ok(())
-    }
 }
 
-impl ::fidl_next::FromWire<WireHandles> for Handles {
-    const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<WireHandles, Self> = unsafe {
-        ::fidl_next::CopyOptimization::enable_if(
-            true
-
-                && <
-                    ::fidl_next::fuchsia::zx::Handle as ::fidl_next::FromWire<::fidl_next::fuchsia::WireHandle>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Bti as ::fidl_next::FromWire<::fidl_next::fuchsia::WireBti>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Channel as ::fidl_next::FromWire<::fidl_next::fuchsia::WireChannel>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Clock as ::fidl_next::FromWire<::fidl_next::fuchsia::WireClock>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::DebugLog as ::fidl_next::FromWire<::fidl_next::fuchsia::WireDebugLog>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Event as ::fidl_next::FromWire<::fidl_next::fuchsia::WireEvent>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::EventPair as ::fidl_next::FromWire<::fidl_next::fuchsia::WireEventPair>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Exception as ::fidl_next::FromWire<::fidl_next::fuchsia::WireException>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Fifo as ::fidl_next::FromWire<::fidl_next::fuchsia::WireFifo>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Guest as ::fidl_next::FromWire<::fidl_next::fuchsia::WireGuest>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Interrupt as ::fidl_next::FromWire<::fidl_next::fuchsia::WireInterrupt>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Iob as ::fidl_next::FromWire<::fidl_next::fuchsia::WireIob>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Iommu as ::fidl_next::FromWire<::fidl_next::fuchsia::WireIommu>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Job as ::fidl_next::FromWire<::fidl_next::fuchsia::WireJob>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Handle as ::fidl_next::FromWire<::fidl_next::fuchsia::WireHandle>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Pager as ::fidl_next::FromWire<::fidl_next::fuchsia::WirePager>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Pmt as ::fidl_next::FromWire<::fidl_next::fuchsia::WirePmt>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Port as ::fidl_next::FromWire<::fidl_next::fuchsia::WirePort>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Process as ::fidl_next::FromWire<::fidl_next::fuchsia::WireProcess>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Profile as ::fidl_next::FromWire<::fidl_next::fuchsia::WireProfile>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Resource as ::fidl_next::FromWire<::fidl_next::fuchsia::WireResource>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Socket as ::fidl_next::FromWire<::fidl_next::fuchsia::WireSocket>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Stream as ::fidl_next::FromWire<::fidl_next::fuchsia::WireStream>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Handle as ::fidl_next::FromWire<::fidl_next::fuchsia::WireHandle>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Thread as ::fidl_next::FromWire<::fidl_next::fuchsia::WireThread>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Timer as ::fidl_next::FromWire<::fidl_next::fuchsia::WireTimer>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Vcpu as ::fidl_next::FromWire<::fidl_next::fuchsia::WireVcpu>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Vmar as ::fidl_next::FromWire<::fidl_next::fuchsia::WireVmar>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Vmo as ::fidl_next::FromWire<::fidl_next::fuchsia::WireVmo>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Vmo as ::fidl_next::FromWire<::fidl_next::fuchsia::WireVmo>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Handle as ::fidl_next::FromWire<::fidl_next::fuchsia::WireHandle>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Vmo as ::fidl_next::FromWire<::fidl_next::fuchsia::WireVmo>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::fuchsia::zx::Vmo as ::fidl_next::FromWire<::fidl_next::fuchsia::WireVmo>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::ClientEnd<crate::SomeProtocol, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::FromWire<::fidl_next::ClientEnd<crate::SomeProtocol, ::fidl_next::fuchsia::WireChannel>>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-                && <
-                    ::fidl_next::ServerEnd<crate::SomeProtocol, ::fidl_next::fuchsia::zx::Channel> as ::fidl_next::FromWire<::fidl_next::ServerEnd<crate::SomeProtocol, ::fidl_next::fuchsia::WireChannel>>
-                >::COPY_OPTIMIZATION.is_enabled()
-
-        )
-    };
-
-    #[inline]
-    fn from_wire(wire: WireHandles) -> Self {
-        Self {
-            plain_handle: ::fidl_next::FromWire::from_wire(wire.plain_handle),
-
-            bti_handle: ::fidl_next::FromWire::from_wire(wire.bti_handle),
-
-            channel_handle: ::fidl_next::FromWire::from_wire(wire.channel_handle),
-
-            clock_handle: ::fidl_next::FromWire::from_wire(wire.clock_handle),
-
-            debuglog_handle: ::fidl_next::FromWire::from_wire(wire.debuglog_handle),
-
-            event_handle: ::fidl_next::FromWire::from_wire(wire.event_handle),
-
-            eventpair_handle: ::fidl_next::FromWire::from_wire(wire.eventpair_handle),
-
-            exception_handle: ::fidl_next::FromWire::from_wire(wire.exception_handle),
-
-            fifo_handle: ::fidl_next::FromWire::from_wire(wire.fifo_handle),
-
-            guest_handle: ::fidl_next::FromWire::from_wire(wire.guest_handle),
-
-            interrupt_handle: ::fidl_next::FromWire::from_wire(wire.interrupt_handle),
-
-            iob_handle: ::fidl_next::FromWire::from_wire(wire.iob_handle),
-
-            iommu_handle: ::fidl_next::FromWire::from_wire(wire.iommu_handle),
-
-            job_handle: ::fidl_next::FromWire::from_wire(wire.job_handle),
-
-            msi_handle: ::fidl_next::FromWire::from_wire(wire.msi_handle),
-
-            pager_handle: ::fidl_next::FromWire::from_wire(wire.pager_handle),
-
-            pmt_handle: ::fidl_next::FromWire::from_wire(wire.pmt_handle),
-
-            port_handle: ::fidl_next::FromWire::from_wire(wire.port_handle),
-
-            process_handle: ::fidl_next::FromWire::from_wire(wire.process_handle),
-
-            profile_handle: ::fidl_next::FromWire::from_wire(wire.profile_handle),
-
-            resource_handle: ::fidl_next::FromWire::from_wire(wire.resource_handle),
-
-            socket_handle: ::fidl_next::FromWire::from_wire(wire.socket_handle),
-
-            stream_handle: ::fidl_next::FromWire::from_wire(wire.stream_handle),
-
-            suspendtoken_handle: ::fidl_next::FromWire::from_wire(wire.suspendtoken_handle),
-
-            thread_handle: ::fidl_next::FromWire::from_wire(wire.thread_handle),
-
-            timer_handle: ::fidl_next::FromWire::from_wire(wire.timer_handle),
-
-            vcpu_handle: ::fidl_next::FromWire::from_wire(wire.vcpu_handle),
-
-            vmar_handle: ::fidl_next::FromWire::from_wire(wire.vmar_handle),
-
-            vmo_handle: ::fidl_next::FromWire::from_wire(wire.vmo_handle),
-
-            rights_handle: ::fidl_next::FromWire::from_wire(wire.rights_handle),
-
-            aliased_plain_handle_field: ::fidl_next::FromWire::from_wire(
-                wire.aliased_plain_handle_field,
-            ),
-
-            aliased_subtype_handle_field: ::fidl_next::FromWire::from_wire(
-                wire.aliased_subtype_handle_field,
-            ),
-
-            aliased_rights_handle_field: ::fidl_next::FromWire::from_wire(
-                wire.aliased_rights_handle_field,
-            ),
-
-            some_protocol: ::fidl_next::FromWire::from_wire(wire.some_protocol),
-
-            request_some_protocol: ::fidl_next::FromWire::from_wire(wire.request_some_protocol),
-        }
-    }
-}
-
-impl ::fidl_next::IntoNatural for WireHandles {
-    type Natural = Handles;
-}
-
-/// The wire type corresponding to [`Handles`].
-#[derive(Debug)]
-#[repr(C)]
-pub struct WireHandles {
-    pub plain_handle: ::fidl_next::fuchsia::WireHandle,
-
-    pub bti_handle: ::fidl_next::fuchsia::WireBti,
-
-    pub channel_handle: ::fidl_next::fuchsia::WireChannel,
-
-    pub clock_handle: ::fidl_next::fuchsia::WireClock,
-
-    pub debuglog_handle: ::fidl_next::fuchsia::WireDebugLog,
-
-    pub event_handle: ::fidl_next::fuchsia::WireEvent,
-
-    pub eventpair_handle: ::fidl_next::fuchsia::WireEventPair,
-
-    pub exception_handle: ::fidl_next::fuchsia::WireException,
-
-    pub fifo_handle: ::fidl_next::fuchsia::WireFifo,
-
-    pub guest_handle: ::fidl_next::fuchsia::WireGuest,
-
-    pub interrupt_handle: ::fidl_next::fuchsia::WireInterrupt,
-
-    pub iob_handle: ::fidl_next::fuchsia::WireIob,
-
-    pub iommu_handle: ::fidl_next::fuchsia::WireIommu,
-
-    pub job_handle: ::fidl_next::fuchsia::WireJob,
-
-    pub msi_handle: ::fidl_next::fuchsia::WireHandle,
-
-    pub pager_handle: ::fidl_next::fuchsia::WirePager,
-
-    pub pmt_handle: ::fidl_next::fuchsia::WirePmt,
-
-    pub port_handle: ::fidl_next::fuchsia::WirePort,
-
-    pub process_handle: ::fidl_next::fuchsia::WireProcess,
-
-    pub profile_handle: ::fidl_next::fuchsia::WireProfile,
-
-    pub resource_handle: ::fidl_next::fuchsia::WireResource,
-
-    pub socket_handle: ::fidl_next::fuchsia::WireSocket,
-
-    pub stream_handle: ::fidl_next::fuchsia::WireStream,
-
-    pub suspendtoken_handle: ::fidl_next::fuchsia::WireHandle,
-
-    pub thread_handle: ::fidl_next::fuchsia::WireThread,
-
-    pub timer_handle: ::fidl_next::fuchsia::WireTimer,
-
-    pub vcpu_handle: ::fidl_next::fuchsia::WireVcpu,
-
-    pub vmar_handle: ::fidl_next::fuchsia::WireVmar,
-
-    pub vmo_handle: ::fidl_next::fuchsia::WireVmo,
-
-    pub rights_handle: ::fidl_next::fuchsia::WireVmo,
-
-    pub aliased_plain_handle_field: ::fidl_next::fuchsia::WireHandle,
-
-    pub aliased_subtype_handle_field: ::fidl_next::fuchsia::WireVmo,
-
-    pub aliased_rights_handle_field: ::fidl_next::fuchsia::WireVmo,
-
-    pub some_protocol:
-        ::fidl_next::ClientEnd<crate::SomeProtocol, ::fidl_next::fuchsia::WireChannel>,
-
-    pub request_some_protocol:
-        ::fidl_next::ServerEnd<crate::SomeProtocol, ::fidl_next::fuchsia::WireChannel>,
-}
-static_assertions::const_assert_eq!(std::mem::size_of::<WireHandles>(), 140);
-static_assertions::const_assert_eq!(std::mem::align_of::<WireHandles>(), 4);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, plain_handle), 0);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, bti_handle), 4);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, channel_handle), 8);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, clock_handle), 12);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, debuglog_handle), 16);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, event_handle), 20);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, eventpair_handle), 24);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, exception_handle), 28);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, fifo_handle), 32);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, guest_handle), 36);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, interrupt_handle), 40);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, iob_handle), 44);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, iommu_handle), 48);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, job_handle), 52);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, msi_handle), 56);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, pager_handle), 60);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, pmt_handle), 64);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, port_handle), 68);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, process_handle), 72);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, profile_handle), 76);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, resource_handle), 80);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, socket_handle), 84);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, stream_handle), 88);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, suspendtoken_handle), 92);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, thread_handle), 96);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, timer_handle), 100);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, vcpu_handle), 104);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, vmar_handle), 108);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, vmo_handle), 112);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, rights_handle), 116);
-
-static_assertions::const_assert_eq!(
-    std::mem::offset_of!(WireHandles, aliased_plain_handle_field),
-    120
-);
-
-static_assertions::const_assert_eq!(
-    std::mem::offset_of!(WireHandles, aliased_subtype_handle_field),
-    124
-);
-
-static_assertions::const_assert_eq!(
-    std::mem::offset_of!(WireHandles, aliased_rights_handle_field),
-    128
-);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, some_protocol), 132);
-
-static_assertions::const_assert_eq!(std::mem::offset_of!(WireHandles, request_some_protocol), 136);
-
-unsafe impl ::fidl_next::Wire for WireHandles {
-    type Decoded<'de> = WireHandles;
-
-    #[inline]
-    fn zero_padding(out_: &mut ::core::mem::MaybeUninit<Self>) {
-        ::fidl_next::munge! {
-            let Self {
-
-                plain_handle,
-                bti_handle,
-                channel_handle,
-                clock_handle,
-                debuglog_handle,
-                event_handle,
-                eventpair_handle,
-                exception_handle,
-                fifo_handle,
-                guest_handle,
-                interrupt_handle,
-                iob_handle,
-                iommu_handle,
-                job_handle,
-                msi_handle,
-                pager_handle,
-                pmt_handle,
-                port_handle,
-                process_handle,
-                profile_handle,
-                resource_handle,
-                socket_handle,
-                stream_handle,
-                suspendtoken_handle,
-                thread_handle,
-                timer_handle,
-                vcpu_handle,
-                vmar_handle,
-                vmo_handle,
-                rights_handle,
-                aliased_plain_handle_field,
-                aliased_subtype_handle_field,
-                aliased_rights_handle_field,
-                some_protocol,
-                request_some_protocol,
-
-            } = &mut *out_;
-        }
-
-        ::fidl_next::Wire::zero_padding(plain_handle);
-
-        ::fidl_next::Wire::zero_padding(bti_handle);
-
-        ::fidl_next::Wire::zero_padding(channel_handle);
-
-        ::fidl_next::Wire::zero_padding(clock_handle);
-
-        ::fidl_next::Wire::zero_padding(debuglog_handle);
-
-        ::fidl_next::Wire::zero_padding(event_handle);
-
-        ::fidl_next::Wire::zero_padding(eventpair_handle);
-
-        ::fidl_next::Wire::zero_padding(exception_handle);
-
-        ::fidl_next::Wire::zero_padding(fifo_handle);
-
-        ::fidl_next::Wire::zero_padding(guest_handle);
-
-        ::fidl_next::Wire::zero_padding(interrupt_handle);
-
-        ::fidl_next::Wire::zero_padding(iob_handle);
-
-        ::fidl_next::Wire::zero_padding(iommu_handle);
-
-        ::fidl_next::Wire::zero_padding(job_handle);
-
-        ::fidl_next::Wire::zero_padding(msi_handle);
-
-        ::fidl_next::Wire::zero_padding(pager_handle);
-
-        ::fidl_next::Wire::zero_padding(pmt_handle);
-
-        ::fidl_next::Wire::zero_padding(port_handle);
-
-        ::fidl_next::Wire::zero_padding(process_handle);
-
-        ::fidl_next::Wire::zero_padding(profile_handle);
-
-        ::fidl_next::Wire::zero_padding(resource_handle);
-
-        ::fidl_next::Wire::zero_padding(socket_handle);
-
-        ::fidl_next::Wire::zero_padding(stream_handle);
-
-        ::fidl_next::Wire::zero_padding(suspendtoken_handle);
-
-        ::fidl_next::Wire::zero_padding(thread_handle);
-
-        ::fidl_next::Wire::zero_padding(timer_handle);
-
-        ::fidl_next::Wire::zero_padding(vcpu_handle);
-
-        ::fidl_next::Wire::zero_padding(vmar_handle);
-
-        ::fidl_next::Wire::zero_padding(vmo_handle);
-
-        ::fidl_next::Wire::zero_padding(rights_handle);
-
-        ::fidl_next::Wire::zero_padding(aliased_plain_handle_field);
-
-        ::fidl_next::Wire::zero_padding(aliased_subtype_handle_field);
-
-        ::fidl_next::Wire::zero_padding(aliased_rights_handle_field);
-
-        ::fidl_next::Wire::zero_padding(some_protocol);
-
-        ::fidl_next::Wire::zero_padding(request_some_protocol);
-    }
-}
-
-unsafe impl<___D> ::fidl_next::Decode<___D> for WireHandles
+impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for DriverProtocol
 where
-    ___D: ::fidl_next::decoder::InternalHandleDecoder + ?Sized,
-    ___D: ::fidl_next::fuchsia::HandleDecoder,
+    ___H: DriverProtocolClientHandler<___T> + ::core::marker::Send,
+    ___T: ::fidl_next::Transport,
 {
-    fn decode(
-        slot_: ::fidl_next::Slot<'_, Self>,
-        decoder_: &mut ___D,
-    ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
-        ::fidl_next::munge! {
-            let Self {
-
-                mut plain_handle,
-                mut bti_handle,
-                mut channel_handle,
-                mut clock_handle,
-                mut debuglog_handle,
-                mut event_handle,
-                mut eventpair_handle,
-                mut exception_handle,
-                mut fifo_handle,
-                mut guest_handle,
-                mut interrupt_handle,
-                mut iob_handle,
-                mut iommu_handle,
-                mut job_handle,
-                mut msi_handle,
-                mut pager_handle,
-                mut pmt_handle,
-                mut port_handle,
-                mut process_handle,
-                mut profile_handle,
-                mut resource_handle,
-                mut socket_handle,
-                mut stream_handle,
-                mut suspendtoken_handle,
-                mut thread_handle,
-                mut timer_handle,
-                mut vcpu_handle,
-                mut vmar_handle,
-                mut vmo_handle,
-                mut rights_handle,
-                mut aliased_plain_handle_field,
-                mut aliased_subtype_handle_field,
-                mut aliased_rights_handle_field,
-                mut some_protocol,
-                mut request_some_protocol,
-
-            } = slot_;
+    async fn on_event(
+        handler: &mut ___H,
+        ordinal: u64,
+        buffer: ___T::RecvBuffer,
+    ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
         }
+    }
+}
 
-        ::fidl_next::Decode::decode(plain_handle.as_mut(), decoder_)?;
+/// A server handler for the DriverProtocol protocol.
+///
+/// See [`DriverProtocol`] for more details.
+pub trait DriverProtocolServerHandler<
+    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
+    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+>
+{
+}
 
-        ::fidl_next::Decode::decode(bti_handle.as_mut(), decoder_)?;
+impl<___H, ___T> ::fidl_next::DispatchServerMessage<___H, ___T> for DriverProtocol
+where
+    ___H: DriverProtocolServerHandler<___T> + ::core::marker::Send,
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_one_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        buffer: ___T::RecvBuffer,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+        }
+    }
 
-        ::fidl_next::Decode::decode(channel_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(clock_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(debuglog_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(event_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(eventpair_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(exception_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(fifo_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(guest_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(interrupt_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(iob_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(iommu_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(job_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(msi_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(pager_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(pmt_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(port_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(process_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(profile_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(resource_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(socket_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(stream_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(suspendtoken_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(thread_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(timer_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(vcpu_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(vmar_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(vmo_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(rights_handle.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(aliased_plain_handle_field.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(aliased_subtype_handle_field.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(aliased_rights_handle_field.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(some_protocol.as_mut(), decoder_)?;
-
-        ::fidl_next::Decode::decode(request_some_protocol.as_mut(), decoder_)?;
-
-        Ok(())
+    async fn on_two_way(
+        handler: &mut ___H,
+        ordinal: u64,
+        buffer: ___T::RecvBuffer,
+        responder: ::fidl_next::protocol::Responder<___T>,
+    ) -> ::core::result::Result<
+        (),
+        ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
+    > {
+        match ordinal {
+            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+        }
     }
 }
 

@@ -60,6 +60,10 @@ pub trait Contextual<'a> {
         self.context().config.emit_debug_impls
     }
 
+    fn non_type_id(&self, compound_ident: &'a CompoundIdent) -> CompoundIdentifierTemplate<'a> {
+        CompoundIdentifierTemplate::non_type(compound_ident, self.context())
+    }
+
     fn natural_id(&self, compound_ident: &'a CompoundIdent) -> CompoundIdentifierTemplate<'a> {
         CompoundIdentifierTemplate::natural(compound_ident, self.context())
     }
