@@ -1,68 +1,297 @@
 # Use developer overrides for assembly of a Fuchsia product
 
-In some cases, you may want to override the configuration of a Fuchsia product.
+The Fuchsia build system uses a combination of platform, product, and board
+configurations to create a final product bundle. While these configurations
+define the canonical version of a product, you may need to make temporary
+modifications for testing or debugging. For more conceptual information about
+software assembly, see [Software Assembly][software-assembly-concepts].
 
-## Use assembly overrides {:#use-assembly-overrides}
+Developer overrides provide a mechanism to make local-only modifications to a
+product's configuration without changing the source files in the Fuchsia tree.
 
-To start using developer overrides for assembly:
+This document explains how you can use developer overrides to modify a product's
+configuration.
 
-1. In your Fuchsia checkout, make a `//local/BUILD.gn` file:
+## Using assembly overrides {:#use-assembly-overrides}
 
-   A `//local.BUILD.gn` file may look like:
+To use developer overrides for assembly, you need to:
 
-   Note: For the fully list of values that you can specify, see
-   [Product configuration][product-config-ref]. Additionally, you can use
-   [`developer_only_options`](#use-developer_only_options) to enable certain
-   options including board configurations.
+1.  **Define the overrides** in a GN target, typically in `//local/BUILD.gn`.
+2.  **Apply the overrides** to your build configuration.
 
-    ```gn
-    import("//build/assembly/developer_overrides.gni")
+For example, to enable a kernel argument, first define the override in
+`//local/BUILD.gn`:
 
-    assembly_developer_overrides("my_overrides") {
-        kernel = {
-            command_line_args = ["foo"]
-        }
-    }
+```gn
+import("//build/assembly/developer_overrides.gni")
+
+assembly_developer_overrides("enable_kernel_debug") {
+  kernel = {
+    command_line_args = [ "foo" ]
+  }
+}
+```
+
+Then, apply this override to your build configuration using one of the following
+methods:
+
+*   [Using `fx set`](#fx-set)
+*   [Using `fx args` or `args.gn``](#args-gn)
+
+### Using `fx set` {:#fx-set}
+
+The `fx set` command includes the `--assembly-override` option to specify an
+override for the main product assembly (not the test assembly, recovery, etc...).
+For example:
+
+Note: The value used for `--assembly-override` is the identifier that you used
+in your `//local/BUILD.gn` file.
+
+```gn
+fx set core.x64 --assembly-override //local:enable_kernel_debug
+```
+
+The `--assembly-override` option supports two formats:
+
+Note: You can provide this option multiple times, but each instance must apply
+to a different assembly target. An error is generated if more than one override
+target matches the same assembly target.
+
+*   `--assembly-override <overrides_target>`: Applies the overrides to the main
+    product assembly.
+
+    For example, the following command applies the `//local:enable_kernel_debug`
+    override to the `core.x64` product:
+
+    ```posix-terminal
+    fx set core.x64 --assembly-override //local:enable_kernel_debug
     ```
 
-   This is what this `BUILD.gn` file indicates:
+*   `--assembly-override <assembly_target_pattern>=<overrides_target>`: Applies
+    the overrides to a specific assembly target pattern.
 
-   * The assembly developer override is named `my_overrides`. You can use
-     any meaningful identifier for this field.
-   * The keys `kernel`, `command_line_args` are all based on supported values
-     for Platform configuration. For more information, see
-     [`PlatformConfig`][platform-assembly-ref].
+    For example, to apply overrides defined in `//local:zedboot_overrides` only
+    to the `zedboot` assembly, you would run the following:
 
-1. Once you have made a `//local/BUILD.gn` file that meets your requirements,
-   you can set your `fx set` command to use this assembly platform
-   configuration. For example:
+    ```posix-terminal
+    fx set core.x64 --assembly-override '//build/images/zedboot/*=//local:zedboot_overrides'
+    ```
 
-   Note: The value used for `--assembly-override` is the identifier that you
-   used in your `//local/BUILD.gn` file.
+For more information, see the following sections:
 
-   ```posix-terminal
-   fx set --assembly-override=//local:my_overrides
-   ```
+*   To learn how to specify the assembly target, see
+    [Product Label Patterns](#product-label-patterns).
+*   To learn how to define the override target, see
+    [Defining an `assembly_developer_overrides` target](#defining-an-assembly_developer_overrides-target).
 
-1. Build Fuchsia:
+### Using `fx args` or `args.gn` {:#args-gn}
 
-   ```posix-terminal
-   fx build
-   ```
+You can apply overrides by editing your `args.gn` file or using
+[`fx args`][fx-args-ref]. The following GN arguments are available:
 
-   You should now be able to build Fuchsia as you normally would.
+*   [`product_assembly_overrides_label`](#product-assembly-overrides-labe):
+    Specifies a single override target for the main product assembly.
+*   [`product_assembly_overrides_contents`](#product-assembly-overrides-contents):
+    Defines the overrides inline within `args.gn` for the main product assembly.
+*   [`product_assembly_overrides`](#product-assembly-overrides-contents): A list
+    that explicitly maps override targets to the assembly targets they apply to.
 
-Additionally, you can also do the following:
+#### `product_assembly_overrides_label` {:#product-assembly-overrides-label}
 
-* [Add a package](#add-package)
-* [Add a shell command](#add-shell-command)
-* [Use `developer_only_options`](#use-developer_only_options)
+The `product_assembly_overrides_label` argument applies the specified overrides
+to the main assembly of the selected product. It does not affect other
+product assemblies like recovery, zedboot, or tests.
 
-## Add a package {#add-package}
+Example `args.gn`:
 
-There may be some cases where you may need to include additional packages to
-your product's packages. In this case, your `//local/BUILD.gn` may look
-like:
+```gn
+import("//products/...")
+import("//boards/...")
+
+product_assembly_overrides_label = "//local:my_overrides"
+```
+
+#### `product_assembly_overrides_contents` {:#product-assembly-overrides-contents}
+
+The `product_assembly_overrides_contents` argument allows you to define
+overrides directly in your `args.gn`. These overrides only apply to the main
+product assembly.
+
+Example `args.gn`:
+
+```gn
+import("//products/...")
+import("//boards/...")
+
+product_assembly_overrides_contents = {
+  kernel = {
+    command_line_args = [ "kernel.enable-debugging-syscalls=true" ]
+  }
+}
+```
+
+The value uses the same syntax as the `assembly_developer_overrides()` GN
+template, see
+[Defining an `assembly_developer_overrides` target](#defining-an-assembly_developer_overrides-target).
+
+#### `product_assembly_overrides` {:#product-assembly-overrides}
+
+The `product_assembly_overrides` argument is used to specify overrides for
+multiple or non-main assemblies. It uses [GN label patterns][gn-label-patterns]
+to match override targets to their corresponding assembly targets.
+
+Example `args.gn`:
+
+Note: You can also place this configuration in `//local/args.gn`, and `fx set`
+automatically appends it to the `args.gn` in your build directory.
+
+```gn
+import("//products/....")
+import("//boards/....")
+
+product_assembly_overrides = [
+  {
+    # zedboot
+    assembly = "//build/images/zedboot/*"
+    overrides = "//local:zedboot_overrides"
+  },
+  {
+    # For assemblies in Bazel, use their product label
+    assembly = "//products/minimal/*"
+    overrides = "//local:minimal_overrides"
+  },
+  {
+    # core or terminal products:
+    assembly = "//build/images/fuchsia/*"
+    overrides = "//local:enable_kernel_debug"
+  },
+]
+```
+
+## Defining an `assembly_developer_overrides` target {:#defining-an-assembly_developer_overrides-target}
+
+To define a set of developer overrides, use the `assembly_developer_overrides()`
+template in a `BUILD.gn` file. It is recommended to place these definitions in
+the `//local` directory of your Fuchsia checkout, as this directory is ignored
+by git.
+
+Example `//local/BUILD.gn`:
+
+Note: To see available override options, see
+[Available override options](#available-override-options).
+
+```gn
+import("//build/assembly/developer_overrides.gni")
+
+assembly_developer_overrides("enable_kernel_debug") {
+  kernel = {
+    command_line_args = [
+      "foo",
+    ]
+  }
+}
+
+# Multiple override sets can be defined in the same file.
+assembly_developer_overrides("bar_debug") {
+  kernel = {
+    command_line_args = [ "bar" ]
+  }
+}
+```
+
+## Available override options {:#available-override-options}
+
+The following sections describe the available options that can be configured
+within an `assembly_developer_overrides` target:
+
+* [Developer-only assembly options](#developer-only-assembly-options)
+* [Platform configuration](#platform-configuration)
+* [Kernel command-line arguments](#kernel-command-line-arguments)
+* [Additional packages](#additional-packages)
+* [Shell commands](#shell-commands)
+* [Board configuration](#board-configuration)
+* [Compiled packages and components](#compiled-packages-and-components)
+* [Appending to lists](#appending-to-lists-with-__append_to__key_)
+
+### Developer-only assembly options {:#developer-only-assembly-options}
+
+These assembly options can only be enabled through developer overrides, and are
+not normally allowed in product or board configs.
+
+Example `//local/BUILD.gn`:
+
+```gn
+import("//build/assembly/developer_overrides.gni")
+
+assembly_developer_overrides("netboot_with_all_packages") {
+  developer_only_options = {
+    all_packages_in_base = true
+    netboot_mode = true
+  }
+}
+```
+
+*   `all_packages_in_base`: Redirects all `cache` and `on_demand` packages into
+    the `base` package set. This is useful for making debugging tools available
+    on a device when networking is non-functional.
+*   `netboot_mode`: Creates a Zircon Boot Image (ZBI) that includes the FVM/Fxfs
+    image inside a ramdisk, allowing the product to be netbooted.
+
+### Platform configuration {:#platform-configuration}
+
+You can override the `platform` configuration of a product assembly
+configuration. For more information, see the
+[`PlatformSettings` reference][PlatformSettings-config].
+
+The values that you specify are merged with the product's platform configuration
+on a field-by-field basis.
+
+Example `//local/BUILD.gn`:
+
+```gn
+import("//build/assembly/developer_overrides.gni")
+
+assembly_developer_overrides("enable_sl4f") {
+  platform = {
+    development_support = {
+      include_sl4f = true
+      include_netsvc = true
+    }
+  }
+}
+```
+
+If you want to append to a list instead of replacing it, see
+[Appending to lists with `__append_to_<key>`](#appending-to-lists-with-__append_to__key_).
+
+### Kernel command line arguments {:#kernel-command-line-arguments}
+
+You can add kernel command line arguments. The order of the kernel command
+line arguments are not preserved. For a list of available options, see the
+[Zircon Kernel Commandline Options][zircon-boot-options] documentation.
+
+Example `//local/BUILD.gn`:
+
+```gn
+import("//build/assembly/developer_overrides.gni")
+
+assembly_developer_overrides("bar_debug") {
+  kernel = {
+    command_line_args = [ "bar" ]
+  }
+}
+```
+
+### Additional packages {:#additional-packages}
+
+You can add developer-specified packages to the `base`, `cache`, `bootfs`, and
+`flexible` package sets. The `flexible` package set is placed in `cache` for
+`eng` build types and in `base` for `user` and `userdebug` build types.
+
+The template requires specific GN labels for packages and does not use GN
+metadata to traverse package groups.
+
+Example `//local/BUILD.gn`:
 
 ```gn
 import("//build/assembly/developer_overrides.gni")
@@ -76,27 +305,13 @@ assembly_developer_overrides("my_custom_base_packages") {
 }
 ```
 
-## Add a shell command {#add-shell-command}
+### Shell commands {:#shell-commands}
 
-There may be some cases where you may need to include shell commands to your
-product's configuration. When adding CLI tools for running in the Fuchsia shell,
-it's necessary to both add the package and configure assembly to create the
-launcher stub that runs the component for the binary. This is due that most CLI
-tools are actually components.
+To add command-line tools to the Fuchsia shell, you must both add the package
+containing the tool and instruct assembly to create the launcher stub for the
+component.
 
-To do this, define a `shell_commands` list within your
-`assembly_developer_overrides`. Each entry in this list is an object with the
-following keys:
-
-* `package`: The name of the package that contains the shell command (for
-  example, `cp`). This is the package name, not a GN target label.
-* `components`: A list of the CLI binaries within the package that you want to
-  register as shell commands. Assembly automatically adds the `meta/` prefix and
-  `.cm` suffix to these names when looking for their component manifests.
-  For example, `foo` becomes `meta/foo.cm`.
-
-For example, to add the `cp` command from the `cp` package, your
-`//local/BUILD.gn` may look like:
+Example `//local/BUILD.gn`:
 
 ```gn
 import("//build/assembly/developer_overrides.gni")
@@ -111,36 +326,13 @@ assembly_developer_overrides("my_custom_shell_commands") {
 }
 ```
 
-And for adding multiple entries to the `shell_commands` list, see the following
-example:
+If making the package available through package discovery isn't sufficient, you
+can also add the package to a package set.
+
+Example `//local/BUILD.gn`:
 
 ```gn
 import("//build/assembly/developer_overrides.gni")
-
-assembly_developer_overrides("my_multiple_shell_commands") {
-  shell_commands = [
-    {
-      package = "foo"
-      components = [ "foo_comp" ]
-    },
-    {
-      package = "bar"
-      components = [ "bar_comp1", "bar_comp2" ]
-    }
-  ]
-}
-```
-
-### Add a shell command to a package set {#add-shell-command-package-set}
-
-Additionally, if making the package available through package discovery
-isn't sufficient, you can also add the package target to a package set.
-For example, to add the package to the `base` package set, your
-`//local/BUILD.gn` may look like:
-
-```gn
-import("//build/assembly/developer_overrides.gni")
-
 assembly_developer_overrides("my_custom_shell_commands") {
   shell_commands = [
     {
@@ -149,78 +341,127 @@ assembly_developer_overrides("my_custom_shell_commands") {
     }
   ]
 
-  # This GN target should define a package named "foo_cli".
+  # This GN target should define a package named "cp".
   base_packages = [
-    "//some/gn/target/for/my/package:foo_cli"
+    "//some/gn/target/for/my/package:cp"
   ]
 }
 ```
 
-## Use `developer_only_options` {#use-developer_only_options}
+### Board configuration {:#board-configuration}
 
-In some cases, you may want to use some of the `developer_only_options`. These
-options can be combined with the general overrides covered in
-[Use assembly overrides](#use-assembly-overrides).
+You can override board-specific configuration to test changes or new features.
 
-Note: For a full list of supported `developer_only_options` see
-[`developer_overrides.gni`].
-
-In this case, your `//local/BUILD.gn` may look like:
+Example `//local/BUILD.gn`:
 
 ```gn
 import("//build/assembly/developer_overrides.gni")
 
-assembly_developer_overrides("my_overrides") {
-  developer_only_options = {
-    all_packages_in_base = true
-    netboot_mode = true
-  }
-}
-```
-
-### `all_packages_in_base`
-
-This option redirects all cache and on_demand package-set packages into the base
-package set. This feature allows the use of a product image that has cache or
-universe packages in a context where networking may be unavailable or a package
-server cannot be run.
-
-The primary use case for this option is to allow debugging tools to be available
-on-device when networking is non-functional.
-
-### `netboot_mode`
-
-This option creates a ZBI (Zircon Boot Image) that includes the fvm/fxfs image
-inside a ramdisk, to allow the netbooting of the product.
-
-This is a replacement for the `netboot` assembly that was previously generated
-with `//build/images/fuchsia:netboot`.
-
-## Override multiple platform configurations {:#override-multiple-platform-configurations}
-
-You can also override multiple platform configuration areas within the same
-`assembly_developer_overrides` definition.
-
-For example, the following override customizes both development SSH keys and
-USB peripheral functions:
-
-```gn
-import("//build/assembly/developer_overrides.gni")
-
-assembly_developer_overrides("my_multi_overrides") {
-  platform = {
-    development_support = {
-      authorized_ssh_keys_path = "//local/fuchsia_authorized_keys"
-    }
-    usb = {
-      peripheral = {
-        functions = [ "cdc" ]
-      }
+assembly_developer_overrides("add_new_feature") {
+  board = {
+    provided_features = [ "fuchsia::new_feature" ]
+    filesystems = {
+      gpt_all = true
     }
   }
 }
 ```
 
-[platform-assembly-ref]: /reference/assembly/PlatformConfig/index.md
-[product-config-ref]: /reference/assembly/index.md
-[`developer_overrides.gni`]: https://source.corp.google.com/h/fuchsia/fuchsia/+/main:build/assembly/developer_overrides.gni;l=13-130
+To append to a list instead of replacing it, see
+[Appending to lists with `__append_to_<key>`](#appending-to-lists-with-__append_to__key_).
+
+### Compiled packages and components
+
+You can add developer-specified contents and CML shards to packages and
+components that are compiled by assembly.
+
+Example `//local/BUILD.gn`:
+
+```gn
+import("//build/assembly/developer_overrides.gni")
+
+assembly_developer_overrides("add_core_shard") {
+  core_shards = [ "//local/testing.core_shard.cml" ]
+}
+```
+
+### Appending to lists with `__append_to_<key>` {:#appending-to-lists-with-__append_to__key_}
+
+By default, developer overrides replace a list with the new contents that you
+specify. To append to a list instead, use the `__append_to_<key>` syntax, where
+`<key>` is the name of the list.
+
+For example, given the following board configuration:
+
+```gn
+board_configuration("bar") {
+  provided_features = [ "fuchsia::feature1", "fuchsia::feature2"]
+}
+```
+
+You can append a new feature using this override:
+
+```gn
+import("//build/assembly/developer_overrides.gni")
+
+assembly_developer_overrides("foo") {
+  board = {
+    __append_to_provided_features = [ "fuchsia::new_feature" ]
+  }
+}
+```
+
+The resulting configuration will be:
+
+```gn
+board: {
+  provided_features: [
+    "fuchsia::feature1",
+    "fuchsia::feature2",
+    "fuchsia::new_feature",
+  ]
+}
+```
+
+## Important details
+
+### Assembly warning text
+
+Assembly operations with overrides always produce a warning that details the
+overrides being applied. For example:
+
+```gn
+WARNING!:  Adding the following via developer overrides from: //local:enable_kernel_debug
+
+  Additional kernel command line arguments:
+    foo
+```
+
+### Product label patterns {#product-label-patterns}
+
+The mapping between an override target and a product bundle is done through
+label pattern matching.
+
+Important: Do not use `//*` as a pattern. It will match every assembly in the
+build, including all tests, zedboot, and recovery images.
+
+*   `//some/label/with/wildcard/*`: Matches all assemblies in and under that
+    path.
+*   `//some/label/with/wildcard:*`: Matches all assemblies in that folder only.
+
+Different assemblies are located at different paths in the build graph. Common
+locations include the following:
+
+*   **GN-assembled products**:
+    *   `bringup` products: `//build/images/bringup/*`
+    *   `core` products: `//build/images/fuchsia/*`
+    *   `zedboot`: `//build/images/zedboot/*`
+    *   `guest`: `//build/images/guest/*`
+*   **Bazel-assembled products** (`minimal`, `terminal`, `workbench`, etc.):
+    *   Boards in `fuchsia.git`: `//products/<name>/*`
+
+[gn-label-patterns]: https://gn.googlesource.com/gn/+/master/docs/reference.md#label_pattern
+[PlatformSettings-config]: /reference/assembly/PlatformSettings/index.md
+[software-assembly-concepts]: /docs/concepts/products/software_assembly.md
+[zircon-boot-options]: /docs/gen/boot-options.md
+[fx-args-ref]: /reference/tools/fx/cmd/args.md
