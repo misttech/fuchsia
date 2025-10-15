@@ -534,42 +534,6 @@ closed protocol Coordinator {
         minimum_rgb uint8;
     }) -> () error zx.Status;
 
-    /// Power off/on the display panel.
-    ///
-    /// This call takes effect immediately. Clients don't need to call
-    /// [`Coordinator.ApplyConfig`].
-    ///
-    /// Fails with ZX_ERR_NOT_FOUND if `display_id` does not belong to a display
-    /// known by the Coordinator. This can happen if a client issues a call to
-    /// [`Coordinator.SetDisplayPower`] before it receives a notification that
-    /// the display was removed.
-    ///
-    /// Fails with ZX_ERR_NOT_SUPPORTED if the display drivers or the hardware
-    /// don't support displays on and off.
-    //
-    // TODO(https://fxbug.dev/449896410): Replaced by `SetDisplayPowerMode`.
-    strict SetDisplayPower(struct {
-        display_id fuchsia.hardware.display.types.DisplayId;
-
-        /// True powers on the display, false powers it off.
-        ///
-        /// Once a display is turned off, the hardware will not generate new
-        /// VSync events. However, the client should be prepared to handle VSync
-        /// events generated before the [`Coordinator.SetDisplayPower`] call
-        /// reaches the hardware.
-        ///
-        /// Calls that impact draft configurations, such as
-        /// [`Coordinator.SetDisplayLayers`], still work while the display is
-        /// powered off.
-        ///
-        /// [`Coordinator.ApplyConfig`] also works while the display is powered
-        /// off.  When the display is powered back on on, it will show the
-        /// latest applied configuration.
-        ///
-        /// Newly added displays are powered on.
-        power_on bool;
-    }) -> () error zx.Status;
-
     /// Sets the display panel power mode.
     ///
     /// This call takes effect immediately. Clients don't need to call
