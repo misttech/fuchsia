@@ -11,8 +11,8 @@ mod artifact_cache;
 mod build_api;
 mod cipd;
 mod gn_label;
-mod mos;
+pub mod mos;
 
-pub use artifact::{ArtifactType, MOSIdentifier};
+pub use artifact::{Artifact, ArtifactType, MOSIdentifier};
 pub use artifact_cache::{ArtifactCache, ArtifactError};
 pub use mos::MOSClient;

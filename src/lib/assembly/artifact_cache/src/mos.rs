@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+//! Provides a client and parsing logic for communicating with MOS.
+
 use crate::artifact::{Artifact, ArtifactType, CIPDPackage, MOSIdentifier};
 use anyhow::{Context, Result, anyhow, bail};
 use gcs::client::Client as GcsClient;
