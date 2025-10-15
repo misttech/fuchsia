@@ -305,9 +305,10 @@ TEST(Inspector, PrintDebugInfoForManyThreads) {
   // Each name should only appear once.
   for (int i = 0; i < kLoopThreadCount; i++) {
     pos = inspector_output.find(loop_thread_names[i]);
-    ASSERT_NE(pos, std::string::npos, "%s not found.", loop_thread_names[i].c_str());
+    ASSERT_NE(pos, std::string::npos, "'%s' not found in '%s'.", loop_thread_names[i].c_str(),
+              inspector_output.c_str());
     ASSERT_EQ(inspector_output.find(loop_thread_names[i], pos + 1), std::string::npos,
-              "%s found twice.", loop_thread_names[i].c_str());
+              "'%s' found twice in '%s'.", loop_thread_names[i].c_str(), inspector_output.c_str());
 
     // Exception should always appear first.
     ASSERT_LT(inspector_pos, pos);

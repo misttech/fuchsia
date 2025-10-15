@@ -551,7 +551,7 @@ __EXPORT void inspector_print_debug_info_for_all_threads(FILE* out, zx_handle_t 
       continue;
     }
 
-    status = child.wait_one(ZX_THREAD_SUSPENDED, zx::deadline_after(zx::msec(100)), nullptr);
+    status = child.wait_one(ZX_THREAD_SUSPENDED, zx::deadline_after(zx::msec(500)), nullptr);
     if (status != ZX_OK) {
       printf("[Process %s (%" PRIu64 "), Thread %s (%" PRIu64 ")] Didn't get suspend signal: %s.\n",
              process_name, process_koid, thread_names[i].c_str(), thread_koids[i],
