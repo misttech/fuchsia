@@ -30,7 +30,6 @@
         {
             protocol: [
                 "fuchsia.feedback.LastRebootInfoProvider",
-                "fuchsia.intl.PropertyProvider",
                 "fuchsia.settings.Accessibility",
                 "fuchsia.ui.annotation.Registry",
                 "fuchsia.ui.composition.Flatland",
@@ -40,6 +39,10 @@
                 "fuchsia.ui.pointer.augment.LocalHit",
                 "fuchsia.ui.pointerinjector.Registry",
             ],
+        },
+        {
+            protocol: [ "fuchsia.intl.PropertyProvider" ],
+            availability: "optional",
         },
     ],
     expose: [

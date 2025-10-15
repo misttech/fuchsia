@@ -501,7 +501,7 @@ fn configure_subsystems(
 
     forensics::ForensicsSubsystem::define_configuration(
         &context_base.for_subsystem("forensics"),
-        &platform.forensics,
+        &(&platform.forensics, &platform.session),
         builder,
     )
     .context("Configuring the 'Forensics' subsystem")?;

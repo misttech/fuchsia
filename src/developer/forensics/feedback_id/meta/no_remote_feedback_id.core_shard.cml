@@ -2,24 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    children: [
-        {
-            name: "feedback_id",
-            url: "{{COMPONENT_URL}}",
-            environment: "#core-env",
-        },
-    ],
     offer: [
-        {
-            protocol: "fuchsia.feedback.DeviceIdProvider",
-            from: "#feedback_id",
-            to: "#feedback",
-        },
-        {
-            protocol: "fuchsia.sysinfo.SysInfo",
-            from: "parent",
-            to: "#feedback_id",
-        },
         {
             protocol: [
                 "google.deviceproperty.Reader",
@@ -28,6 +11,12 @@
             ],
             from: "void",
             to: "#session-manager",
+            availability: "optional",
+        },
+        {
+            protocol: "fuchsia.feedback.DeviceIdProvider",
+            from: "void",
+            to: "#feedback",
             availability: "optional",
         },
     ],

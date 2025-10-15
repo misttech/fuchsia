@@ -58,7 +58,14 @@ impl DefineSubsystemConfiguration<(&IntlConfig, &PlatformSessionConfig)> for Int
                         .icu_platform_bundle("intl_services_small_with_timezone")
                         .context("while configuring the 'small Intl with timezone' subsystem")?;
                 }
-                Type::None => { /* Skip the bundle altogether. */ }
+                Type::None => {
+                    if session_config.enabled {
+                        builder.platform_bundle("no_intl_timezones");
+                    } else {
+                        // Since there's no session-manager there's no need to add the "void"
+                        // route.
+                    }
+                }
             }
 
             if config.include_zoneinfo_files {

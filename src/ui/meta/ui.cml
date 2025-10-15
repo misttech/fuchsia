@@ -16,6 +16,7 @@
             protocol: [ "fuchsia.media.sounds.Player" ],
             from: "parent",
             to: [ "#scene_manager" ],
+            availability: "optional",
         },
         {
             protocol: [

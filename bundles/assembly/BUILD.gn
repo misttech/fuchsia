@@ -1601,6 +1601,10 @@ assembly_input_bundle("feedback_remote_device_id_provider") {
   ]
 }
 
+assembly_input_bundle("no_remote_feedback_id") {
+  core_shards = [ "//src/developer/forensics/feedback_id/meta/no_remote_feedback_id.core_shard.cml" ]
+}
+
 assembly_input_bundle("feedback_large_disk") {
   config_data_labels =
       [ "//src/developer/forensics:feedback_large_disk_product_config" ]
@@ -3920,6 +3924,11 @@ assembly_input_bundle("example_assembly_bundle") {
 assembly_input_bundle("emulator_support") {
   qemu_kernel = qemu_boot_shim.path
   deps = qemu_boot_shim.deps
+}
+
+assembly_input_bundle("no_intl_timezones") {
+  core_shards =
+      [ "//src/intl/intl_services/meta/no_intl_timezones.core_shard.cml" ]
 }
 
 # Assembly may select at most one bundle with `intl_services` name prefix.

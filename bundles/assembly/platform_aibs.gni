@@ -309,6 +309,9 @@ user_platform_aib_names =
       "factory_data",
       "storage_cache_manager",
 
+      # I18n
+      "no_intl_timezones",
+
       # ICU-specific version of intl_services
 
       "intl_services.icu_default_${icu_git_info.default}",
@@ -342,6 +345,7 @@ user_platform_aib_names =
       "power_metrics_recorder",
 
       # Forensics
+      "no_remote_feedback_id",
       "feedback_large_disk",
       "feedback_remote_device_id_provider",
       "feedback_user_config",

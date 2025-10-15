@@ -39,11 +39,16 @@
         {
             protocol: [
                 "fuchsia.feedback.LastRebootInfoProvider",
-                "fuchsia.intl.PropertyProvider",
                 "fuchsia.settings.Accessibility",
             ],
             from: "parent",
-            to: [ "#a11y_manager" ],
+            to: "#a11y_manager",
+        },
+        {
+            protocol: [ "fuchsia.intl.PropertyProvider" ],
+            from: "parent",
+            to: "#a11y_manager",
+            availability: "optional",
         },
     ],
 }

@@ -10,15 +10,20 @@ use assembly_config_schema::developer_overrides::{
 use assembly_config_schema::platform_settings::forensics_config::{
     FeedbackIdComponentUrl, ForensicsConfig,
 };
+use assembly_config_schema::platform_settings::session_config::PlatformSessionConfig;
 use assembly_constants::{FileEntry, PackageDestination, PackageSetDestination};
 
 pub(crate) struct ForensicsSubsystem;
-impl DefineSubsystemConfiguration<ForensicsConfig> for ForensicsSubsystem {
+impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
+    for ForensicsSubsystem
+{
     fn define_configuration(
         context: &ConfigurationContext<'_>,
-        config: &ForensicsConfig,
+        platform_config: &(&ForensicsConfig, &PlatformSessionConfig),
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
+        let (config, session_config) = *platform_config;
+
         if config.feedback.large_disk {
             builder.platform_bundle("feedback_large_disk");
         }
@@ -108,7 +113,11 @@ impl DefineSubsystemConfiguration<ForensicsConfig> for ForensicsSubsystem {
                     builder,
                 )?;
             }
-            FeedbackIdComponentUrl::None => {}
+            FeedbackIdComponentUrl::None => {
+                if session_config.enabled {
+                    builder.platform_bundle("no_remote_feedback_id");
+                }
+            }
         }
 
         Ok(())
@@ -143,9 +152,13 @@ mod test {
         };
 
         let forensics_config: ForensicsConfig = Default::default();
+        let session_config: PlatformSessionConfig = Default::default();
         let mut builder: ConfigurationBuilderImpl = Default::default();
-        let result =
-            ForensicsSubsystem::define_configuration(&context, &forensics_config, &mut builder);
+        let result = ForensicsSubsystem::define_configuration(
+            &context,
+            &(&forensics_config, &session_config),
+            &mut builder,
+        );
         assert!(result.is_ok());
         assert!(builder.build().bundles.contains("feedback_userdebug_config"));
     }
@@ -170,9 +183,13 @@ mod test {
         };
 
         let forensics_config: ForensicsConfig = Default::default();
+        let session_config: PlatformSessionConfig = Default::default();
         let mut builder: ConfigurationBuilderImpl = Default::default();
-        let result =
-            ForensicsSubsystem::define_configuration(&context, &forensics_config, &mut builder);
+        let result = ForensicsSubsystem::define_configuration(
+            &context,
+            &(&forensics_config, &session_config),
+            &mut builder,
+        );
 
         assert!(result.is_err());
     }
@@ -197,9 +214,13 @@ mod test {
         };
 
         let forensics_config: ForensicsConfig = Default::default();
+        let session_config: PlatformSessionConfig = Default::default();
         let mut builder: ConfigurationBuilderImpl = Default::default();
-        let result =
-            ForensicsSubsystem::define_configuration(&context, &forensics_config, &mut builder);
+        let result = ForensicsSubsystem::define_configuration(
+            &context,
+            &(&forensics_config, &session_config),
+            &mut builder,
+        );
 
         assert!(result.is_err());
     }
@@ -229,9 +250,13 @@ mod test {
             },
             ..Default::default()
         };
+        let session_config: PlatformSessionConfig = Default::default();
         let mut builder: ConfigurationBuilderImpl = Default::default();
-        let result =
-            ForensicsSubsystem::define_configuration(&context, &forensics_config, &mut builder);
+        let result = ForensicsSubsystem::define_configuration(
+            &context,
+            &(&forensics_config, &session_config),
+            &mut builder,
+        );
 
         assert!(result.is_ok());
         assert!(
@@ -267,9 +292,13 @@ mod test {
             },
             ..Default::default()
         };
+        let session_config: PlatformSessionConfig = Default::default();
         let mut builder: ConfigurationBuilderImpl = Default::default();
-        let result =
-            ForensicsSubsystem::define_configuration(&context, &forensics_config, &mut builder);
+        let result = ForensicsSubsystem::define_configuration(
+            &context,
+            &(&forensics_config, &session_config),
+            &mut builder,
+        );
 
         assert!(result.is_ok());
         assert!(
