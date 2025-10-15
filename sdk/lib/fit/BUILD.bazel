@@ -2,12 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# TODO(https://fxbug.dev/429377203): Use zx_library() when is it available.
-# TODO(https://fxbug.dev/429374432): Use bazel2gn to sync BUILD.gn file.
-# LINT.IfChange
-load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_source_library")
+load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_source_library_zx")
 
-idk_cc_source_library(
+idk_cc_source_library_zx(
     name = "fit",
     hdrs = [
         "include/lib/fit/defer.h",
@@ -28,9 +25,8 @@ idk_cc_source_library(
     api_area = "Kernel",
     category = "partner",
     idk_name = "fit",
-    include_base = "include",
+    sdk = "source",
     stable = True,
     visibility = ["//visibility:public"],
     deps = ["//sdk/lib/stdcompat"],
 )
-# LINT.ThenChange(BUILD.gn)
