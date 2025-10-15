@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use addr::TargetAddr;
+use addr::{TargetAddr, TargetIpAddr};
 use anyhow::{Error, Result, anyhow};
 use ffx_list_args::{AddressTypes, Format};
 use fidl_fuchsia_developer_ffx as ffx;
 use fidl_fuchsia_net::IpAddress;
-use netext::IsLocalAddr;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::cmp::max;
@@ -24,40 +23,6 @@ const MANUAL: &'static str = "MANUAL";
 const UNKNOWN: &'static str = "<unknown>";
 
 const PADDING_SPACES: usize = 4;
-/// A trait for returning a consistent SSH address.
-///
-/// Based on the structure from which the SSH address is coming, this will
-/// return in order of priority:
-/// -- The first local IPv6 address with a scope id.
-/// -- The last local IPv4 address.
-/// -- Any other address.
-///
-/// DEPRECATED: Migrate to using the ssh address target data.
-pub trait SshAddrFetcher {
-    fn to_ssh_addr(self) -> Option<TargetAddr>;
-}
-
-impl<'a, T: Copy + IntoIterator<Item = &'a TargetAddr>> SshAddrFetcher for &'a T {
-    fn to_ssh_addr(self) -> Option<TargetAddr> {
-        let mut res: Option<TargetAddr> = None;
-        for addr in self.into_iter() {
-            let Some(ip) = addr.ip() else {
-                continue;
-            };
-            let is_valid_local_addr = ip.is_local_addr()
-                && (ip.is_ipv4() || !(ip.is_link_local_addr() && addr.scope_id() == 0));
-
-            if res.is_none() || is_valid_local_addr {
-                res.replace(addr.clone());
-            }
-            if ip.is_ipv6() && is_valid_local_addr {
-                res.replace(addr.clone());
-                break;
-            }
-        }
-        res
-    }
-}
 
 const DEFAULT_SSH_PORT: u16 = 22;
 pub fn port_str(ta: TargetAddr) -> String {
@@ -109,6 +74,17 @@ fn is_ipv4(info: &ffx::TargetAddrInfo) -> bool {
     }
 }
 
+fn is_ipv4_ip(info: &ffx::TargetIpAddrInfo) -> bool {
+    let ip = match info {
+        ffx::TargetIpAddrInfo::Ip(ip) => ip.ip,
+        ffx::TargetIpAddrInfo::IpPort(ip) => ip.ip,
+    };
+    match ip {
+        IpAddress::Ipv4(_) => true,
+        IpAddress::Ipv6(_) => false,
+    }
+}
+
 pub fn filter_targets_by_address_types(
     targets: Vec<ffx::TargetInfo>,
     address_types: AddressTypes,
@@ -120,12 +96,28 @@ pub fn filter_targets_by_address_types(
             AddressTypes::None => None,
             AddressTypes::Ipv4Only => {
                 target.addresses.as_mut().map(|addresses| addresses.retain(|addr| is_ipv4(addr)));
+                target.ssh_address = target.ssh_address.filter(|addr| is_ipv4_ip(addr));
+
                 Some(target)
             }
             AddressTypes::Ipv6Only => {
                 target.addresses.as_mut().map(|addresses| addresses.retain(|addr| !is_ipv4(addr)));
+                target.ssh_address = target.ssh_address.filter(|addr| !is_ipv4_ip(addr));
+
                 Some(target)
             }
+        })
+        .map(|mut target| {
+            if target.ssh_address.is_none() {
+                for address in target.addresses.as_ref().into_iter().flatten() {
+                    let addr = TargetAddr::from(address);
+                    if let Ok(addr) = addr.try_into() {
+                        target.ssh_address = Some(addr);
+                        break;
+                    }
+                }
+            }
+            target
         })
         .collect()
 }
@@ -157,10 +149,21 @@ impl TryFrom<ffx::TargetInfo> for AddressesTarget {
     type Error = Error;
 
     fn try_from(t: ffx::TargetInfo) -> Result<Self> {
-        let addrs = t.addresses.ok_or_else(|| anyhow!("must contain an address"))?;
-        let addrs = addrs.iter().map(TargetAddr::from).collect::<Vec<_>>();
+        let addr = if let Some(addr) = t
+            .addresses
+            .iter()
+            .flatten()
+            .map(TargetAddr::from)
+            .find(|x| matches!(x, TargetAddr::UsbCtx(_) | TargetAddr::VSockCtx(_)))
+        {
+            addr
+        } else {
+            t.ssh_address
+                .map(|x| TargetAddr::from(TargetIpAddr::from(x)))
+                .ok_or_else(|| anyhow!("must contain an address"))?
+        };
 
-        Ok(Self((&addrs).to_ssh_addr().ok_or_else(|| anyhow!("could not convert to ssh addr"))?))
+        Ok(Self(addr))
     }
 }
 
@@ -244,14 +247,10 @@ impl TryFrom<ffx::TargetInfo> for SimpleTarget {
     type Error = Error;
 
     fn try_from(t: ffx::TargetInfo) -> Result<Self> {
-        let nodename = t.nodename.unwrap_or_else(|| "".to_string());
-        let addrs = t.addresses.ok_or_else(|| anyhow!("must contain an address"))?;
-        let addrs = addrs.iter().map(TargetAddr::from).collect::<Vec<_>>();
+        let nodename = t.nodename.clone().unwrap_or_else(|| "".to_string());
+        let AddressesTarget(addr) = t.try_into()?;
 
-        Ok(Self(
-            nodename,
-            (&addrs).to_ssh_addr().ok_or_else(|| anyhow!("could not convert to ssh addr"))?,
-        ))
+        Ok(Self(nodename, addr))
     }
 }
 
@@ -628,15 +627,16 @@ mod test {
     use super::*;
     use fidl_fuchsia_net::{Ipv4Address, Ipv6Address};
     use std::collections::HashMap;
-    use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
     use std::sync::LazyLock;
 
     fn make_target(
         addr: fidl_fuchsia_developer_ffx::TargetAddrInfo,
     ) -> fidl_fuchsia_developer_ffx::TargetInfo {
+        let ssh_address = TargetAddr::from(&addr).try_into().ok();
         ffx::TargetInfo {
             nodename: Some("lorberding".to_string()),
             addresses: Some(vec![addr]),
+            ssh_address,
             rcs_state: Some(ffx::RemoteControlState::Unknown),
             target_state: Some(ffx::TargetState::Unknown),
             ..Default::default()
@@ -777,6 +777,12 @@ mod test {
                     scope_id: 186,
                 }),
             ]),
+            ssh_address: Some(ffx::TargetIpAddrInfo::Ip(ffx::TargetIp {
+                ip: IpAddress::Ipv6(Ipv6Address {
+                    addr: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                }),
+                scope_id: 198,
+            })),
             rcs_state: Some(ffx::RemoteControlState::Unknown),
             target_state: Some(ffx::TargetState::Unknown),
             ..Default::default()
@@ -790,6 +796,10 @@ mod test {
                 ip: IpAddress::Ipv4(Ipv4Address { addr: [122, 24, 25, 25] }),
                 scope_id: 186,
             })]),
+            ssh_address: Some(ffx::TargetIpAddrInfo::Ip(ffx::TargetIp {
+                ip: IpAddress::Ipv4(Ipv4Address { addr: [122, 24, 25, 25] }),
+                scope_id: 186,
+            })),
             rcs_state: Some(ffx::RemoteControlState::Unknown),
             target_state: Some(ffx::TargetState::Unknown),
             ..Default::default()
@@ -911,6 +921,12 @@ mod test {
                     }),
                     scope_id: 137,
                 })]),
+                ssh_address: Some(ffx::TargetIpAddrInfo::Ip(ffx::TargetIp {
+                    ip: IpAddress::Ipv6(Ipv6Address {
+                        addr: [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1],
+                    }),
+                    scope_id: 137,
+                })),
                 rcs_state: Some(ffx::RemoteControlState::Unknown),
                 target_state: Some(ffx::TargetState::Unknown),
                 ..Default::default()
@@ -940,6 +956,7 @@ mod test {
             .collect::<Vec<_>>();
 
         targets[1].addresses = None;
+        targets[1].ssh_address = None;
         targets[3].rcs_state = None;
 
         let formatter = SimpleTargetFormatter::try_from(targets).unwrap();
@@ -1150,29 +1167,6 @@ mod test {
     }
 
     #[test]
-    fn test_to_ssh_addr() {
-        let sockets = vec![
-            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 0)),
-            SocketAddr::V6(SocketAddrV6::new("f111::3".parse().unwrap(), 0, 0, 0)),
-            SocketAddr::V6(SocketAddrV6::new("fe80::1".parse().unwrap(), 0, 0, 0)),
-            SocketAddr::V6(SocketAddrV6::new("fe80::2".parse().unwrap(), 0, 0, 1)),
-            SocketAddr::V6(SocketAddrV6::new("fe80::3".parse().unwrap(), 0, 0, 0)),
-        ];
-        let addrs = sockets.iter().map(|s| TargetAddr::from(*s)).collect::<Vec<_>>();
-        assert_eq!((&addrs).to_ssh_addr(), Some(addrs[3]));
-
-        let sockets = vec![
-            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 0)),
-            SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(129, 0, 0, 1), 0)),
-        ];
-        let addrs = sockets.iter().map(|s| TargetAddr::from(*s)).collect::<Vec<_>>();
-        assert_eq!((&addrs).to_ssh_addr(), Some(addrs[0]));
-
-        let addrs = Vec::<TargetAddr>::new();
-        assert_eq!((&addrs).to_ssh_addr(), None);
-    }
-
-    #[test]
     fn test_stringified_product_state() {
         let mut t = make_valid_target();
         t.target_state = Some(ffx::TargetState::Product);
@@ -1214,8 +1208,10 @@ mod test {
             .collect::<Vec<_>>();
 
         targets[1].addresses = None;
+        targets[1].ssh_address = None;
         targets[3].rcs_state = None;
         targets[4].addresses = None;
+        targets[4].ssh_address = None;
 
         let formatter = AddressesTargetFormatter::try_from(targets).unwrap();
         assert_eq!(formatter.targets.len(), 4);
