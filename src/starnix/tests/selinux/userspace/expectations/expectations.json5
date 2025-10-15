@@ -14,12 +14,8 @@
             matchers: [
                 // TODO: https://fxbug.dev/422968534 - Make (SE)Starnix match the (SE)Linux behavior
                 // regarding opening binder.
-                "BinderTest.OpenBinderNoTestDomain",
-                "BinderTest.OpenBinderWithTestDomain",
                 "BinderTest/CallPermission.DoCall/0",
                 "BinderTest/CallPermission.DoCall/1",
-                "BinderTest/ContextManagerPermission.BecomeServiceManager/0",
-                "BinderTest/ContextManagerPermission.BecomeServiceManager/1",
 
                 // TODO(https://fxbug.dev/398654361)
                 "BinderTest/ManagerProviderClientTest/0.SameOperationsAsSELinuxTestSuiteBinderTestSubTestOne",
