@@ -457,14 +457,20 @@ StringProperty State::CreateStringProperty(std::string_view name, BlockIndex par
   std::unique_ptr<AutoGenerationIncrement> gen = MaybeIncrementGeneration();
 
   BlockIndex name_index, value_index;
-  const zx_status_t creation_status =
+  zx_status_t status =
       InnerCreateValue(name, BlockType::kBufferValue, parent, &name_index, &value_index);
-  if (creation_status != ZX_OK) {
+  if (status != ZX_OK) {
     return StringProperty();
   }
 
   BlockIndex data_index;
-  InnerCreateAndIncrementStringReference(value, &data_index, true);
+  status = InnerCreateAndIncrementStringReference(value, &data_index, true);
+  if (status != ZX_OK) {
+    InnerReleaseStringReference(name_index);
+    heap_->Free(value_index);
+    return StringProperty();
+  }
+
   heap_->GetBlock(value_index)->payload.u64 =
       PropertyBlockPayload::ExtentIndex::Make(data_index) |
       PropertyBlockPayload::TotalLength::Make(0) |
@@ -741,7 +747,11 @@ void State::InnerSetStringProperty(StringProperty* property, const std::string& 
       PropertyBlockPayload::ExtentIndex::Get<BlockIndex>(property_block->payload.u64);
 
   BlockIndex new_string_ref_idx;
-  InnerCreateAndIncrementStringReference(value, &new_string_ref_idx, true);
+  const auto status = InnerCreateAndIncrementStringReference(value, &new_string_ref_idx, true);
+
+  if (status != ZX_OK) {
+    return;
+  }
 
   InnerReleaseStringReference(old_string_ref_idx);
 
@@ -1272,7 +1282,13 @@ zx_status_t State::InnerDoStringReferenceAllocations(std::string_view data, Bloc
                       0 /* this is potentially reset in WriteStringReferencePayload */) |
                   StringReferenceBlockFields::ReferenceCount::Make(0);
   block->payload.u64 = StringReferenceBlockPayload::TotalLength::Make(data.size());
-  return WriteStringReferencePayload(block, data);
+  status = WriteStringReferencePayload(block, data);
+  if (status != ZX_OK) {
+    heap_->Free(*out);
+    return status;
+  }
+
+  return ZX_OK;
 }
 
 zx_status_t State::WriteStringReferencePayload(Block* const block, std::string_view data) {

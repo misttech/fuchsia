@@ -19,6 +19,7 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <ranges>
 #include <sstream>
 #include <string>
 
@@ -1033,6 +1034,64 @@ TEST(State, CreateExponentialHistogramChildren) {
   }
 }
 
+TEST(State, FailedAllocationIsNoOp) {
+  auto state = InitState(4096);
+  ASSERT_TRUE(state != NULL);
+
+  const std::string s(5000, 'a');
+
+  auto p1 = state->CreateStringProperty("", 0, s);
+
+  fbl::WAVLTree<BlockIndex, std::unique_ptr<ScannedBlock>> blocks;
+  size_t free_blocks, allocated_blocks;
+  auto snapshot = SnapshotAndScan(state->GetVmo(), &blocks, &free_blocks, &allocated_blocks);
+  ASSERT_TRUE(snapshot);
+
+  auto everything_but_header =
+      blocks | std::views::filter([](const auto& block) { return block.index != 0; });
+
+  for (const auto& block : everything_but_header) {
+    EXPECT_EQ(BlockType::kFree, GetType(block.block));
+  }
+}
+
+TEST(State, StringPropertyRemainsValidAfterFailedAllocation) {
+  auto state = InitState(4096);
+  ASSERT_TRUE(state != NULL);
+
+  const std::string s(2000, 'a');
+
+  auto p1 = state->CreateStringProperty("", 0, s);
+
+  {
+    fbl::WAVLTree<BlockIndex, std::unique_ptr<ScannedBlock>> blocks;
+    size_t free_blocks, allocated_blocks;
+    auto snapshot = SnapshotAndScan(state->GetVmo(), &blocks, &free_blocks, &allocated_blocks);
+    ASSERT_TRUE(snapshot);
+
+    const auto ref_idx =
+        PropertyBlockPayload::ExtentIndex::Get<BlockIndex>(blocks.find(2)->block->payload.u64);
+
+    ASSERT_EQ(s, TesterLoadStringReference(*state, ref_idx));
+  }
+
+  // should fail to allocate due to not being able to get a sufficiently large block,
+  // leaving an intact `s`
+  p1.Set(std::string(2500, 'b'));
+
+  {
+    fbl::WAVLTree<BlockIndex, std::unique_ptr<ScannedBlock>> blocks;
+    size_t free_blocks, allocated_blocks;
+    auto snapshot = SnapshotAndScan(state->GetVmo(), &blocks, &free_blocks, &allocated_blocks);
+    ASSERT_TRUE(snapshot);
+
+    const auto ref_idx =
+        PropertyBlockPayload::ExtentIndex::Get<BlockIndex>(blocks.find(2)->block->payload.u64);
+
+    ASSERT_EQ(s, TesterLoadStringReference(*state, ref_idx));
+  }
+}
+
 TEST(State, StringPropertiesInternValues) {
   auto state = InitState(4096);
   ASSERT_TRUE(state != NULL);
@@ -1592,10 +1651,20 @@ TEST(State, GetStatsWithFailedAllocationTest) {
   EXPECT_EQ(4096u, stats.maximum_size);
   EXPECT_EQ(4096u, stats.size);
   EXPECT_EQ(2u, stats.allocated_blocks);
-  EXPECT_EQ(0u, stats.deallocated_blocks);
+  EXPECT_EQ(1u, stats.deallocated_blocks);
   EXPECT_EQ(1u, stats.failed_allocations);
 
-  state->ReleaseStringReference(idx);
+  fbl::WAVLTree<BlockIndex, std::unique_ptr<ScannedBlock>> blocks;
+  size_t free_blocks, allocated_blocks;
+  auto snapshot = SnapshotAndScan(state->GetVmo(), &blocks, &free_blocks, &allocated_blocks);
+  ASSERT_TRUE(snapshot);
+
+  auto everything_but_header =
+      blocks | std::views::filter([](const auto& block) { return block.index != 0; });
+
+  for (const auto& block : everything_but_header) {
+    EXPECT_EQ(BlockType::kFree, GetType(block.block));
+  }
 }
 
 constexpr size_t kThreadTimes = 1024 * 10;
