@@ -31,14 +31,14 @@
 namespace goldfish {
 
 class PipeDevice;
-using DeviceType =
-    ddk::Device<PipeDevice, ddk::Messageable<fuchsia_hardware_goldfish::PipeDevice>::Mixin>;
+using DeviceType = ddk::Device<PipeDevice>;
 
 // |PipeDevice| is the "root" ACPI device that creates pipes and executes pipe
 // operations. It could create multiple |PipeChildDevice| instances using
 // |CreateChildDevice| method, each having its own properties so that they can
 // be bound to different drivers, but sharing the same parent |PipeDevice|.
-class PipeDevice : public DeviceType, public fidl::WireServer<fuchsia_hardware_goldfish_pipe::Bus> {
+class PipeDevice : public DeviceType,
+                        public fidl::WireServer<fuchsia_hardware_goldfish_pipe::Bus> {
  public:
   static zx_status_t Create(void* ctx, zx_device_t* parent);
 
@@ -59,10 +59,7 @@ class PipeDevice : public DeviceType, public fidl::WireServer<fuchsia_hardware_g
   void Exec(int32_t id);
   zx_status_t GetBti(zx::bti* out_bti);
 
-  // `fuchsia.hardware.goldfish.PipeDevice`:
-  void Connect(ConnectRequestView request, ConnectCompleter::Sync& completer) override;
-
-  // `fuchsia.hardware.goldfish.pipe.Bus`:
+  // fuchsia.hardware.goldfish.pipe.Bus APIs.
   void Create(CreateCompleter::Sync& completer) override;
   void SetEvent(SetEventRequestView request, SetEventCompleter::Sync& completer) override;
   void Destroy(DestroyRequestView request, DestroyCompleter::Sync& completer) override;
@@ -101,13 +98,12 @@ class PipeDevice : public DeviceType, public fidl::WireServer<fuchsia_hardware_g
       TA_GUARDED(pipes_lock_);
   async_dispatcher_t* const dispatcher_;
 
-  std::unordered_map<PipeConnection*, std::unique_ptr<PipeConnection>> pipe_connections_;
-
   DISALLOW_COPY_ASSIGN_AND_MOVE(PipeDevice);
 };
 
 class PipeChildDevice;
-using PipeChildDeviceType = ddk::Device<PipeChildDevice>;
+using PipeChildDeviceType =
+    ddk::Device<PipeChildDevice, ddk::Messageable<fuchsia_hardware_goldfish::PipeDevice>::Mixin>;
 
 // |PipeChildDevice| is created by |PipeDevice| and serves the
 // |fuchsia.hardware.goldfish.Bus| FIDL protocol by forwarding all the
@@ -115,17 +111,24 @@ using PipeChildDeviceType = ddk::Device<PipeChildDevice>;
 class PipeChildDevice : public PipeChildDeviceType {
  public:
   PipeChildDevice(PipeDevice* parent, async_dispatcher_t* dispatcher);
-  ~PipeChildDevice() = default;
+  ~PipeChildDevice() override = default;
 
   zx_status_t Bind(cpp20::span<const zx_device_str_prop_t> props, const char* dev_name);
 
   // Device protocol implementation.
   void DdkRelease();
 
+  // fuchsia.hardware.goldfish.Controller APIs.
+  void Connect(ConnectRequestView request, ConnectCompleter::Sync& completer) override;
+
  private:
   PipeDevice* const parent_;
   async_dispatcher_t* const dispatcher_;
   component::OutgoingDirectory outgoing_;
+
+  std::unordered_map<PipeConnection*, std::unique_ptr<PipeConnection>> pipe_connections_;
+
+  std::optional<ddk::UnbindTxn> unbind_txn_;
 };
 
 }  // namespace goldfish
