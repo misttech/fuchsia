@@ -37,8 +37,7 @@ using DeviceType = ddk::Device<PipeDevice>;
 // operations. It could create multiple |PipeChildDevice| instances using
 // |CreateChildDevice| method, each having its own properties so that they can
 // be bound to different drivers, but sharing the same parent |PipeDevice|.
-class PipeDevice : public DeviceType,
-                        public fidl::WireServer<fuchsia_hardware_goldfish_pipe::Bus> {
+class PipeDevice : public DeviceType {
  public:
   static zx_status_t Create(void* ctx, zx_device_t* parent);
 
@@ -58,14 +57,6 @@ class PipeDevice : public DeviceType,
   void Open(int32_t id);
   void Exec(int32_t id);
   zx_status_t GetBti(zx::bti* out_bti);
-
-  // fuchsia.hardware.goldfish.pipe.Bus APIs.
-  void Create(CreateCompleter::Sync& completer) override;
-  void SetEvent(SetEventRequestView request, SetEventCompleter::Sync& completer) override;
-  void Destroy(DestroyRequestView request, DestroyCompleter::Sync& completer) override;
-  void Open(OpenRequestView request, OpenCompleter::Sync& completer) override;
-  void Exec(ExecRequestView request, ExecCompleter::Sync& completer) override;
-  void GetBti(GetBtiCompleter::Sync& completer) override;
 
   int IrqHandler();
 
@@ -108,7 +99,8 @@ using PipeChildDeviceType =
 // |PipeChildDevice| is created by |PipeDevice| and serves the
 // |fuchsia.hardware.goldfish.Bus| FIDL protocol by forwarding all the
 // FIDL requests to the parent device.
-class PipeChildDevice : public PipeChildDeviceType {
+class PipeChildDevice : public PipeChildDeviceType,
+                        public fidl::WireServer<fuchsia_hardware_goldfish_pipe::Bus> {
  public:
   PipeChildDevice(PipeDevice* parent, async_dispatcher_t* dispatcher);
   ~PipeChildDevice() override = default;
@@ -121,6 +113,14 @@ class PipeChildDevice : public PipeChildDeviceType {
   // fuchsia.hardware.goldfish.Controller APIs.
   void Connect(ConnectRequestView request, ConnectCompleter::Sync& completer) override;
 
+  // fuchsia.hardware.goldfish.pipe.Bus APIs.
+  void Create(CreateCompleter::Sync& completer) override;
+  void SetEvent(SetEventRequestView request, SetEventCompleter::Sync& completer) override;
+  void Destroy(DestroyRequestView request, DestroyCompleter::Sync& completer) override;
+  void Open(OpenRequestView request, OpenCompleter::Sync& completer) override;
+  void Exec(ExecRequestView request, ExecCompleter::Sync& completer) override;
+  void GetBti(GetBtiCompleter::Sync& completer) override;
+
  private:
   PipeDevice* const parent_;
   async_dispatcher_t* const dispatcher_;
@@ -128,6 +128,7 @@ class PipeChildDevice : public PipeChildDeviceType {
 
   std::unordered_map<PipeConnection*, std::unique_ptr<PipeConnection>> pipe_connections_;
 
+  fidl::ServerBindingGroup<fuchsia_hardware_goldfish_pipe::Bus> pipe_bindings_;
   std::optional<ddk::UnbindTxn> unbind_txn_;
 };
 
