@@ -1265,18 +1265,18 @@
     },
     {
         "package": "perfetto/trace_processor_shell/linux-amd64",
-        "version": "git_tag:v48.1",
-        "instance_id": "38kYV1MrqACqgKUnQo_ZQbVN4cQYmuXDWbJBJ95nfXUC"
+        "version": "git_tag:v52.0",
+        "instance_id": "mQWEXbUHtEfAkP19qogDuLM6EIncyw3ve2KToc5pzOIC"
     },
     {
         "package": "perfetto/trace_processor_shell/mac-amd64",
-        "version": "git_tag:v48.1",
-        "instance_id": "Vb9B8urn3ezhwhq1x252jQhBfzFM0qztsRUYh_7kd0EC"
+        "version": "git_tag:v52.0",
+        "instance_id": "5AegA5dLIztir_TrycsmvZqYRdMPAyW--e1ySCno_iIC"
     },
     {
         "package": "perfetto/trace_processor_shell/mac-arm64",
-        "version": "git_tag:v48.1",
-        "instance_id": "thoBPU__w0gFiXUXZWag6U1tjx-ZdTV4NZt7Ad3urP8C"
+        "version": "git_tag:v52.0",
+        "instance_id": "1aAsDl4GvFLfOT47UW1qFwoFU5n0pdVxkESD3_3noEQC"
     },
     {
         "package": "skia/tools/goldctl/linux-amd64",
