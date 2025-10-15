@@ -2185,6 +2185,11 @@ build_api_module("nuc11_fastboot_images_location") {
 #         This is only used for debugging.
 #     - Type: string
 #
+#   bazel_compdb_file
+#     - Optional: Path to a file including JSON compilation database for the
+#         Bazel targets built by this bazel_action().
+#     - Type: string
+#
 #   path_mapping
 #     - Optional: Path to a file used to map Bazel artifacts to their copy location in the
 #         Ninja build directory. Only used for debugging.

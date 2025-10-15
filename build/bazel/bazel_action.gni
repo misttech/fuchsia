@@ -11,6 +11,11 @@ import("//build/licenses/generated_licenses_spdx.gni")
 declare_args() {
   # Output extra information when Bazel build actions fail.
   bazel_verbose_failures = true
+
+  # Automatically refreshes compile_commands.json after bazel_actions are built.
+  #
+  # NOTE: Enabling will add a several seconds of overhead to the build.
+  bazel_auto_refresh_compdb = false
 }
 
 # Wrap a Bazel command with a GN action.
@@ -687,7 +692,7 @@ template("bazel_action") {
       inputs += invoker.inputs
     }
 
-    depfile = "$target_gen_dir/$target_name.d"
+    depfile = "${target_gen_dir}/${target_name}.d"
 
     outputs = [
       _path_mapping,
@@ -741,6 +746,17 @@ template("bazel_action") {
     }
     if (bazel_verbose_failures) {
       args += [ "--verbose_failures" ]
+    }
+
+    if (bazel_auto_refresh_compdb) {
+      _compdb_file =
+          "${target_out_dir}/${target_name}.bazel_compile_commands.json"
+      _rebased_compdb_file = rebase_path(_compdb_file, root_build_dir)
+      outputs += [ _compdb_file ]
+      args += [
+        "--compdb-file",
+        _rebased_compdb_file,
+      ]
     }
 
     if (_has_file_outputs) {
@@ -917,6 +933,10 @@ template("bazel_action") {
             path_mapping = _rebased_path_mapping
             timings_file = _rebased_timings_file
             build_events_log_json = _rebased_bazel_build_events_log_json
+
+            if (bazel_auto_refresh_compdb) {
+              bazel_compdb_file = _rebased_compdb_file
+            }
           },
           # LINT.ThenChange(//BUILD.gn:bazel_build_actions)
         ]

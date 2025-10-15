@@ -809,6 +809,15 @@ job_count: $concurrency
 
     declare -r end_time="${EPOCHREALTIME/./}"
     track-build-event "${start_time}" "${end_time}" "${status}" "${extra_switches[*]}" "${ninja_targets[*]}" "${FUCHSIA_BUILD_DIR}" "${is_no_op}" "${is_clean_build}" "${quiet}"&
+
+    local -r bazel_auto_refresh_compdb=$(jq -r '.bazel_auto_refresh_compdb // "false"' "${FUCHSIA_BUILD_DIR}/args.json")
+    if [[ "${bazel_auto_refresh_compdb}" == "true" ]]; then
+      "${PREBUILT_PYTHON3}" \
+      "${FUCHSIA_DIR}/build/bazel/scripts/merge_bazel_compdb.py" \
+        --build-dir "${FUCHSIA_BUILD_DIR}" \
+        --compdb "${FUCHSIA_BUILD_DIR}/compile_commands.json" \
+        --bazel-build-action-targets "${FUCHSIA_BUILD_DIR}/bazel_build_action_targets.json"
+    fi
   fi
   exit-with-message
 }

@@ -11,30 +11,14 @@ import subprocess
 from pathlib import Path
 from typing import Any, Sequence
 
-_OPT_PATTERN = re.compile("[\W]+")
-
 _CPP_EXTENSIONS = [".cc", ".c", ".cpp"]
 
 _FUCHSIA_CPU_MAP = {"aarch64": "arm64", "x86_64": "x64"}
-
-_BAZEL_CPU_ALIASES = {
-    "k8": "x86_64",
-    "x64": "x86_64",
-    "x86_64": "x86_64",
-    "aarch64": "aarch64",
-    "arm64": "aarch64",
-    "riscv64": "riscv64",
-}
 
 
 def _map_fuchsia_cpu(cpu: str) -> str | None:
     """Converts a bazel cpu to a fuchsia cpu"""
     return _FUCHSIA_CPU_MAP.get(cpu, cpu)
-
-
-def _map_bazel_cpu(cpu: str) -> str | None:
-    """Converts a cpu to one that bazel recognizes"""
-    return _BAZEL_CPU_ALIASES.get(cpu, cpu)
 
 
 # These regex patterns are a tuple of compiled regex's to lambdas that will be
@@ -237,6 +221,8 @@ def run(*command: str) -> str:
 
 
 def collect_actions(action_graph: dict[str, Any]) -> Sequence[Action]:
+    if not action_graph:
+        return []
     targets = {t["id"]: t for t in action_graph["targets"]}
     actions = []
     for action_dict in action_graph["actions"]:
@@ -247,7 +233,7 @@ def collect_actions(action_graph: dict[str, Any]) -> Sequence[Action]:
 
 
 def get_action_graph_from_labels(
-    bazel_bin: str, compilation_mode: str, cpu: str, labels: Sequence[str]
+    bazel_bin: str, bazel_config_args: list[str], labels: Sequence[str]
 ) -> Sequence[Action]:
     labels_set = "set({})".format(" ".join(labels))
     action_graph = json.loads(
@@ -255,38 +241,22 @@ def get_action_graph_from_labels(
             bazel_bin,
             "aquery",
             "mnemonic('CppCompile',deps({}))".format(labels_set),
-            "--compilation_mode={}".format(compilation_mode),
-            "--cpu={}".format(_map_bazel_cpu(cpu)),
             "--output=jsonproto",
             "--noinclude_artifacts",
             "--ui_event_filters=-info,-warning",
             "--noshow_loading_progress",
             "--noshow_progress",
             "--show_result=0",
+            *bazel_config_args,
         )
     )
     return collect_actions(action_graph)
 
 
-# LINT.IfChange(comp_mode)
-def compilation_mode(gn_args: dict[str, Any]) -> str:
-    optimization = gn_args.get("optimize", "none")
-    # Sometimes the optimization is escape quoted so we clean it up.
-    opt = _OPT_PATTERN.sub("", optimization)
-    if opt == "debug":
-        return "dbg"
-    elif opt in ("size", "speed", "profile", "size_lto", "size_thinlto"):
-        return "opt"
-    else:
-        return "fastbuild"
-
-
-# LINT.ThenChange(//build/bazel/bazel_action.gni:comp_mode,//build/bazel/config/bazel_args.gni:comp_mode)
-
-
 def compdb_for_labels(
     build_dir: Path,
     bazel_bin: str,
+    bazel_config_args: list[str],
     labels: list[str],
 ) -> list[dict[str, Any]]:
     """Generate compile commands for input Bazel labels.
@@ -294,21 +264,16 @@ def compdb_for_labels(
     Args:
         build_dir: Path to the build directory.
         bazel_bin: Path to Bazel binary.
-        compilation_mode: Compilation mode used by the Bazel build invocations.
-        cpu: Target CPU used by the Bazel build invocations.
+        bazel_config_args: Bazel configuration arguments.
         labels: Bazel labels to generate compile commands for.
 
     Returns:
         A list of compile_commands.json entries.
     """
 
-    with open(build_dir / "args.json", "r") as f:
-        gn_args = json.load(f)
-
     actions = get_action_graph_from_labels(
         bazel_bin,
-        compilation_mode(gn_args),
-        gn_args["target_cpu"],
+        bazel_config_args,
         labels,
     )
 
@@ -327,3 +292,7 @@ def compdb_for_labels(
         output_path,
     )
     return [formatter.action_to_compile_commands(action) for action in actions]
+
+
+def dedupe(compdb: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return list({c["file"]: c for c in compdb}.values())

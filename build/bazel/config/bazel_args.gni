@@ -73,7 +73,7 @@ _is_compilation_mode_fastbuild = _optimize_to_fastbuild + [ optimize ] -
 _is_compilation_mode_opt =
     _optimize_to_opt + [ optimize ] - [ optimize ] != _optimize_to_opt
 
-# LINT.ThenChange(//build/bazel/scripts/bazel_compdb_utils.py:comp_mode)
+# LINT.ThenChange(//build/bazel/scripts/refresh-bazel-compdb-bin.py:comp_mode)
 
 # Forward GN sanitizer configuration to Bazel
 

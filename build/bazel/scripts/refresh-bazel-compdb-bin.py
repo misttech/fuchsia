@@ -13,6 +13,39 @@ from typing import Any, Sequence
 
 import bazel_compdb_utils
 
+_OPT_PATTERN = re.compile("[\W]+")
+
+_BAZEL_CPU_ALIASES = {
+    "k8": "x86_64",
+    "x64": "x86_64",
+    "x86_64": "x86_64",
+    "aarch64": "aarch64",
+    "arm64": "aarch64",
+    "riscv64": "riscv64",
+}
+
+
+# LINT.IfChange(comp_mode)
+def compilation_mode(gn_args: dict[str, Any]) -> str:
+    optimization = gn_args.get("optimize", "none")
+    # Sometimes the optimization is escape quoted so we clean it up.
+    opt = _OPT_PATTERN.sub("", optimization)
+    if opt == "debug":
+        return "dbg"
+    elif opt in ("size", "speed", "profile", "size_lto", "size_thinlto"):
+        return "opt"
+    else:
+        return "fastbuild"
+
+
+# LINT.ThenChange(//build/bazel/config/bazel_args.gni:comp_mode)
+
+
+def map_bazel_cpu(cpu: str) -> str | None:
+    """Converts a cpu to one that bazel recognizes"""
+    return _BAZEL_CPU_ALIASES.get(cpu, cpu)
+
+
 _SHOULD_LOG = False
 
 _FUCHSIA_PACKAGE_SUFFIX = "_fuchsia_package"
@@ -185,13 +218,21 @@ def main(argv: Sequence[str]) -> None:
 
     info("Refreshing compdb for Bazel targets: {}".format(labels))
 
+    with open(args.build_dir / "args.json", "r") as f:
+        gn_args = json.load(f)
+
+    bazel_config_args = [
+        "--compilation_mode={}".format(compilation_mode(gn_args)),
+        "--cpu={}".format(map_bazel_cpu(gn_args["target_cpu"])),
+    ]
+
     new_compile_commands = bazel_compdb_utils.compdb_for_labels(
         args.build_dir,
         args.bazel,
+        bazel_config_args,
         labels,
     )
 
-    compile_commands_dict = {}
     compile_commands_path = args.build_dir / "compile_commands.json"
     with open(
         compile_commands_path,
@@ -199,14 +240,12 @@ def main(argv: Sequence[str]) -> None:
     ) as f:
         compile_commands = json.load(f)
         compile_commands.extend(new_compile_commands)
-        for compile_command in compile_commands:
-            compile_commands_dict[compile_command["file"]] = compile_command
 
     with open(
         compile_commands_path,
         "w",
     ) as f:
-        json.dump(list(compile_commands_dict.values()), f, indent=2)
+        json.dump(bazel_compdb_utils.dedupe(compile_commands), f, indent=2)
 
     if args.self_test_filter:
         commands_to_check = [

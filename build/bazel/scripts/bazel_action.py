@@ -20,6 +20,7 @@ from pathlib import Path
 
 _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
+import bazel_compdb_utils
 import build_utils
 import thread_pool_helpers
 import workspace_utils
@@ -1367,6 +1368,11 @@ def main() -> int:
         help="If specified, write debug symbols manifest to file.",
     )
     parser.add_argument(
+        "--compdb-file",
+        type=Path,
+        help="If specified, write compile_commands.json to file.",
+    )
+    parser.add_argument(
         "--verbose_failures",
         action="store_true",
         default=False,
@@ -1840,6 +1846,22 @@ def main() -> int:
         )
         for src_path, dst_path, tracked_files in dir_copies:
             copy_directory_if_changed(src_path, dst_path, tracked_files)
+
+    if args.compdb_file:
+        time_profile.start(
+            "generate_compdb",
+            "Generate {}".format(args.compdb_file),
+        )
+        compile_commands = bazel_compdb_utils.compdb_for_labels(
+            build_dir,
+            bazel_paths.launcher,
+            configured_args,
+            args.bazel_targets,
+        )
+        write_file_if_changed(
+            args.compdb_file,
+            json.dumps(bazel_compdb_utils.dedupe(compile_commands), indent=2),
+        )
 
     time_profile.stop()
 
