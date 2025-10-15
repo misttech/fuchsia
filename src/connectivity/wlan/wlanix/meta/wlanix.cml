@@ -37,6 +37,14 @@
             from: "parent",
             availability: "optional",
         },
+
+        // Not all devices use battery, so we don't expect BatteryManager to always be
+        // present. If BatteryManager is not present, the effect is that certain
+        // Cobalt metrics that rely on battery states are not logged.
+        {
+            protocol: [ "fuchsia.power.battery.BatteryManager" ],
+            availability: "optional",
+        },
     ],
     expose: [
         {

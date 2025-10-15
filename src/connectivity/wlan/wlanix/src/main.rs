@@ -2164,6 +2164,59 @@ async fn serve_fidl<I: IfaceManager>(
     Ok(())
 }
 
+async fn report_battery_updates(telemetry_sender: TelemetrySender) {
+    match fuchsia_component::client::connect_to_protocol::<
+        fidl_fuchsia_power_battery::BatteryManagerMarker,
+    >() {
+        Ok(proxy) => {
+            // Swallow and log failure to watch battery updates because they only affect some
+            // Cobalt metrics and should not cause wlanix to shutdown.
+            if let Err(e) = report_battery_updates_helper(proxy, telemetry_sender).await {
+                warn!("Failed to watch and report battery updates to telemetry: {:?}", e);
+            }
+        }
+        Err(e) => {
+            warn!("Failed to connect to BatteryManager for telemetry: {:?}", e);
+        }
+    };
+}
+
+async fn report_battery_updates_helper(
+    proxy: fidl_fuchsia_power_battery::BatteryManagerProxy,
+    telemetry_sender: TelemetrySender,
+) -> Result<(), Error> {
+    let (battery_watcher_client_end, mut battery_watcher_stream) =
+        fidl::endpoints::create_request_stream();
+    proxy.watch(battery_watcher_client_end)?;
+
+    // Send initial charge status to telemetry
+    let info = proxy.get_battery_info().await?;
+    match info.charge_status {
+        Some(charge_status) => {
+            telemetry_sender.send(TelemetryEvent::BatteryChargeStatus(charge_status))
+        }
+        None => warn!("Battery info not sent to telemetry because it doesn't have charge_status"),
+    }
+
+    // Watch for battery charge status changes
+    while let Some(event) = battery_watcher_stream.next().await {
+        match event? {
+            fidl_fuchsia_power_battery::BatteryInfoWatcherRequest::OnChangeBatteryInfo {
+                info,
+                responder,
+                ..
+            } => {
+                if let Some(charge_status) = info.charge_status {
+                    telemetry_sender.send(TelemetryEvent::BatteryChargeStatus(charge_status));
+                }
+                responder.send()?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[fasync::run_singlethreaded]
 async fn main() {
     diagnostics_log::initialize(
@@ -2212,7 +2265,8 @@ async fn main() {
     let res = futures::try_join!(
         serve_telemetry_fut,
         persistence_fut.map(Ok),
-        serve_fidl(Arc::new(iface_manager), telemetry_sender)
+        serve_fidl(Arc::new(iface_manager), telemetry_sender.clone()),
+        report_battery_updates(telemetry_sender).map(Ok),
     );
     match res {
         Ok(_) => info!("Wlanix exiting cleanly"),
@@ -4887,6 +4941,70 @@ mod tests {
                 phy_id: 1,
                 scenario: fidl_internal::TxPowerScenario::Default,
             }
+        );
+    }
+
+    #[test]
+    fn test_report_battery_updates() {
+        let mut exec = fasync::TestExecutor::new();
+
+        let (battery_manager_proxy, mut battery_manager_stream) =
+            create_proxy_and_stream::<fidl_fuchsia_power_battery::BatteryManagerMarker>();
+        let (telemetry_sender, mut telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let telemetry_sender = TelemetrySender::new(telemetry_sender);
+        let test_fut = report_battery_updates_helper(battery_manager_proxy, telemetry_sender);
+        let mut test_fut = pin!(test_fut);
+        assert_matches!(exec.run_until_stalled(&mut test_fut), Poll::Pending);
+
+        // Verify that `BatteryManagerProxy::watch` is called
+        let mut next_fut = battery_manager_stream.next();
+        let battery_watcher_proxy = assert_matches!(
+            exec.run_until_stalled(&mut next_fut),
+            Poll::Ready(Some(Ok(fidl_fuchsia_power_battery::BatteryManagerRequest::Watch { watcher, .. }))) => watcher.into_proxy());
+
+        // Verify that `BatteryManagerProxy::get_battery_info` is called
+        let mut next_fut: futures::stream::Next<
+            '_,
+            fidl_fuchsia_power_battery::BatteryManagerRequestStream,
+        > = battery_manager_stream.next();
+        let responder = assert_matches!(
+            exec.run_until_stalled(&mut next_fut),
+            Poll::Ready(Some(Ok(fidl_fuchsia_power_battery::BatteryManagerRequest::GetBatteryInfo { responder, .. }))) => responder);
+
+        // Respond with a charge status to proceed with the test
+        assert_matches!(
+            responder.send(&fidl_fuchsia_power_battery::BatteryInfo {
+                charge_status: Some(fidl_fuchsia_power_battery::ChargeStatus::Charging),
+                ..Default::default()
+            }),
+            Ok(())
+        );
+        assert_matches!(exec.run_until_stalled(&mut test_fut), Poll::Pending);
+
+        // Verify such charge status is logged to telemetry
+        assert_matches!(
+            telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::BatteryChargeStatus(
+                fidl_fuchsia_power_battery::ChargeStatus::Charging
+            )))
+        );
+
+        // Send battery info through watcher
+        let battery_info = fidl_fuchsia_power_battery::BatteryInfo {
+            charge_status: Some(fidl_fuchsia_power_battery::ChargeStatus::Discharging),
+            ..Default::default()
+        };
+        let mut on_change_battery_fut =
+            battery_watcher_proxy.on_change_battery_info(&battery_info, None);
+        assert_matches!(exec.run_until_stalled(&mut on_change_battery_fut), Poll::Pending);
+        assert_matches!(exec.run_until_stalled(&mut test_fut), Poll::Pending);
+
+        // Verify such charge status is logged to telemetry
+        assert_matches!(
+            telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::BatteryChargeStatus(
+                fidl_fuchsia_power_battery::ChargeStatus::Discharging
+            )))
         );
     }
 }
