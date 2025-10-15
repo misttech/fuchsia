@@ -29,7 +29,7 @@ use fuchsia_inspect_contrib::profile_duration;
 use linux_uapi::{
     perf_event_attr, perf_type_id, perf_type_id_PERF_TYPE_BREAKPOINT,
     perf_type_id_PERF_TYPE_HARDWARE, perf_type_id_PERF_TYPE_HW_CACHE, perf_type_id_PERF_TYPE_MAX,
-    perf_type_id_PERF_TYPE_SOFTWARE, perf_type_id_PERF_TYPE_TRACEPOINT,
+    perf_type_id_PERF_TYPE_RAW, perf_type_id_PERF_TYPE_SOFTWARE, perf_type_id_PERF_TYPE_TRACEPOINT,
 };
 use selinux::{FileSystemMountOptions, SecurityPermission, SecurityServer};
 use starnix_logging::{CATEGORY_STARNIX_SECURITY, log_debug, trace_duration};
@@ -142,6 +142,7 @@ pub enum PerfEventType {
     Hardware,
     Software,
     Tracepoint,
+    Raw,
     HwCache,
     Breakpoint,
     Max,
@@ -149,16 +150,21 @@ pub enum PerfEventType {
 
 // TODO(https://github.com/rust-lang/rust/issues/39371): remove
 #[allow(non_upper_case_globals)]
-impl From<perf_type_id> for PerfEventType {
-    fn from(type_id: perf_type_id) -> Self {
+impl TryFrom<perf_type_id> for PerfEventType {
+    type Error = Errno;
+
+    fn try_from(type_id: perf_type_id) -> Result<Self, Errno> {
         match type_id {
-            perf_type_id_PERF_TYPE_HARDWARE => Self::Hardware,
-            perf_type_id_PERF_TYPE_SOFTWARE => Self::Software,
-            perf_type_id_PERF_TYPE_TRACEPOINT => Self::Tracepoint,
-            perf_type_id_PERF_TYPE_HW_CACHE => Self::HwCache,
-            perf_type_id_PERF_TYPE_BREAKPOINT => Self::Breakpoint,
-            perf_type_id_PERF_TYPE_MAX => Self::Max,
-            _ => unreachable!("Unsupported perf_event type: {}", type_id),
+            perf_type_id_PERF_TYPE_HARDWARE => Ok(Self::Hardware),
+            perf_type_id_PERF_TYPE_SOFTWARE => Ok(Self::Software),
+            perf_type_id_PERF_TYPE_TRACEPOINT => Ok(Self::Tracepoint),
+            perf_type_id_PERF_TYPE_RAW => Ok(Self::Raw),
+            perf_type_id_PERF_TYPE_HW_CACHE => Ok(Self::HwCache),
+            perf_type_id_PERF_TYPE_BREAKPOINT => Ok(Self::Breakpoint),
+            perf_type_id_PERF_TYPE_MAX => Ok(Self::Max),
+            _ => {
+                return error!(ENOTSUP);
+            }
         }
     }
 }

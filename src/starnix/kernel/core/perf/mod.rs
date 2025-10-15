@@ -769,21 +769,19 @@ pub fn sys_perf_event_open(
         return error!(EINVAL);
     }
 
-    if tid > 0 {
-        track_stub!(TODO("https://fxbug.dev/409621963"), "[perf_event_open] implement tid > 0");
-        return error!(ENOSYS);
-    }
-
     let target_task_type = match tid {
         -1 => TargetTaskType::AllTasks,
         0 => TargetTaskType::CurrentTask,
-        _ => unimplemented!("https://fxbug.dev/409621963"),
+        _ => {
+            track_stub!(TODO("https://fxbug.dev/409621963"), "[perf_event_open] implement tid > 0");
+            return error!(ENOSYS);
+        }
     };
     security::check_perf_event_open_access(
         current_task,
         target_task_type,
         &perf_event_attrs,
-        perf_event_attrs.type_.into(),
+        perf_event_attrs.type_.try_into()?,
     )?;
 
     // https://fuchsia.dev/reference/syscalls/system_get_page_size#errors
