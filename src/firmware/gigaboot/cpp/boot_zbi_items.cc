@@ -32,6 +32,7 @@
 #include <phys/efi/main.h>
 
 #include "acpi.h"
+#include "page_size.h"
 #include "utils.h"
 
 namespace gigaboot {
@@ -363,7 +364,7 @@ zx::result<std::span<zbi_mem_range_t>> CollectPeripheralMemoryItems(
     }
     *current_zbi++ = {
         .paddr = context->uart_mmio_phys.value(),
-        .length = ZX_PAGE_SIZE,
+        .length = PAGE_SIZE,
         .type = ZBI_MEM_TYPE_PERIPHERAL,
     };
   }
@@ -375,7 +376,7 @@ zx::result<std::span<zbi_mem_range_t>> CollectPeripheralMemoryItems(
       // Each of these generally encompass a page, but some systems like QEMU
       // allocate 64K to make it easier when working with 64kb pages. Since we
       // use 4K pages, we allocate 16 pages here just to be safe.
-      constexpr uint64_t entry_length = 16 * ZX_PAGE_SIZE;
+      constexpr uint64_t entry_length = 16 * PAGE_SIZE;
       if (current_zbi == out.end()) {
         printf("Insufficient memory to add memory items\n");
         return zx::error(ZX_ERR_NO_MEMORY);

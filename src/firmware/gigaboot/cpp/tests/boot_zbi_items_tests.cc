@@ -20,6 +20,7 @@
 #include "acpi.h"
 #include "boot_zbi_items.h"
 #include "mock_boot_service.h"
+#include "page_size.h"
 #include "utils.h"
 
 extern "C" efi_status generate_efi_memory_attributes_table_item(
@@ -171,11 +172,11 @@ TEST_F(BootZbiItemTest, AddMemoryItems) {
 
   // Make sure that we added the expected items.
   EXPECT_EQ(zbi_mem_ranges[0].paddr, 0x0ULL);
-  EXPECT_EQ(zbi_mem_ranges[0].length, 0x10 * ZX_PAGE_SIZE);
+  EXPECT_EQ(zbi_mem_ranges[0].length, 0x10 * PAGE_SIZE);
   EXPECT_EQ(zbi_mem_ranges[0].type, EfiToZbiMemRangeType(EfiReservedMemoryType));
 
   EXPECT_EQ(zbi_mem_ranges[1].paddr, 0x1000ULL);
-  EXPECT_EQ(zbi_mem_ranges[1].length, 0x10 * ZX_PAGE_SIZE);
+  EXPECT_EQ(zbi_mem_ranges[1].length, 0x10 * PAGE_SIZE);
   EXPECT_EQ(zbi_mem_ranges[1].type, EfiToZbiMemRangeType(EfiLoaderCode));
   EXPECT_EQ(zbi_mem_ranges[2].type, ZBI_MEM_TYPE_PERIPHERAL);
   EXPECT_EQ(zbi_mem_ranges[3].type, ZBI_MEM_TYPE_PERIPHERAL);
