@@ -253,8 +253,7 @@ pub struct ContainerProgram {
 
     /// The default mount options to use when mounting directories from a component's namespace.
     ///
-    /// The string is expected to follow the format: "<namespace_path>:<mount_options".
-    /// string.
+    /// Each string is expected to follow the format: "<namespace_path>:<mount_options>".
     pub default_ns_mount_options: Option<Vec<String>>,
 
     /// Specifies role names to use for "realtime" tasks based on their process & thread names.
@@ -816,31 +815,59 @@ fn create_fs_context(
     // Create a layered fs to handle /container and /container/component
     let mut mappings = vec![];
     if features.container {
-        // /container will mount the container pkg
         // /container/component will be a tmpfs where component using the starnix kernel will have their
         // package mounted.
-        let rights = fio::PERM_READABLE | fio::PERM_EXECUTABLE;
-        let component_tmpfs = TmpFs::new_fs(locked, kernel);
-        let remotefs = create_remotefs_filesystem(
+        let component_tmpfs_options = FileSystemOptions {
+            params: kernel
+                .features
+                .ns_mount_options("#component_tmpfs")
+                .context("#component_tmpfs options")?,
+            ..Default::default()
+        };
+        let component_tmpfs = TmpFs::new_fs_with_options(locked, kernel, component_tmpfs_options)?;
+
+        // /container will mount the container pkg
+        let container_remotefs_options = FileSystemOptions {
+            source: "data".into(),
+            params: kernel.features.ns_mount_options("#container").context("#container options")?,
+            ..Default::default()
+        };
+        let container_remotefs = create_remotefs_filesystem(
             locked,
             kernel,
             pkg_dir_proxy,
-            FileSystemOptions { source: "data".into(), ..Default::default() },
-            rights,
+            container_remotefs_options,
+            fio::PERM_READABLE | fio::PERM_EXECUTABLE,
         )?;
+
         let container_fs = LayeredFs::new_fs(
             locked,
             kernel,
-            remotefs,
+            container_remotefs,
             BTreeMap::from([("component".into(), component_tmpfs)]),
         );
         mappings.push(("container".into(), container_fs));
     }
     if features.custom_artifacts {
-        mappings.push(("custom_artifacts".into(), TmpFs::new_fs(locked, kernel)));
+        let mount_options = FileSystemOptions {
+            params: kernel
+                .features
+                .ns_mount_options("#custom_artifacts")
+                .context("#custom_artifacts options")?,
+            ..Default::default()
+        };
+        mappings.push((
+            "custom_artifacts".into(),
+            TmpFs::new_fs_with_options(locked, kernel, mount_options)?,
+        ));
     }
     if features.test_data {
-        mappings.push(("test_data".into(), TmpFs::new_fs(locked, kernel)));
+        let mount_options = FileSystemOptions {
+            params: kernel.features.ns_mount_options("#test_data").context("#test_data options")?,
+            ..Default::default()
+        };
+        mappings
+            .push(("test_data".into(), TmpFs::new_fs_with_options(locked, kernel, mount_options)?));
     }
 
     if !mappings.is_empty() {

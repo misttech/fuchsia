@@ -21,6 +21,7 @@ use crate::task::{
     PidTable, SchedulerManager, StopState, Syslog, ThreadGroup, UtsNamespace, UtsNamespaceHandle,
 };
 use crate::vdso::vdso_loader::Vdso;
+use crate::vfs::fs_args::MountParams;
 use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use crate::vfs::socket::{
     GenericMessage, GenericNetlink, NetlinkAccessControl, NetlinkContextImpl,
@@ -120,6 +121,20 @@ pub struct KernelFeatures {
 
     /// The number of bytes to cache in pages for reading zx::MapInfo from VMARs.
     pub cached_zx_map_info_bytes: u32,
+}
+
+impl KernelFeatures {
+    /// Returns the `MountParams` to use when mounting the specified path from a component's
+    /// namespace.  This mechanism is also used to specified options for mounts created via
+    /// container features, by specifying a pseudo-path e.g. "#container".
+    pub fn ns_mount_options(&self, ns_path: &str) -> Result<MountParams, Errno> {
+        if let Some(all_options) = &self.default_ns_mount_options {
+            if let Some(options) = all_options.get(ns_path) {
+                return MountParams::parse(options.as_bytes().into());
+            }
+        }
+        Ok(MountParams::default())
+    }
 }
 
 /// Kernel command line argument structure
