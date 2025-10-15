@@ -273,6 +273,7 @@
         {
             // Routed to session-manager via session_manager.core_shard.cml.
             protocol: [
+                "fuchsia.memory.sampler.Sampler",
                 "fuchsia.power.CollaborativeRebootInitiator",
                 "fuchsia.update.channel.Provider",
                 "fuchsia.update.channelcontrol.ChannelControl",

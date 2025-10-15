@@ -107,6 +107,12 @@
             to: "#session-manager",
         },
         {
+            protocol: [ "fuchsia.memory.sampler.Sampler" ],
+            from: "#memory_sampler",
+            to: "#session-manager",
+            source_availability: "unknown",
+        },
+        {
             protocol: [ "fuchsia.memorypressure.Provider" ],
             from: "#memory_pressure_signaler",
             to: "#session-manager",
