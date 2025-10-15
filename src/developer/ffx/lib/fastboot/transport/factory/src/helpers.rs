@@ -28,7 +28,6 @@ where
         .build(context);
     let query = discovery::query::TargetInfoQuery::NodenameOrSerial(target_name.clone());
     let targets = discovery.discover_devices(query).await.map_err(anyhow::Error::from)?;
-
     for handle in targets {
         if filter(&handle) {
             // This is the first event that matches our name.

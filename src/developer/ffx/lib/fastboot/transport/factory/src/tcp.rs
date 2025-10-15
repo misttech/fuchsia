@@ -29,6 +29,7 @@ pub struct TcpFactory {
     addr: SocketAddr,
     open_retries: u64,
     retry_wait_seconds: u64,
+    retry_forever: bool,
     context: EnvironmentContext,
 }
 
@@ -40,6 +41,7 @@ impl TcpFactory {
         addr: SocketAddr,
         open_retries: u64,
         retry_wait_seconds: u64,
+        retry_forever: bool,
     ) -> Self {
         Self {
             target_name,
@@ -47,6 +49,7 @@ impl TcpFactory {
             addr,
             open_retries,
             retry_wait_seconds,
+            retry_forever,
             context: context.clone(),
         }
     }
@@ -66,19 +69,31 @@ impl InterfaceFactoryBase<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>> for
         &mut self,
     ) -> Result<TcpNetworkInterface<TokioAsyncWrapper<TcpStream>>, InterfaceFactoryError> {
         let wait_duration = Duration::from_secs(self.retry_wait_seconds);
-        for i in 1..self.open_retries {
+        let mut try_count = 1;
+        loop {
+            if !self.retry_forever && try_count > self.open_retries {
+                break Err(InterfaceFactoryError::ConnectionError(
+                    "TCP".to_string(),
+                    self.addr,
+                    self.open_retries,
+                ));
+            }
+            try_count += 1;
             match open_once(&self.addr, Duration::from_secs(1)).await.with_context(|| {
                 format!("TCPFactory connecting via TCP to Fastboot address: {}", self.addr)
             }) {
                 Err(e) => {
-                    log::debug!("Attempt {}. Got error connecting to fastboot address: {}", i, e,);
+                    log::debug!(
+                        "Attempt {}. Got error connecting to fastboot address: {}",
+                        try_count,
+                        e,
+                    );
 
                     Timer::new(wait_duration).await;
                 }
                 Ok(interface) => return Ok(interface),
             }
         }
-        Err(InterfaceFactoryError::ConnectionError("TCP".to_string(), self.addr, self.open_retries))
     }
 
     async fn close(&self) {

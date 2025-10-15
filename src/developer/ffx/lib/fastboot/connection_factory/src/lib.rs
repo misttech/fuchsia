@@ -87,11 +87,12 @@ const TCP_WAIT_SECONDS_DEFAULT: u64 = 2;
 pub struct FastbootNetworkConnectionConfig {
     retry_wait_seconds: u64,
     retry_count: u64,
+    retry_forever: bool,
 }
 
 impl FastbootNetworkConnectionConfig {
     pub fn new(retry_wait_seconds: u64, retry_count: u64) -> Self {
-        Self { retry_wait_seconds, retry_count }
+        Self { retry_wait_seconds, retry_count, retry_forever: false }
     }
 
     async fn new_from_config(
@@ -104,6 +105,10 @@ impl FastbootNetworkConnectionConfig {
         let retry_count = context.get(retry_key).unwrap_or(retry_default);
         let retry_wait_seconds = context.get(wait_key).unwrap_or(wait_default);
         Self::new(retry_wait_seconds, retry_count)
+    }
+
+    pub fn forever() -> Self {
+        Self { retry_wait_seconds: 2, retry_count: 0, retry_forever: true }
     }
 
     pub async fn new_tcp(context: &EnvironmentContext) -> Self {
@@ -162,6 +167,7 @@ pub async fn tcp_proxy(
         *addr,
         config.retry_count,
         config.retry_wait_seconds,
+        config.retry_forever,
     );
     let interface = factory
         .open()

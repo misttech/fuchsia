@@ -514,7 +514,7 @@ Reboot the Target to the bootloader and re-run this command."
                         } else {
                             &socket_addr.to_string()
                         };
-                        let config = FastbootNetworkConnectionConfig::new_tcp(&self.ctx).await;
+                        let config = FastbootNetworkConnectionConfig::forever();
                         let fastboot_device_file_path: Option<PathBuf> =
                             self.ctx.get(FASTBOOT_FILE_PATH).ok();
                         let mut proxy = tcp_proxy(
