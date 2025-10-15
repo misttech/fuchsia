@@ -31,6 +31,10 @@ type LastReboot = table {
     /// Why a device last rebooted.
     2: reason RebootReason;
 
+    /// How a device last shutdown.
+    @available(added=NEXT)
+    6: action ShutdownAction;
+
     /// The uptime of the device before it rebooted. This is the amount of time since boot,
     /// including any time spent in suspend-to-idle.
     3: uptime zx.Duration;
@@ -150,4 +154,13 @@ type RebootReason = strict(removed=9) flexible(added=9) enum : uint16 {
     // fully migrated to Netstack3.
     @available(added=26)
     NETSTACK_MIGRATION = 20;
+};
+
+/// How a device last shutdown.
+@available(added=NEXT)
+type ShutdownAction = flexible enum {
+    POWEROFF = 1;
+    REBOOT = 2;
+    REBOOT_TO_RECOVERY = 3;
+    REBOOT_TO_BOOTLOADER = 4;
 };

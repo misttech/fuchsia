@@ -451,6 +451,12 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.feedback/LastReboot.action",
+        "ordinal": "6",
+        "type": "fuchsia.feedback/ShutdownAction"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.feedback/LastReboot.graceful",
         "ordinal": "1",
         "type": "bool"
@@ -775,6 +781,32 @@
         "kind": "table",
         "name": "fuchsia.feedback/RuntimeCrashReport",
         "resourceness": "resource"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.feedback/ShutdownAction.POWEROFF",
+        "value": "1"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.feedback/ShutdownAction.REBOOT",
+        "value": "2"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.feedback/ShutdownAction.REBOOT_TO_BOOTLOADER",
+        "value": "4"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.feedback/ShutdownAction.REBOOT_TO_RECOVERY",
+        "value": "3"
+    },
+    {
+        "kind": "enum",
+        "name": "fuchsia.feedback/ShutdownAction",
+        "strictness": "flexible",
+        "type": "uint32"
     },
     {
         "kind": "table/member",
