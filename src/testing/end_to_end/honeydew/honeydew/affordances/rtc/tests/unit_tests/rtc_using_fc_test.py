@@ -10,6 +10,7 @@ from unittest import mock
 
 import fidl_fuchsia_hardware_rtc as frtc
 import fuchsia_controller_py
+from fidl import FrameworkError
 
 from honeydew import affordances_capable
 from honeydew.affordances.rtc import rtc_using_fc
@@ -98,57 +99,49 @@ class RtcFcTests(unittest.TestCase):
 
     def test_rtc_set(self) -> None:
         time = datetime.datetime(2022, 2, 5, 15, 50, 23)
-        self.m_run.return_value = frtc.DeviceSetResult(
-            response=frtc.DeviceSetResponse(status=ZX_OK)
-        )
-
-        want = frtc.Time(
-            time.second, time.minute, time.hour, time.day, time.month, time.year
-        )
-
+        self.m_run.return_value = frtc.DeviceSet2Result()
         self.rtc.set(time)
-        self.m_proxy.set_.assert_called_once_with(rtc=want)
         self.m_run.assert_called_once()
 
     def test_rtc_set_error(self) -> None:
-        """Test errors returned by Set()
-
-        Unlike Get, the Set API does not currently use `-> () error zx.Status`
-        syntax. It can return errors in one of two ways, either by a failed FIDL
-        transaction, or by successfully returning an error in the struct.
-
-        This tests the struct case.
-        """
+        """Test errors returned by Set2() are handled."""
         time = datetime.datetime(2022, 2, 5, 15, 50, 23)
-        self.m_run.return_value = frtc.DeviceSetResult(
-            response=frtc.DeviceSetResponse(status=ZX_ERR_INTERNAL)
-        )
+        self.m_run.return_value = frtc.DeviceSet2Result(err=ZX_ERR_INTERNAL)
 
-        msg = r"Device\.Set\(\) error"
+        msg = r"Device\.Set2\(\) error"
         with self.assertRaisesRegex(HoneydewRtcError, msg):
             self.rtc.set(time)
 
-        self.m_proxy.set_.assert_called_once()
         self.m_run.assert_called_once()
 
     def test_rtc_set_exception(self) -> None:
-        """Test errors returned by Set()
-
-        Unlike Get, the Set API does not currently use `-> () error zx.Status`
-        syntax. It can return errors in one of two ways, either by a failed FIDL
-        transaction, or by successfully returning an error in the struct.
-
-        This tests the FIDL-failure case.
-        """
+        """Test that we gracefully handle transport errors when invoking Set2()."""
         time = datetime.datetime(2022, 2, 5, 15, 50, 23)
         self.m_run.side_effect = fuchsia_controller_py.ZxStatus
 
-        msg = r"Device\.Set\(\) error"
+        msg = r"Device\.Set2\(\) error"
         with self.assertRaisesRegex(HoneydewRtcError, msg):
             self.rtc.set(time)
 
-        self.m_proxy.set_.assert_called_once()
         self.m_run.assert_called_once()
+
+    # TODO(https://fxbug.dev/435664909): Remove when API level 26 support is dropped.
+    def test_rtc_set_fallback(self) -> None:
+        """Test that we attempt to fallback to the old Set method if Set2 is unavailable."""
+        time = datetime.datetime(2022, 2, 5, 15, 50, 23)
+        # NOTE: This isn't strictly correct since we should be returning a DeviceSetResult on the
+        # second call, but all we do is try to unwrap the value so this is sufficient. Since we
+        # return another error when the old Set method is called, we still expect an error below.
+        # Unlike the other test cases however, we should see a call to both Set and Set2.
+        self.m_run.return_value = frtc.DeviceSet2Result(
+            framework_err=FrameworkError.UNKNOWN_METHOD
+        )
+
+        msg = r"Device\.Set2\(\) error"
+        with self.assertRaisesRegex(HoneydewRtcError, msg):
+            self.rtc.set(time)
+
+        assert self.m_run.call_count == 2
 
 
 if __name__ == "__main__":

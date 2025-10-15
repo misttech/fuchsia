@@ -7,7 +7,8 @@ import asyncio
 import datetime
 
 import fidl_fuchsia_hardware_rtc as frtc
-import fuchsia_controller_py
+from fidl import FrameworkError
+from fuchsia_controller_py import ZxStatus
 
 from honeydew import affordances_capable
 from honeydew.affordances.rtc import rtc
@@ -85,7 +86,7 @@ class RtcUsingFc(rtc.Rtc):
         """See base class."""
         try:
             response = asyncio.run(self._proxy.get()).unwrap()
-        except (AssertionError, fuchsia_controller_py.ZxStatus) as e:
+        except (AssertionError, ZxStatus) as e:
             msg = f"Device.Get() error {e}"
             raise HoneydewRtcError(msg) from e
 
@@ -106,11 +107,27 @@ class RtcUsingFc(rtc.Rtc):
         )
 
         try:
-            response = asyncio.run(self._proxy.set_(rtc=ftime)).unwrap()
-        except (AssertionError, fuchsia_controller_py.ZxStatus) as e:
-            msg = f"Device.Set() error {e}"
+            response = asyncio.run(self._proxy.set2(rtc=ftime))
+            # Allow fallback to the old Set method if Set2 isn't supported.
+            # TODO(https://fxbug.dev/435664909): Remove when API level 26 support is dropped.
+            # Although we are calling Set instead of Set2, we use "Set2" in the error strings to
+            # avoid having to update the test cases after removing this branch.
+            if response.framework_err == FrameworkError.UNKNOWN_METHOD:
+                try:
+                    old_method = asyncio.run(
+                        self._proxy.set_(rtc=ftime)
+                    ).unwrap()
+                except (AssertionError, ZxStatus) as e:
+                    msg = f"Device.Set2() error {e}"
+                    raise HoneydewRtcError(msg) from e
+                if old_method.status != ZxStatus.ZX_OK:
+                    msg = f"Device.Set2() error {old_method.status}"
+                    raise HoneydewRtcError(msg)
+            else:
+                response.unwrap()
+        except (AssertionError, ZxStatus) as e:
+            msg = f"Device.Set2() error {e}"
             raise HoneydewRtcError(msg) from e
-
-        if response.status != fuchsia_controller_py.ZxStatus.ZX_OK:
-            msg = f"Device.Set() error {response.status}"
-            raise HoneydewRtcError(msg)
+        except HoneydewRtcError:
+            # Propagate errors from the old Set method if we used the fallback path above.
+            raise
