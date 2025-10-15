@@ -28,11 +28,15 @@ extern Mutex gAllThreadsLock LIBC_ASM_LINKAGE_DECLARE(gAllThreadsLock) __LOCAL;
 extern Thread* gAllThreads LIBC_ASM_LINKAGE_DECLARE(gAllThreads) __LOCAL
     __TA_GUARDED(gAllThreadsLock);
 
-// This just wraps T so that its operator++ calls Increment as T(T).
+template <typename IncrementFunction, typename ValueType>
+concept Incrementer =
+    std::regular_invocable<IncrementFunction, ValueType> &&
+    std::convertible_to<std::invoke_result_t<IncrementFunction, ValueType>, ValueType>;
+
+// This just wraps T so that its operator++ std::invoke's Increment as T(T).
 // The * and -> operators are passed through for a pointer type.
 // Instantiations satisfy std::incrementable.
-template <typename T, std::regular_invocable<T> auto Increment>
-  requires std::convertible_to<std::invoke_result_t<decltype(Increment), T>, T>
+template <typename T, Incrementer<T> auto Increment>
 struct Incrementable {
   using difference_type = std::incrementable_traits<T>::difference_type;
 
@@ -50,27 +54,27 @@ struct Incrementable {
     return result;
   }
 
-  template <typename = void>
+  constexpr auto* operator->() const
     requires(std::is_pointer_v<T>)
-  constexpr auto* operator->() const {
+  {
     return value;
   }
 
-  template <typename = void>
+  constexpr auto* operator->()
     requires(std::is_pointer_v<T>)
-  constexpr auto* operator->() {
+  {
     return value;
   }
 
-  template <typename = void>
+  constexpr auto& operator*() const
     requires(std::is_pointer_v<T>)
-  constexpr auto& operator*() const {
+  {
     return *value;
   }
 
-  template <typename = void>
+  constexpr auto& operator*()
     requires(std::is_pointer_v<T>)
-  constexpr auto& operator*() {
+  {
     return *value;
   }
 
