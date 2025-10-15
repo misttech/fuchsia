@@ -4,14 +4,23 @@
 
 import("../libc.gni")
 
-source_set("pthread") {
-  sources = [
-    "pthread_getname_np.c",
-    "pthread_setname_np.c",
-  ]
-  deps = [ "//zircon/third_party/ulib/musl:musl_internal" ]
+llvm_libc_group("pthread") {
+  deps = [ ":name" ]
 }
 
-libc_test("unittests") {
-  sources = [ "pthread-getsetname-test.cc" ]
+llvm_libc_source_set("name") {
+  functions = [
+    "pthread_getname_np",
+    "pthread_setname_np",
+  ]
+  os_functions = functions
+  no_test_functions = functions
+
+  local_deps = [
+    "../zircon:zx-name",
+    "//zircon/third_party/ulib/musl:musl_internal",
+  ]
+
+  test_dir = "."
+  test_sources = [ "pthread-getsetname-test.cc" ]
 }

@@ -69,3 +69,8 @@ libc_test("vmar-tests") {
     "//sdk/lib/fit",
   ]
 }
+
+source_set("zx-name") {
+  public = [ "zx-name.h" ]
+  public_deps = [ "//zircon/system/ulib/zx" ]
+}

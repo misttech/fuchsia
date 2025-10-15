@@ -46,23 +46,18 @@ void testBoth(Function &f) {
 TEST(PthreadGetSetNameTest, GetNameBasic) {
   Thread thrd;
   char name[ZX_MAX_NAME_LEN];
-  pthread_getname_np(thrd, name, sizeof(name));
+  ASSERT_EQ(pthread_getname_np(thrd, name, sizeof(name)), 0);
   EXPECT_STREQ(name, "thread-name");
 }
 
 TEST(PthreadGetSetNameTest, GetNameTruncate) {
   Thread thrd;
-  char name[ZX_MAX_NAME_LEN]{'a', 'b'};
-  // Size 0 shouldn't touch name.
-  pthread_getname_np(thrd, name, 0);
-  EXPECT_STREQ(name, "ab");
-  pthread_getname_np(thrd, name, 1);
-  EXPECT_STREQ(name, "");
-  pthread_getname_np(thrd, name, 2);
-  EXPECT_STREQ(name, "t");
-  pthread_getname_np(thrd, name, 7);
-  EXPECT_STREQ(name, "thread");
-  pthread_getname_np(thrd, name, sizeof(name));
+  char name[ZX_MAX_NAME_LEN];
+  EXPECT_EQ(pthread_getname_np(thrd, name, 0), ERANGE);
+  EXPECT_EQ(pthread_getname_np(thrd, name, 1), ERANGE);
+  EXPECT_EQ(pthread_getname_np(thrd, name, 2), ERANGE);
+  EXPECT_EQ(pthread_getname_np(thrd, name, 7), ERANGE);
+  ASSERT_EQ(pthread_getname_np(thrd, name, sizeof(name)), 0);
   EXPECT_STREQ(name, "thread-name");
 }
 
@@ -78,7 +73,7 @@ TEST(PthreadGetSetNameTest, GetNameErrors) {
 TEST(PthreadGetSetNameTest, SetName) {
   auto test = [](auto &&thrd) {
     char newname[] = "new-thread-name";
-    pthread_setname_np(thrd, newname);
+    ASSERT_EQ(pthread_setname_np(thrd, newname), 0);
     char name[ZX_MAX_NAME_LEN];
     pthread_getname_np(thrd, name, sizeof(name));
     EXPECT_STREQ(name, newname);
@@ -96,10 +91,10 @@ static void test() {
       char c = 'a';
     };
     A newname[I];
-    newname[I - 1].c = 0;
-    pthread_setname_np(thrd, reinterpret_cast<const char *>(newname));
+    newname[I - 1].c = '\0';
+    ASSERT_EQ(pthread_setname_np(thrd, reinterpret_cast<const char *>(newname)), 0);
     char name[I];
-    pthread_getname_np(thrd, name, sizeof(name));
+    ASSERT_EQ(pthread_getname_np(thrd, name, sizeof(name)), 0);
     constexpr size_t last = std::min(ZX_MAX_NAME_LEN, I) - 1;
     EXPECT_EQ(0, name[last]);
     for (size_t i = 0; i < last; i++)
@@ -126,16 +121,17 @@ extern "C" zx_handle_t thrd_get_zx_handle(thrd_t);
 
 TEST(PthreadGetSetNameTest, InvalidHandle) {
   thrd_t thrd;
-  int (*fn)(void *) = +[](void *) {
+  int (*fn)(void *) = [](void *) {
     zx_thread_exit();
     return 0;
   };
   EXPECT_EQ(thrd_create(&thrd, fn, nullptr), thrd_success);
 
-  zx_object_wait_one(thrd_get_zx_handle(thrd), ZX_THREAD_SUSPENDED | ZX_THREAD_TERMINATED,
-                     ZX_TIME_INFINITE, nullptr);
+  ASSERT_OK(zx_object_wait_one(thrd_get_zx_handle(thrd), ZX_THREAD_SUSPENDED | ZX_THREAD_TERMINATED,
+                               ZX_TIME_INFINITE, nullptr));
 
   EXPECT_EQ(pthread_setname_np(thrd, ""), ESRCH);
 
-  // We can't join the thread because it called zx_thread_exit, so the threads data will leak here.
+  // We can't join the thread because it called zx_thread_exit, so the threads
+  // data will leak here.
 }
