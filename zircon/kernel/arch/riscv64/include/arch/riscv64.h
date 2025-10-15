@@ -127,6 +127,7 @@
 #ifndef __ASSEMBLER__
 
 #include <assert.h>
+#include <lib/arch/asm.h>
 #include <stdbool.h>
 #include <sys/types.h>
 #include <zircon/compiler.h>
@@ -206,7 +207,8 @@ static_assert(__offsetof(riscv64_context_switch_frame, s0) == CONTEXT_SWITCH_FRA
 static_assert(sizeof(riscv64_context_switch_frame) == SIZEOF_CONTEXT_SWITCH_FRAME);
 static_assert(sizeof(riscv64_context_switch_frame) % 16u == 0u);
 
-extern "C" void riscv64_exception_entry();
+extern "C" arch::AsmLabel riscv64_exception_entry;
+
 extern "C" void riscv64_context_switch(vaddr_t* old_sp, vaddr_t new_sp);
 #if __has_feature(shadow_call_stack)
 extern "C" void riscv64_uspace_entry(iframe_t* iframe, vaddr_t tp, vaddr_t shadow_call_base);

@@ -11,6 +11,7 @@
 
 #ifndef __ASSEMBLER__
 
+#include <lib/arch/asm.h>
 #include <stdint.h>
 
 #include <phys/exception.h>
@@ -20,7 +21,7 @@ static_assert(sizeof(PhysExceptionState{}.regs) == 32 * 8);
 static_assert(PHYS_EXCEPTION_STATE_SIZE == sizeof(PhysExceptionState));
 
 // Defined in exception.S, calls C++ ArchPhysException.
-extern "C" void ArchPhysExceptionEntry();
+extern "C" arch::AsmLabel ArchPhysExceptionEntry;
 
 // Defined in exception.cc, calls generic PhysException.
 extern "C" uint64_t ArchPhysException(PhysExceptionState& state);
