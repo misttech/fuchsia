@@ -7,10 +7,9 @@
 //! There is no support for actual resource constraints, or any operations outside of adding tasks
 //! to a control group (for the duration of their lifetime).
 
-use crate::task::Kernel;
-use starnix_core::signals::{SignalInfo, send_freeze_signal};
-use starnix_core::task::{ThreadGroup, ThreadGroupKey, WaitQueue, Waiter};
-use starnix_core::vfs::{FsStr, FsString, PathBuilder};
+use crate::signals::{SignalInfo, send_freeze_signal};
+use crate::task::{Kernel, ThreadGroup, ThreadGroupKey, WaitQueue, Waiter};
+use crate::vfs::{FsStr, FsString, PathBuilder};
 use starnix_logging::{CATEGORY_STARNIX, log_warn, trace_duration, track_stub};
 use starnix_sync::{FileOpsCore, LockBefore, Locked, Mutex, MutexGuard, ThreadGroupLimits};
 use starnix_types::ownership::TempRef;
@@ -697,8 +696,8 @@ impl CgroupOps for Cgroup {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::testing::spawn_kernel_and_run;
     use assert_matches::assert_matches;
-    use starnix_core::testing::spawn_kernel_and_run;
     use starnix_uapi::signals::SIGCHLD;
     use starnix_uapi::{CLONE_SIGHAND, CLONE_THREAD, CLONE_VM};
 

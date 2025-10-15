@@ -356,6 +356,11 @@ mod tracer {
     pub type MutexTracer = tracing_mutex::lockapi::TracingWrapper<FakeRwLock>;
 }
 
+// We use tracing_mutex in tests and debug assertions, but we don't want to pull it in for
+// production.
+#[cfg(not(any(test, debug_assertions)))]
+use tracing_mutex as _;
+
 #[cfg(test)]
 mod test {
     use super::*;

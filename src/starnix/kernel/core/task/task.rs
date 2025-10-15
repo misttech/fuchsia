@@ -924,7 +924,7 @@ impl TaskPersistentInfoState {
 
     /// SAFETY: Only use from CurrentTask. Changing credentials outside of the CurrentTask may
     /// introduce TOCTOU issues in access checks.
-    pub(in crate::core__::task) unsafe fn creds_mut(&self) -> RwLockWriteGuard<'_, Credentials> {
+    pub(in crate::task) unsafe fn creds_mut(&self) -> RwLockWriteGuard<'_, Credentials> {
         self.creds.write()
     }
 }

@@ -88,7 +88,7 @@ rustc_binary("starnix_kernel_bin") {
 }
 
 _starnix_core_edition = "2021"
-_starnix_core_source_root = "lib.rs"
+_starnix_core_source_root = "core/lib.rs"
 _starnix_core_sources = [
   # go/keep-sorted start
   "core/arch/${current_cpu}/execution.rs",
@@ -142,6 +142,7 @@ _starnix_core_sources = [
   "core/fs/sysfs/mod.rs",
   "core/fs/sysfs/power_directory.rs",
   "core/fs/tmpfs.rs",
+  "core/lib.rs",
   "core/mm/debugger.rs",
   "core/mm/futex_table.rs",
   "core/mm/map_info_cache.rs",
@@ -157,7 +158,6 @@ _starnix_core_sources = [
   "core/mm/userfault.rs",
   "core/mm/vmex_resource.rs",
   "core/mm/vmsplice.rs",
-  "core/mod.rs",
   "core/mutable_state.rs",
   "core/perf/mod.rs",
   "core/power/manager.rs",
@@ -295,7 +295,6 @@ _starnix_core_sources = [
   "core/vfs/userfault_file.rs",
   "core/vfs/wd_number.rs",
   "core/vfs/xattr.rs",
-  "lib.rs",
 
   # go/keep-sorted end
 ]
@@ -323,7 +322,6 @@ _starnix_core_deps = [
   "//sdk/fidl/fuchsia.posix.socket.raw:fuchsia.posix.socket.raw_rust",
   "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
   "//sdk/fidl/fuchsia.power.observability:fuchsia.power.observability_rust",
-  "//sdk/fidl/fuchsia.power.suspend:fuchsia.power.suspend_rust",
   "//sdk/fidl/fuchsia.recovery:fuchsia.recovery_rust",
   "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_rust",
   "//sdk/fidl/fuchsia.session.power:fuchsia.session.power_rust",
@@ -338,7 +336,6 @@ _starnix_core_deps = [
   "//src/connectivity/lib/net-types",
   "//src/connectivity/network/netlink",
   "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_rust",
-  "//src/lib/async-utils",
   "//src/lib/diagnostics/data/rust",
   "//src/lib/diagnostics/inspect/contrib/rust",
   "//src/lib/diagnostics/inspect/derive",

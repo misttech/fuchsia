@@ -2,15 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::vfs::{NamespaceNode, PathWithReachability};
+use crate::task::{CurrentTask, Task};
+use crate::vfs::{FileObject, FileSystem, FsNode, FsStr, NamespaceNode, PathWithReachability};
 use bstr::BStr;
 use fuchsia_sync::Mutex;
 use hex;
 use linux_uapi::AUDIT_AVC;
 use selinux::permission_check::{PermissionCheck, PermissionCheckResult};
 use selinux::{ClassPermission, KernelClass, KernelPermission, SecurityId};
-use starnix_core::task::{CurrentTask, Task};
-use starnix_core::vfs::{FileObject, FileSystem, FsNode, FsStr};
 use starnix_logging::{BugRef, CATEGORY_STARNIX_SECURITY, trace_instant};
 use std::collections::HashMap;
 use std::fmt::{Display, Error};

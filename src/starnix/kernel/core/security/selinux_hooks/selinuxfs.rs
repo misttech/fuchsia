@@ -10,7 +10,7 @@ use selinux::{InitialSid, SecurityPermission, SecurityServer};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::errors::Errno;
 
-pub(in crate::core__::security) fn selinuxfs_init_null(
+pub(in crate::security) fn selinuxfs_init_null(
     current_task: &CurrentTask,
     null_file_handle: &FileHandle,
 ) {
@@ -32,7 +32,7 @@ pub(in crate::core__::security) fn selinuxfs_init_null(
 
 /// Called by the "selinuxfs" when a policy has been successfully loaded, to allow policy-dependent
 /// initialization to be completed.
-pub(in crate::core__::security) fn selinuxfs_policy_loaded<L>(
+pub(in crate::security) fn selinuxfs_policy_loaded<L>(
     locked: &mut Locked<L>,
     security_server: &SecurityServer,
     current_task: &CurrentTask,
@@ -60,7 +60,7 @@ pub(in crate::core__::security) fn selinuxfs_policy_loaded<L>(
 }
 
 /// Used by the "selinuxfs" module to perform checks on SELinux API file accesses.
-pub(in crate::core__::security) fn selinuxfs_check_access(
+pub(in crate::security) fn selinuxfs_check_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     permission: SecurityPermission,

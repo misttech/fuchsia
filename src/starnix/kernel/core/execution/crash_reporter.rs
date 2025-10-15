@@ -362,7 +362,7 @@ fn truncate_with_ellipsis(s: &mut String, max_len: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starnix_core::testing::spawn_kernel_and_run;
+    use crate::testing::spawn_kernel_and_run;
 
     const CRASH_LOOP_AGE_OUT: zx::MonotonicDuration = zx::Duration::from_minutes(8);
 

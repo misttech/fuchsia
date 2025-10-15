@@ -2,17 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::task::LockedAndTask;
+use crate::fs::fuchsia::{RemoteFs, RemoteNode};
+use crate::task::{CurrentTask, LockedAndTask};
+use crate::vfs::{
+    CacheConfig, CacheMode, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions,
+    FsNodeHandle, FsStr, derive_wrapping_key,
+};
 use fidl::endpoints::{DiscoverableProtocolMarker, SynchronousProxy, create_sync_proxy};
 use fidl_fuchsia_fshost::StarnixVolumeProviderMarker;
 use fidl_fuchsia_fxfs::{CryptMarker, KeyPurpose};
 use fidl_fuchsia_io as fio;
-use starnix_core::fs::fuchsia::{RemoteFs, RemoteNode};
-use starnix_core::task::CurrentTask;
-use starnix_core::vfs::{
-    CacheConfig, CacheMode, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions,
-    FsNodeHandle, FsStr, derive_wrapping_key,
-};
 use starnix_logging::{log_error, log_info};
 use starnix_sync::{FileOpsCore, Locked, Unlocked};
 use starnix_uapi::errors::Errno;

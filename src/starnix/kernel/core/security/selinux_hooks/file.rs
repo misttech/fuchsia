@@ -32,14 +32,12 @@ use starnix_uapi::{
 use std::ops::Range;
 
 /// Returns the security state for a new file object created by `current_task`.
-pub(in crate::core__::security) fn file_alloc_security(
-    current_task: &CurrentTask,
-) -> FileObjectState {
+pub(in crate::security) fn file_alloc_security(current_task: &CurrentTask) -> FileObjectState {
     FileObjectState { sid: current_task_state(current_task).lock().current_sid }
 }
 
 /// Checks whether the `current_task`` has the permissions specified by `mask` to the `file`.
-pub(in crate::core__::security) fn file_permission(
+pub(in crate::security) fn file_permission(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     file: &FileObject,
@@ -73,7 +71,7 @@ pub(in crate::core__::security) fn file_permission(
 }
 
 /// Returns whether the `current_task` can receive `file` via a socket IPC.
-pub(in crate::core__::security) fn file_receive(
+pub(in crate::security) fn file_receive(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     file: &FileObject,
@@ -83,7 +81,7 @@ pub(in crate::core__::security) fn file_receive(
 }
 
 // TODO(nathaniel): merge this back into file_receive above from which it came.
-pub(in crate::core__::security::selinux_hooks) fn todo_option_file_receive(
+pub(in crate::security::selinux_hooks) fn todo_option_file_receive(
     bug: Option<BugRef>,
     security_server: &SecurityServer,
     current_task: &CurrentTask,
@@ -140,7 +138,7 @@ pub(in crate::core__::security::selinux_hooks) fn todo_option_file_receive(
 }
 
 /// Returns whether `current_task` can issue an ioctl to `file`.
-pub(in crate::core__::security) fn check_file_ioctl_access(
+pub(in crate::security) fn check_file_ioctl_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     file: &FileObject,
@@ -189,7 +187,7 @@ pub(in crate::core__::security) fn check_file_ioctl_access(
 }
 
 /// Returns whether `current_task` can perform a lock operation on the given `file`.
-pub(in crate::core__::security) fn check_file_lock_access(
+pub(in crate::security) fn check_file_lock_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     file: &FileObject,
@@ -208,7 +206,7 @@ pub(in crate::core__::security) fn check_file_lock_access(
 
 /// This hook is called by the `fcntl` syscall. Returns whether `current_task` can perform
 /// `fcntl_cmd` on the given file.
-pub(in crate::core__::security) fn check_file_fcntl_access(
+pub(in crate::security) fn check_file_fcntl_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     file: &FileObject,
@@ -286,7 +284,7 @@ pub(in crate::core__::security) fn check_file_fcntl_access(
 }
 
 /// Checks if the requested protection changes `prot` can be applied to `mapping`.
-pub(in crate::core__::security) fn file_mprotect(
+pub(in crate::security) fn file_mprotect(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     mapping_range: &Range<UserAddress>,
@@ -341,7 +339,7 @@ pub(in crate::core__::security) fn file_mprotect(
 
 /// Checks if `current_task` can mmap `file` or anonymous memory with the given `protection_flags`
 /// and `mapping_options`.
-pub(in crate::core__::security) fn mmap_file(
+pub(in crate::security) fn mmap_file(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
     file: Option<&FileHandle>,
