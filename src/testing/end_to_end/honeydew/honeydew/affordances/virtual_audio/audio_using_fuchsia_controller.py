@@ -6,8 +6,10 @@ import asyncio
 import logging
 import os
 import time
+from datetime import timedelta
 
 import fidl_fuchsia_test_audio as fta
+from fidl import AsyncSocket
 from fuchsia_controller_py import Socket
 
 from honeydew.affordances.virtual_audio import audio, errors, types
@@ -154,3 +156,142 @@ class VirtualAudioUsingFuchsiaController(audio.VirtualAudio):
         asyncio.run(_capture())
 
         return types.AudioResponse(self._capture_client)
+
+    def wait_for_quiet(
+        self,
+        requested_quiet_period: timedelta,
+        optional_maximum_time_to_wait_for_quiet: timedelta | None = None,
+    ) -> types.WaitForQuietResult:
+        async def _run() -> types.WaitForQuietResult:
+            requested_quiet_period_ms = int(
+                requested_quiet_period.total_seconds() * 1000
+            )
+            if optional_maximum_time_to_wait_for_quiet is not None:
+                maximum_wait_time_ms = int(
+                    optional_maximum_time_to_wait_for_quiet.total_seconds()
+                    * 1000
+                )
+            else:
+                maximum_wait_time_ms = None
+            _LOGGER.info(
+                f"Waiting for {requested_quiet_period_ms}ms of quiet before proceeding"
+            )
+            res = await self._capture_client.wait_for_quiet(
+                requested_quiet_period_ms=requested_quiet_period_ms,
+                maximum_wait_time_ms=maximum_wait_time_ms,
+            )
+            if res.err is not None:
+                raise errors.VirtualAudioError(
+                    f"Failed to wait for quiet: {res.err}"
+                )
+            if res.response is None:
+                raise errors.VirtualAudioError("Missing response value")
+
+            if res.response.result == fta.WaitForQuietResult.SUCCESS:
+                _LOGGER.info("Quiet observed, proceeding.")
+                return types.WaitForQuietResult.SUCCESS
+            elif (
+                res.response.result
+                == fta.WaitForQuietResult.QUIET_PERIOD_NOT_OBSERVED
+            ):
+                _LOGGER.info("Quiet period was not observed.")
+                return types.WaitForQuietResult.DID_NOT_OBSERVE_QUIET_PERIOD
+            else:
+                raise errors.VirtualAudioError(
+                    f"Unknown response value: {res.response}. Possible version mismatch between host and target."
+                )
+
+        return asyncio.run(_run())
+
+    def queue_triggered_capture(
+        self,
+        maximum_time_to_wait_for_sound: timedelta,
+        maximum_time_to_capture_audio: timedelta,
+        optional_quiet_time_before_stopping_capture: timedelta | None,
+    ) -> None:
+        async def _run() -> None:
+            maximum_time_to_wait_for_sound_ms = int(
+                maximum_time_to_wait_for_sound.total_seconds() * 1000
+            )
+            maximum_capture_duration_ms = int(
+                maximum_time_to_capture_audio.total_seconds() * 1000
+            )
+            if optional_quiet_time_before_stopping_capture is not None:
+                optional_quiet_before_stopping_ms = int(
+                    optional_quiet_time_before_stopping_capture.total_seconds()
+                    * 1000
+                )
+            else:
+                optional_quiet_before_stopping_ms = None
+
+            capture_res = await self._capture_client.queue_triggered_capture(
+                maximum_time_to_wait_for_sound_ms=maximum_time_to_wait_for_sound_ms,
+                maximum_capture_duration_ms=maximum_capture_duration_ms,
+                optional_quiet_before_stopping_ms=optional_quiet_before_stopping_ms,
+            )
+
+            if capture_res.err is not None:
+                raise errors.VirtualAudioError(
+                    f"Failed to queue triggered capture: {capture_res.err}"
+                )
+
+        asyncio.run(_run())
+
+    def wait_for_triggered_capture(self) -> types.TriggeredCaptureResult:
+        async def _run() -> types.TriggeredCaptureResult:
+            capture_res = (
+                await self._capture_client.wait_for_triggered_capture()
+            )
+
+            if capture_res.err is not None:
+                if capture_res.err is not None:
+                    raise errors.VirtualAudioError(
+                        f"Failed to get the result of a triggered capture: {capture_res.err}"
+                    )
+
+            if (
+                capture_res.response is None
+                or capture_res.response.result is None
+            ):
+                raise errors.VirtualAudioError(f"Missing response value")
+
+            if (
+                capture_res.response.result
+                == fta.QueuedCaptureResult.FAILED_NO_SOUND_TIMEOUT
+            ):
+                return types.TriggeredCaptureResult(
+                    status=types.TriggeredCaptureStatus.FAILED_TO_START_RECORDING,
+                    audio_data=None,
+                )
+
+            status: types.TriggeredCaptureStatus
+            if capture_res.response.result == fta.QueuedCaptureResult.CAPTURED:
+                _LOGGER.info("Successfully captured audio")
+                status = types.TriggeredCaptureStatus.SUCCESS
+            elif (
+                capture_res.response.result
+                == fta.QueuedCaptureResult.CAPTURED_TO_TIME_LIMIT
+            ):
+                _LOGGER.info("Successfully captured audio (to duration limit)")
+                status = types.TriggeredCaptureStatus.SUCCESS_RECORDED_TO_LIMIT
+            else:
+                raise errors.VirtualAudioError(
+                    f"Unexpected response value: {capture_res.response}. Possible version mismatch between host and target."
+                )
+
+            receiver = await self._capture_client.get_output_audio()
+            if receiver.err is not None or receiver.response is None:
+                raise errors.VirtualAudioError(
+                    f"Failed to get captured audio from device: {receiver.err}"
+                )
+
+            _LOGGER.info("Reading the stored audio data")
+            sock = AsyncSocket(Socket(receiver.response.audio_reader))
+            data = await sock.read_all()
+            _LOGGER.info("Audio recording contains %d bytes", len(data))
+
+            return types.TriggeredCaptureResult(
+                status=status, audio_data=bytes(data)
+            )
+
+        return asyncio.run(_run())

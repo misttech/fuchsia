@@ -133,6 +133,64 @@ open protocol Capture {
     /// - response `error` description of failure action to take.
     strict StopOutputCapture() -> () error AudioTestError;
 
+    /// Wait for the specified period to elapse without any audio on the output device.
+    ///
+    /// This method waits until zero-filled packets corresponding to the specified quiet
+    /// period are observed on the virtual output device, and then it returns. This
+    /// method will only wait up to the specified maximum wait time.
+    ///
+    /// + request `requested_quiet_period_ms` duration of quiet period to wait for, in milliseconds.
+    /// + request `maximum_wait_time_ms` maximum duration to wait for, in milliseconds.
+    /// - response `result` description of whether the quiet period was observed or not.
+    /// - response `error` description of failure action to take.
+    strict WaitForQuiet(table {
+        1: requested_quiet_period_ms uint32;
+        2: maximum_wait_time_ms uint32;
+    }) -> (struct {
+        result WaitForQuietResult;
+    }) error AudioTestError;
+
+    /// Queue an asynchronous audio capture.
+    ///
+    /// This method sets up a triggered audio capture that will begin capturing when it first
+    /// observes audio on the virtual output device, and will continue either until a maximum
+    /// capture duration is reached or until the virtual output device observes a configurable
+    /// quiet period.
+    ///
+    /// This method returns immediately once the capture is queued. A subsequent call to
+    /// `WaitForTriggeredCapture` is required to wait for the completion of the operation.
+    ///
+    /// This method is incompatible with `StartOutputCapture` and `StopOutputCapture`, and mixing
+    /// calls in a single test is likely to result in an `AudioTestError` being raised.
+    ///
+    /// + request `maximum_time_to_wait_for_sound_ms` maximum time to wait for non-quiet on
+    ///     output device, in milliseconds.
+    /// + request `optional_quiet_before_stopping_ms` stop recording after this duration of
+    ///     quiet is observed, in milliseconds.
+    /// + request `maximum_capture_duration_ms` maximum duration of the recording, in milliseconds.
+    /// - response `error` description of failure action to take.
+    strict QueueTriggeredCapture(table {
+        1: maximum_time_to_wait_for_sound_ms uint32;
+        2: optional_quiet_before_stopping_ms uint32;
+        3: maximum_capture_duration_ms uint32;
+    }) -> () error AudioTestError;
+
+    /// Wait for a previously queued audio capture to trigger and record.
+    ///
+    /// This method waits for a previous call to `QueueTriggeredCapture` to either capture audio
+    /// or time out. Calling this method without a corresponding call to `QueueTriggeredCapture`
+    /// will result in an `AudioTestError` being returned.
+    ///
+    /// This method is incompatible with `StartOutputCapture` and `StopOutputCapture`, and mixing
+    /// calls in a single test is likely to result in an `AudioTestError` being raised.
+    ///
+    /// - response `result` the result of the completed triggered capture, including whether
+    ///     or not it was triggered.
+    /// - response `error` description of failure action to take.
+    strict WaitForTriggeredCapture() -> (struct {
+        result QueuedCaptureResult;
+    }) error AudioTestError;
+
     /// Extract the captured outgoing audio data through a socket.
     ///
     /// The socket is closed once it is fully drained.
@@ -148,4 +206,27 @@ open protocol Capture {
     strict GetOutputAudio() -> (resource struct {
         audio_reader zx.Handle:SOCKET;
     }) error AudioTestError;
+};
+
+/// The result for a `WaitForQuiet` request.
+type WaitForQuietResult = flexible enum {
+    /// The virtual output device successfully observed the requested quiet period.
+    SUCCESS = 1;
+
+    /// The virtual output device did not observe the requested quiet period because audio was
+    /// still playing on the device.
+    QUIET_PERIOD_NOT_OBSERVED = 2;
+};
+
+/// The result for a `QueueTriggeredCapture` request.
+type QueuedCaptureResult = flexible enum {
+    /// The capture triggered, audio was recorded, and the requested quiet period was observed
+    /// ending the capture early.
+    CAPTURED = 1;
+    /// The capture triggered, audio was recorded, and the entire requested duration of audio
+    /// was captured. This could be because the trailing quiet period was not observed, or because
+    /// no trailing quiet period was configured.
+    CAPTURED_TO_TIME_LIMIT = 2;
+    /// The capture was not triggered, and no audio was recorded.
+    FAILED_NO_SOUND_TIMEOUT = 3;
 };

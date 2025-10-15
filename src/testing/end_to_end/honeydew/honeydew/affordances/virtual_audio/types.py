@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """A base class for the audio recording affordance."""
+import enum
 import logging
 from dataclasses import dataclass
 
@@ -14,7 +15,6 @@ from honeydew.affordances.virtual_audio.errors import VirtualAudioError
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-@dataclass
 class AudioInputWaiter:
     """AudioInputWaiter affordance response type.
 
@@ -39,7 +39,6 @@ class AudioInputWaiter:
         _LOGGER.info("Audio injection has completed!")
 
 
-@dataclass
 class AudioResponse:
     """AudioResponse captured audio affordance response type.
 
@@ -78,3 +77,56 @@ class AudioResponse:
         _LOGGER.info("Audio recording contains %d bytes", len(data))
 
         return bytes(data)
+
+
+class WaitForQuietResult(enum.IntEnum):
+    SUCCESS = 1
+    DID_NOT_OBSERVE_QUIET_PERIOD = 2
+
+    def __str__(self) -> str:
+        return f'WaitForQuietResult("{self.message()})")'
+
+    def message(self) -> str:
+        if self == WaitForQuietResult.SUCCESS:
+            return "Successfully observed quiet period"
+        elif self == WaitForQuietResult.DID_NOT_OBSERVE_QUIET_PERIOD:
+            return "Timed out waiting for quiet period"
+        else:
+            return "Unknown error"
+
+    def __bool__(self) -> bool:
+        return self == WaitForQuietResult.SUCCESS
+
+
+class TriggeredCaptureStatus(enum.IntEnum):
+    SUCCESS = 1
+    SUCCESS_RECORDED_TO_LIMIT = 2
+    FAILED_TO_START_RECORDING = 3
+
+    def __str__(self) -> str:
+        return f'TriggeredCaptureStatus("{self.message()}")'
+
+    def message(self) -> str:
+        if self == TriggeredCaptureStatus.SUCCESS:
+            return "Audio was captured and was stopped early because a quiet period was observed"
+        elif self == TriggeredCaptureStatus.SUCCESS_RECORDED_TO_LIMIT:
+            return "Audio was captured up to the specified duration limit"
+        elif self == TriggeredCaptureStatus.FAILED_TO_START_RECORDING:
+            return "Failed to record because no audio was detected on the output device"
+        else:
+            return "Unknown error"
+
+    def __bool__(self) -> bool:
+        return (
+            self == TriggeredCaptureStatus.SUCCESS
+            or self == TriggeredCaptureStatus.SUCCESS_RECORDED_TO_LIMIT
+        )
+
+
+@dataclass
+class TriggeredCaptureResult:
+    # The overall status of the capture.
+    status: TriggeredCaptureStatus
+
+    # The recorded audio data, if retrieved.
+    audio_data: bytes | None

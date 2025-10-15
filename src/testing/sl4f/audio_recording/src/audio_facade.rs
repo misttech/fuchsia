@@ -2,19 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, format_err, Context, Error};
+use anyhow::{Context, Error, anyhow, format_err};
 use async_utils::async_once::Once;
 use fidl::endpoints::create_endpoints;
 use fidl_fuchsia_media::*;
-use fuchsia_async as fasync;
+use fidl_fuchsia_test_audio::QueuedCaptureResult;
+use fuchsia_async::{self as fasync, TimeoutExt};
+use futures::StreamExt;
+use futures::channel::mpsc;
 use futures::lock::Mutex;
 use log::{error, info, trace};
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::input_worker::InputWorker;
-use crate::output_worker::OutputWorker;
+use crate::output_worker::{OutputWorker, PreCaptureArguments, PreCaptureCallback};
 
 // Fixed configuration for our virtual output device.
 const OUTPUT_SAMPLE_FORMAT: AudioSampleFormat = AudioSampleFormat::Signed16;
@@ -109,7 +113,7 @@ impl VirtualOutput {
                     });
             }
             fidl_fuchsia_virtualaudio::DeviceSpecificUnknown!() => {
-                return Err(format_err!("device_specific in config is not StreamConfig"))
+                return Err(format_err!("device_specific in config is not StreamConfig"));
             }
         }
 
@@ -246,7 +250,7 @@ impl VirtualInput {
                     });
             }
             fidl_fuchsia_virtualaudio::DeviceSpecificUnknown!() => {
-                return Err(format_err!("device_specific in config is not StreamConfig"))
+                return Err(format_err!("device_specific in config is not StreamConfig"));
             }
         }
 
@@ -386,6 +390,118 @@ impl AudioFacade {
     /// Stop output capturing. This will fail if output capturing is not started.
     pub async fn stop_output_capture(&self) -> Result<(), Error> {
         self.get_audio_output().await.worker.lock().await.stop_capturing()
+    }
+
+    pub async fn wait_for_quiet_period(
+        &self,
+        quiet_period: Duration,
+        timeout: Duration,
+    ) -> Result<bool, Error> {
+        let (tx, mut rx) = mpsc::channel::<()>(1);
+
+        let tx = std::sync::Mutex::new(tx);
+
+        info!("Loading the callback");
+        let callback = Arc::new(PreCaptureCallback(Box::new(move |args: PreCaptureArguments| {
+            info!(
+                "Got {} accumulated, and {} saw not quiet",
+                args.accumulated_quiet_ms, args.has_sound_in_current_frames
+            );
+            if args.accumulated_quiet_ms >= quiet_period.as_millis() as u64 {
+                tx.lock().unwrap().try_send(()).ok();
+            }
+            return false;
+        })));
+
+        self.get_audio_output()
+            .await
+            .worker
+            .lock()
+            .await
+            .set_precapture_callback(Arc::downgrade(&callback))?;
+
+        fasync::Task::spawn(async move { Ok(rx.next().await.is_some()) })
+            .on_timeout(timeout, || Ok(false))
+            .await
+    }
+
+    pub async fn trigger_capture_on_sound(
+        &self,
+        maximum_time_to_wait_for_sound: Duration,
+        maximum_time_spent_recording: Duration,
+        maybe_ending_quiet_duration: Option<Duration>,
+    ) -> Result<QueuedCaptureResult, Error> {
+        struct State {
+            waiting_start_time: Instant,
+            recording_start_time: Option<Instant>,
+            done_callback: Option<mpsc::Sender<QueuedCaptureResult>>,
+        }
+
+        let (tx, mut rx) = mpsc::channel::<QueuedCaptureResult>(1);
+
+        let state = std::sync::Mutex::new(State {
+            waiting_start_time: Instant::now(),
+            recording_start_time: None,
+            done_callback: Some(tx),
+        });
+
+        let callback = Arc::new(PreCaptureCallback(Box::new(move |args: PreCaptureArguments| {
+            let mut state = state.lock().unwrap();
+            if state.done_callback.is_none() {
+                return false;
+            }
+
+            if let Some(start_time) = &state.recording_start_time {
+                // Currently capturing, determine if we should stop.
+                if let Some(ending_duration) = &maybe_ending_quiet_duration {
+                    if args.accumulated_quiet_ms > ending_duration.as_millis() as u64 {
+                        // Stop if we accumulated enough quiet time.
+                        state
+                            .done_callback
+                            .take()
+                            .unwrap()
+                            .try_send(QueuedCaptureResult::Captured)
+                            .ok();
+                        return false;
+                    }
+                }
+                if Instant::now() - *start_time > maximum_time_spent_recording {
+                    // Stop if we hit the capture time limit.
+                    state
+                        .done_callback
+                        .take()
+                        .unwrap()
+                        .try_send(QueuedCaptureResult::CapturedToTimeLimit)
+                        .ok();
+                    return false;
+                }
+                // Keep capturing
+                return true;
+            } else if args.has_sound_in_current_frames {
+                // Start capturing the sound we just recorded.
+                state.recording_start_time = Some(Instant::now());
+                return true;
+            } else if Instant::now() - state.waiting_start_time > maximum_time_to_wait_for_sound {
+                // We did not start capturing and exceeded our time limit. Return this failure.
+                state
+                    .done_callback
+                    .take()
+                    .unwrap()
+                    .try_send(QueuedCaptureResult::FailedNoSoundTimeout)
+                    .ok();
+            }
+
+            return false;
+        })));
+
+        self.get_audio_output()
+            .await
+            .worker
+            .lock()
+            .await
+            .set_precapture_callback(Arc::downgrade(&callback))?;
+
+        rx.next().await.ok_or_else(|| format_err!("BUG: Did not receive result of capture result"))
     }
 
     /// Get the size of the input audio at the given sample index.

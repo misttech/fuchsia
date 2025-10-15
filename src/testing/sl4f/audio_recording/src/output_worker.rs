@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
-use anyhow::{format_err, Error};
-use futures::lock::Mutex;
+use anyhow::{Error, format_err};
 use futures::TryStreamExt;
+use futures::lock::Mutex;
 use log::trace;
 
 /// The OutputWorker is an implementation of an output virtual audio device.
@@ -32,11 +32,37 @@ pub(crate) struct OutputWorker {
     // How many bytes a frame is.
     frame_size: u64,
 
+    // How many frames fit in one second of audio.
+    frames_per_second: u64,
+
     // Offset into vmo where we'll start to read next, in bytes.
     next_read: u64,
 
     // Offset into vmo where we'll finish reading next, in bytes.
     next_read_end: u64,
+
+    // The duration of "quiet", represented by 0-filled packets on all channels, in ms.
+    // This is the most recent duration of time during which no audio was output on this device.
+    trailing_quiet_ms: u64,
+
+    // Callback to be executed before determining if a capture should be done. If not set,
+    // default to the value of `capturing` to determine if frames should be captured.
+    maybe_pre_capture_callback: Weak<PreCaptureCallback>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PreCaptureArguments {
+    pub(crate) accumulated_quiet_ms: u64,
+    pub(crate) has_sound_in_current_frames: bool,
+}
+
+pub(crate) struct PreCaptureCallback(
+    pub(crate) Box<dyn Fn(PreCaptureArguments) -> bool + Send + Sync>,
+);
+impl std::fmt::Debug for PreCaptureCallback {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PreCaptureCallback")
+    }
 }
 
 impl OutputWorker {
@@ -46,6 +72,11 @@ impl OutputWorker {
     pub(crate) fn start_capturing(&mut self) -> Result<(), Error> {
         if self.capturing {
             return Err(format_err!("Failed to start capturing: already capturing audio output"));
+        }
+        if self.maybe_pre_capture_callback.upgrade().is_some() {
+            return Err(format_err!(
+                "Capture is being controlled asynchronously. Are you using edge-triggering methods?"
+            ));
         }
         self.capturing = true;
         Ok(())
@@ -57,6 +88,11 @@ impl OutputWorker {
     pub(crate) fn stop_capturing(&mut self) -> Result<(), Error> {
         if !self.capturing {
             return Err(format_err!("Failed to stop capturing: not capturing audio output"));
+        }
+        if self.maybe_pre_capture_callback.upgrade().is_some() {
+            return Err(format_err!(
+                "Capture is being controlled asynchronously. Are you using edge-triggering methods?"
+            ));
         }
         self.capturing = false;
         Ok(())
@@ -80,6 +116,22 @@ impl OutputWorker {
         Ok(std::mem::take(&mut self.extracted_data))
     }
 
+    pub(crate) fn set_precapture_callback(
+        &mut self,
+        callback: Weak<PreCaptureCallback>,
+    ) -> Result<(), Error> {
+        if self.capturing {
+            return Err(format_err!("Cannot queue edge-triggered capture, currently capturing."));
+        }
+        if self.maybe_pre_capture_callback.upgrade().is_some() {
+            return Err(format_err!(
+                "Cannot queue edge-triggered capture, another capture is queued."
+            ));
+        }
+        self.maybe_pre_capture_callback = callback;
+        Ok(())
+    }
+
     fn on_set_format(
         &mut self,
         frames_per_second: u32,
@@ -89,6 +141,7 @@ impl OutputWorker {
     ) -> Result<(), Error> {
         let sample_size = crate::util::get_sample_size(sample_format)?;
         self.frame_size = u64::from(num_channels) * u64::from(sample_size);
+        self.frames_per_second = frames_per_second as u64;
 
         let frames_per_millisecond = u64::from(frames_per_second / 1000);
         self.frames_per_notification = frames_per_millisecond * 50;
@@ -113,8 +166,7 @@ impl OutputWorker {
 
         trace!(
             "AudioFacade::OutputWorker: created buffer with {:?} frames, {:?} notifications",
-            num_ring_buffer_frames,
-            target_notifications_per_ring
+            num_ring_buffer_frames, target_notifications_per_ring
         );
 
         self.work_space = u64::from(num_ring_buffer_frames) * self.frame_size;
@@ -133,40 +185,57 @@ impl OutputWorker {
         ring_position: u32,
         capturing: bool,
     ) -> Result<(), Error> {
-        if capturing && self.next_read != self.next_read_end {
+        if self.next_read != self.next_read_end {
             let vmo = if let Some(vmo) = &self.vmo { vmo } else { return Ok(()) };
 
-            trace!(
-                "AudioFacade::OutputWorker read byte {:?} to {:?}",
-                self.next_read,
-                self.next_read_end
-            );
+            if capturing {
+                trace!(
+                    "AudioFacade::OutputWorker read byte {:?} to {:?}",
+                    self.next_read, self.next_read_end
+                );
+            }
 
+            let trailing_zeroes: usize;
+            let mut data: Vec<u8>;
             if self.next_read_end < self.next_read {
-                // Wrap-around case, read through the end.
-                let len = (self.work_space - self.next_read).try_into()?;
-                let mut data = vec![0u8; len];
-                let overwrite1 = vec![1u8; len];
-                vmo.read(&mut data, self.next_read)?;
-                vmo.write(&overwrite1, self.next_read)?;
-                self.extracted_data.append(&mut data);
-
-                // Read remaining data.
-                let next_read_end = self.next_read_end.try_into()?;
-                let mut data = vec![0u8; next_read_end];
-                let overwrite2 = vec![1u8; next_read_end];
-                vmo.read(&mut data, 0)?;
-                vmo.write(&overwrite2, 0)?;
-
-                self.extracted_data.append(&mut data);
+                // Wrap around case, concatenate trailing read and leading read.
+                let trailing_read: usize = (self.work_space - self.next_read).try_into()?;
+                let leading_read: usize = self.next_read_end.try_into()?;
+                let len = trailing_read + leading_read;
+                data = vec![0u8; len];
+                vmo.read(&mut data[0..trailing_read], self.next_read)?;
+                vmo.read(&mut data[trailing_read..], 0)?;
             } else {
-                // Normal case, just read all the bytes.
-                let len = (self.next_read_end - self.next_read).try_into()?;
-                let mut data = vec![0u8; len];
-                let overwrite = vec![1u8; len];
+                // Regular case, just read the bytes.
+                let len: usize = (self.next_read_end - self.next_read).try_into()?;
+                data = vec![0u8; len];
                 vmo.read(&mut data, self.next_read)?;
-                vmo.write(&overwrite, self.next_read)?;
+            }
 
+            trailing_zeroes = data.iter().rev().take_while(|v| **v == 0).count();
+
+            if self.frames_per_second > 0 {
+                let zero_frames = trailing_zeroes as f64 / self.frame_size as f64;
+                let zero_frame_ms = (999.0 * zero_frames / self.frames_per_second as f64) as u64;
+                if trailing_zeroes == data.len() {
+                    // Continuation of previous quiet, add.
+                    self.trailing_quiet_ms += zero_frame_ms;
+                } else {
+                    // Some non-quiet was observed, reset the counter with the new trailing amount.
+                    self.trailing_quiet_ms = zero_frame_ms;
+                }
+            }
+
+            let capturing = if let Some(callback) = self.maybe_pre_capture_callback.upgrade() {
+                callback.0(PreCaptureArguments {
+                    accumulated_quiet_ms: self.trailing_quiet_ms,
+                    has_sound_in_current_frames: trailing_zeroes != data.len(),
+                })
+            } else {
+                capturing
+            };
+
+            if capturing {
                 self.extracted_data.append(&mut data);
             }
         }
@@ -230,7 +299,9 @@ impl OutputWorker {
                     if worker.lock().await.capturing
                         && last_timestamp > zx::MonotonicInstant::from_nanos(0)
                     {
-                        trace!("AudioFacade::OutputWorker: Extraction OnPositionNotify received before OnStart");
+                        trace!(
+                            "AudioFacade::OutputWorker: Extraction OnPositionNotify received before OnStart"
+                        );
                     }
                     last_timestamp = zx::MonotonicInstant::from_nanos(start_time);
                     last_event_time = zx::MonotonicInstant::get();
@@ -241,7 +312,8 @@ impl OutputWorker {
                 } => {
                     if last_timestamp == zx::MonotonicInstant::from_nanos(0) {
                         trace!(
-                                    "AudioFacade::OutputWorker: Extraction OnPositionNotify timestamp cleared before OnStop");
+                            "AudioFacade::OutputWorker: Extraction OnPositionNotify timestamp cleared before OnStop"
+                        );
                     }
                     last_timestamp = zx::MonotonicInstant::from_nanos(0);
                     last_event_time = zx::MonotonicInstant::from_nanos(0);
@@ -260,7 +332,8 @@ impl OutputWorker {
                     if capturing {
                         if last_timestamp == zx::MonotonicInstant::from_nanos(0) {
                             trace!(
-                                        "AudioFacade::OutputWorker: Extraction OnStart not received before OnPositionNotify");
+                                "AudioFacade::OutputWorker: Extraction OnStart not received before OnPositionNotify"
+                            );
                         }
 
                         // Log if our timestamps had a gap of more than 100ms. This is highly
@@ -269,13 +342,15 @@ impl OutputWorker {
                         let timestamp_interval = monotonic_zx_time - last_timestamp;
                         if timestamp_interval > zx::MonotonicDuration::from_millis(100) {
                             trace!(
-                                        "AudioFacade::OutputWorker: Extraction position timestamp jumped by more than 100ms ({:?}ms). Expect glitches.",
-                                        timestamp_interval.into_millis());
+                                "AudioFacade::OutputWorker: Extraction position timestamp jumped by more than 100ms ({:?}ms). Expect glitches.",
+                                timestamp_interval.into_millis()
+                            );
                         }
                         if monotonic_zx_time < last_timestamp {
                             trace!(
-                                        "AudioFacade::OutputWorker: Extraction position timestamp moved backwards ({:?}ms). Expect glitches.",
-                                        timestamp_interval.into_millis());
+                                "AudioFacade::OutputWorker: Extraction position timestamp moved backwards ({:?}ms). Expect glitches.",
+                                timestamp_interval.into_millis()
+                            );
                         }
 
                         // Log if there was a gap in position notification arrivals of more
@@ -285,8 +360,9 @@ impl OutputWorker {
                         let observed_interval = now - last_event_time;
                         if observed_interval > zx::MonotonicDuration::from_millis(150) {
                             trace!(
-                                        "AudioFacade::OutputWorker: Extraction position not updated for 150ms ({:?}ms). Expect glitches.",
-                                        observed_interval.into_millis());
+                                "AudioFacade::OutputWorker: Extraction position not updated for 150ms ({:?}ms). Expect glitches.",
+                                observed_interval.into_millis()
+                            );
                         }
                     }
 
