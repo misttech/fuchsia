@@ -11,17 +11,29 @@ use fuchsia_runtime::{
 use starnix_logging::{log_info, log_warn};
 use starnix_sync::Mutex;
 use std::sync::LazyLock;
-use zx::{self as zx, AsHandleRef, HandleBased, Unowned};
+use zx::{self as zx, AsHandleRef, HandleBased, Rights, Unowned};
 
-static UTC_CLOCK_RIGHTS: LazyLock<zx::Rights> = LazyLock::new(|| {
-    // No zx::Rights::WRITE!
-    zx::Rights::READ
-        | zx::Rights::INSPECT
-        | zx::Rights::TRANSFER
-        | zx::Rights::DUPLICATE
-        | zx::Rights::MAP
-        | zx::Rights::WAIT
-});
+/// The basic rights to use when creating or duplicating a UTC clock. Restrict these
+/// on a case-by-case basis only.
+///
+/// Rights:
+///
+/// - `Rights::DUPLICATE`, `Rights::TRANSFER`: used to forward the UTC clock in runners.
+/// - `Rights::READ`: used to read the clock indication.
+/// - `Rights::WAIT`: used to wait on signals such as "clock is updated" or "clock is started".
+/// - `Rights::MAP`, `Rights::INSPECT`: used to memory-map the UTC clock.
+///
+/// The `Rights::WRITE` is notably absent, since on Fuchsia this right is given to particular
+/// components only and a writable clock can not be obtained via procargs.
+pub static UTC_CLOCK_BASIC_RIGHTS: std::sync::LazyLock<zx::Rights> =
+    std::sync::LazyLock::new(|| {
+        Rights::DUPLICATE
+            | Rights::READ
+            | Rights::WAIT
+            | Rights::TRANSFER
+            | Rights::MAP
+            | Rights::INSPECT
+    });
 
 // Stores a vendored handle from a test fixture. In normal operation the value here must be
 // `None`. In some Starnix container tests, we inject a custom UTC clock that the tests
@@ -42,7 +54,7 @@ static VENDORED_UTC_HANDLE_FOR_TESTS: LazyLock<Option<UtcClockHandle>> = LazyLoc
                 log_warn!("Vendored UTC clock handle koid: {:?}", handle.as_handle_ref().get_koid());
                 // Make sure to remove unneeded rights, even if we know that the test fixture will
                 // give us proper handle rights.
-                 handle.replace_handle(*UTC_CLOCK_RIGHTS)
+                 handle.replace_handle(*UTC_CLOCK_BASIC_RIGHTS)
                     .map(|handle| handle.cast())
                     .inspect_err(|err| {
                         panic!("Could not replace UTC handle for vendored UTC clock: {err:?}");
