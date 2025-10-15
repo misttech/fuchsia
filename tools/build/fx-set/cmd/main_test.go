@@ -667,6 +667,54 @@ func TestFindGNIFile(t *testing.T) {
 	})
 }
 
+func TestResolveProductBundleName(t *testing.T) {
+	t.Run("resolves product bundle name", func(t *testing.T) {
+		checkoutDir := t.TempDir()
+		buildDir := "out/default"
+		err := os.MkdirAll(filepath.Join(checkoutDir, buildDir), 0o755)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pbPath := filepath.Join(checkoutDir, buildDir, productBundlesFile)
+		err = os.WriteFile(pbPath, []byte(`[
+			{"name": "core.x64-release", "label": "//products/core:core.x64-release"},
+			{"name": "workstation.qemu-x64-release", "label": "//products/workstation:workstation.qemu-x64-release"}
+		]`), 0o644)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		label, err := resolveProductBundleName(checkoutDir, buildDir, "core.x64-release")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if label != "//products/core:core.x64-release" {
+			t.Errorf("got %q, want %q", label, "//products/core:core.x64-release")
+		}
+	})
+
+	t.Run("returns an error if product bundle name not found", func(t *testing.T) {
+		checkoutDir := t.TempDir()
+		buildDir := "out/default"
+		err := os.MkdirAll(filepath.Join(checkoutDir, buildDir), 0o755)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pbPath := filepath.Join(checkoutDir, buildDir, productBundlesFile)
+		err = os.WriteFile(pbPath, []byte(`[
+			{"name": "core.x64-release", "label": "//products/core:core.x64-release"}
+		]`), 0o644)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = resolveProductBundleName(checkoutDir, buildDir, "workstation.qemu-x64-release")
+		if err == nil {
+			t.Fatal("expected an error, but got nil")
+		}
+	})
+}
+
 func createFile(t *testing.T, pathParts ...string) {
 	t.Helper()
 

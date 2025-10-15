@@ -20,6 +20,8 @@ import (
 
 	flag "github.com/spf13/pflag"
 
+	"encoding/json"
+
 	"go.fuchsia.dev/fuchsia/tools/integration/fint"
 	fintpb "go.fuchsia.dev/fuchsia/tools/integration/fint/proto"
 	"go.fuchsia.dev/fuchsia/tools/lib/color"
@@ -47,7 +49,14 @@ const (
 
 	// When unspecified, this is used for --rbe-mode.
 	defaultRbeMode = "auto"
+
+	productBundlesFile = "product_bundles.json"
 )
+
+type productBundle struct {
+	Name  string `json:"name"`
+	Label string `json:"label"`
+}
 
 type subprocessRunner interface {
 	Run(ctx context.Context, cmd []string, options subprocess.RunOptions) error
@@ -121,6 +130,14 @@ func mainImpl(ctx context.Context) error {
 		fmt.Printf("Unable to determine RBE access, assuming False.")
 		canUseRbe = false
 	}
+
+	originalMainPb := args.mainPbLabel
+	isMainPbName := originalMainPb != "" && !strings.HasPrefix(originalMainPb, "//")
+	if isMainPbName {
+		// Clear MainPbLabel for the first run if it's a name, it will be resolved after gn gen.
+		args.mainPbLabel = ""
+	}
+
 	if args.fintParamsPath == "" {
 		staticSpec, err = constructStaticSpec(args.checkoutDir, args, canUseRbe)
 		if err != nil {
@@ -157,6 +174,20 @@ func mainImpl(ctx context.Context) error {
 	_, err = fint.Set(ctx, staticSpec, contextSpec, args.skipLocalArgs, args.assemblyOverrideStrings)
 	if err != nil {
 		return err
+	}
+
+	// If --main-pb was a name, resolve it now that product_bundles.json exists.
+	if isMainPbName {
+		label, err := resolveProductBundleName(args.checkoutDir, args.buildDir, originalMainPb)
+		if err != nil {
+			return err
+		}
+		staticSpec.MainPbLabel = label
+		// Re-run fint.Set to update args.gn with the correct main_pb_label.
+		_, err = fint.Set(ctx, staticSpec, contextSpec, args.skipLocalArgs, args.assemblyOverrideStrings)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Set the build dir used by subsequent fx commands.
@@ -660,6 +691,33 @@ func isSymlink(path string) (bool, error) {
 	}
 	isLink := fileInfo.Mode()&os.ModeSymlink != 0
 	return isLink, nil
+}
+
+func resolveProductBundleName(checkoutDir, buildDir, name string) (string, error) {
+	pbPath := filepath.Join(checkoutDir, buildDir, productBundlesFile)
+	data, err := os.ReadFile(pbPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read %s: %w", pbPath, err)
+	}
+
+	var bundles []productBundle
+	if err := json.Unmarshal(data, &bundles); err != nil {
+		return "", fmt.Errorf("failed to parse %s: %w", pbPath, err)
+	}
+
+	for _, b := range bundles {
+		if b.Name == name {
+			label := strings.Split(b.Label, "(")[0]
+			return label, nil
+		}
+	}
+
+	var availableNames []string
+	for _, b := range bundles {
+		availableNames = append(availableNames, b.Name)
+	}
+	sort.Strings(availableNames)
+	return "", fmt.Errorf("product bundle %q not found in %s\nAvailable product bundles:\n  %s", name, pbPath, strings.Join(availableNames, "\n  "))
 }
 
 func isNudgeOn(env map[string]string, nudge string) (bool, error) {
