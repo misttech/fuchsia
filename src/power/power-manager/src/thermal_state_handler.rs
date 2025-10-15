@@ -4,18 +4,18 @@
 
 use crate::common_utils::result_debug_panic::ResultDebugPanic;
 use crate::error::PowerManagerError;
+use crate::log_if_err;
 use crate::message::{Message, MessageReturn};
 use crate::node::Node;
 use crate::platform_metrics::PlatformMetric;
 use crate::types::ThermalLoad;
-use crate::{log_if_err, ok_or_default_err};
-use anyhow::{format_err, Error};
+use anyhow::{Context, Error, format_err};
 use async_trait::async_trait;
 use async_utils::hanging_get::server as hanging_get;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir, ServiceObjLocal};
 use fuchsia_inspect::{self as inspect, NumericProperty, Property};
-use futures::prelude::*;
 use futures::TryStreamExt;
+use futures::prelude::*;
 use log::*;
 use serde_derive::Deserialize;
 use std::cell::RefCell;
@@ -54,7 +54,7 @@ use {fidl_fuchsia_thermal as fthermal, fuchsia_async as fasync, serde_json as js
 
 pub struct ThermalStateHandlerBuilder<'a, 'b> {
     node_name: String,
-    thermal_config: Option<ThermalConfig>,
+    thermal_config: Result<ThermalConfig, Error>,
     outgoing_svc_dir: Option<ServiceFsDir<'a, ServiceObjLocal<'b, ()>>>,
     inspect_root: Option<&'a inspect::Node>,
     platform_metrics: Option<Rc<dyn Node>>,
@@ -118,10 +118,12 @@ impl<'a, 'b> ThermalStateHandlerBuilder<'a, 'b> {
         let config_path =
             thermal_config_path.unwrap_or_else(|| Self::THERMAL_CONFIG_PATH.to_string());
 
-        // Read the thermal config file from `config_path`
+        // Read the thermal config file from `config_path`. If the read fails, hold onto the error
+        // and handle it during `build()`.
         // TODO(b/320705983): Update the thermal config file to identify a more general
         // configuration for thermal loads.
-        let thermal_config = ThermalConfig::read(&Path::new(&config_path)).ok();
+        let thermal_config = ThermalConfig::read(&Path::new(&config_path))
+            .with_context(|| format!("Failed to read thermal config from {}", config_path));
 
         // Clone the platform_metrics node, if specified.
         let platform_metrics =
@@ -140,7 +142,10 @@ impl<'a, 'b> ThermalStateHandlerBuilder<'a, 'b> {
     }
 
     pub fn build(self) -> Result<Rc<ThermalStateHandler>, Error> {
-        let thermal_config = ok_or_default_err!(self.thermal_config).or_debug_panic()?;
+        let thermal_config = self
+            .thermal_config
+            .map_err(|e| format_err!("Thermal config is missing: {:?}", e))
+            .or_debug_panic()?;
 
         // Create the root Inspect node for the ThermalStateHandler node. Allow inspect_root
         // override for tests.
@@ -772,7 +777,7 @@ struct PerSensorMetrics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::mock_node::{create_dummy_node, MessageMatcher, MockNodeMaker};
+    use crate::test::mock_node::{MessageMatcher, MockNodeMaker, create_dummy_node};
     use crate::{msg_eq, msg_ok_return};
     use assert_matches::assert_matches;
     use diagnostics_assertions::assert_data_tree;
@@ -922,7 +927,7 @@ mod tests {
         let node = ThermalStateHandlerBuilder {
             node_name: "thermal_state_handler".to_string(),
             inspect_root: Some(inspector.root()),
-            thermal_config: Some(thermal_config),
+            thermal_config: Ok(thermal_config),
             outgoing_svc_dir: Some(service_fs.root_dir()),
             platform_metrics: None,
             enable_cpu_thermal_state_connector: false,
@@ -1016,7 +1021,7 @@ mod tests {
         let node = ThermalStateHandlerBuilder {
             node_name: "thermal_state_handler".to_string(),
             inspect_root: Some(inspector.root()),
-            thermal_config: Some(thermal_config),
+            thermal_config: Ok(thermal_config),
             outgoing_svc_dir: Some(service_fs.root_dir()),
             platform_metrics: None,
             enable_cpu_thermal_state_connector: true,
@@ -1106,7 +1111,7 @@ mod tests {
         let node = ThermalStateHandlerBuilder {
             node_name: "thermal_state_handler".to_string(),
             inspect_root: None,
-            thermal_config: Some(thermal_config),
+            thermal_config: Ok(thermal_config),
             outgoing_svc_dir: Some(service_fs.root_dir()),
             platform_metrics: None,
             enable_cpu_thermal_state_connector: false,
@@ -1151,7 +1156,7 @@ mod tests {
         let _node = ThermalStateHandlerBuilder {
             node_name: "thermal_state_handler".to_string(),
             inspect_root: None,
-            thermal_config: Some(ThermalConfig::new()),
+            thermal_config: Ok(ThermalConfig::new()),
             outgoing_svc_dir: Some(service_fs.root_dir()),
             platform_metrics: None,
             enable_cpu_thermal_state_connector: false,
@@ -1182,7 +1187,7 @@ mod tests {
         let node = ThermalStateHandlerBuilder {
             node_name: "thermal_state_handler".to_string(),
             inspect_root: None,
-            thermal_config: Some(thermal_config),
+            thermal_config: Ok(thermal_config),
             outgoing_svc_dir: Some(service_fs.root_dir()),
             platform_metrics: None,
             enable_cpu_thermal_state_connector: false,
@@ -1209,7 +1214,7 @@ mod tests {
     async fn test_invalid_thermal_load() {
         let node = ThermalStateHandlerBuilder {
             node_name: "thermal_state_handler".to_string(),
-            thermal_config: Some(ThermalConfig::new()),
+            thermal_config: Ok(ThermalConfig::new()),
             outgoing_svc_dir: None,
             inspect_root: None,
             platform_metrics: None,
@@ -1245,7 +1250,7 @@ mod tests {
         let node = ThermalStateHandlerBuilder {
             node_name: "thermal_state_handler".to_string(),
             inspect_root: None,
-            thermal_config: Some(thermal_config),
+            thermal_config: Ok(thermal_config),
             outgoing_svc_dir: Some(service_fs.root_dir()),
             platform_metrics: None,
             enable_cpu_thermal_state_connector: false,
@@ -1284,7 +1289,7 @@ mod tests {
         let node = ThermalStateHandlerBuilder {
             node_name: "thermal_state_handler".to_string(),
             inspect_root: None,
-            thermal_config: Some(thermal_config),
+            thermal_config: Ok(thermal_config),
             outgoing_svc_dir: Some(service_fs.root_dir()),
             platform_metrics: None,
             enable_cpu_thermal_state_connector: true,
@@ -1335,7 +1340,7 @@ mod tests {
         let node = ThermalStateHandlerBuilder {
             node_name: "thermal_state_handler".to_string(),
             inspect_root: None,
-            thermal_config: Some(thermal_config),
+            thermal_config: Ok(thermal_config),
             outgoing_svc_dir: Some(service_fs.root_dir()),
             platform_metrics: None,
             enable_cpu_thermal_state_connector: true,
@@ -1386,7 +1391,7 @@ mod tests {
         let node = ThermalStateHandlerBuilder {
             node_name: "thermal_state_handler".to_string(),
             inspect_root: None,
-            thermal_config: Some(thermal_config),
+            thermal_config: Ok(thermal_config),
             outgoing_svc_dir: Some(service_fs.root_dir()),
             platform_metrics: None,
             enable_cpu_thermal_state_connector: false,
@@ -1432,7 +1437,7 @@ mod tests {
         let node = ThermalStateHandlerBuilder {
             node_name: "thermal_state_handler".to_string(),
             inspect_root: None,
-            thermal_config: Some(ThermalConfig::new()),
+            thermal_config: Ok(ThermalConfig::new()),
             outgoing_svc_dir: None,
             platform_metrics: Some(mock_platform_metrics.clone()),
             enable_cpu_thermal_state_connector: false,

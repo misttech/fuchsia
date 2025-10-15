@@ -24,12 +24,14 @@ pub mod result_debug_panic {
         fn or_debug_panic(self) -> Result<T, E>;
     }
 
-    impl<T, E> ResultDebugPanic<T, E> for Result<T, E> {
+    impl<T, E: std::fmt::Debug> ResultDebugPanic<T, E> for Result<T, E> {
+        #[track_caller]
         fn or_debug_panic(self) -> Result<T, E> {
-            self.or_else(|e| {
-                debug_assert!(false);
-                Err(e)
-            })
+            #[cfg(debug_assertions)]
+            if let Err(e) = self {
+                panic!("Panicking in debug build because this should never happen; {:?}", e);
+            }
+            self
         }
     }
 
