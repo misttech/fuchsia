@@ -92,9 +92,9 @@ Control::~Control() {
       buffer->cmd = static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeCmdCode::kClose);
       buffer->status = static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeError::kInval);
 
-      [[maybe_unused]] auto result = pipe_bus_->Exec(id_);
+      [[maybe_unused]] auto result = pipe_->Exec(id_);
     }
-    [[maybe_unused]] auto destroy_result = pipe_bus_->Destroy(id_);
+    [[maybe_unused]] auto destroy_result = pipe_->Destroy(id_);
     // We don't check the return status as the pipe is destroyed on a
     // best-effort basis.
   }
@@ -108,7 +108,7 @@ zx_status_t Control::Init() {
     zxlogf(ERROR, "%s: failed to connect to FIDL fragment: %s", kTag, client.status_string());
     return client.status_value();
   }
-  pipe_bus_ = fidl::WireSyncClient(std::move(client.value()));
+  pipe_ = fidl::WireSyncClient(std::move(client.value()));
 
   zx::result address_space_client =
       DdkConnectFragmentFidlProtocol<fuchsia_hardware_goldfish::AddressSpaceService::Device>(
@@ -142,12 +142,12 @@ zx_status_t Control::Init() {
 }
 
 zx_status_t Control::InitPipeDeviceLocked() {
-  if (!pipe_bus_.is_valid()) {
+  if (!pipe_.is_valid()) {
     zxlogf(ERROR, "%s: no pipe protocol", kTag);
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  auto get_bti_result = pipe_bus_->GetBti();
+  auto get_bti_result = pipe_->GetBti();
   if (!get_bti_result.ok()) {
     zxlogf(ERROR, "%s: GetBti failed: %s", kTag, get_bti_result.status_string());
     return get_bti_result.status();
@@ -174,7 +174,7 @@ zx_status_t Control::InitPipeDeviceLocked() {
     return status;
   }
 
-  auto create_result = pipe_bus_->Create();
+  auto create_result = pipe_->Create();
   if (!create_result.ok()) {
     zxlogf(ERROR, "%s: pipe Create failed: %s", kTag, create_result.status_string());
     return create_result.status();
@@ -182,7 +182,7 @@ zx_status_t Control::InitPipeDeviceLocked() {
   id_ = create_result->value()->id;
   zx::vmo vmo = std::move(create_result->value()->vmo);
 
-  auto set_event_result = pipe_bus_->SetEvent(id_, std::move(pipe_event_dup));
+  auto set_event_result = pipe_->SetEvent(id_, std::move(pipe_event_dup));
   if (!set_event_result.ok()) {
     zxlogf(ERROR, "%s: pipe SetEvent failed: %s", kTag, set_event_result.status_string());
     return set_event_result.status();
@@ -202,7 +202,7 @@ zx_status_t Control::InitPipeDeviceLocked() {
   buffer->cmd = static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeCmdCode::kOpen);
   buffer->status = static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeError::kInval);
 
-  auto open_result = pipe_bus_->Open(id_);
+  auto open_result = pipe_->Open(id_);
   if (!open_result.ok()) {
     zxlogf(ERROR, "%s: transport error on Open: %s", kTag, open_result.status_string());
     return open_result.status();
@@ -660,7 +660,7 @@ int32_t Control::WriteLocked(uint32_t cmd_size, int32_t* consumed_size) {
   buffer->rw_params.sizes[0] = cmd_size;
   buffer->rw_params.buffers_count = 1;
   buffer->rw_params.consumed_size = 0;
-  auto result = pipe_bus_->Exec(id_);
+  auto result = pipe_->Exec(id_);
   if (!result.ok()) {
     zxlogf(ERROR, "%s: Exec pipe failed: %s", kTag, result.status_string());
     return result.status();
@@ -689,7 +689,7 @@ zx_status_t Control::ReadResultLocked(void* result, size_t size) {
     buffer->rw_params.sizes[0] = static_cast<uint32_t>(size);
     buffer->rw_params.buffers_count = 1;
     buffer->rw_params.consumed_size = 0;
-    auto exec_result = pipe_bus_->Exec(id_);
+    auto exec_result = pipe_->Exec(id_);
     if (!exec_result.ok()) {
       zxlogf(ERROR, "%s: Exec pipe failed: %s", kTag, exec_result.status_string());
       return exec_result.status();
@@ -711,7 +711,7 @@ zx_status_t Control::ReadResultLocked(void* result, size_t size) {
     buffer->id = id_;
     buffer->cmd = static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeCmdCode::kWakeOnRead);
     buffer->status = static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeError::kInval);
-    auto exec_result2 = pipe_bus_->Exec(id_);
+    auto exec_result2 = pipe_->Exec(id_);
     if (!exec_result2.ok()) {
       zxlogf(ERROR, "%s: Exec pipe failed: %s", kTag, exec_result2.status_string());
       return exec_result2.status();
@@ -912,14 +912,15 @@ fuchsia_hardware_goldfish_pipe::Service::InstanceHandler
 Control::CreateGoldfishPipeServiceInstanceHandler() {
   return fuchsia_hardware_goldfish_pipe::Service::InstanceHandler{{
       .device =
-          [parent = parent()](fidl::ServerEnd<fuchsia_hardware_goldfish_pipe::Bus> server_end) {
+          [parent =
+               parent()](fidl::ServerEnd<fuchsia_hardware_goldfish_pipe::GoldfishPipe> server_end) {
             static constexpr const char kGoldfishPipeFragmentName[] = "goldfish-pipe";
             zx_status_t status = device_connect_fragment_fidl_protocol(
                 parent, kGoldfishPipeFragmentName, fuchsia_hardware_goldfish_pipe::Service::Name,
                 fuchsia_hardware_goldfish_pipe::Service::Device::Name,
                 server_end.TakeChannel().release());
             if (status != ZX_OK) {
-              zxlogf(ERROR, "Failed to connect to the Bus protocol: %s",
+              zxlogf(ERROR, "Failed to connect to the GoldfishPipe protocol: %s",
                      zx_status_get_string(status));
             }
           },

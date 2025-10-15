@@ -73,7 +73,7 @@ zx::result<fidl::ClientEnd<fuchsia_sysmem2::Allocator>> CreateAndInitializeSysme
 
 zx::result<std::unique_ptr<RenderControl>> CreateAndInitializeRenderControl(
     fdf::Namespace* incoming) {
-  zx::result<fidl::ClientEnd<fuchsia_hardware_goldfish_pipe::Bus>>
+  zx::result<fidl::ClientEnd<fuchsia_hardware_goldfish_pipe::GoldfishPipe>>
       render_control_connect_pipe_service_result =
           incoming->Connect<fuchsia_hardware_goldfish_pipe::Service::Device>();
   if (render_control_connect_pipe_service_result.is_error()) {
@@ -81,7 +81,7 @@ zx::result<std::unique_ptr<RenderControl>> CreateAndInitializeRenderControl(
                render_control_connect_pipe_service_result);
     return render_control_connect_pipe_service_result.take_error();
   }
-  fidl::ClientEnd<fuchsia_hardware_goldfish_pipe::Bus> render_control_pipe =
+  fidl::ClientEnd<fuchsia_hardware_goldfish_pipe::GoldfishPipe> render_control_pipe =
       std::move(render_control_connect_pipe_service_result).value();
 
   fbl::AllocChecker alloc_checker;
@@ -121,14 +121,15 @@ zx::result<> DisplayDriver::Start() {
   fidl::ClientEnd<fuchsia_hardware_goldfish::ControlDevice> control =
       std::move(connect_control_service_result).value();
 
-  zx::result<fidl::ClientEnd<fuchsia_hardware_goldfish_pipe::Bus>> connect_pipe_service_result =
-      incoming()->Connect<fuchsia_hardware_goldfish_pipe::Service::Device>();
+  zx::result<fidl::ClientEnd<fuchsia_hardware_goldfish_pipe::GoldfishPipe>>
+      connect_pipe_service_result =
+          incoming()->Connect<fuchsia_hardware_goldfish_pipe::Service::Device>();
   if (connect_pipe_service_result.is_error()) {
     fdf::error("Failed to connect to the goldfish pipe FIDL service: {}",
                connect_pipe_service_result);
     return connect_pipe_service_result.take_error();
   }
-  fidl::ClientEnd<fuchsia_hardware_goldfish_pipe::Bus> pipe =
+  fidl::ClientEnd<fuchsia_hardware_goldfish_pipe::GoldfishPipe> pipe =
       std::move(connect_pipe_service_result).value();
 
   zx::result<fidl::ClientEnd<fuchsia_sysmem2::Allocator>> create_sysmem_allocator_result =

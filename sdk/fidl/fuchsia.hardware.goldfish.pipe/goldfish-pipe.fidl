@@ -33,24 +33,22 @@ type PipeError = strict enum : int32 {
     IO = -4;
 };
 
-/// Goldfish Pipe Bus is a device that provides and manages communication
-/// channels (pipes).
+/// This interface can be used to establish a goldfish pipe connection. The
+/// client is responsible for managing the command structure associated with
+/// the pipe and should issue a 'close' command before destroying a previously
+/// opened pipe. Failure to do so may result in host side resources that are
+/// not cleaned up properly.
 @discoverable
-closed protocol Bus {
-    /// Creates a new connection to the pipe bus.
-    ///
-    /// Clients must `Destroy` all pipe bus connections they `Create`d.
-    /// Failure to do so may result in host side resources being not cleaned up
-    /// properly.
+closed protocol GoldfishPipe {
+    /// Create a new pipe connection. The |id| identifies the pipe and must be
+    /// used for all subsequent commands. The memory that will be used as
+    /// command structure is returned in |vmo|.
     strict Create() -> (resource struct {
-        /// Identifies the pipe and must be used for all subsequent commands.
         id int32;
-
-        /// The memory that will be used as command structure.
         vmo zx.Handle:VMO;
     }) error zx.Status;
 
-    /// Destroys a previously created pipe connection.
+    /// Destroy a previously created pipe connection.
     strict Destroy(struct {
         id int32;
     }) -> ();
@@ -88,5 +86,5 @@ closed protocol Bus {
 };
 
 service Service {
-    device client_end:Bus;
+    device client_end:GoldfishPipe;
 };

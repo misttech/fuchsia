@@ -60,19 +60,19 @@ constexpr display::ModeId kModeId(1);
 }  // namespace
 
 DisplayEngine::DisplayEngine(fidl::ClientEnd<fuchsia_hardware_goldfish::ControlDevice> control,
-                             fidl::ClientEnd<fuchsia_hardware_goldfish_pipe::Bus> pipe_bus,
+                             fidl::ClientEnd<fuchsia_hardware_goldfish_pipe::GoldfishPipe> pipe,
                              fidl::ClientEnd<fuchsia_sysmem2::Allocator> sysmem_allocator,
                              std::unique_ptr<RenderControl> render_control,
                              async_dispatcher_t* display_event_dispatcher,
                              display::DisplayEngineEventsInterface* engine_events)
     : control_(std::move(control)),
-      pipe_bus_(std::move(pipe_bus)),
+      pipe_(std::move(pipe)),
       sysmem_allocator_client_(std::move(sysmem_allocator)),
       rc_(std::move(render_control)),
       display_event_dispatcher_(display_event_dispatcher),
       engine_events_(engine_events) {
   ZX_DEBUG_ASSERT(control_.is_valid());
-  ZX_DEBUG_ASSERT(pipe_bus_.is_valid());
+  ZX_DEBUG_ASSERT(pipe_.is_valid());
   ZX_DEBUG_ASSERT(sysmem_allocator_client_.is_valid());
   ZX_DEBUG_ASSERT(rc_ != nullptr);
   ZX_DEBUG_ASSERT(engine_events_ != nullptr);
