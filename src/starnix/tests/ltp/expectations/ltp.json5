@@ -294,6 +294,11 @@
 
                 // TODO(https://fxbug.dev/395053835): Re-enable once flake is resolved.
                 "setrlimit01",
+
+                // TODO(https://fxbug.dev/442531248): Seems premised on getting the scheduling of
+                // a process that may be alive or may be a zombie; since we don't (yet?) support
+                // the latter, this flakes.
+                "sched_setscheduler04",
             ],
         },
     ],
