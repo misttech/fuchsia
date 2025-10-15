@@ -713,3 +713,8 @@
 	url = https://fuchsia.googlesource.com/third_party/github.com/ridiculousfish/libdivide
 	name = third_party/github.com/ridiculousfish/libdivide
 	ignore = all
+[submodule "third_party/android/platform/system/liburingutils"]
+	path = third_party/android/platform/system/liburingutils
+	url = https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/liburingutils
+	name = third_party/android/platform/system/liburingutils
+	ignore = all
