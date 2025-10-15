@@ -12,8 +12,8 @@ group("musl_internal") {
   ]
   public_deps = [
     "//sdk/lib/c/include:headers",
+    "//src/zircon/lib/zircon:headers",
     "//zircon/system/public",
-    "//zircon/system/ulib/runtime:headers",
     "//zircon/system/ulib/zircon-internal:headers",
   ]
   public_configs = [ ":musl_internal.config" ]
@@ -35,6 +35,7 @@ config("musl_internal.config") {
   include_dirs = [
     "src/internal",
     "arch/${clang_cpu}",
+    "//sdk/lib/c",
   ]
 
   defines = [ "_XOPEN_SOURCE=700" ]

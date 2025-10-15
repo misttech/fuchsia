@@ -15,11 +15,10 @@
 #include <tuple>
 #include <utility>
 
-#include <runtime/tls.h>
-
 #include "../ld/log.h"
 #include "../threads/shadow-call-stack.h"
 #include "../threads/thread-storage.h"
+#include "../threads/zxr-tls.h"
 #include "start-main.h"
 #include "startup-random.h"
 #include "startup-relocate.h"

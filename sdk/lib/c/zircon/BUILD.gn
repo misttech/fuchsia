@@ -35,7 +35,7 @@ libc_source_set("zircon.basic") {
 
   sources = [ "thrd_get_zx_handle.cc" ]
   deps = [
-    "//zircon/system/ulib/runtime",
+    "../threads:zxr-thread",
     "//zircon/third_party/ulib/musl:musl_internal",
   ]
 }

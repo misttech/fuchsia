@@ -14,11 +14,10 @@
 #include <zircon/assert.h>
 #include <zircon/tls.h>
 
-#include <runtime/thread.h>
-#include <runtime/tls.h>
-
 #include "libc.h"
 #include "pthread_arch.h"
+#include "threads/zxr-thread.h"
+#include "threads/zxr-tls.h"
 
 __BEGIN_CDECLS
 

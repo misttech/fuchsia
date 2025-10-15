@@ -7,8 +7,6 @@
 #include <zircon/syscalls.h>
 #include <zircon/utc.h>
 
-#include <runtime/thread.h>
-
 #include "asan_impl.h"
 #include "dynlink.h"
 #include "libc.h"
@@ -60,8 +58,8 @@ __asan_weak_ref("memcpy") __asan_weak_ref("memset")
 #if __has_feature(undefined_behavior_sanitizer)
 __attribute__((no_sanitize("function")))
 #endif
-static inline int
-call_main(int argc, char** argv, char** environ, int (*main_func)(int, char**, char**)) {
+static inline int call_main(int argc, char** argv, char** environ,
+                            int (*main_func)(int, char**, char**)) {
   return main_func(argc, argv, environ);
 }
 

@@ -117,3 +117,40 @@ libc_source_set("thread-list.musl-glue") {
     "//zircon/third_party/ulib/musl:musl_internal",
   ]
 }
+
+source_set("zxr-tls") {
+  visibility = [
+    "../*",
+    "//zircon/third_party/ulib/musl/*",
+  ]
+  public = [ "zxr-tls.h" ]
+  public_deps = [ "//src/zircon/lib/zircon:headers" ]
+}
+
+libc_source_set("zxr-thread") {
+  visibility = [
+    "../*",
+    "//zircon/third_party/ulib/musl/*",
+  ]
+
+  public = [ "zxr-thread.h" ]
+  sources = [ "zxr-thread.cc" ]
+  deps = [
+    "//src/lib/elfldltl:headers",
+    "//src/zircon/lib/zircon:zircon.as-needed",
+    "//zircon/system/ulib/zircon-internal",
+  ]
+
+  # This code is used in early startup, where safe-stack is not ready yet.
+  configs = [ "//build/config/sanitizers:no_sanitizers" ]
+
+  # This might be necessary if something from libc++ didn't get inlined.  A
+  # libc++ ABI symbol that's supposedly the same might be COMDAT'd with another
+  # TU's version that didn't disable the sanitizers.
+  defines = [ "_LIBCPP_HIDE_FROM_ABI_PER_TU=1" ]
+
+  # Make sure the thread_trampoline function has a frame pointer so that
+  # user-visible thread backtraces are consistent across collection methods.
+  remove_configs = [ "//build/config:default_frame_pointers" ]
+  configs += [ "//build/config:frame_pointers" ]
+}

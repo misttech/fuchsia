@@ -6,9 +6,8 @@
 #include <zircon/syscalls/object.h>
 #include <zircon/utc.h>
 
-#include <runtime/thread.h>
-
 #include "libc.h"
+#include "threads/zxr-thread.h"
 #include "threads_impl.h"
 
 static int gettime_finish(zx_status_t syscall_status, zx_time_t now, struct timespec* ts) {

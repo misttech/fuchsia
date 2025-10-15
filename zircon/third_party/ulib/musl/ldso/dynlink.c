@@ -35,12 +35,12 @@
 #include <zircon/syscalls/log.h>
 
 #include <ldmsg/ldmsg.h>
-#include <runtime/thread.h>
 
 #include "asan_impl.h"
 #include "libc.h"
 #include "relr.h"
 #include "stdio_impl.h"
+#include "threads/zxr-thread.h"
 #include "threads_impl.h"
 #include "zircon_impl.h"
 

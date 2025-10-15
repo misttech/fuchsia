@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef RUNTIME_THREAD_H_
-#define RUNTIME_THREAD_H_
+#ifndef LIB_C_THREADS_ZXR_THREAD_H_
+#define LIB_C_THREADS_ZXR_THREAD_H_
 
 #include <stddef.h>
 #include <stdint.h>
@@ -110,4 +110,4 @@ zx_handle_t zxr_thread_self_handle(zxr_thread_t* thread);
 
 __END_CDECLS
 
-#endif  // RUNTIME_THREAD_H_
+#endif  // LIB_C_THREADS_ZXR_THREAD_H_

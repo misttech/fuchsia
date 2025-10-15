@@ -5,13 +5,12 @@
 #include <zircon/process.h>
 #include <zircon/syscalls.h>
 
-#include <runtime/thread.h>
-#include <runtime/tls.h>
-
 #include "asan_impl.h"
 #include "futex_impl.h"
 #include "libc.h"
 #include "stdio_impl.h"
+#include "threads/zxr-thread.h"
+#include "threads/zxr-tls.h"
 #include "threads_impl.h"
 #include "zircon_impl.h"
 
@@ -114,7 +113,7 @@ int __pthread_create(pthread_t* restrict res, const pthread_attr_t* restrict att
   new->start_arg_or_result = arg;
 
   void* sanitizer_hook = __sanitizer_before_thread_create_hook(
-      (thrd_t) new, attr._a_detach, name, new->safe_stack.iov_base, new->safe_stack.iov_len);
+      (thrd_t)new, attr._a_detach, name, new->safe_stack.iov_base, new->safe_stack.iov_len);
   new->sanitizer_hook = sanitizer_hook;
 
   // We have to publish the pointer now, and make sure it is
@@ -132,14 +131,14 @@ int __pthread_create(pthread_t* restrict res, const pthread_attr_t* restrict att
                             new->safe_stack.iov_len, start, new);
 
   if (status == ZX_OK) {
-    __sanitizer_thread_create_hook(sanitizer_hook, (thrd_t) new, thrd_success);
+    __sanitizer_thread_create_hook(sanitizer_hook, (thrd_t)new, thrd_success);
     return 0;
   }
 
   *res = NULL;
   atomic_fetch_sub(&libc.thread_count, 1);
 
-  __sanitizer_thread_create_hook(sanitizer_hook, (thrd_t) new,
+  __sanitizer_thread_create_hook(sanitizer_hook, (thrd_t)new,
                                  status == ZX_ERR_ACCESS_DENIED ? thrd_error : thrd_nomem);
 
 fail_after_alloc:

@@ -15,11 +15,10 @@
 #include <algorithm>
 #include <utility>
 
-#include <runtime/thread.h>
-
 #include "../dlfcn/dlfcn-abi.h"
 #include "../ld/writable-segments.h"
 #include "../threads/thread-list.h"
+#include "../threads/zxr-thread.h"
 #include "../weak.h"
 #include "threads_impl.h"
 

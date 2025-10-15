@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#pragma once
+#ifndef LIB_C_THREADS_ZXR_TLS_H_
+#define LIB_C_THREADS_ZXR_TLS_H_
 
 #include <zircon/compiler.h>
 #include <zircon/syscalls.h>
@@ -94,3 +95,5 @@ ZXR_TLS_INLINE static inline void zxr_tp_set(zx_handle_t self, void* tp) {
 #endif
 
 __END_CDECLS
+
+#endif  // LIB_C_THREADS_ZXR_TLS_H_

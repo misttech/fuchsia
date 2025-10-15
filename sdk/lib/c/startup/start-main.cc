@@ -12,9 +12,8 @@
 #include <cassert>
 #include <mutex>
 
-#include <runtime/thread.h>
-
 #include "../threads/thread-list.h"
+#include "../threads/zxr-thread.h"
 #include "src/stdlib/exit.h"
 #include "threads_impl.h"
 #include "zircon_impl.h"

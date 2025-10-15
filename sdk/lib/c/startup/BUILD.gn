@@ -305,7 +305,7 @@ libc_source_set("start-compiler-abi") {
     "../ld:log.headers",
     "../threads:shadow-call-stack",
     "../threads:thread-storage",
-    "//zircon/system/ulib/runtime:headers",
+    "../threads:zxr-tls",
     "//zircon/system/ulib/zx",
     "//zircon/third_party/ulib/musl:musl_internal",
   ]
@@ -324,8 +324,8 @@ libc_source_set("start-main") {
     ":startup-trampoline",
     "../stdlib:exit",
     "../threads:thread-list",
+    "../threads:zxr-thread",
     "//sdk/lib/ld:fuchsia-debugdata",
-    "//zircon/system/ulib/runtime",
     "//zircon/third_party/ulib/musl:musl_internal",
   ]
 }

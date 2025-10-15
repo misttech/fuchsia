@@ -3,7 +3,10 @@
 # found in the LICENSE file.
 
 source_set("mman") {
-  deps = [ "//zircon/third_party/ulib/musl:musl_internal" ]
+  deps = [
+    "//src/zircon/lib/zircon",
+    "//zircon/third_party/ulib/musl:musl_internal",
+  ]
   sources = [
     "madvise.c",
     "memfd_create.c",

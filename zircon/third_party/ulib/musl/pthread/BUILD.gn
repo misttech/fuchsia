@@ -86,7 +86,8 @@ source_set("pthread") {
   ]
 
   deps = [
-    "//zircon/system/ulib/runtime",
+    "//sdk/lib/c/threads:zxr-thread",
+    "//sdk/lib/c/threads:zxr-tls",
     "//zircon/third_party/ulib/musl:musl_internal",
   ]
 

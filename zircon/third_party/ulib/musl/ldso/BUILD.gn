@@ -8,6 +8,7 @@ source_set("ldso") {
   deps = [
     ":dlstart",
     "//sdk/lib/c/startup/musl-processargs",
+    "//sdk/lib/c/threads:zxr-thread",
     "//sdk/lib/ld:tlsdesc",
     "//zircon/system/ulib/ldmsg",
     "//zircon/third_party/ulib/musl:musl_internal",

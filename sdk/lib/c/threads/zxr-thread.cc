@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "zxr-thread.h"
+
 #include <lib/elfldltl/machine.h>
 #include <lib/zircon-internal/unique-backtrace.h>
 #include <stddef.h>
@@ -9,8 +11,6 @@
 #include <zircon/syscalls.h>
 
 #include <atomic>
-
-#include <runtime/thread.h>
 
 // An zxr_thread_t starts its life JOINABLE.
 // - If someone calls zxr_thread_join on it, it transitions to JOINED.

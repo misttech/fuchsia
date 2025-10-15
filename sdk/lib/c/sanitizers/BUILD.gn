@@ -59,6 +59,7 @@ libc_source_set("memory-snapshot") {
     "../dlfcn:dlfcn-abi",
     "../ld:writable-segments",
     "../threads:thread-list",
+    "../threads:zxr-thread",
     "//zircon/system/ulib/zx",
   ]
 }
