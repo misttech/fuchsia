@@ -29,7 +29,7 @@
 
 #include "src/devices/lib/acpi/client.h"
 #include "src/devices/lib/goldfish/pipe_headers/include/base.h"
-#include "src/graphics/drivers/misc/goldfish/pipe_connection.h"
+#include "src/graphics/drivers/misc/goldfish/pipe.h"
 
 namespace goldfish {
 namespace {
@@ -242,8 +242,8 @@ zx_status_t PipeDevice::Create(int32_t* out_id, zx::vmo* out_vmo) {
 
   fbl::AutoLock lock(&pipes_lock_);
   int32_t id = next_pipe_id_++;
-  ZX_DEBUG_ASSERT(command_storages_.count(id) == 0);
-  command_storages_[id] = std::make_unique<CommandStorage>(paddr, std::move(pmt), zx::event());
+  ZX_DEBUG_ASSERT(pipes_.count(id) == 0);
+  pipes_[id] = std::make_unique<Pipe>(paddr, std::move(pmt), zx::event());
 
   *out_vmo = std::move(vmo);
   *out_id = id;
@@ -255,7 +255,7 @@ zx_status_t PipeDevice::SetEvent(int32_t id, zx::event pipe_event) {
 
   fbl::AutoLock lock(&pipes_lock_);
 
-  ZX_DEBUG_ASSERT(command_storages_.count(id) == 1);
+  ZX_DEBUG_ASSERT(pipes_.count(id) == 1);
   ZX_DEBUG_ASSERT(pipe_event.is_valid());
 
   zx_signals_t kSignals = fuchsia_hardware_goldfish::wire::kSignalReadable |
@@ -263,17 +263,17 @@ zx_status_t PipeDevice::SetEvent(int32_t id, zx::event pipe_event) {
 
   zx_signals_t observed = 0u;
   // If old pipe event exists, transfer observed signal to new pipe event.
-  if (command_storages_[id]->pipe_event.is_valid()) {
+  if (pipes_[id]->pipe_event.is_valid()) {
     zx_status_t status =
-        command_storages_[id]->pipe_event.wait_one(kSignals, zx::time::infinite_past(), &observed);
+        pipes_[id]->pipe_event.wait_one(kSignals, zx::time::infinite_past(), &observed);
     if (status != ZX_OK) {
       zxlogf(ERROR, "%s: failed to transfer observed signals: %d", kTag, status);
       return status;
     }
   }
 
-  command_storages_[id]->pipe_event = std::move(pipe_event);
-  zx_status_t status = command_storages_[id]->pipe_event.signal(kSignals, observed & kSignals);
+  pipes_[id]->pipe_event = std::move(pipe_event);
+  zx_status_t status = pipes_[id]->pipe_event.signal(kSignals, observed & kSignals);
   if (status != ZX_OK) {
     zxlogf(ERROR, "%s: failed to signal event: %d", kTag, status);
     return status;
@@ -285,8 +285,8 @@ void PipeDevice::Destroy(int32_t id) {
   TRACE_DURATION("gfx", "PipeDevice::Destroy");
 
   fbl::AutoLock lock(&pipes_lock_);
-  ZX_DEBUG_ASSERT(command_storages_.count(id) == 1);
-  command_storages_.erase(id);
+  ZX_DEBUG_ASSERT(pipes_.count(id) == 1);
+  pipes_.erase(id);
 }
 
 void PipeDevice::Open(int32_t id) {
@@ -295,8 +295,8 @@ void PipeDevice::Open(int32_t id) {
   zx_paddr_t paddr;
   {
     fbl::AutoLock lock(&pipes_lock_);
-    ZX_DEBUG_ASSERT(command_storages_.count(id) == 1);
-    paddr = command_storages_[id]->paddr;
+    ZX_DEBUG_ASSERT(pipes_.count(id) == 1);
+    paddr = pipes_[id]->paddr;
   }
 
   fbl::AutoLock lock(&mmio_lock_);
@@ -342,8 +342,8 @@ int PipeDevice::IrqHandler() {
 
       auto buffers = static_cast<CommandBuffers*>(io_buffer_.virt());
       for (uint32_t i = 0; i < count; ++i) {
-        auto it = command_storages_.find(buffers->signal_buffers[i].id);
-        if (it != command_storages_.end()) {
+        auto it = pipes_.find(buffers->signal_buffers[i].id);
+        if (it != pipes_.end()) {
           it->second->SignalEvent(buffers->signal_buffers[i].flags);
         }
       }
@@ -353,15 +353,15 @@ int PipeDevice::IrqHandler() {
   return 0;
 }
 
-PipeDevice::CommandStorage::CommandStorage(zx_paddr_t paddr, zx::pmt pmt, zx::event pipe_event)
+PipeDevice::Pipe::Pipe(zx_paddr_t paddr, zx::pmt pmt, zx::event pipe_event)
     : paddr(paddr), pmt(std::move(pmt)), pipe_event(std::move(pipe_event)) {}
 
-PipeDevice::CommandStorage::~CommandStorage() {
+PipeDevice::Pipe::~Pipe() {
   ZX_DEBUG_ASSERT(pmt.is_valid());
   pmt.unpin();
 }
 
-void PipeDevice::CommandStorage::SignalEvent(uint32_t flags) const {
+void PipeDevice::Pipe::SignalEvent(uint32_t flags) const {
   if (!pipe_event.is_valid()) {
     return;
   }
@@ -433,17 +433,16 @@ void PipeChildDevice::Connect(ConnectRequestView request, ConnectCompleter::Sync
   ZX_DEBUG_ASSERT(request->pipe_request.is_valid());
 
   async::PostTask(dispatcher_, [this, pipe_request = std::move(request->pipe_request)]() mutable {
-    auto pipe = std::make_unique<PipeConnection>(
-        parent_, dispatcher_, /* OnBind */ nullptr,
-        /* OnClose */ [this](PipeConnection* pipe_ptr) {
-          // We know |pipe_ptr| is still alive because |pipe_ptr|
-          // is still in |pipes_|.
-          ZX_DEBUG_ASSERT(pipe_connections_.find(pipe_ptr) != pipe_connections_.end());
-          pipe_connections_.erase(pipe_ptr);
-        });
+    auto pipe = std::make_unique<Pipe>(parent_, dispatcher_, /* OnBind */ nullptr,
+                                       /* OnClose */ [this](Pipe* pipe_ptr) {
+                                         // We know |pipe_ptr| is still alive because |pipe_ptr|
+                                         // is still in |pipes_|.
+                                         ZX_DEBUG_ASSERT(pipes_.find(pipe_ptr) != pipes_.end());
+                                         pipes_.erase(pipe_ptr);
+                                       });
 
-    PipeConnection* pipe_ptr = pipe.get();
-    pipe_connections_.insert({pipe_ptr, std::move(pipe)});
+    Pipe* pipe_ptr = pipe.get();
+    pipes_.insert({pipe_ptr, std::move(pipe)});
 
     pipe_ptr->Bind(std::move(pipe_request));
     // Init() must be called after Bind() as it can cause an asynchronous
