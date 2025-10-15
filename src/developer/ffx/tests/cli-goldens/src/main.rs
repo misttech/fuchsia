@@ -171,7 +171,8 @@ fn write_depfile(
         writeln!(
             f,
             "{manifest_filename} : {} {}",
-            tool["executable"], tool["executable_metadata"]
+            tool["executable"].as_str().unwrap(),
+            tool["executable_metadata"].as_str().unwrap()
         )?;
     }
 
