@@ -184,6 +184,9 @@ pub enum ServerError {
         client
     )]
     DeclineIpMismatch { declined: Option<Ipv4Addr>, client: Option<Ipv4Addr> },
+
+    #[error("the client {client:?} does not currently hold a lease with {addr}")]
+    InvalidReleaseAddr { client: ClientIdentifier, addr: Ipv4Addr },
 }
 
 impl From<AddressPoolError> for ServerError {
@@ -586,14 +589,24 @@ impl<DS: DataStore, TS: SystemTimeSource> Server<DS, TS> {
     fn handle_release(&mut self, rel: Message) -> Result<ServerAction, ServerError> {
         let Self { records, pool, store, .. } = self;
         let client_id = ClientIdentifier::from(&rel);
+        let client_ip = rel.ciaddr;
         if let Some(record) = records.get_mut(&client_id) {
             // From https://tools.ietf.org/html/rfc2131#section-4.3.4:
             //
             // Upon receipt of a DHCPRELEASE message, the server marks the network address as not
             // allocated.  The server SHOULD retain a record of the client's initialization
             // parameters for possible reuse in response to subsequent requests from the client.
-            let () = release_leased_addr(&client_id, record, pool, store)?;
-            Ok(ServerAction::AddressRelease(rel.ciaddr))
+            //
+            // Note: Only release the address if the provided address matches our record.
+            if record.current.as_ref().is_some_and(|cur| cur == &client_ip) {
+                // Note: the following function panics if the record shows no current lease,
+                // the check above guarantees that the record has a current lease, so the
+                // function cannot panic.
+                release_leased_addr(&client_id, record, pool, store)?;
+                Ok(ServerAction::AddressRelease(client_ip))
+            } else {
+                Err(ServerError::InvalidReleaseAddr { client: client_id, addr: client_ip })
+            }
         } else {
             Err(ServerError::UnknownClientId(client_id))
         }
@@ -1519,6 +1532,7 @@ pub mod tests {
         validate_discover,
     };
     use anyhow::Error;
+    use assert_matches::assert_matches;
     use datastore::{ActionRecordingDataStore, DataStoreAction};
     use dhcp_protocol::{AtLeast, AtMostBytes};
     use fidl_fuchsia_net_ext::IntoExt as _;
@@ -3433,6 +3447,89 @@ pub mod tests {
 
         assert!(server.pool.addr_is_allocated(release_ip), "addr not marked allocated");
         assert!(!server.pool.addr_is_available(release_ip), "addr still marked available");
+    }
+
+    #[test]
+    fn dispatch_invalid_dhcp_release() {
+        let (mut server, time_source) = new_test_minimal_server_with_time_source();
+        let mut release = new_test_release();
+
+        let allocated_ip = std_ip_v4!("1.2.3.4");
+        let bogus_ip = std_ip_v4!("5.6.7.8");
+        let client_id = ClientIdentifier::from(&release);
+
+        assert!(server.pool.allocated.insert(allocated_ip));
+        assert!(server.pool.universe.insert(allocated_ip));
+        assert_matches!(
+            server.records.insert(
+                client_id.clone(),
+                LeaseRecord::new(Some(allocated_ip), vec![], time_source.now(), u32::MAX).unwrap()
+            ),
+            None
+        );
+
+        release.ciaddr = bogus_ip;
+
+        assert_eq!(
+            server.dispatch(release),
+            Err(ServerError::InvalidReleaseAddr { client: client_id, addr: bogus_ip })
+        );
+
+        assert!(server.pool.addr_is_allocated(allocated_ip), "addr not marked allocated");
+        assert!(!server.pool.addr_is_available(allocated_ip), "addr still marked available");
+    }
+
+    #[test]
+    fn dispatch_dhcp_release_twice() {
+        let (mut server, time_source) = new_test_minimal_server_with_time_source();
+        let mac = random_mac_generator();
+        let make_test_release_with_ciaddr =
+            move |ciaddr| Message { ciaddr, chaddr: mac, ..new_test_release() };
+
+        let allocated_ip = std_ip_v4!("1.2.3.4");
+        let client_id = ClientIdentifier::from(mac);
+
+        assert!(server.pool.allocated.insert(allocated_ip));
+        assert!(server.pool.universe.insert(allocated_ip));
+        assert_matches!(
+            server.records.insert(
+                client_id.clone(),
+                LeaseRecord::new(Some(allocated_ip), vec![], time_source.now(), u32::MAX).unwrap()
+            ),
+            None
+        );
+
+        assert_eq!(
+            server.dispatch(make_test_release_with_ciaddr(allocated_ip)),
+            Ok(ServerAction::AddressRelease(allocated_ip))
+        );
+        assert!(!server.pool.addr_is_allocated(allocated_ip), "addr is still allocated");
+        assert!(server.pool.addr_is_available(allocated_ip), "addr not available");
+
+        let mut store = server.store.take().expect("missing store");
+        let actions = store.actions();
+        let (id, ip) = assert_matches!(
+            actions.as_slice(),
+            [
+                DataStoreAction::StoreClientRecord {
+                    client_id: id,
+                    record: LeaseRecord {
+                        current: None,
+                        previous: Some(ip),
+                        ..
+                    }
+                },
+            ] => (id, ip)
+        );
+        assert_eq!(id, &client_id);
+        assert_eq!(ip, &allocated_ip);
+
+        assert_eq!(
+            server.dispatch(make_test_release_with_ciaddr(allocated_ip)),
+            Err(ServerError::InvalidReleaseAddr { client: client_id, addr: allocated_ip })
+        );
+        assert!(!server.pool.addr_is_allocated(allocated_ip), "addr is still allocated");
+        assert!(server.pool.addr_is_available(allocated_ip), "addr not available");
     }
 
     #[test]
