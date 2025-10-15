@@ -184,8 +184,25 @@ pub(super) async fn resolve_impl(
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
 ) -> Result<fpkg::ResolutionContext, ResolverError> {
     let url = match url {
-        fuchsia_url::AbsolutePackageUrl::Pinned(_) => {
-            return Err(ResolverError::PackageHashNotSupported);
+        fuchsia_url::AbsolutePackageUrl::Pinned(pinned) => {
+            // Resolution of pinned packages is used by CM to save memory by recreating component
+            // declarations on demand (by re-resolving them) instead of caching them.
+            // We specifically only allow resolution of pinned base packages (i.e. do not allow
+            // resolution of pinned upgradeable packages) because upgradeable packages could be
+            // upgraded at any time at which point the blobs may no longer be available.
+            // TODO(https://fxbug.dev/452379656) Implement handle-based contexts for package
+            // resolution, migrate CM to using said contexts to re-resolve packages instead of
+            // making pinned resolves, and then re-forbid pinned resolves here.
+            match base_packages.get(pinned.as_unpinned()) {
+                Some(base_hash) if base_hash == &pinned.hash() => url,
+                Some(base_hash) => {
+                    return Err(ResolverError::MismatchedPin {
+                        pinned_hash: pinned.hash(),
+                        base_hash: *base_hash,
+                    });
+                }
+                None => return Err(ResolverError::PackageHashNotSupported),
+            }
         }
         fuchsia_url::AbsolutePackageUrl::Unpinned(url) => url,
     };
@@ -275,11 +292,11 @@ mod tests {
     use assert_matches::assert_matches;
 
     #[fuchsia::test]
-    async fn resolve_rejects_pinned_url() {
+    async fn resolve_rejects_pinned_url_that_does_not_match_base_package_hash() {
         assert_matches!(
             resolve(
                 "fuchsia-pkg://fuchsia.test/name?\
-                    hash=0000000000000000000000000000000000000000000000000000000000000000",
+                    hash=1111111111111111111111111111111111111111111111111111111111111111",
                 fidl::endpoints::create_endpoints().1,
                 &HashMap::from_iter([(
                     "fuchsia-pkg://fuchsia.test/name".parse().unwrap(),
@@ -291,29 +308,8 @@ mod tests {
                 &None,
             )
             .await,
-            Err(ResolverError::PackageHashNotSupported)
-        )
-    }
-
-    #[fuchsia::test]
-    async fn resolve_with_context_rejects_pinned_url() {
-        assert_matches!(
-            resolve_with_context(
-                "fuchsia-pkg://fuchsia.test/name?\
-                    hash=0000000000000000000000000000000000000000000000000000000000000000",
-                fpkg::ResolutionContext { bytes: vec![] },
-                fidl::endpoints::create_endpoints().1,
-                &HashMap::from_iter([(
-                    "fuchsia-pkg://fuchsia.test/name".parse().unwrap(),
-                    [0; 32].into()
-                )]),
-                ContextAuthenticator::new(),
-                &crate::root_dir::new_test(blobfs::Client::new_test().0).await.1,
-                vfs::execution_scope::ExecutionScope::new(),
-                &None,
-            )
-            .await,
-            Err(ResolverError::PackageHashNotSupported)
+            Err(ResolverError::MismatchedPin{pinned_hash, base_hash})
+                if pinned_hash == [17; 32].into() && base_hash == [0; 32].into()
         )
     }
 
@@ -327,6 +323,35 @@ mod tests {
 
         let _: fpkg::ResolutionContext = resolve(
             "fuchsia-pkg://fuchsia.test/name/0",
+            server,
+            &HashMap::from_iter([(
+                "fuchsia-pkg://fuchsia.test/name".parse().unwrap(),
+                *pkg.hash(),
+            )]),
+            ContextAuthenticator::new(),
+            &open_packages,
+            vfs::execution_scope::ExecutionScope::new(),
+            &None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            fuchsia_pkg::PackageDirectory::from_proxy(proxy).merkle_root().await.unwrap(),
+            *pkg.hash()
+        );
+    }
+
+    #[fuchsia::test]
+    async fn resolve_allows_pinned_url_that_matches_base_package_hash() {
+        let pkg = fuchsia_pkg_testing::PackageBuilder::new("name").build().await.unwrap();
+        let blobfs = blobfs_ramdisk::BlobfsRamdisk::start().await.unwrap();
+        pkg.write_to_blobfs(&blobfs).await;
+        let open_packages = crate::root_dir::new_test(blobfs.client()).await.1;
+        let (proxy, server) = fidl::endpoints::create_proxy();
+
+        let _: fpkg::ResolutionContext = resolve(
+            &format!("fuchsia-pkg://fuchsia.test/name?hash={}", pkg.hash()),
             server,
             &HashMap::from_iter([(
                 "fuchsia-pkg://fuchsia.test/name".parse().unwrap(),

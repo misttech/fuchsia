@@ -16,8 +16,13 @@ pub(crate) enum ResolverError {
     #[error("invalid component URL")]
     InvalidUrl(#[from] fuchsia_url::errors::ParseError),
 
-    #[error("component URL with package hash not supported")]
+    #[error("resolution of pinned URLs only supported for base packages")]
     PackageHashNotSupported,
+
+    #[error(
+        "hash in URL does not match hash in manifest, url: {pinned_hash}, manifest: {base_hash}"
+    )]
+    MismatchedPin { pinned_hash: fuchsia_hash::Hash, base_hash: fuchsia_hash::Hash },
 
     #[error("component not found")]
     ComponentNotFound(#[source] mem_util::FileError),
@@ -80,6 +85,7 @@ impl From<&ResolverError> for fcomponent_resolution::ResolverError {
         match err {
             InvalidUrl(_)
             | PackageHashNotSupported
+            | MismatchedPin { .. }
             | InvalidContext(_)
             | AbsoluteUrlRequired
             | ContextWithAbsoluteUrl => ferror::InvalidArgs,
@@ -107,7 +113,10 @@ impl From<&ResolverError> for fpkg::ResolveError {
         use ResolverError::*;
         use fpkg::ResolveError as ferror;
         match err {
-            InvalidUrl(_) | PackageHashNotSupported | AbsoluteUrlRequired => ferror::InvalidUrl,
+            InvalidUrl(_)
+            | PackageHashNotSupported
+            | MismatchedPin { .. }
+            | AbsoluteUrlRequired => ferror::InvalidUrl,
             ComponentNotFound(_)
             | ConfigValuesNotFound(_)
             | AbiRevision(_)
