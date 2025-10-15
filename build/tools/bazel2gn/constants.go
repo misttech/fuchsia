@@ -43,8 +43,10 @@ var bazelRuleToGNTemplate = map[string]string{
 	"cc_library": "source_set",
 
 	// IDK
+	"idk_cc_shared_library":    "sdk_shared_library",
 	"idk_cc_source_library":    "sdk_source_set",
 	"idk_cc_source_library_zx": "zx_library", // With `sdk="source`.
+	"idk_cc_static_library":    "sdk_static_library",
 	"idk_host_tool":            "sdk_host_tool",
 
 	// Other
@@ -141,8 +143,10 @@ var attrMapsByRules = map[string]map[string]string{
 	"rustc_library":   rustAttrMap,
 
 	// IDK
+	"idk_cc_shared_library":    idkCcAttrMap,
 	"idk_cc_source_library":    idkCcAttrMap,
 	"idk_cc_source_library_zx": idkZxAttrMap,
+	"idk_cc_static_library":    idkCcAttrMap,
 	"idk_host_tool":            idkHostToolAttrMap,
 
 	// Tools
