@@ -263,7 +263,9 @@ extern volatile size_t __pthread_tsd_size;
 
 void* __tls_get_new(size_t offset, size_t modid) ATTR_LIBC_VISIBILITY;
 
-static inline struct pthread* __pthread_self(void) { return tp_to_pthread(zxr_tp_get()); }
+static inline struct pthread* __pthread_self(void) {
+  return tp_to_pthread(__builtin_thread_pointer());
+}
 
 static inline thrd_t __thrd_current(void) { return (thrd_t)__pthread_self(); }
 
