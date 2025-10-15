@@ -649,7 +649,7 @@ if (!(current_os == "fuchsia")) {
 }
 
 group("omaha_client") {
-  public_deps = [ ":omaha_client-v0_2_2" ]
+  public_deps = [ ":omaha_client-v0_2_3" ]
 }
 
 group("once_cell") {
@@ -10328,7 +10328,7 @@ rustc_library("mock-omaha-server-v0_3_6") {
   deps += [ ":hex-v0_4_3" ]
   deps += [ ":hyper-v0_14_19" ]
   deps += [ ":log-v0_4_27" ]
-  deps += [ ":omaha_client-v0_2_2" ]
+  deps += [ ":omaha_client-v0_2_3" ]
   deps += [ ":p256-v0_11_1" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_145" ]
@@ -11392,19 +11392,19 @@ rustc_library("numtoa-v0_1_0") {
   applicable_licenses = [ ":numtoa-v0_1_0.license" ]
 }
 
-license("omaha_client-v0_2_2.license") {
+license("omaha_client-v0_2_3.license") {
   public_package_name = "omaha_client"
   license_files = [
-    "//third_party/rust_crates/vendor/omaha_client-0.2.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/omaha_client-0.2.2/LICENSE-BSD",
-    "//third_party/rust_crates/vendor/omaha_client-0.2.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/omaha_client-0.2.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/omaha_client-0.2.3/LICENSE-BSD",
+    "//third_party/rust_crates/vendor/omaha_client-0.2.3/LICENSE-MIT",
   ]
 }
 
-rustc_library("omaha_client-v0_2_2") {
+rustc_library("omaha_client-v0_2_3") {
   crate_name = "omaha_client"
-  source_root = "//third_party/rust_crates/vendor/omaha_client-0.2.2/src/lib.rs"
-  output_name = "omaha_client-f284b8e997d91b7e"
+  source_root = "//third_party/rust_crates/vendor/omaha_client-0.2.3/src/lib.rs"
+  output_name = "omaha_client-8d029556c4f7e5aa"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -11439,13 +11439,13 @@ rustc_library("omaha_client-v0_2_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=f284b8e997d91b7e",
-    "-Cextra-filename=-f284b8e997d91b7e",
+    "-Cmetadata=8d029556c4f7e5aa",
+    "-Cextra-filename=-8d029556c4f7e5aa",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":omaha_client-v0_2_2.license" ]
+  applicable_licenses = [ ":omaha_client-v0_2_3.license" ]
 }
 
 license("once_cell-v1_21_3.license") {

@@ -2953,9 +2953,9 @@ checksum = "b8f8bdf33df195859076e54ab11ee78a1b208382d3a26ec40d142ffc1ecc49ef"
 
 [[package]]
 name = "omaha_client"
-version = "0.2.2"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ec9fc18d891ccb6ad94cd34f1232a4caab623cb414973caa6d6cd0699c73a11"
+checksum = "e947950aaae223f6a10b2180a262a0e80f2f00697a4c37b7b90458b1c41afd81"
 dependencies = [
  "anyhow",
  "chrono",

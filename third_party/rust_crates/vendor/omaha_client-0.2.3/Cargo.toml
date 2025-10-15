@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "omaha_client"
-version = "0.2.2"
+version = "0.2.3"
 build = false
 exclude = [".*"]
 autolib = false

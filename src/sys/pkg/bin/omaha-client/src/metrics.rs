@@ -331,11 +331,6 @@ impl MetricsReporter for CobaltMetricsReporter {
                     );
                 }
             }
-            Metrics::FailedBootAttempts(_) => {
-                // omaha-client does not monitor this, so the metric was removed from Cobalt.
-                // This enum is defined in the external omaha-client library so removing this
-                // variant will require a version bump and soft migration.
-            }
             Metrics::OmahaEventLost(event) => {
                 let event_type = mos_event_type_from_event_type(event.event_type);
                 let result = mos_event_result_from_event_result(event.event_result);
