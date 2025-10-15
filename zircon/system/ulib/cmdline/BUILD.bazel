@@ -2,12 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# TODO(https://fxbug.dev/429377203): Support Bazel zx_library() when available.
-# Note that idk_cc_source_library_zx() only supports SDK-publishable zx_library()
-# instances for now.
-# TODO(https://fxbug.dev/429374432): Use bazel2gn to keep BUILD.gn in sync.
-# LINT.IfChange
-cc_library(
+load("//build/bazel/rules:zx_library.bzl", "cc_source_library_zx")
+
+cc_source_library_zx(
     name = "cmdline",
     srcs = ["args_parser.cc"],
     hdrs = [
@@ -16,6 +13,6 @@ cc_library(
         "include/lib/cmdline/status.h",
     ],
     includes = ["include"],
+    sdk = "source",
     visibility = ["//visibility:public"],
 )
-# LINT.ThenChange(BUILD.bazel)

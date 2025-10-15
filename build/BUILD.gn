@@ -83,6 +83,7 @@ if (is_host) {
       "//tools/net/device-finder:verify_bazel2gn",
       "//tools/net/mdns:verify_bazel2gn",
       "//tools/net/netboot:verify_bazel2gn",
+      "//zircon/system/ulib/cmdline:verify_bazel2gn",
     ]
   }
 }
