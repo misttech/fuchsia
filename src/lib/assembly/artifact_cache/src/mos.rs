@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::artifact::{Artifact, ArtifactType, CIPDPackage, MOSIdentifier};
-
 use anyhow::{Context, Result, anyhow, bail};
 use gcs::client::Client as GcsClient;
 use hyper::{Body, Method, Request};
@@ -80,11 +79,14 @@ struct GetArtifactResponse {
     cipd_uri: Option<String>,
 }
 
-/// Create a new MOSIdentifier instance from an http response from MOS.
-fn new_identifier_from_http_response(response: &str) -> Result<MOSIdentifier> {
-    let response: GetArtifactResponse = serde_json::from_str(response)?;
-    let path = response.name;
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProductBundleArtifactsResponse {
+    product_bundle_artifacts: Option<Vec<String>>,
+}
 
+/// Create a new MOSIdentifier instance from a path string from MOS.
+fn new_identifier_from_path(path: &str) -> Result<MOSIdentifier> {
     // Split the path into its components based on the '/' delimiter.
     // "artifactRepositories/{repo}/versions/{version}/productBundleArtifacts/{type}_{name}"
     let parts: Vec<&str> = path.split('/').collect();
@@ -114,6 +116,22 @@ fn new_identifier_from_http_response(response: &str) -> Result<MOSIdentifier> {
         .get(1)
         .ok_or_else(|| anyhow!("Could not extract name from final component: {}", last_part))?;
 
+    Ok(MOSIdentifier {
+        repository: repository.to_string(),
+        version: version.to_string(),
+        name: name.to_string(),
+        artifact_type: artifact_type
+            .parse()
+            .map_err(|_| anyhow!("Failed to parse artifact type"))?,
+        cipd: None,
+    })
+}
+
+/// Create a new MOSIdentifier instance from an http response from MOS.
+fn new_identifier_from_http_response(response: &str) -> Result<MOSIdentifier> {
+    let response: GetArtifactResponse = serde_json::from_str(response)?;
+    let mut mos_id = new_identifier_from_path(&response.name)?;
+
     let cipd = if let Some(cipd_uri) = response.cipd_uri {
         let cipd_url = format!("cipd://{}", cipd_uri);
         if let Some(Artifact::CIPD(pkg)) = crate::cipd::parse_cipd_artifact(&cipd_url)? {
@@ -124,25 +142,19 @@ fn new_identifier_from_http_response(response: &str) -> Result<MOSIdentifier> {
     } else {
         None
     };
-
-    Ok(MOSIdentifier {
-        repository: repository.to_string(),
-        version: version.to_string(),
-        name: name.to_string(),
-        artifact_type: artifact_type
-            .parse()
-            .map_err(|_| anyhow!("Failed to parse artifact type"))?,
-        cipd,
-    })
+    mos_id.cipd = cipd;
+    Ok(mos_id)
 }
 
 /// Create a new vector of MOSIdentifier instances from an http response from MOS.
 /// This is used for product bundles and the interpolation API.
 fn new_identifier_vec_from_http_response(response: String) -> Result<Vec<MOSIdentifier>> {
-    response
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(new_identifier_from_http_response)
+    let parsed: ProductBundleArtifactsResponse = serde_json::from_str(&response)?;
+    parsed
+        .product_bundle_artifacts
+        .unwrap_or_default()
+        .iter()
+        .map(|path| new_identifier_from_path(path))
         .collect()
 }
 
@@ -215,34 +227,11 @@ impl MOSClient {
         let data = json!({ "criteria": {"product_name": name.clone(), "version": version.clone()}})
             .to_string();
         let response = self.post(uri.clone(), data).await?;
-        let response = if !response.contains("artifactRepositories") {
-            self.generate_mock_pb_release_info(name, version)?
-        } else {
-            response
-        };
-        new_identifier_vec_from_http_response(response)
-    }
-
-    /// Generate a mock response for product bundle info.
-    fn generate_mock_pb_release_info(&self, name: String, version: String) -> Result<String> {
-        println!("    *** Generating a mock response for {}.{}", &name, &version);
-        let (product_name, board_name) = name
-            .split_once('.')
-            .context("Product name was not in the format of `product.board`")?;
-
-        let product_repository = "fuchsia".to_string();
-
-        let platform = json!({
-            "name": format!("artifactRepositories/fuchsia/versions/{}/productBundleArtifacts/platform_arm64", version),
-        });
-        let product = json!({
-            "name": format!("artifactRepositories/{}/versions/{}/productBundleArtifacts/products_{}", product_repository, version, product_name),
-        });
-        let board = json!({
-            "name": format!("artifactRepositories/fuchsia/versions/{}/productBundleArtifacts/boards_{}", version, board_name),
-        });
-
-        Ok(format!("{}\n{}\n{}", platform, product, board))
+        let identifiers = new_identifier_vec_from_http_response(response)?;
+        if identifiers.is_empty() {
+            bail!("MOS returned no artifact information for product bundle {}.{}", name, version);
+        }
+        Ok(identifiers)
     }
 
     /// Interpolate between two versions of an assembly artifact
@@ -255,42 +244,28 @@ impl MOSClient {
             return Ok(vec![from_success.clone()]);
         }
 
-        // TODO: Fix this once artifacts exist in MOS
         let uri = format!(
-            "artifactRepositories/{}/versions/{}/productBundleArtifacts/{}:interpolate",
-            from_success.repository, from_success.version, from_success.name
+            "artifactRepositories/{}/versions/{}/productBundleArtifacts/{}_{}:interpolate",
+            from_success.repository,
+            from_success.version,
+            from_success.artifact_type,
+            from_success.name
         );
         let data = format!(
-            "{{\"target_artifact\": \"artifactRepositories/{}/versions/{}/productBundleArtifacts/{}\"}}",
-            to_failure.repository, to_failure.version, to_failure.name
+            "{{\"target_artifact\": \"artifactRepositories/{}/versions/{}/productBundleArtifacts/{}_{}\"}}",
+            to_failure.repository, to_failure.version, to_failure.artifact_type, to_failure.name
         );
-        let response = match self.post(uri.clone(), data).await {
-            Ok(resp) => resp,
-            Err(e) => {
-                if e.to_string().contains("404 Not Found") {
-                    self.generate_mock_interpolate_response(from_success)?
-                } else {
-                    return Err(e).context("Failed to call interpolate API");
-                }
-            }
-        };
-        new_identifier_vec_from_http_response(response)
-    }
-
-    /// Generate a mock response for the interpolate API.
-    fn generate_mock_interpolate_response(&self, from_success: &MOSIdentifier) -> Result<String> {
-        println!(
-            "    *** Generating a mock response for {}.{}",
-            &from_success.name, &from_success.version
-        );
-        let response = match from_success.artifact_type {
-            ArtifactType::Platform => json!({}).to_string(),
-            ArtifactType::Product => {
-                format!("{}\n{}", json!({}), json!({}))
-            }
-            ArtifactType::Board => json!({}).to_string(),
-        };
-        Ok(response)
+        let response =
+            self.post(uri.clone(), data).await.context("Failed to call interpolate API")?;
+        let identifiers = new_identifier_vec_from_http_response(response)?;
+        if identifiers.is_empty() {
+            bail!(
+                "MOS returned no results for the interpolation from {} to {}.",
+                from_success.id(),
+                to_failure.id()
+            );
+        }
+        Ok(identifiers)
     }
 }
 
