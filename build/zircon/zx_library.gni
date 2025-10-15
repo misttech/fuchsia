@@ -295,6 +295,12 @@ template("zx_library") {
       include_dirs = [ "include" ]
     }
 
+    # Ignore an "includes" parameter if it contains exactly the value above.
+    # This can happen when this template is used by a bazel2gn-generated target.
+    if (defined(invoker.includes) && invoker.includes == [ "include" ]) {
+      not_needed(invoker, [ "includes" ])
+    }
+
     # IMPORTANT: Rewrite header dependencies in public_deps
     #
     # For each zx_library(), the Zircon build used to produce a 'headers'
@@ -435,4 +441,4 @@ template("zx_library") {
 set_defaults("zx_library") {
   configs = default_common_binary_configs
 }
-# LINT.ThenChange(//build/bazel/bazel_idk/private/idk_cc_source_library.bzl)
+# LINT.ThenChange(//build/bazel/bazel_idk/private/idk_cc_source_library.bzl, //build/bazel/rules/zx_library.bzl)

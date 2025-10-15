@@ -622,3 +622,58 @@ func TestCCConversion(t *testing.T) {
 		})
 	}
 }
+
+func TestZxConversion(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		bazel  string
+		wantGN string
+	}{
+		{
+			name: "extra gn expression",
+			bazel: `load("//build/bazel/rules:zx_library.bzl", "cc_source_library_zx")
+
+cc_source_library_zx(
+    name = "cmdline",
+    srcs = ["args_parser.cc"],
+    hdrs = [
+        "include/lib/cmdline/args_parser.h",
+        "include/lib/cmdline/optional.h",
+        "include/lib/cmdline/status.h",
+    ],
+    includes = ["include"],
+    sdk = "source",
+    visibility = ["//visibility:public"],
+)
+`,
+			wantGN: `zx_library("cmdline") {
+	sources = [
+		"args_parser.cc",
+	]
+	public = [
+		"include/lib/cmdline/args_parser.h",
+		"include/lib/cmdline/optional.h",
+		"include/lib/cmdline/status.h",
+	]
+	includes = [
+		"include",
+	]
+	sdk = "source"
+	visibility = [
+		"*",
+	]
+}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := toSyntaxFile(t, tc.bazel)
+			gotGN, err := bazelToGN(f)
+			if err != nil {
+				t.Fatalf("Unexpected failure converting Bazel build targets: %v", err)
+			}
+			if diff := cmp.Diff(gotGN, tc.wantGN); diff != "" {
+				t.Errorf("Diff found after GN conversion (-got +want):\n%s\nBazel source:\n%s", diff, tc.bazel)
+			}
+		})
+	}
+}

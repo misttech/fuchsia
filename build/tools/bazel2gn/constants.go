@@ -40,7 +40,8 @@ var bazelRuleToGNTemplate = map[string]string{
 	"rust_proc_macro": "rustc_macro",
 
 	// C++
-	"cc_library": "source_set",
+	"cc_library":           "source_set",
+	"cc_source_library_zx": "zx_library",
 
 	// IDK
 	"idk_cc_shared_library":    "sdk_shared_library",
@@ -108,9 +109,10 @@ var idkAttrMap = map[string]string{
 }
 
 // Maps from attribute name in Bazel IDK rules to GN `zx_library()` parameter
-// names for attributes unique to `zx_library()`. Use `idkZxAttrMap` instead.
+// names for attributes unique to `zx_library()` instances that are in the IDK.
+// Use `idkZxAttrMap` instead.
 // This map only includes attributes that have different names in Bazel and GN.
-var zxAttrMap = map[string]string{
+var zxInIDKAttrMap = map[string]string{
 	"category": "sdk_publishable",
 }
 
@@ -124,7 +126,7 @@ var hostToolAttrMap = map[string]string{
 var idkCcAttrMap = mustMergeMaps(idkAttrMap, ccAttrMap)
 
 // idkAttrMap maps from attribute name in Bazel IDK C++ ZX rules to GN parameter names.
-var idkZxAttrMap = mustMergeMaps(idkCcAttrMap, zxAttrMap)
+var idkZxAttrMap = mustMergeMaps(idkCcAttrMap, zxInIDKAttrMap)
 
 // idkHostToolAttrMap maps from attribute name in Bazel IDK host tool rules to GN parameter names.
 var idkHostToolAttrMap = mustMergeMaps(idkAttrMap, hostToolAttrMap)
@@ -134,6 +136,9 @@ var idkHostToolAttrMap = mustMergeMaps(idkAttrMap, hostToolAttrMap)
 var attrMapsByRules = map[string]map[string]string{
 	// C++
 	"cc_library": ccAttrMap,
+
+	// C++ Zircon
+	"cc_source_library_zx": ccAttrMap,
 
 	// Rust
 	"rust_binary":     rustAttrMap,
