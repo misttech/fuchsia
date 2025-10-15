@@ -826,7 +826,7 @@ class Dispatcher : public async_dispatcher_t,
 
   // Tokens registered with the token manager, that are waiting for fdf handles to
   // be transferred,
-  std::unordered_set<fdf_token_t*> registered_tokens_;
+  std::unordered_set<fdf_token_t*> registered_tokens_ __TA_GUARDED(&callback_lock_);
 
   fbl::Canary<fbl::magic("FDFD")> canary_;
 };
