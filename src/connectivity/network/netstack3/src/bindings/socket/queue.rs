@@ -7,7 +7,7 @@
 use std::collections::VecDeque;
 use std::num::NonZeroUsize;
 
-use log::{error, trace};
+use log::trace;
 use netstack3_core::types::BufferSizeSettings;
 use thiserror::Error;
 

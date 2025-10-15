@@ -91,24 +91,17 @@ impl<P, E> Authentication<P, E> {
     {
         match self {
             Authentication::Personal(personal) => Authentication::Personal(personal.into()),
+            #[allow(unreachable_code)]
             Authentication::Enterprise(enterprise) => Authentication::Enterprise(enterprise.into()),
         }
     }
 
     pub fn into_personal(self) -> Option<P> {
-        if let Authentication::Personal(personal) = self {
-            Some(personal)
-        } else {
-            None
-        }
+        if let Authentication::Personal(personal) = self { Some(personal) } else { None }
     }
 
     pub fn into_enterprise(self) -> Option<E> {
-        if let Authentication::Enterprise(enterprise) = self {
-            Some(enterprise)
-        } else {
-            None
-        }
+        if let Authentication::Enterprise(enterprise) = self { Some(enterprise) } else { None }
     }
 
     pub fn is_personal(&self) -> bool {
@@ -765,8 +758,8 @@ mod tests {
 
     use test_case::test_case;
 
-    use crate::security::wep::{WepKey, WEP40_KEY_BYTES};
-    use crate::security::wpa::credential::{Passphrase, Psk, PSK_SIZE_BYTES};
+    use crate::security::wep::{WEP40_KEY_BYTES, WepKey};
+    use crate::security::wpa::credential::{PSK_SIZE_BYTES, Passphrase, Psk};
     use crate::security::wpa::{self};
     use crate::security::{BareCredentials, SecurityError};
 

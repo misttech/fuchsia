@@ -42,6 +42,10 @@ impl<T> JoinHandle<T> {
     pub fn abort(mut self) -> impl Future<Output = Option<T>> {
         // SAFETY: We spawned the task so the return type should be correct.
         let result = unsafe { self.scope.abort_task(self.task_id) };
+        // TODO(https://fxbug.dev/452064816): The compiler throws a false
+        // positive linter warning because it thinks that `self.task_id = 0;` is
+        // never read, even though it is read in the Drop implementation below.
+        #[allow(unused_assignments)]
         async move {
             match result {
                 Some(output) => Some(output),
