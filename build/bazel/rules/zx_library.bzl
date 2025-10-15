@@ -22,7 +22,6 @@ visibility([
 def cc_source_library_zx_impl(
         name,
         includes,
-        sdk,  # buildifier: disable=unused-variable - For GN conversion only.
         **kwargs):
     """Implementation for the cc_source_library_zx() macro."""
 
@@ -31,9 +30,6 @@ def cc_source_library_zx_impl(
     # `zx_library()` assumes headers files are under `include/`.
     if includes != ["include"]:
         fail('`includes` must be `["include"]`.')
-
-    if sdk != "source":
-        fail('`sdk` must be "source".')
 
     # LINT.ThenChange(//build/zircon/zx_library.gni)
 
@@ -54,11 +50,6 @@ cc_source_library_zx = macro(
     attrs = {
         "includes": attr.string_list(
             doc = 'Path to the root directory for includes. Must always be `["include"]`.',
-            mandatory = True,
-            configurable = False,
-        ),
-        "sdk": attr.string(
-            doc = 'Must always be "source". Unused in Bazel, for GN conversion only.',
             mandatory = True,
             configurable = False,
         ),

@@ -46,6 +46,6 @@ zx_library("cmdline") {
     "include/lib/cmdline/status.h",
   ]
   includes = [ "include" ]
-  sdk = "source"
   visibility = [ "*" ]
+  sdk = "source"
 }

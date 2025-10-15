@@ -54,7 +54,6 @@ idk_cc_source_library_zx(
     api_file_path = "//sdk/lib/zx:zx.api",
     category = "partner",
     idk_name = "zx",
-    sdk = "source",
     stable = True,
 
     # The current definition contains headers only applicable to Fuchsia.

@@ -374,13 +374,10 @@ def _idk_cc_source_library_zx_impl(
         stable,
         api_area,
         hdrs,
-        sdk,  # buildifier: disable=unused-variable - For GN conversion only.
         **kwargs):
     """Implementation for the idk_cc_source_library_zx() macro."""
 
     # LINT.IfChange
-    if sdk != "source":
-        fail('`sdk` must be "source".')
     if "sdk_headers" in kwargs:
         fail('`sdk_headers` is not supported. Headers for the IDK must be specified in `public`. Note that "include/" must be included in the paths in `public`.')
 
@@ -426,11 +423,6 @@ Converted to `sdk_publishable` in `zx_library()`.""",
 GN equivalent: `sdk_headers`
 GN note: Unlike the GN template, the "include/" part of the path must be specified.""",
             allow_files = True,
-            mandatory = True,
-            configurable = False,
-        ),
-        "sdk": attr.string(
-            doc = 'Must always be "source". Unused in Bazel, for GN conversion only.',
             mandatory = True,
             configurable = False,
         ),

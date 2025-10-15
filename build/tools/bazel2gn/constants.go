@@ -158,6 +158,11 @@ var attrMapsByRules = map[string]map[string]string{
 	"install_host_tools": hostToolAttrMap,
 }
 
+var extraGnExpressionByRules = map[string]string{
+	"cc_source_library_zx":     `sdk = "source"`,
+	"idk_cc_source_library_zx": `sdk = "source"`,
+}
+
 // These identifiers with the same meanings are represented differently in Bazel
 // and GN. specialIdentifiers maps from their Bazel representations to GN
 // representations.

@@ -60,8 +60,8 @@ zx_library("fit") {
   sdk_area = "Kernel"
   sdk_publishable = "partner"
   sdk_name = "fit"
-  sdk = "source"
   stable = true
   visibility = [ "*" ]
   public_deps = [ "//sdk/lib/stdcompat" ]
+  sdk = "source"
 }

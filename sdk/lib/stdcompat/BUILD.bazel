@@ -53,7 +53,6 @@ idk_cc_source_library_zx(
         "include/lib/stdcompat/internal/utility.h",
     ],
     idk_name = "stdcompat",
-    sdk = "source",
     stable = True,
     visibility = ["//visibility:public"],
 )

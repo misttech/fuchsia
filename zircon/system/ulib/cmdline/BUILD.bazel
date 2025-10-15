@@ -13,6 +13,5 @@ cc_source_library_zx(
         "include/lib/cmdline/status.h",
     ],
     includes = ["include"],
-    sdk = "source",
     visibility = ["//visibility:public"],
 )

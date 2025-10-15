@@ -82,7 +82,7 @@ zx_library("stdcompat") {
   ]
   public += sdk_headers_for_internal_use
   sdk_name = "stdcompat"
-  sdk = "source"
   stable = true
   visibility = [ "*" ]
+  sdk = "source"
 }

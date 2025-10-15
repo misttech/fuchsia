@@ -25,7 +25,6 @@ idk_cc_source_library_zx(
     api_area = "Kernel",
     category = "partner",
     idk_name = "fit",
-    sdk = "source",
     stable = True,
     visibility = ["//visibility:public"],
     deps = ["//sdk/lib/stdcompat"],

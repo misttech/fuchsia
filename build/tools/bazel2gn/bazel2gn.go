@@ -258,6 +258,10 @@ func callExprToGN(expr *syntax.CallExpr) ([]string, error) {
 		ret = append(ret, indent(lines, 1)...)
 	}
 
+	if extra, ok := extraGnExpressionByRules[bazelRule]; ok {
+		ret = append(ret, indent([]string{extra}, 1)...)
+	}
+
 	ret = append(ret, "}")
 	if len(wrappingConditions) > 0 {
 		ret = append([]string{

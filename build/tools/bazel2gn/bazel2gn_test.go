@@ -402,7 +402,6 @@ idk_cc_source_library_zx(
 	api_area = "Media",
 	category = "partner",
 	idk_name = "foobar",
-	sdk = "source",
 	stable = True,
 	hdrs = ["include/lib/foobar/foobar_defs.h"],
 	hdrs_for_internal_use = ["path/to/internal.h"],
@@ -416,7 +415,6 @@ idk_cc_source_library_zx(
 	sdk_area = "Media"
 	sdk_publishable = "partner"
 	sdk_name = "foobar"
-	sdk = "source"
 	stable = true
 	public = [
 		"include/lib/foobar/foobar_defs.h",
@@ -437,6 +435,7 @@ idk_cc_source_library_zx(
 	visibility = [
 		"*",
 	]
+	sdk = "source"
 }`,
 		},
 		{
@@ -642,7 +641,6 @@ cc_source_library_zx(
         "include/lib/cmdline/status.h",
     ],
     includes = ["include"],
-    sdk = "source",
     visibility = ["//visibility:public"],
 )
 `,
@@ -658,10 +656,10 @@ cc_source_library_zx(
 	includes = [
 		"include",
 	]
-	sdk = "source"
 	visibility = [
 		"*",
 	]
+	sdk = "source"
 }`,
 		},
 	} {
