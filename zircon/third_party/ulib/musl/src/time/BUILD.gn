@@ -41,7 +41,6 @@ source_set("time") {
     "wcsftime.c",
   ]
   deps = [
-    "//sdk/lib/c/threads:zxr-thread",
     "//src/zircon/lib/zircon",
     "//zircon/system/ulib/zircon-internal",
     "//zircon/third_party/ulib/musl:musl_internal",

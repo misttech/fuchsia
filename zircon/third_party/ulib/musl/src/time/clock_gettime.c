@@ -2,13 +2,12 @@
 #include <lib/zircon-internal/unique-backtrace.h>
 #include <stdint.h>
 #include <time.h>
+#include <zircon/process.h>
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/object.h>
 #include <zircon/utc.h>
 
 #include "libc.h"
-#include "threads/zxr-thread.h"
-#include "threads_impl.h"
 
 static int gettime_finish(zx_status_t syscall_status, zx_time_t now, struct timespec* ts) {
   if (syscall_status != ZX_OK) {
@@ -49,8 +48,8 @@ int __clock_gettime(clockid_t clk, struct timespec* ts) {
       zx_info_thread_stats_t info;
       zx_status_t status;
 
-      status = _zx_object_get_info(zxr_thread_get_handle(&__pthread_self()->zxr_thread),
-                                   ZX_INFO_THREAD_STATS, &info, sizeof(info), NULL, NULL);
+      status = _zx_object_get_info(_zx_thread_self(), ZX_INFO_THREAD_STATS, &info, sizeof(info),
+                                   NULL, NULL);
       return gettime_finish(status, info.total_runtime, ts);
     }
 
