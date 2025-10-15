@@ -49,7 +49,8 @@ impl Container for FvmContainer {
                     DATA_PARTITION_LABEL | LEGACY_DATA_PARTITION_LABEL if data_label.is_none() => {
                         data_label = Some(volume.clone());
                     }
-                    _ => return None,
+                    // Don't do anything if we find unexpected volumes.
+                    _ => (),
                 }
             }
             if found_blobfs && data_label.is_some() { data_label } else { None }

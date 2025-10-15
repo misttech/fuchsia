@@ -69,6 +69,25 @@ async fn blobfs_and_data_mounted() {
 }
 
 #[fuchsia::test]
+async fn blobfs_and_data_mounted_with_extra_volume() {
+    let mut builder = new_builder();
+    builder
+        .with_disk()
+        .format_volumes(volumes_spec())
+        .format_data(data_fs_spec())
+        .with_extra_volume("internal");
+    let fixture = builder.build().await;
+
+    fixture.check_fs_type("blob", blob_fs_type()).await;
+    fixture.check_fs_type("blob-exec", blob_fs_type()).await;
+    fixture.check_fs_type("data", data_fs_type()).await;
+    fixture.check_test_data_file().await;
+    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
+
+    fixture.tear_down().await;
+}
+
+#[fuchsia::test]
 async fn blobfs_and_data_mounted_legacy_label() {
     let mut builder = new_builder();
     builder
