@@ -10,13 +10,21 @@
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
+#ifdef __cplusplus
+#include <atomic>
+using std::atomic_int;
+#else
+#include <stdatomic.h>
+#endif
+
 __BEGIN_CDECLS
 
 typedef void (*zxr_thread_entry_t)(void*);
 
-// size = 16 on all platforms
 typedef struct {
-  char internal[16];
+  zxr_thread_entry_t entry;
+  zx_handle_t handle;
+  atomic_int state;  // Actually an enum private to zxr-thread.cc
 } zxr_thread_t;
 
 // TODO(kulakowski) Document the possible zx_status_t values from these.
