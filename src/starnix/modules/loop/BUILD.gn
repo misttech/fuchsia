@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
+import("//build/dist/resource.gni")
 import("//build/rust/rustc_library.gni")
 
 group("tests") {
@@ -47,11 +48,19 @@ rustc_library("loop") {
   ]
 }
 
+resource("test_files") {
+  sources = [
+    "test_data/testfile.txt",
+    "test_data/testfile2.txt",
+  ]
+  outputs = [ "data/{{source_file_part}}" ]
+}
+
 fuchsia_unittest_package("starnix-loop-tests") {
   manifest = "meta/starnix_loop_tests.cml"
   deps = [
     ":loop_test",
-    "//src/starnix/kernel:starnix-test-files",
+    ":test_files",
   ]
   test_type = "starnix"
   test_specs = {
