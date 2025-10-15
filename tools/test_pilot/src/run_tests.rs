@@ -12,7 +12,7 @@ use std::time::Instant;
 use std::{fs, io};
 use test_pilot_lib::invocation_log::CommandInvocationLog;
 use test_pilot_lib::test_output::{
-    is_fail_exit_status, outcome_from_exit_status, OutputDirectory, Summary, SummaryArtifact,
+    OutputDirectory, Summary, SummaryArtifact, is_fail_exit_status, outcome_from_exit_status,
 };
 use tokio::io::AsyncReadExt;
 use tokio::process::{self, Command};
@@ -98,6 +98,14 @@ async fn run_test_inner(
     for output_processor in &test_config.output_processors {
         if (exit_status.success() && !output_processor.use_on_success)
             || (!exit_status.success() && !output_processor.use_on_failure)
+        {
+            continue;
+        }
+
+        if !output_processor
+            .use_if_defined
+            .iter()
+            .all(|p| test_config.parameter_is_defined(p.as_str()))
         {
             continue;
         }
@@ -277,9 +285,9 @@ async fn run_command<W1: io::Write + Send, W2: io::Write + Send>(
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use rand::distr::Alphanumeric;
     use rand::Rng;
-    use serde_json::{from_reader, json, Value};
+    use rand::distr::Alphanumeric;
+    use serde_json::{Value, from_reader, json};
     use std::collections::HashMap;
     use std::io::Cursor;
     use std::os::unix::process::ExitStatusExt;
@@ -396,6 +404,7 @@ mod tests {
                 args: vec![String::from("should_end_up_in_proc_stdout")],
                 use_on_success: true,
                 use_on_failure: false,
+                use_if_defined: vec![String::from("host_test_binary")],
             }],
             unknown: HashMap::new(),
         };
@@ -434,6 +443,61 @@ mod tests {
                         "stdout_artifact": "echo/stdout.txt"
                     }
                 },
+                "test": {
+                    "args": ["should_end_up_in_test_stdout"],
+                    "current_dir": "current_dir",
+                    "envs": {"PATH": "/usr/bin"},
+                    "exit_status": 0,
+                    "program_path": "echo",
+                    "stdout_artifact": "test/stdout.txt"
+                }
+            }),
+            log
+        );
+
+        temp_dir.close().expect("temp directory successfully closed");
+    }
+
+    #[fuchsia::test]
+    async fn test_run_test_output_processor_missing_def() {
+        let temp_dir = tempdir().expect("to create temporary directory");
+
+        let config = TestConfig {
+            host_test_binary: PathBuf::from("echo"),
+            host_test_args: vec![String::from("should_end_up_in_test_stdout")],
+            output_directory: temp_dir.path().to_path_buf(),
+            output_processors: vec![OutputProcessor {
+                binary: PathBuf::from("echo"),
+                args: vec![String::from("should_end_up_in_proc_stdout")],
+                use_on_success: true,
+                use_on_failure: false,
+                use_if_defined: vec![String::from("this_is_not_defined")],
+            }],
+            unknown: HashMap::new(),
+        };
+
+        let output_directory = OutputDirectory::new(&config.output_directory);
+        let exit_status = run_test(&config, &output_directory, "/usr/bin")
+            .await
+            .expect("run_test should succeed");
+
+        assert_eq!(ExitStatus::from_raw(0), exit_status);
+        assert_eq!(
+            b"should_end_up_in_test_stdout\n".to_vec(),
+            fs::read(output_directory.test_stdout()).expect("read from test stdout succeeds")
+        );
+        assert!(
+            !fs::exists(output_directory.postprocessor_stdout(&PathBuf::from("echo"))).unwrap()
+        );
+
+        let mut log_reader = std::io::BufReader::new(
+            fs::File::open(&output_directory.execution_log()).expect("can open invocation log"),
+        );
+        let mut log: Value = from_reader(&mut log_reader).expect("can parse invocation log");
+        normalize_current_dir(&mut log);
+
+        assert_eq!(
+            json!({
                 "test": {
                     "args": ["should_end_up_in_test_stdout"],
                     "current_dir": "current_dir",

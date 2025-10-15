@@ -67,6 +67,13 @@
                         description: "Whether the output processor should be used for successful test runs",
                         type: "boolean",
                     },
+                    use_if_defined: {
+                        description: "Parameters that must be defined for the output processor to be used",
+                        type: "array",
+                        items: {
+                            type: "string",
+                        },
+                    },
                 },
                 required: [
                     "binary",

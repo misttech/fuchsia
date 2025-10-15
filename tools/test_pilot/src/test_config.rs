@@ -106,6 +106,16 @@ impl TestConfig {
         }
 
         for output_processor in &self.output_processors {
+            // Output processors disabled due to `use_if_defined` aren't invoked, so they
+            // don't need to be validated and are likely invalid.
+            if !output_processor
+                .use_if_defined
+                .iter()
+                .all(|p| self.parameter_is_defined(p.as_str()))
+            {
+                continue;
+            }
+
             validate_binary_path(&output_processor.binary, Name::from_str(BINARY_OPTION))?;
 
             for arg in &output_processor.args {
@@ -136,13 +146,22 @@ impl TestConfig {
     /// Validates that `pattern` refers to a valid test or output processor parameter. `arg` is
     /// the argument containing the pattern and is used to construct an informative error.
     fn validate_pattern(&self, pattern: &str, arg: &str) -> Result<(), UsageError> {
-        match pattern {
-            HOST_TEST_BINARY_OPTION | OUTPUT_DIRECTORY_OPTION | TEST_CONFIG_FILE_PATTERN => Ok(()),
-            _ if self.unknown.contains_key(pattern) => Ok(()),
-            _ => Err(UsageError::UnknownArgPattern {
+        if self.parameter_is_defined(pattern) {
+            Ok(())
+        } else {
+            Err(UsageError::UnknownArgPattern {
                 unknown_parameter: String::from(pattern),
                 pattern: String::from(arg),
-            }),
+            })
+        }
+    }
+
+    /// Determines whether `parameter` is defined.
+    pub fn parameter_is_defined(&self, parameter: &str) -> bool {
+        match parameter {
+            HOST_TEST_BINARY_OPTION | OUTPUT_DIRECTORY_OPTION | TEST_CONFIG_FILE_PATTERN => true,
+            _ if self.unknown.contains_key(parameter) => true,
+            _ => false,
         }
     }
 
@@ -229,6 +248,12 @@ pub struct OutputProcessor {
     /// Whether the output processor should be invoked when the test run fails.
     #[serde(default)]
     pub use_on_failure: bool,
+
+    /// Test parameters that must defined in order to invoke this output processor. If any
+    /// parameters in the list are not defined, the invocation of this output processor is
+    /// skipped without complaint.
+    #[serde(default)]
+    pub use_if_defined: Vec<String>,
 }
 
 impl OutputProcessor {
@@ -323,6 +348,12 @@ mod tests {
                                 },
                                 "use_on_failure": {
                                     "type": "boolean",
+                                },
+                                "use_if_defined": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string",
+                                    },
                                 },
                             },
                             "required": [
@@ -479,10 +510,13 @@ mod tests {
         );
         let result = TestConfig::from_env_like(&fake_env, test_schema(), &mut NullLogger);
         assert_matches!(result, Ok(_));
-        assert!(result
-            .unwrap()
-            .resolved_host_test_args(&PathBuf::from("test/params/path"))
-            .eq(vec!["test/params/path", "/nonexistent"].into_iter()));
+        assert!(
+            result.unwrap().resolved_host_test_args(&PathBuf::from("test/params/path")).eq(vec![
+                "test/params/path",
+                "/nonexistent"
+            ]
+            .into_iter())
+        );
 
         // Multiple args, no patterns.
         let fake_env = FakeEnv::new(
@@ -496,10 +530,12 @@ mod tests {
         );
         let result = TestConfig::from_env_like(&fake_env, test_schema(), &mut NullLogger);
         assert_matches!(result, Ok(_));
-        assert!(result
-            .unwrap()
-            .resolved_host_test_args(&PathBuf::from("test/params/path"))
-            .eq(vec!["1", "true", "thing"].into_iter()));
+        assert!(
+            result
+                .unwrap()
+                .resolved_host_test_args(&PathBuf::from("test/params/path"))
+                .eq(vec!["1", "true", "thing"].into_iter())
+        );
 
         // One arg, no patterns.
         let fake_env = FakeEnv::new(
@@ -512,10 +548,12 @@ mod tests {
         );
         let result = TestConfig::from_env_like(&fake_env, test_schema(), &mut NullLogger);
         assert_matches!(result, Ok(_));
-        assert!(result
-            .unwrap()
-            .resolved_host_test_args(&PathBuf::from("test/params/path"))
-            .eq(vec!["just_one"].into_iter()));
+        assert!(
+            result
+                .unwrap()
+                .resolved_host_test_args(&PathBuf::from("test/params/path"))
+                .eq(vec!["just_one"].into_iter())
+        );
 
         // Three args, one pattern in first position.
         let fake_env = FakeEnv::new(
@@ -529,10 +567,12 @@ mod tests {
         );
         let result = TestConfig::from_env_like(&fake_env, test_schema(), &mut NullLogger);
         assert_matches!(result, Ok(_));
-        assert!(result
-            .unwrap()
-            .resolved_host_test_args(&PathBuf::from("test/params/path"))
-            .eq(vec!["1", "true", "thing"].into_iter()));
+        assert!(
+            result
+                .unwrap()
+                .resolved_host_test_args(&PathBuf::from("test/params/path"))
+                .eq(vec!["1", "true", "thing"].into_iter())
+        );
 
         // Three args, one pattern in second position.
         let fake_env = FakeEnv::new(
@@ -546,10 +586,12 @@ mod tests {
         );
         let result = TestConfig::from_env_like(&fake_env, test_schema(), &mut NullLogger);
         assert_matches!(result, Ok(_));
-        assert!(result
-            .unwrap()
-            .resolved_host_test_args(&PathBuf::from("test/params/path"))
-            .eq(vec!["1", "true", "thing"].into_iter()));
+        assert!(
+            result
+                .unwrap()
+                .resolved_host_test_args(&PathBuf::from("test/params/path"))
+                .eq(vec!["1", "true", "thing"].into_iter())
+        );
 
         // Three args, one pattern in third position.
         let fake_env = FakeEnv::new(
@@ -563,10 +605,12 @@ mod tests {
         );
         let result = TestConfig::from_env_like(&fake_env, test_schema(), &mut NullLogger);
         assert_matches!(result, Ok(_));
-        assert!(result
-            .unwrap()
-            .resolved_host_test_args(&PathBuf::from("test/params/path"))
-            .eq(vec!["1", "true", "thing"].into_iter()));
+        assert!(
+            result
+                .unwrap()
+                .resolved_host_test_args(&PathBuf::from("test/params/path"))
+                .eq(vec!["1", "true", "thing"].into_iter())
+        );
 
         // Three args, three patterns.
         let fake_env = FakeEnv::new(
@@ -580,10 +624,12 @@ mod tests {
         );
         let result = TestConfig::from_env_like(&fake_env, test_schema(), &mut NullLogger);
         assert_matches!(result, Ok(_));
-        assert!(result
-            .unwrap()
-            .resolved_host_test_args(&PathBuf::from("test/params/path"))
-            .eq(vec!["1", "true", "thing"].into_iter()));
+        assert!(
+            result
+                .unwrap()
+                .resolved_host_test_args(&PathBuf::from("test/params/path"))
+                .eq(vec!["1", "true", "thing"].into_iter())
+        );
 
         // One arg with initial pattern.
         let fake_env = FakeEnv::new(
@@ -597,10 +643,12 @@ mod tests {
         );
         let result = TestConfig::from_env_like(&fake_env, test_schema(), &mut NullLogger);
         assert_matches!(result, Ok(_));
-        assert!(result
-            .unwrap()
-            .resolved_host_test_args(&PathBuf::from("test/params/path"))
-            .eq(vec!["1truething"].into_iter()));
+        assert!(
+            result
+                .unwrap()
+                .resolved_host_test_args(&PathBuf::from("test/params/path"))
+                .eq(vec!["1truething"].into_iter())
+        );
 
         // One arg with embedded pattern.
         let fake_env = FakeEnv::new(
@@ -614,10 +662,12 @@ mod tests {
         );
         let result = TestConfig::from_env_like(&fake_env, test_schema(), &mut NullLogger);
         assert_matches!(result, Ok(_));
-        assert!(result
-            .unwrap()
-            .resolved_host_test_args(&PathBuf::from("test/params/path"))
-            .eq(vec!["1truething"].into_iter()));
+        assert!(
+            result
+                .unwrap()
+                .resolved_host_test_args(&PathBuf::from("test/params/path"))
+                .eq(vec!["1truething"].into_iter())
+        );
 
         // One arg with final pattern.
         let fake_env = FakeEnv::new(
@@ -631,10 +681,12 @@ mod tests {
         );
         let result = TestConfig::from_env_like(&fake_env, test_schema(), &mut NullLogger);
         assert_matches!(result, Ok(_));
-        assert!(result
-            .unwrap()
-            .resolved_host_test_args(&PathBuf::from("test/params/path"))
-            .eq(vec!["1truething"].into_iter()));
+        assert!(
+            result
+                .unwrap()
+                .resolved_host_test_args(&PathBuf::from("test/params/path"))
+                .eq(vec!["1truething"].into_iter())
+        );
 
         // One arg with two initial patterns.
         let fake_env = FakeEnv::new(
@@ -648,10 +700,12 @@ mod tests {
         );
         let result = TestConfig::from_env_like(&fake_env, test_schema(), &mut NullLogger);
         assert_matches!(result, Ok(_));
-        assert!(result
-            .unwrap()
-            .resolved_host_test_args(&PathBuf::from("test/params/path"))
-            .eq(vec!["1truething"].into_iter()));
+        assert!(
+            result
+                .unwrap()
+                .resolved_host_test_args(&PathBuf::from("test/params/path"))
+                .eq(vec!["1truething"].into_iter())
+        );
 
         // One arg with one initial and one final pattern.
         let fake_env = FakeEnv::new(
@@ -665,10 +719,12 @@ mod tests {
         );
         let result = TestConfig::from_env_like(&fake_env, test_schema(), &mut NullLogger);
         assert_matches!(result, Ok(_));
-        assert!(result
-            .unwrap()
-            .resolved_host_test_args(&PathBuf::from("test/params/path"))
-            .eq(vec!["1truething"].into_iter()));
+        assert!(
+            result
+                .unwrap()
+                .resolved_host_test_args(&PathBuf::from("test/params/path"))
+                .eq(vec!["1truething"].into_iter())
+        );
 
         // One arg with two final patterns.
         let fake_env = FakeEnv::new(
@@ -682,10 +738,12 @@ mod tests {
         );
         let result = TestConfig::from_env_like(&fake_env, test_schema(), &mut NullLogger);
         assert_matches!(result, Ok(_));
-        assert!(result
-            .unwrap()
-            .resolved_host_test_args(&PathBuf::from("test/params/path"))
-            .eq(vec!["1truething"].into_iter()));
+        assert!(
+            result
+                .unwrap()
+                .resolved_host_test_args(&PathBuf::from("test/params/path"))
+                .eq(vec!["1truething"].into_iter())
+        );
 
         // One arg with three patterns.
         let fake_env = FakeEnv::new(
@@ -699,10 +757,20 @@ mod tests {
         );
         let result = TestConfig::from_env_like(&fake_env, test_schema(), &mut NullLogger);
         assert_matches!(result, Ok(_));
-        assert!(result
-            .unwrap()
-            .resolved_host_test_args(&PathBuf::from("test/params/path"))
-            .eq(vec!["1truething"].into_iter()));
+        let test_config = result.unwrap();
+        assert!(
+            test_config
+                .resolved_host_test_args(&PathBuf::from("test/params/path"))
+                .eq(vec!["1truething"].into_iter())
+        );
+
+        assert!(test_config.parameter_is_defined("host_test_binary"));
+        assert!(test_config.parameter_is_defined("output_directory"));
+        assert!(test_config.parameter_is_defined("foo"));
+        assert!(test_config.parameter_is_defined("bar"));
+        assert!(test_config.parameter_is_defined("baz"));
+        assert!(!test_config.parameter_is_defined("not_defined"));
+        assert!(!test_config.parameter_is_defined("host_test_args"));
 
         temp_file.close().expect("Failed to close temporary file");
     }
