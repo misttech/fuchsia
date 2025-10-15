@@ -111,23 +111,23 @@ HandoffPrep::VirtualAddressAllocator::FirstClassMappingAllocator(const ElfImage&
   };
 }
 
-uintptr_t HandoffPrep::VirtualAddressAllocator::AllocatePages(size_t size) {
-  ZX_DEBUG_ASSERT(IsPageAligned(size));
+uintptr_t HandoffPrep::VirtualAddressAllocator::AllocatePages(size_t size_bytes) {
+  ZX_DEBUG_ASSERT(IsPageAligned(size_bytes));
   switch (strategy_) {
     case Strategy::kDown:
-      ZX_DEBUG_ASSERT(start_ >= size);
+      ZX_DEBUG_ASSERT(start_ >= size_bytes);
       if (boundary_) {
-        ZX_DEBUG_ASSERT(start_ - size >= *boundary_);
+        ZX_DEBUG_ASSERT(start_ - size_bytes >= *boundary_);
       }
-      start_ -= size;
+      start_ -= size_bytes;
       return start_;
 
     case Strategy::kUp:
       if (boundary_) {
-        ZX_DEBUG_ASSERT(size <= *boundary_);
-        ZX_DEBUG_ASSERT(start_ <= *boundary_ - size);
+        ZX_DEBUG_ASSERT(size_bytes <= *boundary_);
+        ZX_DEBUG_ASSERT(start_ <= *boundary_ - size_bytes);
       }
-      return ktl::exchange(start_, start_ + size);
+      return ktl::exchange(start_, start_ + size_bytes);
   }
   __UNREACHABLE;
 }
@@ -384,6 +384,14 @@ HandoffPrep::ZirconAbi HandoffPrep::ConstructKernelAddressSpace(const UartDriver
   // Construct the arch-specific bits at the end (to give the non-arch-specific
   // placements in the address space a small amount of relative familiarity).
   ArchConstructKernelAddressSpace();
+
+  // All first-class mappings in the kernel address space have been made. We
+  // mark the allocator as done and base the starting address of the kernel's
+  // virtual heap on where the first-class virtual range allocations ended.
+  //
+  // TODO(https://fxbug.dev/446675650): Use the return value to figure out where
+  // to start the virtual heap.
+  ktl::ignore = first_class_mapping_allocator_.Finish();
 
   // If any mmio_deny regions were collected, transfer them over now.
   if (!mmio_deny.empty()) {

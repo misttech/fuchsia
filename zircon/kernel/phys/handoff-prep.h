@@ -206,7 +206,15 @@ class HandoffPrep {
       }
     }
 
-    uintptr_t AllocatePages(size_t size);
+    // Declares the allocator as done, ensuring no further allocations may be
+    // made. Returns the end address of its allocations.
+    constexpr uint64_t Finish() {
+      boundary_ = start_;
+      return start_;
+    }
+
+    // Allocates the given number virtual pages in bytes.
+    uintptr_t AllocatePages(size_t size_bytes);
 
    private:
     uintptr_t start_;
