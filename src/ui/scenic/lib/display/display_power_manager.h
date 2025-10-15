@@ -23,10 +23,6 @@ class DisplayPowerManager : public fidl::Server<fuchsia_ui_display_singleton::Di
   DisplayPowerManager(DisplayManager& display_manager, inspect::Node& parent_node);
 
   // |fuchsia::ui::display::singleton::DisplayPower|
-  void SetDisplayPower(SetDisplayPowerRequest& request,
-                       SetDisplayPowerCompleter::Sync& completer) override;
-  void SetDisplayPower(bool power_on, fit::function<void(fit::result<zx_status_t>)> completer);
-
   void SetPowerMode(SetPowerModeRequest& request, SetPowerModeCompleter::Sync& completer) override;
   void SetPowerMode(fuchsia_ui_display_singleton::PowerMode power_mode,
                     fit::function<void(fit::result<zx_status_t>)> completer);

@@ -9,7 +9,7 @@ use fidl::endpoints::ProtocolMarker;
 use fidl_fuchsia_hardware_backlight as backlight;
 
 use fidl_fuchsia_hardware_backlight::{DeviceProxy as BacklightProxy, State as BacklightCommand};
-use fidl_fuchsia_ui_display_singleton::{DisplayPowerMarker, DisplayPowerProxy};
+use fidl_fuchsia_ui_display_singleton::{DisplayPowerMarker, DisplayPowerProxy, PowerMode};
 use fuchsia_async as fasync;
 use fuchsia_component::client::{Service, connect_to_protocol};
 use futures::channel::oneshot;
@@ -385,7 +385,7 @@ impl DisplayPower {
         let on_off = if display_on { "on" } else { "off" };
         log::info!("Turning DDIC power {}", on_off);
         self.proxy
-            .set_display_power(display_on)
+            .set_power_mode(if display_on { PowerMode::On } else { PowerMode::Off })
             .await
             .map_err(|fidl_error| Into::<Error>::into(fidl_error))
             .with_context(|| format!("Failed to connect to {}", DisplayPowerMarker::DEBUG_NAME))
@@ -667,9 +667,7 @@ mod dual_state_tests {
 
     #[derive(Debug, Clone)]
     struct FakeDisplayPowerService {
-        set_display_power_response: Arc<Mutex<Result<(), i32>>>,
         set_power_mode_response: Arc<Mutex<Result<(), i32>>>,
-        last_set_display_power_value: Arc<Mutex<Option<bool>>>,
         last_set_power_mode_value: Arc<Mutex<Option<PowerMode>>>,
     }
 
@@ -677,9 +675,7 @@ mod dual_state_tests {
     impl FakeDisplayPowerService {
         pub fn new() -> Self {
             Self {
-                set_display_power_response: Arc::new(Mutex::new(Ok(()))),
                 set_power_mode_response: Arc::new(Mutex::new(Ok(()))),
-                last_set_display_power_value: Arc::new(Mutex::new(None)),
                 last_set_power_mode_value: Arc::new(Mutex::new(None)),
             }
         }
@@ -695,13 +691,6 @@ mod dual_state_tests {
             while let Ok(Some(req)) = stream.try_next().await {
                 log::debug!("FakeDisplayPowerService: {}", req.method_name());
                 match req {
-                    DisplayPowerRequest::SetDisplayPower { power_on, responder } => {
-                        let result = self.set_display_power_response.lock().await.clone();
-                        if result.is_ok() {
-                            self.last_set_display_power_value.lock().await.replace(power_on);
-                        }
-                        responder.send(result).expect("send SetDisplayPower");
-                    }
                     DisplayPowerRequest::SetPowerMode { power_mode, responder } => {
                         let result = self.set_power_mode_response.lock().await.clone();
                         if result.is_ok() {
@@ -717,16 +706,8 @@ mod dual_state_tests {
             log::warn!("FakeDisplayPowerService stopped");
         }
 
-        pub async fn set_set_display_power_response(&self, response: Result<(), i32>) {
-            (*self.set_display_power_response.lock().await) = response;
-        }
-
         pub async fn set_set_power_mode_response(&self, response: Result<(), i32>) {
             (*self.set_power_mode_response.lock().await) = response;
-        }
-
-        pub async fn last_set_display_power_value(&self) -> Option<bool> {
-            self.last_set_display_power_value.lock().await.clone()
         }
 
         pub async fn last_set_power_mode_value(&self) -> Option<PowerMode> {
@@ -857,7 +838,7 @@ mod dual_state_tests {
             h.backlight.set(0.5).await.unwrap();
             assert_eq!(h.backlight.get().await.unwrap(), 0.5);
 
-            assert_eq!(h.fake_display_power_service.last_set_display_power_value().await, None)
+            assert_eq!(h.fake_display_power_service.last_set_power_mode_value().await, None)
         })
         .unwrap();
     }
@@ -875,11 +856,11 @@ mod dual_state_tests {
 
         exec.pin_and_run_until_stalled(async {
             assert_eq!(h.backlight.get().await.unwrap(), 1.0);
-            assert_eq!(h.fake_display_power_service.last_set_display_power_value().await, None);
+            assert_eq!(h.fake_display_power_service.last_set_power_mode_value().await, None);
 
             h.backlight.set(0.0).await.unwrap();
             assert_eq!(h.backlight.get().await.unwrap(), 0.0);
-            assert_eq!(h.fake_display_power_service.last_set_display_power_value().await, None);
+            assert_eq!(h.fake_display_power_service.last_set_power_mode_value().await, None);
         })
         .unwrap();
 
@@ -892,7 +873,7 @@ mod dual_state_tests {
         assert_eq!(exec.wake_timers_and_run_until_stalled(), false);
 
         exec.pin_and_run_until_stalled(async {
-            assert_eq!(h.fake_display_power_service.last_set_display_power_value().await, None);
+            assert_eq!(h.fake_display_power_service.last_set_power_mode_value().await, None);
         })
         .unwrap();
 
@@ -906,8 +887,8 @@ mod dual_state_tests {
 
         exec.pin_and_run_until_stalled(async {
             assert_eq!(
-                h.fake_display_power_service.last_set_display_power_value().await,
-                Some(false)
+                h.fake_display_power_service.last_set_power_mode_value().await,
+                Some(PowerMode::Off)
             );
         })
         .unwrap();
@@ -926,7 +907,7 @@ mod dual_state_tests {
 
         exec.pin_and_run_until_stalled(async {
             assert_eq!(h.backlight.get().await.unwrap(), 0.0);
-            assert_eq!(h.fake_display_power_service.last_set_display_power_value().await, None);
+            assert_eq!(h.fake_display_power_service.last_set_power_mode_value().await, None);
         })
         .unwrap();
 
@@ -940,8 +921,8 @@ mod dual_state_tests {
         exec.pin_and_run_until_stalled(async {
             assert_eq!(h.backlight.get().await.unwrap(), 0.0);
             assert_eq!(
-                h.fake_display_power_service.last_set_display_power_value().await,
-                Some(true)
+                h.fake_display_power_service.last_set_power_mode_value().await,
+                Some(PowerMode::On)
             );
         })
         .unwrap();
@@ -984,13 +965,13 @@ mod dual_state_tests {
 
         exec.pin_and_run_until_stalled(async {
             assert_eq!(h.backlight.get().await.unwrap(), 0.0);
-            assert_eq!(h.fake_display_power_service.last_set_display_power_value().await, None);
+            assert_eq!(h.fake_display_power_service.last_set_power_mode_value().await, None);
 
             h.backlight.set(0.0).await.unwrap();
             assert_eq!(h.backlight.get().await.unwrap(), 0.0);
             assert_eq!(
-                h.fake_display_power_service.last_set_display_power_value().await,
-                Some(false)
+                h.fake_display_power_service.last_set_power_mode_value().await,
+                Some(PowerMode::Off)
             );
         })
         .unwrap();
@@ -1010,7 +991,7 @@ mod dual_state_tests {
         exec.pin_and_run_until_stalled(async {
             h.backlight.set(0.0).await.unwrap();
             assert_eq!(h.backlight.get().await.unwrap(), 0.0);
-            assert_eq!(h.fake_display_power_service.last_set_display_power_value().await, None);
+            assert_eq!(h.fake_display_power_service.last_set_power_mode_value().await, None);
         })
         .unwrap();
 
@@ -1023,14 +1004,14 @@ mod dual_state_tests {
         assert_eq!(exec.wake_timers_and_run_until_stalled(), false);
 
         exec.pin_and_run_until_stalled(async {
-            assert_eq!(h.fake_display_power_service.last_set_display_power_value().await, None);
+            assert_eq!(h.fake_display_power_service.last_set_power_mode_value().await, None);
         })
         .unwrap();
 
         exec.pin_and_run_until_stalled(async {
             h.backlight.set(0.5).await.unwrap();
             assert_eq!(h.backlight.get().await.unwrap(), 0.5);
-            assert_eq!(h.fake_display_power_service.last_set_display_power_value().await, None);
+            assert_eq!(h.fake_display_power_service.last_set_power_mode_value().await, None);
         })
         .unwrap();
 
@@ -1044,7 +1025,7 @@ mod dual_state_tests {
         assert_eq!(exec.wake_timers_and_run_until_stalled(), false);
 
         exec.pin_and_run_until_stalled(async {
-            assert_eq!(h.fake_display_power_service.last_set_display_power_value().await, None);
+            assert_eq!(h.fake_display_power_service.last_set_power_mode_value().await, None);
         })
         .unwrap();
     }
@@ -1117,15 +1098,15 @@ mod dual_state_tests {
 
         exec.pin_and_run_until_stalled(async {
             h.fake_display_power_service
-                .set_set_display_power_response(Err(zx::Status::BAD_STATE.into_raw()))
+                .set_set_power_mode_response(Err(zx::Status::BAD_STATE.into_raw()))
                 .await;
 
             assert_eq!(h.backlight.get().await.unwrap(), 1.0);
-            assert_eq!(h.fake_display_power_service.last_set_display_power_value().await, None);
+            assert_eq!(h.fake_display_power_service.last_set_power_mode_value().await, None);
 
             h.backlight.set(0.0).await.unwrap();
             assert_eq!(h.backlight.get().await.unwrap(), 0.0);
-            assert_eq!(h.fake_display_power_service.last_set_display_power_value().await, None);
+            assert_eq!(h.fake_display_power_service.last_set_power_mode_value().await, None);
         })
         .unwrap();
 
@@ -1137,11 +1118,11 @@ mod dual_state_tests {
         assert_eq!(exec.wake_timers_and_run_until_stalled(), true);
 
         exec.pin_and_run_until_stalled(async {
-            assert_eq!(h.fake_display_power_service.last_set_display_power_value().await, None);
+            assert_eq!(h.fake_display_power_service.last_set_power_mode_value().await, None);
 
             h.backlight.set(0.5).await.unwrap();
             assert_eq!(h.backlight.get().await.unwrap(), 0.5);
-            assert_eq!(h.fake_display_power_service.last_set_display_power_value().await, None);
+            assert_eq!(h.fake_display_power_service.last_set_power_mode_value().await, None);
         })
         .unwrap();
     }
@@ -1159,13 +1140,13 @@ mod dual_state_tests {
 
         exec.pin_and_run_until_stalled(async {
             h.fake_display_power_service
-                .set_set_display_power_response(Err(zx::Status::UNAVAILABLE.into_raw()))
+                .set_set_power_mode_response(Err(zx::Status::UNAVAILABLE.into_raw()))
                 .await;
 
             assert_matches!(h.backlight.set(0.5).await, Err(_));
-            assert_eq!(h.fake_display_power_service.last_set_display_power_value().await, None);
+            assert_eq!(h.fake_display_power_service.last_set_power_mode_value().await, None);
 
-            h.fake_display_power_service.set_set_display_power_response(Ok(())).await;
+            h.fake_display_power_service.set_set_power_mode_response(Ok(())).await;
         })
         .unwrap();
 
@@ -1209,7 +1190,7 @@ mod dual_state_tests {
         assert_eq!(exec.wake_timers_and_run_until_stalled(), false);
 
         exec.pin_and_run_until_stalled(async {
-            assert_eq!(h.fake_display_power_service.last_set_display_power_value().await, None);
+            assert_eq!(h.fake_display_power_service.last_set_power_mode_value().await, None);
         })
         .unwrap();
     }

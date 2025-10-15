@@ -44,8 +44,6 @@ class MockDisplayCoordinator
   using DiscardConfigFn = std::function<void()>;
   using AcknowledgeVsyncFn = std::function<void(uint64_t cookie)>;
   using SetMinimumRgbFn = std::function<void(uint8_t)>;
-  using SetDisplayPowerFn =
-      std::function<void(fuchsia_hardware_display::wire::CoordinatorSetDisplayPowerRequest*)>;
   using SetDisplayPowerModeFn =
       std::function<void(fuchsia_hardware_display::wire::CoordinatorSetDisplayPowerModeRequest*)>;
 
@@ -94,8 +92,6 @@ class MockDisplayCoordinator
                         AcknowledgeVsyncCompleter::Sync& completer) override;
   void SetMinimumRgb(fuchsia_hardware_display::wire::CoordinatorSetMinimumRgbRequest* request,
                      SetMinimumRgbCompleter::Sync& completer) override;
-  void SetDisplayPower(fuchsia_hardware_display::wire::CoordinatorSetDisplayPowerRequest* request,
-                       SetDisplayPowerCompleter::Sync& completer) override;
   void SetDisplayPowerMode(
       fuchsia_hardware_display::wire::CoordinatorSetDisplayPowerModeRequest* request,
       SetDisplayPowerModeCompleter::Sync& completer) override;
@@ -153,8 +149,6 @@ class MockDisplayCoordinator
   void set_discard_config_fn(DiscardConfigFn fn) { discard_config_fn_ = std::move(fn); }
   void set_acknowledge_vsync_fn(AcknowledgeVsyncFn fn) { acknowledge_vsync_fn_ = std::move(fn); }
   void set_minimum_rgb_fn(SetMinimumRgbFn fn) { set_minimum_rgb_fn_ = std::move(fn); }
-  void set_set_display_power_fn(SetDisplayPowerFn fn) { set_display_power_fn_ = std::move(fn); }
-  void set_set_display_power_result(zx_status_t result) { set_display_power_result_ = result; }
   void set_set_display_power_mode_fn(SetDisplayPowerModeFn fn) {
     set_display_power_mode_fn_ = std::move(fn);
   }
@@ -206,7 +200,6 @@ class MockDisplayCoordinator
   DiscardConfigFn discard_config_fn_;
   AcknowledgeVsyncFn acknowledge_vsync_fn_;
   SetMinimumRgbFn set_minimum_rgb_fn_;
-  SetDisplayPowerFn set_display_power_fn_;
   SetDisplayPowerModeFn set_display_power_mode_fn_;
 
   std::unordered_set<uint64_t> imported_image_ids_;
@@ -235,7 +228,6 @@ class MockDisplayCoordinator
   uint32_t set_minimum_rgb_count_ = 0;
   uint32_t set_display_power_count_ = 0;
 
-  zx_status_t set_display_power_result_ = ZX_OK;
   zx_status_t set_display_power_mode_result_ = ZX_OK;
   bool display_power_on_ = true;
 

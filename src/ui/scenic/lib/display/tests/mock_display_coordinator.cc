@@ -249,22 +249,6 @@ void MockDisplayCoordinator::SetMinimumRgb(
   completer.Reply(fit::ok());
 }
 
-void MockDisplayCoordinator::SetDisplayPower(
-    fuchsia_hardware_display::wire::CoordinatorSetDisplayPowerRequest* request,
-    SetDisplayPowerCompleter::Sync& completer) {
-  ++set_display_power_count_;
-  if (set_display_power_fn_) {
-    set_display_power_fn_(request);
-  }
-
-  if (set_display_power_result_ == ZX_OK) {
-    display_power_on_ = request->power_on;
-    completer.Reply(fit::ok());
-  } else {
-    completer.Reply(fit::error(set_display_power_result_));
-  }
-}
-
 void MockDisplayCoordinator::SetDisplayPowerMode(
     fuchsia_hardware_display::wire::CoordinatorSetDisplayPowerModeRequest* request,
     SetDisplayPowerModeCompleter::Sync& completer) {
