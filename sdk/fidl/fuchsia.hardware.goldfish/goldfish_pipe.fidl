@@ -17,18 +17,25 @@ const SIGNAL_WRITABLE uint32 = 0x02000000; // ZX_USER_SIGNAL_1
 /// disconnected.
 const SIGNAL_HANGUP uint32 = 0x04000000; // ZX_USER_SIGNAL_2
 
-/// Represents a hardware pipe device.
+/// This is the interface for the Goldfish pipe driver. It is used
+/// to connect to a PipeDevice.
+closed protocol Controller {
+    /// Opens a new PipeDevice session.
+    strict OpenSession(resource struct {
+        session server_end:PipeDevice;
+    });
+};
+
+/// Interface for the Goldfish pipe driver.
 closed protocol PipeDevice {
-    /// Opens a new connection to the hardware pipe.
-    ///
-    /// Each `Pipe` connection is independent and has no side effects on other
-    /// peer connections.
-    strict Connect(resource struct {
+    /// Open pipe. A protocol request `pipe_request` provides an interface
+    /// to the pipe. Multiple pipes can be opened for a single device.
+    /// Closing the device connection will also close all pipe connections.
+    strict OpenPipe(resource struct {
         pipe_request server_end:Pipe;
     });
 };
 
-/// Represents a connection to the hardware pipe.
 closed protocol Pipe {
     /// Request new IO buffer size. Can fail if out of memory. Discards
     /// contents of existing buffer on success. Leaves existing buffer
@@ -96,7 +103,7 @@ closed protocol Pipe {
     });
 };
 
-/// Service provided by the goldfish pipe device.
+// Added to allow service connection to replace devfs
 service ControllerService {
-    device client_end:PipeDevice;
+    device client_end:Controller;
 };

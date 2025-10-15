@@ -141,55 +141,54 @@ TEST_F(LoaderUnittest, MagmaDevice) {
   vfs_loop.Shutdown();
 }
 
-class FakeGoldfishPipe : public fidl::testing::TestBase<fuchsia_hardware_goldfish::Pipe> {
+class FakeGoldfishDevice : public fidl::testing::TestBase<fuchsia_hardware_goldfish::PipeDevice> {
  private:
   void NotImplemented_(const std::string& name, ::fidl::CompleterBase& completer) override {
     ADD_FAILURE() << "unexpected call to " << name;
   }
 };
 
-class FakeGoldfishPipeDevice
-    : public fidl::testing::TestBase<fuchsia_hardware_goldfish::PipeDevice> {
+class FakeGoldfishController
+    : public fidl::testing::TestBase<fuchsia_hardware_goldfish::Controller> {
  public:
-  explicit FakeGoldfishPipeDevice(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
-
-  // `fuchsia_hardware_goldfish::PipeDevice`:
-  void Connect(ConnectRequest& request, ConnectCompleter::Sync& completer) override {
-    pipe_bindings_.AddBinding(dispatcher_, std::move(request.pipe_request()), &pipe_,
-                              fidl::kIgnoreBindingClosure);
-  }
-  void NotImplemented_(const std::string& name, ::fidl::CompleterBase& completer) override {
-    ADD_FAILURE() << "unexpected call to " << name;
-  }
+  explicit FakeGoldfishController(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
 
   auto ProtocolConnector() {
     return
-        [this](fidl::ServerEnd<fuchsia_hardware_goldfish::PipeDevice> server_end) -> zx_status_t {
-          device_bindings_.AddBinding(dispatcher_, std::move(server_end), this,
-                                      fidl::kIgnoreBindingClosure);
+        [this](fidl::ServerEnd<fuchsia_hardware_goldfish::Controller> server_end) -> zx_status_t {
+          controller_bindings_.AddBinding(dispatcher_, std::move(server_end), this,
+                                          fidl::kIgnoreBindingClosure);
           return ZX_OK;
         };
   }
 
   void CloseAll() {
-    device_bindings_.CloseAll(ZX_OK);
-    pipe_bindings_.CloseAll(ZX_OK);
+    controller_bindings_.CloseAll(ZX_OK);
+    bindings_.CloseAll(ZX_OK);
   }
-  size_t PipeBindingsSize() { return pipe_bindings_.size(); }
-  size_t DeviceBindingsSize() { return device_bindings_.size(); }
+  size_t PipeDeviceBindingsSize() { return bindings_.size(); }
+  size_t ControllerBindingsSize() { return controller_bindings_.size(); }
 
  private:
+  void OpenSession(OpenSessionRequest& request, OpenSessionCompleter::Sync& completer) override {
+    bindings_.AddBinding(dispatcher_, std::move(request.session()), &device_,
+                         fidl::kIgnoreBindingClosure);
+  }
+  void NotImplemented_(const std::string& name, ::fidl::CompleterBase& completer) override {
+    ADD_FAILURE() << "unexpected call to " << name;
+  }
+
   async_dispatcher_t* dispatcher_;
-  fidl::ServerBindingGroup<fuchsia_hardware_goldfish::PipeDevice> device_bindings_;
-  fidl::ServerBindingGroup<fuchsia_hardware_goldfish::Pipe> pipe_bindings_;
-  FakeGoldfishPipe pipe_;
+  fidl::ServerBindingGroup<fuchsia_hardware_goldfish::Controller> controller_bindings_;
+  fidl::ServerBindingGroup<fuchsia_hardware_goldfish::PipeDevice> bindings_;
+  FakeGoldfishDevice device_;
 };
 
 TEST_F(LoaderUnittest, GoldfishDevice) {
   async::Loop vfs_loop(&kAsyncLoopConfigNoAttachToCurrentThread);
   fs::SynchronousVfs vfs(vfs_loop.dispatcher());
   auto root = fbl::MakeRefCounted<fs::PseudoDir>();
-  FakeGoldfishPipeDevice goldfish_device(vfs_loop.dispatcher());
+  FakeGoldfishController goldfish_device(vfs_loop.dispatcher());
   const char* kDeviceNodeName = "dev";
   ASSERT_EQ(root->AddEntry(kDeviceNodeName,
                            fbl::MakeRefCounted<fs::Service>(goldfish_device.ProtocolConnector())),
@@ -217,8 +216,8 @@ TEST_F(LoaderUnittest, GoldfishDevice) {
   RunLoopUntil([this]() { return app()->device_count() == 0; });
   EXPECT_EQ(0u, app()->device_count());
   vfs_loop.Shutdown();
-  EXPECT_EQ(0u, goldfish_device.PipeBindingsSize());
-  EXPECT_EQ(0u, goldfish_device.DeviceBindingsSize());
+  EXPECT_EQ(0u, goldfish_device.PipeDeviceBindingsSize());
+  EXPECT_EQ(0u, goldfish_device.ControllerBindingsSize());
 }
 
 TEST_F(LoaderUnittest, LavapipeDeviceAllowed) {

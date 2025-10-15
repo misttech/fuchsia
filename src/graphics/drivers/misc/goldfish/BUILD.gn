@@ -46,6 +46,8 @@ fuchsia_cc_driver("goldfish_driver-driver") {
   output_name = "goldfish"
 
   sources = [
+    "instance.cc",
+    "instance.h",
     "pipe.cc",
     "pipe.h",
     "pipe_device.cc",
@@ -77,6 +79,8 @@ fuchsia_driver_package("goldfish") {
 test("goldfish-pipe-device-test") {
   output_name = "goldfish-pipe-device-test"
   sources = [
+    "instance.cc",
+    "instance_test.cc",
     "pipe.cc",
     "pipe_device.cc",
     "pipe_device_test.cc",

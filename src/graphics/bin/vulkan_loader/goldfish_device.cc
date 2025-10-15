@@ -25,14 +25,26 @@ bool GoldfishDevice::Initialize(const fidl::ClientEnd<fuchsia_io::Directory>& di
   icd_list_.Initialize(&node());
   auto pending_action_token = app()->GetPendingActionToken();
 
-  zx::result<fidl::ClientEnd<fuchsia_hardware_goldfish::PipeDevice>> device_result =
-      component::ConnectAt<fuchsia_hardware_goldfish::PipeDevice>(dir, name);
-  if (device_result.is_error()) {
-    FX_PLOGS(ERROR, device_result.error_value()) << "Failed to connect to the";
+  zx::result controller = component::ConnectAt<fuchsia_hardware_goldfish::Controller>(dir, name);
+  if (controller.is_error()) {
+    FX_PLOGS(ERROR, controller.error_value()) << "Failed to connect to service";
     return false;
   }
 
-  device_.Bind(std::move(device_result).value(), app()->dispatcher(), this);
+  auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_goldfish::PipeDevice>();
+  if (endpoints.is_error()) {
+    FX_LOGS(ERROR) << "Failed to create endpoints: " << endpoints.status_string();
+    return false;
+  }
+
+  device_.Bind(std::move(endpoints->client), app()->dispatcher(), this);
+
+  if (fidl::Status status =
+          fidl::WireCall(controller.value())->OpenSession(std::move(endpoints->server));
+      !status.ok()) {
+    FX_PLOGS(ERROR, status.status()) << "Failed to open session";
+    return false;
+  }
 
   auto data = node().CreateChild("0");
   std::string component_url = "fuchsia-pkg://fuchsia.com/libvulkan_goldfish#meta/vulkan.cm";

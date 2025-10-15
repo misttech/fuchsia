@@ -18,7 +18,6 @@
 #include <lib/zx/channel.h>
 #include <lib/zx/event.h>
 #include <zircon/assert.h>
-#include <zircon/status.h>
 #include <zircon/syscalls/iommu.h>
 #include <zircon/threads.h>
 
@@ -29,7 +28,8 @@
 
 #include "src/devices/lib/acpi/client.h"
 #include "src/devices/lib/goldfish/pipe_headers/include/base.h"
-#include "src/graphics/drivers/misc/goldfish/pipe.h"
+#include "src/graphics/drivers/misc/goldfish/instance.h"
+#include "zircon/status.h"
 
 namespace goldfish {
 namespace {
@@ -429,27 +429,24 @@ zx_status_t PipeChildDevice::Bind(cpp20::span<const zx_device_str_prop_t> props,
   return ZX_OK;
 }
 
-void PipeChildDevice::Connect(ConnectRequestView request, ConnectCompleter::Sync& completer) {
-  ZX_DEBUG_ASSERT(request->pipe_request.is_valid());
+void PipeChildDevice::OpenSession(OpenSessionRequestView request,
+                                  OpenSessionCompleter::Sync& completer) {
+  std::unique_ptr instance = std::make_unique<Instance>(parent_, dispatcher_);
 
-  async::PostTask(dispatcher_, [this, pipe_request = std::move(request->pipe_request)]() mutable {
-    auto pipe = std::make_unique<Pipe>(parent_, dispatcher_, /* OnBind */ nullptr,
-                                       /* OnClose */ [this](Pipe* pipe_ptr) {
-                                         // We know |pipe_ptr| is still alive because |pipe_ptr|
-                                         // is still in |pipes_|.
-                                         ZX_DEBUG_ASSERT(pipes_.find(pipe_ptr) != pipes_.end());
-                                         pipes_.erase(pipe_ptr);
-                                       });
+  bindings_.AddBinding(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                       std::move(request->session), instance.get(),
+                       [instance = std::move(instance)](Instance*, fidl::UnbindInfo info) {});
+}
 
-    Pipe* pipe_ptr = pipe.get();
-    pipes_.insert({pipe_ptr, std::move(pipe)});
-
-    pipe_ptr->Bind(std::move(pipe_request));
-    // Init() must be called after Bind() as it can cause an asynchronous
-    // failure. The pipe will be cleaned up later by the error handler in
-    // the event of a failure.
-    pipe_ptr->Init();
-  });
+void PipeChildDevice::DdkUnbind(ddk::UnbindTxn txn) {
+  ZX_ASSERT(!unbind_txn_.has_value());
+  ddk::UnbindTxn& unbind_txn = unbind_txn_.emplace(std::move(txn));
+  auto cleanup = fit::bind_member(&unbind_txn, &ddk::UnbindTxn::Reply);
+  bindings_.set_empty_set_handler(cleanup);
+  if (!bindings_.CloseAll(ZX_OK)) {
+    // Binding set was already empty.
+    cleanup();
+  }
 }
 
 void PipeChildDevice::DdkRelease() { delete this; }
