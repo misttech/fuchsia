@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use doctor_utils::{
     CheckResult, DaemonManager, DefaultDaemonManager, DoctorCheck, DoctorRecorder, Recorder,
 };
+use emulator_instance::{EmulatorInstanceInfo, EmulatorInstances};
 use errors::{ffx_bail, ffx_error};
 use ffx_build_version::VersionInfo;
 use ffx_command::{ExternalSubToolSuite, FfxCommandLine, ToolSuite};
@@ -952,6 +953,38 @@ async fn check_ffx_info<W: Write>(
     Ok(ffx_node)
 }
 
+async fn check_emulators<W: Write>(
+    ledger: &mut DoctorLedger<W>,
+    env_context: &EnvironmentContext,
+) -> Result<(), anyhow::Error> {
+    let emu_node = ledger.add_node("FFX Emulator Instances", LedgerMode::Normal)?;
+    let emu_instance_root = env_context.get(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)?;
+    let emu_instances = EmulatorInstances::new(emu_instance_root);
+    let instances = emu_instances.get_all_instances()?;
+    for instance in &instances {
+        let instance_node = ledger.add_node("Instance", LedgerMode::Normal)?;
+        let instance_name_node =
+            ledger.add_node(&format!("Name: {}", instance.get_name()), LedgerMode::Normal)?;
+        ledger.set_outcome(instance_name_node, LedgerOutcome::Info)?;
+        let instance_running_node = ledger
+            .add_node(&format!("Is Running: {}", instance.is_running()), LedgerMode::Normal)?;
+        ledger.set_outcome(instance_running_node, LedgerOutcome::Info)?;
+        let instance_state_node = ledger.add_node(
+            &format!("Engine State: {}", instance.get_engine_state()),
+            LedgerMode::Normal,
+        )?;
+        ledger.set_outcome(instance_state_node, LedgerOutcome::Info)?;
+        ledger.close(instance_node)?;
+    }
+    if instances.is_empty() {
+        let empty_node = ledger.add_node("No Emulator instances", LedgerMode::Normal)?;
+        ledger.set_outcome(empty_node, LedgerOutcome::Info)?;
+        ledger.close(empty_node)?;
+    }
+    ledger.close(emu_node)?;
+    Ok(())
+}
+
 async fn check_env_context<W: Write>(
     ledger: &mut DoctorLedger<W>,
     env_context: &EnvironmentContext,
@@ -1851,6 +1884,7 @@ async fn doctor_summary<W: Write>(
 
     let main_node_depth = check_ffx_info(ledger, &version_info).await?;
     check_env_context(ledger, env_context).await?;
+    check_emulators(ledger, env_context).await?;
 
     // Even in direct mode, we might as well at least report the status of the daemon.
     let daemon_proxy = check_daemon_status(
@@ -1894,6 +1928,7 @@ async fn doctor_summary<W: Write>(
 mod test {
     use super::*;
     use async_trait::async_trait;
+    use emulator_instance::{EmulatorInstanceData, EngineState};
     use ffx_config::{ConfigLevel, TestEnv};
     use ffx_doctor_test_utils::MockWriter;
     use fidl::Channel;
@@ -1909,8 +1944,8 @@ mod test {
     use futures::future::Shared;
     use futures::{Future, FutureExt, TryFutureExt};
     use std::cell::Cell;
-    use std::fmt;
     use std::os::unix::fs::PermissionsExt;
+    use std::{fmt, fs};
     use tempfile::tempdir;
 
     const NODENAME: &str = "fake-nodename";
@@ -2632,6 +2667,18 @@ mod test {
         )
     }
 
+    fn setup_emu_dir(test_env: &TestEnv) -> Result<PathBuf> {
+        let emu_dir = test_env.isolate_root.path().join("emu_data");
+        fs::create_dir_all(&emu_dir)?;
+        test_env
+            .context
+            .query(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
+            .level(Some(ConfigLevel::User))
+            .build()
+            .set(&test_env.context, json!(&emu_dir))?;
+        Ok(emu_dir)
+    }
+
     async fn setup_ssh_keys(test_env: &TestEnv) -> Result<()> {
         let pub_key = test_env.isolate_root.path().join("test_authorized_keys");
         let priv_key = test_env.isolate_root.path().join("test_ed25519_key");
@@ -2657,6 +2704,7 @@ mod test {
     async fn test_single_try_no_daemon_running_no_targets_with_default_target() {
         let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
 
         let fake = FakeDaemonManager::new(
             vec![false],
@@ -2711,6 +2759,8 @@ mod test {
                    \n        [✓] {user_file} locked by {user_file}.lock\
                    \n        [✓] {global_file} locked by {global_file}.lock\
                    \n    [✓] The public & private Fuchsia keys are consistent\
+                   \n[✓] FFX Emulator Instances\
+                   \n    [i] No Emulator instances\
                    \n[✗] Checking daemon\
                    \n    [✗] No running daemons found. Run `ffx doctor --restart-daemon`\
                    \n[✗] Google Network Checks\
@@ -2729,6 +2779,7 @@ mod test {
     async fn test_single_try_daemon_running_no_targets() {
         let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
 
         let fake = FakeDaemonManager::new(
             vec![true],
@@ -2782,6 +2833,8 @@ mod test {
                    \n        [✓] {user_file} locked by {user_file}.lock\
                    \n        [✓] {global_file} locked by {global_file}.lock\
                    \n    [✓] The public & private Fuchsia keys are consistent\
+                   \n[✓] FFX Emulator Instances\
+                   \n    [i] No Emulator instances\
                    \n[✓] Checking daemon\
                    \n    [✓] Daemon found: [1]\
                    \n    [✓] Connecting to daemon\
@@ -2808,6 +2861,7 @@ mod test {
     async fn test_single_try_daemon_running_connection_error() {
         let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
 
         let fake = FakeDaemonManager::new(
             vec![true],
@@ -2861,6 +2915,8 @@ mod test {
                    \n        [✓] {user_file} locked by {user_file}.lock\
                    \n        [✓] {global_file} locked by {global_file}.lock\
                    \n    [✓] The public & private Fuchsia keys are consistent\
+                   \n[✓] FFX Emulator Instances\
+                   \n    [i] No Emulator instances\
                    \n[✗] Checking daemon\
                    \n    [✓] Daemon found: [1]\
                    \n    [✗] Error connecting to daemon: Some error message. Run `ffx doctor --restart-daemon`\
@@ -2880,6 +2936,7 @@ mod test {
     async fn test_single_try_daemon_running_no_targets_default_target_empty() {
         let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
 
         let fake = FakeDaemonManager::new(
             vec![true],
@@ -2933,6 +2990,8 @@ mod test {
                    \n        [✓] {user_file} locked by {user_file}.lock\
                    \n        [✓] {global_file} locked by {global_file}.lock\
                    \n    [✓] The public & private Fuchsia keys are consistent\
+                   \n[✓] FFX Emulator Instances\
+                   \n    [i] No Emulator instances\
                    \n[✓] Checking daemon\
                    \n    [✓] Daemon found: [1]\
                    \n    [✓] Connecting to daemon\
@@ -2959,6 +3018,7 @@ mod test {
     async fn test_two_tries_daemon_running_list_fails() {
         let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
 
         let fake = FakeDaemonManager::new(
             vec![true, false],
@@ -3012,6 +3072,8 @@ mod test {
             \n        [✓] {user_file} locked by {user_file}.lock\
             \n        [✓] {global_file} locked by {global_file}.lock\
             \n    [✓] The public & private Fuchsia keys are consistent\
+            \n[✓] FFX Emulator Instances\
+            \n    [i] No Emulator instances\
             \n[✓] Checking daemon\
             \n    [✓] Daemon found: [1]\
             \n    [✓] Connecting to daemon\
@@ -3190,6 +3252,7 @@ mod test {
     async fn test_finds_target_connects_to_rcs_with_ssh_error_verbose() {
         let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
 
         let ledger = test_finds_target_connects_to_rcs_setup(
             &test_env,
@@ -3213,6 +3276,8 @@ mod test {
             \n        [✓] {user_file} locked by {user_file}.lock\
             \n        [✓] {global_file} locked by {global_file}.lock\
             \n    [✓] The public & private Fuchsia keys are consistent\
+            \n[✓] FFX Emulator Instances\
+            \n    [i] No Emulator instances\
             \n[✓] Checking daemon\
             \n    [✓] Daemon found: [1]\
             \n    [✓] Connecting to daemon\
@@ -3278,6 +3343,7 @@ mod test {
     async fn test_finds_target_connects_to_rcs_verbose() {
         let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
 
         let ledger =
             test_finds_target_connects_to_rcs_setup(&test_env, RcsTestArgs::default().verbose())
@@ -3299,6 +3365,8 @@ mod test {
             \n        [✓] {user_file} locked by {user_file}.lock\
             \n        [✓] {global_file} locked by {global_file}.lock\
             \n    [✓] The public & private Fuchsia keys are consistent\
+            \n[✓] FFX Emulator Instances\
+            \n    [i] No Emulator instances\
             \n[✓] Checking daemon\
             \n    [✓] Daemon found: [1]\
             \n    [✓] Connecting to daemon\
@@ -3338,6 +3406,7 @@ mod test {
     async fn test_finds_target_connects_to_rcs_normal() {
         let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
 
         let ledger =
             test_finds_target_connects_to_rcs_setup(&test_env, RcsTestArgs::default()).await;
@@ -3351,6 +3420,8 @@ mod test {
                 \n        [✓] {user_file} locked by {user_file}.lock\
                 \n        [✓] {global_file} locked by {global_file}.lock\
                 \n    [✓] The public & private Fuchsia keys are consistent\
+                \n[✓] FFX Emulator Instances\
+                \n    [i] No Emulator instances\
                 \n[✓] Checking daemon\
                 \n    [✓] Daemon found: [1]\
                 \n    [✓] Connecting to daemon\
@@ -3373,6 +3444,7 @@ mod test {
     async fn test_finds_target_with_filter() {
         let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
 
         let (tx, rx) = oneshot::channel::<()>();
 
@@ -3429,6 +3501,8 @@ mod test {
             \n        [✓] {user_file} locked by {user_file}.lock\
             \n        [✓] {global_file} locked by {global_file}.lock\
             \n    [✓] The public & private Fuchsia keys are consistent\
+            \n[✓] FFX Emulator Instances\
+            \n    [i] No Emulator instances\
             \n[✓] Checking daemon\
             \n    [✓] Daemon found: [1]\
             \n    [✓] Connecting to daemon\
@@ -3462,6 +3536,7 @@ mod test {
     async fn test_invalid_filter_finds_no_targets() {
         let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
 
         let (tx, rx) = oneshot::channel::<()>();
 
@@ -3519,6 +3594,8 @@ mod test {
             \n        [✓] {user_file} locked by {user_file}.lock\
             \n        [✓] {global_file} locked by {global_file}.lock\
             \n    [✓] The public & private Fuchsia keys are consistent\
+            \n[✓] FFX Emulator Instances\
+            \n    [i] No Emulator instances\
             \n[✓] Checking daemon\
             \n    [✓] Daemon found: [1]\
             \n    [✓] Connecting to daemon\
@@ -3622,6 +3699,7 @@ mod test {
     async fn test_single_try_daemon_running_no_targets_record_enabled() {
         let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
 
         let fake = FakeDaemonManager::new(
             vec![true],
@@ -3681,6 +3759,8 @@ mod test {
                     \n        [✓] {user_file} locked by {user_file}.lock\
                     \n        [✓] {global_file} locked by {global_file}.lock\
                     \n    [✓] The public & private Fuchsia keys are consistent\n\
+                    \n[✓] FFX Emulator Instances\
+                    \n    [i] No Emulator instances\n\
                     \n[✓] Checking daemon\
                     \n    [✓] Daemon found: [1]\
                     \n    [✓] Connecting to daemon\
@@ -3714,6 +3794,7 @@ mod test {
     ) {
         let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
 
         let fake = FakeDaemonManager::new(
             vec![true],
@@ -3772,6 +3853,8 @@ mod test {
                     \n        [✓] {user_file} locked by {user_file}.lock\
                     \n        [✓] {global_file} locked by {global_file}.lock\
                     \n    [✓] The public & private Fuchsia keys are consistent\n\
+                    \n[✓] FFX Emulator Instances\
+                    \n    [i] No Emulator instances\n\
                     \n[✓] Checking daemon\
                     \n    [✓] Daemon found: [1]\
                     \n    [✓] Connecting to daemon\
@@ -3861,6 +3944,7 @@ mod test {
     async fn test_finds_target_with_missing_nodename_verbose() {
         let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
 
         let ledger =
             test_finds_target_with_missing_nodename_setup(&test_env, LedgerViewMode::Verbose).await;
@@ -3881,6 +3965,8 @@ mod test {
                 \n        [✓] {user_file} locked by {user_file}.lock\
                 \n        [✓] {global_file} locked by {global_file}.lock\
                 \n    [✓] The public & private Fuchsia keys are consistent\
+                \n[✓] FFX Emulator Instances\
+                \n    [i] No Emulator instances\
                 \n[✓] Checking daemon\
                 \n    [✓] Daemon found: [1]\
                 \n    [✓] Connecting to daemon\
@@ -3920,6 +4006,7 @@ mod test {
     async fn test_finds_target_with_missing_nodename_normal() {
         let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
 
         let ledger =
             test_finds_target_with_missing_nodename_setup(&test_env, LedgerViewMode::Normal).await;
@@ -3933,6 +4020,8 @@ mod test {
                 \n        [✓] {user_file} locked by {user_file}.lock\
                 \n        [✓] {global_file} locked by {global_file}.lock\
                 \n    [✓] The public & private Fuchsia keys are consistent\
+                \n[✓] FFX Emulator Instances\
+                \n    [i] No Emulator instances\
                 \n[✓] Checking daemon\
                 \n    [✓] Daemon found: [1]\
                 \n    [✓] Connecting to daemon\
@@ -3956,6 +4045,7 @@ mod test {
     async fn test_fastboot_target() {
         let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
 
         let fake = FakeDaemonManager::new(
             vec![true],
@@ -4009,6 +4099,8 @@ mod test {
             \n        [✓] {user_file} locked by {user_file}.lock\
             \n        [✓] {global_file} locked by {global_file}.lock\
             \n    [✓] The public & private Fuchsia keys are consistent\
+            \n[✓] FFX Emulator Instances\
+            \n    [i] No Emulator instances\
             \n[✓] Checking daemon\
             \n    [✓] Daemon found: [1]\
             \n    [✓] Connecting to daemon\
@@ -4037,6 +4129,7 @@ mod test {
     async fn test_single_try_daemon_running_different_api_level() {
         let test_env = ffx_config::test_init().expect("Setting up test environment");
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
 
         let fake = FakeDaemonManager::new(
             vec![true],
@@ -4090,6 +4183,8 @@ mod test {
                    \n        [✓] {user_file} locked by {user_file}.lock\
                    \n        [✓] {global_file} locked by {global_file}.lock\
                    \n    [✓] The public & private Fuchsia keys are consistent\
+                   \n[✓] FFX Emulator Instances\
+                   \n    [i] No Emulator instances\
                    \n[✓] Checking daemon\
                    \n    [✓] Daemon found: [1]\
                    \n    [✓] Connecting to daemon\
@@ -4188,6 +4283,8 @@ mod test {
             \n        [✓] {user_file} locked by {user_file}.lock\
             \n        [✓] {global_file} locked by {global_file}.lock\
             \n    [✗] Private key {priv_key} does not exist. Check configuration or run `ffx doctor --repair-keys`\
+            \n[✓] FFX Emulator Instances\
+            \n    [i] No Emulator instances\
             \n[✓] Checking daemon\
             \n    [✓] Daemon found: [1]\
             \n    [✓] Connecting to daemon\
@@ -4330,5 +4427,70 @@ mod test {
             "'GPN' check missing or has wrong outcome. Output:\n{}",
             output
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_check_emulators() -> Result<()> {
+        let test_env = ffx_config::test_init().unwrap();
+        let emu_dir = setup_emu_dir(&test_env)?;
+        // No instances
+        {
+            let mut writer = MockWriter::new();
+            let mut ledger = DoctorLedger::new(
+                &mut writer,
+                Box::new(VisualLedgerView::new()),
+                LedgerViewMode::Verbose,
+            );
+            check_emulators(&mut ledger, &test_env.context).await?;
+            let output = writer.get_data();
+            assert!(output.contains("FFX Emulator Instances"));
+            assert!(!output.contains("Name:"), "got instance on empty dir: {}", output);
+        }
+
+        // One running instance
+        let instance_dir = emu_dir.as_path().join("fuchsia-emulator");
+        fs::create_dir(&instance_dir)?;
+        let mut instance_data =
+            EmulatorInstanceData::new_with_state("fuchsia-emulator", EngineState::Running);
+        instance_data.set_pid(std::process::id());
+        let engine_json_path = instance_dir.join("engine.json");
+        fs::write(&engine_json_path, serde_json::to_string(&instance_data)?)?;
+
+        {
+            let mut writer = MockWriter::new();
+            let mut ledger = DoctorLedger::new(
+                &mut writer,
+                Box::new(VisualLedgerView::new()),
+                LedgerViewMode::Verbose,
+            );
+            check_emulators(&mut ledger, &test_env.context).await?;
+            let output = writer.get_data();
+            assert!(output.contains("FFX Emulator Instances"));
+            assert!(output.contains("Name: fuchsia-emulator"));
+            assert!(output.contains("Is Running: true"));
+            assert!(output.contains("Engine State: running"));
+        }
+
+        // One stopped instance
+        instance_data.set_engine_state(EngineState::Staged);
+        instance_data.set_pid(0);
+        fs::write(&engine_json_path, serde_json::to_string(&instance_data)?)?;
+
+        {
+            let mut writer = MockWriter::new();
+            let mut ledger = DoctorLedger::new(
+                &mut writer,
+                Box::new(VisualLedgerView::new()),
+                LedgerViewMode::Verbose,
+            );
+            check_emulators(&mut ledger, &test_env.context).await?;
+            let output = writer.get_data();
+            assert!(output.contains("FFX Emulator Instances"));
+            assert!(output.contains("Name: fuchsia-emulator"));
+            assert!(output.contains("Is Running: false"));
+            assert!(output.contains("Engine State: staged"));
+        }
+
+        Ok(())
     }
 }

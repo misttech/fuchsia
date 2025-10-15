@@ -23,6 +23,7 @@ ffx_plugin("ffx_doctor") {
     "//src/developer/ffx/lib/diagnostics/checks:lib",
     "//src/developer/ffx/lib/discovery:lib",
     "//src/developer/ffx/lib/doctor_utils:lib",
+    "//src/developer/ffx/lib/emulator_instance:lib",
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/ssh:lib",
