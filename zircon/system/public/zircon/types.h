@@ -398,7 +398,7 @@ typedef struct zx_iovec {
 #define ZX_CHANNEL_MAX_MSG_IOVECS           ((uint32_t)8192u)
 
 // Fifo limits.
-#define ZX_FIFO_MAX_SIZE_BYTES              ZX_PAGE_SIZE
+#define ZX_FIFO_MAX_SIZE_BYTES              ((uint32_t)4096u)
 
 // Socket options and limits.
 
