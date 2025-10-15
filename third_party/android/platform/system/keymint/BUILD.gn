@@ -176,6 +176,7 @@ rustc_library("libkmr_wire_v2") {
     "//third_party/rust_crates:zeroize",
   ]
   features = [ "hal_v2" ]
+  configs += [ "//src/lib/android:android_rust_config" ]
 
   disable_clippy = true
 }
@@ -205,6 +206,7 @@ rustc_library("libkmr_wire_v4") {
     "hal_v3",
     "hal_v4",
   ]
+  configs += [ "//src/lib/android:android_rust_config" ]
 
   disable_clippy = true
 }
