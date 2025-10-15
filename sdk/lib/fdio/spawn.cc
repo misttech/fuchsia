@@ -598,8 +598,17 @@ zx_status_t send_handles_and_namespace(const fidl::WireSyncClient<fprocess::Laun
       auto* handle_info = handle_infos.AddNext();
       handle_info->id = PA_CLOCK_UTC;
       if (zx_status_t status = zx_handle_duplicate(
-              utc_clock, ZX_RIGHT_READ | ZX_RIGHT_WAIT | ZX_RIGHT_DUPLICATE | ZX_RIGHT_TRANSFER,
-              handle_info->handle.reset_and_get_address());
+              utc_clock,
+              // Don't restrict UTC clock rights when spawning a process.
+              //
+              // SECURITY: For the UTC clock, we mostly care about the WRITE right. Almost no
+              // Fuchsia components have WRITE on the clock, and those that do
+              // are controlled via `fuchsia.time.Maintenance`.  In turn,
+              // the UTC clock handle vendors are few and adjust the clock
+              // rights explicitly.
+              //
+              // Either way, `spawn` should not need to be the arbiter.
+              ZX_RIGHT_SAME_RIGHTS, handle_info->handle.reset_and_get_address());
           status != ZX_OK) {
         report_error(err_msg, "failed to clone UTC clock: %d (%s)", status,
                      zx_status_get_string(status));
