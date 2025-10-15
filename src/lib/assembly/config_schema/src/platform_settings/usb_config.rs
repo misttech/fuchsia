@@ -25,8 +25,7 @@ pub struct UsbPeripheralConfig {
     pub functions: Option<Vec<UsbPeripheralFunction>>,
 }
 
-static DEFAULT_PERIPHERAL_FUNCTIONS: &[UsbPeripheralFunction] =
-    &[UsbPeripheralFunction::Cdc, UsbPeripheralFunction::VsockBridge];
+static DEFAULT_PERIPHERAL_FUNCTIONS: &[UsbPeripheralFunction] = &[UsbPeripheralFunction::Cdc];
 
 impl UsbPeripheralConfig {
     pub fn functions(&self) -> &[UsbPeripheralFunction] {
