@@ -26,10 +26,8 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 use target_connector::Connector;
-use target_holders::{RemoteControlProxyHolder, TargetProxyHolder};
-use timeout::timeout;
+use target_holders::{RemoteControlProxyHolder, TargetInfoHolder};
 use tokio::net::{TcpListener, TcpStream};
 use {fidl_fuchsia_starnix_container as fstarcontainer, fuchsia_async as fasync};
 
@@ -80,11 +78,11 @@ impl StarnixAdbCommand {
         self,
         context: &EnvironmentContext,
         rcs_connector: &Connector<RemoteControlProxyHolder>,
-        target_proxy: TargetProxyHolder,
+        target_info: TargetInfoHolder,
     ) -> Result<AdbCommandOutput> {
         match self.subcommand {
             AdbSubcommand::Connect(args) => args
-                .run_connect(context, self.adb, &target_proxy)
+                .run_connect(context, self.adb, &target_info)
                 .await
                 .map(AdbCommandOutput::Connect),
             AdbSubcommand::Proxy(args) => {
@@ -120,15 +118,12 @@ impl AdbConnectArgs {
         self,
         context: &EnvironmentContext,
         adb: String,
-        target_proxy: &TargetProxyHolder,
+        target_info: &TargetInfoHolder,
     ) -> Result<ConnectOutput> {
         let Self {} = self;
 
         let addr_info: TargetIpAddrInfo =
-            timeout(Duration::from_secs(1), target_proxy.get_ssh_address())
-                .await
-                .user_message("Timed out getting target ssh address")?
-                .user_message("Failed to get target ssh address")?;
+            target_info.ssh_address().user_message("Failed to get target ssh address")?;
 
         let ssh_address: TargetIpAddr = addr_info.into();
         let ssh_address: SocketAddr = ssh_address.into();
@@ -137,9 +132,8 @@ impl AdbConnectArgs {
             // If the device doesn't have a standard SSH port, it's likely an emulator
             // instance with user networking. Look up the instance and get its host port mapping
             // to find the port we need.
-            let target_identity = target_proxy.identity().await.map_err(|e| bug!(e))?;
-            let nodename = target_identity
-                .nodename
+            let nodename = target_info
+                .nodename()
                 .ok_or(bug!("could not read nodename from device"))
                 .bug_context("getting target name")?;
             let adb_port = get_emu_host_adb_port(context, &nodename)
