@@ -867,7 +867,7 @@ template("bazel_action") {
     # the the final command-line).
     if (enable_bazel_remote_rbe) {
       _remote_build = !defined(invoker.remote_build) || invoker.remote_build
-      if (!_remote_build) {
+      if (_remote_build) {
         # It is assumed that remote builds are enabled for both the default
         # and host GN toolchains at the same time.
         args += bazel_args.remote_build
