@@ -5,6 +5,11 @@
 import("//build/python/python_host_test.gni")
 import("//build/testing/python_build_time_tests.gni")
 
+python_build_time_tests("bazel_compdb_utils_test") {
+  tests = [ "bazel_compdb_utils_tests.py" ]
+  inputs = [ "bazel_compdb_utils.py" ]
+}
+
 python_build_time_tests("get_git_head_commit_test") {
   tests = [ "get_git_head_commit_test.py" ]
   inputs = [ "get_git_head_commit.py" ]
@@ -77,6 +82,7 @@ if (is_host) {
 group("tests") {
   testonly = true
   deps = [
+    ":bazel_compdb_utils_test($host_toolchain)",
     ":build_utils_test($host_toolchain)",
     ":export_host_tests_test($host_toolchain)",
     ":gn_targets_utils_test($host_toolchain)",
