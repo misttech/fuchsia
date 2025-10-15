@@ -31,14 +31,20 @@ mod integration_test;
 
 const PLACEHOLDER_VERITY_ATTR: u64 = 513; // Just out of the xattr range.
 
+/// F2FS supports negative timestamp values. Fxfs doesn't. Clamp these to 0.
+fn clamp_timestamp(secs: i64, nsecs: u32) -> Timestamp {
+    if secs < 0 {
+        Timestamp::from_secs_and_nanos(0, 0)
+    } else {
+        Timestamp::from_secs_and_nanos(secs.try_into().unwrap(), nsecs)
+    }
+}
+
 fn inode_to_object_attributes(inode: &Inode, allocated_size: u64) -> ObjectAttributes {
     let mode = inode.header.mode;
     ObjectAttributes {
-        creation_time: Timestamp::from_secs_and_nanos(inode.header.ctime, inode.header.ctime_nanos),
-        modification_time: Timestamp::from_secs_and_nanos(
-            inode.header.mtime,
-            inode.header.mtime_nanos,
-        ),
+        creation_time: clamp_timestamp(inode.header.ctime, inode.header.ctime_nanos),
+        modification_time: clamp_timestamp(inode.header.mtime, inode.header.mtime_nanos),
         project_id: 0,
         posix_attributes: Some(PosixAttributes {
             mode: mode.bits() as u32,
@@ -47,8 +53,8 @@ fn inode_to_object_attributes(inode: &Inode, allocated_size: u64) -> ObjectAttri
             rdev: 0,
         }),
         allocated_size,
-        access_time: Timestamp::from_secs_and_nanos(inode.header.atime, inode.header.atime_nanos),
-        change_time: Timestamp::from_secs_and_nanos(inode.header.ctime, inode.header.ctime_nanos),
+        access_time: clamp_timestamp(inode.header.atime, inode.header.atime_nanos),
+        change_time: clamp_timestamp(inode.header.ctime, inode.header.ctime_nanos),
     }
 }
 
@@ -1060,4 +1066,28 @@ pub async fn migrate_device(
     let device = fxfs.take_device().await;
     println!("Final filesystem size is {actual_size}.");
     Ok(device)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_clamp_timestamp() {
+        // Test negative seconds
+        assert_eq!(clamp_timestamp(-1, 0), Timestamp::from_secs_and_nanos(0, 0));
+        assert_eq!(clamp_timestamp(-100, 500), Timestamp::from_secs_and_nanos(0, 0));
+
+        // Test zero seconds
+        assert_eq!(clamp_timestamp(0, 0), Timestamp::from_secs_and_nanos(0, 0));
+        assert_eq!(clamp_timestamp(0, 999_999_999), Timestamp::from_secs_and_nanos(0, 999_999_999));
+
+        // Test positive seconds
+        assert_eq!(clamp_timestamp(1, 0), Timestamp::from_secs_and_nanos(1, 0));
+        assert_eq!(clamp_timestamp(100, 500), Timestamp::from_secs_and_nanos(100, 500));
+        assert_eq!(
+            clamp_timestamp(i64::MAX, 999_999_999),
+            Timestamp::from_secs_and_nanos(i64::MAX as u64, 999_999_999)
+        );
+    }
 }
