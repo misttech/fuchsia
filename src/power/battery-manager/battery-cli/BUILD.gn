@@ -26,9 +26,15 @@ rustc_binary("battery_cli_bin") {
   ]
 }
 
+fuchsia_component("battery_cli") {
+  component_name = "battery_cli"
+  manifest = "meta/battery_cli.cml"
+  deps = [ ":battery_cli_bin" ]
+}
+
 # Shell components
 fuchsia_package("battery-cli") {
-  deps = [ ":battery_cli_bin" ]
+  deps = [ ":battery_cli" ]
 }
 
 # Test components

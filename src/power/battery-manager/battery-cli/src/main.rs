@@ -249,7 +249,7 @@ async fn handle_command(
         Command::Set => set_all_information(args, service).await,
         Command::Reconnect => service.reconnect_real_battery().map_err(|e| format_err!("{}", e)),
         Command::Disconnect => service.disconnect_real_battery().map_err(|e| format_err!("{}", e)),
-        Command::Help => Ok(println!("{}", Command::help_msg().to_string())),
+        Command::Help => Ok(println!("{}", Command::help_msg())),
         Command::Exit | Command::Quit => return Ok(ReplControl::Break),
     }?;
 

@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use rustyline::Helper;
 use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
-use rustyline::Helper;
 use std::borrow::Cow::{self, Borrowed, Owned};
 use std::fmt;
 use std::str::FromStr;
@@ -26,9 +26,7 @@ macro_rules! gen_commands {
         impl $name {
             /// Returns a list of the string representations of all variants
             pub fn variants() -> Vec<String> {
-                let mut variants = Vec::new();
-                $(variants.push($val.to_string());)*
-                variants
+                vec![$( $val.to_string() ),*]
             }
 
             pub fn arguments(&self) -> &'static str {
@@ -126,9 +124,7 @@ impl Hinter for CmdHelper {
         let needs_space = !line.ends_with(" ");
         line.trim()
             .parse::<Command>()
-            .map(|cmd| {
-                format!("{}{}", if needs_space { " " } else { "" }, cmd.arguments().to_string(),)
-            })
+            .map(|cmd| format!("{}{}", if needs_space { " " } else { "" }, cmd.arguments(),))
             .ok()
     }
 }

@@ -5,7 +5,19 @@ Battery Simulator is a simple command line interface for developers to use in te
 
 # Usage
 
-Build and update your project on the target device (note that the product configuration must include //src/power:battery). Then run **fx shell** to enter the shell. To run the simulator, type **battery_cli**.
+Build and update your project on the target device (note that the product configuration must include //src/power:battery). Add the following to the
+developer overrides:
+
+  shell_commands = [{
+      package = "battery-cli"
+      components = [ "battery_cli" ]
+  }]
+
+  base_packages = [
+      "//src/power/battery-manager/battery-cli",
+  ]
+
+ Flash to device or fx ota. Then run **fx shell** to enter the shell. To run the simulator, type **battery_cli**.
 
 ## Disconnect
 
