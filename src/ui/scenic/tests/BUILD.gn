@@ -37,6 +37,7 @@ group("tests") {
     ":screen-capture2-integration-test",
     ":singleton-display-integration-test",
     ":trusted-flatland-factory-integration-test",
+    ":vsync-source-integration-test",
   ]
 
   # TODO(https://fxbug.dev/42075218): Re-enable this test once zx_cache_flush is implemented on
@@ -438,6 +439,18 @@ executable("singleton-display-integration-test-validator-bin") {
   ]
 }
 
+executable("vsync-source-integration-test-validator-bin") {
+  testonly = true
+  sources = [ "vsync_source_integration_test.cc" ]
+  output_name = "vsync-source-integration-test-validator"
+  deps = [
+    ":common-deps-zxtest",
+    "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_cpp",
+    "//src/ui/scenic/lib/utils",
+    "//zircon/system/ulib/fbl",
+  ]
+}
+
 executable("trusted-flatland-factory-integration-test-validator-bin") {
   testonly = true
   sources = [
@@ -618,6 +631,16 @@ ctf_components_packages("display-ownership-integration-test") {
 
 ctf_components_packages("singleton-display-integration-test") {
   bin = ":singleton-display-integration-test-validator-bin"
+  test_specs = {
+    environments = vulkan_envs
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
+}
+
+ctf_components_packages("vsync-source-integration-test") {
+  bin = ":vsync-source-integration-test-validator-bin"
   test_specs = {
     environments = vulkan_envs
     log_settings = {
