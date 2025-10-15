@@ -65,7 +65,6 @@ shared_library("driver") {
     "//src/connectivity/telephony/drivers/qmi-usb-transport:*",
     "//src/connectivity/telephony/tests/fake-drivers/at-fake-transport:*",
     "//src/connectivity/telephony/tests/fake-drivers/fake-transport-base:*",
-    "//src/connectivity/telephony/tests/fake-drivers/usb-qmi-function:*",
     "//src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac:*",
     "//src/connectivity/wlan/drivers/wlanif:*",
     "//src/connectivity/wlan/drivers/wlanif/test:*",

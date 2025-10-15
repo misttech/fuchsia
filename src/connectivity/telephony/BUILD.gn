@@ -16,6 +16,5 @@ group("tests") {
   deps = [
     "drivers:tests",
     "tests/fake-drivers/at-fake-transport:tests",
-    "tests/fake-drivers/usb-qmi-function:tests",
   ]
 }
