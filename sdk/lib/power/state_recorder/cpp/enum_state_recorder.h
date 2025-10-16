@@ -7,6 +7,7 @@
 
 #include <lib/inspect/cpp/bounded_list_node.h>
 #include <lib/inspect/cpp/inspect.h>
+#include <lib/trace-engine/context.h>
 #include <lib/trace-engine/types.h>
 #include <lib/trace/event.h>
 #include <lib/zx/clock.h>
@@ -86,6 +87,7 @@ class EnumStateRecorder final {
     trace_id_ = other.trace_id_;
     trace_name_ = std::move(other.trace_name_);
     trace_name_ref_ = other.trace_name_ref_;
+    current_state_name_ = other.current_state_name_;
     manager_ = other.manager_;
 
     other.moved_from_ = true;
@@ -102,6 +104,7 @@ class EnumStateRecorder final {
         trace_id_(other.trace_id_),
         trace_name_(std::move(other.trace_name_)),
         trace_name_ref_(other.trace_name_ref_),
+        current_state_name_(other.current_state_name_),
         manager_(other.manager_) {
     other.moved_from_ = true;
   }

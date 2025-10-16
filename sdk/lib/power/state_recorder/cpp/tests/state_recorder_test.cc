@@ -11,10 +11,12 @@
 
 #include "gmock/gmock.h"
 #include "lib/power/state_recorder/cpp/enum_state_recorder.h"
+#include "lib/power/state_recorder/cpp/numeric_state_recorder.h"
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 #include "zircon/errors.h"
 
 using ::inspect::testing::ChildrenMatch;
+using ::inspect::testing::DoubleIs;
 using ::inspect::testing::IntIs;
 using ::inspect::testing::NameMatches;
 using ::inspect::testing::NodeMatches;
@@ -265,6 +267,154 @@ TEST_F(StateRecorderTest, ThreeStates) {
   EXPECT_THAT(*history->GetByPath({"2"}),
               NodeMatches(PropertyList(UnorderedElementsAre(IntIs("@time", testing::_),
                                                             StringIs("value", "LOW_SPEED")))));
+}
+
+template <typename T>
+class NumericStateRecorderSignedTest : public StateRecorderTest {};
+
+using SignedIntegerTypes = ::testing::Types<int8_t, int16_t, int32_t, int64_t>;
+TYPED_TEST_SUITE(NumericStateRecorderSignedTest, SignedIntegerTypes);
+
+TYPED_TEST(NumericStateRecorderSignedTest, SignedInt) {
+  using T = TypeParam;
+  std::string name = "my_numeric_int_state";
+  NumericStateMetadata<T> metadata = {
+      .name = name,
+      .units = Units::Number(),
+      .trace_category_literal = "power_test",
+  };
+
+  auto result = NumericStateRecorder<T>::Create(metadata, 0, 10, *this->manager_);
+  ASSERT_TRUE(result.is_ok());
+  auto recorder = std::move(result.value());
+
+  recorder.Record(1);
+  recorder.Record(-1);
+
+  auto hierarchy = this->GetHierarchy();
+  auto* recorders_root = hierarchy.GetByPath({"power_observability_state_recorders"});
+  ASSERT_NE(recorders_root, nullptr);
+  auto* recorder_node = recorders_root->GetByPath({name});
+  ASSERT_NE(recorder_node, nullptr);
+
+  EXPECT_THAT(*recorder_node,
+              AllOf(NodeMatches(NameMatches(name)),
+                    ChildrenMatch(UnorderedElementsAre(NodeMatches(NameMatches("metadata")),
+                                                       NodeMatches(NameMatches("history"))))));
+
+  auto* metadata_node = recorder_node->GetByPath({"metadata"});
+  ASSERT_NE(metadata_node, nullptr);
+  EXPECT_THAT(*metadata_node,
+              NodeMatches(PropertyList(UnorderedElementsAre(
+                  StringIs("name", name), StringIs("type", "numeric"), StringIs("units", "#")))));
+
+  auto* history_node = recorder_node->GetByPath({"history"});
+  ASSERT_NE(history_node, nullptr);
+  EXPECT_THAT(
+      *history_node,
+      ChildrenMatch(UnorderedElementsAre(
+          NodeMatches(AllOf(NameMatches("0"), PropertyList(UnorderedElementsAre(
+                                                  IntIs("@time", testing::_), IntIs("value", 0))))),
+          NodeMatches(AllOf(NameMatches("1"), PropertyList(UnorderedElementsAre(
+                                                  IntIs("@time", testing::_), IntIs("value", 1))))),
+          NodeMatches(
+              AllOf(NameMatches("2"), PropertyList(UnorderedElementsAre(IntIs("@time", testing::_),
+                                                                        IntIs("value", -1))))))));
+}
+
+template <typename T>
+class NumericStateRecorderUnsignedTest : public StateRecorderTest {};
+
+using UnsignedIntegerTypes = ::testing::Types<uint8_t, uint16_t, uint32_t, uint64_t>;
+TYPED_TEST_SUITE(NumericStateRecorderUnsignedTest, UnsignedIntegerTypes);
+
+TYPED_TEST(NumericStateRecorderUnsignedTest, UnsignedInt) {
+  using T = TypeParam;
+  std::string name = "my_numeric_uint_state";
+  NumericStateMetadata<T> metadata = {
+      .name = name,
+      .units = Units::Percent(),
+      .range = {{0, 100}},
+      .trace_category_literal = "power_test",
+  };
+
+  auto result = NumericStateRecorder<T>::Create(metadata, 50, 10, *this->manager_);
+  ASSERT_TRUE(result.is_ok());
+  auto recorder = std::move(result.value());
+  recorder.Record(100);
+
+  auto hierarchy = this->GetHierarchy();
+  auto* recorders_root = hierarchy.GetByPath({"power_observability_state_recorders"});
+  ASSERT_NE(recorders_root, nullptr);
+  auto* recorder_node = recorders_root->GetByPath({name});
+  ASSERT_NE(recorder_node, nullptr);
+
+  auto* metadata_node = recorder_node->GetByPath({"metadata"});
+  ASSERT_NE(metadata_node, nullptr);
+  EXPECT_THAT(*metadata_node,
+              NodeMatches(PropertyList(UnorderedElementsAre(
+                  StringIs("name", name), StringIs("type", "numeric"), StringIs("units", "%")))));
+
+  auto* range_node = metadata_node->GetByPath({"range"});
+  ASSERT_NE(range_node, nullptr);
+  EXPECT_THAT(*range_node, NodeMatches(PropertyList(UnorderedElementsAre(UintIs("min_inc", 0),
+                                                                         UintIs("max_inc", 100)))));
+
+  auto* history_node = recorder_node->GetByPath({"history"});
+  ASSERT_NE(history_node, nullptr);
+  EXPECT_THAT(*history_node,
+              ChildrenMatch(UnorderedElementsAre(
+                  NodeMatches(AllOf(NameMatches("0"),
+                                    PropertyList(UnorderedElementsAre(IntIs("@time", testing::_),
+                                                                      UintIs("value", 50))))),
+                  NodeMatches(AllOf(NameMatches("1"),
+                                    PropertyList(UnorderedElementsAre(IntIs("@time", testing::_),
+                                                                      UintIs("value", 100))))))));
+}
+
+template <typename T>
+class NumericStateRecorderFloatTest : public StateRecorderTest {};
+
+using FloatingPointNumericTypes = ::testing::Types<float, double>;
+TYPED_TEST_SUITE(NumericStateRecorderFloatTest, FloatingPointNumericTypes);
+
+TYPED_TEST(NumericStateRecorderFloatTest, FloatingPoint) {
+  using T = TypeParam;
+  std::string name = "my_numeric_float_state";
+  NumericStateMetadata<T> metadata = {
+      .name = name,
+      .units = Units::Hertz(DecimalPrefix::Kilo),
+      .trace_category_literal = "power_test",
+  };
+
+  auto result = NumericStateRecorder<T>::Create(metadata, 25.5, 10, *this->manager_);
+  ASSERT_TRUE(result.is_ok());
+  auto recorder = std::move(result.value());
+  recorder.Record(26.0);
+
+  auto hierarchy = this->GetHierarchy();
+  auto* recorders_root = hierarchy.GetByPath({"power_observability_state_recorders"});
+  ASSERT_NE(recorders_root, nullptr);
+
+  auto* recorder_node = recorders_root->GetByPath({name});
+  ASSERT_NE(recorder_node, nullptr);
+
+  auto* metadata_node = recorder_node->GetByPath({"metadata"});
+  ASSERT_NE(metadata_node, nullptr);
+  EXPECT_THAT(*metadata_node,
+              NodeMatches(PropertyList(UnorderedElementsAre(
+                  StringIs("name", name), StringIs("type", "numeric"), StringIs("units", "kHz")))));
+
+  auto* history_node = recorder_node->GetByPath({"history"});
+  ASSERT_NE(history_node, nullptr);
+  EXPECT_THAT(*history_node,
+              ChildrenMatch(UnorderedElementsAre(
+                  NodeMatches(AllOf(NameMatches("0"),
+                                    PropertyList(UnorderedElementsAre(IntIs("@time", testing::_),
+                                                                      DoubleIs("value", 25.5))))),
+                  NodeMatches(AllOf(NameMatches("1"),
+                                    PropertyList(UnorderedElementsAre(
+                                        IntIs("@time", testing::_), DoubleIs("value", 26.0))))))));
 }
 
 }  // namespace power_observability
