@@ -12,7 +12,7 @@ use net_types::{SpecifiedAddr, Witness as _};
 use netstack3_base::sync::{PrimaryRc, RwLock};
 use netstack3_base::{
     AnyDevice, ContextPair, DeferredResourceRemovalContext, DeviceIdContext, InspectableValue,
-    Inspector, InspectorDeviceExt, MarkDomain, Marks, MatcherBindingsTypes,
+    Inspector, InspectorDeviceExt, MarkDomain, MarkMatcher, Marks, MatcherBindingsTypes,
     ReferenceNotifiersExt as _, RemoveResourceResultWithContext, StrongDeviceIdentifier,
     SubnetMatcher, WrapBroadcastMarker,
 };
@@ -26,7 +26,7 @@ use crate::internal::device::{
 };
 use crate::internal::routing::RoutingTable;
 use crate::internal::routing::rules::{
-    MarkMatcher, Rule, RuleAction, RuleMatcher, RulesTable, TrafficOriginMatcher,
+    Rule, RuleAction, RuleMatcher, RulesTable, TrafficOriginMatcher,
 };
 use crate::internal::types::{
     Destination, Entry, EntryAndGeneration, Metric, NextHop, OrderedEntry, ResolvedRoute,
@@ -250,13 +250,14 @@ where
                                 MarkMatcher::Unmarked => {
                                     inspector.record_str(domain_str, "Unmarked")
                                 }
-                                MarkMatcher::Marked { start, end, mask } => {
+                                MarkMatcher::Marked { start, end, mask, invert } => {
                                     inspector.record_child(domain_str, |inspector| {
                                         inspector.record_uint("Mask", mask);
                                         inspector.record_child("Range", |inspector| {
                                             inspector.record_uint("StartInclusive", start);
                                             inspector.record_uint("EndInclusive", end);
-                                        })
+                                        });
+                                        inspector.record_bool("Invert", invert);
                                     })
                                 }
                             }

@@ -29,9 +29,8 @@ use netstack3_core::filter::{
     Action, Hook, IpRoutines, MarkAction, NatRoutines, PacketMatcher, Routine, Routines, Rule,
     TransportProtocolMatcher,
 };
-use netstack3_core::routes::{
-    MarkMatcher, MarkMatchers, Rule as RouteRule, RuleAction, RuleMatcher,
-};
+use netstack3_core::ip::{MarkMatcher, MarkMatchers};
+use netstack3_core::routes::{Rule as RouteRule, RuleAction, RuleMatcher};
 use netstack3_core::testutil::{
     CtxPairExt as _, FakeBindingsCtx, FakeCoreCtx, FakeCtx, FakeCtxBuilder,
 };
@@ -207,7 +206,7 @@ fn tcp_accepted_mark<I: TestDualStackIpExt + IpExt>() {
             matcher: RuleMatcher {
                 mark_matchers: MarkMatchers::new([(
                     MarkDomain::Mark1,
-                    MarkMatcher::Marked { mask: !0, start: MARK, end: MARK },
+                    MarkMatcher::Marked { mask: !0, start: MARK, end: MARK, invert: false },
                 )]),
                 ..RuleMatcher::match_all_packets()
             },

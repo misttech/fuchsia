@@ -74,8 +74,8 @@ pub use ip::{
 };
 pub use map_deref::{MapDeref, MapDerefExt};
 pub use matchers::{
-    BoundInterfaceMatcher, InterfaceMatcher, InterfaceProperties, Matcher, MatcherBindingsTypes,
-    SubnetMatcher,
+    BoundInterfaceMatcher, InterfaceMatcher, InterfaceProperties, MarkMatcher, MarkMatchers,
+    Matcher, MatcherBindingsTypes, SubnetMatcher,
 };
 pub use num::PositiveIsize;
 pub use port_alloc::{EphemeralPort, PortAllocImpl, simple_randomized_port_alloc};

@@ -10,8 +10,7 @@ use core::ops::Deref as _;
 
 use net_types::ip::Ip;
 use netstack3_base::{
-    BoundInterfaceMatcher, InterfaceProperties, Mark, MarkDomain, MarkStorage, Marks, Matcher,
-    SubnetMatcher,
+    BoundInterfaceMatcher, InterfaceProperties, MarkMatchers, Marks, Matcher, SubnetMatcher,
 };
 
 use crate::RoutingTableId;
@@ -116,63 +115,6 @@ impl<'a, DeviceClass, I: Ip, D: InterfaceProperties<DeviceClass>> Matcher<Packet
             (TrafficOriginMatcher::Local { .. }, PacketOrigin::NonLocal { .. })
             | (TrafficOriginMatcher::NonLocal, PacketOrigin::Local { .. }) => false,
         }
-    }
-}
-
-/// A matcher to the socket mark.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MarkMatcher {
-    /// Matches a packet if it is unmarked.
-    Unmarked,
-    /// The packet carries a mark that is in the range after masking.
-    Marked {
-        /// The mask to apply.
-        mask: u32,
-        /// Start of the range, inclusive.
-        start: u32,
-        /// End of the range, inclusive.
-        end: u32,
-    },
-}
-
-impl Matcher<Mark> for MarkMatcher {
-    fn matches(&self, Mark(actual): &Mark) -> bool {
-        match self {
-            MarkMatcher::Unmarked => actual.is_none(),
-            MarkMatcher::Marked { mask, start, end } => {
-                actual.is_some_and(|actual| (*start..=*end).contains(&(actual & *mask)))
-            }
-        }
-    }
-}
-
-/// The 2 mark matchers a rule can specify. All non-none markers must match.
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MarkMatchers(MarkStorage<Option<MarkMatcher>>);
-
-impl MarkMatchers {
-    /// Creates [`MarkMatcher`]s from an iterator of `(MarkDomain, MarkMatcher)`.
-    ///
-    /// An unspecified domain will not have a matcher.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the same domain is specified more than once.
-    pub fn new(matchers: impl IntoIterator<Item = (MarkDomain, MarkMatcher)>) -> Self {
-        MarkMatchers(MarkStorage::new(matchers))
-    }
-
-    /// Returns an iterator over the mark matchers of all domains.
-    pub fn iter(&self) -> impl Iterator<Item = (MarkDomain, &Option<MarkMatcher>)> {
-        let Self(storage) = self;
-        storage.iter()
-    }
-}
-
-impl Matcher<Marks> for MarkMatchers {
-    fn matches(&self, actual: &Marks) -> bool {
-        let Self(matchers) = self;
-        matchers.zip_with(actual).all(|(_domain, matcher, actual)| matcher.matches(actual))
     }
 }
 
@@ -388,71 +330,5 @@ mod test {
         } else {
             assert!(!matcher.matches(&input))
         }
-    }
-
-    #[test_case(MarkMatcher::Unmarked, Mark(None) => true)]
-    #[test_case(MarkMatcher::Unmarked, Mark(Some(0)) => false)]
-    #[test_case(MarkMatcher::Marked {
-        mask: 1,
-        start: 0,
-        end: 0,
-    }, Mark(None) => false)]
-    #[test_case(MarkMatcher::Marked {
-        mask: 1,
-        start: 0,
-        end: 0,
-    }, Mark(Some(0)) => true)]
-    #[test_case(MarkMatcher::Marked {
-        mask: 1,
-        start: 0,
-        end: 0,
-    }, Mark(Some(1)) => false)]
-    #[test_case(MarkMatcher::Marked {
-        mask: 1,
-        start: 0,
-        end: 0,
-    }, Mark(Some(2)) => true)]
-    #[test_case(MarkMatcher::Marked {
-        mask: 1,
-        start: 0,
-        end: 0,
-    }, Mark(Some(3)) => false)]
-    fn mark_matcher(matcher: MarkMatcher, mark: Mark) -> bool {
-        matcher.matches(&mark)
-    }
-
-    #[test_case(
-        MarkMatchers::new(
-            [(MarkDomain::Mark1, MarkMatcher::Unmarked),
-            (MarkDomain::Mark2, MarkMatcher::Unmarked)]
-        ),
-        Marks::new([]) => true
-    )]
-    #[test_case(
-        MarkMatchers::new(
-            [(MarkDomain::Mark1, MarkMatcher::Unmarked),
-            (MarkDomain::Mark2, MarkMatcher::Unmarked)]
-        ),
-        Marks::new([(MarkDomain::Mark1, 1)]) => false
-    )]
-    #[test_case(
-        MarkMatchers::new(
-            [(MarkDomain::Mark1, MarkMatcher::Unmarked),
-            (MarkDomain::Mark2, MarkMatcher::Unmarked)]
-        ),
-        Marks::new([(MarkDomain::Mark2, 1)]) => false
-    )]
-    #[test_case(
-        MarkMatchers::new(
-            [(MarkDomain::Mark1, MarkMatcher::Unmarked),
-            (MarkDomain::Mark2, MarkMatcher::Unmarked)]
-        ),
-        Marks::new([
-            (MarkDomain::Mark1, 1),
-            (MarkDomain::Mark2, 1),
-        ]) => false
-    )]
-    fn mark_matchers(matchers: MarkMatchers, marks: Marks) -> bool {
-        matchers.matches(&marks)
     }
 }

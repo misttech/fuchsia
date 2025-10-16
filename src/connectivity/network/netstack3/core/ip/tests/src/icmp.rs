@@ -25,16 +25,13 @@ use packet_formats::testutil::parse_icmp_packet_in_ip_packet_in_ethernet_frame;
 use packet_formats::udp::UdpPacketBuilder;
 
 use netstack3_base::testutil::{TEST_ADDRS_V4, TEST_ADDRS_V6, TestIpExt, set_logger_for_test};
-use netstack3_base::{FrameDestination, Marks};
+use netstack3_base::{FrameDestination, MarkMatcher, MarkMatchers, Marks};
 use netstack3_core::device::DeviceId;
 use netstack3_core::ip::MarkDomain;
 use netstack3_core::testutil::{Ctx, CtxPairExt as _, FakeBindingsCtx, FakeCtxBuilder};
 use netstack3_core::{IpExt, StackStateBuilder};
 use netstack3_ip::icmp::Icmpv4StateBuilder;
-use netstack3_ip::{
-    AddableEntry, AddableMetric, MarkMatcher, MarkMatchers, RawMetric, Rule, RuleAction,
-    RuleMatcher,
-};
+use netstack3_ip::{AddableEntry, AddableMetric, RawMetric, Rule, RuleAction, RuleMatcher};
 use test_case::test_case;
 
 /// Test that receiving a particular IP packet results in a particular ICMP
@@ -102,7 +99,15 @@ fn test_receive_ip_packet<
                 matcher: RuleMatcher {
                     mark_matchers: MarkMatchers::new(marks.iter().cloned().map(
                         |(domain, mark)| {
-                            (domain, MarkMatcher::Marked { mask: !0, start: mark, end: mark })
+                            (
+                                domain,
+                                MarkMatcher::Marked {
+                                    mask: !0,
+                                    start: mark,
+                                    end: mark,
+                                    invert: false,
+                                },
+                            )
                         }
                     )),
                     ..RuleMatcher::match_all_packets()

@@ -11,6 +11,7 @@ use netstack3_base::{IpDeviceAddr, MarkDomain, Marks};
 use test_case::test_case;
 
 use netstack3_base::testutil::TestIpExt;
+use netstack3_base::{MarkMatcher, MarkMatchers};
 use netstack3_core::StackStateBuilder;
 use netstack3_core::device::{
     DeviceId, EthernetCreationProperties, EthernetLinkDevice, MaxEthernetFrameSize,
@@ -21,8 +22,7 @@ use netstack3_core::testutil::{
 };
 use netstack3_ip::{
     AddRouteError, AddableEntry, AddableEntryEither, AddableMetric, Entry, InternalForwarding,
-    MarkMatcher, MarkMatchers, Metric, RawMetric, ResolvedRoute, RouteResolveOptions, Rule,
-    RuleAction, RuleMatcher,
+    Metric, RawMetric, ResolvedRoute, RouteResolveOptions, Rule, RuleAction, RuleMatcher,
 };
 
 #[ip_test(I)]
@@ -428,7 +428,7 @@ fn route_resolution_with_marks<I: TestIpExt + netstack3_core::IpExt>() {
             matcher: RuleMatcher {
                 mark_matchers: MarkMatchers::new(core::iter::once((
                     MarkDomain::Mark1,
-                    MarkMatcher::Marked { mask: 1, start: 0, end: 1 },
+                    MarkMatcher::Marked { mask: 1, start: 0, end: 1, invert: false },
                 ))),
                 ..RuleMatcher::match_all_packets()
             },

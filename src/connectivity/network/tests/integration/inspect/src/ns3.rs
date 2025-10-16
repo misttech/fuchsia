@@ -1127,7 +1127,8 @@ async fn inspect_rules(name: &str) {
                                 Range: {
                                     StartInclusive: 0u64,
                                     EndInclusive: 100u64,
-                                }
+                                },
+                                Invert: false,
                             }
                         },
                         Action: "Unreachable",

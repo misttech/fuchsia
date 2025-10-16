@@ -86,14 +86,15 @@ impl<I: Ip> TryFromFidl<RuleMatcher<I>>
 
         fn to_core_mark_matcher(
             matcher: fnet_matchers_ext::Mark,
-        ) -> netstack3_core::routes::MarkMatcher {
+        ) -> netstack3_core::ip::MarkMatcher {
             match matcher {
-                fnet_matchers_ext::Mark::Unmarked => netstack3_core::routes::MarkMatcher::Unmarked,
-                fnet_matchers_ext::Mark::Marked { mask, between, invert: _ } => {
-                    netstack3_core::routes::MarkMatcher::Marked {
+                fnet_matchers_ext::Mark::Unmarked => netstack3_core::ip::MarkMatcher::Unmarked,
+                fnet_matchers_ext::Mark::Marked { mask, between, invert } => {
+                    netstack3_core::ip::MarkMatcher::Marked {
                         mask,
                         start: *between.start(),
                         end: *between.end(),
+                        invert,
                     }
                 }
             }
@@ -102,7 +103,7 @@ impl<I: Ip> TryFromFidl<RuleMatcher<I>>
         Ok(netstack3_core::routes::RuleMatcher {
             source_address_matcher: from.map(netstack3_core::ip::SubnetMatcher),
             traffic_origin_matcher,
-            mark_matchers: netstack3_core::routes::MarkMatchers::new(
+            mark_matchers: netstack3_core::ip::MarkMatchers::new(
                 mark_1
                     .into_iter()
                     .map(|m| (netstack3_core::ip::MarkDomain::Mark1, to_core_mark_matcher(m)))

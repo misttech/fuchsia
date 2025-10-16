@@ -12,7 +12,7 @@ use core::num::NonZeroU64;
 use derivative::Derivative;
 use net_types::ip::{IpAddress, Subnet};
 
-use crate::{InspectableValue, Inspector};
+use crate::{InspectableValue, Inspector, Mark, MarkDomain, MarkStorage, Marks};
 
 /// Trait defining required types for matchers provided by bindings.
 ///
@@ -148,6 +148,67 @@ impl<DeviceClass: Debug> InspectableValue for BoundInterfaceMatcher<DeviceClass>
     }
 }
 
+/// A matcher to the socket mark.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarkMatcher {
+    /// Matches a packet if it is unmarked.
+    Unmarked,
+    /// The packet carries a mark that is in the range after masking.
+    Marked {
+        /// The mask to apply.
+        mask: u32,
+        /// Start of the range, inclusive.
+        start: u32,
+        /// End of the range, inclusive.
+        end: u32,
+        /// Inverts the meaning of the match.
+        invert: bool,
+    },
+}
+
+impl Matcher<Mark> for MarkMatcher {
+    fn matches(&self, Mark(actual): &Mark) -> bool {
+        match self {
+            MarkMatcher::Unmarked => actual.is_none(),
+            MarkMatcher::Marked { mask, start, end, invert } => {
+                let val = actual.is_some_and(|actual| (*start..=*end).contains(&(actual & *mask)));
+
+                if *invert { !val } else { val }
+            }
+        }
+    }
+}
+
+/// The 2 mark matchers a rule can specify. All non-none markers must match.
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MarkMatchers(MarkStorage<Option<MarkMatcher>>);
+
+impl MarkMatchers {
+    /// Creates [`MarkMatcher`]s from an iterator of `(MarkDomain, MarkMatcher)`.
+    ///
+    /// An unspecified domain will not have a matcher.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the same domain is specified more than once.
+    pub fn new(matchers: impl IntoIterator<Item = (MarkDomain, MarkMatcher)>) -> Self {
+        MarkMatchers(MarkStorage::new(matchers))
+    }
+
+    /// Returns an iterator over the mark matchers of all domains.
+    pub fn iter(&self) -> impl Iterator<Item = (MarkDomain, &Option<MarkMatcher>)> {
+        let Self(storage) = self;
+        storage.iter()
+    }
+}
+
+impl Matcher<Marks> for MarkMatchers {
+    fn matches(&self, actual: &Marks) -> bool {
+        let Self(matchers) = self;
+        matchers.zip_with(actual).all(|(_domain, matcher, actual)| matcher.matches(actual))
+    }
+}
+
 #[cfg(any(test, feature = "testutils"))]
 pub(crate) mod testutil {
     use alloc::string::String;
@@ -232,6 +293,7 @@ mod tests {
 
     use ip_test_macro::ip_test;
     use net_types::ip::Ip;
+    use test_case::test_case;
 
     use super::*;
     use crate::testutil::{FakeDeviceId, TestIpExt};
@@ -283,5 +345,124 @@ mod tests {
         let matcher = SubnetMatcher(I::TEST_ADDRS.subnet);
         assert!(matcher.matches(&I::TEST_ADDRS.local_ip));
         assert!(!matcher.matches(&I::get_other_remote_ip_address(1)));
+    }
+
+    #[test_case(MarkMatcher::Unmarked, Mark(None) => true; "unmarked matches none")]
+    #[test_case(MarkMatcher::Unmarked, Mark(Some(0)) => false; "unmarked does not match some")]
+    #[test_case(MarkMatcher::Marked {
+        mask: 1,
+        start: 0,
+        end: 0,
+        invert: false,
+    }, Mark(None) => false; "marked does not match none")]
+    #[test_case(MarkMatcher::Marked {
+        mask: 1,
+        start: 0,
+        end: 0,
+        invert: false,
+    }, Mark(Some(0)) => true; "marked 0 mask 1 matches 0")]
+    #[test_case(MarkMatcher::Marked {
+        mask: 1,
+        start: 0,
+        end: 0,
+        invert: false,
+    }, Mark(Some(1)) => false; "marked 0 mask 1 does not match 1")]
+    #[test_case(MarkMatcher::Marked {
+        mask: 1,
+        start: 0,
+        end: 0,
+        invert: false,
+    }, Mark(Some(2)) => true; "marked 0 mask 1 matches 2")]
+    #[test_case(MarkMatcher::Marked {
+        mask: 1,
+        start: 0,
+        end: 0,
+        invert: false,
+    }, Mark(Some(3)) => false; "marked 0 mask 1 does not match 3")]
+    #[test_case(MarkMatcher::Marked {
+        mask: !0,
+        start: 0,
+        end: 10,
+        invert: true,
+    }, Mark(Some(5)) => false; "marked invert no match in range")]
+    #[test_case(MarkMatcher::Marked {
+        mask: !0,
+        start: 0,
+        end: 10,
+        invert: true,
+    }, Mark(Some(11)) => true; "marked invert matches out of range")]
+    fn mark_matcher(matcher: MarkMatcher, mark: Mark) -> bool {
+        matcher.matches(&mark)
+    }
+
+    #[test_case(
+        MarkMatchers::new(
+            [(MarkDomain::Mark1, MarkMatcher::Unmarked),
+            (MarkDomain::Mark2, MarkMatcher::Unmarked)]
+        ),
+        Marks::new([]) => true;
+        "all unmarked matches empty"
+    )]
+    #[test_case(
+        MarkMatchers::new(
+            [(MarkDomain::Mark1, MarkMatcher::Unmarked),
+            (MarkDomain::Mark2, MarkMatcher::Unmarked)]
+        ),
+        Marks::new([(MarkDomain::Mark1, 1)]) => false;
+        "all unmarked does not match mark1"
+    )]
+    #[test_case(
+        MarkMatchers::new(
+            [(MarkDomain::Mark1, MarkMatcher::Unmarked),
+            (MarkDomain::Mark2, MarkMatcher::Unmarked)]
+        ),
+        Marks::new([(MarkDomain::Mark2, 1)]) => false;
+        "all unmarked does not match mark2"
+    )]
+    #[test_case(
+        MarkMatchers::new(
+            [(MarkDomain::Mark1, MarkMatcher::Unmarked),
+            (MarkDomain::Mark2, MarkMatcher::Unmarked)]
+        ),
+        Marks::new([
+            (MarkDomain::Mark1, 1),
+            (MarkDomain::Mark2, 1),
+        ]) => false;
+        "all unmarked does not match mark1 and mark2"
+    )]
+    #[test_case(
+        MarkMatchers::new(
+            [(MarkDomain::Mark1, MarkMatcher::Marked { mask: !0, start: 1, end: 1, invert: false }),
+            (MarkDomain::Mark2, MarkMatcher::Unmarked)]
+        ),
+        Marks::new([(MarkDomain::Mark1, 1)]) => true;
+        "mark1 marked matches"
+    )]
+    #[test_case(
+        MarkMatchers::new(
+            [(MarkDomain::Mark1, MarkMatcher::Marked { mask: !0, start: 1, end: 1, invert: false }),
+            (MarkDomain::Mark2, MarkMatcher::Unmarked)]
+        ),
+        Marks::new([(MarkDomain::Mark1, 2)]) => false;
+        "mark1 marked no match"
+    )]
+    #[test_case(
+        MarkMatchers::new(
+            [(MarkDomain::Mark1, MarkMatcher::Marked { mask: !0, start: 1, end: 1, invert: false }),
+            (MarkDomain::Mark2, MarkMatcher::Marked { mask: !0, start: 2, end: 2, invert: false })]
+        ),
+        Marks::new([(MarkDomain::Mark1, 1), (MarkDomain::Mark2, 2)]) => true;
+        "all marked matches"
+    )]
+    #[test_case(
+        MarkMatchers::new(
+            [(MarkDomain::Mark1, MarkMatcher::Marked { mask: !0, start: 1, end: 1, invert: false }),
+            (MarkDomain::Mark2, MarkMatcher::Marked { mask: !0, start: 2, end: 2, invert: false })]
+        ),
+        Marks::new([(MarkDomain::Mark1, 1), (MarkDomain::Mark2, 3)]) => false;
+        "all marked no match mark2"
+    )]
+    fn mark_matchers(matchers: MarkMatchers, marks: Marks) -> bool {
+        matchers.matches(&marks)
     }
 }

@@ -1123,7 +1123,7 @@ impl<I: Ip> TryIntoFidlWithContext<fnet_routes_ext::InstalledRoute<I>> for Entry
     }
 }
 
-impl TryFromFidl<fnet_ext::Marks> for netstack3_core::routes::Marks {
+impl TryFromFidl<fnet_ext::Marks> for netstack3_core::ip::Marks {
     type Error = Never;
 
     fn try_from_fidl(marks: fnet_ext::Marks) -> Result<Self, Self::Error> {
