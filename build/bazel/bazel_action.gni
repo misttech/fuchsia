@@ -682,6 +682,8 @@ template("bazel_action") {
                "//build/bazel/templates/template.bazelrc",
 
                # Imported by bazel_action.py
+               "//build/api/debug_symbols.py",
+               "//build/bazel/scripts/bazel_compdb_utils.py",
                "//build/bazel/scripts/build_utils.py",
                "//build/bazel/scripts/thread_pool_helpers.py",
                "//build/bazel/scripts/workspace_utils.py",
