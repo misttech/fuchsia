@@ -53,19 +53,14 @@ static_library("unwinder") {
   ]
   friend = [ ":*" ]
 
-  if (is_mac) {
-    # TODO(https://fxbug.dev/430278476): Don't build on mac.
-    deps += [ "//src/developer/debug/shared:elf_h_on_mac" ]
-  } else {
-    # UnwindLocal() is only available on ELF systems.
-    public += [
-      "third_party/libunwindstack/context.h",
-      "unwind_local.h",
-    ]
-    sources += [ "unwind_local.cc" ]
-    if (current_cpu == "x64") {
-      sources += [ "third_party/libunwindstack/context_x86_64.S" ]
-    }
+  # UnwindLocal() is only available on ELF systems.
+  public += [
+    "third_party/libunwindstack/context.h",
+    "unwind_local.h",
+  ]
+  sources += [ "unwind_local.cc" ]
+  if (current_cpu == "x64") {
+    sources += [ "third_party/libunwindstack/context_x86_64.S" ]
   }
 
   if (is_fuchsia) {
@@ -105,16 +100,13 @@ test("unwinder_tests_bin") {
 
   deps = [
     ":unwinder",
+    "tests",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",
   ]
 
   if (is_host) {
     data_deps = [ ":test_so" ]
-  }
-
-  if (!is_mac) {
-    deps += [ "tests" ]
   }
 
   ldflags = [ "-Wl,-z,stack-size=0x1000000" ]

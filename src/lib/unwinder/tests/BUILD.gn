@@ -2,9 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# The test depends on UnwindLocal and doesn't work on macOS.
-assert(!is_mac)
-
 source_set("tests") {
   testonly = true
 
