@@ -9,7 +9,7 @@ use bt_hfp::{a2dp, audio, sco};
 use bt_rfcomm::profile::{rfcomm_connect_parameters, server_channel_from_protocol};
 use fidl_fuchsia_bluetooth_bredr as bredr;
 use fidl_fuchsia_bluetooth_hfp::{NetworkInformation, PeerHandlerProxy};
-use fuchsia_async::Task;
+use fuchsia_async::{MonotonicDuration, Task, Timer};
 use fuchsia_bluetooth::profile::{Attribute, ProtocolDescriptor};
 use fuchsia_bluetooth::types::PeerId;
 use fuchsia_inspect::{self as inspect, Property};
@@ -17,8 +17,8 @@ use fuchsia_inspect_derive::{AttachError, Inspect};
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc::{self, Sender};
 use futures::future::Either;
-use futures::stream::{empty, Empty};
-use futures::{select, FutureExt, SinkExt, StreamExt};
+use futures::stream::{Empty, empty};
+use futures::{FutureExt, SinkExt, StreamExt, select};
 use log::{error, info, warn};
 use profile_client::ProfileEvent;
 use std::fmt;
@@ -88,9 +88,8 @@ impl PeerTask {
         hfp_sender: Sender<hfp::Event>,
         sco_connector: sco::Connector,
     ) -> Result<Self, Error> {
-        let connection = ServiceLevelConnection::with_init_timeout(fuchsia_async::Timer::new(
-            CONNECTION_INIT_TIMEOUT,
-        ));
+        let connection =
+            ServiceLevelConnection::with_init_timeout(Timer::new(CONNECTION_INIT_TIMEOUT));
         let a2dp_control = a2dp::Control::connect();
         Ok(Self {
             id,
@@ -523,18 +522,31 @@ impl PeerTask {
                 self.connection.receive_ag_request(marker.unwrap(), AgUpdate::Ok).await;
 
                 let codecs = self.get_codecs();
-                let setup_result =
-                    self.sco_connector.connect(self.id.clone(), codecs.clone()).await;
-                let finish_result = match setup_result {
-                    Ok(conn) => self.finish_sco_connection(conn).await,
-                    Err(err) => {
-                        if !codecs.contains(&CodecId::CVSD) {
-                            // Try again with selecting CVSD
-                            return self.initiate_codec_negotiation(Some(CodecId::CVSD)).await;
-                        } else {
-                            Err(err.into())
+                // TODO(b/452387835): Remove this workaround when we can synchronize closing of old
+                // SCO connections.
+                let mut retries_left = 1;
+                let finish_result = loop {
+                    let setup_result =
+                        self.sco_connector.connect(self.id.clone(), codecs.clone()).await;
+                    match setup_result {
+                        Ok(conn) => break self.finish_sco_connection(conn).await,
+                        Err(err) => {
+                            if retries_left > 0 {
+                                warn!(
+                                    "Failed SCO connect, retrying after 1s - {retries_left} left"
+                                );
+                                retries_left -= 1;
+                                Timer::new(MonotonicDuration::from_seconds(1)).await;
+                                continue;
+                            }
+                            if !codecs.contains(&CodecId::CVSD) {
+                                // Try again with selecting CVSD
+                                return self.initiate_codec_negotiation(Some(CodecId::CVSD)).await;
+                            } else {
+                                break Err(err.into());
+                            }
                         }
-                    }
+                    };
                 };
                 let result =
                     finish_result.map_err(|e| warn!(e:?; "Error setting up audio connection"));
@@ -937,8 +949,8 @@ mod tests {
     use at_commands::{self as at, SerDe};
     use bt_hfp::audio;
     use bt_hfp::call::Number;
-    use bt_rfcomm::profile::build_rfcomm_protocol;
     use bt_rfcomm::ServerChannel;
+    use bt_rfcomm::profile::build_rfcomm_protocol;
     use core::task::Poll;
     use fidl_fuchsia_bluetooth_bredr::{ProfileMarker, ProfileRequestStream, ScoErrorCode};
     use fidl_fuchsia_bluetooth_hfp::{
@@ -956,11 +968,11 @@ mod tests {
 
     use crate::features::{AgFeatures, HfFeatures};
     use crate::peer::indicators::{AgIndicatorsReporting, HfIndicators};
+    use crate::peer::service_level_connection::SlcState;
     use crate::peer::service_level_connection::tests::{
         create_and_connect_slc, create_and_initialize_slc, expect_data_received_by_peer,
         expect_peer_ready, serialize_at_response,
     };
-    use crate::peer::service_level_connection::SlcState;
 
     fn arb_signal() -> impl Strategy<Value = Option<SignalStrength>> {
         proptest::option::of(prop_oneof![
@@ -1914,7 +1926,9 @@ mod tests {
                         panic!("ConnectSco missing required fields");
                     };
                     if initiator != expected_initiator {
-                        log::warn!("Skipping because we expect {initiator} to match expected {expected_initiator}");
+                        log::warn!(
+                            "Skipping because we expect {initiator} to match expected {expected_initiator}"
+                        );
                         continue;
                     };
                     assert!(params.len() >= 1);
@@ -1999,6 +2013,90 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn setup_audio_fails_then_succeeds_on_retry() {
+        // Set up the executor.
+        let mut exec = fasync::TestExecutor::new();
+
+        // Setup the peer task with the specified SlcState to enable codec negotiation and WBS
+        let mut ag_features = AgFeatures::default();
+        ag_features.set(AgFeatures::CODEC_NEGOTIATION, true);
+        let mut hf_features = HfFeatures::default();
+        hf_features.set(HfFeatures::CODEC_NEGOTIATION, true);
+        let state = SlcState {
+            ag_features,
+            hf_features,
+            hf_supported_codecs: Some(vec![CodecId::CVSD, CodecId::MSBC]),
+            ..SlcState::default()
+        };
+        let (connection, mut remote) = create_and_initialize_slc(state);
+        let (peer, mut sender, receiver, mut profile) = setup_peer_task(Some(connection));
+
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<PeerHandlerMarker>();
+
+        let run_fut = peer.run(receiver);
+        let run_fut = pin!(run_fut);
+
+        // Pass in the client end connected to the call manager
+        exec.run_singlethreaded(sender.send(PeerRequest::Handle(proxy))).expect("Connecting peer");
+
+        let (mut stream, run_fut) = run_while(&mut exec, run_fut, wait_for_call_stream(stream));
+
+        // Send the incoming waiting call.
+        let (responder, run_fut) = run_while(&mut exec, run_fut, stream.next());
+        let (client_end, mut call_stream) = fidl::endpoints::create_request_stream();
+        let next_call = NextCall {
+            call: Some(client_end),
+            remote: Some("1234567".to_string()),
+            state: Some(CallState::IncomingWaiting),
+            direction: Some(CallDirection::MobileTerminated),
+            ..Default::default()
+        };
+        responder.unwrap().send(next_call).expect("Successfully send call information");
+
+        // Answer call to initiate audio connection.
+        let (request, run_fut) = run_while(&mut exec, run_fut, &mut call_stream.next());
+        let state_responder = match request {
+            Some(Ok(CallRequest::WatchState { responder })) => responder,
+            req => panic!("Expected WatchState, got {:?}", req),
+        };
+        state_responder.send(CallState::OngoingActive).expect("Sent OngoingActive.");
+
+        // We expect to choose MSBC first.
+        let choose_msbc = vec![at::success(at::Success::Bcs { codec: CodecId::MSBC.into() })];
+        let ((), run_fut) =
+            run_while(&mut exec, run_fut, expect_data_received_by_peer(&mut remote, choose_msbc));
+
+        let codec_confirm_cmd = at::Command::Bcs { codec: CodecId::MSBC.into() };
+        let mut buf = Vec::new();
+        at::Command::serialize(&mut buf, &vec![codec_confirm_cmd]).expect("serialization is ok");
+        let _ = remote.write(&buf[..]).expect("channel write is ok");
+
+        // First SCO connections fail (T2 and T1), causing a re-negotiation of the codec state.
+        let accepted_paramset = vec![bredr::HfpParameterSet::S4];
+        let (sco, run_fut) = run_while(
+            &mut exec,
+            run_fut,
+            expect_sco_connection_with_parameters(&mut profile, true, &accepted_paramset, Ok(())),
+        );
+        assert!(sco.is_none(), "expected sco to fail");
+
+        // TODO(https://fxbug.dev/452387835): Now, we retry once with the same parameters, after a
+        // second delay, and succeed.
+        let accepted_paramset = vec![bredr::HfpParameterSet::T2];
+        let (sco, mut run_fut) = run_while(
+            &mut exec,
+            run_fut,
+            expect_sco_connection_with_parameters(&mut profile, true, &accepted_paramset, Ok(())),
+        );
+        assert!(sco.is_some(), "expected sco to succeed on retry");
+
+        // Drop the peer task sender and run PeerTask's run future until it stalls.
+        drop(sender);
+        // TODO(https://fxbug.dev/42080880): This future should complete but doesn't seem to.
+        let _ = exec.run_until_stalled(&mut run_fut);
+    }
+
+    #[fuchsia::test]
     fn renegotiaties_when_hq_sco_fails_to_connect() {
         // Set up the executor.
         let mut exec = fasync::TestExecutor::new();
@@ -2065,6 +2163,16 @@ mod tests {
             expect_sco_connection_with_parameters(&mut profile, true, &accepted_paramset, Ok(())),
         );
         assert!(sco.is_none(), "expected sco to fail");
+
+        // TODO(https://fxbug.dev/452387835): Now, we retry once with the same parameters, after a
+        // second delay.
+        let accepted_paramset = vec![bredr::HfpParameterSet::S4];
+        let (sco, run_fut) = run_while(
+            &mut exec,
+            run_fut,
+            expect_sco_connection_with_parameters(&mut profile, true, &accepted_paramset, Ok(())),
+        );
+        assert!(sco.is_none(), "expected sco to fail again");
 
         // Now, we re-negotiate with CVSD.
         // "OK" is from previous choice (+BCS=2, AT+BCS=2, OK)
