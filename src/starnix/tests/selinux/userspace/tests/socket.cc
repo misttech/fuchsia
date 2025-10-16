@@ -15,6 +15,7 @@
 #include <linux/sock_diag.h>
 
 #include "src/lib/files/file.h"
+#include "src/starnix/tests/selinux/userspace/netlink_util.h"
 #include "src/starnix/tests/selinux/userspace/util.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 
@@ -240,174 +241,116 @@ TEST(SocketTest, WriteDenied) {
   EXPECT_THAT(write(fds[0], &data, 1), SyscallFailsWithErrno(EACCES));
 }
 
-struct NetlinkSocketTestCase {
-  int protocol;
-  uint16_t message_type;
-  uint16_t flags;
-  std::string_view label;
-  fit::result<int> expected_result;
-};
-
-class NetlinkSocketTest : public ::testing::TestWithParam<NetlinkSocketTestCase> {};
+class NetlinkSocketTest : public ::testing::TestWithParam<netlink_util::NetlinkSocketTestCase> {};
 
 INSTANTIATE_TEST_SUITE_P(
     NetlinkSocketTests, NetlinkSocketTest,
     ::testing::Values(
         // NETLINK_ROUTE test cases
-        NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETROUTE, NLM_F_REQUEST | NLM_F_ACK,
-                              "test_u:test_r:netlink_socket_nlmsg_read_t:s0", fit::ok()},
-        NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETROUTE, NLM_F_REQUEST | NLM_F_ACK,
-                              "test_u:test_r:netlink_socket_no_nlmsg_t:s0", fit::error(EACCES)},
-        NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETROUTE, NLM_F_REQUEST | NLM_F_DUMP,
-                              "test_u:test_r:netlink_socket_nlmsg_read_t:s0", fit::ok()},
-        NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETROUTE, NLM_F_REQUEST | NLM_F_DUMP,
-                              "test_u:test_r:netlink_socket_no_nlmsg_t:s0", fit::error(EACCES)},
-        NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETNEIGH, NLM_F_REQUEST | NLM_F_DUMP,
-                              "test_u:test_r:netlink_socket_nlmsg_read_t:s0", fit::ok()},
-        NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETNEIGH, NLM_F_REQUEST | NLM_F_DUMP,
-                              "test_u:test_r:netlink_socket_no_nlmsg_t:s0", fit::error(EACCES)},
-        NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETLINK, NLM_F_REQUEST | NLM_F_ACK,
-                              "test_u:test_r:netlink_socket_nlmsg_read_t:s0", fit::ok()},
-        NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETLINK, NLM_F_REQUEST | NLM_F_ACK,
-                              "test_u:test_r:netlink_socket_no_nlmsg_t:s0", fit::error(EACCES)},
-        NetlinkSocketTestCase{NETLINK_ROUTE, RTM_NEWROUTE,
-                              NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL,
-                              "test_u:test_r:netlink_socket_nlmsg_write_t:s0", fit::ok()},
-        NetlinkSocketTestCase{NETLINK_ROUTE, RTM_NEWROUTE,
-                              NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL,
-                              "test_u:test_r:netlink_socket_no_nlmsg_t:s0", fit::error(EACCES)},
+        netlink_util::NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETROUTE, NLM_F_REQUEST | NLM_F_ACK,
+                                            "test_u:test_r:netlink_socket_nlmsg_read_t:s0",
+                                            fit::ok()},
+        netlink_util::NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETROUTE, NLM_F_REQUEST | NLM_F_ACK,
+                                            "test_u:test_r:netlink_socket_no_nlmsg_t:s0",
+                                            fit::error(EACCES)},
+        netlink_util::NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETROUTE, NLM_F_REQUEST | NLM_F_DUMP,
+                                            "test_u:test_r:netlink_socket_nlmsg_read_t:s0",
+                                            fit::ok()},
+        netlink_util::NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETROUTE, NLM_F_REQUEST | NLM_F_DUMP,
+                                            "test_u:test_r:netlink_socket_no_nlmsg_t:s0",
+                                            fit::error(EACCES)},
+        netlink_util::NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETNEIGH, NLM_F_REQUEST | NLM_F_DUMP,
+                                            "test_u:test_r:netlink_socket_nlmsg_read_t:s0",
+                                            fit::ok()},
+        netlink_util::NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETNEIGH, NLM_F_REQUEST | NLM_F_DUMP,
+                                            "test_u:test_r:netlink_socket_no_nlmsg_t:s0",
+                                            fit::error(EACCES)},
+        netlink_util::NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETLINK, NLM_F_REQUEST | NLM_F_ACK,
+                                            "test_u:test_r:netlink_socket_nlmsg_read_t:s0",
+                                            fit::ok()},
+        netlink_util::NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETLINK, NLM_F_REQUEST | NLM_F_ACK,
+                                            "test_u:test_r:netlink_socket_no_nlmsg_t:s0",
+                                            fit::error(EACCES)},
+        netlink_util::NetlinkSocketTestCase{
+            NETLINK_ROUTE, RTM_NEWROUTE, NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL,
+            "test_u:test_r:netlink_socket_nlmsg_write_t:s0", fit::ok()},
+        netlink_util::NetlinkSocketTestCase{
+            NETLINK_ROUTE, RTM_NEWROUTE, NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL,
+            "test_u:test_r:netlink_socket_no_nlmsg_t:s0", fit::error(EACCES)},
 
         // NETLINK_AUDIT test cases
-        NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_GET, NLM_F_REQUEST,
-                              "test_u:test_r:netlink_socket_nlmsg_read_t:s0", fit::ok()},
-        NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_GET, NLM_F_REQUEST,
-                              "test_u:test_r:netlink_socket_no_nlmsg_t:s0", fit::error(EACCES)},
-        NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_GET_FEATURE, NLM_F_REQUEST,
-                              "test_u:test_r:netlink_socket_nlmsg_read_t:s0", fit::ok()},
-        NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_GET_FEATURE, NLM_F_REQUEST,
-                              "test_u:test_r:netlink_socket_no_nlmsg_t:s0", fit::error(EACCES)},
-        NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_LIST_RULES, NLM_F_REQUEST | NLM_F_DUMP,
-                              "test_u:test_r:netlink_socket_nlmsg_readpriv_t:s0", fit::ok()},
-        NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_LIST_RULES, NLM_F_REQUEST | NLM_F_DUMP,
-                              "test_u:test_r:netlink_socket_no_nlmsg_t:s0", fit::error(EACCES)},
-        NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_USER, NLM_F_REQUEST,
-                              "test_u:test_r:netlink_socket_nlmsg_relay_t:s0", fit::ok()},
-        NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_USER, NLM_F_REQUEST,
-                              "test_u:test_r:netlink_socket_no_nlmsg_t:s0", fit::error(EACCES)},
-        NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_FIRST_USER_MSG, NLM_F_REQUEST,
-                              "test_u:test_r:netlink_socket_nlmsg_relay_t:s0", fit::ok()},
-        NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_FIRST_USER_MSG, NLM_F_REQUEST,
-                              "test_u:test_r:netlink_socket_no_nlmsg_t:s0", fit::error(EACCES)},
-        NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_LAST_USER_MSG2, NLM_F_REQUEST,
-                              "test_u:test_r:netlink_socket_nlmsg_relay_t:s0", fit::ok()},
-        NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_LAST_USER_MSG2, NLM_F_REQUEST,
-                              "test_u:test_r:netlink_socket_no_nlmsg_t:s0", fit::error(EACCES)},
-        NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_TTY_SET, NLM_F_REQUEST,
-                              "test_u:test_r:netlink_socket_nlmsg_tty_audit_t:s0", fit::ok()},
-        NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_TTY_SET, NLM_F_REQUEST,
-                              "test_u:test_r:netlink_socket_no_nlmsg_t:s0", fit::error(EACCES)},
-        NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_SET, NLM_F_REQUEST,
-                              "test_u:test_r:netlink_socket_nlmsg_write_t:s0", fit::ok()},
-        NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_SET, NLM_F_REQUEST,
-                              "test_u:test_r:netlink_socket_no_nlmsg_t:s0", fit::error(EACCES)},
-        NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_SET_FEATURE, NLM_F_REQUEST,
-                              "test_u:test_r:netlink_socket_nlmsg_write_t:s0", fit::ok()},
-        NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_SET_FEATURE, NLM_F_REQUEST,
-                              "test_u:test_r:netlink_socket_no_nlmsg_t:s0", fit::error(EACCES)},
+        netlink_util::NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_GET, NLM_F_REQUEST,
+                                            "test_u:test_r:netlink_socket_nlmsg_read_t:s0",
+                                            fit::ok()},
+        netlink_util::NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_GET, NLM_F_REQUEST,
+                                            "test_u:test_r:netlink_socket_no_nlmsg_t:s0",
+                                            fit::error(EACCES)},
+        netlink_util::NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_GET_FEATURE, NLM_F_REQUEST,
+                                            "test_u:test_r:netlink_socket_nlmsg_read_t:s0",
+                                            fit::ok()},
+        netlink_util::NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_GET_FEATURE, NLM_F_REQUEST,
+                                            "test_u:test_r:netlink_socket_no_nlmsg_t:s0",
+                                            fit::error(EACCES)},
+        netlink_util::NetlinkSocketTestCase{
+            NETLINK_AUDIT, AUDIT_LIST_RULES, NLM_F_REQUEST | NLM_F_DUMP,
+            "test_u:test_r:netlink_socket_nlmsg_readpriv_t:s0", fit::ok()},
+        netlink_util::NetlinkSocketTestCase{
+            NETLINK_AUDIT, AUDIT_LIST_RULES, NLM_F_REQUEST | NLM_F_DUMP,
+            "test_u:test_r:netlink_socket_no_nlmsg_t:s0", fit::error(EACCES)},
+        netlink_util::NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_USER, NLM_F_REQUEST,
+                                            "test_u:test_r:netlink_socket_nlmsg_relay_t:s0",
+                                            fit::ok()},
+        netlink_util::NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_USER, NLM_F_REQUEST,
+                                            "test_u:test_r:netlink_socket_no_nlmsg_t:s0",
+                                            fit::error(EACCES)},
+        netlink_util::NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_FIRST_USER_MSG, NLM_F_REQUEST,
+                                            "test_u:test_r:netlink_socket_nlmsg_relay_t:s0",
+                                            fit::ok()},
+        netlink_util::NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_FIRST_USER_MSG, NLM_F_REQUEST,
+                                            "test_u:test_r:netlink_socket_no_nlmsg_t:s0",
+                                            fit::error(EACCES)},
+        netlink_util::NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_LAST_USER_MSG2, NLM_F_REQUEST,
+                                            "test_u:test_r:netlink_socket_nlmsg_relay_t:s0",
+                                            fit::ok()},
+        netlink_util::NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_LAST_USER_MSG2, NLM_F_REQUEST,
+                                            "test_u:test_r:netlink_socket_no_nlmsg_t:s0",
+                                            fit::error(EACCES)},
+        netlink_util::NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_TTY_SET, NLM_F_REQUEST,
+                                            "test_u:test_r:netlink_socket_nlmsg_tty_audit_t:s0",
+                                            fit::ok()},
+        netlink_util::NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_TTY_SET, NLM_F_REQUEST,
+                                            "test_u:test_r:netlink_socket_no_nlmsg_t:s0",
+                                            fit::error(EACCES)},
+        netlink_util::NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_SET, NLM_F_REQUEST,
+                                            "test_u:test_r:netlink_socket_nlmsg_write_t:s0",
+                                            fit::ok()},
+        netlink_util::NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_SET, NLM_F_REQUEST,
+                                            "test_u:test_r:netlink_socket_no_nlmsg_t:s0",
+                                            fit::error(EACCES)},
+        netlink_util::NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_SET_FEATURE, NLM_F_REQUEST,
+                                            "test_u:test_r:netlink_socket_nlmsg_write_t:s0",
+                                            fit::ok()},
+        netlink_util::NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_SET_FEATURE, NLM_F_REQUEST,
+                                            "test_u:test_r:netlink_socket_no_nlmsg_t:s0",
+                                            fit::error(EACCES)},
 
         // NETLINK_SOCK_DIAG test cases
-        NetlinkSocketTestCase{NETLINK_SOCK_DIAG, SOCK_DIAG_BY_FAMILY, NLM_F_REQUEST | NLM_F_ACK,
-                              "test_u:test_r:netlink_socket_nlmsg_read_t:s0", fit::ok()},
-        NetlinkSocketTestCase{NETLINK_SOCK_DIAG, SOCK_DIAG_BY_FAMILY, NLM_F_REQUEST | NLM_F_ACK,
-                              "test_u:test_r:netlink_socket_no_nlmsg_t:s0", fit::error(EACCES)},
-
-        // NETLINK_ROUTE xperms test cases
-        NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETROUTE, NLM_F_REQUEST | NLM_F_ACK,
-                              "test_u:test_r:netlink_socket_nlmsg_xperms_getroute_yes_t:s0",
-                              fit::ok()},
-        NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETROUTE, NLM_F_REQUEST | NLM_F_ACK,
-                              "test_u:test_r:netlink_socket_nlmsg_xperms_getroute_no_xperms_t:s0",
-                              fit::ok()},
-        NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETROUTE, NLM_F_REQUEST | NLM_F_ACK,
-                              "test_u:test_r:netlink_socket_nlmsg_xperms_getroute_no_nlmsg_t:s0",
-                              fit::error(EACCES)},
-        NetlinkSocketTestCase{NETLINK_ROUTE, RTM_GETROUTE, NLM_F_REQUEST | NLM_F_ACK,
-                              "test_u:test_r:netlink_socket_nlmsg_xperms_no_getroute_t:s0",
-                              fit::error(EACCES)},
-        NetlinkSocketTestCase{NETLINK_ROUTE, RTM_NEWROUTE, NLM_F_REQUEST | NLM_F_ACK,
-                              "test_u:test_r:netlink_socket_nlmsg_xperms_newroute_yes_t:s0",
-                              fit::ok()},
-        NetlinkSocketTestCase{NETLINK_ROUTE, RTM_NEWROUTE, NLM_F_REQUEST | NLM_F_ACK,
-                              "test_u:test_r:netlink_socket_nlmsg_xperms_newroute_no_t:s0",
-                              fit::error(EACCES)},
-
-        // NETLINK_AUDIT xperms test cases
-        NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_SET, NLM_F_REQUEST,
-                              "test_u:test_r:netlink_socket_nlmsg_xperms_audit_set_yes_t:s0",
-                              fit::ok()},
-        NetlinkSocketTestCase{NETLINK_AUDIT, AUDIT_SET, NLM_F_REQUEST,
-                              "test_u:test_r:netlink_socket_nlmsg_xperms_audit_set_no_t:s0",
-                              fit::error(EACCES)}
-
-        ));
+        netlink_util::NetlinkSocketTestCase{
+            NETLINK_SOCK_DIAG, SOCK_DIAG_BY_FAMILY, NLM_F_REQUEST | NLM_F_ACK,
+            "test_u:test_r:netlink_socket_nlmsg_read_t:s0", fit::ok()},
+        netlink_util::NetlinkSocketTestCase{
+            NETLINK_SOCK_DIAG, SOCK_DIAG_BY_FAMILY, NLM_F_REQUEST | NLM_F_ACK,
+            "test_u:test_r:netlink_socket_no_nlmsg_t:s0", fit::error(EACCES)}));
 
 TEST_P(NetlinkSocketTest, CheckNetlinkMsgPermission) {
-  const NetlinkSocketTestCase& test_case = GetParam();
+  const netlink_util::NetlinkSocketTestCase& test_case = GetParam();
   ASSERT_EQ(WriteTaskAttr("current", "test_u:test_r:socket_sendmsg_test_t:s0"), fit::ok());
 
-  auto sockcreate = ScopedTaskAttrResetter::SetTaskAttr("sockcreate", test_case.label);
-  auto enforce = ScopedEnforcement::SetEnforcing();
-
-  fbl::unique_fd sock_fd(socket(AF_NETLINK, SOCK_RAW, test_case.protocol));
-  ASSERT_THAT(sock_fd.get(), SyscallSucceeds());
-
-  union {
-    struct rtmsg rtmsg;
-    struct audit_status audit_status;
-  } payload;
-  memset(&payload, 0, sizeof(payload));
-
-  char buffer[NLMSG_ALIGN(sizeof(struct nlmsghdr) + sizeof(payload))];
-  memset(buffer, 0, sizeof(buffer));
-
-  struct nlmsghdr* nlh = (struct nlmsghdr*)buffer;
-  nlh->nlmsg_type = test_case.message_type;
-  nlh->nlmsg_flags = test_case.flags;
-  nlh->nlmsg_pid = getpid();
-  nlh->nlmsg_seq = 1;
-
-  size_t payload_len = 0;
-  if (test_case.protocol == NETLINK_AUDIT) {
-    payload_len = sizeof(struct audit_status);
-    nlh->nlmsg_len = NLMSG_LENGTH((__u32)payload_len);
-    struct audit_status* audit_status = (struct audit_status*)NLMSG_DATA(nlh);
-    audit_status->mask = AUDIT_STATUS_ENABLED | AUDIT_STATUS_PID;
-    audit_status->enabled = 1;
-    audit_status->pid = getpid();
-  } else {
-    payload_len = sizeof(struct rtmsg);
-    nlh->nlmsg_len = NLMSG_LENGTH((__u32)payload_len);
-    struct rtmsg* rt_msg = (struct rtmsg*)NLMSG_DATA(nlh);
-    rt_msg->rtm_family = AF_INET;
-    rt_msg->rtm_table = RT_TABLE_MAIN;
-    rt_msg->rtm_protocol = RTPROT_STATIC;
-    rt_msg->rtm_scope = RT_SCOPE_UNIVERSE;
-    rt_msg->rtm_type = RTN_UNICAST;
-  }
-
-  struct sockaddr_nl sa;
-  memset(&sa, 0, sizeof(sa));
-  sa.nl_family = AF_NETLINK;
-
-  ssize_t result = sendto(sock_fd.get(), nlh, nlh->nlmsg_len, 0, (struct sockaddr*)&sa, sizeof(sa));
+  int result = netlink_util::SendNetlinkMsg(test_case);
 
   if (test_helper::IsStarnix() && test_case.protocol == NETLINK_SOCK_DIAG) {
     // Expect `ENOTSUP` for testcases currently unsupported in Starnix.
     EXPECT_THAT(result, SyscallFailsWithErrno(ENOTSUP));
-  } else if (!test_helper::IsStarnix() &&
-             test_case.label.find("nlmsg_xperms") != std::string::npos) {
-    // TODO: https://fxbug.dev/450536365 - The Linux image does not have support for "nlmsg" xperms.
-    EXPECT_THAT(result, SyscallFailsWithErrno(EACCES));
   } else if (test_case.expected_result.is_ok()) {
     EXPECT_THAT(result, SyscallSucceeds());
   } else {

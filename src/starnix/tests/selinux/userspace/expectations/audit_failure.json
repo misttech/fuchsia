@@ -3,7 +3,9 @@
         // TODO(https://fxbug.dev/409256444) - Check `execmod`.
         "MProtectExecmod/MProtectExecmod/ExecMod/ExecmodNo_PrivateMapping_Modification_MprotectFailure",
 
-        // Fails because it logs `nlmsg_relay` and `nlmsg` for the same action on Starnix.
+        // TODO: https://fxbug.dev/452467819 - Fails because it logs regular `nlmsg_read`/
+        // `nlmsg_write`/etc. and `nlmsg` needed for extended permissions for the same action in
+        // Starnix.
         "NetlinkAuditWriteTestSuite/NetlinkAuditSendTest/Send/2",
         "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/1",
         "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/3",
@@ -18,10 +20,14 @@
         "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/23",
         "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/25",
         "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/27",
-        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/32",
-        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/33",
-        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/35",
-        "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/37",
+        "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/0",
+        "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/1",
+        "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/2",
+        "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/3",
+        "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/4",
+        "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/5",
+        "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/6",
+        "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/7",
 
         // Expect `ENOTSUP` for testcases currently unsupported in Starnix, no audit will be logged.
         "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/7",

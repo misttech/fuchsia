@@ -338,321 +338,327 @@
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/0",
             "audit_expectations": [
-                "audit(1760367252.916:239): avc:  denied  { create } for  pid=189 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367252.916:240): avc:  denied  { write } for  pid=189 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367252.916:240): avc:  denied  { nlmsg_relay } for  pid=189 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551847.896:239): avc:  denied  { create } for  pid=132 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551847.896:240): avc:  denied  { write } for  pid=132 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551847.896:240): avc:  denied  { nlmsg_relay } for  pid=132 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/1",
             "audit_expectations": [
-                "audit(1760367252.960:247): avc:  denied  { nlmsg_read } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
-                "audit(1760367252.960:249): avc:  denied  { create } for  pid=191 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367252.960:250): avc:  denied  { write } for  pid=191 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367252.960:250): avc:  denied  { nlmsg_relay } for  pid=191 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551847.936:247): avc:  denied  { nlmsg_read } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
+                "audit(1760551847.936:249): avc:  denied  { create } for  pid=134 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551847.936:250): avc:  denied  { write } for  pid=134 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551847.936:250): avc:  denied  { nlmsg_relay } for  pid=134 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/10",
             "audit_expectations": [
-                "audit(1760367253.396:334): avc:  denied  { create } for  pid=210 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.396:335): avc:  denied  { write } for  pid=210 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.396:335): avc:  denied  { nlmsg_relay } for  pid=210 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.316:334): avc:  denied  { create } for  pid=153 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.316:335): avc:  denied  { write } for  pid=153 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.316:335): avc:  denied  { nlmsg_relay } for  pid=153 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/11",
             "audit_expectations": [
-                "audit(1760367253.440:342): avc:  denied  { nlmsg_read } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
-                "audit(1760367253.440:344): avc:  denied  { create } for  pid=212 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.440:345): avc:  denied  { write } for  pid=212 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.440:345): avc:  denied  { nlmsg_relay } for  pid=212 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.356:342): avc:  denied  { nlmsg_read } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
+                "audit(1760551848.356:344): avc:  denied  { create } for  pid=155 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.356:345): avc:  denied  { write } for  pid=155 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.356:345): avc:  denied  { nlmsg_relay } for  pid=155 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/12",
             "audit_expectations": [
-                "audit(1760367253.492:353): avc:  denied  { create } for  pid=215 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.492:354): avc:  denied  { write } for  pid=215 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.492:354): avc:  denied  { nlmsg_relay } for  pid=215 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.400:353): avc:  denied  { create } for  pid=158 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.400:354): avc:  denied  { write } for  pid=158 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.400:354): avc:  denied  { nlmsg_relay } for  pid=158 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/13",
             "audit_expectations": [
-                "audit(1760367253.536:361): avc:  denied  { nlmsg_read } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
-                "audit(1760367253.536:363): avc:  denied  { create } for  pid=217 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.536:364): avc:  denied  { write } for  pid=217 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.536:364): avc:  denied  { nlmsg_relay } for  pid=217 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.440:361): avc:  denied  { nlmsg_read } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
+                "audit(1760551848.440:363): avc:  denied  { create } for  pid=160 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.440:364): avc:  denied  { write } for  pid=160 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.440:364): avc:  denied  { nlmsg_relay } for  pid=160 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/14",
             "audit_expectations": [
-                "audit(1760367253.588:372): avc:  denied  { create } for  pid=220 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.588:373): avc:  denied  { write } for  pid=220 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.588:373): avc:  denied  { nlmsg_relay } for  pid=220 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.484:372): avc:  denied  { create } for  pid=163 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.484:373): avc:  denied  { write } for  pid=163 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.484:373): avc:  denied  { nlmsg_relay } for  pid=163 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/15",
             "audit_expectations": [
-                "audit(1760367253.632:380): avc:  denied  { nlmsg_readpriv } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
-                "audit(1760367253.632:382): avc:  denied  { create } for  pid=222 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.632:383): avc:  denied  { write } for  pid=222 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.632:383): avc:  denied  { nlmsg_relay } for  pid=222 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.524:380): avc:  denied  { nlmsg_readpriv } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
+                "audit(1760551848.524:382): avc:  denied  { create } for  pid=165 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.524:383): avc:  denied  { write } for  pid=165 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.524:383): avc:  denied  { nlmsg_relay } for  pid=165 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/16",
             "audit_expectations": [
-                "audit(1760367253.684:392): avc:  denied  { create } for  pid=224 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.684:393): avc:  denied  { write } for  pid=224 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.684:393): avc:  denied  { nlmsg_relay } for  pid=224 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.568:392): avc:  denied  { create } for  pid=167 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.568:393): avc:  denied  { write } for  pid=167 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.568:393): avc:  denied  { nlmsg_relay } for  pid=167 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/17",
             "audit_expectations": [
-                "audit(1760367253.728:400): avc:  denied  { nlmsg_relay } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
-                "audit(1760367253.728:402): avc:  denied  { create } for  pid=226 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.728:403): avc:  denied  { write } for  pid=226 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.728:403): avc:  denied  { nlmsg_relay } for  pid=226 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.608:400): avc:  denied  { nlmsg_relay } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
+                "audit(1760551848.608:402): avc:  denied  { create } for  pid=169 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.608:403): avc:  denied  { write } for  pid=169 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.608:403): avc:  denied  { nlmsg_relay } for  pid=169 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/18",
             "audit_expectations": [
-                "audit(1760367253.780:412): avc:  denied  { create } for  pid=228 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.780:413): avc:  denied  { write } for  pid=228 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.780:413): avc:  denied  { nlmsg_relay } for  pid=228 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.652:412): avc:  denied  { create } for  pid=171 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.652:413): avc:  denied  { write } for  pid=171 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.652:413): avc:  denied  { nlmsg_relay } for  pid=171 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/19",
             "audit_expectations": [
-                "audit(1760367253.824:420): avc:  denied  { nlmsg_relay } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
-                "audit(1760367253.824:422): avc:  denied  { create } for  pid=230 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.824:423): avc:  denied  { write } for  pid=230 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.824:423): avc:  denied  { nlmsg_relay } for  pid=230 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.692:420): avc:  denied  { nlmsg_relay } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
+                "audit(1760551848.692:422): avc:  denied  { create } for  pid=173 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.692:423): avc:  denied  { write } for  pid=173 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.692:423): avc:  denied  { nlmsg_relay } for  pid=173 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/2",
             "audit_expectations": [
-                "audit(1760367253.012:258): avc:  denied  { create } for  pid=193 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.012:259): avc:  denied  { write } for  pid=193 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.012:259): avc:  denied  { nlmsg_relay } for  pid=193 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551847.980:258): avc:  denied  { create } for  pid=136 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551847.980:259): avc:  denied  { write } for  pid=136 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551847.980:259): avc:  denied  { nlmsg_relay } for  pid=136 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/20",
             "audit_expectations": [
-                "audit(1760367253.876:432): avc:  denied  { create } for  pid=232 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.876:433): avc:  denied  { write } for  pid=232 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.876:433): avc:  denied  { nlmsg_relay } for  pid=232 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.736:432): avc:  denied  { create } for  pid=175 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.736:433): avc:  denied  { write } for  pid=175 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.736:433): avc:  denied  { nlmsg_relay } for  pid=175 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/21",
             "audit_expectations": [
-                "audit(1760367253.920:440): avc:  denied  { nlmsg_relay } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
-                "audit(1760367253.920:442): avc:  denied  { create } for  pid=234 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.920:443): avc:  denied  { write } for  pid=234 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.920:443): avc:  denied  { nlmsg_relay } for  pid=234 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.776:440): avc:  denied  { nlmsg_relay } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
+                "audit(1760551848.776:442): avc:  denied  { create } for  pid=177 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.776:443): avc:  denied  { write } for  pid=177 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.776:443): avc:  denied  { nlmsg_relay } for  pid=177 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/22",
             "audit_expectations": [
-                "audit(1760367253.972:452): avc:  denied  { create } for  pid=236 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.972:453): avc:  denied  { write } for  pid=236 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.972:453): avc:  denied  { nlmsg_relay } for  pid=236 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.820:452): avc:  denied  { create } for  pid=179 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.820:453): avc:  denied  { write } for  pid=179 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.820:453): avc:  denied  { nlmsg_relay } for  pid=179 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/23",
             "audit_expectations": [
-                "audit(1760367254.016:460): avc:  denied  { nlmsg_tty_audit } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
-                "audit(1760367254.016:462): avc:  denied  { create } for  pid=238 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.016:463): avc:  denied  { write } for  pid=238 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.016:463): avc:  denied  { nlmsg_relay } for  pid=238 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.860:460): avc:  denied  { nlmsg_tty_audit } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
+                "audit(1760551848.860:462): avc:  denied  { create } for  pid=181 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.860:463): avc:  denied  { write } for  pid=181 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.860:463): avc:  denied  { nlmsg_relay } for  pid=181 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/25",
             "audit_expectations": [
-                "audit(1760367254.088:479): avc:  denied  { nlmsg_write } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
-                "audit(1760367254.088:481): avc:  denied  { create } for  pid=241 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.088:482): avc:  denied  { write } for  pid=241 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.088:482): avc:  denied  { nlmsg_relay } for  pid=241 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.920:479): avc:  denied  { nlmsg_write } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
+                "audit(1760551848.920:481): avc:  denied  { create } for  pid=184 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.920:482): avc:  denied  { write } for  pid=184 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.920:482): avc:  denied  { nlmsg_relay } for  pid=184 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/26",
             "audit_expectations": [
-                "audit(1760367254.140:490): avc:  denied  { create } for  pid=243 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.140:491): avc:  denied  { write } for  pid=243 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.140:491): avc:  denied  { nlmsg_relay } for  pid=243 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.968:490): avc:  denied  { create } for  pid=186 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.968:491): avc:  denied  { write } for  pid=186 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.968:491): avc:  denied  { nlmsg_relay } for  pid=186 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/27",
             "audit_expectations": [
-                "audit(1760367254.188:498): avc:  denied  { nlmsg_write } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
-                "audit(1760367254.188:500): avc:  denied  { create } for  pid=245 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.188:501): avc:  denied  { write } for  pid=245 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.188:501): avc:  denied  { nlmsg_relay } for  pid=245 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551849.008:498): avc:  denied  { nlmsg_write } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_audit_socket permissive=0",
+                "audit(1760551849.008:500): avc:  denied  { create } for  pid=188 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551849.008:501): avc:  denied  { write } for  pid=188 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551849.008:501): avc:  denied  { nlmsg_relay } for  pid=188 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/28",
             "audit_expectations": [
-                "audit(1760367254.264:508): avc:  denied  { module_request } for  pid=120 comm=\"socket_bin\" kmod=\"net-pf-16-proto-4-type-2\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=system permissive=0",
-                "audit(1760367254.264:510): avc:  denied  { create } for  pid=247 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.264:511): avc:  denied  { write } for  pid=247 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.264:511): avc:  denied  { nlmsg_relay } for  pid=247 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551849.052:508): avc:  denied  { module_request } for  pid=63 comm=\"socket_bin\" kmod=\"net-pf-16-proto-4-type-2\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=system permissive=0",
+                "audit(1760551849.052:510): avc:  denied  { create } for  pid=190 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551849.052:511): avc:  denied  { write } for  pid=190 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551849.052:511): avc:  denied  { nlmsg_relay } for  pid=190 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/29",
             "audit_expectations": [
-                "audit(1760367254.324:518): avc:  denied  { nlmsg_read } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_tcpdiag_socket permissive=0",
-                "audit(1760367254.324:520): avc:  denied  { create } for  pid=249 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.324:521): avc:  denied  { write } for  pid=249 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.324:521): avc:  denied  { nlmsg_relay } for  pid=249 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551849.100:518): avc:  denied  { nlmsg_read } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_tcpdiag_socket permissive=0",
+                "audit(1760551849.100:520): avc:  denied  { create } for  pid=192 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551849.100:521): avc:  denied  { write } for  pid=192 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551849.100:521): avc:  denied  { nlmsg_relay } for  pid=192 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/3",
             "audit_expectations": [
-                "audit(1760367253.056:266): avc:  denied  { nlmsg_read } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
-                "audit(1760367253.056:268): avc:  denied  { create } for  pid=195 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.056:269): avc:  denied  { write } for  pid=195 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.056:269): avc:  denied  { nlmsg_relay } for  pid=195 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
-            ]
-        },
-        {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/30",
-            "audit_expectations": [
-                "audit(1760367254.380:528): avc:  denied  { nlmsg_read } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_nlmsg_xperms_getroute_yes_t:s0 tclass=netlink_route_socket permissive=0",
-                "audit(1760367254.380:530): avc:  denied  { create } for  pid=251 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.380:531): avc:  denied  { write } for  pid=251 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.380:531): avc:  denied  { nlmsg_relay } for  pid=251 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
-            ]
-        },
-        {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/31",
-            "audit_expectations": [
-                "audit(1760367254.444:538): avc:  denied  { nlmsg_read } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_nlmsg_xperms_getroute_no_xperms_t:s0 tclass=netlink_route_socket permissive=0",
-                "audit(1760367254.444:540): avc:  denied  { create } for  pid=253 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.444:541): avc:  denied  { write } for  pid=253 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.444:541): avc:  denied  { nlmsg_relay } for  pid=253 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
-            ]
-        },
-        {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/32",
-            "audit_expectations": [
-                "audit(1760367254.504:548): avc:  denied  { nlmsg_read } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_nlmsg_xperms_getroute_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
-                "audit(1760367254.504:550): avc:  denied  { create } for  pid=255 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.504:551): avc:  denied  { write } for  pid=255 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.504:551): avc:  denied  { nlmsg_relay } for  pid=255 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
-            ]
-        },
-        {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/33",
-            "audit_expectations": [
-                "audit(1760367254.560:558): avc:  denied  { nlmsg_read } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_nlmsg_xperms_no_getroute_t:s0 tclass=netlink_route_socket permissive=0",
-                "audit(1760367254.560:560): avc:  denied  { create } for  pid=257 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.560:561): avc:  denied  { write } for  pid=257 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.560:561): avc:  denied  { nlmsg_relay } for  pid=257 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
-            ]
-        },
-        {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/34",
-            "audit_expectations": [
-                "audit(1760367254.616:568): avc:  denied  { nlmsg_write } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_nlmsg_xperms_newroute_yes_t:s0 tclass=netlink_route_socket permissive=0",
-                "audit(1760367254.616:570): avc:  denied  { create } for  pid=259 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.616:571): avc:  denied  { write } for  pid=259 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.616:571): avc:  denied  { nlmsg_relay } for  pid=259 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
-            ]
-        },
-        {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/35",
-            "audit_expectations": [
-                "audit(1760367254.668:578): avc:  denied  { nlmsg_write } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_nlmsg_xperms_newroute_no_t:s0 tclass=netlink_route_socket permissive=0",
-                "audit(1760367254.668:580): avc:  denied  { create } for  pid=261 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.668:581): avc:  denied  { write } for  pid=261 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.668:581): avc:  denied  { nlmsg_relay } for  pid=261 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
-            ]
-        },
-        {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/36",
-            "audit_expectations": [
-                "audit(1760367254.720:588): avc:  denied  { nlmsg_write } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_nlmsg_xperms_audit_set_yes_t:s0 tclass=netlink_audit_socket permissive=0",
-                "audit(1760367254.720:590): avc:  denied  { create } for  pid=263 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.720:591): avc:  denied  { write } for  pid=263 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.720:591): avc:  denied  { nlmsg_relay } for  pid=263 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
-            ]
-        },
-        {
-            "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/37",
-            "audit_expectations": [
-                "audit(1760367254.772:598): avc:  denied  { nlmsg_write } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_nlmsg_xperms_audit_set_no_t:s0 tclass=netlink_audit_socket permissive=0",
-                "audit(1760367254.772:600): avc:  denied  { create } for  pid=265 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.772:601): avc:  denied  { write } for  pid=265 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367254.772:601): avc:  denied  { nlmsg_relay } for  pid=265 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.020:266): avc:  denied  { nlmsg_read } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
+                "audit(1760551848.020:268): avc:  denied  { create } for  pid=138 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.020:269): avc:  denied  { write } for  pid=138 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.020:269): avc:  denied  { nlmsg_relay } for  pid=138 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/4",
             "audit_expectations": [
-                "audit(1760367253.108:277): avc:  denied  { create } for  pid=197 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.108:278): avc:  denied  { write } for  pid=197 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.108:278): avc:  denied  { nlmsg_relay } for  pid=197 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.064:277): avc:  denied  { create } for  pid=140 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.064:278): avc:  denied  { write } for  pid=140 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.064:278): avc:  denied  { nlmsg_relay } for  pid=140 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/5",
             "audit_expectations": [
-                "audit(1760367253.152:285): avc:  denied  { nlmsg_read } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
-                "audit(1760367253.152:287): avc:  denied  { create } for  pid=199 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.152:288): avc:  denied  { write } for  pid=199 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.152:288): avc:  denied  { nlmsg_relay } for  pid=199 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.104:285): avc:  denied  { nlmsg_read } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
+                "audit(1760551848.104:287): avc:  denied  { create } for  pid=142 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.104:288): avc:  denied  { write } for  pid=142 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.104:288): avc:  denied  { nlmsg_relay } for  pid=142 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/6",
             "audit_expectations": [
-                "audit(1760367253.204:296): avc:  denied  { create } for  pid=201 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.204:297): avc:  denied  { write } for  pid=201 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.204:297): avc:  denied  { nlmsg_relay } for  pid=201 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.148:296): avc:  denied  { create } for  pid=144 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.148:297): avc:  denied  { write } for  pid=144 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.148:297): avc:  denied  { nlmsg_relay } for  pid=144 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/7",
             "audit_expectations": [
-                "audit(1760367253.248:304): avc:  denied  { nlmsg_read } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
-                "audit(1760367253.248:306): avc:  denied  { create } for  pid=203 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.248:307): avc:  denied  { write } for  pid=203 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.248:307): avc:  denied  { nlmsg_relay } for  pid=203 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.188:304): avc:  denied  { nlmsg_read } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
+                "audit(1760551848.188:306): avc:  denied  { create } for  pid=146 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.188:307): avc:  denied  { write } for  pid=146 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.188:307): avc:  denied  { nlmsg_relay } for  pid=146 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/8",
             "audit_expectations": [
-                "audit(1760367253.300:315): avc:  denied  { create } for  pid=205 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.300:316): avc:  denied  { write } for  pid=205 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.300:316): avc:  denied  { nlmsg_relay } for  pid=205 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.232:315): avc:  denied  { create } for  pid=148 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.232:316): avc:  denied  { write } for  pid=148 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.232:316): avc:  denied  { nlmsg_relay } for  pid=148 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/9",
             "audit_expectations": [
-                "audit(1760367253.344:323): avc:  denied  { nlmsg_write } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
-                "audit(1760367253.344:325): avc:  denied  { create } for  pid=207 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.344:326): avc:  denied  { write } for  pid=207 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367253.344:326): avc:  denied  { nlmsg_relay } for  pid=207 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551848.272:323): avc:  denied  { nlmsg_write } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
+                "audit(1760551848.272:325): avc:  denied  { create } for  pid=150 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.272:326): avc:  denied  { write } for  pid=150 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551848.272:326): avc:  denied  { nlmsg_relay } for  pid=150 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+            ]
+        },
+        {
+            "name": "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/0",
+            "audit_expectations": [
+                "audit(1760551957.944:8): avc:  denied  { create } for  pid=65 comm=\"netlink_xperms_\" scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551957.944:9): avc:  denied  { write } for  pid=65 comm=\"netlink_xperms_\" scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551957.944:9): avc:  denied  { nlmsg } for  pid=65 comm=\"netlink_xperms_\" nl-msgtype=1107 scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551957.944:9): avc:  denied  { audit_write } for  pid=65 comm=\"netlink_xperms_\" capability=29  scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=capability permissive=1"
+            ]
+        },
+        {
+            "name": "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/1",
+            "audit_expectations": [
+                "audit(1760551958.004:17): avc:  denied  { create } for  pid=67 comm=\"netlink_xperms_\" scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551958.004:18): avc:  denied  { write } for  pid=67 comm=\"netlink_xperms_\" scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551958.004:18): avc:  denied  { nlmsg } for  pid=67 comm=\"netlink_xperms_\" nl-msgtype=1107 scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551958.004:18): avc:  denied  { audit_write } for  pid=67 comm=\"netlink_xperms_\" capability=29  scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=capability permissive=1"
+            ]
+        },
+        {
+            "name": "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/2",
+            "audit_expectations": [
+                "audit(1760551958.048:25): avc:  denied  { nlmsg } for  pid=63 comm=\"netlink_xperms_\" nl-msgtype=26 scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_getroute_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0",
+                "audit(1760551958.048:27): avc:  denied  { create } for  pid=69 comm=\"netlink_xperms_\" scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551958.048:28): avc:  denied  { write } for  pid=69 comm=\"netlink_xperms_\" scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551958.048:28): avc:  denied  { nlmsg } for  pid=69 comm=\"netlink_xperms_\" nl-msgtype=1107 scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551958.048:28): avc:  denied  { audit_write } for  pid=69 comm=\"netlink_xperms_\" capability=29  scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=capability permissive=1"
+            ]
+        },
+        {
+            "name": "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/3",
+            "audit_expectations": [
+                "audit(1760551958.100:35): avc:  denied  { nlmsg } for  pid=63 comm=\"netlink_xperms_\" nl-msgtype=26 scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_no_getroute_t:s0 tclass=netlink_route_socket permissive=0",
+                "audit(1760551958.100:37): avc:  denied  { create } for  pid=71 comm=\"netlink_xperms_\" scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551958.100:38): avc:  denied  { write } for  pid=71 comm=\"netlink_xperms_\" scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551958.100:38): avc:  denied  { nlmsg } for  pid=71 comm=\"netlink_xperms_\" nl-msgtype=1107 scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551958.100:38): avc:  denied  { audit_write } for  pid=71 comm=\"netlink_xperms_\" capability=29  scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=capability permissive=1"
+            ]
+        },
+        {
+            "name": "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/4",
+            "audit_expectations": [
+                "audit(1760551958.152:45): avc:  denied  { net_admin } for  pid=63 comm=\"netlink_xperms_\" capability=12  scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=capability permissive=0",
+                "audit(1760551958.152:47): avc:  denied  { create } for  pid=73 comm=\"netlink_xperms_\" scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551958.152:48): avc:  denied  { write } for  pid=73 comm=\"netlink_xperms_\" scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551958.152:48): avc:  denied  { nlmsg } for  pid=73 comm=\"netlink_xperms_\" nl-msgtype=1107 scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551958.152:48): avc:  denied  { audit_write } for  pid=73 comm=\"netlink_xperms_\" capability=29  scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=capability permissive=1"
+            ]
+        },
+        {
+            "name": "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/5",
+            "audit_expectations": [
+                "audit(1760551958.204:55): avc:  denied  { nlmsg } for  pid=63 comm=\"netlink_xperms_\" nl-msgtype=24 scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_newroute_no_t:s0 tclass=netlink_route_socket permissive=0",
+                "audit(1760551958.204:57): avc:  denied  { create } for  pid=75 comm=\"netlink_xperms_\" scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551958.204:58): avc:  denied  { write } for  pid=75 comm=\"netlink_xperms_\" scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551958.204:58): avc:  denied  { nlmsg } for  pid=75 comm=\"netlink_xperms_\" nl-msgtype=1107 scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551958.204:58): avc:  denied  { audit_write } for  pid=75 comm=\"netlink_xperms_\" capability=29  scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=capability permissive=1"
+            ]
+        },
+        {
+            "name": "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/6",
+            "audit_expectations": [
+                "audit(1760551958.256:65): avc:  denied  { audit_control } for  pid=63 comm=\"netlink_xperms_\" capability=30  scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=capability permissive=0",
+                "audit(1760551958.256:67): avc:  denied  { create } for  pid=77 comm=\"netlink_xperms_\" scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551958.256:68): avc:  denied  { write } for  pid=77 comm=\"netlink_xperms_\" scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551958.256:68): avc:  denied  { nlmsg } for  pid=77 comm=\"netlink_xperms_\" nl-msgtype=1107 scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551958.256:68): avc:  denied  { audit_write } for  pid=77 comm=\"netlink_xperms_\" capability=29  scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=capability permissive=1"
+            ]
+        },
+        {
+            "name": "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/7",
+            "audit_expectations": [
+                "audit(1760551958.308:75): avc:  denied  { nlmsg } for  pid=63 comm=\"netlink_xperms_\" nl-msgtype=1001 scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_audit_set_no_t:s0 tclass=netlink_audit_socket permissive=0",
+                "audit(1760551958.308:77): avc:  denied  { create } for  pid=79 comm=\"netlink_xperms_\" scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551958.308:78): avc:  denied  { write } for  pid=79 comm=\"netlink_xperms_\" scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551958.308:78): avc:  denied  { nlmsg } for  pid=79 comm=\"netlink_xperms_\" nl-msgtype=1107 scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551958.308:78): avc:  denied  { audit_write } for  pid=79 comm=\"netlink_xperms_\" capability=29  scontext=test_u:test_r:nlmsg_xperms_test_t:s0 tcontext=test_u:test_r:nlmsg_xperms_test_t:s0 tclass=capability permissive=1"
             ]
         },
         {
@@ -769,176 +775,179 @@
         {
             "name": "SocketPeerSecTest/UnixDomainDatagram",
             "audit_expectations": [
-                "audit(1760367249.312:152): avc:  denied  { getopt } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:unix_dgram_socket_test_t:s0 tclass=unix_dgram_socket permissive=1"
+                "audit(1760551844.316:152): avc:  denied  { getopt } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:unix_dgram_socket_test_t:s0 tclass=unix_dgram_socket permissive=1"
             ]
         },
         {
             "name": "SocketPeerSecTest/UnixDomainStream",
             "audit_expectations": [
-                "audit(1760367249.188:137): avc:  denied  { create } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_peer_t:s0 tclass=unix_stream_socket permissive=1",
-                "audit(1760367249.188:138): avc:  denied  { getattr } for  pid=120 comm=\"socket_bin\" name=\"UNIX-STREAM\" dev=\"sockfs\" ino=334 scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_peer_t:s0 tclass=unix_stream_socket permissive=1",
-                "audit(1760367249.188:139): avc:  denied  { getopt } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_peer_t:s0 tclass=unix_stream_socket permissive=1",
-                "audit(1760367249.188:140): avc:  denied  { getopt } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:unix_stream_socket_test_t:s0 tclass=unix_stream_socket permissive=1",
-                "audit(1760367249.188:141): avc:  denied  { bind } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_peer_t:s0 tclass=unix_stream_socket permissive=1",
-                "audit(1760367249.188:142): avc:  denied  { listen } for  pid=120 comm=\"socket_bin\" path=\"/tmp/unix_domain_stream_test\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_peer_t:s0 tclass=unix_stream_socket permissive=1",
-                "audit(1760367249.188:143): avc:  denied  { connect } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:unix_stream_socket_test_t:s0 tclass=unix_stream_socket permissive=1",
-                "audit(1760367249.188:143): avc:  denied  { write } for  pid=120 comm=\"socket_bin\" name=\"unix_domain_stream_test\" dev=\"tmpfs\" ino=6 scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:object_r:sock_file_test_t:s0 tclass=sock_file permissive=1",
-                "audit(1760367249.188:143): avc:  denied  { connectto } for  pid=120 comm=\"socket_bin\" path=\"/tmp/unix_domain_stream_test\" scontext=test_u:test_r:unix_stream_socket_test_t:s0 tcontext=test_u:test_r:socket_test_peer_t:s0 tclass=unix_stream_socket permissive=1",
-                "audit(1760367249.188:144): avc:  denied  { accept } for  pid=120 comm=\"socket_bin\" path=\"/tmp/unix_domain_stream_test\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_peer_t:s0 tclass=unix_stream_socket permissive=1",
-                "audit(1760367249.188:145): avc:  denied  { create } for  pid=149 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367249.188:146): avc:  denied  { write } for  pid=149 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367249.188:146): avc:  denied  { nlmsg_relay } for  pid=149 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367249.188:146): avc:  denied  { audit_write } for  pid=149 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
+                "audit(1760551844.192:137): avc:  denied  { create } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_peer_t:s0 tclass=unix_stream_socket permissive=1",
+                "audit(1760551844.192:138): avc:  denied  { getattr } for  pid=63 comm=\"socket_bin\" name=\"UNIX-STREAM\" dev=\"sockfs\" ino=342 scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_peer_t:s0 tclass=unix_stream_socket permissive=1",
+                "audit(1760551844.192:139): avc:  denied  { getopt } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_peer_t:s0 tclass=unix_stream_socket permissive=1",
+                "audit(1760551844.192:140): avc:  denied  { getopt } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:unix_stream_socket_test_t:s0 tclass=unix_stream_socket permissive=1",
+                "audit(1760551844.192:141): avc:  denied  { bind } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_peer_t:s0 tclass=unix_stream_socket permissive=1",
+                "audit(1760551844.192:142): avc:  denied  { listen } for  pid=63 comm=\"socket_bin\" path=\"/tmp/unix_domain_stream_test\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_peer_t:s0 tclass=unix_stream_socket permissive=1",
+                "audit(1760551844.192:143): avc:  denied  { connect } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:unix_stream_socket_test_t:s0 tclass=unix_stream_socket permissive=1",
+                "audit(1760551844.192:143): avc:  denied  { write } for  pid=63 comm=\"socket_bin\" name=\"unix_domain_stream_test\" dev=\"tmpfs\" ino=6 scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:object_r:sock_file_test_t:s0 tclass=sock_file permissive=1",
+                "audit(1760551844.192:143): avc:  denied  { connectto } for  pid=63 comm=\"socket_bin\" path=\"/tmp/unix_domain_stream_test\" scontext=test_u:test_r:unix_stream_socket_test_t:s0 tcontext=test_u:test_r:socket_test_peer_t:s0 tclass=unix_stream_socket permissive=1",
+                "audit(1760551844.192:144): avc:  denied  { accept } for  pid=63 comm=\"socket_bin\" path=\"/tmp/unix_domain_stream_test\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_peer_t:s0 tclass=unix_stream_socket permissive=1",
+                "audit(1760551844.196:145): avc:  denied  { create } for  pid=92 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551844.196:146): avc:  denied  { write } for  pid=92 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551844.196:146): avc:  denied  { nlmsg_relay } for  pid=92 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551844.196:146): avc:  denied  { audit_write } for  pid=92 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
             ]
         },
         {
             "name": "SocketTest/AcceptAllowed",
             "audit_expectations": [
-                "audit(1760367247.536:120): avc:  denied  { create } for  pid=145 comm=\"socket_bin\" scontext=test_u:test_r:socket_accept_only_test_t:s0 tcontext=test_u:test_r:socket_accept_only_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.536:121): avc:  denied  { write } for  pid=145 comm=\"socket_bin\" scontext=test_u:test_r:socket_accept_only_test_t:s0 tcontext=test_u:test_r:socket_accept_only_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.536:121): avc:  denied  { nlmsg_relay } for  pid=145 comm=\"socket_bin\" scontext=test_u:test_r:socket_accept_only_test_t:s0 tcontext=test_u:test_r:socket_accept_only_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.536:121): avc:  denied  { audit_write } for  pid=145 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_accept_only_test_t:s0 tcontext=test_u:test_r:socket_accept_only_test_t:s0 tclass=capability permissive=1"
+                "audit(1760551842.508:120): avc:  denied  { create } for  pid=88 comm=\"socket_bin\" scontext=test_u:test_r:socket_accept_only_test_t:s0 tcontext=test_u:test_r:socket_accept_only_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.508:121): avc:  denied  { write } for  pid=88 comm=\"socket_bin\" scontext=test_u:test_r:socket_accept_only_test_t:s0 tcontext=test_u:test_r:socket_accept_only_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.508:121): avc:  denied  { nlmsg_relay } for  pid=88 comm=\"socket_bin\" scontext=test_u:test_r:socket_accept_only_test_t:s0 tcontext=test_u:test_r:socket_accept_only_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.508:121): avc:  denied  { audit_write } for  pid=88 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_accept_only_test_t:s0 tcontext=test_u:test_r:socket_accept_only_test_t:s0 tclass=capability permissive=1"
             ]
         },
         {
             "name": "SocketTest/AcceptDenied",
             "audit_expectations": [
-                "audit(1760367247.588:128): avc:  denied  { accept } for  pid=120 comm=\"socket_bin\" path=\"/tmp/accept_test_no\" scontext=test_u:test_r:socket_accept_test_t:s0 tcontext=test_u:test_r:socket_accept_no_t:s0 tclass=unix_stream_socket permissive=0",
-                "audit(1760367247.588:130): avc:  denied  { create } for  pid=147 comm=\"socket_bin\" scontext=test_u:test_r:socket_accept_test_t:s0 tcontext=test_u:test_r:socket_accept_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.588:131): avc:  denied  { write } for  pid=147 comm=\"socket_bin\" scontext=test_u:test_r:socket_accept_test_t:s0 tcontext=test_u:test_r:socket_accept_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.588:131): avc:  denied  { nlmsg_relay } for  pid=147 comm=\"socket_bin\" scontext=test_u:test_r:socket_accept_test_t:s0 tcontext=test_u:test_r:socket_accept_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.588:131): avc:  denied  { audit_write } for  pid=147 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_accept_test_t:s0 tcontext=test_u:test_r:socket_accept_test_t:s0 tclass=capability permissive=1"
+                "audit(1760551842.552:128): avc:  denied  { accept } for  pid=63 comm=\"socket_bin\" path=\"/tmp/accept_test_no\" scontext=test_u:test_r:socket_accept_test_t:s0 tcontext=test_u:test_r:socket_accept_no_t:s0 tclass=unix_stream_socket permissive=0",
+                "audit(1760551842.552:130): avc:  denied  { create } for  pid=90 comm=\"socket_bin\" scontext=test_u:test_r:socket_accept_test_t:s0 tcontext=test_u:test_r:socket_accept_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.552:131): avc:  denied  { write } for  pid=90 comm=\"socket_bin\" scontext=test_u:test_r:socket_accept_test_t:s0 tcontext=test_u:test_r:socket_accept_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.552:131): avc:  denied  { nlmsg_relay } for  pid=90 comm=\"socket_bin\" scontext=test_u:test_r:socket_accept_test_t:s0 tcontext=test_u:test_r:socket_accept_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.552:131): avc:  denied  { audit_write } for  pid=90 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_accept_test_t:s0 tcontext=test_u:test_r:socket_accept_test_t:s0 tclass=capability permissive=1"
             ]
         },
         {
             "name": "SocketTest/GetSocknameAndPeername",
             "audit_expectations": [
-                "audit(1760367247.472:108): avc:  denied  { getattr } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_getname_test_t:s0 tcontext=test_u:test_r:socket_getname_no_t:s0 tclass=unix_stream_socket permissive=0",
-                "audit(1760367247.472:109): avc:  denied  { getattr } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_getname_test_t:s0 tcontext=test_u:test_r:socket_getname_no_t:s0 tclass=unix_stream_socket permissive=0",
-                "audit(1760367247.472:111): avc:  denied  { create } for  pid=143 comm=\"socket_bin\" scontext=test_u:test_r:socket_getname_test_t:s0 tcontext=test_u:test_r:socket_getname_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.472:112): avc:  denied  { write } for  pid=143 comm=\"socket_bin\" scontext=test_u:test_r:socket_getname_test_t:s0 tcontext=test_u:test_r:socket_getname_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.472:112): avc:  denied  { nlmsg_relay } for  pid=143 comm=\"socket_bin\" scontext=test_u:test_r:socket_getname_test_t:s0 tcontext=test_u:test_r:socket_getname_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.472:112): avc:  denied  { audit_write } for  pid=143 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_getname_test_t:s0 tcontext=test_u:test_r:socket_getname_test_t:s0 tclass=capability permissive=1"
+                "audit(1760551842.448:108): avc:  denied  { getattr } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_getname_test_t:s0 tcontext=test_u:test_r:socket_getname_no_t:s0 tclass=unix_stream_socket permissive=0",
+                "audit(1760551842.448:109): avc:  denied  { getattr } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_getname_test_t:s0 tcontext=test_u:test_r:socket_getname_no_t:s0 tclass=unix_stream_socket permissive=0",
+                "audit(1760551842.448:111): avc:  denied  { create } for  pid=86 comm=\"socket_bin\" scontext=test_u:test_r:socket_getname_test_t:s0 tcontext=test_u:test_r:socket_getname_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.448:112): avc:  denied  { write } for  pid=86 comm=\"socket_bin\" scontext=test_u:test_r:socket_getname_test_t:s0 tcontext=test_u:test_r:socket_getname_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.448:112): avc:  denied  { nlmsg_relay } for  pid=86 comm=\"socket_bin\" scontext=test_u:test_r:socket_getname_test_t:s0 tcontext=test_u:test_r:socket_getname_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.448:112): avc:  denied  { audit_write } for  pid=86 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_getname_test_t:s0 tcontext=test_u:test_r:socket_getname_test_t:s0 tclass=capability permissive=1"
             ]
         },
         {
             "name": "SocketTest/ListenDenied",
             "audit_expectations": [
-                "audit(1760367247.000:22): avc:  denied  { listen } for  pid=120 comm=\"socket_bin\" lport=44747 scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_no_t:s0 tclass=tcp_socket permissive=0",
-                "audit(1760367247.000:24): avc:  denied  { create } for  pid=125 comm=\"socket_bin\" scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.000:25): avc:  denied  { write } for  pid=125 comm=\"socket_bin\" scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.000:25): avc:  denied  { nlmsg_relay } for  pid=125 comm=\"socket_bin\" scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.000:25): avc:  denied  { audit_write } for  pid=125 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_test_t:s0 tclass=capability permissive=1"
+                "audit(1760551842.004:17): avc:  denied  { read } for  pid=66 comm=\"socket_bin\" scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.004:18): avc:  denied  { nlmsg_write } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.004:18): avc:  denied  { audit_control } for  pid=63 comm=\"socket_bin\" capability=30  scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_test_t:s0 tclass=capability permissive=1",
+                "audit(1760551842.016:22): avc:  denied  { listen } for  pid=63 comm=\"socket_bin\" lport=48049 scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_no_t:s0 tclass=tcp_socket permissive=0",
+                "audit(1760551842.016:24): avc:  denied  { create } for  pid=68 comm=\"socket_bin\" scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.016:25): avc:  denied  { write } for  pid=68 comm=\"socket_bin\" scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.016:25): avc:  denied  { nlmsg_relay } for  pid=68 comm=\"socket_bin\" scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.016:25): avc:  denied  { audit_write } for  pid=68 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_test_t:s0 tclass=capability permissive=1"
             ]
         },
         {
             "name": "SocketTest/ReadAllowed",
             "audit_expectations": [
-                "audit(1760367247.364:90): avc:  denied  { create } for  pid=139 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.364:91): avc:  denied  { write } for  pid=139 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.364:91): avc:  denied  { nlmsg_relay } for  pid=139 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.364:91): avc:  denied  { audit_write } for  pid=139 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=capability permissive=1"
+                "audit(1760551842.352:90): avc:  denied  { create } for  pid=82 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.352:91): avc:  denied  { write } for  pid=82 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.352:91): avc:  denied  { nlmsg_relay } for  pid=82 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.352:91): avc:  denied  { audit_write } for  pid=82 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=capability permissive=1"
             ]
         },
         {
             "name": "SocketTest/ReadDenied",
             "audit_expectations": [
-                "audit(1760367247.412:98): avc:  denied  { read } for  pid=120 comm=\"socket_bin\" path=\"socket:[312]\" dev=\"sockfs\" ino=312 scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_no_t:s0 tclass=unix_stream_socket permissive=0",
-                "audit(1760367247.412:100): avc:  denied  { create } for  pid=141 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.412:101): avc:  denied  { write } for  pid=141 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.412:101): avc:  denied  { nlmsg_relay } for  pid=141 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.412:101): avc:  denied  { audit_write } for  pid=141 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=capability permissive=1"
+                "audit(1760551842.396:98): avc:  denied  { read } for  pid=63 comm=\"socket_bin\" path=\"socket:[320]\" dev=\"sockfs\" ino=320 scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_no_t:s0 tclass=unix_stream_socket permissive=0",
+                "audit(1760551842.396:100): avc:  denied  { create } for  pid=84 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.396:101): avc:  denied  { write } for  pid=84 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.396:101): avc:  denied  { nlmsg_relay } for  pid=84 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.396:101): avc:  denied  { audit_write } for  pid=84 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=capability permissive=1"
             ]
         },
         {
             "name": "SocketTest/RecvmsgAllowed",
             "audit_expectations": [
-                "audit(1760367247.260:71): avc:  denied  { create } for  pid=135 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.260:72): avc:  denied  { write } for  pid=135 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.260:72): avc:  denied  { nlmsg_relay } for  pid=135 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.260:72): avc:  denied  { audit_write } for  pid=135 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=capability permissive=1"
+                "audit(1760551842.256:71): avc:  denied  { create } for  pid=78 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.256:72): avc:  denied  { write } for  pid=78 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.256:72): avc:  denied  { nlmsg_relay } for  pid=78 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.256:72): avc:  denied  { audit_write } for  pid=78 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=capability permissive=1"
             ]
         },
         {
             "name": "SocketTest/RecvmsgDenied",
             "audit_expectations": [
-                "audit(1760367247.308:79): avc:  denied  { read } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_no_t:s0 tclass=unix_stream_socket permissive=0",
-                "audit(1760367247.308:81): avc:  denied  { create } for  pid=137 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.308:82): avc:  denied  { write } for  pid=137 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.308:82): avc:  denied  { nlmsg_relay } for  pid=137 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.308:82): avc:  denied  { audit_write } for  pid=137 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=capability permissive=1"
+                "audit(1760551842.300:79): avc:  denied  { read } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_no_t:s0 tclass=unix_stream_socket permissive=0",
+                "audit(1760551842.300:81): avc:  denied  { create } for  pid=80 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.300:82): avc:  denied  { write } for  pid=80 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.300:82): avc:  denied  { nlmsg_relay } for  pid=80 comm=\"socket_bin\" scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.300:82): avc:  denied  { audit_write } for  pid=80 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_recvmsg_test_t:s0 tcontext=test_u:test_r:socket_recvmsg_test_t:s0 tclass=capability permissive=1"
             ]
         },
         {
             "name": "SocketTest/SendmsgAllowed",
             "audit_expectations": [
-                "audit(1760367247.084:33): avc:  denied  { create } for  pid=127 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.084:34): avc:  denied  { write } for  pid=127 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.084:34): avc:  denied  { nlmsg_relay } for  pid=127 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551842.096:33): avc:  denied  { create } for  pid=70 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.096:34): avc:  denied  { write } for  pid=70 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.096:34): avc:  denied  { nlmsg_relay } for  pid=70 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "SocketTest/SendmsgDenied",
             "audit_expectations": [
-                "audit(1760367247.124:41): avc:  denied  { write } for  pid=120 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_no_t:s0 tclass=unix_stream_socket permissive=0",
-                "audit(1760367247.124:43): avc:  denied  { create } for  pid=129 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.124:44): avc:  denied  { write } for  pid=129 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.124:44): avc:  denied  { nlmsg_relay } for  pid=129 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551842.132:41): avc:  denied  { write } for  pid=63 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_no_t:s0 tclass=unix_stream_socket permissive=0",
+                "audit(1760551842.132:43): avc:  denied  { create } for  pid=72 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.132:44): avc:  denied  { write } for  pid=72 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.132:44): avc:  denied  { nlmsg_relay } for  pid=72 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "SocketTest/SockFileLabelIsCorrect",
             "audit_expectations": [
-                "audit(1760367246.904:6): avc:  denied  { create } for  pid=122 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367246.904:7): avc:  denied  { write } for  pid=122 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367246.904:7): avc:  denied  { nlmsg_relay } for  pid=122 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367246.904:7): avc:  denied  { audit_write } for  pid=122 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
+                "audit(1760551841.944:6): avc:  denied  { create } for  pid=65 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551841.944:7): avc:  denied  { write } for  pid=65 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551841.944:7): avc:  denied  { nlmsg_relay } for  pid=65 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551841.944:7): avc:  denied  { audit_write } for  pid=65 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
             ]
         },
         {
             "name": "SocketTest/WriteAllowed",
             "audit_expectations": [
-                "audit(1760367247.172:52): avc:  denied  { create } for  pid=131 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.172:53): avc:  denied  { write } for  pid=131 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.172:53): avc:  denied  { nlmsg_relay } for  pid=131 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551842.176:52): avc:  denied  { create } for  pid=74 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.176:53): avc:  denied  { write } for  pid=74 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.176:53): avc:  denied  { nlmsg_relay } for  pid=74 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "SocketTest/WriteDenied",
             "audit_expectations": [
-                "audit(1760367247.212:60): avc:  denied  { write } for  pid=120 comm=\"socket_bin\" path=\"socket:[291]\" dev=\"sockfs\" ino=291 scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_no_t:s0 tclass=unix_stream_socket permissive=0",
-                "audit(1760367247.212:62): avc:  denied  { create } for  pid=133 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.212:63): avc:  denied  { write } for  pid=133 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367247.212:63): avc:  denied  { nlmsg_relay } for  pid=133 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
+                "audit(1760551842.212:60): avc:  denied  { write } for  pid=63 comm=\"socket_bin\" path=\"socket:[299]\" dev=\"sockfs\" ino=299 scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_no_t:s0 tclass=unix_stream_socket permissive=0",
+                "audit(1760551842.212:62): avc:  denied  { create } for  pid=76 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.212:63): avc:  denied  { write } for  pid=76 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551842.212:63): avc:  denied  { nlmsg_relay } for  pid=76 comm=\"socket_bin\" scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_test_t:s0 tclass=netlink_audit_socket permissive=1"
             ]
         },
         {
             "name": "SocketTests/SocketTest/SocketTakesProcessLabel/0",
             "audit_expectations": [
-                "audit(1760367250.484:165): avc:  denied  { create } for  pid=157 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_no_trans_t:s0 tcontext=test_u:test_r:socket_test_no_trans_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367250.484:166): avc:  denied  { write } for  pid=157 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_no_trans_t:s0 tcontext=test_u:test_r:socket_test_no_trans_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367250.484:166): avc:  denied  { nlmsg_relay } for  pid=157 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_no_trans_t:s0 tcontext=test_u:test_r:socket_test_no_trans_t:s0 tclass=netlink_audit_socket permissive=1",
-                "audit(1760367250.484:166): avc:  denied  { audit_write } for  pid=157 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_test_no_trans_t:s0 tcontext=test_u:test_r:socket_test_no_trans_t:s0 tclass=capability permissive=1"
+                "audit(1760551845.484:165): avc:  denied  { create } for  pid=100 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_no_trans_t:s0 tcontext=test_u:test_r:socket_test_no_trans_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551845.484:166): avc:  denied  { write } for  pid=100 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_no_trans_t:s0 tcontext=test_u:test_r:socket_test_no_trans_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551845.484:166): avc:  denied  { nlmsg_relay } for  pid=100 comm=\"socket_bin\" scontext=test_u:test_r:socket_test_no_trans_t:s0 tcontext=test_u:test_r:socket_test_no_trans_t:s0 tclass=netlink_audit_socket permissive=1",
+                "audit(1760551845.484:166): avc:  denied  { audit_write } for  pid=100 comm=\"socket_bin\" capability=29  scontext=test_u:test_r:socket_test_no_trans_t:s0 tcontext=test_u:test_r:socket_test_no_trans_t:s0 tclass=capability permissive=1"
             ]
         },
         {
             "name": "SocketTests/SocketTest/SocketTakesProcessLabel/3",
             "audit_expectations": [
-                "audit(1760367250.536:180): avc:  denied  { net_raw } for  pid=120 comm=\"socket_bin\" capability=13  scontext=test_u:test_r:socket_test_no_trans_t:s0 tcontext=test_u:test_r:socket_test_no_trans_t:s0 tclass=capability permissive=1"
+                "audit(1760551845.540:180): avc:  denied  { net_raw } for  pid=63 comm=\"socket_bin\" capability=13  scontext=test_u:test_r:socket_test_no_trans_t:s0 tcontext=test_u:test_r:socket_test_no_trans_t:s0 tclass=capability permissive=1"
             ]
         },
         {
             "name": "SocketTransitionTests/SocketTransitionTest/SocketLabelingAccountsForTransitions/5",
             "audit_expectations": [
-                "audit(1760367251.764:217): avc:  denied  { read } for  pid=120 comm=\"socket_bin\" name=\"ping_group_range\" dev=\"proc\" ino=404 scontext=test_u:test_r:socket_test_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=1",
-                "audit(1760367251.764:218): avc:  denied  { getattr } for  pid=120 comm=\"socket_bin\" path=\"/proc/sys/net/ipv4/ping_group_range\" dev=\"proc\" ino=404 scontext=test_u:test_r:socket_test_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=1",
-                "audit(1760367251.764:219): avc:  denied  { write } for  pid=120 comm=\"socket_bin\" name=\"ping_group_range\" dev=\"proc\" ino=404 scontext=test_u:test_r:socket_test_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=1"
+                "audit(1760551846.756:217): avc:  denied  { read } for  pid=63 comm=\"socket_bin\" name=\"ping_group_range\" dev=\"proc\" ino=412 scontext=test_u:test_r:socket_test_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=1",
+                "audit(1760551846.756:218): avc:  denied  { getattr } for  pid=63 comm=\"socket_bin\" path=\"/proc/sys/net/ipv4/ping_group_range\" dev=\"proc\" ino=412 scontext=test_u:test_r:socket_test_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=1",
+                "audit(1760551846.756:219): avc:  denied  { write } for  pid=63 comm=\"socket_bin\" name=\"ping_group_range\" dev=\"proc\" ino=412 scontext=test_u:test_r:socket_test_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=file permissive=1"
             ]
         },
         {
             "name": "SocketTransitionTests/SocketTransitionTest/SocketLabelingAccountsForTransitions/6",
             "audit_expectations": [
-                "audit(1760367251.800:224): avc:  denied  { net_raw } for  pid=120 comm=\"socket_bin\" capability=13  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
+                "audit(1760551846.792:224): avc:  denied  { net_raw } for  pid=63 comm=\"socket_bin\" capability=13  scontext=test_u:test_r:socket_test_t:s0 tcontext=test_u:test_r:socket_test_t:s0 tclass=capability permissive=1"
             ]
         },
         {

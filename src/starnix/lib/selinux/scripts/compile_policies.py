@@ -190,6 +190,14 @@ _COMPOSITE_POLICY_PATHS = [
     (
         [
             "base_policy.conf",
+            "new_file/test_policy.conf",
+            "new_file/netlink_xperms_policy.conf",
+        ],
+        "netlink_xperms_policy.pp",
+    ),
+    (
+        [
+            "base_policy.conf",
             "new_file/type_transition_policy.conf",
         ],
         "type_transition_policy.pp",
