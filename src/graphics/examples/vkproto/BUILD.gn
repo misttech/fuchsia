@@ -85,12 +85,6 @@ vulkan_executable("bin") {
 
     if (is_linux) {
       configs += [ ":vulkan_sdk_linux_config($host_toolchain)" ]
-    } else if (is_mac) {
-      include_dirs += [ "${vulkan_sdk}/include" ]
-
-      lib_dirs = [ "${vulkan_sdk}/lib" ]
-
-      libs = [ "vulkan" ]
     }
   }
 
