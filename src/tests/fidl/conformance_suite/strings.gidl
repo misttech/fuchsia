@@ -161,7 +161,6 @@ decode_failure("StringCountExceedsRemainingMessageSize") {
 }
 
 success("StringWithLimitInVector") {
-    bindings_allowlist = [rust_next],
     value = StringWithLimitInVector{
         v: [
             "Hi",
@@ -181,7 +180,6 @@ success("StringWithLimitInVector") {
 }
 
 encode_failure("StringWithLimitInVectorExceedsLimit") {
-    bindings_allowlist = [rust_next],
     value = StringWithLimitInVector{
         v: [
             "Hello",
@@ -191,7 +189,6 @@ encode_failure("StringWithLimitInVectorExceedsLimit") {
 }
 
 decode_failure("StringWithLimitInVectorExceedsLimit") {
-    bindings_allowlist = [rust_next],
     type = StringWithLimitInVector,
     bytes = {
         v2 = [
@@ -208,7 +205,6 @@ decode_failure("StringWithLimitInVectorExceedsLimit") {
 }
 
 success("StringWithLimitInArray") {
-    bindings_allowlist = [rust_next],
     value = StringWithLimitInArray{
         a: ["Oh", "Hi"],
     },
@@ -228,7 +224,6 @@ success("StringWithLimitInArray") {
 }
 
 encode_failure("StringWithLimitInArrayExceedsLimit") {
-    bindings_allowlist = [rust_next],
     value = StringWithLimitInArray{
         a: ["Oh", "Hello"],
     },
@@ -236,7 +231,6 @@ encode_failure("StringWithLimitInArrayExceedsLimit") {
 }
 
 decode_failure("StringWithLimitInArrayExceedsLimit") {
-    bindings_allowlist = [rust_next],
     type = StringWithLimitInArray,
     bytes = {
         v2 = [
@@ -255,7 +249,6 @@ decode_failure("StringWithLimitInArrayExceedsLimit") {
 }
 
 success("StringWithLimitInTable") {
-    bindings_allowlist = [rust_next],
     value = StringWithLimitInTable{
         t: TableWithStringWithLimit{s: "Hi", },
     },
@@ -278,7 +271,6 @@ success("StringWithLimitInTable") {
 }
 
 encode_failure("StringWithLimitInTableExceedsLimit") {
-    bindings_allowlist = [rust_next],
     value = StringWithLimitInTable{
         t: TableWithStringWithLimit{s: "Hello", },
     },
@@ -286,7 +278,6 @@ encode_failure("StringWithLimitInTableExceedsLimit") {
 }
 
 decode_failure("StringWithLimitInTableExceedsLimit") {
-    bindings_allowlist = [rust_next],
     type = StringWithLimitInTable,
     bytes = {
         v2 = [
@@ -308,7 +299,6 @@ decode_failure("StringWithLimitInTableExceedsLimit") {
 }
 
 success("StringWithLimitInUnion") {
-    bindings_allowlist = [rust_next],
     value = StringWithLimitInUnion{
         u: UnionWithStringWithLimit{s: "Hi", },
     },
@@ -330,7 +320,6 @@ success("StringWithLimitInUnion") {
 }
 
 encode_failure("StringWithLimitInUnionExceedsLimit") {
-    bindings_allowlist = [rust_next],
     value = StringWithLimitInUnion{
         u: UnionWithStringWithLimit{s: "Hello", },
     },
@@ -338,7 +327,6 @@ encode_failure("StringWithLimitInUnionExceedsLimit") {
 }
 
 decode_failure("StringWithLimitInUnionExceedsLimit") {
-    bindings_allowlist = [rust_next],
     type = StringWithLimitInUnion,
     bytes = {
         v2 = [

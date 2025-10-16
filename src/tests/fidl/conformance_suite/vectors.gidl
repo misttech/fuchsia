@@ -560,7 +560,6 @@ success("ByteVectors16") {
 }
 
 success("VectorWithLimitInVector") {
-    bindings_allowlist = [rust_next],
     value = VectorWithLimitInVector{
         v: [
             [113, 200],
@@ -580,7 +579,6 @@ success("VectorWithLimitInVector") {
 }
 
 encode_failure("VectorWithLimitInVectorExceedsLimit") {
-    bindings_allowlist = [rust_next],
     value = VectorWithLimitInVector{
         v: [
             [113, 200, 234],
@@ -590,7 +588,6 @@ encode_failure("VectorWithLimitInVectorExceedsLimit") {
 }
 
 decode_failure("VectorWithLimitInVectorExceedsLimit") {
-    bindings_allowlist = [rust_next],
     type = VectorWithLimitInVector,
     bytes = {
         v2 = [
@@ -607,7 +604,6 @@ decode_failure("VectorWithLimitInVectorExceedsLimit") {
 }
 
 success("VectorWithLimitInArray") {
-    bindings_allowlist = [rust_next],
     value = VectorWithLimitInArray{
         a: [[11, 22], [33, 44]],
     },
@@ -627,7 +623,6 @@ success("VectorWithLimitInArray") {
 }
 
 encode_failure("VectorWithLimitInArrayExceedsLimit") {
-    bindings_allowlist = [rust_next],
     value = VectorWithLimitInArray{
         a: [[11, 22], [33, 44, 55]],
     },
@@ -635,7 +630,6 @@ encode_failure("VectorWithLimitInArrayExceedsLimit") {
 }
 
 decode_failure("VectorWithLimitInArrayExceedsLimit") {
-    bindings_allowlist = [rust_next],
     type = VectorWithLimitInArray,
     bytes = {
         v2 = [
@@ -654,7 +648,6 @@ decode_failure("VectorWithLimitInArrayExceedsLimit") {
 }
 
 success("VectorWithLimitInTable") {
-    bindings_allowlist = [rust_next],
     value = VectorWithLimitInTable{
         t: TableWithVectorWithLimit{v: [11, 22], },
     },
@@ -677,7 +670,6 @@ success("VectorWithLimitInTable") {
 }
 
 encode_failure("VectorWithLimitInTableExceedsLimit") {
-    bindings_allowlist = [rust_next],
     value = VectorWithLimitInTable{
         t: TableWithVectorWithLimit{v: [11, 22, 33], },
     },
@@ -685,7 +677,6 @@ encode_failure("VectorWithLimitInTableExceedsLimit") {
 }
 
 decode_failure("VectorWithLimitInTableExceedsLimit") {
-    bindings_allowlist = [rust_next],
     type = VectorWithLimitInTable,
     bytes = {
         v2 = [
@@ -707,7 +698,6 @@ decode_failure("VectorWithLimitInTableExceedsLimit") {
 }
 
 success("VectorWithLimitInUnion") {
-    bindings_allowlist = [rust_next],
     value = VectorWithLimitInUnion{
         u: UnionWithVectorWithLimit{v: [11, 22], },
     },
@@ -729,7 +719,6 @@ success("VectorWithLimitInUnion") {
 }
 
 encode_failure("VectorWithLimitInUnionExceedsLimit") {
-    bindings_allowlist = [rust_next],
     value = VectorWithLimitInUnion{
         u: UnionWithVectorWithLimit{v: [11, 22, 33], },
     },
@@ -737,7 +726,6 @@ encode_failure("VectorWithLimitInUnionExceedsLimit") {
 }
 
 decode_failure("VectorWithLimitInUnionExceedsLimit") {
-    bindings_allowlist = [rust_next],
     type = VectorWithLimitInUnion,
     bytes = {
         v2 = [
