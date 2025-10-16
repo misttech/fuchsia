@@ -7,7 +7,6 @@ import("//build/dist/resource.gni")
 import("//build/rust/rustc_library.gni")
 import("//build/rust/rustc_test.gni")
 import("//src/starnix/build/args.gni")
-import("//src/starnix/kernel/starnix.gni")
 
 group("tests") {
   testonly = true
@@ -282,7 +281,7 @@ _starnix_core_deps = [
   "//src/lib/replace-with",
   "//src/lib/trace/rust:trace",
   "//src/performance/memory/attribution/server",
-  "//src/starnix/kernel:vdso_data($bionic_linux_toolchain)",
+  "//src/starnix/kernel/vdso",
   "//src/starnix/lib/ebpf",
   "//src/starnix/lib/ebpf_api",
   "//src/starnix/lib/expando",
@@ -357,10 +356,6 @@ _starnix_core_deps = [
   "//third_party/rust_crates:utf8parse",
   "//third_party/rust_crates:zerocopy",
 ]
-if (starnix_enable_arch32) {
-  _starnix_core_deps +=
-      [ "//src/starnix/kernel:vdso_data($bionic_linux_arch32_toolchain)" ]
-}
 
 _starnix_core_features = []
 if (starnix_enable_arch32) {

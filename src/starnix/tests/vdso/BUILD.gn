@@ -19,7 +19,7 @@ test("vdso_calculate_utc_test-bin") {
   sources = [ "vdso_calculate_utc_test.cc" ]
   deps = [
     "//src/lib/fxl/test:gtest_main",
-    "//src/starnix/kernel:vdso_calculate_utc",
+    "//src/starnix/kernel/vdso:vdso_calculate_utc",
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
   ]
