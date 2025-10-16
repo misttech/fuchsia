@@ -30,6 +30,7 @@ source_set("usb-phy-visitor-impl") {
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.designware.platform:fuchsia.designware.platform_cpp",
     "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
+    "//src/devices/bind/fuchsia.usb.phy:fuchsia.usb.phy_cpp",
   ]
   public_deps = [ "//sdk/lib/driver/devicetree/visitors:property-parser" ]
 }
@@ -46,6 +47,7 @@ test("usb-phy-visitor-test-bin") {
     "//sdk/lib/driver/devicetree/visitors/default/mmio",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.platform:fuchsia.platform_cpp",
+    "//src/devices/bind/fuchsia.usb.phy:fuchsia.usb.phy_cpp",
     "//src/lib/fxl/test:gtest_main",
   ]
 }
