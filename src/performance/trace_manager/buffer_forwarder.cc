@@ -107,8 +107,8 @@ TransferStatus BufferForwarder::WriteChunkBy(BufferForwarder::ForwardStrategy st
   // requires a page aligned offset, so we'll need to fudge the offset a bit. Truncate the offset to
   // be page aligned and then add back the extra bytes to the size of the region that we are mapping
   // and then also offset the addr we get back from the mapping.
-  uint64_t page_aligned_offset = vmo_offset & (~(ZX_PAGE_SIZE - 1));
-  uint64_t page_aligned_remainder = vmo_offset % ZX_PAGE_SIZE;
+  uint64_t page_aligned_offset = vmo_offset & (~(zx_system_get_page_size() - 1));
+  uint64_t page_aligned_remainder = vmo_offset % zx_system_get_page_size();
 
   zx_vaddr_t addr;
   zx_status_t map_result = zx::vmar::root_self()->map(ZX_VM_PERM_READ, 0, vmo, page_aligned_offset,

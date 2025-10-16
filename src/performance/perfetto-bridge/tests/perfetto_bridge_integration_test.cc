@@ -67,7 +67,8 @@ TEST(PerfettoBridgeIntegrationTest, Init) {
       };
   trace::TraceReader reader(std::move(handle_perfetto_blob), [](fbl::String&&) {});
 
-  uint8_t buffer[ZX_PAGE_SIZE];
+  constexpr size_t kBufferSize = 4096;
+  uint8_t buffer[kBufferSize];
   uint8_t* buffer_base = buffer;
   size_t leftover_bytes = 0;
   for (;;) {
@@ -98,7 +99,6 @@ TEST(PerfettoBridgeIntegrationTest, Init) {
   loop.RunUntilIdle();
 }
 
-// TODO(https://fxbug.dev/42071555): Add a test to cover calls to Controller::GetKnownCategories once
-// perfetto_producer.cc has a working backend. This would test the plumbing all the
-// way from perfetto to ffx trace.
-// TEST(PerfettoBridgeIntegrationTest, GetKnownCategories)
+// TODO(https://fxbug.dev/42071555): Add a test to cover calls to Controller::GetKnownCategories
+// once perfetto_producer.cc has a working backend. This would test the plumbing all the way from
+// perfetto to ffx trace. TEST(PerfettoBridgeIntegrationTest, GetKnownCategories)

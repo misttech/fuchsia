@@ -33,7 +33,8 @@ void ConsumeEvents(zx::socket in_socket, zx::eventpair e) {
   };
   trace::TraceReader reader(std::move(handle_events), [](std::string_view) {});
 
-  uint8_t buffer[ZX_PAGE_SIZE];
+  constexpr size_t kBufferSize = 4096;
+  uint8_t buffer[kBufferSize];
   uint8_t* buffer_base = buffer;
   size_t leftover_bytes = 0;
   size_t bytes_read = 0;

@@ -67,13 +67,13 @@ TEST(GtestTest, MakeWorkTest) {
 
   // Map a vmo and write random data to it
   zx::vmo vmo;
-  zx_status_t result = zx::vmo::create(ZX_PAGE_SIZE, 0, &vmo);
+  zx_status_t result = zx::vmo::create(zx_system_get_page_size(), 0, &vmo);
   if (result != ZX_OK) {
     return;
   }
   zx_vaddr_t out;
-  result =
-      zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0, ZX_PAGE_SIZE, &out);
+  result = zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0,
+                                      zx_system_get_page_size(), &out);
   if (result != ZX_OK) {
     return;
   }

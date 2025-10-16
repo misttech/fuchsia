@@ -58,7 +58,7 @@ class FuchsiaProducer : public perfetto::Producer {
     //    buffer
     conn_args.receive_shmem_fd_cb_fuchsia = []() {
       zx::vmo vmo;
-      zx_status_t result = zx::vmo::create(8 * ZX_PAGE_SIZE, 0, &vmo);
+      zx_status_t result = zx::vmo::create(8 * zx_system_get_page_size(), 0, &vmo);
       if (result != ZX_OK) {
         FX_PLOGS(ERROR, result) << "Failed to create shmem vmo!";
         return -1;
@@ -175,8 +175,9 @@ class FuchsiaProducer : public perfetto::Producer {
     }
 
     shmem_arbiter_ = perfetto::SharedMemoryArbiter::CreateInstance(
-        shared_memory_.get(), ZX_PAGE_SIZE, perfetto::SharedMemoryABI::ShmemMode::kDefault,
-        perfetto_service_.get(), task_runner_.get());
+        shared_memory_.get(), zx_system_get_page_size(),
+        perfetto::SharedMemoryABI::ShmemMode::kDefault, perfetto_service_.get(),
+        task_runner_.get());
     if (shmem_arbiter_ == nullptr) {
       return zx::error(ZX_ERR_NO_MEMORY);
     }
