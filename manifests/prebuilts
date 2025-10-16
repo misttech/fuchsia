@@ -639,13 +639,13 @@
              attributes="debug-symbols,debug-symbols-x64"/>
     <package name="fuchsia/drivers/rtc/pcf8563/arm64"
              path="prebuilt/drivers/rtc/pcf8563"
-             version="git_revision:cbfe2122725d254ffae179d9f6e0f8808d768a26"/>
+             version="git_revision:9e4d55033ef6af20fd91c058bce06da0a2a62341"/>
     <package name="fuchsia/drivers/rtc/board_input_bundle_set"
              path="prebuilt/drivers/rtc/pcf8563/board_input_bundle_set"
-             version="git_revision:cbfe2122725d254ffae179d9f6e0f8808d768a26"/>
+             version="git_revision:9e4d55033ef6af20fd91c058bce06da0a2a62341"/>
     <package name="fuchsia/drivers/rtc/pcf8563/debug-symbols-arm64"
              path="prebuilt/.build-id"
-             version="git_revision:cbfe2122725d254ffae179d9f6e0f8808d768a26"
+             version="git_revision:9e4d55033ef6af20fd91c058bce06da0a2a62341"
              attributes="debug-symbols,debug-symbols-arm64"/>
     <package name="fuchsia/drivers/msd-arm-mali/debug/arm64"
              path="prebuilt/drivers/msd-arm-mali-debug"
