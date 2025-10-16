@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use lazy_static::lazy_static;
 use std::cell::RefCell;
 use std::ffi::c_char;
+use std::sync::LazyLock;
 use zx::sys::zx_handle_t;
 use zx::{self as zx, AsHandleRef};
 
@@ -25,9 +25,7 @@ use crate::recursion_guard::with_recursion_guard;
 
 // WARNING! Do not change this to use once_cell: once_cell uses parking_lot, which may allocate in
 // the contended case.
-lazy_static! {
-    static ref PROFILER: Profiler = with_recursion_guard(Default::default);
-}
+static PROFILER: LazyLock<Profiler> = LazyLock::new(|| with_recursion_guard(Default::default));
 
 thread_local! {
     static THREAD_DATA: RefCell<PerThreadData> = with_recursion_guard(Default::default);
