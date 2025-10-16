@@ -179,7 +179,7 @@ TEST(RemoteBlockDeviceTest, WriteTransactionReadResponse) {
   ASSERT_TRUE(device.is_ok()) << device.status_string();
 
   zx::vmo vmo;
-  ASSERT_EQ(zx::vmo::create(ZX_PAGE_SIZE, 0, &vmo), ZX_OK);
+  ASSERT_EQ(zx::vmo::create(zx_system_get_page_size(), 0, &vmo), ZX_OK);
 
   storage::OwnedVmoid vmoid;
   ASSERT_EQ(device->BlockAttachVmo(vmo, &vmoid.GetReference(device.value().get())), ZX_OK);
@@ -247,7 +247,7 @@ TEST(RemoteBlockDeviceTest, LargeThreadCountSuceeds) {
   ASSERT_TRUE(device.is_ok()) << device.status_string();
 
   zx::vmo vmo;
-  ASSERT_EQ(zx::vmo::create(ZX_PAGE_SIZE, 0, &vmo), ZX_OK);
+  ASSERT_EQ(zx::vmo::create(zx_system_get_page_size(), 0, &vmo), ZX_OK);
 
   storage::OwnedVmoid vmoid;
   ASSERT_EQ(device->BlockAttachVmo(vmo, &vmoid.GetReference(device.value().get())), ZX_OK);
@@ -347,7 +347,7 @@ TEST(RemoteBlockDeviceTest, NoHangForErrorsWithMultipleThreads) {
     }
 
     zx::vmo vmo;
-    ASSERT_EQ(zx::vmo::create(ZX_PAGE_SIZE, 0, &vmo), ZX_OK);
+    ASSERT_EQ(zx::vmo::create(zx_system_get_page_size(), 0, &vmo), ZX_OK);
 
     storage::OwnedVmoid vmoid;
     ASSERT_EQ(device->BlockAttachVmo(vmo, &vmoid.GetReference(device.get())), ZX_OK);

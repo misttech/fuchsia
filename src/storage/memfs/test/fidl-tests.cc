@@ -120,7 +120,7 @@ void QueryInfo(const char* path, fuchsia_io::wire::FilesystemInfo* info) {
   const char* kFsName = "memfs";
   const char* name = reinterpret_cast<const char*>(info->name.data());
   ASSERT_EQ(strncmp(name, kFsName, strlen(kFsName)), 0, "Unexpected filesystem mounted");
-  ASSERT_EQ(info->block_size, ZX_PAGE_SIZE);
+  ASSERT_EQ(info->block_size, zx_system_get_page_size());
   ASSERT_EQ(info->max_filename_size, NAME_MAX);
   ASSERT_EQ(info->fs_type, fidl::ToUnderlying(fuchsia_fs::VfsType::kMemfs));
   ASSERT_NE(info->fs_id, 0);

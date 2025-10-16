@@ -84,7 +84,7 @@ TEST(BCacheTest, VmoidReuse) {
   ASSERT_FALSE(bc_or.is_error());
 
   zx::vmo vmo;
-  ASSERT_EQ(zx::vmo::create(ZX_PAGE_SIZE, 0, &vmo), ZX_OK);
+  ASSERT_EQ(zx::vmo::create(zx_system_get_page_size(), 0, &vmo), ZX_OK);
 
   storage::Vmoid vmoid;
   // When the BcacheMapper is created, BlockAttachVmo() is called once internally. Therefore, the
@@ -194,7 +194,7 @@ TEST_P(BcacheMapperTest, BlockGetInfo) {
 
 TEST_P(BcacheMapperTest, AttachDetachVmo) {
   zx::vmo vmo;
-  ASSERT_EQ(zx::vmo::create(ZX_PAGE_SIZE, 0, &vmo), ZX_OK);
+  ASSERT_EQ(zx::vmo::create(zx_system_get_page_size(), 0, &vmo), ZX_OK);
 
   storage::Vmoid vmoid;
   ASSERT_EQ(bcache_->BlockAttachVmo(vmo, &vmoid), ZX_OK);

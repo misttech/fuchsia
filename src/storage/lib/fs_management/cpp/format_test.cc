@@ -14,14 +14,14 @@
 namespace fs_management {
 namespace {
 
-constexpr uint32_t kBlockSize = ZX_PAGE_SIZE;
+constexpr uint32_t kBlockSize = 4096;
 
 constexpr uint8_t kGptMagic[] = {0x45, 0x46, 0x49, 0x20, 0x50, 0x41, 0x52, 0x54,
                                  0x00, 0x00, 0x01, 0x00, 0x5c, 0x00, 0x00, 0x00};
 
 TEST(FormatDetectionTest, TestInvalidGptIgnored) {
   zx::vmo vmo;
-  ASSERT_EQ(zx::vmo::create(2 * ZX_PAGE_SIZE, 0, &vmo), ZX_OK);
+  ASSERT_EQ(zx::vmo::create(2 * kBlockSize, 0, &vmo), ZX_OK);
   zx::result ramdisk = ramdevice_client::Ramdisk::CreateWithVmo(std::move(vmo), kBlockSize);
   ASSERT_EQ(ramdisk.status_value(), ZX_OK);
   zx::result block = ramdisk->ConnectBlock();
@@ -31,8 +31,8 @@ TEST(FormatDetectionTest, TestInvalidGptIgnored) {
 
 TEST(FormatDetectionTest, TestGptWithUnusualBlockSize) {
   zx::vmo vmo;
-  ASSERT_EQ(zx::vmo::create(2 * ZX_PAGE_SIZE, 0, &vmo), ZX_OK);
-  vmo.write(kGptMagic, ZX_PAGE_SIZE, sizeof(kGptMagic));
+  ASSERT_EQ(zx::vmo::create(2 * kBlockSize, 0, &vmo), ZX_OK);
+  vmo.write(kGptMagic, kBlockSize, sizeof(kGptMagic));
   zx::result ramdisk = ramdevice_client::Ramdisk::CreateWithVmo(std::move(vmo), kBlockSize);
   ASSERT_EQ(ramdisk.status_value(), ZX_OK);
   zx::result block = ramdisk->ConnectBlock();
@@ -42,7 +42,7 @@ TEST(FormatDetectionTest, TestGptWithUnusualBlockSize) {
 
 TEST(FormatDetectionTest, TestVbmetaRecognised) {
   zx::vmo vmo;
-  ASSERT_EQ(zx::vmo::create(2 * ZX_PAGE_SIZE, 0, &vmo), ZX_OK);
+  ASSERT_EQ(zx::vmo::create(2 * kBlockSize, 0, &vmo), ZX_OK);
 
   // Write the vbmeta magic string at the start of the device.
   const unsigned char kVbmetaMagic[] = {'A', 'V', 'B', '0'};
