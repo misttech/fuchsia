@@ -86,6 +86,10 @@ static inline vm_page_t* vm_get_zero_page(void) { return zero_page; }
 // return the physical address of the zero page
 static inline paddr_t vm_get_zero_page_paddr(void) { return zero_page_paddr; }
 
+// Request the heap dimensions.
+vaddr_t vm_get_kernel_heap_base();
+size_t vm_get_kernel_heap_size();
+
 // internal kernel routines below, do not call directly
 
 // internal routine by the scheduler to swap mmu contexts

@@ -6,6 +6,7 @@
 
 #include <inttypes.h>
 #include <lib/arch/paging.h>
+#include <lib/boot-options/boot-options.h>
 #include <lib/elfldltl/machine.h>
 #include <lib/memalloc/range.h>
 #include <zircon/tls.h>
@@ -18,6 +19,7 @@
 #include <ktl/string_view.h>
 #include <phys/address-space.h>
 #include <phys/allocation.h>
+#include <phys/arch/heap.h>
 #include <phys/elf-image.h>
 #include <region-alloc/region.h>
 
@@ -58,6 +60,7 @@
 
 namespace {
 
+constexpr size_t k1MiB = 0x0010'0000;
 constexpr size_t k1GiB = 0x4000'0000;
 
 constexpr bool IsPageAligned(uintptr_t p) { return p % ZX_PAGE_SIZE == 0; }
@@ -388,10 +391,16 @@ HandoffPrep::ZirconAbi HandoffPrep::ConstructKernelAddressSpace(const UartDriver
   // All first-class mappings in the kernel address space have been made. We
   // mark the allocator as done and base the starting address of the kernel's
   // virtual heap on where the first-class virtual range allocations ended.
-  //
-  // TODO(https://fxbug.dev/446675650): Use the return value to figure out where
-  // to start the virtual heap.
-  ktl::ignore = first_class_mapping_allocator_.Finish();
+  [[maybe_unused]] uintptr_t allocated_end = first_class_mapping_allocator_.Finish();
+
+  // The kernel's virtual heap (if enabled).
+  if constexpr (VIRTUAL_HEAP) {
+    constexpr size_t kHeapAlignment = 1u << kArchHeapAlignmentBits;
+    handoff_->heap_vmar =
+        PhysVmar{.base = fbl::round_up(allocated_end, kHeapAlignment),
+                 .size = fbl::round_up(gBootOptions->heap_max_size_mb * k1MiB, kHeapAlignment)};
+    handoff_->heap_vmar->set_name("heap"sv);
+  }
 
   // If any mmio_deny regions were collected, transfer them over now.
   if (!mmio_deny.empty()) {

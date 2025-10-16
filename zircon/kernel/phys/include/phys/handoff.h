@@ -430,6 +430,9 @@ struct PhysHandoff {
 
   // Mapped kPeripheral ranges.
   PhysHandoffPermanentSpan<const MappedMmioRange> periph_ranges;
+
+  // The kernel's virtual heap, if any. Otherwise, the heap is managed directly out of the physmap.
+  std::optional<PhysVmar> heap_vmar;
 };
 static_assert(std::is_default_constructible_v<PhysHandoff>);
 

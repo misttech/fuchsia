@@ -57,6 +57,9 @@ namespace {
 fbl::Vector<fbl::RefPtr<VmAddressRegion>> handoff_vmars;
 fbl::RefPtr<VmAddressRegion> temporary_handoff_vmar;
 
+// Declare storage for the kernel's heap VMAR. Maybe unused if virtual heap is disabled.
+lazy_init::LazyInit<VmAddressRegion> kernel_heap_vmar;
+
 constexpr uint32_t ToVmarFlags(PhysMapping::Permissions perms) {
   uint32_t flags = VMAR_FLAG_SPECIFIC | VMAR_FLAG_CAN_MAP_SPECIFIC;
   if (perms.readable()) {
@@ -122,14 +125,50 @@ fbl::RefPtr<VmAddressRegion> RegisterVmar(const PhysVmar& phys_vmar) {
 
 }  // namespace
 
-void vm_init_preheap() {}
+// Request the heap dimensions.
+vaddr_t vm_get_kernel_heap_base() {
+  ASSERT(VIRTUAL_HEAP);
+  return kernel_heap_vmar->base();
+}
+
+size_t vm_get_kernel_heap_size() {
+  ASSERT(VIRTUAL_HEAP);
+  return kernel_heap_vmar->size();
+}
+
+void vm_init_preheap() {
+  // Initialize VMM data structures.
+  VmAspace::KernelAspaceInitPreHeap();
+
+  fbl::RefPtr<VmAddressRegion> root_vmar = VmAspace::kernel_aspace()->RootVmar();
+
+  // Hold the vmar in a temporary refptr until we can activate it. Activating it will cause the
+  // address space to acquire a refptr allowing us to then safely drop our ref without triggering
+  // the object to get destroyed.
+  fbl::RefPtr<VmAddressRegion> vmar;
+
+  if constexpr (VIRTUAL_HEAP) {
+    ASSERT(gPhysHandoff->heap_vmar.has_value());
+    gPhysHandoff->heap_vmar->Log("VM");
+    // Reserve the range for the heap.
+    const vaddr_t kernel_heap_base = gPhysHandoff->heap_vmar->base;
+    const size_t heap_bytes = gPhysHandoff->heap_vmar->size;
+    // The heap has nothing to initialize later and we can create this from the beginning with only
+    // read and write and no execute.
+    vmar = fbl::AdoptRef<VmAddressRegion>(&kernel_heap_vmar.Initialize(
+        *root_vmar, kernel_heap_base, heap_bytes,
+        VMAR_FLAG_CAN_MAP_SPECIFIC | VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE,
+        "kernel heap"));
+    {
+      Guard<CriticalMutex> guard(kernel_heap_vmar->lock());
+      kernel_heap_vmar->Activate();
+    }
+  }
+}
 
 // Global so that it can be friended by VmAddressRegion.
 void vm_init() {
   LTRACE_ENTRY;
-
-  // Initialize VMM data structures.
-  VmAspace::KernelAspaceInit();
 
   // grab a page and mark it as the zero page
   zx_status_t status = pmm_alloc_page(0, &zero_page, &zero_page_paddr);

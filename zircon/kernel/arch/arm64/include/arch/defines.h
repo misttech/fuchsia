@@ -32,9 +32,6 @@ static_assert(PAGE_SIZE == (1UL << PAGE_SIZE_SHIFT), "Page size mismatch!");
 #define USER_PAGE_SIZE (1UL << USER_PAGE_SIZE_SHIFT)
 #define USER_PAGE_MASK (USER_PAGE_SIZE - 1)
 
-// Align the heap to 2MiB to optionally support large page mappings in it.
-#define ARCH_HEAP_ALIGN_BITS 21
-
 // The maximum cache line seen on any known ARM hardware.
 #define MAX_CACHE_LINE 64
 

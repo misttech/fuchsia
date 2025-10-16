@@ -30,6 +30,7 @@ source_set("heap") {
     "profile",
     "//zircon/kernel/lib/console",
     "//zircon/kernel/lib/virtual_alloc",
+    "//zircon/kernel/phys:arch-heap",
     "//zircon/system/ulib/lazy_init",
 
     # TODO(https://fxbug.dev/42128324): Remove headers when possible.

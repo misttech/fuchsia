@@ -17,9 +17,6 @@
 static_assert(PAGE_SIZE == (1UL << PAGE_SIZE_SHIFT), "Page size mismatch!");
 #endif
 
-// Align the heap to 2MiB to optionally support large page mappings in it.
-#define ARCH_HEAP_ALIGN_BITS 21
-
 #define MAX_CACHE_LINE 64
 
 #endif  // ZIRCON_KERNEL_ARCH_X86_INCLUDE_ARCH_DEFINES_H_

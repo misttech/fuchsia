@@ -627,6 +627,7 @@ if (toolchain_environment == "kernel.phys" ||
     deps = [
       ":address-space-map",
       ":allocation",
+      ":arch-heap",
       ":elf-image",
       ":handoff",
       ":handoff-entropy",
@@ -645,6 +646,7 @@ if (toolchain_environment == "kernel.phys" ||
       "//zircon/system/ulib/fbl",
       "//zircon/system/ulib/region-alloc:headers",
     ]
+    configs += [ "//zircon/kernel:virtual_heap" ]
   }
 
   static_library("elf-image") {
@@ -852,6 +854,11 @@ source_set("handoff") {
     public_deps += [ "//zircon/system/public" ]
   }
 
+  public_configs = [ ":includes" ]
+}
+
+source_set("arch-heap") {
+  public = [ "$arch_phys/include/phys/arch/heap.h" ]
   public_configs = [ ":includes" ]
 }
 
