@@ -102,33 +102,40 @@ impl ShowTool {
 
 async fn gather_target_info_direct(
     connection: &ffx_target::Connection,
-) -> Result<(AddressData, Option<fidl_fuchsia_developer_ffx::CompatibilityInfo>)> {
+) -> Result<(Option<AddressData>, Option<fidl_fuchsia_developer_ffx::CompatibilityInfo>)> {
     // If we've gotten a connection, we must have an address we connected to
-    let addr = connection.device_address().expect("No address in connection?");
-    let ad = AddressData { host: format!("{}", addr.ip()), port: addr.port() };
+    let ad = connection
+        .device_address()
+        .map(|addr| AddressData { host: format!("{}", addr.ip()), port: addr.port() });
     Ok((ad, connection.compatibility_info().map(|ci| ci.into())))
 }
 
 async fn gather_target_info_from_daemon(
     target_proxy: TargetProxyHolder,
-) -> Result<(AddressData, Option<fidl_fuchsia_developer_ffx::CompatibilityInfo>)> {
+) -> Result<(Option<AddressData>, Option<fidl_fuchsia_developer_ffx::CompatibilityInfo>)> {
     let addr_info = timeout(Duration::from_secs(1), target_proxy.get_ssh_address())
-        .await?
+        .await
+        .ok()
+        .transpose()
         .map_err(|e| anyhow!("Failed to get ssh address: {:?}", e))?;
-    let addr = TargetIpAddr::from(&addr_info);
-    let port = match addr_info {
-        TargetIpAddrInfo::Ip(_info) => 22,
-        TargetIpAddrInfo::IpPort(info) => info.port,
-    };
-    let ssh_address = match addr.ip() {
-        IpAddr::V4(ip) => AddressData { host: ip.to_string(), port },
-        IpAddr::V6(ip) => AddressData {
-            host: format!(
-                "[{ip}{}]",
-                if addr.scope_id() != 0 { format!("%{}", addr.scope_id()) } else { "".into() }
-            ),
-            port,
-        },
+    let ssh_address = if let Some(addr_info) = addr_info {
+        let addr = TargetIpAddr::from(&addr_info);
+        let port = match addr_info {
+            TargetIpAddrInfo::Ip(_info) => 22,
+            TargetIpAddrInfo::IpPort(info) => info.port,
+        };
+        Some(match addr.ip() {
+            IpAddr::V4(ip) => AddressData { host: ip.to_string(), port },
+            IpAddr::V6(ip) => AddressData {
+                host: format!(
+                    "[{ip}{}]",
+                    if addr.scope_id() != 0 { format!("%{}", addr.scope_id()) } else { "".into() }
+                ),
+                port,
+            },
+        })
+    } else {
+        None
     };
     let host = target_proxy.identity().await?;
     Ok((ssh_address, host.compatibility))

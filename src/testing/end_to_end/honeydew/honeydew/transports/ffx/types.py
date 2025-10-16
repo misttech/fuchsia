@@ -25,7 +25,7 @@ class TargetData:
     """
 
     name: str
-    ssh_address: IpPort
+    ssh_address: IpPort | None
     compatibility_state: str
     compatibility_message: str
     last_reboot_graceful: bool

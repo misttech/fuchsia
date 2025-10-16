@@ -39,7 +39,6 @@
         "compatibility_state",
         "last_reboot_graceful",
         "name",
-        "ssh_address",
         "uptime_nanos"
       ],
       "properties": {
@@ -49,9 +48,12 @@
         },
         "ssh_address": {
           "description": "SSH address of the target device.",
-          "allOf": [
+          "anyOf": [
             {
               "$ref": "#/definitions/AddressData"
+            },
+            {
+              "type": "null"
             }
           ]
         },

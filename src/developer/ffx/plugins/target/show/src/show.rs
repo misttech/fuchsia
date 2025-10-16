@@ -34,7 +34,7 @@ pub struct TargetData {
     /// Node name of the target device.
     pub name: String,
     /// SSH address of the target device.
-    pub ssh_address: AddressData,
+    pub ssh_address: Option<AddressData>,
     /// Compatibility information between this host tool and the device.
     pub compatibility_state: CompatibilityState,
     pub compatibility_message: String,
@@ -134,7 +134,7 @@ pub struct BuildData {
     pub commit: Option<String>,
 }
 
-// LINT.ThenChange(/src/testing/end_to_end/honeydew/honeydew/typing/ffx.py)
+// LINT.ThenChange(/src/testing/end_to_end/honeydew/honeydew/transports/ffx/types.py)
 
 impl TargetShowInfo {
     pub(crate) fn to_show_entries(&self) -> Vec<ShowEntry> {
@@ -166,7 +166,7 @@ impl From<&TargetData> for ShowEntry {
                     "SSH Address",
                     "ssh_address",
                     "Interface address",
-                    &Some(format!("{}:{}", value.ssh_address.host, value.ssh_address.port)),
+                    &value.ssh_address.as_ref().map(|addr| format!("{}:{}", addr.host, addr.port)),
                 ),
                 ShowEntry::str_value_with_highlight(
                     "Compatibility state",
