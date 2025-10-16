@@ -17,7 +17,6 @@ pub(crate) mod validate;
 pub mod translate;
 
 use crate::error::Error;
-use cm_types::HandleType;
 use cml_macro::{CheckedVec, OneOrMany, Reference};
 use fidl_fuchsia_io as fio;
 use indexmap::IndexMap;
@@ -37,8 +36,9 @@ use std::{cmp, fmt, path};
 use validate::offer_to_all_from_offer;
 
 pub use cm_types::{
-    AllowedOffers, Availability, BorrowedName, DeliveryType, DependencyType, Durability, Name,
-    NamespacePath, OnTerminate, ParseError, Path, RelativePath, StartupMode, StorageId, Url,
+    AllowedOffers, Availability, BorrowedName, BoundedName, DeliveryType, DependencyType,
+    Durability, HandleType, Name, NamespacePath, OnTerminate, ParseError, Path, RelativePath,
+    StartupMode, StorageId, Url,
 };
 use error::Location;
 
@@ -658,6 +658,96 @@ impl<'a> CapabilityId<'a> {
             clause.decl_type(),
             supported_keywords,
         )))
+    }
+
+    /// Given an Offer or Expose clause, return the set of target identifiers.
+    ///
+    /// When only one capability identifier is specified, the target identifier name is derived
+    /// using the "as" clause. If an "as" clause is not specified, the target identifier is the
+    /// same name as the source.
+    ///
+    /// When multiple capability identifiers are specified, the target names are the same as the
+    /// source names.
+    pub fn from_spanned_expose(
+        expose: &'a Spanned<SpannedExpose>,
+        filename: Option<&std::path::Path>,
+        file_source: Option<&String>,
+    ) -> Result<Vec<Self>, Error> {
+        // TODO: Validate that exactly one of these is set.
+        let alias = expose.r#as();
+        if let Some(n) = expose.service() {
+            return Ok(Self::services_from(Self::get_one_or_many_names(
+                n,
+                alias,
+                expose.capability_type().unwrap(),
+            )?));
+        } else if let Some(n) = expose.protocol() {
+            return Ok(Self::protocols_from(Self::get_one_or_many_names(
+                n,
+                alias,
+                expose.capability_type().unwrap(),
+            )?));
+        } else if let Some(n) = expose.directory() {
+            return Ok(Self::directories_from(Self::get_one_or_many_names(
+                n,
+                alias,
+                expose.capability_type().unwrap(),
+            )?));
+        } else if let Some(n) = expose.storage() {
+            return Ok(Self::storages_from(Self::get_one_or_many_names(
+                n,
+                alias,
+                expose.capability_type().unwrap(),
+            )?));
+        } else if let Some(n) = expose.runner() {
+            return Ok(Self::runners_from(Self::get_one_or_many_names(
+                n,
+                alias,
+                expose.capability_type().unwrap(),
+            )?));
+        } else if let Some(n) = expose.resolver() {
+            return Ok(Self::resolvers_from(Self::get_one_or_many_names(
+                n,
+                alias,
+                expose.capability_type().unwrap(),
+            )?));
+        } else if let Some(event_stream) = expose.event_stream() {
+            return Ok(Self::event_streams_from(Self::get_one_or_many_names(
+                event_stream,
+                alias,
+                expose.capability_type().unwrap(),
+            )?));
+        } else if let Some(n) = expose.dictionary() {
+            return Ok(Self::dictionaries_from(Self::get_one_or_many_names(
+                n,
+                alias,
+                expose.capability_type().unwrap(),
+            )?));
+        } else if let Some(n) = expose.config() {
+            return Ok(Self::configurations_from(Self::get_one_or_many_names(
+                n,
+                alias,
+                expose.capability_type().unwrap(),
+            )?));
+        }
+
+        // Unsupported capability type.
+        let supported_keywords = expose
+            .supported()
+            .into_iter()
+            .map(|k| format!("\"{}\"", k))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let location = validate::byte_index_to_location(file_source, expose.span().0);
+        Err(Error::validate_with_span(
+            format!(
+                "`{}` declaration is missing a capability keyword, one of: {}",
+                expose.decl_type(),
+                supported_keywords,
+            ),
+            location,
+            filename,
+        ))
     }
 
     /// Returns the target names as a `Vec`  from a declaration with `names` and `alias` as a `Vec`.
@@ -1695,7 +1785,7 @@ pub struct SpannedDocument {
 
     pub r#use: Option<Vec<Spanned<SpannedUse>>>,
 
-    pub expose: Option<Vec<Spanned<Expose>>>,
+    pub expose: Option<Vec<Spanned<SpannedExpose>>>,
 
     pub offer: Option<Vec<Spanned<Offer>>>,
 
@@ -3716,6 +3806,87 @@ impl Expose {
     }
 }
 
+#[derive(Deserialize, Debug, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct SpannedExpose {
+    /// When routing a service, the [name](#name) of a [service capability][doc-service].
+    pub service: Option<OneOrMany<Name>>,
+
+    /// When routing a protocol, the [name](#name) of a [protocol capability][doc-protocol].
+    pub protocol: Option<OneOrMany<Name>>,
+
+    /// When routing a directory, the [name](#name) of a [directory capability][doc-directory].
+    pub directory: Option<OneOrMany<Name>>,
+
+    /// When routing a runner, the [name](#name) of a [runner capability][doc-runners].
+    pub runner: Option<OneOrMany<Name>>,
+
+    /// When routing a resolver, the [name](#name) of a [resolver capability][doc-resolvers].
+    pub resolver: Option<OneOrMany<Name>>,
+
+    /// When routing a dictionary, the [name](#name) of a [dictionary capability][doc-dictionaries].
+    pub dictionary: Option<OneOrMany<Name>>,
+
+    /// When routing a config, the [name](#name) of a configuration capability.
+    pub config: Option<OneOrMany<Name>>,
+
+    /// `from`: The source of the capability, one of:
+    /// - `self`: This component. Requires a corresponding
+    ///     [`capability`](#capabilities) declaration.
+    /// - `framework`: The Component Framework runtime.
+    /// - `#<child-name>`: A [reference](#references) to a child component
+    ///     instance.
+    pub from: Spanned<OneOrMany<ExposeFromRef>>,
+
+    /// The [name](#name) for the capability as it will be known by the target. If omitted,
+    /// defaults to the original name. `as` cannot be used when an array of multiple capability
+    /// names is provided.
+    pub r#as: Option<Spanned<Name>>,
+
+    /// The capability target. Either `parent` or `framework`. Defaults to `parent`.
+    pub to: Option<Spanned<ExposeToRef>>,
+
+    /// (`directory` only) the maximum [directory rights][doc-directory-rights] to apply to
+    /// the exposed directory capability.
+    pub rights: Option<Rights>,
+
+    /// (`directory` only) the relative path of a subdirectory within the source directory
+    /// capability to route.
+    pub subdir: Option<Spanned<RelativePath>>,
+
+    /// (`event_stream` only) the name(s) of the event streams being exposed.
+    pub event_stream: Option<Spanned<OneOrMany<Name>>>,
+
+    /// (`event_stream` only) the scope(s) of the event streams being exposed. This is used to
+    /// downscope the range of components to which an event stream refers and make it refer only to
+    /// the components defined in the scope.
+    pub scope: Option<OneOrMany<EventScope>>,
+
+    /// `availability` _(optional)_: The expectations around this capability's availability. Affects
+    /// build-time and runtime route validation. One of:
+    /// - `required` (default): a required dependency, the source must exist and provide it. Use
+    ///     this when the target of this expose requires this capability to function properly.
+    /// - `optional`: an optional dependency. Use this when the target of the expose can function
+    ///     with or without this capability. The target must not have a `required` dependency on the
+    ///     capability. The ultimate source of this expose must be `void` or an actual component.
+    /// - `same_as_target`: the availability expectations of this capability will match the
+    ///     target's. If the target requires the capability, then this field is set to `required`.
+    ///     If the target has an optional dependency on the capability, then the field is set to
+    ///     `optional`.
+    /// - `transitional`: like `optional`, but will tolerate a missing source. Use this
+    ///     only to avoid validation errors during transitional periods of multi-step code changes.
+    ///
+    /// For more information, see the
+    /// [availability](/docs/concepts/components/v2/capabilities/availability.md) documentation.
+    pub availability: Option<Availability>,
+
+    /// Whether or not the source of this offer must exist. One of:
+    /// - `required` (default): the source (`from`) must be defined in this manifest.
+    /// - `unknown`: the source of this offer will be rewritten to `void` if its source (`from`)
+    ///     is not defined in this manifest after includes are processed.
+    pub source_availability: Option<SourceAvailability>,
+}
+
 /// Example:
 ///
 /// ```json5
@@ -4795,9 +4966,67 @@ impl CapabilityClause for Expose {
     }
 }
 
+impl SpannedCapabilityClause for SpannedExpose {
+    fn service(&self) -> Option<OneOrMany<&BorrowedName>> {
+        option_one_or_many_as_ref(&self.service)
+    }
+    fn protocol(&self) -> Option<OneOrMany<&BorrowedName>> {
+        option_one_or_many_as_ref(&self.protocol)
+    }
+    fn directory(&self) -> Option<OneOrMany<&BorrowedName>> {
+        option_one_or_many_as_ref(&self.directory)
+    }
+    fn storage(&self) -> Option<OneOrMany<&BorrowedName>> {
+        None
+    }
+    fn runner(&self) -> Option<OneOrMany<&BorrowedName>> {
+        option_one_or_many_as_ref(&self.runner)
+    }
+    fn resolver(&self) -> Option<OneOrMany<&BorrowedName>> {
+        option_one_or_many_as_ref(&self.resolver)
+    }
+    fn event_stream(&self) -> Option<OneOrMany<&BorrowedName>> {
+        self.event_stream
+            .as_ref()
+            .map(|spanned_value| spanned_value.get_ref().iter().map(|name| name.as_ref()).collect())
+    }
+    fn dictionary(&self) -> Option<OneOrMany<&BorrowedName>> {
+        option_one_or_many_as_ref(&self.dictionary)
+    }
+    fn config(&self) -> Option<OneOrMany<&BorrowedName>> {
+        option_one_or_many_as_ref(&self.config)
+    }
+
+    fn decl_type(&self) -> &'static str {
+        "expose"
+    }
+    fn supported(&self) -> &[&'static str] {
+        &[
+            "service",
+            "protocol",
+            "directory",
+            "runner",
+            "resolver",
+            "event_stream",
+            "dictionary",
+            "config",
+        ]
+    }
+}
+
 impl AsClause for Expose {
     fn r#as(&self) -> Option<&BorrowedName> {
         self.r#as.as_ref().map(Name::as_ref)
+    }
+}
+
+impl AsClause for SpannedExpose {
+    fn r#as(&self) -> Option<&BorrowedName> {
+        self.r#as.as_ref().map(|spanned_value| {
+            let bounded_name: &BoundedName<255> = spanned_value.as_ref();
+            let borrowed_name: &BorrowedName = bounded_name.as_ref();
+            borrowed_name
+        })
     }
 }
 

@@ -10,7 +10,8 @@ use crate::{
     Environment, EnvironmentExtends, Error, EventScope, Expose, ExposeFromRef, ExposeToRef,
     FromClause, Offer, OfferFromRef, OfferToRef, OneOrMany, Program, RegistrationRef, Rights,
     RootDictionaryRef, SourceAvailability, Spanned, SpannedCapability, SpannedCapabilityClause,
-    SpannedChild, SpannedDocument, SpannedUse, Use, UseFromRef, offer_to_all_would_duplicate,
+    SpannedChild, SpannedDocument, SpannedExpose, SpannedUse, Use, UseFromRef,
+    offer_to_all_would_duplicate,
 };
 use cm_types::{BorrowedName, IterablePath, Name};
 use itertools::Either;
@@ -193,6 +194,9 @@ struct ValidationContextWithSpan<'a> {
     current_file_path: Option<&'a Path>,
     current_file_source: Option<&'a String>,
     all_children: HashMap<&'a BorrowedName, &'a SpannedChild>,
+    capability_ids: HashMap<String, CapabilityId<'a>>,
+    use_ids: HashMap<String, CapabilityId<'a>>,
+    expose_ids: HashMap<String, CapabilityId<'a>>,
 }
 
 impl<'a> ValidationContextWithSpan<'a> {
@@ -206,6 +210,9 @@ impl<'a> ValidationContextWithSpan<'a> {
             current_file_path: None,
             current_file_source: None,
             all_children: HashMap::new(),
+            capability_ids: HashMap::new(),
+            use_ids: HashMap::new(),
+            expose_ids: HashMap::new(),
         }
     }
 
@@ -227,17 +234,21 @@ impl<'a> ValidationContextWithSpan<'a> {
                 }
             }
 
-            let mut used_ids = HashMap::new();
-
             if let Some(capabilities) = &document.capabilities {
                 for capability in capabilities {
-                    self.validate_capability(capability, &mut used_ids)?;
+                    self.validate_capability(capability)?;
                 }
             }
 
             if let Some(uses) = &document.r#use {
                 for use_ in uses.iter() {
-                    self.validate_use(&use_, &mut used_ids)?;
+                    self.validate_use(&use_)?;
+                }
+            }
+
+            if let Some(exposes) = &document.expose {
+                for expose in exposes {
+                    self.validate_expose(&expose)?;
                 }
             }
         }
@@ -268,7 +279,6 @@ which is almost certainly a mistake: {}",
     fn validate_capability(
         &mut self,
         capability: &'a Spanned<SpannedCapability>,
-        used_ids: &mut HashMap<String, CapabilityId<'a>>,
     ) -> Result<(), Error> {
         if capability.directory.is_some() && capability.path.is_none() {
             let location = byte_index_to_location(
@@ -398,7 +408,11 @@ which is almost certainly a mistake: {}",
         )?;
 
         for capability_id in capability_ids {
-            if used_ids.insert(capability_id.to_string(), capability_id.clone()).is_some() {
+            if self
+                .capability_ids
+                .insert(capability_id.to_string(), capability_id.clone())
+                .is_some()
+            {
                 let location =
                     byte_index_to_location(self.current_file_source, capability.span().0);
                 return Err(Error::validate_with_span(
@@ -412,11 +426,7 @@ which is almost certainly a mistake: {}",
         Ok(())
     }
 
-    fn validate_use(
-        &mut self,
-        use_: &'a Spanned<SpannedUse>,
-        used_ids: &mut HashMap<String, CapabilityId<'a>>,
-    ) -> Result<(), Error> {
+    fn validate_use(&mut self, use_: &'a Spanned<SpannedUse>) -> Result<(), Error> {
         use_.capability_type()?;
 
         if use_.from.as_ref().map(|s| s.clone().into_inner()) == Some(UseFromRef::Debug)
@@ -605,7 +615,7 @@ which is almost certainly a mistake: {}",
         let capability_ids =
             CapabilityId::from_spanned_use(use_, self.current_file_path, self.current_file_source)?;
         for capability_id in capability_ids {
-            if used_ids.insert(capability_id.to_string(), capability_id.clone()).is_some() {
+            if self.use_ids.insert(capability_id.to_string(), capability_id.clone()).is_some() {
                 let location = byte_index_to_location(self.current_file_source, use_.span().0);
                 return Err(Error::validate_with_span(
                     format!(
@@ -638,7 +648,7 @@ which is almost certainly a mistake: {}",
 
             // Validate that paths-based capabilities (service, directory, protocol)
             // are not prefixes of each other.
-            for (_, used_id) in used_ids.iter() {
+            for (_, used_id) in self.use_ids.iter() {
                 if capability_id == *used_id {
                     continue;
                 }
@@ -680,6 +690,124 @@ which is almost certainly a mistake: {}",
                             used_id,
                             capability_id.type_str(),
                             capability_id,
+                        ),
+                        location,
+                        self.current_file_path,
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_expose(&mut self, expose: &'a Spanned<SpannedExpose>) -> Result<(), Error> {
+        // Ensure directory rights are valid.
+        if let Some(_) = expose.directory.as_ref() {
+            // Exposing a subdirectory makes sense for routing but when exposing to framework,
+            // the subdir should be exposed directly.
+            if expose.to.as_ref().map(|s| s.clone().into_inner()) == Some(ExposeToRef::Framework) {
+                if expose.subdir.is_some() {
+                    let location = byte_index_to_location(
+                        self.current_file_source,
+                        expose.subdir.as_ref().unwrap().span().0,
+                    );
+                    return Err(Error::validate_with_span(
+                        "`subdir` is not supported for expose to framework. Directly expose the subdirectory instead.",
+                        location,
+                        self.current_file_path,
+                    ));
+                }
+            }
+        }
+
+        if let Some(event_stream) = &expose.event_stream {
+            if event_stream.iter().len() > 1 && expose.r#as.is_some() {
+                let location = byte_index_to_location(
+                    self.current_file_source,
+                    expose.r#as.as_ref().unwrap().span().0,
+                );
+                return Err(Error::validate_with_span(
+                    format!("as cannot be used with multiple event streams"),
+                    location,
+                    self.current_file_path,
+                ));
+            }
+            if let Some(ExposeToRef::Framework) =
+                &expose.to.as_ref().map(|s| s.clone().into_inner())
+            {
+                let location = byte_index_to_location(
+                    self.current_file_source,
+                    expose.to.as_ref().unwrap().span().0,
+                );
+                return Err(Error::validate_with_span(
+                    format!("cannot expose an event_stream to framework"),
+                    location,
+                    self.current_file_path,
+                ));
+            }
+            for from in expose.from.get_ref().into_iter() {
+                if from == &ExposeFromRef::Self_ {
+                    let location =
+                        byte_index_to_location(self.current_file_source, expose.from.span().0);
+                    return Err(Error::validate_with_span(
+                        format!("Cannot expose event_streams from self"),
+                        location,
+                        self.current_file_path,
+                    ));
+                }
+            }
+        }
+
+        for ref_ in expose.from.iter() {
+            if let ExposeFromRef::Dictionary(d) = ref_ {
+                if expose.event_stream.is_some() {
+                    let location = byte_index_to_location(
+                        self.current_file_source,
+                        expose.event_stream.as_ref().unwrap().span().0,
+                    );
+                    return Err(Error::validate_with_span(
+                        "Dictionaries do not support \"event_stream\" capabilities",
+                        location,
+                        self.current_file_path,
+                    ));
+                }
+                match &d.root {
+                    RootDictionaryRef::Self_ | RootDictionaryRef::Named(_) => {}
+                    RootDictionaryRef::Parent => {
+                        let location =
+                            byte_index_to_location(self.current_file_source, expose.from.span().0);
+                        return Err(Error::validate_with_span(
+                            "`expose` dictionary path must begin with `self` or `#<child-name>`",
+                            location,
+                            self.current_file_path,
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Ensure we haven't already exposed an entity of the same name.
+        let capability_ids = CapabilityId::from_spanned_expose(
+            expose,
+            self.current_file_path,
+            self.current_file_source,
+        )?;
+        for capability_id in capability_ids {
+            if expose.to.as_ref().map(|s| s.clone().into_inner()) == Some(ExposeToRef::Framework) {
+                continue;
+            }
+            if self.expose_ids.insert(capability_id.to_string(), capability_id.clone()).is_some() {
+                if let CapabilityId::Service(_) = capability_id {
+                    // Services may have duplicates (aggregation).
+                } else {
+                    let location =
+                        byte_index_to_location(self.current_file_source, expose.span().0);
+                    return Err(Error::validate_with_span(
+                        format!(
+                            "\"{}\" is a duplicate \"expose\" target capability for \"{}\"",
+                            capability_id,
+                            expose.to.as_ref().map_or(&ExposeToRef::Parent, |v| v)
                         ),
                         location,
                         self.current_file_path,
@@ -3845,6 +3973,70 @@ mod tests {
             Err(Error::ValidateWithSpan { err, .. }) if &err == "`numbered_handle` is only supported for `use protocol`"
         ),
 
+        test_cml_expose_invalid_subdir_to_framework(
+            r##"{
+                "capabilities": [
+                    {
+                        "directory": "foo",
+                        "rights": ["r*"],
+                        "path": "/foo"
+                    }
+                ],
+                "expose": [
+                    {
+                        "directory": "foo",
+                        "from": "self",
+                        "to": "framework",
+                        "subdir": "blob"
+                    }
+                ],
+                "children": [
+                    {
+                        "name": "child",
+                        "url": "fuchsia-pkg://fuchsia.com/pkg#comp.cm"
+                    }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "`subdir` is not supported for expose to framework. Directly expose the subdirectory instead." &&
+                location == Some(Location { line: 14, column: 35})
+        ),
+        test_cml_expose_event_stream_multiple_as(
+            r##"{
+                "expose": [
+                    {
+                        "event_stream": ["started", "stopped"],
+                        "from" : "framework",
+                        "as": "something"
+                    }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "as cannot be used with multiple event streams" &&
+                location == Some(Location { line: 6, column: 31})
+
+        ),
+        test_cml_expose_event_stream_to_framework(
+            r##"{
+                "expose": [
+                    {
+                        "event_stream": ["started", "stopped"],
+                        "from" : "self",
+                        "to": "framework"
+                    }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "cannot expose an event_stream to framework" &&
+                location == Some(Location { line: 6, column: 31})
+
+        ),
+
+        test_cml_expose_event_stream_from_self(
+            json!({
+                "expose": [
+                    { "event_stream": ["started", "stopped"], "from" : "self" },
+                ]
+            }),
+            Err(Error::ValidateWithSpan { err, .. }) if &err == "Cannot expose event_streams from self"
+        ),
     }
 
     test_validate_cml! {
@@ -3967,7 +4159,7 @@ mod tests {
             }),
             Ok(())
         ),
-        test_cml_expose_event_stream_multiple_as(
+        test_cml_expose_event_stream_multiple_as_no_span(
             json!({
                 "expose": [
                     {
@@ -4016,7 +4208,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "as cannot be used with multiple events"
         ),
-        test_cml_expose_event_stream_from_self(
+        test_cml_expose_event_stream_from_self_no_span(
             json!({
                 "expose": [
                     { "event_stream": ["started", "stopped"], "from" : "self" },
@@ -4044,7 +4236,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "\"#self\" is an \"offer\" target from \"framework\" but \"#self\" does not appear in \"children\" or \"collections\""
         ),
-        test_cml_expose_event_stream_to_framework(
+        test_cml_expose_event_stream_to_framework_no_span(
             json!({
                 "expose": [
                     {
@@ -4663,7 +4855,7 @@ mod tests {
             }),
             Err(Error::Parse { err, .. }) if &err == "invalid value: string \"/\", expected a path with no leading `/` and non-empty segments"
         ),
-        test_cml_expose_invalid_subdir_to_framework(
+        test_cml_expose_invalid_subdir_to_framework_no_span(
             json!({
                 "capabilities": [
                     {
