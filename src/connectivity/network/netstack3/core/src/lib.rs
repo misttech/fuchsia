@@ -107,10 +107,9 @@ pub mod filter {
     mod integration;
 
     pub use netstack3_filter::{
-        Action, AddressMatcher, AddressMatcherType, FilterApi, FilterBindingsContext,
-        FilterBindingsTypes, FilterIpExt, Hook, IpPacket, IpRoutines, MarkAction, NatRoutines,
-        PacketMatcher, PortMatcher, ProofOfEgressCheck, Routine, Routines, Rule,
-        SocketEgressFilterResult, SocketIngressFilterResult, SocketOpsFilter,
+        Action, FilterApi, FilterBindingsContext, FilterBindingsTypes, FilterIpExt, Hook, IpPacket,
+        IpRoutines, MarkAction, NatRoutines, PacketMatcher, ProofOfEgressCheck, Routine, Routines,
+        Rule, SocketEgressFilterResult, SocketIngressFilterResult, SocketOpsFilter,
         SocketOpsFilterBindingContext, TransparentProxy, TransportProtocolMatcher, Tuple,
         UninstalledRoutine, ValidationError,
     };
@@ -145,7 +144,8 @@ pub mod ip {
 
     // Re-exported types.
     pub use netstack3_base::{
-        Mark, MarkDomain, MarkMatcher, MarkMatchers, Marks, SubnetMatcher, WrapBroadcastMarker,
+        AddressMatcher, AddressMatcherType, Mark, MarkDomain, MarkMatcher, MarkMatchers, Marks,
+        PortMatcher, SubnetMatcher, WrapBroadcastMarker,
     };
     pub use netstack3_ip::device::{
         AddIpAddrSubnetError, AddrSubnetAndManualConfigEither, AddressRemovedReason,

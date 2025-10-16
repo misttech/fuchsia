@@ -3,79 +3,15 @@
 // found in the LICENSE file.
 
 use core::fmt::Debug;
-use core::ops::RangeInclusive;
 use netstack3_base::{
-    InspectableValue, InterfaceMatcher, InterfaceProperties, Matcher, SubnetMatcher,
+    AddressMatcher, InspectableValue, InterfaceMatcher, InterfaceProperties, Matcher, PortMatcher,
 };
 
 use derivative::Derivative;
-use net_types::ip::IpAddress;
 use packet_formats::ip::IpExt;
 
 use crate::logic::Interfaces;
 use crate::packets::{FilterIpExt, IpPacket, MaybeTransportPacket, TransportPacketData};
-
-/// A matcher for IP addresses.
-#[derive(Clone, Derivative)]
-#[derivative(Debug)]
-pub enum AddressMatcherType<A: IpAddress> {
-    /// A subnet that must contain the address.
-    #[derivative(Debug = "transparent")]
-    Subnet(SubnetMatcher<A>),
-    /// An inclusive range of IP addresses that must contain the address.
-    Range(RangeInclusive<A>),
-}
-
-impl<A: IpAddress> Matcher<A> for AddressMatcherType<A> {
-    fn matches(&self, actual: &A) -> bool {
-        match self {
-            Self::Subnet(subnet_matcher) => subnet_matcher.matches(actual),
-            Self::Range(range) => range.contains(actual),
-        }
-    }
-}
-
-/// A matcher for IP addresses.
-#[derive(Clone, Debug)]
-pub struct AddressMatcher<A: IpAddress> {
-    /// The type of the address matcher.
-    pub matcher: AddressMatcherType<A>,
-    /// Whether to check for an "inverse" or "negative" match (in which case,
-    /// if the matcher criteria do *not* apply, it *is* considered a match, and
-    /// vice versa).
-    pub invert: bool,
-}
-
-impl<A: IpAddress> InspectableValue for AddressMatcher<A> {
-    fn record<I: netstack3_base::Inspector>(&self, name: &str, inspector: &mut I) {
-        inspector.record_debug(name, self);
-    }
-}
-
-impl<A: IpAddress> Matcher<A> for AddressMatcher<A> {
-    fn matches(&self, addr: &A) -> bool {
-        let Self { matcher, invert } = self;
-        matcher.matches(addr) ^ *invert
-    }
-}
-
-/// A matcher for transport-layer port numbers.
-#[derive(Clone, Debug)]
-pub struct PortMatcher {
-    /// The range of port numbers in which the tested port number must fall.
-    pub range: RangeInclusive<u16>,
-    /// Whether to check for an "inverse" or "negative" match (in which case,
-    /// if the matcher criteria do *not* apply, it *is* considered a match, and
-    /// vice versa).
-    pub invert: bool,
-}
-
-impl Matcher<u16> for PortMatcher {
-    fn matches(&self, actual: &u16) -> bool {
-        let Self { range, invert } = self;
-        range.contains(actual) ^ *invert
-    }
-}
 
 /// A matcher for transport-layer protocol or port numbers.
 #[derive(Debug, Clone)]
@@ -164,8 +100,8 @@ mod tests {
     use packet_formats::ip::{IpProto, Ipv4Proto};
     use test_case::test_case;
 
-    use netstack3_base::SegmentHeader;
     use netstack3_base::testutil::{FakeDeviceClass, FakeMatcherDeviceId};
+    use netstack3_base::{AddressMatcherType, SegmentHeader, SubnetMatcher};
 
     use super::*;
     use crate::packets::testutil::internal::{

@@ -22,14 +22,13 @@ use packet_formats::tcp::TcpSegmentBuilder;
 use packet_formats::udp::UdpPacketBuilder;
 
 use netstack3_base::testutil::{TestDualStackIpExt, TestIpExt, set_logger_for_test};
-use netstack3_base::{CtxPair, Mark, MarkDomain};
+use netstack3_base::{CtxPair, Mark, MarkDomain, MarkMatcher, MarkMatchers};
 use netstack3_core::IpExt;
 use netstack3_core::device::{EthernetLinkDevice, RecvEthernetFrameMeta};
 use netstack3_core::filter::{
     Action, Hook, IpRoutines, MarkAction, NatRoutines, PacketMatcher, Routine, Routines, Rule,
     TransportProtocolMatcher,
 };
-use netstack3_core::ip::{MarkMatcher, MarkMatchers};
 use netstack3_core::routes::{Rule as RouteRule, RuleAction, RuleMatcher};
 use netstack3_core::testutil::{
     CtxPairExt as _, FakeBindingsCtx, FakeCoreCtx, FakeCtx, FakeCtxBuilder,

@@ -43,9 +43,7 @@ pub use context::{
 pub use logic::{
     FilterHandler, FilterImpl, FilterTimerId, IngressVerdict, ProofOfEgressCheck, Verdict,
 };
-pub use matchers::{
-    AddressMatcher, AddressMatcherType, PacketMatcher, PortMatcher, TransportProtocolMatcher,
-};
+pub use matchers::{PacketMatcher, TransportProtocolMatcher};
 pub use packets::{
     DynTransportSerializer, DynamicTransportSerializer, FilterIpExt, ForwardedPacket, IcmpMessage,
     IpPacket, MaybeTransportPacket, MaybeTransportPacketMut, RawIpBody, TransportPacketSerializer,

@@ -827,7 +827,10 @@ mod tests {
     use ip_test_macro::ip_test;
     use net_types::ip::{AddrSubnet, Ipv4};
     use netstack3_base::testutil::{FakeDeviceClass, FakeMatcherDeviceId};
-    use netstack3_base::{AssignedAddrIpExt, InterfaceMatcher, MarkDomain, Marks, SegmentHeader};
+    use netstack3_base::{
+        AddressMatcher, AddressMatcherType, AssignedAddrIpExt, InterfaceMatcher, MarkDomain, Marks,
+        PortMatcher, SegmentHeader,
+    };
     use netstack3_hashmap::HashMap;
     use test_case::test_case;
 
@@ -836,9 +839,7 @@ mod tests {
     use crate::conntrack::{self, ConnectionDirection};
     use crate::context::testutil::{FakeBindingsCtx, FakeCtx, FakeWeakAddressId};
     use crate::logic::nat::NatConfig;
-    use crate::matchers::{
-        AddressMatcher, AddressMatcherType, PacketMatcher, PortMatcher, TransportProtocolMatcher,
-    };
+    use crate::matchers::{PacketMatcher, TransportProtocolMatcher};
     use crate::packets::testutil::internal::{
         ArbitraryValue, FakeIpPacket, FakeTcpSegment, FakeUdpPacket, TransportPacketExt,
     };

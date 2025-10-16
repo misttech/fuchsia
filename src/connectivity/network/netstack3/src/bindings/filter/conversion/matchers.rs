@@ -93,7 +93,7 @@ impl TryConvertToCoreState for fnet_matchers_ext::Interface {
 }
 
 impl TryConvertToCoreState for fnet_matchers_ext::Address {
-    type CoreState<I: IpExt> = netstack3_core::filter::AddressMatcher<I::Addr>;
+    type CoreState<I: IpExt> = netstack3_core::ip::AddressMatcher<I::Addr>;
 
     fn try_convert<I: IpExt>(
         self,
@@ -103,7 +103,7 @@ impl TryConvertToCoreState for fnet_matchers_ext::Address {
         #[generic_over_ip(I, Ip)]
         pub(super) struct Wrap<I: IpExt>(
             Result<
-                ConversionResult<netstack3_core::filter::AddressMatcherType<I::Addr>>,
+                ConversionResult<netstack3_core::ip::AddressMatcherType<I::Addr>>,
                 IpVersionMismatchError,
             >,
         );
@@ -120,7 +120,7 @@ impl TryConvertToCoreState for fnet_matchers_ext::Address {
                             let subnet = net_types::ip::Subnet::new(addr, prefix_len)
                                 .expect("subnet should be validated when change is pushed");
                             Wrap(Ok(ConversionResult::State(
-                                netstack3_core::filter::AddressMatcherType::Subnet(SubnetMatcher(
+                                netstack3_core::ip::AddressMatcherType::Subnet(SubnetMatcher(
                                     subnet,
                                 )),
                             )))
@@ -137,7 +137,7 @@ impl TryConvertToCoreState for fnet_matchers_ext::Address {
                             let subnet = net_types::ip::Subnet::new(addr, prefix_len)
                                 .expect("subnet should be validated when change is pushed");
                             Wrap(Ok(ConversionResult::State(
-                                netstack3_core::filter::AddressMatcherType::Subnet(SubnetMatcher(
+                                netstack3_core::ip::AddressMatcherType::Subnet(SubnetMatcher(
                                     subnet,
                                 )),
                             )))
@@ -156,7 +156,7 @@ impl TryConvertToCoreState for fnet_matchers_ext::Address {
                     |()| match (start, end) {
                         (net_types::ip::IpAddr::V4(start), net_types::ip::IpAddr::V4(end)) => {
                             Wrap(Ok(ConversionResult::State(
-                                netstack3_core::filter::AddressMatcherType::Range(start..=end),
+                                netstack3_core::ip::AddressMatcherType::Range(start..=end),
                             )))
                         }
                         (net_types::ip::IpAddr::V6(_), net_types::ip::IpAddr::V6(_)) => {
@@ -172,7 +172,7 @@ impl TryConvertToCoreState for fnet_matchers_ext::Address {
                         }
                         (net_types::ip::IpAddr::V6(start), net_types::ip::IpAddr::V6(end)) => {
                             Wrap(Ok(ConversionResult::State(
-                                netstack3_core::filter::AddressMatcherType::Range(start..=end),
+                                netstack3_core::ip::AddressMatcherType::Range(start..=end),
                             )))
                         }
                         _ => {
@@ -186,7 +186,7 @@ impl TryConvertToCoreState for fnet_matchers_ext::Address {
                 }
             }
         };
-        Ok(ConversionResult::State(netstack3_core::filter::AddressMatcher { matcher, invert }))
+        Ok(ConversionResult::State(netstack3_core::ip::AddressMatcher { matcher, invert }))
     }
 }
 
@@ -204,7 +204,7 @@ impl TryConvertToCoreState for fnet_matchers_ext::TransportProtocol {
         );
 
         let into_core_port_matcher =
-            |matcher: fnet_matchers_ext::Port| netstack3_core::filter::PortMatcher {
+            |matcher: fnet_matchers_ext::Port| netstack3_core::ip::PortMatcher {
                 range: matcher.range().clone(),
                 invert: matcher.invert,
             };

@@ -8,6 +8,7 @@ use alloc::format;
 use alloc::string::String;
 use core::fmt::Debug;
 use core::num::NonZeroU64;
+use core::ops::RangeInclusive;
 
 use derivative::Derivative;
 use net_types::ip::{IpAddress, Subnet};
@@ -209,6 +210,68 @@ impl Matcher<Marks> for MarkMatchers {
     }
 }
 
+/// A matcher for transport-layer port numbers.
+#[derive(Clone, Debug)]
+pub struct PortMatcher {
+    /// The range of port numbers in which the tested port number must fall.
+    pub range: RangeInclusive<u16>,
+    /// Whether to check for an "inverse" or "negative" match (in which case,
+    /// if the matcher criteria do *not* apply, it *is* considered a match, and
+    /// vice versa).
+    pub invert: bool,
+}
+
+impl Matcher<u16> for PortMatcher {
+    fn matches(&self, actual: &u16) -> bool {
+        let Self { range, invert } = self;
+        range.contains(actual) ^ *invert
+    }
+}
+
+/// A matcher for IP addresses.
+#[derive(Clone, Derivative)]
+#[derivative(Debug)]
+pub enum AddressMatcherType<A: IpAddress> {
+    /// A subnet that must contain the address.
+    #[derivative(Debug = "transparent")]
+    Subnet(SubnetMatcher<A>),
+    /// An inclusive range of IP addresses that must contain the address.
+    Range(RangeInclusive<A>),
+}
+
+impl<A: IpAddress> Matcher<A> for AddressMatcherType<A> {
+    fn matches(&self, actual: &A) -> bool {
+        match self {
+            Self::Subnet(subnet_matcher) => subnet_matcher.matches(actual),
+            Self::Range(range) => range.contains(actual),
+        }
+    }
+}
+
+/// A matcher for IP addresses.
+#[derive(Clone, Debug)]
+pub struct AddressMatcher<A: IpAddress> {
+    /// The type of the address matcher.
+    pub matcher: AddressMatcherType<A>,
+    /// Whether to check for an "inverse" or "negative" match (in which case,
+    /// if the matcher criteria do *not* apply, it *is* considered a match, and
+    /// vice versa).
+    pub invert: bool,
+}
+
+impl<A: IpAddress> InspectableValue for AddressMatcher<A> {
+    fn record<I: Inspector>(&self, name: &str, inspector: &mut I) {
+        inspector.record_debug(name, self);
+    }
+}
+
+impl<A: IpAddress> Matcher<A> for AddressMatcher<A> {
+    fn matches(&self, addr: &A) -> bool {
+        let Self { matcher, invert } = self;
+        matcher.matches(addr) ^ *invert
+    }
+}
+
 #[cfg(any(test, feature = "testutils"))]
 pub(crate) mod testutil {
     use alloc::string::String;
@@ -292,6 +355,7 @@ mod tests {
     use alloc::format;
 
     use ip_test_macro::ip_test;
+    use net_types::Witness;
     use net_types::ip::Ip;
     use test_case::test_case;
 
@@ -464,5 +528,72 @@ mod tests {
     )]
     fn mark_matchers(matchers: MarkMatchers, marks: Marks) -> bool {
         matchers.matches(&marks)
+    }
+
+    #[test_case(PortMatcher { range: 10..=20, invert: false }, 9 => false)]
+    #[test_case(PortMatcher { range: 10..=20, invert: false }, 10 => true)]
+    #[test_case(PortMatcher { range: 10..=20, invert: false }, 15 => true)]
+    #[test_case(PortMatcher { range: 10..=20, invert: false }, 20 => true)]
+    #[test_case(PortMatcher { range: 10..=20, invert: false }, 21 => false)]
+    #[test_case(PortMatcher { range: 10..=20, invert: true }, 9 => true)]
+    #[test_case(PortMatcher { range: 10..=20, invert: true }, 10 => false)]
+    #[test_case(PortMatcher { range: 10..=20, invert: true }, 15 => false)]
+    #[test_case(PortMatcher { range: 10..=20, invert: true }, 20 => false)]
+    #[test_case(PortMatcher { range: 10..=20, invert: true }, 21 => true)]
+    fn port_matcher(matcher: PortMatcher, actual: u16) -> bool {
+        matcher.matches(&actual)
+    }
+
+    #[ip_test(I)]
+    fn address_matcher_type<I: TestIpExt>() {
+        let local_ip = I::TEST_ADDRS.local_ip.get();
+        let remote_ip = I::TEST_ADDRS.remote_ip.get();
+
+        let matcher = AddressMatcherType::Subnet(SubnetMatcher(I::TEST_ADDRS.subnet));
+        assert!(matcher.matches(&local_ip));
+        assert!(!matcher.matches(&I::get_other_remote_ip_address(1)));
+
+        let matcher = AddressMatcherType::Range(local_ip..=remote_ip);
+        assert!(matcher.matches(&local_ip));
+        assert!(matcher.matches(&remote_ip));
+        assert!(!matcher.matches(&I::get_other_remote_ip_address(1)));
+    }
+
+    #[ip_test(I)]
+    fn address_matcher<I: TestIpExt>() {
+        let local_ip = I::TEST_ADDRS.local_ip.get();
+        let remote_ip = I::TEST_ADDRS.remote_ip.get();
+
+        let matcher = AddressMatcher {
+            matcher: AddressMatcherType::Subnet(SubnetMatcher(I::TEST_ADDRS.subnet)),
+            invert: false,
+        };
+        assert!(matcher.matches(&local_ip));
+        assert!(matcher.matches(&remote_ip));
+        assert!(!matcher.matches(&I::get_other_remote_ip_address(1)));
+
+        let matcher = AddressMatcher {
+            matcher: AddressMatcherType::Subnet(SubnetMatcher(I::TEST_ADDRS.subnet)),
+            invert: true,
+        };
+        assert!(!matcher.matches(&local_ip));
+        assert!(!matcher.matches(&remote_ip));
+        assert!(matcher.matches(&I::get_other_remote_ip_address(1)));
+
+        let matcher = AddressMatcher {
+            matcher: AddressMatcherType::Range(local_ip..=remote_ip),
+            invert: false,
+        };
+        assert!(matcher.matches(&local_ip));
+        assert!(matcher.matches(&remote_ip));
+        assert!(!matcher.matches(&I::get_other_remote_ip_address(1)));
+
+        let matcher = AddressMatcher {
+            matcher: AddressMatcherType::Range(local_ip..=remote_ip),
+            invert: true,
+        };
+        assert!(!matcher.matches(&local_ip));
+        assert!(!matcher.matches(&remote_ip));
+        assert!(matcher.matches(&I::get_other_remote_ip_address(1)));
     }
 }
