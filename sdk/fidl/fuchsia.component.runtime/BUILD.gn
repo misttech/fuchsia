@@ -17,7 +17,10 @@ fidl("fuchsia.component.runtime") {
     "//zircon/vdso/zx",
   ]
 
-  sources = [ "factory.fidl" ]
+  sources = [
+    "capabilities.fidl",
+    "factory.fidl",
+  ]
 
   enable_rust_next = true
 }

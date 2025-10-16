@@ -1,7 +1,7 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-@available(added=HEAD)
+
 library fuchsia.component.runtime;
 
 using fuchsia.component.decl;
@@ -20,15 +20,15 @@ const MAX_DATA_LENGTH uint32 = 8192;
 /// Each of these client ends is a reference to an object owned by component
 /// manager.
 @available(added=HEAD)
-type Capability = flexible resource union {
+type CapabilityDeprecated = flexible resource union {
     1: connector client_end:Connector;
     2: dir_connector client_end:DirConnector;
     3: dictionary client_end:Dictionary;
     4: data Data;
-    5: connector_router client_end:ConnectorRouter;
-    6: dir_connector_router client_end:DirConnectorRouter;
-    7: dictionary_router client_end:DictionaryRouter;
-    8: data_router client_end:DataRouter;
+    5: connector_router client_end:ConnectorRouterDeprecated;
+    6: dir_connector_router client_end:DirConnectorRouterDeprecated;
+    7: dictionary_router client_end:DictionaryRouterDeprecated;
+    8: data_router client_end:DataRouterDeprecated;
 };
 
 /// A `Connector` represents the sending end of a connection to a capability. A
@@ -40,16 +40,6 @@ open protocol Connector {
 
     /// Sends a channel to the `Receiver` associated with this `Connector`.
     flexible Connect(resource struct {
-        channel zx.Handle:CHANNEL;
-    });
-};
-
-/// A `Receiver` represents the receiving end of a connection to a capability.
-@available(added=HEAD)
-open protocol Receiver {
-    /// `Receive` will be called by component manager whenever an new handle has
-    /// been given to any `Connector` associated with this `Receiver`.
-    flexible Receive(resource struct {
         channel zx.Handle:CHANNEL;
     });
 };
@@ -70,7 +60,7 @@ open protocol DirConnector {
 /// A `DirReceiver` represents the receiving end of a connection to a
 /// capability.
 @available(added=HEAD)
-open protocol DirReceiver {
+open protocol DirReceiverDeprecated {
     /// `Receive` will be called by component manager whenever a new handle has
     /// been given to any `DirConnector` associated with this `DirReceiver`.
     flexible Receive(resource struct {
@@ -90,7 +80,7 @@ open protocol Dictionary {
     /// component manager.
     flexible Insert(resource struct {
         key fuchsia.component.decl.name;
-        capability Capability;
+        capability CapabilityDeprecated;
     });
 
     /// Returns a clone of the `Capability` named `key` in this dictionary, if
@@ -98,7 +88,7 @@ open protocol Dictionary {
     flexible Get(resource struct {
         key fuchsia.component.decl.name;
     }) -> (resource struct {
-        capability Capability:<optional>;
+        capability CapabilityDeprecated:<optional>;
     });
 
     /// Removes the `Capability` named `key` from this dictionary and returns
@@ -106,7 +96,7 @@ open protocol Dictionary {
     flexible Remove(resource struct {
         key fuchsia.component.decl.name;
     }) -> (resource struct {
-        capability Capability:<optional>;
+        capability CapabilityDeprecated:<optional>;
     });
 
     /// Opens an iterator which can be used to iterate over the keys of this
@@ -122,28 +112,9 @@ open protocol Dictionary {
     });
 };
 
-@available(added=HEAD)
-open protocol DictionaryKeyIterator {
-    /// Returns the next set of keys in this dictionary. Returns an empty vector
-    /// when there are no more keys to iterate.
-    flexible GetNext() -> (struct {
-        keys vector<fuchsia.component.decl.name>:MAX;
-    });
-};
-
-/// Static data which may be put in a dictionary. This is useful for setting
-/// values in the metadata of a `RouteRequest`.
-@available(added=HEAD)
-type Data = flexible union {
-    1: bytes vector<byte>:MAX_DATA_LENGTH;
-    2: string string:MAX_DATA_LENGTH;
-    3: int64 int64;
-    4: uint64 uint64;
-};
-
 /// A factory for `Connector` capabilities.
 @available(added=HEAD)
-open protocol ConnectorRouter {
+open protocol ConnectorRouterDeprecated {
     compose fuchsia.unknown.Cloneable;
 
     /// Attempts to produce a `Connector` capability from this
@@ -164,7 +135,7 @@ open protocol ConnectorRouter {
 
 /// A factory for `DirConnector` capabilities.
 @available(added=HEAD)
-open protocol DirConnectorRouter {
+open protocol DirConnectorRouterDeprecated {
     compose fuchsia.unknown.Cloneable;
 
     /// Attempts to produce a `DirConnector` capability from this
@@ -185,7 +156,7 @@ open protocol DirConnectorRouter {
 
 /// A factory for `Dictionary` capabilities.
 @available(added=HEAD)
-open protocol DictionaryRouter {
+open protocol DictionaryRouterDeprecated {
     compose fuchsia.unknown.Cloneable;
 
     /// Attempts to produce a `Dictionary` capability from this
@@ -206,7 +177,7 @@ open protocol DictionaryRouter {
 
 /// A factory for `Data` capabilities.
 @available(added=HEAD)
-open protocol DataRouter {
+open protocol DataRouterDeprecated {
     compose fuchsia.unknown.Cloneable;
 
     /// Attempts to produce a `Data` capability from this
@@ -235,41 +206,6 @@ type RouterResponse = flexible enum : uint32 {
     UNAVAILABLE = 2;
 };
 
-/// The error values returned when a route operation fails.
-@available(added=HEAD)
-type RouterError = flexible enum : uint32 {
-    /// The router failed to find the capability.
-    NOT_FOUND = 1;
-
-    /// The arguments provided to the function are invalid.
-    INVALID_ARGS = 2;
-
-    /// The operation is not supported.
-    NOT_SUPPORTED = 3;
-
-    /// An internal error occurred.
-    INTERNAL = 4;
-
-    /// An unknown error occurred.
-    UNKNOWN = 5;
-};
-
-/// A token representing a component instance.
-@available(added=HEAD)
-type WeakInstanceToken = resource struct {
-    token zx.Handle:EVENTPAIR;
-};
-
-/// Contains metadata on how to route a capability, and a token representing the
-/// component that started the route.
-///
-/// Either both fields must be set, or neither.
-@available(added=HEAD)
-type RouteRequest = resource table {
-    1: target WeakInstanceToken;
-    2: metadata client_end:Dictionary;
-};
-
 /// The `CapabilityFactory` can be used to create new runtime capabilities.
 @discoverable(server="platform")
 @available(added=HEAD)
@@ -280,7 +216,7 @@ open protocol CapabilityFactory {
     });
 
     flexible CreateDirConnector(resource struct {
-        dir_receiver_client_end client_end:DirReceiver;
+        dir_receiver_client_end client_end:DirReceiverDeprecated;
         dir_connector_server_end server_end:DirConnector;
     });
 
@@ -289,22 +225,22 @@ open protocol CapabilityFactory {
     });
 
     flexible CreateConnectorRouter(resource struct {
-        router_client_end client_end:ConnectorRouter;
-        router_server_end server_end:ConnectorRouter;
+        router_client_end client_end:ConnectorRouterDeprecated;
+        router_server_end server_end:ConnectorRouterDeprecated;
     });
 
     flexible CreateDirConnectorRouter(resource struct {
-        router_client_end client_end:DirConnectorRouter;
-        router_server_end server_end:DirConnectorRouter;
+        router_client_end client_end:DirConnectorRouterDeprecated;
+        router_server_end server_end:DirConnectorRouterDeprecated;
     });
 
     flexible CreateDictionaryRouter(resource struct {
-        router_client_end client_end:DictionaryRouter;
-        router_server_end server_end:DictionaryRouter;
+        router_client_end client_end:DictionaryRouterDeprecated;
+        router_server_end server_end:DictionaryRouterDeprecated;
     });
 
     flexible CreateDataRouter(resource struct {
-        router_client_end client_end:DataRouter;
-        router_server_end server_end:DataRouter;
+        router_client_end client_end:DataRouterDeprecated;
+        router_server_end server_end:DataRouterDeprecated;
     });
 };

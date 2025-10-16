@@ -1,0 +1,412 @@
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+@available(added=HEAD)
+library fuchsia.component.runtime;
+
+using fuchsia.component.decl;
+using fuchsia.io;
+using zx;
+
+@available(added=HEAD)
+type CapabilityType = flexible enum {
+    CONNECTOR = 1;
+    DIR_CONNECTOR = 2;
+    DICTIONARY = 3;
+    DATA = 4;
+    CONNECTOR_ROUTER = 5;
+    DIR_CONNECTOR_ROUTER = 6;
+    DICTIONARY_ROUTER = 7;
+    DATA_ROUTER = 8;
+};
+
+/// Static data which may be put in a dictionary or returned by a router. This
+/// is useful for setting values in the metadata of a `RouteRequest`.
+@available(added=HEAD)
+type Data = flexible union {
+    1: bytes vector<byte>:MAX_DATA_LENGTH;
+    2: string string:MAX_DATA_LENGTH;
+    3: int64 int64;
+    4: uint64 uint64;
+};
+
+/// A `Receiver` represents the receiving end of a `Connector`.
+@available(added=HEAD)
+closed protocol Receiver {
+    /// `Receive` will be called by component manager whenever an new handle has
+    /// been given to any `Connector` associated with this `Receiver`.
+    strict Receive(resource struct {
+        channel zx.Handle:CHANNEL;
+    });
+};
+
+/// A `DirReceiver` represents the receiving end of a `DirConnector`.
+@available(added=HEAD)
+closed protocol DirReceiver {
+    /// `Receive` will be called by component manager whenever a new handle has
+    /// been given to any `DirConnector` associated with this `DirReceiver`.
+    strict Receive(resource struct {
+        channel server_end:fuchsia.io.Directory;
+        rights fuchsia.io.Flags;
+    });
+};
+
+/// A factory for `Connector` capabilities.
+@available(added=HEAD)
+open protocol ConnectorRouter {
+    /// Attempts to produce a `Connector` capability from this
+    /// `ConnectorRouter`. This will return:
+    ///
+    /// - A `Connector` if the operation is successful.
+    /// - An empty value if there is no issue found but the capability is not
+    ///   being provided (for example, an optional route ended in an offer from
+    ///   void).
+    /// - An error, if the operation failed.
+    flexible Route(resource struct {
+        request RouteRequest;
+    }) -> (resource struct {
+        handle zx.Handle:<EVENTPAIR, optional>;
+    }) error RouterError;
+};
+
+/// A factory for `DirConnector` capabilities.
+@available(added=HEAD)
+open protocol DirConnectorRouter {
+    /// Attempts to produce a `DirConnector` capability from this
+    /// `DirConnectorRouter`. This will return:
+    ///
+    /// - A `DirConnector` if the operation is successful.
+    /// - An empty value if there is no issue found but the capability is not
+    ///   being provided (for example, an optional route ended in an offer from
+    ///   void).
+    /// - An error, if the operation failed.
+    flexible Route(resource struct {
+        request RouteRequest;
+    }) -> (resource struct {
+        handle zx.Handle:<EVENTPAIR, optional>;
+    }) error RouterError;
+};
+
+/// A factory for `Dictionary` capabilities.
+@available(added=HEAD)
+open protocol DictionaryRouter {
+    /// Attempts to produce a `Dictionary` capability from this
+    /// `DictionaryRouter`. This will return:
+    ///
+    /// - A `Dictionary` if the operation is successful.
+    /// - An empty value if there is no issue found but the capability is not
+    ///   being provided (for example, an optional route ended in an offer from
+    ///   void).
+    /// - An error, if the operation failed.
+    flexible Route(resource struct {
+        request RouteRequest;
+    }) -> (resource struct {
+        handle zx.Handle:<EVENTPAIR, optional>;
+    }) error RouterError;
+};
+
+/// A factory for `Data` capabilities.
+@available(added=HEAD)
+open protocol DataRouter {
+    /// Attempts to produce a `Data` capability from this
+    /// `DataRouter`. This will return:
+    ///
+    /// - A `Data` value if the operation is successful.
+    /// - An empty value if there is no issue found but the capability is not
+    ///   being provided (for example, an optional route ended in an offer from
+    ///   void).
+    /// - An error, if the operation failed.
+    flexible Route(resource struct {
+        request RouteRequest;
+    }) -> (resource struct {
+        data Data:optional;
+    }) error RouterError;
+};
+
+/// The error values returned when a route operation fails.
+@available(added=HEAD)
+type RouterError = flexible enum : uint32 {
+    /// The router failed to find the capability.
+    NOT_FOUND = 1;
+
+    /// The arguments provided to the function are invalid.
+    INVALID_ARGS = 2;
+
+    /// The operation is not supported.
+    NOT_SUPPORTED = 3;
+
+    /// An internal error occurred.
+    INTERNAL = 4;
+
+    /// An unknown error occurred.
+    UNKNOWN = 5;
+};
+
+/// A token representing a component instance.
+@available(added=HEAD)
+type WeakInstanceToken = resource struct {
+    token zx.Handle:EVENTPAIR;
+};
+
+/// Contains metadata on how to route a capability, and a token representing the
+/// component that started the route.
+///
+/// The contents of `metadata` are data capabilities used by component manager
+/// to track things like the type of the route (e.g. protocol, storage, runner,
+/// ...), the rights on a directory route, and the scope on an event stream
+/// route. Generally an empty dictionary is safe to pass to component manager.
+///
+/// Either both fields must be set, or neither.
+@available(added=HEAD)
+type RouteRequest = resource table {
+    1: target WeakInstanceToken;
+    2: metadata client_end:Dictionary;
+};
+
+@available(added=HEAD)
+closed protocol DictionaryKeyIterator {
+    /// Returns the next set of keys in this dictionary. Returns an empty vector
+    /// when there are no more keys to iterate.
+    strict GetNext() -> (struct {
+        keys vector<fuchsia.component.decl.name>:MAX;
+    });
+};
+
+@available(added=HEAD)
+type CapabilitiesError = flexible enum {
+    NO_SUCH_CAPABILITY = 1;
+    INVALID_NAME = 2;
+    HANDLE_DOES_NOT_REFERENCE_CAPABILITY = 3;
+    INVALID_CAPABILITY_TYPE = 4;
+    UNREGISTERED_CAPABILITY = 5;
+    INVALID_HANDLE = 6;
+};
+
+/// An API for creating and manipulating references to runtime capabilities in
+/// the component framework. These capabilities are all reference counted by
+/// component manager, and when accessed with this protocol the references are
+/// implemented as event pair handles.
+@discoverable(server="platform")
+@available(added=HEAD)
+open protocol Capabilities {
+    /// Creates a reference to a new connector capability. When the connector is
+    /// opened, the channel given to the open call will be sent over
+    /// `receiver_client_end`.
+    ///
+    /// Make sure this method returns before passing the handle's peer to other
+    /// methods in this API. The creation may not be complete before then.
+    flexible ConnectorCreate(resource struct {
+        connector zx.Handle:EVENTPAIR;
+        receiver_client_end client_end:Receiver;
+    }) -> () error CapabilitiesError;
+
+    /// Creates a reference to a new directory connector capability. When the
+    /// directory connector is opened, the channel given to the open call will
+    /// be sent over `receiver_client_end`.
+    ///
+    /// Make sure this method returns before passing the handle's peer to other
+    /// methods in this API. The creation may not be complete before then.
+    flexible DirConnectorCreate(resource struct {
+        dir_connector zx.Handle:EVENTPAIR;
+        receiver_client_end client_end:DirReceiver;
+    }) -> () error CapabilitiesError;
+
+    /// Creates a reference to a new dictionary capability.
+    ///
+    /// Make sure this method returns before passing the handle's peer to other
+    /// methods in this API. The creation may not be complete before then.
+    flexible DictionaryCreate(resource struct {
+        dictionary zx.Handle:EVENTPAIR;
+    }) -> () error CapabilitiesError;
+
+    /// Creates a reference to a new data capability with the given value.
+    ///
+    /// Make sure this method returns before passing the handle's peer to other
+    /// methods in this API. The creation may not be complete before then.
+    flexible DataCreate(resource struct {
+        data_handle zx.Handle:EVENTPAIR;
+        data Data;
+    }) -> () error CapabilitiesError;
+
+    /// Creates a reference to a new router capability that will return a
+    /// connector capability when used.
+    ///
+    /// Make sure this method returns before passing the handle's peer to other
+    /// methods in this API. The creation may not be complete before then.
+    flexible ConnectorRouterCreate(resource struct {
+        router zx.Handle:EVENTPAIR;
+        router_client_end client_end:ConnectorRouter;
+    }) -> () error CapabilitiesError;
+
+    /// Creates a reference to a new router capability that will return a
+    /// directory connector capability when used.
+    ///
+    /// Make sure this method returns before passing the handle's peer to other
+    /// methods in this API. The creation may not be complete before then.
+    flexible DirConnectorRouterCreate(resource struct {
+        router zx.Handle:EVENTPAIR;
+        router_client_end client_end:DirConnectorRouter;
+    }) -> () error CapabilitiesError;
+
+    /// Creates a reference to a new router capability that will return a
+    /// dictionary capability when used.
+    ///
+    /// Make sure this method returns before passing the handle's peer to other
+    /// methods in this API. The creation may not be complete before then.
+    flexible DictionaryRouterCreate(resource struct {
+        router zx.Handle:EVENTPAIR;
+        router_client_end client_end:DictionaryRouter;
+    }) -> () error CapabilitiesError;
+
+    /// Creates a reference to a new router capability that will return a data
+    /// value when used.
+    ///
+    /// Make sure this method returns before passing the handle's peer to other
+    /// methods in this API. The creation may not be complete before then.
+    flexible DataRouterCreate(resource struct {
+        router zx.Handle:EVENTPAIR;
+        router_client_end client_end:DataRouter;
+    }) -> () error CapabilitiesError;
+
+    /// Uses the provided `connector` to open a new connection by delivering
+    /// this channel to whoever created the connector.
+    ///
+    /// If there is an error, it will be reported as a zx.Status epitaph on
+    /// `channel`.
+    ///
+    /// If the `connector` event pair handle is not correlated with a handle
+    /// given to `ConnectorCreate`, this connection will be closed.
+    flexible ConnectorOpen(resource struct {
+        connector zx.Handle:EVENTPAIR;
+        channel zx.Handle:CHANNEL;
+    }) -> () error CapabilitiesError;
+
+    /// Uses the provided `dir_connector` to open a new directory connection by
+    /// delivering this channel to whoever created the directory connector.
+    ///
+    /// If there is an error, it will be reported as a zx.Status epitaph on
+    /// `channel`.
+    ///
+    /// If the `dir_connector` event pair handle is not correlated with a handle
+    /// given to `DirConnectorCreate`, this connection will be closed.
+    ///
+    /// `dir_connector` and `channel` are both required. `rights` and `subdir`
+    /// may be omitted.
+    flexible DirConnectorOpen(resource table {
+        1: dir_connector zx.Handle:EVENTPAIR;
+        2: channel server_end:fuchsia.io.Directory;
+        3: rights fuchsia.io.Flags;
+        4: subdir string:fuchsia.component.decl.MAX_PATH_LENGTH;
+    }) -> () error CapabilitiesError;
+
+    /// Inserts a new `capability` into this `Dictionary` under the name `key`.
+    /// Overwrites any existing entry.
+    flexible DictionaryInsert(resource struct {
+        dictionary zx.Handle:EVENTPAIR;
+        key fuchsia.component.decl.name;
+        value zx.Handle:EVENTPAIR;
+    }) -> () error CapabilitiesError;
+
+    /// Creates a new reference to the `capability` named `key` in this
+    /// dictionary, if that capability exists. That capability will remain in
+    /// the dictionary. To take a capability out of the dictionary, use
+    /// `DictionaryRemove`.
+    ///
+    /// If `key` does not exist, `value` will not reference any capability and
+    /// the `NO_SUCH_CAPABILITY` error value will be returned.
+    ///
+    /// Make sure this method returns before passing the handle's peer to other
+    /// methods in this API. The creation may not be complete before then.
+    flexible DictionaryGet(resource struct {
+        dictionary zx.Handle:EVENTPAIR;
+        key fuchsia.component.decl.name;
+        value zx.Handle:EVENTPAIR;
+    }) -> (resource struct {
+        capability_type CapabilityType;
+    }) error CapabilitiesError;
+
+    /// Removes the `capability` named `key` from this dictionary and returns a
+    /// reference to it, if that capability exists.
+    ///
+    /// `dictionary` and `key` are required. `capability` is optional, and when
+    /// set will become associated with the capability that was removed from the
+    /// dictionary.
+    ///
+    /// If `key` does not exist, `value` will not reference any capability and
+    /// the `NO_SUCH_CAPABILITY` error value will be returned.
+    ///
+    /// Make sure this method returns before passing the peer of `capability` to
+    /// other methods in this API. The creation may not be complete before then.
+    flexible DictionaryRemove(resource table {
+        1: dictionary zx.Handle:EVENTPAIR;
+        2: key fuchsia.component.decl.name;
+        3: value zx.Handle:EVENTPAIR;
+    }) -> (resource struct {
+        capability_type CapabilityType;
+    }) error CapabilitiesError;
+
+    /// Opens an iterator which can be used to iterate over the keys of this
+    /// dictionary.
+    flexible DictionaryIterateKeys(resource struct {
+        dictionary zx.Handle:EVENTPAIR;
+        key_iterator server_end:DictionaryKeyIterator;
+    }) -> () error CapabilitiesError;
+
+    /// Returns the `Data` value that was provided to the `DataCreate` call used with
+    /// `data_handle`.
+    flexible DataGet(resource struct {
+        data_handle zx.Handle:EVENTPAIR;
+    }) -> (Data) error CapabilitiesError;
+
+    /// Attempts to produce a `Connector` capability from this `ConnectorRouter`.
+    ///
+    /// Make sure this method returns before passing the peer of `capability` to other methods in
+    /// this API. The creation may not be complete before then.
+    flexible ConnectorRouterRoute(resource struct {
+        router zx.Handle:EVENTPAIR;
+        request RouteRequest;
+        connector zx.Handle:EVENTPAIR;
+    }) -> () error zx.Status;
+
+    /// Attempts to produce a `DirConnector` capability from this
+    /// `DirConnectorRouter`. This will return:
+    ///
+    /// - A `DirConnector` if the operation is successful.
+    /// - An empty value if there is no issue found but the capability is not
+    ///   being provided (for example, an optional route ended in an offer from
+    ///   void).
+    /// - An error, if the operation failed.
+    flexible DirConnectorRouterRoute(resource struct {
+        router zx.Handle:EVENTPAIR;
+        request RouteRequest;
+        dir_connector zx.Handle:EVENTPAIR;
+    }) -> () error zx.Status;
+
+    /// Attempts to produce a `Dictionary` capability from this
+    /// `DictionaryRouter`. This will return:
+    ///
+    /// - A `Dictionary` if the operation is successful.
+    /// - An empty value if there is no issue found but the capability is not
+    ///   being provided (for example, an optional route ended in an offer from
+    ///   void).
+    /// - An error, if the operation failed.
+    flexible DictionaryRouterRoute(resource struct {
+        router zx.Handle:EVENTPAIR;
+        request RouteRequest;
+        dictionary zx.Handle:EVENTPAIR;
+    }) -> () error zx.Status;
+
+    /// Attempts to produce a `Data` value from this
+    /// `DataRouter`. This will return:
+    ///
+    /// - A `Data` value if the operation is successful.
+    /// - An empty value if there is no issue found but the capability is not
+    ///   being provided (for example, an optional route ended in an offer from
+    ///   void).
+    /// - An error, if the operation failed.
+    flexible DataRouterRoute(resource struct {
+        router zx.Handle:EVENTPAIR;
+        request RouteRequest;
+        data_handle zx.Status;
+    }) -> () error zx.Status;
+};

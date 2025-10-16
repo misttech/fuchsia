@@ -221,37 +221,40 @@ impl CapabilityFactory {
         let _ = self.remote_capabilities.lock().remove(&koid);
     }
 
-    async fn retrieve_remote(&self, capability: fruntime::Capability) -> Option<Capability> {
+    async fn retrieve_remote(
+        &self,
+        capability: fruntime::CapabilityDeprecated,
+    ) -> Option<Capability> {
         let koid = match capability {
-            fruntime::Capability::Connector(connector_client_end) => {
+            fruntime::CapabilityDeprecated::Connector(connector_client_end) => {
                 let connector_proxy = connector_client_end.into_proxy();
                 connector_proxy.as_channel().basic_info().ok()?.related_koid
             }
-            fruntime::Capability::DirConnector(dir_connector_client_end) => {
+            fruntime::CapabilityDeprecated::DirConnector(dir_connector_client_end) => {
                 let dir_connector_proxy = dir_connector_client_end.into_proxy();
                 dir_connector_proxy.as_channel().basic_info().ok()?.related_koid
             }
-            fruntime::Capability::Dictionary(dictionary_client_end) => {
+            fruntime::CapabilityDeprecated::Dictionary(dictionary_client_end) => {
                 let dictionary_proxy = dictionary_client_end.into_proxy();
                 dictionary_proxy.as_channel().basic_info().ok()?.related_koid
             }
-            fruntime::Capability::ConnectorRouter(router_client_end) => {
+            fruntime::CapabilityDeprecated::ConnectorRouter(router_client_end) => {
                 let router_proxy = router_client_end.into_proxy();
                 router_proxy.as_channel().basic_info().ok()?.related_koid
             }
-            fruntime::Capability::DirConnectorRouter(router_client_end) => {
+            fruntime::CapabilityDeprecated::DirConnectorRouter(router_client_end) => {
                 let router_proxy = router_client_end.into_proxy();
                 router_proxy.as_channel().basic_info().ok()?.related_koid
             }
-            fruntime::Capability::DictionaryRouter(router_client_end) => {
+            fruntime::CapabilityDeprecated::DictionaryRouter(router_client_end) => {
                 let router_proxy = router_client_end.into_proxy();
                 router_proxy.as_channel().basic_info().ok()?.related_koid
             }
-            fruntime::Capability::DataRouter(router_client_end) => {
+            fruntime::CapabilityDeprecated::DataRouter(router_client_end) => {
                 let router_proxy = router_client_end.into_proxy();
                 router_proxy.as_channel().basic_info().ok()?.related_koid
             }
-            fruntime::Capability::Data(data) => match data {
+            fruntime::CapabilityDeprecated::Data(data) => match data {
                 fruntime::Data::Bytes(bytes) => return Some(Data::Bytes(bytes.into()).into()),
                 fruntime::Data::String(string) => return Some(Data::String(string.into()).into()),
                 fruntime::Data::Int64(num) => return Some(Data::Int64(num).into()),
@@ -412,49 +415,53 @@ impl CapabilityFactory {
         .boxed()
     }
 
-    async fn to_remote_capability(&self, capability: Capability) -> fruntime::Capability {
+    async fn to_remote_capability(&self, capability: Capability) -> fruntime::CapabilityDeprecated {
         match capability {
             Capability::Connector(connector) => {
-                fruntime::Capability::Connector(connector.to_remote(&self).await)
+                fruntime::CapabilityDeprecated::Connector(connector.to_remote(&self).await)
             }
             Capability::DirConnector(dir_connector) => {
-                fruntime::Capability::DirConnector(dir_connector.to_remote(&self).await)
+                fruntime::CapabilityDeprecated::DirConnector(dir_connector.to_remote(&self).await)
             }
             Capability::Dictionary(dictionary) => {
-                fruntime::Capability::Dictionary(dictionary.to_remote(&self).await)
+                fruntime::CapabilityDeprecated::Dictionary(dictionary.to_remote(&self).await)
             }
             Capability::ConnectorRouter(router) => {
                 let (client_end, router_server_end) = create_endpoints();
                 self.weak_scope
                     .spawn(self.clone().serve_connector_router(router, router_server_end));
-                fruntime::Capability::ConnectorRouter(client_end)
+                fruntime::CapabilityDeprecated::ConnectorRouter(client_end)
             }
             Capability::DirConnectorRouter(router) => {
                 let (client_end, router_server_end) = create_endpoints();
                 self.weak_scope
                     .spawn(self.clone().serve_dir_connector_router(router, router_server_end));
-                fruntime::Capability::DirConnectorRouter(client_end)
+                fruntime::CapabilityDeprecated::DirConnectorRouter(client_end)
             }
             Capability::DictionaryRouter(router) => {
                 let (client_end, router_server_end) = create_endpoints();
                 self.weak_scope
                     .spawn(self.clone().serve_dictionary_router(router, router_server_end));
-                fruntime::Capability::DictionaryRouter(client_end)
+                fruntime::CapabilityDeprecated::DictionaryRouter(client_end)
             }
             Capability::DataRouter(router) => {
                 let (client_end, router_server_end) = create_endpoints();
                 self.weak_scope.spawn(self.clone().serve_data_router(router, router_server_end));
-                fruntime::Capability::DataRouter(client_end)
+                fruntime::CapabilityDeprecated::DataRouter(client_end)
             }
             Capability::Data(data) => match data {
                 Data::Bytes(bytes) => {
-                    fruntime::Capability::Data(fruntime::Data::Bytes(bytes.into()))
+                    fruntime::CapabilityDeprecated::Data(fruntime::Data::Bytes(bytes.into()))
                 }
                 Data::String(string) => {
-                    fruntime::Capability::Data(fruntime::Data::String(string.into()))
+                    fruntime::CapabilityDeprecated::Data(fruntime::Data::String(string.into()))
                 }
-                Data::Int64(num) => fruntime::Capability::Data(fruntime::Data::Int64(num)),
-                Data::Uint64(num) => fruntime::Capability::Data(fruntime::Data::Uint64(num)),
+                Data::Int64(num) => {
+                    fruntime::CapabilityDeprecated::Data(fruntime::Data::Int64(num))
+                }
+                Data::Uint64(num) => {
+                    fruntime::CapabilityDeprecated::Data(fruntime::Data::Uint64(num))
+                }
             },
             other_capability_type => {
                 panic!("unable to remote capabilities of this type: {:?}", other_capability_type)
@@ -490,13 +497,6 @@ impl CapabilityFactory {
                     }
                     let _ = responder.send(&next_elements);
                 }
-                other_request => {
-                    log::warn!(
-                        "dictionary keys iterator exiting due to unrecognized request: \
-                               {other_request:?}"
-                    );
-                    return;
-                }
             }
         }
     }
@@ -504,7 +504,7 @@ impl CapabilityFactory {
     fn serve_connector_router(
         self,
         router: Router<Connector>,
-        router_server_end: ServerEnd<fruntime::ConnectorRouterMarker>,
+        router_server_end: ServerEnd<fruntime::ConnectorRouterDeprecatedMarker>,
     ) -> BoxFuture<'static, ()> {
         async move {
             self.store_remote(&router_server_end, router.clone()).await;
@@ -513,13 +513,13 @@ impl CapabilityFactory {
             let mut stream = router_server_end.into_stream();
             while let Some(Ok(request)) = stream.next().await {
                 match request {
-                    fruntime::ConnectorRouterRequest::Clone { request, .. } => {
+                    fruntime::ConnectorRouterDeprecatedRequest::Clone { request, .. } => {
                         self.weak_scope.spawn(self.clone().serve_connector_router(
                             router.clone(),
                             ServerEnd::new(request.into_channel()),
                         ));
                     }
-                    fruntime::ConnectorRouterRequest::Route {
+                    fruntime::ConnectorRouterDeprecatedRequest::Route {
                         request,
                         connector_server_end,
                         responder,
@@ -561,7 +561,7 @@ impl CapabilityFactory {
     fn serve_dir_connector_router(
         self,
         router: Router<DirConnector>,
-        router_server_end: ServerEnd<fruntime::DirConnectorRouterMarker>,
+        router_server_end: ServerEnd<fruntime::DirConnectorRouterDeprecatedMarker>,
     ) -> BoxFuture<'static, ()> {
         async move {
             self.store_remote(&router_server_end, router.clone()).await;
@@ -570,13 +570,13 @@ impl CapabilityFactory {
             let mut stream = router_server_end.into_stream();
             while let Some(Ok(request)) = stream.next().await {
                 match request {
-                    fruntime::DirConnectorRouterRequest::Clone { request, .. } => {
+                    fruntime::DirConnectorRouterDeprecatedRequest::Clone { request, .. } => {
                         self.weak_scope.spawn(self.clone().serve_dir_connector_router(
                             router.clone(),
                             ServerEnd::new(request.into_channel()),
                         ));
                     }
-                    fruntime::DirConnectorRouterRequest::Route {
+                    fruntime::DirConnectorRouterDeprecatedRequest::Route {
                         request,
                         dir_connector_server_end,
                         responder,
@@ -621,7 +621,7 @@ impl CapabilityFactory {
     fn serve_dictionary_router(
         self,
         router: Router<Dict>,
-        router_server_end: ServerEnd<fruntime::DictionaryRouterMarker>,
+        router_server_end: ServerEnd<fruntime::DictionaryRouterDeprecatedMarker>,
     ) -> BoxFuture<'static, ()> {
         async move {
             self.store_remote(&router_server_end, router.clone()).await;
@@ -630,13 +630,13 @@ impl CapabilityFactory {
             let mut stream = router_server_end.into_stream();
             while let Some(Ok(request)) = stream.next().await {
                 match request {
-                    fruntime::DictionaryRouterRequest::Clone { request, .. } => {
+                    fruntime::DictionaryRouterDeprecatedRequest::Clone { request, .. } => {
                         self.weak_scope.spawn(self.clone().serve_dictionary_router(
                             router.clone(),
                             ServerEnd::new(request.into_channel()),
                         ));
                     }
-                    fruntime::DictionaryRouterRequest::Route {
+                    fruntime::DictionaryRouterDeprecatedRequest::Route {
                         request,
                         dictionary_server_end,
                         responder,
@@ -679,7 +679,7 @@ impl CapabilityFactory {
     fn serve_data_router(
         self,
         router: Router<Data>,
-        router_server_end: ServerEnd<fruntime::DataRouterMarker>,
+        router_server_end: ServerEnd<fruntime::DataRouterDeprecatedMarker>,
     ) -> BoxFuture<'static, ()> {
         async move {
             self.store_remote(&router_server_end, router.clone()).await;
@@ -688,13 +688,13 @@ impl CapabilityFactory {
             let mut stream = router_server_end.into_stream();
             while let Some(Ok(request)) = stream.next().await {
                 match request {
-                    fruntime::DataRouterRequest::Clone { request, .. } => {
+                    fruntime::DataRouterDeprecatedRequest::Clone { request, .. } => {
                         self.weak_scope.spawn(self.clone().serve_data_router(
                             router.clone(),
                             ServerEnd::new(request.into_channel()),
                         ));
                     }
-                    fruntime::DataRouterRequest::Route { request, responder, .. } => {
+                    fruntime::DataRouterDeprecatedRequest::Route { request, responder, .. } => {
                         let maybe_route_request = match self.convert_route_request(request).await {
                             Ok(maybe_request) => maybe_request,
                             Err(e) => {
@@ -770,7 +770,7 @@ impl Connectable for RemoteReceiver {
 
 #[derive(Debug)]
 struct RemoteDirReceiver {
-    remote_receiver: fruntime::DirReceiverProxy,
+    remote_receiver: fruntime::DirReceiverDeprecatedProxy,
 }
 
 impl DirConnectable for RemoteDirReceiver {
@@ -825,7 +825,7 @@ trait Remotable: CapabilityBound {
 #[async_trait]
 impl Remotable for Connector {
     type Marker = fruntime::ConnectorMarker;
-    type RouterProxy = fruntime::ConnectorRouterProxy;
+    type RouterProxy = fruntime::ConnectorRouterDeprecatedProxy;
     type RemotedType = ClientEnd<Self::Marker>;
 
     async fn to_remote(self, factory: &CapabilityFactory) -> Self::RemotedType {
@@ -839,7 +839,7 @@ impl Remotable for Connector {
         factory: &CapabilityFactory,
     ) -> Option<Self> {
         let capability =
-            factory.retrieve_remote(fruntime::Capability::Connector(client_end)).await?;
+            factory.retrieve_remote(fruntime::CapabilityDeprecated::Connector(client_end)).await?;
         match capability {
             Capability::Connector(connector) => Some(connector),
             _ => None,
@@ -863,7 +863,7 @@ impl Remotable for Connector {
 #[async_trait]
 impl Remotable for DirConnector {
     type Marker = fruntime::DirConnectorMarker;
-    type RouterProxy = fruntime::DirConnectorRouterProxy;
+    type RouterProxy = fruntime::DirConnectorRouterDeprecatedProxy;
     type RemotedType = ClientEnd<Self::Marker>;
 
     async fn to_remote(self, factory: &CapabilityFactory) -> Self::RemotedType {
@@ -876,8 +876,9 @@ impl Remotable for DirConnector {
         client_end: Self::RemotedType,
         factory: &CapabilityFactory,
     ) -> Option<Self> {
-        let capability =
-            factory.retrieve_remote(fruntime::Capability::DirConnector(client_end)).await?;
+        let capability = factory
+            .retrieve_remote(fruntime::CapabilityDeprecated::DirConnector(client_end))
+            .await?;
         match capability {
             Capability::DirConnector(dir_connector) => Some(dir_connector),
             _ => None,
@@ -901,7 +902,7 @@ impl Remotable for DirConnector {
 #[async_trait]
 impl Remotable for Dict {
     type Marker = fruntime::DictionaryMarker;
-    type RouterProxy = fruntime::DictionaryRouterProxy;
+    type RouterProxy = fruntime::DictionaryRouterDeprecatedProxy;
     type RemotedType = ClientEnd<Self::Marker>;
 
     async fn to_remote(self, factory: &CapabilityFactory) -> Self::RemotedType {
@@ -915,7 +916,7 @@ impl Remotable for Dict {
         factory: &CapabilityFactory,
     ) -> Option<Self> {
         let capability =
-            factory.retrieve_remote(fruntime::Capability::Dictionary(client_end)).await?;
+            factory.retrieve_remote(fruntime::CapabilityDeprecated::Dictionary(client_end)).await?;
         match capability {
             Capability::Dictionary(dictionary) => Some(dictionary),
             _ => None,
@@ -939,7 +940,7 @@ impl Remotable for Dict {
 #[async_trait]
 impl Remotable for Data {
     type Marker = fruntime::DictionaryMarker;
-    type RouterProxy = fruntime::DataRouterProxy;
+    type RouterProxy = fruntime::DataRouterDeprecatedProxy;
     type RemotedType = fruntime::Data;
 
     async fn to_remote(self, _factory: &CapabilityFactory) -> Self::RemotedType {
@@ -1053,9 +1054,9 @@ mod tests {
 
     fn create_dir_connector(
         proxy: &fruntime::CapabilityFactoryProxy,
-    ) -> (fruntime::DirConnectorProxy, fruntime::DirReceiverRequestStream) {
+    ) -> (fruntime::DirConnectorProxy, fruntime::DirReceiverDeprecatedRequestStream) {
         let (dir_receiver_client_end, dir_receiver_stream) =
-            fidl::endpoints::create_request_stream::<fruntime::DirReceiverMarker>();
+            fidl::endpoints::create_request_stream::<fruntime::DirReceiverDeprecatedMarker>();
         let (dir_connector_proxy, dir_connector_server_end) =
             fidl::endpoints::create_proxy::<fruntime::DirConnectorMarker>();
         proxy.create_dir_connector(dir_receiver_client_end, dir_connector_server_end).unwrap();
@@ -1080,12 +1081,12 @@ mod tests {
 
     async fn test_dir_connector_is_connected(
         dir_connector_proxy: &fruntime::DirConnectorProxy,
-        dir_receiver_stream: &mut fruntime::DirReceiverRequestStream,
+        dir_receiver_stream: &mut fruntime::DirReceiverDeprecatedRequestStream,
     ) {
         let (client_end, server_end) = fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
         dir_connector_proxy.connect(server_end).unwrap();
         let received_server_end = match dir_receiver_stream.next().await {
-            Some(Ok(fruntime::DirReceiverRequest::Receive { channel, .. })) => channel,
+            Some(Ok(fruntime::DirReceiverDeprecatedRequest::Receive { channel, .. })) => channel,
             other_message => panic!("unexpected message: {other_message:?}"),
         };
         assert_eq!(
@@ -1158,14 +1159,16 @@ mod tests {
             fidl::endpoints::create_proxy::<fruntime::DictionaryMarker>();
         proxy.create_dictionary(dictionary_server_end).unwrap();
 
-        dictionary_proxy.insert("a", fruntime::Capability::Data(fruntime::Data::Int64(1))).unwrap();
+        dictionary_proxy
+            .insert("a", fruntime::CapabilityDeprecated::Data(fruntime::Data::Int64(1)))
+            .unwrap();
         assert_eq!(
             dictionary_proxy.get("a").await.unwrap(),
-            Some(Box::new(fruntime::Capability::Data(fruntime::Data::Int64(1))))
+            Some(Box::new(fruntime::CapabilityDeprecated::Data(fruntime::Data::Int64(1))))
         );
         assert_eq!(
             dictionary_proxy.remove("a").await.unwrap(),
-            Some(Box::new(fruntime::Capability::Data(fruntime::Data::Int64(1))))
+            Some(Box::new(fruntime::CapabilityDeprecated::Data(fruntime::Data::Int64(1))))
         );
         assert_eq!(dictionary_proxy.get("a").await.unwrap(), None);
     }
@@ -1185,7 +1188,7 @@ mod tests {
             // "0x", meaning this is always 100 characters long (the max name size)
             let name = format!("{i:#098x}");
             dictionary_proxy
-                .insert(&name, fruntime::Capability::Data(fruntime::Data::Int64(1)))
+                .insert(&name, fruntime::CapabilityDeprecated::Data(fruntime::Data::Int64(1)))
                 .unwrap();
             expected_dictionary_contents.push(name);
             // There's no backpressure, so we can accidentally fill the channel before we have a
@@ -1213,16 +1216,16 @@ mod tests {
     async fn create_connector_router_test() {
         let (proxy, remote_capabilities, _scope) = new_factory_connection();
         let (router_client_end, mut router_stream) =
-            fidl::endpoints::create_request_stream::<fruntime::ConnectorRouterMarker>();
+            fidl::endpoints::create_request_stream::<fruntime::ConnectorRouterDeprecatedMarker>();
         let (router_proxy, router_server_end) =
-            fidl::endpoints::create_proxy::<fruntime::ConnectorRouterMarker>();
+            fidl::endpoints::create_proxy::<fruntime::ConnectorRouterDeprecatedMarker>();
         proxy.create_connector_router(router_client_end, router_server_end).unwrap();
 
         let (connector_proxy, connector_server_end) =
             fidl::endpoints::create_proxy::<fruntime::ConnectorMarker>();
         let success_route_fut = router_proxy.route(Default::default(), connector_server_end);
         let mut receiver_stream = match router_stream.next().await {
-            Some(Ok(fruntime::ConnectorRouterRequest::Route {
+            Some(Ok(fruntime::ConnectorRouterDeprecatedRequest::Route {
                 connector_server_end,
                 responder,
                 ..
@@ -1250,17 +1253,18 @@ mod tests {
     #[fuchsia::test]
     async fn create_dir_connector_router_test() {
         let (proxy, remote_capabilities, _scope) = new_factory_connection();
-        let (router_client_end, mut router_stream) =
-            fidl::endpoints::create_request_stream::<fruntime::DirConnectorRouterMarker>();
+        let (router_client_end, mut router_stream) = fidl::endpoints::create_request_stream::<
+            fruntime::DirConnectorRouterDeprecatedMarker,
+        >();
         let (router_proxy, router_server_end) =
-            fidl::endpoints::create_proxy::<fruntime::DirConnectorRouterMarker>();
+            fidl::endpoints::create_proxy::<fruntime::DirConnectorRouterDeprecatedMarker>();
         proxy.create_dir_connector_router(router_client_end, router_server_end).unwrap();
 
         let (dir_connector_proxy, dir_connector_server_end) =
             fidl::endpoints::create_proxy::<fruntime::DirConnectorMarker>();
         let success_route_fut = router_proxy.route(Default::default(), dir_connector_server_end);
         let mut dir_receiver_stream = match router_stream.next().await {
-            Some(Ok(fruntime::DirConnectorRouterRequest::Route {
+            Some(Ok(fruntime::DirConnectorRouterDeprecatedRequest::Route {
                 dir_connector_server_end,
                 responder,
                 ..
@@ -1291,16 +1295,16 @@ mod tests {
     async fn create_dictionary_router_test() {
         let (proxy, remote_capabilities, _scope) = new_factory_connection();
         let (router_client_end, mut router_stream) =
-            fidl::endpoints::create_request_stream::<fruntime::DictionaryRouterMarker>();
+            fidl::endpoints::create_request_stream::<fruntime::DictionaryRouterDeprecatedMarker>();
         let (router_proxy, router_server_end) =
-            fidl::endpoints::create_proxy::<fruntime::DictionaryRouterMarker>();
+            fidl::endpoints::create_proxy::<fruntime::DictionaryRouterDeprecatedMarker>();
         proxy.create_dictionary_router(router_client_end, router_server_end).unwrap();
 
         let (dictionary_proxy, dictionary_server_end) =
             fidl::endpoints::create_proxy::<fruntime::DictionaryMarker>();
         let success_route_fut = router_proxy.route(Default::default(), dictionary_server_end);
         match router_stream.next().await {
-            Some(Ok(fruntime::DictionaryRouterRequest::Route {
+            Some(Ok(fruntime::DictionaryRouterDeprecatedRequest::Route {
                 dictionary_server_end,
                 responder,
                 ..
@@ -1330,14 +1334,14 @@ mod tests {
     async fn create_data_router_test() {
         let (proxy, remote_capabilities, _scope) = new_factory_connection();
         let (router_client_end, mut router_stream) =
-            fidl::endpoints::create_request_stream::<fruntime::DataRouterMarker>();
+            fidl::endpoints::create_request_stream::<fruntime::DataRouterDeprecatedMarker>();
         let (router_proxy, router_server_end) =
-            fidl::endpoints::create_proxy::<fruntime::DataRouterMarker>();
+            fidl::endpoints::create_proxy::<fruntime::DataRouterDeprecatedMarker>();
         proxy.create_data_router(router_client_end, router_server_end).unwrap();
 
         let success_route_fut = router_proxy.route(Default::default());
         match router_stream.next().await {
-            Some(Ok(fruntime::DataRouterRequest::Route { responder, .. })) => {
+            Some(Ok(fruntime::DataRouterDeprecatedRequest::Route { responder, .. })) => {
                 responder
                     .send(Ok((fruntime::RouterResponse::Success, Some(&fruntime::Data::Int64(1)))))
                     .unwrap();
