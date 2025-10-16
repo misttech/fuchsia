@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::task::{CurrentTask, EventHandler, WaitCanceler, WaitQueue, Waiter};
+use crate::task::{CurrentTask, EventHandler, FullCredentials, WaitCanceler, WaitQueue, Waiter};
 use crate::vfs::FileHandle;
 use crate::vfs::buffers::{AncillaryData, InputBuffer, MessageReadInfo, OutputBuffer};
 use crate::vfs::socket::{
@@ -162,7 +162,10 @@ impl SocketOps for VsockSocket {
                 _ => return error!(EBADF),
             }
         };
-        let bytes_read = file.read(locked, current_task, data)?;
+        let bytes_read = current_task.override_creds(
+            |creds| *creds = FullCredentials::for_kernel(),
+            || file.read(locked, current_task, data),
+        )?;
         Ok(MessageReadInfo {
             bytes_read,
             message_length: bytes_read,
@@ -187,7 +190,10 @@ impl SocketOps for VsockSocket {
                 _ => return error!(EBADF),
             }
         };
-        file.write(locked, current_task, data)
+        current_task.override_creds(
+            |creds| *creds = FullCredentials::for_kernel(),
+            || file.write(locked, current_task, data),
+        )
     }
 
     fn wait_async(
@@ -329,7 +335,10 @@ impl VsockSocketInner {
     {
         Ok(match &self.state {
             VsockSocketState::Disconnected => FdEvents::empty(),
-            VsockSocketState::Connected { file, .. } => file.query_events(locked, current_task)?,
+            VsockSocketState::Connected { file, .. } => current_task.override_creds(
+                |creds| *creds = FullCredentials::for_kernel(),
+                || file.query_events(locked, current_task),
+            )?,
             VsockSocketState::Listening(queue) => {
                 if !queue.sockets.is_empty() {
                     FdEvents::POLLIN
