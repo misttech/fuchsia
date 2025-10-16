@@ -66,8 +66,6 @@ def _make_flag_config(
         conlyflags = [],
         ccflags = [],
         ldflags = [],
-        lld_flags = [],
-        ld64_flags = [],
         combine_cflags_with_ldflags = True):
     """ Create a struct holding all compiler and linker flags.
 
@@ -82,12 +80,6 @@ def _make_flag_config(
        ccflags (string list, optional): C++ only compiler flags.
        conlyflags (string list, optional): C compiler flags (omitted from C++ compilations).
        ldflags (string list, optional): linker flags.
-
-       lld_flags (string list, optional): linker flags to be used only
-          when the Clang lld linker is used (typically on Linux).
-
-       ld64_flags (string list, optional): linker flags to be used only
-          when the MacOS ld64 linker is used.
 
        combine_cflags_with_ldflags (bool, optional): if True (the default), the values
           in cflags will be prepended to ldflags as well.
@@ -107,8 +99,6 @@ def _make_flag_config(
         ldflags = _flag_group_or_none(
             (cflags if combine_cflags_with_ldflags else []) + ldflags,
         ),
-        lld_flags = _flag_group_or_none(lld_flags),
-        ld64_flags = _flag_group_or_none(ld64_flags),
     )
 
 def _iter_config_flags(flag_name, flag_configs):
@@ -131,14 +121,8 @@ def _iter_ccflags(flag_configs):
 def _iter_conlyflags(flag_configs):
     return _iter_config_flags("conlyflags", flag_configs)
 
-def _iter_ldflags(flag_configs, use_ld64 = False):
-    return (
-        _iter_config_flags("ldflags", flag_configs) +
-        _iter_config_flags(
-            "ld64_flags" if use_ld64 else "lld_flags",
-            flag_configs,
-        )
-    )
+def _iter_ldflags(flag_configs):
+    return _iter_config_flags("ldflags", flag_configs)
 
 def _apply_if(feature):
     """Generate `with_features` value that matches a given feature name.
@@ -185,7 +169,7 @@ _flag_configs = struct(
             "-fdata-sections",
             "-ffunction-sections",
         ],
-        lld_flags = ["-Wl,--gc-sections"],
+        ldflags = ["-Wl,--gc-sections"],
     ),
     optimize_none = _make_flag_config(
         cflags = ["-O0"],
@@ -269,8 +253,7 @@ _flag_configs = struct(
         ldflags = ["--driver-mode=g++"],
     ),
     symbol_no_undefined = _make_flag_config(
-        lld_flags = ["-Wl,--no-undefined"],
-        ld64_flags = ["-Wl,-undefined,error"],
+        ldflags = ["-Wl,--no-undefined"],
     ),
     lto = _make_flag_config(
         cflags = [
@@ -355,81 +338,20 @@ def get_default_compile_flags_feature(
     Returns:
        A new feature() value.
     """
-    host_os = clang_info.fuchsia_host_os
-    host_cpu = clang_info.fuchsia_host_arch
-
-    is_macos = target_os == "mac"
-    is_host = target_os == host_os
-
-    clang_tuple = to_clang_target_tuple(target_os, target_cpu)
-    toolchain_dir = "external/{}".format(toolchain_repo_name)
-    macos_sdk_path = "{}/xcode/MacSDK".format(toolchain_dir)
-    clang_version = clang_info.short_version
-
-    # On MacOS, the ld64 linker is required, which uses slightly
-    # different flags for certain features.
-    use_ld64 = is_macos
+    is_host = clang_info.fuchsia_host_os == target_os
 
     default_cflags = []
     default_conlyflags = []
     default_ccflags = []
     default_ldflags = []
 
-    # Include search paths for libc++, which uses #include_next directives, expecting
-    # headers to be listed in a very specific order.
-    if target_os == "mac":
+    if sysroot:
         default_cflags += [
-            # Do not use built-in include search paths. This prevents
-            # picking system-installed headers or libraries by mistake.
-            # This flag also makes --sysroot a no-op!!
-            "-nostdinc",
-
-            # Ensure system framework headers are picked from the Mac SDK
-            "-iframework",
-            "{}/Frameworks".format(macos_sdk_path),
-        ]
-
-        # See https://skia.googlesource.com/skia/+/620de5ac9f6b/toolchain/mac_toolchain_config.bzl
-        default_conlyflags += [
-            # Access <stdbool.h> from C. See https://fxbug.dev/440934285
-            "-isystem",
-            "{}/lib/clang/{}/include".format(toolchain_dir, clang_info.short_version),
-            # Access C library headers.
-            "-isystem",
-            "{}/usr/include".format(macos_sdk_path),
-        ]
-        default_ccflags += [
-            # Ensure the toolchain's libc++ headers are picked up at compilation time,
-            # before the ones that come from the Mac SDK.
-            "-isystem",
-            "{}/include/c++/v1".format(toolchain_dir),
-            "-isystem",
-            "{}/lib/clang/{}/include".format(toolchain_dir, clang_info.short_version),
-            "-isystem",
-            "{}/usr/include".format(macos_sdk_path),
+            "--sysroot={}".format(sysroot),
         ]
         default_ldflags += [
-            # Ensure system framework libraries are picked from the Mac SDK
-            "-iframework",
-            "{}/Frameworks".format(macos_sdk_path),
-            # Ensure that our toolchain's libc++ host runtime is used at link time.
-            # This must appear before xcode/MacSDK/usr/lib below to ensure the XCode
-            # libc++ is not picked up by mistake.
-            "-Wl,-L,{}/lib".format(toolchain_dir),
-            "-lc++",
-            # Ensure the standard C library runtime is found at link time.
-            "-Wl,-L,{}/usr/lib".format(macos_sdk_path),
-            # Debugging help (uncomment to enable)
-            # "-Wl,--verbose",
+            "--sysroot={}".format(sysroot),
         ]
-    else:  # Fuchsia or Linux
-        if sysroot:
-            default_cflags += [
-                "--sysroot={}".format(sysroot),
-            ]
-            default_ldflags += [
-                "--sysroot={}".format(sysroot),
-            ]
 
     default_system_flags = _make_flag_config(
         cflags = default_cflags,
@@ -531,10 +453,10 @@ def get_default_compile_flags_feature(
                     _flag_configs.symbol_no_undefined,
                     _flag_configs.icf,
                     _flag_configs.relpath_debug_info,
-                ], use_ld64 = use_ld64) + (
+                ]) + (
                     _iter_ldflags([
                         _flag_configs.link_zircon,
-                    ], use_ld64 = False) if target_os == "fuchsia" else []
+                    ]) if target_os == "fuchsia" else []
                 ),
             ),
             # These are ldflags that will be added to dbg builds
@@ -542,7 +464,7 @@ def get_default_compile_flags_feature(
                 actions = _all_link_actions,
                 flag_groups = _iter_ldflags([
                     _flag_configs.optimize_debug,
-                ], use_ld64 = use_ld64),
+                ]),
                 with_features = _apply_if("dbg"),
             ),
             # These are ldflags that will be added to opt builds
@@ -552,7 +474,7 @@ def get_default_compile_flags_feature(
                     _flag_configs.optimize_size,
                     # TODO(b/299545705) turn on LTO for all opt builds
                     # _flag_configs.lto,
-                ], use_ld64 = use_ld64),
+                ]),
                 with_features = _apply_if("opt"),
             ),
         ],

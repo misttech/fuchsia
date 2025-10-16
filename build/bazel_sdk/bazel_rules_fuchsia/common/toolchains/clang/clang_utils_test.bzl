@@ -90,16 +90,6 @@ def _to_clang_target_tuple_test(ctx):
         ("linux", "k8", "x86_64-unknown-linux-gnu"),
         ("linux", "x86_64", "x86_64-unknown-linux-gnu"),
         ("linux", "aarch64", "aarch64-unknown-linux-gnu"),
-        ("mac", "x64", "x86_64-apple-darwin"),
-        ("mac", "arm64", "aarch64-apple-darwin"),
-        ("macos", "k8", "x86_64-apple-darwin"),
-        ("macos", "x86_64", "x86_64-apple-darwin"),
-        ("macos", "aarch64", "aarch64-apple-darwin"),
-        ("macos", "arm64", "aarch64-apple-darwin"),
-        ("osx", "k8", "x86_64-apple-darwin"),
-        ("osx", "x86_64", "x86_64-apple-darwin"),
-        ("osx", "aarch64", "aarch64-apple-darwin"),
-        ("osx", "arm64", "aarch64-apple-darwin"),
     ]
     env = unittest.begin(ctx)
     for target_os, target_arch, expected_tuple in cases:
@@ -113,15 +103,15 @@ def _format_target_tag_labels_dict_test(ctx):
         (
             {
                 "linux-x64": ["//{pkg}:{clang_target_tuple}/name_{os}_{cpu}"],
-                "macos-aarch64": ["//{pkg}:{clang_target_tuple}/name_{os}_{cpu}"],
-                "mac-arm64": ["//{pkg}:{clang_target_tuple}/name_{bazel_os}_{bazel_cpu}"],
-                "fuchsia-riscv64": ["//{pkg}:{clang_target_tuple}/name_{os}_{cpu}"],
+                "linux-aarch64": ["//{pkg}:{clang_target_tuple}/name_{bazel_os}_{cpu}"],
+                "fuchsia-arm64": ["//{pkg}:{clang_target_tuple}/name_{os}_{bazel_cpu}"],
+                "fuchsia-riscv64": ["//{pkg}:{clang_target_tuple}/name_{bazel_os}_{bazel_cpu}"],
             },
             {"pkg": "package"},
             {
                 "linux-x64": ["//package:x86_64-unknown-linux-gnu/name_linux_x64"],
-                "macos-aarch64": ["//package:aarch64-apple-darwin/name_mac_arm64"],
-                "mac-arm64": ["//package:aarch64-apple-darwin/name_macos_aarch64"],
+                "linux-aarch64": ["//package:aarch64-unknown-fuchsia/name_linux_arm64"],
+                "fuchsia-arm64": ["//package:aarch64-unknown-fuchsia/name_fuchsia_aarch64"],
                 "fuchsia-riscv64": ["//package:riscv64-unknown-fuchsia/name_fuchsia_riscv64"],
             },
         ),
@@ -150,14 +140,6 @@ def _format_labels_list_to_target_tag_dict_test(ctx):
                 "linux-arm64": [
                     "//package:aarch64-unknown-linux-gnu/foo",
                     "linux_arm64_linux_aarch64.txt",
-                ],
-                "mac-x64": [
-                    "//package:x86_64-apple-darwin/foo",
-                    "mac_x64_macos_x86_64.txt",
-                ],
-                "mac-arm64": [
-                    "//package:aarch64-apple-darwin/foo",
-                    "mac_arm64_macos_aarch64.txt",
                 ],
                 "fuchsia-x64": [
                     "//package:x86_64-unknown-fuchsia/foo",
@@ -188,8 +170,6 @@ def _clang_all_target_tags_test(ctx):
         "fuchsia-riscv64": None,
         "linux-x64": None,
         "linux-arm64": None,
-        "mac-x64": None,
-        "mac-arm64": None,
     }
     input_dict = {
         target_tag: None

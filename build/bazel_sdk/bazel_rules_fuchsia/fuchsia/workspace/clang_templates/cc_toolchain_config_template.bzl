@@ -89,7 +89,7 @@ cc_toolchain_config = rule(
         "target_os": attr.string(
             doc = "Target OS, following Fuchsia conventions",
             mandatory = True,
-            values = ["fuchsia", "linux", "mac"],
+            values = ["fuchsia", "linux"],
         ),
         "target_cpu": attr.string(
             doc = "Target CPU, following Fuchsia conventions",

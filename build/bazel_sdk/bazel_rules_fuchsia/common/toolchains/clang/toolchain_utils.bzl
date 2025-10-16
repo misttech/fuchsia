@@ -21,7 +21,6 @@ load(
     "format_labels_list_to_target_tag_native_glob_select",
     "to_clang_target_tuple",
 )
-load("//common:toolchains/clang/macos_xcode_utils.bzl", "generate_macos_system_filegroups")
 load("//common:toolchains/clang/providers.bzl", "ClangInfo")
 load("//common:toolchains/clang/sanitizer.bzl", "sanitizer_features")
 load("//common/platforms:utils.bzl", "to_fuchsia_cpu_name", "to_fuchsia_os_name")
@@ -45,7 +44,6 @@ def compute_clang_features(clang_info, repo_name, target_os, target_cpu, sysroot
 
     is_linux = target_os == "linux"
     is_fuchsia = target_os == "fuchsia"
-    is_macos = target_os == "mac"
 
     clang_tuple = to_clang_target_tuple(target_os, target_cpu)
 
@@ -227,7 +225,7 @@ def compute_clang_features(clang_info, repo_name, target_os, target_cpu, sysroot
                 flag_groups = [
                     flag_group(
                         flags = [
-                            "-Wl,-map,%{output_execpath}.map" if is_macos else "-Wl,--Map=%{output_execpath}.map",
+                            "-Wl,--Map=%{output_execpath}.map",
                         ],
                         expand_if_available = "output_execpath",
                     ),
@@ -362,21 +360,6 @@ def define_clang_runtime_filegroups(clang_constants):
         ]) + __config_site_sources,
     )
 
-    if clang_constants.fuchsia_host_os == "mac":
-        generate_macos_system_filegroups(
-            compiler_files_name = "mac-sdk-compiler-files",
-            linker_files_name = "mac-sdk-linker-files",
-        )
-
-    # NMOTE: allow_empty=True is required in the glob calls below, otherwise
-    # Bazel 8.x will complain with an error like:
-    #
-    # ERROR: ... glob pattern 'lib/x86_64-apple-darwin/**' didn't match anything
-    #
-    # Even on a Linux host machine because format_labels_list_to_target_tag_native_glob_select()
-    # returns a select() that includes a @platforms//os:macos key and glob() statements
-    # within them.
-
     native.filegroup(
         name = "libcxx_runtime_libs",
         srcs =
@@ -408,7 +391,7 @@ def define_clang_runtime_filegroups(clang_constants):
             #
             format_labels_list_to_target_tag_native_glob_select([
                 "lib/{clang_target_tuple}/**",
-            ], allow_empty = True) +
+            ]) +
             # This contains the Clang runtime libraries, including all
             # their variants. Because individual targets can select a different
             # sanitizer mode than the default for the current build operation,
@@ -440,15 +423,7 @@ def define_clang_runtime_filegroups(clang_constants):
                 extra_dict = {
                     "internal_dir": clang_constants.lib_clang_internal_dir,
                 },
-                allow_empty = True,
-            ) +
-            # As a special case, the libc++ runtime libraries for host MacOS
-            # are not under lib/aarch64-apple-darwin/ but directly under lib/
-            # and only a few static libraries are provided.
-            select({
-                "@platforms//os:macos": native.glob(["lib/*.a"]),
-                "//conditions:default": [],
-            }),
+            ),
     )
 
 def _prebuilt_clang_cc_toolchain_config_impl(ctx):
@@ -482,25 +457,6 @@ def _prebuilt_clang_cc_toolchain_config_impl(ctx):
         sysroot = ctx.attr.sysroot,
     )
 
-    # While target_libc is documented as deprecated, it is still being used
-    # by Bazel to configure the "strip" action. In particular, if target_libc
-    # is "macosx" (and not "macos"), this action will not use the `-p` flag
-    # when invoking the strip tool. That is because this flag is not
-    # supported for MachO binaries and will result in a runtime error.
-    #
-    # See the following Bazel sources:
-    # https://cs.opensource.google/bazel/bazel/+/master:src/main/starlark/builtins_bzl/common/cc/toolchain_config/cc_toolchain_config_info.bzl;drc=ab724f1228a7ce3ef64449b771be805cd5077fda;l=106
-    # https://cs.opensource.google/bazel/bazel/+/master:src/main/starlark/builtins_bzl/common/cc/toolchain_config/legacy_features.bzl;drc=b9f1721f79bb1f21e39d74c13878a33f05fa7034;l=1381
-    #
-    # This seems the only place where this value is being used.
-    # The values of host_system_name, target_system_name, abi_version
-    # and abi_libc_version are not used, except being copied into
-    # a CcToolchainConfigInfo value.
-    if to_fuchsia_os_name(ctx.attr.target_os) == "mac":
-        target_libc = "macosx"
-    else:
-        target_libc = "__bazel_target_libc__"
-
     return cc_common.create_cc_toolchain_config_info(
         ctx = ctx,
         toolchain_identifier = "prebuilt_clang",
@@ -517,7 +473,7 @@ def _prebuilt_clang_cc_toolchain_config_impl(ctx):
         # build error messages.
         host_system_name = "__bazel_host_system_name__",
         target_system_name = "__bazel_target_system_name__",
-        target_libc = target_libc,
+        target_libc = "__bazel_target_libc__",
         abi_version = "__bazel_abi_version__",
         abi_libc_version = "__bazel_abi_libc_version__",
         compiler = "__bazel_compiler__",
@@ -604,10 +560,6 @@ def generate_clang_cc_toolchain(
         ":cc-linker-prebuilts",
         ":libcxx_runtime_libs",
     ]
-
-    if host_os == target_os and target_os == "macos":
-        common_compiler_files += [":mac-sdk-compiler-files"]
-        common_linker_files += [":mac-sdk-linker-files"]
 
     compiler_files = name + "_compiler_files"
     native.filegroup(

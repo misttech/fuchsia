@@ -13,8 +13,6 @@
 #
 
 _TO_FUCHSIA_OS_MAP = {
-    "macos": "mac",
-    "osx": "mac",
     "windows": "win",
 }
 
@@ -25,8 +23,6 @@ _TO_FUCHSIA_CPU_MAP = {
 }
 
 _FUCHSIA_OS_TO_BAZEL_OS = {
-    "mac": "macos",
-    "osx": "macos",  # bazel -> bazel
     "win": "windows",
 }
 
@@ -57,7 +53,7 @@ def to_fuchsia_os_name(target_os):
     Args:
         target_os: A Fuchsia- or Bazel-compatible operating system name,
     Returns:
-        A Fuchsia compatible operating system name string (e.g. "mac")
+        A Fuchsia compatible operating system name string (e.g. "win")
     """
     return _TO_FUCHSIA_OS_MAP.get(target_os, target_os)
 
@@ -101,8 +97,6 @@ all_target_tags = [
     "fuchsia-x64",
     "fuchsia-arm64",
     "fuchsia-riscv64",
-    "mac-x64",
-    "mac-arm64",
 ]
 
 def to_target_os_cpu_pair(target_tag):
@@ -178,7 +172,7 @@ def target_tag_dict_to_select_keys(input_dict, add_default = None, common_packag
 
           {
             "linux-x64": [ "//package;name1" ],
-            "macos-aarch64": [ "//package:name2" ],
+            "fuchsia-aarch64": [ "//package:name2" ],
           }
 
        target_tag_dict_to_select_keys(input_dict, [], "@repo//common") returns
@@ -187,7 +181,7 @@ def target_tag_dict_to_select_keys(input_dict, add_default = None, common_packag
             "@repo//common/platforms:is_linux_x64": [
                 "//package:name1"
             ],
-            "@repo//common/platforms:is_mac_arm64": [
+            "@repo//common/platforms:is_fuchsia_arm64": [
                 "//package:name2",
             ],
             "//conditions:default": [],

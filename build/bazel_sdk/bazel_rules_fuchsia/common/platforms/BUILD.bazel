@@ -52,19 +52,3 @@ config_setting(
         "@platforms//cpu:arm64",
     ],
 )
-
-config_setting(
-    name = "is_mac_x64",
-    constraint_values = [
-        "@platforms//os:osx",
-        "@platforms//cpu:x86_64",
-    ],
-)
-
-config_setting(
-    name = "is_mac_arm64",
-    constraint_values = [
-        "@platforms//os:osx",
-        "@platforms//cpu:arm64",
-    ],
-)

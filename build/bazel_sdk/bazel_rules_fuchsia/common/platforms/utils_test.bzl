@@ -22,9 +22,6 @@ def _test_to_fuchsia_os_name(env):
     cases = [
         ("fuchsia", "fuchsia"),
         ("linux", "linux"),
-        ("mac", "mac"),
-        ("macos", "mac"),
-        ("osx", "mac"),
         ("windows", "win"),
         ("win", "win"),
     ]
@@ -47,9 +44,6 @@ def _test_to_bazel_os_name(env):
     cases = [
         ("fuchsia", "fuchsia"),
         ("linux", "linux"),
-        ("mac", "macos"),
-        ("macos", "macos"),
-        ("osx", "macos"),
         ("windows", "windows"),
         ("win", "windows"),
     ]
@@ -72,9 +66,6 @@ def _test_to_platform_os_constraint(env):
     cases = [
         ("fuchsia", "@platforms//os:fuchsia"),
         ("linux", "@platforms//os:linux"),
-        ("mac", "@platforms//os:macos"),
-        ("macos", "@platforms//os:macos"),
-        ("osx", "@platforms//os:macos"),
         ("windows", "@platforms//os:windows"),
         ("win", "@platforms//os:windows"),
     ]
@@ -107,21 +98,6 @@ def _test_config_setting_label_for_target_os_cpu(env):
         ("linux", "arm64", "//common/platforms:is_linux_arm64"),
         ("linux", "aarch64", "//common/platforms:is_linux_arm64"),
         ("linux", "riscv64", "//common/platforms:is_linux_riscv64"),
-        ("mac", "x64", "//common/platforms:is_mac_x64"),
-        ("mac", "k8", "//common/platforms:is_mac_x64"),
-        ("mac", "x86_64", "//common/platforms:is_mac_x64"),
-        ("mac", "arm64", "//common/platforms:is_mac_arm64"),
-        ("mac", "aarch64", "//common/platforms:is_mac_arm64"),
-        ("macos", "x64", "//common/platforms:is_mac_x64"),
-        ("macos", "k8", "//common/platforms:is_mac_x64"),
-        ("macos", "x86_64", "//common/platforms:is_mac_x64"),
-        ("macos", "arm64", "//common/platforms:is_mac_arm64"),
-        ("macos", "aarch64", "//common/platforms:is_mac_arm64"),
-        ("osx", "x64", "//common/platforms:is_mac_x64"),
-        ("osx", "k8", "//common/platforms:is_mac_x64"),
-        ("osx", "x86_64", "//common/platforms:is_mac_x64"),
-        ("osx", "arm64", "//common/platforms:is_mac_arm64"),
-        ("osx", "aarch64", "//common/platforms:is_mac_arm64"),
     ]
     for os, cpu, expected in cases:
         asserts.equals(env, expected, config_setting_label_for_target_os_cpu(os, cpu))
@@ -134,8 +110,6 @@ def _test_config_setting_label_for_target_tag(env):
         ("linux-x64", "//common/platforms:is_linux_x64"),
         ("linux-arm64", "//common/platforms:is_linux_arm64"),
         ("linux-riscv64", "//common/platforms:is_linux_riscv64"),
-        ("mac-x64", "//common/platforms:is_mac_x64"),
-        ("mac-arm64", "//common/platforms:is_mac_arm64"),
     ]
     for input, expected in cases:
         asserts.equals(env, expected, config_setting_label_for_target_tag(input))
@@ -145,12 +119,12 @@ def _test_target_tag_dict_to_select_keys(env):
         (
             {
                 "linux-x64": ["oh linux"],
-                "mac-arm64": ["damn mac"],
+                "fuchsia-arm64": ["damn fuchsia"],
                 "fuchsia-riscv64": ["sweet risc"],
             },
             {
                 "//common/platforms:is_linux_x64": ["oh linux"],
-                "//common/platforms:is_mac_arm64": ["damn mac"],
+                "//common/platforms:is_fuchsia_arm64": ["damn fuchsia"],
                 "//common/platforms:is_fuchsia_riscv64": ["sweet risc"],
             },
         ),

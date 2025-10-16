@@ -5,8 +5,6 @@
 """Common utilities for repository rules."""
 
 _FUCHSIA_HOST_OS_MAP = {
-    "darwin": "mac",
-    "macos": "mac",
     "windows": "win",
 }
 
@@ -16,7 +14,7 @@ def get_fuchsia_host_os(repo_ctx):
     Args:
       repo_ctx: repository context.
     Returns:
-      A string describing the current host system (e.g. 'linux', 'mac' or 'win').
+      A string describing the current host system (e.g. 'linux' or 'win').
     """
     host_os = repo_ctx.os.name.split(" ")[0]
     return _FUCHSIA_HOST_OS_MAP.get(host_os, host_os)

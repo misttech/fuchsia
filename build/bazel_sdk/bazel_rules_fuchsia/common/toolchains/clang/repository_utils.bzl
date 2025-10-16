@@ -7,7 +7,6 @@
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("//common:repository_utils.bzl", "get_fuchsia_host_arch", "get_fuchsia_host_os")
 load("//common:toolchains/clang/clang_utils.bzl", "process_clang_builtins_output")
-load("//common:toolchains/clang/macos_xcode_utils.bzl", "create_repository_macos_symlinks")
 load("//common:toolchains/clang/providers.bzl", "ClangInfo")
 load("//common:toolchains/clang/toolchain_utils.bzl", "define_clang_runtime_filegroups")
 
@@ -63,11 +62,6 @@ def prepare_clang_repository(repo_ctx, clang_install_dir, needs_symlinks = True)
     if needs_symlinks:
         for f in clang_install_path.readdir():
             repo_ctx.symlink(f, f.basename)
-
-    # On MacOS, create symlinks under xcode/MacSDK to access the SDK headers,
-    # libraries and frameworks.
-    if repo_ctx.os.name == "mac os x":
-        create_repository_macos_symlinks(repo_ctx)
 
     # Extract the builtin include paths by running the executable once.
     # Only care about C++ include paths. The list for compiling C is actually

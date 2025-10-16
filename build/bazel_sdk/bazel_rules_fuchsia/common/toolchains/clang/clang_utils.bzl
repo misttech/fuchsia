@@ -77,8 +77,6 @@ _TARGET_TRIPLE_MAP = {
     "linux-x64": "x86_64-unknown-linux-gnu",
     "linux-arm64": "aarch64-unknown-linux-gnu",
     "linux-riscv64": "riscv64-unknown-linux-gnu",
-    "mac-x64": "x86_64-apple-darwin",
-    "mac-arm64": "aarch64-apple-darwin",
 }
 
 def to_clang_target_tuple(target_os, target_arch):
@@ -139,7 +137,7 @@ def format_target_tag_labels_dict(input_dict, extra_dict = None):
 
           {
             "linux-x64": [ "//{dir}:name_{os}_{cpu}" ],
-            "macos-aarch64": [ "//{dir}:name_{os}_{cpu}" ],
+            "fuchsia-aarch64": [ "//{dir}:name_{os}_{cpu}" ],
           }
 
        format_target_tag_labels_dict(input_dict, { "dir": "package" })
@@ -147,7 +145,7 @@ def format_target_tag_labels_dict(input_dict, extra_dict = None):
 
           {
             "linux-x64": [ "//package:name_linux_x64" ],
-            "macos-aarch64": [ "//package:name_mac_arm64" ],
+            "fuchsia-aarch64": [ "//package:name_fuchsia_arm64" ],
           }
     """
     extra_dict = extra_dict or {}
@@ -191,8 +189,6 @@ def format_labels_list_to_target_tag_dict(
           "fuchsia-riscv64": [ "//package:name_fuchsia_riscv64" ],
           "linux-x64": [ "package:name_linux_x64" ],
           "linux-arm64":  [ "package:name_linux_arm64" ]
-          "mac-x64": [ "package:name_mac_x64" ],
-          "mac-arm64": [ "package:name_mac_arm64" ],
         }
     """
     target_tags = target_tags or all_target_tags
@@ -247,12 +243,6 @@ def format_labels_list_to_target_tag_native_glob_select(labels, target_tags = No
             ]),
             "//common/platforms:is_linux_arm64": native.glob([
                 "//package:aarch64-unknown-linux-gnu/**",
-            ]),
-            "//common/platforms:is_mac_x64": native.glob([
-                "//package:x86_64-apple-darwin/**",
-            ]),
-            "//common/platforms:is_mac_arm64": native.glob([
-                "//package:aarch64-apple-darwin/**",
             ]),
             "//conditions:default": [],
         })

@@ -211,9 +211,7 @@ def _fuchsia_build_config_repository_impl(repo_ctx):
     host_tag = "%s-%s" % (host_os, host_arch)
     host_tag_alt = "%s_%s" % (host_os, host_arch)
 
-    host_os_constraint = "@platforms//os:" + {
-        "mac": "macos",
-    }.get(host_os, host_os)
+    host_os_constraint = "@platforms//os:" + host_os
 
     host_cpu_constraint = "@platforms//cpu:" + {
         "x64": "x86_64",
@@ -238,7 +236,7 @@ build_config = struct(
     host_arch = "{host_arch}",
 
     # The host tag, used to separate prebuilts in the Fuchsia source tree
-    # (e.g. 'linux-x64', 'mac-x64', 'mac-arm64')
+    # (e.g. 'linux-x64')
     host_tag = "{host_tag}",
 
     # The host tag, using underscores instead of dashes.
@@ -249,7 +247,7 @@ build_config = struct(
     host_target_triple = "{host_target_triple}",
 
     # The Bazel platform os constraint value for the host
-    # (e.g. '@platforms//os:linux' or '@platforms//os:macos'
+    # (e.g. '@platforms//os:linux')
     host_platform_os_constraint = "{host_os_constraint}",
 
     # The Bazel platform cpu constraint value for the host
