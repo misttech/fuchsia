@@ -6,7 +6,7 @@
   "pkg/fidl_cpp/include/lib/fidl/cpp/interface_ptr_set.h": "f58f00673b293acbb674b9ec6f02b2dd",
   "pkg/fidl_cpp/include/lib/fidl/cpp/internal/header.h": "81e5bd978113884814bccdfb61d15512",
   "pkg/fidl_cpp/include/lib/fidl/cpp/internal/implementation.h": "ed2073fa0d165d46d664021897c86167",
-  "pkg/fidl_cpp/include/lib/fidl/cpp/internal/message_handler.h": "d449dc0c19faca30cabaa3a8ddb3d3aa",
+  "pkg/fidl_cpp/include/lib/fidl/cpp/internal/message_handler.h": "d3b04fc93f939f8216ccb5636a2d9a2a",
   "pkg/fidl_cpp/include/lib/fidl/cpp/internal/message_reader.h": "4921ca040168845c3a965b1d9a217617",
   "pkg/fidl_cpp/include/lib/fidl/cpp/internal/pending_response.h": "ce9726ca9aea270f67de6949a73e4e03",
   "pkg/fidl_cpp/include/lib/fidl/cpp/internal/proxy.h": "4f9d3ee25e6d438d8a8594561a1cd036",

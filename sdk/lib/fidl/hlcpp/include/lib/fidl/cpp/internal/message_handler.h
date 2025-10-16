@@ -11,6 +11,9 @@
 #include <lib/fit/traits.h>
 #include <zircon/types.h>
 
+#include <algorithm>
+#include <cstddef>
+
 namespace fidl {
 namespace internal {
 
@@ -47,6 +50,46 @@ class MessageHandler {
 // after being invoked, hence it is single-use only.
 class SingleUseMessageHandler {
  public:
+  template <
+      typename Callable,
+      typename = std::enable_if_t<
+          std::is_same<typename fit::callable_traits<Callable>::return_type, zx_status_t>::value>,
+      typename =
+          std::enable_if_t<std::is_same<typename fit::callable_traits<Callable>::args,
+                                        fit::parameter_pack<fidl::HLCPPIncomingMessage&&>>::value>>
+  constexpr explicit SingleUseMessageHandler(Callable&& target, const fidl_type_t* type) {
+    static_assert(sizeof(Callable) <= sizeof(StorageType),
+                  "Callable is too big to store in a SingleUseMessageHandler");
+    new (&storage_) Callable(std::forward<Callable>(target));
+    invoke_ = InvokeImpl<Callable>;
+    destroy_ = DestroyImpl<Callable>;
+    type_ = type;
+  }
+
+  SingleUseMessageHandler(const SingleUseMessageHandler&) = delete;
+  SingleUseMessageHandler& operator=(const SingleUseMessageHandler&) = delete;
+
+  SingleUseMessageHandler(SingleUseMessageHandler&&) = delete;
+  SingleUseMessageHandler& operator=(SingleUseMessageHandler&&) = delete;
+
+  zx_status_t operator()(fidl::HLCPPIncomingMessage message);
+
+  ~SingleUseMessageHandler();
+
+ private:
+  template <typename Callable>
+  static zx_status_t InvokeImpl(SingleUseMessageHandler* handler,
+                                fidl::HLCPPIncomingMessage&& message) {
+    auto& target = *reinterpret_cast<Callable*>(&handler->storage_);
+    return target(std::move(message));
+  }
+
+  template <typename Callable>
+  static void DestroyImpl(SingleUseMessageHandler* handler) {
+    auto& target = *reinterpret_cast<Callable*>(&handler->storage_);
+    target.~Callable();
+  }
+
   // This is the maximum size we allocate for storing a lambda.
   //
   // The generated code always captures a `fit::function` passed by the user,
@@ -64,69 +107,8 @@ class SingleUseMessageHandler {
   //     }
   //
   // Hence we only allocate as much as the size of the capture, here a `fit::function`.
-  constexpr static size_t kCallableSize =
-      sizeof(fit::function<zx_status_t(fidl::HLCPPIncomingMessage&& message)>);
-
-  template <
-      typename Callable,
-      typename = std::enable_if_t<
-          std::is_same<typename fit::callable_traits<Callable>::return_type, zx_status_t>::value>,
-      typename =
-          std::enable_if_t<std::is_same<typename fit::callable_traits<Callable>::args,
-                                        fit::parameter_pack<fidl::HLCPPIncomingMessage&&>>::value>>
-  constexpr explicit SingleUseMessageHandler(Callable&& target, const fidl_type_t* type) {
-    static_assert(sizeof(Callable) <= kCallableSize,
-                  "Callable is too big to store in a SingleUseMessageHandler");
-    new (&storage_) Callable(std::forward<Callable>(target));
-    invoke_ = InvokeImpl<Callable>;
-    destroy_ = DestroyImpl<Callable>;
-    type_ = type;
-  }
-
-  SingleUseMessageHandler(const SingleUseMessageHandler&) = delete;
-  SingleUseMessageHandler& operator=(const SingleUseMessageHandler&) = delete;
-
-  SingleUseMessageHandler(SingleUseMessageHandler&&) = delete;
-  SingleUseMessageHandler& operator=(SingleUseMessageHandler&&) = delete;
-
-  zx_status_t operator()(fidl::HLCPPIncomingMessage message) {
-    if (type_ != nullptr) {
-      const char* error_msg = nullptr;
-      zx_status_t status = message.Decode(type_, &error_msg);
-      if (status != ZX_OK) {
-        FIDL_REPORT_DECODING_ERROR(message, type_, error_msg);
-        return status;
-      }
-    } else if (unlikely(!message.has_only_header())) {
-      return ZX_ERR_INVALID_ARGS;
-    }
-
-    zx_status_t status = invoke_(this, std::move(message));
-    invoke_ = nullptr;
-    destroy_(this);
-    return status;
-  }
-
-  ~SingleUseMessageHandler() {
-    if (invoke_)
-      destroy_(this);
-  }
-
- private:
-  template <typename Callable>
-  static zx_status_t InvokeImpl(SingleUseMessageHandler* handler,
-                                fidl::HLCPPIncomingMessage&& message) {
-    auto& target = *reinterpret_cast<Callable*>(&handler->storage_);
-    return target(std::move(message));
-  }
-
-  template <typename Callable>
-  static void DestroyImpl(SingleUseMessageHandler* handler) {
-    auto& target = *reinterpret_cast<Callable*>(&handler->storage_);
-    target.~Callable();
-  }
-
-  typename std::aligned_storage<kCallableSize>::type storage_;
+  using StorageType = fit::function<zx_status_t(fidl::HLCPPIncomingMessage&& message)>;
+  alignas(StorageType) std::byte storage_[sizeof(StorageType)];
   zx_status_t (*invoke_)(SingleUseMessageHandler* handler, fidl::HLCPPIncomingMessage&&) = nullptr;
   void (*destroy_)(SingleUseMessageHandler* handler) = nullptr;
   const fidl_type_t* type_;
