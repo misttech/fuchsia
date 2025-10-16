@@ -79,6 +79,14 @@ zx_status_t psci_cpu_on(uint64_t mpid, paddr_t entry, uint64_t context);
 // CPU.
 enum class PsciCpuSuspendMaxScope : bool { CpuOnly, CpuAndMore };
 
+// Returns an appropriate power_state value to be used with |psci_cpu_suspend|.
+//
+// |scope| specifies the maximum topological scope that the selected power state
+// is allowed to target.
+//
+// |last| indicates whether the calling CPU is the last one to enter suspend.
+uint32_t psci_select_cpu_suspend_power_state(PsciCpuSuspendMaxScope scope, bool last);
+
 // Returns true if a |psci_cpu_suspend| might result in a powerdown event for
 // the calling CPU.  This function allows callers to skip saving/restoring some
 // CPU state in the case where the suspend operation will not powerdown the
@@ -92,9 +100,8 @@ using PsciCpuSuspendResult = zx::result<CpuPoweredDown>;
 
 // Enters a PSCI CPU_SUSPEND state on the calling CPU.
 //
-// |max_scope| specifies whether the requested power state must be limited to
-// targeting just the calling CPU or if it can target a larger scope (e.g. the
-// containing cluster).
+// |power_state| specifies the power state to enter.  See also
+// |psci_select_cpu_suspend_power_state|.
 //
 // Prior to calling, interrupts must be disabled, preemption must be disabled,
 // and the caller must be pinned to the calling CPU.
@@ -120,7 +127,7 @@ using PsciCpuSuspendResult = zx::result<CpuPoweredDown>;
 // are in an incompatible state with the request are running, as opposed to
 // being in a low-power state.  This is a "normal" error that callers must be
 // prepared to handle (typically with a retry).
-PsciCpuSuspendResult psci_cpu_suspend(PsciCpuSuspendMaxScope max_scope);
+PsciCpuSuspendResult psci_cpu_suspend(uint32_t power_state);
 
 // Holds register state to be saved/restored across a suspend/resume cycle.
 //

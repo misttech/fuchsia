@@ -32,6 +32,7 @@ all_libs = [
   "cbuf",
   "code-patching",
   "console",
+  "control-region",
   "counters",
   "crashlog",
   "crypto",

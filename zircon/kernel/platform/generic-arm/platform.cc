@@ -10,6 +10,7 @@
 #include <lib/arch/intrin.h>
 #include <lib/boot-options/boot-options.h>
 #include <lib/console.h>
+#include <lib/control-region.h>
 #include <lib/crashlog.h>
 #include <lib/debuglog.h>
 #include <lib/instrumentation/asan.h>
@@ -23,6 +24,8 @@
 #include <reg.h>
 #include <string-file.h>
 #include <trace.h>
+
+#include <cstdint>
 
 #include <arch/arch_ops.h>
 #include <arch/arm64.h>
@@ -86,6 +89,9 @@ namespace {
 lazy_init::LazyInit<MappedCrashlog, lazy_init::CheckType::None, lazy_init::Destructor::Disabled>
     mapped_crashlog;
 
+// Used for |platform_suspend_cpu| coordination.
+ControlRegion gControlRegion;
+
 }  // namespace
 
 static void halt_other_cpus(void) {
@@ -134,6 +140,10 @@ void platform_panic_start(PanicStartHaltOtherCpus option) {
 }
 
 void platform_halt_cpu(void) {
+  // TODO(https://fxbug.dev/450973098): Considering modeling offline CPUs as already in the control
+  // region.
+  gControlRegion.Unregister();
+
   uint32_t result = power_cpu_off();
   // should have never returned
   panic("power_cpu_off returned %u\n", result);
@@ -159,45 +169,56 @@ zx_status_t platform_suspend_cpu(PlatformAllowDomainPowerDown allow_domain) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  const bool might_power_down = psci_might_powerdown();
+  const bool cpu_might_power_down = psci_might_powerdown();
 
   const PsciCpuSuspendMaxScope max_scope = static_cast<bool>(allow_domain)
                                                ? PsciCpuSuspendMaxScope::CpuAndMore
                                                : PsciCpuSuspendMaxScope::CpuOnly;
 
-  bool did_serial_suspend{false};
-  if (might_power_down) {
+  if (cpu_might_power_down) {
     lockup_percpu_shutdown();
     platform_suspend_timer_curr_cpu();
     suspend_interrupts_curr_cpu();
+  }
 
-    if ((arch_curr_cpu_num() == BOOT_CPU_ID) && (max_scope == PsciCpuSuspendMaxScope::CpuAndMore)) {
-      platform_serial_prepare_for_suspend();
-      clocks_and_pmic_prepare_for_suspend();
-      did_serial_suspend = true;
+  PsciCpuSuspendResult result;
+
+  {
+    const bool last_to_enter = !gControlRegion.TryEnter();
+    if (last_to_enter) {
+      if (allow_domain == PlatformAllowDomainPowerDown::Yes) {
+        platform_serial_prepare_for_suspend();
+        clocks_and_pmic_prepare_for_suspend();
+      }
+      gControlRegion.CloseEnter();
+    }
+
+    const uint32_t power_state = psci_select_cpu_suspend_power_state(max_scope, last_to_enter);
+
+    LTRACEF("platform_suspend_cpu for cpu-%u, current_boot_time=%ld, suspending...\n",
+            arch_curr_cpu_num(), current_boot_time());
+    // The following call may not return for an arbitrartily long time.
+    result = psci_cpu_suspend(power_state);
+    LTRACEF("psci_cpu_suspend for cpu-%u, status %d\n", arch_curr_cpu_num(), result.status_value());
+
+    DEBUG_ASSERT(arch_ints_disabled());
+
+    const bool first_to_leave = !gControlRegion.TryLeave();
+    if (first_to_leave) {
+      // Serial wakeup is an idempotent operation so it's OK to call this even in the case where the
+      // last to enter did not prepare serial for suspend (e.g. because it was called with
+      // |PsciCpuSuspendMaxScope::CpuOnly|).
+      clocks_and_pmic_wakeup_from_suspend();
+      platform_serial_wakeup_from_suspend();
+      gControlRegion.OpenLeave();
     }
   }
 
-  LTRACEF("platform_suspend_cpu for cpu-%u, current_boot_time=%ld, suspending...\n",
-          arch_curr_cpu_num(), current_boot_time());
-
-  // The following call may not return for an arbitrartily long time.
-  const PsciCpuSuspendResult result = psci_cpu_suspend(max_scope);
-  LTRACEF("psci_cpu_suspend for cpu-%u, status %d\n", arch_curr_cpu_num(), result.status_value());
-
-  DEBUG_ASSERT(arch_ints_disabled());
-
-  if (might_power_down) {
+  if (cpu_might_power_down) {
     zx_status_t status = resume_interrupts_curr_cpu();
     DEBUG_ASSERT_MSG(status == ZX_OK, "resume_interrupts_curr_cpu: %d", status);
     status = platform_resume_timer_curr_cpu();
     DEBUG_ASSERT_MSG(status == ZX_OK, "platform_resume_timer_curr_cpu: %d", status);
-
-    if (did_serial_suspend) {
-      clocks_and_pmic_wakeup_from_suspend();
-      platform_serial_wakeup_from_suspend();
-    }
-
     lockup_percpu_init();
   } else {
     // If the requested power state isn't a "power down" power state, then make
@@ -212,8 +233,11 @@ zx_status_t platform_suspend_cpu(PlatformAllowDomainPowerDown allow_domain) {
 }
 
 zx_status_t platform_start_cpu(cpu_num_t cpu_id, uint64_t mpid) {
-  paddr_t kernel_secondary_entry_paddr = KernelPhysicalAddressOf<arm64_secondary_start>();
+  // TODO(https://fxbug.dev/450973098): Considering modeling offline CPUs as already in the control
+  // region.
+  gControlRegion.Register();
 
+  paddr_t kernel_secondary_entry_paddr = KernelPhysicalAddressOf<arm64_secondary_start>();
   uint32_t ret = power_cpu_on(mpid, kernel_secondary_entry_paddr, 0);
   dprintf(INFO, "Trying to start cpu %u, mpid %#" PRIx64 " returned: %d\n", cpu_id, mpid, (int)ret);
   if (ret != 0) {
@@ -434,6 +458,11 @@ void platform_init(void) {
     }
 
     cpu_suspend_supported = true;
+
+    // Normally, |power_cpu_on| is responsible for registering CPUs with the |ControlRegion|.
+    // Register this one manually since it's the boot CPU and was not started via |power_cpu_on|.
+    DEBUG_ASSERT(arch_curr_cpu_num() == BOOT_CPU_ID);
+    gControlRegion.Register();
   }
   dprintf(INFO, "platform_suspend_cpu support %s\n",
           cpu_suspend_supported ? "enabled" : "disabled");

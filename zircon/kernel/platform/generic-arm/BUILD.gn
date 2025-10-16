@@ -35,6 +35,7 @@ source_set("generic-arm") {
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/cbuf",
     "//zircon/kernel/lib/console",
+    "//zircon/kernel/lib/control-region:headers",
     "//zircon/kernel/lib/crashlog",
     "//zircon/kernel/lib/efi:headers",
     "//zircon/kernel/lib/fbl",
