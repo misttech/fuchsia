@@ -209,7 +209,7 @@ zx_status_t Bti::get_info(zx_handle_t handle, uint32_t topic, void* buffer, size
           return ZX_ERR_BUFFER_TOO_SMALL;
         }
         zx_info_bti_t info = {
-            .minimum_contiguity = ZX_PAGE_SIZE,
+            .minimum_contiguity = zx_system_get_page_size(),
             .aspace_size = UINT64_MAX,
             .pmo_count = bti_obj->pmo_count(),
             .quarantine_count = 0,
@@ -309,10 +309,10 @@ zx_status_t zx_bti_pin(zx_handle_t bti_handle, uint32_t options, zx_handle_t vmo
   }
 
   // Check argument validity
-  if (offset % ZX_PAGE_SIZE != 0) {
+  if (offset % zx_system_get_page_size() != 0) {
     return ZX_ERR_INVALID_ARGS;
   }
-  if (size % ZX_PAGE_SIZE != 0) {
+  if (size % zx_system_get_page_size() != 0) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -356,7 +356,7 @@ zx_status_t zx_bti_pin(zx_handle_t bti_handle, uint32_t options, zx_handle_t vmo
   }
 
   if (compress_results || !contiguous) {
-    if (addrs_count != size / ZX_PAGE_SIZE) {
+    if (addrs_count != size / zx_system_get_page_size()) {
       return ZX_ERR_INVALID_ARGS;
     }
   } else {

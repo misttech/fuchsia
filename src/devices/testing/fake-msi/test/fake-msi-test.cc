@@ -29,7 +29,7 @@ TEST_F(FakeMsiTests, CleanupTest) {
   {
     zx::msi msi;
     zx::vmo vmo;
-    ASSERT_OK(zx::vmo::create(ZX_PAGE_SIZE, /*options=*/0, &vmo));
+    ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), /*options=*/0, &vmo));
     ASSERT_OK(vmo.set_cache_policy(ZX_CACHE_POLICY_UNCACHED_DEVICE));
     ASSERT_OK(zx::msi::allocate(*zx::unowned_resource(), 2, &msi));
     ASSERT_OK(zx::msi::create(msi, /*options=*/0, 0, vmo, /*vmo_offset=*/0, &interrupt));
@@ -48,7 +48,7 @@ TEST_F(FakeMsiTests, CoreTest) {
   zx_info_msi_t msi_info;
   zx_status_t status = zx::msi::allocate(*zx::unowned_resource(ZX_HANDLE_INVALID), msi_cnt, &msi);
   ASSERT_OK(status);
-  ASSERT_OK(zx::vmo::create(ZX_PAGE_SIZE, /*options=*/0, &vmo));
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), /*options=*/0, &vmo));
   ASSERT_OK(msi.get_info(ZX_INFO_MSI, &msi_info, sizeof(msi_info), nullptr, nullptr));
   ASSERT_STATUS(zx::msi::create(msi, ZX_INTERRUPT_VIRTUAL, 0, vmo, /*vmo_offset=*/0, &int_0),
                 ZX_ERR_INVALID_ARGS);

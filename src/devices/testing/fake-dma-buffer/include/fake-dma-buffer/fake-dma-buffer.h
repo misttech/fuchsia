@@ -49,7 +49,7 @@ const FakePage& GetPage(zx_paddr_t phys);
 
 template <typename T>
 static T PhysToVirt(zx_paddr_t phys) {
-  size_t start = fbl::round_down(phys, ZX_PAGE_SIZE);
+  size_t start = fbl::round_down(phys, zx_system_get_page_size());
   size_t offset = phys - start;
   return reinterpret_cast<T>(reinterpret_cast<uintptr_t>(GetPage(start).virt) + offset);
 }

@@ -8,6 +8,7 @@
 #include <string_view>
 
 #include <fake-dma-buffer/fake-dma-buffer.h>
+
 #include "lib/zx/vmo.h"
 
 class ContiguousBufferImpl : public dma_buffer::ContiguousBuffer {
@@ -64,7 +65,7 @@ class BufferFactoryImpl : public dma_buffer::BufferFactory {
   zx_status_t CreateContiguous(const zx::bti& bti, size_t size, uint32_t alignment_log2,
                                bool enable_cache,
                                std::unique_ptr<dma_buffer::ContiguousBuffer>* out) const override {
-    if (size > ZX_PAGE_SIZE) {
+    if (size > zx_system_get_page_size()) {
       // TODO(https://fxbug.dev/42121490): We don't currently support contiguous buffers > 1 page.
       return ZX_ERR_NOT_SUPPORTED;
     }
@@ -118,7 +119,7 @@ class BufferFactoryImpl : public dma_buffer::BufferFactory {
     if (status != ZX_OK) {
       return status;
     }
-    size_t pages = fbl::round_up(size, ZX_PAGE_SIZE) / ZX_PAGE_SIZE;
+    size_t pages = fbl::round_up(size, zx_system_get_page_size()) / zx_system_get_page_size();
     std::vector<zx_paddr_t> physvec;
     physvec.resize(pages);
     for (size_t i = 0; i < pages; i++) {
@@ -129,7 +130,7 @@ class BufferFactoryImpl : public dma_buffer::BufferFactory {
       if (status != ZX_OK) {
         return status;
       }
-      phys->virt = virt + (ZX_PAGE_SIZE * i);
+      phys->virt = virt + (zx_system_get_page_size() * i);
       phys->bti = bti.get();
       phys->contiguous = false;
       physvec[i] = reinterpret_cast<zx_paddr_t>(phys);
@@ -146,7 +147,7 @@ namespace ddk_fake {
 void* PhysToVirt(zx_paddr_t phys) { return PhysToVirt<void*>(phys); }
 
 const FakePage& GetPage(zx_paddr_t phys) {
-  size_t start = fbl::round_down(phys, ZX_PAGE_SIZE);
+  size_t start = fbl::round_down(phys, zx_system_get_page_size());
   return *reinterpret_cast<FakePage*>(start);
 }
 
