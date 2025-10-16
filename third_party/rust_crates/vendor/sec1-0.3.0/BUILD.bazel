@@ -91,7 +91,7 @@ rust_library(
         "//third_party/rust_crates/forks/zeroize",
         "//third_party/rust_crates/vendor/base16ct-0.1.1:base16ct",
         "//third_party/rust_crates/vendor/der-0.6.1:der",
-        "//third_party/rust_crates/vendor/generic-array-0.14.7:generic_array",
+        "//third_party/rust_crates/vendor/generic-array-0.14.9:generic_array",
         "//third_party/rust_crates/vendor/pkcs8-0.9.0:pkcs8",
         "//third_party/rust_crates/vendor/serdect-0.1.0:serdect",
         "//third_party/rust_crates/vendor/subtle-2.6.1:subtle",

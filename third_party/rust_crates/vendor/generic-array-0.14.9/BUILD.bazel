@@ -23,7 +23,7 @@ package_info(
     name = "package_info",
     package_name = "generic-array",
     package_url = "https://github.com/fizyk20/generic-array.git",
-    package_version = "0.14.7",
+    package_version = "0.14.9",
 )
 
 license(
@@ -73,9 +73,9 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.14.7",
+    version = "0.14.9",
     deps = [
-        "//third_party/rust_crates/vendor/generic-array-0.14.7:build_script_build",
+        "//third_party/rust_crates/vendor/generic-array-0.14.9:build_script_build",
         "//third_party/rust_crates/vendor/typenum-1.18.0:typenum",
     ],
 )
@@ -128,7 +128,7 @@ cargo_build_script(
         "noclippy",
         "norustfmt",
     ],
-    version = "0.14.7",
+    version = "0.14.9",
     visibility = ["//visibility:private"],
     deps = [
         "//third_party/rust_crates/vendor/version_check-0.9.4:version_check",

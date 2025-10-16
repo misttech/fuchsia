@@ -1362,7 +1362,7 @@ rustc_library("aead-v0_5_2") {
 
   deps = []
   deps += [ ":crypto-common-v0_1_6" ]
-  deps += [ ":generic-array-v0_14_7" ]
+  deps += [ ":generic-array-v0_14_9" ]
 
   rustenv = []
 
@@ -3027,7 +3027,7 @@ rustc_library("block-buffer-v0_10_4") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":generic-array-v0_14_7" ]
+  deps += [ ":generic-array-v0_14_9" ]
 
   rustenv = []
 
@@ -3061,7 +3061,7 @@ rustc_library("block-padding-v0_3_3") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":generic-array-v0_14_7" ]
+  deps += [ ":generic-array-v0_14_9" ]
 
   rustenv = []
 
@@ -4894,7 +4894,7 @@ rustc_library("crypto-bigint-v0_4_9") {
 
   deps = []
   deps += [ ":zeroize-v1_8_1" ]
-  deps += [ ":generic-array-v0_14_7" ]
+  deps += [ ":generic-array-v0_14_9" ]
   deps += [ ":rand_core-v0_6_4" ]
   deps += [ ":subtle-v2_6_1" ]
 
@@ -4933,7 +4933,7 @@ rustc_library("crypto-common-v0_1_6") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":generic-array-v0_14_7" ]
+  deps += [ ":generic-array-v0_14_9" ]
   deps += [ ":rand_core-v0_6_4" ]
   deps += [ ":typenum-v1_18_0" ]
 
@@ -5369,7 +5369,7 @@ rustc_library("dbl-v0_3_2") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":generic-array-v0_14_7" ]
+  deps += [ ":generic-array-v0_14_9" ]
 
   rustenv = []
 
@@ -6034,7 +6034,7 @@ rustc_library("elliptic-curve-v0_12_3") {
   deps += [ ":der-v0_6_1" ]
   deps += [ ":digest-v0_10_7" ]
   deps += [ ":ff-v0_12_1" ]
-  deps += [ ":generic-array-v0_14_7" ]
+  deps += [ ":generic-array-v0_14_9" ]
   deps += [ ":group-v0_12_1" ]
   deps += [ ":hkdf-v0_12_4" ]
   deps += [ ":pem-rfc7468-v0_6_0" ]
@@ -7616,17 +7616,17 @@ rustc_library("generator-v0_8_7") {
   applicable_licenses = [ ":generator-v0_8_7.license" ]
 }
 
-license("generic-array-v0_14_7.license") {
+license("generic-array-v0_14_9.license") {
   public_package_name = "generic_array"
   license_files =
-      [ "//third_party/rust_crates/vendor/generic-array-0.14.7/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/generic-array-0.14.9/LICENSE" ]
 }
 
-rustc_library("generic-array-v0_14_7") {
+rustc_library("generic-array-v0_14_9") {
   crate_name = "generic_array"
   source_root =
-      "//third_party/rust_crates/vendor/generic-array-0.14.7/src/lib.rs"
-  output_name = "generic_array-562494e3395ef9c1"
+      "//third_party/rust_crates/vendor/generic-array-0.14.9/src/lib.rs"
+  output_name = "generic_array-b9a26d4a850f87d7"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -7639,15 +7639,15 @@ rustc_library("generic-array-v0_14_7") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=562494e3395ef9c1",
-    "-Cextra-filename=-562494e3395ef9c1",
+    "-Cmetadata=b9a26d4a850f87d7",
+    "-Cextra-filename=-b9a26d4a850f87d7",
     "--cfg=feature=\"more_lengths\"",
     "--cfg=relaxed_coherence",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":generic-array-v0_14_7.license" ]
+  applicable_licenses = [ ":generic-array-v0_14_9.license" ]
 }
 
 license("getopts-v0_2_24.license") {
@@ -9056,7 +9056,7 @@ rustc_library("inout-v0_1_3") {
 
   deps = []
   deps += [ ":block-padding-v0_3_3" ]
-  deps += [ ":generic-array-v0_14_7" ]
+  deps += [ ":generic-array-v0_14_9" ]
 
   rustenv = []
 
@@ -16172,7 +16172,7 @@ rustc_library("sec1-v0_3_0") {
   deps += [ ":zeroize-v1_8_1" ]
   deps += [ ":base16ct-v0_1_1" ]
   deps += [ ":der-v0_6_1" ]
-  deps += [ ":generic-array-v0_14_7" ]
+  deps += [ ":generic-array-v0_14_9" ]
   deps += [ ":pkcs8-v0_9_0" ]
   deps += [ ":serdect-v0_1_0" ]
   deps += [ ":subtle-v2_6_1" ]
@@ -16223,7 +16223,7 @@ rustc_library("sec1-v0_7_3") {
   deps += [ ":zeroize-v1_8_1" ]
   deps += [ ":base16ct-v0_2_0" ]
   deps += [ ":der-v0_7_9" ]
-  deps += [ ":generic-array-v0_14_7" ]
+  deps += [ ":generic-array-v0_14_9" ]
   deps += [ ":pkcs8-v0_10_2" ]
 
   rustenv = []

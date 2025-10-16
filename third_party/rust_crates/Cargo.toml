@@ -639,7 +639,7 @@ deps = [
   "//build/validate:non_production_tag",
 ]
 
-[gn.package.generic-array."0.14.7"]
+[gn.package.generic-array."0.14.9"]
 rustflags = [ "--cfg=relaxed_coherence" ]
 
 [gn.package.getrandom."0.2.10"]

@@ -98,7 +98,7 @@ rust_library(
         "//third_party/rust_crates/vendor/der-0.6.1:der",
         "//third_party/rust_crates/vendor/digest-0.10.7:digest",
         "//third_party/rust_crates/vendor/ff-0.12.1:ff",
-        "//third_party/rust_crates/vendor/generic-array-0.14.7:generic_array",
+        "//third_party/rust_crates/vendor/generic-array-0.14.9:generic_array",
         "//third_party/rust_crates/vendor/group-0.12.1:group",
         "//third_party/rust_crates/vendor/hkdf-0.12.4:hkdf",
         "//third_party/rust_crates/vendor/pem-rfc7468-0.6.0:pem_rfc7468",

@@ -74,6 +74,6 @@ rust_library(
     }),
     version = "0.10.4",
     deps = [
-        "//third_party/rust_crates/vendor/generic-array-0.14.7:generic_array",
+        "//third_party/rust_crates/vendor/generic-array-0.14.9:generic_array",
     ],
 )

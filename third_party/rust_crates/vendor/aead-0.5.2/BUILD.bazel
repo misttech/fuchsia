@@ -81,6 +81,6 @@ rust_library(
     version = "0.5.2",
     deps = [
         "//third_party/rust_crates/vendor/crypto-common-0.1.6:crypto_common",
-        "//third_party/rust_crates/vendor/generic-array-0.14.7:generic_array",
+        "//third_party/rust_crates/vendor/generic-array-0.14.9:generic_array",
     ],
 )
