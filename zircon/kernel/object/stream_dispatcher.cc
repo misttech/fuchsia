@@ -529,7 +529,9 @@ zx_status_t StreamDispatcher::ExpandIfNecessary(uint64_t requested_vmo_size, boo
 
   if (required_vmo_size > current_vmo_size) {
     if (!can_resize_vmo) {
-      return ZX_ERR_NOT_SUPPORTED;
+      // VmObjectPaged::Resize returns ZX_ERR_OUT_OF_RANGE when it is given a properly
+      // page-aligned but too large request. Mirror that here.
+      return ZX_ERR_OUT_OF_RANGE;
     }
     zx_status_t status = vmo_->Resize(required_vmo_size);
     if (status != ZX_OK) {

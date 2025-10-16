@@ -408,7 +408,7 @@ TEST(StreamTestCase, WriteExtendsContentSize) {
   EXPECT_STREQ("012345", scratch);
 
   actual = 9823u;
-  ASSERT_EQ(ZX_ERR_NO_SPACE, stream.writev(0, &vec, 1, &actual));
+  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, stream.writev(0, &vec, 1, &actual));
   EXPECT_EQ(4096u, GetContentSize(vmo));
 }
 
@@ -516,7 +516,7 @@ TEST(StreamTestCase, WriteVAt) {
 
   vec.capacity = 10u;
   actual = 9823u;
-  ASSERT_EQ(ZX_ERR_NO_SPACE, stream.writev_at(0, 4100u, &vec, 1, &actual));
+  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, stream.writev_at(0, 4100u, &vec, 1, &actual));
 
   ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), ZX_VMO_RESIZABLE, &vmo));
   ASSERT_OK(zx::stream::create(ZX_STREAM_MODE_WRITE, vmo, 0, &stream));
@@ -623,7 +623,7 @@ TEST(StreamTestCase, Append) {
     EXPECT_EQ(zx_system_get_page_size() - info.content_size, actual);
   }
 
-  ASSERT_EQ(ZX_ERR_NO_SPACE, stream.writev(ZX_STREAM_APPEND, &vec, 1, &actual));
+  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, stream.writev(ZX_STREAM_APPEND, &vec, 1, &actual));
 
   vec.capacity = UINT64_MAX;
   ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, stream.writev(ZX_STREAM_APPEND, &vec, 1, &actual));
@@ -682,7 +682,7 @@ TEST(StreamTestCase, WriteVectorWithStreamInAppendMode) {
     EXPECT_EQ(zx_system_get_page_size() - info.content_size, actual);
   }
 
-  ASSERT_EQ(ZX_ERR_NO_SPACE, stream.writev(0, &vec, 1, nullptr));
+  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, stream.writev(0, &vec, 1, nullptr));
 
   vec.capacity = UINT64_MAX;
   ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, stream.writev(0, &vec, 1, nullptr));
@@ -1362,7 +1362,7 @@ TEST(StreamTestCase, ExpandVmoResizeRight) {
 
   // Should not be able to write any further as that would require expanding the VMO.
   actual = 0;
-  ASSERT_EQ(ZX_ERR_NO_SPACE, stream_no_resize.writev(0, &vec, 1, &actual));
+  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, stream_no_resize.writev(0, &vec, 1, &actual));
   EXPECT_EQ(0u, actual);
 
   // Verify that the VMO has not been resized.
