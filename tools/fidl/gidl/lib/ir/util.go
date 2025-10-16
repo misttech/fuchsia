@@ -24,8 +24,11 @@ func Merge(input []All) All {
 }
 
 func FilterByLanguage(input All, language Language) All {
-	shouldKeep := func(allowlist *[]Language, denylist *[]Language) bool {
+	shouldKeep := func(allowlist *[]Language, denylist *[]Language, skiplist *[]Language) bool {
 		if denylist != nil && slices.Contains(*denylist, language) {
+			return false
+		}
+		if skiplist != nil && slices.Contains(*skiplist, language) {
 			return false
 		}
 		if allowlist != nil {
@@ -38,27 +41,27 @@ func FilterByLanguage(input All, language Language) All {
 	}
 	var output All
 	for _, def := range input.EncodeSuccess {
-		if shouldKeep(def.BindingsAllowlist, def.BindingsDenylist) {
+		if shouldKeep(def.BindingsAllowlist, def.BindingsDenylist, nil) {
 			output.EncodeSuccess = append(output.EncodeSuccess, def)
 		}
 	}
 	for _, def := range input.DecodeSuccess {
-		if shouldKeep(def.BindingsAllowlist, def.BindingsDenylist) {
+		if shouldKeep(def.BindingsAllowlist, def.BindingsDenylist, nil) {
 			output.DecodeSuccess = append(output.DecodeSuccess, def)
 		}
 	}
 	for _, def := range input.EncodeFailure {
-		if shouldKeep(def.BindingsAllowlist, def.BindingsDenylist) {
+		if shouldKeep(def.BindingsAllowlist, def.BindingsDenylist, def.BindingsSkip) {
 			output.EncodeFailure = append(output.EncodeFailure, def)
 		}
 	}
 	for _, def := range input.DecodeFailure {
-		if shouldKeep(def.BindingsAllowlist, def.BindingsDenylist) {
+		if shouldKeep(def.BindingsAllowlist, def.BindingsDenylist, nil) {
 			output.DecodeFailure = append(output.DecodeFailure, def)
 		}
 	}
 	for _, def := range input.Benchmark {
-		if shouldKeep(def.BindingsAllowlist, def.BindingsDenylist) {
+		if shouldKeep(def.BindingsAllowlist, def.BindingsDenylist, nil) {
 			output.Benchmark = append(output.Benchmark, def)
 		}
 	}

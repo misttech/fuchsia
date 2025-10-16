@@ -164,6 +164,7 @@ const (
 	isErr
 	isBindingsAllowlist
 	isBindingsDenylist
+	isBindingsSkip
 	isEnableSendEventBenchmark
 	isEnableEchoCallBenchmark
 )
@@ -188,6 +189,8 @@ func (kind bodyElement) String() string {
 		return "bindings_allowlist"
 	case isBindingsDenylist:
 		return "bindings_denylist"
+	case isBindingsSkip:
+		return "bindings_skip"
 	case isEnableSendEventBenchmark:
 		return "enable_send_event_benchmark"
 	case isEnableEchoCallBenchmark:
@@ -257,6 +260,7 @@ type body struct {
 	Err                      ir.ErrorCode
 	BindingsAllowlist        *[]ir.Language
 	BindingsDenylist         *[]ir.Language
+	BindingsSkip             *[]ir.Language
 	EnableSendEventBenchmark bool
 	EnableEchoCallBenchmark  bool
 }
@@ -415,7 +419,7 @@ var sections = map[string]sectionMetadata{
 	"encode_failure": {
 		requiredKinds: map[bodyElement]struct{}{isValue: {}, isErr: {}},
 		optionalKinds: map[bodyElement]struct{}{
-			isHandleDefs: {}, isBindingsAllowlist: {}, isBindingsDenylist: {},
+			isHandleDefs: {}, isBindingsAllowlist: {}, isBindingsDenylist: {}, isBindingsSkip: {},
 		},
 		allowed: allowedFeatures{
 			handleDefRights: true,
@@ -432,6 +436,7 @@ var sections = map[string]sectionMetadata{
 				Err:               body.Err,
 				BindingsAllowlist: body.BindingsAllowlist,
 				BindingsDenylist:  body.BindingsDenylist,
+				BindingsSkip:      body.BindingsSkip,
 			}
 			all.EncodeFailure = append(all.EncodeFailure, result)
 		},
@@ -696,6 +701,13 @@ func (p *Parser) parseSingleBodyElement(result *body, all map[bodyElement]struct
 		}
 		result.BindingsDenylist = &languages
 		kind = isBindingsDenylist
+	case "bindings_skip":
+		languages, err := p.parseLanguageList()
+		if err != nil {
+			return err
+		}
+		result.BindingsSkip = &languages
+		kind = isBindingsSkip
 	case "enable_send_event_benchmark":
 		value, err := p.parseValue(scope)
 		if err != nil {

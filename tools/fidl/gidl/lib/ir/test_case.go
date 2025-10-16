@@ -45,6 +45,7 @@ type EncodeFailure struct {
 	Err               ErrorCode
 	BindingsAllowlist *[]Language
 	BindingsDenylist  *[]Language
+	BindingsSkip      *[]Language
 }
 
 type DecodeFailure struct {

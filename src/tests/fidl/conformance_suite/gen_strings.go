@@ -212,7 +212,7 @@ var decodeFailureTmpl = template.Must(template.New("decodeFailureTmpl").Parse(
 encode_failure("StringsInvalidCase{{ .index }}") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper {
         str: "{{ .escapedValue }}",
     },

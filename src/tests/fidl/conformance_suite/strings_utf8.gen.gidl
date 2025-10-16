@@ -167,7 +167,7 @@ success("StringsValidCase8") {
 encode_failure("StringsInvalidCase1") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\x80",
     },
@@ -197,7 +197,7 @@ decode_failure("StringsInvalidCase1") {
 encode_failure("StringsInvalidCase2") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xc2\x7f",
     },
@@ -228,7 +228,7 @@ decode_failure("StringsInvalidCase2") {
 encode_failure("StringsInvalidCase3") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xdf\xc0",
     },
@@ -259,7 +259,7 @@ decode_failure("StringsInvalidCase3") {
 encode_failure("StringsInvalidCase4") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xe1\x80\x7f",
     },
@@ -291,7 +291,7 @@ decode_failure("StringsInvalidCase4") {
 encode_failure("StringsInvalidCase5") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xef\xbf\xc0",
     },
@@ -323,7 +323,7 @@ decode_failure("StringsInvalidCase5") {
 encode_failure("StringsInvalidCase6") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xf0\x80\x80\x80",
     },
@@ -356,7 +356,7 @@ decode_failure("StringsInvalidCase6") {
 encode_failure("StringsInvalidCase7") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xf7\xbf\xbf\xc0",
     },
@@ -407,7 +407,7 @@ success("StringsValidCase9") {
 encode_failure("StringsInvalidCase8") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xc2\x7f",
     },
@@ -438,7 +438,7 @@ decode_failure("StringsInvalidCase8") {
 encode_failure("StringsInvalidCase9") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xe1\x7f\x80",
     },
@@ -470,7 +470,7 @@ decode_failure("StringsInvalidCase9") {
 encode_failure("StringsInvalidCase10") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xe1\x80\x7f",
     },
@@ -522,7 +522,7 @@ success("StringsValidCase10") {
 encode_failure("StringsInvalidCase11") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xf0\x7f\x80\x80",
     },
@@ -555,7 +555,7 @@ decode_failure("StringsInvalidCase11") {
 encode_failure("StringsInvalidCase12") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xf0\x90\x7f\x80",
     },
@@ -588,7 +588,7 @@ decode_failure("StringsInvalidCase12") {
 encode_failure("StringsInvalidCase13") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xf0\x90\x80\x7f",
     },
@@ -639,7 +639,7 @@ success("StringsValidCase11") {
 encode_failure("StringsInvalidCase14") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xc0\xaf",
     },
@@ -670,7 +670,7 @@ decode_failure("StringsInvalidCase14") {
 encode_failure("StringsInvalidCase15") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xe0\x80\xaf",
     },
@@ -702,7 +702,7 @@ decode_failure("StringsInvalidCase15") {
 encode_failure("StringsInvalidCase16") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xf0\x80\x80\xaf",
     },
@@ -984,7 +984,7 @@ success("StringsValidCase23") {
 encode_failure("StringsInvalidCase17") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xef",
     },
@@ -1014,7 +1014,7 @@ decode_failure("StringsInvalidCase17") {
 encode_failure("StringsInvalidCase18") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xef\xbb",
     },
@@ -1045,7 +1045,7 @@ decode_failure("StringsInvalidCase18") {
 encode_failure("StringsInvalidCase19") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xdf\x80\x80",
     },
@@ -1077,7 +1077,7 @@ decode_failure("StringsInvalidCase19") {
 encode_failure("StringsInvalidCase20") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xe0\x80\x80",
     },
@@ -1128,7 +1128,7 @@ success("StringsValidCase24") {
 encode_failure("StringsInvalidCase21") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xc3\x28",
     },
@@ -1288,7 +1288,7 @@ success("StringsValidCase31") {
 encode_failure("StringsInvalidCase22") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xc0",
     },
@@ -1316,7 +1316,7 @@ decode_failure("StringsInvalidCase22") {
 encode_failure("StringsInvalidCase23") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xc1",
     },
@@ -1344,7 +1344,7 @@ decode_failure("StringsInvalidCase23") {
 encode_failure("StringsInvalidCase24") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xf5",
     },
@@ -1372,7 +1372,7 @@ decode_failure("StringsInvalidCase24") {
 encode_failure("StringsInvalidCase25") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xf6",
     },
@@ -1400,7 +1400,7 @@ decode_failure("StringsInvalidCase25") {
 encode_failure("StringsInvalidCase26") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xf7",
     },
@@ -1428,7 +1428,7 @@ decode_failure("StringsInvalidCase26") {
 encode_failure("StringsInvalidCase27") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xf8",
     },
@@ -1456,7 +1456,7 @@ decode_failure("StringsInvalidCase27") {
 encode_failure("StringsInvalidCase28") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xf9",
     },
@@ -1484,7 +1484,7 @@ decode_failure("StringsInvalidCase28") {
 encode_failure("StringsInvalidCase29") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xfa",
     },
@@ -1512,7 +1512,7 @@ decode_failure("StringsInvalidCase29") {
 encode_failure("StringsInvalidCase30") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xfb",
     },
@@ -1540,7 +1540,7 @@ decode_failure("StringsInvalidCase30") {
 encode_failure("StringsInvalidCase31") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xfc",
     },
@@ -1568,7 +1568,7 @@ decode_failure("StringsInvalidCase31") {
 encode_failure("StringsInvalidCase32") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xfd",
     },
@@ -1596,7 +1596,7 @@ decode_failure("StringsInvalidCase32") {
 encode_failure("StringsInvalidCase33") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xfe",
     },
@@ -1624,7 +1624,7 @@ decode_failure("StringsInvalidCase33") {
 encode_failure("StringsInvalidCase34") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xff",
     },
@@ -1653,7 +1653,7 @@ decode_failure("StringsInvalidCase34") {
 encode_failure("StringsInvalidCase35") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xed\xa0\x80",
     },
@@ -1685,7 +1685,7 @@ decode_failure("StringsInvalidCase35") {
 encode_failure("StringsInvalidCase36") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xed\xb0\x80",
     },
@@ -1717,7 +1717,7 @@ decode_failure("StringsInvalidCase36") {
 encode_failure("StringsInvalidCase37") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xed\xbf\xbf",
     },
@@ -1749,7 +1749,7 @@ decode_failure("StringsInvalidCase37") {
 encode_failure("StringsInvalidCase38") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xc0\x80",
     },
@@ -1780,7 +1780,7 @@ decode_failure("StringsInvalidCase38") {
 encode_failure("StringsInvalidCase39") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xc1\x80",
     },
@@ -1811,7 +1811,7 @@ decode_failure("StringsInvalidCase39") {
 encode_failure("StringsInvalidCase40") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xc1\x81",
     },
@@ -1842,7 +1842,7 @@ decode_failure("StringsInvalidCase40") {
 encode_failure("StringsInvalidCase41") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xe0\x80\x80",
     },
@@ -1874,7 +1874,7 @@ decode_failure("StringsInvalidCase41") {
 encode_failure("StringsInvalidCase42") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xe0\x82\x80",
     },
@@ -1906,7 +1906,7 @@ decode_failure("StringsInvalidCase42") {
 encode_failure("StringsInvalidCase43") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xe0\x9f\xbf",
     },
@@ -1938,7 +1938,7 @@ decode_failure("StringsInvalidCase43") {
 encode_failure("StringsInvalidCase44") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xf0\x80\x80\x8d",
     },
@@ -1971,7 +1971,7 @@ decode_failure("StringsInvalidCase44") {
 encode_failure("StringsInvalidCase45") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xf0\x80\x82\x91",
     },
@@ -2004,7 +2004,7 @@ decode_failure("StringsInvalidCase45") {
 encode_failure("StringsInvalidCase46") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xf0\x80\xa0\x80",
     },
@@ -2037,7 +2037,7 @@ decode_failure("StringsInvalidCase46") {
 encode_failure("StringsInvalidCase47") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xf0\x8f\xbb\xbf",
     },
@@ -2070,7 +2070,7 @@ decode_failure("StringsInvalidCase47") {
 encode_failure("StringsInvalidCase48") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xf8\x80\x80\x80\xbf",
     },
@@ -2103,7 +2103,7 @@ decode_failure("StringsInvalidCase48") {
 encode_failure("StringsInvalidCase49") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xfc\x80\x80\x80\xa0\xa5",
     },
@@ -2137,7 +2137,7 @@ decode_failure("StringsInvalidCase49") {
 encode_failure("StringsInvalidCase50") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xf4\x90\x80\x80",
     },
@@ -2170,7 +2170,7 @@ decode_failure("StringsInvalidCase50") {
 encode_failure("StringsInvalidCase51") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xf8\xa0\xbf\x80\xbf",
     },
@@ -2204,7 +2204,7 @@ decode_failure("StringsInvalidCase51") {
 encode_failure("StringsInvalidCase52") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xfc\x9c\xbf\x80\xbf\x80",
     },
@@ -2239,7 +2239,7 @@ decode_failure("StringsInvalidCase52") {
 encode_failure("StringsInvalidCase53") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xfe\xff",
     },
@@ -2270,7 +2270,7 @@ decode_failure("StringsInvalidCase53") {
 encode_failure("StringsInvalidCase54") {
     // TODO(https://fxbug.dev/42129370): UTF8 encoding and decoding is not conformant in Dart.
     // Rust is excluded since std::string::String is always valid UTF-8.
-    bindings_denylist = [dart, rust, rust_next],
+    bindings_skip = [dart, rust, rust_next],
     value = StringWrapper{
         str: "\xff\xfe",
     },

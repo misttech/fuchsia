@@ -105,7 +105,7 @@ success("VectorOfEnumStruct") {
 
 encode_failure("StrictEnumInt8StructUnknownValue") {
     // Rust: cannot construct invalid enum.
-    bindings_denylist = [rust, rust_next],
+    bindings_skip = [rust, rust_next],
     value = StrictEnumInt8Struct{
         e: 0x08, // invalid value
     },
@@ -114,7 +114,7 @@ encode_failure("StrictEnumInt8StructUnknownValue") {
 
 encode_failure("StrictEnumInt16StructUnknownValue") {
     // Rust: cannot construct invalid enum.
-    bindings_denylist = [rust, rust_next],
+    bindings_skip = [rust, rust_next],
     value = StrictEnumInt16Struct{
         e: 0x08, // invalid value
     },
@@ -123,7 +123,7 @@ encode_failure("StrictEnumInt16StructUnknownValue") {
 
 encode_failure("StrictEnumInt32StructUnknownValue") {
     // Rust: cannot construct invalid enum.
-    bindings_denylist = [rust, rust_next],
+    bindings_skip = [rust, rust_next],
     value = StrictEnumInt32Struct{
         e: 0x08, // invalid value
     },
@@ -132,7 +132,7 @@ encode_failure("StrictEnumInt32StructUnknownValue") {
 
 encode_failure("StrictEnumInt64StructUnknownValue") {
     // Rust: cannot construct invalid enum.
-    bindings_denylist = [rust, rust_next],
+    bindings_skip = [rust, rust_next],
     value = StrictEnumInt64Struct{
         e: 0x08, // invalid value
     },
@@ -141,7 +141,7 @@ encode_failure("StrictEnumInt64StructUnknownValue") {
 
 encode_failure("StrictEnumUint8StructUnknownValue") {
     // Rust: cannot construct invalid enum.
-    bindings_denylist = [rust, rust_next],
+    bindings_skip = [rust, rust_next],
     value = StrictEnumUint8Struct{
         e: 0x08, // invalid value
     },
@@ -150,7 +150,7 @@ encode_failure("StrictEnumUint8StructUnknownValue") {
 
 encode_failure("StrictEnumUint16StructUnknownValue") {
     // Rust: cannot construct invalid enum.
-    bindings_denylist = [rust, rust_next],
+    bindings_skip = [rust, rust_next],
     value = StrictEnumUint16Struct{
         e: 0x08, // invalid value
     },
@@ -159,7 +159,7 @@ encode_failure("StrictEnumUint16StructUnknownValue") {
 
 encode_failure("StrictEnumUint32StructUnknownValue") {
     // Rust: cannot construct invalid enum.
-    bindings_denylist = [rust, rust_next],
+    bindings_skip = [rust, rust_next],
     value = StrictEnumUint32Struct{
         e: 0x08, // invalid value
     },
@@ -168,7 +168,7 @@ encode_failure("StrictEnumUint32StructUnknownValue") {
 
 encode_failure("StrictEnumUint64StructUnknownValue") {
     // Rust: cannot construct invalid enum.
-    bindings_denylist = [rust, rust_next],
+    bindings_skip = [rust, rust_next],
     value = StrictEnumUint64Struct{
         e: 0x08, // invalid value
     },
