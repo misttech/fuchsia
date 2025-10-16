@@ -21,7 +21,7 @@ std::unique_ptr<perfetto::SharedMemory> SharedVmo::Factory::CreateSharedMemory(s
 
 std::unique_ptr<SharedVmo> SharedVmo::AdoptVmo(zx::vmo vmo) {
   size_t vmo_size;
-  zx_status_t result = vmo.get_size(&vmo_size);
+  zx_status_t result = vmo.get_stream_size(&vmo_size);
   if (result != ZX_OK) {
     return nullptr;
   }

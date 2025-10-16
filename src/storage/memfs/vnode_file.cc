@@ -132,7 +132,7 @@ zx_status_t VnodeFile::Truncate(size_t length) {
   if (zx_status_t status = CreateBackingStoreIfNeeded(); status != ZX_OK) {
     return status;
   }
-  if (zx_status_t status = paged_vmo().set_size(length); status != ZX_OK) {
+  if (zx_status_t status = paged_vmo().set_stream_size(length); status != ZX_OK) {
     return status;
   }
 
@@ -142,7 +142,7 @@ zx_status_t VnodeFile::Truncate(size_t length) {
 
 zx_status_t VnodeFile::CreateBackingStoreIfNeeded() {
   // TODO(https://fxbug.dev/42067655): Use a fixed sized VMO.
-  return EnsureCreatePagedVmo(0, ZX_VMO_RESIZABLE).status_value();
+  return EnsureCreatePagedVmo(0, ZX_VMO_UNBOUNDED).status_value();
 }
 
 uint64_t VnodeFile::GetContentSize() const {
