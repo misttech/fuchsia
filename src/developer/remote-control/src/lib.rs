@@ -279,7 +279,7 @@ impl RemoteControlService {
         .await
     }
 
-    pub async fn open_toolboox(
+    pub async fn open_toolbox(
         self: &Rc<Self>,
         server_end: zx::Channel,
     ) -> Result<(), rcs::ConnectCapabilityError> {

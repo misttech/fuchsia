@@ -29,7 +29,7 @@ fn serve_toolboxes(
                 break;
             };
 
-            if let Err(err) = rcs.open_toolboox(server_end.into_channel()).await {
+            if let Err(err) = rcs.open_toolbox(server_end.into_channel()).await {
                 error!(err:?; "Could not open toolbox for client");
             }
         }
