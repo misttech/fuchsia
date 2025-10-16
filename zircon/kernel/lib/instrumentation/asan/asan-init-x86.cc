@@ -142,6 +142,9 @@ void arch_asan_reallocate_shadow() {
     uintptr_t address = reinterpret_cast<uintptr_t>(paddr_to_physmap(arena.base));
     asan_map_shadow_for(address, arena.size);
   }
+  if constexpr (VIRTUAL_HEAP) {
+    asan_map_shadow_for(vm_get_kernel_heap_base(), vm_get_kernel_heap_size());
+  }
 }
 
 void arch_asan_early_init() {
