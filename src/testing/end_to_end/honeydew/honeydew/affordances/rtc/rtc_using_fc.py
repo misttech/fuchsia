@@ -7,7 +7,6 @@ import asyncio
 import datetime
 
 import fidl_fuchsia_hardware_rtc as frtc
-from fidl import FrameworkError
 from fuchsia_controller_py import ZxStatus
 
 from honeydew import affordances_capable
@@ -105,29 +104,8 @@ class RtcUsingFc(rtc.Rtc):
         ftime = frtc.Time(
             time.second, time.minute, time.hour, time.day, time.month, time.year
         )
-
         try:
-            response = asyncio.run(self._proxy.set2(rtc=ftime))
-            # Allow fallback to the old Set method if Set2 isn't supported.
-            # TODO(https://fxbug.dev/435664909): Remove when API level 26 support is dropped.
-            # Although we are calling Set instead of Set2, we use "Set2" in the error strings to
-            # avoid having to update the test cases after removing this branch.
-            if response.framework_err == FrameworkError.UNKNOWN_METHOD:
-                try:
-                    old_method = asyncio.run(
-                        self._proxy.set_(rtc=ftime)
-                    ).unwrap()
-                except (AssertionError, ZxStatus) as e:
-                    msg = f"Device.Set2() error {e}"
-                    raise HoneydewRtcError(msg) from e
-                if old_method.status != ZxStatus.ZX_OK:
-                    msg = f"Device.Set2() error {old_method.status}"
-                    raise HoneydewRtcError(msg)
-            else:
-                response.unwrap()
+            asyncio.run(self._proxy.set2(rtc=ftime)).unwrap()
         except (AssertionError, ZxStatus) as e:
             msg = f"Device.Set2() error {e}"
             raise HoneydewRtcError(msg) from e
-        except HoneydewRtcError:
-            # Propagate errors from the old Set method if we used the fallback path above.
-            raise
