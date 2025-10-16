@@ -4,11 +4,11 @@
 
 use fidl_fuchsia_settings::{LightError, LightGroup, LightState, LightType, LightValue};
 use fidl_fuchsia_ui_input::MediaButtonsEvent;
-use futures::channel::mpsc;
 use futures::StreamExt;
+use futures::channel::mpsc;
 use light_realm::{
-    assert_fidl_light_group_eq, assert_lights_eq, check_fidl_light_group_eq, HardwareLight,
-    LightRealm,
+    HardwareLight, LightRealm, assert_fidl_light_group_eq, assert_lights_eq,
+    check_fidl_light_group_eq,
 };
 use std::collections::HashMap;
 
@@ -74,7 +74,7 @@ async fn test_light_disabled_by_mic_mute_off() {
 
     // Send mic unmuted, which should disable the light.
     listener_proxy
-        .on_event(&MediaButtonsEvent { mic_mute: Some(false), ..Default::default() })
+        .on_event(MediaButtonsEvent { mic_mute: Some(false), ..Default::default() })
         .await
         .expect("on event called");
 

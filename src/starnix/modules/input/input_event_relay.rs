@@ -544,76 +544,84 @@ impl InputEventsRelay {
         palm_was_pressed: bool,
     ) -> bool {
         trace_duration!(c"input", c"starnix_process_touch_button_event");
-        let fuipolicy::TouchButtonsListenerRequest::OnEvent { event, responder } = button_event;
-        let batch = parse_fidl_touch_button_event(&event, palm_was_pressed);
+        match button_event {
+            fuipolicy::TouchButtonsListenerRequest::OnEvent { event, responder } => {
+                let batch = parse_fidl_touch_button_event(&event, palm_was_pressed);
 
-        let (converted_events, ignored_events, generated_events) = match batch.events.len() {
-            0 => (0u64, 1u64, 0u64),
-            len => {
-                if len % 2 == 1 {
-                    log_warn!(
-                        "unexpectedly received {} events: there should always be an even number of non-empty events.",
-                        len
-                    );
-                }
-                (1u64, 0u64, len as u64)
-            }
-        };
+                let (converted_events, ignored_events, generated_events) = match batch.events.len()
+                {
+                    0 => (0u64, 1u64, 0u64),
+                    len => {
+                        if len % 2 == 1 {
+                            log_warn!(
+                                "unexpectedly received {} events: there should always be an even number of non-empty events.",
+                                len
+                            );
+                        }
+                        (1u64, 0u64, len as u64)
+                    }
+                };
 
-        let dev = match event.device_info {
-            Some(TouchDeviceInfo { id: Some(device_id), .. }) => {
-                self.devices.get_mut(&device_id).unwrap_or(default_touch_device)
-            }
-            _ => default_touch_device,
-        };
+                let dev = match event.device_info {
+                    Some(TouchDeviceInfo { id: Some(device_id), .. }) => {
+                        self.devices.get_mut(&device_id).unwrap_or(default_touch_device)
+                    }
+                    _ => default_touch_device,
+                };
 
-        if let Some(dev_inspect_status) = &dev.inspect_status {
-            dev_inspect_status.count_total_received_events(1);
-            dev_inspect_status.count_total_ignored_events(ignored_events);
-            dev_inspect_status.count_total_converted_events(converted_events);
-            dev_inspect_status.count_total_generated_events(
-                generated_events,
-                batch.event_time.into_nanos().try_into().unwrap(),
-            );
-        } else {
-            log_warn!("unable to record inspect for touch device");
-        }
-
-        dev.open_files.lock().retain(|f| {
-            let Some(file) = f.upgrade() else {
-                log_warn!("Dropping input file for touch that failed to upgrade");
-                return false;
-            };
-            match &file.inspect_status {
-                Some(file_inspect_status) => {
-                    file_inspect_status.count_received_events(1);
-                    file_inspect_status.count_ignored_events(ignored_events);
-                    file_inspect_status.count_converted_events(converted_events);
-                }
-                None => {
-                    log_warn!("unable to record inspect within the input file")
-                }
-            }
-            if !batch.events.is_empty() {
-                if let Some(file_inspect_status) = &file.inspect_status {
-                    file_inspect_status.count_generated_events(
+                if let Some(dev_inspect_status) = &dev.inspect_status {
+                    dev_inspect_status.count_total_received_events(1);
+                    dev_inspect_status.count_total_ignored_events(ignored_events);
+                    dev_inspect_status.count_total_converted_events(converted_events);
+                    dev_inspect_status.count_total_generated_events(
                         generated_events,
                         batch.event_time.into_nanos().try_into().unwrap(),
                     );
+                } else {
+                    log_warn!("unable to record inspect for touch device");
                 }
-                let mut inner = file.inner.lock();
-                inner
-                    .events
-                    .extend(batch.events.clone().into_iter().map(LinuxEventWithTraceId::new));
-                inner.waiters.notify_fd_events(FdEvents::POLLIN);
+
+                dev.open_files.lock().retain(|f| {
+                    let Some(file) = f.upgrade() else {
+                        log_warn!("Dropping input file for touch that failed to upgrade");
+                        return false;
+                    };
+                    match &file.inspect_status {
+                        Some(file_inspect_status) => {
+                            file_inspect_status.count_received_events(1);
+                            file_inspect_status.count_ignored_events(ignored_events);
+                            file_inspect_status.count_converted_events(converted_events);
+                        }
+                        None => {
+                            log_warn!("unable to record inspect within the input file")
+                        }
+                    }
+                    if !batch.events.is_empty() {
+                        if let Some(file_inspect_status) = &file.inspect_status {
+                            file_inspect_status.count_generated_events(
+                                generated_events,
+                                batch.event_time.into_nanos().try_into().unwrap(),
+                            );
+                        }
+                        let mut inner = file.inner.lock();
+                        inner.events.extend(
+                            batch.events.clone().into_iter().map(LinuxEventWithTraceId::new),
+                        );
+                        inner.waiters.notify_fd_events(FdEvents::POLLIN);
+                    }
+
+                    true
+                });
+
+                responder.send().expect("touch buttons responder failed to respond");
+
+                batch.palm_is_pressed
             }
-
-            true
-        });
-
-        responder.send().expect("touch buttons responder failed to respond");
-
-        batch.palm_is_pressed
+            fuipolicy::TouchButtonsListenerRequest::_UnknownMethod { ordinal, .. } => {
+                log_warn!("Received an unknown method with ordinal {ordinal}");
+                palm_was_pressed
+            }
+        }
     }
 
     fn process_mouse_event(
@@ -1473,7 +1481,7 @@ mod test {
             ..Default::default()
         };
 
-        let _ = media_buttons_listener.on_event(&power_pressed_event).await;
+        let _ = media_buttons_listener.on_event(power_pressed_event).await;
 
         let events = read_uapi_events(locked, &keyboard_file, &current_task);
         // Default device should receive events because no device device id is 10.
@@ -1508,7 +1516,7 @@ mod test {
             ..Default::default()
         };
 
-        let _ = media_buttons_listener.on_event(&power_released_event).await;
+        let _ = media_buttons_listener.on_event(power_released_event).await;
 
         let events = read_uapi_events(locked, &keyboard_file, &current_task);
         // Default device should not receive events because they matched device id 10.
@@ -1549,7 +1557,7 @@ mod test {
             ..Default::default()
         };
 
-        let _ = touch_buttons_listener.on_event(&palm_pressed_event).await;
+        let _ = touch_buttons_listener.on_event(palm_pressed_event).await;
 
         let events = read_uapi_events(locked, &touch_file, &current_task);
         // Default device should receive events because no device device id is 10.
@@ -1567,7 +1575,7 @@ mod test {
             ..Default::default()
         };
 
-        let _ = touch_buttons_listener.on_event(&power_released_event).await;
+        let _ = touch_buttons_listener.on_event(power_released_event).await;
 
         let events = read_uapi_events(locked, &touch_file, &current_task);
         // Default device should not receive events because they matched device id 10.
@@ -1705,7 +1713,7 @@ mod test {
             ..Default::default()
         };
 
-        let _ = media_buttons_listener.on_event(&power_pressed_event).await;
+        let _ = media_buttons_listener.on_event(power_pressed_event).await;
 
         // Consume all of the `uapi::input_event`s that are available.
         let events_from_reader1 = read_uapi_events(locked, &keyboard_reader1, &current_task);

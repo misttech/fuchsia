@@ -10,6 +10,7 @@ use crate::input::input_device_configuration::{
 use crate::input::types::{
     DeviceState, DeviceStateSource, InputCategory, InputDeviceType, InputInfoSources, InputState,
 };
+use crate::tests::helpers::clone_media_buttons_event_without_wake_lease;
 use crate::tests::input_test_environment::{TestInputEnvironment, TestInputEnvironmentBuilder};
 use crate::tests::test_failure_utils::create_test_env_with_failures_and_config;
 use assert_matches::assert_matches;
@@ -209,13 +210,21 @@ async fn set_device_muted(
 // Switch the hardware mic state to muted = [muted] for input.
 async fn switch_hardware_mic_mute(env: &TestInputEnvironment, muted: bool) {
     let buttons_event = MediaButtonsEventBuilder::new().set_mic_mute(muted).build();
-    env.input_button_service.lock().await.send_media_button_event(buttons_event.clone()).await;
+    env.input_button_service
+        .lock()
+        .await
+        .send_media_button_event(clone_media_buttons_event_without_wake_lease(&buttons_event))
+        .await;
 }
 
 // Switch the hardware camera disable to disabled = [disabled].
 async fn switch_hardware_camera_disable(env: &TestInputEnvironment, disabled: bool) {
     let buttons_event = MediaButtonsEventBuilder::new().set_camera_disable(disabled).build();
-    env.input_button_service.lock().await.send_media_button_event(buttons_event.clone()).await;
+    env.input_button_service
+        .lock()
+        .await
+        .send_media_button_event(clone_media_buttons_event_without_wake_lease(&buttons_event))
+        .await;
 }
 
 // Perform a watch and check that the mic mute state matches [expected_muted_state].

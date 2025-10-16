@@ -947,7 +947,7 @@ macro_rules! assert_input_event_sequence_generates_media_buttons_events {
         .detach();
 
         for mut stream in $media_buttons_listener_request_stream {
-            let mut expected_command_iter = $expected_events.clone().into_iter().peekable();
+            let mut expected_command_iter = $expected_events.iter().peekable();
             while let Some(request) = stream.next().await {
                 match request {
                     Ok(fidl_ui_policy::MediaButtonsListenerRequest::OnEvent {
@@ -955,7 +955,7 @@ macro_rules! assert_input_event_sequence_generates_media_buttons_events {
                         responder,
                     }) => {
                         let expected_command = expected_command_iter.next().unwrap();
-                        pretty_assertions::assert_eq!(event, expected_command);
+                        pretty_assertions::assert_eq!(&event, expected_command);
                         let _ = responder.send();
 
                         // All the expected events have been received, so make sure no more

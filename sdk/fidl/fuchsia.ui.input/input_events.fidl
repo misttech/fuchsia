@@ -161,6 +161,7 @@ type FocusEvent = struct {
     focused bool;
 };
 
+@available(replaced=HEAD)
 type MediaButtonsEvent = table {
     1: volume int8;
     2: mic_mute bool;
@@ -172,6 +173,20 @@ type MediaButtonsEvent = table {
     6: function bool;
     @available(added=24)
     7: device_id uint32;
+};
+
+@available(added=HEAD)
+type MediaButtonsEvent = resource table {
+    1: volume int8;
+    2: mic_mute bool;
+    3: pause bool;
+    4: camera_disable bool;
+    5: power bool;
+    6: function bool;
+    7: device_id uint32;
+
+    /// Optional wake lease for power baton passing.
+    8: wake_lease zx.Handle:EVENTPAIR;
 };
 
 type InputEvent = strict union {
@@ -196,9 +211,19 @@ type TouchButton = flexible enum {
     PALM = 1;
 };
 
-@available(added=28)
+@available(added=28, replaced=HEAD)
 type TouchButtonsEvent = table {
     1: event_time zx.InstantMono;
     2: device_info TouchDeviceInfo;
     3: pressed_buttons vector<TouchButton>;
+};
+
+@available(added=HEAD)
+type TouchButtonsEvent = resource table {
+    1: event_time zx.InstantMono;
+    2: device_info TouchDeviceInfo;
+    3: pressed_buttons vector<TouchButton>;
+
+    /// Optional wake lease for power baton passing.
+    4: wake_lease zx.Handle:EVENTPAIR;
 };

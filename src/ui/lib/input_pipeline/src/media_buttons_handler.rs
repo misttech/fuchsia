@@ -5,10 +5,11 @@
 use crate::input_handler::{InputHandlerStatus, UnhandledInputHandler};
 use crate::{consumer_controls_binding, input_device, metrics};
 use async_trait::async_trait;
+use fidl::HandleBased;
 use fidl::endpoints::Proxy;
 use fuchsia_inspect::health::Reporter;
-use futures::channel::mpsc;
 use futures::StreamExt;
+use futures::channel::mpsc;
 use metrics_registry::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -65,7 +66,7 @@ impl UnhandledInputHandler for MediaButtonsHandler {
                 self.inspect_status.count_received_event(input_device::InputEvent::from(
                     unhandled_input_event.clone(),
                 ));
-                let media_buttons_event = Self::create_media_buttons_event(
+                let mut media_buttons_event = Self::create_media_buttons_event(
                     media_buttons_event,
                     device_descriptor.device_id,
                 );
@@ -73,7 +74,8 @@ impl UnhandledInputHandler for MediaButtonsHandler {
                 // Send the event if the media buttons are supported.
                 self.send_event_to_listeners(&media_buttons_event).await;
 
-                // Store the sent event.
+                // Store the sent event without any wake leases.
+                media_buttons_event.wake_lease = None;
                 self.inner.borrow_mut().last_event = Some(media_buttons_event);
 
                 // Consume the input event.
@@ -102,6 +104,24 @@ impl MediaButtonsHandler {
         let inspect_status =
             InputHandlerStatus::new(input_handlers_node, "media_buttons_handler", false);
         Self::new_internal(inspect_status, metrics_logger)
+    }
+
+    fn clone_event(event: &fidl_ui_input::MediaButtonsEvent) -> fidl_ui_input::MediaButtonsEvent {
+        fidl_ui_input::MediaButtonsEvent {
+            volume: event.volume,
+            mic_mute: event.mic_mute,
+            pause: event.pause,
+            camera_disable: event.camera_disable,
+            power: event.power,
+            function: event.function,
+            device_id: event.device_id,
+            wake_lease: event.wake_lease.as_ref().map(|lease| {
+                lease
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                    .expect("failed to duplicate event pair")
+            }),
+            ..Default::default()
+        }
     }
 
     fn new_internal(
@@ -179,9 +199,9 @@ impl MediaButtonsHandler {
             let weak_handler = Rc::downgrade(&self);
             let listener_clone = listener.clone();
             let handle_clone = handle.clone();
-            let event_to_send = event.clone();
+            let event_to_send = Self::clone_event(event);
             let fut = async move {
-                match listener_clone.on_event(&event_to_send).await {
+                match listener_clone.on_event(event_to_send).await {
                     Ok(_) => {}
                     Err(e) => {
                         if let Some(handler) = weak_handler.upgrade() {
@@ -212,9 +232,9 @@ impl MediaButtonsHandler {
 
         // Send the listener the last media button event.
         if let Some(event) = &self.inner.borrow().last_event {
-            let event_to_send = event.clone();
+            let event_to_send = Self::clone_event(event);
             let fut = async move {
-                match proxy.on_event(&event_to_send).await {
+                match proxy.on_event(event_to_send).await {
                     Ok(_) => {}
                     Err(e) => {
                         log::info!("Failed to send media buttons event to listener {:?}", e)
@@ -274,8 +294,8 @@ mod tests {
     use anyhow::Error;
     use assert_matches::assert_matches;
     use fidl::endpoints::create_proxy_and_stream;
-    use futures::channel::oneshot;
     use futures::TryStreamExt;
+    use futures::channel::oneshot;
     use pretty_assertions::assert_eq;
     use std::task::Poll;
     use {fidl_fuchsia_input_report as fidl_input_report, fuchsia_async as fasync};
@@ -335,8 +355,8 @@ mod tests {
 
     /// Makes a `Task` that waits for a `oneshot`'s value to be set, and then forwards that value to
     /// a reference-counted container that can be observed outside the task.
-    fn make_signalable_task<T: Default + 'static>(
-    ) -> (oneshot::Sender<T>, fasync::Task<()>, Rc<RefCell<T>>) {
+    fn make_signalable_task<T: Default + 'static>()
+    -> (oneshot::Sender<T>, fasync::Task<()>, Rc<RefCell<T>>) {
         let (sender, receiver) = oneshot::channel();
         let task_completed = Rc::new(RefCell::new(<T as Default>::default()));
         let task_completed_ = task_completed.clone();
@@ -898,5 +918,68 @@ mod tests {
                 }
             }
         });
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn clone_event_with_lease_duplicates_lease() {
+        let (event_pair, _) = fidl::EventPair::create();
+        let event_with_lease = fidl_ui_input::MediaButtonsEvent {
+            volume: Some(1),
+            mic_mute: Some(true),
+            pause: Some(true),
+            camera_disable: Some(true),
+            power: Some(true),
+            function: Some(true),
+            device_id: Some(1),
+            wake_lease: Some(event_pair),
+            ..Default::default()
+        };
+
+        // Test cloning an event that has a wake lease.
+        // With wake lease argument should duplicate the handle.
+        let cloned_event = MediaButtonsHandler::clone_event(&event_with_lease);
+        assert_eq!(event_with_lease.volume, cloned_event.volume);
+        assert_eq!(event_with_lease.mic_mute, cloned_event.mic_mute);
+        assert_eq!(event_with_lease.pause, cloned_event.pause);
+        assert_eq!(event_with_lease.camera_disable, cloned_event.camera_disable);
+        assert_eq!(event_with_lease.power, cloned_event.power);
+        assert_eq!(event_with_lease.function, cloned_event.function);
+        assert_eq!(event_with_lease.device_id, cloned_event.device_id);
+        assert!(event_with_lease.wake_lease.is_some());
+        assert!(cloned_event.wake_lease.is_some());
+        assert_ne!(
+            event_with_lease.wake_lease.as_ref().unwrap().as_handle_ref().raw_handle(),
+            cloned_event.wake_lease.as_ref().unwrap().as_handle_ref().raw_handle()
+        );
+        assert_eq!(
+            event_with_lease.wake_lease.as_ref().unwrap().get_koid(),
+            cloned_event.wake_lease.as_ref().unwrap().get_koid()
+        );
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn clone_event_without_lease_has_no_lease() {
+        // Test cloning an event that does not have a wake lease.
+        let event_without_lease = fidl_ui_input::MediaButtonsEvent {
+            volume: Some(1),
+            mic_mute: Some(true),
+            pause: Some(true),
+            camera_disable: Some(true),
+            power: Some(true),
+            function: Some(true),
+            device_id: Some(1),
+            ..Default::default()
+        };
+
+        // With wake lease argument should result in no wake lease.
+        let cloned_event = MediaButtonsHandler::clone_event(&event_without_lease);
+        assert_eq!(event_without_lease.volume, cloned_event.volume);
+        assert_eq!(event_without_lease.mic_mute, cloned_event.mic_mute);
+        assert_eq!(event_without_lease.pause, cloned_event.pause);
+        assert_eq!(event_without_lease.camera_disable, cloned_event.camera_disable);
+        assert_eq!(event_without_lease.power, cloned_event.power);
+        assert_eq!(event_without_lease.function, cloned_event.function);
+        assert_eq!(event_without_lease.device_id, cloned_event.device_id);
+        assert!(cloned_event.wake_lease.is_none());
     }
 }

@@ -37,6 +37,7 @@ closed protocol DeviceListenerRegistry {
 /// [`fuchsia.ui.policy/DeviceListenerRegistry.RegisterMediaButtonsListener`]
 /// will consume this listener interface and call `OnMediaButtonsEvent` when the
 /// registered media buttons event occurs.
+@available(replaced=HEAD)
 closed protocol MediaButtonsListener {
     // TODO(https://fxbug.dev/42117461): Remove when no longer used.
     @deprecated("Use OnEvent() ")
@@ -49,13 +50,33 @@ closed protocol MediaButtonsListener {
     }) -> ();
 };
 
+@available(added=HEAD)
+closed protocol MediaButtonsListener {
+    // TODO(https://fxbug.dev/42117461): Remove when no longer used.
+    @deprecated("Use OnEvent() ")
+    strict OnMediaButtonsEvent(resource struct {
+        event fuchsia.ui.input.MediaButtonsEvent;
+    });
+
+    strict OnEvent(resource struct {
+        event fuchsia.ui.input.MediaButtonsEvent;
+    }) -> ();
+};
+
 /// A listener for touch buttons events.
 /// [`fuchsia.ui.policy/DeviceListenerRegistry.RegisterTouchButtonsListener`]
 /// will consume this listener interface and call `OnEvent` when the
 /// registered touch buttons event occurs.
-@available(added=28)
+@available(added=28, replaced=HEAD)
 closed protocol TouchButtonsListener {
     strict OnEvent(struct {
+        event fuchsia.ui.input.TouchButtonsEvent;
+    }) -> ();
+};
+
+@available(added=HEAD)
+open protocol TouchButtonsListener {
+    strict OnEvent(resource struct {
         event fuchsia.ui.input.TouchButtonsEvent;
     }) -> ();
 };

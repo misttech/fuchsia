@@ -1649,7 +1649,7 @@ mod test {
             ..Default::default()
         };
 
-        let _ = buttons_listener.on_event(&power_event).await;
+        let _ = buttons_listener.on_event(power_event).await;
         std::mem::drop(buttons_listener); // Close Zircon channel.
 
         let events = read_uapi_events(locked, &input_file, &current_task);
@@ -1675,7 +1675,7 @@ mod test {
             ..Default::default()
         };
 
-        let _ = buttons_listener.on_event(&function_event).await;
+        let _ = buttons_listener.on_event(function_event).await;
         std::mem::drop(buttons_listener); // Close Zircon channel.
 
         let events = read_uapi_events(locked, &input_file, &current_task);
@@ -1731,10 +1731,10 @@ mod test {
             ..Default::default()
         };
 
-        let _ = buttons_listener.on_event(&power_event).await;
-        let _ = buttons_listener.on_event(&function_event).await;
-        let _ = buttons_listener.on_event(&function_release_event).await;
-        let _ = buttons_listener.on_event(&power_release_event).await;
+        let _ = buttons_listener.on_event(power_event).await;
+        let _ = buttons_listener.on_event(function_event).await;
+        let _ = buttons_listener.on_event(function_release_event).await;
+        let _ = buttons_listener.on_event(power_release_event).await;
         std::mem::drop(buttons_listener); // Close Zircon channel.
 
         let events = read_uapi_events(locked, &input_file, &current_task);
@@ -1766,7 +1766,7 @@ mod test {
             ..Default::default()
         };
 
-        let _ = buttons_listener.on_event(&power_and_function_event).await;
+        let _ = buttons_listener.on_event(power_and_function_event).await;
         std::mem::drop(buttons_listener); // Close Zircon channel.
 
         let events = read_uapi_events(locked, &input_file, &current_task);
@@ -2202,8 +2202,8 @@ mod test {
             ..Default::default()
         };
 
-        let _ = buttons_listener.on_event(&power_event).await;
-        let _ = buttons_listener.on_event(&power_release_event).await;
+        let _ = buttons_listener.on_event(power_event).await;
+        let _ = buttons_listener.on_event(power_release_event).await;
 
         let events = read_uapi_events(locked, &input_file, &current_task);
         assert_eq!(events.len(), 4);

@@ -9,8 +9,8 @@ use crate::{input_device, metrics, touch_binding};
 use anyhow::{Context, Error, Result};
 use async_trait::async_trait;
 use async_utils::hanging_get::client::HangingGetStream;
-use fidl::endpoints::{create_proxy, Proxy};
-use fidl::AsHandleRef;
+use fidl::endpoints::{Proxy, create_proxy};
+use fidl::{AsHandleRef, HandleBased};
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc;
@@ -100,7 +100,7 @@ impl UnhandledInputHandler for TouchInjectorHandler {
                     fuchsia_trace::flow_end!(c"input", c"event_in_input_pipeline", trace_id.into());
                 }
                 if touch_event.injector_contacts.values().all(|vec| vec.is_empty()) {
-                    let touch_buttons_event = Self::create_touch_buttons_event(
+                    let mut touch_buttons_event = Self::create_touch_buttons_event(
                         &touch_event,
                         event_time,
                         &touch_device_descriptor,
@@ -109,7 +109,8 @@ impl UnhandledInputHandler for TouchInjectorHandler {
                     // Send the event if the touch buttons are supported.
                     self.send_event_to_listeners(&touch_buttons_event).await;
 
-                    // Store the sent event.
+                    // Store the sent event without any wake leases.
+                    touch_buttons_event.wake_lease = None;
                     self.mutable_state.borrow_mut().last_button_event = Some(touch_buttons_event);
                 } else if touch_event.pressed_buttons.is_empty() {
                     // Create a new injector if this is the first time seeing device_id.
@@ -257,6 +258,24 @@ impl TouchInjectorHandler {
         });
 
         Ok(handler)
+    }
+
+    fn clone_event(event: &fidl_ui_input::TouchButtonsEvent) -> fidl_ui_input::TouchButtonsEvent {
+        fidl_ui_input::TouchButtonsEvent {
+            event_time: event.event_time,
+            device_info: event.device_info.clone(),
+            pressed_buttons: event.pressed_buttons.clone(),
+            wake_lease: event.wake_lease.as_ref().map(|lease| {
+                fidl::EventPair::from_handle(
+                    lease
+                        .as_handle_ref()
+                        .duplicate(zx::Rights::SAME_RIGHTS)
+                        .expect("failed to duplicate event pair")
+                        .into_handle(),
+                )
+            }),
+            ..Default::default()
+        }
     }
 
     /// Adds a new pointer injector and tracks it in `self.injectors` if one doesn't exist at
@@ -543,9 +562,9 @@ impl TouchInjectorHandler {
             let weak_handler = Rc::downgrade(&self);
             let listener_clone = listener.clone();
             let handle_clone = handle.clone();
-            let event_to_send = event.clone();
+            let event_to_send = Self::clone_event(event);
             let fut = async move {
-                match listener_clone.on_event(&event_to_send).await {
+                match listener_clone.on_event(event_to_send).await {
                     Ok(_) => {}
                     Err(e) => {
                         if let Some(handler) = weak_handler.upgrade() {
@@ -579,9 +598,9 @@ impl TouchInjectorHandler {
 
         // Send the listener the last touch button event.
         if let Some(event) = &self.mutable_state.borrow().last_button_event {
-            let event_to_send = event.clone();
+            let event_to_send = Self::clone_event(event);
             let fut = async move {
-                match proxy.on_event(&event_to_send).await {
+                match proxy.on_event(event_to_send).await {
                     Ok(_) => {}
                     Err(e) => {
                         log::info!("Failed to send touch buttons event to listener {:?}", e)
@@ -1267,5 +1286,44 @@ mod tests {
                 }
             }
         });
+    }
+
+    #[fuchsia::test]
+    async fn clone_event_with_lease_duplicates_lease() {
+        let (event_pair, _) = fidl::EventPair::create();
+        let event = fidl_ui_input::TouchButtonsEvent {
+            event_time: Some(zx::MonotonicInstant::from_nanos(1)),
+            device_info: Some(fidl_ui_input::TouchDeviceInfo { id: Some(1), ..Default::default() }),
+            pressed_buttons: Some(vec![fidl_ui_input::TouchButton::Palm]),
+            wake_lease: Some(event_pair),
+            ..Default::default()
+        };
+        let cloned_event = TouchInjectorHandler::clone_event(&event);
+        assert_eq!(event.event_time, cloned_event.event_time);
+        assert_eq!(event.device_info, cloned_event.device_info);
+        assert_eq!(event.pressed_buttons, cloned_event.pressed_buttons);
+        assert!(event.wake_lease.is_some());
+        assert!(cloned_event.wake_lease.is_some());
+        assert_ne!(
+            event.wake_lease.as_ref().unwrap().as_handle_ref().raw_handle(),
+            cloned_event.wake_lease.as_ref().unwrap().as_handle_ref().raw_handle()
+        );
+    }
+
+    #[fuchsia::test]
+    async fn clone_event_without_lease_has_no_lease() {
+        let event = fidl_ui_input::TouchButtonsEvent {
+            event_time: Some(zx::MonotonicInstant::from_nanos(1)),
+            device_info: Some(fidl_ui_input::TouchDeviceInfo { id: Some(1), ..Default::default() }),
+            pressed_buttons: Some(vec![fidl_ui_input::TouchButton::Palm]),
+            wake_lease: None,
+            ..Default::default()
+        };
+        let cloned_event = TouchInjectorHandler::clone_event(&event);
+        assert_eq!(event.event_time, cloned_event.event_time);
+        assert_eq!(event.device_info, cloned_event.device_info);
+        assert_eq!(event.pressed_buttons, cloned_event.pressed_buttons);
+        assert!(event.wake_lease.is_none());
+        assert!(cloned_event.wake_lease.is_none());
     }
 }

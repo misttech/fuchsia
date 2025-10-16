@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use crate::tests::helpers::clone_media_buttons_event_without_wake_lease;
+use anyhow::{Error, format_err};
 use fidl::endpoints::ServerEnd;
 use fidl::prelude::*;
 use fuchsia_async as fasync;
@@ -36,9 +37,9 @@ impl InputDeviceRegistryService {
 
     #[allow(clippy::await_holding_lock)]
     pub(crate) async fn send_media_button_event(&self, event: MediaButtonsEvent) {
-        *self.last_sent_event.write() = Some(event.clone());
+        *self.last_sent_event.write() = Some(clone_media_buttons_event_without_wake_lease(&event));
         for listener in self.listeners.read().iter() {
-            let _ = listener.on_event(&event).await;
+            let _ = listener.on_event(clone_media_buttons_event_without_wake_lease(&event)).await;
         }
     }
 }
@@ -77,9 +78,12 @@ impl Service for InputDeviceRegistryService {
                     // Acknowledge the registration.
                     responder.send().expect("failed to ack RegisterListener call");
                     // Send the last event if there was one.
-                    let last_event = last_event.read().clone();
-                    if let Some(event) = last_event {
-                        let _ = proxy.on_event(&event).await;
+                    let last_event_clone = last_event
+                        .read()
+                        .as_ref()
+                        .map(clone_media_buttons_event_without_wake_lease);
+                    if let Some(event) = last_event_clone {
+                        let _ = proxy.on_event(event).await;
                     }
                 }
             }

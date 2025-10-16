@@ -9,6 +9,7 @@ use crate::message::delegate::Delegate;
 use crate::message::messenger::MessengerClient;
 use crate::message::receptor::Receptor;
 use crate::service::{Address as ServiceAddress, MessageHub};
+use fidl_fuchsia_ui_input::MediaButtonsEvent;
 
 // Create a messenger hub, returning an unbound messenger and publisher.
 pub async fn create_messenger_and_publisher() -> (MessengerClient, Publisher) {
@@ -43,4 +44,19 @@ pub async fn create_receptor_for_setting_type(
         .await
         .expect("Unable to create receptor")
         .1
+}
+
+pub fn clone_media_buttons_event_without_wake_lease(
+    event: &MediaButtonsEvent,
+) -> MediaButtonsEvent {
+    MediaButtonsEvent {
+        volume: event.volume,
+        mic_mute: event.mic_mute,
+        pause: event.pause,
+        camera_disable: event.camera_disable,
+        power: event.power,
+        function: event.function,
+        device_id: event.device_id,
+        ..Default::default()
+    }
 }

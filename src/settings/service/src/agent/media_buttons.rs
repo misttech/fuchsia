@@ -234,8 +234,8 @@ mod tests {
     use crate::message::receptor::Receptor;
     use crate::tests::fakes::input_device_registry_service::InputDeviceRegistryService;
     use crate::tests::helpers::{
-        create_messenger_and_publisher, create_messenger_and_publisher_from_hub,
-        create_receptor_for_setting_type,
+        clone_media_buttons_event_without_wake_lease, create_messenger_and_publisher,
+        create_messenger_and_publisher_from_hub, create_receptor_for_setting_type,
     };
     use futures::channel::mpsc;
     use futures::lock::Mutex;
@@ -463,7 +463,7 @@ mod tests {
         input_device_registry_service
             .lock()
             .await
-            .send_media_button_event(initial_event.clone())
+            .send_media_button_event(clone_media_buttons_event_without_wake_lease(&initial_event))
             .await;
 
         service_registry.lock().await.register_service(input_device_registry_service.clone());
@@ -488,7 +488,7 @@ mod tests {
         input_device_registry_service
             .lock()
             .await
-            .send_media_button_event(second_event.clone())
+            .send_media_button_event(clone_media_buttons_event_without_wake_lease(&second_event))
             .await;
 
         // Listener receives the camera disable event.
@@ -508,7 +508,7 @@ mod tests {
         input_device_registry_service
             .lock()
             .await
-            .send_media_button_event(initial_event.clone())
+            .send_media_button_event(clone_media_buttons_event_without_wake_lease(&initial_event))
             .await;
 
         service_registry.lock().await.register_service(input_device_registry_service.clone());
