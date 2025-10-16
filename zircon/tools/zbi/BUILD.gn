@@ -37,15 +37,11 @@ group("tests") {
   deps = [
     ":make-single-item-zbi-input-test",
     ":zbi-deduplication-test",
+    ":zbi-input-chrdev-test",
     ":zbi-input-size-limit-test",
     ":zbi-storage-kernel-test.compressed",
     ":zbi-storage-kernel-test.uncompressed",
   ]
-  if (!is_mac) {
-    # TODO(https://fxbug.dev/42166036): when bug fixed, add the dep below
-    # unconditionally.
-    deps += [ ":zbi-input-chrdev-test" ]
-  }
 }
 
 template("input_test") {

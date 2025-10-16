@@ -109,7 +109,7 @@ template("host_script_test") {
   assert(defined(test_script), "test_script is required.")
 
   # Only build this for host targets
-  if (!is_linux && !is_mac) {
+  if (!is_linux) {
     not_needed([
                  "test_script",
                  "data_deps",

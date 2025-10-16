@@ -111,25 +111,21 @@ executable("cgpt") {
     "$vboot_dir/cgpt/cgpt_boot.c",
     "$vboot_dir/cgpt/cgpt_common.c",
     "$vboot_dir/cgpt/cgpt_create.c",
+    "$vboot_dir/cgpt/cgpt_find.c",
     "$vboot_dir/cgpt/cgpt_legacy.c",
+    "$vboot_dir/cgpt/cgpt_nor.c",
     "$vboot_dir/cgpt/cgpt_prioritize.c",
     "$vboot_dir/cgpt/cgpt_repair.c",
     "$vboot_dir/cgpt/cgpt_show.c",
     "$vboot_dir/cgpt/cmd_add.c",
     "$vboot_dir/cgpt/cmd_boot.c",
     "$vboot_dir/cgpt/cmd_create.c",
+    "$vboot_dir/cgpt/cmd_find.c",
     "$vboot_dir/cgpt/cmd_legacy.c",
     "$vboot_dir/cgpt/cmd_prioritize.c",
     "$vboot_dir/cgpt/cmd_repair.c",
     "$vboot_dir/cgpt/cmd_show.c",
   ]
-  if (!is_mac) {
-    sources += [
-      "$vboot_dir/cgpt/cgpt_find.c",
-      "$vboot_dir/cgpt/cgpt_nor.c",
-      "$vboot_dir/cgpt/cmd_find.c",
-    ]
-  }
   deps = [
     "//third_party/boringssl:crypto",
     "//third_party/vboot_reference/firmware/lib:gpt_misc",
@@ -154,6 +150,7 @@ executable("futility") {
     "$vboot_dir/futility/cmd_bdb.c",
     "$vboot_dir/futility/cmd_create.c",
     "$vboot_dir/futility/cmd_dump_fmap.c",
+    "$vboot_dir/futility/cmd_dump_kernel_config.c",
     "$vboot_dir/futility/cmd_gbb_utility.c",
     "$vboot_dir/futility/cmd_load_fmap.c",
     "$vboot_dir/futility/cmd_pcr.c",
@@ -164,6 +161,7 @@ executable("futility") {
     "$vboot_dir/futility/cmd_vbutil_kernel.c",
     "$vboot_dir/futility/cmd_vbutil_key.c",
     "$vboot_dir/futility/cmd_vbutil_keyblock.c",
+    "$vboot_dir/futility/dump_kernel_config_lib.c",
     "$vboot_dir/futility/file_type.c",
     "$vboot_dir/futility/file_type_bios.c",
     "$vboot_dir/futility/file_type_rwsig.c",
@@ -182,12 +180,6 @@ executable("futility") {
     "//third_party/vboot_reference/firmware/lib:headers",
   ]
   sources += get_target_outputs(":futility_cmds.c")
-  if (!is_mac) {
-    sources += [
-      "$vboot_dir/futility/cmd_dump_kernel_config.c",
-      "$vboot_dir/futility/dump_kernel_config_lib.c",
-    ]
-  }
   deps += [ "//third_party/boringssl:crypto" ]
   configs += [ ":internal_config" ]
 }
@@ -224,12 +216,6 @@ config("internal_config") {
     "-Wno-extra-semi",
     "-Wno-strict-prototypes",
   ]
-  if (is_mac) {
-    defines = [
-      "HAVE_MACOS=1",
-      "NDEBUG",
-    ]
-  }
   if (is_linux) {
     defines = [
       "_GNU_SOURCE",
