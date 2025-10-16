@@ -5,7 +5,7 @@
 # Indicates if the prebuilt Vulkan runtime is available on current host.
 # Currently the prebuilt runtime is only available on Linux x64 machines.
 #
-has_prebuilt_vulkan_runtime = current_cpu == "x64" && (is_linux || is_mac)
+has_prebuilt_vulkan_runtime = current_cpu == "x64" && is_linux
 
 declare_args() {
   if (host_os == "linux" && host_cpu == "x64") {
@@ -15,10 +15,6 @@ declare_args() {
     # and descriptor files required to load the libraries.
     #
     vulkan_host_runtime_dir = "//prebuilt/third_party/vulkan_runtime/linux-x64"
-  }
-
-  if (host_os == "mac" && host_cpu == "x64") {
-    vulkan_host_runtime_dir = "//prebuilt/third_party/vulkan_runtime/mac-x64"
   }
 
   # TODO(liyl): Currently non-x64 platforms don't have Vulkan support,

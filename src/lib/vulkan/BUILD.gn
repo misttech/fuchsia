@@ -233,22 +233,6 @@ if (is_host && current_cpu == "x64") {
         ]
       }
     }
-    if (is_mac) {
-      sources = [
-        "$vulkan_host_runtime_dir/$_lib_dir/MoltenVK_icd.json",
-        "$vulkan_host_runtime_dir/$_lib_dir/libMoltenVK.dylib",
-        "$vulkan_host_runtime_dir/$_lib_dir/libVkLayer_khronos_validation.dylib",
-
-        # Note also libvulkan.1.dylib below which has to be treated specially
-        # because of its symlink to libvulkan.dylib.
-      ]
-      if (use_swiftshader_vulkan_icd_on_host) {
-        sources += [
-          "$vulkan_host_runtime_dir/$_lib_dir/libvk_swiftshader.dylib",
-          "$vulkan_host_runtime_dir/$_lib_dir/vk_swiftshader_icd.json",
-        ]
-      }
-    }
     outputs = [ "${root_out_dir}/${vulkan_host_runtime_out_root}/${_lib_dir}/{{source_file_part}}" ]
   }
 
@@ -262,34 +246,6 @@ if (is_host && current_cpu == "x64") {
       _lib_dir = vulkan_host_runtime_sub_dirs.lib
       sources = [ "$vulkan_host_runtime_dir/$_lib_dir/libvulkan.so" ]
       outputs = [ "${root_out_dir}/${vulkan_host_runtime_out_root}/${_lib_dir}/{{source_file_part}}" ]
-      deps = [ ":copy_vulkan_libs" ]
-    }
-  }
-
-  # On macOS, copy target will makes copies of all symlinks instead of keeping
-  # the links. Having two separated libvulkan.1.dylib and libvulkan.dylib will
-  # cause Vulkan loader crash, thus we set the symlink after the actual dylib
-  # libvulkan.dylib is copied to build out directory. Additionally, because
-  # ninja looks at the timestamp of the linked-to target, and a copy() will
-  # hardlink, we do a real copy here of libvulkan.1.dylib to update its
-  # timestamp before softlinking, otherwise the timestamp of the link (an
-  # output of this rule) will never be newer than the .stamp file, so this rule
-  # will always be dirty. https://fxbug.dev/42144619.
-  if (is_mac) {
-    action("vulkan_lib_links") {
-      assert(has_prebuilt_vulkan_runtime, "Prebuilt Vulkan runtime not found.")
-      script = "//src/lib/vulkan/build/copy_and_symlink.py"
-      _lib_dir = vulkan_host_runtime_sub_dirs.lib
-      sources = [ "$vulkan_host_runtime_dir/$_lib_dir/libvulkan.1.dylib" ]
-      outputs = [
-        "${root_out_dir}/${vulkan_host_runtime_out_root}/${_lib_dir}/libvulkan.1.dylib",
-        "${root_out_dir}/${vulkan_host_runtime_out_root}/${_lib_dir}/libvulkan.dylib",
-      ]
-      args = [
-        rebase_path(sources[0], root_build_dir),  # source.
-        rebase_path(outputs[0], root_build_dir),  # copy_to.
-        rebase_path(outputs[1], root_build_dir),  # link_to.
-      ]
       deps = [ ":copy_vulkan_libs" ]
     }
   }
