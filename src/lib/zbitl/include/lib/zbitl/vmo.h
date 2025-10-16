@@ -168,7 +168,7 @@ struct StorageTraits<zx::vmo> {
   static fit::result<error_type, std::optional<std::pair<zx::vmo, uint32_t>>> Clone(
       const zx::vmo& zbi, uint32_t offset, uint32_t length, uint32_t to_offset,
       SlopCheck&& slopcheck) {
-    if (slopcheck(offset % ZX_PAGE_SIZE)) {
+    if (slopcheck(offset % zx_system_get_page_size())) {
       return DoClone(zbi, offset, length);
     }
     return fit::ok(std::nullopt);

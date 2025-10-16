@@ -89,10 +89,10 @@ void TestCloning() {
     }
 
     // kSecondItemOnPageBoundary, copying the second item.
-    // item offset % ZX_PAGE_SIZE == 0, and so we do not expect a clone.
+    // item offset % PAGE_SIZE == 0, and so we do not expect a clone.
     {
       auto second = std::next(view.begin());
-      EXPECT_EQ(0u, second.item_offset() % ZX_PAGE_SIZE);
+      EXPECT_EQ(0u, second.item_offset() % zx_system_get_page_size());
       auto copy_result = view.Copy(second, std::next(second));
       ASSERT_FALSE(copy_result.is_error()) << ViewCopyErrorString(copy_result.error_value());
 
@@ -166,7 +166,7 @@ void TestCloning() {
     }
 
     // kMultipleSmallItems, copying the second item.
-    // 2 * sizeof(zbi_header_t) <= item offset < ZX_PAGE_SIZE, and so we expect
+    // 2 * sizeof(zbi_header_t) <= item offset < PAGE_SIZE, and so we expect
     // a clone with a single discard item.
     {
       constexpr uint32_t kSecondItemSize = 240;

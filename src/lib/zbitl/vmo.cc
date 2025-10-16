@@ -105,8 +105,9 @@ fit::result<zx_status_t, zx::vmo> StorageTraits<zx::vmo>::Create(const zx::vmo& 
 
 fit::result<zx_status_t, std::optional<std::pair<zx::vmo, uint32_t>>>
 StorageTraits<zx::vmo>::DoClone(const zx::vmo& original, uint32_t offset, uint32_t length) {
-  const uint32_t slop = offset % uint32_t{ZX_PAGE_SIZE};
-  const uint32_t clone_start = offset & -uint32_t{ZX_PAGE_SIZE};
+  const uint32_t page_size = zx_system_get_page_size();
+  const uint32_t slop = offset % page_size;
+  const uint32_t clone_start = offset & -page_size;
   const uint32_t clone_size = slop + length;
 
   // Make the child resizable only if the parent is.
@@ -123,9 +124,9 @@ StorageTraits<zx::vmo>::DoClone(const zx::vmo& original, uint32_t offset, uint32
     // Explicitly zero the partial page before the range so it remains unseen.
     status = clone.op_range(ZX_VMO_OP_ZERO, 0, slop, nullptr, 0);
   }
-  if (status == ZX_OK && clone_size % ZX_PAGE_SIZE != 0) {
+  if (status == ZX_OK && clone_size % page_size != 0) {
     // Explicitly zero the partial page after the range so it remains unseen.
-    status = clone.op_range(ZX_VMO_OP_ZERO, clone_size, ZX_PAGE_SIZE - (clone_size % ZX_PAGE_SIZE),
+    status = clone.op_range(ZX_VMO_OP_ZERO, clone_size, page_size - (clone_size % page_size),
                             nullptr, 0);
   }
   if (status != ZX_OK) {

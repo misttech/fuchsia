@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 #include <lib/zbitl/vmo.h>
-#include <lib/zircon-internal/align.h>
+
+#include <fbl/algorithm.h>
 
 namespace zbitl {
 
@@ -42,10 +43,10 @@ fit::result<zx_status_t, void*> StorageTraits<MapUnownedVmo>::Map(MapUnownedVmo&
   zbi.mapping_ = MapUnownedVmo::Mapping{};  // Unmap any cached mapping.
 
   // Mapping must take place along page boundaries.
-  const uint64_t previous_page_boundary = payload & -ZX_PAGE_SIZE;
-  const uint64_t next_page_boundary = ZX_PAGE_ALIGN(payload + length);
+  const uint64_t previous_page_boundary = payload & -(uint64_t{zx_system_get_page_size()});
+  const uint64_t next_page_boundary = fbl::round_up(payload + length, zx_system_get_page_size());
   const size_t size = next_page_boundary - previous_page_boundary;
-  const uint64_t offset_in_mapping = payload % ZX_PAGE_SIZE;
+  const uint64_t offset_in_mapping = payload % zx_system_get_page_size();
   // Prefer eagerly fetching the committed pages of the VMO to avoid unnecessarily faulting.
   if (zx_status_t status =
           zbi.vmar().map(ZX_VM_PERM_READ | (zbi.writable_ ? ZX_VM_PERM_WRITE : 0) | ZX_VM_MAP_RANGE,
