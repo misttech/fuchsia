@@ -382,7 +382,7 @@ impl<'a> CapabilityId<'a> {
                     "\"path\" can only be specified when one `service` is supplied.",
                 ));
             }
-            return Ok(Self::services_from(Self::get_one_or_many_names(
+            return Ok(Self::services_from(Self::get_one_or_many_names_no_span(
                 n,
                 None,
                 capability.capability_type().unwrap(),
@@ -393,13 +393,13 @@ impl<'a> CapabilityId<'a> {
                     "\"path\" can only be specified when one `protocol` is supplied.",
                 ));
             }
-            return Ok(Self::protocols_from(Self::get_one_or_many_names(
+            return Ok(Self::protocols_from(Self::get_one_or_many_names_no_span(
                 n,
                 None,
                 capability.capability_type().unwrap(),
             )?));
         } else if let Some(n) = capability.directory() {
-            return Ok(Self::directories_from(Self::get_one_or_many_names(
+            return Ok(Self::directories_from(Self::get_one_or_many_names_no_span(
                 n,
                 None,
                 capability.capability_type().unwrap(),
@@ -410,37 +410,37 @@ impl<'a> CapabilityId<'a> {
                     "Storage declaration is missing \"storage_id\", but is required.",
                 ));
             }
-            return Ok(Self::storages_from(Self::get_one_or_many_names(
+            return Ok(Self::storages_from(Self::get_one_or_many_names_no_span(
                 n,
                 None,
                 capability.capability_type().unwrap(),
             )?));
         } else if let Some(n) = capability.runner() {
-            return Ok(Self::runners_from(Self::get_one_or_many_names(
+            return Ok(Self::runners_from(Self::get_one_or_many_names_no_span(
                 n,
                 None,
                 capability.capability_type().unwrap(),
             )?));
         } else if let Some(n) = capability.resolver() {
-            return Ok(Self::resolvers_from(Self::get_one_or_many_names(
+            return Ok(Self::resolvers_from(Self::get_one_or_many_names_no_span(
                 n,
                 None,
                 capability.capability_type().unwrap(),
             )?));
         } else if let Some(n) = capability.event_stream() {
-            return Ok(Self::event_streams_from(Self::get_one_or_many_names(
+            return Ok(Self::event_streams_from(Self::get_one_or_many_names_no_span(
                 n,
                 None,
                 capability.capability_type().unwrap(),
             )?));
         } else if let Some(n) = capability.dictionary() {
-            return Ok(Self::dictionaries_from(Self::get_one_or_many_names(
+            return Ok(Self::dictionaries_from(Self::get_one_or_many_names_no_span(
                 n,
                 None,
                 capability.capability_type().unwrap(),
             )?));
         } else if let Some(n) = capability.config() {
-            return Ok(Self::configurations_from(Self::get_one_or_many_names(
+            return Ok(Self::configurations_from(Self::get_one_or_many_names_no_span(
                 n,
                 None,
                 capability.capability_type().unwrap(),
@@ -479,11 +479,7 @@ impl<'a> CapabilityId<'a> {
                     filename,
                 ));
             }
-            return Ok(Self::services_from(Self::get_one_or_many_names(
-                n,
-                None,
-                capability.capability_type().unwrap(),
-            )?));
+            return Ok(Self::services_from(Self::get_names(n)?));
         } else if let Some(n) = capability.protocol() {
             if n.is_many() && capability.path.is_some() {
                 let location = validate::byte_index_to_location(
@@ -496,17 +492,9 @@ impl<'a> CapabilityId<'a> {
                     filename,
                 ));
             }
-            return Ok(Self::protocols_from(Self::get_one_or_many_names(
-                n,
-                None,
-                capability.capability_type().unwrap(),
-            )?));
+            return Ok(Self::protocols_from(Self::get_names(n)?));
         } else if let Some(n) = capability.directory() {
-            return Ok(Self::directories_from(Self::get_one_or_many_names(
-                n,
-                None,
-                capability.capability_type().unwrap(),
-            )?));
+            return Ok(Self::directories_from(Self::get_names(n)?));
         } else if let Some(n) = capability.storage() {
             if capability.storage_id.is_none() {
                 let location = validate::byte_index_to_location(
@@ -519,41 +507,17 @@ impl<'a> CapabilityId<'a> {
                     filename,
                 ));
             }
-            return Ok(Self::storages_from(Self::get_one_or_many_names(
-                n,
-                None,
-                capability.capability_type().unwrap(),
-            )?));
+            return Ok(Self::storages_from(Self::get_names(n)?));
         } else if let Some(n) = capability.runner() {
-            return Ok(Self::runners_from(Self::get_one_or_many_names(
-                n,
-                None,
-                capability.capability_type().unwrap(),
-            )?));
+            return Ok(Self::runners_from(Self::get_names(n)?));
         } else if let Some(n) = capability.resolver() {
-            return Ok(Self::resolvers_from(Self::get_one_or_many_names(
-                n,
-                None,
-                capability.capability_type().unwrap(),
-            )?));
+            return Ok(Self::resolvers_from(Self::get_names(n)?));
         } else if let Some(n) = capability.event_stream() {
-            return Ok(Self::event_streams_from(Self::get_one_or_many_names(
-                n,
-                None,
-                capability.capability_type().unwrap(),
-            )?));
+            return Ok(Self::event_streams_from(Self::get_names(n)?));
         } else if let Some(n) = capability.dictionary() {
-            return Ok(Self::dictionaries_from(Self::get_one_or_many_names(
-                n,
-                None,
-                capability.capability_type().unwrap(),
-            )?));
+            return Ok(Self::dictionaries_from(Self::get_names(n)?));
         } else if let Some(n) = capability.config() {
-            return Ok(Self::configurations_from(Self::get_one_or_many_names(
-                n,
-                None,
-                capability.capability_type().unwrap(),
-            )?));
+            return Ok(Self::configurations_from(Self::get_names(n)?));
         }
 
         // Unsupported capability type.
@@ -591,55 +555,55 @@ impl<'a> CapabilityId<'a> {
         // TODO: Validate that exactly one of these is set.
         let alias = clause.r#as();
         if let Some(n) = clause.service() {
-            return Ok(Self::services_from(Self::get_one_or_many_names(
+            return Ok(Self::services_from(Self::get_one_or_many_names_no_span(
                 n,
                 alias,
                 clause.capability_type().unwrap(),
             )?));
         } else if let Some(n) = clause.protocol() {
-            return Ok(Self::protocols_from(Self::get_one_or_many_names(
+            return Ok(Self::protocols_from(Self::get_one_or_many_names_no_span(
                 n,
                 alias,
                 clause.capability_type().unwrap(),
             )?));
         } else if let Some(n) = clause.directory() {
-            return Ok(Self::directories_from(Self::get_one_or_many_names(
+            return Ok(Self::directories_from(Self::get_one_or_many_names_no_span(
                 n,
                 alias,
                 clause.capability_type().unwrap(),
             )?));
         } else if let Some(n) = clause.storage() {
-            return Ok(Self::storages_from(Self::get_one_or_many_names(
+            return Ok(Self::storages_from(Self::get_one_or_many_names_no_span(
                 n,
                 alias,
                 clause.capability_type().unwrap(),
             )?));
         } else if let Some(n) = clause.runner() {
-            return Ok(Self::runners_from(Self::get_one_or_many_names(
+            return Ok(Self::runners_from(Self::get_one_or_many_names_no_span(
                 n,
                 alias,
                 clause.capability_type().unwrap(),
             )?));
         } else if let Some(n) = clause.resolver() {
-            return Ok(Self::resolvers_from(Self::get_one_or_many_names(
+            return Ok(Self::resolvers_from(Self::get_one_or_many_names_no_span(
                 n,
                 alias,
                 clause.capability_type().unwrap(),
             )?));
         } else if let Some(event_stream) = clause.event_stream() {
-            return Ok(Self::event_streams_from(Self::get_one_or_many_names(
+            return Ok(Self::event_streams_from(Self::get_one_or_many_names_no_span(
                 event_stream,
                 alias,
                 clause.capability_type().unwrap(),
             )?));
         } else if let Some(n) = clause.dictionary() {
-            return Ok(Self::dictionaries_from(Self::get_one_or_many_names(
+            return Ok(Self::dictionaries_from(Self::get_one_or_many_names_no_span(
                 n,
                 alias,
                 clause.capability_type().unwrap(),
             )?));
         } else if let Some(n) = clause.config() {
-            return Ok(Self::configurations_from(Self::get_one_or_many_names(
+            return Ok(Self::configurations_from(Self::get_one_or_many_names_no_span(
                 n,
                 alias,
                 clause.capability_type().unwrap(),
@@ -675,59 +639,79 @@ impl<'a> CapabilityId<'a> {
     ) -> Result<Vec<Self>, Error> {
         // TODO: Validate that exactly one of these is set.
         let alias = expose.r#as();
+        let location = validate::byte_index_to_location(file_source, expose.span().0);
+
         if let Some(n) = expose.service() {
             return Ok(Self::services_from(Self::get_one_or_many_names(
                 n,
                 alias,
                 expose.capability_type().unwrap(),
+                location,
+                filename,
             )?));
         } else if let Some(n) = expose.protocol() {
             return Ok(Self::protocols_from(Self::get_one_or_many_names(
                 n,
                 alias,
                 expose.capability_type().unwrap(),
+                location,
+                filename,
             )?));
         } else if let Some(n) = expose.directory() {
             return Ok(Self::directories_from(Self::get_one_or_many_names(
                 n,
                 alias,
                 expose.capability_type().unwrap(),
+                location,
+                filename,
             )?));
         } else if let Some(n) = expose.storage() {
             return Ok(Self::storages_from(Self::get_one_or_many_names(
                 n,
                 alias,
                 expose.capability_type().unwrap(),
+                location,
+                filename,
             )?));
         } else if let Some(n) = expose.runner() {
             return Ok(Self::runners_from(Self::get_one_or_many_names(
                 n,
                 alias,
                 expose.capability_type().unwrap(),
+                location,
+                filename,
             )?));
         } else if let Some(n) = expose.resolver() {
             return Ok(Self::resolvers_from(Self::get_one_or_many_names(
                 n,
                 alias,
                 expose.capability_type().unwrap(),
+                location,
+                filename,
             )?));
         } else if let Some(event_stream) = expose.event_stream() {
             return Ok(Self::event_streams_from(Self::get_one_or_many_names(
                 event_stream,
                 alias,
                 expose.capability_type().unwrap(),
+                location,
+                filename,
             )?));
         } else if let Some(n) = expose.dictionary() {
             return Ok(Self::dictionaries_from(Self::get_one_or_many_names(
                 n,
                 alias,
                 expose.capability_type().unwrap(),
+                location,
+                filename,
             )?));
         } else if let Some(n) = expose.config() {
             return Ok(Self::configurations_from(Self::get_one_or_many_names(
                 n,
                 alias,
                 expose.capability_type().unwrap(),
+                location,
+                filename,
             )?));
         }
 
@@ -738,7 +722,6 @@ impl<'a> CapabilityId<'a> {
             .map(|k| format!("\"{}\"", k))
             .collect::<Vec<_>>()
             .join(", ");
-        let location = validate::byte_index_to_location(file_source, expose.span().0);
         Err(Error::validate_with_span(
             format!(
                 "`{}` declaration is missing a capability keyword, one of: {}",
@@ -750,8 +733,8 @@ impl<'a> CapabilityId<'a> {
         ))
     }
 
-    /// Returns the target names as a `Vec`  from a declaration with `names` and `alias` as a `Vec`.
-    fn get_one_or_many_names<'b>(
+    /// Returns the target names as a `Vec` from a declaration with `names` and `alias` as a `Vec`.
+    fn get_one_or_many_names_no_span<'b>(
         names: OneOrMany<&'b BorrowedName>,
         alias: Option<&'b BorrowedName>,
         capability_type: &str,
@@ -765,6 +748,38 @@ impl<'a> CapabilityId<'a> {
                     "\"as\" can only be specified when one `{}` is supplied.",
                     capability_type,
                 )));
+            }
+            Ok(names)
+        }
+    }
+
+    /// Returns the target names as a `Vec`.
+    fn get_names<'b>(names: OneOrMany<&'b BorrowedName>) -> Result<Vec<&'b BorrowedName>, Error> {
+        let names: Vec<&BorrowedName> = names.into_iter().collect();
+        Ok(names)
+    }
+
+    /// Returns the target names as a `Vec` from a declaration with `names` and `alias` as a `Vec`.
+    fn get_one_or_many_names<'b>(
+        names: OneOrMany<&'b BorrowedName>,
+        alias: Option<&'b BorrowedName>,
+        capability_type: &str,
+        location: Option<Location>,
+        filepath: Option<&std::path::Path>,
+    ) -> Result<Vec<&'b BorrowedName>, Error> {
+        let names: Vec<&BorrowedName> = names.into_iter().collect();
+        if names.len() == 1 {
+            Ok(vec![alias_or_name(alias, &names[0])])
+        } else {
+            if alias.is_some() {
+                return Err(Error::validate_with_span(
+                    format!(
+                        "\"as\" can only be specified when one `{}` is supplied.",
+                        capability_type,
+                    ),
+                    location,
+                    filepath,
+                ));
             }
             Ok(names)
         }
