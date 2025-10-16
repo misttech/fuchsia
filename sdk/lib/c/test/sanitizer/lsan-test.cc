@@ -286,6 +286,8 @@ class ScopedVmar {
 };
 
 TEST_F(LeakSanitizerTest, RegisterRoot) {
+  const size_t page_size = zx_system_get_page_size();
+
   // This should be detected as a leak.
   LeakedAllocation<int> leak;
   ASSERT_TRUE(leak.Allocate());
@@ -294,13 +296,13 @@ TEST_F(LeakSanitizerTest, RegisterRoot) {
   // Set up a VMAR with two special pages.
   // The first is allocated and the second is not.
   ScopedVmar vmar;
-  ASSERT_OK(vmar.Allocate(ZX_PAGE_SIZE * 2));
+  ASSERT_OK(vmar.Allocate(2 * page_size));
   zx::vmo vmo;
   uintptr_t root_page;
-  ASSERT_OK(zx::vmo::create(ZX_PAGE_SIZE, 0, &vmo));
+  ASSERT_OK(zx::vmo::create(page_size, 0, &vmo));
   ASSERT_OK(vmar.get().map(ZX_VM_SPECIFIC | ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, /*vmar_offset=*/0,
-                           vmo, /*vmo_offset=*/0, ZX_PAGE_SIZE, &root_page));
-  const uintptr_t bad_page = root_page + ZX_PAGE_SIZE;
+                           vmo, /*vmo_offset=*/0, page_size, &root_page));
+  const uintptr_t bad_page = root_page + page_size;
 
   // Make the root page contain the only pointer to the leaked item.
   leak.CallWith([root_page](int* ptr) { *reinterpret_cast<int**>(root_page) = ptr; });
@@ -311,8 +313,8 @@ TEST_F(LeakSanitizerTest, RegisterRoot) {
   // Now register both regions as LSan roots.
   // The good one should lead LSan to find the pointer.
   // The bad one should be detected and ignored by LSan.
-  ScopedRootRegionRegistration good_root(reinterpret_cast<void*>(root_page), ZX_PAGE_SIZE);
-  ScopedRootRegionRegistration bad_root(reinterpret_cast<void*>(bad_page), ZX_PAGE_SIZE);
+  ScopedRootRegionRegistration good_root(reinterpret_cast<void*>(root_page), page_size);
+  ScopedRootRegionRegistration bad_root(reinterpret_cast<void*>(bad_page), page_size);
 
   EXPECT_FALSE(HasLeaks());
 }
