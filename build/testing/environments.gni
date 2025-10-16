@@ -108,7 +108,7 @@ bt_lacewing_sorrel_env = {
     device_type = device_types.sorrel
     pool = "fuchsia.tests.bluetooth"
     sorrels = "2"
-    testbed = "lacewing_bt_sorrel"
+    testbed = "lacewing_bt_Sorrel"
   }
 }
 
