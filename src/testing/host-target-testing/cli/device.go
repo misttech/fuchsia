@@ -29,6 +29,9 @@ const (
 
 	// Resolve devices with constant hostnames.
 	ConstantResolver = "constant"
+
+	// Resolve devices with mDNS directly, bypassing ffx.
+	MdnsResolver = "mdns"
 )
 
 type DeviceConfig struct {
@@ -86,6 +89,10 @@ func (c *DeviceConfig) Validate() error {
 	if c.deviceResolverMode == FfxResolver && c.deviceName == "" && c.deviceHostname == "" {
 		return fmt.Errorf("either device name or device hostname must be specified when using ffx resolver")
 	}
+
+	if c.deviceResolverMode == MdnsResolver && c.deviceName == "" {
+		return fmt.Errorf("device name cannot be empty when using mDNS resolver")
+	}
 	return nil
 }
 
@@ -95,6 +102,7 @@ func (c *DeviceConfig) deviceResolver(
 ) (device.DeviceResolver, error) {
 	switch c.deviceResolverMode {
 	case ConstantResolver:
+		logger.Infof(ctx, "constant resolver uses device name '%v' and hostname '%v'", c.deviceName, c.deviceHostname)
 		return device.NewConstantHostResolver(
 			ctx,
 			c.deviceName,
@@ -114,7 +122,15 @@ func (c *DeviceConfig) deviceResolver(
 		if c.deviceName == "" {
 			return nil, fmt.Errorf("device name cannot be empty when using ffx resolver")
 		}
+		logger.Infof(ctx, "ffx resolver uses device name '%v'", c.deviceName)
 		return device.NewFfxResolver(ctx, ffx, c.deviceName)
+	case MdnsResolver:
+		logger.Infof(ctx, "mDNS resolver uses device name '%v'", c.deviceName)
+		return device.NewMdnsResolver(
+			ctx,
+			c.deviceName,
+			c.deviceSshPort,
+		), nil
 	default:
 		return nil, fmt.Errorf("Invalid device resolver mode %v", c.deviceResolverMode)
 	}

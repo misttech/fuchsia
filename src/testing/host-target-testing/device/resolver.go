@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/ffx"
+	"go.fuchsia.dev/fuchsia/tools/botanist/targets"
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 )
 
@@ -67,6 +68,58 @@ func (r ConstantHostResolver) WaitToFindDeviceInFastboot(ctx context.Context) (s
 func (r ConstantHostResolver) WaitToFindDeviceInNetboot(ctx context.Context) (string, error) {
 	// We have no way to tell if the device is in netboot, so just exit.
 	logger.Warningf(ctx, "ConstantHostResolver cannot tell if device is in netboot, assuming nodename is %s", r.nodeName)
+	return r.nodeName, nil
+}
+
+// MdnsResolver resolves a nodename into a hostname using mDNS.
+type MdnsResolver struct {
+	nodeName string
+	sshPort  int
+}
+
+// NewMdnsResolver constructs a new `MdnsResolver` for the specific nodename.
+func NewMdnsResolver(
+	ctx context.Context,
+	nodeName string,
+	sshPort int,
+) *MdnsResolver {
+	return &MdnsResolver{
+		nodeName: nodeName,
+		sshPort:  sshPort,
+	}
+}
+
+func (r *MdnsResolver) NodeName() string {
+	return r.nodeName
+}
+
+func (r *MdnsResolver) ResolveSshAddress(ctx context.Context) (string, error) {
+	ipv4Addr, ipv6Addr, err := targets.ResolveIP(ctx, r.nodeName)
+	if err != nil {
+		return "", err
+	}
+
+	var ip string
+	if ipv6Addr.IP != nil {
+		ip = ipv6Addr.String()
+	} else if ipv4Addr != nil {
+		ip = ipv4Addr.String()
+	} else {
+		return "", fmt.Errorf("cannot resolve target ssh address via mDNS lookup")
+	}
+
+	return net.JoinHostPort(ip, strconv.Itoa(r.sshPort)), nil
+}
+
+func (r *MdnsResolver) WaitToFindDeviceInFastboot(ctx context.Context) (string, error) {
+	// We have no way to tell if the device is in fastboot, so just exit.
+	logger.Warningf(ctx, "MdnsResolver cannot tell if device is in fastboot, assuming nodename is %s", r.nodeName)
+	return r.nodeName, nil
+}
+
+func (r *MdnsResolver) WaitToFindDeviceInNetboot(ctx context.Context) (string, error) {
+	// We have no way to tell if the device is in netboot, so just exit.
+	logger.Warningf(ctx, "MdnsResolver cannot tell if device is in netboot, assuming nodename is %s", r.nodeName)
 	return r.nodeName, nil
 }
 
