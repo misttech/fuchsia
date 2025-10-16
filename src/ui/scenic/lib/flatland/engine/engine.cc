@@ -108,7 +108,8 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
         << scene_state.topology_data.topology_vector[scene_state.topology_data.parent_indices[i]];
   }
   str << "\nFrame display-list contains " << scene_state.image_rectangles.size()
-      << " image-rectangles and " << scene_state.images.size() << " images.";
+      << " image-rectangles and " << scene_state.images.size()
+      << " images (in increasing Z-order):";
   for (auto& r : scene_state.image_rectangles) {
     str << "\n        rect: " << r;
   }

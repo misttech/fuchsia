@@ -159,7 +159,8 @@ void DumpImages(const flatland::GlobalTopologyData& topology_data,
                 const flatland::GlobalImageVector& images,
                 const flatland::GlobalIndexVector& image_indices,
                 const flatland::GlobalRectangleVector& image_rectangles, std::ostream& output) {
-  output << "\nFrame display-list contains " << images.size() << " images and image-rectangles.";
+  output << "\nFrame display-list contains " << images.size()
+         << " images and image-rectangles (in increasing Z-order):";
   FX_DCHECK(images.size() == image_rectangles.size());
   FX_DCHECK(images.size() == image_indices.size());
   for (size_t i = 0; i < images.size(); i++) {
