@@ -143,7 +143,7 @@ TEST(ThreadSampler, StartStop) {
 
   // Start the thread sampler on a thread, wait for some time while taking samples, check to see
   // that samples were written.
-  size_t buffer_size = ZX_PAGE_SIZE;
+  size_t buffer_size = zx_system_get_page_size();
   zx_sampler_config_t config{
       .period = zx::msec(1).get(),
       .buffer_size = buffer_size,
@@ -193,7 +193,7 @@ TEST(ThreadSampler, SamplerLifetime) {
 
   // Once a sampler is created, another sampler should not be able to be created until the returned
   // buffer is release
-  size_t buffer_size = ZX_PAGE_SIZE;
+  size_t buffer_size = zx_system_get_page_size();
   zx_sampler_config_t config{
       .period = zx::msec(1).get(),
       .buffer_size = buffer_size,
@@ -232,7 +232,7 @@ TEST(ThreadSampler, DroppedSampler) {
   NEEDS_NEXT_SKIP(zx_sampler_create);
 
   // Ensure we clean up and can create a new sampler if we drop the old one mid session
-  size_t buffer_size = ZX_PAGE_SIZE;
+  size_t buffer_size = zx_system_get_page_size();
   zx_sampler_config_t config{
       .period = zx::msec(1).get(),
       .buffer_size = buffer_size,
@@ -289,7 +289,7 @@ TEST(ThreadSampler, BadIob) {
   NEEDS_NEXT_SKIP(zx_sampler_create);
 
   // We should not be able to pass in any arbitrary iob
-  size_t buffer_size = ZX_PAGE_SIZE;
+  size_t buffer_size = zx_system_get_page_size();
   zx_sampler_config_t config{
       .period = zx::msec(1).get(),
       .buffer_size = buffer_size,
@@ -316,7 +316,7 @@ TEST(ThreadSampler, BadIob) {
   zx_iob_region_t iob_config{
       .type = ZX_IOB_REGION_TYPE_PRIVATE,
       .access = kIoBufferEpRwMap,
-      .size = ZX_PAGE_SIZE,
+      .size = zx_system_get_page_size(),
       .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
       .private_region =
           {
@@ -347,7 +347,7 @@ TEST(ThreadSampler, NoRights) {
 
   // We require ZX_RIGHT_APPLY_PROFILE on the returned iob in order to control sampling.
   // If a handle lacks the rights, it should be denied access.
-  size_t buffer_size = ZX_PAGE_SIZE;
+  size_t buffer_size = zx_system_get_page_size();
   zx_sampler_config_t config{
       .period = zx::msec(1).get(),
       .buffer_size = buffer_size,
@@ -390,7 +390,7 @@ TEST(ThreadSampler, ClosedHandleReadBuffers) {
   NEEDS_NEXT_SKIP(zx_sampler_create);
 
   // Even after we close the handle, buffers we mapped from the iob should still be readable
-  size_t buffer_size = ZX_PAGE_SIZE;
+  size_t buffer_size = zx_system_get_page_size();
   zx_sampler_config_t config{
       .period = zx::msec(1).get(),
       .buffer_size = buffer_size,
@@ -521,7 +521,7 @@ TEST(ThreadSampler, HighFrequency) {
 
   // We use a larger buffer size than the other tests. We need enough buffer room that the buffers
   // don't immediately fill up and sampling stops.
-  size_t buffer_size = 1000 * ZX_PAGE_SIZE;
+  size_t buffer_size = 1000 * zx_system_get_page_size();
   zx_sampler_config_t config{
       .period = zx::usec(50).get(),
       .buffer_size = buffer_size,

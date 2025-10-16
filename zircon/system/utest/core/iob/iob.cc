@@ -93,11 +93,13 @@ class MappingHelper {
 };
 
 TEST(Iob, Create) {
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx_handle_t ep0, ep1;
   zx_iob_region_t config{
       .type = ZX_IOB_REGION_TYPE_PRIVATE,
       .access = kIoBufferEpRwMap,
-      .size = ZX_PAGE_SIZE,
+      .size = page_size,
       .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
       .private_region =
           {
@@ -119,7 +121,7 @@ TEST(Iob, Create) {
   zx_iob_region_t no_access_config{
       .type = ZX_IOB_REGION_TYPE_PRIVATE,
       .access = 0,
-      .size = ZX_PAGE_SIZE,
+      .size = page_size,
       .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
       .private_region =
           {
@@ -146,11 +148,13 @@ TEST(Iob, CreateHuge) {
 }
 
 TEST(Iob, BadVmOptions) {
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob ep0, ep1;
   zx_iob_region_t config{
       .type = ZX_IOB_REGION_TYPE_PRIVATE,
       .access = kIoBufferEpRwMap,
-      .size = ZX_PAGE_SIZE,
+      .size = page_size,
       .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
       .private_region =
           {
@@ -161,11 +165,13 @@ TEST(Iob, BadVmOptions) {
 }
 
 TEST(Iob, PeerClosed) {
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob ep0, ep1;
   zx_iob_region_t config{
       .type = ZX_IOB_REGION_TYPE_PRIVATE,
       .access = kIoBufferEpRwMap,
-      .size = ZX_PAGE_SIZE,
+      .size = page_size,
       .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
       .private_region =
           {
@@ -194,11 +200,13 @@ TEST(Iob, PeerClosed) {
 }
 
 TEST(Iob, RegionMap) {
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob ep0, ep1;
   zx_iob_region_t config[1]{{
       .type = ZX_IOB_REGION_TYPE_PRIVATE,
       .access = kIoBufferEpRwMap,
-      .size = ZX_PAGE_SIZE,
+      .size = page_size,
       .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
       .private_region =
           {
@@ -209,7 +217,7 @@ TEST(Iob, RegionMap) {
   ASSERT_OK(zx::iob::create(0, config, 1, &ep0, &ep1));
 
   zx::result<MappingHelper> region1 =
-      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, ZX_PAGE_SIZE);
+      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, page_size);
   ASSERT_OK(region1.status_value());
   ASSERT_NE(0, region1->addr());
 
@@ -221,13 +229,15 @@ TEST(Iob, RegionMap) {
   EXPECT_STREQ(data1, test_str);
 
   zx::result<MappingHelper> region2 =
-      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep1, 0, 0, ZX_PAGE_SIZE);
+      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep1, 0, 0, page_size);
   ASSERT_OK(region2.status_value());
   char* data2 = reinterpret_cast<char*>(region2->addr());
   EXPECT_STREQ(data2, test_str);
 }
 
 TEST(Iob, MappingRights) {
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob ep0, ep1;
   constexpr size_t noPermissionsIdx = 0;
   constexpr size_t onlyEp0Idx = 1;
@@ -241,7 +251,7 @@ TEST(Iob, MappingRights) {
       {
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = ZX_IOB_ACCESS_EP0_CAN_MEDIATED_WRITE,
-          .size = ZX_PAGE_SIZE,
+          .size = page_size,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_ID_ALLOCATOR},
           .private_region =
               {
@@ -251,7 +261,7 @@ TEST(Iob, MappingRights) {
       {
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = kIoBufferEp0OnlyRwMap,
-          .size = ZX_PAGE_SIZE,
+          .size = page_size,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
           .private_region =
               {
@@ -261,7 +271,7 @@ TEST(Iob, MappingRights) {
       {
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = kIoBufferRdOnlyMap | ZX_IOB_ACCESS_EP0_CAN_MEDIATED_WRITE,
-          .size = ZX_PAGE_SIZE,
+          .size = page_size,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_ID_ALLOCATOR},
           .private_region =
               {
@@ -283,11 +293,11 @@ TEST(Iob, MappingRights) {
 
   // We shouldn't be able to map a region that didn't set map permissions.
   zx::result<MappingHelper> map1 = MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0,
-                                                         noPermissionsIdx, 0, ZX_PAGE_SIZE);
+                                                         noPermissionsIdx, 0, page_size);
   EXPECT_EQ(ZX_ERR_ACCESS_DENIED, map1.status_value());
 
   zx::result<MappingHelper> map2 = MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep1,
-                                                         noPermissionsIdx, 0, ZX_PAGE_SIZE);
+                                                         noPermissionsIdx, 0, page_size);
   EXPECT_EQ(ZX_ERR_ACCESS_DENIED, map2.status_value());
 
   // And if a region is set to only be mappable by one endpoint, ensure it is.
@@ -295,8 +305,8 @@ TEST(Iob, MappingRights) {
       MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep1, onlyEp0Idx, 0, 0);
   EXPECT_EQ(ZX_ERR_ACCESS_DENIED, map3.status_value());
 
-  zx::result<MappingHelper> map4 = MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0,
-                                                         onlyEp0Idx, 0, ZX_PAGE_SIZE);
+  zx::result<MappingHelper> map4 =
+      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, onlyEp0Idx, 0, page_size);
   EXPECT_EQ(ZX_OK, map4.status_value());
 
   // We shouldn't be able to request more rights than the region has
@@ -310,12 +320,14 @@ TEST(Iob, MappingRights) {
 }
 
 TEST(Iob, PeerClosedMappedReferences) {
+  const uint64_t page_size = zx_system_get_page_size();
+
   // We shouldn't see peer closed until mappings created by an endpoint are also closed
   zx::iob ep0, ep1;
   zx_iob_region_t config{
       .type = ZX_IOB_REGION_TYPE_PRIVATE,
       .access = kIoBufferEpRwMap,
-      .size = ZX_PAGE_SIZE,
+      .size = page_size,
       .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
       .private_region =
           {
@@ -326,12 +338,12 @@ TEST(Iob, PeerClosedMappedReferences) {
   zx::unowned_vmar vmar = zx::vmar::root_self();
 
   zx::result<MappingHelper> region1 =
-      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, ZX_PAGE_SIZE);
+      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, page_size);
   ASSERT_OK(region1.status_value());
   ASSERT_NE(0, region1->addr());
 
   zx::result<MappingHelper> region2 =
-      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, ZX_PAGE_SIZE);
+      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, page_size);
   ASSERT_OK(region2.status_value());
   ASSERT_NE(0, region2->addr());
 
@@ -353,12 +365,14 @@ TEST(Iob, PeerClosedMappedReferences) {
 }
 
 TEST(Iob, GetInfoIob) {
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob ep0, ep1;
   zx_iob_region_t config[3]{
       {
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = kIoBufferEpRwMap,
-          .size = ZX_PAGE_SIZE,
+          .size = page_size,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
           .private_region =
               {
@@ -368,7 +382,7 @@ TEST(Iob, GetInfoIob) {
       {
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = kIoBufferEpRwMap,
-          .size = 2 * ZX_PAGE_SIZE,
+          .size = 2 * page_size,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
           .private_region =
               {
@@ -378,7 +392,7 @@ TEST(Iob, GetInfoIob) {
       {
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = kIoBufferEpRwMap,
-          .size = 3 * ZX_PAGE_SIZE,
+          .size = 3 * page_size,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
           .private_region =
               {
@@ -411,12 +425,14 @@ TEST(Iob, GetInfoIob) {
 }
 
 TEST(Iob, RegionInfoSwappedAccess) {
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob ep0, ep1;
   zx_iob_region_t config[3]{
       {
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = kIoBufferEp0OnlyRwMap,
-          .size = ZX_PAGE_SIZE,
+          .size = page_size,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
           .private_region =
               {
@@ -444,12 +460,14 @@ TEST(Iob, RegionInfoSwappedAccess) {
 }
 
 TEST(Iob, GetInfoIobRegions) {
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob ep0, ep1;
   zx_iob_region_t config[3]{
       {
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = kIoBufferEpRwMap,
-          .size = ZX_PAGE_SIZE,
+          .size = page_size,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
           .private_region =
               {
@@ -459,7 +477,7 @@ TEST(Iob, GetInfoIobRegions) {
       {
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = kIoBufferEpRwMap,
-          .size = 2 * ZX_PAGE_SIZE,
+          .size = 2 * page_size,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
           .private_region =
               {
@@ -469,7 +487,7 @@ TEST(Iob, GetInfoIobRegions) {
       {
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = kIoBufferEpRwMap,
-          .size = 3 * ZX_PAGE_SIZE,
+          .size = 3 * page_size,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
           .private_region =
               {
@@ -489,13 +507,15 @@ TEST(Iob, GetInfoIobRegions) {
 }
 
 TEST(Iob, RoundedSizes) {
+  const uint64_t page_size = zx_system_get_page_size();
+
   // Check that iobs round up their requested size to the nearest page
   zx::iob ep0, ep1;
   zx_iob_region_t config[3]{
       {
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = kIoBufferEpRwMap,
-          .size = ZX_PAGE_SIZE,
+          .size = page_size,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
           .private_region =
               {
@@ -505,7 +525,7 @@ TEST(Iob, RoundedSizes) {
       {
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = kIoBufferEpRwMap,
-          .size = ZX_PAGE_SIZE + 1,
+          .size = page_size + 1,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
           .private_region =
               {
@@ -515,7 +535,7 @@ TEST(Iob, RoundedSizes) {
       {
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = kIoBufferEpRwMap,
-          .size = ZX_PAGE_SIZE - 1,
+          .size = page_size - 1,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
           .private_region =
               {
@@ -527,18 +547,20 @@ TEST(Iob, RoundedSizes) {
 
   zx_iob_region_info_t info[3];
   ASSERT_OK(ep0.get_info(ZX_INFO_IOB_REGIONS, &info, sizeof(info), nullptr, nullptr));
-  EXPECT_EQ(info[0].region.size, ZX_PAGE_SIZE);
-  EXPECT_EQ(info[1].region.size, 2 * ZX_PAGE_SIZE);
-  EXPECT_EQ(info[2].region.size, ZX_PAGE_SIZE);
+  EXPECT_EQ(info[0].region.size, page_size);
+  EXPECT_EQ(info[1].region.size, 2 * page_size);
+  EXPECT_EQ(info[2].region.size, page_size);
 }
 
 TEST(Iob, GetSetNames) {
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob ep0, ep1;
   zx_iob_region_t config[3]{
       {
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = kIoBufferEpRwMap,
-          .size = ZX_PAGE_SIZE,
+          .size = page_size,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
           .private_region =
               {
@@ -588,12 +610,14 @@ TEST(Iob, GetSetNames) {
 
 /// Iob regions count towards a process's vmo allocations.
 TEST(Iob, GetInfoProcessVmos) {
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob ep0, ep1;
   zx_iob_region_t config[3]{
       {
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = kIoBufferEp0OnlyRwMap,
-          .size = ZX_PAGE_SIZE,
+          .size = page_size,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
           .private_region =
               {
@@ -603,7 +627,7 @@ TEST(Iob, GetInfoProcessVmos) {
       {
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = kIoBufferEp0OnlyRwMap,
-          .size = 2 * ZX_PAGE_SIZE,
+          .size = 2 * page_size,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
           .private_region =
               {
@@ -613,7 +637,7 @@ TEST(Iob, GetInfoProcessVmos) {
       {
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = kIoBufferEp0OnlyRwMap,
-          .size = 3 * ZX_PAGE_SIZE,
+          .size = 3 * page_size,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
           .private_region =
               {
@@ -650,8 +674,9 @@ TEST(Iob, GetInfoProcessVmos) {
       for (size_t i = 0; i < vmo_count; ++i) {
         zx_info_vmo_t& vmo_info = vmo_infos[i];
         if (0 == strcmp("TestIob", vmo_info.name)) {
-          switch (vmo_info.size_bytes) {
-            case ZX_PAGE_SIZE * 1:
+          EXPECT_EQ(0u, vmo_info.size_bytes % page_size);
+          switch (vmo_info.size_bytes / page_size) {
+            case 1:
               if ((vmo_info.handle_rights & ZX_RIGHT_READ) == 0) {
                 // This is ep1 and we shouldn't have WRITE rights either
                 EXPECT_FALSE(vmo_info.handle_rights & ZX_RIGHT_WRITE);
@@ -664,7 +689,7 @@ TEST(Iob, GetInfoProcessVmos) {
                 saw_ep0_1_page = true;
               }
               break;
-            case ZX_PAGE_SIZE * 2:
+            case 2:
               if ((vmo_info.handle_rights & ZX_RIGHT_READ) == 0) {
                 EXPECT_FALSE(vmo_info.handle_rights & ZX_RIGHT_WRITE);
                 EXPECT_FALSE(saw_ep1_2_page);
@@ -675,7 +700,7 @@ TEST(Iob, GetInfoProcessVmos) {
                 saw_ep0_2_page = true;
               }
               break;
-            case ZX_PAGE_SIZE * 3:
+            case 3:
               if ((vmo_info.handle_rights & ZX_RIGHT_READ) == 0) {
                 EXPECT_FALSE(vmo_info.handle_rights & ZX_RIGHT_WRITE);
                 EXPECT_FALSE(saw_ep1_3_page);
@@ -725,11 +750,13 @@ TEST(Iob, GetInfoProcessVmos) {
 }
 
 TEST(Iob, GetInfoProcessMaps) {
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob ep0, ep1;
   zx_iob_region_t config[3]{{
       .type = ZX_IOB_REGION_TYPE_PRIVATE,
       .access = kIoBufferEpRwMap,
-      .size = ZX_PAGE_SIZE,
+      .size = page_size,
       .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
       .private_region =
           {
@@ -743,7 +770,7 @@ TEST(Iob, GetInfoProcessMaps) {
   ASSERT_OK(zx::process::self()->get_info(ZX_INFO_PROCESS_MAPS, nullptr, 0, nullptr,
                                           &num_mappings_before));
   zx::result<MappingHelper> region =
-      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, ZX_PAGE_SIZE);
+      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, page_size);
   ASSERT_OK(region.status_value());
   ASSERT_NE(0, region->addr());
 
@@ -773,7 +800,7 @@ TEST(Iob, GetInfoProcessMaps) {
   for (size_t i = 0; i < num_map_infos; ++i) {
     zx_info_maps_t& mapping = map_infos[i];
     if (mapping.u.mapping.vmo_koid == iob_koid) {
-      EXPECT_EQ(mapping.size, ZX_PAGE_SIZE);
+      EXPECT_EQ(mapping.size, page_size);
       saw_iob_mapping = true;
       break;
     }
@@ -787,6 +814,7 @@ TEST(Iob, IdAllocatorMediatedAccess) {
   constexpr std::array<std::byte, 10> kBlob{std::byte{'a'}};
   constexpr zx_iob_allocate_id_options_t kOptions = 0;
   constexpr uint32_t kIdAllocatorIdx = 0;
+  const uint64_t page_size = zx_system_get_page_size();
 
   // Endpoint 0 will be mapped, while endpoint 1 will facilitate mediated
   // allocations.
@@ -795,7 +823,7 @@ TEST(Iob, IdAllocatorMediatedAccess) {
       {
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = kIoBufferEp0OnlyRwMap | ZX_IOB_ACCESS_EP1_CAN_MEDIATED_WRITE,
-          .size = ZX_PAGE_SIZE,
+          .size = page_size,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_ID_ALLOCATOR},
           .private_region = {.options = 0},
       },
@@ -804,10 +832,10 @@ TEST(Iob, IdAllocatorMediatedAccess) {
   ASSERT_OK(zx::iob::create(0, config, std::size(config), &ep0, &ep1));
 
   zx::result<MappingHelper> mapped_region =
-      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, ZX_PAGE_SIZE);
+      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, page_size);
   EXPECT_OK(mapped_region.status_value());
   ASSERT_NE(mapped_region->addr(), 0u);
-  cpp20::span<std::byte> bytes{reinterpret_cast<std::byte*>(mapped_region->addr()), ZX_PAGE_SIZE};
+  cpp20::span<std::byte> bytes{reinterpret_cast<std::byte*>(mapped_region->addr()), page_size};
 
   // Since mediated access is enabled, the region should already be initialized.
   iob::BlobIdAllocator allocator(bytes);
@@ -836,6 +864,7 @@ TEST(Iob, IdAllocatorMediatedErrors) {
   constexpr std::array<std::byte, 10> kBlob{std::byte{'a'}};
   constexpr zx_iob_allocate_id_options_t kOptions = 0;
   constexpr uint32_t kIdAllocatorIdx = 0;
+  const uint64_t page_size = zx_system_get_page_size();
 
   // Endpoint 0 will be mapped, while endpoint 1 will facilitate mediated
   // allocations.
@@ -844,14 +873,14 @@ TEST(Iob, IdAllocatorMediatedErrors) {
       {
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = kIoBufferEp0OnlyRwMap | ZX_IOB_ACCESS_EP1_CAN_MEDIATED_WRITE,
-          .size = ZX_PAGE_SIZE,
+          .size = page_size,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_ID_ALLOCATOR},
           .private_region = {.options = 0},
       },
       {
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = kIoBufferEpRwMap,
-          .size = ZX_PAGE_SIZE,
+          .size = page_size,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
           .private_region = {.options = 0},
       },
@@ -860,10 +889,10 @@ TEST(Iob, IdAllocatorMediatedErrors) {
   ASSERT_OK(zx::iob::create(0, config, std::size(config), &ep0, &ep1));
 
   zx::result<MappingHelper> region =
-      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, ZX_PAGE_SIZE);
+      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, page_size);
   ASSERT_OK(region.status_value());
   ASSERT_NE(region->addr(), 0u);
-  cpp20::span<std::byte> bytes{reinterpret_cast<std::byte*>(region->addr()), ZX_PAGE_SIZE};
+  cpp20::span<std::byte> bytes{reinterpret_cast<std::byte*>(region->addr()), page_size};
 
   // Since mediated access is enabled, the region should already be initialized.
   iob::BlobIdAllocator allocator(bytes);
@@ -939,11 +968,13 @@ TEST(Iob, IdAllocatorMediatedErrors) {
 }
 
 TEST(Iob, MapWhenPeerClosed) {
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob ep0, ep1;
   zx_iob_region_t config{
       .type = ZX_IOB_REGION_TYPE_PRIVATE,
       .access = kIoBufferEpRwMap,
-      .size = ZX_PAGE_SIZE,
+      .size = page_size,
       .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
       .private_region =
           {
@@ -954,38 +985,44 @@ TEST(Iob, MapWhenPeerClosed) {
   ep1.reset();
 
   zx::result<MappingHelper> region =
-      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, ZX_PAGE_SIZE);
+      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, page_size);
   EXPECT_OK(region.status_value());
 }
 
 TEST(IobSharedRegion, InvalidArgs) {
   NEEDS_NEXT_SKIP(zx_iob_create_shared_region);
 
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx_handle_t handle;
 
   // Non-zero options.
-  EXPECT_STATUS(zx_iob_create_shared_region(1, ZX_PAGE_SIZE, &handle), ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(zx_iob_create_shared_region(1, page_size, &handle), ZX_ERR_INVALID_ARGS);
 
   // Zero size.
   EXPECT_STATUS(zx_iob_create_shared_region(0, 0, &handle), ZX_ERR_INVALID_ARGS);
 
   // Not multiple of page size
-  EXPECT_STATUS(zx_iob_create_shared_region(0, ZX_PAGE_SIZE + 3, &handle), ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(zx_iob_create_shared_region(0, page_size + 3, &handle), ZX_ERR_INVALID_ARGS);
 }
 
 TEST(IobSharedRegion, CreateSucceeds) {
   NEEDS_NEXT_SKIP(zx_iob_create_shared_region);
 
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx_handle_t handle;
-  EXPECT_OK(zx_iob_create_shared_region(0, ZX_PAGE_SIZE, &handle));
+  EXPECT_OK(zx_iob_create_shared_region(0, page_size, &handle));
   zx_handle_close(handle);
 }
 
 TEST(Iob, SharedRegionWithNonRingBufferDiscipline) {
   NEEDS_NEXT_SKIP(zx_iob_create_shared_region);
 
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx_handle_t shared_region;
-  ASSERT_OK(zx_iob_create_shared_region(0, 2 * ZX_PAGE_SIZE, &shared_region));
+  ASSERT_OK(zx_iob_create_shared_region(0, 2 * page_size, &shared_region));
   [[maybe_unused]] auto clean_up_shared_region = [=] { zx_handle_close(shared_region); };
 
   for (zx_iob_discipline_type_t type :
@@ -1007,6 +1044,8 @@ TEST(Iob, SharedRegionWithNonRingBufferDiscipline) {
 TEST(Iob, CreateWithMediatedWriteRingBufferDisciplineInvalidArgs) {
   NEEDS_NEXT_SKIP(zx_iob_create_shared_region);
 
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob ep0, ep1;
 
   // With private region.
@@ -1014,7 +1053,7 @@ TEST(Iob, CreateWithMediatedWriteRingBufferDisciplineInvalidArgs) {
     zx_iob_region_t config = {
         .type = ZX_IOB_REGION_TYPE_PRIVATE,
         .access = kIoBufferEpRwMap,
-        .size = ZX_PAGE_SIZE,
+        .size = page_size,
         .discipline =
             zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_MEDIATED_WRITE_RING_BUFFER},
     };
@@ -1024,7 +1063,7 @@ TEST(Iob, CreateWithMediatedWriteRingBufferDisciplineInvalidArgs) {
   // Region too small: it must be at least two pages.
   {
     zx_handle_t shared_region;
-    ASSERT_OK(zx_iob_create_shared_region(0, ZX_PAGE_SIZE, &shared_region));
+    ASSERT_OK(zx_iob_create_shared_region(0, page_size, &shared_region));
     [[maybe_unused]] auto clean_up_shared_region = [=] { zx_handle_close(shared_region); };
 
     zx_iob_region_t config = {
@@ -1042,13 +1081,13 @@ TEST(Iob, CreateWithMediatedWriteRingBufferDisciplineInvalidArgs) {
   // Non-zero size.
   {
     zx_handle_t shared_region;
-    ASSERT_OK(zx_iob_create_shared_region(0, 2 * ZX_PAGE_SIZE, &shared_region));
+    ASSERT_OK(zx_iob_create_shared_region(0, 2 * page_size, &shared_region));
     [[maybe_unused]] auto clean_up_shared_region = [=] { zx_handle_close(shared_region); };
 
     zx_iob_region_t config = {
         .type = ZX_IOB_REGION_TYPE_SHARED,
         .access = kIoBufferEpRwMap,
-        .size = 2 * ZX_PAGE_SIZE,  // <- This should be zero
+        .size = 2 * page_size,  // <- This should be zero
         .discipline =
             zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_MEDIATED_WRITE_RING_BUFFER},
     };
@@ -1062,10 +1101,12 @@ TEST(Iob, CreateWithMediatedWriteRingBufferDisciplineInvalidArgs) {
 TEST(Iob, CreateWithMediatedWriteRingBufferDisciplineSucceeds) {
   NEEDS_NEXT_SKIP(zx_iob_create_shared_region);
 
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob ep0, ep1;
 
   zx_handle_t shared_region;
-  ASSERT_OK(zx_iob_create_shared_region(0, 2 * ZX_PAGE_SIZE, &shared_region));
+  ASSERT_OK(zx_iob_create_shared_region(0, 2 * page_size, &shared_region));
   [[maybe_unused]] auto clean_up_shared_region = [=] { zx_handle_close(shared_region); };
 
   zx_iob_region_t config = {
@@ -1082,10 +1123,12 @@ TEST(Iob, CreateWithMediatedWriteRingBufferDisciplineSucceeds) {
 TEST(Iob, IobWriteChecksRights) {
   NEEDS_NEXT_SKIP(zx_iob_create_shared_region);
 
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob ep0, ep1;
 
   zx_handle_t shared_region;
-  ASSERT_OK(zx_iob_create_shared_region(0, 2 * ZX_PAGE_SIZE, &shared_region));
+  ASSERT_OK(zx_iob_create_shared_region(0, 2 * page_size, &shared_region));
   [[maybe_unused]] auto clean_up_shared_region = [=] { zx_handle_close(shared_region); };
 
   zx_iob_region_t config = {
@@ -1120,10 +1163,12 @@ TEST(Iob, IobWriteChecksRights) {
 TEST(Iob, IobWriteInvalidArgs) {
   NEEDS_NEXT_SKIP(zx_iob_create_shared_region);
 
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob ep0, ep1;
 
   zx_handle_t shared_region;
-  ASSERT_OK(zx_iob_create_shared_region(0, 2 * ZX_PAGE_SIZE, &shared_region));
+  ASSERT_OK(zx_iob_create_shared_region(0, 2 * page_size, &shared_region));
   [[maybe_unused]] auto clean_up_shared_region = [=] { zx_handle_close(shared_region); };
 
   zx_iob_region_t config[] = {
@@ -1136,7 +1181,7 @@ TEST(Iob, IobWriteInvalidArgs) {
       {
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = kIoBufferEpRwMap,
-          .size = ZX_PAGE_SIZE,
+          .size = page_size,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
       },
   };
@@ -1229,10 +1274,12 @@ TEST(Iob, IobWriteInvalidArgs) {
 TEST(Iob, IobWriteCorrupt) {
   NEEDS_NEXT_SKIP(zx_iob_create_shared_region);
 
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob ep0, ep1;
 
   zx_handle_t shared_region;
-  ASSERT_OK(zx_iob_create_shared_region(0, 2 * ZX_PAGE_SIZE, &shared_region));
+  ASSERT_OK(zx_iob_create_shared_region(0, 2 * page_size, &shared_region));
   [[maybe_unused]] auto clean_up_shared_region = [=] { zx_handle_close(shared_region); };
 
   zx_iob_region_t config = {
@@ -1246,7 +1293,7 @@ TEST(Iob, IobWriteCorrupt) {
   ASSERT_OK(zx::iob::create(0, &config, 1, &ep0, &ep1));
 
   zx::result<MappingHelper> mapping =
-      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, ZX_PAGE_SIZE * 2);
+      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, page_size * 2);
   ASSERT_OK(mapping);
 
   uint64_t* phead = reinterpret_cast<uint64_t*>(mapping->addr());
@@ -1278,10 +1325,12 @@ TEST(Iob, IobWriteCorrupt) {
 }
 
 void IobWriteTest(bool use_two_iovecs) {
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob ep0, ep1;
 
   zx_handle_t shared_region;
-  ASSERT_OK(zx_iob_create_shared_region(0, 2 * ZX_PAGE_SIZE, &shared_region));
+  ASSERT_OK(zx_iob_create_shared_region(0, 2 * page_size, &shared_region));
   [[maybe_unused]] auto clean_up_shared_region = [=] { zx_handle_close(shared_region); };
 
   zx_iob_region_t config = {
@@ -1298,7 +1347,7 @@ void IobWriteTest(bool use_two_iovecs) {
   ASSERT_OK(zx::iob::create(0, &config, 1, &ep0, &ep1));
 
   zx::result<MappingHelper> mapping =
-      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, ZX_PAGE_SIZE * 2);
+      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, page_size * 2);
   ASSERT_OK(mapping);
 
   uint64_t* phead = reinterpret_cast<uint64_t*>(mapping->addr());
@@ -1336,13 +1385,13 @@ void IobWriteTest(bool use_two_iovecs) {
   constexpr size_t kRoundedMessageSize = 8 + 16;
 
   uint64_t last_head = 0;
-  for (unsigned i = 0; i < ZX_PAGE_SIZE / kRoundedMessageSize; ++i) {
+  for (unsigned i = 0; i < page_size / kRoundedMessageSize; ++i) {
     EXPECT_OK(zx_iob_writev(ep0.get(), 0, 0, vec, iovec_count));
 
     EXPECT_EQ(*phead, last_head + 8 + 16);
     EXPECT_EQ(*ptail, 0);
-    EXPECT_BYTES_EQ(reinterpret_cast<uint8_t*>(mapping->addr() + ZX_PAGE_SIZE + last_head),
-                    expected, std::size(expected));
+    EXPECT_BYTES_EQ(reinterpret_cast<uint8_t*>(mapping->addr() + page_size + last_head), expected,
+                    std::size(expected));
     last_head = *phead;
   }
 
@@ -1356,10 +1405,10 @@ void IobWriteTest(bool use_two_iovecs) {
   EXPECT_EQ(*phead, last_head + 8 + 16);
   EXPECT_EQ(*ptail, kRoundedMessageSize);
 
-  size_t amount_before_wrapping = ZX_PAGE_SIZE - last_head;
-  EXPECT_BYTES_EQ(reinterpret_cast<uint8_t*>(mapping->addr() + ZX_PAGE_SIZE + last_head), expected,
+  size_t amount_before_wrapping = page_size - last_head;
+  EXPECT_BYTES_EQ(reinterpret_cast<uint8_t*>(mapping->addr() + page_size + last_head), expected,
                   amount_before_wrapping);
-  EXPECT_BYTES_EQ(reinterpret_cast<uint8_t*>(mapping->addr() + ZX_PAGE_SIZE),
+  EXPECT_BYTES_EQ(reinterpret_cast<uint8_t*>(mapping->addr() + page_size),
                   expected + amount_before_wrapping, std::size(expected) - amount_before_wrapping);
 }
 
@@ -1378,10 +1427,12 @@ TEST(Iob, IobWriteWithMultipleVectors) {
 TEST(Iob, IobWriteWithFaultSucceeds) {
   NEEDS_NEXT_SKIP(zx_iob_create_shared_region);
 
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob ep0, ep1;
 
   zx_handle_t shared_region;
-  ASSERT_OK(zx_iob_create_shared_region(0, 2 * ZX_PAGE_SIZE, &shared_region));
+  ASSERT_OK(zx_iob_create_shared_region(0, 2 * page_size, &shared_region));
   [[maybe_unused]] auto clean_up_shared_region = [=] { zx_handle_close(shared_region); };
 
   zx_iob_region_t config = {
@@ -1396,13 +1447,13 @@ TEST(Iob, IobWriteWithFaultSucceeds) {
 
   // Create a VMO and map it. The first access to the mapping should trigger a page fault.
   zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(ZX_PAGE_SIZE, 0, &vmo));
+  ASSERT_OK(zx::vmo::create(page_size, 0, &vmo));
 
   zx_vaddr_t addr{0};
-  ASSERT_OK(zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0, ZX_PAGE_SIZE,
-                                       &addr));
+  ASSERT_OK(
+      zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0, page_size, &addr));
 
-  auto clean_up = fit::defer([addr] { zx::vmar::root_self()->unmap(addr, ZX_PAGE_SIZE); });
+  auto clean_up = fit::defer([addr, page_size] { zx::vmar::root_self()->unmap(addr, page_size); });
 
   zx_iovec_t vec = {
       .buffer = reinterpret_cast<void*>(addr),
@@ -1416,10 +1467,12 @@ TEST(Iob, IobWriteWithFaultSucceeds) {
 TEST(Iob, IobWriteUpdatedSignal) {
   NEEDS_NEXT_SKIP(zx_iob_create_shared_region);
 
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob ep0, ep1;
 
   zx_handle_t shared_region;
-  ASSERT_OK(zx_iob_create_shared_region(0, 2 * ZX_PAGE_SIZE, &shared_region));
+  ASSERT_OK(zx_iob_create_shared_region(0, 2 * page_size, &shared_region));
   [[maybe_unused]] auto clean_up_shared_region = [=] { zx_handle_close(shared_region); };
 
   zx_iob_region_t config = {
@@ -1460,12 +1513,13 @@ TEST(Iob, IobWriteMaxMessageSize) {
 
   constexpr size_t kMaxMessageSize = 65535 - 16;
   // Chosen so the buffer can fit two maximum sized messages.
-  constexpr size_t kRegionSize = 2 * (kMaxMessageSize / ZX_PAGE_SIZE + 2) * ZX_PAGE_SIZE;
+  const uint64_t page_size = zx_system_get_page_size();
+  const size_t region_size = 2 * (kMaxMessageSize / page_size + 2) * page_size;
 
   zx::iob ep0, ep1;
 
   zx_handle_t shared_region;
-  ASSERT_OK(zx_iob_create_shared_region(0, kRegionSize, &shared_region));
+  ASSERT_OK(zx_iob_create_shared_region(0, region_size, &shared_region));
   [[maybe_unused]] auto clean_up_shared_region = [=] { zx_handle_close(shared_region); };
 
   zx_iob_region_t config = {
@@ -1482,7 +1536,7 @@ TEST(Iob, IobWriteMaxMessageSize) {
   ASSERT_OK(zx::iob::create(0, &config, 1, &ep0, &ep1));
 
   zx::result<MappingHelper> mapping =
-      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, kRegionSize);
+      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, region_size);
   ASSERT_OK(mapping);
 
   uint64_t* phead = reinterpret_cast<uint64_t*>(mapping->addr());
@@ -1522,9 +1576,9 @@ TEST(Iob, IobWriteMaxMessageSize) {
   };
 
   // Check the expected data.
-  EXPECT_BYTES_EQ(reinterpret_cast<uint8_t*>(mapping->addr() + ZX_PAGE_SIZE), expected,
+  EXPECT_BYTES_EQ(reinterpret_cast<uint8_t*>(mapping->addr() + page_size), expected,
                   std::size(expected));
-  EXPECT_BYTES_EQ(reinterpret_cast<uint8_t*>(mapping->addr() + ZX_PAGE_SIZE + std::size(expected)),
+  EXPECT_BYTES_EQ(reinterpret_cast<uint8_t*>(mapping->addr() + page_size + std::size(expected)),
                   buffer.get(), kMaxMessageSize);
 
   const uint64_t head = *phead;
@@ -1551,20 +1605,22 @@ TEST(Iob, IobWriteMaxMessageSize) {
 
   EXPECT_OK(zx_iob_writev(ep0.get(), 0, 0, vecs, kMaxIovecs));
 
-  EXPECT_BYTES_EQ(reinterpret_cast<uint8_t*>(mapping->addr() + ZX_PAGE_SIZE + head), expected,
+  EXPECT_BYTES_EQ(reinterpret_cast<uint8_t*>(mapping->addr() + page_size + head), expected,
                   std::size(expected));
   EXPECT_BYTES_EQ(
-      reinterpret_cast<uint8_t*>(mapping->addr() + ZX_PAGE_SIZE + head + std::size(expected)),
+      reinterpret_cast<uint8_t*>(mapping->addr() + page_size + head + std::size(expected)),
       buffer.get(), kMaxMessageSize);
 }
 
 TEST(Iob, IobWriteMultiThreaded) {
   NEEDS_NEXT_SKIP(zx_iob_create_shared_region);
 
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob ep0, ep1;
 
   zx_handle_t shared_region;
-  ASSERT_OK(zx_iob_create_shared_region(0, 2 * ZX_PAGE_SIZE, &shared_region));
+  ASSERT_OK(zx_iob_create_shared_region(0, 2 * page_size, &shared_region));
   [[maybe_unused]] auto clean_up_shared_region = [=] { zx_handle_close(shared_region); };
 
   zx_iob_region_t config = {
@@ -1613,7 +1669,7 @@ TEST(Iob, IobWriteMultiThreaded) {
   });
 
   zx::result<MappingHelper> mapping =
-      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, ZX_PAGE_SIZE * 2);
+      MappingHelper::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, ep0, 0, 0, page_size * 2);
   ASSERT_OK(mapping);
 
   std::atomic_ref<uint64_t> phead(*reinterpret_cast<uint64_t*>(mapping->addr()));
@@ -1644,27 +1700,26 @@ TEST(Iob, IobWriteMultiThreaded) {
     while (tail < head) {
       // Tag
       const uint8_t expected_tag[] = {0xef, 0xcd, 0xab, 0x89, 0x67, 0x45, 0x23, 0x01};
-      EXPECT_BYTES_EQ(
-          reinterpret_cast<uint64_t*>(mapping->addr() + ZX_PAGE_SIZE + tail % ZX_PAGE_SIZE),
-          expected_tag, 8);
+      EXPECT_BYTES_EQ(reinterpret_cast<uint64_t*>(mapping->addr() + page_size + tail % page_size),
+                      expected_tag, 8);
 
       // Read the message length to determine which of the two messages we expect.
       uint64_t message_len =
-          *reinterpret_cast<uint64_t*>(mapping->addr() + ZX_PAGE_SIZE + (tail + 8) % ZX_PAGE_SIZE);
+          *reinterpret_cast<uint64_t*>(mapping->addr() + page_size + (tail + 8) % page_size);
       if (message_len == 6) {
         EXPECT_BYTES_EQ(
-            reinterpret_cast<uint8_t*>(mapping->addr() + ZX_PAGE_SIZE + (tail + 16) % ZX_PAGE_SIZE),
+            reinterpret_cast<uint8_t*>(mapping->addr() + page_size + (tail + 16) % page_size),
             "12345", 6);
         ++thread1_message_count;
         tail += 16 + 8;
       } else {
         EXPECT_EQ(message_len, 11);
         EXPECT_BYTES_EQ(
-            reinterpret_cast<uint8_t*>(mapping->addr() + ZX_PAGE_SIZE + (tail + 16) % ZX_PAGE_SIZE),
+            reinterpret_cast<uint8_t*>(mapping->addr() + page_size + (tail + 16) % page_size),
             "67890abc", 8);
         EXPECT_BYTES_EQ(
-            reinterpret_cast<uint8_t*>(mapping->addr() + ZX_PAGE_SIZE + (tail + 24) % ZX_PAGE_SIZE),
-            "de", 3);
+            reinterpret_cast<uint8_t*>(mapping->addr() + page_size + (tail + 24) % page_size), "de",
+            3);
         ++thread2_message_count;
         tail += 16 + 16;
       }
@@ -1683,10 +1738,12 @@ TEST(Iob, IobWriteMultiThreaded) {
 TEST(Iob, VmoKoid) {
   NEEDS_NEXT_SKIP(zx_iob_create_shared_region);
 
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob ep0, ep1;
 
   zx_handle_t shared_region;
-  ASSERT_OK(zx_iob_create_shared_region(0, 2 * ZX_PAGE_SIZE, &shared_region));
+  ASSERT_OK(zx_iob_create_shared_region(0, 2 * page_size, &shared_region));
   [[maybe_unused]] auto clean_up_shared_region = [=] { zx_handle_close(shared_region); };
 
   zx_iob_region_t config = {

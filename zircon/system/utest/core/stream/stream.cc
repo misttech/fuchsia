@@ -885,16 +885,17 @@ TEST(StreamTestCase, ReadShrinkRace) {
   constexpr size_t kNumIterations = 10;
 
   constexpr size_t kInitialVmoSize = 80u;
-  constexpr size_t kInitialVmoNumPages =
-      fbl::round_up(kInitialVmoSize, ZX_PAGE_SIZE) / ZX_PAGE_SIZE;
-  constexpr size_t kTruncateToSize = 0u;
+  constexpr size_t truncate_to_size = 0u;
+
+  const size_t page_size = zx_system_get_page_size();
+  const size_t initial_vmo_num_pages = fbl::round_up(kInitialVmoSize, page_size) / page_size;
 
   for (size_t i = 0; i < kNumIterations; ++i) {
     pager_tests::UserPager pager;
     ASSERT_TRUE(pager.Init());
 
     pager_tests::Vmo* vmo;
-    ASSERT_TRUE(pager.CreateVmoWithOptions(kInitialVmoNumPages, ZX_VMO_RESIZABLE, &vmo));
+    ASSERT_TRUE(pager.CreateVmoWithOptions(initial_vmo_num_pages, ZX_VMO_RESIZABLE, &vmo));
 
     zx::stream stream;
     ASSERT_OK(zx::stream::create(ZX_STREAM_MODE_READ, vmo->vmo(), 0, &stream));
@@ -915,7 +916,7 @@ TEST(StreamTestCase, ReadShrinkRace) {
       ASSERT_TRUE(actual == 0u || actual == buffer.size());
     });
 
-    std::thread set_size_thread([&] { ASSERT_OK(vmo->vmo().set_size(kTruncateToSize)); });
+    std::thread set_size_thread([&] { ASSERT_OK(vmo->vmo().set_size(truncate_to_size)); });
 
     // Wait for and supply page read, in case |read_thread| wins. This is inherently a race we want
     // to test, so waiting is the best we can do.
@@ -929,7 +930,7 @@ TEST(StreamTestCase, ReadShrinkRace) {
     // The set size must now be complete.
     uint64_t content_size = 42u;
     ASSERT_OK(vmo->vmo().get_prop_content_size(&content_size));
-    EXPECT_EQ(kTruncateToSize, content_size);
+    EXPECT_EQ(truncate_to_size, content_size);
 
     // Reads should be okay and return nothing.
     std::array<char, 16u> buffer = {};
@@ -945,35 +946,35 @@ TEST(StreamTestCase, ReadShrinkRace) {
 
 TEST(StreamTestCase, WriteShrinkRace) {
   constexpr size_t kNumIterations = 50;
-  const size_t kInitialVmoSize = static_cast<size_t>(zx_system_get_page_size()) + 8u;
-  const size_t kInitialVmoNumPages =
-      fbl::round_up(kInitialVmoSize, zx_system_get_page_size()) / zx_system_get_page_size();
-  const size_t kTruncateToSize = static_cast<size_t>(zx_system_get_page_size());
-  ASSERT_GT(kInitialVmoSize, kTruncateToSize);
+
+  const size_t page_size = zx_system_get_page_size();
+  const size_t initial_vmo_size = page_size + 8u;
+  const size_t initial_vmo_num_pages = fbl::round_up(initial_vmo_size, page_size) / page_size;
+  const size_t truncate_to_size = page_size;
 
   for (size_t i = 0; i < kNumIterations; ++i) {
     pager_tests::UserPager pager;
     ASSERT_TRUE(pager.Init());
 
     pager_tests::Vmo* vmo;
-    ASSERT_TRUE(pager.CreateVmoWithOptions(kInitialVmoNumPages, ZX_VMO_RESIZABLE, &vmo));
+    ASSERT_TRUE(pager.CreateVmoWithOptions(initial_vmo_num_pages, ZX_VMO_RESIZABLE, &vmo));
 
     zx::stream stream;
     ASSERT_OK(zx::stream::create(ZX_STREAM_MODE_WRITE, vmo->vmo(), 0u, &stream));
 
-    pager.SupplyPages(vmo, 0u, kInitialVmoNumPages);
+    pager.SupplyPages(vmo, 0u, initial_vmo_num_pages);
 
     // Create a write that intersects with the truncate.
     std::thread boundary_write_thread([&] {
       std::array<char, 16u> buffer = {};
-      ASSERT_LE(buffer.size(), kInitialVmoSize);
+      ASSERT_LE(buffer.size(), initial_vmo_size);
       zx_iovec_t vec = {
           .buffer = buffer.data(),
           .capacity = buffer.size(),
       };
 
       // Attempt to write the last |buffer.size()| bytes.
-      const zx_off_t kOffset = kInitialVmoSize - buffer.size();
+      const zx_off_t kOffset = initial_vmo_size - buffer.size();
       size_t actual = 42u;
       ASSERT_OK(stream.writev_at(0, kOffset, &vec, 1u, &actual));
       ASSERT_EQ(actual, buffer.size());
@@ -982,7 +983,7 @@ TEST(StreamTestCase, WriteShrinkRace) {
     // Create a write that should always complete, regardless of truncation.
     std::thread full_write_thread([&] {
       std::array<char, 16> buffer = {};
-      ASSERT_LE(buffer.size(), kInitialVmoSize);
+      ASSERT_LE(buffer.size(), initial_vmo_size);
       zx_iovec_t vec = {
           .buffer = buffer.data(),
           .capacity = buffer.size(),
@@ -995,64 +996,64 @@ TEST(StreamTestCase, WriteShrinkRace) {
     });
 
     // Simultaneously try to truncate.
-    std::thread truncate_thread([&] { ASSERT_OK(vmo->vmo().set_size(kTruncateToSize)); });
+    std::thread truncate_thread([&] { ASSERT_OK(vmo->vmo().set_size(truncate_to_size)); });
 
     boundary_write_thread.join();
     full_write_thread.join();
     truncate_thread.join();
 
     // The set size must now be complete.
-    // The size will either be |kTruncateToSize| if the truncate happened last or |kInitialVmoSize|
-    // if the write happened last.
+    // The size will either be |truncate_to_size| if the truncate happened last or
+    // |initial_vmo_size| if the write happened last.
     uint64_t content_size = 42u;
     ASSERT_OK(vmo->vmo().get_prop_content_size(&content_size));
-    ASSERT_TRUE(content_size == kInitialVmoSize || content_size == kTruncateToSize);
+    ASSERT_TRUE(content_size == initial_vmo_size || content_size == truncate_to_size);
   }
 }
 
 TEST(StreamTestCase, ReadWriteShrinkRace) {
   constexpr size_t kNumIterations = 500;
-  constexpr size_t kInitialVmoSize = (ZX_PAGE_SIZE * 8) + 8u;
-  constexpr size_t kInitialVmoNumPages =
-      fbl::round_up(kInitialVmoSize, ZX_PAGE_SIZE) / ZX_PAGE_SIZE;
-  constexpr size_t kTruncateToSize = ZX_PAGE_SIZE;
-  ASSERT_GT(kInitialVmoSize, kTruncateToSize);
+
+  const size_t page_size = zx_system_get_page_size();
+  const size_t initial_vmo_size = 8 * page_size + 8u;
+  const size_t initial_vmo_num_pages = fbl::round_up(initial_vmo_size, page_size) / page_size;
+  const size_t truncate_to_size = page_size;
 
   for (size_t i = 0; i < kNumIterations; ++i) {
     pager_tests::UserPager pager;
     ASSERT_TRUE(pager.Init());
 
     pager_tests::Vmo* vmo;
-    ASSERT_TRUE(pager.CreateVmoWithOptions(kInitialVmoNumPages, ZX_VMO_RESIZABLE, &vmo));
+    ASSERT_TRUE(pager.CreateVmoWithOptions(initial_vmo_num_pages, ZX_VMO_RESIZABLE, &vmo));
 
     zx::stream stream;
     ASSERT_OK(
         zx::stream::create(ZX_STREAM_MODE_READ | ZX_STREAM_MODE_WRITE, vmo->vmo(), 0u, &stream));
 
-    pager.SupplyPages(vmo, 0u, kInitialVmoNumPages);
+    pager.SupplyPages(vmo, 0u, initial_vmo_num_pages);
 
     // Create a write that intersects with the truncate.
     std::thread write_thread([&] {
       std::array<char, 16u> buffer = {};
-      ASSERT_LE(buffer.size(), kInitialVmoSize);
+      ASSERT_LE(buffer.size(), initial_vmo_size);
       zx_iovec_t vec = {
           .buffer = buffer.data(),
           .capacity = buffer.size(),
       };
 
       // Attempt to write the last |buffer.size()| bytes.
-      const zx_off_t kOffset = kInitialVmoSize - buffer.size();
+      const zx_off_t offset = initial_vmo_size - buffer.size();
       size_t actual = 42u;
-      ASSERT_OK(stream.writev_at(0, kOffset, &vec, 1u, &actual));
+      ASSERT_OK(stream.writev_at(0, offset, &vec, 1u, &actual));
       ASSERT_EQ(actual, buffer.size());
     });
 
     // Simultaneously try to truncate.
-    std::thread truncate_thread([&] { ASSERT_OK(vmo->vmo().set_stream_size(kTruncateToSize)); });
+    std::thread truncate_thread([&] { ASSERT_OK(vmo->vmo().set_stream_size(truncate_to_size)); });
 
     // Create a read that intersects with the truncate.
     std::thread read_thread([&] {
-      std::array<char, kInitialVmoSize> buffer = {};
+      std::vector<char> buffer(initial_vmo_size, 0);
       zx_iovec_t vec = {
           .buffer = buffer.data(),
           .capacity = buffer.size(),
@@ -1061,9 +1062,9 @@ TEST(StreamTestCase, ReadWriteShrinkRace) {
       size_t actual = 42u;
       ASSERT_OK(stream.readv_at(0, 0u, &vec, 1u, &actual));
       // If the write happens after the truncate, the read may see a content size in the range
-      // [kTruncateToSize, kInitialVmoSize] because of a partial expanding write updating content
+      // [truncate_to_size, initial_vmo_size] because of a partial expanding write updating content
       // size as it progresses.
-      ASSERT_TRUE(actual >= kTruncateToSize || actual <= kInitialVmoSize);
+      ASSERT_TRUE(actual >= truncate_to_size || actual <= initial_vmo_size);
     });
 
     write_thread.join();
@@ -1071,11 +1072,11 @@ TEST(StreamTestCase, ReadWriteShrinkRace) {
     read_thread.join();
 
     // The set size must now be complete.
-    // The size will either be |kTruncateToSize| if the truncate happened last or |kInitialVmoSize|
-    // if the write happened last.
+    // The size will either be |truncate_to_size| if the truncate happened last or
+    // |initial_vmo_size| if the write happened last.
     uint64_t content_size = 42u;
     ASSERT_OK(vmo->vmo().get_prop_content_size(&content_size));
-    ASSERT_TRUE(content_size == kInitialVmoSize || content_size == kTruncateToSize);
+    ASSERT_TRUE(content_size == initial_vmo_size || content_size == truncate_to_size);
   }
 }
 

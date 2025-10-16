@@ -4,6 +4,7 @@
 
 #include <lib/zx/vmo.h>
 #include <zircon/sanitizer.h>
+
 #include <zxtest/zxtest.h>
 
 namespace {
@@ -14,7 +15,7 @@ constexpr char kTestMessage[] = "{{{dumpfile:test:test}}}";
 
 TEST(RunTestHelper, PublishData) {
   zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(ZX_PAGE_SIZE, 0, &vmo));
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
   vmo.set_property(ZX_PROP_NAME, kTestName, sizeof(kTestName) - 1);
   __sanitizer_publish_data(kTestData, vmo.release());
   __sanitizer_log_write(kTestMessage, sizeof(kTestMessage) - 1);

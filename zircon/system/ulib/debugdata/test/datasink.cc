@@ -19,6 +19,8 @@ constexpr uint8_t kTestData[] = {0x00, 0x11, 0x22, 0x33};
 constexpr char kTestProfile[] = "test-profile";
 
 TEST(DataSinkTest, ProcessData) {
+  const size_t page_size = zx_system_get_page_size();
+
   files::ScopedTempDir root_tmp_dir;
   std::string tmp_location;
   ASSERT_TRUE(root_tmp_dir.NewTempDir(&tmp_location));
@@ -35,7 +37,7 @@ TEST(DataSinkTest, ProcessData) {
       };
 
   zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(ZX_PAGE_SIZE, 0, &vmo));
+  ASSERT_OK(zx::vmo::create(page_size, 0, &vmo));
   ASSERT_OK(vmo.write(kTestData, 0, sizeof(kTestData)));
   ASSERT_OK(vmo.set_prop_content_size(sizeof(kTestData)));
 
@@ -43,7 +45,7 @@ TEST(DataSinkTest, ProcessData) {
                                    on_data_collection_warning_callback);
 
   zx::vmo profile_vmo;
-  ASSERT_OK(zx::vmo::create(ZX_PAGE_SIZE, 0, &profile_vmo));
+  ASSERT_OK(zx::vmo::create(page_size, 0, &profile_vmo));
   ASSERT_OK(profile_vmo.set_property(ZX_PROP_NAME, kTestProfile, sizeof(kTestProfile)));
   ASSERT_OK(profile_vmo.write(kTestData, 0, sizeof(kTestData)));
   data_sink.ProcessSingleDebugData(kProfileSink, std::move(profile_vmo), {},

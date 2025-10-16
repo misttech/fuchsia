@@ -624,7 +624,7 @@ v1::VmoBuffer V1RandomVmoBuffer() {
   v1::VmoBuffer r{};
   // Arbitrary is good enough - we don't need truly "random" for this.
   zx::vmo arbitrary_vmo;
-  ZX_ASSERT(ZX_OK == zx::vmo::create(ZX_PAGE_SIZE, 0, &arbitrary_vmo));
+  ZX_ASSERT(ZX_OK == zx::vmo::create(zx_system_get_page_size(), 0, &arbitrary_vmo));
   r.vmo() = std::move(arbitrary_vmo);
   random(&r.vmo_usable_start());
   return r;
@@ -638,7 +638,7 @@ v2::VmoBuffer V2RandomVmoBuffer() {
   if (vmo_present) {
     // Arbitrary is good enough - we don't need truly "random" for this.
     zx::vmo arbitrary_vmo;
-    ZX_ASSERT(ZX_OK == zx::vmo::create(ZX_PAGE_SIZE, 0, &arbitrary_vmo));
+    ZX_ASSERT(ZX_OK == zx::vmo::create(zx_system_get_page_size(), 0, &arbitrary_vmo));
     r.vmo() = std::move(arbitrary_vmo);
   }
 
@@ -665,7 +665,7 @@ v1::wire::VmoBuffer V1WireRandomVmoBuffer() {
   v1::wire::VmoBuffer r{};
   // Arbitrary is good enough - we don't need truly "random" for this.
   zx::vmo arbitrary_vmo;
-  ZX_ASSERT(ZX_OK == zx::vmo::create(ZX_PAGE_SIZE, 0, &arbitrary_vmo));
+  ZX_ASSERT(ZX_OK == zx::vmo::create(zx_system_get_page_size(), 0, &arbitrary_vmo));
   r.vmo = std::move(arbitrary_vmo);
   random(&r.vmo_usable_start);
   return r;

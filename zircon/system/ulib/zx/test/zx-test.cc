@@ -791,12 +791,14 @@ class IobMapping {
 };
 
 TEST(ZxTestCase, IobCreateAndMap) {
+  const uint64_t page_size = zx_system_get_page_size();
+
   zx::iob iob;
   zx_iob_region_t regions[2] = {
       zx_iob_region_t{
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = ZX_IOB_ACCESS_EP0_CAN_MAP_READ | ZX_IOB_ACCESS_EP0_CAN_MAP_WRITE,
-          .size = ZX_PAGE_SIZE,
+          .size = page_size,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
           .private_region =
               {
@@ -806,7 +808,7 @@ TEST(ZxTestCase, IobCreateAndMap) {
       zx_iob_region_t{
           .type = ZX_IOB_REGION_TYPE_PRIVATE,
           .access = ZX_IOB_ACCESS_EP1_CAN_MAP_READ | ZX_IOB_ACCESS_EP1_CAN_MAP_WRITE,
-          .size = ZX_PAGE_SIZE,
+          .size = page_size,
           .discipline = zx_iob_discipline_t{.type = ZX_IOB_DISCIPLINE_TYPE_NONE},
           .private_region =
               {
@@ -821,10 +823,10 @@ TEST(ZxTestCase, IobCreateAndMap) {
   ASSERT_OK(zx_handle_check_valid(ep1.get()));
 
   zx::result<IobMapping> mapping0 =
-      IobMapping::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0u, ep0, 0, 0, ZX_PAGE_SIZE);
+      IobMapping::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0u, ep0, 0, 0, page_size);
   ASSERT_OK(mapping0.status_value());
   zx::result<IobMapping> mapping1 =
-      IobMapping::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0u, ep1, 1, 0, ZX_PAGE_SIZE);
+      IobMapping::Create(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0u, ep1, 1, 0, page_size);
   ASSERT_OK(mapping1.status_value());
 }
 

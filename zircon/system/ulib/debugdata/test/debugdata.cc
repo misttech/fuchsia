@@ -48,7 +48,7 @@ TEST(DebugDataTest, PublishData) {
   publisher.Bind(std::move(endpoints.server));
 
   zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(ZX_PAGE_SIZE, 0, &vmo));
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
   ASSERT_OK(vmo.write(kTestData, 0, sizeof(kTestData)));
 
   zx::eventpair token1, token2;
@@ -84,7 +84,7 @@ TEST(DebugDataTest, DrainData) {
   publisher.Bind(std::move(endpoints.server));
 
   zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(ZX_PAGE_SIZE, 0, &vmo));
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
   ASSERT_OK(vmo.write(kTestData, 0, sizeof(kTestData)));
 
   zx::eventpair token1, token2;
