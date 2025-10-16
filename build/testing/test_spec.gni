@@ -290,7 +290,7 @@ template("test_spec") {
     if (!defined(environments)) {
       environments = basic_envs
     }
-  } else if (is_linux || is_mac) {
+  } else if (is_linux) {
     if (!defined(environments)) {
       environments = [ host_env ]
     }
@@ -508,13 +508,6 @@ template("test_spec") {
     dims = []  # Clear from previous iteration.
     dims = env.dimensions
 
-    if (defined(dims.os) && dims.os == "mac") {
-      # When running tests for a mac build, we only wish to run mac tests; we
-      # enforce the "mac" tag in that case to filter out other tests.
-      assert(defined(env.tags) && [ "mac" ] + env.tags - env.tags == [],
-             "Mac environments must have a tag of \"mac\"")
-    }
-
     if (defined(env.emulator)) {
       emu_config = env.emulator
       assert(defined(emu_config.name),
@@ -539,7 +532,7 @@ template("test_spec") {
     }
   }
 
-  if (is_linux || is_mac) {
+  if (is_linux) {
     # If the test is a pure host test, expects_ssh should be false
     # because there is no target to run against.
     if (!defined(invoker.expects_ssh) && _environments == [ host_env ]) {
@@ -598,9 +591,7 @@ template("test_spec") {
 
       if (!defined(package_url)) {
         assert(defined(path), "path or package_url must be defined.")
-        if (is_linux || is_mac ||
-            (defined(invoker.os) &&
-             (invoker.os == "linux" || invoker.os == "mac"))) {
+        if (is_linux || (defined(invoker.os) && invoker.os == "linux")) {
           # Trim leading //.
           path = rebase_path(path, root_build_dir)
         }
