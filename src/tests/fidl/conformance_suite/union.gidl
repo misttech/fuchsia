@@ -120,7 +120,7 @@ success("FlexibleUnionUnknownValueStored") {
 
 decode_success("FlexibleUnionUnknownValue") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_allowlist = [rust],
+    bindings_allowlist = [rust, rust_next],
     value = TestFlexibleXUnionInStruct{
         xu: SampleXUnion{
             1234: null,
@@ -176,7 +176,7 @@ success("FlexibleResourceUnionUnknownValueStored") {
 
 decode_success("FlexibleResourceUnionUnknownValue") {
     // TODO(https://fxbug.dev/42166276): Drop unknown data in all bindings.
-    bindings_allowlist = [rust],
+    bindings_allowlist = [rust, rust_next],
     value = TestFlexibleResourceXUnionInStruct{
         xu: SampleResourceXUnion{
             1234: null,

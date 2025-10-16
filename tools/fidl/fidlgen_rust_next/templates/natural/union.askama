@@ -16,6 +16,18 @@ pub enum {{ name }} {
     {% endif %}
 }
 
+{% if !union_.is_strict %}
+impl {{ name }} {
+    pub fn is_unknown(&self) -> bool {
+        #[allow(unreachable_patterns)]
+        match self {
+            Self::UnknownOrdinal_(_) => true,
+            _ => false,
+        }
+    }
+}
+{% endif %}
+
 impl ::fidl_next::Encodable for {{ name }} {
     type Encoded = crate::wire::{{ name }}{{ static_ }};
 }
@@ -173,7 +185,11 @@ impl{{ de }} ::fidl_next::FromWire<crate::wire::{{ name }}{{ de }}> for {{ name 
                     )
                 ),
             {% endfor %}
-            _ => unsafe { ::core::hint::unreachable_unchecked() },
+            {% if !union_.is_strict %}
+                ord => return Self::UnknownOrdinal_(ord as u64),
+            {% else %}
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            {% endif %}
         }
     }
 }
@@ -190,7 +206,11 @@ impl{{ de }} ::fidl_next::FromWireRef<crate::wire::{{ name }}{{ de }}> for {{ na
                     )
                 ),
             {% endfor %}
-            _ => unsafe { ::core::hint::unreachable_unchecked() },
+            {% if !union_.is_strict %}
+                ord => return Self::UnknownOrdinal_(ord as u64),
+            {% else %}
+                _ => unsafe { ::core::hint::unreachable_unchecked() },
+            {% endif %}
         }
     }
 }

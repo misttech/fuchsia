@@ -179,6 +179,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse {
         type Encoded =
             crate::wire::UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionResponse<'static>;
@@ -319,7 +329,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -338,7 +348,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -874,6 +884,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse {
         type Encoded =
             crate::wire::UnknownInteractionsAjarDriverProtocolStrictTwoWayUnionErrResponse<'static>;
@@ -1017,7 +1037,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -1038,7 +1058,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -1436,6 +1456,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse {
         type Encoded =
             crate::wire::UnknownInteractionsAjarProtocolStrictTwoWayUnionResponse<'static>;
@@ -1571,7 +1601,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -1590,7 +1620,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -2119,6 +2149,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse {
         type Encoded =
             crate::wire::UnknownInteractionsAjarProtocolStrictTwoWayUnionErrResponse<'static>;
@@ -2256,7 +2296,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -2275,7 +2315,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -2665,6 +2705,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnknownInteractionsAjarProtocolStrictEventUnionRequest {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnknownInteractionsAjarProtocolStrictEventUnionRequest {
         type Encoded = crate::wire::UnknownInteractionsAjarProtocolStrictEventUnionRequest<'static>;
     }
@@ -2799,7 +2849,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -2818,7 +2868,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -3207,6 +3257,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnknownInteractionsAjarProtocolFlexibleEventUnionRequest {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnknownInteractionsAjarProtocolFlexibleEventUnionRequest {
         type Encoded =
             crate::wire::UnknownInteractionsAjarProtocolFlexibleEventUnionRequest<'static>;
@@ -3342,7 +3402,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -3361,7 +3421,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -3760,6 +3820,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse {
         type Encoded =
             crate::wire::UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionResponse<'static>;
@@ -3902,7 +3972,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -3923,7 +3993,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -4468,6 +4538,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable
         for UnknownInteractionsClosedDriverProtocolStrictTwoWayUnionErrResponse
     {
@@ -4612,7 +4692,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -4633,7 +4713,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -5011,6 +5091,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse {
         type Encoded =
             crate::wire::UnknownInteractionsClosedProtocolStrictTwoWayUnionResponse<'static>;
@@ -5148,7 +5238,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -5167,7 +5257,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -5700,6 +5790,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse {
         type Encoded =
             crate::wire::UnknownInteractionsClosedProtocolStrictTwoWayUnionErrResponse<'static>;
@@ -5839,7 +5939,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -5858,7 +5958,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -6252,6 +6352,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnknownInteractionsClosedProtocolStrictEventUnionRequest {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnknownInteractionsClosedProtocolStrictEventUnionRequest {
         type Encoded =
             crate::wire::UnknownInteractionsClosedProtocolStrictEventUnionRequest<'static>;
@@ -6387,7 +6497,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -6406,7 +6516,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -6800,6 +6910,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse {
         type Encoded =
             crate::wire::UnknownInteractionsDriverProtocolStrictTwoWayUnionResponse<'static>;
@@ -6937,7 +7057,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -6956,7 +7076,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -7489,6 +7609,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse {
         type Encoded =
             crate::wire::UnknownInteractionsDriverProtocolStrictTwoWayUnionErrResponse<'static>;
@@ -7628,7 +7758,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -7647,7 +7777,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -8178,6 +8308,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse {
         type Encoded =
             crate::wire::UnknownInteractionsDriverProtocolFlexibleTwoWayUnionResponse<'static>;
@@ -8315,7 +8455,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -8334,7 +8474,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -8863,6 +9003,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse {
         type Encoded =
             crate::wire::UnknownInteractionsDriverProtocolFlexibleTwoWayUnionErrResponse<'static>;
@@ -9003,7 +9153,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -9024,7 +9174,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -9419,6 +9569,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnknownInteractionsProtocolStrictTwoWayUnionResponse {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnknownInteractionsProtocolStrictTwoWayUnionResponse {
         type Encoded = crate::wire::UnknownInteractionsProtocolStrictTwoWayUnionResponse<'static>;
     }
@@ -9552,7 +9712,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -9571,7 +9731,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -10089,6 +10249,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnknownInteractionsProtocolStrictTwoWayUnionErrResponse {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnknownInteractionsProtocolStrictTwoWayUnionErrResponse {
         type Encoded =
             crate::wire::UnknownInteractionsProtocolStrictTwoWayUnionErrResponse<'static>;
@@ -10224,7 +10394,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -10243,7 +10413,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -10764,6 +10934,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnknownInteractionsProtocolFlexibleTwoWayUnionResponse {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnknownInteractionsProtocolFlexibleTwoWayUnionResponse {
         type Encoded = crate::wire::UnknownInteractionsProtocolFlexibleTwoWayUnionResponse<'static>;
     }
@@ -10898,7 +11078,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -10917,7 +11097,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -11438,6 +11618,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse {
         type Encoded =
             crate::wire::UnknownInteractionsProtocolFlexibleTwoWayUnionErrResponse<'static>;
@@ -11575,7 +11765,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -11594,7 +11784,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -11983,6 +12173,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnknownInteractionsProtocolStrictEventUnionRequest {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnknownInteractionsProtocolStrictEventUnionRequest {
         type Encoded = crate::wire::UnknownInteractionsProtocolStrictEventUnionRequest<'static>;
     }
@@ -12115,7 +12315,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -12134,7 +12334,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -12517,6 +12717,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnknownInteractionsProtocolFlexibleEventUnionRequest {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnknownInteractionsProtocolFlexibleEventUnionRequest {
         type Encoded = crate::wire::UnknownInteractionsProtocolFlexibleEventUnionRequest<'static>;
     }
@@ -12650,7 +12860,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -12669,7 +12879,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }

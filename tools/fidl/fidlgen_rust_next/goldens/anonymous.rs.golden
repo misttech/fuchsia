@@ -659,6 +659,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl Expression {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for Expression {
         type Encoded = crate::wire::Expression<'static>;
     }
@@ -810,7 +820,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<crate::wire::FunctionApplication<'de>>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -831,7 +841,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<crate::wire::FunctionApplication<'de>>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -880,6 +890,16 @@ pub mod natural {
         UnionData(u8),
 
         UnknownOrdinal_(u64),
+    }
+
+    impl UnionMember {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
     }
 
     impl ::fidl_next::Encodable for UnionMember {
@@ -1005,7 +1025,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<u8>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -1018,7 +1038,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<u8>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }

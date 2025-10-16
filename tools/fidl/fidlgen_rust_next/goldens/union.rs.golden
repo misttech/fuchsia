@@ -125,6 +125,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl EmptyFlexibleUnion {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for EmptyFlexibleUnion {
         type Encoded = crate::wire::EmptyFlexibleUnion<'static>;
     }
@@ -236,7 +246,7 @@ pub mod natural {
         fn from_wire(wire: crate::wire::EmptyFlexibleUnion<'de>) -> Self {
             let wire = ::core::mem::ManuallyDrop::new(wire);
             match wire.raw.ordinal() {
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -245,7 +255,7 @@ pub mod natural {
         #[inline]
         fn from_wire_ref(wire: &crate::wire::EmptyFlexibleUnion<'de>) -> Self {
             match wire.raw.ordinal() {
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -301,6 +311,16 @@ pub mod natural {
         F(f32),
 
         UnknownOrdinal_(u64),
+    }
+
+    impl ExplicitFlexibleUnion {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
     }
 
     impl ::fidl_next::Encodable for ExplicitFlexibleUnion {
@@ -438,7 +458,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireF32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -457,7 +477,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireF32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -513,6 +533,16 @@ pub mod natural {
         S(::std::string::String),
 
         UnknownOrdinal_(u64),
+    }
+
+    impl ExplicitFoo {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
     }
 
     impl ::fidl_next::Encodable for ExplicitFoo {
@@ -652,7 +682,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireString<'de>>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -669,7 +699,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireString<'de>>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -1774,6 +1804,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl FlexibleFoo {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for FlexibleFoo {
         type Encoded = crate::wire::FlexibleFoo<'static>;
     }
@@ -1911,7 +1951,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -1928,7 +1968,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -1979,6 +2019,16 @@ pub mod natural {
         Pasta(crate::natural::Pasta),
 
         UnknownOrdinal_(u64),
+    }
+
+    impl FlexiblePizzaOrPasta {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
     }
 
     impl ::fidl_next::Encodable for FlexiblePizzaOrPasta {
@@ -2120,7 +2170,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<crate::wire::Pasta<'de>>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -2139,7 +2189,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<crate::wire::Pasta<'de>>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -2197,6 +2247,16 @@ pub mod natural {
         VectorStringAlsoNeedsConstructor(::std::vec::Vec<::std::string::String>),
 
         UnknownOrdinal_(u64),
+    }
+
+    impl FlexibleUnion {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
     }
 
     impl ::fidl_next::Encodable for FlexibleUnion {
@@ -2358,7 +2418,7 @@ pub mod natural {
                     },
                 )),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -2383,7 +2443,7 @@ pub mod natural {
                     }),
                 ),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -2439,6 +2499,16 @@ pub mod natural {
         V(::std::vec::Vec<::std::string::String>),
 
         UnknownOrdinal_(u64),
+    }
+
+    impl NewerSimpleUnion {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
     }
 
     impl ::fidl_next::Encodable for NewerSimpleUnion {
@@ -2596,7 +2666,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -2617,7 +2687,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireVector<'de, ::fidl_next::WireString<'de>>>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -2804,6 +2874,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl OlderSimpleUnion {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for OlderSimpleUnion {
         type Encoded = crate::wire::OlderSimpleUnion<'static>;
     }
@@ -2939,7 +3019,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireF32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -2956,7 +3036,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireF32>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -5138,6 +5218,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnionContainingEmptyStruct {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnionContainingEmptyStruct {
         type Encoded = crate::wire::UnionContainingEmptyStruct<'static>;
     }
@@ -5265,7 +5355,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<crate::wire::Empty>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -5280,7 +5370,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<crate::wire::Empty>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -5500,6 +5590,16 @@ pub mod natural {
         UnknownOrdinal_(u64),
     }
 
+    impl UnionWithAttributes {
+        pub fn is_unknown(&self) -> bool {
+            #[allow(unreachable_patterns)]
+            match self {
+                Self::UnknownOrdinal_(_) => true,
+                _ => false,
+            }
+        }
+    }
+
     impl ::fidl_next::Encodable for UnionWithAttributes {
         type Encoded = crate::wire::UnionWithAttributes<'static>;
     }
@@ -5623,7 +5723,7 @@ pub mod natural {
                     wire.raw.get().read_unchecked::<::fidl_next::WireI64>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }
@@ -5636,7 +5736,7 @@ pub mod natural {
                     wire.raw.get().deref_unchecked::<::fidl_next::WireI64>()
                 })),
 
-                _ => unsafe { ::core::hint::unreachable_unchecked() },
+                ord => return Self::UnknownOrdinal_(ord as u64),
             }
         }
     }

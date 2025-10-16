@@ -234,6 +234,7 @@ var encodeErrorPatternNames = map[ir.ErrorCode]string{
 	ir.StrictBitsUnknownBit:         "EncodeError::InvalidStrictBits",
 	ir.StringTooLong:                "EncodeError::Validation(ValidationError::StringTooLong{ .. })",
 	ir.CountExceedsLimit:            "EncodeError::Validation(ValidationError::VectorTooLong{ .. })",
+	ir.FlexibleUnionUnknownField:    "EncodeError::UnknownUnionOrdinal(_)",
 }
 
 func encodeErrorPattern(code ir.ErrorCode) (string, error) {

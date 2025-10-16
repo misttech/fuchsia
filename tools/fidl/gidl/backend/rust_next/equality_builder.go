@@ -114,7 +114,6 @@ match %s.basic_info() {
 						decl.Name(), field.Key.UnknownOrdinal))
 				}
 				b.write("assert!(%s.is_unknown());", expr)
-				b.write("assert_eq!(%s.ordinal(), %d);", expr, field.Key.UnknownOrdinal)
 			} else {
 				b.write(`
 	match %s {
