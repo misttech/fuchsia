@@ -77,6 +77,10 @@ pub enum DecodeError {
         actual: usize,
     },
 
+    /// Envelope flags other than the inline bit were set.
+    #[error("invalid envelope flags: {0:#b}")]
+    InvalidEnvelopeFlags(u16),
+
     /// An optional value was marked absent but its size was non-zero
     #[error("optional value is absent but has a non-zero size; expected 0, found {0}")]
     InvalidOptionalSize(u64),

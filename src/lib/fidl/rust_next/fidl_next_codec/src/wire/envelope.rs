@@ -175,17 +175,19 @@ impl WireEnvelope {
         maybe_num_bytes: Slot<'_, WireU32>,
         flags: Slot<'_, WireU16>,
     ) -> Result<Option<usize>, DecodeError> {
-        if **flags & Self::IS_INLINE_BIT == 0 {
-            let num_bytes = **maybe_num_bytes;
-            if !(num_bytes as usize).is_multiple_of(CHUNK_SIZE) {
-                return Err(DecodeError::InvalidEnvelopeSize(num_bytes));
+        match **flags {
+            Self::IS_INLINE_BIT => Ok(None),
+            0 => {
+                let num_bytes = **maybe_num_bytes;
+                if !(num_bytes as usize).is_multiple_of(CHUNK_SIZE) {
+                    Err(DecodeError::InvalidEnvelopeSize(num_bytes))
+                } else if num_bytes <= INLINE_SIZE as u32 {
+                    Err(DecodeError::OutOfLineValueTooSmall(num_bytes))
+                } else {
+                    Ok(Some(num_bytes as usize / CHUNK_SIZE))
+                }
             }
-            if num_bytes <= INLINE_SIZE as u32 {
-                return Err(DecodeError::OutOfLineValueTooSmall(num_bytes));
-            }
-            Ok(Some(num_bytes as usize / CHUNK_SIZE))
-        } else {
-            Ok(None)
+            _ => Err(DecodeError::InvalidEnvelopeFlags(**flags)),
         }
     }
 

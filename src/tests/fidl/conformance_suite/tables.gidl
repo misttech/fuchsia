@@ -180,7 +180,6 @@ success("TableFieldOutOfLine") {
 }
 
 decode_failure("TableFieldBadInlineMarkerLower") {
-    bindings_denylist = [rust_next],
     type = TableFieldInlinedStruct,
     bytes = {
         v2 = [
@@ -194,7 +193,6 @@ decode_failure("TableFieldBadInlineMarkerLower") {
 }
 
 decode_failure("TableFieldBadInlineMarkerUpper") {
-    bindings_denylist = [rust_next],
     type = TableFieldInlinedStruct,
     bytes = {
         v2 = [
@@ -208,7 +206,6 @@ decode_failure("TableFieldBadInlineMarkerUpper") {
 }
 
 decode_failure("TableFieldOutOfLineBadOutlinedMarker") {
-    bindings_denylist = [rust_next],
     type = TableFieldOutOfLineStruct,
     bytes = {
         v2 = [

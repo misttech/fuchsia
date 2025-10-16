@@ -461,7 +461,6 @@ success("UnionEnvelopeInlining_LargeValue_Outlined") {
 }
 
 decode_failure("UnionEnvelopeInlining_SmallValue_BadInlineMarkerLower") {
-    bindings_denylist = [rust_next],
     type = EnvelopeInliningTestUnionStruct,
     bytes = {
         v2 = [
@@ -474,7 +473,6 @@ decode_failure("UnionEnvelopeInlining_SmallValue_BadInlineMarkerLower") {
 }
 
 decode_failure("UnionEnvelopeInlining_SmallValue_BadInlineMarkerUpper") {
-    bindings_denylist = [rust_next],
     type = EnvelopeInliningTestUnionStruct,
     bytes = {
         v2 = [
@@ -487,7 +485,6 @@ decode_failure("UnionEnvelopeInlining_SmallValue_BadInlineMarkerUpper") {
 }
 
 decode_failure("UnionEnvelopeInlining_LargeValue_BadOutlinedMarker") {
-    bindings_denylist = [rust_next],
     type = EnvelopeInliningTestUnionStruct,
     bytes = {
         v2 = [
