@@ -224,22 +224,23 @@ void PostHandoffBootstrap(PhysHandoff* handoff) {
   __asm__ volatile(
       R"""(
       .pushsection .rodata.kBootConstants, "a", %%progbits
-      .balign %cc0
+      .balign %cc[alignment]
       .globl kBootConstants
       .hidden kBootConstants
       .type kBootConstants, %%object
       kBootConstants:
-        .space %cc1, %cc2
-      .size kBootConstants, %cc1
+        .space %cc[size], %cc[fill]
+      .size kBootConstants, %cc[size]
       .globl kKernelPhysicalLoadAddress
       .hidden kKernelPhysicalLoadAddress
       .type kKernelPhysicalLoadAddress, %%object
-      kKernelPhysicalLoadAddress = kBootConstants + %cc3
+      kKernelPhysicalLoadAddress = kBootConstants + %cc[offsetof_loadaddr]
       .popsection
       )"""
       :
-      : "i"(alignof(BootConstants)), "i"(sizeof(BootConstants)), "i"(kFill),
-        "i"(offsetof(BootConstants, kernel_physical_load_address)));
+      :
+      [alignment] "i"(alignof(BootConstants)), [size] "i"(sizeof(BootConstants)), [fill] "i"(kFill),
+      [offsetof_loadaddr] "i"(offsetof(BootConstants, kernel_physical_load_address)));
 
   // Crucial set-up happens in ArchPostHandoffBootstrap() and it should happen
   // early. We take care to only sequence the simple setting of several,

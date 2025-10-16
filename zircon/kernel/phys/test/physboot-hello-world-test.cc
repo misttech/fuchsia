@@ -72,17 +72,18 @@ void CheckBootConstants() {
   __asm__ volatile(
       R"""(
       .pushsection .rodata.kBootConstants, "a", %%progbits
-      .balign %cc0
+      .balign %cc[alignment]
       .globl kBootConstants
       .hidden kBootConstants
       .type kBootConstants, %%object
       kBootConstants:
-        .space %cc1, %cc2
-      .size kBootConstants, %cc1
+        .space %cc[size], %cc[fill]
+      .size kBootConstants, %cc[size]
       .popsection
       )"""
       :
-      : "i"(alignof(BootConstants)), "i"(sizeof(BootConstants)), "i"(0xbb));
+      :
+      [alignment] "i"(alignof(BootConstants)), [size] "i"(sizeof(BootConstants)), [fill] "i"(0xbb));
 
   uart::all::KernelDriver<uart::BasicIoProvider, uart::UnsynchronizedPolicy, uart::NullIrqProvider>(
       handoff->boot_options->serial)
