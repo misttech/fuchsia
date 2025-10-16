@@ -319,20 +319,28 @@ template("boot_test") {
 
     # Take the existing board, and shove the new partitions config in.
     board_config_target = "_boot_test.${target_name}.create_board_config"
+    recovery_board_config_target = "${board_config_target}.recovery"
     hybrid_board_configuration(board_config_target) {
       board_config = board_configuration_label
       replace_partitions_config = ":$partition_config_target"
     }
+    hybrid_board_configuration(recovery_board_config_target) {
+      board_config = recovery_board_configuration_label
+      replace_partitions_config = ":$partition_config_target"
+    }
     _board_config_label = ":${board_config_target}"
+    _recovery_board_config_label = ":${recovery_board_config_target}"
   } else {
     # Configurations that don't declare a board would fail to generate
     # a hybrid board below. Passing an invalid board to assembled_system
     # is alright for GN as long as it isn't built.
     _board_config_label = board_configuration_label
+    _recovery_board_config_label = recovery_board_configuration_label
   }
 
   if (current_toolchain == default_toolchain) {
     assembled_system_target = "_$main_target.assembled_system"
+    recovery_assembled_system_target = "${assembled_system_target}.recovery"
 
     assembly_mode = "test-zbi"
     assembled_system_kernel_zbi = "//build/testing/boot_tests:empty-zbi"
@@ -371,17 +379,59 @@ template("boot_test") {
       forward_variables_from(invoker, [ "qemu_kernel" ])
     }
 
+    # Mirrors ${assembled_system_target} but using the recovery board config.
+    #
+    # Recovery isn't important for the test itself so the contents are largely
+    # irrelevant, but some boards require a valid image in the recovery slot
+    # in order to boot (b/450614346).
+    assembled_system(recovery_assembled_system_target) {
+      visibility = [ ":*" ]
+      testonly = true
+      image_name = "fuchsia"
+      namespace = recovery_assembled_system_target
+
+      # Must use the recovery board config to ensure the final artifact is a
+      # valid recovery image.
+      board_config_label = _recovery_board_config_label
+
+      # Product and ZBI contents can be the same as the main target.
+      product_assembly_config_label =
+          "//build/testing/boot_tests:product_config"
+      kernel_zbi = assembled_system_kernel_zbi
+      generate_vbmeta = use_vbmeta
+      assembly_mode = assembly_mode
+
+      generate_signed_zbi = false
+      if (signable_ramdisk) {
+        if (custom_signing_script != "") {
+          inputs = custom_signing_script_inputs
+          deps = [ "//build/images/custom_signing:deps" ]
+          generate_signed_zbi = true
+        } else if (use_vboot) {
+          inputs = vboot_action.inputs
+          generate_signed_zbi = true
+        }
+      }
+      forward_variables_from(invoker, [ "qemu_kernel" ])
+    }
+
     product_bundle(product_bundle_target) {
       testonly = true
 
       name = main_target
       system_a = "$target_out_dir/$assembled_system_target"
-      system_r = "$target_out_dir/$assembled_system_target"
+      system_r = "$target_out_dir/$recovery_assembled_system_target"
 
-      deps = [ ":$assembled_system_target" ]
+      deps = [
+        ":$assembled_system_target",
+        ":$recovery_assembled_system_target",
+      ]
     }
   } else {
-    not_needed([ "_board_config_label" ])
+    not_needed([
+                 "_board_config_label",
+                 "_recovery_board_config_label",
+               ])
     group(product_bundle_target) {
       testonly = true
       deps = [ ":${product_bundle_target}($default_toolchain)" ]
