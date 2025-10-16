@@ -8,7 +8,6 @@
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <zircon/process.h>
 #include <zircon/types.h>
 
 #include <fbl/algorithm.h>
@@ -17,8 +16,11 @@
 #include <fbl/macros.h>
 
 #if !defined _KERNEL && defined __Fuchsia__
+#include <lib/zx/object.h>
+#include <lib/zx/vmar.h>
 #include <lib/zx/vmo.h>
 #include <zircon/syscalls.h>
+#include <zircon/syscalls/object.h>
 #endif
 
 namespace bitmap {
@@ -89,11 +91,14 @@ class VmoStorage {
   zx_status_t Allocate(size_t size) {
     Release();
     size_ = fbl::round_up(size, static_cast<size_t>(zx_system_get_page_size()));
-    zx_status_t status;
-    if ((status = zx::vmo::create(size_, ZX_VMO_RESIZABLE, &vmo_)) != ZX_OK) {
+    zx_status_t status = zx::vmo::create(size_, ZX_VMO_RESIZABLE, &vmo_);
+    if (status != ZX_OK) {
       return status;
-    } else if ((status = zx_vmar_map(zx_vmar_root_self(), ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0,
-                                     vmo_.get(), 0, size_, &mapped_addr_)) != ZX_OK) {
+    }
+
+    status = zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo_, 0, size_,
+                                        &mapped_addr_);
+    if (status != ZX_OK) {
       vmo_.reset();
       return status;
     }
@@ -114,41 +119,49 @@ class VmoStorage {
     }
 
     zx_info_vmar_t vmar_info;
-    if ((status = zx_object_get_info(zx_vmar_root_self(), ZX_INFO_VMAR, &vmar_info,
-                                     sizeof(vmar_info), NULL, NULL)) != ZX_OK) {
+    status = zx::vmar::root_self()->get_info(ZX_INFO_VMAR, &vmar_info, sizeof(vmar_info), nullptr,
+                                             nullptr);
+    if (status != ZX_OK) {
       return status;
     }
 
-    // Try to extend mapping
+    // Try to extend the mapping.
     uintptr_t addr;
-    if ((status =
-             zx_vmar_map(zx_vmar_root_self(), ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_SPECIFIC,
-                         mapped_addr_ + size_ - vmar_info.base, vmo_.get(), size_, size - size_,
-                         &addr)) != ZX_OK) {
-      // If extension fails, create entirely new mapping and unmap the old one
-      if ((status = zx_vmar_map(zx_vmar_root_self(), ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0,
-                                vmo_.get(), 0, size, &addr)) != ZX_OK) {
-        return status;
-      }
-
-      if ((status = zx_vmar_unmap(zx_vmar_root_self(), mapped_addr_, size_)) != ZX_OK) {
-        return status;
-      }
-
-      mapped_addr_ = addr;
+    status = zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_SPECIFIC,
+                                        mapped_addr_ + size_ - vmar_info.base, vmo_, size_,
+                                        size - size_, &addr);
+    if (status == ZX_OK) {
+      return ZX_OK;
     }
 
+    // If extension fails, create an entirely new mapping and unmap the old one.
+    status =
+        zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo_, 0, size, &addr);
+    if (status != ZX_OK) {
+      return status;
+    }
+
+    status = zx::vmar::root_self()->unmap(mapped_addr_, size_);
+    if (status != ZX_OK) {
+      zx::vmar::root_self()->unmap(addr, size);
+      return status;
+    }
+
+    mapped_addr_ = addr;
+    size_ = size;
     return ZX_OK;
   }
 
   void* GetData() {
     ZX_DEBUG_ASSERT(mapped_addr_ != 0);
-    return (void*)mapped_addr_;
+    return reinterpret_cast<void*>(mapped_addr_);
   }
+
   const void* GetData() const {
     ZX_DEBUG_ASSERT(mapped_addr_ != 0);
-    return (void*)mapped_addr_;
+    return reinterpret_cast<const void*>(mapped_addr_);
   }
+
   const zx::vmo& GetVmo() const {
     ZX_DEBUG_ASSERT(mapped_addr_ != 0);
     return vmo_;
@@ -157,10 +170,11 @@ class VmoStorage {
  private:
   void Release() {
     if (mapped_addr_ != 0) {
-      zx_vmar_unmap(zx_vmar_root_self(), mapped_addr_, size_);
+      zx::vmar::root_self()->unmap(mapped_addr_, size_);
     }
     mapped_addr_ = 0;
   }
+
   zx::vmo vmo_;
   uintptr_t mapped_addr_;
   size_t size_;
