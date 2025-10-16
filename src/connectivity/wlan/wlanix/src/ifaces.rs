@@ -476,8 +476,14 @@ impl ClientIface for SmeClientIface {
         );
         select! {
             scan_results = fut => {
-                let scan_result_vmo = scan_results?
-                    .map_err(|e| format_err!("Scan ended with error: {:?}", e))?;
+                let scan_result_vmo = match scan_results? {
+                    Ok(vmo) => vmo,
+                    Err(e) => match e {
+                        fidl_sme::ScanErrorCode::ShouldWait
+                        | fidl_sme::ScanErrorCode::CanceledByDriverOrFirmware => return Ok(ScanEnd::Cancelled),
+                        _ => bail!("Scan ended with error: {:?}", e),
+                    }
+                };
                 info!("Got scan results from SME.");
                 *self.last_scan_results.lock() = Some(LastScanResults::new(
                     fasync::BootInstant::now(),
@@ -1644,7 +1650,7 @@ mod tests {
     }
 
     #[test]
-    fn test_trigger_scan() {
+    fn test_trigger_scan_success() {
         let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
             setup_test_manager_with_iface();
         assert!(iface.get_last_scan_results().is_empty());
@@ -1658,6 +1664,34 @@ mod tests {
         responder.send(Ok(result)).expect("Failed to send result");
         assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Ready(Ok(ScanEnd::Complete)));
         assert_eq!(iface.get_last_scan_results().len(), 1);
+    }
+
+    #[test]
+    fn test_trigger_scan_failure() {
+        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
+            setup_test_manager_with_iface();
+        let mut scan_fut = iface.trigger_scan();
+        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        let (_req, responder) = assert_matches!(
+            exec.run_until_stalled(&mut sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
+        responder.send(Err(fidl_sme::ScanErrorCode::InternalError)).expect("Failed to send result");
+        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Ready(Err(_)));
+    }
+
+    #[test]
+    fn test_trigger_scan_cancelled() {
+        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
+            setup_test_manager_with_iface();
+        let mut scan_fut = iface.trigger_scan();
+        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+        let (_req, responder) = assert_matches!(
+            exec.run_until_stalled(&mut sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
+        responder
+            .send(Err(fidl_sme::ScanErrorCode::CanceledByDriverOrFirmware))
+            .expect("Failed to send result");
+        assert_matches!(exec.run_until_stalled(&mut scan_fut), Poll::Ready(Ok(ScanEnd::Cancelled)));
     }
 
     #[test]
