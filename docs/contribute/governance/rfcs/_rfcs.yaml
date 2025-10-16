@@ -3588,3 +3588,22 @@
   ]
   submitted: '2025-05-29'
   reviewed: '2025-09-15'
+
+- name: 'RFC-0275'
+  title: 'Panel drivers'
+  short_description: 'Split the responsibilities of the "display driver" into a display engine driver and panel drivers.'
+  authors: ['costan@google.com', 'liyl@google.com']
+  file: '0275_panel_drivers.md'
+  area: ['Drivers', 'Graphics']
+  issue: ['430383474']
+  gerrit_change_id: ['1317834']
+  status: 'Accepted'
+  reviewers: [
+    'carolineliu@google.com',
+    'cstout@google.com',
+    'harshanv@google.com',
+    'jjosh@google.com',
+    'surajmalhotra@google.com',
+  ]
+  submitted: '2025-07-08'
+  reviewed: '2025-10-16'
