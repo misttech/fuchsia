@@ -258,8 +258,9 @@ zx_status_t OpteeController::InitializeSharedMemory() {
   // Briefly pin the first page of this VMO to determine the secure world's base physical address.
   zx_paddr_t mmio_vmo_paddr;
   zx::pmt pmt;
-  status = bti_.pin(ZX_BTI_PERM_READ | ZX_BTI_CONTIGUOUS, *zx::unowned_vmo(mmio_dev.vmo),
-                    /*offset=*/0, ZX_PAGE_SIZE, &mmio_vmo_paddr, /*addrs_count=*/1, &pmt);
+  status =
+      bti_.pin(ZX_BTI_PERM_READ | ZX_BTI_CONTIGUOUS, *zx::unowned_vmo(mmio_dev.vmo),
+               /*offset=*/0, zx_system_get_page_size(), &mmio_vmo_paddr, /*addrs_count=*/1, &pmt);
   if (status != ZX_OK) {
     LOG(ERROR, "unable to pin secure world memory");
     return status;

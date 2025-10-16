@@ -988,7 +988,7 @@ zx_status_t OpteeClient::RpmbSendRequest(std::optional<SharedMemoryView>& req,
   //                                      by PAGE SIZE
   //         |   TX FRAMES  |     padding      |        RX FRAMES     |
   zx::vmo rpmb_vmo;
-  uint64_t size = fbl::round_up(req->size(), ZX_PAGE_SIZE);
+  uint64_t size = fbl::round_up(req->size(), zx_system_get_page_size());
   bool has_rx_frames = resp && resp->size();
   uint64_t rx_offset = size;
 
@@ -998,7 +998,7 @@ zx_status_t OpteeClient::RpmbSendRequest(std::optional<SharedMemoryView>& req,
   }
 
   if (has_rx_frames) {
-    size += fbl::round_up(resp->size(), ZX_PAGE_SIZE);
+    size += fbl::round_up(resp->size(), zx_system_get_page_size());
   }
 
   fuchsia_hardware_rpmb::wire::Request rpmb_request = {};
