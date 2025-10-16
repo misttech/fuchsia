@@ -59,7 +59,7 @@ class Unit(enum.StrEnum):
     countSmallerIsBetter = "count_smallerIsBetter"
     countBiggerIsBetter = "count_biggerIsBetter"
     # Power-based units.
-    watts = "Watts"
+    watts = "W"
 
 
 class MetricDescription(TypedDict):
