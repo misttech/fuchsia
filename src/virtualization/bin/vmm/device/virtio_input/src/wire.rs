@@ -5,7 +5,7 @@
 // Keep all consts and type defs for completeness.
 #![allow(dead_code)]
 
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 pub use zerocopy::byteorder::little_endian::{U16 as LE16, U32 as LE32};
@@ -69,10 +69,10 @@ pub struct VirtioInputEvent {
     pub value: LE32,
 }
 
-lazy_static! {
-    pub static ref SYNC_EVENT: VirtioInputEvent =
-        VirtioInputEvent { type_: LE16::new(VIRTIO_INPUT_EV_SYN), ..Default::default() };
-}
+pub static SYNC_EVENT: LazyLock<VirtioInputEvent> = LazyLock::new(|| VirtioInputEvent {
+    type_: LE16::new(VIRTIO_INPUT_EV_SYN),
+    ..Default::default()
+});
 
 //
 // virtio-input uses evdev keycodes for key events. The full set of these symbols is found in
