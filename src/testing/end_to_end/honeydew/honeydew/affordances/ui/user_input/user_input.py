@@ -14,6 +14,7 @@ DEFAULTS: dict[str, Any] = {
     "TAP_EVENT_COUNT": 1,
     "TAP_DURATION_MS": 300,
     "SWIPE_DURATION_MS": 0,
+    "ONE_TAP_DURATION_MS": 0,
 }
 
 
@@ -26,6 +27,7 @@ class TouchDevice(abc.ABC):
         location: types.Coordinate,
         tap_event_count: int = DEFAULTS["TAP_EVENT_COUNT"],
         duration_ms: int = DEFAULTS["TAP_DURATION_MS"],
+        duration_of_one_tap_ms: int = DEFAULTS["ONE_TAP_DURATION_MS"],
     ) -> None:
         """Instantiates Taps at coordinates (x, y) for a touchscreen with
            default or custom width, height, duration, and tap event counts.
@@ -38,6 +40,9 @@ class TouchDevice(abc.ABC):
 
             duration_ms: Duration of the event(s) in milliseconds, defaults to
                 300.
+
+            duration_of_one_tap_ms: Duration of 1 event(s) in milliseconds,
+                defaults to 0.
 
         Raises:
             UserInputError: if failed tap operation.

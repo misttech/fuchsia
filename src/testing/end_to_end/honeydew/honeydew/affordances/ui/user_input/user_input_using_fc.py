@@ -78,6 +78,9 @@ class TouchDevice(user_input.TouchDevice):
         location: ui_custom_types.Coordinate,
         tap_event_count: int = user_input.DEFAULTS["TAP_EVENT_COUNT"],
         duration_ms: int = user_input.DEFAULTS["TAP_DURATION_MS"],
+        duration_of_one_tap_ms: int = user_input.DEFAULTS[
+            "ONE_TAP_DURATION_MS"
+        ],
     ) -> None:
         """Instantiates Taps at coordinates (x, y) for a touchscreen with
            default or custom width, height, duration, and tap event counts.
@@ -91,6 +94,9 @@ class TouchDevice(user_input.TouchDevice):
             duration_ms: Duration of the event(s) in milliseconds, defaults to
                 300.
 
+            duration_of_one_tap_ms: Duration of 1 event(s) in milliseconds,
+                defaults to 0.
+
         Raises:
             UserInputError: if failed tap operation.
         """
@@ -101,10 +107,14 @@ class TouchDevice(user_input.TouchDevice):
             for _ in range(tap_event_count):
                 asyncio.run(
                     self._touch_screen_proxy.simulate_tap(
-                        tap_location=f_math.Vec(x=location.x, y=location.y)
+                        tap_location=f_math.Vec(x=location.x, y=location.y),
+                        duration=duration_of_one_tap_ms
+                        * 1000000,  # milliseconds to nanoseconds
                     )
                 )
-                time.sleep(interval / 1000)  # Sleep in seconds
+                time.sleep(
+                    interval / 1000 - duration_of_one_tap_ms / 1000
+                )  # Sleep in seconds
 
         except fcp.ZxStatus as status:
             raise user_input_errors.UserInputError(

@@ -106,7 +106,9 @@ class UserInputFCTests(unittest.TestCase):
 
         touch_device = self.user_input().create_touch_device()
         touch_device.tap(location=ui_custom_types.Coordinate(x=1, y=2))
-        simulate_tap.assert_called_once_with(tap_location=f_math.Vec(x=1, y=2))
+        simulate_tap.assert_called_once_with(
+            tap_location=f_math.Vec(x=1, y=2), duration=0
+        )
 
     @mock.patch.object(
         f_test_input.TouchScreenClient,
@@ -129,12 +131,19 @@ class UserInputFCTests(unittest.TestCase):
             location=ui_custom_types.Coordinate(x=1, y=2),
             tap_event_count=3,
             duration_ms=6,
+            duration_of_one_tap_ms=2,
         )
         simulate_tap.assert_has_calls(
             [
-                mock.call(tap_location=f_math.Vec(x=1, y=2)),
-                mock.call(tap_location=f_math.Vec(x=1, y=2)),
-                mock.call(tap_location=f_math.Vec(x=1, y=2)),
+                mock.call(
+                    tap_location=f_math.Vec(x=1, y=2), duration=2 * 1000000
+                ),
+                mock.call(
+                    tap_location=f_math.Vec(x=1, y=2), duration=2 * 1000000
+                ),
+                mock.call(
+                    tap_location=f_math.Vec(x=1, y=2), duration=2 * 1000000
+                ),
             ]
         )
 
