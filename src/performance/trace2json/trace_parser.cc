@@ -19,9 +19,14 @@
 namespace tracing {
 namespace {
 bool ShouldPassthrough(const trace::Record& record) {
+  // Need metadata and init records to have a well-formed trace.
+  // Most use cases for trace files require scheduler records.
+  // Thread and kernel object records get process and thread names into traces.
   return record.type() == trace::RecordType::kScheduler ||
          record.type() == trace::RecordType::kMetadata ||
-         record.type() == trace::RecordType::kInitialization;
+         record.type() == trace::RecordType::kInitialization ||
+         record.type() == trace::RecordType::kThread ||
+         record.type() == trace::RecordType::kKernelObject;
 }
 
 bool MatchesAny(const std::vector<std::unique_ptr<re2::RE2>>& patterns, std::string_view string) {
