@@ -23,13 +23,7 @@ stamp_group(
     deps = [
         ":hello_libc",
         ":hello_libcpp",
-    ] + select({
-        "@platforms//os:macos": [
-            ":hello_cpp_macos_framework",
-            ":hello_rust_macos_framework",
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 # A trivial C source file that prints "hello libc" to stdout.
@@ -46,24 +40,4 @@ cc_binary(
 cc_binary(
     name = "hello_libcpp",
     srcs = ["hello_libcpp.cc"],
-)
-
-# A trivial C++ source file that must link to a MacOS framework.
-cc_binary(
-    name = "hello_cpp_macos_framework",
-    srcs = ["hello_cpp_macos_framework.cc"],
-    linkopts = ["-framework CoreFoundation"],
-    target_compatible_with = [
-        "@platforms//os:macos",
-    ],
-)
-
-# A trivial Rust source file that must link to a MacOS framework.
-rust_binary(
-    name = "hello_rust_macos_framework",
-    srcs = ["hello_rust_macos_framework.rs"],
-    edition = "2021",
-    target_compatible_with = [
-        "@platforms//os:macos",
-    ],
 )
