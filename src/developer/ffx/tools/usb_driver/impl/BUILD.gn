@@ -4,8 +4,6 @@
 
 import("//build/rust/rustc_library.gni")
 
-assert(!is_mac, "The USB host driver is not supported on Mac")
-
 rustc_library("lib") {
   name = "usb_driver_impl"
   edition = "2021"

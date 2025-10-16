@@ -11,13 +11,8 @@ version_info_bin = get_label_info(
                        "//src/developer/ffx/lib/version/build:version-info.bin($default_toolchain)",
                        "target_out_dir") + "/version-info.bin"
 
-if (is_mac) {
-  build_info_section = ".FFX_BUILD,.ffx_build"
-  version_info_section = ".FFX_VERSION,.ffx_version"
-} else {
-  build_info_section = ".ffx_build"
-  version_info_section = ".ffx_version"
-}
+build_info_section = ".ffx_build"
+version_info_section = ".ffx_version"
 
 # Apply FFX version information after ffx has been linked.
 #
