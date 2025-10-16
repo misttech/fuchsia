@@ -11,6 +11,7 @@ lib_srcs = [
   "src/fake_device.rs",
   "src/file_backed_device.rs",
   "src/lib.rs",
+  "src/ranged_device.rs",
 ]
 
 lib_deps = [

@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::buffer::{BufferRef, MutableBufferRef};
+use crate::buffer_allocator::BufferFuture;
+use crate::{Device, ReadOptions, WriteOptions};
 use anyhow::{Error, anyhow, bail, ensure};
 use async_trait::async_trait;
 use std::ops::Range;
 use std::sync::Arc;
-use storage_device::buffer::{BufferRef, MutableBufferRef};
-use storage_device::buffer_allocator::BufferFuture;
-use storage_device::{Device, ReadOptions, WriteOptions};
 
 /// Wrapper around a Device where we can only access a region within it.
 pub struct RangedDevice {
@@ -122,9 +122,9 @@ impl Device for RangedDevice {
 #[cfg(test)]
 mod tests {
     use super::RangedDevice;
+    use crate::Device;
+    use crate::fake_device::FakeDevice;
     use std::sync::Arc;
-    use storage_device::Device;
-    use storage_device::fake_device::FakeDevice;
 
     #[fuchsia::test]
     async fn test_ranged_device_reads() {

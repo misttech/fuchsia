@@ -22,9 +22,7 @@ use fxfs_crypto::{Crypt, EncryptionKey, WrappingKeyId};
 use std::collections::HashSet;
 use std::sync::Arc;
 use storage_device::DeviceHolder;
-
-mod ranged_device;
-use crate::ranged_device::RangedDevice;
+use storage_device::ranged_device::RangedDevice;
 
 #[cfg(test)]
 mod integration_test;

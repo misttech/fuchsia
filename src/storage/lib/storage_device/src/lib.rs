@@ -33,6 +33,8 @@ pub mod file_backed_device;
 
 pub mod fake_device;
 
+pub mod ranged_device;
+
 #[async_trait]
 /// Device is an abstract representation of an underlying block device.
 pub trait Device: Send + Sync {

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::ranged_device::RangedDevice;
 use crate::*;
 use anyhow::Context;
 use f2fs_reader::F2fsReader;
@@ -12,6 +11,7 @@ use fxfs::object_store::journal::super_block::SuperBlockInstance;
 use fxfs::object_store::volume::root_volume as fxfs_root_volume;
 use fxfs::object_store::{Directory, HandleOptions, ObjectStore};
 use fxfs_insecure_crypto::InsecureCrypt;
+use storage_device::ranged_device::RangedDevice;
 
 use std::io::Read;
 use std::sync::Arc;
