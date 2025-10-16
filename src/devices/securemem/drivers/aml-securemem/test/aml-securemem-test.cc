@@ -178,7 +178,7 @@ class AmlogicSecureMemTest : public zxtest::Test {
 
 TEST_F(AmlogicSecureMemTest, GetSecureMemoryPhysicalAddressBadVmo) {
   zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(ZX_PAGE_SIZE, 0, &vmo));
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
 
   ASSERT_TRUE(dev()->GetSecureMemoryPhysicalAddress(std::move(vmo)).is_error());
 }
