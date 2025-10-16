@@ -251,6 +251,7 @@ pub mod fuchsia;
 mod into_natural;
 mod primitives;
 mod slot;
+mod validate;
 mod wire;
 
 pub use bitflags;
@@ -269,4 +270,5 @@ pub use self::from_wire::*;
 pub use self::into_natural::*;
 pub use self::primitives::*;
 pub use self::slot::*;
+pub use self::validate::*;
 pub use self::wire::*;

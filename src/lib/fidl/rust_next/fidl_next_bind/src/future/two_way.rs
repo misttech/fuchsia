@@ -7,7 +7,7 @@ use core::marker::PhantomData;
 use core::pin::Pin;
 use core::task::{Context, Poll, ready};
 
-use fidl_next_codec::{Decode, DecoderExt, EncodeError};
+use fidl_next_codec::{Constrained, Decode, DecoderExt, EncodeError};
 use fidl_next_protocol::Transport;
 use pin_project::pin_project;
 
@@ -147,7 +147,7 @@ macro_rules! two_way_futures {
             impl<'a, M, T> Future for $future<'a, M, T>
             where
                 M: Method,
-                M::Response: Decode<T::RecvBuffer>,
+                M::Response: Decode<T::RecvBuffer> + Constrained<Constraint = ()>,
                 T: Transport,
             {
                 type Output = Result<$output, Error<T::Error>>;

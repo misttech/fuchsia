@@ -45,8 +45,9 @@ pub mod natural {
             self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
         }
     }
 
@@ -59,6 +60,7 @@ pub mod natural {
             &self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::ObjType { value } = out);
             let _ = value.write(::fidl_next::WireU32::from(match *self {
@@ -136,6 +138,7 @@ pub mod natural {
             self,
             encoder_: &mut ___E,
             out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let Self::Encoded {
@@ -151,41 +154,82 @@ pub mod natural {
                 } = out_;
             }
 
-            ::fidl_next::Encode::encode(self.field_of_u32, encoder_, field_of_u32)?;
+            ::fidl_next::Encode::encode(self.field_of_u32, encoder_, field_of_u32, ())?;
+
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(field_of_u32.as_mut_ptr()) };
 
             ::fidl_next::Encode::encode(
                 self.field_of_vec_of_strings,
                 encoder_,
                 field_of_vec_of_strings,
+                (4294967295, 4294967295),
             )?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(field_of_vec_of_strings.as_mut_ptr()) };
+            ::fidl_next::Constrained::validate(_field, (4294967295, 4294967295))?;
 
             ::fidl_next::Encode::encode(
                 self.field_of_vec_of_strings_at_most_nine,
                 encoder_,
                 field_of_vec_of_strings_at_most_nine,
+                (9, 4294967295),
             )?;
+
+            let mut _field = unsafe {
+                ::fidl_next::Slot::new_unchecked(field_of_vec_of_strings_at_most_nine.as_mut_ptr())
+            };
+            ::fidl_next::Constrained::validate(_field, (9, 4294967295))?;
 
             ::fidl_next::Encode::encode(
                 self.field_of_vec_of_strings_at_most_5,
                 encoder_,
                 field_of_vec_of_strings_at_most_5,
+                (5, 4294967295),
             )?;
+
+            let mut _field = unsafe {
+                ::fidl_next::Slot::new_unchecked(field_of_vec_of_strings_at_most_5.as_mut_ptr())
+            };
+            ::fidl_next::Constrained::validate(_field, (5, 4294967295))?;
 
             ::fidl_next::Encode::encode(
                 self.field_of_vec_of_ref_me_at_most_5,
                 encoder_,
                 field_of_vec_of_ref_me_at_most_5,
+                (5, ()),
             )?;
 
-            ::fidl_next::Encode::encode(self.field_of_channel, encoder_, field_of_channel)?;
+            let mut _field = unsafe {
+                ::fidl_next::Slot::new_unchecked(field_of_vec_of_ref_me_at_most_5.as_mut_ptr())
+            };
+            ::fidl_next::Constrained::validate(_field, (5, ()))?;
 
-            ::fidl_next::Encode::encode(self.field_of_client_end, encoder_, field_of_client_end)?;
+            ::fidl_next::Encode::encode(self.field_of_channel, encoder_, field_of_channel, ())?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(field_of_channel.as_mut_ptr()) };
+
+            ::fidl_next::Encode::encode(
+                self.field_of_client_end,
+                encoder_,
+                field_of_client_end,
+                (),
+            )?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(field_of_client_end.as_mut_ptr()) };
 
             ::fidl_next::Encode::encode(
                 self.field_of_nullable_client_end,
                 encoder_,
                 field_of_nullable_client_end,
+                (),
             )?;
+
+            let mut _field = unsafe {
+                ::fidl_next::Slot::new_unchecked(field_of_nullable_client_end.as_mut_ptr())
+            };
 
             Ok(())
         }
@@ -206,9 +250,10 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
                 ::fidl_next::WireBox::encode_present(out);
             } else {
                 ::fidl_next::WireBox::encode_absent(out);
@@ -295,6 +340,7 @@ pub mod wire {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
             _: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { value } = slot);
 
@@ -322,6 +368,8 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for ObjType {
         type Natural = crate::natural::ObjType;
     }
+
+    impl ::fidl_next::Unconstrained for ObjType {}
 
     /// The wire type corresponding to [`Channel`](crate::natural::Channel).
     pub type Channel = ::fidl_next::fuchsia::WireChannel;
@@ -451,6 +499,7 @@ pub mod wire {
         fn decode(
             slot_: ::fidl_next::Slot<'_, Self>,
             decoder_: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
@@ -467,11 +516,25 @@ pub mod wire {
                 } = slot_;
             }
 
-            ::fidl_next::Decode::decode(field_of_u32.as_mut(), decoder_)?;
+            let _field = field_of_u32.as_mut();
 
-            ::fidl_next::Decode::decode(field_of_vec_of_strings.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(field_of_u32.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(field_of_vec_of_strings_at_most_nine.as_mut(), decoder_)?;
+            let _field = field_of_vec_of_strings.as_mut();
+            ::fidl_next::Constrained::validate(_field, (4294967295, 4294967295))?;
+            ::fidl_next::Decode::decode(
+                field_of_vec_of_strings.as_mut(),
+                decoder_,
+                (4294967295, 4294967295),
+            )?;
+
+            let _field = field_of_vec_of_strings_at_most_nine.as_mut();
+            ::fidl_next::Constrained::validate(_field, (9, 4294967295))?;
+            ::fidl_next::Decode::decode(
+                field_of_vec_of_strings_at_most_nine.as_mut(),
+                decoder_,
+                (9, 4294967295),
+            )?;
 
             let field_of_vec_of_strings_at_most_nine =
                 unsafe { field_of_vec_of_strings_at_most_nine.deref_unchecked() };
@@ -483,7 +546,13 @@ pub mod wire {
                 });
             }
 
-            ::fidl_next::Decode::decode(field_of_vec_of_strings_at_most_5.as_mut(), decoder_)?;
+            let _field = field_of_vec_of_strings_at_most_5.as_mut();
+            ::fidl_next::Constrained::validate(_field, (5, 4294967295))?;
+            ::fidl_next::Decode::decode(
+                field_of_vec_of_strings_at_most_5.as_mut(),
+                decoder_,
+                (5, 4294967295),
+            )?;
 
             let field_of_vec_of_strings_at_most_5 =
                 unsafe { field_of_vec_of_strings_at_most_5.deref_unchecked() };
@@ -495,7 +564,13 @@ pub mod wire {
                 });
             }
 
-            ::fidl_next::Decode::decode(field_of_vec_of_ref_me_at_most_5.as_mut(), decoder_)?;
+            let _field = field_of_vec_of_ref_me_at_most_5.as_mut();
+            ::fidl_next::Constrained::validate(_field, (5, ()))?;
+            ::fidl_next::Decode::decode(
+                field_of_vec_of_ref_me_at_most_5.as_mut(),
+                decoder_,
+                (5, ()),
+            )?;
 
             let field_of_vec_of_ref_me_at_most_5 =
                 unsafe { field_of_vec_of_ref_me_at_most_5.deref_unchecked() };
@@ -507,11 +582,17 @@ pub mod wire {
                 });
             }
 
-            ::fidl_next::Decode::decode(field_of_channel.as_mut(), decoder_)?;
+            let _field = field_of_channel.as_mut();
 
-            ::fidl_next::Decode::decode(field_of_client_end.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(field_of_channel.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(field_of_nullable_client_end.as_mut(), decoder_)?;
+            let _field = field_of_client_end.as_mut();
+
+            ::fidl_next::Decode::decode(field_of_client_end.as_mut(), decoder_, ())?;
+
+            let _field = field_of_nullable_client_end.as_mut();
+
+            ::fidl_next::Decode::decode(field_of_nullable_client_end.as_mut(), decoder_, ())?;
 
             Ok(())
         }
@@ -520,6 +601,8 @@ pub mod wire {
     impl<'de> ::fidl_next::IntoNatural for ExampleOfUseOfAliases<'de> {
         type Natural = crate::natural::ExampleOfUseOfAliases;
     }
+
+    impl ::fidl_next::Unconstrained for ExampleOfUseOfAliases<'static> {}
 }
 
 pub mod wire_optional {}

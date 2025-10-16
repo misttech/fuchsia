@@ -24,7 +24,6 @@ success("UnionWithBoundString") {
 }
 
 encode_failure("UnionWithBoundString_ExceedsBounds") {
-    bindings_denylist = [rust_next],
     value = UnionWithBoundStringStruct{
         v: UnionWithBoundString{
             boundFiveStr: "abcdef",

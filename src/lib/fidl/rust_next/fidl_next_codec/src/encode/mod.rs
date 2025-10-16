@@ -12,8 +12,8 @@ use core::ptr::copy_nonoverlapping;
 pub use self::error::EncodeError;
 
 use crate::{
-    CopyOptimization, Encoder, EncoderExt as _, Wire, WireBox, WireF32, WireF64, WireI16, WireI32,
-    WireI64, WireU16, WireU32, WireU64,
+    Constrained, CopyOptimization, Encoder, EncoderExt as _, Wire, WireBox, WireF32, WireF64,
+    WireI16, WireI32, WireI64, WireU16, WireU32, WireU64,
 };
 
 /// A type which can be encoded as FIDL.
@@ -25,7 +25,7 @@ pub trait Encodable {
     const COPY_OPTIMIZATION: CopyOptimization<Self, Self::Encoded> = CopyOptimization::disable();
 
     /// The wire type for the value.
-    type Encoded: Wire;
+    type Encoded: Wire + Constrained;
 }
 
 /// Encodes a value.
@@ -39,6 +39,7 @@ pub unsafe trait Encode<E: ?Sized>: Encodable + Sized {
         self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        constraint: <<Self as Encodable>::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError>;
 }
 
@@ -53,13 +54,14 @@ pub unsafe trait EncodeRef<E: ?Sized>: Encode<E> {
         &self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        constraint: <<Self as Encodable>::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError>;
 }
 
 /// A type which can be encoded as FIDL when optional.
 pub trait EncodableOption {
     /// The wire type for the optional value.
-    type EncodedOption: Wire;
+    type EncodedOption: Wire + Constrained;
 }
 
 /// Encodes an optional value.
@@ -73,6 +75,7 @@ pub unsafe trait EncodeOption<E: ?Sized>: EncodableOption + Sized {
         this: Option<Self>,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::EncodedOption>,
+        constraint: <<Self as EncodableOption>::EncodedOption as Constrained>::Constraint,
     ) -> Result<(), EncodeError>;
 }
 
@@ -87,6 +90,7 @@ pub unsafe trait EncodeOptionRef<E: ?Sized>: EncodeOption<E> {
         this: Option<&Self>,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::EncodedOption>,
+        constraint: <<Self as EncodableOption>::EncodedOption as Constrained>::Constraint,
     ) -> Result<(), EncodeError>;
 }
 
@@ -99,8 +103,9 @@ unsafe impl<E: ?Sized, T: EncodeRef<E>> Encode<E> for &T {
         self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        constraint: <<Self as Encodable>::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        T::encode_ref(self, encoder, out)
+        T::encode_ref(self, encoder, out, constraint)
     }
 }
 
@@ -113,8 +118,9 @@ unsafe impl<E: ?Sized, T: EncodeOptionRef<E>> EncodeOption<E> for &T {
         this: Option<Self>,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::EncodedOption>,
+        constraint: <<Self as EncodableOption>::EncodedOption as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        T::encode_option_ref(this, encoder, out)
+        T::encode_option_ref(this, encoder, out, constraint)
     }
 }
 
@@ -127,8 +133,9 @@ unsafe impl<E: ?Sized, T: Encode<E>> Encode<E> for Box<T> {
         self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        constraint: <<Self as Encodable>::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        T::encode(*self, encoder, out)
+        T::encode(*self, encoder, out, constraint)
     }
 }
 
@@ -137,8 +144,9 @@ unsafe impl<E: ?Sized, T: EncodeRef<E>> EncodeRef<E> for Box<T> {
         &self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        constraint: <<Self as Encodable>::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        T::encode_ref(self, encoder, out)
+        T::encode_ref(self, encoder, out, constraint)
     }
 }
 
@@ -151,8 +159,9 @@ unsafe impl<E: ?Sized, T: EncodeOption<E>> EncodeOption<E> for Box<T> {
         this: Option<Self>,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::EncodedOption>,
+        constraint: <<Self as EncodableOption>::EncodedOption as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        T::encode_option(this.map(|value| *value), encoder, out)
+        T::encode_option(this.map(|value| *value), encoder, out, constraint)
     }
 }
 
@@ -161,8 +170,9 @@ unsafe impl<E: ?Sized, T: EncodeOptionRef<E>> EncodeOptionRef<E> for Box<T> {
         this: Option<&Self>,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::EncodedOption>,
+        constraint: <<Self as EncodableOption>::EncodedOption as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        T::encode_option_ref(this.map(|value| &**value), encoder, out)
+        T::encode_option_ref(this.map(|value| &**value), encoder, out, constraint)
     }
 }
 
@@ -184,8 +194,9 @@ macro_rules! impl_primitive {
                 self,
                 encoder: &mut E,
                 out: &mut MaybeUninit<Self::Encoded>,
+                constraint: <<Self as Encodable>::Encoded as Constrained>::Constraint,
             ) -> Result<(), EncodeError> {
-                self.encode_ref(encoder, out)
+                self.encode_ref(encoder, out, constraint)
             }
         }
 
@@ -195,6 +206,7 @@ macro_rules! impl_primitive {
                 &self,
                 _: &mut E,
                 out: &mut MaybeUninit<Self::Encoded>,
+                _constraint: <<Self as Encodable>::Encoded as Constrained>::Constraint,
             ) -> Result<(), EncodeError> {
                 out.write(<$enc>::from(*self));
                 Ok(())
@@ -211,8 +223,9 @@ macro_rules! impl_primitive {
                 this: Option<Self>,
                 encoder: &mut E,
                 out: &mut MaybeUninit<Self::EncodedOption>,
+                constraint: <<Self as EncodableOption>::EncodedOption as Constrained>::Constraint,
             ) -> Result<(), EncodeError> {
-                Self::encode_option_ref(this.as_ref(), encoder, out)
+                Self::encode_option_ref(this.as_ref(), encoder, out, constraint)
             }
         }
 
@@ -222,9 +235,10 @@ macro_rules! impl_primitive {
                 this: Option<&Self>,
                 encoder: &mut E,
                 out: &mut MaybeUninit<Self::EncodedOption>,
+                constraint: <<Self as EncodableOption>::EncodedOption as Constrained>::Constraint,
             ) -> Result<(), EncodeError> {
                 if let Some(value) = this {
-                    encoder.encode_next(value)?;
+                    encoder.encode_next(value, constraint)?;
                     WireBox::encode_present(out);
                 } else {
                     WireBox::encode_absent(out);
@@ -272,6 +286,7 @@ fn encode_to_array<A, E, T, const N: usize>(
     value: A,
     encoder: &mut E,
     out: &mut MaybeUninit<[T::Encoded; N]>,
+    constraint: <T::Encoded as Constrained>::Constraint,
 ) -> Result<(), EncodeError>
 where
     A: AsRef<[T]> + IntoIterator,
@@ -296,7 +311,7 @@ where
             // 3. Adding `i` to reach the `i`th element.
             // 4. Dereferencing as `&mut`.
             let out_i = unsafe { &mut *out.as_mut_ptr().cast::<MaybeUninit<T::Encoded>>().add(i) };
-            item.encode(encoder, out_i)?;
+            item.encode(encoder, out_i, constraint)?;
         }
     }
     Ok(())
@@ -311,8 +326,9 @@ where
         self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        constraint: <T::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        encode_to_array(self, encoder, out)
+        encode_to_array(self, encoder, out, constraint)
     }
 }
 
@@ -325,15 +341,16 @@ where
         &self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        constraint: <T::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        encode_to_array(self, encoder, out)
+        encode_to_array(self, encoder, out, constraint)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::chunks;
-    use crate::testing::assert_encoded;
+    use crate::testing::{assert_encoded, assert_encoded_with_constraint};
 
     #[test]
     fn encode_unit() {
@@ -393,51 +410,57 @@ mod tests {
 
     #[test]
     fn encode_vec() {
-        assert_encoded(
+        assert_encoded_with_constraint(
             None::<Vec<u32>>,
             &chunks![
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00,
             ],
+            (1000, ()),
         );
-        assert_encoded(
+        assert_encoded_with_constraint(
             Some(vec![0x12345678u32, 0x9abcdef0u32]),
             &chunks![
                 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 0xff, 0xff, 0x78, 0x56, 0x34, 0x12, 0xf0, 0xde, 0xbc, 0x9a,
             ],
+            (1000, ()),
         );
-        assert_encoded(
+        assert_encoded_with_constraint(
             Some(Vec::<u32>::new()),
             &chunks![
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 0xff, 0xff,
             ],
+            (1000, ()),
         );
     }
 
     #[test]
     fn encode_string() {
-        assert_encoded(
+        assert_encoded_with_constraint(
             None::<String>,
             &chunks![
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00,
             ],
+            1000,
         );
-        assert_encoded(
+        assert_encoded_with_constraint(
             Some("0123".to_string()),
             &chunks![
                 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 0xff, 0xff, 0x30, 0x31, 0x32, 0x33, 0x00, 0x00, 0x00, 0x00,
             ],
+            1000,
         );
-        assert_encoded(
+        assert_encoded_with_constraint(
             Some(String::new()),
             &chunks![
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 0xff, 0xff,
             ],
+            1000,
         );
     }
 }

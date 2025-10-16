@@ -13,6 +13,7 @@ use {
     fidl_next::{Chunk, WireU64,
         Decode, DecodeError, DecoderExt as _,
         Encode, EncodeError, EncoderExt as _,
+        ValidationError,
         ClientEnd, ServerEnd},
     fidl_next::fuchsia::channel::Buffer,
     fidl_next::fuchsia::channel::RecvBuffer,
@@ -39,7 +40,7 @@ use {
         {{- end }}
         let value = {{ .Value }};
         let mut buffer = Buffer::new();
-        buffer.encode_next(value).unwrap();
+        buffer.encode_next(value, ()).unwrap();
         assert_eq!(&{{ .Bytes }}, buffer.bytes().as_slice());
         // TODO: support handle dispositions
         {{-  if .RawHandles }}
@@ -86,7 +87,7 @@ use {
 
         let mut buffer = Buffer::new();
         let value = {{ .Value }};
-        match buffer.encode_next(value) {
+        match buffer.encode_next(value, ()) {
             Err(err) => assert_matches!(err, {{ .ErrorPattern }}),
             Ok(_) => panic!("unexpected successful encoding"),
         }

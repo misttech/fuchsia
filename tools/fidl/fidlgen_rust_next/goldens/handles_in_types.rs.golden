@@ -22,6 +22,7 @@ pub mod natural {
             self,
             encoder_: &mut ___E,
             out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             *out_ = ::core::mem::MaybeUninit::zeroed();
 
@@ -43,9 +44,10 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
                 ::fidl_next::WireBox::encode_present(out);
             } else {
                 ::fidl_next::WireBox::encode_absent(out);
@@ -90,6 +92,7 @@ pub mod natural {
             mut self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::EmptyResourceTable { table } = out);
 
@@ -145,6 +148,7 @@ pub mod natural {
             self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::EmptyResourceUnion { raw, _phantom: _ } = out);
 
@@ -172,12 +176,13 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire_optional::EmptyResourceUnion { raw, _phantom: _ } = &mut *out);
 
             if let Some(inner) = this {
                 let value_out = unsafe { &mut *out.as_mut_ptr().cast() };
-                ::fidl_next::Encode::encode(inner, encoder, value_out)?;
+                ::fidl_next::Encode::encode(inner, encoder, value_out, ())?;
             } else {
                 ::fidl_next::RawWireUnion::encode_absent(raw);
             }
@@ -258,8 +263,9 @@ pub mod natural {
             self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
         }
     }
 
@@ -272,6 +278,7 @@ pub mod natural {
             &self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::ObjType { value } = out);
             let _ = value.write(::fidl_next::WireU32::from(match *self {
@@ -339,6 +346,7 @@ pub mod natural {
             mut self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::TableWithHandle { table } = out);
 
@@ -358,6 +366,7 @@ pub mod natural {
                                 value,
                                 preallocated.encoder,
                                 &mut out,
+                                (),
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -416,6 +425,7 @@ pub mod natural {
             self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::UnionWithHandle { raw, _phantom: _ } = out);
 
@@ -423,7 +433,7 @@ pub mod natural {
                 Self::H(value) => ::fidl_next::RawWireUnion::encode_as::<
                     ___E,
                     ::fidl_next::fuchsia::zx::Vmo,
-                >(value, 1, encoder, raw)?,
+                >(value, 1, encoder, raw, ())?,
 
                 Self::UnknownOrdinal_(ordinal) => {
                     return Err(::fidl_next::EncodeError::UnknownUnionOrdinal(ordinal as usize));
@@ -448,12 +458,13 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire_optional::UnionWithHandle { raw, _phantom: _ } = &mut *out);
 
             if let Some(inner) = this {
                 let value_out = unsafe { &mut *out.as_mut_ptr().cast() };
-                ::fidl_next::Encode::encode(inner, encoder, value_out)?;
+                ::fidl_next::Encode::encode(inner, encoder, value_out, ())?;
             } else {
                 ::fidl_next::RawWireUnion::encode_absent(raw);
             }
@@ -535,6 +546,7 @@ pub mod natural {
             self,
             encoder_: &mut ___E,
             out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let Self::Encoded {
@@ -548,21 +560,47 @@ pub mod natural {
                 } = out_;
             }
 
-            ::fidl_next::Encode::encode(self.normal_handle, encoder_, normal_handle)?;
+            ::fidl_next::Encode::encode(self.normal_handle, encoder_, normal_handle, ())?;
 
-            ::fidl_next::Encode::encode(self.handle_in_vec, encoder_, handle_in_vec)?;
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(normal_handle.as_mut_ptr()) };
 
-            ::fidl_next::Encode::encode(self.handle_in_array, encoder_, handle_in_array)?;
+            ::fidl_next::Encode::encode(
+                self.handle_in_vec,
+                encoder_,
+                handle_in_vec,
+                (4294967295, ()),
+            )?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(handle_in_vec.as_mut_ptr()) };
+            ::fidl_next::Constrained::validate(_field, (4294967295, ()))?;
+
+            ::fidl_next::Encode::encode(self.handle_in_array, encoder_, handle_in_array, ())?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(handle_in_array.as_mut_ptr()) };
 
             ::fidl_next::Encode::encode(
                 self.handle_in_mixed_vec_array,
                 encoder_,
                 handle_in_mixed_vec_array,
+                (4294967295, ()),
             )?;
 
-            ::fidl_next::Encode::encode(self.table_with_handle, encoder_, table_with_handle)?;
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(handle_in_mixed_vec_array.as_mut_ptr()) };
+            ::fidl_next::Constrained::validate(_field, (4294967295, ()))?;
 
-            ::fidl_next::Encode::encode(self.union_with_handle, encoder_, union_with_handle)?;
+            ::fidl_next::Encode::encode(self.table_with_handle, encoder_, table_with_handle, ())?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(table_with_handle.as_mut_ptr()) };
+
+            ::fidl_next::Encode::encode(self.union_with_handle, encoder_, union_with_handle, ())?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(union_with_handle.as_mut_ptr()) };
 
             Ok(())
         }
@@ -582,9 +620,10 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
                 ::fidl_next::WireBox::encode_present(out);
             } else {
                 ::fidl_next::WireBox::encode_absent(out);
@@ -652,6 +691,7 @@ pub mod wire {
         fn decode(
             slot_: ::fidl_next::Slot<'_, Self>,
             decoder_: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
@@ -673,6 +713,8 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for EmptyResourceStruct {
         type Natural = crate::natural::EmptyResourceStruct;
     }
+
+    impl ::fidl_next::Unconstrained for EmptyResourceStruct {}
 
     /// The wire type corresponding to [`EmptyResourceTable`].
     #[repr(C)]
@@ -702,6 +744,7 @@ pub mod wire {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
             decoder: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { table } = slot);
 
@@ -729,6 +772,8 @@ pub mod wire {
     impl<'de> ::fidl_next::IntoNatural for EmptyResourceTable<'de> {
         type Natural = crate::natural::EmptyResourceTable;
     }
+
+    impl ::fidl_next::Unconstrained for EmptyResourceTable<'_> {}
 
     /// The wire type corresponding to [`EmptyResourceUnion`].
     #[repr(transparent)]
@@ -778,6 +823,7 @@ pub mod wire {
         fn decode(
             mut slot: ::fidl_next::Slot<'_, Self>,
             decoder: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
             match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
@@ -799,6 +845,8 @@ pub mod wire {
     impl<'de> ::fidl_next::IntoNatural for EmptyResourceUnion<'de> {
         type Natural = crate::natural::EmptyResourceUnion;
     }
+
+    impl ::fidl_next::Unconstrained for EmptyResourceUnion<'static> {}
 
     /// The wire type corresponding to [`ObjType`].
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -829,6 +877,7 @@ pub mod wire {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
             _: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { value } = slot);
 
@@ -856,6 +905,8 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for ObjType {
         type Natural = crate::natural::ObjType;
     }
+
+    impl ::fidl_next::Unconstrained for ObjType {}
 
     /// The wire type corresponding to [`TableWithHandle`].
     #[repr(C)]
@@ -889,6 +940,7 @@ pub mod wire {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
             decoder: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { table } = slot);
 
@@ -900,6 +952,7 @@ pub mod wire {
                         ::fidl_next::WireEnvelope::decode_as::<___D, ::fidl_next::fuchsia::WireVmo>(
                             slot.as_mut(),
                             decoder,
+                            (),
                         )?;
 
                         Ok(())
@@ -929,6 +982,8 @@ pub mod wire {
     impl<'de> ::fidl_next::IntoNatural for TableWithHandle<'de> {
         type Natural = crate::natural::TableWithHandle;
     }
+
+    impl ::fidl_next::Unconstrained for TableWithHandle<'_> {}
 
     /// The wire type corresponding to [`UnionWithHandle`].
     #[repr(transparent)]
@@ -989,11 +1044,14 @@ pub mod wire {
         fn decode(
             mut slot: ::fidl_next::Slot<'_, Self>,
             decoder: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
             match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
                 1 => ::fidl_next::RawWireUnion::decode_as::<___D, ::fidl_next::fuchsia::WireVmo>(
-                    raw, decoder,
+                    raw,
+                    decoder,
+                    (),
                 )?,
 
                 _ => ::fidl_next::RawWireUnion::decode_unknown(raw, decoder)?,
@@ -1017,6 +1075,8 @@ pub mod wire {
     impl<'de> ::fidl_next::IntoNatural for UnionWithHandle<'de> {
         type Natural = crate::natural::UnionWithHandle;
     }
+
+    impl ::fidl_next::Unconstrained for UnionWithHandle<'static> {}
 
     /// The wire type corresponding to [`HandlesInTypes`].
     #[derive(Debug)]
@@ -1112,6 +1172,7 @@ pub mod wire {
         fn decode(
             slot_: ::fidl_next::Slot<'_, Self>,
             decoder_: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
@@ -1126,17 +1187,33 @@ pub mod wire {
                 } = slot_;
             }
 
-            ::fidl_next::Decode::decode(normal_handle.as_mut(), decoder_)?;
+            let _field = normal_handle.as_mut();
 
-            ::fidl_next::Decode::decode(handle_in_vec.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(normal_handle.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(handle_in_array.as_mut(), decoder_)?;
+            let _field = handle_in_vec.as_mut();
+            ::fidl_next::Constrained::validate(_field, (4294967295, ()))?;
+            ::fidl_next::Decode::decode(handle_in_vec.as_mut(), decoder_, (4294967295, ()))?;
 
-            ::fidl_next::Decode::decode(handle_in_mixed_vec_array.as_mut(), decoder_)?;
+            let _field = handle_in_array.as_mut();
 
-            ::fidl_next::Decode::decode(table_with_handle.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(handle_in_array.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(union_with_handle.as_mut(), decoder_)?;
+            let _field = handle_in_mixed_vec_array.as_mut();
+            ::fidl_next::Constrained::validate(_field, (4294967295, ()))?;
+            ::fidl_next::Decode::decode(
+                handle_in_mixed_vec_array.as_mut(),
+                decoder_,
+                (4294967295, ()),
+            )?;
+
+            let _field = table_with_handle.as_mut();
+
+            ::fidl_next::Decode::decode(table_with_handle.as_mut(), decoder_, ())?;
+
+            let _field = union_with_handle.as_mut();
+
+            ::fidl_next::Decode::decode(union_with_handle.as_mut(), decoder_, ())?;
 
             Ok(())
         }
@@ -1145,6 +1222,8 @@ pub mod wire {
     impl<'de> ::fidl_next::IntoNatural for HandlesInTypes<'de> {
         type Natural = crate::natural::HandlesInTypes;
     }
+
+    impl ::fidl_next::Unconstrained for HandlesInTypes<'static> {}
 }
 
 pub mod wire_optional {
@@ -1199,6 +1278,7 @@ pub mod wire_optional {
         fn decode(
             mut slot: ::fidl_next::Slot<'_, Self>,
             decoder: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
             match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
@@ -1219,6 +1299,8 @@ pub mod wire_optional {
     impl<'de> ::fidl_next::IntoNatural for EmptyResourceUnion<'de> {
         type Natural = ::core::option::Option<crate::natural::EmptyResourceUnion>;
     }
+
+    impl ::fidl_next::Unconstrained for EmptyResourceUnion<'static> {}
 
     #[repr(transparent)]
     pub struct UnionWithHandle<'de> {
@@ -1270,11 +1352,14 @@ pub mod wire_optional {
         fn decode(
             mut slot: ::fidl_next::Slot<'_, Self>,
             decoder: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
             match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
                 1 => ::fidl_next::RawWireUnion::decode_as::<___D, ::fidl_next::fuchsia::WireVmo>(
-                    raw, decoder,
+                    raw,
+                    decoder,
+                    (),
                 )?,
 
                 0 => ::fidl_next::RawWireUnion::decode_absent(raw)?,
@@ -1294,6 +1379,8 @@ pub mod wire_optional {
     impl<'de> ::fidl_next::IntoNatural for UnionWithHandle<'de> {
         type Natural = ::core::option::Option<crate::natural::UnionWithHandle>;
     }
+
+    impl ::fidl_next::Unconstrained for UnionWithHandle<'static> {}
 }
 
 pub use self::natural::*;

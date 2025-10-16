@@ -9,9 +9,10 @@ use munge::munge;
 
 use super::raw::RawWireVector;
 use crate::{
-    Decode, DecodeError, Decoder, DecoderExt as _, Encodable, EncodableOption, Encode, EncodeError,
-    EncodeOption, EncodeOptionRef, EncodeRef, Encoder, EncoderExt as _, FromWire, FromWireOption,
-    FromWireOptionRef, FromWireRef, IntoNatural, Slot, Wire, WirePointer, WireVector,
+    Constrained, Decode, DecodeError, Decoder, DecoderExt as _, Encodable, EncodableOption, Encode,
+    EncodeError, EncodeOption, EncodeOptionRef, EncodeRef, Encoder, EncoderExt as _, FromWire,
+    FromWireOption, FromWireOptionRef, FromWireRef, IntoNatural, Slot, ValidationError, Wire,
+    WirePointer, WireVector,
 };
 
 /// An optional FIDL vector
@@ -102,6 +103,31 @@ impl<'de, T> WireOptionalVector<'de, T> {
 
         Ok(())
     }
+
+    /// Validate that this vector's length falls within the limit.
+    pub(crate) fn validate_max_len(
+        slot: Slot<'_, Self>,
+        limit: u64,
+    ) -> Result<(), crate::ValidationError> {
+        munge!(let Self { raw: RawWireVector { len, ptr } } = slot);
+        let count = **len;
+        let is_present = ptr.as_bytes() != [0; 8];
+        if is_present && count > limit {
+            Err(ValidationError::VectorTooLong { count, limit })
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl<T: Constrained> Constrained for WireOptionalVector<'_, T> {
+    type Constraint = (u64, T::Constraint);
+
+    fn validate(slot: Slot<'_, Self>, constraint: Self::Constraint) -> Result<(), ValidationError> {
+        let (limit, _member_constraint) = constraint;
+
+        Self::validate_max_len(slot, limit)
+    }
 }
 
 impl<T: fmt::Debug> fmt::Debug for WireOptionalVector<'_, T> {
@@ -111,13 +137,26 @@ impl<T: fmt::Debug> fmt::Debug for WireOptionalVector<'_, T> {
 }
 
 unsafe impl<D: Decoder + ?Sized, T: Decode<D>> Decode<D> for WireOptionalVector<'static, T> {
-    fn decode(mut slot: Slot<'_, Self>, mut decoder: &mut D) -> Result<(), DecodeError> {
+    fn decode(
+        mut slot: Slot<'_, Self>,
+        mut decoder: &mut D,
+        constraint: <Self as Constrained>::Constraint,
+    ) -> Result<(), DecodeError> {
         munge!(let Self { raw: RawWireVector { len, mut ptr } } = slot.as_mut());
 
+        let (length_constraint, member_constraint) = constraint;
+
         if WirePointer::is_encoded_present(ptr.as_mut())? {
+            if **len > length_constraint {
+                return Err(DecodeError::Validation(ValidationError::VectorTooLong {
+                    count: **len,
+                    limit: length_constraint,
+                }));
+            }
+
             let mut slice = decoder.take_slice_slot::<T>(**len as usize)?;
             for i in 0..**len as usize {
-                T::decode(slice.index(i), decoder)?;
+                T::decode(slice.index(i), decoder, member_constraint)?;
             }
             WirePointer::set_decoded(ptr, slice.as_mut_ptr().cast());
         } else if *len != 0 {
@@ -133,6 +172,7 @@ fn encode_to_optional_vector<V, E, T>(
     value: Option<V>,
     encoder: &mut E,
     out: &mut MaybeUninit<WireOptionalVector<'_, T::Encoded>>,
+    constraint: <WireOptionalVector<'_, T::Encoded> as Constrained>::Constraint,
 ) -> Result<(), EncodeError>
 where
     V: AsRef<[T]> + IntoIterator,
@@ -141,6 +181,8 @@ where
     E: Encoder + ?Sized,
     T: Encode<E>,
 {
+    let (_length_constraint, member_constraint) = constraint;
+
     if let Some(value) = value {
         let len = value.as_ref().len();
         if T::COPY_OPTIMIZATION.is_enabled() {
@@ -151,7 +193,7 @@ where
             let bytes = unsafe { slice::from_raw_parts(slice.as_ptr().cast(), size_of_val(slice)) };
             encoder.write(bytes);
         } else {
-            encoder.encode_next_iter(value.into_iter())?;
+            encoder.encode_next_iter(value.into_iter(), member_constraint)?;
         }
         WireOptionalVector::encode_present(out, len as u64);
     } else {
@@ -173,8 +215,9 @@ where
         this: Option<Self>,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::EncodedOption>,
+        constraint: <Self::EncodedOption as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        encode_to_optional_vector(this, encoder, out)
+        encode_to_optional_vector(this, encoder, out, constraint)
     }
 }
 
@@ -187,8 +230,9 @@ where
         this: Option<&Self>,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::EncodedOption>,
+        constraint: <Self::EncodedOption as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        encode_to_optional_vector(this, encoder, out)
+        encode_to_optional_vector(this, encoder, out, constraint)
     }
 }
 
@@ -205,8 +249,9 @@ where
         this: Option<Self>,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::EncodedOption>,
+        constraint: <Self::EncodedOption as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        encode_to_optional_vector(this, encoder, out)
+        encode_to_optional_vector(this, encoder, out, constraint)
     }
 }
 

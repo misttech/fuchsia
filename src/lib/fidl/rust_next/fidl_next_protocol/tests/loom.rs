@@ -4,7 +4,12 @@
 
 #![cfg(feature = "loom")]
 
-use fidl_next_codec::{DecoderExt as _, WireString};
+use core::mem::MaybeUninit;
+
+use fidl_next_codec::{
+    Decode, Decoder, DecoderExt as _, Encodable, Encode, EncodeError, Encoder, Unconstrained, Wire,
+    WireString, munge,
+};
 use fidl_next_protocol_loom::mpsc::Mpsc;
 use fidl_next_protocol_loom::{
     Client, ClientDispatcher, ClientHandler, ProtocolError, Responder, ServerDispatcher,
@@ -17,6 +22,60 @@ fn loom() -> loom::model::Builder {
     let mut builder = loom::model::Builder::new();
     builder.preemption_bound = Some(1);
     builder
+}
+
+#[repr(transparent)]
+struct WireTestMessage<'a>(WireString<'a>);
+
+impl<'a> WireTestMessage<'a> {
+    fn as_str(&'a self) -> &'a str {
+        self.0.as_str()
+    }
+}
+
+impl Unconstrained for WireTestMessage<'_> {}
+
+unsafe impl Wire for WireTestMessage<'static> {
+    type Decoded<'de> = WireTestMessage<'de>;
+
+    fn zero_padding(out: &mut MaybeUninit<Self>) {
+        munge!(let Self (s) = out);
+        WireString::zero_padding(s);
+    }
+}
+
+unsafe impl<D: Decoder> Decode<D> for WireTestMessage<'static> {
+    fn decode(
+        slot: fidl_next_codec::Slot<'_, Self>,
+        decoder: &mut D,
+        _: (),
+    ) -> Result<(), fidl_next_codec::DecodeError> {
+        munge!(let Self (s) = slot);
+        WireString::decode(s, decoder, 1000)
+    }
+}
+
+struct TestMessage(String);
+impl TestMessage {
+    fn new(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+impl Encodable for TestMessage {
+    type Encoded = WireTestMessage<'static>;
+}
+
+unsafe impl<E: Encoder + ?Sized> Encode<E> for TestMessage {
+    fn encode(
+        self,
+        encoder: &mut E,
+        out: &mut MaybeUninit<Self::Encoded>,
+        _: (),
+    ) -> Result<(), EncodeError> {
+        munge!(let WireTestMessage (s) = out);
+        self.0.as_str().encode(encoder, s, 1000)
+    }
 }
 
 #[test]
@@ -38,12 +97,12 @@ fn close_on_drop() {
             buffer: T::RecvBuffer,
             responder: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
-            let message = buffer.decode::<WireString<'_>>().expect("failed to decode request");
+            let message = buffer.decode::<WireTestMessage<'_>>().expect("failed to decode request");
             assert_eq!(ordinal, 42);
-            assert_eq!(&**message, "Ping");
+            assert_eq!(message.as_str(), "Ping");
 
             responder
-                .respond(42, "Pong")
+                .respond(42, TestMessage::new("Pong"))
                 .expect("failed to encode response")
                 .await
                 .expect("failed to send response");
@@ -59,14 +118,17 @@ fn close_on_drop() {
         let client_task = spawn(|| block_on(client_dispatcher.run_client()));
         let server_task = spawn(|| block_on(ServerDispatcher::new(server_end).run(TestServer)));
 
-        let recv_future =
-            block_on(client.send_two_way(42, "Ping").expect("client failed to encode request"))
-                .expect("client failed to send request");
+        let recv_future = block_on(
+            client
+                .send_two_way(42, TestMessage::new("Ping"))
+                .expect("client failed to encode request"),
+        )
+        .expect("client failed to send request");
         let message = block_on(recv_future)
             .expect("client failed to receive response")
-            .decode::<WireString<'_>>()
+            .decode::<WireTestMessage<'_>>()
             .expect("failed to decode response");
-        assert_eq!(&**message, "Pong");
+        assert_eq!(message.as_str(), "Pong");
 
         // Dropping the last client should close the connection.
         drop(client);
@@ -95,12 +157,12 @@ fn send_one_way() {
             buffer: T::RecvBuffer,
             responder: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
-            let message = buffer.decode::<WireString<'_>>().expect("failed to decode request");
+            let message = buffer.decode::<WireTestMessage<'_>>().expect("failed to decode request");
             assert_eq!(ordinal, 42);
-            assert_eq!(&**message, "Ping");
+            assert_eq!(message.as_str(), "Ping");
 
             responder
-                .respond(42, "Pong")
+                .respond(42, TestMessage::new("Pong"))
                 .expect("failed to encode response")
                 .await
                 .expect("failed to send response");
@@ -116,14 +178,17 @@ fn send_one_way() {
         let client_task = spawn(|| block_on(client_dispatcher.run_client()));
         let server_task = spawn(|| block_on(ServerDispatcher::new(server_end).run(TestServer)));
 
-        let recv_future =
-            block_on(client.send_two_way(42, "Ping").expect("client failed to encode request"))
-                .expect("client failed to send request");
+        let recv_future = block_on(
+            client
+                .send_two_way(42, TestMessage::new("Ping"))
+                .expect("client failed to encode request"),
+        )
+        .expect("client failed to send request");
         let message = block_on(recv_future)
             .expect("client failed to receive response")
-            .decode::<WireString<'_>>()
+            .decode::<WireTestMessage<'_>>()
             .expect("failed to decode response");
-        assert_eq!(&**message, "Pong");
+        assert_eq!(message.as_str(), "Pong");
 
         client.close();
 
@@ -152,11 +217,11 @@ fn two_way() {
             responder: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
             assert_eq!(ordinal, 42);
-            let message = buffer.decode::<WireString<'_>>().expect("failed to decode request");
-            assert_eq!(&**message, "Ping");
+            let message = buffer.decode::<WireTestMessage<'_>>().expect("failed to decode request");
+            assert_eq!(message.as_str(), "Ping");
 
             responder
-                .respond(42, "Pong")
+                .respond(42, TestMessage::new("Pong"))
                 .expect("failed to encode response")
                 .await
                 .expect("failed to send response");
@@ -172,14 +237,17 @@ fn two_way() {
         let client_task = spawn(|| block_on(client_dispatcher.run_client()));
         let server_task = spawn(|| block_on(ServerDispatcher::new(server_end).run(TestServer)));
 
-        let recv_future =
-            block_on(client.send_two_way(42, "Ping").expect("client failed to encode request"))
-                .expect("client failed to send request");
+        let recv_future = block_on(
+            client
+                .send_two_way(42, TestMessage::new("Ping"))
+                .expect("client failed to encode request"),
+        )
+        .expect("client failed to send request");
         let message = block_on(recv_future)
             .expect("client failed to receive response")
-            .decode::<WireString<'_>>()
+            .decode::<WireTestMessage<'_>>()
             .expect("failed to decode response");
-        assert_eq!(&**message, "Pong");
+        assert_eq!(message.as_str(), "Pong");
 
         client.close();
 
@@ -207,7 +275,7 @@ fn multiple_two_way() {
             buffer: T::RecvBuffer,
             responder: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
-            let message = buffer.decode::<WireString<'_>>().expect("failed to decode request");
+            let message = buffer.decode::<WireTestMessage<'_>>().expect("failed to decode request");
 
             let response = match ordinal {
                 1 => "One",
@@ -216,10 +284,10 @@ fn multiple_two_way() {
                 x => panic!("unexpected request ordinal {x} from client"),
             };
 
-            assert_eq!(&**message, response);
+            assert_eq!(message.as_str(), response);
 
             responder
-                .respond(ordinal, response)
+                .respond(ordinal, TestMessage::new(response))
                 .expect("server failed to encode response")
                 .await
                 .expect("server failed to send response");
@@ -235,36 +303,45 @@ fn multiple_two_way() {
         let client_task = spawn(|| block_on(client_dispatcher.run_client()));
         let server_task = spawn(|| block_on(ServerDispatcher::new(server_end).run(TestServer)));
 
-        let send_one =
-            block_on(client.send_two_way(1, "One").expect("client failed to encode request"))
-                .expect("client failed to send request");
-        let send_two =
-            block_on(client.send_two_way(2, "Two").expect("client failed to encode request"))
-                .expect("client failed to send request");
-        let send_three =
-            block_on(client.send_two_way(3, "Three").expect("client failed to encode request"))
-                .expect("client failed to send request");
+        let send_one = block_on(
+            client
+                .send_two_way(1, TestMessage::new("One"))
+                .expect("client failed to encode request"),
+        )
+        .expect("client failed to send request");
+        let send_two = block_on(
+            client
+                .send_two_way(2, TestMessage::new("Two"))
+                .expect("client failed to encode request"),
+        )
+        .expect("client failed to send request");
+        let send_three = block_on(
+            client
+                .send_two_way(3, TestMessage::new("Three"))
+                .expect("client failed to encode request"),
+        )
+        .expect("client failed to send request");
 
         let (response_one, response_two, response_three) =
             block_on(futures::future::join3(send_one, send_two, send_three));
 
         let message_one = response_one
             .expect("client failed to receive response")
-            .decode::<WireString<'_>>()
+            .decode::<WireTestMessage<'_>>()
             .expect("failed to decode response");
-        assert_eq!(&**message_one, "One");
+        assert_eq!(message_one.as_str(), "One");
 
         let message_two = response_two
             .expect("client failed to receive response")
-            .decode::<WireString<'_>>()
+            .decode::<WireTestMessage<'_>>()
             .expect("failed to decode response");
-        assert_eq!(&**message_two, "Two");
+        assert_eq!(message_two.as_str(), "Two");
 
         let message_three = response_three
             .expect("client failed to receive response")
-            .decode::<WireString<'_>>()
+            .decode::<WireTestMessage<'_>>()
             .expect("failed to decode response");
-        assert_eq!(&**message_three, "Three");
+        assert_eq!(message_three.as_str(), "Three");
 
         client.close();
 
@@ -286,8 +363,8 @@ fn event() {
             buffer: T::RecvBuffer,
         ) -> Result<(), ProtocolError<T::Error>> {
             assert_eq!(ordinal, 10);
-            let message = buffer.decode::<WireString<'_>>().expect("failed to decode request");
-            assert_eq!(&**message, "Surprise!");
+            let message = buffer.decode::<WireTestMessage<'_>>().expect("failed to decode request");
+            assert_eq!(message.as_str(), "Surprise!");
 
             self.client.close();
 
@@ -325,8 +402,12 @@ fn event() {
         let server = server_dispatcher.server();
         let server_task = spawn(|| block_on(server_dispatcher.run(TestServer)));
 
-        block_on(server.send_event(10, "Surprise!").expect("server failed to encode response"))
-            .expect("server failed to send response");
+        block_on(
+            server
+                .send_event(10, TestMessage::new("Surprise!"))
+                .expect("server failed to encode response"),
+        )
+        .expect("server failed to send response");
 
         client_task.join().unwrap().expect("client encountered an error");
         server_task.join().unwrap().expect("server encountered an error");
@@ -344,8 +425,8 @@ fn one_way_nonblocking() {
             buffer: T::RecvBuffer,
         ) -> Result<(), ProtocolError<T::Error>> {
             assert_eq!(ordinal, 42);
-            let message = buffer.decode::<WireString<'_>>().expect("failed to decode request");
-            assert_eq!(&**message, "Hello world");
+            let message = buffer.decode::<WireTestMessage<'_>>().expect("failed to decode request");
+            assert_eq!(message.as_str(), "Hello world");
 
             Ok(())
         }
@@ -368,7 +449,7 @@ fn one_way_nonblocking() {
         let server_task = spawn(|| block_on(ServerDispatcher::new(server_end).run(TestServer)));
 
         client
-            .send_one_way(42, "Hello world")
+            .send_one_way(42, TestMessage::new("Hello world"))
             .expect("client failed to encode request")
             .send_immediately()
             .expect("client failed to send request");

@@ -52,7 +52,9 @@ impl i2cimpl::DeviceServerHandler<DriverChannel> for DeviceServer {
     ) {
         if request.take().bitrate == 5 {
             responder
-                .respond(FlexibleResult::Ok::<_, i32>(()))
+                .respond(FlexibleResult::Ok::<DeviceSetBitrateResponse, i32>(
+                    DeviceSetBitrateResponse {},
+                ))
                 .await
                 .unwrap_or_else(|err| warn!("Failed to send set_bitrate response: {err:?}"));
         } else {

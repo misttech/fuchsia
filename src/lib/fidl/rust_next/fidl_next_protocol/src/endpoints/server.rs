@@ -11,7 +11,7 @@ use core::pin::Pin;
 use core::ptr;
 use core::task::{Context, Poll};
 
-use fidl_next_codec::{Encode, EncodeError, EncoderExt as _};
+use fidl_next_codec::{Constrained, Encode, EncodeError, EncoderExt as _};
 use pin_project::pin_project;
 
 use crate::concurrency::sync::Arc;
@@ -64,10 +64,11 @@ impl<T: Transport> Server<T> {
     pub fn send_event<M>(&self, ordinal: u64, event: M) -> Result<SendFuture<'_, T>, EncodeError>
     where
         M: Encode<T::SendBuffer>,
+        M::Encoded: Constrained<Constraint = ()>,
     {
         self.inner.connection.send_message(|buffer| {
             encode_header::<T>(buffer, 0, ordinal)?;
-            buffer.encode_next(event)
+            buffer.encode_next(event, ())
         })
     }
 }
@@ -231,10 +232,11 @@ impl<T: Transport> Responder<T> {
     pub fn respond<M>(self, ordinal: u64, response: M) -> Result<RespondFuture<T>, EncodeError>
     where
         M: Encode<T::SendBuffer>,
+        M::Encoded: Constrained<Constraint = ()>,
     {
         let state = self.server.inner.connection.send_message_raw(|buffer| {
             encode_header::<T>(buffer, self.txid.get(), ordinal)?;
-            buffer.encode_next(response)
+            buffer.encode_next(response, ())
         })?;
 
         let this = ManuallyDrop::new(self);

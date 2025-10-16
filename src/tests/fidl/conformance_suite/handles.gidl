@@ -323,7 +323,7 @@ decode_failure("HandlesBeforeAndAfterFailureAreClosed") {
 // has a constraint error.
 encode_failure("TooManyHandlesInVector") {
     // TODO(96626): Should close handles in some constraint violation cases.
-    bindings_denylist = [llcpp, hlcpp, go, dart, rust_next],
+    bindings_denylist = [llcpp, hlcpp, go, dart],
     handle_defs = {
         #0 = event(),
         #1 = event(),

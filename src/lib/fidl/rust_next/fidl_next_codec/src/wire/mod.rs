@@ -24,7 +24,9 @@ pub use self::vec::*;
 
 use core::mem::MaybeUninit;
 
-use crate::{WireF32, WireF64, WireI16, WireI32, WireI64, WireU16, WireU32, WireU64};
+use crate::{
+    Unconstrained, WireF32, WireF64, WireI16, WireI32, WireI64, WireU16, WireU32, WireU64,
+};
 
 /// A FIDL wire type.
 ///
@@ -48,6 +50,8 @@ macro_rules! impl_primitive {
             #[inline]
             fn zero_padding(_: &mut MaybeUninit<Self>) {}
         }
+
+        impl Unconstrained for $ty {}
     };
 }
 

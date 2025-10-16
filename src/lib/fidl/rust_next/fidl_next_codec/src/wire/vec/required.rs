@@ -12,15 +12,15 @@ use munge::munge;
 
 use super::raw::RawWireVector;
 use crate::{
-    Chunk, Decode, DecodeError, Decoder, DecoderExt as _, Encodable, Encode, EncodeError,
-    EncodeRef, Encoder, EncoderExt as _, FromWire, FromWireRef, IntoNatural, Slot, Wire,
-    WirePointer,
+    Chunk, Constrained, Decode, DecodeError, Decoder, DecoderExt as _, Encodable, Encode,
+    EncodeError, EncodeRef, Encoder, EncoderExt as _, FromWire, FromWireRef, IntoNatural, Slot,
+    ValidationError, Wire, WirePointer,
 };
 
 /// A FIDL vector
 #[repr(transparent)]
 pub struct WireVector<'de, T> {
-    pub(crate) raw: RawWireVector<'de, T>,
+    raw: RawWireVector<'de, T>,
 }
 
 unsafe impl<T: Wire> Wire for WireVector<'static, T> {
@@ -79,6 +79,7 @@ impl<T> WireVector<'_, T> {
     pub unsafe fn decode_raw<D>(
         mut slot: Slot<'_, Self>,
         mut decoder: &mut D,
+        max_len: u64,
     ) -> Result<(), DecodeError>
     where
         D: Decoder + ?Sized,
@@ -90,8 +91,43 @@ impl<T> WireVector<'_, T> {
             return Err(DecodeError::RequiredValueAbsent);
         }
 
+        if **len > max_len {
+            return Err(DecodeError::Validation(ValidationError::VectorTooLong {
+                count: **len,
+                limit: max_len,
+            }));
+        }
+
         let mut slice = decoder.take_slice_slot::<T>(**len as usize)?;
         WirePointer::set_decoded(ptr, slice.as_mut_ptr().cast());
+
+        Ok(())
+    }
+
+    /// Validate that this vector's length falls within the limit.
+    pub(crate) fn validate_max_len(
+        slot: Slot<'_, Self>,
+        limit: u64,
+    ) -> Result<(), crate::ValidationError> {
+        munge!(let Self { raw: RawWireVector { len, ptr:_ } } = slot);
+        let count: u64 = **len;
+        if count > limit { Err(ValidationError::VectorTooLong { count, limit }) } else { Ok(()) }
+    }
+}
+
+type VectorConstraint<T> = (u64, <T as Constrained>::Constraint);
+
+impl<T: Constrained> Constrained for WireVector<'_, T> {
+    type Constraint = VectorConstraint<T>;
+
+    fn validate(slot: Slot<'_, Self>, constraint: Self::Constraint) -> Result<(), ValidationError> {
+        let (limit, _) = constraint;
+
+        munge!(let Self { raw: RawWireVector { len, ptr:_ } } = slot);
+        let count = **len;
+        if count > limit {
+            return Err(ValidationError::VectorTooLong { count, limit });
+        }
 
         Ok(())
     }
@@ -157,8 +193,21 @@ impl<T: fmt::Debug> fmt::Debug for WireVector<'_, T> {
 }
 
 unsafe impl<D: Decoder + ?Sized, T: Decode<D>> Decode<D> for WireVector<'static, T> {
-    fn decode(mut slot: Slot<'_, Self>, mut decoder: &mut D) -> Result<(), DecodeError> {
+    fn decode(
+        mut slot: Slot<'_, Self>,
+        mut decoder: &mut D,
+        constraint: <Self as Constrained>::Constraint,
+    ) -> Result<(), DecodeError> {
         munge!(let Self { raw: RawWireVector { len, mut ptr } } = slot.as_mut());
+
+        let (length_constraint, member_constraint) = constraint;
+
+        if **len > length_constraint {
+            return Err(DecodeError::Validation(ValidationError::VectorTooLong {
+                count: **len,
+                limit: length_constraint,
+            }));
+        }
 
         if !WirePointer::is_encoded_present(ptr.as_mut())? {
             return Err(DecodeError::RequiredValueAbsent);
@@ -166,7 +215,7 @@ unsafe impl<D: Decoder + ?Sized, T: Decode<D>> Decode<D> for WireVector<'static,
 
         let mut slice = decoder.take_slice_slot::<T>(**len as usize)?;
         for i in 0..**len as usize {
-            T::decode(slice.index(i), decoder)?;
+            T::decode(slice.index(i), decoder, member_constraint)?;
         }
         WirePointer::set_decoded(ptr, slice.as_mut_ptr().cast());
 
@@ -179,6 +228,7 @@ fn encode_to_vector<V, E, T>(
     value: V,
     encoder: &mut E,
     out: &mut MaybeUninit<WireVector<'_, T::Encoded>>,
+    constraint: VectorConstraint<T::Encoded>,
 ) -> Result<(), EncodeError>
 where
     V: AsRef<[T]> + IntoIterator,
@@ -188,6 +238,7 @@ where
     T: Encode<E>,
 {
     let len = value.as_ref().len();
+    let (_length_constraint, member_constraint) = constraint;
     if T::COPY_OPTIMIZATION.is_enabled() {
         let slice = value.as_ref();
         // SAFETY: `T` has copy optimization enabled, which guarantees that it has no uninit bytes
@@ -196,7 +247,7 @@ where
         let bytes = unsafe { slice::from_raw_parts(slice.as_ptr().cast(), size_of_val(slice)) };
         encoder.write(bytes);
     } else {
-        encoder.encode_next_iter(value.into_iter())?;
+        encoder.encode_next_iter(value.into_iter(), member_constraint)?;
     }
     WireVector::encode_present(out, len as u64);
     Ok(())
@@ -215,8 +266,19 @@ where
         self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        constraint: <Self::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        encode_to_vector(self, encoder, out)
+        encode_to_vector(self, encoder, out, constraint)?;
+
+        munge! (let Self::Encoded { raw } = out);
+
+        let raw_ptr = unsafe { &*raw.as_ptr() };
+
+        for _member in unsafe { raw_ptr.as_slice_ptr().as_ref() }.unwrap() {
+            // member.validate_in_line()
+        }
+
+        Ok(())
     }
 }
 
@@ -229,8 +291,9 @@ where
         &self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        constraint: <Self::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        encode_to_vector(self, encoder, out)
+        encode_to_vector(self, encoder, out, constraint)
     }
 }
 
@@ -247,8 +310,9 @@ where
         self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        constraint: <Self::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        encode_to_vector(self, encoder, out)
+        encode_to_vector(self, encoder, out, constraint)
     }
 }
 

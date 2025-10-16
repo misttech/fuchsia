@@ -39,6 +39,7 @@ where
         mut self,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        _: ()
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let crate::wire::{{ name }} { table } = out);
 
@@ -58,6 +59,7 @@ where
                             value,
                             preallocated.encoder,
                             &mut out,
+                            {{ self.constraint(member.ty) }},
                         )?;
                     } else {
                         ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -86,6 +88,7 @@ where
         &self,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        _: (),
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let crate::wire::{{ name }} { table } = out);
 
@@ -105,6 +108,7 @@ where
                             value,
                             preallocated.encoder,
                             &mut out,
+                            {{ self.constraint(member.ty) }},
                         )?;
                     } else {
                         ::fidl_next::WireEnvelope::encode_zero(&mut out)

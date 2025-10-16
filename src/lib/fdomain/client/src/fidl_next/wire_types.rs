@@ -5,7 +5,8 @@
 use super::{HandleEncoder, WireHandle, WireOptionalHandle};
 use crate::{Channel, Event, EventPair, Handle, HandleBased, Socket};
 use fidl_next_codec::{
-    Encodable, EncodableOption, Encode, EncodeError, EncodeOption, FromWire, FromWireOption,
+    Constrained, Encodable, EncodableOption, Encode, EncodeError, EncodeOption, FromWire,
+    FromWireOption,
 };
 use std::mem::MaybeUninit;
 
@@ -20,8 +21,9 @@ macro_rules! handle_type {
                 self,
                 encoder: &mut E,
                 out: &mut MaybeUninit<Self::Encoded>,
+                constraint: <Self::Encoded as Constrained>::Constraint,
             ) -> Result<(), EncodeError> {
-                Encode::<E>::encode(self.into_handle(), encoder, out)
+                Encode::<E>::encode(self.into_handle(), encoder, out, constraint)
             }
         }
 
@@ -40,8 +42,14 @@ macro_rules! handle_type {
                 this: Option<Self>,
                 encoder: &mut E,
                 out: &mut MaybeUninit<Self::EncodedOption>,
+                constraint: <Self::EncodedOption as Constrained>::Constraint,
             ) -> Result<(), EncodeError> {
-                EncodeOption::<E>::encode_option(this.map(HandleBased::into_handle), encoder, out)
+                EncodeOption::<E>::encode_option(
+                    this.map(HandleBased::into_handle),
+                    encoder,
+                    out,
+                    constraint,
+                )
             }
         }
 

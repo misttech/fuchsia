@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_next_codec::{Constrained, Unconstrained};
+
 /// A FIDL protocol.
 ///
 /// # Safety
@@ -36,9 +38,11 @@ pub trait Method {
     type Request;
 
     /// The response payload for the method.
-    type Response;
+    type Response: Constrained;
 }
 
 /// The request or response type of a method which does not have a request or
 /// response.
 pub enum Never {}
+
+impl Unconstrained for Never {}

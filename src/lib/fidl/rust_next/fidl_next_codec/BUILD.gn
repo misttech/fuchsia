@@ -26,6 +26,7 @@ rustc_library("fidl_next_codec") {
     "src/primitives.rs",
     "src/slot.rs",
     "src/testing.rs",
+    "src/validate.rs",
     "src/wire/boxed.rs",
     "src/wire/empty_struct.rs",
     "src/wire/envelope.rs",

@@ -31,8 +31,9 @@ pub mod natural {
             self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
         }
     }
 
@@ -45,6 +46,7 @@ pub mod natural {
             &self,
             _: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::EmptyBits { value } = out);
 
@@ -102,8 +104,9 @@ pub mod natural {
             self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
         }
     }
 
@@ -116,6 +119,7 @@ pub mod natural {
             &self,
             _: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::FlexibleBits { value } = out);
 
@@ -174,8 +178,9 @@ pub mod natural {
             self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
         }
     }
 
@@ -188,6 +193,7 @@ pub mod natural {
             &self,
             _: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MyBits { value } = out);
 
@@ -249,8 +255,9 @@ pub mod natural {
             self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
         }
     }
 
@@ -263,6 +270,7 @@ pub mod natural {
             &self,
             _: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::StrictBits { value } = out);
 
@@ -321,6 +329,7 @@ pub mod wire {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
             _: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             Ok(())
         }
@@ -335,6 +344,8 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for EmptyBits {
         type Natural = crate::natural::EmptyBits;
     }
+
+    impl ::fidl_next::Unconstrained for EmptyBits {}
 
     /// The wire type corresponding to [`FlexibleBits`](crate::natural::FlexibleBits).
     #[derive(Clone, Copy, Debug)]
@@ -359,6 +370,7 @@ pub mod wire {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
             _: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             Ok(())
         }
@@ -373,6 +385,8 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for FlexibleBits {
         type Natural = crate::natural::FlexibleBits;
     }
+
+    impl ::fidl_next::Unconstrained for FlexibleBits {}
 
     /// The wire type corresponding to [`MyBits`](crate::natural::MyBits).
     #[derive(Clone, Copy, Debug)]
@@ -397,6 +411,7 @@ pub mod wire {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
             _: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { value } = slot);
             let set = u32::from(*value);
@@ -421,6 +436,8 @@ pub mod wire {
         type Natural = crate::natural::MyBits;
     }
 
+    impl ::fidl_next::Unconstrained for MyBits {}
+
     /// The wire type corresponding to [`StrictBits`](crate::natural::StrictBits).
     #[derive(Clone, Copy, Debug)]
     #[repr(transparent)]
@@ -444,6 +461,7 @@ pub mod wire {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
             _: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { value } = slot);
             let set = u64::from(*value);
@@ -467,6 +485,8 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for StrictBits {
         type Natural = crate::natural::StrictBits;
     }
+
+    impl ::fidl_next::Unconstrained for StrictBits {}
 }
 
 pub mod wire_optional {}

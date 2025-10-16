@@ -35,3 +35,23 @@ type LotsOfVectors = struct {
     v8 vector<int64>;
     v9 vector<bool>;
 };
+
+type VectorWithLimitInVector = struct {
+    v vector<vector<uint8>:2>;
+};
+
+type VectorWithLimitInArray = struct {
+    a array<vector<uint8>:<2, optional>, 2>;
+};
+
+type VectorWithLimitInTable = struct {
+    t @generated_name("TableWithVectorWithLimit") table {
+        1: v vector<uint8>:2;
+    };
+};
+
+type VectorWithLimitInUnion = struct {
+    u @generated_name("UnionWithVectorWithLimit") flexible union {
+        1: v vector<uint8>:2;
+    };
+};

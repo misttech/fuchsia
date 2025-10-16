@@ -25,6 +25,7 @@ mod service;
 mod r#struct;
 mod table;
 mod r#union;
+mod validation;
 mod wire_type;
 
 use askama::Template;
@@ -51,6 +52,7 @@ use self::service::*;
 use self::r#struct::*;
 use self::table::*;
 use self::r#union::*;
+use self::validation::*;
 use self::wire_type::*;
 
 pub fn render_library(library: &Library, config: &Config) -> Result<String, askama::Error> {

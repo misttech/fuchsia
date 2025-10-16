@@ -156,6 +156,7 @@ pub mod {{ module_name }} {
                         self,
                         encoder_: &mut ___E,
                         out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+                        _: (),
                     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
                         ::fidl_next::munge! {
                             let Self::Encoded {
@@ -167,7 +168,7 @@ pub mod {{ module_name }} {
 
                         {% for member in args.members %}
                             {% let member_name = filters::escape_snake(member.name) %}
-                            ::fidl_next::Encode::encode(self.{{ member_name }}, encoder_, {{ member_name }})?;
+                            ::fidl_next::Encode::encode(self.{{ member_name }}, encoder_, {{ member_name }}, {{ self.constraint(member.ty) }})?;
                         {% endfor %}
                         Ok(())
                     }

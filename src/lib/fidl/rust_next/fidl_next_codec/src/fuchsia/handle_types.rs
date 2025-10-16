@@ -6,8 +6,8 @@ use core::mem::MaybeUninit;
 
 use crate::fuchsia::{HandleDecoder, HandleEncoder, WireHandle, WireOptionalHandle};
 use crate::{
-    Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError, EncodeOption, FromWire,
-    FromWireOption, IntoNatural, Slot, Wire, munge,
+    Constrained, Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError,
+    EncodeOption, FromWire, FromWireOption, IntoNatural, Slot, Unconstrained, Wire, munge,
 };
 
 use zx::Handle;
@@ -52,9 +52,9 @@ macro_rules! define_wire_handle_types {
         }
 
         unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for $wire {
-            fn decode(mut slot: Slot<'_, Self>, decoder: &mut D) -> Result<(), DecodeError> {
+            fn decode(mut slot: Slot<'_, Self>, decoder: &mut D, constraint:  <Self as Constrained>::Constraint) -> Result<(), DecodeError> {
                 munge!(let Self { handle } = slot.as_mut());
-                WireHandle::decode(handle, decoder)
+                WireHandle::decode(handle, decoder, constraint)
             }
         }
 
@@ -106,9 +106,9 @@ macro_rules! define_wire_handle_types {
         }
 
         unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for $wire_optional {
-            fn decode(mut slot: Slot<'_, Self>, decoder: &mut D) -> Result<(), DecodeError> {
+            fn decode(mut slot: Slot<'_, Self>, decoder: &mut D, constraint:  <Self as Constrained>::Constraint) -> Result<(), DecodeError> {
                 munge!(let Self { handle } = slot.as_mut());
-                WireOptionalHandle::decode(handle, decoder)
+                WireOptionalHandle::decode(handle, decoder, constraint)
             }
         }
 
@@ -121,9 +121,10 @@ macro_rules! define_wire_handle_types {
                 self,
                 encoder: &mut E,
                 out: &mut MaybeUninit<Self::Encoded>,
+                constraint:  <Self::Encoded as Constrained>::Constraint,
             ) -> Result<(), EncodeError> {
                 munge!(let $wire { handle } = out);
-                Handle::from(self).encode(encoder, handle)
+                Handle::from(self).encode(encoder, handle, constraint)
             }
         }
 
@@ -146,9 +147,10 @@ macro_rules! define_wire_handle_types {
                 this: Option<Self>,
                 encoder: &mut E,
                 out: &mut MaybeUninit<Self::EncodedOption>,
+                constraint:  <Self::EncodedOption as Constrained>::Constraint,
             ) -> Result<(), EncodeError> {
                 munge!(let $wire_optional { handle } = out);
-                Handle::encode_option(this.map(Handle::from), encoder, handle)
+                Handle::encode_option(this.map(Handle::from), encoder, handle, constraint)
             }
         }
 
@@ -161,6 +163,10 @@ macro_rules! define_wire_handle_types {
         impl IntoNatural for $wire_optional {
             type Natural = Option<zx::$natural>;
         }
+
+        // TODO: validate handle rights.
+        impl Unconstrained for $wire {}
+        impl Unconstrained for $wire_optional {}
     )* };
 }
 

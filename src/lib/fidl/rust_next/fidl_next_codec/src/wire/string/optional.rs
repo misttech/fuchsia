@@ -9,9 +9,9 @@ use core::str::from_utf8;
 use munge::munge;
 
 use crate::{
-    Decode, DecodeError, Decoder, EncodableOption, EncodeError, EncodeOption, EncodeOptionRef,
-    Encoder, FromWireOption, FromWireOptionRef, IntoNatural, Slot, Wire, WireOptionalVector,
-    WireString, WireVector,
+    Constrained, Decode, DecodeError, Decoder, EncodableOption, EncodeError, EncodeOption,
+    EncodeOptionRef, Encoder, FromWireOption, FromWireOptionRef, IntoNatural, Slot,
+    ValidationError, Wire, WireOptionalVector, WireString, WireVector,
 };
 
 /// An optional FIDL string
@@ -62,6 +62,26 @@ impl WireOptionalString<'_> {
     pub fn as_ref(&self) -> Option<&WireString<'_>> {
         self.vec.as_ref().map(|vec| unsafe { &*(vec as *const WireVector<'_, u8>).cast() })
     }
+
+    /// Validate that this string's length falls within the limit.
+    fn validate_max_len(slot: Slot<'_, Self>, limit: u64) -> Result<(), crate::ValidationError> {
+        munge!(let Self { vec } = slot);
+        match WireOptionalVector::validate_max_len(vec, limit) {
+            Ok(()) => Ok(()),
+            Err(ValidationError::VectorTooLong { count, limit }) => {
+                Err(ValidationError::StringTooLong { count, limit })
+            }
+            Err(e) => Err(e),
+        }
+    }
+}
+
+impl Constrained for WireOptionalString<'_> {
+    type Constraint = u64;
+
+    fn validate(slot: Slot<'_, Self>, constraint: Self::Constraint) -> Result<(), ValidationError> {
+        Self::validate_max_len(slot, constraint)
+    }
 }
 
 impl fmt::Debug for WireOptionalString<'_> {
@@ -73,7 +93,7 @@ impl fmt::Debug for WireOptionalString<'_> {
 
 unsafe impl<D: Decoder + ?Sized> Decode<D> for WireOptionalString<'static> {
     #[inline]
-    fn decode(slot: Slot<'_, Self>, decoder: &mut D) -> Result<(), DecodeError> {
+    fn decode(slot: Slot<'_, Self>, decoder: &mut D, constraint: u64) -> Result<(), DecodeError> {
         munge!(let Self { mut vec } = slot);
 
         unsafe {
@@ -81,6 +101,13 @@ unsafe impl<D: Decoder + ?Sized> Decode<D> for WireOptionalString<'static> {
         }
         let vec = unsafe { vec.deref_unchecked() };
         if let Some(bytes) = vec.as_ref() {
+            if bytes.len() > constraint as usize {
+                return Err(DecodeError::Validation(ValidationError::StringTooLong {
+                    count: bytes.len() as u64,
+                    limit: constraint,
+                }));
+            }
+
             // Check if the string is valid ASCII (fast path)
             if !bytes.as_slice().is_ascii() {
                 // Fall back to checking if the string is valid UTF-8 (slow path)
@@ -103,8 +130,9 @@ unsafe impl<E: Encoder + ?Sized> EncodeOption<E> for String {
         this: Option<Self>,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::EncodedOption>,
+        constraint: u64,
     ) -> Result<(), EncodeError> {
-        <&str>::encode_option(this.as_deref(), encoder, out)
+        <&str>::encode_option(this.as_deref(), encoder, out, constraint)
     }
 }
 
@@ -114,8 +142,9 @@ unsafe impl<E: Encoder + ?Sized> EncodeOptionRef<E> for String {
         this: Option<&Self>,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::EncodedOption>,
+        constraint: u64,
     ) -> Result<(), EncodeError> {
-        <&str>::encode_option(this.map(String::as_str), encoder, out)
+        <&str>::encode_option(this.map(String::as_str), encoder, out, constraint)
     }
 }
 
@@ -129,6 +158,7 @@ unsafe impl<E: Encoder + ?Sized> EncodeOption<E> for &str {
         this: Option<Self>,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::EncodedOption>,
+        _constraint: u64,
     ) -> Result<(), EncodeError> {
         if let Some(string) = this {
             encoder.write(string.as_bytes());

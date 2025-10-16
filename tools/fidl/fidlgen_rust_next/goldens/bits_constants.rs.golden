@@ -34,8 +34,9 @@ pub mod natural {
             self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
         }
     }
 
@@ -48,6 +49,7 @@ pub mod natural {
             &self,
             _: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::BitsType { value } = out);
 
@@ -106,6 +108,7 @@ pub mod wire {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
             _: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { value } = slot);
             let set = u32::from(*value);
@@ -129,6 +132,8 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for BitsType {
         type Natural = crate::natural::BitsType;
     }
+
+    impl ::fidl_next::Unconstrained for BitsType {}
 }
 
 pub mod wire_optional {}

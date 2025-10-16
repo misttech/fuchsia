@@ -12,8 +12,8 @@ use fdf_channel::channel::Channel;
 use fdf_core::handle::{DriverHandle, fdf_handle_t};
 use fidl_next::fuchsia::{HandleDecoder, HandleEncoder};
 use fidl_next::{
-    Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError, EncodeOption, FromWire,
-    FromWireOption, IntoNatural, Slot, Wire, WireU32, munge,
+    Constrained, Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError,
+    EncodeOption, FromWire, FromWireOption, IntoNatural, Slot, Unconstrained, Wire, WireU32, munge,
 };
 
 use crate::DriverChannel;
@@ -76,7 +76,11 @@ impl fmt::Debug for WireDriverChannel {
 // SAFETY: `decode` only returns `Ok` if it wrote to the `decoded` field of the
 // handle, initializing it.
 unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireDriverChannel {
-    fn decode(mut slot: Slot<'_, Self>, decoder: &mut D) -> Result<(), DecodeError> {
+    fn decode(
+        mut slot: Slot<'_, Self>,
+        decoder: &mut D,
+        _: <Self as Constrained>::Constraint,
+    ) -> Result<(), DecodeError> {
         munge!(let Self { encoded } = slot.as_mut());
 
         match **encoded {
@@ -90,6 +94,8 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireDriverChannel {
         Ok(())
     }
 }
+
+impl Unconstrained for WireDriverChannel {}
 
 /// The FIDL wire type for optional [`DriverChannel`]s.
 ///
@@ -164,7 +170,11 @@ impl WireOptionalDriverChannel {
 // - It wrote to the `decoded` field of the handle, initializing it.
 // - The handle's encoded (and decoded) value was zero, indicating `None`.
 unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireOptionalDriverChannel {
-    fn decode(mut slot: Slot<'_, Self>, decoder: &mut D) -> Result<(), DecodeError> {
+    fn decode(
+        mut slot: Slot<'_, Self>,
+        decoder: &mut D,
+        _: <Self as Constrained>::Constraint,
+    ) -> Result<(), DecodeError> {
         munge!(let Self { encoded } = slot.as_mut());
 
         match **encoded {
@@ -180,6 +190,8 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireOptionalDriverChannel {
     }
 }
 
+impl Unconstrained for WireOptionalDriverChannel {}
+
 impl Encodable for DriverChannel {
     type Encoded = WireDriverChannel;
 }
@@ -191,6 +203,7 @@ unsafe impl<E: HandleEncoder + ?Sized> Encode<E> for DriverChannel {
         self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        _: <WireDriverChannel as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
         let handle = self.channel.into_driver_handle();
         // SAFETY: `self.into_raw()` returns a valid driver handle.
@@ -230,6 +243,7 @@ unsafe impl<E: HandleEncoder + ?Sized> EncodeOption<E> for DriverChannel {
         this: Option<Self>,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::EncodedOption>,
+        _: <Self::EncodedOption as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
         if let Some(driver_channel) = this {
             let handle = driver_channel.channel.into_driver_handle();
@@ -286,7 +300,7 @@ mod tests {
         let driver_channel = DriverChannel::new(channel);
 
         let mut encoder = SendBuffer::new();
-        encoder.encode_next(driver_channel).unwrap();
+        encoder.encode_next(driver_channel, ()).unwrap();
 
         assert_eq!(encoder.handles.len(), 1);
         let driver_ref = encoder.handles[0].as_ref().unwrap().resolve_ref();
@@ -319,7 +333,7 @@ mod tests {
         let driver_channel = DriverChannel::new(channel);
 
         let mut encoder = SendBuffer::new();
-        encoder.encode_next(Some(driver_channel)).unwrap();
+        encoder.encode_next(Some(driver_channel), ()).unwrap();
 
         assert_eq!(encoder.handles.len(), 1);
         let driver_ref = encoder.handles[0].as_ref().unwrap().resolve_ref();
@@ -347,7 +361,7 @@ mod tests {
     #[test]
     fn roundtrip_none() {
         let mut encoder = SendBuffer::new();
-        encoder.encode_next(Option::<DriverChannel>::None).unwrap();
+        encoder.encode_next(Option::<DriverChannel>::None, ()).unwrap();
 
         assert_eq!(encoder.handles.len(), 0);
         assert_eq!(encoder.data, chunks![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],);

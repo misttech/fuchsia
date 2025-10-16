@@ -8,7 +8,7 @@ use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use core::slice::from_raw_parts;
 
-use crate::{CHUNK_SIZE, Chunk, Encode, EncodeError, Wire, WireU64};
+use crate::{CHUNK_SIZE, Chunk, Constrained, Encode, EncodeError, Slot, Wire, WireU64};
 
 /// An encoder for FIDL handles (internal).
 pub trait InternalHandleEncoder {
@@ -113,12 +113,16 @@ pub trait EncoderExt {
     fn encode_next_iter<T: Encode<Self>>(
         &mut self,
         values: impl ExactSizeIterator<Item = T>,
+        constraint: <T::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError>;
-
     /// Encodes a value.
     ///
     /// Returns `Err` if encoding failed.
-    fn encode_next<T: Encode<Self>>(&mut self, value: T) -> Result<(), EncodeError>;
+    fn encode_next<T: Encode<Self>>(
+        &mut self,
+        value: T,
+        constraint: <T::Encoded as Constrained>::Constraint,
+    ) -> Result<(), EncodeError>;
 }
 
 impl<E: Encoder + ?Sized> EncoderExt for E {
@@ -140,13 +144,19 @@ impl<E: Encoder + ?Sized> EncoderExt for E {
     fn encode_next_iter<T: Encode<Self>>(
         &mut self,
         values: impl ExactSizeIterator<Item = T>,
+        constraint: <T::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
         let mut outputs = self.preallocate::<T::Encoded>(values.len());
 
         let mut out = MaybeUninit::<T::Encoded>::uninit();
         <T::Encoded as Wire>::zero_padding(&mut out);
         for value in values {
-            value.encode(outputs.encoder, &mut out)?;
+            value.encode(outputs.encoder, &mut out, constraint)?;
+            <T::Encoded as Constrained>::validate(
+                unsafe { Slot::new_unchecked_from_maybe_uninit(&mut out) },
+                constraint,
+            )
+            .map_err(EncodeError::Validation)?;
             unsafe {
                 outputs.write_next(out.assume_init_ref());
             }
@@ -155,8 +165,12 @@ impl<E: Encoder + ?Sized> EncoderExt for E {
         Ok(())
     }
 
-    fn encode_next<T: Encode<Self>>(&mut self, value: T) -> Result<(), EncodeError> {
-        self.encode_next_iter(core::iter::once(value))
+    fn encode_next<T: Encode<Self>>(
+        &mut self,
+        value: T,
+        constraint: <T::Encoded as Constrained>::Constraint,
+    ) -> Result<(), EncodeError> {
+        self.encode_next_iter(core::iter::once(value), constraint)
     }
 }
 

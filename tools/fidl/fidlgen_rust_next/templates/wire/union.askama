@@ -108,11 +108,12 @@ where
     fn decode(
         mut slot: ::fidl_next::Slot<'_, Self>,
         decoder: &mut ___D,
+        _: (),
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
         match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
             {% for member in union_.members %}
-                {{ member.ordinal }} => ::fidl_next::RawWireUnion::{{ decode_as }}::<___D, {{ self.static_wire_type(member.ty) }}>(raw, decoder)?,
+                {{ member.ordinal }} => ::fidl_next::RawWireUnion::{{ decode_as }}::<___D, {{ self.static_wire_type(member.ty) }}>(raw, decoder, {{ self.constraint(member.ty) }})?,
             {% endfor %}
             {% if union_.is_strict %}
                 ord => return Err(::fidl_next::DecodeError::InvalidUnionOrdinal(ord as usize)),
@@ -148,3 +149,5 @@ where
 impl{{ de }} ::fidl_next::IntoNatural for {{ name }}{{ de }} {
     type Natural = crate::natural::{{ name }};
 }
+
+impl ::fidl_next::Unconstrained for {{ name }}{{ static_ }} {}

@@ -7,9 +7,9 @@ use core::mem::MaybeUninit;
 use core::{concat, stringify};
 
 use fidl_next_codec::{
-    Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError, EncodeOption,
-    EncodeOptionRef, EncodeRef, FromWire, FromWireOption, FromWireOptionRef, FromWireRef,
-    IntoNatural, Slot, Wire, munge,
+    Constrained, Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError,
+    EncodeOption, EncodeOptionRef, EncodeRef, FromWire, FromWireOption, FromWireOptionRef,
+    FromWireRef, IntoNatural, Slot, Unconstrained, Wire, munge,
 };
 use fidl_next_protocol::{ProtocolError, Transport};
 
@@ -97,16 +97,18 @@ macro_rules! endpoint {
             D: ?Sized,
             P: 'static,
             T: Decode<D>,
+            T: Constrained<Constraint=()>,
         {
-            fn decode(slot: Slot<'_, Self>, decoder: &mut D) -> Result<(), DecodeError> {
+            fn decode(slot: Slot<'_, Self>, decoder: &mut D, constraint:  <Self as Constrained>::Constraint) -> Result<(), DecodeError> {
                 munge!(let Self { transport, _protocol: _ } = slot);
-                T::decode(transport, decoder)
+                T::decode(transport, decoder, constraint)
             }
         }
 
         impl<P, T> Encodable for $name<P, T>
         where
             T: Encodable,
+            T::Encoded : Constrained<Constraint=()>,
             P: 'static,
         {
             type Encoded = $name<P, T::Encoded>;
@@ -115,6 +117,7 @@ macro_rules! endpoint {
         impl<P, T> EncodableOption for $name<P, T>
         where
             T: EncodableOption,
+            T::EncodedOption: Constrained<Constraint=()>,
             P: 'static,
         {
             type EncodedOption = $name<P, T::EncodedOption>;
@@ -127,14 +130,16 @@ macro_rules! endpoint {
             E: ?Sized,
             P: 'static,
             T: Encode<E>,
+            T::Encoded: Constrained<Constraint=()>
         {
             fn encode(
                 self,
                 encoder: &mut E,
                 out: &mut MaybeUninit<Self::Encoded>,
+                constraint:  (),
             ) -> Result<(), EncodeError> {
                 munge!(let Self::Encoded { transport, _protocol: _ } = out);
-                self.transport.encode(encoder, transport)
+                self.transport.encode(encoder, transport, constraint)
             }
         }
 
@@ -146,13 +151,15 @@ macro_rules! endpoint {
             E: ?Sized,
             P: 'static,
             T: EncodeRef<E>,
+            T::Encoded: Constrained<Constraint=()>
         {
             fn encode_ref(
                 &self,
                 encoder: &mut E,
                 out: &mut MaybeUninit<Self::Encoded>,
+                constraint:  (),
             ) -> Result<(), EncodeError> {
-                self.as_ref().encode(encoder, out)
+                self.as_ref().encode(encoder, out, constraint)
             }
         }
 
@@ -164,14 +171,16 @@ macro_rules! endpoint {
             E: ?Sized,
             P: 'static,
             T: EncodeOption<E>,
+            T::EncodedOption: Constrained<Constraint=()>
         {
             fn encode_option(
                 this: Option<Self>,
                 encoder: &mut E,
                 out: &mut MaybeUninit<Self::EncodedOption>,
+                constraint: (),
             ) -> Result<(), EncodeError> {
                 munge!(let Self::EncodedOption { transport, _protocol: _ } = out);
-                T::encode_option(this.map(|this| this.transport), encoder, transport)
+                T::encode_option(this.map(|this| this.transport), encoder, transport, constraint)
             }
         }
 
@@ -183,16 +192,20 @@ macro_rules! endpoint {
             E: ?Sized,
             P: 'static,
             T: EncodeOptionRef<E>,
+            T::EncodedOption: Constrained<Constraint=()>
         {
             fn encode_option_ref(
                 this: Option<&Self>,
                 encoder: &mut E,
                 out: &mut MaybeUninit<Self::EncodedOption>,
+                constraint:  (),
             ) -> Result<(), EncodeError> {
                 munge!(let Self::EncodedOption { transport, _protocol: _ } = out);
-                T::encode_option_ref(this.map(|this| &this.transport), encoder, transport)
+                T::encode_option_ref(this.map(|this| &this.transport), encoder, transport, constraint)
             }
         }
+
+        impl<P, T : Constrained<Constraint=()>> Unconstrained for $name<P, T> {}
 
         impl<P, T, U> FromWire<$name<P, U>> for $name<P, T>
         where

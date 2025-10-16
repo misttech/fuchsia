@@ -10,8 +10,8 @@ use zx::sys::{ZX_HANDLE_INVALID, zx_handle_t};
 
 use crate::fuchsia::{HandleDecoder, HandleEncoder};
 use crate::{
-    Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError, EncodeOption, FromWire,
-    FromWireOption, IntoNatural, Slot, Wire, WireU32, munge,
+    Constrained, Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError,
+    EncodeOption, FromWire, FromWireOption, IntoNatural, Slot, Unconstrained, Wire, WireU32, munge,
 };
 
 /// A Zircon handle.
@@ -64,7 +64,11 @@ impl fmt::Debug for WireHandle {
 }
 
 unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireHandle {
-    fn decode(mut slot: Slot<'_, Self>, decoder: &mut D) -> Result<(), DecodeError> {
+    fn decode(
+        mut slot: Slot<'_, Self>,
+        decoder: &mut D,
+        _constraint: <Self as Constrained>::Constraint,
+    ) -> Result<(), DecodeError> {
         munge!(let Self { encoded } = slot.as_mut());
 
         match **encoded {
@@ -76,6 +80,18 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireHandle {
             }
             e => return Err(DecodeError::InvalidHandlePresence(e)),
         }
+        Ok(())
+    }
+}
+
+impl Constrained for WireHandle {
+    type Constraint = ();
+
+    fn validate(
+        _slot: Slot<'_, Self>,
+        _constraint: Self::Constraint,
+    ) -> Result<(), crate::ValidationError> {
+        // TODO: validate handle rights.
         Ok(())
     }
 }
@@ -128,9 +144,13 @@ impl WireOptionalHandle {
 }
 
 unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireOptionalHandle {
-    fn decode(mut slot: Slot<'_, Self>, decoder: &mut D) -> Result<(), DecodeError> {
+    fn decode(
+        mut slot: Slot<'_, Self>,
+        decoder: &mut D,
+        constraint: <Self as Constrained>::Constraint,
+    ) -> Result<(), DecodeError> {
         munge!(let Self { handle } = slot.as_mut());
-        WireHandle::decode(handle, decoder)
+        WireHandle::decode(handle, decoder, constraint)
     }
 }
 
@@ -143,6 +163,7 @@ unsafe impl<E: HandleEncoder + ?Sized> Encode<E> for Handle {
         self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        _constraint: <Self::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
         if self.is_invalid() {
             Err(EncodeError::InvalidRequiredHandle)
@@ -176,6 +197,7 @@ unsafe impl<E: HandleEncoder + ?Sized> EncodeOption<E> for Handle {
         this: Option<Self>,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::EncodedOption>,
+        _constraint: <Self::EncodedOption as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
         if let Some(handle) = this {
             encoder.push_handle(handle)?;
@@ -198,3 +220,6 @@ impl FromWireOption<WireOptionalHandle> for Handle {
 impl IntoNatural for WireOptionalHandle {
     type Natural = Option<Handle>;
 }
+
+// TODO: validate handle rights
+impl Unconstrained for WireOptionalHandle {}

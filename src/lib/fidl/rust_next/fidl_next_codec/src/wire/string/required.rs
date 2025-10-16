@@ -10,8 +10,8 @@ use core::str::{from_utf8, from_utf8_unchecked};
 use munge::munge;
 
 use crate::{
-    Decode, DecodeError, Decoder, Encodable, Encode, EncodeError, EncodeRef, Encoder, FromWire,
-    FromWireRef, IntoNatural, Slot, Wire, WireVector,
+    Constrained, Decode, DecodeError, Decoder, Encodable, Encode, EncodeError, EncodeRef, Encoder,
+    FromWire, FromWireRef, IntoNatural, Slot, ValidationError, Wire, WireVector,
 };
 
 /// A FIDL string
@@ -55,6 +55,26 @@ impl WireString<'_> {
     pub fn as_str(&self) -> &str {
         unsafe { from_utf8_unchecked(self.vec.as_slice()) }
     }
+
+    /// Validate that this string's length falls within the limit.
+    fn validate_max_len(slot: Slot<'_, Self>, limit: u64) -> Result<(), crate::ValidationError> {
+        munge!(let Self { vec } = slot);
+        match WireVector::validate_max_len(vec, limit) {
+            Ok(()) => Ok(()),
+            Err(ValidationError::VectorTooLong { count, limit }) => {
+                Err(ValidationError::StringTooLong { count, limit })
+            }
+            Err(e) => Err(e),
+        }
+    }
+}
+
+impl Constrained for WireString<'_> {
+    type Constraint = u64;
+
+    fn validate(slot: Slot<'_, Self>, constraint: u64) -> Result<(), ValidationError> {
+        Self::validate_max_len(slot, constraint)
+    }
 }
 
 impl Deref for WireString<'_> {
@@ -75,12 +95,21 @@ impl fmt::Debug for WireString<'_> {
 
 unsafe impl<D: Decoder + ?Sized> Decode<D> for WireString<'static> {
     #[inline]
-    fn decode(slot: Slot<'_, Self>, decoder: &mut D) -> Result<(), DecodeError> {
+    fn decode(slot: Slot<'_, Self>, decoder: &mut D, constraint: u64) -> Result<(), DecodeError> {
         munge!(let Self { mut vec } = slot);
 
-        unsafe {
-            WireVector::decode_raw(vec.as_mut(), decoder)?;
-        }
+        match unsafe { WireVector::decode_raw(vec.as_mut(), decoder, constraint) } {
+            Ok(()) => (),
+            Err(DecodeError::Validation(ValidationError::VectorTooLong { count, limit })) => {
+                return Err(DecodeError::Validation(ValidationError::StringTooLong {
+                    count,
+                    limit,
+                }));
+            }
+            Err(e) => {
+                return Err(e);
+            }
+        };
         let vec = unsafe { vec.deref_unchecked() };
 
         // Check if the string is valid ASCII (fast path)
@@ -104,8 +133,9 @@ unsafe impl<E: Encoder + ?Sized> Encode<E> for String {
         self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        constraint: u64,
     ) -> Result<(), EncodeError> {
-        self.as_str().encode(encoder, out)
+        self.as_str().encode(encoder, out, constraint)
     }
 }
 
@@ -115,8 +145,9 @@ unsafe impl<E: Encoder + ?Sized> EncodeRef<E> for String {
         &self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        constraint: u64,
     ) -> Result<(), EncodeError> {
-        self.as_str().encode(encoder, out)
+        self.as_str().encode(encoder, out, constraint)
     }
 }
 
@@ -130,6 +161,7 @@ unsafe impl<E: Encoder + ?Sized> Encode<E> for &str {
         self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        _constraint: u64,
     ) -> Result<(), EncodeError> {
         encoder.write(self.as_bytes());
         WireString::encode_present(out, self.len() as u64);

@@ -14,12 +14,15 @@ pub fn encode_header<T: Transport>(
     txid: u32,
     ordinal: u64,
 ) -> Result<(), EncodeError> {
-    buffer.encode_next(WireMessageHeader {
-        txid: WireU32(txid),
-        flags: [FLAG_0_WIRE_FORMAT_V2_BIT, 0, 0],
-        magic_number: MAGIC_NUMBER,
-        ordinal: WireU64(ordinal),
-    })
+    buffer.encode_next(
+        WireMessageHeader {
+            txid: WireU32(txid),
+            flags: [FLAG_0_WIRE_FORMAT_V2_BIT, 0, 0],
+            magic_number: MAGIC_NUMBER,
+            ordinal: WireU64(ordinal),
+        },
+        (),
+    )
 }
 
 /// Parses the transaction ID and ordinal from the given buffer.
@@ -39,7 +42,7 @@ pub fn encode_epitaph<T: Transport>(
     buffer: &mut T::SendBuffer,
     error: i32,
 ) -> Result<(), EncodeError> {
-    buffer.encode_next(WireEpitaph { error: WireI32(error) })
+    buffer.encode_next(WireEpitaph { error: WireI32(error) }, ())
 }
 
 /// Parses the epitaph error from the given buffer.

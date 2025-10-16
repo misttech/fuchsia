@@ -9,9 +9,9 @@ use core::ptr::NonNull;
 use munge::munge;
 
 use crate::{
-    Decode, DecodeError, Decoder, DecoderExt as _, Encodable, EncodableOption, Encode, EncodeError,
-    EncodeOption, EncodeOptionRef, EncodeRef, FromWire, FromWireOption, FromWireOptionRef,
-    FromWireRef, IntoNatural, Slot, Wire, WirePointer,
+    Constrained, Decode, DecodeError, Decoder, DecoderExt as _, Encodable, EncodableOption, Encode,
+    EncodeError, EncodeOption, EncodeOptionRef, EncodeRef, FromWire, FromWireOption,
+    FromWireOptionRef, FromWireRef, IntoNatural, Slot, ValidationError, Wire, WirePointer,
 };
 
 /// A boxed (optional) FIDL value.
@@ -89,12 +89,16 @@ impl<T: fmt::Debug> fmt::Debug for WireBox<'_, T> {
 }
 
 unsafe impl<D: Decoder + ?Sized, T: Decode<D>> Decode<D> for WireBox<'static, T> {
-    fn decode(slot: Slot<'_, Self>, mut decoder: &mut D) -> Result<(), DecodeError> {
+    fn decode(
+        slot: Slot<'_, Self>,
+        mut decoder: &mut D,
+        constraint: <Self as Constrained>::Constraint,
+    ) -> Result<(), DecodeError> {
         munge!(let Self { mut ptr } = slot);
 
         if WirePointer::is_encoded_present(ptr.as_mut())? {
             let mut value = decoder.take_slot::<T>()?;
-            T::decode(value.as_mut(), decoder)?;
+            T::decode(value.as_mut(), decoder, constraint)?;
             WirePointer::set_decoded(ptr, value.as_mut_ptr());
         }
 
@@ -111,8 +115,9 @@ unsafe impl<E: ?Sized, T: EncodeOption<E>> Encode<E> for Option<T> {
         self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        constraint: <Self::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        T::encode_option(self, encoder, out)
+        T::encode_option(self, encoder, out, constraint)
     }
 }
 
@@ -121,8 +126,9 @@ unsafe impl<E: ?Sized, T: EncodeOptionRef<E>> EncodeRef<E> for Option<T> {
         &self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        constraint: <Self::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        T::encode_option_ref(self.as_ref(), encoder, out)
+        T::encode_option_ref(self.as_ref(), encoder, out, constraint)
     }
 }
 
@@ -139,5 +145,18 @@ impl<T: IntoNatural> IntoNatural for WireBox<'_, T> {
 impl<T: FromWireRef<W>, W> FromWireOptionRef<WireBox<'_, W>> for T {
     fn from_wire_option_ref(wire: &WireBox<'_, W>) -> Option<Self> {
         wire.as_ref().map(T::from_wire_ref)
+    }
+}
+
+impl<T: Constrained> Constrained for WireBox<'_, T> {
+    type Constraint = T::Constraint;
+
+    fn validate(slot: Slot<'_, Self>, constraint: Self::Constraint) -> Result<(), ValidationError> {
+        munge!(let Self { ptr } = slot);
+
+        let ptr = unsafe { ptr.deref_unchecked() };
+        let ptr = ptr.as_ptr();
+        let member_slot = unsafe { Slot::new_unchecked(ptr) };
+        T::validate(member_slot, constraint)
     }
 }

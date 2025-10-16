@@ -29,7 +29,6 @@ success("VectorWrapper_randomly_generated") {
 }
 
 encode_failure("VectorExceedsLimit") {
-    bindings_denylist = [rust_next],
     value = VectorWithLimit{
         v: [1, 2, 3], // exceeds the string length
     },
@@ -63,7 +62,7 @@ success("EmptyOptionalVectorWithNullPtrBody") {
 
 decode_failure("NonEmptyVectorWithNullPtrBody") {
     // TODO(https://fxbug.dev/42170063) Fix this on dart.
-    bindings_denylist = [dart, rust_next],
+    bindings_denylist = [dart],
     type = VectorWrapper,
     bytes = {
         v2 = [
@@ -115,7 +114,6 @@ decode_failure("OptionalVectorWrongPointerValue") {
 
 // Test vector with a 2^64-1 count, exceeding the 32-bit limit from RFC-0059.
 decode_failure("VectorCountExceedsLimitByALot") {
-    bindings_denylist = [rust_next],
     type = VectorWrapper,
     bytes = {
         v2 = [
@@ -128,7 +126,6 @@ decode_failure("VectorCountExceedsLimitByALot") {
 
 // Test vector with a 2^32 count, exceeding the 32-bit limit from RFC-0059.
 decode_failure("VectorCountExceedsLimitByOne") {
-    bindings_denylist = [rust_next],
     type = VectorWrapper,
     bytes = {
         v2 = [
@@ -560,4 +557,202 @@ success("ByteVectors16") {
             repeat(16):512,
         ],
     },
+}
+
+success("VectorWithLimitInVector") {
+    bindings_allowlist = [rust_next],
+    value = VectorWithLimitInVector{
+        v: [
+            [113, 200],
+        ],
+    },
+    bytes = {
+        v2 = [
+            num(1):8,
+            repeat(0xff):8,
+
+            num(2):8,
+            repeat(0xff):8,
+
+            113, 200, padding:6,
+        ],
+    },
+}
+
+encode_failure("VectorWithLimitInVectorExceedsLimit") {
+    bindings_allowlist = [rust_next],
+    value = VectorWithLimitInVector{
+        v: [
+            [113, 200, 234],
+        ],
+    },
+    err = COUNT_EXCEEDS_LIMIT,
+}
+
+decode_failure("VectorWithLimitInVectorExceedsLimit") {
+    bindings_allowlist = [rust_next],
+    type = VectorWithLimitInVector,
+    bytes = {
+        v2 = [
+            num(1):8,
+            repeat(0xff):8,
+
+            num(3):8,
+            repeat(0xff):8,
+
+            113, 200, 234, padding:5,
+        ],
+    },
+    err = COUNT_EXCEEDS_LIMIT,
+}
+
+success("VectorWithLimitInArray") {
+    bindings_allowlist = [rust_next],
+    value = VectorWithLimitInArray{
+        a: [[11, 22], [33, 44]],
+    },
+    bytes = {
+        v2 = [
+            num(2):8,
+            repeat(0xff):8,
+
+            num(2):8,
+            repeat(0xff):8,
+
+            num(11):1, num(22):1, padding:6,
+
+            num(33):1, num(44):1, padding:6,
+        ],
+    },
+}
+
+encode_failure("VectorWithLimitInArrayExceedsLimit") {
+    bindings_allowlist = [rust_next],
+    value = VectorWithLimitInArray{
+        a: [[11, 22], [33, 44, 55]],
+    },
+    err = COUNT_EXCEEDS_LIMIT,
+}
+
+decode_failure("VectorWithLimitInArrayExceedsLimit") {
+    bindings_allowlist = [rust_next],
+    type = VectorWithLimitInArray,
+    bytes = {
+        v2 = [
+            num(2):8,
+            repeat(0xff):8,
+
+            num(3):8,
+            repeat(0xff):8,
+
+            num(11):1, num(22):1, padding:6,
+
+            num(33):1, num(44):1, num(55):1, padding:5,
+        ],
+    },
+    err = COUNT_EXCEEDS_LIMIT,
+}
+
+success("VectorWithLimitInTable") {
+    bindings_allowlist = [rust_next],
+    value = VectorWithLimitInTable{
+        t: TableWithVectorWithLimit{v: [11, 22], },
+    },
+    bytes = {
+        v2 = [
+            // table inline portion
+            num(1):8,
+            repeat(0xff):8,
+
+            // envelope
+            num(24):4, num(0):2, num(0):2,
+
+            // vector
+            num(2):8,
+            repeat(0xff):8,
+
+            num(11):1, num(22):1, padding:6,
+        ],
+    },
+}
+
+encode_failure("VectorWithLimitInTableExceedsLimit") {
+    bindings_allowlist = [rust_next],
+    value = VectorWithLimitInTable{
+        t: TableWithVectorWithLimit{v: [11, 22, 33], },
+    },
+    err = COUNT_EXCEEDS_LIMIT,
+}
+
+decode_failure("VectorWithLimitInTableExceedsLimit") {
+    bindings_allowlist = [rust_next],
+    type = VectorWithLimitInTable,
+    bytes = {
+        v2 = [
+            // table inline portion
+            num(1):8,
+            repeat(0xff):8,
+
+            // envelope
+            num(24):4, num(0):2, num(0):2,
+
+            // vector
+            num(3):8,
+            repeat(0xff):8,
+
+            num(11):1, num(22):1, num(33):1, padding:5,
+        ],
+    },
+    err = COUNT_EXCEEDS_LIMIT,
+}
+
+success("VectorWithLimitInUnion") {
+    bindings_allowlist = [rust_next],
+    value = VectorWithLimitInUnion{
+        u: UnionWithVectorWithLimit{v: [11, 22], },
+    },
+    bytes = {
+        v2 = [
+            // ordinal
+            num(1):8,
+
+            // envelope
+            num(24):4, num(0):2, num(0):2,
+
+            // vector
+            num(2):8,
+            repeat(0xff):8,
+
+            num(11):1, num(22):1, padding:6,
+        ],
+    },
+}
+
+encode_failure("VectorWithLimitInUnionExceedsLimit") {
+    bindings_allowlist = [rust_next],
+    value = VectorWithLimitInUnion{
+        u: UnionWithVectorWithLimit{v: [11, 22, 33], },
+    },
+    err = COUNT_EXCEEDS_LIMIT,
+}
+
+decode_failure("VectorWithLimitInUnionExceedsLimit") {
+    bindings_allowlist = [rust_next],
+    type = VectorWithLimitInUnion,
+    bytes = {
+        v2 = [
+            // ordinal
+            num(1):8,
+
+            // envelope
+            num(24):4, num(0):2, num(0):2,
+
+            // vector
+            num(3):8,
+            repeat(0xff):8,
+
+            num(11):1, num(22):1, num(33):1, padding:5,
+        ],
+    },
+    err = COUNT_EXCEEDS_LIMIT,
 }

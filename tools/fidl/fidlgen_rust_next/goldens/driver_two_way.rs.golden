@@ -35,6 +35,7 @@ pub mod natural {
             self,
             encoder_: &mut ___E,
             out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let Self::Encoded {
@@ -44,9 +45,13 @@ pub mod natural {
                 } = out_;
             }
 
-            ::fidl_next::Encode::encode(self.addend1, encoder_, addend1)?;
+            ::fidl_next::Encode::encode(self.addend1, encoder_, addend1, ())?;
 
-            ::fidl_next::Encode::encode(self.addend2, encoder_, addend2)?;
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(addend1.as_mut_ptr()) };
+
+            ::fidl_next::Encode::encode(self.addend2, encoder_, addend2, ())?;
+
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(addend2.as_mut_ptr()) };
 
             Ok(())
         }
@@ -61,6 +66,7 @@ pub mod natural {
             &self,
             encoder_: &mut ___E,
             out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let Self::Encoded {
@@ -71,9 +77,13 @@ pub mod natural {
                 } = out_;
             }
 
-            ::fidl_next::EncodeRef::encode_ref(&self.addend1, encoder_, addend1)?;
+            ::fidl_next::EncodeRef::encode_ref(&self.addend1, encoder_, addend1, ())?;
 
-            ::fidl_next::EncodeRef::encode_ref(&self.addend2, encoder_, addend2)?;
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(addend1.as_mut_ptr()) };
+
+            ::fidl_next::EncodeRef::encode_ref(&self.addend2, encoder_, addend2, ())?;
+
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(addend2.as_mut_ptr()) };
 
             Ok(())
         }
@@ -93,9 +103,10 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
                 ::fidl_next::WireBox::encode_present(out);
             } else {
                 ::fidl_next::WireBox::encode_absent(out);
@@ -115,9 +126,10 @@ pub mod natural {
             this: ::core::option::Option<&Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
                 ::fidl_next::WireBox::encode_present(out);
             } else {
                 ::fidl_next::WireBox::encode_absent(out);
@@ -189,6 +201,7 @@ pub mod natural {
             self,
             encoder_: &mut ___E,
             out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let Self::Encoded {
@@ -197,7 +210,9 @@ pub mod natural {
                 } = out_;
             }
 
-            ::fidl_next::Encode::encode(self.sum, encoder_, sum)?;
+            ::fidl_next::Encode::encode(self.sum, encoder_, sum, ())?;
+
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(sum.as_mut_ptr()) };
 
             Ok(())
         }
@@ -212,6 +227,7 @@ pub mod natural {
             &self,
             encoder_: &mut ___E,
             out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let Self::Encoded {
@@ -221,7 +237,9 @@ pub mod natural {
                 } = out_;
             }
 
-            ::fidl_next::EncodeRef::encode_ref(&self.sum, encoder_, sum)?;
+            ::fidl_next::EncodeRef::encode_ref(&self.sum, encoder_, sum, ())?;
+
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(sum.as_mut_ptr()) };
 
             Ok(())
         }
@@ -241,9 +259,10 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
                 ::fidl_next::WireBox::encode_present(out);
             } else {
                 ::fidl_next::WireBox::encode_absent(out);
@@ -263,9 +282,10 @@ pub mod natural {
             this: ::core::option::Option<&Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
                 ::fidl_next::WireBox::encode_present(out);
             } else {
                 ::fidl_next::WireBox::encode_absent(out);
@@ -345,6 +365,7 @@ pub mod wire {
         fn decode(
             slot_: ::fidl_next::Slot<'_, Self>,
             decoder_: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
@@ -355,9 +376,13 @@ pub mod wire {
                 } = slot_;
             }
 
-            ::fidl_next::Decode::decode(addend1.as_mut(), decoder_)?;
+            let _field = addend1.as_mut();
 
-            ::fidl_next::Decode::decode(addend2.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(addend1.as_mut(), decoder_, ())?;
+
+            let _field = addend2.as_mut();
+
+            ::fidl_next::Decode::decode(addend2.as_mut(), decoder_, ())?;
 
             Ok(())
         }
@@ -366,6 +391,8 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for TwoWayAddRequest {
         type Natural = crate::natural::TwoWayAddRequest;
     }
+
+    impl ::fidl_next::Unconstrained for TwoWayAddRequest {}
 
     /// The wire type corresponding to [`TwoWayAddResponse`].
     #[derive(Clone, Debug)]
@@ -403,6 +430,7 @@ pub mod wire {
         fn decode(
             slot_: ::fidl_next::Slot<'_, Self>,
             decoder_: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
@@ -412,7 +440,9 @@ pub mod wire {
                 } = slot_;
             }
 
-            ::fidl_next::Decode::decode(sum.as_mut(), decoder_)?;
+            let _field = sum.as_mut();
+
+            ::fidl_next::Decode::decode(sum.as_mut(), decoder_, ())?;
 
             Ok(())
         }
@@ -421,6 +451,8 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for TwoWayAddResponse {
         type Natural = crate::natural::TwoWayAddResponse;
     }
+
+    impl ::fidl_next::Unconstrained for TwoWayAddResponse {}
 }
 
 pub mod wire_optional {}
@@ -479,6 +511,7 @@ pub mod two_way {
                 self,
                 encoder_: &mut ___E,
                 out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+                _: (),
             ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
                 ::fidl_next::munge! {
                     let Self::Encoded {
@@ -488,9 +521,9 @@ pub mod two_way {
                     } = out_;
                 }
 
-                ::fidl_next::Encode::encode(self.addend1, encoder_, addend1)?;
+                ::fidl_next::Encode::encode(self.addend1, encoder_, addend1, ())?;
 
-                ::fidl_next::Encode::encode(self.addend2, encoder_, addend2)?;
+                ::fidl_next::Encode::encode(self.addend2, encoder_, addend2, ())?;
 
                 Ok(())
             }

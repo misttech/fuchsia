@@ -7,7 +7,8 @@ use core::mem::MaybeUninit;
 use munge::munge;
 
 use crate::{
-    DecodeError, Decoder, DecoderExt as _, Slot, Wire, WireEnvelope, WirePointer, WireU64,
+    DecodeError, Decoder, DecoderExt as _, Slot, Unconstrained, Wire, WireEnvelope, WirePointer,
+    WireU64,
 };
 
 /// A FIDL table
@@ -25,6 +26,8 @@ unsafe impl Wire for WireTable<'static> {
         // Wire tables have no padding
     }
 }
+
+impl Unconstrained for WireTable<'_> {}
 
 impl WireTable<'static> {
     /// Encodes that a table contains `len` values in a slot.

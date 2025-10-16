@@ -10,8 +10,8 @@ use munge::munge;
 use crate::decoder::InternalHandleDecoder;
 use crate::encoder::InternalHandleEncoder;
 use crate::{
-    CHUNK_SIZE, Decode, DecodeError, Decoder, DecoderExt as _, Encode, EncodeError, Encoder,
-    EncoderExt as _, Slot, Wire, WireU16, WireU32,
+    CHUNK_SIZE, Constrained, Decode, DecodeError, Decoder, DecoderExt as _, Encode, EncodeError,
+    Encoder, EncoderExt as _, Slot, Unconstrained, Wire, WireU16, WireU32,
 };
 
 #[derive(Clone, Copy)]
@@ -42,6 +42,8 @@ unsafe impl Wire for WireEnvelope {
     fn zero_padding(_: &mut MaybeUninit<Self>) {}
 }
 
+impl Unconstrained for WireEnvelope {}
+
 impl WireEnvelope {
     const IS_INLINE_BIT: u16 = 1;
 
@@ -57,6 +59,7 @@ impl WireEnvelope {
         value: T,
         encoder: &mut E,
         out: &mut MaybeUninit<Self>,
+        constraint: <T::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
         munge! {
             let Self {
@@ -87,7 +90,7 @@ impl WireEnvelope {
 
         let value_out = unsafe { &mut *maybe_num_bytes.as_mut_ptr().cast() };
         T::Encoded::zero_padding(value_out);
-        value.encode(encoder, value_out)?;
+        value.encode(encoder, value_out, constraint)?;
 
         flags.write(WireU16(Self::IS_INLINE_BIT));
 
@@ -103,6 +106,7 @@ impl WireEnvelope {
         value: T,
         encoder: &mut E,
         out: &mut MaybeUninit<Self>,
+        constraint: <T::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
         munge! {
             let Self {
@@ -129,12 +133,12 @@ impl WireEnvelope {
             }
             let value_out = unsafe { &mut *maybe_num_bytes.as_mut_ptr().cast() };
             T::Encoded::zero_padding(value_out);
-            value.encode(encoder, value_out)?;
+            value.encode(encoder, value_out, constraint)?;
             flags.write(WireU16(Self::IS_INLINE_BIT));
         } else {
             let bytes_before = encoder.bytes_written();
 
-            encoder.encode_next(value)?;
+            encoder.encode_next(value, constraint)?;
 
             let bytes_count = (encoder.bytes_written() - bytes_before).try_into().unwrap();
             maybe_num_bytes.write(WireU32(bytes_count));
@@ -240,6 +244,7 @@ impl WireEnvelope {
     pub fn decode_as_static<D: InternalHandleDecoder + ?Sized, T: Decode<D>>(
         mut slot: Slot<'_, Self>,
         decoder: &mut D,
+        constraint: <T as Constrained>::Constraint,
     ) -> Result<(), DecodeError> {
         munge! {
             let Self {
@@ -264,7 +269,7 @@ impl WireEnvelope {
         }
         munge!(let Self { mut decoded_inline } = slot);
         let mut slot = unsafe { Slot::<T>::new_unchecked(decoded_inline.as_mut_ptr().cast()) };
-        T::decode(slot.as_mut(), decoder)?;
+        T::decode(slot.as_mut(), decoder, constraint)?;
 
         let handles_consumed = handles_before - decoder.__internal_handles_remaining();
         if handles_consumed != num_handles {
@@ -282,6 +287,7 @@ impl WireEnvelope {
     pub fn decode_as<D: Decoder + ?Sized, T: Decode<D>>(
         mut slot: Slot<'_, Self>,
         mut decoder: &mut D,
+        constraint: <T as Constrained>::Constraint,
     ) -> Result<(), DecodeError> {
         munge! {
             let Self {
@@ -303,7 +309,7 @@ impl WireEnvelope {
             // than it claims that it will
             let mut value_slot = decoder.take_slot::<T>()?;
             let value_ptr = value_slot.as_mut_ptr();
-            T::decode(value_slot, decoder)?;
+            T::decode(value_slot, decoder, constraint)?;
 
             munge!(let Self { mut decoded_out_of_line } = slot);
             // SAFETY: Identical to `ptr.write(value_ptr.cast())`, but raw
@@ -316,7 +322,7 @@ impl WireEnvelope {
             }
             munge!(let Self { mut decoded_inline } = slot);
             let mut slot = unsafe { Slot::<T>::new_unchecked(decoded_inline.as_mut_ptr().cast()) };
-            T::decode(slot.as_mut(), decoder)?;
+            T::decode(slot.as_mut(), decoder, constraint)?;
         }
 
         let handles_consumed = handles_before - decoder.__internal_handles_remaining();

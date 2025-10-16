@@ -91,6 +91,17 @@ impl<'de, T: ?Sized> Slot<'de, T> {
     }
 }
 
+impl<'de, T: Sized> Slot<'de, T> {
+    /// Creates a new slot from the given backing storage.
+    ///
+    /// # Safety
+    ///
+    /// `backing` must actually be initialized with valid `T`.
+    pub unsafe fn new_unchecked_from_maybe_uninit(backing: &mut MaybeUninit<T>) -> Self {
+        Self { ptr: backing.as_mut_ptr(), _phantom: PhantomData }
+    }
+}
+
 impl<T> Slot<'_, T> {
     /// Returns a slice of the underlying bytes.
     pub fn as_bytes(&self) -> &[u8] {

@@ -7,8 +7,8 @@ use core::marker::PhantomData;
 use core::mem::{ManuallyDrop, MaybeUninit};
 
 use fidl_next_codec::{
-    Chunk, Decode, DecodeError, Decoder, Encodable, Encode, EncodeError, EncodeRef, Encoder,
-    FromWire, FromWireRef, IntoNatural, RawWireUnion, Slot, Wire, munge,
+    Chunk, Constrained, Decode, DecodeError, Decoder, Encodable, Encode, EncodeError, EncodeRef,
+    Encoder, FromWire, FromWireRef, IntoNatural, RawWireUnion, Slot, Unconstrained, Wire, munge,
 };
 
 use crate::{FrameworkError, WireFrameworkError};
@@ -62,6 +62,8 @@ unsafe impl<T: Wire> Wire for WireFlexible<'static, T> {
         RawWireUnion::zero_padding(raw);
     }
 }
+
+impl<T: Constrained<Constraint = ()>> Unconstrained for WireFlexible<'_, T> {}
 
 const ORD_OK: u64 = 1;
 const ORD_FRAMEWORK_ERR: u64 = 3;
@@ -166,14 +168,20 @@ where
 unsafe impl<D, T> Decode<D> for WireFlexible<'static, T>
 where
     D: Decoder + ?Sized,
-    T: Decode<D>,
+    T: Decode<D> + Constrained<Constraint = ()>,
 {
-    fn decode(slot: Slot<'_, Self>, decoder: &mut D) -> Result<(), DecodeError> {
+    fn decode(
+        slot: Slot<'_, Self>,
+        decoder: &mut D,
+        constraint: <Self as Constrained>::Constraint,
+    ) -> Result<(), DecodeError> {
         munge!(let Self { mut raw, _phantom: _ } = slot);
 
         match RawWireUnion::encoded_ordinal(raw.as_mut()) {
-            ORD_OK => RawWireUnion::decode_as::<D, T>(raw, decoder)?,
-            ORD_FRAMEWORK_ERR => RawWireUnion::decode_as::<D, WireFrameworkError>(raw, decoder)?,
+            ORD_OK => RawWireUnion::decode_as::<D, T>(raw, decoder, constraint)?,
+            ORD_FRAMEWORK_ERR => {
+                RawWireUnion::decode_as::<D, WireFrameworkError>(raw, decoder, ())?
+            }
             ord => return Err(DecodeError::InvalidUnionOrdinal(ord as usize)),
         }
 
@@ -184,6 +192,7 @@ where
 impl<T> Encodable for Flexible<T>
 where
     T: Encodable,
+    T::Encoded: Constrained<Constraint = ()>,
 {
     type Encoded = WireFlexible<'static, T::Encoded>;
 }
@@ -192,21 +201,26 @@ unsafe impl<E, T> Encode<E> for Flexible<T>
 where
     E: Encoder + ?Sized,
     T: Encode<E>,
+    T::Encoded: Constrained<Constraint = ()>,
 {
     fn encode(
         self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        constraint: <Self::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
         munge!(let WireFlexible { raw, _phantom: _ } = out);
 
         match self {
-            Self::Ok(value) => RawWireUnion::encode_as::<E, T>(value, ORD_OK, encoder, raw)?,
+            Self::Ok(value) => {
+                RawWireUnion::encode_as::<E, T>(value, ORD_OK, encoder, raw, constraint)?
+            }
             Self::FrameworkErr(error) => RawWireUnion::encode_as::<E, FrameworkError>(
                 error,
                 ORD_FRAMEWORK_ERR,
                 encoder,
                 raw,
+                (),
             )?,
         }
 
@@ -218,13 +232,15 @@ unsafe impl<E, T> EncodeRef<E> for Flexible<T>
 where
     E: Encoder + ?Sized,
     T: EncodeRef<E>,
+    T::Encoded: Constrained<Constraint = ()>,
 {
     fn encode_ref(
         &self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        constraint: <Self::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        self.as_ref().encode(encoder, out)
+        self.as_ref().encode(encoder, out, constraint)
     }
 }
 

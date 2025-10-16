@@ -49,6 +49,7 @@ pub mod natural {
             self,
             encoder_: &mut ___E,
             out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let Self::Encoded {
@@ -59,11 +60,20 @@ pub mod natural {
                 } = out_;
             }
 
-            ::fidl_next::Encode::encode(self.fdf_channel_handle, encoder_, fdf_channel_handle)?;
+            ::fidl_next::Encode::encode(self.fdf_channel_handle, encoder_, fdf_channel_handle, ())?;
 
-            ::fidl_next::Encode::encode(self.client_end_driver, encoder_, client_end_driver)?;
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(fdf_channel_handle.as_mut_ptr()) };
 
-            ::fidl_next::Encode::encode(self.server_end_driver, encoder_, server_end_driver)?;
+            ::fidl_next::Encode::encode(self.client_end_driver, encoder_, client_end_driver, ())?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(client_end_driver.as_mut_ptr()) };
+
+            ::fidl_next::Encode::encode(self.server_end_driver, encoder_, server_end_driver, ())?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(server_end_driver.as_mut_ptr()) };
 
             Ok(())
         }
@@ -83,9 +93,10 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
                 ::fidl_next::WireBox::encode_present(out);
             } else {
                 ::fidl_next::WireBox::encode_absent(out);
@@ -370,6 +381,7 @@ pub mod natural {
             self,
             encoder_: &mut ___E,
             out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let Self::Encoded {
@@ -412,91 +424,191 @@ pub mod natural {
                 } = out_;
             }
 
-            ::fidl_next::Encode::encode(self.plain_handle, encoder_, plain_handle)?;
+            ::fidl_next::Encode::encode(self.plain_handle, encoder_, plain_handle, ())?;
 
-            ::fidl_next::Encode::encode(self.bti_handle, encoder_, bti_handle)?;
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(plain_handle.as_mut_ptr()) };
 
-            ::fidl_next::Encode::encode(self.channel_handle, encoder_, channel_handle)?;
+            ::fidl_next::Encode::encode(self.bti_handle, encoder_, bti_handle, ())?;
 
-            ::fidl_next::Encode::encode(self.clock_handle, encoder_, clock_handle)?;
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(bti_handle.as_mut_ptr()) };
 
-            ::fidl_next::Encode::encode(self.debuglog_handle, encoder_, debuglog_handle)?;
+            ::fidl_next::Encode::encode(self.channel_handle, encoder_, channel_handle, ())?;
 
-            ::fidl_next::Encode::encode(self.event_handle, encoder_, event_handle)?;
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(channel_handle.as_mut_ptr()) };
 
-            ::fidl_next::Encode::encode(self.eventpair_handle, encoder_, eventpair_handle)?;
+            ::fidl_next::Encode::encode(self.clock_handle, encoder_, clock_handle, ())?;
 
-            ::fidl_next::Encode::encode(self.exception_handle, encoder_, exception_handle)?;
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(clock_handle.as_mut_ptr()) };
 
-            ::fidl_next::Encode::encode(self.fifo_handle, encoder_, fifo_handle)?;
+            ::fidl_next::Encode::encode(self.debuglog_handle, encoder_, debuglog_handle, ())?;
 
-            ::fidl_next::Encode::encode(self.guest_handle, encoder_, guest_handle)?;
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(debuglog_handle.as_mut_ptr()) };
 
-            ::fidl_next::Encode::encode(self.interrupt_handle, encoder_, interrupt_handle)?;
+            ::fidl_next::Encode::encode(self.event_handle, encoder_, event_handle, ())?;
 
-            ::fidl_next::Encode::encode(self.iob_handle, encoder_, iob_handle)?;
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(event_handle.as_mut_ptr()) };
 
-            ::fidl_next::Encode::encode(self.iommu_handle, encoder_, iommu_handle)?;
+            ::fidl_next::Encode::encode(self.eventpair_handle, encoder_, eventpair_handle, ())?;
 
-            ::fidl_next::Encode::encode(self.job_handle, encoder_, job_handle)?;
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(eventpair_handle.as_mut_ptr()) };
 
-            ::fidl_next::Encode::encode(self.msi_handle, encoder_, msi_handle)?;
+            ::fidl_next::Encode::encode(self.exception_handle, encoder_, exception_handle, ())?;
 
-            ::fidl_next::Encode::encode(self.pager_handle, encoder_, pager_handle)?;
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(exception_handle.as_mut_ptr()) };
 
-            ::fidl_next::Encode::encode(self.pmt_handle, encoder_, pmt_handle)?;
+            ::fidl_next::Encode::encode(self.fifo_handle, encoder_, fifo_handle, ())?;
 
-            ::fidl_next::Encode::encode(self.port_handle, encoder_, port_handle)?;
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(fifo_handle.as_mut_ptr()) };
 
-            ::fidl_next::Encode::encode(self.process_handle, encoder_, process_handle)?;
+            ::fidl_next::Encode::encode(self.guest_handle, encoder_, guest_handle, ())?;
 
-            ::fidl_next::Encode::encode(self.profile_handle, encoder_, profile_handle)?;
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(guest_handle.as_mut_ptr()) };
 
-            ::fidl_next::Encode::encode(self.resource_handle, encoder_, resource_handle)?;
+            ::fidl_next::Encode::encode(self.interrupt_handle, encoder_, interrupt_handle, ())?;
 
-            ::fidl_next::Encode::encode(self.socket_handle, encoder_, socket_handle)?;
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(interrupt_handle.as_mut_ptr()) };
 
-            ::fidl_next::Encode::encode(self.stream_handle, encoder_, stream_handle)?;
+            ::fidl_next::Encode::encode(self.iob_handle, encoder_, iob_handle, ())?;
 
-            ::fidl_next::Encode::encode(self.suspendtoken_handle, encoder_, suspendtoken_handle)?;
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(iob_handle.as_mut_ptr()) };
 
-            ::fidl_next::Encode::encode(self.thread_handle, encoder_, thread_handle)?;
+            ::fidl_next::Encode::encode(self.iommu_handle, encoder_, iommu_handle, ())?;
 
-            ::fidl_next::Encode::encode(self.timer_handle, encoder_, timer_handle)?;
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(iommu_handle.as_mut_ptr()) };
 
-            ::fidl_next::Encode::encode(self.vcpu_handle, encoder_, vcpu_handle)?;
+            ::fidl_next::Encode::encode(self.job_handle, encoder_, job_handle, ())?;
 
-            ::fidl_next::Encode::encode(self.vmar_handle, encoder_, vmar_handle)?;
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(job_handle.as_mut_ptr()) };
 
-            ::fidl_next::Encode::encode(self.vmo_handle, encoder_, vmo_handle)?;
+            ::fidl_next::Encode::encode(self.msi_handle, encoder_, msi_handle, ())?;
 
-            ::fidl_next::Encode::encode(self.rights_handle, encoder_, rights_handle)?;
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(msi_handle.as_mut_ptr()) };
+
+            ::fidl_next::Encode::encode(self.pager_handle, encoder_, pager_handle, ())?;
+
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(pager_handle.as_mut_ptr()) };
+
+            ::fidl_next::Encode::encode(self.pmt_handle, encoder_, pmt_handle, ())?;
+
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(pmt_handle.as_mut_ptr()) };
+
+            ::fidl_next::Encode::encode(self.port_handle, encoder_, port_handle, ())?;
+
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(port_handle.as_mut_ptr()) };
+
+            ::fidl_next::Encode::encode(self.process_handle, encoder_, process_handle, ())?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(process_handle.as_mut_ptr()) };
+
+            ::fidl_next::Encode::encode(self.profile_handle, encoder_, profile_handle, ())?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(profile_handle.as_mut_ptr()) };
+
+            ::fidl_next::Encode::encode(self.resource_handle, encoder_, resource_handle, ())?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(resource_handle.as_mut_ptr()) };
+
+            ::fidl_next::Encode::encode(self.socket_handle, encoder_, socket_handle, ())?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(socket_handle.as_mut_ptr()) };
+
+            ::fidl_next::Encode::encode(self.stream_handle, encoder_, stream_handle, ())?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(stream_handle.as_mut_ptr()) };
+
+            ::fidl_next::Encode::encode(
+                self.suspendtoken_handle,
+                encoder_,
+                suspendtoken_handle,
+                (),
+            )?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(suspendtoken_handle.as_mut_ptr()) };
+
+            ::fidl_next::Encode::encode(self.thread_handle, encoder_, thread_handle, ())?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(thread_handle.as_mut_ptr()) };
+
+            ::fidl_next::Encode::encode(self.timer_handle, encoder_, timer_handle, ())?;
+
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(timer_handle.as_mut_ptr()) };
+
+            ::fidl_next::Encode::encode(self.vcpu_handle, encoder_, vcpu_handle, ())?;
+
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(vcpu_handle.as_mut_ptr()) };
+
+            ::fidl_next::Encode::encode(self.vmar_handle, encoder_, vmar_handle, ())?;
+
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(vmar_handle.as_mut_ptr()) };
+
+            ::fidl_next::Encode::encode(self.vmo_handle, encoder_, vmo_handle, ())?;
+
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(vmo_handle.as_mut_ptr()) };
+
+            ::fidl_next::Encode::encode(self.rights_handle, encoder_, rights_handle, ())?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(rights_handle.as_mut_ptr()) };
 
             ::fidl_next::Encode::encode(
                 self.aliased_plain_handle_field,
                 encoder_,
                 aliased_plain_handle_field,
+                (),
             )?;
+
+            let mut _field = unsafe {
+                ::fidl_next::Slot::new_unchecked(aliased_plain_handle_field.as_mut_ptr())
+            };
 
             ::fidl_next::Encode::encode(
                 self.aliased_subtype_handle_field,
                 encoder_,
                 aliased_subtype_handle_field,
+                (),
             )?;
+
+            let mut _field = unsafe {
+                ::fidl_next::Slot::new_unchecked(aliased_subtype_handle_field.as_mut_ptr())
+            };
 
             ::fidl_next::Encode::encode(
                 self.aliased_rights_handle_field,
                 encoder_,
                 aliased_rights_handle_field,
+                (),
             )?;
 
-            ::fidl_next::Encode::encode(self.some_protocol, encoder_, some_protocol)?;
+            let mut _field = unsafe {
+                ::fidl_next::Slot::new_unchecked(aliased_rights_handle_field.as_mut_ptr())
+            };
+
+            ::fidl_next::Encode::encode(self.some_protocol, encoder_, some_protocol, ())?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(some_protocol.as_mut_ptr()) };
 
             ::fidl_next::Encode::encode(
                 self.request_some_protocol,
                 encoder_,
                 request_some_protocol,
+                (),
             )?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(request_some_protocol.as_mut_ptr()) };
 
             Ok(())
         }
@@ -516,9 +628,10 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
                 ::fidl_next::WireBox::encode_present(out);
             } else {
                 ::fidl_next::WireBox::encode_absent(out);
@@ -824,6 +937,7 @@ pub mod wire {
         fn decode(
             slot_: ::fidl_next::Slot<'_, Self>,
             decoder_: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
@@ -835,11 +949,17 @@ pub mod wire {
                 } = slot_;
             }
 
-            ::fidl_next::Decode::decode(fdf_channel_handle.as_mut(), decoder_)?;
+            let _field = fdf_channel_handle.as_mut();
 
-            ::fidl_next::Decode::decode(client_end_driver.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(fdf_channel_handle.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(server_end_driver.as_mut(), decoder_)?;
+            let _field = client_end_driver.as_mut();
+
+            ::fidl_next::Decode::decode(client_end_driver.as_mut(), decoder_, ())?;
+
+            let _field = server_end_driver.as_mut();
+
+            ::fidl_next::Decode::decode(server_end_driver.as_mut(), decoder_, ())?;
 
             Ok(())
         }
@@ -848,6 +968,8 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for FdfHandles {
         type Natural = crate::natural::FdfHandles;
     }
+
+    impl ::fidl_next::Unconstrained for FdfHandles {}
 
     /// The wire type corresponding to [`AliasedPlainHandle`](crate::natural::AliasedPlainHandle).
     pub type AliasedPlainHandle = ::fidl_next::fuchsia::WireHandle;
@@ -1144,6 +1266,7 @@ pub mod wire {
         fn decode(
             slot_: ::fidl_next::Slot<'_, Self>,
             decoder_: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
@@ -1187,75 +1310,145 @@ pub mod wire {
                 } = slot_;
             }
 
-            ::fidl_next::Decode::decode(plain_handle.as_mut(), decoder_)?;
+            let _field = plain_handle.as_mut();
 
-            ::fidl_next::Decode::decode(bti_handle.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(plain_handle.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(channel_handle.as_mut(), decoder_)?;
+            let _field = bti_handle.as_mut();
 
-            ::fidl_next::Decode::decode(clock_handle.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(bti_handle.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(debuglog_handle.as_mut(), decoder_)?;
+            let _field = channel_handle.as_mut();
 
-            ::fidl_next::Decode::decode(event_handle.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(channel_handle.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(eventpair_handle.as_mut(), decoder_)?;
+            let _field = clock_handle.as_mut();
 
-            ::fidl_next::Decode::decode(exception_handle.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(clock_handle.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(fifo_handle.as_mut(), decoder_)?;
+            let _field = debuglog_handle.as_mut();
 
-            ::fidl_next::Decode::decode(guest_handle.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(debuglog_handle.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(interrupt_handle.as_mut(), decoder_)?;
+            let _field = event_handle.as_mut();
 
-            ::fidl_next::Decode::decode(iob_handle.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(event_handle.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(iommu_handle.as_mut(), decoder_)?;
+            let _field = eventpair_handle.as_mut();
 
-            ::fidl_next::Decode::decode(job_handle.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(eventpair_handle.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(msi_handle.as_mut(), decoder_)?;
+            let _field = exception_handle.as_mut();
 
-            ::fidl_next::Decode::decode(pager_handle.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(exception_handle.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(pmt_handle.as_mut(), decoder_)?;
+            let _field = fifo_handle.as_mut();
 
-            ::fidl_next::Decode::decode(port_handle.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(fifo_handle.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(process_handle.as_mut(), decoder_)?;
+            let _field = guest_handle.as_mut();
 
-            ::fidl_next::Decode::decode(profile_handle.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(guest_handle.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(resource_handle.as_mut(), decoder_)?;
+            let _field = interrupt_handle.as_mut();
 
-            ::fidl_next::Decode::decode(socket_handle.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(interrupt_handle.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(stream_handle.as_mut(), decoder_)?;
+            let _field = iob_handle.as_mut();
 
-            ::fidl_next::Decode::decode(suspendtoken_handle.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(iob_handle.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(thread_handle.as_mut(), decoder_)?;
+            let _field = iommu_handle.as_mut();
 
-            ::fidl_next::Decode::decode(timer_handle.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(iommu_handle.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(vcpu_handle.as_mut(), decoder_)?;
+            let _field = job_handle.as_mut();
 
-            ::fidl_next::Decode::decode(vmar_handle.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(job_handle.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(vmo_handle.as_mut(), decoder_)?;
+            let _field = msi_handle.as_mut();
 
-            ::fidl_next::Decode::decode(rights_handle.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(msi_handle.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(aliased_plain_handle_field.as_mut(), decoder_)?;
+            let _field = pager_handle.as_mut();
 
-            ::fidl_next::Decode::decode(aliased_subtype_handle_field.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(pager_handle.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(aliased_rights_handle_field.as_mut(), decoder_)?;
+            let _field = pmt_handle.as_mut();
 
-            ::fidl_next::Decode::decode(some_protocol.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(pmt_handle.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(request_some_protocol.as_mut(), decoder_)?;
+            let _field = port_handle.as_mut();
+
+            ::fidl_next::Decode::decode(port_handle.as_mut(), decoder_, ())?;
+
+            let _field = process_handle.as_mut();
+
+            ::fidl_next::Decode::decode(process_handle.as_mut(), decoder_, ())?;
+
+            let _field = profile_handle.as_mut();
+
+            ::fidl_next::Decode::decode(profile_handle.as_mut(), decoder_, ())?;
+
+            let _field = resource_handle.as_mut();
+
+            ::fidl_next::Decode::decode(resource_handle.as_mut(), decoder_, ())?;
+
+            let _field = socket_handle.as_mut();
+
+            ::fidl_next::Decode::decode(socket_handle.as_mut(), decoder_, ())?;
+
+            let _field = stream_handle.as_mut();
+
+            ::fidl_next::Decode::decode(stream_handle.as_mut(), decoder_, ())?;
+
+            let _field = suspendtoken_handle.as_mut();
+
+            ::fidl_next::Decode::decode(suspendtoken_handle.as_mut(), decoder_, ())?;
+
+            let _field = thread_handle.as_mut();
+
+            ::fidl_next::Decode::decode(thread_handle.as_mut(), decoder_, ())?;
+
+            let _field = timer_handle.as_mut();
+
+            ::fidl_next::Decode::decode(timer_handle.as_mut(), decoder_, ())?;
+
+            let _field = vcpu_handle.as_mut();
+
+            ::fidl_next::Decode::decode(vcpu_handle.as_mut(), decoder_, ())?;
+
+            let _field = vmar_handle.as_mut();
+
+            ::fidl_next::Decode::decode(vmar_handle.as_mut(), decoder_, ())?;
+
+            let _field = vmo_handle.as_mut();
+
+            ::fidl_next::Decode::decode(vmo_handle.as_mut(), decoder_, ())?;
+
+            let _field = rights_handle.as_mut();
+
+            ::fidl_next::Decode::decode(rights_handle.as_mut(), decoder_, ())?;
+
+            let _field = aliased_plain_handle_field.as_mut();
+
+            ::fidl_next::Decode::decode(aliased_plain_handle_field.as_mut(), decoder_, ())?;
+
+            let _field = aliased_subtype_handle_field.as_mut();
+
+            ::fidl_next::Decode::decode(aliased_subtype_handle_field.as_mut(), decoder_, ())?;
+
+            let _field = aliased_rights_handle_field.as_mut();
+
+            ::fidl_next::Decode::decode(aliased_rights_handle_field.as_mut(), decoder_, ())?;
+
+            let _field = some_protocol.as_mut();
+
+            ::fidl_next::Decode::decode(some_protocol.as_mut(), decoder_, ())?;
+
+            let _field = request_some_protocol.as_mut();
+
+            ::fidl_next::Decode::decode(request_some_protocol.as_mut(), decoder_, ())?;
 
             Ok(())
         }
@@ -1264,6 +1457,8 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for Handles {
         type Natural = crate::natural::Handles;
     }
+
+    impl ::fidl_next::Unconstrained for Handles {}
 }
 
 pub mod wire_optional {}

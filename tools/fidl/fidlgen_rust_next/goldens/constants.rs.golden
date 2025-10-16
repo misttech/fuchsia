@@ -32,8 +32,9 @@ pub mod natural {
             self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
         }
     }
 
@@ -46,6 +47,7 @@ pub mod natural {
             &self,
             _: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::Bits { value } = out);
 
@@ -108,8 +110,9 @@ pub mod natural {
             self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
         }
     }
 
@@ -122,6 +125,7 @@ pub mod natural {
             &self,
             _: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::BitsType { value } = out);
 
@@ -185,8 +189,9 @@ pub mod natural {
             self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
         }
     }
 
@@ -199,6 +204,7 @@ pub mod natural {
             &self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::Enum { value } = out);
             let _ = value.write(::fidl_next::WireU32::from(match *self {
@@ -266,8 +272,9 @@ pub mod natural {
             self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
         }
     }
 
@@ -280,6 +287,7 @@ pub mod natural {
             &self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::EnumType { value } = out);
             let _ = value.write(::fidl_next::WireI32::from(match *self {
@@ -345,6 +353,7 @@ pub mod natural {
             self,
             encoder_: &mut ___E,
             out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let Self::Encoded {
@@ -357,15 +366,36 @@ pub mod natural {
                 } = out_;
             }
 
-            ::fidl_next::Encode::encode(self.int64_with_default, encoder_, int64_with_default)?;
+            ::fidl_next::Encode::encode(self.int64_with_default, encoder_, int64_with_default, ())?;
 
-            ::fidl_next::Encode::encode(self.string_with_default, encoder_, string_with_default)?;
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(int64_with_default.as_mut_ptr()) };
 
-            ::fidl_next::Encode::encode(self.bool_with_default, encoder_, bool_with_default)?;
+            ::fidl_next::Encode::encode(
+                self.string_with_default,
+                encoder_,
+                string_with_default,
+                4294967295,
+            )?;
 
-            ::fidl_next::Encode::encode(self.enum_with_default, encoder_, enum_with_default)?;
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(string_with_default.as_mut_ptr()) };
+            ::fidl_next::Constrained::validate(_field, 4294967295)?;
 
-            ::fidl_next::Encode::encode(self.bits_with_default, encoder_, bits_with_default)?;
+            ::fidl_next::Encode::encode(self.bool_with_default, encoder_, bool_with_default, ())?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(bool_with_default.as_mut_ptr()) };
+
+            ::fidl_next::Encode::encode(self.enum_with_default, encoder_, enum_with_default, ())?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(enum_with_default.as_mut_ptr()) };
+
+            ::fidl_next::Encode::encode(self.bits_with_default, encoder_, bits_with_default, ())?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(bits_with_default.as_mut_ptr()) };
 
             Ok(())
         }
@@ -381,6 +411,7 @@ pub mod natural {
             &self,
             encoder_: &mut ___E,
             out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let Self::Encoded {
@@ -398,31 +429,52 @@ pub mod natural {
                 &self.int64_with_default,
                 encoder_,
                 int64_with_default,
+                (),
             )?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(int64_with_default.as_mut_ptr()) };
 
             ::fidl_next::EncodeRef::encode_ref(
                 &self.string_with_default,
                 encoder_,
                 string_with_default,
+                4294967295,
             )?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(string_with_default.as_mut_ptr()) };
+            ::fidl_next::Constrained::validate(_field, 4294967295)?;
 
             ::fidl_next::EncodeRef::encode_ref(
                 &self.bool_with_default,
                 encoder_,
                 bool_with_default,
+                (),
             )?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(bool_with_default.as_mut_ptr()) };
 
             ::fidl_next::EncodeRef::encode_ref(
                 &self.enum_with_default,
                 encoder_,
                 enum_with_default,
+                (),
             )?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(enum_with_default.as_mut_ptr()) };
 
             ::fidl_next::EncodeRef::encode_ref(
                 &self.bits_with_default,
                 encoder_,
                 bits_with_default,
+                (),
             )?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(bits_with_default.as_mut_ptr()) };
 
             Ok(())
         }
@@ -442,9 +494,10 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
                 ::fidl_next::WireBox::encode_present(out);
             } else {
                 ::fidl_next::WireBox::encode_absent(out);
@@ -464,9 +517,10 @@ pub mod natural {
             this: ::core::option::Option<&Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
                 ::fidl_next::WireBox::encode_present(out);
             } else {
                 ::fidl_next::WireBox::encode_absent(out);
@@ -540,6 +594,7 @@ pub mod wire {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
             _: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { value } = slot);
             let set = u32::from(*value);
@@ -564,6 +619,8 @@ pub mod wire {
         type Natural = crate::natural::Bits;
     }
 
+    impl ::fidl_next::Unconstrained for Bits {}
+
     /// The wire type corresponding to [`BitsType`](crate::natural::BitsType).
     #[derive(Clone, Copy, Debug)]
     #[repr(transparent)]
@@ -587,6 +644,7 @@ pub mod wire {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
             _: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { value } = slot);
             let set = u32::from(*value);
@@ -610,6 +668,8 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for BitsType {
         type Natural = crate::natural::BitsType;
     }
+
+    impl ::fidl_next::Unconstrained for BitsType {}
 
     /// The wire type corresponding to [`Enum`].
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -638,6 +698,7 @@ pub mod wire {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
             _: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { value } = slot);
 
@@ -663,6 +724,8 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for Enum {
         type Natural = crate::natural::Enum;
     }
+
+    impl ::fidl_next::Unconstrained for Enum {}
 
     /// The wire type corresponding to [`EnumType`].
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -693,6 +756,7 @@ pub mod wire {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
             _: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { value } = slot);
 
@@ -720,6 +784,8 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for EnumType {
         type Natural = crate::natural::EnumType;
     }
+
+    impl ::fidl_next::Unconstrained for EnumType {}
 
     /// The wire type corresponding to [`Struct`].
     #[derive(Debug)]
@@ -794,6 +860,7 @@ pub mod wire {
         fn decode(
             slot_: ::fidl_next::Slot<'_, Self>,
             decoder_: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
@@ -807,15 +874,25 @@ pub mod wire {
                 } = slot_;
             }
 
-            ::fidl_next::Decode::decode(int64_with_default.as_mut(), decoder_)?;
+            let _field = int64_with_default.as_mut();
 
-            ::fidl_next::Decode::decode(string_with_default.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(int64_with_default.as_mut(), decoder_, ())?;
 
-            ::fidl_next::Decode::decode(bool_with_default.as_mut(), decoder_)?;
+            let _field = string_with_default.as_mut();
+            ::fidl_next::Constrained::validate(_field, 4294967295)?;
+            ::fidl_next::Decode::decode(string_with_default.as_mut(), decoder_, 4294967295)?;
 
-            ::fidl_next::Decode::decode(enum_with_default.as_mut(), decoder_)?;
+            let _field = bool_with_default.as_mut();
 
-            ::fidl_next::Decode::decode(bits_with_default.as_mut(), decoder_)?;
+            ::fidl_next::Decode::decode(bool_with_default.as_mut(), decoder_, ())?;
+
+            let _field = enum_with_default.as_mut();
+
+            ::fidl_next::Decode::decode(enum_with_default.as_mut(), decoder_, ())?;
+
+            let _field = bits_with_default.as_mut();
+
+            ::fidl_next::Decode::decode(bits_with_default.as_mut(), decoder_, ())?;
 
             Ok(())
         }
@@ -824,6 +901,8 @@ pub mod wire {
     impl<'de> ::fidl_next::IntoNatural for Struct<'de> {
         type Natural = crate::natural::Struct;
     }
+
+    impl ::fidl_next::Unconstrained for Struct<'static> {}
 }
 
 pub mod wire_optional {}

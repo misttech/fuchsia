@@ -34,4 +34,8 @@ pub enum EncodeError {
     /// Invalid bits were set in a strict bits value.
     #[error("invalid bits were set in a strict bits value")]
     InvalidStrictBits,
+
+    /// Validation Failed
+    #[error("validation failed")]
+    Validation(#[from] crate::ValidationError),
 }

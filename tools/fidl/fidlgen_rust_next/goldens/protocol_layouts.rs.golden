@@ -32,6 +32,7 @@ pub mod natural {
             mut self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::LocalTablePayload { table } = out);
 
@@ -51,6 +52,7 @@ pub mod natural {
                                 value,
                                 preallocated.encoder,
                                 &mut out,
+                                (),
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -79,6 +81,7 @@ pub mod natural {
             &self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::LocalTablePayload { table } = out);
 
@@ -98,6 +101,7 @@ pub mod natural {
                                 value,
                                 preallocated.encoder,
                                 &mut out,
+                                (),
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -168,12 +172,13 @@ pub mod natural {
             self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::LocalUnionPayload { raw, _phantom: _ } = out);
 
             match self {
                 Self::B(value) => {
-                    ::fidl_next::RawWireUnion::encode_as::<___E, bool>(value, 1, encoder, raw)?
+                    ::fidl_next::RawWireUnion::encode_as::<___E, bool>(value, 1, encoder, raw, ())?
                 }
 
                 Self::UnknownOrdinal_(ordinal) => {
@@ -195,12 +200,13 @@ pub mod natural {
             &self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::LocalUnionPayload { raw, _phantom: _ } = out);
 
             match self {
                 Self::B(value) => {
-                    ::fidl_next::RawWireUnion::encode_as::<___E, &bool>(value, 1, encoder, raw)?
+                    ::fidl_next::RawWireUnion::encode_as::<___E, &bool>(value, 1, encoder, raw, ())?
                 }
 
                 Self::UnknownOrdinal_(ordinal) => {
@@ -226,12 +232,13 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire_optional::LocalUnionPayload { raw, _phantom: _ } = &mut *out);
 
             if let Some(inner) = this {
                 let value_out = unsafe { &mut *out.as_mut_ptr().cast() };
-                ::fidl_next::Encode::encode(inner, encoder, value_out)?;
+                ::fidl_next::Encode::encode(inner, encoder, value_out, ())?;
             } else {
                 ::fidl_next::RawWireUnion::encode_absent(raw);
             }
@@ -250,12 +257,13 @@ pub mod natural {
             this: ::core::option::Option<&Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire_optional::LocalUnionPayload { raw, _phantom: _ } = &mut *out);
 
             if let Some(inner) = this {
                 let value_out = unsafe { &mut *out.as_mut_ptr().cast() };
-                ::fidl_next::EncodeRef::encode_ref(inner, encoder, value_out)?;
+                ::fidl_next::EncodeRef::encode_ref(inner, encoder, value_out, ())?;
             } else {
                 ::fidl_next::RawWireUnion::encode_absent(raw);
             }
@@ -363,6 +371,7 @@ pub mod natural {
             mut self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MainProtocolOneWayAnonRequest { table } = out);
 
@@ -382,6 +391,7 @@ pub mod natural {
                                 value,
                                 preallocated.encoder,
                                 &mut out,
+                                (),
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -410,6 +420,7 @@ pub mod natural {
             &self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MainProtocolOneWayAnonRequest { table } = out);
 
@@ -429,6 +440,7 @@ pub mod natural {
                                 value,
                                 preallocated.encoder,
                                 &mut out,
+                                (),
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -503,12 +515,13 @@ pub mod natural {
             self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MainProtocolTwoWayAnonRequest { raw, _phantom: _ } = out);
 
             match self {
                 Self::B(value) => {
-                    ::fidl_next::RawWireUnion::encode_as::<___E, bool>(value, 1, encoder, raw)?
+                    ::fidl_next::RawWireUnion::encode_as::<___E, bool>(value, 1, encoder, raw, ())?
                 }
 
                 Self::UnknownOrdinal_(ordinal) => {
@@ -530,12 +543,13 @@ pub mod natural {
             &self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MainProtocolTwoWayAnonRequest { raw, _phantom: _ } = out);
 
             match self {
                 Self::B(value) => {
-                    ::fidl_next::RawWireUnion::encode_as::<___E, &bool>(value, 1, encoder, raw)?
+                    ::fidl_next::RawWireUnion::encode_as::<___E, &bool>(value, 1, encoder, raw, ())?
                 }
 
                 Self::UnknownOrdinal_(ordinal) => {
@@ -561,12 +575,13 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire_optional::MainProtocolTwoWayAnonRequest { raw, _phantom: _ } = &mut *out);
 
             if let Some(inner) = this {
                 let value_out = unsafe { &mut *out.as_mut_ptr().cast() };
-                ::fidl_next::Encode::encode(inner, encoder, value_out)?;
+                ::fidl_next::Encode::encode(inner, encoder, value_out, ())?;
             } else {
                 ::fidl_next::RawWireUnion::encode_absent(raw);
             }
@@ -585,12 +600,13 @@ pub mod natural {
             this: ::core::option::Option<&Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire_optional::MainProtocolTwoWayAnonRequest { raw, _phantom: _ } = &mut *out);
 
             if let Some(inner) = this {
                 let value_out = unsafe { &mut *out.as_mut_ptr().cast() };
-                ::fidl_next::EncodeRef::encode_ref(inner, encoder, value_out)?;
+                ::fidl_next::EncodeRef::encode_ref(inner, encoder, value_out, ())?;
             } else {
                 ::fidl_next::RawWireUnion::encode_absent(raw);
             }
@@ -703,6 +719,7 @@ pub mod natural {
             mut self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MainProtocolTwoWayAnonResponse { table } = out);
 
@@ -722,6 +739,7 @@ pub mod natural {
                                 value,
                                 preallocated.encoder,
                                 &mut out,
+                                (),
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -750,6 +768,7 @@ pub mod natural {
             &self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MainProtocolTwoWayAnonResponse { table } = out);
 
@@ -769,6 +788,7 @@ pub mod natural {
                                 value,
                                 preallocated.encoder,
                                 &mut out,
+                                (),
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -850,6 +870,7 @@ pub mod natural {
             mut self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MainProtocolTwoWayAnonWithErrorRequest { table } = out);
 
@@ -869,6 +890,7 @@ pub mod natural {
                                 value,
                                 preallocated.encoder,
                                 &mut out,
+                                (),
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -897,6 +919,7 @@ pub mod natural {
             &self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MainProtocolTwoWayAnonWithErrorRequest { table } = out);
 
@@ -916,6 +939,7 @@ pub mod natural {
                                 value,
                                 preallocated.encoder,
                                 &mut out,
+                                (),
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -990,12 +1014,13 @@ pub mod natural {
             self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MainProtocolTwoWayAnonWithErrorResponse { raw, _phantom: _ } = out);
 
             match self {
                 Self::B(value) => {
-                    ::fidl_next::RawWireUnion::encode_as::<___E, bool>(value, 1, encoder, raw)?
+                    ::fidl_next::RawWireUnion::encode_as::<___E, bool>(value, 1, encoder, raw, ())?
                 }
 
                 Self::UnknownOrdinal_(ordinal) => {
@@ -1017,12 +1042,13 @@ pub mod natural {
             &self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MainProtocolTwoWayAnonWithErrorResponse { raw, _phantom: _ } = out);
 
             match self {
                 Self::B(value) => {
-                    ::fidl_next::RawWireUnion::encode_as::<___E, &bool>(value, 1, encoder, raw)?
+                    ::fidl_next::RawWireUnion::encode_as::<___E, &bool>(value, 1, encoder, raw, ())?
                 }
 
                 Self::UnknownOrdinal_(ordinal) => {
@@ -1048,12 +1074,13 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire_optional::MainProtocolTwoWayAnonWithErrorResponse { raw, _phantom: _ } = &mut *out);
 
             if let Some(inner) = this {
                 let value_out = unsafe { &mut *out.as_mut_ptr().cast() };
-                ::fidl_next::Encode::encode(inner, encoder, value_out)?;
+                ::fidl_next::Encode::encode(inner, encoder, value_out, ())?;
             } else {
                 ::fidl_next::RawWireUnion::encode_absent(raw);
             }
@@ -1072,12 +1099,13 @@ pub mod natural {
             this: ::core::option::Option<&Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire_optional::MainProtocolTwoWayAnonWithErrorResponse { raw, _phantom: _ } = &mut *out);
 
             if let Some(inner) = this {
                 let value_out = unsafe { &mut *out.as_mut_ptr().cast() };
-                ::fidl_next::EncodeRef::encode_ref(inner, encoder, value_out)?;
+                ::fidl_next::EncodeRef::encode_ref(inner, encoder, value_out, ())?;
             } else {
                 ::fidl_next::RawWireUnion::encode_absent(raw);
             }
@@ -1188,12 +1216,13 @@ pub mod natural {
             self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MainProtocolOnAnonRequest { raw, _phantom: _ } = out);
 
             match self {
                 Self::B(value) => {
-                    ::fidl_next::RawWireUnion::encode_as::<___E, bool>(value, 1, encoder, raw)?
+                    ::fidl_next::RawWireUnion::encode_as::<___E, bool>(value, 1, encoder, raw, ())?
                 }
 
                 Self::UnknownOrdinal_(ordinal) => {
@@ -1215,12 +1244,13 @@ pub mod natural {
             &self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MainProtocolOnAnonRequest { raw, _phantom: _ } = out);
 
             match self {
                 Self::B(value) => {
-                    ::fidl_next::RawWireUnion::encode_as::<___E, &bool>(value, 1, encoder, raw)?
+                    ::fidl_next::RawWireUnion::encode_as::<___E, &bool>(value, 1, encoder, raw, ())?
                 }
 
                 Self::UnknownOrdinal_(ordinal) => {
@@ -1246,12 +1276,13 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire_optional::MainProtocolOnAnonRequest { raw, _phantom: _ } = &mut *out);
 
             if let Some(inner) = this {
                 let value_out = unsafe { &mut *out.as_mut_ptr().cast() };
-                ::fidl_next::Encode::encode(inner, encoder, value_out)?;
+                ::fidl_next::Encode::encode(inner, encoder, value_out, ())?;
             } else {
                 ::fidl_next::RawWireUnion::encode_absent(raw);
             }
@@ -1270,12 +1301,13 @@ pub mod natural {
             this: ::core::option::Option<&Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire_optional::MainProtocolOnAnonRequest { raw, _phantom: _ } = &mut *out);
 
             if let Some(inner) = this {
                 let value_out = unsafe { &mut *out.as_mut_ptr().cast() };
-                ::fidl_next::EncodeRef::encode_ref(inner, encoder, value_out)?;
+                ::fidl_next::EncodeRef::encode_ref(inner, encoder, value_out, ())?;
             } else {
                 ::fidl_next::RawWireUnion::encode_absent(raw);
             }
@@ -1394,6 +1426,7 @@ pub mod wire {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
             decoder: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { table } = slot);
 
@@ -1405,6 +1438,7 @@ pub mod wire {
                         ::fidl_next::WireEnvelope::decode_as::<___D, ::fidl_next::WireU16>(
                             slot.as_mut(),
                             decoder,
+                            (),
                         )?;
 
                         Ok(())
@@ -1434,6 +1468,8 @@ pub mod wire {
     impl<'de> ::fidl_next::IntoNatural for LocalTablePayload<'de> {
         type Natural = crate::natural::LocalTablePayload;
     }
+
+    impl ::fidl_next::Unconstrained for LocalTablePayload<'_> {}
 
     /// The wire type corresponding to [`LocalUnionPayload`].
     #[repr(transparent)]
@@ -1492,10 +1528,11 @@ pub mod wire {
         fn decode(
             mut slot: ::fidl_next::Slot<'_, Self>,
             decoder: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
             match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-                1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder)?,
+                1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder, ())?,
 
                 _ => ::fidl_next::RawWireUnion::decode_unknown(raw, decoder)?,
             }
@@ -1516,6 +1553,8 @@ pub mod wire {
     impl<'de> ::fidl_next::IntoNatural for LocalUnionPayload<'de> {
         type Natural = crate::natural::LocalUnionPayload;
     }
+
+    impl ::fidl_next::Unconstrained for LocalUnionPayload<'static> {}
 
     /// The wire type corresponding to [`MainProtocolOneWayAnonRequest`].
     #[repr(C)]
@@ -1549,6 +1588,7 @@ pub mod wire {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
             decoder: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { table } = slot);
 
@@ -1560,6 +1600,7 @@ pub mod wire {
                         ::fidl_next::WireEnvelope::decode_as::<___D, ::fidl_next::WireU16>(
                             slot.as_mut(),
                             decoder,
+                            (),
                         )?;
 
                         Ok(())
@@ -1589,6 +1630,8 @@ pub mod wire {
     impl<'de> ::fidl_next::IntoNatural for MainProtocolOneWayAnonRequest<'de> {
         type Natural = crate::natural::MainProtocolOneWayAnonRequest;
     }
+
+    impl ::fidl_next::Unconstrained for MainProtocolOneWayAnonRequest<'_> {}
 
     /// The wire type corresponding to [`MainProtocolTwoWayAnonRequest`].
     #[repr(transparent)]
@@ -1649,10 +1692,11 @@ pub mod wire {
         fn decode(
             mut slot: ::fidl_next::Slot<'_, Self>,
             decoder: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
             match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-                1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder)?,
+                1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder, ())?,
 
                 _ => ::fidl_next::RawWireUnion::decode_unknown(raw, decoder)?,
             }
@@ -1673,6 +1717,8 @@ pub mod wire {
     impl<'de> ::fidl_next::IntoNatural for MainProtocolTwoWayAnonRequest<'de> {
         type Natural = crate::natural::MainProtocolTwoWayAnonRequest;
     }
+
+    impl ::fidl_next::Unconstrained for MainProtocolTwoWayAnonRequest<'static> {}
 
     /// The wire type corresponding to [`MainProtocolTwoWayAnonResponse`].
     #[repr(C)]
@@ -1706,6 +1752,7 @@ pub mod wire {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
             decoder: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { table } = slot);
 
@@ -1717,6 +1764,7 @@ pub mod wire {
                         ::fidl_next::WireEnvelope::decode_as::<___D, ::fidl_next::WireU16>(
                             slot.as_mut(),
                             decoder,
+                            (),
                         )?;
 
                         Ok(())
@@ -1746,6 +1794,8 @@ pub mod wire {
     impl<'de> ::fidl_next::IntoNatural for MainProtocolTwoWayAnonResponse<'de> {
         type Natural = crate::natural::MainProtocolTwoWayAnonResponse;
     }
+
+    impl ::fidl_next::Unconstrained for MainProtocolTwoWayAnonResponse<'_> {}
 
     /// The wire type corresponding to [`MainProtocolTwoWayAnonWithErrorRequest`].
     #[repr(C)]
@@ -1779,6 +1829,7 @@ pub mod wire {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
             decoder: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { table } = slot);
 
@@ -1790,6 +1841,7 @@ pub mod wire {
                         ::fidl_next::WireEnvelope::decode_as::<___D, ::fidl_next::WireU16>(
                             slot.as_mut(),
                             decoder,
+                            (),
                         )?;
 
                         Ok(())
@@ -1819,6 +1871,8 @@ pub mod wire {
     impl<'de> ::fidl_next::IntoNatural for MainProtocolTwoWayAnonWithErrorRequest<'de> {
         type Natural = crate::natural::MainProtocolTwoWayAnonWithErrorRequest;
     }
+
+    impl ::fidl_next::Unconstrained for MainProtocolTwoWayAnonWithErrorRequest<'_> {}
 
     /// The wire type corresponding to [`MainProtocolTwoWayAnonWithErrorResponse`].
     #[repr(transparent)]
@@ -1882,10 +1936,11 @@ pub mod wire {
         fn decode(
             mut slot: ::fidl_next::Slot<'_, Self>,
             decoder: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
             match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-                1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder)?,
+                1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder, ())?,
 
                 _ => ::fidl_next::RawWireUnion::decode_unknown(raw, decoder)?,
             }
@@ -1906,6 +1961,8 @@ pub mod wire {
     impl<'de> ::fidl_next::IntoNatural for MainProtocolTwoWayAnonWithErrorResponse<'de> {
         type Natural = crate::natural::MainProtocolTwoWayAnonWithErrorResponse;
     }
+
+    impl ::fidl_next::Unconstrained for MainProtocolTwoWayAnonWithErrorResponse<'static> {}
 
     /// The wire type corresponding to [`MainProtocolOnAnonRequest`].
     #[repr(transparent)]
@@ -1966,10 +2023,11 @@ pub mod wire {
         fn decode(
             mut slot: ::fidl_next::Slot<'_, Self>,
             decoder: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
             match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-                1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder)?,
+                1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder, ())?,
 
                 _ => ::fidl_next::RawWireUnion::decode_unknown(raw, decoder)?,
             }
@@ -1990,6 +2048,8 @@ pub mod wire {
     impl<'de> ::fidl_next::IntoNatural for MainProtocolOnAnonRequest<'de> {
         type Natural = crate::natural::MainProtocolOnAnonRequest;
     }
+
+    impl ::fidl_next::Unconstrained for MainProtocolOnAnonRequest<'static> {}
 }
 
 pub mod wire_optional {
@@ -2043,10 +2103,11 @@ pub mod wire_optional {
         fn decode(
             mut slot: ::fidl_next::Slot<'_, Self>,
             decoder: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
             match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-                1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder)?,
+                1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder, ())?,
 
                 0 => ::fidl_next::RawWireUnion::decode_absent(raw)?,
                 _ => ::fidl_next::RawWireUnion::decode_unknown(raw, decoder)?,
@@ -2065,6 +2126,8 @@ pub mod wire_optional {
     impl<'de> ::fidl_next::IntoNatural for LocalUnionPayload<'de> {
         type Natural = ::core::option::Option<crate::natural::LocalUnionPayload>;
     }
+
+    impl ::fidl_next::Unconstrained for LocalUnionPayload<'static> {}
 
     #[repr(transparent)]
     pub struct MainProtocolTwoWayAnonRequest<'de> {
@@ -2119,10 +2182,11 @@ pub mod wire_optional {
         fn decode(
             mut slot: ::fidl_next::Slot<'_, Self>,
             decoder: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
             match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-                1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder)?,
+                1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder, ())?,
 
                 0 => ::fidl_next::RawWireUnion::decode_absent(raw)?,
                 _ => ::fidl_next::RawWireUnion::decode_unknown(raw, decoder)?,
@@ -2141,6 +2205,8 @@ pub mod wire_optional {
     impl<'de> ::fidl_next::IntoNatural for MainProtocolTwoWayAnonRequest<'de> {
         type Natural = ::core::option::Option<crate::natural::MainProtocolTwoWayAnonRequest>;
     }
+
+    impl ::fidl_next::Unconstrained for MainProtocolTwoWayAnonRequest<'static> {}
 
     #[repr(transparent)]
     pub struct MainProtocolTwoWayAnonWithErrorResponse<'de> {
@@ -2197,10 +2263,11 @@ pub mod wire_optional {
         fn decode(
             mut slot: ::fidl_next::Slot<'_, Self>,
             decoder: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
             match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-                1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder)?,
+                1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder, ())?,
 
                 0 => ::fidl_next::RawWireUnion::decode_absent(raw)?,
                 _ => ::fidl_next::RawWireUnion::decode_unknown(raw, decoder)?,
@@ -2220,6 +2287,8 @@ pub mod wire_optional {
         type Natural =
             ::core::option::Option<crate::natural::MainProtocolTwoWayAnonWithErrorResponse>;
     }
+
+    impl ::fidl_next::Unconstrained for MainProtocolTwoWayAnonWithErrorResponse<'static> {}
 
     #[repr(transparent)]
     pub struct MainProtocolOnAnonRequest<'de> {
@@ -2274,10 +2343,11 @@ pub mod wire_optional {
         fn decode(
             mut slot: ::fidl_next::Slot<'_, Self>,
             decoder: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { mut raw, _phantom: _ } = slot.as_mut());
             match ::fidl_next::RawWireUnion::encoded_ordinal(raw.as_mut()) {
-                1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder)?,
+                1 => ::fidl_next::RawWireUnion::decode_as::<___D, bool>(raw, decoder, ())?,
 
                 0 => ::fidl_next::RawWireUnion::decode_absent(raw)?,
                 _ => ::fidl_next::RawWireUnion::decode_unknown(raw, decoder)?,
@@ -2296,6 +2366,8 @@ pub mod wire_optional {
     impl<'de> ::fidl_next::IntoNatural for MainProtocolOnAnonRequest<'de> {
         type Natural = ::core::option::Option<crate::natural::MainProtocolOnAnonRequest>;
     }
+
+    impl ::fidl_next::Unconstrained for MainProtocolOnAnonRequest<'static> {}
 }
 
 pub use self::natural::*;
@@ -3792,6 +3864,7 @@ pub mod open_protocol {
                 self,
                 encoder_: &mut ___E,
                 out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+                _: (),
             ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
                 ::fidl_next::munge! {
                     let Self::Encoded {
@@ -3800,7 +3873,7 @@ pub mod open_protocol {
                     } = out_;
                 }
 
-                ::fidl_next::Encode::encode(self.value, encoder_, value)?;
+                ::fidl_next::Encode::encode(self.value, encoder_, value, ())?;
 
                 Ok(())
             }
@@ -3827,6 +3900,7 @@ pub mod open_protocol {
                 self,
                 encoder_: &mut ___E,
                 out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+                _: (),
             ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
                 ::fidl_next::munge! {
                     let Self::Encoded {
@@ -3835,7 +3909,7 @@ pub mod open_protocol {
                     } = out_;
                 }
 
-                ::fidl_next::Encode::encode(self.value, encoder_, value)?;
+                ::fidl_next::Encode::encode(self.value, encoder_, value, ())?;
 
                 Ok(())
             }
@@ -3862,6 +3936,7 @@ pub mod open_protocol {
                 self,
                 encoder_: &mut ___E,
                 out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+                _: (),
             ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
                 ::fidl_next::munge! {
                     let Self::Encoded {
@@ -3870,7 +3945,7 @@ pub mod open_protocol {
                     } = out_;
                 }
 
-                ::fidl_next::Encode::encode(self.value, encoder_, value)?;
+                ::fidl_next::Encode::encode(self.value, encoder_, value, ())?;
 
                 Ok(())
             }
@@ -3897,6 +3972,7 @@ pub mod open_protocol {
                 self,
                 encoder_: &mut ___E,
                 out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+                _: (),
             ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
                 ::fidl_next::munge! {
                     let Self::Encoded {
@@ -3905,7 +3981,7 @@ pub mod open_protocol {
                     } = out_;
                 }
 
-                ::fidl_next::Encode::encode(self.value, encoder_, value)?;
+                ::fidl_next::Encode::encode(self.value, encoder_, value, ())?;
 
                 Ok(())
             }
@@ -3932,6 +4008,7 @@ pub mod open_protocol {
                 self,
                 encoder_: &mut ___E,
                 out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+                _: (),
             ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
                 ::fidl_next::munge! {
                     let Self::Encoded {
@@ -3940,7 +4017,7 @@ pub mod open_protocol {
                     } = out_;
                 }
 
-                ::fidl_next::Encode::encode(self.value, encoder_, value)?;
+                ::fidl_next::Encode::encode(self.value, encoder_, value, ())?;
 
                 Ok(())
             }
@@ -3967,6 +4044,7 @@ pub mod open_protocol {
                 self,
                 encoder_: &mut ___E,
                 out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+                _: (),
             ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
                 ::fidl_next::munge! {
                     let Self::Encoded {
@@ -3975,7 +4053,7 @@ pub mod open_protocol {
                     } = out_;
                 }
 
-                ::fidl_next::Encode::encode(self.value, encoder_, value)?;
+                ::fidl_next::Encode::encode(self.value, encoder_, value, ())?;
 
                 Ok(())
             }
@@ -4002,6 +4080,7 @@ pub mod open_protocol {
                 self,
                 encoder_: &mut ___E,
                 out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+                _: (),
             ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
                 ::fidl_next::munge! {
                     let Self::Encoded {
@@ -4010,7 +4089,7 @@ pub mod open_protocol {
                     } = out_;
                 }
 
-                ::fidl_next::Encode::encode(self.value, encoder_, value)?;
+                ::fidl_next::Encode::encode(self.value, encoder_, value, ())?;
 
                 Ok(())
             }
@@ -4037,6 +4116,7 @@ pub mod open_protocol {
                 self,
                 encoder_: &mut ___E,
                 out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+                _: (),
             ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
                 ::fidl_next::munge! {
                     let Self::Encoded {
@@ -4045,7 +4125,7 @@ pub mod open_protocol {
                     } = out_;
                 }
 
-                ::fidl_next::Encode::encode(self.value, encoder_, value)?;
+                ::fidl_next::Encode::encode(self.value, encoder_, value, ())?;
 
                 Ok(())
             }
@@ -4072,6 +4152,7 @@ pub mod open_protocol {
                 self,
                 encoder_: &mut ___E,
                 out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+                _: (),
             ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
                 ::fidl_next::munge! {
                     let Self::Encoded {
@@ -4080,7 +4161,7 @@ pub mod open_protocol {
                     } = out_;
                 }
 
-                ::fidl_next::Encode::encode(self.value, encoder_, value)?;
+                ::fidl_next::Encode::encode(self.value, encoder_, value, ())?;
 
                 Ok(())
             }

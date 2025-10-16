@@ -25,6 +25,7 @@ pub mod natural {
             self,
             encoder_: &mut ___E,
             out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let Self::Encoded {
@@ -34,13 +35,27 @@ pub mod natural {
                 } = out_;
             }
 
-            ::fidl_next::Encode::encode(self.vector_of_uint8, encoder_, vector_of_uint8)?;
+            ::fidl_next::Encode::encode(
+                self.vector_of_uint8,
+                encoder_,
+                vector_of_uint8,
+                (4294967295, ()),
+            )?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(vector_of_uint8.as_mut_ptr()) };
+            ::fidl_next::Constrained::validate(_field, (4294967295, ()))?;
 
             ::fidl_next::Encode::encode(
                 self.vector_of_vector_of_bool,
                 encoder_,
                 vector_of_vector_of_bool,
+                (4294967295, (4294967295, ())),
             )?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(vector_of_vector_of_bool.as_mut_ptr()) };
+            ::fidl_next::Constrained::validate(_field, (4294967295, (4294967295, ())))?;
 
             Ok(())
         }
@@ -56,6 +71,7 @@ pub mod natural {
             &self,
             encoder_: &mut ___E,
             out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let Self::Encoded {
@@ -66,13 +82,27 @@ pub mod natural {
                 } = out_;
             }
 
-            ::fidl_next::EncodeRef::encode_ref(&self.vector_of_uint8, encoder_, vector_of_uint8)?;
+            ::fidl_next::EncodeRef::encode_ref(
+                &self.vector_of_uint8,
+                encoder_,
+                vector_of_uint8,
+                (4294967295, ()),
+            )?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(vector_of_uint8.as_mut_ptr()) };
+            ::fidl_next::Constrained::validate(_field, (4294967295, ()))?;
 
             ::fidl_next::EncodeRef::encode_ref(
                 &self.vector_of_vector_of_bool,
                 encoder_,
                 vector_of_vector_of_bool,
+                (4294967295, (4294967295, ())),
             )?;
+
+            let mut _field =
+                unsafe { ::fidl_next::Slot::new_unchecked(vector_of_vector_of_bool.as_mut_ptr()) };
+            ::fidl_next::Constrained::validate(_field, (4294967295, (4294967295, ())))?;
 
             Ok(())
         }
@@ -93,9 +123,10 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
                 ::fidl_next::WireBox::encode_present(out);
             } else {
                 ::fidl_next::WireBox::encode_absent(out);
@@ -115,9 +146,10 @@ pub mod natural {
             this: ::core::option::Option<&Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
                 ::fidl_next::WireBox::encode_present(out);
             } else {
                 ::fidl_next::WireBox::encode_absent(out);
@@ -207,6 +239,7 @@ pub mod wire {
         fn decode(
             slot_: ::fidl_next::Slot<'_, Self>,
             decoder_: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
@@ -217,9 +250,17 @@ pub mod wire {
                 } = slot_;
             }
 
-            ::fidl_next::Decode::decode(vector_of_uint8.as_mut(), decoder_)?;
+            let _field = vector_of_uint8.as_mut();
+            ::fidl_next::Constrained::validate(_field, (4294967295, ()))?;
+            ::fidl_next::Decode::decode(vector_of_uint8.as_mut(), decoder_, (4294967295, ()))?;
 
-            ::fidl_next::Decode::decode(vector_of_vector_of_bool.as_mut(), decoder_)?;
+            let _field = vector_of_vector_of_bool.as_mut();
+            ::fidl_next::Constrained::validate(_field, (4294967295, (4294967295, ())))?;
+            ::fidl_next::Decode::decode(
+                vector_of_vector_of_bool.as_mut(),
+                decoder_,
+                (4294967295, (4294967295, ())),
+            )?;
 
             Ok(())
         }
@@ -228,6 +269,8 @@ pub mod wire {
     impl<'de> ::fidl_next::IntoNatural for ExampleUseOfVectors<'de> {
         type Natural = crate::natural::ExampleUseOfVectors;
     }
+
+    impl ::fidl_next::Unconstrained for ExampleUseOfVectors<'static> {}
 }
 
 pub mod wire_optional {}

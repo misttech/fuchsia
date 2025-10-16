@@ -232,6 +232,8 @@ func wireFormatSupported(wireFormat ir.WireFormat) bool {
 var encodeErrorPatternNames = map[ir.ErrorCode]string{
 	ir.NonNullableTypeWithNullValue: "EncodeError::InvalidRequiredHandle",
 	ir.StrictBitsUnknownBit:         "EncodeError::InvalidStrictBits",
+	ir.StringTooLong:                "EncodeError::Validation(ValidationError::StringTooLong{ .. })",
+	ir.CountExceedsLimit:            "EncodeError::Validation(ValidationError::VectorTooLong{ .. })",
 }
 
 func encodeErrorPattern(code ir.ErrorCode) (string, error) {
@@ -242,7 +244,7 @@ func encodeErrorPattern(code ir.ErrorCode) (string, error) {
 }
 
 var decodeErrorPatternMap = map[ir.ErrorCode]string{
-	ir.CountExceedsLimit:                  "DecodeError::VectorTooLong{ .. }",
+	ir.CountExceedsLimit:                  "DecodeError::Validation(ValidationError::VectorTooLong{ .. })",
 	ir.EnvelopeBytesExceedMessageLength:   "DecodeError::InvalidEnvelopeSize(_)",
 	ir.EnvelopeHandlesExceedMessageLength: "DecodeError::InvalidEnvelopeSize(_)",
 	ir.ExceededMaxOutOfLineDepth:          `"TODO: ExceededMaxOutOfLineDepth"`,
@@ -257,22 +259,22 @@ var decodeErrorPatternMap = map[ir.ErrorCode]string{
 	ir.InvalidPaddingByte:                 `"TODO: InvalidPaddingByte"`,
 	ir.InvalidPresenceIndicator:           "DecodeError::InvalidPointerPresence(_)",
 	ir.MissingRequiredHandleRights:        `"TODO: MissingRequiredHandleRights"`,
-	ir.NonEmptyStringWithNullBody:         "DecodeError::InvalidOptionalSize(_)",
-	ir.NonEmptyVectorWithNullBody:         "DecodeError::InvalidOptionalSize(_)",
+	ir.NonEmptyStringWithNullBody:         "DecodeError::InvalidOptionalSize(_) | DecodeError::RequiredValueAbsent",
+	ir.NonEmptyVectorWithNullBody:         "DecodeError::InvalidOptionalSize(_) | DecodeError::RequiredValueAbsent",
 	ir.NonNullableTypeWithNullValue:       "DecodeError::RequiredValueAbsent",
 	ir.StrictBitsUnknownBit:               "DecodeError::InvalidBits{ .. }",
 	ir.StrictEnumUnknownValue:             "DecodeError::InvalidEnumOrdinal(_)",
 	ir.StrictUnionUnknownField:            "DecodeError::InvalidUnionOrdinal(_)",
-	ir.StringCountExceeds32BitLimit:       "DecodeError::VectorTooLong{ .. }",
+	ir.StringCountExceeds32BitLimit:       "DecodeError::Validation(ValidationError::StringTooLong{ .. })",
 	ir.StringNotUtf8:                      "DecodeError::InvalidUtf8(_)",
-	ir.StringTooLong:                      "DecodeError::VectorTooLong{ .. }", // probably should have a different error
+	ir.StringTooLong:                      "DecodeError::Validation(ValidationError::StringTooLong{ .. })", // probably should have a different error
 	ir.TableCountExceeds32BitLimit:        "DecodeError::VectorTooLong{ .. }",
 	ir.TooFewBytes:                        "DecodeError::InsufficientData",
 	ir.TooFewHandles:                      "DecodeError::InsufficientHandles",
 	ir.TooManyBytesInMessage:              "DecodeError::ExtraBytes{ .. }",
 	ir.TooManyHandlesInMessage:            "DecodeError::ExtraHandles{ .. }",
 	ir.UnionFieldNotSet:                   "DecodeError::InvalidUnionEnvelope",
-	ir.VectorCountExceeds32BitLimit:       "DecodeError::VectorTooLong{ .. }",
+	ir.VectorCountExceeds32BitLimit:       "DecodeError::Validation(ValidationError::VectorTooLong{ .. })",
 }
 
 func decodeErrorPattern(code ir.ErrorCode) (string, error) {

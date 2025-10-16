@@ -6,7 +6,7 @@ use core::future::Future;
 use core::marker::PhantomData;
 use core::ops::Deref;
 
-use fidl_next_codec::Encode;
+use fidl_next_codec::{Constrained, Encode};
 use fidl_next_protocol::{self as protocol, ProtocolError, ServerHandler, Transport};
 
 use crate::{Method, Protocol, RespondFuture, ServerEnd};
@@ -194,6 +194,7 @@ impl<M, T: Transport> Responder<M, T> {
     where
         M: Method,
         R: Encode<T::SendBuffer, Encoded = M::Response>,
+        M::Response: Constrained<Constraint = ()>,
     {
         RespondFuture::from_untyped(self.responder.respond(M::ORDINAL, response))
     }

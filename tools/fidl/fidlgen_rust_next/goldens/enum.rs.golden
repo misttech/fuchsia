@@ -30,8 +30,9 @@ pub mod natural {
             self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
         }
     }
 
@@ -44,6 +45,7 @@ pub mod natural {
             &self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MyEmptyFlexibleEnum { value } = out);
             let _ = value.write(::fidl_next::WireU32::from(match *self {
@@ -107,8 +109,9 @@ pub mod natural {
             self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
         }
     }
 
@@ -121,6 +124,7 @@ pub mod natural {
             &self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MyFlexibleEnum { value } = out);
             let _ = value.write(::fidl_next::WireU32::from(match *self {
@@ -194,8 +198,9 @@ pub mod natural {
             self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
         }
     }
 
@@ -208,6 +213,7 @@ pub mod natural {
             &self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MyFlexibleEnumWithCustomUnknown { value } = out);
             let _ = value.write(::fidl_next::WireU32::from(match *self {
@@ -291,8 +297,9 @@ pub mod natural {
             self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
         }
     }
 
@@ -305,6 +312,7 @@ pub mod natural {
             &self,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MyStrictEnum { value } = out);
             let _ = value.write(::fidl_next::WireU32::from(match *self {
@@ -371,6 +379,7 @@ pub mod wire {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
             _: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             Ok(())
         }
@@ -389,6 +398,8 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for MyEmptyFlexibleEnum {
         type Natural = crate::natural::MyEmptyFlexibleEnum;
     }
+
+    impl ::fidl_next::Unconstrained for MyEmptyFlexibleEnum {}
 
     /// The wire type corresponding to [`MyFlexibleEnum`].
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -419,6 +430,7 @@ pub mod wire {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
             _: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             Ok(())
         }
@@ -441,6 +453,8 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for MyFlexibleEnum {
         type Natural = crate::natural::MyFlexibleEnum;
     }
+
+    impl ::fidl_next::Unconstrained for MyFlexibleEnum {}
 
     /// The wire type corresponding to [`MyFlexibleEnumWithCustomUnknown`].
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -476,6 +490,7 @@ pub mod wire {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
             _: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             Ok(())
         }
@@ -509,6 +524,8 @@ pub mod wire {
         type Natural = crate::natural::MyFlexibleEnumWithCustomUnknown;
     }
 
+    impl ::fidl_next::Unconstrained for MyFlexibleEnumWithCustomUnknown {}
+
     /// The wire type corresponding to [`MyStrictEnum`].
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     #[repr(transparent)]
@@ -538,6 +555,7 @@ pub mod wire {
         fn decode(
             slot: ::fidl_next::Slot<'_, Self>,
             _: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge!(let Self { value } = slot);
 
@@ -565,6 +583,8 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for MyStrictEnum {
         type Natural = crate::natural::MyStrictEnum;
     }
+
+    impl ::fidl_next::Unconstrained for MyStrictEnum {}
 }
 
 pub mod wire_optional {}

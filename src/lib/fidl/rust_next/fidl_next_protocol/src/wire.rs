@@ -5,8 +5,8 @@
 use core::mem::MaybeUninit;
 
 use fidl_next_codec::{
-    Decode, DecodeError, Encodable, Encode, EncodeError, EncodeRef, Slot, Wire, WireI32, WireU32,
-    WireU64,
+    Constrained, Decode, DecodeError, Encodable, Encode, EncodeError, EncodeRef, Slot,
+    Unconstrained, Wire, WireI32, WireU32, WireU64,
 };
 
 use zerocopy::IntoBytes;
@@ -50,8 +50,9 @@ unsafe impl<E: ?Sized> Encode<E> for WireMessageHeader {
         self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        constraint: <Self::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        self.encode_ref(encoder, out)
+        self.encode_ref(encoder, out, constraint)
     }
 }
 
@@ -61,15 +62,18 @@ unsafe impl<E: ?Sized> EncodeRef<E> for WireMessageHeader {
         &self,
         _: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        _constraint: <Self::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
         out.write(*self);
         Ok(())
     }
 }
 
+impl Unconstrained for WireMessageHeader {}
+
 unsafe impl<D: ?Sized> Decode<D> for WireMessageHeader {
     #[inline]
-    fn decode(_: Slot<'_, Self>, _: &mut D) -> Result<(), DecodeError> {
+    fn decode(_: Slot<'_, Self>, _: &mut D, _: ()) -> Result<(), DecodeError> {
         Ok(())
     }
 }
@@ -101,8 +105,9 @@ unsafe impl<E: ?Sized> Encode<E> for WireEpitaph {
         self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        constraint: <Self::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        self.encode_ref(encoder, out)
+        self.encode_ref(encoder, out, constraint)
     }
 }
 
@@ -112,15 +117,18 @@ unsafe impl<E: ?Sized> EncodeRef<E> for WireEpitaph {
         &self,
         _: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        _constraint: <Self::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
         out.write(*self);
         Ok(())
     }
 }
 
+impl Unconstrained for WireEpitaph {}
+
 unsafe impl<D: ?Sized> Decode<D> for WireEpitaph {
     #[inline]
-    fn decode(_: Slot<'_, Self>, _: &mut D) -> Result<(), DecodeError> {
+    fn decode(_: Slot<'_, Self>, _: &mut D, _: ()) -> Result<(), DecodeError> {
         Ok(())
     }
 }

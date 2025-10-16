@@ -56,8 +56,9 @@ where
         self,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        _: (),
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::EncodeRef::encode_ref(&self, encoder, out)
+        ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
     }
 }
 
@@ -70,6 +71,7 @@ where
         &self,
         encoder: &mut ___E,
         out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        _: (),
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let crate::wire::{{ name }} { value } = out);
         let _ = value.write({{ wire_int }}::from(match *self {

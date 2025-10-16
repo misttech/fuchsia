@@ -8,7 +8,9 @@ mod error;
 
 pub use self::error::*;
 
-use crate::{Slot, Wire, WireF32, WireF64, WireI16, WireI32, WireI64, WireU16, WireU32, WireU64};
+use crate::{
+    Constrained, Slot, Wire, WireF32, WireF64, WireI16, WireI32, WireI64, WireU16, WireU32, WireU64,
+};
 
 /// Decodes a value from the given slot.
 ///
@@ -16,19 +18,23 @@ use crate::{Slot, Wire, WireF32, WireF64, WireI16, WireI32, WireI64, WireU16, Wi
 ///
 /// If `decode` returns `Ok`, then the provided `slot` will contain a valid decoded value after the
 /// decoder is committed.
-pub unsafe trait Decode<D: ?Sized>: Wire {
+pub unsafe trait Decode<D: ?Sized>: Wire + Constrained {
     /// Decodes a value into a slot using a decoder.
     ///
     /// If decoding succeeds, `slot` will contain a valid decoded value after the decoder is
     /// committed. If decoding fails, an error will be returned.
-    fn decode(slot: Slot<'_, Self>, decoder: &mut D) -> Result<(), DecodeError>;
+    fn decode(
+        slot: Slot<'_, Self>,
+        decoder: &mut D,
+        constraint: Self::Constraint,
+    ) -> Result<(), DecodeError>;
 }
 
 macro_rules! impl_primitive {
     ($ty:ty) => {
         unsafe impl<D: ?Sized> Decode<D> for $ty {
             #[inline]
-            fn decode(_: Slot<'_, Self>, _: &mut D) -> Result<(), DecodeError> {
+            fn decode(_: Slot<'_, Self>, _: &mut D, _: ()) -> Result<(), DecodeError> {
                 Ok(())
             }
         }
@@ -62,7 +68,7 @@ impl_primitives! {
 
 unsafe impl<D: ?Sized> Decode<D> for bool {
     #[inline]
-    fn decode(slot: Slot<'_, Self>, _: &mut D) -> Result<(), DecodeError> {
+    fn decode(slot: Slot<'_, Self>, _: &mut D, _: ()) -> Result<(), DecodeError> {
         let value = unsafe { slot.as_ptr().cast::<u8>().read() };
         match value {
             0 | 1 => (),
@@ -73,9 +79,13 @@ unsafe impl<D: ?Sized> Decode<D> for bool {
 }
 
 unsafe impl<D: ?Sized, T: Decode<D>, const N: usize> Decode<D> for [T; N] {
-    fn decode(mut slot: Slot<'_, Self>, decoder: &mut D) -> Result<(), DecodeError> {
+    fn decode(
+        mut slot: Slot<'_, Self>,
+        decoder: &mut D,
+        constraint: T::Constraint,
+    ) -> Result<(), DecodeError> {
         for i in 0..N {
-            T::decode(slot.index(i), decoder)?;
+            T::decode(slot.index(i), decoder, constraint)?;
         }
         Ok(())
     }
@@ -85,7 +95,7 @@ unsafe impl<D: ?Sized, T: Decode<D>, const N: usize> Decode<D> for [T; N] {
 mod tests {
     use crate::{WireF32, WireF64, WireI16, WireI32, WireI64, WireU16, WireU32, WireU64, chunks};
 
-    use crate::testing::assert_decoded;
+    use crate::testing::{assert_decoded, assert_decoded_with_constraint};
     use crate::wire::{WireBox, WireString, WireVector};
     use crate::{WireOptionalString, WireOptionalVector};
 
@@ -170,50 +180,56 @@ mod tests {
 
     #[test]
     fn decode_vec() {
-        assert_decoded::<WireOptionalVector<'_, WireU32>>(
+        assert_decoded_with_constraint::<WireOptionalVector<'_, WireU32>>(
             &mut chunks![
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00,
             ],
+            (1000, ()),
             |x| assert!(x.as_ref().is_none()),
         );
-        assert_decoded::<WireVector<'_, WireU32>>(
+        assert_decoded_with_constraint::<WireVector<'_, WireU32>>(
             &mut chunks![
                 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 0xff, 0xff, 0x78, 0x56, 0x34, 0x12, 0xf0, 0xde, 0xbc, 0x9a,
             ],
+            (1000, ()),
             |x| assert_eq!(x.as_slice(), [0x12345678, 0x9abcdef0].as_slice(),),
         );
-        assert_decoded::<WireVector<'_, WireU32>>(
+        assert_decoded_with_constraint::<WireVector<'_, WireU32>>(
             &mut chunks![
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 0xff, 0xff,
             ],
+            (1000, ()),
             |x| assert_eq!(x.len(), 0),
         );
     }
 
     #[test]
     fn decode_string() {
-        assert_decoded::<WireOptionalString<'_>>(
+        assert_decoded_with_constraint::<WireOptionalString<'_>>(
             &mut chunks![
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00,
             ],
+            1000,
             |x| assert!(x.is_none()),
         );
-        assert_decoded::<WireString<'_>>(
+        assert_decoded_with_constraint::<WireString<'_>>(
             &mut chunks![
                 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 0xff, 0xff, 0x30, 0x31, 0x32, 0x33, 0x00, 0x00, 0x00, 0x00,
             ],
+            1000,
             |x| assert_eq!(x.as_str(), "0123"),
         );
-        assert_decoded::<WireString<'_>>(
+        assert_decoded_with_constraint::<WireString<'_>>(
             &mut chunks![
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 0xff, 0xff,
             ],
+            1000,
             |x| assert_eq!(x.len(), 0),
         );
     }

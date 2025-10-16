@@ -35,6 +35,7 @@ where
     fn decode(
         slot: ::fidl_next::Slot<'_, Self>,
         decoder: &mut ___D,
+        _: (),
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         ::fidl_next::munge!(let Self { table } = slot);
 
@@ -48,7 +49,7 @@ where
                         ::fidl_next::WireEnvelope::decode_as::<
                             ___D,
                             {{ self.static_wire_type(member.ty) }},
-                        >(slot.as_mut(), decoder)?;
+                        >(slot.as_mut(), decoder, {{ self.constraint(member.ty) }})?;
                         {# type check #}
                         {% match member.ty.kind -%}
                             {% when TypeKind::Array { element_count, element_type } %}
@@ -137,3 +138,5 @@ impl<'de> {{ name }}<'de> {
 impl<'de> ::fidl_next::IntoNatural for {{ name }}<'de> {
     type Natural = crate::natural::{{ name }};
 }
+
+impl ::fidl_next::Unconstrained for {{ name }}<'_> {}

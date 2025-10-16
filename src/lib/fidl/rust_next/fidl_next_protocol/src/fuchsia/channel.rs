@@ -343,7 +343,7 @@ mod tests {
     use fidl_next_codec::fuchsia::{HandleDecoder, HandleEncoder, WireHandle};
     use fidl_next_codec::{
         Decode, DecodeError, DecoderExt as _, Encodable, Encode, EncodeError, EncoderExt as _,
-        FromWire, Slot, Wire, munge,
+        FromWire, Slot, Unconstrained, Wire, munge,
     };
     use fuchsia_async as fasync;
     use zx::{AsHandleRef, Channel, Handle, HandleBased as _, Instant, Signals, WaitResult};
@@ -393,6 +393,8 @@ mod tests {
         boolean: bool,
     }
 
+    impl Unconstrained for WireHandleAndBoolean {}
+
     unsafe impl Wire for WireHandleAndBoolean {
         type Decoded<'de> = Self;
 
@@ -412,19 +414,20 @@ mod tests {
             self,
             encoder: &mut E,
             out: &mut MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> Result<(), EncodeError> {
             munge!(let Self::Encoded { handle, boolean } = out);
-            self.handle.encode(encoder, handle)?;
-            self.boolean.encode(encoder, boolean)?;
+            self.handle.encode(encoder, handle, ())?;
+            self.boolean.encode(encoder, boolean, ())?;
             Ok(())
         }
     }
 
     unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireHandleAndBoolean {
-        fn decode(slot: Slot<'_, Self>, decoder: &mut D) -> Result<(), DecodeError> {
+        fn decode(slot: Slot<'_, Self>, decoder: &mut D, _: ()) -> Result<(), DecodeError> {
             munge!(let Self { handle, boolean } = slot);
-            Decode::decode(handle, decoder)?;
-            Decode::decode(boolean, decoder)?;
+            Decode::decode(handle, decoder, ())?;
+            Decode::decode(boolean, decoder, ())?;
             Ok(())
         }
     }
@@ -441,7 +444,7 @@ mod tests {
 
         let mut buffer = Buffer::new();
         buffer
-            .encode_next(HandleAndBoolean { handle: encode_end.into_handle(), boolean: false })
+            .encode_next(HandleAndBoolean { handle: encode_end.into_handle(), boolean: false }, ())
             .expect("encoding should succeed");
         // Modify the buffer so that the boolean value is invalid
         *buffer.chunks[0] |= 0x00000002_00000000;
@@ -472,7 +475,7 @@ mod tests {
 
         let mut buffer = Buffer::new();
         buffer
-            .encode_next(HandleAndBoolean { handle: encode_end.into_handle(), boolean: false })
+            .encode_next(HandleAndBoolean { handle: encode_end.into_handle(), boolean: false }, ())
             .expect("encoding should succeed");
 
         let recv_buffer = RecvBuffer { buffer, chunks_taken: 0, handles_taken: 0 };

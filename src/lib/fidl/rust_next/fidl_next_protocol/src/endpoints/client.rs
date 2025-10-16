@@ -8,7 +8,7 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll, ready};
 
-use fidl_next_codec::{Encode, EncodeError, EncoderExt};
+use fidl_next_codec::{Constrained, Encode, EncodeError, EncoderExt};
 use pin_project::{pin_project, pinned_drop};
 
 use crate::concurrency::sync::{Arc, Mutex};
@@ -56,6 +56,7 @@ impl<T: Transport> Client<T> {
     ) -> Result<SendFuture<'_, T>, EncodeError>
     where
         M: Encode<T::SendBuffer>,
+        M::Encoded: Constrained<Constraint = ()>,
     {
         self.send_message(0, ordinal, request)
     }
@@ -68,6 +69,7 @@ impl<T: Transport> Client<T> {
     ) -> Result<TwoWayRequestFuture<'_, T>, EncodeError>
     where
         M: Encode<T::SendBuffer>,
+        M::Encoded: Constrained<Constraint = ()>,
     {
         let index = self.inner.responses.lock().unwrap().alloc(ordinal);
 
@@ -91,10 +93,11 @@ impl<T: Transport> Client<T> {
     ) -> Result<SendFuture<'_, T>, EncodeError>
     where
         M: Encode<T::SendBuffer>,
+        M::Encoded: Constrained<Constraint = ()>,
     {
         self.inner.connection.send_message(|buffer| {
             encode_header::<T>(buffer, txid, ordinal)?;
-            buffer.encode_next(message)
+            buffer.encode_next(message, ())
         })
     }
 }

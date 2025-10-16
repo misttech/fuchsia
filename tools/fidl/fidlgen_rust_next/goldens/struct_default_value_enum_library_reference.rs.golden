@@ -34,6 +34,7 @@ pub mod natural {
             self,
             encoder_: &mut ___E,
             out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let Self::Encoded {
@@ -42,7 +43,9 @@ pub mod natural {
                 } = out_;
             }
 
-            ::fidl_next::Encode::encode(self.field, encoder_, field)?;
+            ::fidl_next::Encode::encode(self.field, encoder_, field, ())?;
+
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(field.as_mut_ptr()) };
 
             Ok(())
         }
@@ -57,6 +60,7 @@ pub mod natural {
             &self,
             encoder_: &mut ___E,
             out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
                 let Self::Encoded {
@@ -66,7 +70,9 @@ pub mod natural {
                 } = out_;
             }
 
-            ::fidl_next::EncodeRef::encode_ref(&self.field, encoder_, field)?;
+            ::fidl_next::EncodeRef::encode_ref(&self.field, encoder_, field, ())?;
+
+            let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(field.as_mut_ptr()) };
 
             Ok(())
         }
@@ -86,9 +92,10 @@ pub mod natural {
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
                 ::fidl_next::WireBox::encode_present(out);
             } else {
                 ::fidl_next::WireBox::encode_absent(out);
@@ -108,9 +115,10 @@ pub mod natural {
             this: ::core::option::Option<&Self>,
             encoder: &mut ___E,
             out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
-                ::fidl_next::EncoderExt::encode_next(encoder, inner)?;
+                ::fidl_next::EncoderExt::encode_next(encoder, inner, ())?;
                 ::fidl_next::WireBox::encode_present(out);
             } else {
                 ::fidl_next::WireBox::encode_absent(out);
@@ -182,6 +190,7 @@ pub mod wire {
         fn decode(
             slot_: ::fidl_next::Slot<'_, Self>,
             decoder_: &mut ___D,
+            _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
             ::fidl_next::munge! {
                 let Self {
@@ -191,7 +200,9 @@ pub mod wire {
                 } = slot_;
             }
 
-            ::fidl_next::Decode::decode(field.as_mut(), decoder_)?;
+            let _field = field.as_mut();
+
+            ::fidl_next::Decode::decode(field.as_mut(), decoder_, ())?;
 
             Ok(())
         }
@@ -200,6 +211,8 @@ pub mod wire {
     impl ::fidl_next::IntoNatural for Foo {
         type Natural = crate::natural::Foo;
     }
+
+    impl ::fidl_next::Unconstrained for Foo {}
 }
 
 pub mod wire_optional {}

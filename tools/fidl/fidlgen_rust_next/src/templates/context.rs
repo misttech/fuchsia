@@ -9,6 +9,7 @@ use fidl_ir::{Attributes, CompoundIdent, Constant, IntType, Library, PrimSubtype
 use super::{
     CompoundIdentifierTemplate, ConstantTemplate, Denylist, DocStringTemplate, NaturalIntTemplate,
     NaturalPrimTemplate, NaturalTypeTemplate, WireIntTemplate, WirePrimTemplate, WireTypeTemplate,
+    constraint_for,
 };
 
 #[derive(Clone, Copy)]
@@ -117,6 +118,21 @@ pub trait Contextual<'a> {
 
     fn rust_next_denylist(&self, ident: &CompoundIdent) -> Denylist {
         Denylist::for_ident(self.context().library, ident, &["rust_next"])
+    }
+
+    fn constraint(&self, ty: &'a Type) -> String {
+        match constraint_for(ty) {
+            Some(constraint) => constraint,
+            None => "()".to_string(),
+        }
+    }
+
+    fn validate(&self, ty: &'a Type, field_name: &str) -> String {
+        if let Some(constraint) = constraint_for(ty) {
+            format!("::fidl_next::Constrained::validate({field_name}, {constraint})?;",)
+        } else {
+            String::new()
+        }
     }
 }
 

@@ -17,7 +17,6 @@ success("Length2String") {
 }
 
 encode_failure("StringExceedsLimit") {
-    bindings_denylist = [rust_next],
     value = Length2StringWrapper{
         length_2_string: "abc", // exceeds the string length
     },
@@ -62,7 +61,6 @@ decode_failure("OptionalStringWithInvalidPresenceIndicator") {
 }
 
 decode_failure("NonEmptyStringWithNullPtrBody") {
-    bindings_denylist = [rust_next],
     type = StringWrapper,
     bytes = {
         v2 = [
@@ -112,7 +110,6 @@ decode_failure("OptionalStringWrongPointerValue") {
 
 // Test string with a 2^64-1 count, exceeding the 32-bit limit from RFC-0059.
 decode_failure("StringCountExceedsLimitByALot") {
-    bindings_denylist = [rust_next],
     type = StringWrapper,
     bytes = {
         v2 = [
@@ -125,7 +122,6 @@ decode_failure("StringCountExceedsLimitByALot") {
 
 // Test string with a 2^32 count, exceeding the 32-bit limit from RFC-0059.
 decode_failure("StringCountExceedsLimitByOne") {
-    bindings_denylist = [rust_next],
     type = StringWrapper,
     bytes = {
         v2 = [
@@ -162,4 +158,202 @@ decode_failure("StringCountExceedsRemainingMessageSize") {
         ],
     },
     err = TOO_FEW_BYTES,
+}
+
+success("StringWithLimitInVector") {
+    bindings_allowlist = [rust_next],
+    value = StringWithLimitInVector{
+        v: [
+            "Hi",
+        ],
+    },
+    bytes = {
+        v2 = [
+            num(1):8,
+            repeat(0xff):8,
+
+            num(2):8,
+            repeat(0xff):8,
+
+            'H', 'i', padding:6,
+        ],
+    },
+}
+
+encode_failure("StringWithLimitInVectorExceedsLimit") {
+    bindings_allowlist = [rust_next],
+    value = StringWithLimitInVector{
+        v: [
+            "Hello",
+        ],
+    },
+    err = STRING_TOO_LONG,
+}
+
+decode_failure("StringWithLimitInVectorExceedsLimit") {
+    bindings_allowlist = [rust_next],
+    type = StringWithLimitInVector,
+    bytes = {
+        v2 = [
+            num(1):8,
+            repeat(0xff):8,
+
+            num(3):8,
+            repeat(0xff):8,
+
+            'H', 'e', 'l', 'l', 'o', padding:3,
+        ],
+    },
+    err = STRING_TOO_LONG,
+}
+
+success("StringWithLimitInArray") {
+    bindings_allowlist = [rust_next],
+    value = StringWithLimitInArray{
+        a: ["Oh", "Hi"],
+    },
+    bytes = {
+        v2 = [
+            num(2):8,
+            repeat(0xff):8,
+
+            num(2):8,
+            repeat(0xff):8,
+
+            'O', 'h', padding:6,
+
+            'H', 'i', padding:6,
+        ],
+    },
+}
+
+encode_failure("StringWithLimitInArrayExceedsLimit") {
+    bindings_allowlist = [rust_next],
+    value = StringWithLimitInArray{
+        a: ["Oh", "Hello"],
+    },
+    err = STRING_TOO_LONG,
+}
+
+decode_failure("StringWithLimitInArrayExceedsLimit") {
+    bindings_allowlist = [rust_next],
+    type = StringWithLimitInArray,
+    bytes = {
+        v2 = [
+            num(2):8,
+            repeat(0xff):8,
+
+            num(3):8,
+            repeat(0xff):8,
+
+            'O', 'h', padding:6,
+
+            'H', 'e', 'l', 'l', 'o', padding:3,
+        ],
+    },
+    err = STRING_TOO_LONG,
+}
+
+success("StringWithLimitInTable") {
+    bindings_allowlist = [rust_next],
+    value = StringWithLimitInTable{
+        t: TableWithStringWithLimit{s: "Hi", },
+    },
+    bytes = {
+        v2 = [
+            // table inline portion
+            num(1):8,
+            repeat(0xff):8,
+
+            // envelope
+            num(24):4, num(0):2, num(0):2,
+
+            // vector
+            num(2):8,
+            repeat(0xff):8,
+
+            'H', 'i', padding:6,
+        ],
+    },
+}
+
+encode_failure("StringWithLimitInTableExceedsLimit") {
+    bindings_allowlist = [rust_next],
+    value = StringWithLimitInTable{
+        t: TableWithStringWithLimit{s: "Hello", },
+    },
+    err = STRING_TOO_LONG,
+}
+
+decode_failure("StringWithLimitInTableExceedsLimit") {
+    bindings_allowlist = [rust_next],
+    type = StringWithLimitInTable,
+    bytes = {
+        v2 = [
+            // table inline portion
+            num(1):8,
+            repeat(0xff):8,
+
+            // envelope
+            num(24):4, num(0):2, num(0):2,
+
+            // vector
+            num(5):8,
+            repeat(0xff):8,
+
+            'H', 'e', 'l', 'l', 'o', padding:3,
+        ],
+    },
+    err = STRING_TOO_LONG,
+}
+
+success("StringWithLimitInUnion") {
+    bindings_allowlist = [rust_next],
+    value = StringWithLimitInUnion{
+        u: UnionWithStringWithLimit{s: "Hi", },
+    },
+    bytes = {
+        v2 = [
+            // ordinal
+            num(1):8,
+
+            // envelope
+            num(24):4, num(0):2, num(0):2,
+
+            // vector
+            num(2):8,
+            repeat(0xff):8,
+
+            'H', 'i', padding:6,
+        ],
+    },
+}
+
+encode_failure("StringWithLimitInUnionExceedsLimit") {
+    bindings_allowlist = [rust_next],
+    value = StringWithLimitInUnion{
+        u: UnionWithStringWithLimit{s: "Hello", },
+    },
+    err = STRING_TOO_LONG,
+}
+
+decode_failure("StringWithLimitInUnionExceedsLimit") {
+    bindings_allowlist = [rust_next],
+    type = StringWithLimitInUnion,
+    bytes = {
+        v2 = [
+            // ordinal
+            num(1):8,
+
+            // envelope
+            num(24):4, num(0):2, num(0):2,
+
+            // vector
+            num(3):8,
+            repeat(0xff):8,
+
+            'H', 'e', 'l', 'l', 'o', padding:3,
+        ],
+    },
+    err = STRING_TOO_LONG,
 }

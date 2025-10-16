@@ -10,8 +10,8 @@ use std::sync::atomic::{AtomicPtr, Ordering};
 
 use super::codec::{HandleDecoder, HandleEncoder};
 use fidl_next_codec::{
-    Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError, EncodeOption, FromWire,
-    FromWireOption, Slot, Wire, WireU32, munge,
+    Constrained, Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError,
+    EncodeOption, FromWire, FromWireOption, Slot, Unconstrained, Wire, WireU32, munge,
 };
 
 use crate::{Client, Handle};
@@ -159,7 +159,11 @@ impl fmt::Debug for WireHandle {
 }
 
 unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireHandle {
-    fn decode(mut slot: Slot<'_, Self>, decoder: &mut D) -> Result<(), DecodeError> {
+    fn decode(
+        mut slot: Slot<'_, Self>,
+        decoder: &mut D,
+        _: <Self as Constrained>::Constraint,
+    ) -> Result<(), DecodeError> {
         munge!(let Self { encoded } = slot.as_mut());
 
         match **encoded {
@@ -174,6 +178,8 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireHandle {
         Ok(())
     }
 }
+
+impl Unconstrained for WireHandle {}
 
 /// An optional Zircon handle.
 #[derive(Debug)]
@@ -223,11 +229,17 @@ impl WireOptionalHandle {
 }
 
 unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireOptionalHandle {
-    fn decode(mut slot: Slot<'_, Self>, decoder: &mut D) -> Result<(), DecodeError> {
+    fn decode(
+        mut slot: Slot<'_, Self>,
+        decoder: &mut D,
+        constraint: <Self as Constrained>::Constraint,
+    ) -> Result<(), DecodeError> {
         munge!(let Self { handle } = slot.as_mut());
-        WireHandle::decode(handle, decoder)
+        WireHandle::decode(handle, decoder, constraint)
     }
 }
+
+impl Unconstrained for WireOptionalHandle {}
 
 impl Encodable for Handle {
     type Encoded = WireHandle;
@@ -238,6 +250,7 @@ unsafe impl<E: HandleEncoder + ?Sized> Encode<E> for Handle {
         self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        _: <Self::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
         if self.client.upgrade().is_none() {
             Err(EncodeError::InvalidRequiredHandle)
@@ -264,6 +277,7 @@ unsafe impl<E: HandleEncoder + ?Sized> EncodeOption<E> for Handle {
         this: Option<Self>,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::EncodedOption>,
+        _: <Self::EncodedOption as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
         if let Some(handle) = this {
             encoder.push_handle(handle)?;

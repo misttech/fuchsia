@@ -6,8 +6,8 @@ use core::fmt;
 use core::mem::MaybeUninit;
 
 use fidl_next_codec::{
-    Decode, DecodeError, Encodable, Encode, EncodeError, EncodeRef, FromWire, FromWireRef,
-    IntoNatural, Slot, Wire, WireI32, munge,
+    Constrained, Decode, DecodeError, Encodable, Encode, EncodeError, EncodeRef, FromWire,
+    FromWireRef, IntoNatural, Slot, Unconstrained, Wire, WireI32, munge,
 };
 
 use crate::concurrency::hint::unreachable_unchecked;
@@ -34,6 +34,8 @@ unsafe impl Wire for WireFrameworkError {
     fn zero_padding(_: &mut MaybeUninit<Self>) {}
 }
 
+impl Unconstrained for WireFrameworkError {}
+
 impl fmt::Debug for WireFrameworkError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         FrameworkError::from(*self).fmt(f)
@@ -50,7 +52,7 @@ impl From<WireFrameworkError> for FrameworkError {
 }
 
 unsafe impl<D: ?Sized> Decode<D> for WireFrameworkError {
-    fn decode(slot: Slot<'_, Self>, _: &mut D) -> Result<(), DecodeError> {
+    fn decode(slot: Slot<'_, Self>, _: &mut D, _: ()) -> Result<(), DecodeError> {
         munge!(let Self { inner } = slot);
         match **inner {
             -2 => Ok(()),
@@ -68,8 +70,9 @@ unsafe impl<E: ?Sized> Encode<E> for FrameworkError {
         self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        constraint: <Self::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        self.encode_ref(encoder, out)
+        self.encode_ref(encoder, out, constraint)
     }
 }
 
@@ -78,6 +81,7 @@ unsafe impl<E: ?Sized> EncodeRef<E> for FrameworkError {
         &self,
         _: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
+        _constraint: <Self::Encoded as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
         munge!(let WireFrameworkError { inner } = out);
         inner.write(WireI32(match self {

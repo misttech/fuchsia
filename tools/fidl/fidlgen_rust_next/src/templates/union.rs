@@ -20,6 +20,7 @@ pub struct UnionTemplate<'a> {
     mod_name: String,
 
     de: &'static str,
+    infer: &'static str,
     static_: &'static str,
     phantom: &'static str,
     decode_unknown: &'static str,
@@ -31,11 +32,12 @@ impl<'a> UnionTemplate<'a> {
     pub fn new(union_: &'a Union, context: Context<'a>) -> Self {
         let is_static = union_.shape.is_static();
 
-        let (de, static_, phantom, decode_unknown, decode_as, encode_as) = if is_static {
-            ("", "", "()", "decode_unknown_static", "decode_as_static", "encode_as_static")
+        let (de, infer, static_, phantom, decode_unknown, decode_as, encode_as) = if is_static {
+            ("", "", "", "()", "decode_unknown_static", "decode_as_static", "encode_as_static")
         } else {
             (
                 "<'de>",
+                "<'_>",
                 "<'static>",
                 "&'de mut [::fidl_next::Chunk]",
                 "decode_unknown",
@@ -53,6 +55,7 @@ impl<'a> UnionTemplate<'a> {
             mod_name: escape_snake(union_.name.decl_name()),
 
             de,
+            infer,
             static_,
             phantom,
             decode_unknown,

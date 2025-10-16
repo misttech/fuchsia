@@ -42,6 +42,7 @@ where
     fn decode(
         slot: ::fidl_next::Slot<'_, Self>,
         _ : &mut ___D,
+        _: (),
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
         {% if enm.is_strict %}
             ::fidl_next::munge!(let Self { value } = slot);
@@ -79,3 +80,5 @@ impl ::core::convert::From<crate::natural::{{ name }}> for {{ name }} {
 impl ::fidl_next::IntoNatural for {{ name }} {
     type Natural = crate::natural::{{ name }};
 }
+
+impl ::fidl_next::Unconstrained for {{ name }} {}

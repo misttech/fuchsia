@@ -7,7 +7,7 @@ use core::ptr::slice_from_raw_parts_mut;
 
 use munge::munge;
 
-use crate::{Wire, WirePointer, WireU64};
+use crate::{Unconstrained, Wire, WirePointer, WireU64};
 
 #[repr(C)]
 pub struct RawWireVector<'de, T> {
@@ -56,3 +56,5 @@ impl<T> RawWireVector<'_, T> {
         slice_from_raw_parts_mut(self.as_ptr(), self.len() as usize)
     }
 }
+
+impl<T: Wire> Unconstrained for RawWireVector<'_, T> {}
