@@ -698,12 +698,41 @@ which is almost certainly a mistake: {}",
             }
         }
 
+        if let Some(_) = use_.directory.as_ref() {
+            // All directory "use" expressions must have directory rights.
+            match &use_.rights {
+                Some(rights) => {
+                    let location =
+                        byte_index_to_location(self.current_file_source, rights.span().0);
+                    self.validate_directory_rights(&rights, location, self.current_file_path)?
+                }
+                None => {
+                    let location = byte_index_to_location(self.current_file_source, use_.span().0);
+                    return Err(Error::validate_with_span(
+                        "This use statement requires a `rights` field. Refer to: https://fuchsia.dev/go/components/directory#consumer.",
+                        location,
+                        self.current_file_path,
+                    ));
+                }
+            };
+        }
+
         Ok(())
     }
 
     fn validate_expose(&mut self, expose: &'a Spanned<SpannedExpose>) -> Result<(), Error> {
         // Ensure directory rights are valid.
         if let Some(_) = expose.directory.as_ref() {
+            if expose.from.iter().any(|r| *r == ExposeFromRef::Self_) || expose.rights.is_some() {
+                if let Some(rights) = expose.rights.as_ref() {
+                    let location = byte_index_to_location(
+                        self.current_file_source,
+                        expose.rights.as_ref().unwrap().span().0,
+                    );
+                    self.validate_directory_rights(&rights, location, self.current_file_path)?;
+                }
+            }
+
             // Exposing a subdirectory makes sense for routing but when exposing to framework,
             // the subdir should be exposed directly.
             if expose.to.as_ref().map(|s| s.clone().into_inner()) == Some(ExposeToRef::Framework) {
@@ -822,6 +851,29 @@ which is almost certainly a mistake: {}",
     fn validate_collection(&mut self, collection: &'a Collection) -> Result<(), Error> {
         if collection.allow_long_names.is_some() {
             self.features.check(Feature::AllowLongNames)?;
+        }
+        Ok(())
+    }
+
+    /// Validates that directory rights for all route types are valid, i.e that it does not
+    /// contain duplicate rights.
+    fn validate_directory_rights(
+        &self,
+        rights_clause: &Rights,
+        location: Option<Location>,
+        filename: Option<&Path>,
+    ) -> Result<(), Error> {
+        let mut rights = HashSet::new();
+        for right_token in rights_clause.0.iter() {
+            for right in right_token.expand() {
+                if !rights.insert(right) {
+                    return Err(Error::validate_with_span(
+                        format!("\"{}\" is duplicated in the rights clause.", right_token),
+                        location,
+                        filename,
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -4037,6 +4089,45 @@ mod tests {
             }),
             Err(Error::ValidateWithSpan { err, .. }) if &err == "Cannot expose event_streams from self"
         ),
+
+        test_cml_rights_alias_star_expansion_collision(
+            r##"{
+                "use": [
+                  {
+                    "directory": "mydir",
+                    "path": "/mydir",
+                    "rights": ["w*", "x*"]
+                  }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"x*\" is duplicated in the rights clause." &&
+                location == Some(Location { line: 6, column: 31})
+
+        ),
+
+        test_cml_rights_alias_star_expansion_with_longform_collision(
+            r##"{
+                "use": [
+                  {
+                    "directory": "mydir",
+                    "path": "/mydir",
+                    "rights": ["r*", "read_bytes"]
+                  }
+                ]
+            }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"read_bytes\" is duplicated in the rights clause." &&
+                location == Some(Location { line: 6, column: 31})
+
+        ),
+
+        test_cml_rights_use_invalid(
+            json!({
+                "use": [
+                  { "directory": "mydir", "path": "/mydir" },
+                ]
+            }),
+            Err(Error::ValidateWithSpan { err, .. }) if &err == "This use statement requires a `rights` field. Refer to: https://fuchsia.dev/go/components/directory#consumer."
+        ),
     }
 
     test_validate_cml! {
@@ -6830,7 +6921,7 @@ mod tests {
             }),
             Ok(())
         ),
-        test_cml_rights_alias_star_expansion_with_longform_collision(
+        test_cml_rights_alias_star_expansion_with_longform_collision_no_span(
             json!({
                 "use": [
                   {
@@ -6842,7 +6933,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "\"read_bytes\" is duplicated in the rights clause."
         ),
-        test_cml_rights_alias_star_expansion_collision(
+        test_cml_rights_alias_star_expansion_collision_no_span(
             json!({
                 "use": [
                   {
@@ -6854,7 +6945,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "\"x*\" is duplicated in the rights clause."
         ),
-        test_cml_rights_use_invalid(
+        test_cml_rights_use_invalid_no_span(
             json!({
                 "use": [
                   { "directory": "mydir", "path": "/mydir" },

@@ -3565,7 +3565,7 @@ pub struct SpannedUse {
 
     /// (`directory` only) the maximum [directory rights][doc-directory-rights] to apply to
     /// the directory in the component's namespace.
-    pub rights: Option<Rights>,
+    pub rights: Option<Spanned<Rights>>,
 
     /// (`directory` only) A subdirectory within the directory capability to provide in the
     /// component's namespace.
@@ -3863,7 +3863,7 @@ pub struct SpannedExpose {
 
     /// (`directory` only) the maximum [directory rights][doc-directory-rights] to apply to
     /// the exposed directory capability.
-    pub rights: Option<Rights>,
+    pub rights: Option<Spanned<Rights>>,
 
     /// (`directory` only) the relative path of a subdirectory within the source directory
     /// capability to route.
