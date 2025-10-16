@@ -7,7 +7,6 @@
 
 #include <lib/inspect/cpp/bounded_list_node.h>
 #include <lib/inspect/cpp/inspect.h>
-#include <lib/syslog/cpp/macros.h>
 #include <lib/trace-engine/types.h>
 #include <lib/trace/event.h>
 #include <lib/zx/clock.h>
@@ -32,10 +31,7 @@ zx_koid_t GetPid() {
     zx_info_handle_basic_t info;
     zx_status_t status =
         zx::process::self()->get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
-    if (status != ZX_OK) {
-      FX_LOGS(ERROR) << "Failed to retrieve PID";
-      return ZX_KOID_INVALID;
-    }
+    ZX_ASSERT_MSG(status == ZX_OK, "Failed to retrieve PID");
     return info.koid;
   }();
   return pid;
