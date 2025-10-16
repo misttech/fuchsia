@@ -34,7 +34,7 @@ class MoveOnlyMeta {
 
 zx::vmo MakeVmo() {
   zx::vmo vmo;
-  EXPECT_EQ(zx::vmo::create(ZX_PAGE_SIZE, 0, &vmo), ZX_OK);
+  EXPECT_EQ(zx::vmo::create(zx_system_get_page_size(), 0, &vmo), ZX_OK);
   return vmo;
 }
 

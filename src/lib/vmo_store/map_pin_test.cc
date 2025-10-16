@@ -16,7 +16,9 @@ namespace testing {
 class MapPinTest : public ::testing::Test {
  public:
   static constexpr size_t kVmoPages = 4;
-  static constexpr size_t kVmoSize = ZX_PAGE_SIZE * kVmoPages;
+
+  static size_t VmoSize() { return kVmoPages * zx_system_get_page_size(); }
+
   using VmoStore = ::vmo_store::VmoStore<::vmo_store::HashTableStorage<size_t, void>>;
 
   static ::vmo_store::Options DefaultMapOptions() {
@@ -30,7 +32,7 @@ class MapPinTest : public ::testing::Test {
         ::vmo_store::PinOptions{GetBti(), ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE, true}};
   }
 
-  static zx::result<size_t> CreateAndRegister(VmoStore& store, size_t vmo_size = kVmoSize) {
+  static zx::result<size_t> CreateAndRegister(VmoStore& store, size_t vmo_size = VmoSize()) {
     zx::vmo vmo;
     zx_status_t status = zx::vmo::create(vmo_size, 0, &vmo);
     if (status != ZX_OK) {
@@ -60,7 +62,7 @@ TEST_F(MapPinTest, Map) {
   ASSERT_NE(stored, nullptr);
   // Check mapped data.
   auto data = stored->data();
-  ASSERT_EQ(data.size(), kVmoSize);
+  ASSERT_EQ(data.size(), VmoSize());
   constexpr uint8_t kData[] = {0x01, 0x02, 0x03, 0x04, 0xAA, 0xBB, 0x55};
   ASSERT_OK(stored->vmo()->write(kData, 0, sizeof(kData)));
   ASSERT_TRUE(std::equal(data.begin(), data.begin() + sizeof(kData), kData, kData + sizeof(kData)));
@@ -68,7 +70,7 @@ TEST_F(MapPinTest, Map) {
 
 TEST_F(MapPinTest, VmarManagerMap) {
   // Check that the VmarManager is used when mapping.
-  auto vmar = fzl::VmarManager::Create(kVmoSize * 2);
+  auto vmar = fzl::VmarManager::Create(VmoSize() * 2);
   ASSERT_NE(vmar, nullptr);
   auto options = DefaultMapOptions();
   options.map->vmar = vmar;
@@ -96,28 +98,29 @@ TEST_F(MapPinTest, Pin) {
   fzl::PinnedVmo::Region regions[kVmoPages];
   size_t region_count;
   // Call with region_count zero to evaluate how many regions are necessary.
-  ASSERT_STATUS(
-      vmo->GetPinnedRegions(ZX_PAGE_SIZE + kOffset, ZX_PAGE_SIZE, nullptr, 0, &region_count),
-      ZX_ERR_BUFFER_TOO_SMALL);
+  ASSERT_STATUS(vmo->GetPinnedRegions(zx_system_get_page_size() + kOffset,
+                                      zx_system_get_page_size(), nullptr, 0, &region_count),
+                ZX_ERR_BUFFER_TOO_SMALL);
   ASSERT_EQ(region_count, 2u);
 
-  ASSERT_OK(vmo->GetPinnedRegions(ZX_PAGE_SIZE + kOffset, ZX_PAGE_SIZE, regions, kVmoPages,
-                                  &region_count));
+  ASSERT_OK(vmo->GetPinnedRegions(zx_system_get_page_size() + kOffset, zx_system_get_page_size(),
+                                  regions, kVmoPages, &region_count));
   ASSERT_EQ(region_count, 2u);
-  // Physical addresses returned by fake bti are always ZX_PAGE_SIZE.
-  EXPECT_EQ(regions[0].phys_addr, ZX_PAGE_SIZE + kOffset);
-  EXPECT_EQ(regions[0].size, ZX_PAGE_SIZE - kOffset);
-  EXPECT_EQ(regions[1].phys_addr, ZX_PAGE_SIZE);
+  // Physical addresses returned by fake bti are always zx_system_get_page_size().
+  EXPECT_EQ(regions[0].phys_addr, zx_system_get_page_size() + kOffset);
+  EXPECT_EQ(regions[0].size, zx_system_get_page_size() - kOffset);
+  EXPECT_EQ(regions[1].phys_addr, zx_system_get_page_size());
   EXPECT_EQ(regions[1].size, kOffset);
 
   // Verify error cases for out of range. It should happen even if region_count is not large enough.
-  ASSERT_STATUS(vmo->GetPinnedRegions(kVmoSize, 1, regions, 0, &region_count), ZX_ERR_OUT_OF_RANGE);
-  ASSERT_STATUS(vmo->GetPinnedRegions(0, kVmoSize + 1, regions, 0, &region_count),
+  ASSERT_STATUS(vmo->GetPinnedRegions(VmoSize(), 1, regions, 0, &region_count),
+                ZX_ERR_OUT_OF_RANGE);
+  ASSERT_STATUS(vmo->GetPinnedRegions(0, VmoSize() + 1, regions, 0, &region_count),
                 ZX_ERR_OUT_OF_RANGE);
 
   // Check hat we're able to get all the regions and they match the entirety of the pinned
   // structure.
-  ASSERT_OK(vmo->GetPinnedRegions(0, kVmoSize, regions, kVmoPages, &region_count));
+  ASSERT_OK(vmo->GetPinnedRegions(0, VmoSize(), regions, kVmoPages, &region_count));
   ASSERT_EQ(region_count, static_cast<size_t>(vmo->pinned_vmo().region_count()));
   for (size_t i = 0; i < region_count; i++) {
     EXPECT_EQ(regions[i].size, vmo->pinned_vmo().region(i).size);
@@ -131,7 +134,7 @@ TEST_F(MapPinTest, PinSingleRegion) {
   options.pin->index = false;
   VmoStore store(std::move(options));
   // Create and register a VMO with a single page.
-  zx::result result = CreateAndRegister(store, ZX_PAGE_SIZE);
+  zx::result result = CreateAndRegister(store, zx_system_get_page_size());
   ASSERT_OK(result.status_value());
   size_t key = result.value();
   auto* vmo = store.GetVmo(key);
@@ -142,25 +145,27 @@ TEST_F(MapPinTest, PinSingleRegion) {
   fzl::PinnedVmo::Region regions[1];
   size_t region_count;
   // Call with region_count zero to evaluate how many regions are necessary.
-  ASSERT_STATUS(vmo->GetPinnedRegions(kOffset, ZX_PAGE_SIZE / 2, nullptr, 0, &region_count),
-                ZX_ERR_BUFFER_TOO_SMALL);
+  ASSERT_STATUS(
+      vmo->GetPinnedRegions(kOffset, zx_system_get_page_size() / 2, nullptr, 0, &region_count),
+      ZX_ERR_BUFFER_TOO_SMALL);
   ASSERT_EQ(region_count, 1u);
 
-  ASSERT_OK(vmo->GetPinnedRegions(kOffset, ZX_PAGE_SIZE / 2, regions, 1, &region_count));
+  ASSERT_OK(
+      vmo->GetPinnedRegions(kOffset, zx_system_get_page_size() / 2, regions, 1, &region_count));
   ASSERT_EQ(region_count, 1u);
-  // Physical addresses returned by fake bti are always ZX_PAGE_SIZE.
-  EXPECT_EQ(regions[0].phys_addr, ZX_PAGE_SIZE + kOffset);
-  EXPECT_EQ(regions[0].size, ZX_PAGE_SIZE / 2);
+  // Physical addresses returned by fake bti are always zx_system_get_page_size().
+  EXPECT_EQ(regions[0].phys_addr, zx_system_get_page_size() + kOffset);
+  EXPECT_EQ(regions[0].size, zx_system_get_page_size() / 2);
 
   // Verify error cases for out of range. It should happen even if region_count is not large enough.
-  ASSERT_STATUS(vmo->GetPinnedRegions(ZX_PAGE_SIZE, 1, regions, 0, &region_count),
+  ASSERT_STATUS(vmo->GetPinnedRegions(zx_system_get_page_size(), 1, regions, 0, &region_count),
                 ZX_ERR_OUT_OF_RANGE);
-  ASSERT_STATUS(vmo->GetPinnedRegions(0, ZX_PAGE_SIZE + 1, regions, 0, &region_count),
+  ASSERT_STATUS(vmo->GetPinnedRegions(0, zx_system_get_page_size() + 1, regions, 0, &region_count),
                 ZX_ERR_OUT_OF_RANGE);
 
   // Check hat we're able to get all the regions and they match the entirety of the pinned
   // structure.
-  ASSERT_OK(vmo->GetPinnedRegions(0, ZX_PAGE_SIZE, regions, 1, &region_count));
+  ASSERT_OK(vmo->GetPinnedRegions(0, zx_system_get_page_size(), regions, 1, &region_count));
   ASSERT_EQ(region_count, static_cast<size_t>(vmo->pinned_vmo().region_count()));
   for (size_t i = 0; i < region_count; i++) {
     EXPECT_EQ(regions[i].size, vmo->pinned_vmo().region(i).size);
@@ -173,7 +178,7 @@ TEST_F(MapPinTest, PinSingleRegion) {
   ASSERT_OK(result.status_value());
   key = result.value();
   vmo = store.GetVmo(key);
-  ASSERT_STATUS(vmo->GetPinnedRegions(0, kVmoSize, regions, 1, &region_count), ZX_ERR_BAD_STATE);
+  ASSERT_STATUS(vmo->GetPinnedRegions(0, VmoSize(), regions, 1, &region_count), ZX_ERR_BAD_STATE);
   ASSERT_EQ(region_count, 0u);
 }
 

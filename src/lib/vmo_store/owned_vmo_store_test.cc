@@ -15,14 +15,15 @@ namespace testing {
 
 class OwnershipTest : public ::testing::Test {
  public:
-  static constexpr uint64_t kVmoSize = ZX_PAGE_SIZE;
+  static uint64_t VmoSize() { return zx_system_get_page_size(); }
+
   using Store = ::vmo_store::OwnedVmoStore<HashTableStorage<size_t>>;
   using Agent = typename Store::RegistrationAgent;
   OwnershipTest() : ::testing::Test(), store_(Options()) {}
 
   zx::vmo CreateVmo() {
     zx::vmo vmo;
-    EXPECT_OK(zx::vmo::create(kVmoSize, 0, &vmo));
+    EXPECT_OK(zx::vmo::create(VmoSize(), 0, &vmo));
     return vmo;
   }
 
