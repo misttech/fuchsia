@@ -130,8 +130,11 @@ class DisplayEngine final : public display::DisplayEngineInterface {
 
   display::DisplayEngineEventsInterface& engine_events_;
 
-  uint32_t latest_framebuffer_resource_id_ = virtio_abi::kInvalidResourceId;
-  uint32_t displayed_framebuffer_resource_id_ = virtio_abi::kInvalidResourceId;
+  uint32_t latest_framebuffer_resource_id_ __TA_GUARDED(flush_lock_) =
+      virtio_abi::kInvalidResourceId;
+  virtio_abi::ResourceFormat latest_framebuffer_resource_format_ __TA_GUARDED(flush_lock_) = {};
+  uint32_t latest_framebuffer_stride_ __TA_GUARDED(flush_lock_) = 0;
+
   display::DriverConfigStamp latest_config_stamp_ = display::kInvalidDriverConfigStamp;
   display::DriverConfigStamp displayed_config_stamp_ = display::kInvalidDriverConfigStamp;
 

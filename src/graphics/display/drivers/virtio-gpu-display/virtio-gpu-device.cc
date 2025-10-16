@@ -25,12 +25,29 @@
 
 namespace virtio_display {
 
+std::optional<virtio_abi::ResourceFormat> PixelFormatToVirtioResourceFormat(
+    display::PixelFormat pixel_format) {
+  // TODO(https://fxbug.dev/42073721): Support more formats.
+  if (pixel_format == display::PixelFormat::kB8G8R8A8) {
+    return virtio_abi::ResourceFormat::kBgra32;
+  }
+  if (pixel_format == display::PixelFormat::kR8G8B8A8) {
+    return virtio_abi::ResourceFormat::kBgra32;  // kR8g8b8a8;
+  }
+
+  return std::nullopt;
+}
+
 VirtioGpuDevice::VirtioGpuDevice(std::unique_ptr<VirtioPciDevice> virtio_device)
     : virtio_device_(std::move(virtio_device)) {
   ZX_DEBUG_ASSERT(virtio_device_);
 }
 
 VirtioGpuDevice::~VirtioGpuDevice() = default;
+
+bool VirtioGpuDevice::UseBlobResource() {
+  return (pci_device().Features() & virtio_abi::GpuDeviceFeatures::kGpuResourceBlob) != 0;
+}
 
 zx::result<uint32_t> VirtioGpuDevice::UpdateCursor() {
   const virtio_abi::UpdateCursorCommand command = {
@@ -159,25 +176,12 @@ zx::result<fbl::Vector<uint8_t>> VirtioGpuDevice::GetDisplayEdid(uint32_t scanou
   return zx::ok(std::move(edid_bytes));
 }
 
-namespace {
-
-// Returns nullopt for an unsupported format.
-std::optional<virtio_abi::ResourceFormat> To2DResourceFormat(display::PixelFormat pixel_format) {
-  // TODO(https://fxbug.dev/42073721): Support more formats.
-  if (pixel_format == display::PixelFormat::kB8G8R8A8) {
-    return virtio_abi::ResourceFormat::kBgra32;
-  }
-
-  return std::nullopt;
-}
-
-}  // namespace
-
 zx::result<uint32_t> VirtioGpuDevice::Create2DResource(uint32_t width, uint32_t height,
                                                        display::PixelFormat pixel_format) {
   fdf::trace("Allocate2DResource");
 
-  std::optional<virtio_abi::ResourceFormat> resource_format = To2DResourceFormat(pixel_format);
+  std::optional<virtio_abi::ResourceFormat> resource_format =
+      PixelFormatToVirtioResourceFormat(pixel_format);
   if (!resource_format.has_value()) {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
@@ -197,6 +201,34 @@ zx::result<uint32_t> VirtioGpuDevice::Create2DResource(uint32_t width, uint32_t 
                static_cast<uint32_t>(response.header.type));
     return zx::error(ZX_ERR_IO);
   }
+  return zx::ok(command.resource_id);
+}
+
+zx::result<uint32_t> VirtioGpuDevice::CreateBlobResource(zx_paddr_t ptr, uint32_t size) {
+  fdf::trace("CreateBlobResource");
+
+  const virtio_abi::CreateBlobResourceCommand<1> command = {
+      .header = {.type = virtio_abi::ControlType::kCreateBlobCommand},
+      .resource_id = next_resource_id_++,
+      .blob_mem = static_cast<uint32_t>(virtio_abi::BlobMem::kGuest),
+      .blob_flags = static_cast<uint32_t>(virtio_abi::BlobFlags::kUseShareable),
+      .blob_id = 0,  // needed only for Host3D/Host3D_Guest
+      .size = size,
+      .entries =
+          {
+              {.address = ptr, .length = static_cast<uint32_t>(size)},
+          },
+  };
+
+  const auto& response =
+      virtio_device_->ExchangeControlqRequestResponse<virtio_abi::EmptyResponse>(command);
+  if (response.header.type != virtio_abi::ControlType::kEmptyResponse) {
+    fdf::error("CreateBlobResource - Unexpected response type: {} (0x{:04x})",
+               ControlTypeToString(response.header.type),
+               static_cast<uint32_t>(response.header.type));
+    return zx::error(ZX_ERR_IO);
+  }
+
   return zx::ok(command.resource_id);
 }
 
@@ -236,6 +268,35 @@ zx::result<> VirtioGpuDevice::SetScanoutProperties(uint32_t scanout_id, uint32_t
       .image_source = {.x = 0, .y = 0, .width = width, .height = height},
       .scanout_id = scanout_id,
       .resource_id = resource_id,
+  };
+
+  const auto& response =
+      virtio_device_->ExchangeControlqRequestResponse<virtio_abi::EmptyResponse>(command);
+  if (response.header.type != virtio_abi::ControlType::kEmptyResponse) {
+    fdf::error("Unexpected response type: {} (0x{:04x})", ControlTypeToString(response.header.type),
+               static_cast<uint32_t>(response.header.type));
+    return zx::error(ZX_ERR_IO);
+  }
+  return zx::ok();
+}
+
+zx::result<> VirtioGpuDevice::SetScanoutBlob(uint32_t scanout_id, uint32_t resource_id,
+                                             virtio_abi::ResourceFormat resource_format,
+                                             uint32_t width, uint32_t height, uint32_t stride) {
+  fdf::trace("SetScanoutBlob - scanout ID {}, resource ID {}, size {}x{}", scanout_id, resource_id,
+             width, height);
+
+  const virtio_abi::SetScanoutBlobCommand command = {
+      .header = {.type = virtio_abi::ControlType::kSetScanoutBlobCommand},
+      .image_source = {.x = 0, .y = 0, .width = width, .height = height},
+      .scanout_id = scanout_id,
+      .resource_id = resource_id,
+      .width = width,
+      .height = height,
+      .format = static_cast<uint32_t>(resource_format),
+      .padding = 0,
+      .strides = {stride, 0, 0, 0},
+      .offsets = {0, 0, 0, 0},
   };
 
   const auto& response =

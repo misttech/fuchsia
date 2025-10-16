@@ -17,6 +17,12 @@ commands map to the GPU.
 The display guest driver (this driver) binds to the `virtio-gpu` device, and
 mediates the GPU guest driver's access to the `virtio-gpu` device.
 
+## Resources
+
+Blob resources may be supported by the virtio-gpu device. If supported, the
+driver prefers blob resources because the image stride can be specified for
+scanout (otherwise, stride is assumed to be packed).
+
 ## Manual testing
 
 We do not currently have automated integration tests. Behavior changes in this

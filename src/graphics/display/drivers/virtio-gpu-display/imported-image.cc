@@ -25,7 +25,9 @@ namespace virtio_display {
 
 // static
 zx::result<ImportedImage> ImportedImage::Create(const zx::bti& bti, zx::vmo& image_vmo,
-                                                uint64_t image_vmo_offset, size_t image_size) {
+                                                uint64_t image_vmo_offset, size_t image_size,
+                                                virtio_abi::ResourceFormat resource_format,
+                                                uint32_t stride) {
   ZX_DEBUG_ASSERT(bti.is_valid());
   ZX_DEBUG_ASSERT(image_vmo.is_valid());
   ZX_DEBUG_ASSERT(image_vmo_offset % zx_system_get_page_size() == 0);
@@ -45,7 +47,7 @@ zx::result<ImportedImage> ImportedImage::Create(const zx::bti& bti, zx::vmo& ima
   }
 
   return zx::ok(ImportedImage(image_physical_address, std::move(pinned_memory_token),
-                              virtio_abi::kInvalidResourceId));
+                              virtio_abi::kInvalidResourceId, resource_format, stride));
 }
 
 // static
@@ -54,10 +56,13 @@ ImportedImage ImportedImage::CreateEmpty() { return ImportedImage(); }
 ImportedImage::ImportedImage() = default;
 
 ImportedImage::ImportedImage(zx_paddr_t physical_address, zx::pmt pinned_memory_token,
-                             uint32_t virtio_resource_id)
+                             uint32_t virtio_resource_id,
+                             virtio_abi::ResourceFormat resource_format, uint32_t stride)
     : physical_address_(physical_address),
       pinned_memory_token_(std::move(pinned_memory_token)),
-      virtio_resource_id_(virtio_resource_id) {
+      virtio_resource_id_(virtio_resource_id),
+      resource_format_(resource_format),
+      stride_(stride) {
   ZX_DEBUG_ASSERT(pinned_memory_token_.is_valid());
 }
 

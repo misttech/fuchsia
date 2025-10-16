@@ -26,6 +26,10 @@ struct DisplayInfo {
   int scanout_id;
 };
 
+// Returns nullopt for an unsupported format.
+std::optional<virtio_abi::ResourceFormat> PixelFormatToVirtioResourceFormat(
+    display::PixelFormat pixel_format);
+
 // Implements the display-related subset of the virtio-gpu device specification.
 class VirtioGpuDevice {
  public:
@@ -35,6 +39,8 @@ class VirtioGpuDevice {
   VirtioGpuDevice& operator=(const VirtioGpuDevice&) = delete;
 
   ~VirtioGpuDevice();
+
+  bool UseBlobResource();
 
   // Updates the cursor.
   //
@@ -76,6 +82,12 @@ class VirtioGpuDevice {
   zx::result<uint32_t> Create2DResource(uint32_t width, uint32_t height,
                                         display::PixelFormat pixel_format);
 
+  // Creates a blob resource.
+  //
+  // virtio13 5.7.6.8 "Device Operation: controlq", operation
+  // VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB.
+  zx::result<uint32_t> CreateBlobResource(zx_paddr_t ptr, uint32_t size);
+
   // Sets scanout parameters for one scanout.
   //
   // Setting `resource_id` to kInvalidResourceId disables the scanout.
@@ -84,6 +96,14 @@ class VirtioGpuDevice {
   // VIRTIO_GPU_CMD_SET_SCANOUT.
   zx::result<> SetScanoutProperties(uint32_t scanout_id, uint32_t resource_id, uint32_t width,
                                     uint32_t height);
+
+  // Sets scanout parameters using a blob resource.
+  //
+  // virtio13 5.7.6.8 "Device Operation: controlq", operation
+  // VIRTIO_GPU_CMD_SET_SCANOUT_BLOB.
+  zx::result<> SetScanoutBlob(uint32_t scanout_id, uint32_t resource_id,
+                              virtio_abi::ResourceFormat resource_format, uint32_t width,
+                              uint32_t height, uint32_t stride);
 
   // Flushes any scanouts that use `resource_id` to the host screen.
   //

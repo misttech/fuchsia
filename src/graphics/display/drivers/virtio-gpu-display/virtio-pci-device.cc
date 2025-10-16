@@ -216,6 +216,9 @@ zx_status_t VirtioPciDevice::Init() {
   if ((device_supported_features & virtio_abi::GpuDeviceFeatures::kGpuEdid) != 0) {
     driver_supported_features |= virtio_abi::GpuDeviceFeatures::kGpuEdid;
   }
+  if ((device_supported_features & virtio_abi::GpuDeviceFeatures::kGpuResourceBlob) != 0) {
+    driver_supported_features |= virtio_abi::GpuDeviceFeatures::kGpuResourceBlob;
+  }
 
   DriverFeaturesAck(driver_supported_features);
   features_ = driver_supported_features;

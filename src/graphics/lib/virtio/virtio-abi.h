@@ -409,6 +409,25 @@ enum class ResourceFormat : uint32_t {
   kRgbx32 = 134,
 };
 
+// Values for CreateBlobResourceCommand::blob_mem.
+enum class BlobMem : uint32_t {
+  // Guest only blob resource.
+  kGuest = 0x1,
+
+  // Host only blob resource.
+  kHost3D = 0x2,
+
+  // Default (host and guest) blob resource.
+  kHost3D_Guest = 0x3,
+};
+
+// Values for CreateBlobResourceCommand::blob_flags.
+enum class BlobFlags : uint32_t {
+  kUseMappable = 0x1,
+  kUseShareable = 0x2,
+  kUseCrossDevice = 0x4,
+};
+
 // Resource ID that has a special meaning in at least one operation.
 //
 // virtio13 5.7.6.8 "Device Operation: controlq", the
@@ -447,6 +466,28 @@ struct SetScanoutCommand {
 
   // kInvalidResourceId means that the scanout is disabled.
   uint32_t resource_id;
+};
+
+struct SetScanoutBlobCommand {
+  // `type` must be `kSetScanoutBlobCommand`.
+  ControlHeader header;
+
+  // The area of the `resource_id` image used by the scanout.
+  //
+  // The area must be entirely contained within the resource's dimensions.
+  Rectangle image_source;
+
+  uint32_t scanout_id;
+
+  // kInvalidResourceId means that the scanout is disabled.
+  uint32_t resource_id;
+
+  uint32_t width;
+  uint32_t height;
+  uint32_t format;
+  uint32_t padding;
+  uint32_t strides[4];
+  uint32_t offsets[4];
 };
 
 // Flushes a scanout resource to the screen.
@@ -497,6 +538,20 @@ struct Transfer2DResourceToHostCommand {
 struct MemoryEntry {
   uint64_t address;
   uint32_t length;
+};
+
+template <uint32_t N>
+struct CreateBlobResourceCommand {
+  // `type` must be `kCreateBlobResourceCommand`.
+  ControlHeader header;
+
+  uint32_t resource_id;
+  uint32_t blob_mem;
+  uint32_t blob_flags;
+  uint32_t nr_entries = N;
+  uint64_t blob_id;
+  uint64_t size;
+  MemoryEntry entries[N];
 };
 
 // Assigns backing pages to a resource.

@@ -27,14 +27,17 @@ class ImportedImage {
   // `bti` must be valid for the duration of the call. `image_vmo` must point to
   // a valid VMO whose size is at least image_vmo_offset + image_size.
   static zx::result<ImportedImage> Create(const zx::bti& bti, zx::vmo& image_vmo,
-                                          uint64_t image_vmo_offset, size_t image_size);
+                                          uint64_t image_vmo_offset, size_t image_size,
+                                          virtio_abi::ResourceFormat resource_format,
+                                          uint32_t stride);
 
   // Creates an instance representing the image moved-out state.
   static ImportedImage CreateEmpty();
 
   // Exposed for testing. Production code must use Create*() factory methods.
   explicit ImportedImage(zx_paddr_t physical_address, zx::pmt pinned_memory_token,
-                         uint32_t virtio_resource_id);
+                         uint32_t virtio_resource_id, virtio_abi::ResourceFormat resource_format,
+                         uint32_t stride);
 
   ImportedImage(const ImportedImage&) = delete;
   ImportedImage& operator=(const ImportedImage&) = delete;
@@ -42,16 +45,25 @@ class ImportedImage {
   ImportedImage(ImportedImage&& rhs) noexcept
       : physical_address_(rhs.physical_address_),
         pinned_memory_token_(std::move(rhs.pinned_memory_token_)),
-        virtio_resource_id_(rhs.virtio_resource_id_) {
+        virtio_resource_id_(rhs.virtio_resource_id_),
+        resource_format_(rhs.resource_format_),
+        stride_(rhs.stride_) {
     rhs.physical_address_ = 0;
     rhs.virtio_resource_id_ = virtio_abi::kInvalidResourceId;
+    rhs.resource_format_ = {};
+    rhs.stride_ = 0;
   }
+
   ImportedImage& operator=(ImportedImage&& rhs) noexcept {
     physical_address_ = rhs.physical_address_;
     rhs.physical_address_ = 0;
     pinned_memory_token_ = std::move(rhs.pinned_memory_token_);
     virtio_resource_id_ = rhs.virtio_resource_id_;
     rhs.virtio_resource_id_ = virtio_abi::kInvalidResourceId;
+    resource_format_ = rhs.resource_format_;
+    rhs.resource_format_ = {};
+    stride_ = rhs.stride_;
+    rhs.stride_ = 0;
     return *this;
   }
 
@@ -64,6 +76,10 @@ class ImportedImage {
 
   // The virtio resource ID used to attach this image.
   uint32_t virtio_resource_id() const { return virtio_resource_id_; }
+
+  virtio_abi::ResourceFormat resource_format() const { return resource_format_; }
+
+  uint32_t stride() const { return stride_; }
 
   // See `virtio_resource_id()` for details.
   //
@@ -91,6 +107,8 @@ class ImportedImage {
   zx_paddr_t physical_address_ = 0;
   zx::pmt pinned_memory_token_;
   uint32_t virtio_resource_id_ = virtio_abi::kInvalidResourceId;
+  virtio_abi::ResourceFormat resource_format_ = {};
+  uint32_t stride_ = {};
 };
 
 }  // namespace virtio_display

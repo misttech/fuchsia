@@ -122,16 +122,26 @@ zx::result<display::DriverImageId> DisplayEngine::ImportImage(
                       "Sysmem negotiation resulted in unsupported pixel format: %" PRIu32,
                       sysmem_buffer_info->pixel_format.ValueForLogging());
 
+  std::optional<virtio_abi::ResourceFormat> maybe_format =
+      PixelFormatToVirtioResourceFormat(sysmem_buffer_info->pixel_format);
+  if (!maybe_format) {
+    fdf::error("ImportImage: unhandled pixel_format");
+    return zx::error(ZX_ERR_NOT_SUPPORTED);
+  }
+
   ZX_DEBUG_ASSERT(sysmem_buffer_info->pixel_format_modifier ==
                   fuchsia_images2::wire::PixelFormatModifier::kLinear);
 
-  size_t image_size = static_cast<size_t>(image_metadata.width()) *
-                      static_cast<size_t>(image_metadata.height()) *
-                      sysmem_buffer_info->pixel_format.EncodingSize();
+  size_t min_bytes_per_row = sysmem_buffer_info->minimum_bytes_per_row > 0
+                                 ? sysmem_buffer_info->minimum_bytes_per_row
+                                 : static_cast<size_t>(image_metadata.width()) *
+                                       sysmem_buffer_info->pixel_format.EncodingSize();
 
-  zx::result<ImportedImage> imported_image_result =
-      ImportedImage::Create(gpu_device_->bti(), sysmem_buffer_info->image_vmo,
-                            sysmem_buffer_info->image_vmo_offset, image_size);
+  size_t image_size = min_bytes_per_row * static_cast<size_t>(image_metadata.height());
+
+  zx::result<ImportedImage> imported_image_result = ImportedImage::Create(
+      gpu_device_->bti(), sysmem_buffer_info->image_vmo, sysmem_buffer_info->image_vmo_offset,
+      image_size, *maybe_format, sysmem_buffer_info->minimum_bytes_per_row);
   if (imported_image_result.is_error()) {
     // Create() already logged the error.
     return imported_image_result.take_error();
@@ -141,19 +151,32 @@ zx::result<display::DriverImageId> DisplayEngine::ImportImage(
   ZX_DEBUG_ASSERT(imported_image != nullptr);
   *imported_image = std::move(imported_image_result).value();
 
-  zx::result<uint32_t> create_resource_result = gpu_device_->Create2DResource(
-      image_metadata.width(), image_metadata.height(), sysmem_buffer_info->pixel_format);
-  if (create_resource_result.is_error()) {
-    fdf::error("Failed to allocate 2D resource: {}", create_resource_result);
-    return create_resource_result.take_error();
-  }
-  imported_image->set_virtio_resource_id(create_resource_result.value());
+  if (gpu_device_->UseBlobResource()) {
+    zx::result<uint32_t> create_resource_result = gpu_device_->CreateBlobResource(
+        imported_image->physical_address(),
+        static_cast<uint32_t>(imported_image->RoundedUpImageSize(image_size)));
+    if (create_resource_result.is_error()) {
+      fdf::error("Failed to allocate blob resource: {}", create_resource_result);
+      return create_resource_result.take_error();
+    }
 
-  zx::result<> attach_result = gpu_device_->AttachResourceBacking(
-      imported_image->virtio_resource_id(), imported_image->physical_address(), image_size);
-  if (attach_result.is_error()) {
-    fdf::error("Failed to attach resource backing store: {}", attach_result);
-    return attach_result.take_error();
+    imported_image->set_virtio_resource_id(create_resource_result.value());
+  } else {
+    zx::result<uint32_t> create_resource_result = gpu_device_->Create2DResource(
+        image_metadata.width(), image_metadata.height(), sysmem_buffer_info->pixel_format);
+    if (create_resource_result.is_error()) {
+      fdf::error("Failed to allocate 2D resource: {}", create_resource_result);
+      return create_resource_result.take_error();
+    }
+
+    imported_image->set_virtio_resource_id(create_resource_result.value());
+
+    zx::result<> attach_result = gpu_device_->AttachResourceBacking(
+        imported_image->virtio_resource_id(), imported_image->physical_address(), image_size);
+    if (attach_result.is_error()) {
+      fdf::error("Failed to attach resource backing store: {}", attach_result);
+      return attach_result.take_error();
+    }
   }
 
   return zx::ok(image_id);
@@ -230,6 +253,8 @@ void DisplayEngine::ApplyConfiguration(display::DisplayId display_id,
   {
     fbl::AutoLock al(&flush_lock_);
     latest_framebuffer_resource_id_ = imported_image->virtio_resource_id();
+    latest_framebuffer_resource_format_ = imported_image->resource_format();
+    latest_framebuffer_stride_ = imported_image->stride();
     latest_config_stamp_ = config_stamp;
   }
 }
@@ -360,16 +385,25 @@ zx::result<std::unique_ptr<DisplayEngine>> DisplayEngine::Create(
 void DisplayEngine::virtio_gpu_flusher() {
   fdf::trace("Entering VirtioGpuFlusher()");
 
+  const bool use_blob = gpu_device_->UseBlobResource();
+  fdf::info("VirtioGpuFlusher use_blob: {}", use_blob);
+
+  uint32_t displayed_framebuffer_resource_id_ = virtio_abi::kInvalidResourceId;
+
   zx_instant_mono_t next_deadline = zx_clock_get_monotonic();
   zx_instant_mono_t period = ZX_SEC(1) / kRefreshRateHz;
   for (;;) {
     zx_nanosleep(next_deadline);
 
     bool fb_change;
+    virtio_abi::ResourceFormat resource_format;
+    uint32_t stride;
     {
       fbl::AutoLock al(&flush_lock_);
       fb_change = displayed_framebuffer_resource_id_ != latest_framebuffer_resource_id_;
       displayed_framebuffer_resource_id_ = latest_framebuffer_resource_id_;
+      resource_format = latest_framebuffer_resource_format_;
+      stride = latest_framebuffer_stride_;
       displayed_config_stamp_ = latest_config_stamp_;
     }
 
@@ -378,9 +412,18 @@ void DisplayEngine::virtio_gpu_flusher() {
     if (fb_change) {
       uint32_t resource_id = displayed_framebuffer_resource_id_ ? displayed_framebuffer_resource_id_
                                                                 : virtio_abi::kInvalidResourceId;
-      zx::result<> set_scanout_result = gpu_device_->SetScanoutProperties(
-          current_display_.scanout_id, resource_id, current_display_.scanout_info.geometry.width,
-          current_display_.scanout_info.geometry.height);
+
+      zx::result<> set_scanout_result;
+      if (use_blob) {
+        set_scanout_result =
+            gpu_device_->SetScanoutBlob(current_display_.scanout_id, resource_id, resource_format,
+                                        current_display_.scanout_info.geometry.width,
+                                        current_display_.scanout_info.geometry.height, stride);
+      } else {
+        set_scanout_result = gpu_device_->SetScanoutProperties(
+            current_display_.scanout_id, resource_id, current_display_.scanout_info.geometry.width,
+            current_display_.scanout_info.geometry.height);
+      }
       if (set_scanout_result.is_error()) {
         fdf::error("Failed to set scanout: {}", set_scanout_result);
         continue;
@@ -388,12 +431,14 @@ void DisplayEngine::virtio_gpu_flusher() {
     }
 
     if (displayed_framebuffer_resource_id_) {
-      zx::result<> transfer_result = gpu_device_->TransferToHost2D(
-          displayed_framebuffer_resource_id_, current_display_.scanout_info.geometry.width,
-          current_display_.scanout_info.geometry.height);
-      if (transfer_result.is_error()) {
-        fdf::error("Failed to transfer resource: {}", transfer_result);
-        continue;
+      if (!use_blob) {
+        zx::result<> transfer_result = gpu_device_->TransferToHost2D(
+            displayed_framebuffer_resource_id_, current_display_.scanout_info.geometry.width,
+            current_display_.scanout_info.geometry.height);
+        if (transfer_result.is_error()) {
+          fdf::error("Failed to transfer resource: {}", transfer_result);
+          continue;
+        }
       }
 
       zx::result<> flush_result = gpu_device_->FlushResource(
