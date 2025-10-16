@@ -99,9 +99,6 @@ LIB_STDCOMPAT_INLINE_LINKAGE inline bool compare_exchange(T* ptr, value_t<T>& ex
 // Provide atomic operations based on compiler builtins.
 template <typename Derived, typename T>
 class atomic_ops {
- private:
-  using storage_t = std::aligned_storage_t<sizeof(T), alignof(T)>;
-
  public:
   LIB_STDCOMPAT_INLINE_LINKAGE void store(
       T desired, std::memory_order order = std::memory_order_seq_cst) const noexcept {
@@ -110,7 +107,7 @@ class atomic_ops {
 
   LIB_STDCOMPAT_INLINE_LINKAGE T
   load(std::memory_order order = std::memory_order_seq_cst) const noexcept {
-    storage_t store;
+    alignas(T) std::byte store[sizeof(T)];
     auto* ret = reinterpret_cast<std::remove_const_t<value_t<T>>*>(&store);
     __atomic_load(ptr(), ret, to_builtin_memory_order(order));
     return *ret;
@@ -120,7 +117,7 @@ class atomic_ops {
 
   LIB_STDCOMPAT_INLINE_LINKAGE T
   exchange(T desired, std::memory_order order = std::memory_order_seq_cst) const noexcept {
-    storage_t store;
+    alignas(T) std::byte store[sizeof(T)];
     value_t<T> nv_desired = desired;
     auto* ret = reinterpret_cast<value_t<T>*>(&store);
     __atomic_exchange(ptr(), std::addressof(nv_desired), ret, to_builtin_memory_order(order));

@@ -29,7 +29,7 @@ class inline_any_impl {
   static constexpr size_t storage_size = std::max(sizeof(I), Reserve);
   static constexpr size_t storage_alignment = std::max(alignof(I), Align);
 
-  using storage = std::aligned_storage_t<storage_size, storage_alignment>;
+  using storage = std::byte[storage_size];
 
   template <typename... Conditions>
   using requires_conditions = ::fit::internal::requires_conditions<Conditions...>;
@@ -329,7 +329,7 @@ class inline_any_impl {
     return type_op_fn<cpp20::remove_cvref_t<T>, Pinned>::fn;
   }
 
-  storage storage_;
+  alignas(storage_alignment) storage storage_;
   op_fn op_{default_op_fn};
 };
 

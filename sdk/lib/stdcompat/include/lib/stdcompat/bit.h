@@ -5,6 +5,7 @@
 #ifndef LIB_STDCOMPAT_BIT_H_
 #define LIB_STDCOMPAT_BIT_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -55,7 +56,7 @@ template <typename To, typename From>
 std::enable_if_t<sizeof(To) == sizeof(From) && std::is_trivially_copyable<To>::value &&
                      std::is_trivially_copyable<From>::value,
                  To> bit_cast(const From& from) {
-  std::aligned_storage_t<sizeof(To)> uninitialized_to;
+  alignas(To) std::byte uninitialized_to[sizeof(To)];
   std::memcpy(static_cast<void*>(&uninitialized_to), static_cast<const void*>(std::addressof(from)),
               sizeof(To));
   return *reinterpret_cast<const To*>(&uninitialized_to);
