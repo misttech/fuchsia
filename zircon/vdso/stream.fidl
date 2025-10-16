@@ -131,8 +131,8 @@ closed protocol Stream {
     ///
     /// If the resize operation fails after some amount of data was written to the
     /// stream, the function will return successfully.  If no bytes were written to
-    /// stream, the operation will return `ZX_ERR_FILE_BIG` or `ZX_ERR_NO_SPACE`,
-    /// as appropriate.
+    /// stream, the operation will return `ZX_ERR_FILE_BIG`, `ZX_ERR_OUT_OF_RANGE`, or
+    /// `ZX_ERR_NO_SPACE`, as appropriate.
     ///
     /// If a NULL *actual* is passed in, it will be ignored.
     ///
@@ -171,6 +171,9 @@ closed protocol Stream {
     /// `ZX_ERR_FILE_BIG`  the stream has exceeded a predefined maximum size limit.
     ///
     /// `ZX_ERR_NO_SPACE`  the underlying storage medium does not have sufficient space.
+    ///
+    /// `ZX_ERR_OUT_OF_RANGE`  attempt to write to a position that cannot be accommodated
+    /// by the underlying VMO.
     ///
     /// ## See also
     ///
@@ -223,8 +226,8 @@ closed protocol Stream {
     ///
     /// If the resize operation fails after some amount of data was written to the
     /// stream, the function will return successfully.  If no bytes were written to
-    /// stream, the operation will return `ZX_ERR_FILE_BIG` or `ZX_ERR_NO_SPACE`,
-    /// as appropriate.
+    /// stream, the operation will return `ZX_ERR_FILE_BIG`, `ZX_ERR_OUT_OF_RANGE`, or
+    /// `ZX_ERR_NO_SPACE`, as appropriate.
     ///
     /// If a NULL *actual* is passed in, it will be ignored.
     ///
@@ -263,6 +266,9 @@ closed protocol Stream {
     /// `ZX_ERR_FILE_BIG`  the stream has exceeded a predefined maximum size limit.
     ///
     /// `ZX_ERR_NO_SPACE`  the underlying storage medium does not have sufficient space.
+    ///
+    /// `ZX_ERR_OUT_OF_RANGE`  attempt to write to a position that cannot be accommodated
+    /// by the underlying VMO.
     ///
     /// ## See also
     ///
