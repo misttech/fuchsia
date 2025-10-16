@@ -88,19 +88,10 @@ target(default_library_type, "re2") {
   configs -= [ "//build/config:symbol_visibility_hidden" ]
 
   if (default_library_type == "shared_library") {
-    if (is_mac) {
-      version_script = "src/libre2.symbols.darwin"
-    } else {
-      version_script = "src/libre2.symbols"
-    }
+    version_script = "src/libre2.symbols"
     inputs = [ version_script ]
-    if (is_mac) {
-      ldflags = [ "-Wl,-exported_symbols_list=" +
-                  rebase_path(version_script, root_build_dir) ]
-    } else {
-      ldflags = [ "-Wl,--version-script=" +
-                  rebase_path(version_script, root_build_dir) ]
-    }
+    ldflags = [ "-Wl,--version-script=" +
+                rebase_path(version_script, root_build_dir) ]
   }
 }
 

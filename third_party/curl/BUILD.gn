@@ -421,8 +421,6 @@ target(default_library_type, "libcurl") {
   ]
   if (is_linux) {
     defines += [ "_GNU_SOURCE" ]
-  } else if (is_mac) {
-    frameworks = [ "SystemConfiguration.framework" ]
   }
   public_configs = [ ":curl_config" ]
   configs += [ ":suppress_warnings" ]
@@ -562,8 +560,6 @@ executable("curl_bin") {
   defines = [ "HAVE_CONFIG_H" ]
   if (is_linux) {
     defines += [ "_GNU_SOURCE" ]
-  } else if (is_mac) {
-    frameworks = [ "SystemConfiguration.framework" ]
   }
   include_dirs = [ "src/lib" ]
   configs += [ ":suppress_warnings" ]

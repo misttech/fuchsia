@@ -13,15 +13,10 @@ generator_crate = "../../vendor/generator-0.7.5"
 
 static_library("asm-static") {
   output_name = "asm"
-  if (current_cpu == "x64" && !is_mac) {
+  if (current_cpu == "x64" && is_elf) {
     sources = [ "$generator_crate/src/detail/asm/asm_x86_64_sysv_elf_gas.S" ]
-  } else if (current_cpu == "x64" && is_mac) {
-    sources = [ "$generator_crate/src/detail/asm/asm_x86_64_sysv_macho_gas.S" ]
-  } else if (current_cpu == "arm64" && !is_mac) {
+  } else if (current_cpu == "arm64" && is_elf) {
     sources = [ "$generator_crate/src/detail/asm/asm_aarch64_aapcs_elf_gas.S" ]
-  } else if (current_cpu == "arm64" && is_mac) {
-    sources =
-        [ "$generator_crate/src/detail/asm/asm_aarch64_aapcs_macho_gas.S" ]
   } else {
     assert(false, "unsupported OS or CPU: $current_os/$current_cpu")
   }

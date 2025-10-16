@@ -97,11 +97,7 @@ static_library("ring-core") {
               "sha512-x86_64",
               "chacha20_poly1305_x86_64",
             ]) {
-      if (is_mac) {
-        sources += [ "$ring_crate/pregenerated/$asm_src-macosx.S" ]
-      } else {
-        sources += [ "$ring_crate/pregenerated/$asm_src-elf.S" ]
-      }
+      sources += [ "$ring_crate/pregenerated/$asm_src-elf.S" ]
     }
 
     sources += [ "$ring_crate/crypto/poly1305/poly1305_vec.c" ]
@@ -132,11 +128,7 @@ static_library("ring-core") {
               "sha256-armv8",
               "sha512-armv8",
             ]) {
-      if (is_mac) {
-        sources += [ "$ring_crate/pregenerated/$asm_src-ios64.S" ]
-      } else {
-        sources += [ "$ring_crate/pregenerated/$asm_src-linux64.S" ]
-      }
+      sources += [ "$ring_crate/pregenerated/$asm_src-linux64.S" ]
     }
   }
 }
