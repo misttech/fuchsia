@@ -111,11 +111,22 @@ def parse_audit_expectations_from_output(stdout: str) -> list[dict[str, Any]]:
     return audit_expectations
 
 
+def sanitize_audit_log(log: str) -> str:
+    """Removes volatile fields from an audit log string for comparison."""
+    # Remove audit(timestamp:serial):
+    sanitized = re.sub(r"audit\([^)]*\):\s*", "", log)
+    # Remove pid=...
+    sanitized = re.sub(r"\s+pid=\S+", "", sanitized)
+    # Remove comm="..."
+    sanitized = re.sub(r'\s+comm="[^"]*"', "", sanitized)
+    return sanitized.strip()
+
+
 def write_updated_expectations(
     all_new_expectations: list[dict[str, Any]],
     fuchsia_dir: pathlib.Path,
 ) -> None:
-    """Updates the `audit_expectations.json` file with new results."""
+    """Updates the `audit_success.json` file with new results, if they are meaningfully different."""
     if not all_new_expectations:
         print("No new audit expectations found to update.")
         return
@@ -137,10 +148,55 @@ def write_updated_expectations(
         test["name"]: test for test in existing_data.get(tests_array_name, [])
     }
 
+    updated_count = 0
     for new_exp in all_new_expectations:
         test_name = new_exp["name"]
-        print(f"Updating expectations for {test_name}")
-        existing_tests_map[test_name] = new_exp
+        existing_exp = existing_tests_map.get(test_name)
+
+        # Sanitize the new expectations before comparison and potential saving.
+        new_exp["audit_expectations"] = [
+            sanitize_audit_log(log)
+            for log in new_exp.get("audit_expectations", [])
+        ]
+
+        if not existing_exp:
+            print(f"Adding new expectations for {test_name}")
+            existing_tests_map[test_name] = new_exp
+            updated_count += 1
+            continue
+
+        # Compare existing and new expectations by sanitizing audit log strings.
+        old_audits = existing_exp.get("audit_expectations", [])
+        new_audits = new_exp.get("audit_expectations", [])
+
+        # Simple length check first.
+        if len(old_audits) != len(new_audits):
+            print(
+                f"Updating expectations for {test_name} (audit count changed)"
+            )
+            existing_tests_map[test_name] = new_exp
+            updated_count += 1
+            continue
+
+        # Compare sanitized audit strings.
+        are_different = False
+        for old_audit, new_audit in zip(old_audits, new_audits):
+            if old_audit != new_audit:
+                are_different = True
+                break
+
+        if are_different:
+            print(
+                f"Updating expectations for {test_name} (audit content changed)"
+            )
+            existing_tests_map[test_name] = new_exp
+            updated_count += 1
+        else:
+            print(f"No meaningful changes for {test_name}, skipping update.")
+
+    if updated_count == 0:
+        print("No meaningful expectation changes detected. File not updated.")
+        return
 
     # Convert back to a list and sort by name for consistent output.
     updated_tests = sorted(existing_tests_map.values(), key=lambda x: x["name"])
@@ -148,7 +204,9 @@ def write_updated_expectations(
     with open(expectations_file, "w") as f:
         json.dump(final_data, f, indent=4)
         f.write("\n")
-    print(f"Successfully updated {expectations_file}")
+    print(
+        f"Successfully updated {expectations_file} with {updated_count} changes."
+    )
 
 
 def run_test(
