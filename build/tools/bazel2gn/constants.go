@@ -40,13 +40,17 @@ var bazelRuleToGNTemplate = map[string]string{
 	"rust_proc_macro": "rustc_macro",
 
 	// C++
-	"cc_library":           "source_set",
-	"cc_source_library_zx": "zx_library",
+	"cc_library": "source_set",
+
+	// C++ Zircon
+	"cc_shared_library_zx": "zx_library", // With `sdk="shared"`.
+	"cc_source_library_zx": "zx_library", // With `sdk="source"`.
+	"cc_static_library_zx": "zx_library", // With `sdk="static"`.
 
 	// IDK
 	"idk_cc_shared_library":    "sdk_shared_library",
 	"idk_cc_source_library":    "sdk_source_set",
-	"idk_cc_source_library_zx": "zx_library", // With `sdk="source`.
+	"idk_cc_source_library_zx": "zx_library", // With `sdk="source"`.
 	"idk_cc_static_library":    "sdk_static_library",
 	"idk_host_tool":            "sdk_host_tool",
 
@@ -138,7 +142,9 @@ var attrMapsByRules = map[string]map[string]string{
 	"cc_library": ccAttrMap,
 
 	// C++ Zircon
+	"cc_shared_library_zx": ccAttrMap,
 	"cc_source_library_zx": ccAttrMap,
+	"cc_static_library_zx": ccAttrMap,
 
 	// Rust
 	"rust_binary":     rustAttrMap,
@@ -159,7 +165,9 @@ var attrMapsByRules = map[string]map[string]string{
 }
 
 var extraGnExpressionByRules = map[string]string{
+	"cc_shared_library_zx":     `sdk = "shared"`,
 	"cc_source_library_zx":     `sdk = "source"`,
+	"cc_static_library_zx":     `sdk = "static"`,
 	"idk_cc_source_library_zx": `sdk = "source"`,
 }
 

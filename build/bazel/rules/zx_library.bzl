@@ -19,7 +19,43 @@ visibility([
     "//zircon/...",
 ])
 
-def cc_source_library_zx_impl(
+def _cc_shared_library_zx_impl(
+        name,
+        includes,
+        **kwargs):
+    """Implementation for the cc_shared_library_zx() macro."""
+
+    # LINT.IfChange
+
+    # `zx_library()` assumes headers files are under `include/`.
+    if includes != ["include"]:
+        fail('`includes` must be `["include"]`.')
+
+    # LINT.ThenChange(//build/zircon/zx_library.gni)
+
+    cc_library(
+        name = name,
+        includes = includes,
+        **kwargs
+    )
+
+cc_shared_library_zx = macro(
+    doc = "Defines a Zircon C++ shared library that will be a `zx_library()` in GN. " +
+          "This macro is for libraries not in the IDK. For IDK libraries, use `idk_cc_shared_library_zx()`.",
+    # TODO(https://fxbug.dev/446694542): Remove `native.` once the
+    # `cc_library()` wrapper is a symbolic macro.
+    inherit_attrs = native.cc_library,
+    implementation = _cc_shared_library_zx_impl,
+    attrs = {
+        "includes": attr.string_list(
+            doc = 'Path to the root directory for includes. Must always be `["include"]`.',
+            mandatory = True,
+            configurable = False,
+        ),
+    },
+)
+
+def _cc_source_library_zx_impl(
         name,
         includes,
         **kwargs):
@@ -46,7 +82,43 @@ cc_source_library_zx = macro(
     # TODO(https://fxbug.dev/446694542): Remove `native.` once the
     # `cc_library()` wrapper is a symbolic macro.
     inherit_attrs = native.cc_library,
-    implementation = cc_source_library_zx_impl,
+    implementation = _cc_source_library_zx_impl,
+    attrs = {
+        "includes": attr.string_list(
+            doc = 'Path to the root directory for includes. Must always be `["include"]`.',
+            mandatory = True,
+            configurable = False,
+        ),
+    },
+)
+
+def _cc_static_library_zx_impl(
+        name,
+        includes,
+        **kwargs):
+    """Implementation for the cc_static_library_zx() macro."""
+
+    # LINT.IfChange
+
+    # `zx_library()` assumes headers files are under `include/`.
+    if includes != ["include"]:
+        fail('`includes` must be `["include"]`.')
+
+    # LINT.ThenChange(//build/zircon/zx_library.gni)
+
+    cc_library(
+        name = name,
+        includes = includes,
+        **kwargs
+    )
+
+cc_static_library_zx = macro(
+    doc = "Defines a Zircon C++ static library that will be a `zx_library()` in GN. " +
+          "This macro is for libraries not in the IDK. For IDK libraries, use `idk_cc_static_library_zx()`.",
+    # TODO(https://fxbug.dev/446694542): Remove `native.` once the
+    # `cc_library()` wrapper is a symbolic macro.
+    inherit_attrs = native.cc_library,
+    implementation = _cc_static_library_zx_impl,
     attrs = {
         "includes": attr.string_list(
             doc = 'Path to the root directory for includes. Must always be `["include"]`.',
