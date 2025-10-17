@@ -71,6 +71,7 @@ rustc_library_with_features("netstack3-base") {
     "//src/lib/network/packet",
     "//third_party/rust_crates:arc-swap",
     "//third_party/rust_crates:arrayvec",
+    "//third_party/rust_crates:bitflags",
     "//third_party/rust_crates:derivative",
     "//third_party/rust_crates:either",
     "//third_party/rust_crates:log",

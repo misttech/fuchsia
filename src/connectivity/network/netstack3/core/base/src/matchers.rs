@@ -6,12 +6,14 @@
 
 use alloc::format;
 use alloc::string::String;
+use core::convert::Infallible as Never;
 use core::fmt::Debug;
 use core::num::NonZeroU64;
 use core::ops::RangeInclusive;
 
+use bitflags::bitflags;
 use derivative::Derivative;
-use net_types::ip::{IpAddress, Subnet};
+use net_types::ip::{IpAddr, IpAddress, Ipv4Addr, Ipv6Addr, Subnet};
 
 use crate::{InspectableValue, Inspector, Mark, MarkDomain, MarkStorage, Marks};
 
@@ -210,6 +212,22 @@ impl Matcher<Marks> for MarkMatchers {
     }
 }
 
+/// A matcher for a socket's cookie.
+pub struct SocketCookieMatcher {
+    /// The cookie to check against.
+    pub cookie: u64,
+    /// Invert the matching criterion (i.e. if the socket cookie isn't the same,
+    /// it matches).
+    pub invert: bool,
+}
+
+impl Matcher<u64> for SocketCookieMatcher {
+    fn matches(&self, actual: &u64) -> bool {
+        let val = *actual == self.cookie;
+        if self.invert { !val } else { val }
+    }
+}
+
 /// A matcher for transport-layer port numbers.
 #[derive(Clone, Debug)]
 pub struct PortMatcher {
@@ -225,6 +243,305 @@ impl Matcher<u16> for PortMatcher {
     fn matches(&self, actual: &u16) -> bool {
         let Self { range, invert } = self;
         range.contains(actual) ^ *invert
+    }
+}
+
+bitflags! {
+    /// A matcher for TCP state machine state.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct TcpStateMatcher: u32 {
+        /// The TCP ESTABLISHED state.
+        const ESTABLISHED = 1 << 0;
+        /// The TCP SYN_SENT state.
+        const SYN_SENT = 1 << 1;
+        /// The TCP SYN_RECV state.
+        const SYN_RECV = 1 << 2;
+        /// The TCP FIN_WAIT1 state.
+        const FIN_WAIT1 = 1 << 3;
+        /// The TCP FIN_WAIT2 state.
+        const FIN_WAIT2 = 1 << 4;
+        /// The TCP TIME_WAIT state.
+        const TIME_WAIT = 1 << 5;
+        /// The TCP CLOSE state.
+        const CLOSE = 1 << 6;
+        /// The TCP CLOSE_WAIT state.
+        const CLOSE_WAIT = 1 << 7;
+        /// The TCP LAST_ACK state.
+        const LAST_ACK = 1 << 8;
+        /// The TCP LISTEN state.
+        const LISTEN = 1 << 9;
+        /// The TCP CLOSING state.
+        const CLOSING = 1 << 10;
+    }
+}
+
+impl Matcher<TcpSocketState> for TcpStateMatcher {
+    fn matches(&self, actual: &TcpSocketState) -> bool {
+        self.contains(actual.matcher_flag())
+    }
+}
+
+/// Represents the state of a TCP socket's state machine.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[allow(missing_docs)]
+pub enum TcpSocketState {
+    Established,
+    SynSent,
+    SynRecv,
+    FinWait1,
+    FinWait2,
+    TimeWait,
+    Close,
+    CloseWait,
+    LastAck,
+    Listen,
+    Closing,
+}
+
+impl TcpSocketState {
+    fn matcher_flag(&self) -> TcpStateMatcher {
+        match self {
+            TcpSocketState::Established => TcpStateMatcher::ESTABLISHED,
+            TcpSocketState::SynSent => TcpStateMatcher::SYN_SENT,
+            TcpSocketState::SynRecv => TcpStateMatcher::SYN_RECV,
+            TcpSocketState::FinWait1 => TcpStateMatcher::FIN_WAIT1,
+            TcpSocketState::FinWait2 => TcpStateMatcher::FIN_WAIT2,
+            TcpSocketState::TimeWait => TcpStateMatcher::TIME_WAIT,
+            TcpSocketState::Close => TcpStateMatcher::CLOSE,
+            TcpSocketState::CloseWait => TcpStateMatcher::CLOSE_WAIT,
+            TcpSocketState::LastAck => TcpStateMatcher::LAST_ACK,
+            TcpSocketState::Listen => TcpStateMatcher::LISTEN,
+            TcpSocketState::Closing => TcpStateMatcher::CLOSING,
+        }
+    }
+}
+
+/// Allows code to match on properties of a TCP socket without Netstack3 Core
+/// having to specifically expose that state.
+pub trait TcpSocketProperties {
+    /// Returns whether the socket's source port is matched by the matcher.
+    fn src_port_matches(&self, matcher: &PortMatcher) -> bool;
+
+    /// Returns whether the socket's destination port is matched by the matcher.
+    fn dst_port_matches(&self, matcher: &PortMatcher) -> bool;
+
+    /// Returns whether the socket's TCP state is matched by the matcher.
+    fn state_matches(&self, matcher: &TcpStateMatcher) -> bool;
+}
+
+impl TcpSocketProperties for Never {
+    fn src_port_matches(&self, _matcher: &PortMatcher) -> bool {
+        unimplemented!()
+    }
+
+    fn dst_port_matches(&self, _matcher: &PortMatcher) -> bool {
+        unimplemented!()
+    }
+
+    fn state_matches(&self, _matcher: &TcpStateMatcher) -> bool {
+        unimplemented!()
+    }
+}
+
+impl<T> TcpSocketProperties for &T
+where
+    T: TcpSocketProperties,
+{
+    fn src_port_matches(&self, matcher: &PortMatcher) -> bool {
+        (*self).src_port_matches(matcher)
+    }
+
+    fn dst_port_matches(&self, matcher: &PortMatcher) -> bool {
+        (*self).dst_port_matches(matcher)
+    }
+
+    fn state_matches(&self, matcher: &TcpStateMatcher) -> bool {
+        (*self).state_matches(matcher)
+    }
+}
+
+/// The top-level matcher for TCP sockets.
+pub enum TcpSocketMatcher {
+    /// Match any TCP socket without further constraints.
+    Empty,
+    /// Match on the source port.
+    SrcPort(PortMatcher),
+    /// Match on the destination port.
+    DstPort(PortMatcher),
+    /// Match on the state of the TCP state machine.
+    State(TcpStateMatcher),
+}
+
+impl<T: TcpSocketProperties> Matcher<T> for TcpSocketMatcher {
+    fn matches(&self, actual: &T) -> bool {
+        match self {
+            TcpSocketMatcher::Empty => true,
+            TcpSocketMatcher::SrcPort(matcher) => actual.src_port_matches(matcher),
+            TcpSocketMatcher::DstPort(matcher) => actual.dst_port_matches(matcher),
+            TcpSocketMatcher::State(matcher) => actual.state_matches(matcher),
+        }
+    }
+}
+
+bitflags! {
+    /// A matcher for UDP states.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct UdpStateMatcher: u32 {
+        /// The UDP socket is bound but not connected.
+        const BOUND = 1 << 0;
+        /// The UDP socket is explicitly connected.
+        const CONNECTED = 1 << 1;
+    }
+}
+
+impl Matcher<UdpSocketState> for UdpStateMatcher {
+    fn matches(&self, actual: &UdpSocketState) -> bool {
+        self.contains(actual.matcher_flag())
+    }
+}
+
+/// Represents the state of a UDP socket.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum UdpSocketState {
+    /// The socket is bound to a local address and (maybe) port.
+    Bound,
+    /// The socket is connected to a remote peer and has a full 4-tuple.
+    Connected,
+}
+
+impl UdpSocketState {
+    fn matcher_flag(&self) -> UdpStateMatcher {
+        match self {
+            UdpSocketState::Bound => UdpStateMatcher::BOUND,
+            UdpSocketState::Connected => UdpStateMatcher::CONNECTED,
+        }
+    }
+}
+
+/// Allows code to match on properties of a UDP socket without Netstack3 Core
+/// having to specifically expose that state.
+pub trait UdpSocketProperties {
+    /// Returns whether the socket's source port is matched by the matcher.
+    fn src_port_matches(&self, matcher: &PortMatcher) -> bool;
+
+    /// Returns whether the socket's destination port is matched by the matcher.
+    fn dst_port_matches(&self, matcher: &PortMatcher) -> bool;
+
+    /// Returns whether the socket's UDP state is matched by the matcher.
+    fn state_matches(&self, matcher: &UdpStateMatcher) -> bool;
+}
+
+impl UdpSocketProperties for Never {
+    fn src_port_matches(&self, _matcher: &PortMatcher) -> bool {
+        unimplemented!()
+    }
+
+    fn dst_port_matches(&self, _matcher: &PortMatcher) -> bool {
+        unimplemented!()
+    }
+
+    fn state_matches(&self, _matcher: &UdpStateMatcher) -> bool {
+        unimplemented!()
+    }
+}
+
+impl<U> UdpSocketProperties for &U
+where
+    U: UdpSocketProperties,
+{
+    fn src_port_matches(&self, matcher: &PortMatcher) -> bool {
+        (*self).src_port_matches(matcher)
+    }
+
+    fn dst_port_matches(&self, matcher: &PortMatcher) -> bool {
+        (*self).dst_port_matches(matcher)
+    }
+
+    fn state_matches(&self, matcher: &UdpStateMatcher) -> bool {
+        (*self).state_matches(matcher)
+    }
+}
+
+/// The top-level matcher for UDP sockets.
+pub enum UdpSocketMatcher {
+    /// Match any UDP socket without further constraints.
+    Empty,
+    /// Match the source port.
+    SrcPort(PortMatcher),
+    /// Match the destination port.
+    DstPort(PortMatcher),
+    /// Match the UDP state.
+    State(UdpStateMatcher),
+}
+
+impl<T: UdpSocketProperties> Matcher<T> for UdpSocketMatcher {
+    fn matches(&self, actual: &T) -> bool {
+        match self {
+            UdpSocketMatcher::Empty => true,
+            UdpSocketMatcher::SrcPort(matcher) => actual.src_port_matches(matcher),
+            UdpSocketMatcher::DstPort(matcher) => actual.dst_port_matches(matcher),
+            UdpSocketMatcher::State(matcher) => actual.state_matches(matcher),
+        }
+    }
+}
+
+/// Provides optional access to TCP socket properties.
+pub trait MaybeSocketTransportProperties {
+    /// The type that encapsulates TCP socket properties.
+    type TcpProps<'a>: TcpSocketProperties
+    where
+        Self: 'a;
+
+    /// The type that encapsulates UDP socket properties.
+    type UdpProps<'a>: UdpSocketProperties
+    where
+        Self: 'a;
+
+    /// Returns TCP socket properties if the socket is a TCP socket.
+    fn tcp_socket_properties(&self) -> Option<&Self::TcpProps<'_>>;
+
+    /// Returns UDP socket properties if the socket is a UDP socket.
+    fn udp_socket_properties(&self) -> Option<&Self::UdpProps<'_>>;
+}
+
+impl MaybeSocketTransportProperties for Never {
+    type TcpProps<'a>
+        = Never
+    where
+        Self: 'a;
+
+    type UdpProps<'a>
+        = Never
+    where
+        Self: 'a;
+
+    fn tcp_socket_properties(&self) -> Option<&Self::TcpProps<'_>> {
+        unimplemented!()
+    }
+
+    fn udp_socket_properties(&self) -> Option<&Self::UdpProps<'_>> {
+        unimplemented!()
+    }
+}
+
+/// A matcher for the transport protocol of a socket.
+pub enum SocketTransportProtocolMatcher {
+    /// Match against a TCP socket.
+    Tcp(TcpSocketMatcher),
+    /// Match against a UDP socket.
+    Udp(UdpSocketMatcher),
+}
+
+impl<T: MaybeSocketTransportProperties> Matcher<T> for SocketTransportProtocolMatcher {
+    fn matches(&self, actual: &T) -> bool {
+        match self {
+            SocketTransportProtocolMatcher::Tcp(tcp_matcher) => {
+                actual.tcp_socket_properties().map_or(false, |props| tcp_matcher.matches(props))
+            }
+            SocketTransportProtocolMatcher::Udp(udp_matcher) => {
+                actual.udp_socket_properties().map_or(false, |props| udp_matcher.matches(props))
+            }
+        }
     }
 }
 
@@ -272,6 +589,106 @@ impl<A: IpAddress> Matcher<A> for AddressMatcher<A> {
     }
 }
 
+/// An address matcher that matches any IP version as specified at runtime.
+pub enum AgnosticAddressMatcher {
+    /// The top-level IPv4 address matcher.
+    V4(AddressMatcher<Ipv4Addr>),
+    /// The top-level IPv6 address matcher.
+    V6(AddressMatcher<Ipv6Addr>),
+}
+
+impl Matcher<IpAddr> for AgnosticAddressMatcher {
+    fn matches(&self, addr: &IpAddr) -> bool {
+        match self {
+            AgnosticAddressMatcher::V4(matcher) => match addr {
+                IpAddr::V4(addr) => matcher.matches(addr),
+                IpAddr::V6(_) => false,
+            },
+            AgnosticAddressMatcher::V6(matcher) => match addr {
+                IpAddr::V4(_) => false,
+                IpAddr::V6(addr) => matcher.matches(addr),
+            },
+        }
+    }
+}
+
+/// Allows code to match on properties of a socket without Netstack3 Core
+/// having to specifically expose that state.
+pub trait IpSocketProperties<DeviceClass> {
+    /// Returns whether the provided IP version matches the socket.
+    fn family_matches(&self, family: &net_types::ip::IpVersion) -> bool;
+
+    /// Returns whether the provided address matcher matches the socket's source
+    /// address.
+    fn src_addr_matches(&self, addr: &AgnosticAddressMatcher) -> bool;
+
+    /// Returns whether the provided address matcher matches the socket's
+    /// destination address.
+    fn dst_addr_matches(&self, addr: &AgnosticAddressMatcher) -> bool;
+
+    /// Returns whether the transport protocol matches the socket's
+    /// transport-layer information.
+    fn transport_protocol_matches(&self, matcher: &SocketTransportProtocolMatcher) -> bool;
+
+    /// Returns whether the provided interface matcher matches the socket's
+    /// bound interface, if present.
+    fn bound_interface_matches(&self, iface: &BoundInterfaceMatcher<DeviceClass>) -> bool;
+
+    /// Returns whether the provided cookie matcher matches the socket's cookie.
+    fn cookie_matches(&self, cookie: &SocketCookieMatcher) -> bool;
+
+    /// Returns whether the provided mark matcher matches the socket's mark 1,
+    /// if present.
+    fn mark1_matches(&self, mark: &MarkMatcher) -> bool;
+
+    /// Returns whether the provided mark matcher matches the socket's mark 2,
+    /// if present.
+    fn mark2_matches(&self, mark: &MarkMatcher) -> bool;
+}
+
+/// The top-level matcher for IP sockets.
+pub enum IpSocketMatcher<DeviceClass> {
+    /// Matches the socket's address family.
+    Family(net_types::ip::IpVersion),
+    /// Matches the socket's source address.
+    SrcAddr(AgnosticAddressMatcher),
+    /// Matches the socket's destination address.
+    DstAddr(AgnosticAddressMatcher),
+    /// Matches the socket's transport protocol.
+    Proto(SocketTransportProtocolMatcher),
+    /// Matches the socket's bound interface.
+    BoundInterface(BoundInterfaceMatcher<DeviceClass>),
+    /// Matches the socket's cookie.
+    Cookie(SocketCookieMatcher),
+    /// Matches the socket's mark 1.
+    Mark1(MarkMatcher),
+    /// Matches the socket's mark 2.
+    Mark2(MarkMatcher),
+}
+
+impl<DeviceClass, S: IpSocketProperties<DeviceClass>> Matcher<S>
+    for &[IpSocketMatcher<DeviceClass>]
+{
+    fn matches(&self, actual: &S) -> bool {
+        self.iter().all(|matcher| matcher.matches(actual))
+    }
+}
+
+impl<DeviceClass, S: IpSocketProperties<DeviceClass>> Matcher<S> for IpSocketMatcher<DeviceClass> {
+    fn matches(&self, actual: &S) -> bool {
+        match self {
+            IpSocketMatcher::Family(family) => actual.family_matches(family),
+            IpSocketMatcher::SrcAddr(addr) => actual.src_addr_matches(addr),
+            IpSocketMatcher::DstAddr(addr) => actual.dst_addr_matches(addr),
+            IpSocketMatcher::Proto(proto) => actual.transport_protocol_matches(proto),
+            IpSocketMatcher::BoundInterface(iface) => actual.bound_interface_matches(iface),
+            IpSocketMatcher::Cookie(cookie) => actual.cookie_matches(cookie),
+            IpSocketMatcher::Mark1(mark) => actual.mark1_matches(mark),
+            IpSocketMatcher::Mark2(mark) => actual.mark2_matches(mark),
+        }
+    }
+}
+
 #[cfg(any(test, feature = "testutils"))]
 pub(crate) mod testutil {
     use alloc::string::String;
@@ -290,8 +707,10 @@ pub(crate) mod testutil {
         pub class: FakeDeviceClass,
     }
 
-    #[allow(missing_docs)]
     impl FakeMatcherDeviceId {
+        /// Returns a [`FakeMatcherDeviceId`] for an arbitrary WLAN interface.
+        ///
+        /// The interface returned will always be identical.
         pub fn wlan_interface() -> FakeMatcherDeviceId {
             FakeMatcherDeviceId {
                 id: NonZeroU64::new(1).unwrap(),
@@ -300,6 +719,9 @@ pub(crate) mod testutil {
             }
         }
 
+        /// Returns a [`FakeMatcherDeviceId`] for an arbitrary Ethernet interface.
+        ///
+        /// The interface returned will always be identical.
         pub fn ethernet_interface() -> FakeMatcherDeviceId {
             FakeMatcherDeviceId {
                 id: NonZeroU64::new(2).unwrap(),
@@ -354,7 +776,7 @@ pub(crate) mod testutil {
 mod tests {
     use ip_test_macro::ip_test;
     use net_types::Witness;
-    use net_types::ip::Ip;
+    use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6};
     use test_case::test_case;
 
     use super::*;
@@ -615,6 +1037,14 @@ mod tests {
         matchers.matches(&marks)
     }
 
+    #[test_case(SocketCookieMatcher { cookie: 123, invert: false }, 123 => true)]
+    #[test_case(SocketCookieMatcher { cookie: 123, invert: false }, 456 => false)]
+    #[test_case(SocketCookieMatcher { cookie: 123, invert: true }, 123 => false)]
+    #[test_case(SocketCookieMatcher { cookie: 123, invert: true }, 456 => true)]
+    fn socket_cookie_matcher(matcher: SocketCookieMatcher, actual: u64) -> bool {
+        matcher.matches(&actual)
+    }
+
     #[test_case(PortMatcher { range: 10..=20, invert: false }, 9 => false)]
     #[test_case(PortMatcher { range: 10..=20, invert: false }, 10 => true)]
     #[test_case(PortMatcher { range: 10..=20, invert: false }, 15 => true)]
@@ -627,6 +1057,511 @@ mod tests {
     #[test_case(PortMatcher { range: 10..=20, invert: true }, 21 => true)]
     fn port_matcher(matcher: PortMatcher, actual: u16) -> bool {
         matcher.matches(&actual)
+    }
+
+    struct FakeTcpSocket {
+        src_port: u16,
+        dst_port: u16,
+        state: TcpSocketState,
+    }
+
+    impl MaybeSocketTransportProperties for FakeTcpSocket {
+        type TcpProps<'a>
+            = Self
+        where
+            Self: 'a;
+
+        type UdpProps<'a>
+            = Never
+        where
+            Self: 'a;
+
+        fn tcp_socket_properties(&self) -> Option<&Self::TcpProps<'_>> {
+            Some(self)
+        }
+
+        fn udp_socket_properties(&self) -> Option<&Self::UdpProps<'_>> {
+            None
+        }
+    }
+
+    impl TcpSocketProperties for FakeTcpSocket {
+        fn src_port_matches(&self, matcher: &PortMatcher) -> bool {
+            matcher.matches(&self.src_port)
+        }
+
+        fn dst_port_matches(&self, matcher: &PortMatcher) -> bool {
+            matcher.matches(&self.dst_port)
+        }
+
+        fn state_matches(&self, matcher: &TcpStateMatcher) -> bool {
+            matcher.matches(&self.state)
+        }
+    }
+
+    struct FakeUdpSocket {
+        src_port: u16,
+        dst_port: u16,
+        state: UdpSocketState,
+    }
+
+    impl MaybeSocketTransportProperties for FakeUdpSocket {
+        type TcpProps<'a>
+            = Never
+        where
+            Self: 'a;
+
+        type UdpProps<'a>
+            = Self
+        where
+            Self: 'a;
+
+        fn tcp_socket_properties(&self) -> Option<&Self::TcpProps<'_>> {
+            None
+        }
+
+        fn udp_socket_properties(&self) -> Option<&Self::UdpProps<'_>> {
+            Some(self)
+        }
+    }
+
+    impl UdpSocketProperties for FakeUdpSocket {
+        fn src_port_matches(&self, matcher: &PortMatcher) -> bool {
+            matcher.matches(&self.src_port)
+        }
+
+        fn dst_port_matches(&self, matcher: &PortMatcher) -> bool {
+            matcher.matches(&self.dst_port)
+        }
+
+        fn state_matches(&self, matcher: &UdpStateMatcher) -> bool {
+            matcher.matches(&self.state)
+        }
+    }
+
+    struct FakeIpSocket<I, T>
+    where
+        I: TestIpExt,
+        T: MaybeSocketTransportProperties,
+    {
+        src_ip: I::Addr,
+        dst_ip: I::Addr,
+        proto: T,
+        intf: Option<FakeMatcherDeviceId>,
+        cookie: u64,
+        mark_1: Mark,
+        mark_2: Mark,
+    }
+
+    impl<I, T> MaybeSocketTransportProperties for FakeIpSocket<I, T>
+    where
+        I: TestIpExt,
+        T: MaybeSocketTransportProperties,
+    {
+        type TcpProps<'a>
+            = T::TcpProps<'a>
+        where
+            Self: 'a;
+
+        type UdpProps<'a>
+            = T::UdpProps<'a>
+        where
+            Self: 'a;
+
+        fn tcp_socket_properties(&self) -> Option<&Self::TcpProps<'_>> {
+            self.proto.tcp_socket_properties()
+        }
+
+        fn udp_socket_properties(&self) -> Option<&Self::UdpProps<'_>> {
+            self.proto.udp_socket_properties()
+        }
+    }
+
+    impl<I, T> IpSocketProperties<FakeDeviceClass> for FakeIpSocket<I, T>
+    where
+        I: TestIpExt,
+        T: MaybeSocketTransportProperties,
+    {
+        fn family_matches(&self, family: &net_types::ip::IpVersion) -> bool {
+            *family == I::VERSION
+        }
+
+        fn src_addr_matches(&self, addr: &AgnosticAddressMatcher) -> bool {
+            addr.matches(&self.src_ip.into())
+        }
+
+        fn dst_addr_matches(&self, addr: &AgnosticAddressMatcher) -> bool {
+            addr.matches(&self.dst_ip.into())
+        }
+
+        fn transport_protocol_matches(&self, matcher: &SocketTransportProtocolMatcher) -> bool {
+            matcher.matches(self)
+        }
+
+        fn bound_interface_matches(&self, iface: &BoundInterfaceMatcher<FakeDeviceClass>) -> bool {
+            iface.matches(&self.intf.as_ref())
+        }
+
+        fn cookie_matches(&self, cookie: &SocketCookieMatcher) -> bool {
+            cookie.matches(&self.cookie)
+        }
+
+        fn mark1_matches(&self, mark: &MarkMatcher) -> bool {
+            mark.matches(&self.mark_1)
+        }
+
+        fn mark2_matches(&self, mark: &MarkMatcher) -> bool {
+            mark.matches(&self.mark_2)
+        }
+    }
+
+    #[test_case(
+        TcpSocketMatcher::Empty,
+        FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established } => true;
+        "empty matcher"
+    )]
+    #[test_case(
+        TcpSocketMatcher::SrcPort(PortMatcher { range: 80..=80, invert: false }),
+        FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established } => true;
+        "src_port match"
+    )]
+    #[test_case(
+        TcpSocketMatcher::SrcPort(PortMatcher { range: 80..=80, invert: false }),
+        FakeTcpSocket { src_port: 81, dst_port: 12345, state: TcpSocketState::Established } => false;
+        "src_port no match"
+    )]
+    #[test_case(
+        TcpSocketMatcher::SrcPort(PortMatcher { range: 80..=80, invert: true }),
+        FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established } => false;
+        "src_port invert no match"
+    )]
+    #[test_case(
+        TcpSocketMatcher::SrcPort(PortMatcher { range: 80..=80, invert: true }),
+        FakeTcpSocket { src_port: 81, dst_port: 12345, state: TcpSocketState::Established } => true;
+        "src_port invert match"
+    )]
+    #[test_case(
+        TcpSocketMatcher::DstPort(PortMatcher { range: 12345..=12345, invert: false }),
+        FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established } => true;
+        "dst_port match"
+    )]
+    #[test_case(
+        TcpSocketMatcher::DstPort(PortMatcher { range: 12345..=12345, invert: false }),
+        FakeTcpSocket { src_port: 80, dst_port: 12346, state: TcpSocketState::Established } => false;
+        "dst_port no match"
+    )]
+    #[test_case(
+        TcpSocketMatcher::State(TcpStateMatcher::ESTABLISHED),
+        FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established } => true;
+        "state match"
+    )]
+    #[test_case(
+        TcpSocketMatcher::State(TcpStateMatcher::SYN_SENT),
+        FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established } => false;
+        "state no match"
+    )]
+    #[test_case(
+        TcpSocketMatcher::State(TcpStateMatcher::ESTABLISHED | TcpStateMatcher::SYN_SENT),
+        FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established } => true;
+        "state multi match established"
+    )]
+    #[test_case(
+        TcpSocketMatcher::State(TcpStateMatcher::ESTABLISHED | TcpStateMatcher::SYN_SENT),
+        FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::SynSent } => true;
+        "state multi match syn_sent"
+    )]
+    #[test_case(
+        TcpSocketMatcher::State(TcpStateMatcher::ESTABLISHED | TcpStateMatcher::SYN_SENT),
+        FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::FinWait1 } => false;
+        "state multi no match"
+    )]
+    fn tcp_socket_matcher(matcher: TcpSocketMatcher, socket: FakeTcpSocket) -> bool {
+        matcher.matches(&socket)
+    }
+
+    #[test_case(
+        UdpSocketMatcher::Empty,
+        FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Bound } => true;
+        "empty matcher"
+    )]
+    #[test_case(
+        UdpSocketMatcher::SrcPort(PortMatcher { range: 53..=53, invert: false }),
+        FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Bound } => true;
+        "src_port match"
+    )]
+    #[test_case(
+        UdpSocketMatcher::SrcPort(PortMatcher { range: 53..=53, invert: false }),
+        FakeUdpSocket { src_port: 54, dst_port: 12345, state: UdpSocketState::Bound } => false;
+        "src_port no match"
+    )]
+    #[test_case(
+        UdpSocketMatcher::DstPort(PortMatcher { range: 12345..=12345, invert: false }),
+        FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Bound } => true;
+        "dst_port match"
+    )]
+    #[test_case(
+        UdpSocketMatcher::DstPort(PortMatcher { range: 12345..=12345, invert: false }),
+        FakeUdpSocket { src_port: 53, dst_port: 12346, state: UdpSocketState::Bound } => false;
+        "dst_port no match"
+    )]
+    #[test_case(
+        UdpSocketMatcher::State(UdpStateMatcher::BOUND),
+        FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Bound } => true;
+        "state match bound"
+    )]
+    #[test_case(
+        UdpSocketMatcher::State(UdpStateMatcher::CONNECTED),
+        FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Bound } => false;
+        "state no match connected"
+    )]
+    #[test_case(
+        UdpSocketMatcher::State(UdpStateMatcher::BOUND | UdpStateMatcher::CONNECTED),
+        FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Bound } => true;
+        "state multi match bound"
+    )]
+    #[test_case(
+        UdpSocketMatcher::State(UdpStateMatcher::BOUND | UdpStateMatcher::CONNECTED),
+        FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Connected } => true;
+        "state multi match connected"
+    )]
+    fn udp_socket_matcher(matcher: UdpSocketMatcher, socket: FakeUdpSocket) -> bool {
+        matcher.matches(&socket)
+    }
+
+    #[ip_test(I)]
+    #[test_case(
+        IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Tcp(TcpSocketMatcher::Empty)),
+        FakeIpSocket {
+            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
+            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
+            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            cookie: 0,
+            intf: None,
+            mark_1: None.into(),
+            mark_2: None.into(),
+        } => true;
+        "tcp empty"
+    )]
+    #[test_case(
+        IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Tcp(TcpSocketMatcher::Empty)),
+        FakeIpSocket {
+            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
+            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
+            proto: FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Bound },
+            cookie: 0,
+            intf: None,
+            mark_1: None.into(),
+            mark_2: None.into(),
+        } => false;
+        "tcp empty no match udp"
+    )]
+    #[test_case(
+        IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Udp(UdpSocketMatcher::Empty)),
+        FakeIpSocket {
+            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
+            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
+            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            cookie: 0,
+            intf: None,
+            mark_1: None.into(),
+            mark_2: None.into(),
+        } => false;
+        "udp empty no match tcp"
+    )]
+    #[test_case(
+        IpSocketMatcher::Proto(SocketTransportProtocolMatcher::Udp(UdpSocketMatcher::Empty)),
+        FakeIpSocket {
+            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
+            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
+            proto: FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Bound },
+            cookie: 0,
+            intf: None,
+            mark_1: None.into(),
+            mark_2: None.into(),
+        } => true;
+        "udp empty"
+    )]
+    #[test_case(
+        IpSocketMatcher::Proto(
+            SocketTransportProtocolMatcher::Tcp(
+                TcpSocketMatcher::SrcPort(PortMatcher { range: 80..=80, invert: false })
+            )
+        ),
+        FakeIpSocket {
+            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
+            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
+            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            cookie: 0,
+            intf: None,
+            mark_1: None.into(),
+            mark_2: None.into(),
+        } => true;
+        "tcp src_port match"
+    )]
+    #[test_case(
+        IpSocketMatcher::Proto(
+            SocketTransportProtocolMatcher::Tcp(
+                TcpSocketMatcher::SrcPort(PortMatcher { range: 80..=80, invert: false })
+            )
+        ),
+        FakeIpSocket {
+            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
+            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
+            proto: FakeTcpSocket { src_port: 81, dst_port: 12345, state: TcpSocketState::Established },
+            cookie: 0,
+            intf: None,
+            mark_1: None.into(),
+            mark_2: None.into(),
+        } => false;
+        "tcp src_port no match"
+    )]
+    #[test_case(
+        IpSocketMatcher::Proto(
+            SocketTransportProtocolMatcher::Udp(
+                UdpSocketMatcher::SrcPort(PortMatcher { range: 53..=53, invert: false })
+            )
+        ),
+        FakeIpSocket {
+            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
+            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
+            proto: FakeUdpSocket { src_port: 53, dst_port: 12345, state: UdpSocketState::Bound },
+            cookie: 0,
+            intf: None,
+            mark_1: None.into(),
+            mark_2: None.into(),
+        } => true;
+        "udp src_port match"
+    )]
+    #[test_case(
+        IpSocketMatcher::Proto(
+            SocketTransportProtocolMatcher::Udp(
+                UdpSocketMatcher::SrcPort(PortMatcher { range: 53..=53, invert: false })
+            )
+        ),
+        FakeIpSocket {
+            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
+            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
+            proto: FakeUdpSocket { src_port: 54, dst_port: 12345, state: UdpSocketState::Bound },
+            cookie: 0,
+            intf: None,
+            mark_1: None.into(),
+            mark_2: None.into(),
+        } => false;
+        "udp src_port no match"
+    )]
+    #[test_case(
+        IpSocketMatcher::Cookie(SocketCookieMatcher { cookie: 123, invert: false }),
+        FakeIpSocket {
+            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
+            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
+            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            cookie: 123,
+            intf: None,
+            mark_1: None.into(),
+            mark_2: None.into(),
+        } => true;
+        "cookie match"
+    )]
+    #[test_case(
+        IpSocketMatcher::Cookie(SocketCookieMatcher { cookie: 123, invert: false }),
+        FakeIpSocket {
+            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
+            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
+            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            cookie: 456,
+            intf: None,
+            mark_1: None.into(),
+            mark_2: None.into(),
+        } => false;
+        "cookie no match"
+    )]
+    #[test_case(
+        IpSocketMatcher::Mark1(MarkMatcher::Unmarked),
+        FakeIpSocket {
+            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
+            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
+            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            cookie: 0,
+            intf: None,
+            mark_1: None.into(),
+            mark_2: None.into(),
+        } => true;
+        "mark1 unmarked match"
+    )]
+    #[test_case(
+        IpSocketMatcher::Mark1(MarkMatcher::Unmarked),
+        FakeIpSocket {
+            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
+            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
+            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            cookie: 0,
+            intf: None,
+            mark_1: Some(1).into(),
+            mark_2: None.into(),
+        } => false;
+        "mark1 unmarked no match"
+    )]
+    #[test_case(
+        IpSocketMatcher::Mark2(MarkMatcher::Unmarked),
+        FakeIpSocket {
+            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
+            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
+            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            cookie: 0,
+            intf: None,
+            mark_1: None.into(),
+            mark_2: None.into(),
+        } => true;
+        "mark2 unmarked match"
+    )]
+    #[test_case(
+        IpSocketMatcher::Mark2(MarkMatcher::Unmarked),
+        FakeIpSocket {
+            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
+            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
+            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            cookie: 0,
+            intf: None,
+            mark_1: None.into(),
+            mark_2: Some(1).into(),
+        } => false;
+        "mark2 unmarked no match"
+    )]
+    #[test_case(
+        IpSocketMatcher::BoundInterface(BoundInterfaceMatcher::Bound(
+            InterfaceMatcher::Id(FakeMatcherDeviceId::wlan_interface().id)
+        )),
+        FakeIpSocket {
+            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
+            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
+            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            cookie: 0,
+            intf: Some(FakeMatcherDeviceId::wlan_interface()),
+            mark_1: None.into(),
+            mark_2: None.into(),
+        } => true;
+        "bound_interface match"
+    )]
+    #[test_case(
+        IpSocketMatcher::BoundInterface(BoundInterfaceMatcher::Bound(
+            InterfaceMatcher::Id(FakeMatcherDeviceId::wlan_interface().id)
+        )),
+        FakeIpSocket {
+            src_ip: <I as TestIpExt>::TEST_ADDRS.local_ip.get(),
+            dst_ip: <I as TestIpExt>::TEST_ADDRS.remote_ip.get(),
+            proto: FakeTcpSocket { src_port: 80, dst_port: 12345, state: TcpSocketState::Established },
+            cookie: 0,
+            intf: Some(FakeMatcherDeviceId::ethernet_interface()),
+            mark_1: None.into(),
+            mark_2: None.into(),
+        } => false;
+        "bound_interface no match"
+    )]
+    fn ip_socket_matcher<I: TestIpExt, T: MaybeSocketTransportProperties>(
+        matcher: IpSocketMatcher<FakeDeviceClass>,
+        socket: FakeIpSocket<I, T>,
+    ) -> bool {
+        matcher.matches(&socket)
     }
 
     #[ip_test(I)]
@@ -680,5 +1615,98 @@ mod tests {
         assert!(!matcher.matches(&local_ip));
         assert!(!matcher.matches(&remote_ip));
         assert!(matcher.matches(&I::get_other_remote_ip_address(1)));
+    }
+
+    #[test]
+    fn agnostic_address_matcher() {
+        let v4_addr = IpAddr::V4(Ipv4Addr::new([192, 0, 2, 1]));
+        let v6_addr = IpAddr::V6(Ipv6Addr::new([0x2001, 0xdb8, 0, 0, 0, 0, 0, 1]));
+
+        let v4_subnet = Subnet::new(Ipv4Addr::new([192, 0, 2, 0]), 24).unwrap();
+        let v6_subnet = Subnet::new(Ipv6Addr::new([0x2001, 0xdb8, 0, 0, 0, 0, 0, 0]), 32).unwrap();
+
+        let v4_matcher = AgnosticAddressMatcher::V4(AddressMatcher {
+            matcher: AddressMatcherType::Subnet(SubnetMatcher(v4_subnet)),
+            invert: false,
+        });
+        assert!(v4_matcher.matches(&v4_addr));
+        assert!(!v4_matcher.matches(&v6_addr));
+
+        let v6_matcher = AgnosticAddressMatcher::V6(AddressMatcher {
+            matcher: AddressMatcherType::Subnet(SubnetMatcher(v6_subnet)),
+            invert: false,
+        });
+        assert!(!v6_matcher.matches(&v4_addr));
+        assert!(v6_matcher.matches(&v6_addr));
+    }
+
+    #[test_case(IpSocketMatcher::Family(IpVersion::V4) => true; "v4 family matcher on v4 socket")]
+    #[test_case(IpSocketMatcher::Family(IpVersion::V6) => false; "v6 family matcher on v4 socket")]
+    #[test_case(IpSocketMatcher::SrcAddr(AgnosticAddressMatcher::V4(AddressMatcher {
+        matcher: AddressMatcherType::Subnet(SubnetMatcher(Ipv4::TEST_ADDRS.subnet)),
+        invert: false,
+    })) => true; "src_addr match")]
+    #[test_case(IpSocketMatcher::SrcAddr(AgnosticAddressMatcher::V4(AddressMatcher {
+        matcher: AddressMatcherType::Subnet(SubnetMatcher(Subnet::new(Ipv4Addr::new([0, 0, 0, 0]), 32).unwrap())),
+        invert: false,
+    })) => false; "src_addr no match")]
+    #[test_case(IpSocketMatcher::DstAddr(AgnosticAddressMatcher::V4(AddressMatcher {
+        matcher: AddressMatcherType::Subnet(SubnetMatcher(Ipv4::TEST_ADDRS.subnet)),
+        invert: false,
+    })) => true; "dst_addr match")]
+    #[test_case(IpSocketMatcher::DstAddr(AgnosticAddressMatcher::V4(AddressMatcher {
+        matcher: AddressMatcherType::Subnet(SubnetMatcher(Subnet::new(Ipv4Addr::new([0, 0, 0, 0]), 32).unwrap())),
+        invert: false,
+    })) => false; "dst_addr no match")]
+    fn ip_socket_matcher_test_v4(matcher: IpSocketMatcher<FakeDeviceClass>) -> bool {
+        let socket = FakeIpSocket::<Ipv4, _> {
+            src_ip: <Ipv4 as TestIpExt>::TEST_ADDRS.local_ip.get(),
+            dst_ip: <Ipv4 as TestIpExt>::TEST_ADDRS.remote_ip.get(),
+            proto: FakeTcpSocket {
+                src_port: 80,
+                dst_port: 12345,
+                state: TcpSocketState::Established,
+            },
+            cookie: 0,
+            intf: None,
+            mark_1: None.into(),
+            mark_2: None.into(),
+        };
+        matcher.matches(&socket)
+    }
+
+    #[test_case(IpSocketMatcher::Family(IpVersion::V4) => false; "v4 family matcher on v6 socket")]
+    #[test_case(IpSocketMatcher::Family(IpVersion::V6) => true; "v6 family matcher on v6 socket")]
+    #[test_case(IpSocketMatcher::SrcAddr(AgnosticAddressMatcher::V6(AddressMatcher {
+        matcher: AddressMatcherType::Subnet(SubnetMatcher(Ipv6::TEST_ADDRS.subnet)),
+        invert: false,
+    })) => true; "src_addr match v6")]
+    #[test_case(IpSocketMatcher::SrcAddr(AgnosticAddressMatcher::V6(AddressMatcher {
+        matcher: AddressMatcherType::Subnet(SubnetMatcher(Subnet::new(Ipv6Addr::new([0; 8]), 128).unwrap())),
+        invert: false,
+    })) => false; "src_addr no match v6")]
+    #[test_case(IpSocketMatcher::DstAddr(AgnosticAddressMatcher::V6(AddressMatcher {
+        matcher: AddressMatcherType::Subnet(SubnetMatcher(Ipv6::TEST_ADDRS.subnet)),
+        invert: false,
+    })) => true; "dst_addr match v6")]
+    #[test_case(IpSocketMatcher::DstAddr(AgnosticAddressMatcher::V6(AddressMatcher {
+        matcher: AddressMatcherType::Subnet(SubnetMatcher(Subnet::new(Ipv6Addr::new([0; 8]), 128).unwrap())),
+        invert: false,
+    })) => false; "dst_addr no match v6")]
+    fn ip_socket_matcher_test_v6(matcher: IpSocketMatcher<FakeDeviceClass>) -> bool {
+        let socket = FakeIpSocket::<Ipv6, _> {
+            src_ip: <Ipv6 as TestIpExt>::TEST_ADDRS.local_ip.get(),
+            dst_ip: <Ipv6 as TestIpExt>::TEST_ADDRS.remote_ip.get(),
+            proto: FakeTcpSocket {
+                src_port: 80,
+                dst_port: 12345,
+                state: TcpSocketState::Established,
+            },
+            cookie: 0,
+            intf: None,
+            mark_1: None.into(),
+            mark_2: None.into(),
+        };
+        matcher.matches(&socket)
     }
 }

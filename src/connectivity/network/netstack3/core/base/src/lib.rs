@@ -74,9 +74,12 @@ pub use ip::{
 };
 pub use map_deref::{MapDeref, MapDerefExt};
 pub use matchers::{
-    AddressMatcher, AddressMatcherType, BoundInterfaceMatcher, InterfaceMatcher,
-    InterfaceProperties, MarkMatcher, MarkMatchers, Matcher, MatcherBindingsTypes, PortMatcher,
-    SubnetMatcher,
+    AddressMatcher, AddressMatcherType, AgnosticAddressMatcher, BoundInterfaceMatcher,
+    InterfaceMatcher, InterfaceProperties, IpSocketMatcher, IpSocketProperties, MarkMatcher,
+    MarkMatchers, Matcher, MatcherBindingsTypes, MaybeSocketTransportProperties, PortMatcher,
+    SocketCookieMatcher, SocketTransportProtocolMatcher, SubnetMatcher, TcpSocketMatcher,
+    TcpSocketProperties, TcpSocketState, TcpStateMatcher, UdpSocketMatcher, UdpSocketProperties,
+    UdpSocketState, UdpStateMatcher,
 };
 pub use num::PositiveIsize;
 pub use port_alloc::{EphemeralPort, PortAllocImpl, simple_randomized_port_alloc};
