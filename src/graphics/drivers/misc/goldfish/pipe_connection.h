@@ -10,6 +10,7 @@
 #include <lib/ddk/device.h>
 #include <lib/ddk/io-buffer.h>
 #include <lib/fidl/cpp/wire/server.h>
+#include <lib/fzl/owned-vmo-mapper.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <lib/zx/event.h>
 #include <lib/zx/pmt.h>
@@ -85,7 +86,7 @@ class PipeConnection : public fidl::WireServer<fuchsia_hardware_goldfish::Pipe> 
   PipeDevice* pipe_ = nullptr;
   int32_t id_ TA_GUARDED(lock_) = 0;
   zx::bti bti_;
-  ddk::IoBuffer cmd_buffer_;
+  fzl::OwnedVmoMapper cmd_buffer_;
 
   Buffer buffer_ TA_GUARDED(lock_) = {};
 };

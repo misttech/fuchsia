@@ -39,8 +39,8 @@ PipeConnection::PipeConnection(PipeDevice* pipe, async_dispatcher_t* dispatcher,
 PipeConnection::~PipeConnection() {
   fbl::AutoLock lock(&lock_);
   if (id_) {
-    if (cmd_buffer_.is_valid()) {
-      auto buffer = static_cast<PipeCmdBuffer*>(cmd_buffer_.virt());
+    if (cmd_buffer_.vmo().is_valid()) {
+      auto buffer = static_cast<PipeCmdBuffer*>(cmd_buffer_.start());
       buffer->id = id_;
       buffer->cmd = static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeCmdCode::kClose);
       buffer->status = static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeError::kInval);
@@ -96,13 +96,14 @@ void PipeConnection::Init() {
     return;
   }
 
-  status = cmd_buffer_.InitVmo(bti_.get(), vmo.get(), 0, IO_BUFFER_RW);
+  status =
+      cmd_buffer_.Map(std::move(vmo), /*offset=*/0, /*size=*/0, ZX_VM_PERM_READ | ZX_VM_PERM_WRITE);
   if (status != ZX_OK) {
-    FAIL_ASYNC(status, "[%s] Pipe::Pipe() io_buffer_init_vmo failed", kTag);
+    FAIL_ASYNC(status, "Failed to map the command buffer VMO: %s", zx_status_get_string(status));
     return;
   }
 
-  auto buffer = static_cast<PipeCmdBuffer*>(cmd_buffer_.virt());
+  auto buffer = static_cast<PipeCmdBuffer*>(cmd_buffer_.start());
   buffer->id = id_;
   buffer->cmd = static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeCmdCode::kOpen);
   buffer->status = static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeError::kInval);
@@ -110,7 +111,7 @@ void PipeConnection::Init() {
   pipe_->Open(id_);
   if (buffer->status) {
     FAIL_ASYNC(ZX_ERR_INTERNAL, "[%s] Pipe::Pipe() failed to open pipe", kTag);
-    cmd_buffer_.release();
+    return;
   }
 }
 
@@ -278,7 +279,7 @@ zx_status_t PipeConnection::TransferLocked(int32_t cmd, int32_t wake_cmd, zx_sig
                                            size_t read_count, size_t* actual) {
   TRACE_DURATION("gfx", "Pipe::Transfer", "count", count, "read_count", read_count);
 
-  auto buffer = static_cast<PipeCmdBuffer*>(cmd_buffer_.virt());
+  auto buffer = static_cast<PipeCmdBuffer*>(cmd_buffer_.start());
   buffer->id = id_;
   buffer->cmd = cmd;
   buffer->status = static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeError::kInval);

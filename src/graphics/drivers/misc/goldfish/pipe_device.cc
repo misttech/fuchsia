@@ -12,6 +12,7 @@
 #include <lib/ddk/driver.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/ddk/trace/event.h>
+#include <lib/dma-buffer/buffer.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/fidl/cpp/wire/connect_service.h>
 #include <lib/fidl/cpp/wire/internal/transport.h>
@@ -185,20 +186,23 @@ zx_status_t PipeDevice::Bind() {
     return thrd_status_to_zx_status(rc);
   }
 
+  std::unique_ptr<dma_buffer::BufferFactory> buffer_factory = dma_buffer::CreateBufferFactory();
+
   static_assert(sizeof(CommandBuffers) <= PAGE_SIZE, "cmds size");
-  zx_status_t status = io_buffer_.Init(bti_.get(), PAGE_SIZE, IO_BUFFER_RW | IO_BUFFER_CONTIG);
+  zx_status_t status = buffer_factory->CreateContiguous(
+      bti_, /*size=*/PAGE_SIZE, /*alignment_log2=*/0, /*enable_cache=*/true, &io_buffer_);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "%s: io_buffer_init failed: %d", kTag, status);
+    zxlogf(ERROR, "Failed to create contiguous IO buffer: %s", zx_status_get_string(status));
     return status;
   }
 
   // Register the buffer addresses with the device.
-  zx_paddr_t pa_signal_buffers = io_buffer_.phys() + offsetof(CommandBuffers, signal_buffers);
+  zx_paddr_t pa_signal_buffers = io_buffer_->phys() + offsetof(CommandBuffers, signal_buffers);
   mmio_->Write32(upper_32_bits(pa_signal_buffers), PIPE_V2_REG_SIGNAL_BUFFER_HIGH);
   mmio_->Write32(lower_32_bits(pa_signal_buffers), PIPE_V2_REG_SIGNAL_BUFFER);
   mmio_->Write32(MAX_SIGNALLED_PIPES, PIPE_V2_REG_SIGNAL_BUFFER_COUNT);
   zx_paddr_t pa_open_command_buffer =
-      io_buffer_.phys() + offsetof(CommandBuffers, open_command_buffer);
+      io_buffer_->phys() + offsetof(CommandBuffers, open_command_buffer);
   mmio_->Write32(upper_32_bits(pa_open_command_buffer), PIPE_V2_REG_OPEN_BUFFER_HIGH);
   mmio_->Write32(lower_32_bits(pa_open_command_buffer), PIPE_V2_REG_OPEN_BUFFER);
 
@@ -326,7 +330,7 @@ void PipeDevice::Open(int32_t id) {
   }
 
   fbl::AutoLock lock(&mmio_lock_);
-  CommandBuffers* buffers = static_cast<CommandBuffers*>(io_buffer_.virt());
+  CommandBuffers* buffers = static_cast<CommandBuffers*>(io_buffer_->virt());
   buffers->open_command_buffer.pa_command_buffer = paddr;
   buffers->open_command_buffer.rw_params_max_count = MAX_BUFFERS_PER_COMMAND;
   mmio_->Write32(id, PIPE_V2_REG_CMD);
@@ -411,7 +415,7 @@ int PipeDevice::IrqHandler() {
 
       fbl::AutoLock lock(&pipes_lock_);
 
-      auto buffers = static_cast<CommandBuffers*>(io_buffer_.virt());
+      auto buffers = static_cast<CommandBuffers*>(io_buffer_->virt());
       for (uint32_t i = 0; i < count; ++i) {
         auto it = command_storages_.find(buffers->signal_buffers[i].id);
         if (it != command_storages_.end()) {

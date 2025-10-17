@@ -10,6 +10,7 @@
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/ddk/device.h>
 #include <lib/ddk/io-buffer.h>
+#include <lib/dma-buffer/buffer.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <lib/zx/bti.h>
@@ -89,7 +90,7 @@ class PipeDevice : public DeviceType, public fidl::WireServer<fuchsia_hardware_g
   acpi::Client acpi_fidl_;
   zx::interrupt irq_;
   zx::bti bti_;
-  ddk::IoBuffer io_buffer_;
+  std::unique_ptr<dma_buffer::ContiguousBuffer> io_buffer_;
   thrd_t irq_thread_{};
   int32_t next_pipe_id_ TA_GUARDED(pipes_lock_) = 1;
 
