@@ -88,6 +88,18 @@
       "hidden": false
     },
     {
+      "kind": {
+        "Option": {
+          "arg_name": "ota-manifest-key"
+        }
+      },
+      "optionality": "optional",
+      "long": "--ota-manifest-key",
+      "short": null,
+      "description": "path to the Ed25519 private key in PEM format to sign the ota manifest.",
+      "hidden": false
+    },
+    {
       "kind": "Switch",
       "optionality": "optional",
       "long": "--stage",

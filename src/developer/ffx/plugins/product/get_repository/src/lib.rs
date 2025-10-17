@@ -104,6 +104,7 @@ mod tests {
                 targets_private_key_path: None,
                 snapshot_private_key_path: None,
                 timestamp_private_key_path: None,
+                ota_manifest_signature_path: None,
             }],
             update_package_hash: None,
             virtual_devices_path: None,
