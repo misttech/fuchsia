@@ -1342,10 +1342,18 @@ ktl::optional<PageQueues::VmoBacklink> PageQueues::PeekIsolate(size_t lowest_que
       return result;
     }
     if (loop_iterations++ > kMaxIterations) {
-      KERNEL_OOPS("[pq]: %s iterated more than %u times\n", __FUNCTION__, kMaxIterations);
+      KERNEL_OOPS("[pq]: %s iterated more than %u times (%u). lru:%zu mru:%zu\n", __FUNCTION__,
+                  kMaxIterations, loop_iterations, lru_gen_.load(ktl::memory_order_relaxed),
+                  mru_gen_.load(ktl::memory_order_relaxed));
     }
 
-    SynchronizeWithAging();
+    // Synchronize with any aging that was outstanding at the time of this call, and then use that
+    // updated mru_gen_ to compute the lru_target. Only do this for the first iteration of the loop,
+    // because we want to meet the termination condition to break out of the loop, which might not
+    // happen if we update mru_gen_ every time.
+    if (loop_iterations == 1) {
+      SynchronizeWithAging();
+    }
     // The limit gen is 1 larger than the lowest queue because evicting from queue X is done by
     // attempting to make the lru queue be X+1.
     const uint64_t lru_limit = mru_gen_.load(ktl::memory_order_relaxed) - (lowest_queue - 1);
