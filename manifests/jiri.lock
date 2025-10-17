@@ -126,23 +126,23 @@
     },
     {
         "package": "fuchsia/go/linux-amd64",
-        "version": "git_revision:980eab27c2f0be6de72cde534e22a645ccd4b110",
-        "instance_id": "rAkqInRWetQQNq6Vx9mzLierIIBCNEiEtqPmbEa-TAwC"
+        "version": "git_revision:29d27710e5eb28013d20ee9032eb85c7631256cc",
+        "instance_id": "anBm5-dIzGUm-vMGnCvRv4ziBYGUsqpYR2anWze1Re4C"
     },
     {
         "package": "fuchsia/go/linux-arm64",
-        "version": "git_revision:980eab27c2f0be6de72cde534e22a645ccd4b110",
-        "instance_id": "k1uCLmAYSbqbV-8U4UlgzntvZOHjyfS4tMbU_nVtoYEC"
+        "version": "git_revision:29d27710e5eb28013d20ee9032eb85c7631256cc",
+        "instance_id": "UBbwrfBkhGU7sbAput6Z_V6p12mCoyzhLx7bJfy7O2QC"
     },
     {
         "package": "fuchsia/go/mac-amd64",
-        "version": "git_revision:980eab27c2f0be6de72cde534e22a645ccd4b110",
-        "instance_id": "m_gW0V2Zw53f2Aj-ZEpu4eWmIlnT8eUfmMmWElaONbcC"
+        "version": "git_revision:29d27710e5eb28013d20ee9032eb85c7631256cc",
+        "instance_id": "1la1RCywGHNn2HRyxpK--y2g9fLvi65kR8wI4lFprzAC"
     },
     {
         "package": "fuchsia/go/mac-arm64",
-        "version": "git_revision:980eab27c2f0be6de72cde534e22a645ccd4b110",
-        "instance_id": "mPcMM_f59gn6HvOWvPPFbFgy-31_RjQT8qkKxXqAajcC"
+        "version": "git_revision:29d27710e5eb28013d20ee9032eb85c7631256cc",
+        "instance_id": "ymFWWwetDzEZwBDeXdXMuE1vpIipmyFDjuPu3J0ZOZUC"
     },
     {
         "package": "fuchsia/gui_tools/fuchsia_devtools/linux-amd64",
