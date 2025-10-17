@@ -29,6 +29,8 @@
 
 namespace {
 
+const size_t kPageSize = zx_system_get_page_size();
+
 zx::vmo* config_vmo = nullptr;
 size_t config_size = 0;
 
@@ -360,7 +362,7 @@ class Gt6853Test : public zxtest::Test {
 
   void AddDefaultConfig() {
     config_size = 2338;
-    ASSERT_OK(zx::vmo::create(fbl::round_up(config_size, ZX_PAGE_SIZE), 0, &config_vmo_));
+    ASSERT_OK(zx::vmo::create(fbl::round_up(config_size, kPageSize), 0, &config_vmo_));
 
     const uint32_t config_size_le = htole32(config_size);
     ASSERT_OK(config_vmo_.write(&config_size_le, 0, sizeof(config_size_le)));
@@ -576,7 +578,7 @@ TEST_F(Gt6853Test, ReadReport) {
 
 TEST_F(Gt6853Test, ConfigDownloadPanelType9364) {
   config_size = 2338;
-  ASSERT_OK(zx::vmo::create(fbl::round_up(config_size, ZX_PAGE_SIZE), 0, &config_vmo_));
+  ASSERT_OK(zx::vmo::create(fbl::round_up(config_size, kPageSize), 0, &config_vmo_));
 
   const uint32_t config_size_le = htole32(config_size);
   ASSERT_OK(config_vmo_.write(&config_size_le, 0, sizeof(config_size_le)));
@@ -605,7 +607,7 @@ TEST_F(Gt6853Test, ConfigDownloadPanelType9364) {
 
 TEST_F(Gt6853Test, ConfigDownloadPanelType9365) {
   config_size = 2338;
-  ASSERT_OK(zx::vmo::create(fbl::round_up(config_size, ZX_PAGE_SIZE), 0, &config_vmo_));
+  ASSERT_OK(zx::vmo::create(fbl::round_up(config_size, kPageSize), 0, &config_vmo_));
 
   const uint32_t config_size_le = htole32(config_size);
   ASSERT_OK(config_vmo_.write(&config_size_le, 0, sizeof(config_size_le)));
@@ -637,7 +639,7 @@ TEST_F(Gt6853Test, ConfigDownloadUnableToLoadConfig) { EXPECT_NOT_OK(Init()); }
 
 TEST_F(Gt6853Test, NoConfigEntry) {
   config_size = 2338;
-  ASSERT_OK(zx::vmo::create(fbl::round_up(config_size, ZX_PAGE_SIZE), 0, &config_vmo_));
+  ASSERT_OK(zx::vmo::create(fbl::round_up(config_size, kPageSize), 0, &config_vmo_));
 
   const uint32_t config_size_le = htole32(config_size);
   ASSERT_OK(config_vmo_.write(&config_size_le, 0, sizeof(config_size_le)));
@@ -661,7 +663,7 @@ TEST_F(Gt6853Test, NoConfigEntry) {
 
 TEST_F(Gt6853Test, InvalidConfigEntry) {
   config_size = 2338;
-  ASSERT_OK(zx::vmo::create(fbl::round_up(config_size, ZX_PAGE_SIZE), 0, &config_vmo_));
+  ASSERT_OK(zx::vmo::create(fbl::round_up(config_size, kPageSize), 0, &config_vmo_));
 
   ASSERT_OK(WriteConfigData({0x1c, 0x03, 0x00, 0x00, 0x2b}, 0));
   ASSERT_OK(WriteConfigData({0x03}, 9));
@@ -684,7 +686,7 @@ TEST_F(Gt6853Test, InvalidConfigEntry) {
 
 TEST_F(Gt6853Test, BadConfigChecksum) {
   config_size = 2338;
-  ASSERT_OK(zx::vmo::create(fbl::round_up(config_size, ZX_PAGE_SIZE), 0, &config_vmo_));
+  ASSERT_OK(zx::vmo::create(fbl::round_up(config_size, kPageSize), 0, &config_vmo_));
 
   const uint32_t config_size_le = htole32(config_size);
   ASSERT_OK(config_vmo_.write(&config_size_le, 0, sizeof(config_size_le)));
@@ -708,7 +710,7 @@ TEST_F(Gt6853Test, BadConfigChecksum) {
 
 TEST_F(Gt6853Test, FirmwareDownload) {
   firmware_size = 2048;
-  ASSERT_OK(zx::vmo::create(fbl::round_up(firmware_size, ZX_PAGE_SIZE), 0, &firmware_vmo_));
+  ASSERT_OK(zx::vmo::create(fbl::round_up(firmware_size, kPageSize), 0, &firmware_vmo_));
   ASSERT_OK(WriteFirmwareData({0x00, 0x00, 0x07, 0xfa, 0x02, 0x98}, 0));
   ASSERT_OK(WriteFirmwareData({0x03}, 27));
   ASSERT_OK(WriteFirmwareData({0x01, 0x00, 0x00, 0x01, 0x00, 0xab, 0xcd}, 32));
@@ -741,7 +743,7 @@ TEST_F(Gt6853Test, FirmwareDownload) {
 
 TEST_F(Gt6853Test, FirmwareDownloadInvalidCrc) {
   firmware_size = 2048;
-  ASSERT_OK(zx::vmo::create(fbl::round_up(firmware_size, ZX_PAGE_SIZE), 0, &firmware_vmo_));
+  ASSERT_OK(zx::vmo::create(fbl::round_up(firmware_size, kPageSize), 0, &firmware_vmo_));
   ASSERT_OK(WriteFirmwareData({0x00, 0x00, 0x07, 0xfa, 0x02, 0x99}, 0));
   ASSERT_OK(WriteFirmwareData({0x03}, 27));
   ASSERT_OK(WriteFirmwareData({0x01, 0x00, 0x00, 0x01, 0x00, 0xab, 0xcd}, 32));
@@ -753,7 +755,7 @@ TEST_F(Gt6853Test, FirmwareDownloadInvalidCrc) {
 
 TEST_F(Gt6853Test, FirmwareDownloadNoIspEntry) {
   firmware_size = 2048;
-  ASSERT_OK(zx::vmo::create(fbl::round_up(firmware_size, ZX_PAGE_SIZE), 0, &firmware_vmo_));
+  ASSERT_OK(zx::vmo::create(fbl::round_up(firmware_size, kPageSize), 0, &firmware_vmo_));
   ASSERT_OK(WriteFirmwareData({0x00, 0x00, 0x07, 0xfa, 0x00, 0x00}, 0));
   ASSERT_OK(WriteFirmwareData({0x00}, 27));
 
