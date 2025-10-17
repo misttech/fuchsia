@@ -68,14 +68,46 @@ func main() {
 	all := parseAllGidlIr(gidlFiles)
 	filtered := filter(all, language)
 
+	longestName := 1
+	for _, def := range all.EncodeSuccess {
+		if len(def.Name) > longestName {
+			longestName = len(def.Name)
+		}
+	}
+	for _, def := range all.DecodeSuccess {
+		if len(def.Name) > longestName {
+			longestName = len(def.Name)
+		}
+	}
+	for _, def := range all.EncodeFailure {
+		if len(def.Name) > longestName {
+			longestName = len(def.Name)
+		}
+	}
+	for _, def := range all.DecodeFailure {
+		if len(def.Name) > longestName {
+			longestName = len(def.Name)
+		}
+	}
+	for _, def := range all.Benchmark {
+		if len(def.Name) > longestName {
+			longestName = len(def.Name)
+		}
+	}
+
 	fmt.Printf("Disabled tests for %s\n", language)
 	fmt.Printf("***************************************\n")
+
+	showTest := func(name string, loc ir.SourceLocation) {
+		fmt.Printf("%-*s %s:%d\n", longestName, name, loc.Filename, loc.Line)
+
+	}
 
 	if len(filtered.EncodeSuccess) > 0 {
 		fmt.Printf("\nEncode success\n")
 		fmt.Printf("---------------------------------------\n")
 		for _, t := range filtered.EncodeSuccess {
-			fmt.Printf("%s\n", t.Name)
+			showTest(t.Name, t.SourceLocation)
 		}
 	}
 
@@ -83,7 +115,7 @@ func main() {
 		fmt.Printf("\nEncode failure\n")
 		fmt.Printf("---------------------------------------\n")
 		for _, t := range filtered.EncodeFailure {
-			fmt.Printf("%s\n", t.Name)
+			showTest(t.Name, t.SourceLocation)
 		}
 	}
 
@@ -91,7 +123,7 @@ func main() {
 		fmt.Printf("\nDecode success\n")
 		fmt.Printf("---------------------------------------\n")
 		for _, t := range filtered.DecodeSuccess {
-			fmt.Printf("%s\n", t.Name)
+			showTest(t.Name, t.SourceLocation)
 		}
 	}
 
@@ -99,7 +131,7 @@ func main() {
 		fmt.Printf("\nDecode failure\n")
 		fmt.Printf("---------------------------------------\n")
 		for _, t := range filtered.DecodeFailure {
-			fmt.Printf("%s\n", t.Name)
+			showTest(t.Name, t.SourceLocation)
 		}
 	}
 
@@ -107,7 +139,7 @@ func main() {
 		fmt.Printf("\nBenchmark\n")
 		fmt.Printf("---------------------------------------\n")
 		for _, t := range filtered.Benchmark {
-			fmt.Printf("%s\n", t.Name)
+			showTest(t.Name, t.SourceLocation)
 		}
 	}
 }

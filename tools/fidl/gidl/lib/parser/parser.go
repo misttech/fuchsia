@@ -321,7 +321,7 @@ type sectionMetadata struct {
 	optionalKinds map[bodyElement]struct{}
 	allowed       allowedFeatures
 	mustUseHandle func(kind bodyElement, info handleInfo) bool
-	setter        func(name string, body body, all *ir.All)
+	setter        func(name string, body body, loc ir.SourceLocation, all *ir.All)
 }
 
 var sections = map[string]sectionMetadata{
@@ -334,7 +334,7 @@ var sections = map[string]sectionMetadata{
 		mustUseHandle: func(kind bodyElement, info handleInfo) bool {
 			return kind == isValue || kind == isHandles
 		},
-		setter: func(name string, body body, all *ir.All) {
+		setter: func(name string, body body, loc ir.SourceLocation, all *ir.All) {
 			encodeSuccess := ir.EncodeSuccess{
 				Name:              name,
 				Value:             body.Value,
@@ -343,6 +343,7 @@ var sections = map[string]sectionMetadata{
 				BindingsAllowlist: body.BindingsAllowlist,
 				BindingsDenylist:  body.BindingsDenylist,
 				CheckHandleRights: false,
+				SourceLocation:    loc,
 			}
 			all.EncodeSuccess = append(all.EncodeSuccess, encodeSuccess)
 			decodeSuccess := ir.DecodeSuccess{
@@ -352,6 +353,7 @@ var sections = map[string]sectionMetadata{
 				HandleDefs:        body.HandleDefs,
 				BindingsAllowlist: body.BindingsAllowlist,
 				BindingsDenylist:  body.BindingsDenylist,
+				SourceLocation:    loc,
 			}
 			all.DecodeSuccess = append(all.DecodeSuccess, decodeSuccess)
 		},
@@ -377,7 +379,7 @@ var sections = map[string]sectionMetadata{
 				return false
 			}
 		},
-		setter: func(name string, body body, all *ir.All) {
+		setter: func(name string, body body, loc ir.SourceLocation, all *ir.All) {
 			result := ir.EncodeSuccess{
 				Name:              name,
 				Value:             body.Value,
@@ -385,7 +387,7 @@ var sections = map[string]sectionMetadata{
 				HandleDefs:        body.HandleDefs,
 				BindingsAllowlist: body.BindingsAllowlist,
 				BindingsDenylist:  body.BindingsDenylist,
-				CheckHandleRights: true,
+				CheckHandleRights: true, SourceLocation: loc,
 			}
 			all.EncodeSuccess = append(all.EncodeSuccess, result)
 		},
@@ -404,14 +406,14 @@ var sections = map[string]sectionMetadata{
 			// 'value', since they could be unknowns that are discarded.
 			return kind == isHandles
 		},
-		setter: func(name string, body body, all *ir.All) {
+		setter: func(name string, body body, loc ir.SourceLocation, all *ir.All) {
 			result := ir.DecodeSuccess{
 				Name:              name,
 				Value:             body.Value,
 				Encodings:         toIrEncodings(body.Encodings),
 				HandleDefs:        body.HandleDefs,
 				BindingsAllowlist: body.BindingsAllowlist,
-				BindingsDenylist:  body.BindingsDenylist,
+				BindingsDenylist:  body.BindingsDenylist, SourceLocation: loc,
 			}
 			all.DecodeSuccess = append(all.DecodeSuccess, result)
 		},
@@ -428,7 +430,7 @@ var sections = map[string]sectionMetadata{
 		mustUseHandle: func(kind bodyElement, info handleInfo) bool {
 			return kind == isValue
 		},
-		setter: func(name string, body body, all *ir.All) {
+		setter: func(name string, body body, loc ir.SourceLocation, all *ir.All) {
 			result := ir.EncodeFailure{
 				Name:              name,
 				Value:             body.Value,
@@ -436,7 +438,7 @@ var sections = map[string]sectionMetadata{
 				Err:               body.Err,
 				BindingsAllowlist: body.BindingsAllowlist,
 				BindingsDenylist:  body.BindingsDenylist,
-				BindingsSkip:      body.BindingsSkip,
+				BindingsSkip:      body.BindingsSkip, SourceLocation: loc,
 			}
 			all.EncodeFailure = append(all.EncodeFailure, result)
 		},
@@ -452,7 +454,7 @@ var sections = map[string]sectionMetadata{
 		mustUseHandle: func(kind bodyElement, info handleInfo) bool {
 			return kind == isHandles
 		},
-		setter: func(name string, body body, all *ir.All) {
+		setter: func(name string, body body, loc ir.SourceLocation, all *ir.All) {
 			result := ir.DecodeFailure{
 				Name:              name,
 				Type:              body.Type,
@@ -461,6 +463,7 @@ var sections = map[string]sectionMetadata{
 				Err:               body.Err,
 				BindingsAllowlist: body.BindingsAllowlist,
 				BindingsDenylist:  body.BindingsDenylist,
+				SourceLocation:    loc,
 			}
 			all.DecodeFailure = append(all.DecodeFailure, result)
 		},
@@ -475,7 +478,7 @@ var sections = map[string]sectionMetadata{
 		mustUseHandle: func(kind bodyElement, info handleInfo) bool {
 			return kind == isValue
 		},
-		setter: func(name string, body body, all *ir.All) {
+		setter: func(name string, body body, loc ir.SourceLocation, all *ir.All) {
 			benchmark := ir.Benchmark{
 				Name:                     name,
 				Value:                    body.Value,
@@ -484,6 +487,7 @@ var sections = map[string]sectionMetadata{
 				BindingsDenylist:         body.BindingsDenylist,
 				EnableSendEventBenchmark: body.EnableSendEventBenchmark,
 				EnableEchoCallBenchmark:  body.EnableEchoCallBenchmark,
+				SourceLocation:           loc,
 			}
 			all.Benchmark = append(all.Benchmark, benchmark)
 		},
@@ -497,7 +501,7 @@ func (h handleSlice) Less(i, j int) bool { return h[i] < h[j] }
 func (h handleSlice) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 
 func (p *Parser) parseSection(all *ir.All) error {
-	section, name, err := p.parsePreamble()
+	section, name, loc, err := p.parsePreamble()
 	if err != nil {
 		return err
 	}
@@ -544,38 +548,43 @@ func (p *Parser) parseSection(all *ir.All) error {
 		}
 	}
 	p.handles = nil
-	section.setter(name, body, all)
+	section.setter(name, body, loc, all)
 	return nil
 }
 
-func (p *Parser) parsePreamble() (sectionMetadata, string, error) {
+func (p *Parser) parsePreamble() (sectionMetadata, string, ir.SourceLocation, error) {
 	tok, err := p.consumeToken(tText)
 	if err != nil {
-		return sectionMetadata{}, "", err
+		return sectionMetadata{}, "", ir.SourceLocation{}, err
+	}
+
+	loc := ir.SourceLocation{
+		Filename: p.scanner.Filename,
+		Line:     tok.line,
 	}
 
 	section, ok := sections[tok.value]
 	if !ok {
-		return sectionMetadata{}, "", p.newParseError(tok, "unknown section %s", tok.value)
+		return sectionMetadata{}, "", loc, p.newParseError(tok, "unknown section %s", tok.value)
 	}
 
 	tok, err = p.consumeToken(tLparen)
 	if err != nil {
-		return sectionMetadata{}, "", err
+		return sectionMetadata{}, "", loc, err
 	}
 
 	tok, err = p.consumeToken(tString)
 	if err != nil {
-		return sectionMetadata{}, "", err
+		return sectionMetadata{}, "", loc, err
 	}
 	name := tok.value
 
 	tok, err = p.consumeToken(tRparen)
 	if err != nil {
-		return sectionMetadata{}, "", err
+		return sectionMetadata{}, "", loc, err
 	}
 
-	return section, name, nil
+	return section, name, loc, nil
 }
 
 func (p *Parser) parseBody(requiredKinds map[bodyElement]struct{}, optionalKinds map[bodyElement]struct{}, scope scope) (body, error) {

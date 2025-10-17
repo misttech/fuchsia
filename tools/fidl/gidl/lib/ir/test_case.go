@@ -16,6 +16,11 @@ type All struct {
 	Benchmark     []Benchmark
 }
 
+type SourceLocation struct {
+	Filename string
+	Line     int
+}
+
 type EncodeSuccess struct {
 	Name              string
 	Value             RecordLike
@@ -27,6 +32,7 @@ type EncodeSuccess struct {
 	// "handle_dispositions", but false for bidirectional "success" tests
 	// because they provide only "handles" with no rights information.
 	CheckHandleRights bool
+	SourceLocation
 }
 
 type DecodeSuccess struct {
@@ -36,6 +42,7 @@ type DecodeSuccess struct {
 	HandleDefs        []HandleDef
 	BindingsAllowlist *[]Language
 	BindingsDenylist  *[]Language
+	SourceLocation
 }
 
 type EncodeFailure struct {
@@ -46,6 +53,7 @@ type EncodeFailure struct {
 	BindingsAllowlist *[]Language
 	BindingsDenylist  *[]Language
 	BindingsSkip      *[]Language
+	SourceLocation
 }
 
 type DecodeFailure struct {
@@ -56,6 +64,7 @@ type DecodeFailure struct {
 	Err               ErrorCode
 	BindingsAllowlist *[]Language
 	BindingsDenylist  *[]Language
+	SourceLocation
 }
 
 type Benchmark struct {
@@ -66,6 +75,7 @@ type Benchmark struct {
 	BindingsDenylist         *[]Language
 	EnableSendEventBenchmark bool
 	EnableEchoCallBenchmark  bool
+	SourceLocation
 }
 
 type Language string

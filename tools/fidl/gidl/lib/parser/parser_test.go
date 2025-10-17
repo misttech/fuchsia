@@ -845,6 +845,7 @@ func TestParseSuccessCase(t *testing.T) {
 				},
 			}},
 			CheckHandleRights: false,
+			SourceLocation:    ir.SourceLocation{Line: 2},
 		}},
 		DecodeSuccess: []ir.DecodeSuccess{{
 			Name: "OneStringOfMaxLengthFive-empty",
@@ -866,6 +867,7 @@ func TestParseSuccessCase(t *testing.T) {
 					255, 255, 255, 255, 255, 255, 255, 255, // alloc present
 				},
 			}},
+			SourceLocation: ir.SourceLocation{Line: 2},
 		}},
 	}
 	checkMatch(t, all, expectedAll, err)
@@ -940,6 +942,7 @@ func TestParseEncodeSuccessCase(t *testing.T) {
 				},
 			}},
 			CheckHandleRights: true,
+			SourceLocation:    ir.SourceLocation{Line: 2},
 		}},
 	}
 	checkMatch(t, all, expectedAll, err)
@@ -1008,6 +1011,7 @@ func TestParseDecodeSuccessCase(t *testing.T) {
 				},
 				Handles: []ir.Handle{0, 1},
 			}},
+			SourceLocation: ir.SourceLocation{Line: 2},
 		}},
 	}
 	checkMatch(t, all, expectedAll, err)
@@ -1036,7 +1040,8 @@ func TestParseEncodeFailureCase(t *testing.T) {
 					},
 				},
 			},
-			Err: "STRING_TOO_LONG",
+			Err:            "STRING_TOO_LONG",
+			SourceLocation: ir.SourceLocation{Line: 2},
 		}},
 	}
 	checkMatch(t, all, expectedAll, err)
@@ -1067,7 +1072,8 @@ func TestParseDecodeFailureCase(t *testing.T) {
 					255, 255, 255, 255, 255, 255, 255, 255, // alloc present
 				},
 			}},
-			Err: "STRING_TOO_LONG",
+			Err:            "STRING_TOO_LONG",
+			SourceLocation: ir.SourceLocation{Line: 2},
 		}},
 	}
 	checkMatch(t, all, expectedAll, err)
@@ -1095,6 +1101,7 @@ func TestParseBenchmarkCase(t *testing.T) {
 					},
 				},
 			},
+			SourceLocation: ir.SourceLocation{Line: 2},
 		}},
 	}
 	checkMatch(t, all, expectedAll, err)
@@ -1146,6 +1153,7 @@ func TestParseSucceedsBindingsAllowlistAndDenylist(t *testing.T) {
 				BindingsAllowlist: &[]ir.Language{"go", "rust"},
 				BindingsDenylist:  &[]ir.Language{"dart"},
 				CheckHandleRights: false,
+				SourceLocation:    ir.SourceLocation{Line: 2},
 			},
 		},
 		DecodeSuccess: []ir.DecodeSuccess{
@@ -1171,6 +1179,7 @@ func TestParseSucceedsBindingsAllowlistAndDenylist(t *testing.T) {
 				}},
 				BindingsAllowlist: &[]ir.Language{"go", "rust"},
 				BindingsDenylist:  &[]ir.Language{"dart"},
+				SourceLocation:    ir.SourceLocation{Line: 2},
 			},
 		},
 	}
@@ -1257,6 +1266,7 @@ func TestParseSucceedsMultipleWireFormats(t *testing.T) {
 				},
 			},
 			CheckHandleRights: false,
+			SourceLocation:    ir.SourceLocation{Line: 2},
 		}},
 		DecodeSuccess: []ir.DecodeSuccess{{
 			Name: "MultipleWireFormats",
@@ -1274,6 +1284,7 @@ func TestParseSucceedsMultipleWireFormats(t *testing.T) {
 					Bytes:      []byte{1},
 				},
 			},
+			SourceLocation: ir.SourceLocation{Line: 2},
 		}},
 	}
 	checkMatch(t, all, expectedAll, err)
@@ -1388,6 +1399,7 @@ func TestParseSucceedsHandles(t *testing.T) {
 				{Subtype: fidlgen.HandleSubtypeEvent, Rights: fidlgen.HandleRightsSameRights},
 			},
 			CheckHandleRights: false,
+			SourceLocation:    ir.SourceLocation{Line: 2},
 		}},
 		DecodeSuccess: []ir.DecodeSuccess{{
 			Name: "HasHandles",
@@ -1408,6 +1420,7 @@ func TestParseSucceedsHandles(t *testing.T) {
 			HandleDefs: []ir.HandleDef{
 				{Subtype: fidlgen.HandleSubtypeEvent, Rights: fidlgen.HandleRightsSameRights},
 			},
+			SourceLocation: ir.SourceLocation{Line: 2},
 		}},
 	}
 	checkMatch(t, all, expectedAll, err)
@@ -1482,6 +1495,7 @@ func TestParseSucceedsHandlesDefsAfterHandles(t *testing.T) {
 				{Subtype: fidlgen.HandleSubtypeEvent, Rights: fidlgen.HandleRightsSameRights},
 			},
 			CheckHandleRights: false,
+			SourceLocation:    ir.SourceLocation{Line: 2},
 		}},
 		DecodeSuccess: []ir.DecodeSuccess{{
 			Name: "HasHandles",
@@ -1502,6 +1516,7 @@ func TestParseSucceedsHandlesDefsAfterHandles(t *testing.T) {
 			HandleDefs: []ir.HandleDef{
 				{Subtype: fidlgen.HandleSubtypeEvent, Rights: fidlgen.HandleRightsSameRights},
 			},
+			SourceLocation: ir.SourceLocation{Line: 2},
 		}},
 	}
 	checkMatch(t, all, expectedAll, err)
