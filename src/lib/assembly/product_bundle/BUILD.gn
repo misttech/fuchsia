@@ -40,9 +40,7 @@ rustc_library("product_bundle") {
     "//src/lib/assembly/release_info",
     "//src/lib/fuchsia",
     "//src/sys/pkg/lib/fuchsia-repo",
-    "//third_party/rust_crates:pem",
     "//third_party/rust_crates:pretty_assertions",
-    "//third_party/rust_crates:ring",
     "//third_party/rust_crates:tempfile",
   ]
   sources = [

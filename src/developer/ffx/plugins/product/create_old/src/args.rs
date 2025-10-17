@@ -41,10 +41,6 @@ pub struct CreateCommand {
     #[argh(option)]
     pub tuf_keys: Option<Utf8PathBuf>,
 
-    /// path to the Ed25519 private key in PEM format to sign the ota manifest.
-    #[argh(option)]
-    pub ota_manifest_key: Option<Utf8PathBuf>,
-
     /// file containing the version of the Product to put in the update package.
     #[argh(option)]
     pub update_package_version_file: Option<Utf8PathBuf>,

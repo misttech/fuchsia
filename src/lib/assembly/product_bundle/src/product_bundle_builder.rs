@@ -45,7 +45,6 @@ pub struct ProductBundleBuilder {
 struct UpdateDetails {
     epoch: EpochFile,
     version_file: Utf8PathBuf,
-    ota_manifest_key_path: Option<Utf8PathBuf>,
 }
 
 /// The details needed to build a TUF repository.
@@ -116,15 +115,10 @@ impl ProductBundleBuilder {
     }
 
     /// Add an update package.
-    pub fn update_package(
-        mut self,
-        version_file: impl AsRef<Utf8Path>,
-        epoch: u64,
-        ota_manifest_key_path: Option<Utf8PathBuf>,
-    ) -> Self {
+    pub fn update_package(mut self, version_file: impl AsRef<Utf8Path>, epoch: u64) -> Self {
         let epoch: EpochFile = EpochFile::Version1 { epoch };
         let version_file = version_file.as_ref().to_path_buf();
-        self.update_details = Some(UpdateDetails { epoch, version_file, ota_manifest_key_path });
+        self.update_details = Some(UpdateDetails { epoch, version_file });
         self
     }
 
@@ -200,19 +194,11 @@ impl ProductBundleBuilder {
         let gen_dir = TempDir::new().context("creating temporary directory")?;
         let gen_dir_path = Utf8Path::from_path(gen_dir.path())
             .context("checking if temporary directory is UTF-8")?;
-        let mut ota_manifest_signature_path = None;
         let update_package = if let Some(update_details) = update_details {
             if let Some(repository_details) = &repository_details {
-                if update_details.ota_manifest_key_path.is_some() {
-                    ota_manifest_signature_path =
-                        Some(out_dir.join("repository/ota_manifest.json.sig"))
-                }
-
                 write_ota_manifest(
                     &update_details.version_file,
                     &update_details.epoch,
-                    update_details.ota_manifest_key_path.as_ref(),
-                    ota_manifest_signature_path.as_ref(),
                     repository_details.delivery_blob_type,
                     &system_a,
                     &system_r,
@@ -254,7 +240,6 @@ impl ProductBundleBuilder {
             write_repositories(
                 repository_details,
                 update_package,
-                ota_manifest_signature_path,
                 packages_a,
                 packages_r,
                 blobs_path,
@@ -393,7 +378,6 @@ fn write_update_package(
 async fn write_repositories(
     repository_details: RepositoryDetails,
     update_package: Option<UpdatePackage>,
-    ota_manifest_signature_path: Option<Utf8PathBuf>,
     packages_a: Vec<(Option<Utf8PathBuf>, PackageManifest)>,
     packages_r: Vec<(Option<Utf8PathBuf>, PackageManifest)>,
     blobs_path: impl AsRef<Utf8Path>,
@@ -454,7 +438,6 @@ async fn write_repositories(
         targets_private_key_path: copy_file(tuf_keys.join("targets.json"), &keys_path).ok(),
         snapshot_private_key_path: copy_file(tuf_keys.join("snapshot.json"), &keys_path).ok(),
         timestamp_private_key_path: copy_file(tuf_keys.join("timestamp.json"), &keys_path).ok(),
-        ota_manifest_signature_path,
     }])
 }
 
@@ -713,15 +696,6 @@ mod test {
         let mut version_file = std::fs::File::create(&version_path).unwrap();
         version_file.write_all(b"1.2.3.4").unwrap();
 
-        // Write a test key for the OTA manifest.
-        let rng = ring::rand::SystemRandom::new();
-        let pkcs8_bytes = ring::signature::Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
-        let pem =
-            pem::Pem { tag: "PRIVATE KEY".to_string(), contents: pkcs8_bytes.as_ref().to_vec() };
-        let ota_key_path = tempdir.join("ota_key.pem");
-        let mut ota_key_file = std::fs::File::create(&ota_key_path).unwrap();
-        ota_key_file.write_all(pem::encode(&pem).as_bytes()).unwrap();
-
         // Write the test key for the repository.
         let tuf_keys = tempdir.join("keys");
         test_utils::make_repo_keys_dir(&tuf_keys);
@@ -758,7 +732,7 @@ mod test {
                 VirtualDevice::V1(VirtualDeviceV1::new("my_virtual_device", Hardware::default())),
             )
             .recommended_virtual_device("my_virtual_device")
-            .update_package(version_path, 42, Some(ota_key_path))
+            .update_package(version_path, 42)
             .repository(delivery_blob::DeliveryBlobType::Type1, tuf_keys)
             .gerrit_size_report(&size_report_path)
             .build(Box::new(tools), &product_bundle_path)
@@ -794,9 +768,6 @@ mod test {
                 targets_private_key_path: Some(product_bundle_path.join("keys/targets.json")),
                 snapshot_private_key_path: Some(product_bundle_path.join("keys/snapshot.json")),
                 timestamp_private_key_path: Some(product_bundle_path.join("keys/timestamp.json")),
-                ota_manifest_signature_path: Some(
-                    product_bundle_path.join("repository/ota_manifest.json.sig"),
-                ),
             }],
             update_package_hash: Some(
                 "4198e7b88cc98aa87b16afa134e1f1ec8580fd9105f7db399adf6ff65426b49c".parse().unwrap(),

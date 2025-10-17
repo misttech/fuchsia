@@ -89,10 +89,6 @@ pub struct CreateCommand {
     #[argh(option)]
     pub tuf_keys: Option<Utf8PathBuf>,
 
-    /// path to the Ed25519 private key in PEM format to sign the ota manifest.
-    #[argh(option)]
-    pub ota_manifest_key: Option<Utf8PathBuf>,
-
     /// prepare the assembly inputs, but do not run assembly yet.
     #[argh(switch)]
     pub stage: bool,

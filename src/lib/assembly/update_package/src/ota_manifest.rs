@@ -10,6 +10,7 @@ use delivery_blob::DeliveryBlobType;
 use epoch::EpochFile;
 use fuchsia_pkg::PackageManifest;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs::File;
 use update_package::manifest::{self, OtaManifestV1};
 
 fn get_all_blobs(
@@ -47,8 +48,6 @@ fn get_all_blobs(
 pub fn write_ota_manifest(
     version_file: impl AsRef<std::path::Path>,
     epoch: &EpochFile,
-    private_key_path: Option<&Utf8PathBuf>,
-    ota_manifest_signature_path: Option<&Utf8PathBuf>,
     delivery_blob_type: DeliveryBlobType,
     system_a: &Option<AssembledSystem>,
     system_r: &Option<AssembledSystem>,
@@ -184,21 +183,9 @@ pub fn write_ota_manifest(
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating directory {}", parent.display()))?;
     }
-    let manifest_json =
-        serde_json::to_string(&manifest.into_versioned()).context("serializing ota manifest")?;
-    std::fs::write(&out_path, &manifest_json).context("writing ota manifest")?;
-    if let Some(private_key_path) = private_key_path {
-        let signature_path = ota_manifest_signature_path.ok_or_else(|| {
-            anyhow::anyhow!("signature path is required if private key is provided")
-        })?;
-        let key_bytes = std::fs::read(&private_key_path)
-            .with_context(|| format!("reading private key {private_key_path}"))?;
-        let pem = pem::parse(key_bytes).context("parsing pem")?;
-        let key_pair = ring::signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(&pem.contents)
-            .map_err(|e| anyhow::anyhow!("parsing pkcs8: {e}"))?;
-        let signature = key_pair.sign(manifest_json.as_bytes());
-        std::fs::write(signature_path, signature).context("writing signature")?;
-    }
+    let file = File::create(out_path).context("creating ota manifest")?;
+    serde_json::to_writer(std::io::BufWriter::new(file), &manifest.into_versioned())
+        .context("writing ota manifest")?;
     Ok(())
 }
 
@@ -212,7 +199,6 @@ mod tests {
         BlobInfo, MetaPackage, PackageManifest, PackageManifestBuilder, SubpackageInfo,
     };
     use pretty_assertions::assert_eq;
-    use ring::signature::KeyPair as _;
     use std::io::Write as _;
     use tempfile::NamedTempFile;
 
@@ -229,14 +215,6 @@ mod tests {
     fn build_ota_manifest() {
         let mut version_file = NamedTempFile::new().unwrap();
         write!(version_file, "1.2.3.4").unwrap();
-
-        let rng = ring::rand::SystemRandom::new();
-        let pkcs8_bytes = ring::signature::Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
-        let pem =
-            pem::Pem { tag: "PRIVATE KEY".to_string(), contents: pkcs8_bytes.as_ref().to_vec() };
-        let mut private_key_file = NamedTempFile::new().unwrap();
-        write!(private_key_file, "{}", pem::encode(&pem)).unwrap();
-        let private_key_path = Utf8Path::from_path(private_key_file.path()).unwrap().to_path_buf();
 
         let fake_zbi = NamedTempFile::new().unwrap();
         let fake_vbmeta = NamedTempFile::new().unwrap();
@@ -283,14 +261,9 @@ mod tests {
         let pkg1 = make_package("pkg1", [meta_far, blob1]);
 
         let manifest_file = NamedTempFile::new().unwrap();
-        let signature_file = NamedTempFile::new().unwrap();
-        let signature_path = Utf8Path::from_path(signature_file.path()).unwrap().to_path_buf();
-
         write_ota_manifest(
             version_file.path(),
             &EpochFile::Version1 { epoch: 1 },
-            Some(&private_key_path),
-            Some(&signature_path),
             DeliveryBlobType::Type1,
             &system_a,
             &None,
@@ -300,16 +273,7 @@ mod tests {
         )
         .unwrap();
 
-        let manifest_json = std::fs::read_to_string(manifest_file.path()).unwrap();
-        let signature = std::fs::read(signature_file.path()).unwrap();
-        let key_pair = ring::signature::Ed25519KeyPair::from_pkcs8(pkcs8_bytes.as_ref()).unwrap();
-        let public_key = ring::signature::UnparsedPublicKey::new(
-            &ring::signature::ED25519,
-            key_pair.public_key().as_ref(),
-        );
-        public_key.verify(manifest_json.as_bytes(), &signature).unwrap();
-
-        let value: serde_json::Value = serde_json::from_str(&manifest_json).unwrap();
+        let value: serde_json::Value = serde_json::from_reader(manifest_file).unwrap();
         let manifest: OtaManifestV1 = serde_json::from_value(value["version1"].clone()).unwrap();
 
         assert_eq!(manifest.build_version, "1.2.3.4".parse().unwrap());
@@ -483,8 +447,6 @@ mod tests {
         write_ota_manifest(
             version_file.path(),
             &EpochFile::Version1 { epoch: 1 },
-            None,
-            None,
             DeliveryBlobType::Type1,
             &system_a,
             &system_r,
@@ -629,8 +591,6 @@ mod tests {
         write_ota_manifest(
             version_file.path(),
             &EpochFile::Version1 { epoch: 1 },
-            None,
-            None,
             DeliveryBlobType::Type1,
             &system_a,
             &system_r,

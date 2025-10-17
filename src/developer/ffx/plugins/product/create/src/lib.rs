@@ -107,9 +107,6 @@ struct SanitizedCreateCommand {
     /// The tuf keys to use.
     pub tuf_keys: Option<Utf8PathBuf>,
 
-    /// path to the Ed25519 private key in PEM format to sign the ota manifest.
-    pub ota_manifest_key: Option<Utf8PathBuf>,
-
     /// What result we want from running `ffx product create`.
     pub result: CreateResult,
 }
@@ -158,8 +155,10 @@ impl TryFrom<CreateCommand> for SanitizedCreateCommand {
                 (p, b)
             };
 
-        let CreateCommand { output_name, output_version, tuf_keys, ota_manifest_key, auth, .. } =
-            cmd;
+        let output_name = cmd.output_name;
+        let output_version = cmd.output_version;
+        let tuf_keys = cmd.tuf_keys;
+        let auth = cmd.auth;
         Ok(Self {
             platform,
             product_config,
@@ -168,7 +167,6 @@ impl TryFrom<CreateCommand> for SanitizedCreateCommand {
             output_version,
             auth,
             tuf_keys,
-            ota_manifest_key,
             result,
         })
     }
@@ -242,7 +240,7 @@ async fn sanitized_product_bundle_create(
     .await?;
     let mut builder = ProductBundleBuilder::new(name, version)
         .system(system, Slot::A)
-        .update_package(update_version_file, 1, cmd.ota_manifest_key);
+        .update_package(update_version_file, 1);
 
     if let Some(tuf_keys) = cmd.tuf_keys {
         builder = builder.repository(DeliveryBlobType::Type1, tuf_keys);

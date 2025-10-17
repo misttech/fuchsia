@@ -65,13 +65,13 @@ pub async fn pb_create_with_sdk_version(
             if cmd.tuf_keys.is_none() {
                 anyhow::bail!("TUF keys must be provided to build an update package");
             }
-            let version = cmd.update_package_version_file.as_ref().ok_or_else(|| {
+            let version = cmd.update_package_version_file.clone().ok_or_else(|| {
                 anyhow::anyhow!("A version file must be provided to build an update package")
             })?;
             let epoch = cmd.update_package_epoch.ok_or_else(|| {
                 anyhow::anyhow!("A epoch must be provided to build an update package")
             })?;
-            Some((version, epoch, cmd.ota_manifest_key.clone()))
+            Some((version, epoch))
         } else {
             None
         };
@@ -97,8 +97,8 @@ pub async fn pb_create_with_sdk_version(
         let system = AssembledSystem::from_dir(system_path)?;
         pb_builder = pb_builder.system(system, PartitionSlot::R);
     }
-    if let Some((version, epoch, ota_manifest_key)) = update_details {
-        pb_builder = pb_builder.update_package(version, epoch, ota_manifest_key);
+    if let Some((version, epoch)) = &update_details {
+        pb_builder = pb_builder.update_package(version, *epoch);
     }
     if let Some(tuf_keys) = &cmd.tuf_keys {
         let delivery_blob_type =
@@ -168,7 +168,6 @@ mod test {
                 system_b: None,
                 system_r: None,
                 tuf_keys: None,
-                ota_manifest_key: None,
                 update_package_version_file: None,
                 update_package_epoch: None,
                 virtual_device: vec![],
@@ -244,7 +243,6 @@ mod test {
                 system_b: None,
                 system_r: Some(system_dir.clone()),
                 tuf_keys: None,
-                ota_manifest_key: None,
                 update_package_version_file: None,
                 update_package_epoch: None,
                 virtual_device: vec![],
@@ -326,7 +324,6 @@ mod test {
                     system_b: None,
                     system_r: Some(system_dir.clone()),
                     tuf_keys: None,
-                    ota_manifest_key: None,
                     update_package_version_file: None,
                     update_package_epoch: None,
                     virtual_device: vec![],
@@ -381,7 +378,6 @@ mod test {
                 system_b: None,
                 system_r: Some(system_dir.clone()),
                 tuf_keys: Some(tuf_keys),
-                ota_manifest_key: None,
                 update_package_version_file: None,
                 update_package_epoch: None,
                 virtual_device: vec![],
@@ -417,7 +413,6 @@ mod test {
                     targets_private_key_path: Some(pb_dir.join("keys/targets.json")),
                     snapshot_private_key_path: Some(pb_dir.join("keys/snapshot.json")),
                     timestamp_private_key_path: Some(pb_dir.join("keys/timestamp.json")),
-                    ota_manifest_signature_path: None,
                 }],
                 update_package_hash: None,
                 virtual_devices_path: None,
@@ -462,7 +457,6 @@ mod test {
                 system_b: None,
                 system_r: None,
                 tuf_keys: Some(tuf_keys),
-                ota_manifest_key: None,
                 update_package_version_file: Some(version_path),
                 update_package_epoch: Some(1),
                 virtual_device: vec![],
@@ -505,7 +499,6 @@ mod test {
                 targets_private_key_path: Some(pb_dir.join("keys/targets.json")),
                 snapshot_private_key_path: Some(pb_dir.join("keys/snapshot.json")),
                 timestamp_private_key_path: Some(pb_dir.join("keys/timestamp.json")),
-                ota_manifest_signature_path: None,
             }]
         );
     }
@@ -545,7 +538,6 @@ mod test {
                 system_b: None,
                 system_r: None,
                 tuf_keys: None,
-                ota_manifest_key: None,
                 update_package_version_file: None,
                 update_package_epoch: None,
                 virtual_device: vec![vd_path1, vd_path2],
