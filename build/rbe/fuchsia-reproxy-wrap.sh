@@ -171,6 +171,7 @@ readonly _log_base="${reproxy_logdir##*/}"  # basename
   # Re-use the randomly generated dir name in a custom tempdir.
   reproxy_tmpdir="$project_root/$default_build_subdir"/.reproxy_tmpdirs/"$_log_base"
 }
+# reproxy_tmpdir is expected to be unique.
 
 readonly _fake_tmpdir="$(mktemp -u)"
 readonly _tmpdir="${_fake_tmpdir%/*}"  # dirname
@@ -178,7 +179,8 @@ readonly _tmpdir="${_fake_tmpdir%/*}"  # dirname
 # The socket file doesn't need to be co-located with logs.
 # Using an absolute path to the socket allows rewrapper to be invoked
 # from different working directories.
-readonly socket_path="$_tmpdir/$_log_base.sock"
+readonly pid=$$
+readonly socket_path="$_tmpdir/reproxy.$pid.$date.sock"
 test "${#socket_path}" -le 100 || {
   cat <<EOF
 Socket paths are limited to around 100 characters on some platforms.
