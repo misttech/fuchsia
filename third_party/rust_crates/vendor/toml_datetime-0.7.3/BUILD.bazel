@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "toml_datetime",
     package_url = "https://github.com/toml-rs/toml",
-    package_version = "0.7.0",
+    package_version = "0.7.3",
 )
 
 license(
@@ -77,8 +77,8 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.7.0",
+    version = "0.7.3",
     deps = [
-        "//third_party/rust_crates/vendor/serde-1.0.228:serde",
+        "//third_party/rust_crates/vendor/serde_core-1.0.228:serde_core",
     ],
 )

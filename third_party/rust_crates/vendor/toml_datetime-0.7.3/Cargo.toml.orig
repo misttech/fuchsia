@@ -1,6 +1,6 @@
 [package]
 name = "toml_datetime"
-version = "0.7.0"
+version = "0.7.3"
 description = "A TOML-compatible datetime type"
 categories = ["encoding", "parser-implementations", "parsing", "config"]
 keywords = ["encoding", "toml", "no_std"]
@@ -12,7 +12,7 @@ include.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true
-rustdoc-args = ["--cfg", "docsrs", "--generate-link-to-definition"]
+rustdoc-args = ["--generate-link-to-definition"]
 
 [package.metadata.release]
 pre-release-replacements = [
@@ -25,12 +25,12 @@ pre-release-replacements = [
 
 [features]
 default = ["std"]
-alloc = ["serde?/alloc"]
-std = ["alloc", "serde?/std"]
-serde = ["dep:serde"]
+alloc = ["serde_core?/alloc"]
+std = ["alloc", "serde_core?/std"]
+serde = ["dep:serde_core"]
 
 [dependencies]
-serde = { version = "1.0.145", default-features = false, optional = true }
+serde_core = { version = "1.0.225", default-features = false, optional = true }
 
 [lints]
 workspace = true

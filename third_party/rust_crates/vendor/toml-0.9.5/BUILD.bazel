@@ -83,7 +83,7 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/serde-1.0.228:serde",
         "//third_party/rust_crates/vendor/serde_spanned-1.0.2:serde_spanned",
-        "//third_party/rust_crates/vendor/toml_datetime-0.7.0:toml_datetime",
+        "//third_party/rust_crates/vendor/toml_datetime-0.7.3:toml_datetime",
         "//third_party/rust_crates/vendor/toml_parser-1.0.2:toml_parser",
         "//third_party/rust_crates/vendor/toml_writer-1.0.4:toml_writer",
         "//third_party/rust_crates/vendor/winnow-0.7.12:winnow",

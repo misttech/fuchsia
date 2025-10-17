@@ -19033,7 +19033,7 @@ rustc_library("toml-v0_9_5") {
   deps += [ ":indexmap-v2_11_0" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_spanned-v1_0_2" ]
-  deps += [ ":toml_datetime-v0_7_0" ]
+  deps += [ ":toml_datetime-v0_7_3" ]
   deps += [ ":toml_parser-v1_0_2" ]
   deps += [ ":toml_writer-v1_0_4" ]
   deps += [ ":winnow-v0_7_12" ]
@@ -19056,33 +19056,33 @@ rustc_library("toml-v0_9_5") {
   applicable_licenses = [ ":toml-v0_9_5.license" ]
 }
 
-license("toml_datetime-v0_7_0.license") {
+license("toml_datetime-v0_7_3.license") {
   public_package_name = "toml_datetime"
   license_files = [
-    "//third_party/rust_crates/vendor/toml_datetime-0.7.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/toml_datetime-0.7.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/toml_datetime-0.7.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/toml_datetime-0.7.3/LICENSE-MIT",
   ]
 }
 
-rustc_library("toml_datetime-v0_7_0") {
+rustc_library("toml_datetime-v0_7_3") {
   crate_name = "toml_datetime"
   source_root =
-      "//third_party/rust_crates/vendor/toml_datetime-0.7.0/src/lib.rs"
-  output_name = "toml_datetime-a155b648f3df16d"
+      "//third_party/rust_crates/vendor/toml_datetime-0.7.3/src/lib.rs"
+  output_name = "toml_datetime-5f8acf5da7da39e0"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde_core-v1_0_228" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=a155b648f3df16d",
-    "-Cextra-filename=-a155b648f3df16d",
+    "-Cmetadata=5f8acf5da7da39e0",
+    "-Cextra-filename=-5f8acf5da7da39e0",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"serde\"",
     "--cfg=feature=\"std\"",
@@ -19090,7 +19090,7 @@ rustc_library("toml_datetime-v0_7_0") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":toml_datetime-v0_7_0.license" ]
+  applicable_licenses = [ ":toml_datetime-v0_7_3.license" ]
 }
 
 license("toml_edit-v0_2_1.license") {
