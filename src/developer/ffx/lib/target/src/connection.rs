@@ -62,7 +62,7 @@ impl Connection {
     pub async fn new(connector: impl TargetConnector + 'static) -> Result<Self, ConnectionError> {
         let connector_debug_string = format!("{connector:?}");
         let (fidl_pipe, node, client) = FidlPipe::start_internal(connector).await.map_err(|e| {
-            ConnectionError::ConnectionStartError(connector_debug_string, e.to_string())
+            ConnectionError::ConnectionStartError(connector_debug_string, format!("{e:#}"))
         })?;
         let overnet = node.map(|node| OvernetClient { node });
         Ok(Self { overnet, fdomain: Mutex::new(client), fidl_pipe, rcs_info: Default::default() })
