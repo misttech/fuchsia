@@ -352,15 +352,13 @@ pub(crate) mod testutil {
 
 #[cfg(test)]
 mod tests {
-    use alloc::format;
-
     use ip_test_macro::ip_test;
     use net_types::Witness;
     use net_types::ip::Ip;
     use test_case::test_case;
 
     use super::*;
-    use crate::testutil::{FakeDeviceId, TestIpExt};
+    use crate::testutil::{FakeDeviceClass, FakeMatcherDeviceId, TestIpExt};
 
     /// Only matches `true`.
     #[derive(Debug)]
@@ -394,14 +392,101 @@ mod tests {
         assert!(None::<TrueMatcher>.required_matches(None));
     }
 
-    #[test]
-    fn device_name_matcher() {
-        let device = FakeDeviceId;
-        let positive_matcher = InterfaceMatcher::Name(FakeDeviceId::FAKE_NAME.into());
-        let negative_matcher =
-            InterfaceMatcher::Name(format!("DONTMATCH-{}", FakeDeviceId::FAKE_NAME));
-        assert!(positive_matcher.matches(&device));
-        assert!(!negative_matcher.matches(&device));
+    #[test_case(
+        InterfaceMatcher::Id(FakeMatcherDeviceId::wlan_interface().id),
+        FakeMatcherDeviceId::wlan_interface() => true
+    )]
+    #[test_case(
+        InterfaceMatcher::Id(FakeMatcherDeviceId::wlan_interface().id),
+        FakeMatcherDeviceId::ethernet_interface() => false
+    )]
+    #[test_case(
+        InterfaceMatcher::Name(FakeMatcherDeviceId::wlan_interface().name),
+        FakeMatcherDeviceId::wlan_interface() => true
+    )]
+    #[test_case(
+        InterfaceMatcher::Name(FakeMatcherDeviceId::wlan_interface().name),
+        FakeMatcherDeviceId::ethernet_interface() => false
+    )]
+    #[test_case(
+        InterfaceMatcher::DeviceClass(FakeDeviceClass::Wlan),
+        FakeMatcherDeviceId::wlan_interface() => true
+    )]
+    #[test_case(
+        InterfaceMatcher::DeviceClass(FakeDeviceClass::Wlan),
+        FakeMatcherDeviceId::ethernet_interface() => false
+    )]
+    fn interface_matcher(
+        matcher: InterfaceMatcher<FakeDeviceClass>,
+        device: FakeMatcherDeviceId,
+    ) -> bool {
+        matcher.matches(&device)
+    }
+
+    #[test_case(BoundInterfaceMatcher::Unbound, None => true)]
+    #[test_case(
+        BoundInterfaceMatcher::Unbound,
+        Some(FakeMatcherDeviceId::wlan_interface()) => false
+    )]
+    #[test_case(
+        BoundInterfaceMatcher::Bound(
+            InterfaceMatcher::Id(FakeMatcherDeviceId::wlan_interface().id)
+        ),
+        None => false
+    )]
+    #[test_case(
+        BoundInterfaceMatcher::Bound(
+            InterfaceMatcher::Id(FakeMatcherDeviceId::wlan_interface().id)
+        ),
+        Some(FakeMatcherDeviceId::wlan_interface()) => true
+    )]
+    #[test_case(
+        BoundInterfaceMatcher::Bound(
+            InterfaceMatcher::Id(FakeMatcherDeviceId::wlan_interface().id)
+        ),
+        Some(FakeMatcherDeviceId::ethernet_interface()) => false
+    )]
+    #[test_case(
+        BoundInterfaceMatcher::Bound(
+            InterfaceMatcher::Name(FakeMatcherDeviceId::wlan_interface().name)
+        ),
+        None => false
+    )]
+    #[test_case(
+        BoundInterfaceMatcher::Bound(
+            InterfaceMatcher::Name(FakeMatcherDeviceId::wlan_interface().name)
+        ),
+        Some(FakeMatcherDeviceId::wlan_interface()) => true
+    )]
+    #[test_case(
+        BoundInterfaceMatcher::Bound(
+            InterfaceMatcher::Name(FakeMatcherDeviceId::wlan_interface().name)
+        ),
+        Some(FakeMatcherDeviceId::ethernet_interface()) => false
+    )]
+    #[test_case(
+        BoundInterfaceMatcher::Bound(
+            InterfaceMatcher::DeviceClass(FakeDeviceClass::Wlan)
+        ),
+        None => false
+    )]
+    #[test_case(
+        BoundInterfaceMatcher::Bound(
+            InterfaceMatcher::DeviceClass(FakeDeviceClass::Wlan)
+        ),
+        Some(FakeMatcherDeviceId::wlan_interface()) => true
+    )]
+    #[test_case(
+        BoundInterfaceMatcher::Bound(
+            InterfaceMatcher::DeviceClass(FakeDeviceClass::Wlan)
+        ),
+        Some(FakeMatcherDeviceId::ethernet_interface()) => false
+    )]
+    fn bound_interface_matcher(
+        matcher: BoundInterfaceMatcher<FakeDeviceClass>,
+        device: Option<FakeMatcherDeviceId>,
+    ) -> bool {
+        matcher.matches(&device.as_ref())
     }
 
     #[ip_test(I)]
