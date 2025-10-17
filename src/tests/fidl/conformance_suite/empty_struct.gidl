@@ -189,7 +189,7 @@ success("OptionalEmptyStructAbsent") {
 }
 
 decode_failure("OptionalEmptyStructInvalidPresenceIndicator") {
-    bindings_denylist = [dart, rust_next],
+    bindings_denylist = [dart],
     bytes = {
         v2 = [
             repeat(0xab):8,

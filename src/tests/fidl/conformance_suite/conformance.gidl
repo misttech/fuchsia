@@ -203,7 +203,6 @@ decode_failure("OptionalXUnionInStructPresentInvalidNumBytes") {
 }
 
 decode_failure("OptionalXUnionInStructPresentInvalidNumHandles") {
-    bindings_denylist = [rust_next],
     type = TestOptionalXUnionInStruct,
     bytes = {
         v2 = [

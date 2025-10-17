@@ -256,7 +256,7 @@ var decodeErrorPatternMap = map[ir.ErrorCode]string{
 	ir.InvalidInlineBitInEnvelope:         `"TODO: InvalidInlineBitInEnvelope"`,
 	ir.InvalidInlineMarkerInEnvelope:      `DecodeError::InvalidEnvelopeFlags(_)`,
 	ir.InvalidNumBytesInEnvelope:          "DecodeError::InvalidEnvelopeSize(_)",
-	ir.InvalidNumHandlesInEnvelope:        "DecodeError::InvalidEnvelopeSize(_)",
+	ir.InvalidNumHandlesInEnvelope:        "DecodeError::IncorrectNumberOfHandlesConsumed{ .. }",
 	ir.InvalidPaddingByte:                 `"TODO: InvalidPaddingByte"`,
 	ir.InvalidPresenceIndicator:           "DecodeError::InvalidPointerPresence(_)",
 	ir.MissingRequiredHandleRights:        `"TODO: MissingRequiredHandleRights"`,
