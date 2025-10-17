@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::power::{OnWakeOps, create_proxy_for_wake_events_counter_zero};
+use crate::power::{MessageCounterHandle, OnWakeOps, create_proxy_for_wake_events_counter_zero};
 use crate::task::{CurrentTask, TargetTime};
 use crate::vfs::timer::{TimelineChangeObserver, TimerOps};
 use anyhow::{Context, Result};
@@ -197,31 +197,31 @@ impl std::fmt::Display for TimerState {
 /// give us control over container suspension which is guarded by the compiler, not conventions.
 #[derive(Debug)]
 struct SuspendLock {
-    counter: Arc<zx::Counter>,
+    message_counter: MessageCounterHandle,
 }
 
 impl Drop for SuspendLock {
     fn drop(&mut self) {
-        self.counter.add(-1).expect("decrement counter");
+        self.message_counter.mark_handled();
     }
 }
 
 impl SuspendLock {
     /// Creates a suspend lock on the provided counter. The counter will be incrementeed
     /// at creation, and decremented at disposition.
-    fn new_with_increment(prototype: Arc<zx::Counter>) -> Self {
-        prototype.add(1).expect("increment counter");
+    fn new_with_increment(prototype: MessageCounterHandle) -> Self {
+        prototype.new_message();
         Self::new_internal(prototype)
     }
 
     /// Creates a suspend lock on the provided counter, but does not increase the counter.
-    fn new_without_increment(prototype: Arc<zx::Counter>) -> Self {
+    fn new_without_increment(prototype: MessageCounterHandle) -> Self {
         // No increment - the counter was already incremented by the wake proxy
         Self::new_internal(prototype)
     }
 
-    fn new_internal(prototype: Arc<zx::Counter>) -> Self {
-        Self { counter: prototype }
+    fn new_internal(prototype: MessageCounterHandle) -> Self {
+        Self { message_counter: prototype }
     }
 }
 
@@ -231,7 +231,7 @@ struct HrTimerManagerState {
 
     /// The event that is registered with runner to allow the hrtimer to wake the kernel.
     /// Optional, because we want the ability to inject a counter in tests.
-    message_counter: Option<Arc<zx::Counter>>,
+    message_counter: Option<MessageCounterHandle>,
 
     /// For recording timer events.
     inspect_node: BoundedListNode,
@@ -256,7 +256,7 @@ impl HrTimerManagerState {
     }
 
     /// Gets a new shareable instance of the message counter.
-    fn get_counter(&self) -> Arc<zx::Counter> {
+    fn get_counter(&self) -> MessageCounterHandle {
         let counter_ref =
             self.message_counter.as_ref().expect("message_counter is None, but should not be.");
         counter_ref.clone()
@@ -417,15 +417,11 @@ impl HrTimerManager {
                             .map(|(k, v)| (*k, v.deadline))
                             .collect::<Vec<_>>(),
                         guard.get_pending_timers_count(),
-                        guard
-                            .message_counter
-                            .as_ref()
-                            .map(|c| c.read().expect("message counter is readable"))
-                            .unwrap_or(0),
+                        guard.message_counter.as_ref().map(|c| c.to_string()).unwrap_or_default(),
                     )
                 };
                 inspector.root().record_uint("pending_timers_count", pending_timers_count as u64);
-                inspector.root().record_int("message_counter", message_counter);
+                inspector.root().record_string("message_counter", message_counter);
 
                 // These are the deadlines we are currently waiting for. The format is:
                 // `alarm koid` -> `deadline nanos` (remains: `duration until alarm nanos`)
@@ -561,7 +557,7 @@ impl HrTimerManager {
     // counter. Used to inject a fake counter in tests.
     fn inject_or_set_message_counter(
         self: &HrTimerManagerHandle,
-        message_counter: Arc<zx::Counter>,
+        message_counter: MessageCounterHandle,
     ) {
         let mut guard = self.lock();
         if guard.message_counter.is_none() {
@@ -647,14 +643,17 @@ impl HrTimerManager {
             connect_to_wake_alarms_async().expect("connection to wake alarms async proxy")
         });
 
-        let (device_channel, message_counter) =
-            if let Some(message_counter) = message_counter_for_test {
-                // For tests only.
-                (wake_channel, message_counter)
-            } else {
-                create_proxy_for_wake_events_counter_zero(wake_channel, "wake-alarms".to_string())
-            };
-        let message_counter = Arc::new(message_counter);
+        let counter_name = "wake-alarms";
+        let (device_channel, counter) = if let Some(message_counter) = message_counter_for_test {
+            // For tests only.
+            (wake_channel, message_counter)
+        } else {
+            create_proxy_for_wake_events_counter_zero(wake_channel, counter_name.to_string())
+        };
+        let message_counter = system_task
+            .kernel()
+            .suspend_resume_manager
+            .add_message_counter(counter_name, Some(counter));
         self.inject_or_set_message_counter(message_counter.clone());
         setup_done
             .as_ref()
@@ -868,7 +867,7 @@ impl HrTimerManager {
             log_debug!("watch_new_hrtimer_loop: pending timers:       {:?}", guard.pending_timers);
             log_debug!(
                 "watch_new_hrtimer_loop: message counter:      {:?}",
-                message_counter.read().expect("message counter is readable"),
+                message_counter.to_string(),
             );
             log_debug!(
                 "watch_new_hrtimer_loop: interval timers:      {:?}",
@@ -1102,6 +1101,7 @@ impl HrTimerNode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::power::MessageCounter;
     use crate::task::HrTimer;
     use crate::testing::spawn_kernel_and_run;
     use fake_wake_alarms::{MAGIC_EXPIRE_DEADLINE, Response, serve_fake_wake_alarms};
@@ -1376,23 +1376,25 @@ mod tests {
 
     #[fuchsia::test]
     async fn suspend_locks_behaviors() {
-        let counter = Arc::new(zx::Counter::create());
+        let counter = zx::Counter::create();
+        let message_counter =
+            MessageCounter::new("test", counter.duplicate_handle(zx::Rights::SAME_RIGHTS).ok());
 
         assert_eq!(counter.read().unwrap(), 0, "no locks");
-        let lock1 = SuspendLock::new_with_increment(counter.clone());
+        let lock1 = SuspendLock::new_with_increment(message_counter.clone());
         assert_eq!(counter.read().unwrap(), 1, "lock1 is created");
         {
-            let _lock2 = SuspendLock::new_with_increment(counter.clone());
+            let _lock2 = SuspendLock::new_with_increment(message_counter.clone());
             assert_eq!(counter.read().unwrap(), 2, "lock1 and _lock2 are live");
-            let _lock3 = SuspendLock::new_with_increment(counter.clone());
+            let _lock3 = SuspendLock::new_with_increment(message_counter.clone());
             assert_eq!(counter.read().unwrap(), 3, "lock1, and _lock2 and _lock 3 are all live");
         }
 
         assert_eq!(counter.read().unwrap(), 1, "lock1 is still live");
         {
-            let _lock4 = SuspendLock::new_without_increment(counter.clone());
+            let _lock4 = SuspendLock::new_without_increment(message_counter.clone());
             assert_eq!(counter.read().unwrap(), 1, "2 locks live, but only one increment");
-            let _lock5 = SuspendLock::new_with_increment(counter.clone());
+            let _lock5 = SuspendLock::new_with_increment(message_counter.clone());
             assert_eq!(counter.read().unwrap(), 2, "3 locks, 2 with increment");
         }
         assert_eq!(counter.read().unwrap(), 0, "only lock1 is live");

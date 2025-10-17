@@ -646,6 +646,7 @@ pub fn create_watcher_for_wake_events(watcher: zx::EventPair) {
         .expect("Failed to register wake watcher");
 }
 
+#[derive(Debug)]
 pub struct MessageCounter {
     name: String,
     counter: Option<zx::Counter>,
@@ -659,6 +660,11 @@ impl MessageCounter {
 
     pub fn mark_handled(&self) {
         self.counter.as_ref().map(mark_proxy_message_handled);
+    }
+
+    /// Increment the counter to keep the system awake.
+    pub fn new_message(&self) {
+        self.counter.as_ref().map(|c| c.add(1).expect("Failed to increment counter"));
     }
 }
 
