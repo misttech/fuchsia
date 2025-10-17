@@ -355,17 +355,18 @@ zx::result<display::DriverImageId> DisplayEngine::ImportImage(
       fidl::Arena arena;
       // AFBC does not use canvas.
       uint64_t offset = collection_info.buffers().at(buffer_index).vmo_usable_start();
+      const uint64_t kPageSize = zx_system_get_page_size();
       size_t size = fbl::round_up(
           ImageFormatImageSize(
               ImageConstraintsToFormat(arena, collection_info.settings().image_format_constraints(),
                                        image_metadata.dimensions().width(),
                                        image_metadata.dimensions().height())
                   .value()),
-          ZX_PAGE_SIZE);
+          kPageSize);
       zx_paddr_t paddr;
       zx::result<> pin_result = zx::make_result(bti_.pin(
           ZX_BTI_PERM_READ | ZX_BTI_CONTIGUOUS, collection_info.buffers().at(buffer_index).vmo(),
-          offset & ~(ZX_PAGE_SIZE - 1), size, &paddr, 1, &import_info->pmt));
+          offset & ~(kPageSize - 1), size, &paddr, 1, &import_info->pmt));
       if (pin_result.is_error()) {
         fdf::error("Failed to pin BTI: {}", pin_result);
         return pin_result.take_error();

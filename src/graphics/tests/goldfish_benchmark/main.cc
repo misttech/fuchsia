@@ -187,7 +187,7 @@ int main(int argc, char** argv) {
       RunPingPongBenchmark(pipe, size, iterations, /* skip_if_out_of_memory */ false);
     }
   } else {
-    RunPingPongBenchmark(pipe, ZX_PAGE_SIZE, 500, /* skip_if_out_of_memory */ false);
+    RunPingPongBenchmark(pipe, zx_system_get_page_size(), 500, /* skip_if_out_of_memory */ false);
 
     // In some cases the system might not be able to allocate a contiguous
     // memory space of 1MB due to out of memory. In that case we should just

@@ -308,14 +308,14 @@ zx_status_t RdmaEngine::SetupRdma() {
   StopRdma();
   bti_.release_quarantine();
 
-  status = zx::vmo::create_contiguous(bti_, kRdmaRegionSize, 0, &rdma_vmo_);
+  status = zx::vmo::create_contiguous(bti_, RdmaRegionSize(), 0, &rdma_vmo_);
   if (status != ZX_OK) {
     fdf::error("Could not create RDMA VMO: {}", zx::make_result(status));
     return status;
   }
 
   zx_paddr_t rdma_physical_address = 0;
-  status = bti_.pin(ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE, rdma_vmo_, 0, kRdmaRegionSize,
+  status = bti_.pin(ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE, rdma_vmo_, 0, RdmaRegionSize(),
                     &rdma_physical_address, 1, &rdma_pmt_);
   if (status != ZX_OK) {
     fdf::error("Could not create RDMA VMO: {}", zx::make_result(status));
@@ -324,13 +324,13 @@ zx_status_t RdmaEngine::SetupRdma() {
 
   zx_vaddr_t rdma_virtual_address = 0;
   status = zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, rdma_vmo_, 0,
-                                      kRdmaRegionSize, &rdma_virtual_address);
+                                      RdmaRegionSize(), &rdma_virtual_address);
   if (status != ZX_OK) {
     fdf::error("Could not map RDMA VMO: {}", zx::make_result(status));
     return status;
   }
   const cpp20::span<uint8_t> rdma_region(reinterpret_cast<uint8_t*>(rdma_virtual_address),
-                                         kRdmaRegionSize);
+                                         RdmaRegionSize());
 
   // At this point, we have a table initialized.
   // Initialize each rdma channel container
@@ -344,14 +344,14 @@ zx_status_t RdmaEngine::SetupRdma() {
   }
 
   // Allocate RDMA Table for AFBC engine
-  status = zx::vmo::create_contiguous(bti_, kAfbcRdmaRegionSize, 0, &afbc_rdma_vmo_);
+  status = zx::vmo::create_contiguous(bti_, RdmaRegionSize(), 0, &afbc_rdma_vmo_);
   if (status != ZX_OK) {
     fdf::error("Could not create afbc RDMA VMO: {}", zx::make_result(status));
     return status;
   }
 
   zx_paddr_t afbc_rdma_physical_address = 0;
-  status = bti_.pin(ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE, afbc_rdma_vmo_, 0, kAfbcRdmaRegionSize,
+  status = bti_.pin(ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE, afbc_rdma_vmo_, 0, RdmaRegionSize(),
                     &afbc_rdma_physical_address, 1, &afbc_rdma_pmt_);
   if (status != ZX_OK) {
     fdf::error("Could not pin afbc RDMA VMO: {}", zx::make_result(status));
@@ -360,7 +360,7 @@ zx_status_t RdmaEngine::SetupRdma() {
 
   zx_vaddr_t afbc_rdma_virtual_address = 0;
   status = zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, afbc_rdma_vmo_, 0,
-                                      kAfbcRdmaRegionSize, &afbc_rdma_virtual_address);
+                                      RdmaRegionSize(), &afbc_rdma_virtual_address);
   if (status != ZX_OK) {
     fdf::error("Could not map afbc vmar: {}", zx::make_result(status));
     return status;

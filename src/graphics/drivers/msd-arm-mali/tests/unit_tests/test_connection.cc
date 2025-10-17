@@ -22,6 +22,8 @@
 
 namespace {
 
+const uint32_t kPageSize = zx_system_get_page_size();
+
 template <typename T>
 static T ReadValueFromBuffer(MsdArmBuffer* buffer, uint64_t offset) {
   // Map and memcpy instead of PlatformBuffer::Read to ensure this function works with
@@ -1035,8 +1037,8 @@ class TestConnection {
     uint64_t jit_region_start;
     InitializeJitAddressSpace(connection, &jit_region_start);
 
-    constexpr uint32_t kBufferSize = ZX_PAGE_SIZE;
-    constexpr uint32_t kAddressPageAddress = ZX_PAGE_SIZE * 100;
+    const uint32_t kBufferSize = kPageSize;
+    const uint32_t kAddressPageAddress = 100 * kPageSize;
     auto buffer = CreateBufferAtAddress(connection, kAddressPageAddress, kBufferSize);
 
     // Allocate two atoms that together take up the space.
@@ -1099,13 +1101,13 @@ class TestConnection {
     uint64_t jit_region_start;
     InitializeJitAddressSpace(connection, &jit_region_start);
 
-    constexpr uint32_t kBufferSize = ZX_PAGE_SIZE;
+    const uint32_t kBufferSize = kPageSize;
     std::shared_ptr<MsdArmBuffer> buffer(
         MsdArmBuffer::Create(kBufferSize, "test-buffer").release());
     EXPECT_TRUE(buffer);
     buffer->platform_buffer()->SetCachePolicy(MAGMA_CACHE_POLICY_WRITE_COMBINING);
 
-    constexpr uint32_t kAddressPageAddress = ZX_PAGE_SIZE * 100;
+    const uint32_t kAddressPageAddress = 100 * kPageSize;
     auto mapping = std::make_unique<GpuMapping>(kAddressPageAddress, 0, kBufferSize, 0,
                                                 connection.get(), buffer);
     EXPECT_TRUE(connection->AddMapping(std::move(mapping)));
@@ -1146,8 +1148,8 @@ class TestConnection {
     uint64_t jit_region_start;
     InitializeJitAddressSpace(connection, &jit_region_start);
 
-    constexpr uint32_t kBufferSize = ZX_PAGE_SIZE;
-    constexpr uint32_t kAddressPageAddress = ZX_PAGE_SIZE * 100;
+    const uint32_t kBufferSize = kPageSize;
+    const uint32_t kAddressPageAddress = 100 * kPageSize;
     auto buffer = CreateBufferAtAddress(connection, kAddressPageAddress, kBufferSize);
 
     // Allocate two atoms that together take up the space.
@@ -1229,8 +1231,8 @@ class TestConnection {
     uint64_t jit_region_start;
     InitializeJitAddressSpace(connection, &jit_region_start);
 
-    constexpr uint32_t kBufferSize = ZX_PAGE_SIZE;
-    constexpr uint32_t kAddressPageAddress = ZX_PAGE_SIZE * 100;
+    const uint32_t kBufferSize = kPageSize;
+    const uint32_t kAddressPageAddress = 100 * kPageSize;
     auto buffer = CreateBufferAtAddress(connection, kAddressPageAddress, kBufferSize);
 
     std::vector<magma_arm_jit_memory_allocate_info> infos(1);
@@ -1256,8 +1258,8 @@ class TestConnection {
     uint64_t jit_region_start;
     InitializeJitAddressSpace(connection, &jit_region_start);
 
-    constexpr uint32_t kBufferSize = ZX_PAGE_SIZE;
-    constexpr uint32_t kAddressPageAddress = ZX_PAGE_SIZE * 100;
+    const uint32_t kBufferSize = kPageSize;
+    const uint32_t kAddressPageAddress = 100 * kPageSize;
     auto buffer = CreateBufferAtAddress(connection, kAddressPageAddress, kBufferSize);
 
     std::vector<magma_arm_jit_memory_allocate_info> infos(1);
@@ -1282,8 +1284,8 @@ class TestConnection {
     uint64_t jit_region_start;
     InitializeJitAddressSpace(connection, &jit_region_start);
 
-    constexpr uint32_t kBufferSize = ZX_PAGE_SIZE;
-    constexpr uint32_t kAddressPageAddress = ZX_PAGE_SIZE * 100;
+    const uint32_t kBufferSize = kPageSize;
+    const uint32_t kAddressPageAddress = 100 * kPageSize;
     auto buffer = CreateBufferAtAddress(connection, kAddressPageAddress, kBufferSize);
 
     // Allocate two atoms that together take up the space.
@@ -1326,7 +1328,7 @@ class TestConnection {
     owner.set_memory_pressure_level(msd::MAGMA_MEMORY_PRESSURE_LEVEL_CRITICAL);
 
     // ID 1 has 1 committed page.
-    EXPECT_EQ(ZX_PAGE_SIZE, connection->PeriodicMemoryPressureCallback());
+    EXPECT_EQ(kPageSize, connection->PeriodicMemoryPressureCallback());
     {
       std::lock_guard lock(connection->address_lock_);
       EXPECT_EQ(1u, connection->jit_memory_regions_.size());
@@ -1340,7 +1342,7 @@ class TestConnection {
       std::lock_guard lock(connection->address_lock_);
       EXPECT_EQ(1u, connection->jit_memory_regions_.size());
     }
-    EXPECT_EQ(ZX_PAGE_SIZE, connection->PeriodicMemoryPressureCallback());
+    EXPECT_EQ(kPageSize, connection->PeriodicMemoryPressureCallback());
     {
       std::lock_guard lock(connection->address_lock_);
       EXPECT_EQ(0u, connection->jit_memory_regions_.size());

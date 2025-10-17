@@ -14,6 +14,8 @@
 #include <limits>
 #include <utility>
 
+#include <fbl/algorithm.h>
+
 namespace intel_display {
 
 template <typename T>
@@ -32,7 +34,8 @@ std::pair<T, size_t> RoundToPageBoundaries(T region_start_address, size_t region
   const uint32_t page_offset = static_cast<uint32_t>(region_start_address & page_bits_mask);
   ZX_ASSERT(page_offset == region_start_address - first_page_address);
 
-  const size_t page_region_size = ZX_PAGE_ALIGN(region_size + page_offset);
+  const size_t page_region_size =
+      fbl::round_up(region_size + page_offset, zx_system_get_page_size());
 
   ZX_ASSERT(first_page_address + page_region_size >= region_start_address + region_size);
   return {first_page_address, page_region_size};

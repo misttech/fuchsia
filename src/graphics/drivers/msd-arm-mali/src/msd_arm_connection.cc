@@ -921,7 +921,7 @@ size_t MsdArmConnection::FreeUnusedJitRegionsIfNeeded() {
       continue;
     }
     jit_allocator_->Free(address);
-    removed_size += region.buffer->committed_page_count() * ZX_PAGE_SIZE;
+    removed_size += region.buffer->committed_page_count() * zx_system_get_page_size();
     --it;
     it = jit_memory_regions_.erase(it);
   }

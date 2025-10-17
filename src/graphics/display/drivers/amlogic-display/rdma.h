@@ -76,14 +76,11 @@ constexpr size_t kTableSize = (IDX_MAX * sizeof(RdmaTable));
 // Single element table for AFBC (ARM Frame Buffer Compression) RDMA
 constexpr size_t kAfbcTableSize = sizeof(RdmaTable);
 
-// Non-AFBC RDMA Region size
-constexpr size_t kRdmaRegionSize = ZX_PAGE_SIZE;
-
-// AFBC RDMA Region Size
-constexpr size_t kAfbcRdmaRegionSize = ZX_PAGE_SIZE;
+// RDMA Region size (AFBC and non-AFBC)
+inline size_t RdmaRegionSize() { return zx_system_get_page_size(); }
 
 // Arbitrarily limit table size to maximum 16
-constexpr uint32_t kNumberOfTables = std::min(16ul, (kRdmaRegionSize / (kTableSize)));
+constexpr uint32_t kNumberOfTables = std::min(16ul, (ZX_MIN_PAGE_SIZE / (kTableSize)));
 // We should have space for at least 3 tables. If RDMA table has grown too large and cannot
 // fit more than 3 tables within a PAGE_SIZE, we need to either:
 // - Re-evaluate why RDMA table has grown so large
@@ -109,7 +106,7 @@ struct RdmaChannelContainer {
 
 /*
  * RDMA Operation Design (non-AFBC):
- * Allocate kRdmaRegionSize of physical contiguous memory. This region will include
+ * Allocate RdmaRegionSize() of physical contiguous memory. This region will include
  * kNumberOfTables of RDMA Tables.
  * RDMA Tables will get populated with <reg><val> pairs. The last element will be a unique
  * stamp for a given configuration. The stamp is used to verify how far the RDMA channel was able
