@@ -393,12 +393,19 @@ async fn update(
             attempt_res
         };
 
-        if let Err(AttemptError::UpdateCanceled) = attempt_res.as_ref() {
-            co.yield_(fupdate_installer_ext::State::Canceled).await;
-        }
+        let status_code = metrics::result_to_status_code(attempt_res.as_ref().map(|_| ()));
+        let attempt_res = match attempt_res {
+            Ok(ok) => Some(ok),
+            Err(e) => {
+                if let AttemptError::UpdateCanceled = e {
+                    co.yield_(fupdate_installer_ext::State::Canceled).await;
+                }
+                error!("system update failed: {:#}", anyhow!(e));
+                None
+            }
+        };
 
         info!("system update attempt completed, logging metrics");
-        let status_code = metrics::result_to_status_code(attempt_res.as_ref().map(|_| ()));
         cobalt.log_ota_result_attempt(
             config.initiator,
             history.lock().attempts_for(&source_version, &target_version) + 1,
@@ -417,12 +424,8 @@ async fn update(
         info!("flushing cobalt events");
         let () = flush_cobalt(cobalt_forwarder_task, COBALT_FLUSH_TIMEOUT).await;
 
-        let (state, mode) = match attempt_res {
-            Ok(ok) => ok,
-            Err(e) => {
-                error!("system update failed: {:#}", anyhow!(e));
-                return target_version;
-            }
+        let Some((state, mode)) = attempt_res else {
+            return target_version;
         };
 
         info!(mode:?; "checking if reboot is required or should be deferred");
