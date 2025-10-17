@@ -351,8 +351,8 @@ zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
   // Copy the symbols from the primary parent.
   composite->symbols_ = primary->symbols_;
 
-  // Copy the dictionary from the primary parent.
-  composite->dictionary_ref_ = primary->dictionary_ref_;
+  // The primary decides if the dictionary is for the whole subtree.
+  composite->dictionary_for_subtree_ = primary->dictionary_for_subtree_;
 
   // Copy the offers from each parent.
   std::vector<NodeOffer> node_offers;
@@ -372,6 +372,22 @@ zx::result<std::shared_ptr<Node>> Node::CreateCompositeNode(
           parent_index == primary_index);
       node_offers.push_back(std::move(offer));
     }
+
+    if (parent_ptr->dictionary_ref_.has_value()) {
+      if (primary->dictionary_for_subtree_ && parent_index != primary_index) {
+        fdf_log::error(
+            "Cannot have a dictionary ref when the primary's dictionary is for the subtree.");
+        return zx::error(ZX_ERR_INVALID_ARGS);
+      }
+
+      if (composite->dictionary_ref_.has_value()) {
+        fdf_log::error("Multiple parents have a dictionary ref.");
+        return zx::error(ZX_ERR_INVALID_ARGS);
+      }
+
+      composite->dictionary_ref_ = parent_ptr->dictionary_ref_;
+    }
+
     parent_index++;
   }
   composite->offers_ = std::move(node_offers);
@@ -950,31 +966,36 @@ Node::OwnedByParent::OwnedByParent(fidl::ServerEnd<fdf::Node> node, Node* child)
     : node_ref_(child->dispatcher_, std::move(node), child,
                 [](Node* node, fidl::UnbindInfo info) { node->OnNodeServerUnbound(info); }) {}
 
-fit::result<fdf::NodeError, std::shared_ptr<Node>> Node::AddChildHelper(
-    fuchsia_driver_framework::NodeAddArgs args,
-    fidl::ServerEnd<fuchsia_driver_framework::NodeController> controller,
-    fidl::ServerEnd<fuchsia_driver_framework::Node> node) {
+void Node::AddChildHelper(fuchsia_driver_framework::NodeAddArgs args,
+                          fidl::ServerEnd<fuchsia_driver_framework::NodeController> controller,
+                          fidl::ServerEnd<fuchsia_driver_framework::Node> node,
+                          AddNodeResultCallback callback) {
   if (!unbinding_children_completers_.empty()) {
     fdf_log::error("Failed to add node: Node is currently unbinding all of its children");
-    return fit::as_error(fdf::NodeError::kUnbindChildrenInProgress);
+    callback(fit::as_error(fdf::NodeError::kUnbindChildrenInProgress));
+    return;
   }
   if (node_manager_ == nullptr) {
     fdf_log::warn("Failed to add Node, as this Node '{}' was removed", name());
-    return fit::as_error(fdf::NodeError::kNodeRemoved);
+    callback(fit::as_error(fdf::NodeError::kNodeRemoved));
+    return;
   }
   if (GetNodeShutdownCoordinator().IsShuttingDown()) {
     fdf_log::warn("Failed to add Node, as this Node '{}' is being removed", name());
-    return fit::as_error(fdf::NodeError::kNodeRemoved);
+    callback(fit::as_error(fdf::NodeError::kNodeRemoved));
+    return;
   }
   if (!args.name().has_value()) {
     fdf_log::error("Failed to add Node, a name must be provided");
-    return fit::as_error(fdf::NodeError::kNameMissing);
+    callback(fit::as_error(fdf::NodeError::kNameMissing));
+    return;
   }
   std::string_view name = args.name().value();
   for (auto& child : children_) {
     if (child->name() == name) {
       fdf_log::error("Failed to add Node '{}', name already exists among siblings", name);
-      return fit::as_error(fdf::NodeError::kNameAlreadyExists);
+      callback(fit::as_error(fdf::NodeError::kNameAlreadyExists));
+      return;
     }
   };
   std::shared_ptr child =
@@ -994,7 +1015,8 @@ fit::result<fdf::NodeError, std::shared_ptr<Node>> Node::AddChildHelper(
       fdf_log::error(
           "Failed to add Node '{}'. Found values for both properties and properties2 are set. Only one of the fields can be set.",
           name);
-      return fit::as_error(fdf::NodeError::kUnsupportedArgs);
+      callback(fit::as_error(fdf::NodeError::kUnsupportedArgs));
+      return;
     }
 
     properties.reserve(arg_deprecated_properties->size());
@@ -1003,18 +1025,15 @@ fit::result<fdf::NodeError, std::shared_ptr<Node>> Node::AddChildHelper(
         fdf_log::error(
             "Failed to add Node '{}'. Found integer-based key {} which is no longer supported.",
             name, property.key().int_value().value());
-        return fit::as_error(fdf::NodeError::kUnsupportedArgs);
+        callback(fit::as_error(fdf::NodeError::kUnsupportedArgs));
+        return;
       }
       properties.emplace_back(ToProperty2(property));
     }
   }
 
   if (fdf_offers.has_value()) {
-    size_t n = 0;
-    if (fdf_offers.has_value()) {
-      n = fdf_offers.value().size();
-    }
-    child->offers_.reserve(n);
+    child->offers_.reserve(fdf_offers.value().size());
 
     // Find a parent node with a collection. This indicates that a driver has
     // been bound to the node, and the driver is running within the collection.
@@ -1025,26 +1044,35 @@ fit::result<fdf::NodeError, std::shared_ptr<Node>> Node::AddChildHelper(
     std::string source_name = source_node->MakeComponentMoniker();
     Collection source_collection = source_node->collection_;
 
-    if (fdf_offers.has_value()) {
-      for (auto& fdf_offer : fdf_offers.value()) {
-        fit::result new_offer =
-            ProcessNodeOfferWithTransportProperty(fdf_offer, source_collection, source_name);
-        if (new_offer.is_error()) {
-          fdf_log::error("Failed to add Node '{}': Bad add offer: {}", child->MakeTopologicalPath(),
-                         new_offer.error_value());
-          return new_offer.take_error();
-        }
-        auto [processed_offer, property] = std::move(new_offer.value());
-        child->offers_.emplace_back(processed_offer);
-        properties.emplace_back(property);
+    for (auto& fdf_offer : fdf_offers.value()) {
+      fit::result new_offer =
+          ProcessNodeOfferWithTransportProperty(fdf_offer, source_collection, source_name);
+      if (new_offer.is_error()) {
+        fdf_log::error("Failed to add Node '{}': Bad add offer: {}", child->MakeTopologicalPath(),
+                       new_offer.error_value());
+        callback(new_offer.take_error());
+        return;
       }
+      auto [processed_offer, property] = std::move(new_offer.value());
+      child->offers_.emplace_back(processed_offer);
+      properties.emplace_back(property);
     }
+  }
+
+  if (args.offers_dictionary().has_value() && dictionary_for_subtree_) {
+    fdf_log::error(
+        "Unsupported offers_dictionary while subtree_dictionary_ref_ is set for node '{}'.", name);
+    callback(fit::as_error(fdf::NodeError::kUnsupportedArgs));
+    return;
   }
 
   child->bus_info_ = std::move(args.bus_info());
 
-  // Copy the dictionary of a parent node down to the child.
-  child->dictionary_ref_ = dictionary_ref_;
+  // Copy the subtree dictionary of a parent node down to the child.
+  if (dictionary_for_subtree_) {
+    child->dictionary_ref_ = dictionary_ref_;
+    child->dictionary_for_subtree_ = true;
+  }
 
   child->SetNonCompositeProperties(properties);
 
@@ -1052,7 +1080,8 @@ fit::result<fdf::NodeError, std::shared_ptr<Node>> Node::AddChildHelper(
     auto is_valid = ValidateSymbols(symbols.value());
     if (is_valid.is_error()) {
       fdf_log::error("Failed to add Node '{}', bad symbols", name);
-      return fit::as_error(is_valid.error_value());
+      callback(fit::as_error(is_valid.error_value()));
+      return;
     }
 
     child->symbols_ = std::move(args.symbols().value());
@@ -1099,15 +1128,36 @@ fit::result<fdf::NodeError, std::shared_ptr<Node>> Node::AddChildHelper(
                                      }
                                    });
   }
-  if (node.is_valid()) {
-    child->state_.emplace<OwnedByParent>(std::move(node), child.get());
-  } else {
-    auto tracker = child->CreateBindResultTracker(/*silent=*/true);
-    (*node_manager_)->Bind(*child, std::move(tracker));
-  }
 
-  child->AddToParents();
-  return fit::ok(child);
+  auto finish = [this, child, node = std::move(node)]() mutable {
+    if (node.is_valid()) {
+      child->state_.emplace<OwnedByParent>(std::move(node), child.get());
+    } else {
+      auto tracker = child->CreateBindResultTracker(/*silent=*/true);
+      (*node_manager_)->Bind(*child, std::move(tracker));
+    }
+
+    child->AddToParents();
+  };
+
+  if (args.offers_dictionary().has_value()) {
+    (*node_manager_)
+        ->ImportDictionary(*std::move(args.offers_dictionary()),
+                           [child, callback = std::move(callback),
+                            finish = std::move(finish)](zx::result<uint64_t> result) mutable {
+                             // If the import failed it will log a warning, but we don't need to
+                             // fail the child creation.
+                             if (result.is_ok()) {
+                               child->dictionary_ref_ = result.value();
+                             }
+
+                             finish();
+                             callback(fit::ok(child));
+                           });
+  } else {
+    finish();
+    callback(fit::ok(child));
+  }
 }
 
 void Node::WaitForChildToExit(std::string_view name,
@@ -1177,7 +1227,8 @@ void Node::AddChild(fuchsia_driver_framework::NodeAddArgs args,
           callback(result.take_error());
           return;
         }
-        callback(self->AddChildHelper(std::move(args), std::move(controller), std::move(node)));
+        self->AddChildHelper(std::move(args), std::move(controller), std::move(node),
+                             std::move(callback));
       });
 }
 

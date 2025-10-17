@@ -38,11 +38,11 @@ zx::result<> Runner::Publish(component::OutgoingDirectory& outgoing) {
       bindings_.CreateHandler(this, dispatcher_, fidl::kIgnoreBindingClosure));
 }
 
-void Runner::CreateDriverComponent(
-    const std::shared_ptr<ComponentOwner>& owner,
-    fidl::ServerEnd<fcomponent::Controller> controller_request, std::string_view moniker,
-    std::string_view url, std::string_view collection_name, const std::vector<NodeOffer>& offers,
-    std::optional<fuchsia_component_sandbox::DictionaryRef> dictionary_ref) {
+void Runner::CreateDriverComponent(const std::shared_ptr<ComponentOwner>& owner,
+                                   fidl::ServerEnd<fcomponent::Controller> controller_request,
+                                   std::string_view moniker, std::string_view url,
+                                   std::string_view collection_name,
+                                   const std::vector<NodeOffer>& offers) {
   fidl::Arena arena;
   auto child_decl = fdecl::wire::Child::Builder(arena)
                         .name(fidl::StringView::FromExternal(moniker))
@@ -56,8 +56,10 @@ void Runner::CreateDriverComponent(
     child_args_builder.controller(std::move(controller_request));
   }
 
+  auto offers_dictionary = owner->TakeDictionary();
+
   size_t offers_count;
-  if (!dictionary_ref.has_value()) {
+  if (!owner->SkipInjectedOffers()) {
     offers_count = offers.size() + offer_injector_.ExtraOffersCount();
   } else {
     offers_count = offers.size();
@@ -76,14 +78,14 @@ void Runner::CreateDriverComponent(
       }
     }
   }
-  if (!dictionary_ref.has_value()) {
+  if (!owner->SkipInjectedOffers()) {
     offer_injector_.Inject(arena, dynamic_offers, offers.size());
   }
 
   child_args_builder.dynamic_offers(dynamic_offers);
 
-  if (dictionary_ref.has_value()) {
-    child_args_builder.dictionary(fidl::ToWire(arena, *std::move(dictionary_ref)));
+  if (offers_dictionary) {
+    child_args_builder.dictionary(fidl::ToWire(arena, std::move(offers_dictionary.value())));
   }
 
   std::string child_moniker(moniker);

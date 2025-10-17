@@ -157,7 +157,7 @@ void BindManager::OnMatchDriverCallback(
   // available for binding when the match callback is fired. Currently, there are no issues from it,
   // but it is something we should address.
   if (!node) {
-    fdf_log::warn("Node was freed before it could be bound");
+    fdf_log::warn("Node {} was freed before it could be bound", request.node_moniker);
     return;
   }
 

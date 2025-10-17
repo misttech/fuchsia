@@ -5,6 +5,7 @@ library fuchsia.driver.framework;
 
 using fuchsia.device.fs;
 using fuchsia.component;
+using fuchsia.component.sandbox;
 using fuchsia.component.decl;
 using fuchsia.io;
 
@@ -225,6 +226,14 @@ type NodeAddArgs = resource table {
     /// only be specified by bus drivers, ideally those which are included by default.
     @available(added=26)
     7: bus_info BusInfo;
+
+    /// This can be used to provide additional offers, through a dictionary, to the driver that is
+    /// bound to this node. Unlike |offers2|, any capabilities available through this dictionary
+    /// are opaque to the driver framework.
+    /// All capabilities directly in the dictionary MUST be mutually exclusive from the offers in
+    /// offers2.
+    @available(added=HEAD)
+    9: offers_dictionary fuchsia.component.sandbox.DictionaryRef;
 };
 
 @available(added=NEXT)

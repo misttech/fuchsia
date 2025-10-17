@@ -229,6 +229,7 @@ class Devfs : public fidl::Server<fuchsia_component_runner::ComponentController>
   void RequestStartComponent(fuchsia_process::wire::HandleInfo startup_handle,
                              const std::string& moniker,
                              const std::weak_ptr<BootupTracker>& bootup_tracker) override;
+  bool SkipInjectedOffers() const override { return true; }
 
   fbl::RefPtr<PseudoDir> get_class_entry(std::string_view class_name) {
     ZX_ASSERT(class_entries_.contains(std::string(class_name)));

@@ -129,6 +129,11 @@ class NodeManager {
   }
 
   virtual void WaitForBootup(fit::callback<void()> callback) { callback(); }
+
+  virtual void ImportDictionary(fuchsia_component_sandbox::DictionaryRef dictionary,
+                                fit::callback<void(zx::result<uint64_t>)> callback) {
+    callback(zx::error(ZX_ERR_NOT_SUPPORTED));
+  }
 };
 
 class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
@@ -337,7 +342,8 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   fuchsia_driver_framework::NodePropertyDictionary2 GetNodePropertyDict() const;
 
-  void SetDictionaryRef(std::optional<uint64_t> dictionary_ref) {
+  void SetSubtreeDictionaryRef(std::optional<uint64_t> dictionary_ref) {
+    dictionary_for_subtree_ = dictionary_ref.has_value();
     dictionary_ref_ = dictionary_ref;
   }
 
@@ -346,6 +352,21 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   void UnmarkAsCompositeParent() { state_ = Unbound{}; }
 
   std::optional<uint64_t> dictionary_ref() { return dictionary_ref_; }
+
+  bool has_dictionary() const { return offers_dictionary_.has_value(); }
+
+  void SetDictionary(fuchsia_component_sandbox::DictionaryRef dictionary) {
+    ZX_ASSERT_MSG(!offers_dictionary_, "cannot SetDictionary when one already exists.");
+    offers_dictionary_ = std::move(dictionary);
+  }
+
+  bool SkipInjectedOffers() const override { return dictionary_for_subtree_; }
+
+  std::optional<fuchsia_component_sandbox::DictionaryRef> TakeDictionary() override {
+    std::optional<fuchsia_component_sandbox::DictionaryRef> temp;
+    std::swap(temp, offers_dictionary_);
+    return temp;
+  }
 
   const Collection& collection() const { return collection_; }
 
@@ -497,10 +518,10 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   std::shared_ptr<BindResultTracker> CreateBindResultTracker(bool silent = false);
 
-  fit::result<fuchsia_driver_framework::NodeError, std::shared_ptr<Node>> AddChildHelper(
-      fuchsia_driver_framework::NodeAddArgs args,
-      fidl::ServerEnd<fuchsia_driver_framework::NodeController> controller,
-      fidl::ServerEnd<fuchsia_driver_framework::Node> node);
+  void AddChildHelper(fuchsia_driver_framework::NodeAddArgs args,
+                      fidl::ServerEnd<fuchsia_driver_framework::NodeController> controller,
+                      fidl::ServerEnd<fuchsia_driver_framework::Node> node,
+                      AddNodeResultCallback callback);
 
   // Creates a passthrough for the associated devfs node that will connect to
   // the device controller of this node if no connector provided, or the connection
@@ -565,8 +586,14 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   std::optional<fuchsia_driver_framework::BusInfo> bus_info_;
 
   // A component framework dictionary that should be provided to the driver
-  // that binds to this node, as well as any children nodes.
+  // that binds to this node.
+  // This ref will become an offers_dictionary_ in the driver_runner when the driver is starting.
   std::optional<uint64_t> dictionary_ref_;
+  std::optional<fuchsia_component_sandbox::DictionaryRef> offers_dictionary_;
+
+  // Whether the dictionary_ref_ should be passed down the node subtree. If false, the dictionary
+  // is only for the current node (or the composite parented by this node).
+  bool dictionary_for_subtree_ = false;
 
   Collection collection_ = Collection::kNone;
   fuchsia_driver_framework::DriverPackageType driver_package_type_;

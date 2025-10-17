@@ -4,6 +4,7 @@
 
 #include "src/devices/bin/driver_manager/driver_runner.h"
 
+#include <fidl/fuchsia.component.sandbox/cpp/common_types_format.h>
 #include <fidl/fuchsia.driver.development/cpp/wire.h>
 #include <fidl/fuchsia.driver.host/cpp/wire.h>
 #include <fidl/fuchsia.driver.index/cpp/wire.h>
@@ -224,15 +225,13 @@ void PerformBFS(const std::shared_ptr<Node>& starting_node,
 
 void CallStartDriverOnRunner(Runner& runner, Node& node, const std::string& moniker,
                              std::string_view url,
-                             std::optional<fuchsia_component_sandbox::DictionaryRef> ref,
                              const std::shared_ptr<BootupTracker>& bootup_tracker) {
   if (!node.HasDriverComponentController()) {
     auto [controller_client, controller_request] =
         fidl::Endpoints<fcomponent::Controller>::Create();
     node.SetController(std::move(controller_client));
     runner.CreateDriverComponent(node.shared_from_this(), std::move(controller_request), moniker,
-                                 url, CollectionName(node.collection()).get(), node.offers(),
-                                 std::move(ref));
+                                 url, CollectionName(node.collection()).get(), node.offers());
   } else {
     runner.StartDriverComponent(moniker);
   }
@@ -584,7 +583,7 @@ void DriverRunner::StartDevfsDriver(std::shared_ptr<driver_manager::Devfs>& devf
   std::vector<NodeOffer> offers;
   runner_.CreateDriverComponent(devfs, std::move(controller_request), "devfs_driver",
                                 "fuchsia-boot:///devfs-driver#meta/devfs-driver.cm",
-                                CollectionName(Collection::kBoot).get(), offers, std::nullopt);
+                                CollectionName(Collection::kBoot).get(), offers);
 }
 
 void DriverRunner::NewDriverAvailable(NewDriverAvailableCompleter::Sync& completer) {
@@ -613,7 +612,7 @@ zx::result<> DriverRunner::StartDriver(Node& node, std::string_view url,
   auto moniker = node.MakeComponentMoniker();
   bootup_tracker_->NotifyNewStartRequest(moniker, url_string);
 
-  if (node.dictionary_ref().has_value()) {
+  if (node.dictionary_ref().has_value() && !node.has_dictionary()) {
     uint64_t dest = cap_id_++;
     capability_store_->DictionaryCopy(node.dictionary_ref().value(), dest)
         .Then(
@@ -640,16 +639,16 @@ zx::result<> DriverRunner::StartDriver(Node& node, std::string_view url,
                       return;
                     }
 
-                    CallStartDriverOnRunner(
-                        runner_, *node, moniker, url_string,
-                        fidl::ToNatural(std::move(result->value()->capability.dictionary())),
-                        bootup_tracker_);
+                    node->SetDictionary(
+                        fidl::ToNatural(std::move(result->value()->capability.dictionary())));
+
+                    CallStartDriverOnRunner(runner_, *node, moniker, url_string, bootup_tracker_);
                   });
             });
     return zx::ok();
   }
 
-  CallStartDriverOnRunner(runner_, node, moniker, url, std::nullopt, bootup_tracker_);
+  CallStartDriverOnRunner(runner_, node, moniker, url, bootup_tracker_);
   return zx::ok();
 }
 
@@ -791,6 +790,31 @@ bool DriverRunner::IsDriverHostValid(DriverHost* driver_host) const {
   return driver_hosts_.find_if([driver_host](const DriverHostComponent& host) {
     return &host == driver_host;
   }) != driver_hosts_.end();
+}
+
+void DriverRunner::ImportDictionary(fuchsia_component_sandbox::DictionaryRef dictionary,
+                                    fit::callback<void(zx::result<uint64_t>)> callback) {
+  uint64_t imported = cap_id_++;
+  capability_store_
+      ->Import(imported, fuchsia_component_sandbox::wire::Capability::WithDictionary(
+                             fuchsia_component_sandbox::wire::DictionaryRef{
+                                 .token = std::move(dictionary.token())}))
+      .Then([imported, callback = std::move(callback)](
+                fidl::WireUnownedResult<fuchsia_component_sandbox::CapabilityStore::Import>&
+                    result) mutable {
+        if (!result.ok()) {
+          fdf_log::warn("failed to call import dictionary ref {}", result.FormatDescription());
+          callback(zx::error(result.status()));
+          return;
+        }
+        if (result->is_error()) {
+          fdf_log::warn("failed to import dictionary ref {}", result->error_value());
+          callback(zx::error(ZX_ERR_INTERNAL));
+          return;
+        }
+
+        callback(zx::ok(imported));
+      });
 }
 
 zx::result<std::string> DriverRunner::StartDriver(
@@ -972,7 +996,7 @@ void DriverRunner::RestartWithDictionary(fidl::StringView moniker,
         std::shared_ptr<driver_manager::Node> restarted_node = nullptr;
         PerformBFS(root_node_, [&](const std::shared_ptr<driver_manager::Node>& current) {
           if (current->MakeComponentMoniker() == moniker) {
-            if (current->dictionary_ref()) {
+            if (current->dictionary_ref().has_value()) {
               fdf_log::error(
                   "RestartWithDictionary requested node id already contains a dictionary_ref from another RestartWithDictionary operation.");
               return false;
@@ -980,7 +1004,7 @@ void DriverRunner::RestartWithDictionary(fidl::StringView moniker,
             ZX_ASSERT_MSG(restarted_node == nullptr,
                           "Multiple nodes with same moniker not possible.");
             restarted_node = current;
-            current->SetDictionaryRef(imported);
+            current->SetSubtreeDictionaryRef(imported);
             current->RestartNode();
             return false;
           }
@@ -998,7 +1022,7 @@ void DriverRunner::RestartWithDictionary(fidl::StringView moniker,
                   async_dispatcher_t* dispatcher, async::WaitOnce* wait, zx_status_t status,
                   const zx_packet_signal_t* signal) {
                 fdf_log::info("RestartWithDictionary operation released.");
-                restarted_node->SetDictionaryRef(std::nullopt);
+                restarted_node->SetSubtreeDictionaryRef(std::nullopt);
                 restarted_node->RestartNode();
               });
 

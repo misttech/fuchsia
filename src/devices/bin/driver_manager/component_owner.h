@@ -35,6 +35,12 @@ class ComponentOwner {
   virtual void RequestStartComponent(fuchsia_process::wire::HandleInfo startup_handle,
                                      const std::string& moniker,
                                      const std::weak_ptr<BootupTracker>& bootup_tracker) = 0;
+
+  virtual bool SkipInjectedOffers() const { return false; }
+
+  virtual std::optional<fuchsia_component_sandbox::DictionaryRef> TakeDictionary() {
+    return std::nullopt;
+  }
 };
 
 }  // namespace driver_manager

@@ -201,6 +201,9 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
       fit::callback<void(zx::result<DriverHost*>)> completion_cb) override;
   bool IsDriverHostValid(DriverHost* driver_host) const override;
 
+  void ImportDictionary(fuchsia_component_sandbox::DictionaryRef dictionary,
+                        fit::callback<void(zx::result<uint64_t>)> callback) override;
+
   // BindManagerBridge interface.
   zx::result<std::string> StartDriver(
       Node& node, fuchsia_driver_framework::wire::DriverInfo driver_info) override;
