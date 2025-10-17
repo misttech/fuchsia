@@ -38,11 +38,7 @@ shared_library("fostr_shared") {
 
 if (is_host) {
   host_test_data("fostr_shared_test_data") {
-    if (is_linux) {
-      sources = [ "$root_out_dir/libfostr_shared.so" ]
-    } else if (is_mac) {
-      sources = [ "$root_out_dir/libfostr_shared.dylib" ]
-    }
+    sources = [ "$root_out_dir/libfostr_shared.so" ]
     deps = [ ":fostr_shared($host_toolchain)" ]
   }
 }

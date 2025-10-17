@@ -6,8 +6,6 @@ static_library("buildid") {
   sources = [ "buildid.h" ]
   if (current_os == "linux") {
     sources += [ "linux.cc" ]
-  } else if (current_os == "mac") {
-    sources += [ "macos.cc" ]
   }
 
   cflags = [ "-fPIC" ]

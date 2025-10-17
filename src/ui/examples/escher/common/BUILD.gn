@@ -41,7 +41,7 @@ source_set("common_base") {
   ]
   include_dirs = [ "//lib" ]
 
-  if (is_linux || is_mac) {
+  if (is_linux) {
     deps += [ ":demo_harness_glfw" ]
   }
 }

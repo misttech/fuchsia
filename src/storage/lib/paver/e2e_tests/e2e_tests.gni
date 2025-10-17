@@ -67,7 +67,7 @@ import("//build/testing/host_test.gni")
 #   - Optional: tftp block size.
 #   - Type: integer string
 template("e2e_tests_pave") {
-  assert(is_linux || is_mac, "system_tests are for linux/mac only")
+  assert(is_linux, "system_tests are for linux only")
 
   assert(
       defined(invoker.downgrade_release_builder) ||

@@ -39,7 +39,7 @@ source_set("ftl") {
   ]
   friend = [ "test:*" ]
 
-  if (is_fuchsia || is_mac) {
+  if (is_fuchsia) {
     sources += [ "utils/semaphore.cc" ]
   } else {
     sources += [ "utils/semaphore_posix.cc" ]

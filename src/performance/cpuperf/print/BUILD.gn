@@ -13,7 +13,7 @@ group("print") {
   ]
 }
 
-# TODO(dje): At the moment it only runs on linux or macos.
+# TODO(dje): At the moment it only runs on linux.
 
 executable("cpuperf_print") {
   sources = [

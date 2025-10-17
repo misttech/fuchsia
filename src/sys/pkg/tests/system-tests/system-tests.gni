@@ -161,7 +161,7 @@ _environment_service_account =
 #   - Optional: resolver mode to use
 #   - Type: string, default "constant"
 template("system_test_upgrade_suite") {
-  assert(is_linux || is_mac, "system_tests are for linux/mac only")
+  assert(is_linux, "system_tests are for linux only")
 
   assert(
       !(defined(invoker.downgrade_release_builder) &&
@@ -469,7 +469,7 @@ template("system_test_upgrade_suite") {
 #   - Optional: check that the device booted into the expected ABR slot.
 #   - Type: bool, default true
 template("system_test_reboot_suite") {
-  assert(is_linux || is_mac, "system_test_reboot_suite is for linux/mac only")
+  assert(is_linux, "system_test_reboot_suite is for linux only")
 
   assert(
       !(defined(invoker.release_builder) && defined(invoker.release_build_id)),
@@ -630,7 +630,7 @@ template("system_test_reboot_suite") {
 #   - Optional: check that the device booted into the expected ABR slot.
 #   - Type: bool, default true
 template("system_test_recovery_suite") {
-  assert(is_linux || is_mac, "system_test_recovery_suite is for linux/mac only")
+  assert(is_linux, "system_test_recovery_suite is for linux only")
 
   assert(
       !(defined(invoker.release_builder) && defined(invoker.release_build_id)),

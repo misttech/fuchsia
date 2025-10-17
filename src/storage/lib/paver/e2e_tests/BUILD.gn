@@ -40,7 +40,7 @@ if (is_host) {
   }
 }
 
-if (is_linux || is_mac) {
+if (is_linux) {
   e2e_tests_pave("nuc-release-pave") {
     downgrade_release_builder = "fuchsia/global.ci/core.x64-release"
 

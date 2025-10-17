@@ -91,7 +91,7 @@ group("system_tests") {
   ]
 }
 
-if (is_linux || is_mac) {
+if (is_linux) {
   system_test_reboot_suite("workstation-release-reboot") {
     environments = [
       # These are disabled on NUCs to preserve hardware capacity.
