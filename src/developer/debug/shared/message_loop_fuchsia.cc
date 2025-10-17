@@ -16,6 +16,7 @@
 
 #include "src/developer/debug/shared/channel_watcher.h"
 #include "src/developer/debug/shared/event_handlers.h"
+#include "src/developer/debug/shared/event_pair_watcher.h"
 #include "src/developer/debug/shared/logging/logging.h"
 #include "src/developer/debug/shared/message_loop.h"
 #include "src/developer/debug/shared/socket_watcher.h"
@@ -23,8 +24,6 @@
 #include "src/developer/debug/shared/zx_status.h"
 
 namespace debug {
-
-ChannelWatcher::~ChannelWatcher() = default;
 
 MessageLoopFuchsia::MessageLoopFuchsia() : loop_(&kAsyncLoopConfigAttachToCurrentThread) {}
 
@@ -191,6 +190,28 @@ zx_status_t MessageLoopFuchsia::WatchChannel(zx_handle_t channel, ChannelWatcher
   return ZX_OK;
 }
 
+zx_status_t MessageLoopFuchsia::WatchEventPair(zx_handle_t event_pair, EventPairWatcher* watcher,
+                                               MessageLoop::WatchHandle* out) {
+  WatchInfo info;
+  info.type = WatchType::kEventPair;
+  info.event_pair_watcher = watcher;
+  info.event_pair_handle = event_pair;
+
+  int watch_id = GetNextWatchID();
+
+  zx_signals_t signals = ZX_EVENTPAIR_PEER_CLOSED;
+
+  zx_status_t status = AddSignalHandler(watch_id, event_pair, signals, &info);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  watches_[watch_id] = std::move(info);
+  *out = WatchHandle(this, watch_id);
+
+  return ZX_OK;
+}
+
 zx_status_t MessageLoopFuchsia::WatchProcessExceptions(WatchProcessConfig config,
                                                        MessageLoop::WatchHandle* out) {
   WatchInfo info;
@@ -284,6 +305,7 @@ void MessageLoopFuchsia::HandleChannelException(const ChannelExceptionHandler& h
   // We should only receive exceptions here.
   switch (watch_info->type) {
     case WatchType::kChannel:
+    case WatchType::kEventPair:
     case WatchType::kFdio:
     case WatchType::kSocket:
       FX_NOTREACHED() << "Should only receive exceptions.";
@@ -370,6 +392,7 @@ void MessageLoopFuchsia::StopWatching(int id) {
       fdio_unsafe_release(info.fdio);
       __FALLTHROUGH;
     case WatchType::kChannel:
+    case WatchType::kEventPair:
     case WatchType::kSocket:
       RemoveSignalHandler(&info);
       break;
@@ -458,7 +481,7 @@ void MessageLoopFuchsia::OnJobException(const WatchInfo& info, zx::exception exc
 void MessageLoopFuchsia::OnSocketSignal(int watch_id, const WatchInfo& info,
                                         zx_signals_t observed) {
   if (observed & ZX_SOCKET_PEER_CLOSED) {
-    info.socket_watcher->OnSocketError(info.socket_handle);
+    info.socket_watcher->OnPeerClosed(info.socket_handle);
     return;
   }
 
@@ -499,7 +522,12 @@ void MessageLoopFuchsia::OnChannelSignal(int watch_id, const WatchInfo& info,
   }
 
   if (observed & ZX_CHANNEL_PEER_CLOSED)
-    info.channel_watcher->OnChannelClosed(info.channel_handle);
+    info.channel_watcher->OnPeerClosed(info.channel_handle);
+}
+
+void MessageLoopFuchsia::OnEventPairSignal(const WatchInfo& info, zx_signals_t observed) {
+  if (observed & ZX_EVENTPAIR_PEER_CLOSED)
+    info.event_pair_watcher->OnPeerClosed(info.event_pair_handle);
 }
 
 const char* WatchTypeToString(WatchType type) {
@@ -514,6 +542,8 @@ const char* WatchTypeToString(WatchType type) {
       return "Process";
     case WatchType::kSocket:
       return "Socket";
+    case WatchType::kEventPair:
+      return "EventPair";
   }
 
   FX_NOTREACHED();

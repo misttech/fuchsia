@@ -82,11 +82,11 @@ void BufferedZxSocket::OnSocketWritable(zx_handle_t) {
   // until proven otherwise.
   watch_handle_ = {};
   MessageLoopFuchsia::Current()->WatchSocket(MessageLoop::WatchMode::kRead, socket_.get(), this,
-                                            &watch_handle_);
+                                             &watch_handle_);
   stream().SetWritable();
 }
 
-void BufferedZxSocket::OnSocketError(zx_handle_t) {
+void BufferedZxSocket::OnPeerClosed(zx_handle_t) {
   if (error_callback())
     error_callback()();
 }
@@ -106,7 +106,7 @@ size_t BufferedZxSocket::ConsumeStreamBufferData(const char* data, size_t len) {
   if (written < len) {
     watch_handle_ = {};
     MessageLoopFuchsia::Current()->WatchSocket(MessageLoop::WatchMode::kReadWrite, socket_.get(),
-                                              this, &watch_handle_);
+                                               this, &watch_handle_);
   }
   return written;
 }

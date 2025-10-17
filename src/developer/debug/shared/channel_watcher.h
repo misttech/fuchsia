@@ -11,13 +11,14 @@
 
 #include <zircon/types.h>
 
+#include "src/developer/debug/shared/peered_object_watcher.h"
+
 namespace debug {
-class ChannelWatcher {
+class ChannelWatcher : public PeeredObjectWatcher {
  public:
   virtual void OnChannelReadable(zx_handle_t) = 0;
-  virtual void OnChannelClosed(zx_handle_t) = 0;
 
-  virtual ~ChannelWatcher();
+  virtual ~ChannelWatcher() = default;
 };
 }  // namespace debug
 #endif  // SRC_DEVELOPER_DEBUG_SHARED_CHANNEL_WATCHER_H_

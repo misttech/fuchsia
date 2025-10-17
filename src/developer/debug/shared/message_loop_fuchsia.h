@@ -21,12 +21,20 @@
 namespace debug {
 
 class ChannelWatcher;
+class EventPairWatcher;
 class ExceptionHandler;
 class SignalHandler;
 class SocketWatcher;
 class ZirconExceptionWatcher;
 
-enum class WatchType : uint32_t { kChannel, kFdio, kProcessExceptions, kJobExceptions, kSocket };
+enum class WatchType : uint32_t {
+  kChannel,
+  kFdio,
+  kProcessExceptions,
+  kJobExceptions,
+  kSocket,
+  kEventPair
+};
 const char* WatchTypeToString(WatchType);
 
 // MessageLoop is a virtual class to enable tests to intercept watch messages.
@@ -71,6 +79,9 @@ class MessageLoopFuchsia : public MessageLoop {
   // this is modified in the future to watch for both readable and writable events, then the same
   // restriction as |WatchSocket| will apply.
   virtual zx_status_t WatchChannel(zx_handle_t channel, ChannelWatcher* watcher, WatchHandle* out);
+
+  virtual zx_status_t WatchEventPair(zx_handle_t event_pair, EventPairWatcher* watcher,
+                                     WatchHandle* out);
 
   // Expose the underlying dispatcher from the async loop.
   async_dispatcher_t* dispatcher() { return loop_.dispatcher(); }
@@ -139,6 +150,7 @@ class MessageLoopFuchsia : public MessageLoop {
 
   void OnSocketSignal(int watch_id, const WatchInfo& info, zx_signals_t observed);
   void OnChannelSignal(int watch_id, const WatchInfo& info, zx_signals_t observed);
+  void OnEventPairSignal(const WatchInfo& info, zx_signals_t observed);
 
   std::map<int, WatchInfo> watches_;
 
@@ -199,6 +211,9 @@ struct MessageLoopFuchsia::WatchInfo {
   zx_koid_t task_koid = 0;
   zx_handle_t task_handle = ZX_HANDLE_INVALID;
   bool uses_exception_channel = true;
+
+  EventPairWatcher* event_pair_watcher = nullptr;
+  zx_handle_t event_pair_handle = ZX_HANDLE_INVALID;
 
   // This makes easier the lookup of the associated ExceptionHandler with this watch id.
   const async_wait_t* signal_handler_key = nullptr;

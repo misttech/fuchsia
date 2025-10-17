@@ -11,13 +11,14 @@
 
 #include <zircon/types.h>
 
+#include "src/developer/debug/shared/peered_object_watcher.h"
+
 namespace debug {
 
-class SocketWatcher {
+class SocketWatcher : public PeeredObjectWatcher {
  public:
   virtual void OnSocketReadable(zx_handle_t socket_handle) {}
   virtual void OnSocketWritable(zx_handle_t socket_handle) {}
-  virtual void OnSocketError(zx_handle_t socket_handle) {}
 
   virtual ~SocketWatcher() = default;
 };

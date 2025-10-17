@@ -41,7 +41,7 @@ class BufferedZxSocket final : public BufferedStream, public SocketWatcher {
   // SocketWatcher implementation.
   void OnSocketReadable(zx_handle_t) override;
   void OnSocketWritable(zx_handle_t) override;
-  void OnSocketError(zx_handle_t) override;
+  void OnPeerClosed(zx_handle_t) override;
 
   // StreamBuffer::Writer implementation.
   size_t ConsumeStreamBufferData(const char* data, size_t len) override;

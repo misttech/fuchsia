@@ -490,7 +490,9 @@ TEST(MessageLoop, RunUntilNoTasks_EmptyQueue) {
 
   std::string error_message;
   ASSERT_TRUE(loop.Init(&error_message)) << error_message;
-  { loop.RunUntilNoTasks(); }
+  {
+    loop.RunUntilNoTasks();
+  }
 
   loop.Cleanup();
 }
@@ -554,7 +556,7 @@ class ReadableWatcher : public ChannelWatcher, public SocketWatcher {
       have_gotten_channel_data_ = true;
     }
   }
-  void OnChannelClosed(zx_handle_t) override {
+  void OnPeerClosed(zx_handle_t) override {
     // We should have always drained the channel data before acknowledging the PEER_CLOSED event.
     ASSERT_TRUE(have_gotten_channel_data_);
     loop_->QuitNow();

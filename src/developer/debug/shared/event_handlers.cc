@@ -96,6 +96,9 @@ void SignalHandler::Handler(async_dispatcher_t*, async_wait_t* wait, zx_status_t
     case WatchType::kProcessExceptions:
       loop->OnProcessTerminated(*watch_info, signal->observed);
       break;
+    case WatchType::kEventPair:
+      loop->OnEventPairSignal(*watch_info, signal->observed);
+      break;
     case WatchType::kJobExceptions:
       FX_NOTREACHED();
   }
