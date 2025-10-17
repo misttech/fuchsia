@@ -29,6 +29,7 @@ GENERATED_FILE_HEADER = """#![allow(dead_code)]
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 #![allow(clippy::missing_safety_doc)]
+#![allow(clippy::undocumented_unsafe_blocks, reason = "bindgen-generated code")]
 """
 
 # Replacements to add to these defined by the user.
