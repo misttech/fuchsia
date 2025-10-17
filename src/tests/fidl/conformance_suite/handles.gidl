@@ -29,7 +29,6 @@ encode_failure("AbsentNonOptionalHandle") {
 }
 
 decode_failure("AbsentNonOptionalHandle") {
-    bindings_denylist = [rust_next],
     bytes = {
         v2 = [
             repeat(0x00):4, padding:4,

@@ -72,7 +72,7 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireHandle {
         munge!(let Self { encoded } = slot.as_mut());
 
         match **encoded {
-            0 => (),
+            0 => return Err(DecodeError::RequiredHandleAbsent),
             u32::MAX => {
                 let handle = decoder.take_raw_handle()?;
                 munge!(let Self { mut decoded } = slot);
@@ -144,13 +144,20 @@ impl WireOptionalHandle {
 }
 
 unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireOptionalHandle {
-    fn decode(
-        mut slot: Slot<'_, Self>,
-        decoder: &mut D,
-        constraint: <Self as Constrained>::Constraint,
-    ) -> Result<(), DecodeError> {
-        munge!(let Self { handle } = slot.as_mut());
-        WireHandle::decode(handle, decoder, constraint)
+    fn decode(mut slot: Slot<'_, Self>, decoder: &mut D, _: ()) -> Result<(), DecodeError> {
+        munge!(let Self { handle: mut wire_handle } = slot.as_mut());
+        munge!(let WireHandle { encoded } = wire_handle.as_mut());
+
+        match **encoded {
+            0 => (),
+            u32::MAX => {
+                let handle = decoder.take_raw_handle()?;
+                munge!(let WireHandle { mut decoded } = wire_handle);
+                decoded.write(handle);
+            }
+            e => return Err(DecodeError::InvalidHandlePresence(e)),
+        }
+        Ok(())
     }
 }
 

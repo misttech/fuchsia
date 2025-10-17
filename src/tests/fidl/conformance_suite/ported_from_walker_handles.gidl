@@ -258,7 +258,7 @@ decode_failure("ArrayOfPresentHandlesTooFewError") {
 
 decode_failure("ArrayOfNonnullableHandlesSomeAbsentError") {
     // TODO(https://fxbug.dev/42136336): Close handles on encode/decode failure.
-    bindings_denylist = [dart, rust_next],
+    bindings_denylist = [dart],
     handle_defs = {
         #0 = event(),
         #1 = event(),

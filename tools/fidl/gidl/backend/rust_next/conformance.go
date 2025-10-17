@@ -262,7 +262,7 @@ var decodeErrorPatternMap = map[ir.ErrorCode]string{
 	ir.MissingRequiredHandleRights:        `"TODO: MissingRequiredHandleRights"`,
 	ir.NonEmptyStringWithNullBody:         "DecodeError::InvalidOptionalSize(_) | DecodeError::RequiredValueAbsent",
 	ir.NonEmptyVectorWithNullBody:         "DecodeError::InvalidOptionalSize(_) | DecodeError::RequiredValueAbsent",
-	ir.NonNullableTypeWithNullValue:       "DecodeError::RequiredValueAbsent",
+	ir.NonNullableTypeWithNullValue:       "DecodeError::RequiredValueAbsent | DecodeError::RequiredHandleAbsent",
 	ir.StrictBitsUnknownBit:               "DecodeError::InvalidBits{ .. }",
 	ir.StrictEnumUnknownValue:             "DecodeError::InvalidEnumOrdinal(_)",
 	ir.StrictUnionUnknownField:            "DecodeError::InvalidUnionOrdinal(_)",
