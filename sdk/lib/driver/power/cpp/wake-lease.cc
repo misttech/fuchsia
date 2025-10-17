@@ -88,12 +88,7 @@ bool ManualWakeLease::Start(bool ignore_system_state) {
   }
 
   active_ = true;
-  bool lease_acquired = AcquireLease(ignore_system_state);
-
-  // Set the suspension state to false because either we already had a lease
-  // or we acquired one, in which case we aren't suspended or won't be soon.
-  system_suspended_ = false;
-  return lease_acquired;
+  return AcquireLease(ignore_system_state);
 }
 
 // Indicate that the operation is complete. The system may suspend after this
