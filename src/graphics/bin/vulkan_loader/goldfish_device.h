@@ -24,9 +24,10 @@ class GoldfishDevice : public GpuDevice,
 
   IcdList& icd_list() override { return icd_list_; }
 
- private:
-  void on_fidl_error(fidl::UnbindInfo unbind_info) override;
+  // `fidl::WireAsyncEventHandler<fuchsia_hardware_goldfish::PipeDevice>`:
+  void on_fidl_error(::fidl::UnbindInfo error) override;
 
+ private:
   explicit GoldfishDevice(LoaderApp* app) : GpuDevice(app) {}
 
   bool Initialize(const fidl::ClientEnd<fuchsia_io::Directory>& dir, const std::string& name,

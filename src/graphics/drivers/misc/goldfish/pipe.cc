@@ -13,6 +13,7 @@
 #include <fbl/auto_lock.h>
 
 #include "src/devices/lib/goldfish/pipe_headers/include/base.h"
+#include "src/graphics/drivers/misc/goldfish/pipe_device.h"
 
 namespace goldfish {
 namespace {
@@ -116,15 +117,11 @@ void Pipe::Bind(fidl::ServerEnd<fuchsia_hardware_goldfish::Pipe> server_request)
   using PipeProtocol = fuchsia_hardware_goldfish::Pipe;
   using PipeServer = fidl::WireServer<PipeProtocol>;
   auto on_unbound = [this](PipeServer*, fidl::UnbindInfo info, fidl::ServerEnd<PipeProtocol>) {
-    if (info.is_user_initiated()) {
-      return;
+    if (info.is_peer_closed() || info.is_user_initiated()) {
+      zxlogf(DEBUG, "Pipe closed: %s", info.FormatDescription().c_str());
+    } else {
+      zxlogf(ERROR, "Pipe error: %s", info.FormatDescription().c_str());
     }
-    if (info.is_peer_closed()) {
-      // Client closed without errors. No-op.
-      return;
-    }
-    // handle pipe error.
-    zxlogf(ERROR, "[%s] Pipe error: %s\n", kTag, info.FormatDescription().c_str());
     if (on_close_) {
       on_close_(this);
     }
