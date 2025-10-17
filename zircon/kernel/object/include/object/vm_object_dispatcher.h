@@ -75,16 +75,8 @@ class VmObjectDispatcher final : public SoloDispatcher<VmObjectDispatcher, ZX_DE
 
   zx_info_vmo_t GetVmoInfo(zx_rights_t rights);
 
+  zx_status_t SetContentSize(uint64_t);
   zx_status_t SetStreamSize(uint64_t);
-
-  // The implementation of zx_object_set_property ZX_PROP_VMO_CONTENT_SIZE.
-  //
-  // ZX_PROP_VMO_CONTENT_SIZE is considered legacy by RFC-0238.
-  //
-  // Different from |VmObjectDispatcher::SetStreamSize| in that newly revealed
-  // content is not guaranteed to be zero.
-  zx_status_t SetLegacyPropVmoContentSize(uint64_t);
-
   uint64_t GetContentSize() const;
 
   const fbl::RefPtr<VmObject>& vmo() const { return vmo_; }
