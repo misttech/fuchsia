@@ -636,6 +636,10 @@ pub mod wire {
             decoder_: &mut ___D,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+            if slot_.as_bytes()[316..320] != [0u8; 4] {
+                return Err(::fidl_next::DecodeError::InvalidPadding);
+            }
+
             ::fidl_next::munge! {
                 let Self {
 

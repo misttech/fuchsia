@@ -153,6 +153,10 @@ pub enum DecodeError {
     #[error("invalid empty struct")]
     InvalidEmptyStruct,
 
+    /// Invalid padding
+    #[error("invalid padding")]
+    InvalidPadding,
+
     /// Validation Failed
     #[error("validation failed")]
     Validation(#[from] crate::ValidationError),

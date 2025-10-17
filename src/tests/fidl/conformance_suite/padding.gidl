@@ -20,7 +20,6 @@ success("CorrectPaddingBetweenFieldsInt8Int16") {
 }
 
 decode_failure("BadPaddingBetweenFieldsInt8Int16") {
-    bindings_denylist = [rust_next],
     type = PaddingBetweenFieldsInt8Int16,
     bytes = {
         v2 = [
@@ -48,7 +47,6 @@ success("CorrectPaddingBetweenFieldsInt8Int32") {
 }
 
 decode_failure("BadPaddingBetweenFieldsInt8Int32LowerByte") {
-    bindings_denylist = [rust_next],
     type = PaddingBetweenFieldsInt8Int32,
     bytes = {
         v2 = [
@@ -61,7 +59,6 @@ decode_failure("BadPaddingBetweenFieldsInt8Int32LowerByte") {
 }
 
 decode_failure("BadPaddingBetweenFieldsInt8Int32MiddleByte") {
-    bindings_denylist = [rust_next],
     type = PaddingBetweenFieldsInt8Int32,
     bytes = {
         v2 = [
@@ -74,7 +71,6 @@ decode_failure("BadPaddingBetweenFieldsInt8Int32MiddleByte") {
 }
 
 decode_failure("BadPaddingBetweenFieldsInt8Int32UpperByte") {
-    bindings_denylist = [rust_next],
     type = PaddingBetweenFieldsInt8Int32,
     bytes = {
         v2 = [
@@ -101,7 +97,6 @@ success("CorrectPaddingBetweenFieldsInt8Int64") {
 }
 
 decode_failure("BadPaddingBetweenFieldsInt8Int64LowerByte") {
-    bindings_denylist = [rust_next],
     type = PaddingBetweenFieldsInt8Int64,
     bytes = {
         v2 = [
@@ -114,7 +109,6 @@ decode_failure("BadPaddingBetweenFieldsInt8Int64LowerByte") {
 }
 
 decode_failure("BadPaddingBetweenFieldsInt8Int64MiddleByte") {
-    bindings_denylist = [rust_next],
     type = PaddingBetweenFieldsInt8Int64,
     bytes = {
         v2 = [
@@ -127,7 +121,6 @@ decode_failure("BadPaddingBetweenFieldsInt8Int64MiddleByte") {
 }
 
 decode_failure("BadPaddingBetweenFieldsInt8Int64UpperByte") {
-    bindings_denylist = [rust_next],
     type = PaddingBetweenFieldsInt8Int64,
     bytes = {
         v2 = [
@@ -154,7 +147,6 @@ success("CorrectPaddingBetweenFieldsInt16Int32") {
 }
 
 decode_failure("BadPaddingBetweenFieldsInt16Int32LowerByte") {
-    bindings_denylist = [rust_next],
     type = PaddingBetweenFieldsInt16Int32,
     bytes = {
         v2 = [
@@ -167,7 +159,6 @@ decode_failure("BadPaddingBetweenFieldsInt16Int32LowerByte") {
 }
 
 decode_failure("BadPaddingBetweenFieldsInt16Int32UpperByte") {
-    bindings_denylist = [rust_next],
     type = PaddingBetweenFieldsInt16Int32,
     bytes = {
         v2 = [
@@ -194,7 +185,6 @@ success("CorrectPaddingBetweenFieldsInt16Int64") {
 }
 
 decode_failure("BadPaddingBetweenFieldsInt16Int64LowerByte") {
-    bindings_denylist = [rust_next],
     type = PaddingBetweenFieldsInt16Int64,
     bytes = {
         v2 = [
@@ -207,7 +197,6 @@ decode_failure("BadPaddingBetweenFieldsInt16Int64LowerByte") {
 }
 
 decode_failure("BadPaddingBetweenFieldsInt16Int64MiddleByte") {
-    bindings_denylist = [rust_next],
     type = PaddingBetweenFieldsInt16Int64,
     bytes = {
         v2 = [
@@ -220,7 +209,6 @@ decode_failure("BadPaddingBetweenFieldsInt16Int64MiddleByte") {
 }
 
 decode_failure("BadPaddingBetweenFieldsInt16Int64UpperByte") {
-    bindings_denylist = [rust_next],
     type = PaddingBetweenFieldsInt16Int64,
     bytes = {
         v2 = [
@@ -247,7 +235,6 @@ success("CorrectPaddingBetweenFieldsInt32Int64") {
 }
 
 decode_failure("BadPaddingBetweenFieldsInt32Int64LowerByte") {
-    bindings_denylist = [rust_next],
     type = PaddingBetweenFieldsInt32Int64,
     bytes = {
         v2 = [
@@ -260,7 +247,6 @@ decode_failure("BadPaddingBetweenFieldsInt32Int64LowerByte") {
 }
 
 decode_failure("BadPaddingBetweenFieldsInt32Int64MiddleByte") {
-    bindings_denylist = [rust_next],
     type = PaddingBetweenFieldsInt32Int64,
     bytes = {
         v2 = [
@@ -273,7 +259,6 @@ decode_failure("BadPaddingBetweenFieldsInt32Int64MiddleByte") {
 }
 
 decode_failure("BadPaddingBetweenFieldsInt32Int64UpperByte") {
-    bindings_denylist = [rust_next],
     type = PaddingBetweenFieldsInt32Int64,
     bytes = {
         v2 = [
@@ -631,7 +616,6 @@ success("CorrectPaddingEndOfInlineObjectBeforeNextObject1Byte") {
 }
 
 decode_failure("BadPaddingEndOfInlineObjectBeforeNextObject1ByteLowerByte") {
-    bindings_denylist = [rust_next],
     type = PaddingEndOfInlineObjectBeforeNextObject1Byte,
     bytes = {
         v2 = [
@@ -647,7 +631,6 @@ decode_failure("BadPaddingEndOfInlineObjectBeforeNextObject1ByteLowerByte") {
 }
 
 decode_failure("BadPaddingEndOfInlineObjectBeforeNextObject1ByteUpperByte") {
-    bindings_denylist = [rust_next],
     type = PaddingEndOfInlineObjectBeforeNextObject1Byte,
     bytes = {
         v2 = [
@@ -684,7 +667,6 @@ success("CorrectPaddingEndOfInlineObjectBeforeNextObject2Byte") {
 }
 
 decode_failure("BadPaddingEndOfInlineObjectBeforeNextObject2ByteLowerByte") {
-    bindings_denylist = [rust_next],
     type = PaddingEndOfInlineObjectBeforeNextObject2Byte,
     bytes = {
         v2 = [
@@ -700,7 +682,6 @@ decode_failure("BadPaddingEndOfInlineObjectBeforeNextObject2ByteLowerByte") {
 }
 
 decode_failure("BadPaddingEndOfInlineObjectBeforeNextObject2ByteUpperByte") {
-    bindings_denylist = [rust_next],
     type = PaddingEndOfInlineObjectBeforeNextObject2Byte,
     bytes = {
         v2 = [
@@ -739,7 +720,6 @@ success("CorrectPaddingEndOfInlineObjectBeforeNextObject3Byte") {
 }
 
 decode_failure("BadPaddingEndOfInlineObjectBeforeNextObject3ByteLowerByte") {
-    bindings_denylist = [rust_next],
     type = PaddingEndOfInlineObjectBeforeNextObject3Byte,
     bytes = {
         v2 = [
@@ -756,7 +736,6 @@ decode_failure("BadPaddingEndOfInlineObjectBeforeNextObject3ByteLowerByte") {
 }
 
 decode_failure("BadPaddingEndOfInlineObjectBeforeNextObject3ByteUpperByte") {
-    bindings_denylist = [rust_next],
     type = PaddingEndOfInlineObjectBeforeNextObject3Byte,
     bytes = {
         v2 = [
@@ -794,7 +773,6 @@ success("CorrectPaddingEndOfInlineObjectBeforeNextObject4Byte") {
 }
 
 decode_failure("BadPaddingEndOfInlineObjectBeforeNextObject4ByteLowerByte") {
-    bindings_denylist = [rust_next],
     type = PaddingEndOfInlineObjectBeforeNextObject4Byte,
     bytes = {
         v2 = [
@@ -810,7 +788,6 @@ decode_failure("BadPaddingEndOfInlineObjectBeforeNextObject4ByteLowerByte") {
 }
 
 decode_failure("BadPaddingEndOfInlineObjectBeforeNextObject4ByteUpperByte") {
-    bindings_denylist = [rust_next],
     type = PaddingEndOfInlineObjectBeforeNextObject4Byte,
     bytes = {
         v2 = [
@@ -849,7 +826,6 @@ success("CorrectPaddingEndOfInlineObjectBeforeNextObject5Byte") {
 }
 
 decode_failure("BadPaddingEndOfInlineObjectBeforeNextObject5ByteLowerByte") {
-    bindings_denylist = [rust_next],
     type = PaddingEndOfInlineObjectBeforeNextObject5Byte,
     bytes = {
         v2 = [
@@ -866,7 +842,6 @@ decode_failure("BadPaddingEndOfInlineObjectBeforeNextObject5ByteLowerByte") {
 }
 
 decode_failure("BadPaddingEndOfInlineObjectBeforeNextObject5ByteUpperByte") {
-    bindings_denylist = [rust_next],
     type = PaddingEndOfInlineObjectBeforeNextObject5Byte,
     bytes = {
         v2 = [
@@ -906,7 +881,6 @@ success("CorrectPaddingEndOfInlineObjectBeforeNextObject6Byte") {
 }
 
 decode_failure("BadPaddingEndOfInlineObjectBeforeNextObject6ByteLowerByte") {
-    bindings_denylist = [rust_next],
     type = PaddingEndOfInlineObjectBeforeNextObject6Byte,
     bytes = {
         v2 = [
@@ -923,7 +897,6 @@ decode_failure("BadPaddingEndOfInlineObjectBeforeNextObject6ByteLowerByte") {
 }
 
 decode_failure("BadPaddingEndOfInlineObjectBeforeNextObject6ByteUpperByte") {
-    bindings_denylist = [rust_next],
     type = PaddingEndOfInlineObjectBeforeNextObject6Byte,
     bytes = {
         v2 = [
@@ -965,7 +938,6 @@ success("CorrectPaddingEndOfInlineObjectBeforeNextObject7Byte") {
 }
 
 decode_failure("BadPaddingEndOfInlineObjectBeforeNextObject7Byte") {
-    bindings_denylist = [rust_next],
     type = PaddingEndOfInlineObjectBeforeNextObject7Byte,
     bytes = {
         v2 = [

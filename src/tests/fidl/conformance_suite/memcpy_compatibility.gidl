@@ -46,7 +46,6 @@ success("TwoLayerStructInnerPaddingAlign4") {
 }
 
 decode_failure("TwoLayerStructInnerPaddingAlign4BadPadding") {
-    bindings_denylist = [rust_next],
     type = TwoLayerStructInnerPaddingAlign4,
     bytes = {
         v2 = [
@@ -103,7 +102,6 @@ success("TwoLayerStructInnerPaddingAlign8") {
 }
 
 decode_failure("TwoLayerStructInnerPaddingAlign8BadPadding") {
-    bindings_denylist = [rust_next],
     type = TwoLayerStructInnerPaddingAlign8,
     bytes = {
         v2 = [
@@ -176,7 +174,6 @@ success("CorrectArrayWithInternalPadding") {
 }
 
 decode_failure("BadPaddedArrayWithInternalPadding") {
-    bindings_denylist = [rust_next],
     type = ArrayWithInternalPadding,
     bytes = {
         v2 = [

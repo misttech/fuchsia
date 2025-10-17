@@ -64,6 +64,12 @@ where
         decoder_: &mut ___D,
         _: (),
     ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+        {% for range in self.zero_padding_ranges() %}
+            if slot_.as_bytes()[{{ range.offset }}..{{ range.offset + range.width }}] != [0u8; {{ range.width }}] {
+                return Err(::fidl_next::DecodeError::InvalidPadding);
+            }
+        {% endfor %}
+
         ::fidl_next::munge! {
             let Self {
                 {% if is_empty %}

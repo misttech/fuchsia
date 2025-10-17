@@ -5273,6 +5273,10 @@ pub mod wire {
             decoder_: &mut ___D,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+            if slot_.as_bytes()[1..8] != [0u8; 7] {
+                return Err(::fidl_next::DecodeError::InvalidPadding);
+            }
+
             ::fidl_next::munge! {
                 let Self {
 
@@ -5619,6 +5623,10 @@ pub mod wire {
             decoder_: &mut ___D,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+            if slot_.as_bytes()[1..8] != [0u8; 7] {
+                return Err(::fidl_next::DecodeError::InvalidPadding);
+            }
+
             ::fidl_next::munge! {
                 let Self {
 
@@ -5950,6 +5958,10 @@ pub mod wire {
             decoder_: &mut ___D,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::DecodeError> {
+            if slot_.as_bytes()[1..8] != [0u8; 7] {
+                return Err(::fidl_next::DecodeError::InvalidPadding);
+            }
+
             ::fidl_next::munge! {
                 let Self {
 
