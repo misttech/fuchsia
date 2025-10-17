@@ -378,7 +378,7 @@ zx_status_t Ge2dTask::InitializeWatermarkImages(
     uint64_t input_vmo_size =
         wm.image_format.display_height * wm_info[i].wm_image_format.bytes_per_row;
     uint64_t output_vmo_size = wm.image_format.display_height * wm.image_format.bytes_per_row;
-    uint64_t rounded_input_vmo_size = fbl::round_up(input_vmo_size, ZX_PAGE_SIZE);
+    uint64_t rounded_input_vmo_size = fbl::round_up(input_vmo_size, zx_system_get_page_size());
     max_size = std::max(output_vmo_size, max_size);
 
     // Round the width up to be a multiple of 2, or otherwise the final RGBA to NV12
