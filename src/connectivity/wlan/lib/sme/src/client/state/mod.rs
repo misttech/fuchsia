@@ -6,14 +6,13 @@ mod link_state;
 
 use crate::client::event::{self, Event};
 use crate::client::internal::Context;
-use crate::client::protection::{build_protection_ie, Protection, ProtectionIe, SecurityContext};
+use crate::client::protection::{Protection, ProtectionIe, SecurityContext, build_protection_ie};
 use crate::client::{
-    report_connect_finished, report_roam_finished, AssociationFailure, ClientConfig,
-    ClientSmeStatus, ConnectResult, ConnectTransactionEvent, ConnectTransactionSink,
-    EstablishRsnaFailure, EstablishRsnaFailureReason, RoamFailure, RoamFailureType, RoamResult,
-    ServingApInfo,
+    AssociationFailure, ClientConfig, ClientSmeStatus, ConnectResult, ConnectTransactionEvent,
+    ConnectTransactionSink, EstablishRsnaFailure, EstablishRsnaFailureReason, RoamFailure,
+    RoamFailureType, RoamResult, ServingApInfo, report_connect_finished, report_roam_finished,
 };
-use crate::{mlme_event_name, MlmeRequest, MlmeSink};
+use crate::{MlmeRequest, MlmeSink, mlme_event_name};
 use anyhow::bail;
 use fidl_fuchsia_wlan_common_security::Authentication;
 use fidl_fuchsia_wlan_mlme::{self as fidl_mlme, MlmeEvent};
@@ -26,8 +25,8 @@ use wlan_common::bss::BssDescription;
 use wlan_common::ie::rsn::cipher;
 use wlan_common::ie::rsn::suite_selector::OUI;
 use wlan_common::ie::{self};
-use wlan_common::security::wep::WepKey;
 use wlan_common::security::SecurityAuthenticator;
+use wlan_common::security::wep::WepKey;
 use wlan_common::timer::EventHandle;
 use wlan_rsn::auth;
 use wlan_rsn::rsna::{AuthRejectedReason, AuthStatus, SecAssocUpdate, UpdateSink};
@@ -409,8 +408,10 @@ impl Connecting {
         ind: fidl_mlme::DeauthenticateIndication,
         state_change_ctx: &mut Option<StateChangeContext>,
     ) -> Idle {
-        let msg = format!("Association request failed due to spurious deauthentication; reason code: {:?}, locally_initiated: {:?}",
-                          ind.reason_code, ind.locally_initiated);
+        let msg = format!(
+            "Association request failed due to spurious deauthentication; reason code: {:?}, locally_initiated: {:?}",
+            ind.reason_code, ind.locally_initiated
+        );
         warn!("{}", msg);
         // A deauthenticate_ind means that MLME has already cleared the association,
         // so we go directly to Idle instead of through Disconnecting.
@@ -434,8 +435,10 @@ impl Connecting {
         state_change_ctx: &mut Option<StateChangeContext>,
         context: &mut Context,
     ) -> Disconnecting {
-        let msg = format!("Association request failed due to spurious disassociation; reason code: {:?}, locally_initiated: {:?}",
-                          ind.reason_code, ind.locally_initiated);
+        let msg = format!(
+            "Association request failed due to spurious disassociation; reason code: {:?}, locally_initiated: {:?}",
+            ind.reason_code, ind.locally_initiated
+        );
         warn!("{}", msg);
         send_deauthenticate_request(&self.cmd.bss.bssid, &context.mlme_sink);
         let timeout = context.timer.schedule(event::DeauthenticateTimeout);
@@ -1759,7 +1762,9 @@ fn roam_handle_result(
     roam_initiator: RoamInitiator,
 ) -> Result<Associated, AfterRoamFailureState> {
     if result_fields.original_association_maintained {
-        warn!("Roam result claims that device is still associated with original BSS, but Fast BSS Transition is currently unsupported");
+        warn!(
+            "Roam result claims that device is still associated with original BSS, but Fast BSS Transition is currently unsupported"
+        );
     }
 
     // If a failure occurs in this function, SME will need to know how to log the failure.
@@ -2136,7 +2141,7 @@ mod tests {
     use anyhow::format_err;
     use assert_matches::assert_matches;
     use diagnostics_assertions::{
-        assert_data_tree, AnyBytesProperty, AnyNumericProperty, AnyStringProperty,
+        AnyBytesProperty, AnyNumericProperty, AnyStringProperty, assert_data_tree,
     };
     use fidl_fuchsia_wlan_common_security::{Credentials, Protocol};
     use fuchsia_async::DurationExt;
@@ -2155,23 +2160,23 @@ mod tests {
     };
     use wlan_common::test_utils::fake_stas::IesOverrides;
     use wlan_common::{fake_bss_description, timer};
+    use wlan_rsn::NegotiatedProtection;
     use wlan_rsn::key::exchange::Key;
     use wlan_rsn::rsna::SecAssocStatus;
-    use wlan_rsn::NegotiatedProtection;
     use {
         fidl_fuchsia_wlan_common as fidl_common,
         fidl_fuchsia_wlan_common_security as fidl_security, fidl_internal,
     };
 
+    use crate::MlmeStream;
     use crate::client::event::RsnaCompletionTimeout;
     use crate::client::rsn::Rsna;
     use crate::client::test_utils::{
-        create_connect_conf, create_on_wmm_status_resp, expect_stream_empty, fake_wmm_param,
-        mock_psk_supplicant, MockSupplicant, MockSupplicantController,
+        MockSupplicant, MockSupplicantController, create_connect_conf, create_on_wmm_status_resp,
+        expect_stream_empty, fake_wmm_param, mock_psk_supplicant,
     };
-    use crate::client::{inspect, ConnectTransactionStream, RoamFailureType};
+    use crate::client::{ConnectTransactionStream, RoamFailureType, inspect};
     use crate::test_utils::{self, make_wpa1_ie};
-    use crate::MlmeStream;
 
     #[test]
     fn connect_happy_path_unprotected() {
@@ -4807,14 +4812,14 @@ mod tests {
     fn disconnect_reported_on_manual_disconnect_with_wsc() {
         let mut h = TestHelper::new();
         let (mut cmd, mut connect_txn_stream) = connect_command_one();
-        cmd.bss = Box::new(fake_bss_description!(Open,
+        *cmd.bss = fake_bss_description!(Open,
             ssid: Ssid::try_from("bar").unwrap(),
             bssid: [8; 6],
             rssi_dbm: 60,
             snr_db: 30,
             ies_overrides: IesOverrides::new().set_raw(
                 get_vendor_ie_bytes_for_wsc_ie(&fake_probe_resp_wsc_ie_bytes()).expect("getting vendor ie bytes")
-        )));
+        ));
 
         let state = link_up_state(cmd);
         let state = disconnect(state, &mut h, fidl_sme::UserDisconnectReason::WlanSmeUnitTesting);
@@ -4853,11 +4858,11 @@ mod tests {
     fn bss_channel_switch_ind() {
         let mut h = TestHelper::new();
         let (mut cmd, mut connect_txn_stream) = connect_command_one();
-        cmd.bss = Box::new(fake_bss_description!(Open,
+        *cmd.bss = fake_bss_description!(Open,
             ssid: Ssid::try_from("bar").unwrap(),
             bssid: [8; 6],
             channel: Channel::new(1, Cbw::Cbw20),
-        ));
+        );
         let state = link_up_state(cmd);
 
         let input_info = fidl_internal::ChannelSwitchInfo { new_channel: 36 };
