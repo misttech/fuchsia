@@ -27,30 +27,51 @@ pub(crate) trait RecursiveMap {
 
     /// Filters values recursively through the function provided.
     fn recursive_map<T: Fn(Value) -> Option<Value>>(self, mapper: &T) -> Self::Output;
+
+    /// Filters values recursively through the function provided. Can report an error.
+    fn try_recursive_map<T: Fn(Value) -> Result<Option<Value>>>(
+        self,
+        mapper: &T,
+    ) -> Result<Self::Output>;
 }
 
 impl RecursiveMap for Value {
     type Output = Option<Value>;
     fn recursive_map<T: Fn(Value) -> Option<Value>>(self, mapper: &T) -> Option<Value> {
+        // We can use unwrap() because try_recursive_map() only returns
+        // an error if the mapper function does
+        self.try_recursive_map(&|v| Ok(mapper(v))).unwrap()
+    }
+
+    fn try_recursive_map<T: Fn(Value) -> Result<Option<Value>>>(
+        self,
+        mapper: &T,
+    ) -> Result<Self::Output> {
         match self {
             Value::Object(map) => {
                 let mut result = Map::new();
                 for (key, value) in map.into_iter() {
-                    let new_value = if value.is_object() {
-                        value.clone().recursive_map(mapper)
+                    let new_value = if value.is_object() || value.is_array() {
+                        value.clone().try_recursive_map(mapper)?
                     } else {
-                        mapper(value.clone())
+                        mapper(value.clone())?
                     };
                     if let Some(new_value) = new_value.clone() {
                         result.insert(key.clone(), new_value);
                     }
                 }
-                if result.len() == 0 { None } else { mapper(Value::Object(result)) }
+                if result.len() == 0 { Ok(None) } else { mapper(Value::Object(result)) }
             }
             Value::Array(arr) => {
-                let result =
-                    Vec::from_iter(arr.into_iter().filter_map(|value| value.recursive_map(mapper)));
-                if result.len() == 0 { None } else { mapper(Value::Array(result)) }
+                let result = Vec::from_iter(
+                    arr.into_iter()
+                        .map(|v| v.try_recursive_map(mapper))
+                        // This is the magic line: if there were any errors, get an error result
+                        .collect::<Result<Vec<Option<Value>>>>()?
+                        .into_iter()
+                        .flatten(),
+                );
+                if result.len() == 0 { Ok(None) } else { mapper(Value::Array(result)) }
             }
             other => mapper(other),
         }
@@ -61,6 +82,16 @@ impl RecursiveMap for Option<Value> {
     type Output = Option<Value>;
     fn recursive_map<T: Fn(Value) -> Option<Value>>(self, mapper: &T) -> Self::Output {
         self.and_then(|value| value.recursive_map(mapper))
+    }
+
+    fn try_recursive_map<T: Fn(Value) -> Result<Option<Value>>>(
+        self,
+        mapper: &T,
+    ) -> Result<Self::Output> {
+        match self {
+            None => Ok(None),
+            Some(v) => v.try_recursive_map(mapper),
+        }
     }
 }
 
@@ -135,7 +166,7 @@ pub(crate) fn nested_remove(
     if remaining_keys.len() == 0 {
         cur.remove(&key.to_string()).context(ConfigError::KeyNotFound).map(|_| ())
     } else {
-        // Just ensured this would be the case.
+        // Just ensured this would be a case.
         let next_map = cur
             .get_mut(key)
             .context(ConfigError::KeyNotFound)?
@@ -146,5 +177,78 @@ pub(crate) fn nested_remove(
             cur.remove(key).context("Current key not found trying to recursively remove")?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::anyhow;
+    use serde_json::json;
+
+    #[test]
+    fn test_try_recursive_map_object_error() {
+        let value = json!({"a": 1, "b": 2});
+        let res = value.try_recursive_map(&|v| {
+            if v == 2 { Err(anyhow!("failed")) } else { Ok(Some(v)) }
+        });
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_try_recursive_map_array_error() {
+        let value = json!([1, 2, 3]);
+        let res = value.try_recursive_map(&|v| {
+            if v == 2 { Err(anyhow!("failed")) } else { Ok(Some(v)) }
+        });
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_try_recursive_map_nested_error() {
+        let value = json!({"a": 1, "b": [2, 3]});
+        let res = value.try_recursive_map(&|v| {
+            if v == 2 { Err(anyhow!("failed")) } else { Ok(Some(v)) }
+        });
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_try_recursive_map_object_success() {
+        let value = json!({"a": 1, "b": 2});
+        let res = value.try_recursive_map(&|v| {
+            if v.is_object() {
+                Ok(Some(v))
+            } else {
+                Ok(Some(v.as_u64().map(|x| x + 1).unwrap().into()))
+            }
+        });
+        assert_eq!(res.unwrap(), Some(json!({"a": 2, "b": 3})));
+    }
+
+    #[test]
+    fn test_try_recursive_map_array_success() {
+        let value = json!([1, 2, 3]);
+        let res = value.try_recursive_map(&|v| {
+            if v.is_array() {
+                Ok(Some(v))
+            } else {
+                Ok(Some(v.as_u64().map(|x| x + 1).unwrap().into()))
+            }
+        });
+        assert_eq!(res.unwrap(), Some(json!([2, 3, 4])));
+    }
+
+    #[test]
+    fn test_try_recursive_map_nested_success() {
+        let value = json!({"a": 1, "b": [2, 3]});
+        let res = value.try_recursive_map(&|v| {
+            if v.is_object() || v.is_array() {
+                Ok(Some(v))
+            } else {
+                Ok(Some(v.as_u64().map(|x| x + 1).unwrap().into()))
+            }
+        });
+        assert_eq!(res.unwrap(), Some(json!({"a": 2, "b": [3, 4]})));
     }
 }

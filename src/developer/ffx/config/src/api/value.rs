@@ -24,6 +24,13 @@ impl RecursiveMap for ConfigValue {
     fn recursive_map<T: Fn(Value) -> Option<Value>>(self, mapper: &T) -> ConfigValue {
         ConfigValue(self.0.recursive_map(mapper))
     }
+
+    fn try_recursive_map<T: Fn(Value) -> anyhow::Result<Option<Value>>>(
+        self,
+        mapper: &T,
+    ) -> anyhow::Result<Self::Output> {
+        Ok(ConfigValue(self.0.try_recursive_map(mapper)?))
+    }
 }
 
 pub trait ValueStrategy {
