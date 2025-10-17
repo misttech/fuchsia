@@ -182,6 +182,7 @@ VK_TEST_F(RectangleCompositorTest, SimpleTextureTest) {
   EXPECT_EQ(histogram[kRed], num_pixels);
   EXPECT_EQ(histogram[kGreen], num_pixels);
   EXPECT_EQ(histogram[kBlue], num_pixels);
+  EXPECT_EQ(histogram[kBlack], 0U);
 }
 
 // Render a single full-screen renderable with a texture that has 2 colors.

@@ -138,7 +138,12 @@ Escher::Escher(VulkanDeviceQueuesPtr device, HackFilesystemPtr filesystem,
 
 Escher::~Escher() {
   shader_program_factory_->Clear();
-  ESCHER_DCHECK_VK_RESULT(vk_device().waitIdle());
+
+  auto result = vk_device().waitIdle();
+  if (result != vk::Result::eSuccess) {
+    FX_LOGS(ERROR) << "~Escher() vkDeviceWaitIdle() failed with status: " << vk::to_string(result);
+  }
+
   Cleanup();
 
   // Everything that refers to a ResourceRecycler must be released before their

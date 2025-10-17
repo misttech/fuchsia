@@ -6,6 +6,7 @@
 
 #include <fuchsia/images/cpp/fidl.h>
 #include <lib/fdio/directory.h>
+#include <lib/trace/event.h>
 
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/ui/lib/escher/vk/pipeline_builder.h"
@@ -15,6 +16,8 @@ namespace flatland {
 
 std::pair<std::unique_ptr<escher::Escher>, std::unique_ptr<VkRenderer>>
 CreateEscherAndPrewarmedRenderer(bool use_protected_memory) {
+  TRACE_DURATION("gfx", "CreateEscherAndPrewarmedRenderer");
+
   auto env = escher::test::EscherEnvironment::GetGlobalTestEnvironment();
   std::unique_ptr<escher::Escher> escher;
   if (use_protected_memory) {
@@ -49,6 +52,8 @@ CreateEscherAndPrewarmedRenderer(bool use_protected_memory) {
 }
 
 void RendererTest::SetUp() {
+  TRACE_DURATION("gfx", "flatland::RendererTest::SetUp");
+
   escher::test::TestWithVkValidationLayer::SetUp();
   // Create the SysmemAllocator.
   zx_status_t status = fdio_service_connect("/svc/fuchsia.sysmem2.Allocator",
@@ -60,6 +65,8 @@ void RendererTest::SetUp() {
 }
 
 void RendererTest::TearDown() {
+  TRACE_DURATION("gfx", "flatland::RendererTest::TearDown");
+
   sysmem_allocator_ = nullptr;
   escher::test::TestWithVkValidationLayer::TearDown();
 }
