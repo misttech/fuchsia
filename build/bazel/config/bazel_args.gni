@@ -34,17 +34,6 @@ _common_args = []
 _build_args = []
 _remote_build_args = []
 
-if (bazel_quiet) {
-  _common_args += [ "--config=quiet" ]
-} else {
-  # Disable INFO lines and printing results, this makes Bazel output much
-  # less chatty when invoked from Ninja. https://fxbug.dev/42077198
-  _common_args += [ "--ui_event_filters=-info" ]
-
-  # The --show_result option is not supported by bazel query.
-  _build_args += [ "--show_result=0" ]
-}
-
 if (bazel_execution_logs) {
   _common_args += [ "--config=exec_log" ]
 }

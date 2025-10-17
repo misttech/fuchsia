@@ -875,6 +875,19 @@ template("bazel_action") {
 
     args += [ "--" ]
 
+    if (bazel_quiet) {
+      args += [ "--config=quiet" ]
+    } else {
+      # Disable INFO lines and printing results, this makes Bazel output much
+      # less chatty when invoked from Ninja. https://fxbug.dev/42077198
+      args += [ "--ui_event_filters=-info" ]
+
+      if (invoker.command != "query") {
+        # The --show_result option is not supported by bazel query.
+        args += [ "--show_result=0" ]
+      }
+    }
+
     if (_build_for_host) {
       args += [ "--config=host_config_args" ]
       if (defined(invoker.bazel_platform)) {
