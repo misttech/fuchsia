@@ -63,6 +63,27 @@ where
         .into_owned()
 }
 
+// Replace at most one occurrence of the regex with the replacer(str). If the replacer
+// returns an Err, this function returns that error.
+// Test-only until the next CL
+#[cfg(test)]
+fn try_replace_regex<T>(value: &String, regex: &Regex, replacer: T) -> Result<String>
+where
+    T: Fn(&str) -> Result<String>,
+{
+    // Check if we need the replacement before actually doing the replacement, so we can determine
+    // whether the replacer is returning an error.
+    // Note: this check is why this function only works on the first
+    // replacement. But there is no use-case where we need multiple
+    // replacements, so it keeps the code simple.
+    if let Some(m) = regex.find(value) {
+        let replacement = replacer(m.as_str())?;
+        Ok(regex.replace(value, regex::NoExpand(&replacement)).into_owned())
+    } else {
+        Ok(value.clone())
+    }
+}
+
 fn replace<'a, P>(regex: &'a Regex, base_path: P, value: Value) -> Option<Value>
 where
     P: Fn() -> Result<PathBuf> + Sync + Send + 'a,
@@ -79,4 +100,88 @@ where
         })
         .map(postprocess)
         .or(Some(value))
+}
+
+// Test-only until the next CL
+#[cfg(test)]
+fn try_replace<'a, P>(regex: &'a Regex, base_path: P, value: Value) -> Result<Value>
+where
+    P: Fn() -> Result<PathBuf> + Sync + Send + 'a,
+{
+    if let Some(ref s) = preprocess(&value) {
+        Ok(postprocess(try_replace_regex(s, regex, |_| {
+            // Don't invoke the base_path closure until we know we actually need it (i.e. when regex.replace
+            // actually calls the "replacer" closure)
+            let p = base_path()?;
+            p.to_str()
+                .map(|s| s.to_string())
+                .ok_or_else(|| anyhow::anyhow!("path contains invalid UTF-8: {p:?}"))
+        })?))
+    } else {
+        // Not a string
+        Ok(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::anyhow;
+    use serde_json::json;
+
+    #[test]
+    fn test_try_replace_regex_success() {
+        let regex = Regex::new(r"\$TEST").unwrap();
+        let value = "hello $TEST world".to_string();
+        let result = try_replace_regex(&value, &regex, |_| Ok("replaced".to_string()));
+        assert_eq!(result.unwrap(), "hello replaced world");
+    }
+
+    #[test]
+    fn test_try_replace_regex_error() {
+        let regex = Regex::new(r"\$TEST").unwrap();
+        let value = "hello $TEST world".to_string();
+        let result = try_replace_regex(&value, &regex, |_| Err(anyhow!("test error")));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_try_replace_regex_no_match() {
+        let regex = Regex::new(r"\$TEST").unwrap();
+        let value = "hello world".to_string();
+        let result = try_replace_regex(&value, &regex, |_| Ok("replaced".to_string()));
+        assert_eq!(result.unwrap(), "hello world");
+    }
+
+    #[test]
+    fn test_try_replace_success() {
+        let regex = Regex::new(r"\$TEST").unwrap();
+        let value = json!("hello $TEST world");
+        let result = try_replace(&regex, || Ok(PathBuf::from("/test")), value);
+        assert_eq!(result.unwrap(), json!("hello /test world"));
+    }
+
+    #[test]
+    fn test_try_replace_error() {
+        let regex = Regex::new(r"\$TEST").unwrap();
+        let value = json!("hello $TEST world");
+        let result = try_replace(&regex, || Err(anyhow!("test error")), value);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_try_replace_no_match() {
+        let regex = Regex::new(r"\$TEST").unwrap();
+        let value = json!("hello world");
+        let result = try_replace(&regex, || Ok(PathBuf::from("/test")), value);
+        assert_eq!(result.unwrap(), json!("hello world"));
+    }
+
+    #[test]
+    fn test_try_replace_not_string() {
+        let regex = Regex::new(r"\$TEST").unwrap();
+        let value = json!(123);
+        let result = try_replace(&regex, || Ok(PathBuf::from("/test")), value.clone());
+        assert_eq!(result.unwrap(), value);
+    }
 }
