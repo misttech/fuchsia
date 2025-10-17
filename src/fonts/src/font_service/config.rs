@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use config::Config;
-use once_cell::sync::OnceCell;
+use std::sync::OnceLock;
 
 /// Gets a reference to the font service's structured config.
 ///
@@ -14,7 +14,7 @@ use once_cell::sync::OnceCell;
 pub(crate) fn as_ref() -> &'static Config {
     // Once-only initialized structured configuration.
     // In tests, we only need the config to be present, and initialized to true.
-    static CONFIG: OnceCell<Config> = OnceCell::new();
+    static CONFIG: OnceLock<Config> = OnceLock::new();
     let config = CONFIG.get_or_init(|| {
         if cfg!(test) {
             // Substitute a safe default in tests, to avoid needing to

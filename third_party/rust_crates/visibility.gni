@@ -85,7 +85,6 @@ once_cell_visibility = [
   # (cd $FUCHSIA_DIR && git grep  --files-with-matches '//third_party/rust_crates:once_cell' -- '*BUILD.gn' | sed 's|\(.*\)/BUILD.gn|"//\1:*",|')
   "//src/connectivity/network/netstack3:*",
   "//src/connectivity/network/netstack3/core/filter:*",
-  "//src/fonts:*",
   "//src/graphics/lib/compute/rive-rs:*",
   "//src/lib/async-utils:*",
   "//src/lib/ui/carnelian:*",
