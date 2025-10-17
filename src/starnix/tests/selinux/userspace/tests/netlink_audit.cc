@@ -39,6 +39,12 @@ TEST(NetlinkAuditTest, RegisterAuditDaemon) {
   EXPECT_TRUE(UnregisterAuditDaemon(fd.get()).is_ok());
 }
 
+TEST(NetlinkAuditTest, DeregisterInexistentAuditDaemon) {
+  fbl::unique_fd fd = OpenNetlinkAuditSocket();
+  ASSERT_TRUE(fd.is_valid());
+  ASSERT_TRUE(UnregisterAuditDaemon(fd.get()).is_ok());
+}
+
 TEST(NetlinkAuditTest, RegisterAuditDaemonWithOtherPid) {
   fbl::unique_fd fd = OpenNetlinkAuditSocket();
   ASSERT_TRUE(fd.is_valid());

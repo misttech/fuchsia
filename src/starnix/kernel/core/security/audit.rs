@@ -3,22 +3,21 @@
 // found in the LICENSE file.
 
 use crate::vfs::socket::AuditNetlinkClient;
-use arc_swap::ArcSwapWeak;
 use linux_uapi::{
-    AUDIT_FAIL_PANIC, AUDIT_FAIL_PRINTK, AUDIT_FAIL_SILENT, AUDIT_FIRST_USER_MSG,
-    AUDIT_FIRST_USER_MSG2, AUDIT_GET, AUDIT_LAST_USER_MSG, AUDIT_LAST_USER_MSG2, AUDIT_SET,
-    AUDIT_STATUS_BACKLOG_LIMIT, AUDIT_STATUS_ENABLED, AUDIT_STATUS_FAILURE, AUDIT_STATUS_LOST,
-    AUDIT_STATUS_PID, AUDIT_USER,
+    AUDIT_CONFIG_CHANGE, AUDIT_FAIL_PANIC, AUDIT_FAIL_PRINTK, AUDIT_FAIL_SILENT,
+    AUDIT_FIRST_USER_MSG, AUDIT_FIRST_USER_MSG2, AUDIT_GET, AUDIT_LAST_USER_MSG,
+    AUDIT_LAST_USER_MSG2, AUDIT_SET, AUDIT_STATUS_BACKLOG_LIMIT, AUDIT_STATUS_ENABLED,
+    AUDIT_STATUS_FAILURE, AUDIT_STATUS_LOST, AUDIT_STATUS_PID, AUDIT_USER,
 };
 use starnix_lifecycle::AtomicU64Counter;
 use starnix_logging::log_warn;
-use starnix_sync::Mutex;
+use starnix_sync::{Mutex, MutexGuard};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{audit_status, error, pid_t};
 use std::collections::VecDeque;
 use std::fmt::Display;
-use std::sync::atomic::{AtomicI32, AtomicU8, AtomicU32, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 use std::time::SystemTime;
 use std::u32;
 use zx::MonotonicDuration;
@@ -56,6 +55,17 @@ enum AuditMode {
     Enabled,
 }
 
+/// The audit sink reference structure.
+#[derive(Default)]
+struct AuditNetlinkClientRef {
+    /// Inner reference to the registered audit sink, if any.
+    client: Option<Arc<AuditNetlinkClient>>,
+    /// The PID of the registered audit sink.
+    pid: pid_t,
+    /// Deque for the audit messages, always present.
+    messages: VecDeque<AuditMessage>,
+}
+
 /// Audit status structure defining the behaviour of the logger.
 struct AuditConfig {
     /// The audit mode set by kernel command line.
@@ -64,10 +74,8 @@ struct AuditConfig {
     backlog_limit: AtomicU32,
     /// Action to take in case of audit failure.
     fail_action: AtomicU8,
-    /// The PID of the process registered as the audit daemon.
-    audit_sink_pid: AtomicI32,
     /// Socket to which the logger writes audit messages.
-    audit_sink: ArcSwapWeak<AuditNetlinkClient>,
+    audit_sink: Mutex<AuditNetlinkClientRef>,
 }
 
 impl Default for AuditConfig {
@@ -76,7 +84,6 @@ impl Default for AuditConfig {
             audit_mode: AuditMode::Unspecified,
             backlog_limit: AtomicU32::new(DEFAULT_BACKLOG_LIMIT),
             fail_action: AtomicU8::new(AUDIT_FAIL_PRINTK as u8),
-            audit_sink_pid: Default::default(),
             audit_sink: Default::default(),
         }
     }
@@ -145,31 +152,45 @@ impl AuditLogger {
         if self.configuration.audit_mode == AuditMode::Disabled {
             return;
         }
-        self.add_audit_to_backlog(audit_type, audit_formatter);
+        self.add_audit_to_backlog(
+            audit_type,
+            audit_formatter,
+            &mut self.configuration.audit_sink.lock(),
+        );
     }
 
     /// Called by the `NetlinkAuditClient` to pull the next audit log from the backlog.
     pub fn read_audit_log(&self, client: &Arc<AuditNetlinkClient>) -> Option<AuditMessage> {
-        let current_client = self.configuration.audit_sink.load().upgrade()?;
+        let mut client_guard = self.configuration.audit_sink.lock();
+        let Some(current_client) = client_guard.client.as_ref() else {
+            return None;
+        };
         // Check if the current client is reading the backlog.
         if !Arc::ptr_eq(&current_client, client) {
             return None;
         }
-        self.audit_queue.lock().pop_front()
+        client_guard.messages.pop_front()
     }
 
     /// Function to detach the `AuditNetlinkClient` from the `AuditLogger` if
     /// the provided client matches the one registered.
-    ///
-    /// The `client` must be valid.
-    pub fn detach_client(&self, client: Weak<AuditNetlinkClient>) {
-        if !Weak::ptr_eq(
-            &self.configuration.audit_sink.compare_and_swap(&client, Weak::new()),
-            &client,
-        ) {
-            return;
+    pub fn detach_client(&self, client: &Arc<AuditNetlinkClient>) {
+        let mut client_guard = self.configuration.audit_sink.lock();
+        if client_guard
+            .client
+            .as_ref()
+            .is_some_and(|current_client| Arc::ptr_eq(client, &current_client))
+        {
+            let pid = client_guard.pid;
+            client_guard.client = None;
+            client_guard.pid = 0;
+            client_guard.messages.clear();
+            self.add_audit_to_backlog(
+                AUDIT_CONFIG_CHANGE as u16,
+                || format!("audit sink detached pid={pid}"),
+                &mut client_guard,
+            );
         }
-        self.configuration.audit_sink_pid.store(0, Ordering::Release);
     }
 
     /// Applies the specified changes to the audit logger settings.
@@ -205,7 +226,7 @@ impl AuditLogger {
             mask: Default::default(),
             enabled: Default::default(),
             failure: self.configuration.fail_action.load(Ordering::Acquire) as u32,
-            pid: self.configuration.audit_sink_pid.load(Ordering::Acquire) as u32,
+            pid: self.configuration.audit_sink.lock().pid as u32,
             rate_limit: u32::MAX,
             backlog_limit: self.configuration.backlog_limit.load(Ordering::Acquire),
             lost: self.lost_audit_messages.load(Ordering::Acquire),
@@ -218,28 +239,13 @@ impl AuditLogger {
 
     /// Retrieve the number of audit messages in the backlog.
     pub fn get_backlog_count(&self, client: &Arc<AuditNetlinkClient>) -> usize {
-        match self.configuration.audit_sink.load().upgrade() {
-            Some(current_client) if Arc::ptr_eq(&current_client, client) => {
-                self.audit_queue.lock().len()
+        let client_guard = self.configuration.audit_sink.lock();
+        if let Some(current_client) = &client_guard.client {
+            if Arc::ptr_eq(&current_client, client) {
+                return client_guard.messages.len();
             }
-            _ => 0,
         }
-    }
-
-    /// Detach was requested by the audit client.
-    fn detach_own_client(&self, pid: pid_t) -> bool {
-        // Verify the PID of the current task here to ensure the correct process
-        // requested the detach operation.
-        if let Err(_) = self.configuration.audit_sink_pid.compare_exchange(
-            pid,
-            0,
-            Ordering::Acquire,
-            Ordering::Relaxed,
-        ) {
-            return false;
-        }
-        self.configuration.audit_sink.store(Weak::new());
-        true
+        0
     }
 
     /// Function to update the attached `client` and its PID
@@ -250,23 +256,34 @@ impl AuditLogger {
         client: &Arc<AuditNetlinkClient>,
     ) -> Result<(), Errno> {
         if request_pid == 0 {
-            if self.detach_own_client(pid) {
-                return Ok(());
-            }
-            return error!(EPERM);
+            let client_ref = {
+                let client_guard = self.configuration.audit_sink.lock();
+                // If there is no audit client registered and unregister is requested, return without error.
+                if client_guard.pid == 0 {
+                    return Ok(());
+                } else if pid != client_guard.pid {
+                    return error!(EPERM);
+                }
+                client_guard.client.clone()
+            };
+            client_ref.inspect(|client_ref| self.detach_client(&client_ref));
+            return Ok(());
         }
         if pid != request_pid {
             return error!(EINVAL);
         }
 
-        let no_client = Weak::new();
-        if !Weak::ptr_eq(
-            &self.configuration.audit_sink.compare_and_swap(&no_client, Arc::downgrade(client)),
-            &Weak::new(),
-        ) {
+        let mut client_guard = self.configuration.audit_sink.lock();
+        if client_guard.client.is_some() {
             return error!(EEXIST);
         }
-        self.configuration.audit_sink_pid.store(pid, Ordering::Release);
+        client_guard.client = Some(client.clone());
+        client_guard.pid = pid;
+        self.add_audit_to_backlog(
+            AUDIT_CONFIG_CHANGE as u16,
+            || format!("new audit sink attached pid={pid}"),
+            &mut client_guard,
+        );
         Ok(())
     }
 
@@ -275,29 +292,33 @@ impl AuditLogger {
         &self,
         audit_type: u16,
         audit_formatter: T,
+        client_guard: &mut MutexGuard<'_, AuditNetlinkClientRef>,
     ) {
         // At this point, we know that the audit framework is not disabled until reboot.
         let audit_message = self.prepend_audit_metadata(audit_formatter);
         // If there is no audit sink and the auditing is partially enabled, print and return
         // without pushing the message to the backlog.
-        let Some(client) = self.configuration.audit_sink.load().upgrade() else {
+        if client_guard.client.is_none() {
             log_warn!("{audit_message}");
-            if self.configuration.audit_mode == AuditMode::Enabled {
-                self.push_back_audit(audit_type, audit_message);
-            }
-            return;
-        };
-        self.push_back_audit(audit_type, audit_message);
-        client.notify();
+        }
+        if client_guard.client.is_some() || self.configuration.audit_mode == AuditMode::Enabled {
+            self.push_back_audit(audit_type, audit_message, client_guard);
+            client_guard.client.as_ref().inspect(|client| client.notify());
+        }
     }
 
     /// Push the audit message in the backlog after checking its limit.
-    fn push_back_audit(&self, audit_type: u16, audit_message: String) {
-        let mut queue = self.audit_queue.lock();
+    fn push_back_audit(
+        &self,
+        audit_type: u16,
+        audit_message: String,
+        client_guard: &mut MutexGuard<'_, AuditNetlinkClientRef>,
+    ) {
         // TODO: https://fxbug.dev/440090442 - implement backlog waiting.
-        if !self.check_backlog(queue.len() as u32) {
-            queue.push_back(AuditMessage { audit_type, message: audit_message.into() });
+        if self.check_backlog(client_guard.messages.len() as u32) {
+            return;
         }
+        client_guard.messages.push_back(AuditMessage { audit_type, message: audit_message.into() });
     }
 
     /// Function to check the backlog size against the backlog limit.

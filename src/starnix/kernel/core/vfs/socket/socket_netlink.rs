@@ -1661,7 +1661,7 @@ impl AuditNetlinkClient {
     }
 
     fn detach(self: &Arc<Self>) {
-        self.audit_logger.detach_client(Arc::downgrade(self));
+        self.audit_logger.detach_client(self);
     }
 
     fn build_audit_nlmsg(
