@@ -6,7 +6,6 @@ use futures::stream::Stream;
 use thiserror::Error;
 
 #[cfg_attr(target_os = "linux", path = "usb_linux/mod.rs")]
-#[cfg_attr(target_os = "macos", path = "usb_osx/mod.rs")]
 mod usb_plat;
 
 pub mod bulk_interface;

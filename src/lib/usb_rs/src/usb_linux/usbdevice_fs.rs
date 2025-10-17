@@ -11,12 +11,6 @@
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
-// Configure linkage for MacOS.
-#[cfg(target_os = "macos")]
-#[link(name = "IOKit", kind = "framework")]
-#[link(name = "CoreFoundation", kind = "framework")]
-extern "C" {}
-
 #[repr(C)]
 #[derive(Default)]
 pub struct __IncompleteArrayField<T>(::std::marker::PhantomData<T>, [T; 0]);
