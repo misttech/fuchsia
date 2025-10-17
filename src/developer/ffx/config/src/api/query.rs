@@ -140,6 +140,7 @@ impl<'a> ConfigQuery<'a> {
             let cv = self
                 .get_config(ctx.load().map_err(|e| ConfigError::new(e))?)
                 .map_err(|e| ConfigError::new(e))?
+                .try_recursive_map(&|val| shared_data(&ctx, val))?
                 .recursive_map(&|val| build(&ctx, val))
                 .recursive_map(&|val| workspace(&ctx, val));
             let cv = if let Some(ref v) = cv.0 {
@@ -174,7 +175,7 @@ impl<'a> ConfigQuery<'a> {
                 .recursive_map(&|val| runtime(&ctx, val))
                 .recursive_map(&|val| cache(&ctx, val))
                 .recursive_map(&|val| data(&ctx, val))
-                .recursive_map(&|val| shared_data(&ctx, val))
+                .try_recursive_map(&|val| shared_data(&ctx, val))?
                 .recursive_map(&|val| config(&ctx, val))
                 .recursive_map(&|val| home(&ctx, val))
                 .recursive_map(&|val| build(&ctx, val))
@@ -198,6 +199,7 @@ impl<'a> ConfigQuery<'a> {
             let cv = self
                 .get_config(ctx.load().map_err(|e| ConfigError::new(e))?)
                 .map_err(|e| ConfigError::new(e))?
+                .try_recursive_map(&|val| shared_data(&ctx, val))?
                 .recursive_map(&|val| build(&ctx, val))
                 .recursive_map(&|val| workspace(&ctx, val));
             let cv = if let Some(ref v) = cv.0 {
@@ -225,6 +227,7 @@ impl<'a> ConfigQuery<'a> {
                 .recursive_map(&|val| runtime(&ctx, val))
                 .recursive_map(&|val| cache(&ctx, val))
                 .recursive_map(&|val| data(&ctx, val))
+                .try_recursive_map(&|val| shared_data(&ctx, val))?
                 .recursive_map(&|val| config(&ctx, val))
                 .recursive_map(&|val| home(&ctx, val))
                 .recursive_map(&|val| build(&ctx, val))

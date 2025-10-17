@@ -11,6 +11,7 @@ import os
 import subprocess
 import tempfile
 import zipfile
+from pathlib import Path
 from typing import Any, List, Optional, Text, Tuple
 
 import ffxtestcase
@@ -93,7 +94,17 @@ class FfxStrictTest(ffxtestcase.FfxTestCase):
         if not out_dir:
             out_dir = "/dev/null"
         _LOGGER.info(f"Setting ffx config log dir to {out_dir}")
-        # Get other required configs
+
+        # Get other required configs:
+        #
+        # ffx.subtool-search-paths: Subtool path, for externally-compiled subtools
+        # test.output_path: Output path for certain tests
+        # ssh.priv: path to private key for ssh connection to target
+        # fastboot.devices_file.path: path for discovering Pontis fastboot devices
+        # log.dir: directory to write logs
+        ffx_path = self.dut.ffx.config.binary_path
+        subtool_path = Path(ffx_path).resolve().parent
+        configs.append(f"ffx.subtool-search-paths={subtool_path}")
         configs.append(f"test.output_path={out_dir}")
         self._get_ssh_private_key()
         configs.append(f"ssh.priv={self.ssh_private_key}")
@@ -207,6 +218,24 @@ class FfxStrictTest(ffxtestcase.FfxTestCase):
                     "The command should not require a target",
                 )
                 raise
+
+    def test_strict_may_require_shared_data(self) -> None:
+        """Test `ffx --strict` will error out if $SHARED_DATA is required but not supplied"""
+        (_code, stdout, _stderr) = self._run_strict_ffx_unchecked(
+            ["repository", "server", "list"],
+            f"{self.dut_ssh_address}",
+        )
+        _LOGGER.info(f"code: {_code}")
+        _LOGGER.info(f"stdout: {stdout}")
+        _LOGGER.info(f"stderr: {_stderr}")
+        # We can't actually load the output into json, because `ffx repository server list`
+        # has technically not been ported to ffx-strict, and it can produce multiple error
+        # lines, which is not valid JSON. But it is the only built-in plugin that requires
+        # SHARED_DATA, so it is the tool we are using here.
+        asserts.assert_true(
+            "SHARED_DATA must be specified in strict mode" in stdout,
+            "Expected a message about SHARED_DATA in strict",
+        )
 
     def test_target_list_strict(self) -> None:
         """Test `ffx --strict target list` does not affect daemon state."""

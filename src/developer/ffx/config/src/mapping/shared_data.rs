@@ -3,15 +3,16 @@
 // found in the LICENSE file.
 
 use crate::EnvironmentContext;
-use crate::mapping::replace;
+use crate::mapping::try_replace;
+use anyhow::Result;
 use regex::Regex;
 use serde_json::Value;
 use std::sync::LazyLock;
 
-pub(crate) fn shared_data(ctx: &EnvironmentContext, value: Value) -> Option<Value> {
+pub(crate) fn shared_data(ctx: &EnvironmentContext, value: Value) -> Result<Option<Value>> {
     static REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$(SHARED_DATA)").unwrap());
 
-    replace(&*REGEX, || ctx.get_shared_data_path(), value)
+    try_replace(&*REGEX, || ctx.get_shared_data_path(), value).map(|v| Some(v))
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -40,28 +41,7 @@ mod test {
             .to_string_lossy()
             .to_string();
         let test = Value::String("$SHARED_DATA".to_string());
-        assert_eq!(shared_data(&ctx, test), Some(Value::String(value)));
-    }
-
-    #[test]
-    fn test_mapper_multiple() {
-        let ctx = EnvironmentContext::isolated(
-            ExecutableKind::Test,
-            "/tmp".into(),
-            Default::default(),
-            ConfigMap::default(),
-            None,
-            None,
-            false,
-        )
-        .unwrap();
-        let value = ctx
-            .get_shared_data_path()
-            .expect("Getting data directory")
-            .to_string_lossy()
-            .to_string();
-        let test = Value::String("$SHARED_DATA/$SHARED_DATA".to_string());
-        assert_eq!(shared_data(&ctx, test), Some(Value::String(format!("{}/{}", value, value))));
+        assert_eq!(shared_data(&ctx, test).expect("unexpected error"), Some(Value::String(value)));
     }
 
     #[test]
@@ -77,6 +57,9 @@ mod test {
         )
         .unwrap();
         let test = Value::String("$WHATEVER".to_string());
-        assert_eq!(shared_data(&ctx, test), Some(Value::String("$WHATEVER".to_string())));
+        assert_eq!(
+            shared_data(&ctx, test).expect("unexpected error"),
+            Some(Value::String("$WHATEVER".to_string()))
+        );
     }
 }

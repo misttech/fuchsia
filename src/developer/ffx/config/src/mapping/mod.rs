@@ -65,8 +65,6 @@ where
 
 // Replace at most one occurrence of the regex with the replacer(str). If the replacer
 // returns an Err, this function returns that error.
-// Test-only until the next CL
-#[cfg(test)]
 fn try_replace_regex<T>(value: &String, regex: &Regex, replacer: T) -> Result<String>
 where
     T: Fn(&str) -> Result<String>,
@@ -102,8 +100,6 @@ where
         .or(Some(value))
 }
 
-// Test-only until the next CL
-#[cfg(test)]
 fn try_replace<'a, P>(regex: &'a Regex, base_path: P, value: Value) -> Result<Value>
 where
     P: Fn() -> Result<PathBuf> + Sync + Send + 'a,

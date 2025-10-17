@@ -4,7 +4,7 @@
 
 use crate::EnvironmentContext;
 use crate::environment::EnvironmentKind;
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use camino::Utf8Path;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
@@ -86,8 +86,41 @@ impl EnvironmentContext {
         }
     }
 
+    // Read a raw (no substitutions, no nesting) from our default-level config map.
+    fn read_raw_default_config(&self, key: &str) -> Result<Option<serde_json::Value>> {
+        // This is horrible: the "shared_data" has been dropped from
+        // runtime_args, and is not merged into the "default"-level config.
+        // So we need to get at the config (even though this function is only
+        // called from inside other config query code). The saving grace is
+        // that this code should go away soon, replaced by direct access to a
+        // read-only map of values.
+        let env = self.load()?;
+        let config = env.config_from_cache()?;
+        let read_guard = config.read().map_err(|_| anyhow!("config read guard"))?;
+        let default_map = &read_guard.default;
+        Ok(default_map.get(key).cloned())
+    }
+
     pub fn get_shared_data_path(&self) -> Result<PathBuf> {
-        get_shared_data_base_path().and_then(|base| Ok(base.join("shared")))
+        // Special handling for ffx-strict: allow shared_data, but _only_ if the
+        // actual shared-data directory has been specified on the command line.
+        // Note that this function will only be called for queries that actually
+        // contain "$SHARED_DATA".
+        if self.is_strict() {
+            if let Some(v) = self.read_raw_default_config("shared_data")? {
+                if let Some(s) = v.as_str() {
+                    Ok(PathBuf::from(s))
+                } else {
+                    bail!("'shared_data' config: {v:?} is not a string")
+                }
+            } else {
+                bail!(
+                    "SHARED_DATA must be specified in strict mode. Use `ffx ... -c shared_data=<dir>.`"
+                )
+            }
+        } else {
+            get_shared_data_base_path().and_then(|base| Ok(base.join("shared")))
+        }
     }
 
     pub fn get_analytics_path(&self) -> Option<PathBuf> {
