@@ -164,7 +164,7 @@ void DLog::BluescreenInit() {
   printf("\nZIRCON KERNEL PANIC\n\n");
 
   // Print uptime, current CPU, and version information.
-  printf("UPTIME: %" PRIi64 "ms, CPU: %" PRIu32 "\n", current_mono_time() / ZX_MSEC(1),
+  printf("UPTIME: %" PRIi64 "ms, CPU: %" PRIu32 "\n", current_boot_time() / ZX_MSEC(1),
          arch_curr_cpu_num());
   stdout->Write(kBootConstants.kernel_debug_ident.get());
 }
