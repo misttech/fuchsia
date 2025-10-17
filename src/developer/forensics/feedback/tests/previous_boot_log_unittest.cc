@@ -7,7 +7,7 @@
 #include <lib/async/cpp/executor.h>
 
 #include "src/developer/forensics/feedback/attachments/types.h"
-#include "src/developer/forensics/testing/gpretty_printers.h"
+#include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
 #include "src/developer/forensics/testing/unit_test_fixture.h"
 #include "src/developer/forensics/utils/errors.h"
 #include "src/lib/files/file.h"

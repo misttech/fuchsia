@@ -13,7 +13,7 @@
 #include "src/developer/forensics/feedback/constants.h"
 #include "src/developer/forensics/feedback/reboot_log/annotations.h"
 #include "src/developer/forensics/testing/gmatchers.h"
-#include "src/developer/forensics/testing/gpretty_printers.h"
+#include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
 #include "src/developer/forensics/testing/scoped_memfs_manager.h"
 #include "src/lib/files/file.h"
 

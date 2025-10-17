@@ -30,7 +30,7 @@
 #include "src/developer/forensics/feedback_data/constants.h"
 #include "src/developer/forensics/feedback_data/tests/stub_attachment_provider.h"
 #include "src/developer/forensics/testing/gmatchers.h"
-#include "src/developer/forensics/testing/gpretty_printers.h"
+#include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
 #include "src/developer/forensics/testing/stubs/cobalt_logger_factory.h"
 #include "src/developer/forensics/testing/unit_test_fixture.h"
 #include "src/developer/forensics/utils/archive.h"

@@ -17,7 +17,7 @@
 #include "src/developer/forensics/feedback/annotations/annotation_manager.h"
 #include "src/developer/forensics/feedback/annotations/constants.h"
 #include "src/developer/forensics/testing/gmatchers.h"
-#include "src/developer/forensics/testing/gpretty_printers.h"
+#include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
 #include "src/developer/forensics/testing/unit_test_fixture.h"
 #include "src/developer/forensics/utils/storage_size.h"
 #include "src/lib/files/path.h"

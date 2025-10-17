@@ -12,7 +12,7 @@
 #include "src/developer/forensics/feedback/reboot_log/reboot_log.h"
 #include "src/developer/forensics/feedback/reboot_log/reboot_reason.h"
 #include "src/developer/forensics/last_reboot/last_reboot_info_provider.h"
-#include "src/developer/forensics/testing/gpretty_printers.h"
+#include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
 
 namespace forensics {
 namespace last_reboot {

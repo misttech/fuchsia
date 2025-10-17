@@ -23,7 +23,7 @@
 #include "src/developer/forensics/exceptions/constants.h"
 #include "src/developer/forensics/exceptions/tests/crasher_wrapper.h"
 #include "src/developer/forensics/testing/gmatchers.h"
-#include "src/developer/forensics/testing/gpretty_printers.h"
+#include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
 #include "src/developer/forensics/testing/stubs/wake_lease.h"
 #include "src/developer/forensics/testing/unit_test_fixture.h"
 #include "src/lib/fostr/fidl/fuchsia/exception/formatting.h"

@@ -11,7 +11,7 @@
 
 #include "fuchsia/feedback/cpp/fidl.h"
 #include "src/developer/forensics/feedback/annotations/types.h"
-#include "src/developer/forensics/testing/gpretty_printers.h"
+#include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
 #include "src/developer/forensics/utils/errors.h"
 
 namespace fuchsia::feedback {
