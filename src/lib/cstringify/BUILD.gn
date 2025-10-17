@@ -12,7 +12,6 @@ rustc_library("cstringify") {
   visibility = [
     ":*",
     "//src/lib/trace/rust/bench:*",
-    "//src/storage/fxfs/trace:*",
   ]
   with_unit_tests = true
   edition = "2021"

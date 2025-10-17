@@ -5,12 +5,13 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{ToTokens, TokenStreamExt, quote};
+use std::ffi::CString;
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::visit_mut::VisitMut;
 use syn::{
-    Attribute, Block, Expr, Ident, ImplItem, ItemFn, ItemImpl, LitStr, Path, ReturnType, Token,
-    Type, parse_macro_input, parse_quote,
+    Attribute, Block, Expr, Ident, ImplItem, ItemFn, ItemImpl, LitCStr, LitStr, Path, ReturnType,
+    Token, Type, parse_macro_input, parse_quote,
 };
 
 enum TraceItem {
@@ -182,10 +183,25 @@ impl VisitMut for RemoveImplTrait {
     }
 }
 
+type TraceName = LitCStr;
+
+fn path_to_trace_name(path: &Path) -> TraceName {
+    let name = path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect::<Vec<_>>()
+        .join("::");
+    LitCStr::new(
+        &CString::new(name).expect("Identifiers shouldn't contain the null character"),
+        path.span(),
+    )
+}
+
 fn add_tracing_to_async_block(
     return_type: &ReturnType,
     block: &mut Block,
-    name: Path,
+    name: TraceName,
     args: TraceArgs,
 ) {
     let return_type = if let ReturnType::Type(_, return_type) = return_type {
@@ -217,7 +233,7 @@ fn add_tracing_to_async_block(
     // move any variables used in the future.
     let stmts = &block.stmts;
     block.stmts = parse_quote!(
-        let __trace_args = ::fxfs_trace::trace_future_args!(::fxfs_trace::__reexport::cstringify!(#name) #args);
+        let __trace_args = ::fxfs_trace::trace_future_args!(#name #args);
         ::fxfs_trace::TraceFutureExt::trace(async move {
             #type_inference_fix
             #(#stmts)*
@@ -225,10 +241,10 @@ fn add_tracing_to_async_block(
     );
 }
 
-fn add_tracing_to_sync_block(block: &mut Block, name: Path, args: TraceArgs) {
+fn add_tracing_to_sync_block(block: &mut Block, name: TraceName, args: TraceArgs) {
     let stmts = &block.stmts;
     block.stmts = parse_quote!(
-        ::fxfs_trace::duration!(::fxfs_trace::__reexport::cstringify!(#name) #args);
+        ::fxfs_trace::duration!(#name #args);
         #(#stmts)*
     );
 }
@@ -262,12 +278,13 @@ fn add_tracing_to_impl(mut item_impl: ItemImpl, args: TraceImplArgs) -> syn::Res
             let Some(trace_fn_args) = trace_fn_args else {
                 continue;
             };
-            let trace_name = if let Some(name) = trace_fn_args.0.name {
+            let trace_name_path = if let Some(name) = trace_fn_args.0.name {
                 name
             } else {
                 let ident = func.sig.ident.clone();
                 parse_quote!(#prefix :: #ident)
             };
+            let trace_name = path_to_trace_name(&trace_name_path);
             if func.sig.asyncness.is_some() {
                 add_tracing_to_async_block(
                     &func.sig.output,
@@ -284,8 +301,9 @@ fn add_tracing_to_impl(mut item_impl: ItemImpl, args: TraceImplArgs) -> syn::Res
 }
 
 fn add_tracing_to_fn(mut item_fn: ItemFn, args: TraceFnArgs) -> syn::Result<TokenStream2> {
-    let trace_name =
+    let trace_name_path =
         if let Some(name) = args.0.name { name } else { item_fn.sig.ident.clone().into() };
+    let trace_name = path_to_trace_name(&trace_name_path);
     if item_fn.sig.asyncness.is_some() {
         add_tracing_to_async_block(
             &item_fn.sig.output,
@@ -315,7 +333,7 @@ fn add_tracing_to_fn(mut item_fn: ItemFn, args: TraceFnArgs) -> syn::Result<Toke
 ///
 /// `#[trace]` Arguments:
 ///  - `name` - string to use for the name of the trace event. Defaults to
-///             `<prefix/type-name>::<method-name>`.
+///             `<prefix>::<method-name>`.
 ///
 /// Example:
 /// ```

@@ -5,11 +5,6 @@
 pub use fxfs_trace_macros::*;
 pub use storage_trace::{self, Scope, TraceFutureExt};
 
-#[doc(hidden)]
-pub mod __reexport {
-    pub use cstringify::cstringify;
-}
-
 #[macro_export]
 macro_rules! duration {
     ($name:expr $(, $key:expr => $val:expr)*) => {

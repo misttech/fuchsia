@@ -11,7 +11,6 @@ rustc_library("trace") {
   edition = "2024"
   sources = [ "src/lib.rs" ]
   deps = [
-    "//src/lib/cstringify",
     "//src/storage/fxfs/trace/macros:fxfs_trace_macros",
     "//src/storage/lib/trace",
   ]
