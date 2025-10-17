@@ -24,21 +24,29 @@ __BEGIN_CDECLS
 #define EFI_FUNCTION_UNAVAILABLE(msg)
 #endif
 
+#ifdef __clang__
+#define EFI_CFI_UNCHECKED_CALLEE __attribute__((cfi_unchecked_callee))
+#else
+#define EFI_CFI_UNCHECKED_CALLEE
+#endif
+
 // EFI functions and callbacks use the Microsoft Windows x86_64 ABI.
 //
 // This ABI is special for x86_64 (and possibly other architectures). Set the appropriate
 // attribute per architecture, or allow the header to be used for types only with no function
 // calls allowed.
 #if defined(__x86_64__)
-#define EFIAPI __attribute__((ms_abi))
+#define EFIAPI_ARCH __attribute__((ms_abi))
 #elif defined(__i386__)
-#define EFIAPI __attribute__((regparm(0)))
+#define EFIAPI_ARCH __attribute__((regparm(0)))
 #elif defined(__aarch64__) || defined(__riscv)
 // ARM64 doesn't need the ABI tag, likewise RISC-V.
-#define EFIAPI
+#define EFIAPI_ARCH
 #else
-#define EFIAPI EFI_FUNCTION_UNAVAILABLE("EFI API functions undefined for this architecture.")
+#define EFIAPI_ARCH EFI_FUNCTION_UNAVAILABLE("EFI API functions undefined for this architecture.")
 #endif
+
+#define EFIAPI EFIAPI_ARCH EFI_CFI_UNCHECKED_CALLEE
 
 #define EFI_ERROR_MASK ((uintptr_t)INTPTR_MAX + 1)
 #define EFI_ERR(x) (EFI_ERROR_MASK | (x))
