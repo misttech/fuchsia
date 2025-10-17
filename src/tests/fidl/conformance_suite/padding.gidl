@@ -1512,7 +1512,7 @@ decode_failure("UnionInlinePadding_ThreePaddingByte_UpperByte_InvalidPadding") {
 }
 
 decode_failure("BadPaddedString_LowerByte") {
-    bindings_denylist = [dart, rust_next],
+
     type = StringWrapper,
     bytes = {
         v2 = [
@@ -1526,7 +1526,7 @@ decode_failure("BadPaddedString_LowerByte") {
 }
 
 decode_failure("BadPaddedString_UpperByte") {
-    bindings_denylist = [dart, rust_next],
+
     type = StringWrapper,
     bytes = {
         v2 = [
@@ -1540,7 +1540,6 @@ decode_failure("BadPaddedString_UpperByte") {
 }
 
 decode_failure("BadPaddedVector_LowerByte") {
-    bindings_denylist = [dart, rust_next],
     type = VectorWrapper,
     bytes = {
         v2 = [
@@ -1554,7 +1553,6 @@ decode_failure("BadPaddedVector_LowerByte") {
 }
 
 decode_failure("BadPaddedVector_UpperByte") {
-    bindings_denylist = [dart, rust_next],
     type = VectorWrapper,
     bytes = {
         v2 = [

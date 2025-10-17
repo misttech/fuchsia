@@ -96,18 +96,19 @@ unsafe impl<D: Decoder + ?Sized> Decode<D> for WireOptionalString<'static> {
     fn decode(slot: Slot<'_, Self>, decoder: &mut D, constraint: u64) -> Result<(), DecodeError> {
         munge!(let Self { mut vec } = slot);
 
-        unsafe {
-            WireOptionalVector::decode_raw(vec.as_mut(), decoder)?;
+        let result = unsafe { WireOptionalVector::decode_raw(vec.as_mut(), decoder, constraint) };
+        match result {
+            Ok(()) => (),
+            Err(DecodeError::Validation(ValidationError::VectorTooLong { count, limit })) => {
+                return Err(DecodeError::Validation(ValidationError::StringTooLong {
+                    count,
+                    limit,
+                }));
+            }
+            Err(e) => return Err(e),
         }
         let vec = unsafe { vec.deref_unchecked() };
         if let Some(bytes) = vec.as_ref() {
-            if bytes.len() > constraint as usize {
-                return Err(DecodeError::Validation(ValidationError::StringTooLong {
-                    count: bytes.len() as u64,
-                    limit: constraint,
-                }));
-            }
-
             // Check if the string is valid ASCII (fast path)
             if !bytes.as_slice().is_ascii() {
                 // Fall back to checking if the string is valid UTF-8 (slow path)

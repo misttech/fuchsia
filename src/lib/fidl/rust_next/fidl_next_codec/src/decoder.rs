@@ -176,11 +176,24 @@ impl<D: Decoder + ?Sized> DecoderExt for D {
              higher than {CHUNK_SIZE}",
         );
 
-        let count = (size_of::<T>() * len).div_ceil(CHUNK_SIZE);
-        let chunks = self.take_chunks(count)?;
+        let slice_byte_length = size_of::<T>() * len;
+        let chunk_count = slice_byte_length.div_ceil(CHUNK_SIZE);
+        let chunk_length = CHUNK_SIZE * chunk_count;
+        let padding_length = chunk_length - slice_byte_length;
+        let chunks_ptr = self.take_chunks(chunk_count)?.as_mut_ptr();
+        let padding: &[u8] = unsafe {
+            core::slice::from_raw_parts(
+                chunks_ptr.cast::<u8>().add(slice_byte_length),
+                padding_length,
+            )
+        };
+        if padding.iter().any(|byte| *byte != 0) {
+            return Err(DecodeError::InvalidPadding);
+        }
+
         // SAFETY: `result` is at least 8-aligned and points to at least enough
         // bytes for a slice of `T` of length `len`.
-        unsafe { Ok(Slot::new_slice_unchecked(chunks.as_mut_ptr().cast(), len)) }
+        unsafe { Ok(Slot::new_slice_unchecked(chunks_ptr.cast(), len)) }
     }
 
     fn decode_owned<'de, T: Decode<Self> + Constrained<Constraint = ()>>(

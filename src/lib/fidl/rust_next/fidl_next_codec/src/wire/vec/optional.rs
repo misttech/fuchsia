@@ -87,6 +87,7 @@ impl<'de, T> WireOptionalVector<'de, T> {
     pub unsafe fn decode_raw<D>(
         mut slot: Slot<'_, Self>,
         mut decoder: &mut D,
+        max_len: u64,
     ) -> Result<(), DecodeError>
     where
         D: Decoder + ?Sized,
@@ -95,6 +96,13 @@ impl<'de, T> WireOptionalVector<'de, T> {
         munge!(let Self { raw: RawWireVector { len, mut ptr } } = slot.as_mut());
 
         if WirePointer::is_encoded_present(ptr.as_mut())? {
+            if **len > max_len {
+                return Err(DecodeError::Validation(ValidationError::VectorTooLong {
+                    count: **len,
+                    limit: max_len,
+                }));
+            }
+
             let mut slice = decoder.take_slice_slot::<T>(**len as usize)?;
             WirePointer::set_decoded(ptr, slice.as_mut_ptr().cast());
         } else if *len != 0 {
