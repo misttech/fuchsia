@@ -12,10 +12,10 @@ use crate::ConfigError;
 
 /// A trait that adds a recursive mapping function to a nested json value tree.
 ///
-/// Note that implementations of this should be on value types and not references,
-/// with perhaps an additional impl for a reference that clones. This is because most
-/// of the time most values won't change, so it makes sense to copy the whole thing up
-/// front and only have to build a new item if necessary.
+/// Note that implementations of this should be on value types and not
+/// references. This is because most of the time most values won't change, so
+/// it makes sense to copy the whole thing up front and only have to build a new
+/// item if necessary.
 ///
 /// This also makes it so you can efficiently chain [`RecursiveMap::recursive_map`]
 /// calls together, since they will continue to use the same Value items until one
@@ -57,18 +57,6 @@ impl RecursiveMap for Value {
     }
 }
 
-impl RecursiveMap for &Value {
-    type Output = Option<Value>;
-    fn recursive_map<T: Fn(Value) -> Option<Value>>(self, mapper: &T) -> Self::Output {
-        self.clone().recursive_map(mapper)
-    }
-}
-impl RecursiveMap for Option<&Value> {
-    type Output = Option<Value>;
-    fn recursive_map<T: Fn(Value) -> Option<Value>>(self, mapper: &T) -> Self::Output {
-        self.and_then(|value| value.clone().recursive_map(mapper))
-    }
-}
 impl RecursiveMap for Option<Value> {
     type Output = Option<Value>;
     fn recursive_map<T: Fn(Value) -> Option<Value>>(self, mapper: &T) -> Self::Output {

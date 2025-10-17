@@ -25,12 +25,6 @@ impl RecursiveMap for ConfigValue {
         ConfigValue(self.0.recursive_map(mapper))
     }
 }
-impl RecursiveMap for &ConfigValue {
-    type Output = ConfigValue;
-    fn recursive_map<T: Fn(Value) -> Option<Value>>(self, mapper: &T) -> ConfigValue {
-        ConfigValue(self.0.clone()).recursive_map(mapper)
-    }
-}
 
 pub trait ValueStrategy {
     fn handle_arrays(value: Value) -> Option<Value> {

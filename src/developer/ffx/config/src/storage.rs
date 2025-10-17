@@ -990,7 +990,7 @@ mod test {
         };
         let test_mapping = "TEST_MAP".to_string();
         let test_passed = "passed".to_string();
-        let mapped_value = test.get("name", SelectMode::First).as_ref().recursive_map(&test_map);
+        let mapped_value = test.get("name", SelectMode::First).recursive_map(&test_map);
         assert_eq!(mapped_value, Some(Value::String(test_passed)));
         let identity_value = test.get("name", SelectMode::First);
         assert_eq!(identity_value, Some(Value::String(test_mapping)));
@@ -1048,7 +1048,7 @@ mod test {
             default: serde_json::from_slice(NESTED)?,
             runtime: serde_json::from_slice(DEEP)?,
         };
-        let value = test.get("name.nested", SelectMode::First).as_ref().recursive_map(&test_map);
+        let value = test.get("name.nested", SelectMode::First).recursive_map(&test_map);
         assert_eq!(value, Some(serde_json::from_str("{\"deep\": {\"name\": \"passed\"}}")?));
         Ok(())
     }
