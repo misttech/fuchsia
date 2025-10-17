@@ -213,6 +213,17 @@ declare_args() {
 #     Type: boolean
 #     Default: false
 #
+#   bazel_platform: (optional)
+#     Overwrite the `--platforms` flag when building with Bazel.
+#     Must match one of the available platforms defined in
+#     //build/bazel/platforms/BUILD.bazel.
+#     When not set, the configured platform from the .bazelrc will be used.
+#
+#     NOTE: There is no guarantee that your chosen platform will work with the
+#     `--config` applied, so use this parameter with caution.
+#
+#     Type: string
+#
 #   deps:
 #   metadata:
 #   check_for_output_dir_leaks:
@@ -279,6 +290,13 @@ template("bazel_action") {
   _build_for_host = defined(invoker.host) && invoker.host
   assert(!_build_for_host || _no_sdk,
          "`no_sdk` must true when `host` is true. ")
+
+  # Limit usage of `bazel_platform` to host platforms to minimize chances of
+  # misuse. It's created to support cross-compiling SDK host tools.
+  if (defined(invoker.bazel_platform)) {
+    assert(_build_for_host,
+           "`bazel_platform` is only supported when `host` is true.")
+  }
 
   _copy_outputs = []
   if (defined(invoker.copy_outputs)) {
@@ -713,7 +731,16 @@ template("bazel_action") {
     foreach(_bazel_target, _bazel_targets) {
       _out_dir = get_label_info(_bazel_target, "target_out_dir")
       _bazel_label = get_label_info(_bazel_target, "name")
-      _dedupe_stamps += [ "${_out_dir}/${_bazel_label}.bazel_target_can_only_be_referenced_by_one_bazel_action" ]
+
+      _dedupe_suffix = "${current_os}_${current_cpu}"
+      if (_build_for_host) {
+        _dedupe_suffix = "${host_os}_${host_cpu}"
+      }
+      if (defined(invoker.bazel_platform)) {
+        _dedupe_suffix = invoker.bazel_platform
+      }
+
+      _dedupe_stamps += [ "${_out_dir}/${_bazel_label}.${_dedupe_suffix}.bazel_target_can_only_be_referenced_by_one_bazel_action" ]
     }
     outputs += _dedupe_stamps
 
@@ -849,17 +876,23 @@ template("bazel_action") {
     args += [ "--" ]
 
     if (_build_for_host) {
-      args += [
-        "--config=host_config_args",
-        "--platforms=//build/bazel/platforms:host",
-      ]
+      args += [ "--config=host_config_args" ]
+      if (defined(invoker.bazel_platform)) {
+        args +=
+            [ "--platforms=//build/bazel/platforms:${invoker.bazel_platform}" ]
+      } else {
+        args += [ "--platforms=//build/bazel/platforms:host" ]
+      }
     } else {
       # Since this template can only be used on the default toolchain, the
       # platform is always Fuchsia.
-      args += [
-        "--config=fuchsia_config_args",
-        "--platforms=//build/bazel/platforms:fuchsia_${current_cpu}",
-      ]
+      args += [ "--config=fuchsia_config_args" ]
+      if (defined(invoker.bazel_platform)) {
+        args +=
+            [ "--platforms=//build/bazel/platforms:${invoker.bazel_platform}" ]
+      } else {
+        args += [ "--platforms=//build/bazel/platforms:fuchsia_${current_cpu}" ]
+      }
     }
 
     # When remote builds are enabled, append the right build arguments.

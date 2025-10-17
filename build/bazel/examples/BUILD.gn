@@ -50,10 +50,33 @@ bazel_build_group("host_examples") {
   ]
 }
 
+if (host_cpu == "x64") {
+  bazel_build_group("host_examples_arm64") {
+    host = true
+    no_sdk = true
+    bazel_platform = "linux_arm64"
+    subtargets = [
+      {
+        bazel_target = "//build/bazel/examples/hello_host"
+        gn_target_name = "hello_host_arm64"
+        copy_outputs = [
+          {
+            bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}"
+            ninja = "hello_host_arm64_from_bazel"
+          },
+        ]
+      },
+    ]
+  }
+}
+
 group("examples") {
   testonly = true
   deps = [
     ":host_examples",
     ":target_examples",
   ]
+  if (host_cpu == "x64") {
+    deps += [ ":host_examples_arm64" ]
+  }
 }

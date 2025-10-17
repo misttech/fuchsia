@@ -2,12 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("@rules_cc//cc:defs.bzl", "cc_binary")
 
 cc_binary(
     name = "hello_host",
     srcs = ["main.cc"],
-    target_compatible_with = HOST_CONSTRAINTS,
+    # Intentionally not setting CPU because we use this target to test cross-compiled on other CPUs.
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
     visibility = ["//visibility:public"],
 )
