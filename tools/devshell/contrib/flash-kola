@@ -25,6 +25,11 @@ ARTIFACTS="${PRODUCT_BUNDLE}/product_bundle.json"
 DTBO_PATH="${PRODUCT_BUNDLE}/$(fx-command-run jq --raw-output '.system_a[] | select(.name=="dtbo-a") | .path' "${ARTIFACTS}")"
 FVM_PATH="${PRODUCT_BUNDLE}/$(fx-command-run jq --raw-output '.system_a[] | select(.name=="fxfs.fastboot") | .path' "${ARTIFACTS}")"
 ZBI_PATH="${PRODUCT_BUNDLE}/$(fx-command-run jq --raw-output '.system_a[] | select(.name=="zircon-a") | .path' "${ARTIFACTS}")"
+# Extract bootloaders into a {partition_name: artifact_path} map.
+declare -A BOOTLOADER_IMAGES
+while IFS=$'\t' read -r PART_NAME RELATIVE_PATH; do
+  BOOTLOADER_IMAGES["${PART_NAME}"]="${PRODUCT_BUNDLE}/${RELATIVE_PATH}"
+done < <(fx-command-run jq --raw-output '.partitions.bootloader_partitions[] | [.name, .image] | @tsv' "${ARTIFACTS}")
 
 RECOVERY_PATH=""
 if [[ -d "${PRODUCT_BUNDLE}/system_r" ]]; then
@@ -76,6 +81,9 @@ else
   fx-info "Bootloader is '${BOOTLOADER}'."
 fi
 
+for PART_NAME in "${!BOOTLOADER_IMAGES[@]}"; do
+  ${FASTBOOT} flash "${PART_NAME}" "${BOOTLOADER_IMAGES[${PART_NAME}]}"
+done
 ${FASTBOOT} flash boot_a "$ZBI_PATH"
 ${FASTBOOT} flash boot_b "$ZBI_PATH"
 ${FASTBOOT} flash dtbo_a "$DTBO_PATH"
