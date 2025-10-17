@@ -525,3 +525,93 @@ GN note: Unlike the GN template, this list does not include `hdrs_for_internal_u
     },
     implementation = _idk_cc_static_library_impl,
 )
+
+def _idk_cc_shared_library_zx_impl(
+        name,
+        category,
+        hdrs,
+        **kwargs):
+    """Implementation for the idk_cc_shared_library_zx() macro."""
+
+    # LINT.IfChange
+    if "sdk_headers" in kwargs:
+        fail('`sdk_headers` is not supported. Headers for the IDK must be specified in `public`. Note that "include/" must be included in the paths in `public`.')
+
+    # LINT.ThenChange(//build/zircon/zx_library.gni)
+
+    idk_cc_shared_library(
+        name = name,
+        category = category,
+        hdrs = hdrs,
+        **kwargs
+    )
+
+idk_cc_shared_library_zx = macro(
+    doc = "Defines a C++ shared library that can be exported to an IDK and will be a zx_library() in GN.",
+    inherit_attrs = idk_cc_shared_library,
+    implementation = _idk_cc_shared_library_zx_impl,
+    attrs = {
+        "category": attr.string(
+            doc = """See idk_cc_shared_library().
+GN equivalent: `sdk_publishable`""",
+            mandatory = True,
+            configurable = False,
+        ),
+        "hdrs": attr.label_list(
+            doc = """See idk_cc_shared_library().
+GN equivalent: `sdk_headers`
+GN note: Unlike the GN template, the "include/" part of the path must be specified.""",
+            allow_files = True,
+            mandatory = True,
+            configurable = False,
+        ),
+    },
+)
+
+def _idk_cc_static_library_zx_impl(
+        name,
+        idk_name,
+        category,
+        stable,
+        api_area,
+        hdrs,
+        **kwargs):
+    """Implementation for the idk_cc_static_library_zx() macro."""
+
+    # LINT.IfChange
+    if "sdk_headers" in kwargs:
+        fail('`sdk_headers` is not supported. Headers for the IDK must be specified in `public`. Note that "include/" must be included in the paths in `public`.')
+
+    # LINT.ThenChange(//build/zircon/zx_library.gni)
+
+    idk_cc_static_library(
+        name = name,
+        idk_name = idk_name,
+        category = category,
+        stable = stable,
+        api_area = api_area,
+        hdrs = hdrs,
+        **kwargs
+    )
+
+idk_cc_static_library_zx = macro(
+    doc = "Defines a C++ static library that can be exported to an IDK and will be a zx_library() in GN.",
+    inherit_attrs = idk_cc_static_library,
+    implementation = _idk_cc_static_library_zx_impl,
+    attrs = {
+        "category": attr.string(
+            doc = """See idk_cc_static_library().
+GN equivalent: `sdk_publishable`""",
+            mandatory = True,
+            configurable = False,
+        ),
+        "hdrs": attr.label_list(
+            doc = """See idk_cc_static_library().
+GN equivalent: `sdk_headers`
+GN note: Unlike the GN template, the "include/" part of the path must be specified.""",
+            allow_files = True,
+            mandatory = True,
+            configurable = False,
+        ),
+    },
+)

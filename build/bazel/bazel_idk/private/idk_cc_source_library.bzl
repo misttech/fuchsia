@@ -405,7 +405,7 @@ idk_cc_source_library_zx = macro(
         ),
         "category": attr.string(
             doc = """See idk_cc_source_library().
-Converted to `sdk_publishable` in `zx_library()`.""",
+GN equivalent: `sdk_publishable`""",
             mandatory = True,
             configurable = False,
         ),
@@ -419,7 +419,7 @@ Converted to `sdk_publishable` in `zx_library()`.""",
             mandatory = True,
         ),
         "hdrs": attr.label_list(
-            doc = """ See idk_cc_source_library().
+            doc = """See idk_cc_source_library().
 GN equivalent: `sdk_headers`
 GN note: Unlike the GN template, the "include/" part of the path must be specified.""",
             allow_files = True,
