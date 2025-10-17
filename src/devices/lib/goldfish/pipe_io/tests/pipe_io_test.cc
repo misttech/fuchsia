@@ -30,13 +30,13 @@ class PipeIoTest : public ::testing::Test {
   void SetUp() override {
     loop_.StartThread("pipe-io-server");
 
-    auto endpoints = fidl::Endpoints<fuchsia_hardware_goldfish_pipe::GoldfishPipe>::Create();
+    auto endpoints = fidl::Endpoints<fuchsia_hardware_goldfish_pipe::Bus>::Create();
 
     binding_ = fidl::BindServer(loop_.dispatcher(), std::move(endpoints.server), &pipe_);
     EXPECT_TRUE(binding_.has_value());
 
-    pipe_client_ = fidl::WireSyncClient(std::move(endpoints.client));
-    io_ = std::make_unique<PipeIo>(std::move(pipe_client_), "pipe");
+    pipe_bus_client_ = fidl::WireSyncClient(std::move(endpoints.client));
+    io_ = std::make_unique<PipeIo>(std::move(pipe_bus_client_), "pipe");
   }
 
   void TearDown() override {
@@ -49,8 +49,8 @@ class PipeIoTest : public ::testing::Test {
 
  protected:
   testing::FakePipe pipe_;
-  fidl::WireSyncClient<fuchsia_hardware_goldfish_pipe::GoldfishPipe> pipe_client_;
-  std::optional<fidl::ServerBindingRef<fuchsia_hardware_goldfish_pipe::GoldfishPipe>> binding_;
+  fidl::WireSyncClient<fuchsia_hardware_goldfish_pipe::Bus> pipe_bus_client_;
+  std::optional<fidl::ServerBindingRef<fuchsia_hardware_goldfish_pipe::Bus>> binding_;
   std::unique_ptr<PipeIo> io_;
   async::Loop loop_;
 };
@@ -322,12 +322,12 @@ class PipeAutoReaderTest : public gtest::TestLoopFixture {
   void SetUp() override {
     TestLoopFixture::SetUp();
 
-    auto endpoints = fidl::Endpoints<fuchsia_hardware_goldfish_pipe::GoldfishPipe>::Create();
+    auto endpoints = fidl::Endpoints<fuchsia_hardware_goldfish_pipe::Bus>::Create();
 
     binding_ = fidl::BindServer(loop_.dispatcher(), std::move(endpoints.server), &pipe_);
     EXPECT_TRUE(binding_.has_value());
 
-    pipe_client_ = fidl::WireSyncClient(std::move(endpoints.client));
+    pipe_bus_client_ = fidl::WireSyncClient(std::move(endpoints.client));
 
     loop_.StartThread("pipe-io-server");
   }
@@ -339,15 +339,15 @@ class PipeAutoReaderTest : public gtest::TestLoopFixture {
 
  protected:
   testing::FakePipe pipe_;
-  fidl::WireSyncClient<fuchsia_hardware_goldfish_pipe::GoldfishPipe> pipe_client_;
-  std::optional<fidl::ServerBindingRef<fuchsia_hardware_goldfish_pipe::GoldfishPipe>> binding_;
+  fidl::WireSyncClient<fuchsia_hardware_goldfish_pipe::Bus> pipe_bus_client_;
+  std::optional<fidl::ServerBindingRef<fuchsia_hardware_goldfish_pipe::Bus>> binding_;
   async::Loop loop_;
 };
 
 TEST_F(PipeAutoReaderTest, AutoRead) {
   int sum = 0;
   std::unique_ptr<PipeAutoReader> reader = std::make_unique<PipeAutoReader>(
-      std::move(pipe_client_), "pipe", dispatcher(), [&sum](PipeIo::ReadResult<char> result) {
+      std::move(pipe_bus_client_), "pipe", dispatcher(), [&sum](PipeIo::ReadResult<char> result) {
         ASSERT_TRUE(result.is_ok());
         int val = 0;
         sscanf(result.value().data(), "%d", &val);

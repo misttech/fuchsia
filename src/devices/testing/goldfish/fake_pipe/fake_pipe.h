@@ -21,10 +21,10 @@
 namespace goldfish::sensor {
 namespace testing {
 
-// A fake fuchsia.hardware.goldfish.pipe.GoldfishPipe FIDL protocol implementation where
+// A fake fuchsia.hardware.goldfish.pipe.Bus FIDL protocol implementation where
 // users can set up custom callbacks for PIPE_CMD_WRITE commands and queue
 // outputs for PIPE_CMD_READ commands.
-class FakePipe : public fidl::WireServer<fuchsia_hardware_goldfish_pipe::GoldfishPipe> {
+class FakePipe : public fidl::WireServer<fuchsia_hardware_goldfish_pipe::Bus> {
  public:
   void Create(CreateCompleter::Sync& completer) override;
   void SetEvent(SetEventRequestView request, SetEventCompleter::Sync& completer) override;

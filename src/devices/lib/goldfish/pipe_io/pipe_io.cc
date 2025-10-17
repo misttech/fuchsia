@@ -26,9 +26,9 @@
 
 namespace goldfish {
 
-PipeIo::PipeIo(fidl::WireSyncClient<fuchsia_hardware_goldfish_pipe::GoldfishPipe> pipe,
+PipeIo::PipeIo(fidl::WireSyncClient<fuchsia_hardware_goldfish_pipe::Bus> pipe_bus,
                const char* pipe_name) {
-  pipe_ = std::move(pipe);
+  pipe_bus_ = std::move(pipe_bus);
 
   auto status = Init(pipe_name);
   if (status == ZX_OK) {
@@ -39,12 +39,12 @@ PipeIo::PipeIo(fidl::WireSyncClient<fuchsia_hardware_goldfish_pipe::GoldfishPipe
 zx_status_t PipeIo::SetupPipe() {
   fbl::AutoLock lock(&lock_);
 
-  if (!pipe_.is_valid()) {
+  if (!pipe_bus_.is_valid()) {
     zxlogf(ERROR, "%s: no pipe protocol", __func__);
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  auto result = pipe_->GetBti();
+  auto result = pipe_bus_->GetBti();
   if (!result.ok()) {
     zxlogf(ERROR, "%s: GetBti failed: %s", __func__, result.status_string());
     return result.status();
@@ -75,7 +75,7 @@ zx_status_t PipeIo::SetupPipe() {
     return status;
   }
 
-  auto create_result = pipe_->Create();
+  auto create_result = pipe_bus_->Create();
   if (!create_result.ok()) {
     zxlogf(ERROR, "%s: Create pipe failed: %s", __func__, create_result.status_string());
     return create_result.status();
@@ -83,7 +83,7 @@ zx_status_t PipeIo::SetupPipe() {
   id_ = create_result->value()->id;
   zx::vmo vmo = std::move(create_result->value()->vmo);
 
-  auto set_event_result = pipe_->SetEvent(id_, std::move(pipe_event_dup));
+  auto set_event_result = pipe_bus_->SetEvent(id_, std::move(pipe_event_dup));
   if (!set_event_result.ok()) {
     zxlogf(ERROR, "%s: SetEvent failed: %s", __func__, set_event_result.status_string());
     return set_event_result.status();
@@ -100,7 +100,7 @@ zx_status_t PipeIo::SetupPipe() {
   buffer->cmd = static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeCmdCode::kOpen);
   buffer->status = static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeError::kInval);
 
-  auto open_result = pipe_->Open(id_);
+  auto open_result = pipe_bus_->Open(id_);
   if (!open_result.ok()) {
     zxlogf(ERROR, "%s: Open failed: %s", __func__, open_result.status_string());
     return ZX_ERR_INTERNAL;
@@ -142,9 +142,9 @@ PipeIo::~PipeIo() {
       buffer->cmd = static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeCmdCode::kClose);
       buffer->status = static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeError::kInval);
 
-      [[maybe_unused]] auto result = pipe_->Exec(id_);
+      [[maybe_unused]] auto result = pipe_bus_->Exec(id_);
     }
-    [[maybe_unused]] auto destroy_result = pipe_->Destroy(id_);
+    [[maybe_unused]] auto destroy_result = pipe_bus_->Destroy(id_);
     // We don't check the return status as the pipe is destroyed on a
     // best-effort basis.
   }
@@ -226,7 +226,7 @@ zx::result<uint32_t> PipeIo::ExecTransferCommandLocked(bool has_write, bool has_
                        : static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeCmdCode::kRead))
           : static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeCmdCode::kWrite);
   buffer->status = static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeError::kInval);
-  auto result = pipe_->Exec(id_);
+  auto result = pipe_bus_->Exec(id_);
   if (!result.ok()) {
     zxlogf(ERROR, "[%s] Exec failed: %s", __func__, result.status_string());
     return zx::error_result(result.status());
@@ -257,7 +257,7 @@ zx::result<uint32_t> PipeIo::ExecTransferCommandLocked(bool has_write, bool has_
       has_write ? static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeCmdCode::kWakeOnWrite)
                 : static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeCmdCode::kWakeOnRead);
   buffer->status = static_cast<int32_t>(fuchsia_hardware_goldfish_pipe::PipeError::kInval);
-  auto result2 = pipe_->Exec(id_);
+  auto result2 = pipe_bus_->Exec(id_);
   if (!result2.ok()) {
     zxlogf(ERROR, "[%s] Pipe::Exec() failed: %s", __func__, result2.status_string());
     return zx::error_result(result2.status());
