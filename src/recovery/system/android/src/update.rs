@@ -14,6 +14,7 @@ use {fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio};
 
 pub async fn apply_update(
     url: &str,
+    signature: &[u8],
     view_sender: &crate::view_sender::ViewSender,
     exposed_dir: Arc<vfs::directory::simple::Simple>,
     svc_dir: Arc<vfs::directory::simple::Simple>,
@@ -81,7 +82,10 @@ pub async fn apply_update(
 
     view_sender.queue_message(RecoveryMessages::Log(format!("Installing update...")));
     let mut updater = Updater::new().context("Failed to create updater")?;
-    let res = updater.install_update(Some(&url.parse()?)).await.context("Failed to apply update");
+    let res = updater
+        .install_update(Some(&url.parse()?), Some(signature))
+        .await
+        .context("Failed to apply update");
     // Don't format blobs if we try to update again to allow resuming to maintain forward progress.
     FORMAT_BLOB_VOLUME.store(false, std::sync::atomic::Ordering::Relaxed);
     // Explicitly closing the `blob_exposed_dir` to let fshost shutdown the filesystem and destroy

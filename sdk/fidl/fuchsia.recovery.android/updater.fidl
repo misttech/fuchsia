@@ -16,5 +16,7 @@ closed protocol Updater {
     strict Update(resource struct {
         /// The URL of the update manifest.
         manifest_url fuchsia.url.Url;
+        /// The Ed25519 signature of the update manifest.
+        signature vector<uint8>:64;
     }) -> ();
 };

@@ -71,10 +71,13 @@ pub async fn download_and_apply_update_with_updater(
             .map_err(UpdateError::InstallError)?;
         }
         UpdateUrlSource::UpdateUrl(url) => {
-            let () = updater.install_update(Some(&url)).await.map_err(UpdateError::InstallError)?;
+            let () = updater
+                .install_update(Some(&url), None)
+                .await
+                .map_err(UpdateError::InstallError)?;
         }
         UpdateUrlSource::UseDefault => {
-            let () = updater.install_update(None).await.map_err(UpdateError::InstallError)?;
+            let () = updater.install_update(None, None).await.map_err(UpdateError::InstallError)?;
         }
     }
     Ok(())

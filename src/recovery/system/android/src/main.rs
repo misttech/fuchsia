@@ -559,11 +559,12 @@ impl ViewAssistant for RecoveryViewAssistant {
                         log::error!("Sideload request sender dropped");
                         return;
                     };
-                    let UpdaterRequest::Update { manifest_url, responder } = request;
+                    let UpdaterRequest::Update { manifest_url, signature, responder } = request;
 
                     view_sender.queue_message(RecoveryMessages::Log(
                         match update::apply_update(
                             &manifest_url,
+                            &signature,
                             &view_sender,
                             exposed_dir,
                             svc_dir,

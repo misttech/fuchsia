@@ -32,7 +32,11 @@ impl Updater {
     /// If `update_package` is Some, use the given package URL as the URL for the update package.
     /// Otherwise, `system-updater` uses the default URL.
     /// This will not install any images to the recovery partitions.
-    pub async fn install_update(&mut self, update_package: Option<&url::Url>) -> Result<(), Error> {
+    pub async fn install_update(
+        &mut self,
+        update_package: Option<&url::Url>,
+        signature: Option<&[u8]>,
+    ) -> Result<(), Error> {
         let update_package = match update_package {
             Some(url) => url.to_owned(),
             None => DEFAULT_UPDATE_PACKAGE_URL.parse().unwrap(),
@@ -51,7 +55,7 @@ impl Updater {
             },
             &self.proxy,
             Some(reboot_controller_server_end),
-            None,
+            signature,
         )
         .await
         .context("starting system update")?;
@@ -483,7 +487,7 @@ pub(crate) mod for_tests {
         /// Run the system update, returning an `UpdaterResult` containing information about the
         /// result of the update.
         pub async fn run(mut self) -> UpdaterResult {
-            let () = self.updater.install_update(None).await.expect("installing update");
+            let () = self.updater.install_update(None, None).await.expect("installing update");
 
             UpdaterResult {
                 paver_events: self.paver.take_events(),

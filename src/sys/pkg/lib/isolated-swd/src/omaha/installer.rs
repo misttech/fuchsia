@@ -65,7 +65,7 @@ impl Installer for IsolatedInstaller {
             };
             let () = self
                 .updater
-                .install_update(Some(&url))
+                .install_update(Some(&url), None)
                 .await
                 .map_err(IsolatedInstallError::Failure)?;
             if let Some(o) = observer.as_ref() {

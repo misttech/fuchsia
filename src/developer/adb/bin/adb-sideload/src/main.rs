@@ -52,9 +52,14 @@ impl SideloadServer {
                 );
                 let far_offset = find_far_offset(&mut sideload_file, file_size).await?;
                 let far_file = sideload_file.into_sub_file(far_offset, file_size - far_offset);
-                let archive = fuchsia_archive::AsyncUtf8Reader::new(Arc::new(Mutex::new(far_file)))
+                let mut archive =
+                    fuchsia_archive::AsyncUtf8Reader::new(Arc::new(Mutex::new(far_file)))
+                        .await
+                        .context("Failed to parse far")?;
+                let signature = archive
+                    .read_file("ota_manifest.json.sig")
                     .await
-                    .context("Failed to parse far")?;
+                    .context("Failed to read signature")?;
                 let (server_fut, close_fn, addr) = http_server::start_server(archive, block_size)
                     .context("Failed to start http server")?;
                 let server_task = fasync::Task::spawn(server_fut);
@@ -62,7 +67,10 @@ impl SideloadServer {
                 let updater = connect_to_protocol::<UpdaterMarker>()
                     .context("Failed to connect to updater")?;
                 updater
-                    .update(&format!("http://localhost:{}/ota_manifest.json", addr.port()))
+                    .update(
+                        &format!("http://localhost:{}/ota_manifest.json", addr.port()),
+                        &signature,
+                    )
                     .await?;
                 log::info!("Shutting down http server");
                 let far_reader = close_fn();
