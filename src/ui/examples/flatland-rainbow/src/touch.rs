@@ -199,7 +199,7 @@ mod tests {
 
         // Each time we receive a `Watch()` request from the client, we respond with the next
         // response provided by the caller of this function.
-        let mut response_iter = responses.iter();
+        let mut response_iter = responses.into_iter();
         while let Some(events) = response_iter.next() {
             if let Ok(Some(request)) = request_stream.try_next().await {
                 match request {
@@ -217,7 +217,7 @@ mod tests {
                         }
 
                         expected_client_response_count = events.len();
-                        responder.send(&events)?;
+                        responder.send(events)?;
                     }
                     _ => {
                         return Err(anyhow!("unexpected request: only Watch() is supported"));

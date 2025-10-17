@@ -7,16 +7,16 @@
 use crate::input_handler::{InputHandler, InputHandlerStatus};
 use crate::utils::{CursorMessage, Position, Size};
 use crate::{input_device, metrics, mouse_binding};
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{Context, Error, Result, anyhow};
 use async_trait::async_trait;
 use async_utils::hanging_get::client::HangingGetStream;
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_input_report::Range;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_inspect::health::Reporter;
+use futures::SinkExt;
 use futures::channel::mpsc::Sender;
 use futures::stream::StreamExt;
-use futures::SinkExt;
 use metrics_registry::*;
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
@@ -335,7 +335,7 @@ impl MouseInjectorHandler {
         self.inner_mut().injectors.insert(mouse_descriptor.device_id, device_proxy.clone());
 
         // Inject ADD event the first time a MouseDevice is seen.
-        let events_to_send = &[self.create_pointer_sample_event(
+        let events_to_send = vec![self.create_pointer_sample_event(
             mouse_event,
             event_time,
             pointerinjector::EventPhase::Add,
@@ -384,7 +384,7 @@ impl MouseInjectorHandler {
             (mouse_binding::MouseLocation::Absolute(_), _) => {
                 return Err(anyhow!(
                     "Received an Absolute mouse location without absolute device ranges."
-                ))
+                ));
             }
         };
         Position::clamp(&mut new_position, Position::zero(), self.max_position);
@@ -441,7 +441,7 @@ impl MouseInjectorHandler {
                 }
                 _ => None,
             };
-            let events_to_send = &[self.create_pointer_sample_event(
+            let events_to_send = vec![self.create_pointer_sample_event(
                 mouse_event,
                 event_time,
                 pointerinjector::EventPhase::Change,
@@ -551,7 +551,7 @@ impl MouseInjectorHandler {
                     // Update Scenic with the latest viewport.
                     let injectors = self.inner().injectors.values().cloned().collect::<Vec<_>>();
                     for injector in injectors {
-                        let events = &[pointerinjector::Event {
+                        let events = vec![pointerinjector::Event {
                             timestamp: Some(fuchsia_async::MonotonicInstant::now().into_nanos()),
                             data: Some(pointerinjector::Data::Viewport(new_viewport.clone())),
                             trace_flow_id: Some(fuchsia_trace::Id::random().into()),
@@ -1310,7 +1310,10 @@ mod tests {
 
         mouse_handler.clone().handle_input_event(event1).await;
         assert_eq!(
-            injector_stream_receiver.next().await.map(|events| events.concat()),
+            injector_stream_receiver
+                .next()
+                .await
+                .map(|events| events.into_iter().flatten().collect()),
             Some(vec![
                 create_mouse_pointer_sample_event_phase_add(
                     vec![1],
@@ -1333,7 +1336,10 @@ mod tests {
         // Send another input event.
         mouse_handler.clone().handle_input_event(event2).await;
         assert_eq!(
-            injector_stream_receiver.next().await.map(|events| events.concat()),
+            injector_stream_receiver
+                .next()
+                .await
+                .map(|events| events.into_iter().flatten().collect()),
             Some(vec![create_mouse_pointer_sample_event(
                 pointerinjector::EventPhase::Change,
                 vec![],
@@ -1463,7 +1469,10 @@ mod tests {
         let _registry_task = fasync::Task::local(registry_fut);
         mouse_handler.clone().handle_input_event(event1).await;
         assert_eq!(
-            injector_stream_receiver.next().await.map(|events| events.concat()),
+            injector_stream_receiver
+                .next()
+                .await
+                .map(|events| events.into_iter().flatten().collect()),
             Some(vec![
                 create_mouse_pointer_sample_event_phase_add(
                     vec![1],
@@ -1485,10 +1494,10 @@ mod tests {
 
         // Send another down event.
         mouse_handler.clone().handle_input_event(event2).await;
-        let pointer_sample_event2 = injector_stream_receiver
+        let pointer_sample_event2: Vec<_> = injector_stream_receiver
             .next()
             .await
-            .map(|events| events.concat())
+            .map(|events| events.into_iter().flatten().collect())
             .expect("Failed to receive pointer sample event.");
         let expected_event_time: i64 = event_time2.into_nanos();
         assert_eq!(pointer_sample_event2.len(), 1);
@@ -1511,7 +1520,7 @@ mod tests {
                     })),
                 ..
             } => {
-                assert_eq!(actual_event_time, &expected_event_time);
+                assert_eq!(*actual_event_time, expected_event_time);
                 assert_eq!(actual_position[0], expected_position.x);
                 assert_eq!(actual_position[1], expected_position.y);
                 assert_eq!(
@@ -1525,7 +1534,10 @@ mod tests {
         // Send another up event.
         mouse_handler.clone().handle_input_event(event3).await;
         assert_eq!(
-            injector_stream_receiver.next().await.map(|events| events.concat()),
+            injector_stream_receiver
+                .next()
+                .await
+                .map(|events| events.into_iter().flatten().collect()),
             Some(vec![create_mouse_pointer_sample_event(
                 pointerinjector::EventPhase::Change,
                 vec![2],
@@ -1541,7 +1553,10 @@ mod tests {
         // Send another up event.
         mouse_handler.clone().handle_input_event(event4).await;
         assert_eq!(
-            injector_stream_receiver.next().await.map(|events| events.concat()),
+            injector_stream_receiver
+                .next()
+                .await
+                .map(|events| events.into_iter().flatten().collect()),
             Some(vec![create_mouse_pointer_sample_event(
                 pointerinjector::EventPhase::Change,
                 vec![],
@@ -1660,7 +1675,10 @@ mod tests {
         let _registry_task = fasync::Task::local(registry_fut);
         mouse_handler.clone().handle_input_event(event1).await;
         assert_eq!(
-            injector_stream_receiver.next().await.map(|events| events.concat()),
+            injector_stream_receiver
+                .next()
+                .await
+                .map(|events| events.into_iter().flatten().collect()),
             Some(vec![
                 create_mouse_pointer_sample_event_phase_add(vec![1], zero_position, event_time1,),
                 create_mouse_pointer_sample_event(
@@ -1690,7 +1708,10 @@ mod tests {
         // Send a move event.
         mouse_handler.clone().handle_input_event(event2).await;
         assert_eq!(
-            injector_stream_receiver.next().await.map(|events| events.concat()),
+            injector_stream_receiver
+                .next()
+                .await
+                .map(|events| events.into_iter().flatten().collect()),
             Some(vec![create_mouse_pointer_sample_event(
                 pointerinjector::EventPhase::Change,
                 vec![1],
@@ -1717,7 +1738,10 @@ mod tests {
         // Send an up event.
         mouse_handler.clone().handle_input_event(event3).await;
         assert_eq!(
-            injector_stream_receiver.next().await.map(|events| events.concat()),
+            injector_stream_receiver
+                .next()
+                .await
+                .map(|events| events.into_iter().flatten().collect()),
             Some(vec![create_mouse_pointer_sample_event(
                 pointerinjector::EventPhase::Change,
                 vec![],
@@ -2002,8 +2026,11 @@ mod tests {
         let _registry_task = fasync::Task::local(registry_fut);
 
         mouse_handler.clone().handle_input_event(event).await;
-        let got_events =
-            injector_stream_receiver.next().await.map(|events| events.concat()).unwrap();
+        let got_events: Vec<_> = injector_stream_receiver
+            .next()
+            .await
+            .map(|events| events.into_iter().flatten().collect())
+            .unwrap();
         pretty_assertions::assert_eq!(got_events.len(), 2);
         assert_matches!(
             got_events[0],
@@ -2122,7 +2149,10 @@ mod tests {
         // Handle button down event.
         mouse_handler.clone().handle_input_event(down_event).await;
         assert_eq!(
-            injector_stream_receiver.next().await.map(|events| events.concat()),
+            injector_stream_receiver
+                .next()
+                .await
+                .map(|events| events.into_iter().flatten().collect()),
             Some(vec![
                 create_mouse_pointer_sample_event_phase_add(
                     vec![1],
@@ -2145,7 +2175,10 @@ mod tests {
         // Handle wheel event with button pressing.
         mouse_handler.clone().handle_input_event(wheel_event).await;
         assert_eq!(
-            injector_stream_receiver.next().await.map(|events| events.concat()),
+            injector_stream_receiver
+                .next()
+                .await
+                .map(|events| events.into_iter().flatten().collect()),
             Some(vec![create_mouse_pointer_sample_event(
                 pointerinjector::EventPhase::Change,
                 vec![1],
@@ -2161,7 +2194,10 @@ mod tests {
         // Handle button up event.
         mouse_handler.clone().handle_input_event(up_event).await;
         assert_eq!(
-            injector_stream_receiver.next().await.map(|events| events.concat()),
+            injector_stream_receiver
+                .next()
+                .await
+                .map(|events| events.into_iter().flatten().collect()),
             Some(vec![create_mouse_pointer_sample_event(
                 pointerinjector::EventPhase::Change,
                 vec![],
@@ -2177,7 +2213,10 @@ mod tests {
         // Handle wheel event after button released.
         mouse_handler.clone().handle_input_event(continue_wheel_event).await;
         assert_eq!(
-            injector_stream_receiver.next().await.map(|events| events.concat()),
+            injector_stream_receiver
+                .next()
+                .await
+                .map(|events| events.into_iter().flatten().collect()),
             Some(vec![create_mouse_pointer_sample_event(
                 pointerinjector::EventPhase::Change,
                 vec![],

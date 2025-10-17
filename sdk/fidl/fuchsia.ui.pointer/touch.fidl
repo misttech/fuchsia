@@ -65,9 +65,7 @@ closed protocol TouchSource {
     /// unfortunately does not admit an idiomatic matching of response to event.
     strict Watch(struct {
         responses vector<TouchResponse>:TOUCH_MAX_EVENT;
-    }) -> (struct {
-        events vector<TouchEvent>:TOUCH_MAX_EVENT;
-    });
+    }) -> (TouchSourceWatchResponse);
 
     /// The gesture protocol allows a client to enact a "hold" on an open
     /// interaction of touch events; it prevents resolution of interaction
@@ -91,8 +89,19 @@ closed protocol TouchSource {
     }) -> ();
 };
 
+@available(replaced=HEAD)
+type TouchSourceWatchResponse = struct {
+    events vector<TouchEvent>:TOUCH_MAX_EVENT;
+};
+
+@available(added=HEAD)
+type TouchSourceWatchResponse = resource struct {
+    events vector<TouchEvent>:TOUCH_MAX_EVENT;
+};
+
 /// The self-sufficient, self-consistent collection of pointer-related data,
 /// sent from server to client.
+@available(replaced=HEAD)
 type TouchEvent = table {
     /// The time this event was observed.
     /// Required.
@@ -123,6 +132,42 @@ type TouchEvent = table {
     /// An identifier to correlate this event's send/receive occurrence across
     /// component boundaries or abstraction layers.
     6: trace_flow_id uint64;
+};
+
+@available(added=HEAD)
+type TouchEvent = resource table {
+    /// The time this event was observed.
+    /// Required.
+    1: timestamp zx.Time;
+
+    /// The parameters of the associated view and viewport, sufficient to
+    /// correctly interpret the position, orientation, magnitude, and
+    /// inter-event distance of touch events dispatched to a view.
+    /// - It is issued on connection and on change.
+    2: view_parameters ViewParameters;
+
+    /// A description of the pointer device, sufficient to correctly interpret
+    /// the capabilities and usage intent of the device.
+    /// - It is issued once per device.
+    // TODO(https://fxbug.dev/430088531): This should be replaced with
+    // [`fuchsia.ui.input/TouchDeviceInfo`].
+    3: device_info TouchDeviceInfo;
+
+    /// A description of each sampled data point in an interaction of touch
+    /// events.
+    /// - It is issued on every sample in the interaction.
+    4: pointer_sample TouchPointerSample;
+
+    /// The result of gesture disambiguation for a interaction of touch events.
+    /// - It is issued once per interaction.
+    5: interaction_result TouchInteractionResult;
+
+    /// An identifier to correlate this event's send/receive occurrence across
+    /// component boundaries or abstraction layers.
+    6: trace_flow_id uint64;
+
+    /// Optional wake lease for power baton passing.
+    7: wake_lease zx.Handle:EVENTPAIR;
 };
 
 /// Information about a device that issues touch event streams.

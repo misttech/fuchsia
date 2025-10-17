@@ -103,9 +103,9 @@ class TouchFlatlandClient final {
     CreateScene();
 
     // Listen for pointer events.
-    touch_source_->Watch({}).Then([&](auto res) {
+    touch_source_->Watch({}).Then([&](auto& res) {
       ZX_ASSERT_OK(res);
-      Watch(res.value().events());
+      Watch(std::move(res.value().events()));
     });
 
     auto test_app_status_listener_connect =
@@ -204,9 +204,9 @@ class TouchFlatlandClient final {
     }
 
     // Start next touch event watch.
-    touch_source_->Watch({std::move(responses)}).Then([&](auto res) {
+    touch_source_->Watch({std::move(responses)}).Then([&](auto& res) {
       ZX_ASSERT_OK(res);
-      Watch(res.value().events());
+      Watch(std::move(res.value().events()));
     });
   }
 

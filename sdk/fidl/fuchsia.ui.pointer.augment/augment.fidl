@@ -80,14 +80,22 @@ closed protocol TouchSourceWithLocalHit {
     /// augmented data.
     strict Watch(struct {
         responses vector<pointer.TouchResponse>:pointer.TOUCH_MAX_EVENT;
-    }) -> (struct {
-        events vector<TouchEventWithLocalHit>:pointer.TOUCH_MAX_EVENT;
-    });
+    }) -> (TouchSourceWithLocalHitWatchResponse);
     /// Identical usage to [`fuchsia.ui.pointer.TouchSource.UpdateResponse`].
     strict UpdateResponse(struct {
         interaction pointer.TouchInteractionId;
         response pointer.TouchResponse;
     }) -> ();
+};
+
+@available(replaced=HEAD)
+type TouchSourceWithLocalHitWatchResponse = struct {
+    events vector<TouchEventWithLocalHit>:pointer.TOUCH_MAX_EVENT;
+};
+
+@available(added=HEAD)
+type TouchSourceWithLocalHitWatchResponse = resource struct {
+    events vector<TouchEventWithLocalHit>:pointer.TOUCH_MAX_EVENT;
 };
 
 /// A floating point two-dimensional point.
@@ -101,7 +109,22 @@ alias Point2 = array<float32, 2>;
 /// graphical content: its "hits" from top to bottom. The "local hit" of `e` is
 /// the location of `e` in the coordinate system of the view in which `e` has
 /// the top-most intersection.
+@available(replaced=HEAD)
 type TouchEventWithLocalHit = struct {
+    /// Identical usage to [`fuchsia.ui.pointer.TouchEvent`].
+    touch_event pointer.TouchEvent;
+
+    /// Augmented data for `touch_event` that describes the top-most client
+    /// KOID that it hits.
+    local_viewref_koid zx.Koid;
+
+    /// Augmented data for `touch_event` that describes its local coordinates in
+    /// the coordinate space for `local_viewref_koid`.
+    local_point Point2;
+};
+
+@available(added=HEAD)
+type TouchEventWithLocalHit = resource struct {
     /// Identical usage to [`fuchsia.ui.pointer.TouchEvent`].
     touch_event pointer.TouchEvent;
 

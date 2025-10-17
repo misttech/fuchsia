@@ -86,7 +86,15 @@ closed protocol Device {
     /// Flow control: The caller is allowed at most one in-flight |Inject| call
     /// at at time: subsequent |Inject| calls must wait until the acknowledgment
     /// returns. Non-compliance results in channel closure.
-    strict Inject(struct {
-        events vector<Event>:MAX_INJECT;
-    }) -> ();
+    strict Inject(DeviceInjectRequest) -> ();
+};
+
+@available(replaced=HEAD)
+type DeviceInjectRequest = struct {
+    events vector<Event>:MAX_INJECT;
+};
+
+@available(added=HEAD)
+type DeviceInjectRequest = resource struct {
+    events vector<Event>:MAX_INJECT;
 };

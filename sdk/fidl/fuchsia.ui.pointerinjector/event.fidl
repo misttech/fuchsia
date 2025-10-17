@@ -82,6 +82,7 @@ type Data = flexible union {
 };
 
 // A per-device collection of pointer-related data, sent from server to client.
+@available(replaced=HEAD)
 type Event = table {
     /// The time when this event was observed.
     ///
@@ -96,4 +97,24 @@ type Event = table {
     /// An identifier to correlate this event's send/receive occurrence across
     /// component boundaries or abstraction layers.
     3: trace_flow_id uint64;
+};
+
+@available(added=HEAD)
+type Event = resource table {
+    /// The time when this event was observed.
+    ///
+    /// Required.
+    1: timestamp zx.Time;
+
+    /// The event's data.
+    ///
+    /// Required.
+    2: data Data;
+
+    /// An identifier to correlate this event's send/receive occurrence across
+    /// component boundaries or abstraction layers.
+    3: trace_flow_id uint64;
+
+    /// Optional wake lease for power baton passing.
+    4: wake_lease zx.Handle:EVENTPAIR;
 };

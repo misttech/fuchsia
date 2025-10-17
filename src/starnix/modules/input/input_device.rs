@@ -757,7 +757,7 @@ mod test {
     ) -> Vec<TouchResponse> {
         match request_stream.next().await {
             Some(Ok(TouchSourceRequest::Watch { responses, responder })) => {
-                responder.send(&touch_events).expect("failure sending Watch reply");
+                responder.send(touch_events).expect("failure sending Watch reply");
                 responses
             }
             unexpected_request => panic!("unexpected request {:?}", unexpected_request),
@@ -772,7 +772,7 @@ mod test {
     ) {
         match request_stream.next().await {
             Some(Ok(fuipointer::MouseSourceRequest::Watch { responder })) => {
-                responder.send(&mouse_events).expect("failure sending Watch reply");
+                responder.send(mouse_events).expect("failure sending Watch reply");
             }
             unexpected_request => panic!("unexpected request {:?}", unexpected_request),
         }
@@ -805,7 +805,7 @@ mod test {
         // Reply to first `Watch` with two `TouchEvent`s.
         match touch_source_stream.next().await {
             Some(Ok(TouchSourceRequest::Watch { responder, .. })) => responder
-                .send(&vec![TouchEvent::default(); 2])
+                .send(vec![make_empty_touch_event(), make_empty_touch_event()])
                 .expect("failure sending Watch reply"),
             unexpected_request => panic!("unexpected request {:?}", unexpected_request),
         }
@@ -816,7 +816,13 @@ mod test {
             Some(Ok(TouchSourceRequest::Watch { responses, responder })) => {
                 assert_matches!(responses.as_slice(), [_, _]);
                 responder
-                    .send(&vec![TouchEvent::default(); 5])
+                    .send(vec![
+                        make_empty_touch_event(),
+                        make_empty_touch_event(),
+                        make_empty_touch_event(),
+                        make_empty_touch_event(),
+                        make_empty_touch_event(),
+                    ])
                     .expect("failure sending Watch reply")
             }
             unexpected_request => panic!("unexpected request {:?}", unexpected_request),
@@ -1891,7 +1897,7 @@ mod test {
         // A TouchEvent::default() has no pointer sample so these events should be discarded.
         match touch_source_stream.next().await {
             Some(Ok(TouchSourceRequest::Watch { responder, .. })) => responder
-                .send(&vec![make_empty_touch_event(); 2])
+                .send(vec![make_empty_touch_event(), make_empty_touch_event()])
                 .expect("failure sending Watch reply"),
             unexpected_request => panic!("unexpected request {:?}", unexpected_request),
         }
@@ -1902,7 +1908,7 @@ mod test {
             Some(Ok(TouchSourceRequest::Watch { responses, responder })) => {
                 assert_matches!(responses.as_slice(), [_, _]);
                 responder
-                    .send(&vec![
+                    .send(vec![
                         make_touch_event_with_coords_phase_timestamp(
                             0.0,
                             0.0,
@@ -2027,7 +2033,7 @@ mod test {
         // A TouchEvent::default() has no pointer sample so these events should be discarded.
         match touch_source_stream.next().await {
             Some(Ok(TouchSourceRequest::Watch { responder, .. })) => responder
-                .send(&vec![make_empty_touch_event(); 2])
+                .send(vec![make_empty_touch_event(), make_empty_touch_event()])
                 .expect("failure sending Watch reply"),
             unexpected_request => panic!("unexpected request {:?}", unexpected_request),
         }
@@ -2036,7 +2042,7 @@ mod test {
         match touch_source_stream.next().await {
             Some(Ok(TouchSourceRequest::Watch { responses, responder })) => {
                 assert_matches!(responses.as_slice(), [_, _]);
-                responder.send(&vec![]).expect("failure sending Watch reply");
+                responder.send(vec![]).expect("failure sending Watch reply");
             }
             unexpected_request => panic!("unexpected request {:?}", unexpected_request),
         }
@@ -2054,7 +2060,7 @@ mod test {
         match touch_source_stream.next().await {
             Some(Ok(TouchSourceRequest::Watch { responder, .. })) => {
                 responder
-                    .send(&vec![
+                    .send(vec![
                         make_touch_event_with_coords_phase_timestamp(
                             0.0,
                             0.0,
@@ -2309,7 +2315,7 @@ mod test {
         // converted to 1 uapi event each, with an extra sync event to signify end of the batch.
         answer_next_mouse_watch_request(
             &mut mouse_source_stream,
-            vec![make_mouse_wheel_event(1); 5],
+            (0..5).map(|_| make_mouse_wheel_event(1)).collect(),
         )
         .await;
 

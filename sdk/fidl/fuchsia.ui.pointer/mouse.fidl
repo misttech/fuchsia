@@ -47,13 +47,22 @@ closed protocol MouseSource {
     /// notifying the client. If a |MouseEvent| carries |ViewParameters|, these
     /// parameters apply to successive |MousePointerSample|s until the next
     /// |ViewParameters|.
-    strict Watch() -> (struct {
-        events vector<MouseEvent>:MOUSE_MAX_EVENT;
-    });
+    strict Watch() -> (MouseSourceWatchResponse);
+};
+
+@available(replaced=HEAD)
+type MouseSourceWatchResponse = struct {
+    events vector<MouseEvent>:MOUSE_MAX_EVENT;
+};
+
+@available(added=HEAD)
+type MouseSourceWatchResponse = resource struct {
+    events vector<MouseEvent>:MOUSE_MAX_EVENT;
 };
 
 /// The self-sufficient, self-consistent collection of pointer-related data,
 /// sent from server to client.
+@available(replaced=HEAD)
 type MouseEvent = table {
     /// The time this event was observed.
     /// Required.
@@ -87,6 +96,45 @@ type MouseEvent = table {
     /// An identifier to correlate this event's send/receive occurrence across
     /// component boundaries or abstraction layers.
     6: trace_flow_id uint64;
+};
+
+@available(added=HEAD)
+type MouseEvent = resource table {
+    /// The time this event was observed.
+    /// Required.
+    1: timestamp zx.Time;
+
+    /// The parameters of the associated view and viewport, sufficient to
+    /// correctly interpret the position, orientation, magnitude, and
+    /// inter-event distance of pointer events dispatched to a view.
+    /// - It is issued on connection and on change.
+    2: view_parameters ViewParameters;
+
+    /// A description of the mouse device, sufficient to correctly interpret
+    /// the capabilities and usage intent of the device.
+    /// - It is issued once per device.
+    3: device_info MouseDeviceInfo;
+
+    /// A description of each sampled data point in a mouse event stream.
+    ///
+    /// Issuance policy. There are two dispatch modes, "hover" and "latched".
+    /// Hover mode is default, and the stream is dispatched in fragments to the
+    /// visible client that each mouse event hovers above. Latched mode directs
+    /// the stream to a single client (regardless of view boundary) until
+    /// unlatched. Latched mode is typically toggled when the user presses the
+    /// primary mouse button, but is ultimately a product-specific policy.
+    4: pointer_sample MousePointerSample;
+
+    /// The signal for view entry/exit in hover mode.
+    /// - It is issued on hover entry into a view, and hover exit from a view.
+    5: stream_info MouseEventStreamInfo;
+
+    /// An identifier to correlate this event's send/receive occurrence across
+    /// component boundaries or abstraction layers.
+    6: trace_flow_id uint64;
+
+    /// Optional wake lease for power baton passing.
+    7: wake_lease zx.Handle:EVENTPAIR;
 };
 
 /// The valid values of relative motion for a mouse device.

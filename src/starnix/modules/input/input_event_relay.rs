@@ -1092,7 +1092,7 @@ mod test {
     ) -> Vec<TouchResponse> {
         match request_stream.next().await {
             Some(Ok(TouchSourceRequest::Watch { responses, responder })) => {
-                responder.send(&touch_events).expect("failure sending Watch reply");
+                responder.send(touch_events).expect("failure sending Watch reply");
                 responses
             }
             unexpected_request => panic!("unexpected request {:?}", unexpected_request),
@@ -1107,7 +1107,7 @@ mod test {
     ) {
         match request_stream.next().await {
             Some(Ok(fuipointer::MouseSourceRequest::Watch { responder })) => {
-                responder.send(&mouse_events).expect("failure sending Watch reply");
+                responder.send(mouse_events).expect("failure sending Watch reply");
             }
             unexpected_request => panic!("unexpected request {:?}", unexpected_request),
         }
