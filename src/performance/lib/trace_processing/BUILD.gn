@@ -6,6 +6,8 @@ import("//build/host.gni")
 import("//build/python/python_binary.gni")
 import("//build/python/python_library.gni")
 
+assert(is_host)
+
 python_library("trace_processing") {
   testonly = true
   library_name = "trace_processing"
@@ -37,11 +39,6 @@ python_library("trace_processing") {
 
   data_package_name = "data"
   data_sources = [ "${root_out_dir}/trace2json" ]
-}
-
-group("tests") {
-  testonly = true
-  public_deps = [ "tests" ]
 }
 
 python_binary("run_cpu_breakdown_bin") {
