@@ -753,6 +753,10 @@ template("bazel_product_bundle") {
     # Required by _size_report_target sub-target.
     # Size checker prints out size information when limits are exceeded on
     # INFO level, so it is necessary to include Bazel INFO logs here.
+    #
+    # Required by Product Assembly sub-targets as that's how warnings about
+    # the use of developer overrides for assembly are printed to for
+    # visibility to the developer.
     filter_bazel_info_logs = false
 
     # Required by targets.bazel_product_bundle sub-target
