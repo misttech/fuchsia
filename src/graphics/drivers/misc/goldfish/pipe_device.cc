@@ -319,6 +319,51 @@ zx_status_t PipeDevice::GetBti(zx::bti* out_bti) {
   return bti_.duplicate(ZX_RIGHT_SAME_RIGHTS, out_bti);
 }
 
+void PipeDevice::Create(CreateCompleter::Sync& completer) {
+  int32_t id;
+  zx::vmo vmo;
+  zx_status_t status = Create(&id, &vmo);
+  if (status == ZX_OK) {
+    completer.ReplySuccess(id, std::move(vmo));
+  } else {
+    completer.Close(status);
+  }
+}
+
+void PipeDevice::SetEvent(SetEventRequestView request, SetEventCompleter::Sync& completer) {
+  zx_status_t status = SetEvent(request->id, std::move(request->pipe_event));
+  if (status == ZX_OK) {
+    completer.ReplySuccess();
+  } else {
+    completer.Close(status);
+  }
+}
+
+void PipeDevice::Destroy(DestroyRequestView request, DestroyCompleter::Sync& completer) {
+  Destroy(request->id);
+  completer.Reply();
+}
+
+void PipeDevice::Open(OpenRequestView request, OpenCompleter::Sync& completer) {
+  Open(request->id);
+  completer.Reply();
+}
+
+void PipeDevice::Exec(ExecRequestView request, ExecCompleter::Sync& completer) {
+  Exec(request->id);
+  completer.Reply();
+}
+
+void PipeDevice::GetBti(GetBtiCompleter::Sync& completer) {
+  zx::bti bti;
+  zx_status_t status = GetBti(&bti);
+  if (status == ZX_OK) {
+    completer.ReplySuccess(std::move(bti));
+  } else {
+    completer.Close(status);
+  }
+}
+
 int PipeDevice::IrqHandler() {
   while (true) {
     zx_status_t status = irq_.wait(nullptr);
@@ -393,34 +438,32 @@ PipeChildDevice::PipeChildDevice(PipeDevice* parent, async_dispatcher_t* dispatc
 
 zx_status_t PipeChildDevice::Bind(cpp20::span<const zx_device_str_prop_t> props,
                                   const char* dev_name) {
-  zx::result result = outgoing_.AddService<fuchsia_hardware_goldfish_pipe::Service>(
+  zx::result<> add_service_result = outgoing_.AddService<fuchsia_hardware_goldfish_pipe::Service>(
       fuchsia_hardware_goldfish_pipe::Service::InstanceHandler({
-          .device = pipe_bindings_.CreateHandler(this, dispatcher_, fidl::kIgnoreBindingClosure),
+          .device = parent_->fidl::WireServer<fuchsia_hardware_goldfish_pipe::Bus>::bind_handler(
+              dispatcher_),
       }));
-  if (result.is_error()) {
-    zxlogf(ERROR, "Failed to add service the outgoing directory");
-    return result.status_value();
+  if (add_service_result.is_error()) {
+    zxlogf(ERROR, "Failed to add service the outgoing directory: %s",
+           add_service_result.status_string());
+    return add_service_result.status_value();
   }
 
-  zx::result endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
-  if (endpoints.is_error()) {
-    return endpoints.status_value();
+  auto [dir_client, dir_server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
+  zx::result<> serve_result = outgoing_.Serve(std::move(dir_server));
+  if (serve_result.is_error()) {
+    zxlogf(ERROR, "Failed to service the outgoing directory: %s", serve_result.status_string());
+    return serve_result.status_value();
   }
 
-  result = outgoing_.Serve(std::move(endpoints->server));
-  if (result.is_error()) {
-    zxlogf(ERROR, "Failed to service the outgoing directory");
-    return result.status_value();
-  }
-
-  std::array offers = {
+  std::array<const char*, 1> offers = {
       fuchsia_hardware_goldfish_pipe::Service::Name,
   };
 
   zx_status_t status = DdkAdd(ddk::DeviceAddArgs(dev_name)
                                   .set_str_props(props)
                                   .set_fidl_service_offers(offers)
-                                  .set_outgoing_dir(endpoints->client.TakeChannel())
+                                  .set_outgoing_dir(std::move(dir_client).TakeChannel())
                                   .set_proto_id(ZX_PROTOCOL_GOLDFISH_PIPE));
   if (status != ZX_OK) {
     zxlogf(ERROR, "%s: create %s device failed: %d", kTag, dev_name, status);
@@ -454,51 +497,6 @@ void PipeChildDevice::Connect(ConnectRequestView request, ConnectCompleter::Sync
 }
 
 void PipeChildDevice::DdkRelease() { delete this; }
-
-void PipeChildDevice::Create(CreateCompleter::Sync& completer) {
-  int32_t id;
-  zx::vmo vmo;
-  zx_status_t status = parent_->Create(&id, &vmo);
-  if (status == ZX_OK) {
-    completer.ReplySuccess(id, std::move(vmo));
-  } else {
-    completer.Close(status);
-  }
-}
-
-void PipeChildDevice::SetEvent(SetEventRequestView request, SetEventCompleter::Sync& completer) {
-  zx_status_t status = parent_->SetEvent(request->id, std::move(request->pipe_event));
-  if (status == ZX_OK) {
-    completer.ReplySuccess();
-  } else {
-    completer.Close(status);
-  }
-}
-
-void PipeChildDevice::Destroy(DestroyRequestView request, DestroyCompleter::Sync& completer) {
-  parent_->Destroy(request->id);
-  completer.Reply();
-}
-
-void PipeChildDevice::Open(OpenRequestView request, OpenCompleter::Sync& completer) {
-  parent_->Open(request->id);
-  completer.Reply();
-}
-
-void PipeChildDevice::Exec(ExecRequestView request, ExecCompleter::Sync& completer) {
-  parent_->Exec(request->id);
-  completer.Reply();
-}
-
-void PipeChildDevice::GetBti(GetBtiCompleter::Sync& completer) {
-  zx::bti bti;
-  zx_status_t status = parent_->GetBti(&bti);
-  if (status == ZX_OK) {
-    completer.ReplySuccess(std::move(bti));
-  } else {
-    completer.Close(status);
-  }
-}
 
 }  // namespace goldfish
 
