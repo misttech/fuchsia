@@ -93,6 +93,7 @@ pub struct CachingObjectHandle<S> {
 // SAFETY: Only `buffer` isn't Sync. Access to `buffer` is synchronized with `chunk_states`.
 unsafe impl<S> Sync for CachingObjectHandle<S> {}
 
+#[fxfs_trace::trace]
 impl<S: ReadObjectHandle> CachingObjectHandle<S> {
     pub fn new(source: S) -> Self {
         let block_size = source.block_size() as usize;
@@ -144,49 +145,49 @@ impl<S: ReadObjectHandle> CachingObjectHandle<S> {
                     listener.await;
                 }
                 Action::Load => {
-                    // If this future is dropped or reading fails then put the chunk back into the
-                    // `Missing` state.
-                    let drop_guard = scopeguard::guard((), |_| {
-                        {
-                            let mut chunks = self.chunks.lock();
-                            debug_assert!(matches!(chunks[chunk_num], Chunk::Pending));
-                            chunks[chunk_num] = Chunk::Missing;
-                        }
-                        self.event.notify(usize::MAX);
-                    });
-
-                    let read_start = chunk_num * CHUNK_SIZE;
-                    let len =
-                        std::cmp::min(read_start + CHUNK_SIZE, self.source.get_size() as usize)
-                            - read_start;
-                    let aligned_len =
-                        std::cmp::min(read_start + CHUNK_SIZE, block_aligned_size(&self.source))
-                            - read_start;
-
-                    fxfs_trace::duration!(c"CachingObjectHandle::load", "len" => aligned_len);
-
-                    let mut read_buf = self.source.allocate_buffer(aligned_len).await;
-                    let amount_read =
-                        self.source.read(read_start as u64, read_buf.as_mut()).await?;
-                    ensure!(amount_read >= len, anyhow!(FxfsError::Internal).context("Short read"));
-
-                    log::debug!("COH {}: Read {len}@{read_start}", self.source.object_id());
-
-                    let data = Vec::from(&read_buf.as_slice()[..len]).into_boxed_slice();
-                    let cached_chunk = CachedChunk(Arc::new(data));
-
-                    {
-                        let mut chunks = self.chunks.lock();
-                        debug_assert!(matches!(chunks[chunk_num], Chunk::Pending));
-                        chunks[chunk_num] = Chunk::Present(cached_chunk.clone());
-                    }
-                    self.event.notify(usize::MAX);
-
-                    scopeguard::ScopeGuard::into_inner(drop_guard);
-                    return Ok(cached_chunk);
+                    return self.load(chunk_num).await;
                 }
             }
         }
+    }
+
+    #[trace]
+    async fn load(&self, chunk_num: usize) -> Result<CachedChunk, Error> {
+        // If this future is dropped or reading fails then put the chunk back into the
+        // `Missing` state.
+        let drop_guard = scopeguard::guard((), |_| {
+            {
+                let mut chunks = self.chunks.lock();
+                debug_assert!(matches!(chunks[chunk_num], Chunk::Pending));
+                chunks[chunk_num] = Chunk::Missing;
+            }
+            self.event.notify(usize::MAX);
+        });
+
+        let read_start = chunk_num * CHUNK_SIZE;
+        let len =
+            std::cmp::min(read_start + CHUNK_SIZE, self.source.get_size() as usize) - read_start;
+        let aligned_len =
+            std::cmp::min(read_start + CHUNK_SIZE, block_aligned_size(&self.source)) - read_start;
+
+        let mut read_buf = self.source.allocate_buffer(aligned_len).await;
+        let amount_read = self.source.read(read_start as u64, read_buf.as_mut()).await?;
+        ensure!(amount_read >= len, anyhow!(FxfsError::Internal).context("Short read"));
+
+        log::debug!("COH {}: Read {len}@{read_start}", self.source.object_id());
+
+        let data = Vec::from(&read_buf.as_slice()[..len]).into_boxed_slice();
+        let cached_chunk = CachedChunk(Arc::new(data));
+
+        {
+            let mut chunks = self.chunks.lock();
+            debug_assert!(matches!(chunks[chunk_num], Chunk::Pending));
+            chunks[chunk_num] = Chunk::Present(cached_chunk.clone());
+        }
+        self.event.notify(usize::MAX);
+
+        scopeguard::ScopeGuard::into_inner(drop_guard);
+        return Ok(cached_chunk);
     }
 
     /// Purges unused extents, freeing unused memory.  This follows a second-chance algorithm:

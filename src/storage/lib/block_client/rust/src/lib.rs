@@ -428,52 +428,50 @@ impl Common {
 
     // Sends the request and waits for the response.
     async fn send(&self, mut request: BlockFifoRequest) -> Result<(), zx::Status> {
-        async move {
-            let (request_id, trace_flow_id) = {
-                let mut state = self.fifo_state.lock();
+        let (request_id, trace_flow_id) = {
+            let mut state = self.fifo_state.lock();
 
-                let mut flags = BlockIoFlag::from_bits_retain(request.command.flags);
-                if BlockOpcode::from_primitive(request.command.opcode) == Some(BlockOpcode::Write)
-                    && state.attach_barrier
-                {
-                    flags |= BlockIoFlag::PRE_BARRIER;
-                    request.command.flags = flags.bits();
-                    state.attach_barrier = false;
-                }
+            let mut flags = BlockIoFlag::from_bits_retain(request.command.flags);
+            if BlockOpcode::from_primitive(request.command.opcode) == Some(BlockOpcode::Write)
+                && state.attach_barrier
+            {
+                flags |= BlockIoFlag::PRE_BARRIER;
+                request.command.flags = flags.bits();
+                state.attach_barrier = false;
+            }
 
-                if state.fifo.is_none() {
-                    // Fifo has been closed.
-                    return Err(zx::Status::CANCELED);
-                }
-                trace::duration!(
-                    c"storage",
-                    c"block_client::send::start",
-                    "op" => opcode_str(request.command.opcode)
-                );
-                let request_id = state.next_request_id;
-                state.next_request_id = state.next_request_id.overflowing_add(1).0;
-                assert!(
-                    state.map.insert(request_id, RequestState::default()).is_none(),
-                    "request id in use!"
-                );
-                request.reqid = request_id;
-                if request.trace_flow_id == NO_TRACE_ID {
-                    request.trace_flow_id = generate_trace_flow_id(request_id);
-                }
-                let trace_flow_id = request.trace_flow_id;
-                trace::flow_begin!(c"storage", c"block_client::send", trace_flow_id);
-                state.queue.push_back(request);
-                if let Some(waker) = state.poller_waker.clone() {
-                    state.poll_send_requests(&mut Context::from_waker(&waker));
-                }
-                (request_id, trace_flow_id)
-            };
-            ResponseFuture::new(self.fifo_state.clone(), request_id).await?;
-            trace::duration!(c"storage", c"block_client::send::end");
-            trace::flow_end!(c"storage", c"block_client::send", trace_flow_id);
-            Ok(())
-        }
-        .await
+            if state.fifo.is_none() {
+                // Fifo has been closed.
+                return Err(zx::Status::CANCELED);
+            }
+            trace::duration!(
+                c"storage",
+                c"block_client::send::start",
+                "op" => opcode_str(request.command.opcode),
+                "len" => request.length * self.block_size
+            );
+            let request_id = state.next_request_id;
+            state.next_request_id = state.next_request_id.overflowing_add(1).0;
+            assert!(
+                state.map.insert(request_id, RequestState::default()).is_none(),
+                "request id in use!"
+            );
+            request.reqid = request_id;
+            if request.trace_flow_id == NO_TRACE_ID {
+                request.trace_flow_id = generate_trace_flow_id(request_id);
+            }
+            let trace_flow_id = request.trace_flow_id;
+            trace::flow_begin!(c"storage", c"block_client::send", trace_flow_id);
+            state.queue.push_back(request);
+            if let Some(waker) = state.poller_waker.clone() {
+                state.poll_send_requests(&mut Context::from_waker(&waker));
+            }
+            (request_id, trace_flow_id)
+        };
+        ResponseFuture::new(self.fifo_state.clone(), request_id).await?;
+        trace::duration!(c"storage", c"block_client::send::end");
+        trace::flow_end!(c"storage", c"block_client::send", trace_flow_id);
+        Ok(())
     }
 
     async fn detach_vmo(&self, vmo_id: VmoId) -> Result<(), zx::Status> {
