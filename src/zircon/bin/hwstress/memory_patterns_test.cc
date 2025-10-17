@@ -13,6 +13,8 @@
 namespace hwstress {
 namespace {
 
+const size_t kPageSize = zx_system_get_page_size();
+
 TEST(Util, RotatePattern) {
   ASSERT_EQ(RotatePattern({}, 5), std::vector<uint64_t>{});
 
@@ -49,7 +51,7 @@ TEST(SimplePattern, EndianCheck) {
   WritePattern(memory, SimplePattern(0x00112233'44556677ul));
 
   // Ensure that bytes were written in the correct (big-endian) order.
-  for (size_t i = 0; i < ZX_PAGE_SIZE; i += 8) {
+  for (size_t i = 0; i < kPageSize; i += 8) {
     EXPECT_EQ(memory[i + 0], 0x00);
     EXPECT_EQ(memory[i + 1], 0x11);
     EXPECT_EQ(memory[i + 2], 0x22);
@@ -68,7 +70,7 @@ TEST(MultiWordPattern, EndianCheck) {
   WritePattern(memory, MultiWordPattern({0x00112233'44556677ul, 0x8899aabb'ccddeeff}));
 
   // Ensure that bytes were written in the correct (big-endian) order.
-  for (size_t i = 0; i < ZX_PAGE_SIZE; i += 16) {
+  for (size_t i = 0; i < kPageSize; i += 16) {
     EXPECT_EQ(memory[i + 0], 0x00);
     EXPECT_EQ(memory[i + 1], 0x11);
     EXPECT_EQ(memory[i + 2], 0x22);
@@ -98,8 +100,8 @@ TEST(VerifyPattern, Simple) {
 
   // Change the memory to have incorrect bytes at various locations, and ensure
   // we see the errors.
-  for (int bad_byte_index :
-       std::initializer_list<int>{0, 1, 2, 3, 4, 5, 6, 7, 8, ZX_PAGE_SIZE - 1}) {
+  for (size_t bad_byte_index :
+       std::initializer_list<size_t>{0, 1, 2, 3, 4, 5, 6, 7, 8, kPageSize - 1}) {
     memset(memory.data(), 0x55, memory.size());
     memory[bad_byte_index] = 0x0;
     EXPECT_TRUE(VerifyPattern(memory, SimplePattern(0x55555555'55555555)).has_value());
