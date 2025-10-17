@@ -17,7 +17,7 @@ constexpr uint32_t kFakeRangeCount = 3;
 
 // The +2 is because we want to cover the worst case where only the first byte of the buffer
 // overlaps the first page and only the last byte of the buffer overlaps the last page.
-constexpr size_t kBufferSize = 64 * ZX_PAGE_SIZE + 2;
+uint32_t BufferSize() { return 64 * static_cast<uint32_t>(zx_system_get_page_size()) + 2; }
 
 volatile uint8_t g_volatile_byte;
 
@@ -26,9 +26,10 @@ volatile uint8_t g_volatile_byte;
 class FakeMapRangeTest : public ::testing::Test {
  public:
   void SetUp() override {
-    ASSERT_EQ(ZX_OK, FakeMapRange::Create(kBufferSize, &fake_ranges_[0]));
+    ASSERT_EQ(ZX_OK, FakeMapRange::Create(BufferSize(), &fake_ranges_[0]));
     first_vmar_byte_offset_ = 0;
-    last_vmar_byte_offset_ = fbl::round_up(ZX_PAGE_SIZE - 1 + kBufferSize, ZX_PAGE_SIZE) - 1;
+    uint32_t page_size = static_cast<uint32_t>(zx_system_get_page_size());
+    last_vmar_byte_offset_ = fbl::round_up(page_size - 1 + BufferSize(), page_size) - 1;
   }
 
  protected:
@@ -56,4 +57,4 @@ TEST_F(FakeMapRangeTest, WriteLastByteFaults) {
                "");
 }
 
-TEST_F(FakeMapRangeTest, SizeWorks) { ASSERT_EQ(kBufferSize, fake_ranges_[0]->size()); }
+TEST_F(FakeMapRangeTest, SizeWorks) { ASSERT_EQ(BufferSize(), fake_ranges_[0]->size()); }

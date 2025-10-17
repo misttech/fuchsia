@@ -65,7 +65,7 @@ class CodecBuffer {
   const zx::vmo& vmo() const;
 
   // The offset within the main VMO where data of this CodecBuffer starts.  The vmo_offset() is not
-  // required to be divisible by ZX_PAGE_SIZE.
+  // required to be divisible by page size.
   uint64_t vmo_offset() const;
 
   // The use of weak_ptr<> here is to emphasize that we don't need shared_ptr<>
@@ -124,7 +124,7 @@ class CodecBuffer {
   // does anyway, that thread will cleanly fault (not get stuck reading, not seem to let a write
   // happen, not be reading/writing any arbitrary other data in the process's address space).  The
   // fake_map_addr vaddr region is guaranteed to have enough vaddr pages to accommodate
-  // vmo_usable_start % ZX_PAGE_SIZE + vmo_usable_size (so that an access within the bounds of the
+  // vmo_usable_start % PAGE_SIZE + vmo_usable_size (so that an access within the bounds of the
   // buffer will reliably fault cleanly).
   void FakeMap(uint8_t* fake_map_addr);
 

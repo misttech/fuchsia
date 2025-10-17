@@ -71,10 +71,10 @@ constexpr uint32_t kMaxCompressedFrameSizeIncludingHeaders =
 
 constexpr uint32_t kStreamBufferReadAlignment = 512;
 // It might be reasonable to remove this adjustment, given some experimentation to see if the
-// kStreamBufferReadAlignment is sufficient on its own to make kStreamBufferSize work.
+// kStreamBufferReadAlignment is sufficient on its own to make StreamBufferSize() work.
 constexpr uint32_t kReadNotEqualWriteAdjustment = 1;
 
-// The ZX_PAGE_SIZE alignment is just because we won't really allocate a partial page via sysmem
+// The page-size alignment is just because we won't really allocate a partial page via sysmem
 // anyway, so we may as well use the rest of the last needed page even if kStreamBufferReadAlignment
 // might technically work.
 //
@@ -82,11 +82,11 @@ constexpr uint32_t kReadNotEqualWriteAdjustment = 1;
 // because the first kPaddingSize is still in the stream buffer at the time we're decoding the
 // second frame, because the first frame ended just after the first frame's payload data as far as
 // the HW is concerned (despite the need for padding to cause the first frame to complete).
-constexpr uint32_t kStreamBufferSize =
-    AlignUpConstexpr(kMaxCompressedFrameSizeIncludingHeaders + 2 * kPaddingSize +
-                         kStreamBufferReadAlignment + kReadNotEqualWriteAdjustment,
-                     static_cast<uint32_t>(ZX_PAGE_SIZE));
-static_assert(kStreamBufferSize % ZX_PAGE_SIZE == 0);
+uint32_t StreamBufferSize() {
+  return AlignUpConstexpr(kMaxCompressedFrameSizeIncludingHeaders + 2 * kPaddingSize +
+                              kStreamBufferReadAlignment + kReadNotEqualWriteAdjustment,
+                          static_cast<uint32_t>(zx_system_get_page_size()));
+}
 
 // For now we rely on a compressed input frame to be contained entirely in a single buffer.  While
 // this minimum size may work for some demo streams, for now clients are expected to set a larger
@@ -310,7 +310,7 @@ void CodecAdapterH264Multi::CoreCodecStartStream() {
     video_->AddNewDecoderInstance(std::move(decoder_instance));
     std::optional<InternalBuffer> saved_stream_buffer = std::move(saved_stream_buffer_);
     saved_stream_buffer_.reset();
-    if (video_->AllocateStreamBuffer(buffer, kStreamBufferSize, std::move(saved_stream_buffer),
+    if (video_->AllocateStreamBuffer(buffer, StreamBufferSize(), std::move(saved_stream_buffer),
                                      /*use_parser=*/true, IsOutputSecure()) != ZX_OK) {
       // Log here instead of in AllocateStreamBuffer() since video_ doesn't know which codec this is
       // for.

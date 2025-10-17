@@ -36,7 +36,7 @@ class SecmemSession {
 
  private:
   static constexpr uint64_t kParameterAlignment = 32u;
-  static constexpr uint64_t kParameterBufferSize = ZX_PAGE_SIZE;
+  static uint64_t ParameterBufferSize() { return zx_system_get_page_size(); }
 
   static void PackUint32Parameter(uint32_t value, std::vector<uint8_t>* buffer);
   static fpromise::result<uint32_t> UnpackUint32Parameter(const std::vector<uint8_t>& buffer,

@@ -564,10 +564,11 @@ uint64_t VideoDecoderRunner::QueueH264Frames(uint64_t stream_lifetime_ordinal,
 
       // Force some frames to split across packet boundary.
       //
-      // TODO(https://fxbug.dev/42084549): Also cover more than one frame in a packet, and split headers.
+      // TODO(https://fxbug.dev/42084549): Also cover more than one frame in a packet, and split
+      // headers.
       //
-      // TODO(https://fxbug.dev/42084549): Enable testing frames split across packets once SW decode can do
-      // that, or have this be gated on whether capability was requested of decoder and try
+      // TODO(https://fxbug.dev/42084549): Enable testing frames split across packets once SW decode
+      // can do that, or have this be gated on whether capability was requested of decoder and try
       // requesting this capability then fall back to not this capability.
       (void)kMaxFrameBytesPerPacket;
       // bytes_to_copy = std::min(bytes_to_copy, kMaxFrameBytesPerPacket);
@@ -958,7 +959,8 @@ void VideoDecoderRunner::Run() {
         // This is required for timestamp_ish values to transit the
         // Codec.
         //
-        // TODO(https://fxbug.dev/42135582): We shouldn't need to promise this to have PTS(s) flow through.
+        // TODO(https://fxbug.dev/42135582): We shouldn't need to promise this to have PTS(s) flow
+        // through.
         decoder_params.set_promise_separate_access_units_on_input(true);
         if (params_.is_secure_output) {
           decoder_params.set_secure_output_mode(fuchsia::mediacodec::SecureMemoryMode::ON);
@@ -1152,7 +1154,8 @@ void VideoDecoderRunner::Run() {
       // We have a non-empty packet of the stream.
 
       if (params_.test_params->require_sw) {
-        if ((packet.start_offset() + packet.valid_length_bytes()) % ZX_PAGE_SIZE == 0) {
+        if ((packet.start_offset() + packet.valid_length_bytes()) % zx_system_get_page_size() ==
+            0) {
           // If this doesn't print, then it means the check for padding below isn't really checking
           // whether we force an extra 16 bytes after the output frame, since buffers are always
           // aligned up to 4KiB anyway.  Only when the frame size is 4KiB aligned will we see the

@@ -33,7 +33,7 @@
 class FakeMapRange {
  public:
   // The specified size need not account for extra VA space needed in case of buffers that aren't
-  // aligned with respect to ZX_PAGE_SIZE.  This class provides that extra space automatically.
+  // aligned with respect to PAGE_SIZE.  This class provides that extra space automatically.
   //
   // Create() will assert if result isn't empty.
   static zx_status_t Create(size_t size, std::optional<FakeMapRange>* result);
@@ -47,10 +47,10 @@ class FakeMapRange {
 
   // Attempts to read or write memory via base() will intentionally fault.
   //
-  // The returned address is always ZX_PAGE_SIZE aligned.
+  // The returned address is always PAGE_SIZE aligned.
   //
   // The returned address has enough room to accommodate a fake buffer base pointer that preserves
-  // low-order page-offset bits for a buffer with any alignment with respect to ZX_PAGE_SIZE.
+  // low-order page-offset bits for a buffer with any alignment with respect to PAGE_SIZE.
   uint8_t* base();
   // This size is how large a buffer can be supported by this instance.
   size_t size();

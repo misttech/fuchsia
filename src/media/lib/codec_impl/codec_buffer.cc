@@ -21,9 +21,11 @@ CodecBuffer::~CodecBuffer() {
   zx_status_t status;
   if (is_mapped_) {
     ZX_DEBUG_ASSERT(buffer_base_);
-    uintptr_t unmap_address = fbl::round_down(reinterpret_cast<uintptr_t>(base()), ZX_PAGE_SIZE);
+    uintptr_t unmap_address =
+        fbl::round_down(reinterpret_cast<uintptr_t>(base()), zx_system_get_page_size());
     size_t unmap_len =
-        fbl::round_up(reinterpret_cast<uintptr_t>(base() + size()), ZX_PAGE_SIZE) - unmap_address;
+        fbl::round_up(reinterpret_cast<uintptr_t>(base() + size()), zx_system_get_page_size()) -
+        unmap_address;
     status = zx::vmar::root_self()->unmap(unmap_address, unmap_len);
     if (status != ZX_OK) {
       parent_->FailFatalLocked("CodecBuffer::~CodecBuffer() failed to unmap() Buffer - status: %d",
@@ -52,24 +54,25 @@ bool CodecBuffer::Map() {
   }
 
   // We must page-align the mapping (since HW can only map at page granularity).  This means the
-  // mapping may include up to ZX_PAGE_SIZE - 1 bytes before vmo_usable_start, and up to
-  // ZX_PAGE_SIZE - 1 bytes after vmo_usable_start + vmo_usable_size.  The usage of the mapping is
+  // mapping may include up to PAGE_SIZE - 1 bytes before vmo_usable_start, and up to
+  // PAGE_SIZE - 1 bytes after vmo_usable_start + vmo_usable_size.  The usage of the mapping is
   // expected to stay within CodecBuffer::base() to CodecBuffer::base() + vmo_usable_size.
-  uint64_t adjusted_vmo_offset = fbl::round_down(vmo_offset(), ZX_PAGE_SIZE);
-  size_t len = fbl::round_up(vmo_offset() + size(), ZX_PAGE_SIZE) - adjusted_vmo_offset;
+  uint64_t adjusted_vmo_offset = fbl::round_down(vmo_offset(), zx_system_get_page_size());
+  size_t len =
+      fbl::round_up(vmo_offset() + size(), zx_system_get_page_size()) - adjusted_vmo_offset;
   zx_status_t res = zx::vmar::root_self()->map(flags, 0, vmo(), adjusted_vmo_offset, len, &tmp);
   if (res != ZX_OK) {
     LOG(ERROR, "Failed to map %zu byte buffer vmo (res %d)", size(), res);
     return false;
   }
-  buffer_base_ = reinterpret_cast<uint8_t*>(tmp + (vmo_offset() % ZX_PAGE_SIZE));
+  buffer_base_ = reinterpret_cast<uint8_t*>(tmp + (vmo_offset() % zx_system_get_page_size()));
   is_mapped_ = true;
   return true;
 }
 
 void CodecBuffer::FakeMap(uint8_t* fake_map_addr) {
-  ZX_DEBUG_ASSERT(reinterpret_cast<uintptr_t>(fake_map_addr) % ZX_PAGE_SIZE == 0);
-  buffer_base_ = fake_map_addr + (vmo_offset() % ZX_PAGE_SIZE);
+  ZX_DEBUG_ASSERT(reinterpret_cast<uintptr_t>(fake_map_addr) % zx_system_get_page_size() == 0);
+  buffer_base_ = fake_map_addr + (vmo_offset() % zx_system_get_page_size());
   ZX_DEBUG_ASSERT(!is_mapped_);
 }
 
@@ -120,11 +123,11 @@ zx_status_t CodecBuffer::Pin() {
   is_known_contiguous_ = true;
 
   // We must page-align the pin (since pining is page granularity).  This means the pin may include
-  // up to ZX_PAGE_SIZE - 1 bytes before vmo_usable_start, and up to ZX_PAGE_SIZE - 1 bytes after
+  // up to PAGE_SIZE - 1 bytes before vmo_usable_start, and up to PAGE_SIZE - 1 bytes after
   // vmo_usable_start + vmo_usable_size. The usage of the pin is expected to stay within
   // CodecBuffer::base() to CodecBuffer::base() + vmo_usable_size.
-  uint64_t pin_offset = fbl::round_down(vmo_offset(), ZX_PAGE_SIZE);
-  uint64_t pin_size = fbl::round_up(vmo_offset() + size(), ZX_PAGE_SIZE) - pin_offset;
+  uint64_t pin_offset = fbl::round_down(vmo_offset(), zx_system_get_page_size());
+  uint64_t pin_size = fbl::round_up(vmo_offset() + size(), zx_system_get_page_size()) - pin_offset;
 
   uint32_t options = ZX_BTI_CONTIGUOUS | ZX_BTI_PERM_READ;
   if (port() == kOutputPort) {
@@ -139,7 +142,7 @@ zx_status_t CodecBuffer::Pin() {
   // Include the low-order bits of vmo_usable_start() in contiguous_paddr_base_ so that the paddr
   // at contiguous_paddr_base_ points (physical) at the byte at offset vmo_usable_start() within
   // *vmo.
-  contiguous_paddr_base_ = paddr + (vmo_offset() % ZX_PAGE_SIZE);
+  contiguous_paddr_base_ = paddr + (vmo_offset() % zx_system_get_page_size());
   return ZX_OK;
 }
 

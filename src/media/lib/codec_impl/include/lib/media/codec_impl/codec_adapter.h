@@ -91,7 +91,7 @@ class CodecAdapter {
   // and CodecBuffer::base() isn't usable for direct CPU access.  Instead
   // CodecBuffer::base() will be a vaddr that will fault if accessed as if it
   // were buffer data, and preserves the low-order vmo_usable_start %
-  // ZX_PAGE_SIZE bits.
+  // PAGE_SIZE bits.
   virtual bool IsCoreCodecMappedBufferUseful(CodecPort port) = 0;
 
   // If true, the codec is HW-based, in the sense that at least some of the

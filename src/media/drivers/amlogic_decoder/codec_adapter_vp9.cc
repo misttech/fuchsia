@@ -98,9 +98,10 @@ constexpr uint32_t kLittleInputPerPacketBufferBytesMin = 1920 * 1080 * 3 / 2 / 2
 // the size of the stream buffer also, so force the input buffer size.
 constexpr uint32_t kLittleInputPerPacketBufferBytesMax = kLittleInputPerPacketBufferBytesMin;
 
-constexpr uint32_t kLittleStreamBufferSize =
-    AlignUpConstexpr(kLittleInputPerPacketBufferBytesMax + kFlushThroughBytes + 8,
-                     static_cast<uint32_t>(ZX_PAGE_SIZE));
+[[maybe_unused]] uint32_t LittleStreamBufferSize() {
+  return AlignUpConstexpr(kLittleInputPerPacketBufferBytesMax + kFlushThroughBytes + 8,
+                          static_cast<uint32_t>(zx_system_get_page_size()));
+}
 
 // For now, force the input buffer size to be exactly 1/2 VDEC so that exactly two buffers barely
 // fit in VDEC.  The HW requires a VP9 superframe to be in a single buffer.  At this size we can be
@@ -111,15 +112,22 @@ constexpr uint32_t kLittleStreamBufferSize =
 constexpr uint32_t kBigInputPerPacketBufferBytesMin = 1024 * 1024 * 775 / 100 / 2;
 constexpr uint32_t kBigInputPerPacketBufferBytesMax = kBigInputPerPacketBufferBytesMin;
 
-constexpr uint32_t kBigStreamBufferSize = AlignUpConstexpr(
-    kBigInputPerPacketBufferBytesMax + kFlushThroughBytes + 8, static_cast<uint32_t>(ZX_PAGE_SIZE));
+[[maybe_unused]] uint32_t BigStreamBufferSize() {
+  return AlignUpConstexpr(kBigInputPerPacketBufferBytesMax + kFlushThroughBytes + 8,
+                          static_cast<uint32_t>(zx_system_get_page_size()));
+}
 
 constexpr uint32_t kInputPerPacketBufferBytesMin =
     kUseLessRam ? kLittleInputPerPacketBufferBytesMin : kBigInputPerPacketBufferBytesMin;
 constexpr uint32_t kInputPerPacketBufferBytesMax =
     kUseLessRam ? kLittleInputPerPacketBufferBytesMax : kBigInputPerPacketBufferBytesMax;
-constexpr uint32_t kStreamBufferSize = kUseLessRam ? kLittleStreamBufferSize : kBigStreamBufferSize;
-static_assert(kStreamBufferSize % ZX_PAGE_SIZE == 0);
+uint32_t StreamBufferSize() {
+  if constexpr (kUseLessRam) {
+    return LittleStreamBufferSize();
+  } else {
+    return BigStreamBufferSize();
+  }
+}
 
 constexpr uint32_t kInputBufferCountForCodecMin = 1;
 constexpr uint32_t kInputBufferCountForCodecMax = 64;
@@ -562,7 +570,7 @@ void CodecAdapterVp9::CoreCodecStartStream() {
     // The video decoder can read from non-secure buffers even in secure mode.
     std::optional<InternalBuffer> saved_stream_buffer = std::move(saved_stream_buffer_);
     saved_stream_buffer_.reset();
-    status = video_->AllocateStreamBuffer(instance->stream_buffer(), kStreamBufferSize,
+    status = video_->AllocateStreamBuffer(instance->stream_buffer(), StreamBufferSize(),
                                           std::move(saved_stream_buffer),
                                           /*use_parser=*/use_parser_,
                                           /*is_secure=*/IsPortSecure(kInputPort));

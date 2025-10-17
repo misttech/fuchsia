@@ -2506,7 +2506,7 @@ void H264MultiDecoder::InitializedFrames(std::vector<CodecFrame> frames, uint32_
     uint32_t mb_width = coded_width / 16;
     uint32_t mb_height = coded_height / 16;
     uint64_t colocated_buffer_size =
-        fbl::round_up(mb_width * mb_height * kMvRefDataSizePerMb, ZX_PAGE_SIZE);
+        fbl::round_up(mb_width * mb_height * kMvRefDataSizePerMb, zx_system_get_page_size());
 
     std::optional<InternalBuffer> mv_buffer;
     std::optional<InternalBuffer> on_deck_mv_buffer;
@@ -2787,7 +2787,7 @@ void H264MultiDecoder::SwappedIn() {
         truncate_to_32(owner_->current_instance()->stream_buffer()->buffer().size());
     ZX_DEBUG_ASSERT(stream_buffer_size_ > kStreamBufferReadAlignment);
     ZX_DEBUG_ASSERT(stream_buffer_size_ % kStreamBufferReadAlignment == 0);
-    ZX_DEBUG_ASSERT(stream_buffer_size_ % ZX_PAGE_SIZE == 0);
+    ZX_DEBUG_ASSERT(stream_buffer_size_ % zx_system_get_page_size() == 0);
   }
 
   // ExtendBits() doesn't know to only let the unwrapped read offset be less than the unwrapped

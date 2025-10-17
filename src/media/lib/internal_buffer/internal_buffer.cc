@@ -31,7 +31,7 @@ fpromise::result<InternalBuffer, zx_status_t> InternalBuffer::CreateAligned(
   ZX_DEBUG_ASSERT(*sysmem);
   ZX_DEBUG_ASSERT(*bti);
   ZX_DEBUG_ASSERT(size);
-  ZX_DEBUG_ASSERT(size % ZX_PAGE_SIZE == 0);
+  ZX_DEBUG_ASSERT(size % zx_system_get_page_size() == 0);
   ZX_DEBUG_ASSERT(!is_mapping_needed || !is_secure);
   InternalBuffer local_result(size, is_secure, is_writable, is_mapping_needed);
   zx_status_t status = local_result.Init(name, sysmem, alignment, bti);
@@ -181,7 +181,7 @@ InternalBuffer::InternalBuffer(size_t size, bool is_secure, bool is_writable,
       is_writable_(is_writable),
       is_mapping_needed_(is_mapping_needed) {
   ZX_DEBUG_ASSERT(size_);
-  ZX_DEBUG_ASSERT(size_ % ZX_PAGE_SIZE == 0);
+  ZX_DEBUG_ASSERT(size_ % zx_system_get_page_size() == 0);
   ZX_ASSERT(!pin_);
   ZX_DEBUG_ASSERT(!is_moved_out_);
   ZX_DEBUG_ASSERT(!is_mapping_needed_ || !is_secure_);
@@ -285,8 +285,9 @@ zx_status_t InternalBuffer::Init(const char* name,
     return ZX_ERR_INTERNAL;
   }
 
-  ZX_DEBUG_ASSERT(
-      out_buffer_collection_info.buffers()->at(0).vmo_usable_start().value() % ZX_PAGE_SIZE == 0);
+  ZX_DEBUG_ASSERT(out_buffer_collection_info.buffers()->at(0).vmo_usable_start().value() %
+                      zx_system_get_page_size() ==
+                  0);
   zx::vmo vmo = std::move(*out_buffer_collection_info.buffers()->at(0).vmo());
 
   uintptr_t virt_base = 0;

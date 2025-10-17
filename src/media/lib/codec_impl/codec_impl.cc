@@ -2141,11 +2141,11 @@ bool CodecImpl::AddBufferCommon(CodecBuffer::Info buffer_info, CodecVmoRange vmo
 
   if (IsCoreCodecMappedBufferUseful(port)) {
     if (fake_map_range_[port]) {
-      // The fake_map_range_[port]->base() is % ZX_PAGE_SIZE == 0, which is the same as a mapping
+      // The fake_map_range_[port]->base() is % PAGE_SIZE == 0, which is the same as a mapping
       // would be.  There are sufficient virtual pages starting at FakeMapRange::base() to permit
-      // CodecBuffer to include the low-order vmo_usable_start % ZX_PAGE_SIZE bits in
+      // CodecBuffer to include the low-order vmo_usable_start % PAGE_SIZE bits in
       // CodecBuffer::base(), for any vmo_usable_start() value (even the worst case of
-      // ZX_PAGE_SIZE - 1, and buffer size % ZX_PAGE_SIZE == 2).  By including those low-order
+      // PAGE_SIZE - 1, and buffer size % PAGE_SIZE == 2).  By including those low-order
       // intra-page-offset bits, we can treat non-secure and secure cases similarly.
       local_buffer->FakeMap(fake_map_range_[port]->base());
     } else {

@@ -24,7 +24,7 @@ class InternalBuffer {
   //
   // |bti| is borrowed during the call - not retained.
   //
-  // |size| of the requested buffer.  This must be % ZX_PAGE_SIZE == 0.
+  // |size| of the requested buffer.  This must be % PAGE_SIZE == 0.
   //
   // |is_secure| is whether to allocate secure buffers or non-secure buffers.  All buffers are
   // allocated via sysmem and are physically contiguous.

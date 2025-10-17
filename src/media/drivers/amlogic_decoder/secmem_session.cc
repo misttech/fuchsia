@@ -261,7 +261,8 @@ zx_status_t SecmemSession::GetVp9HeaderSize(zx_paddr_t vp9_paddr, uint32_t befor
     LOG(ERROR, "vp9_paddr + before_size overflow");
     return ZX_ERR_INVALID_ARGS;
   }
-  if ((vp9_paddr & ZX_PAGE_MASK) != 0) {
+
+  if ((vp9_paddr & (zx_system_get_page_size() - 1)) != 0) {
     // If the intra-page offset is exactly 16, that has special meaning to the TA, so instead of
     // risking that we randomly encounter that case later, require page alignment.
     LOG(ERROR, "vp9_paddr must be page-aligned for now");

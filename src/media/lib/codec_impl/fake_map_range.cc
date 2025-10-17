@@ -70,12 +70,13 @@ FakeMapRange::FakeMapRange(size_t size) : raw_size_(size) {
   ZX_DEBUG_ASSERT(raw_size_);
 
   // The worst-case required vmar_size_ will be when this instance is used for a buffer where
-  // vmo_usable_start() % ZX_PAGE_SIZE == ZX_PAGE_SIZE - 1.  In that case, we need a whole page just
+  // vmo_usable_start() % PAGE_SIZE == PAGE_SIZE - 1.  In that case, we need a whole page just
   // for the first byte, and also the rest of the page containing the last byte.
 
-  vmar_size_ = fbl::round_up(ZX_PAGE_SIZE - 1 + raw_size_, ZX_PAGE_SIZE);
-  ZX_DEBUG_ASSERT(vmar_size_ % ZX_PAGE_SIZE == 0);
-  ZX_DEBUG_ASSERT(ZX_PAGE_SIZE - 1 + raw_size_ <= vmar_size_);
+  size_t page_size = zx_system_get_page_size();
+  vmar_size_ = fbl::round_up(page_size - 1 + raw_size_, page_size);
+  ZX_DEBUG_ASSERT(vmar_size_ % page_size == 0);
+  ZX_DEBUG_ASSERT(page_size - 1 + raw_size_ <= vmar_size_);
 }
 
 zx_status_t FakeMapRange::Init() {

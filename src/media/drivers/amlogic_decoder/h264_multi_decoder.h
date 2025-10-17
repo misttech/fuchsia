@@ -468,7 +468,7 @@ class H264MultiDecoder : public VideoDecoder {
   int per_frame_attempt_seen_first_mb_in_slice_ = -1;
 
   // Not restricted to being a power of 2, but at least for now we do restrict to being a multiple
-  // of ZX_PAGE_SIZE.
+  // of system page size.
   uint32_t stream_buffer_size_ = 0;
 
   // If we fail to fully decode a frame, we'll force "swap out" but with should_save_input_context_
