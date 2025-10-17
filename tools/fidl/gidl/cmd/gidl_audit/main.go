@@ -98,16 +98,25 @@ func main() {
 	fmt.Printf("Disabled tests for %s\n", language)
 	fmt.Printf("***************************************\n")
 
-	showTest := func(name string, loc ir.SourceLocation) {
-		fmt.Printf("%-*s %s:%d\n", longestName, name, loc.Filename, loc.Line)
+	showTest := func(name string, reason string, loc ir.SourceLocation) {
+		fmt.Printf("%-*s %s %s:%d\n", longestName, name, reason, loc.Filename, loc.Line)
+	}
 
+	reason := func(allowlist *[]ir.Language, denylist *[]ir.Language) string {
+		if allowlist != nil && !slices.Contains(*allowlist, language) {
+			return "!allow"
+		}
+		if denylist != nil && slices.Contains(*denylist, language) {
+			return "deny  "
+		}
+		panic("expected this test case to be filtered out.")
 	}
 
 	if len(filtered.EncodeSuccess) > 0 {
 		fmt.Printf("\nEncode success\n")
 		fmt.Printf("---------------------------------------\n")
 		for _, t := range filtered.EncodeSuccess {
-			showTest(t.Name, t.SourceLocation)
+			showTest(t.Name, reason(t.BindingsAllowlist, t.BindingsDenylist), t.SourceLocation)
 		}
 	}
 
@@ -115,7 +124,7 @@ func main() {
 		fmt.Printf("\nEncode failure\n")
 		fmt.Printf("---------------------------------------\n")
 		for _, t := range filtered.EncodeFailure {
-			showTest(t.Name, t.SourceLocation)
+			showTest(t.Name, reason(t.BindingsAllowlist, t.BindingsDenylist), t.SourceLocation)
 		}
 	}
 
@@ -123,7 +132,7 @@ func main() {
 		fmt.Printf("\nDecode success\n")
 		fmt.Printf("---------------------------------------\n")
 		for _, t := range filtered.DecodeSuccess {
-			showTest(t.Name, t.SourceLocation)
+			showTest(t.Name, reason(t.BindingsAllowlist, t.BindingsDenylist), t.SourceLocation)
 		}
 	}
 
@@ -131,7 +140,7 @@ func main() {
 		fmt.Printf("\nDecode failure\n")
 		fmt.Printf("---------------------------------------\n")
 		for _, t := range filtered.DecodeFailure {
-			showTest(t.Name, t.SourceLocation)
+			showTest(t.Name, reason(t.BindingsAllowlist, t.BindingsDenylist), t.SourceLocation)
 		}
 	}
 
@@ -139,7 +148,7 @@ func main() {
 		fmt.Printf("\nBenchmark\n")
 		fmt.Printf("---------------------------------------\n")
 		for _, t := range filtered.Benchmark {
-			showTest(t.Name, t.SourceLocation)
+			showTest(t.Name, reason(t.BindingsAllowlist, t.BindingsDenylist), t.SourceLocation)
 		}
 	}
 }
