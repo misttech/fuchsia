@@ -49,6 +49,8 @@ async fn start_server(
     context: &EnvironmentContext,
     addr: SocketAddr,
     cmd: StartCommand,
+    writer: &mut MachineWriter<serde_json::Value>,
+    pid_file_path: &str,
 ) -> anyhow::Result<()> {
     let cache = Arc::new(Mutex::new(HashMap::new()));
 
@@ -81,7 +83,18 @@ async fn start_server(
         }
     });
 
+    let pid = std::process::id();
+    writeln!(writer, "Starting server on http://{} with pid {}", addr, pid)
+        .context("writing start message")?;
+
     let listener = TcpListener::bind(addr).await.context("binding to address")?;
+
+    // Record PID in config file after server successfully started
+    if let Some(parent) = Path::new(&pid_file_path).parent() {
+        fs::create_dir_all(parent).context("creating pid file directory")?;
+    }
+    fs::write(&pid_file_path, pid.to_string()).context("writing pid file")?;
+
     loop {
         let (stream, _) = listener.accept().await.context("accepting connection")?;
         let cache_for_handler = cache.clone();
@@ -156,27 +169,21 @@ impl FfxMain for MonitorTool {
         })?;
         match self.cmd.subcommand {
             SubCommand::Start(cmd) => {
-                let pid = std::process::id();
-                if let Some(parent) = Path::new(&pid_file_path).parent() {
-                    fs::create_dir_all(parent).context("creating pid file directory")?;
-                }
-                fs::write(&pid_file_path, pid.to_string()).context("writing pid file")?;
-
                 let port = match cmd.port {
                     Some(port) => port,
                     None => DEFAULT_MONITOR_PORT,
                 };
 
+                let addr = SocketAddr::from((LOCAL_SERVER_IP_ADDRESS_ARRAY, port));
+
+                // Record port in config file
                 if let Some(parent) = Path::new(&port_file_path).parent() {
                     fs::create_dir_all(parent).context("creating pid file directory")?;
                 }
                 fs::write(&port_file_path, port.to_string()).context("writing port file")?;
-
-                let addr = SocketAddr::from((LOCAL_SERVER_IP_ADDRESS_ARRAY, port));
-                writeln!(writer, "Starting server on http://{} with pid {}", addr, pid)
-                    .context("writing start message")?;
-
-                start_server(&self.context, addr, cmd).await.map_err(fho::Error::from)
+                start_server(&self.context, addr, cmd, &mut writer, &pid_file_path)
+                    .await
+                    .map_err(fho::Error::from)
             }
             SubCommand::Stop(_) => {
                 let pid_str = fs::read_to_string(&pid_file_path).context("reading pid file")?;

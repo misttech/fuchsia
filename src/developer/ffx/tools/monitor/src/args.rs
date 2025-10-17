@@ -25,7 +25,12 @@ pub enum SubCommand {
 }
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
-#[argh(subcommand, name = "start", description = "Start the monitor server")]
+#[argh(
+    subcommand,
+    name = "start",
+    description = "Start the monitor server",
+    example = "To start the monitor with a specific device:\n  ffx monitor start --nodename fuchsia-1234-5678-90ab\n\nTo start the monitor on a specific port:\n  ffx monitor start --port 8080"
+)]
 pub struct StartCommand {
     #[argh(option)]
     /// specify the device nodename ffx going to monitor
