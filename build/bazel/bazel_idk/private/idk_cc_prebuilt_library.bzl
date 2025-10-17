@@ -483,3 +483,45 @@ not have a stable ABI. Can be either "none" or "static".""",
 )
 
 # LINT.ThenChange(//build/cpp/sdk_prebuilt_library_impl.gni:sdk_prebuilt_library_impl)
+
+def _idk_cc_shared_library_impl(name, **kwargs):
+    idk_cc_prebuilt_library(name = name, prebuilt_library_type = "shared", **kwargs)
+
+idk_cc_shared_library = macro(
+    doc = """Defines a C++ prebuilt shared library that can be exported to an IDK.""",
+    inherit_attrs = idk_cc_prebuilt_library,
+    attrs = {
+        # Do not inherit as this attribute is specified in the implementation.
+        "prebuilt_library_type": None,
+    },
+    implementation = _idk_cc_shared_library_impl,
+)
+
+def _idk_cc_static_library_impl(name, **kwargs):
+    idk_cc_prebuilt_library(name = name, prebuilt_library_type = "static", **kwargs)
+
+idk_cc_static_library = macro(
+    doc = """Defines a C++ prebuilt static library that can be exported to an IDK.""",
+    inherit_attrs = idk_cc_prebuilt_library,
+    attrs = {
+        # Do not inherit as this attribute is specified in the implementation.
+        "prebuilt_library_type": None,
+        # Disallow an empty list, unlike the underlying macro.
+        "hdrs": attr.label_list(
+            doc = """The list of C and C++ header files published by this library to be directly
+included by sources in dependent rules. Does not include internal headers that are included from
+public headers but not meant to be included by dependents - see `hdrs_for_internal_use`.
+Atoms providing headers used by these headers must be included in the (public) `deps`.
+May only be empty if `no_headers` is True.
+GN equivalent: `public`
+GN note: Unlike the GN template, this list does not include `hdrs_for_internal_use`.""",
+            allow_files = True,
+            allow_empty = False,
+            mandatory = True,
+            configurable = False,
+        ),
+        # Do not inherit as this attribute is not supported.
+        "output_name": None,
+    },
+    implementation = _idk_cc_static_library_impl,
+)
