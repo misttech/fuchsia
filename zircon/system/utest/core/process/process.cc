@@ -46,7 +46,7 @@ const zx_duration_mono_t kTimeoutNs = ZX_MSEC(250);
 // on hardware clock reads can fail.
 
 #ifdef __aarch64__
-constexpr std::string_view kCaviumMidr = "Cavium CN99XX r1p2";
+constexpr std::string_view kCaviumMidr = "Cavium CN99XX";
 #else
 constexpr std::string_view kCaviumMidr{};
 #endif
@@ -64,7 +64,7 @@ std::string ReadMidrTxt() {
   return midr;
 }
 
-bool CheckIsCavium() { return !kCaviumMidr.empty() && ReadMidrTxt() == kCaviumMidr; }
+bool CheckIsCavium() { return !kCaviumMidr.empty() && ReadMidrTxt().starts_with(kCaviumMidr); }
 
 bool SkipBug363254896() {
   static bool is_cavium = CheckIsCavium();
