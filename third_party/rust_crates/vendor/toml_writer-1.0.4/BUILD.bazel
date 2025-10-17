@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "toml_writer",
     package_url = "https://github.com/toml-rs/toml",
-    package_version = "1.0.2",
+    package_version = "1.0.4",
 )
 
 license(
@@ -76,5 +76,5 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.0.2",
+    version = "1.0.4",
 )
