@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_GRAPHICS_DRIVERS_MISC_GOLDFISH_PIPE_H_
-#define SRC_GRAPHICS_DRIVERS_MISC_GOLDFISH_PIPE_H_
+#ifndef SRC_GRAPHICS_DRIVERS_MISC_GOLDFISH_PIPE_CONNECTION_H_
+#define SRC_GRAPHICS_DRIVERS_MISC_GOLDFISH_PIPE_CONNECTION_H_
 
 #include <fidl/fuchsia.hardware.goldfish.pipe/cpp/wire.h>
 #include <fidl/fuchsia.hardware.goldfish/cpp/wire.h>
@@ -24,14 +24,15 @@ namespace goldfish {
 class PipeDevice;
 
 // An instance of this class serves a Pipe connection.
-class Pipe : public fidl::WireServer<fuchsia_hardware_goldfish::Pipe> {
+class PipeConnection : public fidl::WireServer<fuchsia_hardware_goldfish::Pipe> {
  public:
-  using OnBindFn = fit::function<void(Pipe*)>;
-  using OnCloseFn = fit::function<void(Pipe*)>;
+  using OnBindFn = fit::function<void(PipeConnection*)>;
+  using OnCloseFn = fit::function<void(PipeConnection*)>;
 
-  Pipe(PipeDevice* pipe, async_dispatcher_t* dispatcher, OnBindFn on_bind, OnCloseFn on_close);
+  PipeConnection(PipeDevice* pipe, async_dispatcher_t* dispatcher, OnBindFn on_bind,
+                 OnCloseFn on_close);
   // Public for std::unique_ptr<Pipe>:
-  ~Pipe() override;
+  ~PipeConnection() override;
 
   void Init();
 
@@ -91,4 +92,4 @@ class Pipe : public fidl::WireServer<fuchsia_hardware_goldfish::Pipe> {
 
 }  // namespace goldfish
 
-#endif  // SRC_GRAPHICS_DRIVERS_MISC_GOLDFISH_PIPE_H_
+#endif  // SRC_GRAPHICS_DRIVERS_MISC_GOLDFISH_PIPE_CONNECTION_H_

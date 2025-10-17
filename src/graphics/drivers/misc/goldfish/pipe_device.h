@@ -26,7 +26,7 @@
 #include <fbl/mutex.h>
 
 #include "src/devices/lib/acpi/client.h"
-#include "src/graphics/drivers/misc/goldfish/pipe.h"
+#include "src/graphics/drivers/misc/goldfish/pipe_connection.h"
 
 namespace goldfish {
 
@@ -61,9 +61,11 @@ class PipeDevice : public DeviceType {
   int IrqHandler();
 
  private:
-  struct Pipe {
-    Pipe(zx_paddr_t paddr, zx::pmt pmt, zx::event pipe_event);
-    ~Pipe();
+  // Storage of commands and responses to be transferred over
+  // the pipe of a certain connection.
+  struct CommandStorage {
+    CommandStorage(zx_paddr_t paddr, zx::pmt pmt, zx::event pipe_event);
+    ~CommandStorage();
 
     void SignalEvent(uint32_t flags) const;
 
@@ -83,9 +85,8 @@ class PipeDevice : public DeviceType {
   std::optional<fdf::MmioBuffer> mmio_ TA_GUARDED(mmio_lock_);
 
   fbl::Mutex pipes_lock_;
-  // TODO(https://fxbug.dev/42107181): This should be std::unordered_map.
-  using PipeMap = std::map<int32_t, std::unique_ptr<Pipe>>;
-  PipeMap pipes_ TA_GUARDED(pipes_lock_);
+  std::unordered_map</* connection_id */ int32_t, std::unique_ptr<CommandStorage>> command_storages_
+      TA_GUARDED(pipes_lock_);
   async_dispatcher_t* const dispatcher_;
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(PipeDevice);
@@ -125,7 +126,7 @@ class PipeChildDevice : public PipeChildDeviceType,
   async_dispatcher_t* const dispatcher_;
   component::OutgoingDirectory outgoing_;
 
-  std::unordered_map<Pipe*, std::unique_ptr<Pipe>> pipes_;
+  std::unordered_map<PipeConnection*, std::unique_ptr<PipeConnection>> pipe_connections_;
 
   fidl::ServerBindingGroup<fuchsia_hardware_goldfish_pipe::Bus> pipe_bindings_;
   std::optional<ddk::UnbindTxn> unbind_txn_;
