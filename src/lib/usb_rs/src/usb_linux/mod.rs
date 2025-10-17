@@ -503,11 +503,7 @@ impl InterfaceInner {
         Ok(async move {
             poll_fn(|ctx| {
                 urb.waker.register(ctx.waker());
-                if urb.refs.load(Ordering::Relaxed) != 1 {
-                    Poll::Pending
-                } else {
-                    Poll::Ready(())
-                }
+                if urb.refs.load(Ordering::Relaxed) != 1 { Poll::Pending } else { Poll::Ready(()) }
             })
             .await;
 
@@ -565,6 +561,10 @@ impl Drop for Interface {
                 );
             }
         }
+        // Wake up the reaper thread so it can observe the Interface has
+        // been dropped, allowing it to exit and release the Weak<InterfaceInner>
+        // and also drop the File
+        self.inner.reaper_thread.thread().unpark();
     }
 }
 
@@ -784,7 +784,7 @@ impl BulkInEndpoint {
 
             let got = {
                 let mut out = out.lock().unwrap();
-                let idx = out.iter().enumerate().find(|x| x.1 .1 == next_expected).map(|x| x.0);
+                let idx = out.iter().enumerate().find(|x| x.1.1 == next_expected).map(|x| x.0);
 
                 idx.and_then(|idx| out.remove(idx))
             };
@@ -904,7 +904,7 @@ mod test {
     use crate::USB_ENDPOINT_DIR_MASK;
     use futures::StreamExt;
     use std::collections::HashMap;
-    use std::sync::mpsc::{channel, Receiver, Sender};
+    use std::sync::mpsc::{Receiver, Sender, channel};
 
     #[derive(Clone)]
     enum EndpointBuffer {
