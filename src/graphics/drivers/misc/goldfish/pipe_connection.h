@@ -7,8 +7,6 @@
 
 #include <fidl/fuchsia.hardware.goldfish.pipe/cpp/wire.h>
 #include <fidl/fuchsia.hardware.goldfish/cpp/wire.h>
-#include <lib/ddk/device.h>
-#include <lib/ddk/io-buffer.h>
 #include <lib/fidl/cpp/wire/server.h>
 #include <lib/fzl/owned-vmo-mapper.h>
 #include <lib/zircon-internal/thread_annotations.h>
@@ -16,7 +14,6 @@
 #include <lib/zx/pmt.h>
 #include <stdarg.h>
 
-#include <ddktl/device.h>
 #include <fbl/condition_variable.h>
 #include <fbl/mutex.h>
 
@@ -74,7 +71,7 @@ class PipeConnection : public fidl::WireServer<fuchsia_hardware_goldfish::Pipe> 
   zx_status_t SetBufferSizeLocked(uint64_t size) TA_REQ(lock_);
 
   // Close current bounded channel and send an epitaph to the client.
-  void FailAsync(zx_status_t epitaph, const char* file, int line, const char* format, ...);
+  void FailAsync(zx_status_t epitaph);
 
   std::unique_ptr<fidl::ServerBindingRef<fuchsia_hardware_goldfish::Pipe>> binding_ref_;
   const OnBindFn on_bind_;

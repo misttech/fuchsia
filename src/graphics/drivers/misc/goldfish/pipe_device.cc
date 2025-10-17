@@ -4,38 +4,29 @@
 
 #include "src/graphics/drivers/misc/goldfish/pipe_device.h"
 
-#include <fidl/fuchsia.hardware.goldfish.pipe/cpp/markers.h>
+#include <fidl/fuchsia.hardware.acpi/cpp/wire.h>
 #include <fidl/fuchsia.hardware.goldfish/cpp/wire.h>
-#include <inttypes.h>
-#include <lib/ddk/binding_driver.h>
-#include <lib/ddk/debug.h>
-#include <lib/ddk/driver.h>
-#include <lib/ddk/platform-defs.h>
-#include <lib/ddk/trace/event.h>
+#include <lib/async/cpp/task.h>
 #include <lib/dma-buffer/buffer.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <lib/fdf/cpp/dispatcher.h>
-#include <lib/fidl/cpp/wire/connect_service.h>
-#include <lib/fidl/cpp/wire/internal/transport.h>
-#include <lib/zx/channel.h>
+#include <lib/trace/event.h>
+#include <lib/zx/bti.h>
 #include <lib/zx/event.h>
+#include <lib/zx/pmt.h>
 #include <zircon/assert.h>
 #include <zircon/status.h>
-#include <zircon/syscalls/iommu.h>
 #include <zircon/threads.h>
 
-#include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/goldfish/platform/cpp/bind.h>
-#include <bind/fuchsia/google/platform/cpp/bind.h>
+#include <cstdint>
+
 #include <fbl/auto_lock.h>
 
-#include "src/devices/lib/acpi/client.h"
 #include "src/devices/lib/goldfish/pipe_headers/include/base.h"
 #include "src/graphics/drivers/misc/goldfish/pipe_connection.h"
 
 namespace goldfish {
 namespace {
-
-const char* kTag = "goldfish-pipe";
 
 constexpr uint32_t PIPE_DRIVER_VERSION = 4;
 constexpr uint32_t PIPE_MIN_DEVICE_VERSION = 2;
@@ -76,80 +67,37 @@ uint32_t lower_32_bits(uint64_t n) { return static_cast<uint32_t>(n); }
 
 }  // namespace
 
-// static
-zx_status_t PipeDevice::Create(void* ctx, zx_device_t* parent) {
-  auto acpi = acpi::Client::Create(parent);
-  if (acpi.is_error()) {
-    return acpi.status_value();
-  }
-  auto pipe_device = std::make_unique<goldfish::PipeDevice>(
-      parent, std::move(acpi.value()), fdf::Dispatcher::GetCurrent()->async_dispatcher());
-
-  zx_status_t status = pipe_device->Bind();
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  const zx_device_str_prop_t kControlProps[] = {
-      ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_VID,
-                           bind_fuchsia_google_platform::BIND_PLATFORM_DEV_VID_GOOGLE),
-      ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_PID,
-                           bind_fuchsia_goldfish_platform::BIND_PLATFORM_DEV_PID_GOLDFISH),
-      ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_DID,
-                           bind_fuchsia_goldfish_platform::BIND_PLATFORM_DEV_DID_PIPE_CONTROL),
-  };
-
-  constexpr const char* kControlDeviceName = "goldfish-pipe-control";
-  status = pipe_device->CreateChildDevice(kControlProps, kControlDeviceName);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "%s: create %s child device failed: %d", kTag, kControlDeviceName, status);
-    return status;
-  }
-
-  const zx_device_str_prop_t kSensorProps[] = {
-      ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_VID,
-                           bind_fuchsia_google_platform::BIND_PLATFORM_DEV_VID_GOOGLE),
-      ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_PID,
-                           bind_fuchsia_goldfish_platform::BIND_PLATFORM_DEV_PID_GOLDFISH),
-      ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_DID,
-                           bind_fuchsia_goldfish_platform::BIND_PLATFORM_DEV_DID_PIPE_SENSOR),
-  };
-  constexpr const char* kSensorDeviceName = "goldfish-pipe-sensor";
-  status = pipe_device->CreateChildDevice(kSensorProps, kSensorDeviceName);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "%s: create %s child device failed: %d", kTag, kSensorDeviceName, status);
-    return status;
-  }
-
-  // devmgr now owns the device.
-  [[maybe_unused]] auto* dev = pipe_device.release();
-  return ZX_OK;
+PipeDevice::PipeDevice(fidl::ClientEnd<fuchsia_hardware_acpi::Device> acpi,
+                       fdf::UnownedSynchronizedDispatcher dispatcher)
+    : acpi_(std::move(acpi)), dispatcher_(std::move(dispatcher)) {
+  ZX_DEBUG_ASSERT(acpi_.is_valid());
+  ZX_DEBUG_ASSERT(dispatcher_->get() != nullptr);
 }
 
-PipeDevice::PipeDevice(zx_device_t* parent, acpi::Client client, async_dispatcher_t* dispatcher)
-    : DeviceType(parent), acpi_fidl_(std::move(client)), dispatcher_(dispatcher) {}
+PipeDevice::~PipeDevice() = default;
 
-PipeDevice::~PipeDevice() {
-  if (irq_.is_valid()) {
-    irq_.destroy();
-    thrd_join(irq_thread_, nullptr);
+zx::result<> PipeDevice::Initialize() {
+  fidl::WireResult<fuchsia_hardware_acpi::Device::GetBti> bti_result = acpi_->GetBti(0);
+  if (!bti_result.ok()) {
+    FDF_LOG(ERROR, "GetBti FIDL transport failed: %s", bti_result.status_string());
+    return zx::error(bti_result.status());
   }
-}
-
-zx_status_t PipeDevice::Bind() {
-  auto bti_result = acpi_fidl_.borrow()->GetBti(0);
-  if (!bti_result.ok() || bti_result->is_error()) {
-    zx_status_t status = bti_result.ok() ? bti_result->error_value() : bti_result.status();
-    zxlogf(ERROR, "%s: GetBti failed: %d", kTag, status);
-    return status;
+  if (bti_result->is_error()) {
+    zx_status_t status = bti_result->error_value();
+    FDF_LOG(ERROR, "GetBti failed: %s", zx_status_get_string(status));
+    return zx::error(status);
   }
   bti_ = std::move(bti_result->value()->bti);
 
-  auto mmio_result = acpi_fidl_.borrow()->GetMmio(0);
-  if (!mmio_result.ok() || mmio_result->is_error()) {
-    zx_status_t status = mmio_result.ok() ? mmio_result->error_value() : mmio_result.status();
-    zxlogf(ERROR, "%s: GetMmio failed: %d", kTag, status);
-    return status;
+  fidl::WireResult<fuchsia_hardware_acpi::Device::GetMmio> mmio_result = acpi_->GetMmio(0);
+  if (!mmio_result.ok()) {
+    FDF_LOG(ERROR, "GetMmio FIDL transport failed: %s", mmio_result.status_string());
+    return zx::error(mmio_result.status());
+  }
+  if (mmio_result->is_error()) {
+    zx_status_t status = mmio_result->error_value();
+    FDF_LOG(ERROR, "GetMmio failed: %s", zx_status_get_string(status));
+    return zx::error(status);
   }
 
   fbl::AutoLock lock(&mmio_lock_);
@@ -157,8 +105,8 @@ zx_status_t PipeDevice::Bind() {
   zx::result<fdf::MmioBuffer> result = fdf::MmioBuffer::Create(
       mmio.offset, mmio.size, std::move(mmio.vmo), ZX_CACHE_POLICY_UNCACHED_DEVICE);
   if (result.is_error()) {
-    zxlogf(ERROR, "%s: mmiobuffer create failed: %s", kTag, result.status_string());
-    return result.status_value();
+    FDF_LOG(ERROR, "mmiobuffer create failed: %s", result.status_string());
+    return zx::error(result.status_value());
   }
   mmio_ = std::move(result.value());
 
@@ -166,24 +114,29 @@ zx_status_t PipeDevice::Bind() {
   mmio_->Write32(PIPE_DRIVER_VERSION, PIPE_V2_REG_VERSION);
   uint32_t version = mmio_->Read32(PIPE_V2_REG_VERSION);
   if (version < PIPE_MIN_DEVICE_VERSION) {
-    zxlogf(ERROR, "%s: insufficient device version: %d", kTag, version);
-    return ZX_ERR_NOT_SUPPORTED;
+    FDF_LOG(ERROR, "insufficient device version: %d", version);
+    return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
-  auto irq = acpi_fidl_.borrow()->MapInterrupt(0);
-  if (!irq.ok() || irq->is_error()) {
-    zx_status_t status = !irq.ok() ? irq.status() : irq->error_value();
-    zxlogf(ERROR, "%s: map_interrupt failed: %d", kTag, status);
-    return status;
+  fidl::WireResult<::fuchsia_hardware_acpi::Device::MapInterrupt> irq_result =
+      acpi_->MapInterrupt(0);
+  if (!irq_result.ok()) {
+    FDF_LOG(ERROR, "MapInterrupt FIDL call failed: %s", irq_result.status_string());
+    return zx::error(irq_result.status());
   }
-  irq_.reset(irq->value()->irq.release());
+  if (irq_result->is_error()) {
+    zx_status_t status = irq_result->error_value();
+    FDF_LOG(ERROR, "MapInterrupt failed: %s", zx_status_get_string(status));
+    return zx::error(status);
+  }
+  irq_ = std::move(irq_result->value()->irq);
 
   int rc = thrd_create_with_name(
       &irq_thread_, [](void* arg) { return static_cast<PipeDevice*>(arg)->IrqHandler(); }, this,
       "goldfish_pipe_irq_thread");
   if (rc != thrd_success) {
     irq_.destroy();
-    return thrd_status_to_zx_status(rc);
+    return zx::error(thrd_status_to_zx_status(rc));
   }
 
   std::unique_ptr<dma_buffer::BufferFactory> buffer_factory = dma_buffer::CreateBufferFactory();
@@ -192,8 +145,8 @@ zx_status_t PipeDevice::Bind() {
   zx_status_t status = buffer_factory->CreateContiguous(
       bti_, /*size=*/PAGE_SIZE, /*alignment_log2=*/0, /*enable_cache=*/true, &io_buffer_);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "Failed to create contiguous IO buffer: %s", zx_status_get_string(status));
-    return status;
+    FDF_LOG(ERROR, "Failed to create contiguous IO buffer: %s", zx_status_get_string(status));
+    return zx::error(status);
   }
 
   // Register the buffer addresses with the device.
@@ -206,51 +159,41 @@ zx_status_t PipeDevice::Bind() {
   mmio_->Write32(upper_32_bits(pa_open_command_buffer), PIPE_V2_REG_OPEN_BUFFER_HIGH);
   mmio_->Write32(lower_32_bits(pa_open_command_buffer), PIPE_V2_REG_OPEN_BUFFER);
 
-  status = DdkAdd(ddk::DeviceAddArgs("goldfish-pipe")
-                      .set_flags(DEVICE_ADD_NON_BINDABLE)
-                      .set_proto_id(ZX_PROTOCOL_GOLDFISH_PIPE));
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "%s: create goldfish-pipe root device failed: %d", kTag, status);
-    return status;
-  }
-  return ZX_OK;
+  return zx::ok();
 }
 
-zx_status_t PipeDevice::CreateChildDevice(cpp20::span<const zx_device_str_prop_t> props,
-                                          const char* dev_name) {
-  auto child_device = std::make_unique<PipeChildDevice>(this, dispatcher_);
-  zx_status_t status = child_device->Bind(props, dev_name);
-  if (status == ZX_OK) {
-    // devmgr now owns device.
-    [[maybe_unused]] auto* dev = child_device.release();
+zx::result<> PipeDevice::PrepareStop() {
+  if (irq_.is_valid()) {
+    irq_.destroy();
+    thrd_join(irq_thread_, nullptr);
   }
-  return status;
+  return zx::ok();
 }
-
-void PipeDevice::DdkRelease() { delete this; }
 
 void PipeDevice::Connect(ConnectRequestView request, ConnectCompleter::Sync& completer) {
   ZX_DEBUG_ASSERT(request->pipe_request.is_valid());
 
-  async::PostTask(dispatcher_, [this, pipe_request = std::move(request->pipe_request)]() mutable {
-    auto pipe = std::make_unique<PipeConnection>(
-        this, dispatcher_, /* OnBind */ nullptr,
-        /* OnClose */ [this](PipeConnection* pipe_ptr) {
-          // We know |pipe_ptr| is still alive because |pipe_ptr|
-          // is still in |pipes_|.
-          ZX_DEBUG_ASSERT(pipe_connections_.find(pipe_ptr) != pipe_connections_.end());
-          pipe_connections_.erase(pipe_ptr);
-        });
+  async::PostTask(
+      dispatcher_->async_dispatcher(),
+      [this, pipe_request = std::move(request->pipe_request)]() mutable {
+        auto pipe = std::make_unique<PipeConnection>(
+            this, dispatcher_->async_dispatcher(), /* OnBind */ nullptr,
+            /* OnClose */ [this](PipeConnection* pipe_ptr) {
+              // We know |pipe_ptr| is still alive because |pipe_ptr|
+              // is still in |pipes_|.
+              ZX_DEBUG_ASSERT(pipe_connections_.find(pipe_ptr) != pipe_connections_.end());
+              pipe_connections_.erase(pipe_ptr);
+            });
 
-    PipeConnection* pipe_ptr = pipe.get();
-    pipe_connections_.insert({pipe_ptr, std::move(pipe)});
+        PipeConnection* pipe_ptr = pipe.get();
+        pipe_connections_.insert({pipe_ptr, std::move(pipe)});
 
-    pipe_ptr->Bind(std::move(pipe_request));
-    // Init() must be called after Bind() as it can cause an asynchronous
-    // failure. The pipe will be cleaned up later by the error handler in
-    // the event of a failure.
-    pipe_ptr->Init();
-  });
+        pipe_ptr->Bind(std::move(pipe_request));
+        // Init() must be called after Bind() as it can cause an asynchronous
+        // failure. The pipe will be cleaned up later by the error handler in
+        // the event of a failure.
+        pipe_ptr->Init();
+      });
 }
 
 zx_status_t PipeDevice::Create(int32_t* out_id, zx::vmo* out_vmo) {
@@ -297,7 +240,7 @@ zx_status_t PipeDevice::SetEvent(int32_t id, zx::event pipe_event) {
     zx_status_t status =
         command_storages_[id]->pipe_event.wait_one(kSignals, zx::time::infinite_past(), &observed);
     if (status != ZX_OK) {
-      zxlogf(ERROR, "%s: failed to transfer observed signals: %d", kTag, status);
+      FDF_LOG(ERROR, "failed to transfer observed signals: %d", status);
       return status;
     }
   }
@@ -305,7 +248,7 @@ zx_status_t PipeDevice::SetEvent(int32_t id, zx::event pipe_event) {
   command_storages_[id]->pipe_event = std::move(pipe_event);
   zx_status_t status = command_storages_[id]->pipe_event.signal(kSignals, observed & kSignals);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "%s: failed to signal event: %d", kTag, status);
+    FDF_LOG(ERROR, "failed to signal event: %d", status);
     return status;
   }
   return ZX_OK;
@@ -398,7 +341,7 @@ int PipeDevice::IrqHandler() {
   while (true) {
     zx_status_t status = irq_.wait(nullptr);
     if (status != ZX_OK) {
-      zxlogf(ERROR, "%s: irq.wait() got %d", kTag, status);
+      FDF_LOG(ERROR, "irq.wait() got %d", status);
       break;
     }
 
@@ -454,62 +397,8 @@ void PipeDevice::CommandStorage::SignalEvent(uint32_t flags) const {
 
   zx_status_t status = pipe_event.signal(/*clear_mask=*/0u, state_set);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "%s: zx_signal_object failed: %d", kTag, status);
+    FDF_LOG(ERROR, "zx_signal_object failed: %d", status);
   }
 }
-
-PipeChildDevice::PipeChildDevice(PipeDevice* parent, async_dispatcher_t* dispatcher)
-    : PipeChildDeviceType(parent->zxdev()),
-      parent_(parent),
-      dispatcher_(dispatcher),
-      outgoing_(dispatcher) {
-  ZX_DEBUG_ASSERT(parent_);
-}
-
-zx_status_t PipeChildDevice::Bind(cpp20::span<const zx_device_str_prop_t> props,
-                                  const char* dev_name) {
-  zx::result<> add_service_result = outgoing_.AddService<fuchsia_hardware_goldfish_pipe::Service>(
-      fuchsia_hardware_goldfish_pipe::Service::InstanceHandler({
-          .device = parent_->fidl::WireServer<fuchsia_hardware_goldfish_pipe::Bus>::bind_handler(
-              dispatcher_),
-      }));
-  if (add_service_result.is_error()) {
-    zxlogf(ERROR, "Failed to add service the outgoing directory: %s",
-           add_service_result.status_string());
-    return add_service_result.status_value();
-  }
-
-  auto [dir_client, dir_server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
-  zx::result<> serve_result = outgoing_.Serve(std::move(dir_server));
-  if (serve_result.is_error()) {
-    zxlogf(ERROR, "Failed to service the outgoing directory: %s", serve_result.status_string());
-    return serve_result.status_value();
-  }
-
-  std::array<const char*, 1> offers = {
-      fuchsia_hardware_goldfish_pipe::Service::Name,
-  };
-
-  zx_status_t status = DdkAdd(ddk::DeviceAddArgs(dev_name)
-                                  .set_str_props(props)
-                                  .set_fidl_service_offers(offers)
-                                  .set_outgoing_dir(std::move(dir_client).TakeChannel()));
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "%s: create %s device failed: %d", kTag, dev_name, status);
-    return status;
-  }
-  return ZX_OK;
-}
-
-void PipeChildDevice::DdkRelease() { delete this; }
 
 }  // namespace goldfish
-
-static constexpr zx_driver_ops_t goldfish_driver_ops = []() -> zx_driver_ops_t {
-  zx_driver_ops_t ops = {};
-  ops.version = DRIVER_OPS_VERSION;
-  ops.bind = goldfish::PipeDevice::Create;
-  return ops;
-}();
-
-ZIRCON_DRIVER(goldfish, goldfish_driver_ops, "zircon", "0.1");

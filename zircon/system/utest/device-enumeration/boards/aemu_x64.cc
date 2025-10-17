@@ -18,16 +18,14 @@ TEST_F(DeviceEnumerationTest, AemuX64Test) {
   static const char* kAemuNodeMonikers[] = {
       "dev.sys.platform.pt.PCI0.bus.00_0b_0.00_0b_0.goldfish-address-space",
 
-      // Verify goldfish pipe root device created.
       "dev.sys.platform.pt.acpi._SB_.GFPP.pt.GFPP-composite-spec.goldfish-pipe",
-      // Verify goldfish pipe child devices created.
-      "dev.sys.platform.pt.acpi._SB_.GFPP.pt.GFPP-composite-spec.goldfish-pipe.goldfish-pipe-control",
-      "dev.sys.platform.pt.acpi._SB_.GFPP.pt.GFPP-composite-spec.goldfish-pipe.goldfish-pipe-sensor",
+      "dev.sys.platform.pt.acpi._SB_.GFPP.pt.GFPP-composite-spec.goldfish-pipe-control",
+      "dev.sys.platform.pt.acpi._SB_.GFPP.pt.GFPP-composite-spec.goldfish-pipe-sensor",
       "dev.sys.platform.pt.acpi._SB_.GFSK.pt.GFSK-composite-spec.goldfish-sync",
 
-      "dev.sys.platform.pt.acpi._SB_.GFPP.pt.GFPP-composite-spec.goldfish-pipe.goldfish-pipe-control.goldfish-control-2.goldfish-control",
-      "dev.sys.platform.pt.acpi._SB_.GFPP.pt.GFPP-composite-spec.goldfish-pipe.goldfish-pipe-control.goldfish-control-2.goldfish-control.goldfish-display",
-      "dev.sys.platform.pt.acpi._SB_.GFPP.pt.GFPP-composite-spec.goldfish-pipe.goldfish-pipe-control.goldfish-control-2",
+      "dev.sys.platform.pt.acpi._SB_.GFPP.pt.GFPP-composite-spec.goldfish-pipe-control.goldfish-control-2.goldfish-control",
+      "dev.sys.platform.pt.acpi._SB_.GFPP.pt.GFPP-composite-spec.goldfish-pipe-control.goldfish-control-2.goldfish-control.goldfish-display",
+      "dev.sys.platform.pt.acpi._SB_.GFPP.pt.GFPP-composite-spec.goldfish-pipe-control.goldfish-control-2",
   };
 
   VerifyNodes(kAemuNodeMonikers);

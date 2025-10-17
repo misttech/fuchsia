@@ -216,7 +216,6 @@ shared_library("driver") {
     "//src/diagnostics/validator/logs/ddk/log-test-driver:*",
     "//src/firmware/drivers/usb-fastboot-function:*",
     "//src/graphics/drivers/aml-gpu:*",
-    "//src/graphics/drivers/misc/goldfish:*",
     "//src/graphics/drivers/misc/goldfish_address_space:*",
     "//src/graphics/drivers/misc/goldfish_control:*",
     "//src/graphics/drivers/misc/goldfish_sync:*",

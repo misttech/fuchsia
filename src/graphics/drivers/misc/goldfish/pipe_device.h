@@ -5,53 +5,51 @@
 #ifndef SRC_GRAPHICS_DRIVERS_MISC_GOLDFISH_PIPE_DEVICE_H_
 #define SRC_GRAPHICS_DRIVERS_MISC_GOLDFISH_PIPE_DEVICE_H_
 
+#include <fidl/fuchsia.hardware.acpi/cpp/wire.h>
 #include <fidl/fuchsia.hardware.goldfish.pipe/cpp/wire.h>
 #include <fidl/fuchsia.hardware.goldfish/cpp/wire.h>
-#include <lib/component/outgoing/cpp/outgoing_directory.h>
-#include <lib/ddk/device.h>
-#include <lib/ddk/io-buffer.h>
 #include <lib/dma-buffer/buffer.h>
-#include <lib/driver/mmio/cpp/mmio.h>
-#include <lib/zircon-internal/thread_annotations.h>
+#include <lib/driver/mmio/cpp/mmio-buffer.h>
+#include <lib/fdf/cpp/dispatcher.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/event.h>
 #include <lib/zx/interrupt.h>
 #include <threads.h>
+#include <zircon/compiler.h>
 #include <zircon/types.h>
 
-#include <map>
+#include <cstdint>
 #include <memory>
 #include <optional>
+#include <unordered_map>
 
-#include <ddktl/device.h>
 #include <fbl/mutex.h>
 
-#include "src/devices/lib/acpi/client.h"
 #include "src/graphics/drivers/misc/goldfish/pipe_connection.h"
 
 namespace goldfish {
-
-class PipeDevice;
-using DeviceType =
-    ddk::Device<PipeDevice, ddk::Messageable<fuchsia_hardware_goldfish::PipeDevice>::Mixin>;
 
 // |PipeDevice| is the "root" ACPI device that creates pipes and executes pipe
 // operations. It could create multiple |PipeChildDevice| instances using
 // |CreateChildDevice| method, each having its own properties so that they can
 // be bound to different drivers, but sharing the same parent |PipeDevice|.
-class PipeDevice : public DeviceType, public fidl::WireServer<fuchsia_hardware_goldfish_pipe::Bus> {
+class PipeDevice : public fidl::WireServer<fuchsia_hardware_goldfish::PipeDevice>,
+                   public fidl::WireServer<fuchsia_hardware_goldfish_pipe::Bus> {
  public:
-  static zx_status_t Create(void* ctx, zx_device_t* parent);
-
-  explicit PipeDevice(zx_device_t* parent, acpi::Client client, async_dispatcher_t* dispatcher);
+  explicit PipeDevice(fidl::ClientEnd<fuchsia_hardware_acpi::Device> acpi,
+                      fdf::UnownedSynchronizedDispatcher dispatcher);
   ~PipeDevice();
 
-  zx_status_t Bind();
-  zx_status_t CreateChildDevice(cpp20::span<const zx_device_str_prop_t> props,
-                                const char* dev_name);
+  PipeDevice(const PipeDevice&) = delete;
+  PipeDevice& operator=(const PipeDevice&) = delete;
+  PipeDevice(PipeDevice&&) = delete;
+  PipeDevice& operator=(PipeDevice&&) = delete;
 
-  // Device protocol implementation.
-  void DdkRelease();
+  // Must be called exactly once for each `PipeDevice` instance.
+  zx::result<> Initialize();
+
+  // Corresponds to `PrepareStop()` in DFv2 driver.
+  zx::result<> PrepareStop();
 
   zx_status_t Create(int32_t* out_id, zx::vmo* out_vmo);
   zx_status_t SetEvent(int32_t id, zx::event pipe_event);
@@ -87,46 +85,24 @@ class PipeDevice : public DeviceType, public fidl::WireServer<fuchsia_hardware_g
     zx::event pipe_event;
   };
 
-  acpi::Client acpi_fidl_;
+  fidl::WireSyncClient<fuchsia_hardware_acpi::Device> acpi_;
+
   zx::interrupt irq_;
   zx::bti bti_;
   std::unique_ptr<dma_buffer::ContiguousBuffer> io_buffer_;
   thrd_t irq_thread_{};
-  int32_t next_pipe_id_ TA_GUARDED(pipes_lock_) = 1;
+  int32_t next_pipe_id_ __TA_GUARDED(pipes_lock_) = 1;
 
   fbl::Mutex mmio_lock_;
-  std::optional<fdf::MmioBuffer> mmio_ TA_GUARDED(mmio_lock_);
+  std::optional<fdf::MmioBuffer> mmio_ __TA_GUARDED(mmio_lock_);
 
   fbl::Mutex pipes_lock_;
   std::unordered_map</* connection_id */ int32_t, std::unique_ptr<CommandStorage>> command_storages_
-      TA_GUARDED(pipes_lock_);
-  async_dispatcher_t* const dispatcher_;
+      __TA_GUARDED(pipes_lock_);
 
   std::unordered_map<PipeConnection*, std::unique_ptr<PipeConnection>> pipe_connections_;
 
-  DISALLOW_COPY_ASSIGN_AND_MOVE(PipeDevice);
-};
-
-class PipeChildDevice;
-using PipeChildDeviceType = ddk::Device<PipeChildDevice>;
-
-// |PipeChildDevice| is created by |PipeDevice| and serves the
-// |fuchsia.hardware.goldfish.Bus| FIDL protocol by forwarding all the
-// FIDL requests to the parent device.
-class PipeChildDevice : public PipeChildDeviceType {
- public:
-  PipeChildDevice(PipeDevice* parent, async_dispatcher_t* dispatcher);
-  ~PipeChildDevice() = default;
-
-  zx_status_t Bind(cpp20::span<const zx_device_str_prop_t> props, const char* dev_name);
-
-  // Device protocol implementation.
-  void DdkRelease();
-
- private:
-  PipeDevice* const parent_;
-  async_dispatcher_t* const dispatcher_;
-  component::OutgoingDirectory outgoing_;
+  fdf::UnownedSynchronizedDispatcher const dispatcher_;
 };
 
 }  // namespace goldfish

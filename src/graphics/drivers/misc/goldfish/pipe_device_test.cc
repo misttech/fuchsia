@@ -4,35 +4,21 @@
 
 #include "src/graphics/drivers/misc/goldfish/pipe_device.h"
 
-#include <fidl/fuchsia.hardware.goldfish.pipe/cpp/wire.h>
-#include <fidl/fuchsia.hardware.goldfish/cpp/wire.h>
-#include <lib/async-loop/cpp/loop.h>
-#include <lib/async-loop/default.h>
-#include <lib/async/default.h>
-#include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
+#include <fidl/fuchsia.hardware.goldfish.pipe/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.goldfish/cpp/fidl.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
-#include <lib/ddk/binding_driver.h>
-#include <lib/ddk/platform-defs.h>
+#include <lib/driver/testing/cpp/driver_runtime.h>
+#include <lib/driver/testing/cpp/scoped_global_logger.h>
 #include <lib/fake-bti/bti.h>
-#include <lib/zx/channel.h>
 #include <lib/zx/vmar.h>
-#include <zircon/errors.h>
-#include <zircon/syscalls.h>
 
-#include <algorithm>
 #include <cstring>
 #include <memory>
-#include <set>
-#include <thread>
-#include <vector>
 
-#include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/goldfish/platform/cpp/bind.h>
-#include <bind/fuchsia/google/platform/cpp/bind.h>
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 #include "src/devices/lib/acpi/mock/mock-acpi.h"
-#include "src/devices/testing/mock-ddk/mock-device.h"
+#include "src/lib/testing/predicates/status.h"
 
 namespace goldfish {
 
@@ -42,16 +28,6 @@ namespace {
 
 constexpr uint32_t kPipeMinDeviceVersion = 2;
 constexpr uint32_t kMaxSignalledPipes = 64;
-
-const zx_device_str_prop_t kDefaultPipeDeviceProps[] = {
-    ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_VID,
-                         bind_fuchsia_google_platform::BIND_PLATFORM_DEV_VID_GOOGLE),
-    ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_PID,
-                         bind_fuchsia_goldfish_platform::BIND_PLATFORM_DEV_PID_GOLDFISH),
-    ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_DID,
-                         bind_fuchsia_goldfish_platform::BIND_PLATFORM_DEV_DID_PIPE_CONTROL),
-};
-constexpr const char* kDefaultPipeDeviceName = "goldfish-pipe";
 
 // MMIO Registers of goldfish pipe.
 // The layout should match the register offsets defined in pipe_device.cc.
@@ -113,19 +89,9 @@ class VmoMapping {
 };
 
 // Test suite creating fake PipeDevice on a mock ACPI bus.
-class PipeDeviceTest : public zxtest::Test {
+class PipeDeviceTest : public ::testing::Test {
  public:
-  PipeDeviceTest()
-      // The IncomingNamespace must live on a different thread because the
-      // pipe-device makes synchronous FIDL calls to it.
-      : ns_loop_(&kAsyncLoopConfigNoAttachToCurrentThread),
-        fake_root_(MockDevice::FakeRootParent()),
-        test_loop_(&kAsyncLoopConfigAttachToCurrentThread) {}
-
-  // |zxtest::Test|
   void SetUp() override {
-    ASSERT_OK(ns_loop_.StartThread("incoming-namespace-loop-dispatcher"));
-
     ASSERT_OK(fake_bti_create(acpi_bti_.reset_and_get_address()));
 
     constexpr size_t kCtrlSize = 4096u;
@@ -145,7 +111,7 @@ class PipeDeviceTest : public zxtest::Test {
         });
     mock_acpi_fidl_.SetGetMmio([this](acpi::mock::Device::GetMmioRequestView rv,
                                       acpi::mock::Device::GetMmioCompleter::Sync& completer) {
-      ASSERT_EQ(rv->index, 0);
+      ASSERT_EQ(rv->index, 0u);
       zx::vmo dupe;
       ASSERT_OK(vmo_control_.duplicate(ZX_RIGHT_SAME_RIGHTS, &dupe));
       completer.ReplySuccess(fuchsia_mem::wire::Range{
@@ -157,37 +123,30 @@ class PipeDeviceTest : public zxtest::Test {
 
     mock_acpi_fidl_.SetGetBti([this](acpi::mock::Device::GetBtiRequestView rv,
                                      acpi::mock::Device::GetBtiCompleter::Sync& completer) {
-      ASSERT_EQ(rv->index, 0);
+      ASSERT_EQ(rv->index, 0u);
       zx::bti out_bti;
       ASSERT_OK(acpi_bti_.duplicate(ZX_RIGHT_SAME_RIGHTS, &out_bti));
       completer.ReplySuccess(std::move(out_bti));
     });
 
-    auto acpi_client = mock_acpi_fidl_.CreateClient(ns_loop_.dispatcher());
+    zx::result<acpi::Client> acpi_client =
+        mock_acpi_fidl_.CreateClient(env_dispatcher_->async_dispatcher());
     ASSERT_OK(acpi_client.status_value());
 
-    fake_root_->AddProtocol(ZX_PROTOCOL_ACPI, nullptr, nullptr, "acpi");
-
-    auto dut = std::make_unique<PipeDevice>(fake_root_.get(), std::move(acpi_client.value()),
-                                            test_loop_.dispatcher());
-    ASSERT_OK(dut->Bind());
-    dut_ = dut.release();
-
-    dut_child_ = std::make_unique<PipeChildDevice>(dut_, test_loop_.dispatcher());
+    fidl::ClientEnd<fuchsia_hardware_acpi::Device> acpi =
+        std::move(acpi_client).value().borrow().TakeClientEnd();
+    dut_ = std::make_unique<PipeDevice>(std::move(acpi), driver_dispatcher_->borrow());
+    ASSERT_OK(dut_->Initialize());
 
     auto [bus_client, bus_server] = fidl::Endpoints<fuchsia_hardware_goldfish_pipe::Bus>::Create();
-
-    binding_ = fidl::BindServer(test_loop_.dispatcher(), std::move(bus_server), dut_);
+    binding_ =
+        fidl::BindServer(driver_dispatcher_->async_dispatcher(), std::move(bus_server), dut_.get());
     EXPECT_TRUE(binding_.has_value());
 
-    client_.Bind(std::move(bus_client), test_loop_.dispatcher());
+    client_ = fidl::SyncClient(std::move(bus_client));
   }
 
-  // |zxtest::Test|
-  void TearDown() override {
-    device_async_remove(fake_root_.get());
-    mock_ddk::ReleaseFlaggedDevices(fake_root_.get());
-  }
+  void TearDown() override { ASSERT_OK(dut_->PrepareStop()); }
 
   std::unique_ptr<VmoMapping> MapControlRegisters() const {
     return std::make_unique<VmoMapping>(vmo_control_, /*size=*/sizeof(Registers), /*offset=*/0);
@@ -199,14 +158,16 @@ class PipeDeviceTest : public zxtest::Test {
   }
 
  protected:
-  async::Loop ns_loop_;
-  acpi::mock::Device mock_acpi_fidl_;
+  fdf_testing::ScopedGlobalLogger logger_;
+  fdf_testing::DriverRuntime runtime_;
 
-  std::shared_ptr<MockDevice> fake_root_;
-  async::Loop test_loop_;
-  PipeDevice* dut_;
-  std::unique_ptr<PipeChildDevice> dut_child_;
-  fidl::WireClient<fuchsia_hardware_goldfish_pipe::Bus> client_;
+  fdf::UnownedSynchronizedDispatcher env_dispatcher_{runtime_.StartBackgroundDispatcher()};
+  fdf::UnownedSynchronizedDispatcher driver_dispatcher_{runtime_.StartBackgroundDispatcher()};
+
+  acpi::mock::Device mock_acpi_fidl_;
+  std::unique_ptr<PipeDevice> dut_;
+
+  fidl::SyncClient<fuchsia_hardware_goldfish_pipe::Bus> client_;
   std::optional<fidl::ServerBindingRef<fuchsia_hardware_goldfish_pipe::Bus>> binding_;
 
   zx::bti acpi_bti_;
@@ -240,43 +201,31 @@ TEST_F(PipeDeviceTest, Bind) {
 }
 
 TEST_F(PipeDeviceTest, CreatePipe) {
-  ASSERT_OK(dut_child_->Bind(kDefaultPipeDeviceProps, kDefaultPipeDeviceName));
-  dut_child_.release();
+  fidl::Result create_result = client_->Create();
+  ASSERT_TRUE(create_result.is_ok());
 
-  int32_t id = 0;
-  zx::vmo vmo;
-  client_->Create().Then([&](auto& result) {
-    ASSERT_OK(result.status());
-    id = result->value()->id;
-    vmo = std::move(result->value()->vmo);
-  });
-  test_loop_.RunUntilIdle();
+  int32_t id = create_result.value().id();
+  zx::vmo vmo = std::move(create_result.value().vmo());
 
-  ASSERT_NE(id, 0u);
-  ASSERT_TRUE(vmo.is_valid());
+  EXPECT_NE(id, 0);
+  EXPECT_TRUE(vmo.is_valid());
 
-  client_->Destroy(id).Then([](auto& result) { ASSERT_OK(result.status()); });
-  test_loop_.RunUntilIdle();
+  fidl::Result destroy_result = client_->Destroy(id);
+  ASSERT_TRUE(destroy_result.is_ok());
 }
 
 TEST_F(PipeDeviceTest, Exec) {
-  ASSERT_OK(dut_child_->Bind(kDefaultPipeDeviceProps, kDefaultPipeDeviceName));
-  dut_child_.release();
+  fidl::Result create_result = client_->Create();
+  ASSERT_TRUE(create_result.is_ok());
 
-  int32_t id = 0;
-  zx::vmo vmo;
-  client_->Create().Then([&](auto& result) {
-    ASSERT_OK(result.status());
-    id = result->value()->id;
-    vmo = std::move(result->value()->vmo);
-  });
-  test_loop_.RunUntilIdle();
+  int32_t id = create_result.value().id();
+  zx::vmo vmo = std::move(create_result.value().vmo());
 
-  ASSERT_NE(id, 0u);
+  ASSERT_NE(id, 0);
   ASSERT_TRUE(vmo.is_valid());
 
-  client_->Exec(id).Then([](auto& result) { ASSERT_OK(result.status()); });
-  test_loop_.RunUntilIdle();
+  fidl::Result exec_result = client_->Exec(id);
+  ASSERT_TRUE(exec_result.is_ok());
 
   {
     auto mapped = MapControlRegisters();
@@ -284,31 +233,24 @@ TEST_F(PipeDeviceTest, Exec) {
     ASSERT_EQ(ctrl_regs->command, static_cast<uint32_t>(id));
   }
 
-  client_->Destroy(id).Then([](auto& result) { ASSERT_OK(result.status()); });
-  test_loop_.RunUntilIdle();
+  fidl::Result destroy_result = client_->Destroy(id);
+  EXPECT_TRUE(destroy_result.is_ok());
 }
 
 TEST_F(PipeDeviceTest, TransferObservedSignals) {
-  ASSERT_OK(dut_child_->Bind(kDefaultPipeDeviceProps, kDefaultPipeDeviceName));
-  dut_child_.release();
+  fidl::Result create_result = client_->Create();
+  ASSERT_TRUE(create_result.is_ok());
 
-  int32_t id = 0;
-  zx::vmo vmo;
-  client_->Create().Then([&](auto& result) {
-    ASSERT_OK(result.status());
-    id = result->value()->id;
-    vmo = std::move(result->value()->vmo);
-  });
-  test_loop_.RunUntilIdle();
+  int32_t id = create_result.value().id();
+  zx::vmo vmo = std::move(create_result.value().vmo());
 
   zx::event old_event, old_event_dup;
   ASSERT_OK(zx::event::create(0u, &old_event));
   ASSERT_OK(old_event.duplicate(ZX_RIGHT_SAME_RIGHTS, &old_event_dup));
 
-  client_->SetEvent(id, std::move(old_event_dup)).Then([](auto& result) {
-    ASSERT_OK(result.status());
-  });
-  test_loop_.RunUntilIdle();
+  fidl::Result set_event_result =
+      client_->SetEvent({{.id = id, .pipe_event = std::move(old_event_dup)}});
+  ASSERT_TRUE(set_event_result.is_ok());
 
   // Trigger signals on "old" event.
   old_event.signal(0u, fuchsia_hardware_goldfish::wire::kSignalReadable);
@@ -319,10 +261,8 @@ TEST_F(PipeDeviceTest, TransferObservedSignals) {
   ASSERT_OK(new_event.signal(fuchsia_hardware_goldfish::wire::kSignalReadable, 0u));
   ASSERT_OK(new_event.duplicate(ZX_RIGHT_SAME_RIGHTS, &new_event_dup));
 
-  client_->SetEvent(id, std::move(new_event_dup)).Then([](auto& result) {
-    ASSERT_OK(result.status());
-  });
-  test_loop_.RunUntilIdle();
+  set_event_result = client_->SetEvent({{.id = id, .pipe_event = std::move(new_event_dup)}});
+  ASSERT_TRUE(set_event_result.is_ok());
 
   // Wait for `SIGNAL_READABLE` signal on the new event.
   zx_signals_t observed;
@@ -331,15 +271,9 @@ TEST_F(PipeDeviceTest, TransferObservedSignals) {
 }
 
 TEST_F(PipeDeviceTest, GetBti) {
-  ASSERT_OK(dut_child_->Bind(kDefaultPipeDeviceProps, kDefaultPipeDeviceName));
-  dut_child_.release();
-
-  zx::bti bti;
-  client_->GetBti().Then([&](auto& result) {
-    ASSERT_OK(result.status());
-    bti = std::move(result->value()->bti);
-  });
-  test_loop_.RunUntilIdle();
+  fidl::Result get_bti_result = client_->GetBti();
+  ASSERT_TRUE(get_bti_result.is_ok());
+  zx::bti bti = std::move(get_bti_result.value().bti());
 
   zx_info_bti_t goldfish_bti_info, acpi_bti_info;
   ASSERT_OK(
@@ -348,52 +282,6 @@ TEST_F(PipeDeviceTest, GetBti) {
       acpi_bti_.get_info(ZX_INFO_BTI, &acpi_bti_info, sizeof(acpi_bti_info), nullptr, nullptr));
 
   ASSERT_FALSE(memcmp(&goldfish_bti_info, &acpi_bti_info, sizeof(zx_info_bti_t)));
-}
-
-TEST_F(PipeDeviceTest, ChildDevice) {
-  // Test creating multiple child devices. Each child device can access the
-  // Bus FIDL protocol, and they should share the same parent device.
-
-  auto child1 = std::make_unique<PipeChildDevice>(dut_, test_loop_.dispatcher());
-  auto child2 = std::make_unique<PipeChildDevice>(dut_, test_loop_.dispatcher());
-
-  const zx_device_str_prop_t kPropsChild1[] = {
-      ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_VID,
-                           bind_fuchsia_google_platform::BIND_PLATFORM_DEV_VID_GOOGLE),
-      ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_PID,
-                           bind_fuchsia_goldfish_platform::BIND_PLATFORM_DEV_PID_GOLDFISH),
-      ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_DID, 0x01u),
-  };
-  constexpr const char* kDeviceNameChild1 = "goldfish-pipe-child1";
-  ASSERT_OK(child1->Bind(kPropsChild1, kDeviceNameChild1));
-  child1.release();
-
-  const zx_device_str_prop_t kPropsChild2[] = {
-      ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_VID,
-                           bind_fuchsia_google_platform::BIND_PLATFORM_DEV_VID_GOOGLE),
-      ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_PID,
-                           bind_fuchsia_goldfish_platform::BIND_PLATFORM_DEV_PID_GOLDFISH),
-      ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_DID, 0x02u),
-  };
-  constexpr const char* kDeviceNameChild2 = "goldfish-pipe-child2";
-  ASSERT_OK(child2->Bind(kPropsChild2, kDeviceNameChild2));
-  child2.release();
-
-  int32_t id1 = 0;
-  int32_t id2 = 0;
-  client_->Create().Then([&](auto& result) {
-    ASSERT_OK(result.status());
-    id1 = result->value()->id;
-  });
-  client_->Create().Then([&](auto& result) {
-    ASSERT_OK(result.status());
-    id2 = result->value()->id;
-  });
-  test_loop_.RunUntilIdle();
-  ASSERT_NE(id1, 0);
-  ASSERT_NE(id2, 0);
-
-  ASSERT_NE(id1, id2);
 }
 
 }  // namespace
