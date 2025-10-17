@@ -387,7 +387,7 @@ zx_status_t sys_object_set_property(zx_handle_t handle_value, uint32_t property,
       if (status != ZX_OK) {
         return status;
       }
-      return vmo->SetContentSize(value);
+      return vmo->SetLegacyPropVmoContentSize(value);
     }
     case ZX_PROP_STREAM_MODE_APPEND: {
       if (size < sizeof(uint8_t)) {

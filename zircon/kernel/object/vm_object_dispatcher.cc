@@ -292,7 +292,7 @@ zx_info_vmo_t VmObjectDispatcher::GetVmoInfo(zx_rights_t rights) {
   return info;
 }
 
-zx_status_t VmObjectDispatcher::SetContentSize(uint64_t content_size) {
+zx_status_t VmObjectDispatcher::SetLegacyPropVmoContentSize(uint64_t content_size) {
   canary_.Assert();
 
   // Set stream size is not supported for physical or contiguous VMOs.
