@@ -8,6 +8,8 @@
 #include <fidl/fuchsia.bluetooth.sys/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 
+#include <algorithm>
+
 #include "fidl/fuchsia.bluetooth.sys/cpp/markers.h"
 #include "fidl/fuchsia.bluetooth.sys/cpp/natural_types.h"
 #include "src/connectivity/bluetooth/testing/bt-affordances/ffi_c/bindings.h"
@@ -71,7 +73,19 @@ class HostService : public pandora::Host::Service {
     std::lock_guard lock(svc->m_scan_scp_writer_);
     if (svc->scan_rsp_writer) {
       pandora::ScanningResponse scan_rsp;
-      scan_rsp.set_public_(std::to_string(peer->id));
+
+      // Convert peer address from little-endian to big-endian, as expected by Pandora.
+      uint8_t big_endian_addr[6];
+      std::ranges::copy(peer->address, big_endian_addr);
+      std::ranges::reverse(big_endian_addr);
+
+      if (peer->address_type == static_cast<uint8_t>(fuchsia_bluetooth::AddressType::kPublic)) {
+        scan_rsp.set_public_(big_endian_addr, 6);
+      } else if (peer->address_type ==
+                 static_cast<uint8_t>(fuchsia_bluetooth::AddressType::kRandom)) {
+        scan_rsp.set_random(big_endian_addr, 6);
+      }
+
       scan_rsp.set_connectable(peer->connectable);
       scan_rsp.mutable_data()->set_complete_local_name(peer->name);
       if (!svc->scan_rsp_writer->Write(scan_rsp)) {

@@ -51,7 +51,9 @@ impl State {
     }
 
     async fn le_scan(
-        mut le_peer_receiver: UnboundedReceiver<Vec<fidl_fuchsia_bluetooth_le::Peer>>,
+        mut le_peer_receiver: UnboundedReceiver<
+            Vec<(fidl_fuchsia_bluetooth_le::Peer, Option<fidl_fuchsia_bluetooth::Address>)>,
+        >,
         context: FfiPointer,
         cb: LeScanCallbackWrapper,
         mut shutdown_receiver: oneshot::Receiver<()>,
@@ -70,19 +72,26 @@ impl State {
                 return;
             };
 
-            for found_peer in le_peers {
-                Self::process_le_peer(found_peer, context, &cb);
+            for (found_peer, address) in le_peers {
+                Self::process_le_peer(found_peer, address, context, &cb);
             }
         }
     }
 
     fn process_le_peer(
         found_peer: fidl_fuchsia_bluetooth_le::Peer,
+        address: Option<fidl_fuchsia_bluetooth::Address>,
         context: FfiPointer,
         cb: &LeScanCallbackWrapper,
     ) {
         let mut le_peer = LePeer {
             id: found_peer.id.unwrap().value,
+            address_type: if address.is_some() {
+                address.unwrap().type_.into_primitive()
+            } else {
+                0
+            },
+            address: if address.is_some() { address.unwrap().bytes } else { [0; 6] },
             connectable: found_peer.connectable.unwrap(),
             name: [0; 248],
         };
@@ -266,9 +275,13 @@ pub extern "C" fn set_connectability(connectable: bool) -> zx_status_t {
     zx::Status::OK.into_raw()
 }
 
+/// `address_type` is 1 for Public, 2 for Random, or 0 if no address was provided. These values
+/// correspond to fuchsia.bluetooth/AddressType. If no address was provided, `address` is zero.
 #[repr(C)]
 pub struct LePeer {
     pub id: u64,
+    pub address_type: u8,
+    pub address: [u8; 6],
     pub connectable: bool,
     pub name: [core::ffi::c_char; 248],
     // TODO(https://fxbug.dev/396500079): Support more fields as necessary to enable PTS tests.
@@ -296,7 +309,6 @@ unsafe impl Sync for LeScanCallbackWrapper {}
 pub extern "C" fn start_le_scan(context: *mut c_void, cb: LeScanCallback) -> zx_status_t {
     let ffi_ptr = FfiPointer(context);
     let cb_wrapper = LeScanCallbackWrapper(cb);
-
     if let Err(err) = STATE.start_le_scan(ffi_ptr, cb_wrapper) {
         eprintln!("start_le_scan encountered error: {err:?}");
         return zx::Status::INTERNAL.into_raw();
@@ -310,9 +322,9 @@ pub extern "C" fn start_le_scan(context: *mut c_void, cb: LeScanCallback) -> zx_
 /// Returns ZX_STATUS_BAD_STATE if no scan was ongoing.
 #[no_mangle]
 pub extern "C" fn stop_le_scan() -> zx_status_t {
-    if STATE.le_scan.lock().is_none() {
+    let Some(le_scan) = STATE.le_scan.lock().take() else {
         return zx::Status::BAD_STATE.into_raw();
-    }
+    };
 
     // The le_scan thread join operation must be non-blocking. We spawn a new thread to handle the
     // shutdown logic to prevent deadlocks if called from the scan callback thread.
@@ -321,8 +333,7 @@ pub extern "C" fn stop_le_scan() -> zx_status_t {
             eprintln!("LE scan could not be stopped (likely stopped already).");
         }
 
-        let le_scan = STATE.le_scan.lock().take().unwrap();
-        le_scan.1.send(()).unwrap();
+        let _ = le_scan.1.send(());
         le_scan.0.join().expect("Failed to join LE scan thread");
     });
 

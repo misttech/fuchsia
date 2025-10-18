@@ -11,8 +11,12 @@
 #include <new>
 #include <ostream>
 
+/// `address_type` is 1 for Public, 2 for Random, or 0 if no address was provided. These values
+/// correspond to fuchsia.bluetooth/AddressType. If no address was provided, `address` is zero.
 struct LePeer {
   uint64_t id;
+  uint8_t address_type;
+  uint8_t address[6];
   bool connectable;
   char name[248];
 };

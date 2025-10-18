@@ -4,8 +4,6 @@
 
 #include "host.h"
 
-#include <algorithm>
-
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/message.h>
 
@@ -35,6 +33,7 @@ Status HostService::ReadLocalAddress(grpc::ServerContext* context,
   if (read_local_address(host_addr.data()) != ZX_OK) {
     return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
   }
+  // Convert local address from little-endian to big-endian, as expected by Pandora.
   std::ranges::reverse(host_addr);
   response->set_address(host_addr.data(), 6);
   return {/*OK*/};
@@ -42,8 +41,12 @@ Status HostService::ReadLocalAddress(grpc::ServerContext* context,
 
 Status HostService::Connect(grpc::ServerContext* context, const pandora::ConnectRequest* request,
                             pandora::ConnectResponse* response) {
-  uint64_t peer_id = get_peer_id(request->address().c_str());
-  if (!peer_id || connect_peer(peer_id) != ZX_OK) {
+  std::string little_endian_addr(request->address().rbegin(), request->address().rend());
+  uint64_t peer_id = get_peer_id(little_endian_addr.c_str());
+  if (!peer_id) {
+    return Status(StatusCode::NOT_FOUND, "Peer not found");
+  }
+  if (connect_peer(peer_id) != ZX_OK) {
     return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
   }
   response->mutable_connection()->mutable_cookie()->set_value(std::to_string(peer_id));
@@ -65,17 +68,16 @@ Status HostService::ConnectLE(::grpc::ServerContext* context,
                               const ::pandora::ConnectLERequest* request,
                               ::pandora::ConnectLEResponse* response) {
   if (!request->has_public_()) {
-    return Status(StatusCode::INVALID_ARGUMENT, "Expected PeerId encoded in public address field");
+    return Status(StatusCode::INVALID_ARGUMENT, "Expected public address field");
+  }
+  if (request->public_().size() != 6) {
+    return Status(StatusCode::INVALID_ARGUMENT, "Expected 6 byte BD_ADDR");
   }
 
-  uint64_t peer_id;
-  if (request->public_().size() == 6) {
-    peer_id = get_peer_id(request->public_().c_str());
-    if (!peer_id) {
-      return Status(StatusCode::NOT_FOUND, "Could not find peer.");
-    }
-  } else {
-    peer_id = std::strtoul(request->public_().c_str(), nullptr, /*base=*/10);
+  std::string little_endian_addr(request->public_().rbegin(), request->public_().rend());
+  uint64_t peer_id = get_peer_id(little_endian_addr.c_str());
+  if (!peer_id) {
+    return Status(StatusCode::NOT_FOUND, "Could not find peer.");
   }
 
   if (connect_le(peer_id) != ZX_OK) {
@@ -143,7 +145,7 @@ Status HostService::Scan(::grpc::ServerContext* context, const ::pandora::ScanRe
   // so we keep it alive for an arbitrary sleep period allowing the scan to proceed, after which we
   // cancel the scan. In practice, the mmi2gRPC client cancels the scan earlier (when the test peer
   // is found).
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  std::this_thread::sleep_for(std::chrono::seconds(5));
 
   std::lock_guard lock(m_scan_scp_writer_);
   scan_rsp_writer = nullptr;

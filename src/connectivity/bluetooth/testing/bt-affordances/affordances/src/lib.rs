@@ -26,6 +26,7 @@ use fuchsia_sync::Mutex;
 use futures::channel::{mpsc, oneshot};
 use futures::{StreamExt, select};
 use std::ffi::{CStr, CString};
+use std::sync::Arc;
 use std::thread;
 
 // TODO(b/414848887): Pass more descriptive errors.
@@ -44,7 +45,12 @@ enum Request {
     SetConnectability(bool, oneshot::Sender<Result<(), anyhow::Error>>),
     StartLeScan(
         oneshot::Sender<
-            Result<mpsc::UnboundedReceiver<Vec<fidl_fuchsia_bluetooth_le::Peer>>, anyhow::Error>,
+            Result<
+                mpsc::UnboundedReceiver<
+                    Vec<(fidl_fuchsia_bluetooth_le::Peer, Option<fidl_fuchsia_bluetooth::Address>)>,
+                >,
+                anyhow::Error,
+            >,
         >,
     ),
     StopLeScan(oneshot::Sender<bool>),
@@ -79,7 +85,8 @@ impl WorkThread {
     ) -> Result<(), anyhow::Error> {
         let mut proxies = Proxies::connect()?;
         let mut host_cache: Vec<HostInfo> = Vec::new();
-        let mut peer_cache: Vec<Peer> = Vec::new();
+        // TODO(https://fxbug.dev/396500079): Consider HashMap<PeerId, Peer> instead.
+        let peer_cache: Arc<Mutex<Vec<Peer>>> = Arc::new(Mutex::new(Vec::new()));
         let mut _l2cap_channel: Channel;
         let mut _central_connection: ConnectionProxy;
         let mut _peripheral_connection: ClientEnd<ConnectionMarker>;
@@ -118,19 +125,20 @@ impl WorkThread {
                     result_sender.send(Ok(host_cache.clone())).unwrap();
                 }
                 Request::GetKnownPeers(result_sender) => {
-                    if let Err(err) =
-                        proxies.refresh_peer_cache(std::time::Duration::ZERO, &mut peer_cache).await
+                    if let Err(err) = proxies
+                        .refresh_peer_cache(std::time::Duration::ZERO, peer_cache.clone())
+                        .await
                     {
                         result_sender
                             .send(Err(anyhow!("refresh_peer_cache() error: {err}")))
                             .unwrap();
                         continue;
                     }
-                    result_sender.send(Ok(peer_cache.clone())).unwrap();
+                    result_sender.send(Ok(peer_cache.lock().clone())).unwrap();
                 }
                 Request::GetPeerId(address, result_sender) => {
                     if let Some(peer) = proxies
-                        .get_peer(&address, std::time::Duration::from_secs(2), &mut peer_cache)
+                        .get_peer(&address, std::time::Duration::from_secs(2), peer_cache.clone())
                         .await?
                     {
                         result_sender.send(Ok(peer.id.unwrap())).unwrap();
@@ -171,7 +179,7 @@ impl WorkThread {
                     result_sender.send(proxies.set_connectability(connectable).await).unwrap();
                 }
                 Request::StartLeScan(result_sender) => {
-                    result_sender.send(proxies.start_le_scan().await).unwrap();
+                    result_sender.send(proxies.start_le_scan(peer_cache.clone()).await).unwrap();
                 }
                 Request::StopLeScan(result_sender) => {
                     result_sender.send(proxies.stop_le_scan()).unwrap();
@@ -319,9 +327,19 @@ impl WorkThread {
     // Calling this while a scan is ongoing drops and overwrites the existing scan.
     pub async fn start_le_scan(
         &self,
-    ) -> Result<mpsc::UnboundedReceiver<Vec<fidl_fuchsia_bluetooth_le::Peer>>, anyhow::Error> {
+    ) -> Result<
+        mpsc::UnboundedReceiver<
+            Vec<(fidl_fuchsia_bluetooth_le::Peer, Option<fidl_fuchsia_bluetooth::Address>)>,
+        >,
+        anyhow::Error,
+    > {
         let (sender, receiver) = oneshot::channel::<
-            Result<mpsc::UnboundedReceiver<Vec<fidl_fuchsia_bluetooth_le::Peer>>, anyhow::Error>,
+            Result<
+                mpsc::UnboundedReceiver<
+                    Vec<(fidl_fuchsia_bluetooth_le::Peer, Option<fidl_fuchsia_bluetooth::Address>)>,
+                >,
+                anyhow::Error,
+            >,
         >();
         self.sender.clone().unbounded_send(Request::StartLeScan(sender))?;
         receiver.await?
@@ -460,21 +478,29 @@ impl Proxies {
         }
     }
 
+    fn update_peer_cache(
+        peer_cache: Arc<Mutex<Vec<Peer>>>,
+        updated: Vec<Peer>,
+        removed: Vec<PeerId>,
+    ) {
+        let mut peer_cache = peer_cache.lock();
+        if !removed.is_empty() {
+            peer_cache.retain(|peer| !removed.contains(&peer.id.unwrap()));
+        }
+        updated.iter().for_each(|updated_peer| {
+            let _ = peer_cache.extract_if(.., |peer| peer.id.unwrap() == updated_peer.id.unwrap());
+        });
+        peer_cache.extend(updated);
+    }
+
     async fn refresh_peer_cache(
         &mut self,
         timeout: std::time::Duration,
-        peer_cache: &mut Vec<Peer>,
+        peer_cache: Arc<Mutex<Vec<Peer>>>,
     ) -> Result<(), fidl::Error> {
         match self.peer_watcher_stream.next().on_timeout(timeout, || None).await {
             Some(Ok((updated, removed))) => {
-                removed.iter().for_each(|removed_id| {
-                    let _ = peer_cache.extract_if(.., |peer| peer.id.unwrap() == *removed_id);
-                });
-                updated.iter().for_each(|updated_peer| {
-                    let _ = peer_cache
-                        .extract_if(.., |peer| peer.id.unwrap() == updated_peer.id.unwrap());
-                });
-                peer_cache.extend(updated);
+                Self::update_peer_cache(peer_cache, updated, removed);
                 Ok(())
             }
             Some(Err(err)) => Err(err),
@@ -485,19 +511,18 @@ impl Proxies {
     // `address` should encode a BD_ADDR as a string of bytes in little-endian order.
     // If `timeout` >= 1 second, a discovery session will be established.
     // Returns None if peer is not found before `timeout` elapses.
-    async fn get_peer<'a>(
+    //
+    // TODO(https://fxbug.dev/450986278): Migrate to fasync::MonotonicInstant.
+    async fn get_peer(
         &mut self,
         address: &CString,
         mut timeout: std::time::Duration,
-        peer_cache: &'a mut Vec<Peer>,
-    ) -> Result<Option<&'a Peer>, anyhow::Error> {
+        peer_cache: Arc<Mutex<Vec<Peer>>>,
+    ) -> Result<Option<Peer>, anyhow::Error> {
         let addr_matches =
-            |peer: &Peer| peer.address.unwrap().bytes.iter().eq(address.to_bytes().iter().rev());
-        // To satisfy borrow checker, must first check if peer exists before generating a reference
-        // to the peer in the conditional scope. See "Problem case #3" in "non-lexical lifetimes"
-        // rust-lang RFC.
-        if peer_cache.iter().any(addr_matches) {
-            return Ok(Some(peer_cache.iter().find(|peer: &&Peer| addr_matches(peer)).unwrap()));
+            |peer: &Peer| peer.address.unwrap().bytes.iter().eq(address.to_bytes().iter());
+        if let Some(peer) = peer_cache.lock().iter().find(|peer: &&Peer| addr_matches(peer)) {
+            return Ok(Some(peer.clone()));
         }
 
         let (_token, discovery_session_server) = fidl::endpoints::create_proxy();
@@ -511,9 +536,9 @@ impl Proxies {
             Timer::new(second).await;
         }
 
-        self.refresh_peer_cache(timeout, peer_cache).await?;
-        if peer_cache.iter().any(addr_matches) {
-            return Ok(Some(peer_cache.iter().find(|peer: &&Peer| addr_matches(peer)).unwrap()));
+        self.refresh_peer_cache(timeout, peer_cache.clone()).await?;
+        if let Some(peer) = peer_cache.lock().iter().find(|peer: &&Peer| addr_matches(peer)) {
+            return Ok(Some(peer.clone()));
         }
         return Ok(None);
     }
@@ -630,10 +655,55 @@ impl Proxies {
         Ok(())
     }
 
+    // Send peer update of those for which the address is known and return the list of those for
+    // which the address is not known.
+    fn send_peer_update(
+        peer_cache: Arc<Mutex<Vec<Peer>>>,
+        sender: &mpsc::UnboundedSender<
+            Vec<(fidl_fuchsia_bluetooth_le::Peer, Option<fidl_fuchsia_bluetooth::Address>)>,
+        >,
+        updated: Vec<fidl_fuchsia_bluetooth_le::Peer>,
+    ) -> Result<Vec<fidl_fuchsia_bluetooth_le::Peer>, anyhow::Error> {
+        let mut send_list = vec![];
+        let mut missing_addr = vec![];
+
+        for peer in updated {
+            match peer_cache
+                .lock()
+                .iter()
+                .find(|&cached_peer| cached_peer.id.unwrap() == peer.id.unwrap())
+            {
+                Some(cached_peer) => send_list.push((peer, Some(cached_peer.address.unwrap()))),
+                None => missing_addr.push(peer),
+            };
+        }
+
+        if let Err(err) = sender.unbounded_send(send_list) {
+            sender.close_channel();
+            return Err(anyhow!("LE scan stream closed with status: {err}"));
+        }
+
+        Ok(missing_addr)
+    }
+
     async fn start_le_scan(
         &mut self,
-    ) -> Result<mpsc::UnboundedReceiver<Vec<fidl_fuchsia_bluetooth_le::Peer>>, anyhow::Error> {
-        let (sender, receiver) = mpsc::unbounded::<Vec<fidl_fuchsia_bluetooth_le::Peer>>();
+        peer_cache: Arc<Mutex<Vec<Peer>>>,
+    ) -> Result<
+        mpsc::UnboundedReceiver<
+            Vec<(fidl_fuchsia_bluetooth_le::Peer, Option<fidl_fuchsia_bluetooth::Address>)>,
+        >,
+        anyhow::Error,
+    > {
+        // Enable Discovery as well to ascertain dual mode peers.
+        let (_token, discovery_session_server) = fidl::endpoints::create_proxy();
+        if let Err(err) = self.access_proxy.start_discovery(discovery_session_server).await? {
+            return Err(anyhow!("fuchsia.bluetooth.sys.Access/StartDiscovery error: {err:?}"));
+        }
+
+        let (sender, receiver) = mpsc::unbounded::<
+            Vec<(fidl_fuchsia_bluetooth_le::Peer, Option<fidl_fuchsia_bluetooth::Address>)>,
+        >();
 
         let (scan_client, scan_server) = fidl::endpoints::create_proxy::<ScanResultWatcherMarker>();
         let options = ScanOptions {
@@ -646,19 +716,59 @@ impl Proxies {
             HangingGetStream::new(scan_client, ScanResultWatcherProxy::watch);
 
         *self.le_scan_task.lock() = Some(Task::spawn(async move {
-            while let Some(result) = scan_result_stream.next().await {
-                match result {
-                    Ok(updated) => {
-                        if let Err(err) = sender.unbounded_send(updated) {
-                            println!("LE scan stream closed with status: {err}");
-                            sender.close_channel();
-                            return;
+            // Connect new Access proxy to avoid MultipleObservers error.
+            let access_proxy = connect_to_protocol::<AccessMarker>()
+                .expect("Failed to connect fuchsia.bluetooth.sys/Access");
+            let mut peer_watcher_stream =
+                HangingGetStream::new_with_fn_ptr(access_proxy, AccessProxy::watch_peers);
+
+            let mut peers_waiting_for_addr = vec![];
+            loop {
+                select! {
+                    scan_result = scan_result_stream.select_next_some() => {
+                        match scan_result {
+                            Ok(updated) => {
+                                match Self::send_peer_update(peer_cache.clone(), &sender, updated) {
+                                    Ok(waiting) => peers_waiting_for_addr = waiting,
+                                    Err(err) => {
+                                        eprintln!("{err}");
+                                        return;
+                                    }
+                                }
+                            }
+
+                            Err(err) => {
+                                eprintln!("LE scan encountered error: {err}");
+                                sender.close_channel();
+                                return;
+                            }
                         }
                     }
-                    Err(err) => {
-                        eprintln!("LE scan encountered error: {err}");
-                        sender.close_channel();
-                        return;
+
+                    peer_result = peer_watcher_stream.select_next_some() => {
+                        match peer_result {
+                            Ok((updated, removed)) => {
+                                Self::update_peer_cache(peer_cache.clone(), updated, removed);
+
+                                match Self::send_peer_update(
+                                    peer_cache.clone(),
+                                    &sender,
+                                    peers_waiting_for_addr,
+                                ) {
+                                    Ok(still_waiting) => peers_waiting_for_addr = still_waiting,
+                                    Err(err) => {
+                                        eprintln!("{err}");
+                                        return;
+                                    }
+                                }
+                            }
+
+                            Err(err) => {
+                                eprintln!("PeerWatcher stream returned error: {err}");
+                                sender.close_channel();
+                                return;
+                            }
+                        }
                     }
                 }
             }
