@@ -177,7 +177,10 @@ Status HostService::SetDiscoverabilityMode(::grpc::ServerContext* context,
 Status HostService::SetConnectabilityMode(::grpc::ServerContext* context,
                                           const ::pandora::SetConnectabilityModeRequest* request,
                                           ::google::protobuf::Empty* response) {
-  return Status(StatusCode::UNIMPLEMENTED, "");
+  if (set_connectability(request->mode() == ::pandora::ConnectabilityMode::CONNECTABLE) != ZX_OK) {
+    return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
+  }
+  return {/*OK*/};
 }
 
 std::vector<fuchsia_bluetooth_sys::Peer>::const_iterator HostService::WaitForPeer(

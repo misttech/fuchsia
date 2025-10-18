@@ -16,8 +16,8 @@ use fidl_fuchsia_bluetooth_le::{
     ScanResultWatcherProxy,
 };
 use fidl_fuchsia_bluetooth_sys::{
-    AccessMarker, AccessProxy, HostInfo, HostWatcherMarker, HostWatcherProxy, PairingOptions, Peer,
-    ProcedureTokenProxy,
+    AccessMarker, AccessProxy, AccessSetConnectionPolicyRequest, HostInfo, HostWatcherMarker,
+    HostWatcherProxy, PairingOptions, Peer, ProcedureTokenProxy,
 };
 use fuchsia_async::{LocalExecutor, Task, TimeoutExt, Timer};
 use fuchsia_bluetooth::types::Channel;
@@ -41,6 +41,7 @@ enum Request {
     ConnectL2cap(PeerId, u16, oneshot::Sender<Result<(), anyhow::Error>>),
     SetDiscovery(bool, oneshot::Sender<Result<(), anyhow::Error>>),
     SetDiscoverability(bool, oneshot::Sender<Result<(), anyhow::Error>>),
+    SetConnectability(bool, oneshot::Sender<Result<(), anyhow::Error>>),
     StartLeScan(
         oneshot::Sender<
             Result<mpsc::UnboundedReceiver<Vec<fidl_fuchsia_bluetooth_le::Peer>>, anyhow::Error>,
@@ -165,6 +166,9 @@ impl WorkThread {
                 }
                 Request::SetDiscoverability(discoverable, result_sender) => {
                     result_sender.send(proxies.set_discoverability(discoverable).await).unwrap();
+                }
+                Request::SetConnectability(connectable, result_sender) => {
+                    result_sender.send(proxies.set_connectability(connectable).await).unwrap();
                 }
                 Request::StartLeScan(result_sender) => {
                     result_sender.send(proxies.start_le_scan().await).unwrap();
@@ -301,6 +305,13 @@ impl WorkThread {
         receiver.await?
     }
 
+    // Set connection policy.
+    pub async fn set_connectability(&self, connectable: bool) -> Result<(), anyhow::Error> {
+        let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
+        self.sender.clone().unbounded_send(Request::SetConnectability(connectable, sender))?;
+        receiver.await?
+    }
+
     // Scan for all nearby LE peripherals and broadcasters. Returns the receiving end of an
     // mpsc::channel through which LE peer updates are written. Dropping the receiver closes the
     // channel, which stops the scan when the next update is received.
@@ -358,6 +369,7 @@ struct Proxies {
     peer_watcher_stream: HangingGetStream<AccessProxy, (Vec<Peer>, Vec<PeerId>)>,
     discovery_session: Mutex<Option<ProcedureTokenProxy>>,
     discoverability_session: Mutex<Option<ProcedureTokenProxy>>,
+    suppress_connections_session: Mutex<Option<ProcedureTokenProxy>>,
     le_scan_task: Mutex<Option<Task<()>>>,
 }
 
@@ -375,6 +387,7 @@ impl Proxies {
             HangingGetStream::new_with_fn_ptr(access_proxy.clone(), AccessProxy::watch_peers);
         let discovery_session: Mutex<Option<ProcedureTokenProxy>> = Mutex::new(None);
         let discoverability_session: Mutex<Option<ProcedureTokenProxy>> = Mutex::new(None);
+        let suppress_connections_session: Mutex<Option<ProcedureTokenProxy>> = Mutex::new(None);
         let le_scan_task: Mutex<Option<Task<()>>> = Mutex::new(None);
 
         Ok(Proxies {
@@ -386,6 +399,7 @@ impl Proxies {
             peer_watcher_stream,
             discovery_session,
             discoverability_session,
+            suppress_connections_session,
             le_scan_task,
         })
     }
@@ -585,6 +599,34 @@ impl Proxies {
             return Err(anyhow!("fuchsia.bluetooth.sys.Access/MakeDiscoverable error: {err:?}"));
         }
         *discoverability_session = Some(token);
+        Ok(())
+    }
+
+    async fn set_connectability(&self, connectable: bool) -> Result<(), anyhow::Error> {
+        {
+            let mut suppress_connections_session = self.suppress_connections_session.lock();
+            if connectable {
+                if suppress_connections_session.take().is_none() {
+                    eprintln!("Device is already connectable.");
+                }
+                return Ok(());
+            }
+            if suppress_connections_session.is_some() {
+                return Ok(());
+            }
+        }
+        let (token, suppress_connections_server) = fidl::endpoints::create_proxy();
+        if let Err(err) = self
+            .access_proxy
+            .set_connection_policy(AccessSetConnectionPolicyRequest {
+                suppress_bredr_connections: Some(suppress_connections_server),
+                ..Default::default()
+            })
+            .await?
+        {
+            return Err(anyhow!("fuchsia.bluetooth.sys.Access/SetConnectionPolicy error: {err:?}"));
+        }
+        *self.suppress_connections_session.lock() = Some(token);
         Ok(())
     }
 

@@ -81,6 +81,11 @@ zx_status_t connect_l2cap_channel(uint64_t peer_id, uint16_t psm);
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
 zx_status_t set_discoverability(bool discoverable);
 
+/// Set connection policy.
+///
+/// Returns ZX_STATUS_INTERNAL on error (check logs).
+zx_status_t set_connectability(bool connectable);
+
 /// Scan for all nearby LE peripherals and broadcasters.
 ///
 /// The callback `cb` is invoked on every LE peer found or updated. The `context` provided to this

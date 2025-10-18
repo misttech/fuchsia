@@ -254,6 +254,18 @@ pub extern "C" fn set_discoverability(discoverable: bool) -> zx_status_t {
     zx::Status::OK.into_raw()
 }
 
+/// Set connection policy.
+///
+/// Returns ZX_STATUS_INTERNAL on error (check logs).
+#[no_mangle]
+pub extern "C" fn set_connectability(connectable: bool) -> zx_status_t {
+    if let Err(err) = block_on(STATE.worker.set_connectability(connectable)) {
+        eprintln!("set_connectability encountered error: {err:?}");
+        return zx::Status::INTERNAL.into_raw();
+    }
+    zx::Status::OK.into_raw()
+}
+
 #[repr(C)]
 pub struct LePeer {
     pub id: u64,
