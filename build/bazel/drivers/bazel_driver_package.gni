@@ -31,12 +31,6 @@ import("//build/packages/prebuilt_package.gni")
 #     bazel_target.
 #     Type: list of strings (GN labels)
 #
-#   gn_driver_package_for_verification: (optional)
-#     A GN label which this driver will be checked against. If this is provided,
-#     a verify_driver_package target will be created. If not, the driver will
-#     not have any verification.
-#     Type: GN Label
-#
 #   deps:
 #   testonly:
 #   visibility:
@@ -80,23 +74,6 @@ template("bazel_driver_package") {
           [ get_label_info(":$target_name", "label_no_toolchain") ]
     }
   }
-  if (defined(invoker.gn_driver_package_for_verification)) {
-    verify_against_gn = true
-
-    # Rule to verify that the GN built driver is identical to the Bazel built driver.
-    verify_target_name = "$target_name.verify_driver_package"
-    verify_driver_package(verify_target_name) {
-      gn_driver_package = invoker.gn_driver_package_for_verification
-      bazel_driver_package_target = bazel_target + "_fuchsia_package"
-      blobs_to_ignore = [
-        # These libraries are getting pulled in transitively in the Bazel SDK. We need
-        # to figure out why they are included an not include them
-        "lib/libtrace-engine.so",
-      ]
-    }
-  } else {
-    verify_against_gn = false
-  }
 
   # From the perspective of GN/Ninja, this package is a prebuilt
   # even though we just built it ourselves.
@@ -114,9 +91,6 @@ template("bazel_driver_package") {
       deps = []
     }
     deps += [ ":$bazel_build_target" ]
-    if (verify_against_gn) {
-      deps += [ ":$verify_target_name" ]
-    }
 
     metadata = {
       # Used by the assert_driver_components template.
