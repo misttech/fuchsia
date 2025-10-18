@@ -2460,8 +2460,8 @@ TEST(Sysmem, RequiredSizeV1) {
       allocate_result.value().buffer_collection_info.buffers[0].vmo.get(), &vmo_size);
   ASSERT_EQ(status, ZX_OK);
 
-  // Image must be at least 512x1024 NV12, due to the required max sizes
-  // above.
+  // The buffer must be able to hold an image that's at least 512x1024 NV12, due to the required max
+  // sizes above.
   EXPECT_LE(1024 * 512 * 3 / 2, vmo_size);
 }
 
@@ -3571,8 +3571,8 @@ TEST(Sysmem, DefaultAttributesV1) {
   auto status = zx_vmo_get_size(buffer_collection_info->buffers[0].vmo.get(), &vmo_size);
   ASSERT_EQ(status, ZX_OK);
 
-  // Image must be at least 512x1024 NV12, due to the required max sizes
-  // above.
+  // The buffer must be able to hold an image that's at least 512x1024 NV12, due to the required max
+  // sizes above.
   EXPECT_LE(512 * 1024 * 3 / 2, vmo_size);
 }
 

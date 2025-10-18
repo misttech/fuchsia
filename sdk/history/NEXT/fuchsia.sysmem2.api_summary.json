@@ -1172,6 +1172,12 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.sysmem2/ImageFormatConstraints.required_max_size_list",
+        "ordinal": "18",
+        "type": "vector<fuchsia.math/SizeU>:64"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.sysmem2/ImageFormatConstraints.required_min_size",
         "ordinal": "11",
         "type": "fuchsia.math/SizeU"
@@ -1233,6 +1239,12 @@
         "name": "fuchsia.sysmem2/MAX_COUNT_IMAGE_FORMAT_CONSTRAINTS_COLOR_SPACES",
         "type": "uint32",
         "value": "32"
+    },
+    {
+        "kind": "const",
+        "name": "fuchsia.sysmem2/MAX_COUNT_IMAGE_FORMAT_CONSTRAINTS_REQUIRED_MAX_SIZE_LIST",
+        "type": "uint32",
+        "value": "64"
     },
     {
         "kind": "const",

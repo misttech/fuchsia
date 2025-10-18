@@ -1331,8 +1331,57 @@ fpromise::result<fuchsia_sysmem::ImageFormatConstraints> V1CopyFromV2ImageFormat
     v1.required_max_coded_height() = v2.required_max_size()->height();
   }
 
+#if __Fuchsia_API_level__ >= FUCHSIA_INTERNAL_LEVEL_NEXT_()
+  // The v2.required_max_size_list is intentionally not converted here, as there
+  // is no v1 equivalent, unless the v2.required_max_size conversion above has
+  // already done all the conversion that's relevant to this particular v2 data.
+  //
+  // In general the v1.required_max_coded_width/height don't mean the same
+  // thing, and trying to convert the list to those two fields wouldn't
+  // guarantee that those two fields represent an image size that can actually
+  // be allocated. So instead, we don't convert the v2.required_max_size_list
+  // here.
+  //
+  // Overall this means that if a client is providing constraints that get run
+  // through this function, it'll lose the ability to specify
+  // required_max_size_list and may be forced to use required_max_size instead
+  // despite that field being deprecated. In this case we should make the data
+  // flow v2-clean instead of converting to v1 and back.
+  //
+  // A potential use of this function is to convert results from the sysmem2
+  // connection to the sysmem server into sysmem(1) ImageFormatConstraints for
+  // the caller to track in their own data structures etc. When
+  // required_max_size_list comes back from the sysmem server, it's generally
+  // not super critical for the client to have the required_max_size_list (in
+  // contrast to sending to the sysmem server where it's more important).
+  //
+  // Because this is a fidelity loss, we detect if this particular v2 data
+  // represents additional information beyond what is also in required_max_size,
+  // and if so, we output a warning, which should be interpreted as a nudge to
+  // make the relevant data flow path v2-clean.
+  //
+  // These warnings should not be output when running sysmem-tests-v1, since it
+  // only ever sends v1-representable requests, so converting back to v1 is full
+  // fidelity since no other participant ever added anything that's only
+  // representable in v2.
+  if (v2.required_max_size_list().has_value() && !v2.required_max_size_list()->empty()) {
+    if (v2.required_max_size_list()->size() > 1) {
+      // Please consider moving whichever path is hitting this to be v2-clean.
+      LOG(WARNING, "v2.required_max_size_list has more than one entry, which v1 can't represent");
+    } else {
+      // the one entry
+      auto& entry = v2.required_max_size_list()->front();
+      if (entry.width() != v1.required_max_coded_width() ||
+          entry.height() != v1.required_max_coded_height()) {
+        // Please consider moving whichever path is hitting this to be v2-clean.
+        LOG(WARNING, "v2.requried_max_size_list contains info not representable in v1");
+      }
+    }
+  }
+#endif
+
   // V2 doesn't have these fields.  A similar constraint, though not exactly the same, can be
-  // achieved with required_min_size.width, required_max_size.width.
+  // achieved with required_min_size.width, required_max_size_list[n].width.
   v1.required_min_bytes_per_row() = 0;
   v1.required_max_bytes_per_row() = 0;
 

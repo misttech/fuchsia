@@ -1992,7 +1992,8 @@ TEST(Sysmem, ComplicatedFormatModifiersV2) {
 
   for (uint32_t i = 0; i < constraints_2.image_format_constraints()->size(); ++i) {
     // Modify constraints_2 to require nonzero image dimensions.
-    constraints_2.image_format_constraints()->at(i).required_max_size() = {512, 512};
+    constraints_2.image_format_constraints()->at(i).required_max_size_list() =
+        std::vector{fuchsia_math::SizeU{512, 512}};
   }
 
   // TODO(https://fxbug.dev/42067191): Make this work for sysmem2.
@@ -2727,7 +2728,7 @@ TEST(Sysmem, SystemRamHeapSupportsAllDomainsV2) {
   }
 }
 
-TEST(Sysmem, RequiredSizeV2) {
+TEST(Sysmem, RequiredSizeV2_Deprecated) {
   auto collection = make_single_participant_collection_v2();
 
   v2::BufferCollectionConstraints constraints;
@@ -2765,9 +2766,397 @@ TEST(Sysmem, RequiredSizeV2) {
       allocate_result->buffer_collection_info()->buffers()->at(0).vmo()->get(), &vmo_size);
   ASSERT_EQ(status, ZX_OK);
 
-  // Image must be at least 512x1024 NV12, due to the required max sizes
-  // above.
+  // The aggregated required_max_size gets added as an entry to required_max_size_list in the
+  // response.
+  ASSERT_TRUE(allocate_result->buffer_collection_info()
+                  ->settings()
+                  ->image_format_constraints()
+                  ->required_max_size_list()
+                  .has_value());
+  ASSERT_EQ(allocate_result->buffer_collection_info()
+                ->settings()
+                ->image_format_constraints()
+                ->required_max_size_list()
+                ->at(0)
+                .width(),
+            512);
+  ASSERT_EQ(allocate_result->buffer_collection_info()
+                ->settings()
+                ->image_format_constraints()
+                ->required_max_size_list()
+                ->at(0)
+                .height(),
+            1024);
+
+  // The buffer must be able to hold an image that's at least 512x1024 NV12, due to the required max
+  // sizes above.
+  EXPECT_LE(
+      1024 * 512 * 3 / 2,
+      *allocate_result->buffer_collection_info()->settings()->buffer_settings()->size_bytes());
   EXPECT_LE(1024 * 512 * 3 / 2, vmo_size);
+}
+
+TEST(Sysmem, RequiredSizeV2) {
+  auto collection = make_single_participant_collection_v2();
+
+  v2::BufferCollectionConstraints constraints;
+  constraints.usage().emplace();
+  constraints.usage()->cpu() =
+      fuchsia_sysmem::wire::kCpuUsageReadOften | fuchsia_sysmem::wire::kCpuUsageWriteOften;
+  constraints.min_buffer_count_for_camping() = 1;
+  ZX_DEBUG_ASSERT(!constraints.buffer_memory_constraints().has_value());
+  constraints.image_format_constraints().emplace(1);
+  auto& image_constraints = constraints.image_format_constraints()->at(0);
+  image_constraints.pixel_format() = fuchsia_images2::PixelFormat::kNv12;
+  image_constraints.color_spaces().emplace(1);
+  image_constraints.color_spaces()->at(0) = fuchsia_images2::ColorSpace::kRec709;
+  image_constraints.min_size() = {256, 256};
+  image_constraints.max_size() = {std::numeric_limits<uint32_t>::max(),
+                                  std::numeric_limits<uint32_t>::max()};
+  image_constraints.min_bytes_per_row() = 256;
+  image_constraints.max_bytes_per_row() = std::numeric_limits<uint32_t>::max();
+  image_constraints.max_width_times_height() = std::numeric_limits<uint32_t>::max();
+  image_constraints.size_alignment() = {1, 1};
+  image_constraints.bytes_per_row_divisor() = 1;
+  image_constraints.start_offset_divisor() = 1;
+  image_constraints.display_rect_alignment() = {1, 1};
+  const fuchsia_math::SizeU kRequiredSize = {512, 1024};
+  image_constraints.required_max_size_list() = std::vector{kRequiredSize};
+
+  v2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  set_constraints_request.constraints() = std::move(constraints);
+  ASSERT_TRUE(collection->SetConstraints(std::move(set_constraints_request)).is_ok());
+
+  auto allocate_result = collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(allocate_result.is_ok());
+
+  size_t vmo_size;
+  zx_status_t status = zx_vmo_get_size(
+      allocate_result->buffer_collection_info()->buffers()->at(0).vmo()->get(), &vmo_size);
+  ASSERT_EQ(status, ZX_OK);
+
+  bool entry_found = false;
+  uint32_t extra_entries = 0;
+  for (auto& entry : *allocate_result->buffer_collection_info()
+                          ->settings()
+                          ->image_format_constraints()
+                          ->required_max_size_list()) {
+    if (entry.width() == kRequiredSize.width() && entry.height() == kRequiredSize.height()) {
+      entry_found = true;
+    } else {
+      ++extra_entries;
+    }
+  }
+  EXPECT_TRUE(entry_found);
+  EXPECT_EQ(extra_entries, 0);
+
+  // Entries in required_max_size_list don't get propagated to deprecated required_max_size.
+  ASSERT_TRUE(allocate_result->buffer_collection_info()
+                  ->settings()
+                  ->image_format_constraints()
+                  ->required_max_size()
+                  .has_value());
+  ASSERT_EQ(allocate_result->buffer_collection_info()
+                ->settings()
+                ->image_format_constraints()
+                ->required_max_size()
+                ->width(),
+            0);
+  ASSERT_EQ(allocate_result->buffer_collection_info()
+                ->settings()
+                ->image_format_constraints()
+                ->required_max_size()
+                ->height(),
+            0);
+
+  // The buffer must be able to hold an image that's at least 512x1024 NV12, due to the required max
+  // sizes above.
+  EXPECT_LE(
+      1024 * 512 * 3 / 2,
+      *allocate_result->buffer_collection_info()->settings()->buffer_settings()->size_bytes());
+  EXPECT_LE(1024 * 512 * 3 / 2, vmo_size);
+}
+
+TEST(Sysmem, RequiredSizeMultipleEntriesV2) {
+  auto collection = make_single_participant_collection_v2();
+
+  v2::BufferCollectionConstraints constraints;
+  constraints.usage().emplace();
+  constraints.usage()->cpu() =
+      fuchsia_sysmem::wire::kCpuUsageReadOften | fuchsia_sysmem::wire::kCpuUsageWriteOften;
+  constraints.min_buffer_count_for_camping() = 1;
+  ZX_DEBUG_ASSERT(!constraints.buffer_memory_constraints().has_value());
+  constraints.image_format_constraints().emplace(1);
+  auto& image_constraints = constraints.image_format_constraints()->at(0);
+  image_constraints.pixel_format() = fuchsia_images2::PixelFormat::kNv12;
+  image_constraints.color_spaces().emplace(1);
+  image_constraints.color_spaces()->at(0) = fuchsia_images2::ColorSpace::kRec709;
+  image_constraints.min_size() = {256, 256};
+  image_constraints.max_size() = {std::numeric_limits<uint32_t>::max(),
+                                  std::numeric_limits<uint32_t>::max()};
+  image_constraints.min_bytes_per_row() = 256;
+  image_constraints.max_bytes_per_row() = std::numeric_limits<uint32_t>::max();
+  image_constraints.max_width_times_height() = std::numeric_limits<uint32_t>::max();
+  image_constraints.size_alignment() = {1, 1};
+  // force the portrait and landscape cases below to have different image sizes
+  image_constraints.bytes_per_row_divisor() = 512;
+  image_constraints.start_offset_divisor() = 1;
+  image_constraints.display_rect_alignment() = {1, 1};
+
+  // portrait and landscape must each fit in the buffer, but this doesn't mean the buffer will be
+  // large enough to store 1024x1024
+  //
+  // The bytes_per_row will round up to 512 given other constraints.
+  const fuchsia_math::SizeU kRequiredSizePortrait = {500, 1000};
+  // The bytes_per_row will round up to 1024 given other constraints.
+  const fuchsia_math::SizeU kRequiredSizeLandscape = {1000, 500};
+  image_constraints.required_max_size_list() = std::vector{
+      kRequiredSizePortrait,
+      kRequiredSizeLandscape,
+  };
+
+  v2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  set_constraints_request.constraints() = std::move(constraints);
+  ASSERT_TRUE(collection->SetConstraints(std::move(set_constraints_request)).is_ok());
+
+  auto allocate_result = collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(allocate_result.is_ok());
+
+  size_t vmo_size;
+  zx_status_t status = zx_vmo_get_size(
+      allocate_result->buffer_collection_info()->buffers()->at(0).vmo()->get(), &vmo_size);
+  ASSERT_EQ(status, ZX_OK);
+
+  // Entries in required_max_size_list don't get propagated to deprecated required_max_size.
+  ASSERT_TRUE(allocate_result->buffer_collection_info()
+                  ->settings()
+                  ->image_format_constraints()
+                  ->required_max_size()
+                  .has_value());
+  ASSERT_EQ(allocate_result->buffer_collection_info()
+                ->settings()
+                ->image_format_constraints()
+                ->required_max_size()
+                ->width(),
+            0);
+  ASSERT_EQ(allocate_result->buffer_collection_info()
+                ->settings()
+                ->image_format_constraints()
+                ->required_max_size()
+                ->height(),
+            0);
+
+  // these aren't redundant with each other (and no other entries) so they must both be found
+  bool portrait_entry_found = false;
+  bool landscape_entry_found = false;
+  uint32_t extra_entries = 0;
+  for (auto& entry : *allocate_result->buffer_collection_info()
+                          ->settings()
+                          ->image_format_constraints()
+                          ->required_max_size_list()) {
+    if (entry.width() == kRequiredSizePortrait.width() &&
+        entry.height() == kRequiredSizePortrait.height()) {
+      portrait_entry_found = true;
+    } else if (entry.width() == kRequiredSizeLandscape.width() &&
+               entry.height() == kRequiredSizeLandscape.height()) {
+      landscape_entry_found = true;
+    } else {
+      ++extra_entries;
+    }
+  }
+  EXPECT_TRUE(portrait_entry_found);
+  EXPECT_TRUE(landscape_entry_found);
+  EXPECT_EQ(extra_entries, 0);
+
+  // In these checks, the first number is the bytes_per_row not width.
+  //
+  // Buffer must be be able to hold 512x1000 NV12, due to an entry in required_max_size_list above.
+  EXPECT_LE(
+      512 * 1000 * 3 / 2,
+      *allocate_result->buffer_collection_info()->settings()->buffer_settings()->size_bytes());
+  EXPECT_LE(512 * 1000 * 3 / 2, vmo_size);
+  // Buffer must be be able to hold 1024x500 NV12, due to an entry in required_max_size_list above.
+  EXPECT_LE(
+      1024 * 500 * 3 / 2,
+      *allocate_result->buffer_collection_info()->settings()->buffer_settings()->size_bytes());
+  EXPECT_LE(1024 * 500 * 3 / 2, vmo_size);
+  // However, the buffer won't be large enough to store 1000x1000 (or 1024x1000) because the entries
+  // apply separately, and are not aggregated like multiple clients' required_max_size, which is
+  // deprecated because of that aggregation behavior not being memory-efficient (or convenient) for
+  // portrait and landscape cases.
+  EXPECT_GT(
+      1000 * 1000 * 3 / 2,
+      *allocate_result->buffer_collection_info()->settings()->buffer_settings()->size_bytes());
+  // vmo_size having rounded up to a page boundary isn't enough to break this check
+  EXPECT_GT(1000 * 1000 * 3 / 2, vmo_size);
+}
+
+TEST(Sysmem, RequiredSizeMultipleEntriesTwoClientsRedundantEntriesV2) {
+  auto parent_token = create_initial_token_v2();
+  auto child_token = create_token_under_token_v2(parent_token);
+  auto parent_collection = convert_token_to_collection_v2(std::move(parent_token));
+  auto child_collection = convert_token_to_collection_v2(std::move(child_token));
+
+  // parent constraints first; we'll copy these for parent, then override fields for child
+
+  v2::BufferCollectionConstraints constraints;
+  constraints.usage().emplace();
+  constraints.usage()->cpu() =
+      fuchsia_sysmem::wire::kCpuUsageReadOften | fuchsia_sysmem::wire::kCpuUsageWriteOften;
+  constraints.min_buffer_count_for_camping() = 1;
+  ZX_DEBUG_ASSERT(!constraints.buffer_memory_constraints().has_value());
+  constraints.image_format_constraints().emplace(1);
+  auto& image_constraints = constraints.image_format_constraints()->at(0);
+  image_constraints.pixel_format() = fuchsia_images2::PixelFormat::kNv12;
+  image_constraints.color_spaces().emplace(1);
+  image_constraints.color_spaces()->at(0) = fuchsia_images2::ColorSpace::kRec709;
+  image_constraints.min_size() = {256, 256};
+  image_constraints.max_size() = {std::numeric_limits<uint32_t>::max(),
+                                  std::numeric_limits<uint32_t>::max()};
+  image_constraints.min_bytes_per_row() = 256;
+  image_constraints.max_bytes_per_row() = std::numeric_limits<uint32_t>::max();
+  image_constraints.max_width_times_height() = std::numeric_limits<uint32_t>::max();
+  image_constraints.size_alignment() = {1, 1};
+  image_constraints.bytes_per_row_divisor() = 1;
+  image_constraints.start_offset_divisor() = 1;
+  image_constraints.display_rect_alignment() = {1, 1};
+
+  // portrait and landscape must each fit in the buffer, but this doesn't mean the buffer will be
+  // large enough to store 1024x1024
+  //
+  // The bytes_per_row will round up to 512 given other constraints.
+  const fuchsia_math::SizeU kRequiredSizePortrait = {500, 1000};
+  // The bytes_per_row will round up to 1024 given other constraints.
+  const fuchsia_math::SizeU kRequiredSizeLandscape = {1000, 500};
+  image_constraints.required_max_size_list() = std::vector{
+      kRequiredSizePortrait,
+      kRequiredSizeLandscape,
+  };
+
+  v2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  // intentional copy/clone
+  set_constraints_request.constraints() = constraints;
+  ASSERT_TRUE(parent_collection->SetConstraints(std::move(set_constraints_request)).is_ok());
+
+  // child constraints fixup
+
+  const fuchsia_math::SizeU kRequiredSizePortraitLarger = {502, 1002};
+  const fuchsia_math::SizeU kRequiredSizeLandscapeLarger = {1002, 502};
+  image_constraints.required_max_size_list() = std::vector{
+      kRequiredSizePortraitLarger,
+      kRequiredSizeLandscapeLarger,
+  };
+  v2::BufferCollectionSetConstraintsRequest set_constraints_request_child;
+  set_constraints_request_child.constraints() = std::move(constraints);
+  ASSERT_TRUE(child_collection->SetConstraints(std::move(set_constraints_request_child)).is_ok());
+
+  auto parent_allocate_result = parent_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(parent_allocate_result.is_ok());
+
+  auto child_allocate_result = child_collection->WaitForAllBuffersAllocated();
+  ASSERT_TRUE(child_allocate_result.is_ok());
+
+  const auto kBothResultPtrs = std::vector{&parent_allocate_result, &child_allocate_result};
+
+  size_t vmo_size = 0;
+  for (auto* parent_or_child_result_ptr : kBothResultPtrs) {
+    auto& parent_or_child_result = *parent_or_child_result_ptr;
+    size_t local_vmo_size;
+    zx_status_t status = zx_vmo_get_size(
+        parent_or_child_result->buffer_collection_info()->buffers()->at(0).vmo()->get(),
+        &local_vmo_size);
+    ASSERT_EQ(status, ZX_OK);
+    if (vmo_size != 0) {
+      ASSERT_EQ(local_vmo_size, vmo_size);
+    }
+    vmo_size = local_vmo_size;
+  }
+  ASSERT_NE(vmo_size, 0);
+
+  // Entries in required_max_size_list don't get propagated to deprecated required_max_size.
+  for (auto* parent_or_child_result_ptr : kBothResultPtrs) {
+    auto& parent_or_child_result = *parent_or_child_result_ptr;
+    ASSERT_TRUE(parent_or_child_result->buffer_collection_info()
+                    ->settings()
+                    ->image_format_constraints()
+                    ->required_max_size()
+                    .has_value());
+    ASSERT_EQ(parent_or_child_result->buffer_collection_info()
+                  ->settings()
+                  ->image_format_constraints()
+                  ->required_max_size()
+                  ->width(),
+              0);
+    ASSERT_EQ(parent_or_child_result->buffer_collection_info()
+                  ->settings()
+                  ->image_format_constraints()
+                  ->required_max_size()
+                  ->height(),
+              0);
+  }
+
+  for (auto* parent_or_child_result_ptr : kBothResultPtrs) {
+    auto& parent_or_child_result = *parent_or_child_result_ptr;
+    // these aren't redundant with each other (and no other entries) so they must both be found
+    bool portrait_entry_found = false;
+    bool landscape_entry_found = false;
+    uint32_t extra_entries = 0;
+    // the "*Larger" entries are the only ones that remain after redundant entries are removed by
+    // the server
+    for (auto& entry : *parent_or_child_result->buffer_collection_info()
+                            ->settings()
+                            ->image_format_constraints()
+                            ->required_max_size_list()) {
+      if (entry.width() == kRequiredSizePortraitLarger.width() &&
+          entry.height() == kRequiredSizePortraitLarger.height()) {
+        portrait_entry_found = true;
+      } else if (entry.width() == kRequiredSizeLandscapeLarger.width() &&
+                 entry.height() == kRequiredSizeLandscapeLarger.height()) {
+        landscape_entry_found = true;
+      } else {
+        ++extra_entries;
+      }
+    }
+    EXPECT_TRUE(portrait_entry_found);
+    EXPECT_TRUE(landscape_entry_found);
+    EXPECT_EQ(0, extra_entries);
+  }
+
+  for (auto* parent_or_child_result_ptr : kBothResultPtrs) {
+    auto& parent_or_child_result = *parent_or_child_result_ptr;
+    // In these checks, the first number is the bytes_per_row not width.
+    //
+    // Buffer must be be able to hold 502x1002 NV12, due to an entry in required_max_size_list
+    // above.
+    uint32_t larger_portrait_image_size =
+        kRequiredSizePortraitLarger.width() * kRequiredSizeLandscapeLarger.height() * 3 / 2;
+    EXPECT_LE(larger_portrait_image_size, *parent_or_child_result->buffer_collection_info()
+                                               ->settings()
+                                               ->buffer_settings()
+                                               ->size_bytes());
+    EXPECT_LE(larger_portrait_image_size, vmo_size);
+    // Buffer must be be able to hold 1002x502 NV12, due to an entry in required_max_size_list
+    // above.
+    uint32_t larger_landscape_image_size =
+        kRequiredSizeLandscapeLarger.width() * kRequiredSizeLandscapeLarger.height() * 3 / 2;
+    EXPECT_LE(larger_landscape_image_size, *parent_or_child_result->buffer_collection_info()
+                                                ->settings()
+                                                ->buffer_settings()
+                                                ->size_bytes());
+    EXPECT_LE(larger_landscape_image_size, vmo_size);
+    // However, the buffer won't be large enough to store 1002x1002 because the entries apply
+    // separately, and are not aggregated like multiple clients' required_max_size, which is
+    // deprecated because of that aggregation behavior not being memory-efficient (or convenient)
+    // for portrait and landscape cases.
+    uint32_t too_large_image_size =
+        kRequiredSizeLandscapeLarger.width() * kRequiredSizePortraitLarger.height() * 3 / 2;
+    EXPECT_GT(too_large_image_size, *parent_or_child_result->buffer_collection_info()
+                                         ->settings()
+                                         ->buffer_settings()
+                                         ->size_bytes());
+    // vmo_size having rounded up to a page boundary isn't enough to break this check
+    EXPECT_GT(too_large_image_size, vmo_size);
+  }
 }
 
 // min_bytes_per_row should account for the bytes_per_row_divisor.
@@ -4036,9 +4425,7 @@ TEST(Sysmem, DefaultAttributesV2) {
   image_constraints.pixel_format() = fuchsia_images2::PixelFormat::kNv12;
   image_constraints.color_spaces().emplace(1);
   image_constraints.color_spaces()->at(0) = fuchsia_images2::ColorSpace::kRec709;
-  image_constraints.required_max_size().emplace();
-  image_constraints.required_max_size()->width() = 512;
-  image_constraints.required_max_size()->height() = 1024;
+  image_constraints.required_max_size() = {512, 1024};
 
   v2::BufferCollectionSetConstraintsRequest set_constraints_request;
   set_constraints_request.constraints() = std::move(constraints);
@@ -4054,8 +4441,10 @@ TEST(Sysmem, DefaultAttributesV2) {
   auto status = zx_vmo_get_size(buffer_collection_info.buffers()->at(0).vmo()->get(), &vmo_size);
   ASSERT_EQ(status, ZX_OK);
 
-  // Image must be at least 512x1024 NV12, due to the required max sizes
-  // above.
+  // The buffer must be able to hold an image that's at least 512x1024 NV12, due to the required max
+  // sizes above.
+  EXPECT_LE(512 * 1024 * 3 / 2,
+            *buffer_collection_info.settings()->buffer_settings()->size_bytes());
   EXPECT_LE(512 * 1024 * 3 / 2, vmo_size);
 }
 
@@ -4097,9 +4486,7 @@ TEST(Sysmem, TooManyFormatsV2) {
     image_constraints.pixel_format() = fuchsia_images2::PixelFormat::kNv12;
     image_constraints.color_spaces().emplace(1);
     image_constraints.color_spaces()->at(0) = fuchsia_images2::ColorSpace::kRec709;
-    image_constraints.required_max_size().emplace();
-    image_constraints.required_max_size()->width() = 512;
-    image_constraints.required_max_size()->height() = 1024;
+    image_constraints.required_max_size() = {512, 1024};
   }
 
   v2::BufferCollectionSetConstraintsRequest set_constraints_request;

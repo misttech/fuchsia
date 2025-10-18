@@ -2348,7 +2348,7 @@ bool LogicalBufferCollection::IsMinBufferSizeSpecifiedByAnyParticipant(
       return true;
     }
     if (constraints.image_format_constraints().has_value()) {
-      for (auto& image_format_constraints : constraints.image_format_constraints().value()) {
+      for (auto& image_format_constraints : *constraints.image_format_constraints()) {
         if (image_format_constraints.min_size().has_value() &&
             image_format_constraints.min_size()->width() > 0 &&
             image_format_constraints.min_size()->height() > 0) {
@@ -2358,6 +2358,13 @@ bool LogicalBufferCollection::IsMinBufferSizeSpecifiedByAnyParticipant(
             image_format_constraints.required_max_size()->width() > 0 &&
             image_format_constraints.required_max_size()->height() > 0) {
           return true;
+        }
+        if (image_format_constraints.required_max_size_list().has_value()) {
+          for (auto& size : *image_format_constraints.required_max_size_list()) {
+            if (size.width() > 0 && size.height() > 0) {
+              return true;
+            }
+          }
         }
       }
     }
@@ -2537,6 +2544,87 @@ LogicalBufferCollection::CombineConstraints(ConstraintsList* constraints_list) {
       // This is a failure.  The space of permitted settings contains no
       // points.
       return fpromise::error();
+    }
+  }
+
+  if (acc.image_format_constraints().has_value()) {
+    // This loop does not and must not eliminate any *acc.image_format_constraints() entries; that
+    // happens above under AccumulateConstraintBufferCollection.
+    for (auto& image_constraints : *acc.image_format_constraints()) {
+      // list is present but may be empty
+      ZX_DEBUG_ASSERT(image_constraints.required_max_size_list().has_value());
+      // field is present but may be {0, 0}
+      ZX_DEBUG_ASSERT(image_constraints.required_max_size().has_value());
+      auto& required_max_size = *image_constraints.required_max_size();
+      // an entry with 0 width or 0 height would be redundant
+      if (required_max_size.width() != 0 && required_max_size.height() != 0) {
+        // Until required_max_size field is removed (replaced by required_max_size_list), we copy
+        // the aggregated required_max_size (max of widths and max of heights) to an additional
+        // entry in required_max_size_list. This of course can go away when we remove
+        // required_max_size.
+        //
+        // intentional copy; the required_max_size retains it's meaning and is sent by the server
+        // for backwards compatibility until required_max_size is removed
+        image_constraints.required_max_size_list()->emplace_back(required_max_size);
+      }
+
+      // remove redundant entries from required_max_size_list; this is done mainly to decrease the
+      // chance of exceeding MAX_COUNT_IMAGE_FORMAT_CONSTRAINTS_REQUIRED_MAX_SIZE_LIST in the
+      // response from the server
+      {
+        // this isn't the most optimized, but should be easy to read and understand
+        std::vector<fuchsia_math::SizeU> new_list;
+        std::vector<fuchsia_math::SizeU>& old_list = *image_constraints.required_max_size_list();
+        auto redundant_with_list = [](const std::vector<fuchsia_math::SizeU>& list_to_check,
+                                      const fuchsia_math::SizeU& candidate) -> bool {
+          for (auto& other : list_to_check) {
+            if (other.width() >= candidate.width() && other.height() >= candidate.height()) {
+              // candidate is redundant with this entry in list_to_check
+              return true;
+            }
+          }
+          // candidate is not redundant with any entry in list_to_check
+          return false;
+        };
+        // the number of redundant entries isn't large enough to make this reserve problematic
+        new_list.reserve(old_list.size());
+        while (!old_list.empty()) {
+          auto candidate = old_list.back();
+          old_list.pop_back();
+          // we don't want to add a candidate to new_list if there's another old_list entry that's
+          // at least as good (which we'll get to shortly), and we don't want to add candidate to
+          // new_list if new_list already has an entry that's at least as good
+          bool is_candidate_redundant =
+              redundant_with_list(old_list, candidate) || redundant_with_list(new_list, candidate);
+          if (is_candidate_redundant) {
+            continue;
+          }
+          new_list.push_back(candidate);
+        }
+        image_constraints.required_max_size_list() = new_list;
+      }
+
+      if (image_constraints.required_max_size_list()->size() >
+          fuchsia_sysmem2::kMaxCountImageFormatConstraintsRequiredMaxSizeList) {
+        // This failure case is unlikely given this threshold and expected usage. If we fail this
+        // way in a real situation we could increase the threshold if we don't see a way to create a
+        // more suitable (less verbose) constraint for that situation.
+        //
+        // We intentionally don't treat this as elimination of an entry in
+        // acc.image_format_constraints(), as this isn't about aggregation failure - this is just a
+        // limitation of the fidl field's ability to communicate an aggregation result. We also
+        // intentionally don't determine which entry of acc.image_format_constraints() we're going
+        // to select for allocation before checking this, because that would mess with overall
+        // ordering too much, and this error should be too unlikely to justify this driving an
+        // overall sequencing change.
+        //
+        // Also, even if we're not going to pick this entry of acc.image_format_constraints(), this
+        // occurring is as likely as not to be a client under development doing something
+        // unintentional, so failing here is probably best anyway.
+        LogError(FROM_HERE, "required_max_size_list from server has too many entries for fidl: %zu",
+                 image_constraints.required_max_size_list()->size());
+        return fpromise::error();
+      }
     }
   }
 
@@ -3011,8 +3099,29 @@ bool LogicalBufferCollection::CheckSanitizeImageFormatConstraints(
                                        std::numeric_limits<uint32_t>::max()};
   }
 
+  // The required_max_size is deprecated but we retain the behavior until the field is removed.
   if (!constraints.required_max_size().has_value()) {
     constraints.required_max_size() = {0, 0};
+  }
+
+  // the kAggregated stage always has required_max_size_list.has_value()
+  ZX_DEBUG_ASSERT(stage != CheckSanitizeStage::kAggregated ||
+                  constraints.required_max_size_list().has_value());
+  if (stage != CheckSanitizeStage::kAggregated) {
+    if (!constraints.required_max_size_list().has_value()) {
+      // default empty list
+      constraints.required_max_size_list().emplace();
+    }
+  }
+  ZX_DEBUG_ASSERT(constraints.required_max_size_list().has_value());
+  // this won't fail kInitial stage since it has no entries
+  for (auto& required_max_size : *constraints.required_max_size_list()) {
+    if (required_max_size.width() == 0 || required_max_size.height() == 0) {
+      LogError(FROM_HERE,
+               "both required_max_size.width and height must not be 0 - from client: {%u, %u}",
+               required_max_size.width(), required_max_size.height());
+      return false;
+    }
   }
 
   // "Packed" by default (for example, kBgr24 3 bytes per pixel is allowed to have zero padding per
@@ -3181,6 +3290,12 @@ bool LogicalBufferCollection::CheckSanitizeImageFormatConstraints(
     LogError(FROM_HERE, "required_max_size.width > max_size.width");
     return false;
   }
+  for (auto& required_max_size : *constraints.required_max_size_list()) {
+    if (required_max_size.width() > constraints.max_size()->width()) {
+      LogError(FROM_HERE, "required_max_size_list[n].width > max_size.width");
+      return false;
+    }
+  }
   if (constraints.required_min_size()->height() == 0) {
     LogError(FROM_HERE, "required_min_size.height == 0");
     return false;
@@ -3193,6 +3308,12 @@ bool LogicalBufferCollection::CheckSanitizeImageFormatConstraints(
   if (constraints.required_max_size()->height() > constraints.max_size()->height()) {
     LogError(FROM_HERE, "required_max_size.height > max_size.height");
     return false;
+  }
+  for (auto& required_max_size : *constraints.required_max_size_list()) {
+    if (required_max_size.height() > constraints.max_size()->height()) {
+      LogError(FROM_HERE, "required_max_size_list[n].height > max_size.height");
+      return false;
+    }
   }
 
   return true;
@@ -3512,6 +3633,10 @@ bool LogicalBufferCollection::AccumulateConstraintImageFormat(
   ZX_DEBUG_ASSERT(acc->required_max_size().has_value());
   ZX_DEBUG_ASSERT(c.required_max_size().has_value());
 
+  // list has_value() but may be empty list
+  ZX_DEBUG_ASSERT(acc->required_max_size_list().has_value());
+  ZX_DEBUG_ASSERT(c.required_max_size_list().has_value());
+
   ZX_DEBUG_ASSERT(acc->required_min_size()->width() != 0);
   ZX_DEBUG_ASSERT(c.required_min_size()->width() != 0);
   ZX_DEBUG_ASSERT(acc->required_min_size()->height() != 0);
@@ -3521,11 +3646,16 @@ bool LogicalBufferCollection::AccumulateConstraintImageFormat(
       std::min(acc->required_min_size()->width(), c.required_min_size()->width());
   acc->required_max_size()->width() =
       std::max(acc->required_max_size()->width(), c.required_max_size()->width());
-
   acc->required_min_size()->height() =
       std::min(acc->required_min_size()->height(), c.required_min_size()->height());
   acc->required_max_size()->height() =
       std::max(acc->required_max_size()->height(), c.required_max_size()->height());
+
+  // We don't copy the aggregated required_max_size to an entry in required_max_size_list until
+  // after the rest of Accumulate* is done. For now they remain separate.
+  std::copy(c.required_max_size_list()->begin(), c.required_max_size_list()->end(),
+            std::back_inserter(*acc->required_max_size_list()));
+  // we don't clear *c.required_max_size_list() here; c will get deleted fairly soon
 
   if (c.is_alpha_present().has_value()) {
     if (!acc->is_alpha_present().has_value()) {
@@ -3850,77 +3980,88 @@ LogicalBufferCollection::GenerateUnpopulatedBufferCollectionInfo(
 
     min_image.size().emplace();
 
-    // We use required_max_size.width because that's the max width that the producer (or
-    // initiator) wants these buffers to be able to hold.
-    min_image.size()->width() =
-        AlignUp(std::max(image_format_constraints.min_size()->width(),
-                         image_format_constraints.required_max_size()->width()),
-                image_format_constraints.size_alignment()->width());
-    if (min_image.size()->width() > image_format_constraints.max_size()->width()) {
-      LogError(FROM_HERE, "size_alignment.width caused size.width > max_size.width");
-      return fpromise::error(ZX_ERR_NOT_SUPPORTED);
+    // We need at least one entry in required_max_size_list to account for size_alignment etc in the
+    // loop below, so if we have zero entries, use a local list with just {0, 0} in it.
+    const std::vector<fuchsia_math::SizeU>* local_required_max_size_list = nullptr;
+    std::optional<std::vector<fuchsia_math::SizeU>> local_required_max_size_list_storage;
+    if (image_format_constraints.required_max_size_list()->empty()) {
+      local_required_max_size_list_storage.emplace(std::vector{fuchsia_math::SizeU{0, 0}});
+      local_required_max_size_list = &*local_required_max_size_list_storage;
+    } else {
+      local_required_max_size_list = &*image_format_constraints.required_max_size_list();
     }
 
-    // We use required_max_size.height because that's the max height that the producer (or
-    // initiator) needs these buffers to be able to hold.
-    min_image.size()->height() =
-        AlignUp(std::max(image_format_constraints.min_size()->height(),
-                         image_format_constraints.required_max_size()->height()),
-                image_format_constraints.size_alignment()->height());
-    if (min_image.size()->height() > image_format_constraints.max_size()->height()) {
-      LogError(FROM_HERE, "size_alignment.height caused size.height > max_size.height");
-      return fpromise::error(ZX_ERR_NOT_SUPPORTED);
-    }
-
-    uint32_t one_row_non_padding_bytes;
-    if (!CheckMul(ImageFormatStrideBytesPerWidthPixel(pixel_format_and_modifier),
-                  min_image.size()->width())
-             .AssignIfValid(&one_row_non_padding_bytes)) {
-      LogError(FROM_HERE, "stride_bytes_per_width_pixel * size.width failed");
-      return fpromise::error(ZX_ERR_NOT_SUPPORTED);
-    }
-    // TODO: Make/use a safemath-y version of AlignUp().
-    min_image.bytes_per_row() =
-        AlignUp(std::max(one_row_non_padding_bytes, *image_format_constraints.min_bytes_per_row()),
-                *image_format_constraints.bytes_per_row_divisor());
-    if (*min_image.bytes_per_row() > *image_format_constraints.max_bytes_per_row()) {
-      LogError(FROM_HERE,
-               "bytes_per_row_divisor caused bytes_per_row > "
-               "max_bytes_per_row");
-      return fpromise::error(ZX_ERR_NOT_SUPPORTED);
-    }
-
-    uint32_t min_image_width_times_height;
-    if (!CheckMul(min_image.size()->width(), min_image.size()->height())
-             .AssignIfValid(&min_image_width_times_height)) {
-      LogError(FROM_HERE, "min_image width*height failed");
-      return fpromise::error(ZX_ERR_NOT_SUPPORTED);
-    }
-    if (min_image_width_times_height > *image_format_constraints.max_width_times_height()) {
-      LogError(FROM_HERE, "min_image_width_times_height > max_width_times_height");
-      return fpromise::error(ZX_ERR_NOT_SUPPORTED);
-    }
-
-    // The display size and valid size don't matter for computing size in bytes.
-    ZX_DEBUG_ASSERT(!min_image.display_rect().has_value());
-    ZX_DEBUG_ASSERT(!min_image.valid_size().has_value());
-
-    // Checked previously.
-    ZX_DEBUG_ASSERT(image_format_constraints.color_spaces()->size() >= 1);
-    // This doesn't matter for computing size in bytes, as we trust the pixel_format to fully
-    // specify the image size.  But set it to the first ColorSpace anyway, just so the
-    // color_space.type is a valid value.
-    min_image.color_space() = image_format_constraints.color_spaces()->at(0);
-
-    uint64_t image_min_size_bytes = ImageFormatImageSize(min_image);
-
-    if (image_min_size_bytes > min_size_bytes) {
-      if (image_min_size_bytes > max_size_bytes) {
-        LogError(FROM_HERE, "image_min_size_bytes > max_size_bytes");
+    for (auto& required_max_size : *local_required_max_size_list) {
+      // We use required_max_size.width because that's the max width that the producer (or
+      // initiator) wants these buffers to be able to hold.
+      min_image.size()->width() =
+          AlignUp(std::max(image_format_constraints.min_size()->width(), required_max_size.width()),
+                  image_format_constraints.size_alignment()->width());
+      if (min_image.size()->width() > image_format_constraints.max_size()->width()) {
+        LogError(FROM_HERE, "size_alignment.width caused size.width > max_size.width");
         return fpromise::error(ZX_ERR_NOT_SUPPORTED);
       }
-      min_size_bytes = image_min_size_bytes;
-      ZX_DEBUG_ASSERT(min_size_bytes <= max_size_bytes);
+
+      // We use required_max_size.height because that's the max height that the producer (or
+      // initiator) needs these buffers to be able to hold.
+      min_image.size()->height() = AlignUp(
+          std::max(image_format_constraints.min_size()->height(), required_max_size.height()),
+          image_format_constraints.size_alignment()->height());
+      if (min_image.size()->height() > image_format_constraints.max_size()->height()) {
+        LogError(FROM_HERE, "size_alignment.height caused size.height > max_size.height");
+        return fpromise::error(ZX_ERR_NOT_SUPPORTED);
+      }
+
+      uint32_t one_row_non_padding_bytes;
+      if (!CheckMul(ImageFormatStrideBytesPerWidthPixel(pixel_format_and_modifier),
+                    min_image.size()->width())
+               .AssignIfValid(&one_row_non_padding_bytes)) {
+        LogError(FROM_HERE, "stride_bytes_per_width_pixel * size.width failed");
+        return fpromise::error(ZX_ERR_NOT_SUPPORTED);
+      }
+      // TODO: Make/use a safemath-y version of AlignUp().
+      min_image.bytes_per_row() = AlignUp(
+          std::max(one_row_non_padding_bytes, *image_format_constraints.min_bytes_per_row()),
+          *image_format_constraints.bytes_per_row_divisor());
+      if (*min_image.bytes_per_row() > *image_format_constraints.max_bytes_per_row()) {
+        LogError(FROM_HERE,
+                 "bytes_per_row_divisor caused bytes_per_row > "
+                 "max_bytes_per_row");
+        return fpromise::error(ZX_ERR_NOT_SUPPORTED);
+      }
+
+      uint32_t min_image_width_times_height;
+      if (!CheckMul(min_image.size()->width(), min_image.size()->height())
+               .AssignIfValid(&min_image_width_times_height)) {
+        LogError(FROM_HERE, "min_image width*height failed");
+        return fpromise::error(ZX_ERR_NOT_SUPPORTED);
+      }
+      if (min_image_width_times_height > *image_format_constraints.max_width_times_height()) {
+        LogError(FROM_HERE, "min_image_width_times_height > max_width_times_height");
+        return fpromise::error(ZX_ERR_NOT_SUPPORTED);
+      }
+
+      // The display size and valid size don't matter for computing size in bytes.
+      ZX_DEBUG_ASSERT(!min_image.display_rect().has_value());
+      ZX_DEBUG_ASSERT(!min_image.valid_size().has_value());
+
+      // Checked previously.
+      ZX_DEBUG_ASSERT(image_format_constraints.color_spaces()->size() >= 1);
+      // This doesn't matter for computing size in bytes, as we trust the pixel_format to fully
+      // specify the image size.  But set it to the first ColorSpace anyway, just so the
+      // color_space.type is a valid value.
+      min_image.color_space() = image_format_constraints.color_spaces()->at(0);
+
+      uint64_t image_min_size_bytes = ImageFormatImageSize(min_image);
+
+      if (image_min_size_bytes > min_size_bytes) {
+        if (image_min_size_bytes > max_size_bytes) {
+          LogError(FROM_HERE, "image_min_size_bytes > max_size_bytes");
+          return fpromise::error(ZX_ERR_NOT_SUPPORTED);
+        }
+        min_size_bytes = image_min_size_bytes;
+        ZX_DEBUG_ASSERT(min_size_bytes <= max_size_bytes);
+      }
     }
   }
 
@@ -4020,14 +4161,25 @@ fpromise::result<fuchsia_sysmem2::BufferCollectionInfo, Error> LogicalBufferColl
                                &vmo_properties_);
     }
     if (image_format_constraints.required_max_size()->width() > 0) {
-      inspect_node_.CreateUint("required_max_size_width",
+      inspect_node_.CreateUint("deprecated_required_max_size_width",
                                image_format_constraints.required_max_size()->width(),
                                &vmo_properties_);
     }
     if (image_format_constraints.required_max_size()->height() > 0) {
-      inspect_node_.CreateUint("required_max_size_height",
+      inspect_node_.CreateUint("deprecated_required_max_size_height",
                                image_format_constraints.required_max_size()->height(),
                                &vmo_properties_);
+    }
+    // the list ordering isn't significant here; it just helps if they don't all look the same
+    size_t index = 0;
+    for (auto& required_max_size : *image_format_constraints.required_max_size_list()) {
+      ZX_DEBUG_ASSERT(required_max_size.width() > 0);
+      ZX_DEBUG_ASSERT(required_max_size.height() > 0);
+      inspect_node_.CreateUint(std::format("required_max_size_list[{}].width", index),
+                               required_max_size.width(), &vmo_properties_);
+      inspect_node_.CreateUint(std::format("required_max_size_list[{}].height", index),
+                               required_max_size.height(), &vmo_properties_);
+      ++index;
     }
   }
 
@@ -4676,8 +4828,19 @@ void LogicalBufferCollection::LogImageFormatConstraints(
 
   LOG_SIZEU_FIELD(FROM_HERE, indent, ifc, size_alignment);
   LOG_SIZEU_FIELD(FROM_HERE, indent, ifc, display_rect_alignment);
+
   LOG_SIZEU_FIELD(FROM_HERE, indent, ifc, required_min_size);
   LOG_SIZEU_FIELD(FROM_HERE, indent, ifc, required_max_size);
+  if (ifc.required_max_size_list().has_value()) {
+    LogInfo(FROM_HERE, "%*srequired_max_size_list.size(): %zu", indent.num_spaces(), "",
+            ifc.required_max_size_list()->size());
+    auto indent = indent_tracker.Nested();
+    for (uint32_t i = 0; i < ifc.required_max_size_list()->size(); ++i) {
+      auto& required_max_size = ifc.required_max_size_list()->at(i);
+      LogInfo(FROM_HERE, "%*srequired_max_size_list[%u]: {%u, %u}", indent.num_spaces(), "",
+              required_max_size.width(), required_max_size.height());
+    }
+  }
 
   LOG_UINT32_FIELD(FROM_HERE, indent, ifc, bytes_per_row_divisor);
 

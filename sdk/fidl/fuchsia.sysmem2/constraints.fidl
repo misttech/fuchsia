@@ -23,6 +23,9 @@ const MAX_COUNT_IMAGE_FORMAT_CONSTRAINTS_COLOR_SPACES uint32 = 32;
 /// [`fuchsia.sysmem2/ImageFormatConstraints.pixel_format_and_modifiers`].
 const MAX_COUNT_PIXEL_FORMAT_AND_MODIFIERS uint32 = 64;
 
+@available(added=NEXT)
+const MAX_COUNT_IMAGE_FORMAT_CONSTRAINTS_REQUIRED_MAX_SIZE_LIST uint32 = 64;
+
 /// Constraints on allocated buffers and, optionally, constraints on images
 /// stored in the buffers. These constraints can be specified per-participant.
 /// The sysmem service implements aggregation of constraints from multiple
@@ -196,7 +199,7 @@ type Heap = table {
     /// [`fuchsia.sysmem2.BufferMemoryConstraints.permitted_heaps`] can leave
     /// this field un-set, or set it to zero. Sysmem will always fill out this
     /// field for the heap indicated in
-    /// [`fuchsia.sysmem2.BufferMemmorySettings.heap`] (for a singleton heap the
+    /// [`fuchsia.sysmem2.BufferMemorySettings.heap`] (for a singleton heap the
     /// `id` field will be set to 0 by sysmem).
     2: id uint64;
 };
@@ -648,12 +651,96 @@ type ImageFormatConstraints = table {
     /// by effectively taking the union.
     ///
     /// This field aggregates by taking the min per component, and
-    /// required_max_size aggregates by taking the max per component.
+    /// required_max_size aggregates by taking the max per component. In
+    /// addition the aggregated required_max_size is included in the aggregated
+    /// required_max_size_list.
     ///
     /// Un-set is treated as 0xFFFFFFFF, 0xFFFFFFFF.
     11: required_min_size fuchsia.math.SizeU;
-    /// See also `required_min_size`. Un-set is treated as 0, 0.
+    /// This field is deprecated. The replacement is required_max_size_list.
+    ///
+    /// See also `required_min_size` and `required_max_size_list`. Un-set is
+    /// treated as 0, 0.
+    ///
+    /// In the BufferCollectionInfo returned from sysmem, this field has the max
+    /// across all participants' required_max_size fields, for width and height
+    /// separately. In addition, the allocated buffer is large enough to store
+    /// an image that is this max-of-all-widths by max-of-all-heights. This has
+    /// the potential to allocate buffers that are larger than necessary, for
+    /// example if the participant is trying to make sure the buffer can store
+    /// both landscape and portrait images. In contrast, required_max_size_list
+    /// allows listing those separately so they can be handled better by the
+    /// server. See required_max_size_list and please switch to that field.
+    ///
+    /// When this field is set, the provided size is aggregated by taking max of
+    /// across all participants' required_max_size fields, and that aggregated
+    /// result is put in this field in the BufferCollectionInfo from the server,
+    /// and is also treated as an additional item in the aggregated
+    /// required_max_size_list (even if that field is not set by any client).
+    /// See required_max_size_list. This behavior is for maintaining backward
+    /// compatibility for clients using required_max_size before it was
+    /// deprecated, and for overall compatibility with required_max_size_list,
+    /// but this behavior is itself deprecated as well. Please switch to only
+    /// using required_max_size_list.
+    ///
+    /// Please don't add additional usages of this field.
+    @available(deprecated=NEXT, note="use required_max_size_list instead")
     12: required_max_size fuchsia.math.SizeU;
+
+    /// If an entry in this list has width or height greater than max_size width
+    /// or height respectively (evaluated both before and again after
+    /// aggregation), allocation will fail.
+    ///
+    /// This field aggregates by appending the entries to an overall list, or in
+    /// other words, this field does not aggregate; all entries from all
+    /// participants must be satisfied by the allocated buffer(s) or the
+    /// allocation will fail. This lack of aggregation is to avoid
+    /// larger-than-necessary buffers if one participant specifies a large width
+    /// and small height and another participant specifies a small width and
+    /// large height, or more likely, if a single participant specifies those
+    /// two entries (for example). In that case, the buffer's
+    /// `BufferMemorySettings.size_bytes` needs to be large enough to store the
+    /// larger (in bytes) of the specified sizes (given available ranges of
+    /// other ImageFormatConstraints), but not the max width and max height
+    /// across all specified sizes used as the width and height of a single
+    /// image.
+    ///
+    /// Under the resulting `BufferCollectionInfo`, `max_size` is the max
+    /// allowed value for each dimension separately, but this does not imply
+    /// that an image of max_size can fit in the buffer (typically won't). In
+    /// contrast, any image that's no bigger than an entry in the returned
+    /// `required_max_size_list` will fit in the buffer. The returned list will
+    /// have redundant entries removed, so a client's entry may not be present
+    /// if another entry covers the client's entry; this also removes any
+    /// duplicates. The correct way to check if an image will fit is to check
+    /// that `ImageFormatImageSize()` is less than or equal to
+    /// `BufferMemorySettings.size_bytes`.
+    ///
+    /// Until `required_max_size` is removed, the returned
+    /// `required_max_size_list` will, if any participants specified
+    /// `required_max_size`, ensure that the aggregated (using max width and max
+    /// height) `required_max_size` will fit in the allocated buffer. This does
+    /// not imply that there will necessarily be an entry that indicates this
+    /// specific aggregated `required_max_size`, as that entry can be removed if
+    /// it's covered by another entry.
+    ///
+    /// In contrast to `max_size`, an entry can be added to
+    /// `required_max_size_list` to ensure the buffer actually has the capacity
+    /// to store an image that has both width and height less than or equal to
+    /// the entry's width and height respectively. See
+    /// `BufferMemorySettings.size_bytes` for more on what "capacity" means
+    /// here.
+    ///
+    /// A typical usage of more than one entry in this list would be specifying
+    /// that each buffer needs to be able to store up to a given portrait size
+    /// and also up to a given landscape size. In general, more than one entry
+    /// makes sense if the participant needs to ensure that the buffer can be
+    /// used to store images of a few different aspect ratios at up to the
+    /// listed size per aspect ratio. In the response from the server, redundant
+    /// entries are removed.
+    @available(added=NEXT)
+    18: required_max_size_list
+            vector<fuchsia.math.SizeU>:MAX_COUNT_IMAGE_FORMAT_CONSTRAINTS_REQUIRED_MAX_SIZE_LIST;
 
     /// `fuchsia_images2.ImageFormat.bytes_per_row % bytes_per_row_divisor` must
     /// be 0. Un-set is treated as 1.
@@ -734,4 +821,6 @@ type ImageFormatConstraints = table {
     /// field will be un-set in the allocation result.
     @available(added=24)
     17: is_alpha_present bool;
+
+    // 18: see required_max_size_list above.
 };

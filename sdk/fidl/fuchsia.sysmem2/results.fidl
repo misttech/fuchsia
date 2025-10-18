@@ -111,6 +111,50 @@ type SingleBufferSettings = table {
 @available(added=19)
 type BufferMemorySettings = table {
     /// This field will always be set by sysmem.
+    ///
+    /// Rule for producers: For `BufferCollectionInfo` with
+    /// `ImageFormatConstraints`, storing an image of a given `ImageFormat` in a
+    /// buffer of that `BufferCollection` is only allowed if the result of
+    /// calling `ImageFormatImageSize` or a strictly equivalent computation is
+    /// less than or equal to `size_bytes`.
+    ///
+    /// Producer participants _must_ stay within `size_bytes` when determining
+    /// whether an image will fit in a buffer, even if the VMO's size is larger
+    /// than this.
+    ///
+    /// Note: The VMO's zx_vmo_get_stream_size / ZX_PROP_VMO_CONTENT_SIZE are
+    /// not usable for this purpose, as that can't be set (and get returns
+    /// 0) for all VMO types that sysmem actually allocates (at least so far).
+    /// In any case zx_vmo_get_stream_size is about current content size not max
+    /// permitted content size.
+    ///
+    /// Any future padding-only constraint which is irrelevant to a non-padding
+    /// participant when locating each valid pixel's valid data will be
+    /// accounted for by checking ImageFormatImageSize() against `size_bytes`
+    /// instead of the VMO size.
+    ///
+    /// Following this rule allows producers to not need to worry about
+    /// arbitrary padding requirements of other participants, including
+    /// future-added padding-only constraints.
+    ///
+    /// The `bytes_per_row` and rounding up to a tile size boundary are included
+    /// in ImageFormatImageSize and accounted for in `size_bytes`, even though
+    /// these two aspects are partially about padding. These two aspects are
+    /// included in the `ImageFormatImageSize` calculation because these two
+    /// aspects are also relevant to all participants that need to locate pixel
+    /// data.
+    ///
+    /// With the exception of `bytes_per_row` and rounding up to a tile size
+    /// boundary when not PixelFormatModifier.Linear (and no other exceptions),
+    /// this field does not include any extra VMO size padding that is added
+    /// because of participant-specific padding constraint(s).
+    ///
+    /// The same `size_bytes` value is sent to all participants.
+    ///
+    /// This field is not page aligned. This value rounded up to
+    /// zx_system_page_size() boundary is guaranteed to be less than or equal
+    /// the buffer VMO size. In other words, the VMO is allowed to have more
+    /// pages than implied by this value.
     1: size_bytes uint64;
     /// This field will always be set by sysmem.
     2: is_physically_contiguous bool;
