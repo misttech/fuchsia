@@ -14,7 +14,6 @@ use futures::executor::block_on;
 use std::ffi::{CStr, c_void};
 use std::sync::LazyLock;
 use std::thread::JoinHandle;
-use zx::sys::zx_status_t;
 
 struct State {
     worker: WorkThread,
@@ -126,7 +125,7 @@ unsafe impl Sync for FfiPointer {}
 ///
 /// Returns ZX_STATUS_INTERNAL if Rust affordances exited with an error (check logs).
 #[no_mangle]
-pub extern "C" fn stop_rust_affordances() -> zx_status_t {
+pub extern "C" fn stop_rust_affordances() -> i32 {
     println!("Stopping Rust affordances");
     if let Err(err) = STATE.worker.join() {
         eprintln!("stop_rust_affordances encountered error: {err}");
@@ -143,7 +142,7 @@ pub extern "C" fn stop_rust_affordances() -> zx_status_t {
 ///
 /// The caller must ensure that `addr_byte_buff` points to a valid buffer of 6 bytes.
 #[no_mangle]
-pub extern "C" fn read_local_address(addr_byte_buff: *mut u8) -> zx_status_t {
+pub extern "C" fn read_local_address(addr_byte_buff: *mut u8) -> i32 {
     if let Err(err) = block_on(STATE.worker.read_local_address(addr_byte_buff)) {
         eprintln!("read_local_address encountered error: {err}");
         return zx::Status::INTERNAL.into_raw();
@@ -175,7 +174,7 @@ type GetKnownPeersCallback = extern "C" fn(context: *mut c_void, peer: *const Di
 ///
 /// The caller must ensure `context` and `cb` point to valid memory & a valid callback.
 #[no_mangle]
-pub extern "C" fn get_known_peers(context: *mut c_void, cb: GetKnownPeersCallback) -> zx_status_t {
+pub extern "C" fn get_known_peers(context: *mut c_void, cb: GetKnownPeersCallback) -> i32 {
     match block_on(STATE.worker.get_known_peers()) {
         Ok(discovered_peers) => {
             for peer in discovered_peers {
@@ -219,7 +218,7 @@ pub unsafe extern "C" fn get_peer_id(address: *const core::ffi::c_char) -> u64 {
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
 #[no_mangle]
-pub extern "C" fn connect_peer(peer_id: u64) -> zx_status_t {
+pub extern "C" fn connect_peer(peer_id: u64) -> i32 {
     let peer_id = PeerId { value: peer_id };
 
     if let Err(err) = block_on(STATE.worker.connect_peer(peer_id)) {
@@ -233,7 +232,7 @@ pub extern "C" fn connect_peer(peer_id: u64) -> zx_status_t {
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
 #[no_mangle]
-pub extern "C" fn disconnect_peer(peer_id: u64) -> zx_status_t {
+pub extern "C" fn disconnect_peer(peer_id: u64) -> i32 {
     let peer_id = PeerId { value: peer_id };
 
     if let Err(err) = block_on(STATE.worker.disconnect_peer(peer_id)) {
@@ -251,7 +250,7 @@ pub extern "C" fn disconnect_peer(peer_id: u64) -> zx_status_t {
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
 #[no_mangle]
-pub extern "C" fn pair(peer_id: u64, le_security_level: u32, bondable: bool) -> zx_status_t {
+pub extern "C" fn pair(peer_id: u64, le_security_level: u32, bondable: bool) -> i32 {
     let peer_id = PeerId { value: peer_id };
 
     let mut options = PairingOptions::default();
@@ -270,7 +269,7 @@ pub extern "C" fn pair(peer_id: u64, le_security_level: u32, bondable: bool) -> 
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
 #[no_mangle]
-pub extern "C" fn forget_peer(peer_id: u64) -> zx_status_t {
+pub extern "C" fn forget_peer(peer_id: u64) -> i32 {
     let peer_id = PeerId { value: peer_id };
 
     if let Err(err) = block_on(STATE.worker.forget_peer(peer_id)) {
@@ -285,7 +284,7 @@ pub extern "C" fn forget_peer(peer_id: u64) -> zx_status_t {
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
 #[no_mangle]
-pub extern "C" fn connect_l2cap_channel(peer_id: u64, psm: u16) -> zx_status_t {
+pub extern "C" fn connect_l2cap_channel(peer_id: u64, psm: u16) -> i32 {
     let peer_id = PeerId { value: peer_id };
 
     if let Err(err) = block_on(STATE.worker.connect_l2cap_channel(peer_id, psm)) {
@@ -299,7 +298,7 @@ pub extern "C" fn connect_l2cap_channel(peer_id: u64, psm: u16) -> zx_status_t {
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
 #[no_mangle]
-pub extern "C" fn set_discovery(discovery: bool) -> zx_status_t {
+pub extern "C" fn set_discovery(discovery: bool) -> i32 {
     if let Err(err) = block_on(STATE.worker.set_discovery(discovery)) {
         eprintln!("set_discovery encountered error: {err:?}");
         return zx::Status::INTERNAL.into_raw();
@@ -311,7 +310,7 @@ pub extern "C" fn set_discovery(discovery: bool) -> zx_status_t {
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
 #[no_mangle]
-pub extern "C" fn set_discoverability(discoverable: bool) -> zx_status_t {
+pub extern "C" fn set_discoverability(discoverable: bool) -> i32 {
     if let Err(err) = block_on(STATE.worker.set_discoverability(discoverable)) {
         eprintln!("set_discoverability encountered error: {err:?}");
         return zx::Status::INTERNAL.into_raw();
@@ -323,7 +322,7 @@ pub extern "C" fn set_discoverability(discoverable: bool) -> zx_status_t {
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
 #[no_mangle]
-pub extern "C" fn set_connectability(connectable: bool) -> zx_status_t {
+pub extern "C" fn set_connectability(connectable: bool) -> i32 {
     if let Err(err) = block_on(STATE.worker.set_connectability(connectable)) {
         eprintln!("set_connectability encountered error: {err:?}");
         return zx::Status::INTERNAL.into_raw();
@@ -362,7 +361,7 @@ unsafe impl Sync for LeScanCallbackWrapper {}
 ///
 /// The caller must ensure `context` and `cb` point to valid memory & a valid callback.
 #[no_mangle]
-pub extern "C" fn start_le_scan(context: *mut c_void, cb: LeScanCallback) -> zx_status_t {
+pub extern "C" fn start_le_scan(context: *mut c_void, cb: LeScanCallback) -> i32 {
     let ffi_ptr = FfiPointer(context);
     let cb_wrapper = LeScanCallbackWrapper(cb);
     if let Err(err) = STATE.start_le_scan(ffi_ptr, cb_wrapper) {
@@ -377,7 +376,7 @@ pub extern "C" fn start_le_scan(context: *mut c_void, cb: LeScanCallback) -> zx_
 ///
 /// Returns ZX_STATUS_BAD_STATE if no scan was ongoing.
 #[no_mangle]
-pub extern "C" fn stop_le_scan() -> zx_status_t {
+pub extern "C" fn stop_le_scan() -> i32 {
     let Some(le_scan) = STATE.le_scan.lock().take() else {
         return zx::Status::BAD_STATE.into_raw();
     };
@@ -400,7 +399,7 @@ pub extern "C" fn stop_le_scan() -> zx_status_t {
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
 #[no_mangle]
-pub extern "C" fn connect_le(peer_id: u64) -> zx_status_t {
+pub extern "C" fn connect_le(peer_id: u64) -> i32 {
     let peer_id = PeerId { value: peer_id };
 
     if let Err(err) = block_on(STATE.worker.connect_le(peer_id)) {

@@ -40,7 +40,7 @@ extern "C" {
 /// Stop serving Rust affordances.
 ///
 /// Returns ZX_STATUS_INTERNAL if Rust affordances exited with an error (check logs).
-zx_status_t stop_rust_affordances();
+int32_t stop_rust_affordances();
 
 /// Populates `addr_byte_buff` with public address of active host.
 ///
@@ -49,7 +49,7 @@ zx_status_t stop_rust_affordances();
 /// # Safety
 ///
 /// The caller must ensure that `addr_byte_buff` points to a valid buffer of 6 bytes.
-zx_status_t read_local_address(uint8_t *addr_byte_buff);
+int32_t read_local_address(uint8_t *addr_byte_buff);
 
 /// Get all peers discovered by the system.
 ///
@@ -61,7 +61,7 @@ zx_status_t read_local_address(uint8_t *addr_byte_buff);
 /// # Safety
 ///
 /// The caller must ensure `context` and `cb` point to valid memory & a valid callback.
-zx_status_t get_known_peers(void *context, GetKnownPeersCallback cb);
+int32_t get_known_peers(void *context, GetKnownPeersCallback cb);
 
 /// Get identifier of peer with given `address`.
 ///
@@ -76,12 +76,12 @@ uint64_t get_peer_id(const char *address);
 /// Connect to peer with given identifier.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
-zx_status_t connect_peer(uint64_t peer_id);
+int32_t connect_peer(uint64_t peer_id);
 
 /// Disconnect all logical links (BR/EDR & LE) to peer with given identifier.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
-zx_status_t disconnect_peer(uint64_t peer_id);
+int32_t disconnect_peer(uint64_t peer_id);
 
 /// Initiate pairing with peer with given identifier.
 ///
@@ -90,33 +90,33 @@ zx_status_t disconnect_peer(uint64_t peer_id);
 /// fuchsia.bluetooth.sys/PairingOptions for details.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
-zx_status_t pair(uint64_t peer_id, uint32_t le_security_level, bool bondable);
+int32_t pair(uint64_t peer_id, uint32_t le_security_level, bool bondable);
 
 /// Remove all bonding information and disconnect peer with given identifier, if found.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
-zx_status_t forget_peer(uint64_t peer_id);
+int32_t forget_peer(uint64_t peer_id);
 
 /// Connect an L2CAP channel on a specific PSM to an already-connected peer. Calling this again will
 /// result in the channel being closed after the new channel is opened.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
-zx_status_t connect_l2cap_channel(uint64_t peer_id, uint16_t psm);
+int32_t connect_l2cap_channel(uint64_t peer_id, uint16_t psm);
 
 /// Start or stop general discovery procedure.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
-zx_status_t set_discovery(bool discovery);
+int32_t set_discovery(bool discovery);
 
 /// Start or revoke discoverability.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
-zx_status_t set_discoverability(bool discoverable);
+int32_t set_discoverability(bool discoverable);
 
 /// Set connection policy.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
-zx_status_t set_connectability(bool connectable);
+int32_t set_connectability(bool connectable);
 
 /// Scan for all nearby LE peripherals and broadcasters.
 ///
@@ -130,17 +130,17 @@ zx_status_t set_connectability(bool connectable);
 /// # Safety
 ///
 /// The caller must ensure `context` and `cb` point to valid memory & a valid callback.
-zx_status_t start_le_scan(void *context, LeScanCallback cb);
+int32_t start_le_scan(void *context, LeScanCallback cb);
 
 /// Stop an ongoing LE scan.
 ///
 /// Returns ZX_STATUS_BAD_STATE if no scan was ongoing.
-zx_status_t stop_le_scan();
+int32_t stop_le_scan();
 
 /// Connect to an LE peer with the given identifier.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
-zx_status_t connect_le(uint64_t peer_id);
+int32_t connect_le(uint64_t peer_id);
 
 /// Start advertising as an LE peripheral, accept the first connection, and return the PeerId of
 /// its initiator. If no LE peer connects within `timeout` seconds, then return an arbitrary valid
