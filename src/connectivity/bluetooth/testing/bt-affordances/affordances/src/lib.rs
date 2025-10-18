@@ -5,9 +5,13 @@
 use anyhow::anyhow;
 use async_utils::hanging_get::client::HangingGetStream;
 use fidl::endpoints::ClientEnd;
-use fidl_fuchsia_bluetooth::{AddressType, PeerId};
+use fidl_fuchsia_bluetooth::{AddressType, PeerId, Uuid};
 use fidl_fuchsia_bluetooth_bredr::{
     ConnectParameters, L2capParameters, ProfileMarker, ProfileProxy,
+};
+use fidl_fuchsia_bluetooth_gatt2::{
+    Characteristic, LocalServiceMarker, LocalServiceRequestStream, Server_Marker, Server_Proxy,
+    ServiceHandle, ServiceInfo,
 };
 use fidl_fuchsia_bluetooth_le::{
     AdvertisedPeripheralMarker, AdvertisedPeripheralRequest, AdvertisingParameters, CentralMarker,
@@ -60,6 +64,12 @@ enum Request {
         Option<AddressType>,
         std::time::Duration,
         oneshot::Sender<Result<Option<PeerId>, anyhow::Error>>,
+    ),
+    PublishService(
+        Uuid,
+        ServiceHandle,
+        Vec<Characteristic>,
+        oneshot::Sender<Result<(), anyhow::Error>>,
     ),
     Stop,
 }
@@ -207,6 +217,25 @@ impl WorkThread {
                         }
                         Ok(None) => {
                             result_sender.send(Ok(None)).unwrap();
+                        }
+                        Err(err) => {
+                            result_sender.send(Err(err)).unwrap();
+                        }
+                    }
+                }
+                Request::PublishService(uuid, service_handle, characteristics, result_sender) => {
+                    match proxies.publish_service(uuid, service_handle, characteristics).await {
+                        Ok(mut local_service_request_stream) => {
+                            fuchsia_async::Task::spawn(async move {
+                                while let Some(Ok(request)) =
+                                    local_service_request_stream.next().await
+                                {
+                                    // Just log the request for now.
+                                    println!("Received LocalService request: {:?}", request);
+                                }
+                            })
+                            .detach();
+                            result_sender.send(Ok(())).unwrap();
                         }
                         Err(err) => {
                             result_sender.send(Err(err)).unwrap();
@@ -386,12 +415,30 @@ impl WorkThread {
             .unwrap();
         receiver.await?
     }
+
+    // Publish a GATT service with the given parameters. GATT requests are logged.
+    pub async fn publish_service(
+        &self,
+        uuid: Uuid,
+        service_handle: ServiceHandle,
+        characteristics: Vec<Characteristic>,
+    ) -> Result<(), anyhow::Error> {
+        let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
+        self.sender.clone().unbounded_send(Request::PublishService(
+            uuid,
+            service_handle,
+            characteristics,
+            sender,
+        ))?;
+        receiver.await?
+    }
 }
 
 struct Proxies {
     access_proxy: AccessProxy,
     profile_proxy: ProfileProxy,
     central_proxy: CentralProxy,
+    gatt_server_proxy: Server_Proxy,
     peripheral_proxy: PrivilegedPeripheralProxy,
     host_watcher_stream: HangingGetStream<HostWatcherProxy, Vec<HostInfo>>,
     peer_watcher_stream: HangingGetStream<AccessProxy, (Vec<Peer>, Vec<PeerId>)>,
@@ -406,6 +453,7 @@ impl Proxies {
         let access_proxy = connect_to_protocol::<AccessMarker>()?;
         let profile_proxy = connect_to_protocol::<ProfileMarker>()?;
         let central_proxy = connect_to_protocol::<CentralMarker>()?;
+        let gatt_server_proxy = connect_to_protocol::<Server_Marker>()?;
         let peripheral_proxy = connect_to_protocol::<PrivilegedPeripheralMarker>()?;
         let host_watcher_stream = HangingGetStream::new_with_fn_ptr(
             connect_to_protocol::<HostWatcherMarker>()?,
@@ -422,6 +470,7 @@ impl Proxies {
             access_proxy,
             profile_proxy,
             central_proxy,
+            gatt_server_proxy,
             peripheral_proxy,
             host_watcher_stream,
             peer_watcher_stream,
@@ -834,5 +883,30 @@ impl Proxies {
                 }
             }
         }
+    }
+
+    async fn publish_service(
+        &self,
+        uuid: Uuid,
+        service_handle: ServiceHandle,
+        characteristics: Vec<Characteristic>,
+    ) -> Result<LocalServiceRequestStream, anyhow::Error> {
+        let service_info = ServiceInfo {
+            handle: Some(service_handle),
+            kind: None, // default: ServiceKind::PRIMARY
+            type_: Some(uuid),
+            characteristics: Some(characteristics),
+            ..Default::default()
+        };
+        let (service_client, service_stream) =
+            fidl::endpoints::create_request_stream::<LocalServiceMarker>();
+
+        if let Err(err) =
+            self.gatt_server_proxy.publish_service(&service_info, service_client).await?
+        {
+            return Err(anyhow!("fuchsia.bluetooth.gatt2.Server/PublishService error: {err:?}"));
+        }
+
+        Ok(service_stream)
     }
 }

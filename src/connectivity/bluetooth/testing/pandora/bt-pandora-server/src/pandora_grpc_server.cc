@@ -33,6 +33,9 @@ zx_status_t PandoraGrpcServer::Run(uint16_t port, bool verbose) {
   builder.RegisterService(&l2cap_service_);
   builder.RegisterService(&security_service_);
   builder.RegisterService(&security_storage_service_);
+#ifdef PANDORA_WITH_GATT
+  builder.RegisterService(&gatt_service_);
+#endif  // PANDORA_WITH_GATT
 
   FX_LOGS(INFO) << "Server listening on " << address;
   server_ = builder.BuildAndStart();

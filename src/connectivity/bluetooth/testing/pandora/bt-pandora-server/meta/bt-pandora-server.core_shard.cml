@@ -25,6 +25,7 @@
         {
             protocol: [
                 "fuchsia.bluetooth.bredr.Profile",
+                "fuchsia.bluetooth.gatt2.Server",
                 "fuchsia.bluetooth.le.Central",
                 "fuchsia.bluetooth.le.PrivilegedPeripheral",
                 "fuchsia.bluetooth.sys.Access",

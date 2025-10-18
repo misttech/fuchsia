@@ -10,6 +10,10 @@
 #include "grpc_services/l2cap.h"
 #include "grpc_services/security.h"
 
+#ifdef PANDORA_WITH_GATT
+#include "grpc_services/gatt.h"
+#endif  // PANDORA_WITH_GATT
+
 #include <grpc++/grpc++.h>
 
 // PandoraGrpcServer wraps a gRPC server implementing the Pandora Bluetooth test interfaces.
@@ -37,6 +41,9 @@ class PandoraGrpcServer {
   L2capService l2cap_service_;
   SecurityService security_service_;
   SecurityStorageService security_storage_service_;
+#ifdef PANDORA_WITH_GATT
+  GattService gatt_service_;
+#endif  // PANDORA_WITH_GATT
 
   std::unique_ptr<grpc::Server> server_;
 };

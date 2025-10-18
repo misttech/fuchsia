@@ -151,6 +151,18 @@ int32_t connect_le(uint64_t peer_id);
 /// system. See fuchsia.bluetooth.le/AdvertisingParameters for details.
 uint64_t advertise_peripheral(bool connectable, uint8_t address_type, uint64_t timeout);
 
+/// Publish a local GATT service with one characteristic. GATT requests to the service are logged.
+///
+/// Returns ZX_STATUS_INVALID_ARGS if UUID or `characteristic_properties` are invalid (check logs).
+/// Returns ZX_STATUS_INTERNAL on error in bt-affordances (check logs).
+///
+/// # Safety
+///
+/// The caller must ensure that UUIDs are validly encoded as C strings.
+int32_t publish_service(uint64_t handle, const char *uuid, uint64_t characteristic_handle,
+                        const char *characteristic_uuid, uint16_t characteristic_properties,
+                        uint16_t characteristic_permissions);
+
 }  // extern "C"
 
 #endif  // SRC_CONNECTIVITY_BLUETOOTH_TESTING_BT_AFFORDANCES_FFI_C_BINDINGS_H_
