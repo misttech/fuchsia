@@ -332,7 +332,8 @@ pub extern "C" fn connect_le(peer_id: u64) -> zx_status_t {
 }
 
 /// Start advertising as an LE peripheral, accept the first connection, and return the PeerId of
-/// its initiator.
+/// its initiator. If no LE peer connects because the advertisement is not `connectable`, then
+/// return an arbitrary valid PeerId (1). In case of error, return 0.
 ///
 /// `address_type` is 1 for Public or 2 for Random. All other values are interpreted as unset, in
 /// which case the address type will be Public or Random depending on if privacy is enabled in the
@@ -342,9 +343,10 @@ pub extern "C" fn advertise_peripheral(connectable: bool, address_type: u8) -> u
     match block_on(
         STATE.worker.advertise_peripheral(connectable, AddressType::from_primitive(address_type)),
     ) {
-        Ok(peer_id) => peer_id.value,
+        Ok(Some(peer_id)) => peer_id.value,
+        Ok(None) => 1,
         Err(err) => {
-            eprintln!("start_advertising_peripheral encountered error: {err}");
+            eprintln!("advertise_peripheral encountered error: {err}");
             0
         }
     }

@@ -48,7 +48,11 @@ enum Request {
     ),
     StopLeScan(oneshot::Sender<bool>),
     ConnectLe(PeerId, oneshot::Sender<Result<(), anyhow::Error>>),
-    AdvertisePeripheral(bool, Option<AddressType>, oneshot::Sender<Result<PeerId, anyhow::Error>>),
+    AdvertisePeripheral(
+        bool,
+        Option<AddressType>,
+        oneshot::Sender<Result<Option<PeerId>, anyhow::Error>>,
+    ),
     Stop,
 }
 
@@ -181,9 +185,12 @@ impl WorkThread {
                 }
                 Request::AdvertisePeripheral(connectable, address_type, result_sender) => {
                     match proxies.advertise_peripheral(connectable, address_type).await {
-                        Ok((peer_id, connection)) => {
+                        Ok(Some((peer_id, connection))) => {
                             _peripheral_connection = connection;
-                            result_sender.send(Ok(peer_id)).unwrap();
+                            result_sender.send(Ok(Some(peer_id))).unwrap();
+                        }
+                        Ok(None) => {
+                            result_sender.send(Ok(None)).unwrap();
                         }
                         Err(err) => {
                             result_sender.send(Err(err)).unwrap();
@@ -325,14 +332,15 @@ impl WorkThread {
     }
 
     // Start advertising as an LE peripheral, accept the first connection, and return the PeerId of
-    // its initiator.
-    // TODO(b/407618718): Accept additional AdvertisingParameters.
+    // its initiator. If `connectable` is false, then advertise for 10 seconds and return None.
+    // TODO(https://fxbug.dev/407618718): Accept additional AdvertisingParameters and support
+    // non-blocking non-connectable advertising.
     pub async fn advertise_peripheral(
         &self,
         connectable: bool,
         address_type: Option<AddressType>,
-    ) -> Result<PeerId, anyhow::Error> {
-        let (sender, receiver) = oneshot::channel::<Result<PeerId, anyhow::Error>>();
+    ) -> Result<Option<PeerId>, anyhow::Error> {
+        let (sender, receiver) = oneshot::channel::<Result<Option<PeerId>, anyhow::Error>>();
         self.sender
             .clone()
             .unbounded_send(Request::AdvertisePeripheral(connectable, address_type, sender))
@@ -631,12 +639,7 @@ impl Proxies {
         &self,
         connectable: bool,
         address_type: Option<AddressType>,
-    ) -> Result<(PeerId, ClientEnd<ConnectionMarker>), anyhow::Error> {
-        // TODO(https://fxbug.dev/396500079): Support non-connectable advertising.
-        if !connectable {
-            return Err(anyhow!("Non-connectable peripheral advertising not yet supported."));
-        }
-
+    ) -> Result<Option<(PeerId, ClientEnd<ConnectionMarker>)>, anyhow::Error> {
         let (client, mut request_stream) =
             fidl::endpoints::create_request_stream::<AdvertisedPeripheralMarker>();
 
@@ -645,6 +648,18 @@ impl Proxies {
         params.address_type = address_type;
 
         let mut advertise_fut = self.peripheral_proxy.advertise(&params, client);
+
+        // TODO(https://fxbug.dev/396500079): Support non-blocking non-connectable advertising.
+        // By advertising for 10 seconds here, we can pass PTS tests, but this is not a general
+        // solution.
+        if !connectable {
+            if let Err(peripheral_err) =
+                advertise_fut.on_timeout(std::time::Duration::from_secs(10), || Ok(Ok(()))).await?
+            {
+                return Err(anyhow!("Peripheral.Advertise encountered error: {peripheral_err:?}"));
+            }
+            return Ok(None);
+        }
 
         select! {
             result = advertise_fut => {
@@ -658,7 +673,7 @@ impl Proxies {
                         responder,
                     })) => {
                         let _ = responder.send();
-                        return Ok((peer.id.unwrap(), connection));
+                        return Ok(Some((peer.id.unwrap(), connection)));
                     }
                     Some(Err(e)) => {
                         return Err(anyhow!("Error in AdvertisedPeripheral stream: {e:?}"));

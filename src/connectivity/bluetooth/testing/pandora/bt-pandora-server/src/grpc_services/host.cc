@@ -71,6 +71,9 @@ Status HostService::ConnectLE(::grpc::ServerContext* context,
   uint64_t peer_id;
   if (request->public_().size() == 6) {
     peer_id = get_peer_id(request->public_().c_str());
+    if (!peer_id) {
+      return Status(StatusCode::NOT_FOUND, "Could not find peer.");
+    }
   } else {
     peer_id = std::strtoul(request->public_().c_str(), nullptr, /*base=*/10);
   }
@@ -102,6 +105,11 @@ Status HostService::WaitDisconnection(::grpc::ServerContext* context,
 Status HostService::Advertise(::grpc::ServerContext* context,
                               const ::pandora::AdvertiseRequest* request,
                               ::grpc::ServerWriter<::pandora::AdvertiseResponse>* writer) {
+  if (request->has_data() && request->data().le_discoverability_mode() ==
+                                 pandora::DiscoverabilityMode::DISCOVERABLE_GENERAL) {
+    set_discoverability(true);
+  }
+
   uint8_t address_type =
       request->own_address_type() == pandora::OwnAddressType::PUBLIC ||
               request->own_address_type() == pandora::OwnAddressType::RESOLVABLE_OR_PUBLIC
@@ -111,9 +119,11 @@ Status HostService::Advertise(::grpc::ServerContext* context,
   if (!peer_id) {
     return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
   }
-  pandora::AdvertiseResponse response;
-  response.mutable_connection()->mutable_cookie()->set_value(std::to_string(peer_id));
-  writer->Write(response);
+  if (request->connectable()) {
+    pandora::AdvertiseResponse response;
+    response.mutable_connection()->mutable_cookie()->set_value(std::to_string(peer_id));
+    writer->Write(response);
+  }
   return {/*OK*/};
 }
 
