@@ -27,7 +27,7 @@ fuchsia_component("battery_manager_integration_test_component_cpp") {
 }
 
 fuchsia_test_package("battery-manager-integration-tests") {
-  package_name = "battery_namanger_integration_test"
+  package_name = "battery_manager_integration_test"
   test_components = [ ":battery_manager_integration_test_component_cpp" ]
   test_specs = {
     log_settings = {

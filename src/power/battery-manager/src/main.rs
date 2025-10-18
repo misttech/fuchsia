@@ -10,6 +10,7 @@ use crate::battery_manager::{BatteryManager, BatterySimulationStateObserver};
 use crate::battery_simulator::SimulatedBatteryInfoSource;
 use crate::history_logger::{HistoryLogger, HistoryLoggerConfig};
 use anyhow::{Context, Error};
+use battery_manager_config::Config;
 use fidl_fuchsia_power_battery::BatteryManagerRequestStream;
 use fuchsia_component::client as fclient;
 use fuchsia_component::server::ServiceFs;
@@ -21,7 +22,7 @@ use std::path::Path;
 use std::sync::{Arc, Weak};
 use {
     fidl_fuchsia_power_battery as fpower, fidl_fuchsia_power_battery_test as spower,
-    fuchsia_async as fasync,
+    fidl_fuchsia_power_system as fsystem, fuchsia_async as fasync,
 };
 
 enum IncomingService {
@@ -92,16 +93,20 @@ async fn main() -> Result<(), Error> {
     // it expects.
     move_battery_history();
 
-    let config = HistoryLoggerConfig {
+    let logger_config = HistoryLoggerConfig {
         curr_boot_path: CURR_BOOT_BATTERY_HISTORY_FILE.to_string(),
         prev_boot_path: PREV_BOOT_BATTERY_HISTORY_FILE.to_string(),
         battery_level_buffer_capacity: MAX_BATTERY_LEVEL_MEASUREMENTS,
         charge_status_buffer_capacity: MAX_CHARGE_STATUS_MEASUREMENTS,
     };
 
-    let logger = HistoryLogger::from_file(inspector.root(), config);
+    let logger = HistoryLogger::from_file(inspector.root(), logger_config);
     let battery_manager = Arc::new(BatteryManager::new_with_logger(logger));
     let battery_manager_clone = battery_manager.clone();
+
+    let config = Config::take_from_startup_handle();
+    inspector.root().record_child("config", |config_node| config.record_inspect(config_node));
+    log::info!(config:?; "config");
 
     fasync::Task::local(async move {
         let proxy = match get_battery_info_provider_proxy().await {
@@ -112,7 +117,15 @@ async fn main() -> Result<(), Error> {
             }
         };
 
-        if let Err(e) = battery_manager_clone.start_watching_battery_info(proxy).await {
+        let sag = if config.suspend_enabled {
+            Some(
+                fuchsia_component::client::connect_to_protocol::<fsystem::ActivityGovernorMarker>()
+                    .expect("should connect to system activity governor"),
+            )
+        } else {
+            None
+        };
+        if let Err(e) = battery_manager_clone.start_watching_battery_info(proxy, sag).await {
             error!("Error when watching battery info: {e:?}");
         }
     })

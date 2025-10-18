@@ -5,14 +5,25 @@
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 
+fuchsia_component_manifest("manifest") {
+  component_name = "battery-manager"
+  manifest = "meta/battery_manager.cml"
+}
+
+fuchsia_structured_config_rust_lib("battery-manager-config") {
+  cm_label = ":manifest"
+}
+
 rustc_binary("bin") {
   output_name = "battery_manager"
   with_unit_tests = true
   edition = "2021"
 
   deps = [
+    ":battery-manager-config",
     "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
     "//sdk/fidl/fuchsia.power.battery.test:fuchsia.power.battery.test_rust",
+    "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
     "//sdk/rust/zx",
     "//src/lib/diagnostics/inspect/contrib/rust",
     "//src/lib/diagnostics/inspect/runtime/rust",

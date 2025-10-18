@@ -25,5 +25,16 @@
             from: "parent",
             to: "#battery_manager",
         },
+        {
+            protocol: "fuchsia.power.system.ActivityGovernor",
+            from: "parent",
+            to: "#battery_manager",
+            availability: "optional",
+        },
+        {
+            config: [ "fuchsia.power.SuspendEnabled" ],
+            from: "parent",
+            to: [ "#battery_manager" ],
+        },
     ],
 }

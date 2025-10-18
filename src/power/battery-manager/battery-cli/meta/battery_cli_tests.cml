@@ -22,6 +22,22 @@
             from: "#battery_manager",
             to: "#test_driver",
         },
+        {
+            config: [ "fuchsia.power.SuspendEnabled" ],
+            from: "void",
+            to: [ "#battery_manager" ],
+            availability: "optional",
+        },
+        {
+            storage: "data",
+            from: "parent",
+            to: [ "#battery_manager" ],
+        },
+        {
+            storage: "tmp",
+            from: "parent",
+            to: [ "#battery_manager" ],
+        },
     ],
     expose: [
         {

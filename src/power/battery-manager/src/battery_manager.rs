@@ -3,16 +3,19 @@
 // found in the LICENSE file.
 
 use crate::history_logger::HistoryLogger;
-use anyhow::Error;
+use anyhow::{Context, Error};
 use fidl::HandleBased;
 use fidl::endpoints::Proxy;
 use fuchsia_sync::Mutex as SMutex;
 use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
-use log::{debug, error};
+use log::{debug, error, info};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
-use {fidl_fuchsia_power_battery as fpower, fuchsia_async as fasync};
+use {
+    fidl_fuchsia_power_battery as fpower, fidl_fuchsia_power_system as fsystem,
+    fuchsia_async as fasync,
+};
 
 // Record up to 12 hours of battery level data in 30 second intervals.
 //
@@ -56,6 +59,9 @@ pub struct BatteryManager {
 
     /// Publishes battery events to Inspect.
     history_logger: Arc<SMutex<HistoryLogger>>,
+
+    /// Blocking suspension if charging
+    charge_wake_lease: Arc<Mutex<Option<fsystem::LeaseToken>>>,
 }
 
 #[inline]
@@ -91,6 +97,7 @@ impl BatteryManager {
                 ..Default::default()
             }),
             history_logger: Arc::new(SMutex::new(logger)),
+            charge_wake_lease: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -137,8 +144,55 @@ impl BatteryManager {
         .detach()
     }
 
-    fn update_battery_info(&self, info: fpower::BatteryInfo) {
+    async fn determine_suspend_status(
+        &self,
+        source: Option<fpower::ChargeSource>,
+        sag: Option<fsystem::ActivityGovernorProxy>,
+    ) {
+        let Some(sag) = sag else {
+            return;
+        };
+
+        let Some(charge_source) = source else {
+            return;
+        };
+
+        let is_charging = match charge_source {
+            fpower::ChargeSource::Unknown | fpower::ChargeSource::None => false,
+            _ => true,
+        };
+        let mut charge_wake_lease = self.charge_wake_lease.lock().await;
+        if is_charging && charge_wake_lease.is_none() {
+            let res = sag
+                .take_wake_lease("charging_block_suspension")
+                .await
+                .context("failed to take wake lease");
+
+            *charge_wake_lease = match res {
+                Ok(token) => {
+                    info!("Acquired wake lock to block suspension while charging");
+                    Some(token)
+                }
+                Err(e) => {
+                    error!("Can't block suspension due to error: {e}");
+                    None
+                }
+            };
+        }
+        if !is_charging && charge_wake_lease.is_some() {
+            *charge_wake_lease = None;
+            info!("Dropped wake lease token, allowing suspension.");
+        }
+    }
+
+    async fn update_battery_info(
+        &self,
+        info: fpower::BatteryInfo,
+        sag: Option<fsystem::ActivityGovernorProxy>,
+    ) {
         let new_charge_status = info.charge_status;
+        let new_charge_source = info.charge_source;
+        self.determine_suspend_status(new_charge_source, sag).await;
 
         let mut new_battery_info = self.battery_info.write().unwrap();
         *new_battery_info = info;
@@ -208,6 +262,7 @@ impl BatteryManager {
     async fn wait_on_updates(
         &self,
         watcher: fidl::endpoints::ServerEnd<fpower::BatteryInfoWatcherMarker>,
+        sag: Option<fsystem::ActivityGovernorProxy>,
     ) -> Result<(), Error> {
         let mut stream = watcher.into_stream();
         while let Some(event) = stream.try_next().await? {
@@ -217,7 +272,7 @@ impl BatteryManager {
                     wake_lease,
                     responder,
                 } => {
-                    self.update_battery_info(info);
+                    self.update_battery_info(info, sag.clone()).await;
                     self.update_watchers_conditionally(false, wake_lease);
                     responder.send()?;
                 }
@@ -231,6 +286,7 @@ impl BatteryManager {
     pub(crate) async fn start_watching_battery_info(
         &self,
         proxy: fpower::BatteryInfoProviderProxy,
+        sag: Option<fsystem::ActivityGovernorProxy>,
     ) -> Result<(), Error> {
         let (client_end, server_end) =
             fidl::endpoints::create_endpoints::<fpower::BatteryInfoWatcherMarker>();
@@ -240,7 +296,9 @@ impl BatteryManager {
             self.battery_info.clone(),
         )
         .detach();
-        self.wait_on_updates(server_end).await
+
+        info!("Wainting on updates from driver");
+        self.wait_on_updates(server_end, sag).await
     }
 
     fn periodically_publish_battery_level(
@@ -296,6 +354,7 @@ mod tests {
     use futures::channel::oneshot;
     use futures::future::*;
     use log::info;
+    use std::collections::VecDeque;
     use tempfile::{TempDir, tempdir};
 
     fn create_config(
@@ -526,10 +585,9 @@ mod tests {
 
         // The 'server' task: run wait_on_updates in the background
         let battery_clone = battery_manager.clone();
-        let server_task =
-            fasync::Task::spawn(
-                async move { battery_clone.clone().wait_on_updates(server_end).await },
-            );
+        let server_task = fasync::Task::spawn(async move {
+            battery_clone.clone().wait_on_updates(server_end, None).await
+        });
 
         let client_fut = async move {
             proxy.on_change_battery_info(&updated_info, wake_lease).await.unwrap();
@@ -548,7 +606,7 @@ mod tests {
         rx_signal.await.unwrap();
     }
 
-    // This function acts as a fake watcher, processing FIDL messages
+    // This function acts as a fake driver, provide battery info and lease.
     fn fake_driver(
         info: fpower::BatteryInfo,
         lease: Option<zx::EventPair>,
@@ -590,6 +648,7 @@ mod tests {
         let mut updated_info = battery_manager.get_battery_info_copy();
         updated_info.level_percent = Some(60.0);
         updated_info.status = Some(fpower::BatteryStatus::Ok);
+        updated_info.charge_source = Some(fpower::ChargeSource::Usb);
         updated_info.timestamp = Some(20);
         let first_info = battery_manager.get_battery_info_copy();
         let first_timestamp = first_info.timestamp.unwrap();
@@ -616,7 +675,7 @@ mod tests {
         // test start_watching_battery_info
         let _ = battery_manager
             .clone()
-            .start_watching_battery_info(fake_driver(updated_info, wake_lease))
+            .start_watching_battery_info(fake_driver(updated_info, wake_lease), None)
             .await;
 
         // After the futures complete, check the state of the BatteryManager
@@ -628,5 +687,99 @@ mod tests {
 
         rx_signal.await.unwrap();
         Ok(())
+    }
+
+    // This function acts as a fake sag server and respond with leases from the queue.
+    fn fake_sag_vec(
+        lease_sequence: Arc<Mutex<VecDeque<fsystem::LeaseToken>>>,
+    ) -> fsystem::ActivityGovernorProxy {
+        let (proxy, mut stream) =
+            fidl::endpoints::create_proxy_and_stream::<fsystem::ActivityGovernorMarker>();
+        fasync::Task::local(async move {
+            while let Ok(req) = stream.try_next().await {
+                match req {
+                    Some(fsystem::ActivityGovernorRequest::TakeWakeLease { responder, .. }) => {
+                        let mut queue = lease_sequence.lock().await;
+                        let result = queue.pop_front().unwrap();
+                        responder.send(result).unwrap();
+                    }
+                    e => panic!("Unexpected request: {:?}", e),
+                }
+            }
+        })
+        .detach();
+
+        proxy
+    }
+
+    #[fuchsia::test]
+    async fn test_block_suspend() {
+        info!("Starting");
+        let (_dir, battery_manager) = create_manager();
+        {
+            let charge_wake_lease = battery_manager.charge_wake_lease.lock().await;
+            assert!(charge_wake_lease.is_none());
+        }
+
+        let (tx, rx1) = zx::EventPair::create();
+        let token_info = tx.basic_info().unwrap();
+        let tx_id1 = token_info.koid;
+
+        let (tx, rx2) = zx::EventPair::create();
+        let token_info = tx.basic_info().unwrap();
+        let tx_id2 = token_info.koid;
+
+        let vector = vec![rx1, rx2];
+        let sag = Some(fake_sag_vec(Arc::new(Mutex::new(VecDeque::from(vector)))));
+
+        battery_manager
+            .determine_suspend_status(Some(fpower::ChargeSource::Usb), sag.clone())
+            .await;
+        {
+            let charge_wake_lease = battery_manager.charge_wake_lease.lock().await;
+            assert!(!charge_wake_lease.is_none());
+            let lease_token =
+                charge_wake_lease.as_ref().expect("LeaseToken be present inside the Mutex");
+            let token_info = lease_token.basic_info().unwrap();
+            let related_id = token_info.related_koid;
+            assert_eq!(related_id, tx_id1);
+        }
+
+        // Call again, and expect the same lease.
+        battery_manager
+            .determine_suspend_status(Some(fpower::ChargeSource::Usb), sag.clone())
+            .await;
+        {
+            let charge_wake_lease = battery_manager.charge_wake_lease.lock().await;
+            assert!(!charge_wake_lease.is_none());
+            let lease_token =
+                charge_wake_lease.as_ref().expect("LeaseToken be present inside the Mutex");
+            let token_info = lease_token.basic_info().unwrap();
+            let related_id = token_info.related_koid;
+            assert_eq!(related_id, tx_id1);
+        }
+
+        // Call with no power, and expect the lease dropped.
+        battery_manager
+            .determine_suspend_status(Some(fpower::ChargeSource::None), sag.clone())
+            .await;
+        {
+            let charge_wake_lease = battery_manager.charge_wake_lease.lock().await;
+            assert!(charge_wake_lease.is_none());
+        }
+
+        // Call again, and expect a new lease.
+        battery_manager
+            .determine_suspend_status(Some(fpower::ChargeSource::Usb), sag.clone())
+            .await;
+        {
+            let charge_wake_lease = battery_manager.charge_wake_lease.lock().await;
+            assert!(!charge_wake_lease.is_none());
+            let lease_token =
+                charge_wake_lease.as_ref().expect("LeaseToken be present inside the Mutex");
+            let token_info = lease_token.basic_info().unwrap();
+            let related_id = token_info.related_koid;
+            assert_eq!(related_id, tx_id2);
+        }
     }
 }

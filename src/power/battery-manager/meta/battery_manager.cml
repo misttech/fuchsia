@@ -36,6 +36,17 @@
             path: "/userdata",
         },
         { service: "fuchsia.power.battery.InfoService" },
+        {
+            protocol: "fuchsia.power.system.ActivityGovernor",
+            availability: "optional",
+        },
+        {
+            config: "fuchsia.power.SuspendEnabled",
+            key: "suspend_enabled",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
     ],
     expose: [
         {
