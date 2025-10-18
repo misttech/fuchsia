@@ -6,7 +6,7 @@ use super::utils::connect_to_device_channel;
 use fidl_fuchsia_hardware_qcom_hvdcpopti as fhvdcpopti;
 use futures_util::StreamExt;
 use starnix_core::mm::MemoryAccessorExt;
-use starnix_core::power::{MessageCounterHandle, create_proxy_for_wake_events_counter};
+use starnix_core::power::{OwnedMessageCounterHandle, create_proxy_for_wake_events_counter};
 use starnix_core::task::{CurrentTask, EventHandler, WaitCanceler, WaitQueue, Waiter};
 use starnix_core::vfs::{
     FileObject, FileOps, InputBuffer, NamespaceNode, OutputBuffer, VecInputBuffer,
@@ -42,7 +42,7 @@ pub fn create_qbg_device(
 struct QbgDeviceState {
     waiters: WaitQueue,
     read_queue: Mutex<VecDeque<VecInputBuffer>>,
-    message_counter: Mutex<Option<MessageCounterHandle>>,
+    message_counter: Mutex<Option<OwnedMessageCounterHandle>>,
 }
 
 impl QbgDeviceState {

@@ -2,7 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::power::{MessageCounterHandle, OnWakeOps, create_proxy_for_wake_events_counter_zero};
+use crate::power::{
+    OnWakeOps, OwnedMessageCounterHandle, SharedMessageCounter,
+    create_proxy_for_wake_events_counter_zero,
+};
 use crate::task::{CurrentTask, TargetTime};
 use crate::vfs::timer::{TimelineChangeObserver, TimerOps};
 use anyhow::{Context, Result};
@@ -80,11 +83,11 @@ async fn wait_signaled<H: HandleBased>(handle: &H) -> Result<()> {
 
 /// Cancels an alarm by ID.
 async fn cancel_by_id(
-    _suspend_lock: &SuspendLock,
+    _message_counter: &SharedMessageCounter,
     timer_state: Option<TimerState>,
     timer_id: &zx::Koid,
     proxy: &fta::WakeAlarmsProxy,
-    interval_timers_pending_reschedule: &mut HashMap<zx::Koid, SuspendLock>,
+    interval_timers_pending_reschedule: &mut HashMap<zx::Koid, SharedMessageCounter>,
     task_by_timer_id: &mut HashMap<zx::Koid, fasync::Task<()>>,
     alarm_id: &str,
 ) {
@@ -102,8 +105,8 @@ async fn cancel_by_id(
         let _ = timer_state.task.await;
 
         // If this timer is an interval timer, we must remove it from the pending reschedule list.
-        // This does not affect container suspend, since `_suspend_lock` is live. It's a no-op for
-        // other timers.
+        // This does not affect container suspend, since `_message_counter` is live. It's a no-op
+        // for other timers.
         interval_timers_pending_reschedule.remove(timer_id);
         log_debug!("cancel_by_id: 2/2 DONE canceling timer: {timer_id:?}: alarm_id: {alarm_id}");
     }
@@ -188,50 +191,13 @@ impl std::fmt::Display for TimerState {
     }
 }
 
-/// Prevents the Starnix container from going to sleep as long as it is in scope.
-///
-/// Each live SuspendLock is responsible for one increment of the underlying `zx::Counter` while it
-/// in scope, and removes it from the counter when it goes out of scope.  Processes that need to
-/// cooperate can pass a SuspendLock to each other to ensure that once the work is done, the lock
-/// goes out of scope as well. This allows for precise accounting of remaining work, and should
-/// give us control over container suspension which is guarded by the compiler, not conventions.
-#[derive(Debug)]
-struct SuspendLock {
-    message_counter: MessageCounterHandle,
-}
-
-impl Drop for SuspendLock {
-    fn drop(&mut self) {
-        self.message_counter.mark_handled();
-    }
-}
-
-impl SuspendLock {
-    /// Creates a suspend lock on the provided counter. The counter will be incrementeed
-    /// at creation, and decremented at disposition.
-    fn new_with_increment(prototype: MessageCounterHandle) -> Self {
-        prototype.new_message();
-        Self::new_internal(prototype)
-    }
-
-    /// Creates a suspend lock on the provided counter, but does not increase the counter.
-    fn new_without_increment(prototype: MessageCounterHandle) -> Self {
-        // No increment - the counter was already incremented by the wake proxy
-        Self::new_internal(prototype)
-    }
-
-    fn new_internal(prototype: MessageCounterHandle) -> Self {
-        Self { message_counter: prototype }
-    }
-}
-
 struct HrTimerManagerState {
     /// All pending timers are stored here.
     pending_timers: HashMap<zx::Koid, TimerState>,
 
     /// The event that is registered with runner to allow the hrtimer to wake the kernel.
     /// Optional, because we want the ability to inject a counter in tests.
-    message_counter: Option<MessageCounterHandle>,
+    message_counter: Option<OwnedMessageCounterHandle>,
 
     /// For recording timer events.
     inspect_node: BoundedListNode,
@@ -256,10 +222,10 @@ impl HrTimerManagerState {
     }
 
     /// Gets a new shareable instance of the message counter.
-    fn get_counter(&self) -> MessageCounterHandle {
+    fn share_message_counter(&self, new_pending_message: bool) -> SharedMessageCounter {
         let counter_ref =
             self.message_counter.as_ref().expect("message_counter is None, but should not be.");
-        counter_ref.clone()
+        counter_ref.share(new_pending_message)
     }
 }
 
@@ -281,7 +247,7 @@ enum Cmd {
         done: zx::Event,
         /// The Starnix container suspend lock. Keep it alive until no more
         /// work is necessary.
-        suspend_lock: SuspendLock,
+        message_counter: SharedMessageCounter,
     },
     /// Stop the timer noted below. `done` is similar to above.
     Stop {
@@ -291,7 +257,7 @@ enum Cmd {
         done: zx::Event,
         /// The Starnix container suspend lock. Keep it alive until no more
         /// work is necessary.
-        suspend_lock: SuspendLock,
+        message_counter: SharedMessageCounter,
     },
     /// A wake alarm occurred.
     Alarm {
@@ -301,7 +267,7 @@ enum Cmd {
         lease: zx::EventPair,
         /// The Starnix container suspend lock. Keep it alive until no more
         /// work is necessary.
-        suspend_lock: SuspendLock,
+        message_counter: SharedMessageCounter,
     },
     /// Install a timeline change monitor
     MonitorUtc { timer: HrTimerHandle, counter: zx::Counter, recv: mpsc::UnboundedReceiver<bool> },
@@ -557,7 +523,7 @@ impl HrTimerManager {
     // counter. Used to inject a fake counter in tests.
     fn inject_or_set_message_counter(
         self: &HrTimerManagerHandle,
-        message_counter: MessageCounterHandle,
+        message_counter: OwnedMessageCounterHandle,
     ) {
         let mut guard = self.lock();
         if guard.message_counter.is_none() {
@@ -667,7 +633,8 @@ impl HrTimerManager {
         // been rescheduled.
         // TODO: b/418813184 - Remove in favor of Fuchsia-specific interval timer support
         // once it is available.
-        let mut interval_timers_pending_reschedule: HashMap<zx::Koid, SuspendLock> = HashMap::new();
+        let mut interval_timers_pending_reschedule: HashMap<zx::Koid, SharedMessageCounter> =
+            HashMap::new();
 
         // Per timer tasks.
         let mut task_by_timer_id: HashMap<zx::Koid, fasync::Task<()>> = HashMap::new();
@@ -681,7 +648,7 @@ impl HrTimerManager {
                 // A new timer needs to be started.  The timer node for the timer
                 // is provided, and `done` must be signaled once the setup is
                 // complete.
-                Cmd::Start { new_timer_node, done, suspend_lock } => {
+                Cmd::Start { new_timer_node, done, message_counter } => {
                     defer! {
                         // Allow add_timer to proceed once command processing is done.
                         signal_handle(&done, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED).map_err(|err| to_errno_with_log(err)).expect("event can be signaled");
@@ -701,7 +668,7 @@ impl HrTimerManager {
 
                     let maybe_cancel = self.lock().pending_timers.remove(&timer_id);
                     cancel_by_id(
-                        &suspend_lock,
+                        &message_counter,
                         maybe_cancel,
                         &timer_id,
                         &device_async_proxy,
@@ -740,7 +707,6 @@ impl HrTimerManager {
                     let mut done_sender = self.get_sender();
                     let prev_len = self.lock().get_pending_timers_count();
 
-                    let counter_clone = message_counter.clone();
                     let self_clone = self.clone();
                     let task = fasync::Task::local(async move {
                         log_debug!(
@@ -750,7 +716,8 @@ impl HrTimerManager {
                         ftrace::flow_step!(c"alarms", c"hrtimer_lifecycle", trace_id);
 
                         let response = request_fut.await;
-                        let suspend_lock = SuspendLock::new_without_increment(counter_clone);
+                        // The counter was already incremented by the wake proxy when the alarm fired.
+                        let message_counter = self_clone.lock().share_message_counter(false);
                         ftrace::instant!(c"alarms", c"starnix:hrtimer:wake", ftrace::Scope::Process, "timer_id" => timer_id);
 
                         log_debug!("wake_alarm_future: set_and_wait over: {:?}", response);
@@ -760,7 +727,7 @@ impl HrTimerManager {
                             // only forward it.
                             Ok(Ok(lease)) => {
                                 done_sender
-                                    .send(Cmd::Alarm { new_timer_node, lease, suspend_lock })
+                                    .send(Cmd::Alarm { new_timer_node, lease, message_counter })
                                     .await
                                     .expect("infallible");
                             }
@@ -790,7 +757,7 @@ impl HrTimerManager {
                     self.record_inspect_on_start(&mut guard, timer_id, task, deadline, prev_len);
                     log_debug!("Cmd::Start scheduled: timer_id: {:?}", timer_id);
                 }
-                Cmd::Alarm { new_timer_node, lease, suspend_lock } => {
+                Cmd::Alarm { new_timer_node, lease, message_counter } => {
                     let timer = &new_timer_node.hr_timer;
                     let timer_id = timer.get_id();
                     ftrace::duration!(c"alarms", c"starnix:hrtimer:alarm", "timer_id" => timer_id);
@@ -803,7 +770,7 @@ impl HrTimerManager {
                     // ensure that we stay awake, we store the suspend lock for a while. This
                     // prevents container suspend.
                     //
-                    // This map entry and its SuspendLock is removed in one of the following cases:
+                    // This map entry and its MessageCounterHandle is removed in one of the following cases:
                     //
                     // (1) When the interval timer eventually gets rescheduled. We
                     // assume that for interval timers the reschedule will be imminent and that
@@ -812,11 +779,11 @@ impl HrTimerManager {
                     //
                     // (2) When the timer is canceled.
                     if *timer.is_interval.lock() {
-                        interval_timers_pending_reschedule.insert(timer_id, suspend_lock);
+                        interval_timers_pending_reschedule.insert(timer_id, message_counter);
                     }
                     log_debug!("Cmd::Alarm done: timer_id: {timer_id:?}");
                 }
-                Cmd::Stop { timer, done, suspend_lock } => {
+                Cmd::Stop { timer, done, message_counter } => {
                     defer! {
                         signal_handle(&done, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED).expect("can signal");
                     }
@@ -832,7 +799,7 @@ impl HrTimerManager {
                     };
 
                     cancel_by_id(
-                        &suspend_lock,
+                        &message_counter,
                         maybe_cancel,
                         &timer_id,
                         &device_async_proxy,
@@ -910,8 +877,8 @@ impl HrTimerManager {
         ftrace::duration!(c"alarms", c"starnix:add_timer", "deadline" => deadline.estimate_boot().unwrap().into_nanos());
         ftrace::flow_step!(c"alarms", c"hrtimer_lifecycle", new_timer.trace_id());
 
-        let counter = self.lock().get_counter();
-        let suspend_lock_until_timer_scheduled = SuspendLock::new_with_increment(counter);
+        // Keep system awake until timer is scheduled.
+        let message_counter_until_timer_scheduled = self.lock().share_message_counter(true);
 
         let sender = self.get_sender();
         let new_timer_node = HrTimerNode::new(deadline, wake_source, new_timer.clone());
@@ -921,7 +888,7 @@ impl HrTimerManager {
         sender
             .unbounded_send(Cmd::Start {
                 new_timer_node,
-                suspend_lock: suspend_lock_until_timer_scheduled,
+                message_counter: message_counter_until_timer_scheduled,
                 done: wake_alarm_scheduled_clone,
             })
             .map_err(|_| errno!(EINVAL, "add_timer: could not send Cmd::Start"))?;
@@ -940,8 +907,8 @@ impl HrTimerManager {
     pub fn remove_timer(self: &HrTimerManagerHandle, timer: &HrTimerHandle) -> Result<(), Errno> {
         log_debug!("remove_timer: entry:  {timer:?}");
         ftrace::duration!(c"alarms", c"starnix:remove_timer");
-        let counter = self.lock().get_counter();
-        let suspend_lock_until_removed = SuspendLock::new_with_increment(counter);
+        // Keep system awake until timer is removed.
+        let message_counter_until_removed = self.lock().share_message_counter(true);
 
         let sender = self.get_sender();
         let done = zx::Event::create();
@@ -950,7 +917,7 @@ impl HrTimerManager {
         sender
             .unbounded_send(Cmd::Stop {
                 timer: timer.clone(),
-                suspend_lock: suspend_lock_until_removed,
+                message_counter: message_counter_until_removed,
                 done: done_clone,
             })
             .map_err(|_| errno!(EINVAL, "remove_timer: could not send Cmd::Stop"))?;
@@ -1101,7 +1068,6 @@ impl HrTimerNode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::power::MessageCounter;
     use crate::task::HrTimer;
     use crate::testing::spawn_kernel_and_run;
     use fake_wake_alarms::{MAGIC_EXPIRE_DEADLINE, Response, serve_fake_wake_alarms};
@@ -1372,38 +1338,5 @@ mod tests {
             );
         })
         .await;
-    }
-
-    #[fuchsia::test]
-    async fn suspend_locks_behaviors() {
-        let counter = zx::Counter::create();
-        let message_counter =
-            MessageCounter::new("test", counter.duplicate_handle(zx::Rights::SAME_RIGHTS).ok());
-
-        assert_eq!(counter.read().unwrap(), 0, "no locks");
-        let lock1 = SuspendLock::new_with_increment(message_counter.clone());
-        assert_eq!(counter.read().unwrap(), 1, "lock1 is created");
-        {
-            let _lock2 = SuspendLock::new_with_increment(message_counter.clone());
-            assert_eq!(counter.read().unwrap(), 2, "lock1 and _lock2 are live");
-            let _lock3 = SuspendLock::new_with_increment(message_counter.clone());
-            assert_eq!(counter.read().unwrap(), 3, "lock1, and _lock2 and _lock 3 are all live");
-        }
-
-        assert_eq!(counter.read().unwrap(), 1, "lock1 is still live");
-        {
-            let _lock4 = SuspendLock::new_without_increment(message_counter.clone());
-            assert_eq!(counter.read().unwrap(), 1, "2 locks live, but only one increment");
-            let _lock5 = SuspendLock::new_with_increment(message_counter.clone());
-            assert_eq!(counter.read().unwrap(), 2, "3 locks, 2 with increment");
-        }
-        assert_eq!(counter.read().unwrap(), 0, "only lock1 is live");
-
-        drop(lock1);
-        assert_eq!(
-            counter.read().unwrap(),
-            -1,
-            "no locks live, but 1 no-increment lock was available"
-        );
     }
 }

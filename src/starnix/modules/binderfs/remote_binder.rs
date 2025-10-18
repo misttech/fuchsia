@@ -14,7 +14,7 @@ use futures::{Future, Stream, StreamExt, TryStreamExt, pin_mut, select};
 use starnix_core::device::{DeviceMode, DeviceOps};
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{DesiredAddress, MappingOptions, MemoryAccessorExt, ProtectionFlags};
-use starnix_core::power::{ContainerWakingStream, LockSource, MessageCounterHandle};
+use starnix_core::power::{ContainerWakingStream, LockSource, OwnedMessageCounterHandle};
 use starnix_core::task::{CurrentTask, Kernel, LockedAndTask, ThreadGroup, WaitQueue, Waiter};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
@@ -620,7 +620,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
     /// Serve the ContainerPowerController protocol.
     async fn serve_container_power_controller(
         server_end: ServerEnd<fbinder::ContainerPowerControllerMarker>,
-        message_counter: MessageCounterHandle,
+        message_counter: OwnedMessageCounterHandle,
         kernel: Arc<Kernel>,
         service_name: &str,
     ) -> Result<(), Error> {
@@ -1181,7 +1181,7 @@ mod tests {
     use fidl::endpoints::{Proxy, create_endpoints, create_proxy};
     use rand::distr::{Alphanumeric, SampleString};
     use starnix_core::mm::MemoryAccessor;
-    use starnix_core::power::{LockSource, MessageCounter};
+    use starnix_core::power::{LockSource, OwnedMessageCounter};
     use starnix_core::testing::*;
     use starnix_core::vfs::{FileSystemOptions, WhatToMount};
     use starnix_types::PAGE_SIZE;
@@ -1523,7 +1523,7 @@ mod tests {
             let kernel = current_task.kernel().clone();
             let (power_controller, power_controller_server_end) = fidl::endpoints::create_proxy();
             let counter = zx::Counter::create();
-            let message_counter = MessageCounter::new(
+            let message_counter = OwnedMessageCounter::new(
                 "test",
                 Some(counter.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed handle dup")),
             );
@@ -1556,7 +1556,7 @@ mod tests {
 
         let (power_controller, power_controller_server_end) = fidl::endpoints::create_proxy();
         let counter = zx::Counter::create();
-        let message_counter = MessageCounter::new(
+        let message_counter = OwnedMessageCounter::new(
             "test",
             Some(counter.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed handle dup")),
         );

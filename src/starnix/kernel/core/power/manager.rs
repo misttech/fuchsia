@@ -9,7 +9,7 @@ use crate::vfs::EpollKey;
 use std::cmp::min;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use anyhow::{Context, anyhow};
 use fidl::endpoints::Proxy;
@@ -41,7 +41,7 @@ pub struct SuspendResumeManager {
 
     /// The currently registered message counters in the system whose values are exposed to inspect
     /// via a lazy node.
-    message_counters: Arc<Mutex<HashSet<WeakKey<MessageCounter>>>>,
+    message_counters: Arc<Mutex<HashSet<WeakKey<OwnedMessageCounter>>>>,
 
     // The lock used to to avoid suspension while holding eBPF locks.
     ebpf_suspend_lock: OrderedRwLock<(), EbpfSuspendLock>,
@@ -219,7 +219,8 @@ pub type SuspendResumeManagerHandle = Arc<SuspendResumeManager>;
 
 impl Default for SuspendResumeManager {
     fn default() -> Self {
-        let message_counters: Arc<Mutex<HashSet<WeakKey<MessageCounter>>>> = Default::default();
+        let message_counters: Arc<Mutex<HashSet<WeakKey<OwnedMessageCounter>>>> =
+            Default::default();
         let message_counters_clone = message_counters.clone();
         let root = inspect::component::inspector().root();
         root.record_lazy_values("message_counters", move || {
@@ -233,14 +234,7 @@ impl Default for SuspendResumeManager {
                     root.create_string_array("message_counters", message_counters.len());
                 for (i, c) in message_counters.iter().enumerate() {
                     let counter = c.0.upgrade().expect("lost counter should be retained");
-                    message_counters_inspect.set(
-                        i,
-                        format!(
-                            "Counter({}): {:?}",
-                            counter.name,
-                            counter.counter.as_ref().map(|c| c.read())
-                        ),
-                    );
+                    message_counters_inspect.set(i, counter.to_string());
                 }
                 root.record(message_counters_inspect);
                 Ok(inspector)
@@ -340,8 +334,8 @@ impl SuspendResumeManager {
         &self,
         name: &str,
         counter: Option<zx::Counter>,
-    ) -> MessageCounterHandle {
-        let container_counter = MessageCounter::new(name, counter);
+    ) -> OwnedMessageCounterHandle {
+        let container_counter = OwnedMessageCounter::new(name, counter);
         let mut message_counters = self.message_counters.lock();
         message_counters.insert(WeakKey::from(&container_counter));
         message_counters.retain(|c| c.0.upgrade().is_some());
@@ -646,35 +640,80 @@ pub fn create_watcher_for_wake_events(watcher: zx::EventPair) {
         .expect("Failed to register wake watcher");
 }
 
+/// Wrapper around a Weak `OwnedMessageCounter` that can be passed around to keep the container
+/// awake.
+///
+/// Each live `SharedMessageCounter` is responsible for a pending message while it in scope,
+/// and removes it from the counter when it goes out of scope.  Processes that need to cooperate
+/// can pass a `SharedMessageCounter` to each other to ensure that once the work is done, the lock
+/// goes out of scope as well. This allows for precise accounting of remaining work, and should
+/// give us control over container suspension which is guarded by the compiler, not conventions.
 #[derive(Debug)]
-pub struct MessageCounter {
+pub struct SharedMessageCounter(Weak<OwnedMessageCounter>);
+
+impl Drop for SharedMessageCounter {
+    fn drop(&mut self) {
+        if let Some(message_counter) = self.0.upgrade() {
+            message_counter.mark_handled();
+        }
+    }
+}
+
+/// Owns a `zx::Counter` to track pending messages that prevent the container from suspending.
+///
+/// This struct ensures that the counter is reset to 0 when the last strong reference is dropped,
+/// effectively releasing any wake lock held by this counter.
+pub struct OwnedMessageCounter {
     name: String,
     counter: Option<zx::Counter>,
 }
-pub type MessageCounterHandle = Arc<MessageCounter>;
+pub type OwnedMessageCounterHandle = Arc<OwnedMessageCounter>;
 
-impl MessageCounter {
-    pub fn new(name: &str, counter: Option<zx::Counter>) -> MessageCounterHandle {
-        Arc::new(Self { name: name.to_string(), counter })
-    }
-
-    pub fn mark_handled(&self) {
-        self.counter.as_ref().map(mark_proxy_message_handled);
-    }
-
-    /// Increment the counter to keep the system awake.
-    pub fn new_message(&self) {
-        self.counter.as_ref().map(|c| c.add(1).expect("Failed to increment counter"));
-    }
-}
-
-impl Drop for MessageCounter {
+impl Drop for OwnedMessageCounter {
+    /// Resets the underlying `zx::Counter` to 0 when the `OwnedMessageCounter` is dropped.
+    ///
+    /// This ensures that all pending messages are marked as handled, allowing the system to suspend
+    /// if no other wake locks are held.
     fn drop(&mut self) {
         self.counter.as_ref().map(mark_all_proxy_messages_handled);
     }
 }
 
-impl fmt::Display for MessageCounter {
+impl OwnedMessageCounter {
+    pub fn new(name: &str, counter: Option<zx::Counter>) -> OwnedMessageCounterHandle {
+        Arc::new(Self { name: name.to_string(), counter })
+    }
+
+    /// Decrements the counter, signaling that a pending message or operation has been handled.
+    ///
+    /// This should be called when the work associated with a previous `mark_pending` call is
+    /// complete.
+    pub fn mark_handled(&self) {
+        self.counter.as_ref().map(mark_proxy_message_handled);
+    }
+
+    /// Increments the counter, signaling that a new message or operation is pending.
+    ///
+    /// This prevents the system from suspending until a corresponding `mark_handled` call is made.
+    pub fn mark_pending(&self) {
+        self.counter.as_ref().map(|c| c.add(1).expect("Failed to increment counter"));
+    }
+
+    /// Creates a `SharedMessageCounter` from this `OwnedMessageCounter`.
+    ///
+    /// `new_pending_message` - if a new pending message should be added
+    pub fn share(
+        self: &OwnedMessageCounterHandle,
+        new_pending_message: bool,
+    ) -> SharedMessageCounter {
+        if new_pending_message {
+            self.mark_pending();
+        }
+        SharedMessageCounter(Arc::downgrade(self))
+    }
+}
+
+impl fmt::Display for OwnedMessageCounter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Counter({}): {:?}", self.name, self.counter.as_ref().map(|c| c.read()))
     }
@@ -685,12 +724,12 @@ impl fmt::Display for MessageCounter {
 ///
 /// When the proxy is dropped, the counter is reset to 0 to release the wake-lock.
 pub struct ContainerWakingProxy<P: Proxy> {
-    counter: MessageCounterHandle,
+    counter: OwnedMessageCounterHandle,
     proxy: P,
 }
 
 impl<P: Proxy> ContainerWakingProxy<P> {
-    pub fn new(counter: MessageCounterHandle, proxy: P) -> Self {
+    pub fn new(counter: OwnedMessageCounterHandle, proxy: P) -> Self {
         Self { counter, proxy }
     }
 
@@ -720,12 +759,12 @@ impl<P: Proxy> ContainerWakingProxy<P> {
 ///
 /// When the stream is dropped, the counter is reset to 0 to release the wake-lock.
 pub struct ContainerWakingStream<S: fidl::endpoints::RequestStream> {
-    counter: MessageCounterHandle,
+    counter: OwnedMessageCounterHandle,
     stream: S,
 }
 
 impl<S: fidl::endpoints::RequestStream> ContainerWakingStream<S> {
-    pub fn new(counter: MessageCounterHandle, stream: S) -> Self {
+    pub fn new(counter: OwnedMessageCounterHandle, stream: S) -> Self {
         Self { counter, stream }
     }
 
@@ -783,7 +822,7 @@ mod test {
         assert_eq!(counter.read(), Ok(5));
 
         let waking_proxy = ContainerWakingProxy {
-            counter: MessageCounter::new(
+            counter: OwnedMessageCounter::new(
                 "test_proxy",
                 Some(counter.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
             ),
@@ -818,7 +857,7 @@ mod test {
         assert_eq!(counter.read(), Ok(5));
 
         let mut waking_stream = ContainerWakingStream {
-            counter: MessageCounter::new(
+            counter: OwnedMessageCounter::new(
                 "test_stream",
                 Some(counter.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
             ),
@@ -871,5 +910,45 @@ mod test {
         assert_data_tree!(inspector, root: contains {
             message_counters: Vec::<String>::new(),
         });
+    }
+
+    #[::fuchsia::test]
+    fn test_shared_message_counter() {
+        // Create an owned counter and set its value.
+        let zx_counter = zx::Counter::create();
+        let owned_counter = OwnedMessageCounter::new(
+            "test_shared_counter",
+            Some(zx_counter.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+        );
+        zx_counter.add(5).unwrap();
+        assert_eq!(zx_counter.read(), Ok(5));
+
+        // Create a shared counter with no new message. The value should be unchanged.
+        let shared_counter = owned_counter.share(false);
+        assert_eq!(zx_counter.read(), Ok(5));
+
+        // Drop the shared counter. The value should be decremented.
+        drop(shared_counter);
+        assert_eq!(zx_counter.read(), Ok(4));
+
+        // Create a shared counter with a new message. The value should be incremented.
+        let shared_counter_2 = owned_counter.share(true);
+        assert_eq!(zx_counter.read(), Ok(5));
+
+        // Drop the shared counter. The value should be decremented.
+        drop(shared_counter_2);
+        assert_eq!(zx_counter.read(), Ok(4));
+
+        // Create another shared counter.
+        let shared_counter_3 = owned_counter.share(false);
+        assert_eq!(zx_counter.read(), Ok(4));
+
+        // Drop the owned counter. The value should be reset to 0.
+        drop(owned_counter);
+        assert_eq!(zx_counter.read(), Ok(0));
+
+        // Drop the shared counter. The value should remain 0, and it shouldn't panic.
+        drop(shared_counter_3);
+        assert_eq!(zx_counter.read(), Ok(0));
     }
 }
