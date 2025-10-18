@@ -11,6 +11,17 @@
 #include <new>
 #include <ostream>
 
+/// `address_type` is 1 for Public or 2 for Random, corresponding to the values of
+/// fuchsia.bluetooth/AddressType.
+struct DiscoveredPeer {
+  uint64_t id;
+  uint8_t address_type;
+  uint8_t address[6];
+};
+
+/// `peer` is only valid for the duration of this callback.
+using GetKnownPeersCallback = void (*)(void *context, const DiscoveredPeer *peer);
+
 /// `address_type` is 1 for Public, 2 for Random, or 0 if no address was provided. These values
 /// correspond to fuchsia.bluetooth/AddressType. If no address was provided, `address` is zero.
 struct LePeer {
@@ -39,6 +50,18 @@ zx_status_t stop_rust_affordances();
 ///
 /// The caller must ensure that `addr_byte_buff` points to a valid buffer of 6 bytes.
 zx_status_t read_local_address(uint8_t *addr_byte_buff);
+
+/// Get all peers discovered by the system.
+///
+/// The callback `cb` is invoked on every peer. The `context` provided to this function is included
+/// in each invocation of `cb`.
+///
+/// Returns ZX_STATUS_INTERNAL on error (check logs).
+///
+/// # Safety
+///
+/// The caller must ensure `context` and `cb` point to valid memory & a valid callback.
+zx_status_t get_known_peers(void *context, GetKnownPeersCallback cb);
 
 /// Get identifier of peer with given `address`.
 ///
@@ -79,6 +102,11 @@ zx_status_t forget_peer(uint64_t peer_id);
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
 zx_status_t connect_l2cap_channel(uint64_t peer_id, uint16_t psm);
+
+/// Start or stop general discovery procedure.
+///
+/// Returns ZX_STATUS_INTERNAL on error (check logs).
+zx_status_t set_discovery(bool discovery);
 
 /// Start or revoke discoverability.
 ///

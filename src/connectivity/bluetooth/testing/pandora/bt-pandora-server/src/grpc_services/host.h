@@ -68,10 +68,26 @@ class HostService : public pandora::Host::Service {
                                        ::google::protobuf::Empty* response) override;
 
  private:
+  static void GetKnownPeersCb(void* context, const DiscoveredPeer* peer) {
+    HostService* svc = static_cast<HostService*>(context);
+    std::lock_guard lock(svc->m_inquiry_rsp_writer_);
+    if (svc->inquiry_rsp_writer_) {
+      pandora::InquiryResponse inquiry_rsp;
+
+      std::string big_endian_addr(std::rbegin(peer->address), std::rend(peer->address));
+      inquiry_rsp.set_address(big_endian_addr);
+
+      if (!svc->inquiry_rsp_writer_->Write(inquiry_rsp)) {
+        FX_LOGS(INFO) << "Inquiry canceled by gRPC client.";
+        svc->inquiry_rsp_writer_ = nullptr;
+      }
+    }
+  }
+
   static void LeScanCb(void* context, const LePeer* peer) {
     HostService* svc = static_cast<HostService*>(context);
-    std::lock_guard lock(svc->m_scan_scp_writer_);
-    if (svc->scan_rsp_writer) {
+    std::lock_guard lock(svc->m_scan_rsp_writer_);
+    if (svc->scan_rsp_writer_) {
       pandora::ScanningResponse scan_rsp;
 
       // Convert peer address from little-endian to big-endian, as expected by Pandora.
@@ -88,17 +104,21 @@ class HostService : public pandora::Host::Service {
 
       scan_rsp.set_connectable(peer->connectable);
       scan_rsp.mutable_data()->set_complete_local_name(peer->name);
-      if (!svc->scan_rsp_writer->Write(scan_rsp)) {
+      if (!svc->scan_rsp_writer_->Write(scan_rsp)) {
         FX_LOGS(INFO) << "LE scan canceled by gRPC client.";
-        svc->scan_rsp_writer = nullptr;
+        svc->scan_rsp_writer_ = nullptr;
         stop_le_scan();
       }
     }
   }
 
-  std::mutex m_scan_scp_writer_;
+  std::mutex m_inquiry_rsp_writer_;
+  // If this Writer is non-null, there is an ongoing `Inquiry` response streaming RPC.
+  grpc::ServerWriter<::pandora::InquiryResponse>* inquiry_rsp_writer_ = nullptr;
+
+  std::mutex m_scan_rsp_writer_;
   // If this Writer is non-null, there is an ongoing `Scan` response streaming RPC.
-  grpc::ServerWriter<::pandora::ScanningResponse>* scan_rsp_writer = nullptr;
+  grpc::ServerWriter<::pandora::ScanningResponse>* scan_rsp_writer_ = nullptr;
 
   // Wait for a Peer with the given |addr| to become known. If |enforce_connected| is set, wait
   // until the Peer is also connected. Returns an iterator to the peer.

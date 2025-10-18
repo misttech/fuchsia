@@ -151,6 +151,50 @@ pub extern "C" fn read_local_address(addr_byte_buff: *mut u8) -> zx_status_t {
     zx::Status::OK.into_raw()
 }
 
+/// `address_type` is 1 for Public or 2 for Random, corresponding to the values of
+/// fuchsia.bluetooth/AddressType.
+#[repr(C)]
+pub struct DiscoveredPeer {
+    pub id: u64,
+    pub address_type: u8,
+    pub address: [u8; 6],
+    // TODO(https://fxbug.dev/396500079): Support more fields if necessary to enable PTS tests.
+}
+
+/// `peer` is only valid for the duration of this callback.
+type GetKnownPeersCallback = extern "C" fn(context: *mut c_void, peer: *const DiscoveredPeer);
+
+/// Get all peers discovered by the system.
+///
+/// The callback `cb` is invoked on every peer. The `context` provided to this function is included
+/// in each invocation of `cb`.
+///
+/// Returns ZX_STATUS_INTERNAL on error (check logs).
+///
+/// # Safety
+///
+/// The caller must ensure `context` and `cb` point to valid memory & a valid callback.
+#[no_mangle]
+pub extern "C" fn get_known_peers(context: *mut c_void, cb: GetKnownPeersCallback) -> zx_status_t {
+    match block_on(STATE.worker.get_known_peers()) {
+        Ok(discovered_peers) => {
+            for peer in discovered_peers {
+                let discovered_peer = DiscoveredPeer {
+                    id: peer.id.unwrap().value,
+                    address_type: peer.address.unwrap().type_.into_primitive(),
+                    address: peer.address.unwrap().bytes,
+                };
+                cb(context, &discovered_peer);
+            }
+        }
+        Err(err) => {
+            eprintln!("get_known_peers encountered error: {err}");
+            return zx::Status::INTERNAL.into_raw();
+        }
+    }
+    zx::Status::OK.into_raw()
+}
+
 /// Get identifier of peer with given `address`.
 ///
 /// Returns 0 on error.
@@ -246,6 +290,18 @@ pub extern "C" fn connect_l2cap_channel(peer_id: u64, psm: u16) -> zx_status_t {
 
     if let Err(err) = block_on(STATE.worker.connect_l2cap_channel(peer_id, psm)) {
         eprintln!("connect_l2cap_channel encountered error: {err:?}");
+        return zx::Status::INTERNAL.into_raw();
+    }
+    zx::Status::OK.into_raw()
+}
+
+/// Start or stop general discovery procedure.
+///
+/// Returns ZX_STATUS_INTERNAL on error (check logs).
+#[no_mangle]
+pub extern "C" fn set_discovery(discovery: bool) -> zx_status_t {
+    if let Err(err) = block_on(STATE.worker.set_discovery(discovery)) {
+        eprintln!("set_discovery encountered error: {err:?}");
         return zx::Status::INTERNAL.into_raw();
     }
     zx::Status::OK.into_raw()

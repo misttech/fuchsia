@@ -132,8 +132,8 @@ Status HostService::Advertise(::grpc::ServerContext* context,
 Status HostService::Scan(::grpc::ServerContext* context, const ::pandora::ScanRequest* request,
                          ::grpc::ServerWriter<::pandora::ScanningResponse>* writer) {
   {
-    std::lock_guard lock(m_scan_scp_writer_);
-    scan_rsp_writer = writer;
+    std::lock_guard lock(m_scan_rsp_writer_);
+    scan_rsp_writer_ = writer;
   }
 
   if (start_le_scan(/*context=*/this, LeScanCb) != ZX_OK) {
@@ -147,8 +147,8 @@ Status HostService::Scan(::grpc::ServerContext* context, const ::pandora::ScanRe
   // is found).
   std::this_thread::sleep_for(std::chrono::seconds(5));
 
-  std::lock_guard lock(m_scan_scp_writer_);
-  scan_rsp_writer = nullptr;
+  std::lock_guard lock(m_scan_rsp_writer_);
+  scan_rsp_writer_ = nullptr;
   zx_status_t status = stop_le_scan();
   if (status == ZX_OK) {
     FX_LOGS(WARNING) << "LE scan stopped after timeout.";
@@ -163,7 +163,29 @@ Status HostService::Scan(::grpc::ServerContext* context, const ::pandora::ScanRe
 Status HostService::Inquiry(::grpc::ServerContext* context,
                             const ::google::protobuf::Empty* request,
                             ::grpc::ServerWriter<::pandora::InquiryResponse>* writer) {
-  return Status(StatusCode::UNIMPLEMENTED, "");
+  if (set_discovery(true) == ZX_OK) {
+    std::lock_guard lock(m_inquiry_rsp_writer_);
+    inquiry_rsp_writer_ = writer;
+  } else {
+    return Status(StatusCode::INTERNAL, "Failed to start discovery (check logs)");
+  }
+
+  // Discover for an arbitrary period of 5 seconds, which passes PTS tests.
+  //
+  // TODO(https://fxbug.dev/396500079): Adopt a streaming API instead of a scan period with timeout.
+  std::this_thread::sleep_for(std::chrono::seconds(5));
+
+  if (get_known_peers(this, GetKnownPeersCb) != ZX_OK) {
+    return Status(StatusCode::INTERNAL, "Failed to get known peers (check logs)");
+  }
+
+  std::lock_guard lock(m_inquiry_rsp_writer_);
+  FX_LOGS(INFO) << "Inquiry stopping after timeout.";
+  inquiry_rsp_writer_ = nullptr;
+  if (set_discovery(false) != ZX_OK) {
+    return Status(StatusCode::INTERNAL, "Failed to stop discovery (check logs)");
+  }
+  return {/*OK*/};
 }
 
 Status HostService::SetDiscoverabilityMode(::grpc::ServerContext* context,

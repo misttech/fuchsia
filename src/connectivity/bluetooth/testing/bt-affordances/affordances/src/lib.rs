@@ -127,7 +127,10 @@ impl WorkThread {
                 }
                 Request::GetKnownPeers(result_sender) => {
                     if let Err(err) = proxies
-                        .refresh_peer_cache(std::time::Duration::ZERO, peer_cache.clone())
+                        .refresh_peer_cache(
+                            std::time::Duration::from_millis(10),
+                            peer_cache.clone(),
+                        )
                         .await
                     {
                         result_sender
