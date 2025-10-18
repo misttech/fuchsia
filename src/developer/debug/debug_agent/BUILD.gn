@@ -397,11 +397,13 @@ test("unit_tests") {
     deps += [
       "//sdk/lib/component/incoming/cpp",
       "//sdk/lib/component/outgoing/cpp",
+      "//src/storage/lib/vfs/cpp",
 
       # Only include these here in the Fuchsia build because on the host build they're included in
       # the zxdb_unit_tests.
       "//src/developer/debug/ipc:tests",
       "//src/developer/debug/shared:tests",
+      "//zircon/system/ulib/fbl",
     ]
   } else if (is_linux) {
     sources += [

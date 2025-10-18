@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include "fbl/ref_ptr.h"
 #include "fidl/fuchsia.component/cpp/fidl.h"
 #include "src/developer/debug/debug_agent/component_manager.h"
 #include "src/developer/debug/debug_agent/system_interface.h"
@@ -15,7 +16,13 @@
 #include "src/developer/debug/debug_agent/zircon_utils.h"
 #include "src/developer/debug/ipc/filter_utils.h"
 #include "src/developer/debug/ipc/records.h"
+#include "src/developer/debug/shared/event_pair_watcher.h"
+#include "src/developer/debug/shared/message_loop.h"
+#include "src/developer/debug/shared/message_loop_fuchsia.h"
 #include "src/developer/debug/shared/test_with_loop.h"
+#include "src/storage/lib/vfs/cpp/managed_vfs.h"
+#include "src/storage/lib/vfs/cpp/pseudo_dir.h"
+#include "src/storage/lib/vfs/cpp/pseudo_file.h"
 
 namespace debug_agent {
 
@@ -44,7 +51,15 @@ bool FindProcess(const debug_ipc::ProcessTreeRecord& record, zx_koid_t koid_to_f
 
 }  // namespace
 
-class ZirconSystemInterfaceTest : public debug::TestWithLoop {};
+class ZirconSystemInterfaceTest : public debug::TestWithLoop, public debug::EventPairWatcher {
+ public:
+  debug::MessageLoopFuchsia& loop() {
+    return reinterpret_cast<debug::MessageLoopFuchsia&>(debug::TestWithLoop::loop());
+  }
+
+  // EventPairWatcher implementation.
+  void OnPeerClosed(zx_handle_t) override { loop().QuitNow(); }
+};
 
 TEST_F(ZirconSystemInterfaceTest, DISABLED_GetProcessTree) {
   ZirconSystemInterface system_interface;
@@ -106,6 +121,145 @@ TEST_F(ZirconSystemInterfaceTest, DISABLED_FindComponentInfo) {
   ASSERT_GE(component_info.url.size(), prefix.size() + suffix.size());
   EXPECT_EQ(prefix, component_info.url.substr(0, prefix.size()));
   EXPECT_EQ(suffix, component_info.url.substr(component_info.url.size() - suffix.size()));
+}
+
+TEST_F(ZirconSystemInterfaceTest, ComponentEvents) {
+  ZirconSystemInterface system_interface;
+  // Need a concrete instance to call |OnComponentEvent| directly.
+  ZirconComponentManager* zircon_component_manager =
+      reinterpret_cast<ZirconComponentManager*>(&system_interface.GetComponentManager());
+
+  constexpr char kElfMoniker[] = "some/moniker";
+  constexpr char kElfUrl[] = "fuchsia-pkg://fuchsia.com/package1#meta/component.cm";
+  constexpr char kNonElfMoniker[] = "some/non_elf/moniker";
+  constexpr char kNonElfUrl[] = "fuchsia-pkg://fuchsia.com/package2#meta/non_elf.cm";
+  constexpr zx_koid_t kExpectedKoid = 23;
+
+  async::Loop vfs_loop(&kAsyncLoopConfigNoAttachToCurrentThread);
+
+  auto job_id_file =
+      fbl::MakeRefCounted<fs::UnbufferedPseudoFile>([](fbl::String* output) -> zx_status_t {
+        *output = std::to_string(kExpectedKoid);
+        return ZX_OK;
+      });
+  auto elf_dir = fbl::MakeRefCounted<fs::PseudoDir>();
+  ASSERT_EQ(elf_dir->AddEntry("job_id", std::move(job_id_file)), ZX_OK);
+
+  auto root_dir = fbl::MakeRefCounted<fs::PseudoDir>();
+  ASSERT_EQ(root_dir->AddEntry("elf", std::move(elf_dir)), ZX_OK);
+
+  auto [client_end, server_end] = *fidl::CreateEndpoints<fuchsia_io::Directory>();
+
+  fs::ManagedVfs vfs(vfs_loop.dispatcher());
+  ASSERT_EQ(vfs.ServeDirectory(std::move(root_dir), std::move(server_end)), ZX_OK);
+  ASSERT_EQ(vfs_loop.StartThread(), ZX_OK);
+
+  // Inject an ELF component.
+  fuchsia_component::EventHeader header;
+  header.component_url(kElfUrl);
+  header.moniker(kElfMoniker);
+  header.event_type(fuchsia_component::EventType::kDebugStarted);
+
+  fuchsia_component::Event event;
+  event.header() = std::move(header);
+
+  zx::eventpair left, right;
+  ASSERT_EQ(zx_eventpair_create(0, left.reset_and_get_address(), right.reset_and_get_address()),
+            ZX_OK);
+
+  fuchsia_component::DebugStartedPayload payload;
+  payload.runtime_dir() = std::move(client_end);
+  payload.break_on_start() = std::move(right);
+  event.payload() = fuchsia_component::EventPayload::WithDebugStarted(std::move(payload));
+
+  // Inject the event.
+  zircon_component_manager->OnComponentEvent(std::move(event));
+
+  debug::MessageLoop::WatchHandle handle;
+  loop().WatchEventPair(left.get(), this, &handle);
+  loop().Run();
+
+  const auto& info = system_interface.GetComponentManager().FindComponentInfo(kExpectedKoid);
+  EXPECT_EQ(info.size(), 1u);
+  EXPECT_EQ(info[0].moniker, kElfMoniker);
+  EXPECT_EQ(info[0].url, kElfUrl);
+
+  fuchsia_component::EventHeader stopped_header;
+  stopped_header.component_url(kElfUrl);
+  stopped_header.moniker(kElfMoniker);
+  stopped_header.event_type(fuchsia_component::EventType::kStopped);
+
+  fuchsia_component::Event stopped_event;
+  stopped_event.header() = std::move(stopped_header);
+
+  fuchsia_component::StoppedPayload stopped_payload;
+  stopped_payload.exit_code(0);
+  stopped_event.payload() =
+      fuchsia_component::EventPayload::WithStopped(std::move(stopped_payload));
+
+  zircon_component_manager->OnComponentEvent(std::move(stopped_event));
+
+  EXPECT_TRUE(system_interface.GetComponentManager().FindComponentInfo(kExpectedKoid).empty());
+
+  // Inject a non-ELF component.
+  fuchsia_component::EventHeader non_elf_header;
+  non_elf_header.component_url(kNonElfUrl);
+  non_elf_header.moniker(kNonElfMoniker);
+  non_elf_header.event_type(fuchsia_component::EventType::kDebugStarted);
+
+  fuchsia_component::Event non_elf_event;
+  non_elf_event.header() = std::move(non_elf_header);
+
+  ASSERT_EQ(zx_eventpair_create(0, left.reset_and_get_address(), right.reset_and_get_address()),
+            ZX_OK);
+
+  fuchsia_component::DebugStartedPayload non_elf_payload;
+  non_elf_payload.runtime_dir() = std::nullopt;
+  non_elf_payload.break_on_start() = std::move(right);
+  non_elf_event.payload() =
+      fuchsia_component::EventPayload::WithDebugStarted(std::move(non_elf_payload));
+
+  zircon_component_manager->OnComponentEvent(std::move(non_elf_event));
+
+  loop().WatchEventPair(left.get(), this, &handle);
+  loop().Run();
+
+  // Still shouldn't have any ELF component info.
+  EXPECT_TRUE(system_interface.GetComponentManager().FindComponentInfo(kExpectedKoid).empty());
+  ASSERT_EQ(system_interface.GetComponentManager().GetNonElfComponentInfo().size(), 1u);
+
+  const auto& it = system_interface.GetComponentManager().GetNonElfComponentInfo().begin();
+  ASSERT_NE(it, system_interface.GetComponentManager().GetNonElfComponentInfo().end());
+
+  const auto& component_info = it->second;
+  EXPECT_EQ(component_info.moniker, kNonElfMoniker);
+  EXPECT_EQ(component_info.url, kNonElfUrl);
+
+  fuchsia_component::EventHeader non_elf_stopped_header;
+  non_elf_stopped_header.component_url(kNonElfUrl);
+  non_elf_stopped_header.moniker(kNonElfMoniker);
+  non_elf_stopped_header.event_type(fuchsia_component::EventType::kStopped);
+
+  fuchsia_component::Event non_elf_stopped_event;
+  non_elf_stopped_event.header() = std::move(non_elf_stopped_header);
+
+  fuchsia_component::StoppedPayload non_elf_stopped_payload;
+  non_elf_stopped_payload.exit_code(0);
+  non_elf_stopped_event.payload() =
+      fuchsia_component::EventPayload::WithStopped(std::move(non_elf_stopped_payload));
+
+  zircon_component_manager->OnComponentEvent(std::move(non_elf_stopped_event));
+
+  loop().RunUntilNoTasks();
+
+  EXPECT_TRUE(zircon_component_manager->GetNonElfComponentInfo().empty());
+
+  vfs.Shutdown([&vfs_loop](zx_status_t status) {
+    ASSERT_EQ(status, ZX_OK);
+    vfs_loop.Quit();
+  });
+
+  vfs_loop.JoinThreads();
 }
 
 TEST_F(ZirconSystemInterfaceTest, FilterMatchComponents) {
