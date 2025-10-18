@@ -315,7 +315,7 @@ Timer::~Timer() {
   // Ensure that we are not on any TimerQueue's list.
   ZX_DEBUG_ASSERT(!InContainer());
   // Ensure that we are not active on some cpu.
-  ZX_DEBUG_ASSERT(active_cpu_.load(ktl::memory_order_relaxed) == INVALID_CPU);
+  ZX_DEBUG_ASSERT(active_cpu_.load_unlocked() == INVALID_CPU);
 }
 
 void Timer::Set(const Deadline& deadline, Callback callback, void* arg) {
@@ -337,12 +337,12 @@ void Timer::Set(const Deadline& deadline, Callback callback, void* arg) {
   Guard<MonitoredSpinLock, IrqSave> guard{TimerLock::Get(), SOURCE_TAG};
 
   cpu_num_t cpu = arch_curr_cpu_num();
-  cpu_num_t active_cpu = active_cpu_.load(ktl::memory_order_relaxed);
+  cpu_num_t active_cpu = active_cpu_.load_locked();
 
   bool currently_active = (active_cpu == cpu);
   if (unlikely(currently_active)) {
     // The timer is active on our own cpu, we must be inside the callback.
-    if (cancel_.load(ktl::memory_order_relaxed)) {
+    if (cancel_.load_locked()) {
       return;
     }
   } else if (unlikely(active_cpu != INVALID_CPU)) {
@@ -353,7 +353,7 @@ void Timer::Set(const Deadline& deadline, Callback callback, void* arg) {
   scheduled_time_ = deadline.when();
   callback_ = callback;
   arg_ = arg;
-  cancel_.store(false, ktl::memory_order_relaxed);
+  cancel_.store_locked(false);
   // We don't need to modify active_cpu_ because it is managed by timer_tick().
 
   LTRACEF("scheduled time %" PRIi64 "\n", scheduled_time_);
@@ -393,12 +393,12 @@ bool Timer::Cancel() {
   cpu_num_t cpu = arch_curr_cpu_num();
 
   // mark the timer as canceled
-  cancel_.store(true, ktl::memory_order_relaxed);
+  cancel_.store_locked(true);
   // TODO(https://fxbug.dev/42142666): Consider whether this DeviceMemoryBarrier is required
   arch::DeviceMemoryBarrier();
 
   // see if we're trying to cancel the timer we're currently in the middle of handling
-  if (unlikely(active_cpu_.load(ktl::memory_order_relaxed) == cpu)) {
+  if (unlikely(active_cpu_.load_locked() == cpu)) {
     // zero it out
     callback_ = nullptr;
     arg_ = nullptr;
@@ -452,7 +452,7 @@ bool Timer::Cancel() {
   guard.Release();
 
   // wait for the timer to become un-busy in case a callback is currently active on another cpu
-  while (active_cpu_.load(ktl::memory_order_relaxed) != INVALID_CPU) {
+  while (active_cpu_.load_unlocked() != INVALID_CPU) {
     arch::Yield();
   }
 
@@ -522,7 +522,7 @@ void TimerQueue::TickInternal(TimestampType now, cpu_num_t cpu,
     timer_list->erase(timer);
 
     // Mark the timer busy.
-    timer.active_cpu_.store(cpu, ktl::memory_order_relaxed);
+    timer.active_cpu_.store_locked(cpu);
     // Unlocking the spinlock in CallUnlocked acts as a release fence.
 
     // Now that the timer is off of the list, release the spinlock to handle
@@ -540,7 +540,7 @@ void TimerQueue::TickInternal(TimestampType now, cpu_num_t cpu,
     });
 
     // Mark it not busy.
-    timer.active_cpu_.store(INVALID_CPU, ktl::memory_order_relaxed);
+    timer.active_cpu_.store_locked(INVALID_CPU);
     // TODO(https://fxbug.dev/42142666): Consider whether this DeviceMemoryBarrier is required
     arch::DeviceMemoryBarrier();
   }
@@ -556,7 +556,7 @@ zx_status_t Timer::TrylockOrCancel(MonitoredSpinLock* lock) {
   // to grab or the passed in timer to be canceled.
   while (unlikely(lock->TryAcquire(SOURCE_TAG))) {
     // we failed to grab it, check for cancel
-    if (cancel_.load(ktl::memory_order_relaxed)) {
+    if (cancel_.load_unlocked()) {
       // we were canceled, so bail immediately
       return ZX_ERR_TIMED_OUT;
     }
@@ -574,7 +574,7 @@ zx_status_t Timer::TrylockOrCancel(ChainLock& lock) {
   // lock, arch:Yield'ing in between attempts, and bailing out in the case that
   // we notice that the cancel_ flag has been set.
   while (!lock.TryAcquire()) {
-    if (cancel_.load(ktl::memory_order_relaxed)) {
+    if (cancel_.load_unlocked()) {
       return ZX_ERR_TIMED_OUT;
     }
     arch::Yield();

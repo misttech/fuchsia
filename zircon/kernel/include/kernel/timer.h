@@ -99,6 +99,84 @@ class Timer : public fbl::DoublyLinkedListable<Timer*, fbl::NodeOptions::AllowRe
   // TimerQueues can directly manipulate the state of their enqueued Timers.
   friend class TimerQueue;
 
+  // TimerSyncVar is a small helper class used to help us follow some of the
+  // trickier rules when it comes to synchronization and timer operations.  Most
+  // of timer and timer queue state is protected by the global TimerLock, which
+  // guarantees ordering.  There are some examples which are a bit more
+  // complicated.  Consider the cancel operation.
+  //
+  // When a timer needs to fire, the global lock is held and the timer's
+  // deadline is evaluated.  If the deadline has arrived, the TimerTick code
+  // will remove the timer from the appropriate pending list, and then indicate
+  // that there is a callback-in-flight by setting the `active_cpu_` atomic to
+  // the current CPU value.  Then it drops the lock and performs the callback.
+  // Both dropping the lock and recording which cpu is handling the callback are
+  // important here because the callback can choose to call into the timer's
+  // methods during the callback.  Calling "set" is a good example of something
+  // someone might want to do from the timer callback.
+  //
+  // Now consider another CPU attempting to cancel a timer T when there is a
+  // callback already in flight.  Cancel is supposed to return a boolean:
+  //
+  // 1) True means that the cancel succeeded.  The timer was canceled before any
+  //    callback was made, and now there is a guarantee that no callback will be
+  //    made and that the timer's owner is free to destroy the Timer.
+  // 2) False means that the cancel failed.  When control is returned to the
+  //    caller, the callback is guaranteed to have finished.
+  //
+  // So, when cancel runs, it grabs the lock and checks to see if the callback
+  // has already started.  If it has, then it need to drop the lock (so the
+  // TimerTick code can reacquire the lock and mark the callback done via
+  // active_cpu_), _and wait for the callback to finish_.  It does this by
+  // spinning on the `active_cpu_` variable, read using atomic loads.
+  //
+  // It is important, however, that when the callback has finished, that the
+  // cancel CPU is guaranteed that not only is the callback done, but that all
+  // of the side effects of the callback are visible to the cancel CPU.  So, it
+  // needs to load with acquire, and writes of the state (who always hold the
+  // lock) need to store with release.  Anyone else reading the variable from
+  // _inside_ of the lock, however, do not need to load with acquire.  The lock
+  // is already satisfying any ordering requirements.
+  //
+  // So: TimerSyncVar lets us control access to the two variables (cancel_ and
+  // active_cpu_) we have which are sometimes are called upon to provide
+  // synchronization guarantees without relying on the guarantees provided by
+  // the lock.  It enforces the following rules using the static analyzer.
+  //
+  // 1) Whenever a SyncVar is written, it is always stored with release semantics,
+  //    and also demands that we hold the lock.
+  // 2) Whenever a SyncVar is read from inside of the lock, it is loaded with
+  //    relaxed semantics.  The fact that #1 happened with the lock held
+  //    provides our synchronization guarantees.
+  // 3) Whenever a SyncVar is read from outside of the lock, it is read using
+  //    acquire semantics, which should syncronize-with the release-store
+  //    performed in #1.
+  //
+  // Wrapping this all up in a class provides a good place for annotations, in
+  // addition to guaranteeing that no one can make a mistake by directly
+  // accessing the actual atomic with the wrong semantics.
+  template <typename T>
+  class TimerSyncVar {
+   public:
+    // No default constructor.  Explicitly initialize your PODs folks!
+    explicit constexpr TimerSyncVar(T val) : val_{val} {}
+
+    // No copy, no move.
+    TimerSyncVar(const TimerSyncVar&) = delete;
+    TimerSyncVar(TimerSyncVar&&) = delete;
+    TimerSyncVar& operator=(const TimerSyncVar&) = delete;
+    TimerSyncVar& operator=(TimerSyncVar&&) = delete;
+
+    T load_locked() TA_REQ(TimerLock::Get()) { return val_.load(ktl::memory_order_relaxed); }
+    T load_unlocked() TA_EXCL(TimerLock::Get()) { return val_.load(ktl::memory_order_acquire); }
+    void store_locked(T val) TA_REQ(TimerLock::Get()) {
+      val_.store(val, ktl::memory_order_release);
+    }
+
+   private:
+    ktl::atomic<T> val_;
+  };
+
   static constexpr uint32_t kMagic = fbl::magic("timr");
   uint32_t magic_ = kMagic;
 
@@ -116,10 +194,10 @@ class Timer : public fbl::DoublyLinkedListable<Timer*, fbl::NodeOptions::AllowRe
   const zx_clock_t clock_id_;
 
   // INVALID_CPU, if inactive.
-  ktl::atomic<cpu_num_t> active_cpu_{INVALID_CPU};
+  TimerSyncVar<cpu_num_t> active_cpu_{INVALID_CPU};
 
   // true if cancel is pending
-  ktl::atomic<bool> cancel_{false};
+  TimerSyncVar<bool> cancel_{false};
 
   // Note that we need to manually name the timer_lock because it is one of and
   // extremely small number of "wrapped" locks in the system, and cannot easily
