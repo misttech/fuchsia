@@ -24,7 +24,7 @@ use fuchsia_bluetooth::types::Channel;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_sync::Mutex;
 use futures::channel::{mpsc, oneshot};
-use futures::{StreamExt, select};
+use futures::{FutureExt, StreamExt, select};
 use std::ffi::{CStr, CString};
 use std::sync::Arc;
 use std::thread;
@@ -58,6 +58,7 @@ enum Request {
     AdvertisePeripheral(
         bool,
         Option<AddressType>,
+        std::time::Duration,
         oneshot::Sender<Result<Option<PeerId>, anyhow::Error>>,
     ),
     Stop,
@@ -195,8 +196,8 @@ impl WorkThread {
                         }
                     }
                 }
-                Request::AdvertisePeripheral(connectable, address_type, result_sender) => {
-                    match proxies.advertise_peripheral(connectable, address_type).await {
+                Request::AdvertisePeripheral(connectable, address_type, timeout, result_sender) => {
+                    match proxies.advertise_peripheral(connectable, address_type, timeout).await {
                         Ok(Some((peer_id, connection))) => {
                             _peripheral_connection = connection;
                             result_sender.send(Ok(Some(peer_id))).unwrap();
@@ -368,11 +369,17 @@ impl WorkThread {
         &self,
         connectable: bool,
         address_type: Option<AddressType>,
+        timeout: std::time::Duration,
     ) -> Result<Option<PeerId>, anyhow::Error> {
         let (sender, receiver) = oneshot::channel::<Result<Option<PeerId>, anyhow::Error>>();
         self.sender
             .clone()
-            .unbounded_send(Request::AdvertisePeripheral(connectable, address_type, sender))
+            .unbounded_send(Request::AdvertisePeripheral(
+                connectable,
+                address_type,
+                timeout,
+                sender,
+            ))
             .unwrap();
         receiver.await?
     }
@@ -791,6 +798,7 @@ impl Proxies {
         &self,
         connectable: bool,
         address_type: Option<AddressType>,
+        timeout: std::time::Duration,
     ) -> Result<Option<(PeerId, ClientEnd<ConnectionMarker>)>, anyhow::Error> {
         let (client, mut request_stream) =
             fidl::endpoints::create_request_stream::<AdvertisedPeripheralMarker>();
@@ -799,25 +807,11 @@ impl Proxies {
         params.connectable = Some(connectable);
         params.address_type = address_type;
 
-        let mut advertise_fut = self.peripheral_proxy.advertise(&params, client);
-
-        // TODO(https://fxbug.dev/396500079): Support non-blocking non-connectable advertising.
-        // By advertising for 10 seconds here, we can pass PTS tests, but this is not a general
-        // solution.
-        if !connectable {
-            if let Err(peripheral_err) =
-                advertise_fut.on_timeout(std::time::Duration::from_secs(10), || Ok(Ok(()))).await?
-            {
-                return Err(anyhow!("Peripheral.Advertise encountered error: {peripheral_err:?}"));
-            }
-            return Ok(None);
-        }
-
         select! {
-            result = advertise_fut => {
+            result = self.peripheral_proxy.advertise(&params, client) => {
                 return Err(anyhow!("LE advertisement finished with result: {result:?}"));
             }
-            request = request_stream.next() => {
+            request = request_stream.next().on_timeout(timeout, || None).fuse() => {
                 match request {
                     Some(Ok(AdvertisedPeripheralRequest::OnConnected {
                         peer,
@@ -831,7 +825,8 @@ impl Proxies {
                         return Err(anyhow!("Error in AdvertisedPeripheral stream: {e:?}"));
                     }
                     None => {
-                        return Err(anyhow!("AdvertisedPeripheral stream terminated."));
+                        println!("Peripheral advertisement ended without connection");
+                        return Ok(None);
                     }
                 }
             }

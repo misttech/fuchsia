@@ -355,17 +355,19 @@ pub extern "C" fn connect_le(peer_id: u64) -> zx_status_t {
 }
 
 /// Start advertising as an LE peripheral, accept the first connection, and return the PeerId of
-/// its initiator. If no LE peer connects because the advertisement is not `connectable`, then
-/// return an arbitrary valid PeerId (1). In case of error, return 0.
+/// its initiator. If no LE peer connects within `timeout` seconds, then return an arbitrary valid
+/// PeerId (1). In case of error, return 0.
 ///
 /// `address_type` is 1 for Public or 2 for Random. All other values are interpreted as unset, in
 /// which case the address type will be Public or Random depending on if privacy is enabled in the
 /// system. See fuchsia.bluetooth.le/AdvertisingParameters for details.
 #[no_mangle]
-pub extern "C" fn advertise_peripheral(connectable: bool, address_type: u8) -> u64 {
-    match block_on(
-        STATE.worker.advertise_peripheral(connectable, AddressType::from_primitive(address_type)),
-    ) {
+pub extern "C" fn advertise_peripheral(connectable: bool, address_type: u8, timeout: u64) -> u64 {
+    match block_on(STATE.worker.advertise_peripheral(
+        connectable,
+        AddressType::from_primitive(address_type),
+        std::time::Duration::from_secs(timeout),
+    )) {
         Ok(Some(peer_id)) => peer_id.value,
         Ok(None) => 1,
         Err(err) => {

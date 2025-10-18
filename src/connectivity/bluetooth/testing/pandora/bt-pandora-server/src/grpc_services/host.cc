@@ -117,7 +117,7 @@ Status HostService::Advertise(::grpc::ServerContext* context,
               request->own_address_type() == pandora::OwnAddressType::RESOLVABLE_OR_PUBLIC
           ? 1
           : 2;
-  uint64_t peer_id = advertise_peripheral(request->connectable(), address_type);
+  uint64_t peer_id = advertise_peripheral(request->connectable(), address_type, /*timeout=*/10);
   if (!peer_id) {
     return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
   }
