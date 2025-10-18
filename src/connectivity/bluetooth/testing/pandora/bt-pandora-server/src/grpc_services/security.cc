@@ -67,22 +67,27 @@ SecurityService::SecurityService(async_dispatcher_t* dispatcher) {
     return;
   }
   fidl::BindServer(dispatcher, std::move(pairing_delegate_server_end),
-                   std::make_unique<PairingDelegateImpl>(m_pairing_stream_, &pairing_stream_));
+                   std::make_unique<PairingDelegateImpl>(m_pairing_event_, &pairing_stream_,
+                                                         pairing_event_queue_));
 }
 
 ::grpc::Status SecurityService::OnPairing(
     ::grpc::ServerContext* context,
     ::grpc::ServerReaderWriter<::pandora::PairingEvent, ::pandora::PairingEventAnswer>* stream) {
   {
-    std::unique_lock<std::mutex> lock(m_pairing_stream_);
+    std::unique_lock<std::mutex> lock(m_pairing_event_);
     pairing_stream_ = stream;
+    while (!pairing_event_queue_.empty()) {
+      pairing_stream_->Write(pairing_event_queue_.back());
+      pairing_event_queue_.pop_back();
+    }
   }
 
   for (pandora::PairingEventAnswer msg; stream->Read(&msg);) {
     // TODO(https://fxbug.dev/396500079): Process these events.
   }
 
-  std::unique_lock<std::mutex> lock(m_pairing_stream_);
+  std::unique_lock<std::mutex> lock(m_pairing_event_);
   pairing_stream_ = nullptr;
   return {/*OK*/};
 }
@@ -138,23 +143,26 @@ SecurityService::SecurityService(async_dispatcher_t* dispatcher) {
 
 void SecurityService::PairingDelegateImpl::OnPairingRequest(
     OnPairingRequestRequest& request, OnPairingRequestCompleter::Sync& completer) {
-  FX_LOGS(INFO) << "PairingDelegate received pairing request; accepting";
+  std::unique_lock<std::mutex> lock(m_pairing_event_);
 
-  std::unique_lock<std::mutex> lock(m_pairing_stream_);
+  std::array<uint8_t, 6> peer_addr = request.peer().address()->bytes();
+  // Convert from LE bytes to BE bytes
+  std::ranges::reverse(peer_addr);
+
+  pandora::PairingEvent event;
+  event.set_address(peer_addr.data(), 6);
+  if (request.method() == PairingMethod::kPasskeyDisplay) {
+    event.set_passkey_entry_notification(request.displayed_passkey());
+  } else if (request.method() == PairingMethod::kPasskeyComparison) {
+    event.set_numeric_comparison(request.displayed_passkey());
+  }
+
   if (*pairing_stream_) {
-    pandora::PairingEvent event;
-
-    std::array<uint8_t, 6> peer_addr = request.peer().address()->bytes();
-    // Convert from LE bytes to BE bytes
-    std::ranges::reverse(peer_addr);
-    event.set_address(peer_addr.data(), 6);
-    if (request.method() == PairingMethod::kPasskeyDisplay ||
-        request.method() == PairingMethod::kPasskeyComparison) {
-      event.set_passkey_entry_notification(request.displayed_passkey());
-    }
-
-    FX_LOGS(INFO) << "Writing pairing event to stream";
+    FX_LOGS(INFO) << "Writing PairingDelegate event to gRPC stream";
     (*pairing_stream_)->Write(event);
+  } else {
+    FX_LOGS(INFO) << "Caching PairingDelegate event";
+    pairing_event_queue_.push_back(event);
   }
 
   completer.Reply({true, {}});

@@ -40,8 +40,11 @@ class SecurityService : public pandora::Security::Service {
     explicit PairingDelegateImpl(
         std::mutex& m_pairing_stream,
         ::grpc::ServerReaderWriter<::pandora::PairingEvent, ::pandora::PairingEventAnswer>**
-            pairing_stream)
-        : m_pairing_stream_(m_pairing_stream), pairing_stream_(pairing_stream) {}
+            pairing_stream,
+        std::vector<pandora::PairingEvent>& pairing_event_queue)
+        : m_pairing_event_(m_pairing_stream),
+          pairing_stream_(pairing_stream),
+          pairing_event_queue_(pairing_event_queue) {}
     void OnPairingRequest(OnPairingRequestRequest& request,
                           OnPairingRequestCompleter::Sync& completer) override;
     void OnPairingComplete(OnPairingCompleteRequest& request,
@@ -51,17 +54,21 @@ class SecurityService : public pandora::Security::Service {
 
    private:
     // These point to the corresponding fields in the containing object.
-    std::mutex& m_pairing_stream_;
+    std::mutex& m_pairing_event_;
     ::grpc::ServerReaderWriter<::pandora::PairingEvent, ::pandora::PairingEventAnswer>**
         pairing_stream_;
+    std::vector<pandora::PairingEvent>& pairing_event_queue_;
   };
 
   fidl::SyncClient<fuchsia_bluetooth_sys::Pairing> pairing_client_;
 
-  std::mutex m_pairing_stream_;
+  std::mutex m_pairing_event_;
   // If this stream is non-null, it means a Security.OnPairing bidirectional stream is active.
   ::grpc::ServerReaderWriter<::pandora::PairingEvent, ::pandora::PairingEventAnswer>*
       pairing_stream_ = nullptr;
+  // Queue pairing events that occur before a Security.OnPairing stream is established so they can
+  // be relayed to the client once the stream is established.
+  std::vector<pandora::PairingEvent> pairing_event_queue_;
 };
 
 #endif  // SRC_CONNECTIVITY_BLUETOOTH_TESTING_PANDORA_BT_PANDORA_SERVER_SRC_GRPC_SERVICES_SECURITY_H_
