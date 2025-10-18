@@ -82,10 +82,10 @@ impl PackageManifestList {
     }
 
     pub fn write_with_relative_paths(self, path: &Utf8Path) -> anyhow::Result<Self> {
-        let versioned = match &self.0 {
+        let versioned = match self.0 {
             VersionedPackageManifestList::Version1(package_manifest_list) => {
                 VersionedPackageManifestList::Version1(
-                    package_manifest_list.clone().write_with_relative_paths(path)?,
+                    package_manifest_list.write_with_relative_paths(path)?,
                 )
             }
         };

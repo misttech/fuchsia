@@ -16,7 +16,7 @@ use fuchsia_url::{RepositoryUrl, UnpinnedAbsolutePackageUrl};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, File, create_dir_all};
-use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::str;
 use tempfile_ext::NamedTempFileExt as _;
@@ -527,13 +527,31 @@ impl PackageManifest {
 
     pub fn write_with_relative_paths(self, path: impl AsRef<Utf8Path>) -> anyhow::Result<Self> {
         fn inner(this: PackageManifest, path: &Utf8Path) -> anyhow::Result<PackageManifest> {
-            let versioned = match this.0 {
-                VersionedPackageManifest::Version1(manifest) => {
-                    VersionedPackageManifest::Version1(manifest.write_with_relative_paths(path)?)
-                }
+            let manifest = match this.0 {
+                VersionedPackageManifest::Version1(manifest) => PackageManifest(
+                    VersionedPackageManifest::Version1(manifest.with_relative_paths(path)?),
+                ),
+            };
+            let () = manifest.write(path)?;
+            Ok(manifest)
+        }
+        inner(self, path.as_ref())
+    }
+
+    pub fn write(&self, path: impl AsRef<Utf8Path>) -> anyhow::Result<()> {
+        fn inner(this: &PackageManifest, path: &Utf8Path) -> anyhow::Result<()> {
+            let mut tmp = if let Some(parent) = path.parent() {
+                create_dir_all(parent)?;
+                tempfile::NamedTempFile::new_in(parent)?
+            } else {
+                tempfile::NamedTempFile::new()?
             };
 
-            Ok(PackageManifest(versioned))
+            serde_json::to_writer_pretty(BufWriter::new(&mut tmp), this)?;
+            tmp.persist_if_changed(path)
+                .with_context(|| format!("failed to persist package manifest: {path}"))?;
+
+            Ok(())
         }
         inner(self, path.as_ref())
     }
@@ -625,7 +643,7 @@ struct PackageManifestV1 {
 }
 
 impl PackageManifestV1 {
-    pub fn write_with_relative_paths(
+    pub fn with_relative_paths(
         self,
         manifest_path: impl AsRef<Utf8Path>,
     ) -> anyhow::Result<PackageManifestV1> {
@@ -657,19 +675,6 @@ impl PackageManifestV1 {
             } else {
                 this
             };
-
-            let versioned_manifest = VersionedPackageManifest::Version1(manifest.clone());
-
-            let mut tmp = if let Some(parent) = manifest_path.parent() {
-                create_dir_all(parent)?;
-                tempfile::NamedTempFile::new_in(parent)?
-            } else {
-                tempfile::NamedTempFile::new()?
-            };
-
-            serde_json::to_writer_pretty(&mut tmp, &versioned_manifest)?;
-            tmp.persist_if_changed(manifest_path)
-                .with_context(|| format!("failed to persist package manifest: {manifest_path}"))?;
 
             Ok(manifest)
         }
