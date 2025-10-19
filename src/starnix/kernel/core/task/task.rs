@@ -18,6 +18,7 @@ use crate::task::{
 use crate::vfs::{FdFlags, FdNumber, FdTable, FileHandle, FsContext, FsNodeHandle, FsString};
 use bitflags::bitflags;
 use fuchsia_inspect_contrib::profile_duration;
+use fuchsia_rcu::rcu_option_arc::RcuOptionArc;
 use macro_rules_attribute::apply;
 use starnix_logging::{log_warn, set_current_task_info, set_zx_name};
 use starnix_sync::{
@@ -990,7 +991,7 @@ pub struct Task {
     pub files: FdTable,
 
     /// The memory manager for this task.  This is `None` only for system tasks.
-    pub mm: Option<Mutex<Arc<MemoryManager>>>,
+    pub mm: RcuOptionArc<MemoryManager>,
 
     /// The file system for this task.
     fs: Option<RwLock<Arc<FsContext>>>,
@@ -1181,7 +1182,7 @@ impl Task {
                 thread_group,
                 thread: RwLock::new(thread.map(Arc::new)),
                 files,
-                mm: mm.map(Mutex::new),
+                mm: RcuOptionArc::new(mm),
                 fs: Some(RwLock::new(fs)),
                 abstract_socket_namespace,
                 abstract_vsock_namespace,
@@ -1279,7 +1280,7 @@ impl Task {
 
     #[track_caller]
     pub fn mm(&self) -> Result<Arc<MemoryManager>, Errno> {
-        Ok(self.mm.as_ref().ok_or_else(|| errno!(EINVAL))?.lock().clone())
+        self.mm.to_option_arc().ok_or_else(|| errno!(EINVAL))
     }
 
     pub fn unshare_fs(&self) {
@@ -1575,7 +1576,7 @@ impl Releasable for Task {
 
         // Drop fields that can end up owning a FsNode to ensure no FsNode are owned by this task.
         self.fs = None;
-        self.mm = None;
+        self.mm.update(None);
 
         // Rebuild a temporary CurrentTask to run the release actions that requires a CurrentState.
         let current_task = CurrentTask::new(OwnedRef::new(self), thread_state);
