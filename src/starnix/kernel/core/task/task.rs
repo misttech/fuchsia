@@ -994,7 +994,7 @@ pub struct Task {
     pub mm: RcuOptionArc<MemoryManager>,
 
     /// The file system for this task.
-    fs: Option<RwLock<Arc<FsContext>>>,
+    fs: RcuOptionArc<FsContext>,
 
     /// The namespace for abstract AF_UNIX sockets for this task.
     pub abstract_socket_namespace: Arc<AbstractUnixSocketNamespace>,
@@ -1183,7 +1183,7 @@ impl Task {
                 thread: RwLock::new(thread.map(Arc::new)),
                 files,
                 mm: RcuOptionArc::new(mm),
-                fs: Some(RwLock::new(fs)),
+                fs: RcuOptionArc::new(Some(fs)),
                 abstract_socket_namespace,
                 abstract_vsock_namespace,
                 vfork_event,
@@ -1271,11 +1271,14 @@ impl Task {
     }
 
     pub fn fs(&self) -> Arc<FsContext> {
-        self.fs.as_ref().expect("fs must be set").read().clone()
+        self.fs.to_option_arc().expect("fs must be set")
     }
 
     pub fn has_shared_fs(&self) -> bool {
-        self.fs.as_ref().is_some_and(|fs| Arc::strong_count(&*fs.read()) > 1usize)
+        let maybe_fs = self.fs.to_option_arc();
+        // This check is incorrect because someone else could be holding a temporary Arc to the
+        // FsContext and therefore increasing the strong count.
+        maybe_fs.is_some_and(|fs| Arc::strong_count(&fs) > 2usize)
     }
 
     #[track_caller]
@@ -1284,8 +1287,8 @@ impl Task {
     }
 
     pub fn unshare_fs(&self) {
-        let mut fs = self.fs.as_ref().expect("fs must be set").write();
-        *fs = fs.fork();
+        let fs = self.fs().fork();
+        self.fs.update(Some(fs));
     }
 
     /// Modify the given elements of the scheduler state with new values and update the
@@ -1575,7 +1578,7 @@ impl Releasable for Task {
         self.signal_vfork();
 
         // Drop fields that can end up owning a FsNode to ensure no FsNode are owned by this task.
-        self.fs = None;
+        self.fs.update(None);
         self.mm.update(None);
 
         // Rebuild a temporary CurrentTask to run the release actions that requires a CurrentState.
