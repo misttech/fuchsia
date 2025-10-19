@@ -4,5 +4,5 @@
 
 pub mod rcu_hash_map;
 
-pub use fuchsia_rcu::{RcuReadScope, RcuWriteScope};
+pub use fuchsia_rcu::RcuReadScope;
 pub use rcu_hash_map::RcuHashMap;

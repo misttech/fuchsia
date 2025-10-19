@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fuchsia_rcu::RcuReadScope;
 use fuchsia_rcu::rcu_cell::RcuCell;
-use fuchsia_rcu::rcu_read_scope::RcuReadScope;
-use fuchsia_rcu::rcu_write_scope::RcuWriteScope;
 
 /// An array-like data structure that can be read without locking.
 ///
@@ -41,7 +40,7 @@ impl<T: Send + Sync + 'static> RcuArray<T> {
     /// # Safety
     ///
     /// Requires external synchronization to exclude concurrent writers.
-    pub unsafe fn ensure_at_least(&self, scope: &RcuWriteScope, requested_size: usize)
+    pub unsafe fn ensure_at_least(&self, requested_size: usize)
     where
         T: Clone + Default,
     {
@@ -50,15 +49,15 @@ impl<T: Send + Sync + 'static> RcuArray<T> {
             return;
         }
         let new_size = std::cmp::max(requested_size, array.len() * 2);
-        self.copy_update(scope, &array, new_size);
+        self.copy_update(&array, new_size);
     }
 
     /// Updates the array to contain the given vector.
-    pub fn update(&self, scope: &RcuWriteScope, new_array: Vec<T>) {
-        self.inner.update(scope, new_array.into_boxed_slice());
+    pub fn update(&self, new_array: Vec<T>) {
+        self.inner.update(new_array.into_boxed_slice());
     }
 
-    fn copy_update(&self, scope: &RcuWriteScope, array: &[T], new_size: usize)
+    fn copy_update(&self, array: &[T], new_size: usize)
     where
         T: Clone + Default,
     {
@@ -70,7 +69,7 @@ impl<T: Send + Sync + 'static> RcuArray<T> {
         for _ in array.len()..new_size {
             new_array.push(T::default());
         }
-        self.inner.update(scope, new_array.into_boxed_slice());
+        self.inner.update(new_array.into_boxed_slice());
     }
 }
 
@@ -90,8 +89,7 @@ impl<T: Send + Sync + 'static> From<Vec<T>> for RcuArray<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_rcu::rcu_read_scope::RcuReadScope;
-    use fuchsia_rcu::rcu_write_scope::RcuWriteScope;
+    use fuchsia_rcu::{RcuReadScope, rcu_synchronize};
 
     #[test]
     fn test_rcu_array_get() {
@@ -113,21 +111,22 @@ mod tests {
     #[test]
     fn test_rcu_array_ensure_at_least() {
         let array = RcuArray::from(vec![1, 2, 3]);
-        let write_scope = RcuWriteScope::new();
 
-        unsafe { array.ensure_at_least(&write_scope, 5) };
-        let read_scope = RcuReadScope::new();
+        unsafe { array.ensure_at_least(5) };
+        let scope = RcuReadScope::new();
         // Should at least double.
-        assert_eq!(array.as_slice(&read_scope), &[1, 2, 3, 0, 0, 0]);
+        assert_eq!(array.as_slice(&scope), &[1, 2, 3, 0, 0, 0]);
 
-        unsafe { array.ensure_at_least(&write_scope, 2) };
-        let read_scope = RcuReadScope::new();
+        unsafe { array.ensure_at_least(2) };
+
         // Should not shrink below current size.
-        assert_eq!(array.as_slice(&read_scope), &[1, 2, 3, 0, 0, 0]);
+        assert_eq!(array.as_slice(&scope), &[1, 2, 3, 0, 0, 0]);
 
-        unsafe { array.ensure_at_least(&write_scope, 12) };
-        let read_scope = RcuReadScope::new();
-        assert_eq!(array.as_slice(&read_scope), &[1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        unsafe { array.ensure_at_least(12) };
+        assert_eq!(array.as_slice(&scope), &[1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+        std::mem::drop(scope);
+        rcu_synchronize();
     }
 
     #[test]

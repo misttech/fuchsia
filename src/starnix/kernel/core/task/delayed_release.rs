@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::task::CurrentTask;
+use fuchsia_rcu::rcu_run_callbacks;
 use starnix_sync::{FileOpsCore, Locked};
 use starnix_types::ownership::Releasable;
 use std::cell::RefCell;
@@ -81,6 +82,7 @@ impl DelayedReleaser {
     /// Run all current delayed releases for the current thread.
     pub fn apply<'a>(&self, locked: &'a mut Locked<FileOpsCore>, current_task: &'a CurrentTask) {
         loop {
+            rcu_run_callbacks();
             let releasers = RELEASERS.with(|cell| {
                 std::mem::take(
                     cell.borrow_mut()

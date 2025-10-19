@@ -3,8 +3,7 @@
 // found in the LICENSE file.
 
 use crate::rcu_ptr::{RcuPtr, RcuReadGuard};
-use crate::rcu_write_scope::RcuWriteScope;
-use crate::state_machine::rcu_synchronize;
+use crate::state_machine::{rcu_drop, rcu_synchronize};
 use std::sync::Arc;
 
 /// An RCU (Read-Copy-Update) version of `Arc`.
@@ -44,12 +43,12 @@ impl<T: Send + Sync + 'static> RcuArc<T> {
     ///
     /// Concurrent readers may continue to see the old value of the Arc until the RCU state machine
     /// has made sufficient progress to ensure that no concurrent readers are holding read guards.
-    pub fn update(&self, scope: &RcuWriteScope, data: Arc<T>) {
+    pub fn update(&self, data: Arc<T>) {
         let ptr = Self::into_ptr(data);
-        // SAFETY: `scope.drop` defers the drop of the object until the RCU state machine has made
+        // SAFETY: `rcu_drop` defers the drop of the object until the RCU state machine has made
         // sufficient progress to ensure that no concurrent readers are holding read guards.
         let arc = unsafe { self.replace(ptr) };
-        scope.drop(arc);
+        rcu_drop(arc);
     }
 
     /// Create a new `Arc` to the object referenced by the RCU Arc.
@@ -154,12 +153,11 @@ mod tests {
         let arc = RcuArc::from(object);
         assert_eq!(arc.read().value, 42);
         assert_eq!(drops.load(Ordering::Relaxed), 0);
-        let scope = RcuWriteScope::default();
-        arc.update(&scope, DropCounter::new(43));
+        arc.update(DropCounter::new(43));
         assert_eq!(arc.read().value, 43);
         assert_eq!(drops.load(Ordering::Relaxed), 0);
 
-        scope.sync();
+        rcu_synchronize();
         assert_eq!(drops.load(Ordering::Relaxed), 1);
     }
 

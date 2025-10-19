@@ -5,8 +5,7 @@
 #![warn(unsafe_op_in_unsafe_fn)]
 
 use fuchsia_rcu::rcu_ptr::{RcuPtr, RcuPtrRef};
-use fuchsia_rcu::rcu_read_scope::RcuReadScope;
-use fuchsia_rcu::rcu_write_scope::RcuWriteScope;
+use fuchsia_rcu::{RcuReadScope, rcu_drop};
 
 /// `Link` is an intrusive structure in a doubly-linked list.
 ///
@@ -77,11 +76,13 @@ impl<T> Node<T> {
     /// Deallocates a node once all in-flight read operations have completed.
     ///
     /// The node must have been allocated using `alloc`.
-    fn deferred_dealloc(scope: &RcuWriteScope, node: RcuPtrRef<'_, Node<T>>)
+    fn deferred_dealloc(node: RcuPtrRef<'_, Node<T>>)
     where
         T: Send + Sync + 'static,
     {
-        unsafe { scope.drop_box(node.as_mut_ptr()) };
+        // SAFETY: The node was allocated using `alloc`.
+        let value = unsafe { Box::from_raw(node.as_mut_ptr()) };
+        rcu_drop(value);
     }
 
     /// Returns a pointer to the Link embedded in a Node.
@@ -108,8 +109,8 @@ impl<T> Node<T> {
 /// is modifying the list. To read from the list, you will need to enter an
 /// `RcuReadScope`.
 ///
-/// To modify the list, you will need to enter a `RcuWriteScope` and use some
-/// external synchronization, such as a `Mutex`, to exclude concurrent writers.
+/// To modify the list, you will need to use some external synchronization,
+/// such as a `Mutex`, to exclude concurrent writers.
 #[derive(Debug)]
 pub struct RcuList<T: Send + Sync + 'static> {
     /// The first element of the list, if any.
@@ -180,21 +181,21 @@ impl<T: Send + Sync + 'static> RcuList<T> {
     /// # Safety
     ///
     /// Requires external synchronization to exclude concurrent writers.
-    pub unsafe fn clear(&self, scope: &RcuWriteScope) {
-        let read_scope = RcuReadScope::new();
-        let mut current = self.head.read(&read_scope);
+    pub unsafe fn clear(&self) {
+        let scope = RcuReadScope::new();
+        let mut current = self.head.read(&scope);
 
         self.head.assign(std::ptr::null_mut());
         self.tail.assign(std::ptr::null_mut());
 
         while let Some(link) = current.as_ref() {
-            let next = link.next.read(&read_scope);
+            let next = link.next.read(&scope);
 
             // Other readers may continue to see this entry in the list and use the `next` pointer,
             // but they should not read the `prev` pointer anymore.
             link.prev.poison();
             let node = Node::<T>::from_link(current);
-            Node::deferred_dealloc(scope, node);
+            Node::deferred_dealloc(node);
             current = next;
         }
     }
@@ -217,9 +218,8 @@ impl<T: Send + Sync + 'static> RcuList<T> {
 
 impl<T: Send + Sync + 'static> Drop for RcuList<T> {
     fn drop(&mut self) {
-        let scope = RcuWriteScope::default();
         // SAFETY: The list is being dropped, so there are no concurrent readers.
-        unsafe { self.clear(&scope) };
+        unsafe { self.clear() };
     }
 }
 
@@ -256,7 +256,7 @@ impl<'a, T: Send + Sync + 'static> RcuListCursor<'a, T> {
     /// # Safety
     ///
     /// Requires external synchronization to exclude concurrent writers.
-    pub unsafe fn remove(&mut self, scope: &RcuWriteScope)
+    pub unsafe fn remove(&mut self)
     where
         T: Send + Sync + 'static,
     {
@@ -282,7 +282,7 @@ impl<'a, T: Send + Sync + 'static> RcuListCursor<'a, T> {
             // Other readers may continue to see this entry in the list and use the `next` pointer,
             // but they should not read the `prev` pointer anymore.
             link.prev.poison();
-            Node::deferred_dealloc(scope, node_ptr);
+            Node::deferred_dealloc(node_ptr);
         }
     }
 }
@@ -309,6 +309,7 @@ impl<'a, T: 'static> Iterator for RcuListIter<'a, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fuchsia_rcu::rcu_synchronize;
 
     #[test]
     fn test_rcu_list_push_front() {
@@ -359,12 +360,15 @@ mod tests {
             list.push_back(3);
         }
 
-        let write_scope = RcuWriteScope::default();
-        unsafe { list.clear(&write_scope) };
+        unsafe { list.clear() };
 
-        let scope = RcuReadScope::new();
-        let mut iter = list.iter(&scope);
-        assert_eq!(iter.next(), None);
+        {
+            let scope = RcuReadScope::new();
+            let mut iter = list.iter(&scope);
+            assert_eq!(iter.next(), None);
+        }
+
+        rcu_synchronize();
     }
 
     #[test]
@@ -393,6 +397,9 @@ mod tests {
             }
             assert_eq!(drop_count.load(Ordering::SeqCst), 0);
         }
+
+        rcu_synchronize();
+
         // The list is dropped here, so the contained objects should also be dropped.
         assert_eq!(drop_count.load(Ordering::SeqCst), 3);
     }
@@ -423,35 +430,35 @@ mod tests {
             list.push_back(3);
         }
 
-        let write_scope = RcuWriteScope::default();
-        let scope = RcuReadScope::new();
-        let mut cursor = list.cursor(&scope);
-        cursor.advance(); // current is 2
-        assert_eq!(cursor.current(), Some(&2));
-        unsafe { cursor.remove(&write_scope) };
+        {
+            let scope = RcuReadScope::new();
+            let mut cursor = list.cursor(&scope);
+            cursor.advance(); // current is 2
+            assert_eq!(cursor.current(), Some(&2));
+            unsafe { cursor.remove() };
 
-        let scope = RcuReadScope::new();
-        let mut iter = list.iter(&scope);
-        assert_eq!(iter.next(), Some(&1));
-        assert_eq!(iter.next(), Some(&3));
-        assert_eq!(iter.next(), None);
+            let mut iter = list.iter(&scope);
+            assert_eq!(iter.next(), Some(&1));
+            assert_eq!(iter.next(), Some(&3));
+            assert_eq!(iter.next(), None);
 
-        // Test removing head
-        let scope = RcuReadScope::new();
-        let mut cursor = list.cursor(&scope);
-        unsafe { cursor.remove(&write_scope) };
+            // Test removing head
+            let mut cursor = list.cursor(&scope);
+            unsafe { cursor.remove() };
 
-        let mut iter = list.iter(&scope);
-        assert_eq!(iter.next(), Some(&3));
-        assert_eq!(iter.next(), None);
+            let mut iter = list.iter(&scope);
+            assert_eq!(iter.next(), Some(&3));
+            assert_eq!(iter.next(), None);
 
-        // Test removing tail
-        let scope = RcuReadScope::new();
-        let mut cursor = list.cursor(&scope);
-        unsafe { cursor.remove(&write_scope) };
+            // Test removing tail
+            let mut cursor = list.cursor(&scope);
+            unsafe { cursor.remove() };
 
-        let mut iter = list.iter(&scope);
-        assert_eq!(iter.next(), None);
+            let mut iter = list.iter(&scope);
+            assert_eq!(iter.next(), None);
+        }
+
+        rcu_synchronize();
     }
 
     #[test]
@@ -463,14 +470,16 @@ mod tests {
             list.push_back(3);
         }
 
-        let write_scope = RcuWriteScope::default();
-        let scope = RcuReadScope::new();
-        let mut cursor = list.cursor(&scope);
-        while cursor.current().is_some() {
-            unsafe { cursor.remove(&write_scope) };
+        {
+            let scope = RcuReadScope::new();
+            let mut cursor = list.cursor(&scope);
+            while cursor.current().is_some() {
+                unsafe { cursor.remove() };
+            }
+
+            assert_eq!(list.iter(&scope).next(), None);
         }
 
-        let scope = RcuReadScope::new();
-        assert_eq!(list.iter(&scope).next(), None);
+        rcu_synchronize();
     }
 }

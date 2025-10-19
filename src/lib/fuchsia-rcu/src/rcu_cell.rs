@@ -4,8 +4,7 @@
 
 use crate::rcu_ptr::{RcuPtr, RcuReadGuard};
 use crate::rcu_read_scope::RcuReadScope;
-use crate::rcu_write_scope::RcuWriteScope;
-use crate::state_machine::rcu_synchronize;
+use crate::state_machine::{rcu_drop, rcu_synchronize};
 
 /// An RCU (Read-Copy-Update) version of `Cell`.
 ///
@@ -52,13 +51,12 @@ impl<T: Send + Sync + 'static> RcuCell<T> {
     ///
     /// Concurrent readers may continue to see the old value of the Cell until the RCU state machine
     /// has made sufficient progress to ensure that no concurrent readers are holding read guards.
-    pub fn update(&self, scope: &RcuWriteScope, data: T) {
+    pub fn update(&self, data: T) {
         let new_ptr = Box::into_raw(Box::new(data));
         let ptr = self.ptr.replace(new_ptr);
         // SAFETY: `ptr` was created by `Box::into_raw`.
-        unsafe {
-            scope.drop_box(ptr);
-        }
+        let value = unsafe { Box::from_raw(ptr) };
+        rcu_drop(value);
     }
 
     #[must_use]
@@ -124,9 +122,9 @@ mod tests {
     #[test]
     fn test_rcu_cell_set_deferred() {
         let value = RcuCell::new(42);
-        let scope = RcuWriteScope::default();
-        value.update(&scope, 43);
+        value.update(43);
         assert_eq!(value.read().deref(), &43);
+        rcu_synchronize();
     }
 
     #[test]

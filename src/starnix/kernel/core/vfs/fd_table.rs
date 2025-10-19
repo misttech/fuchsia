@@ -6,8 +6,8 @@ use crate::task::{CurrentTaskAndLocked, Task, register_delayed_release};
 use crate::vfs::{FdNumber, FileHandle, FileReleaser};
 use bitflags::bitflags;
 use fuchsia_inspect_contrib::profile_duration;
+use fuchsia_rcu::RcuReadScope;
 use fuchsia_rcu::rcu_arc::RcuArc;
-use fuchsia_rcu::{RcuReadScope, RcuWriteScope};
 use fuchsia_rcu_collections::rcu_array::RcuArray;
 use starnix_sync::{LockBefore, Locked, Mutex, MutexGuard, ThreadGroupLimits};
 use starnix_syscalls::SyscallResult;
@@ -338,8 +338,7 @@ impl<'a> FdTableWriteGuard<'a> {
     /// Returns whether the `FdTable` previously contained an entry for the given `FdNumber`.
     fn insert_entry(
         &self,
-        write_scope: &RcuWriteScope,
-        read_scope: &RcuReadScope,
+        scope: &RcuReadScope,
         fd: FdNumber,
         rlimit: u64,
         entry: FdTableEntry,
@@ -351,7 +350,7 @@ impl<'a> FdTableWriteGuard<'a> {
         if raw_fd as u64 >= rlimit {
             return error!(EMFILE);
         }
-        let mut view = self.store.read(read_scope);
+        let mut view = self.store.read(scope);
         if raw_fd == self.store.next_fd.get().raw() {
             self.store
                 .next_fd
@@ -360,8 +359,8 @@ impl<'a> FdTableWriteGuard<'a> {
         let raw_fd = raw_fd as usize;
         if view.len() <= raw_fd {
             // SAFETY: The write guard excludes concurrent writers.
-            unsafe { self.store.entries.ensure_at_least(write_scope, raw_fd + 1) };
-            view = self.store.read(read_scope);
+            unsafe { self.store.entries.ensure_at_least(raw_fd + 1) };
+            view = self.store.read(scope);
         }
         let id = self.store.id();
         Ok(view.slice[raw_fd].set_entry(id, entry))
@@ -622,11 +621,10 @@ impl FdTable {
     where
         L: LockBefore<ThreadGroupLimits>,
     {
-        let scope = RcuWriteScope::new();
         let rlimit = task.thread_group().get_rlimit(locked, Resource::NOFILE);
         let inner = self.inner.read();
         let guard = inner.write();
-        guard.insert_entry(&scope, &inner.scope, fd, rlimit, FdTableEntry { file, flags })?;
+        guard.insert_entry(&inner.scope, fd, rlimit, FdTableEntry { file, flags })?;
         Ok(())
     }
 
@@ -648,12 +646,11 @@ impl FdTable {
         L: LockBefore<ThreadGroupLimits>,
     {
         profile_duration!("AddFd");
-        let scope = RcuWriteScope::new();
         let rlimit = task.thread_group().get_rlimit(locked, Resource::NOFILE);
         let inner = self.inner.read();
         let guard = inner.write();
         let fd = guard.next_fd();
-        guard.insert_entry(&scope, &inner.scope, fd, rlimit, FdTableEntry { file, flags })?;
+        guard.insert_entry(&inner.scope, fd, rlimit, FdTableEntry { file, flags })?;
         Ok(fd)
     }
 
@@ -673,7 +670,6 @@ impl FdTable {
         L: LockBefore<ThreadGroupLimits>,
     {
         profile_duration!("DuplicateFd");
-        let scope = RcuWriteScope::new();
         let rlimit = task.thread_group().get_rlimit(locked, Resource::NOFILE);
         let inner = self.inner.read();
         let guard = inner.write();
@@ -698,7 +694,7 @@ impl FdTable {
             }
         };
         let existing_entry =
-            guard.insert_entry(&scope, &inner.scope, fd, rlimit, FdTableEntry { file, flags })?;
+            guard.insert_entry(&inner.scope, fd, rlimit, FdTableEntry { file, flags })?;
         assert!(!existing_entry);
         Ok(fd)
     }

@@ -110,6 +110,17 @@ struct RcuThreadBlock {
     /// The index of the read counter that the thread incremented when it entered its outermost read
     /// lock.
     counter_index: Cell<u8>,
+
+    /// Whether this thread has scheduled callbacks since the last time the thread called
+    /// `rcu_synchronize`.
+    has_pending_callbacks: Cell<bool>,
+}
+
+impl RcuThreadBlock {
+    /// Returns true if the thread is holding a read lock.
+    fn holding_read_lock(&self) -> bool {
+        self.nesting_level.get() > 0
+    }
 }
 
 thread_local! {
@@ -118,11 +129,6 @@ thread_local! {
     /// This data is used to track the nesting level of read locks and the index of the read counter
     /// that the thread incremented when it entered its outermost read lock.
     static RCU_THREAD_BLOCK: RcuThreadBlock = RcuThreadBlock::default();
-}
-
-/// Check if the current thread is holding a read lock.
-fn rcu_holding_read_lock() -> bool {
-    RCU_THREAD_BLOCK.with(|block| block.nesting_level.get() > 0)
 }
 
 /// Acquire a read lock.
@@ -210,6 +216,10 @@ pub(crate) fn rcu_replace_pointer<T>(ptr: &AtomicPtr<T>, new_ptr: *mut T) -> *mu
 /// To wait until the callback is run, call `rcu_synchronize()`. The callback might be called from
 /// an arbitrary thread.
 pub(crate) fn rcu_call(callback: impl FnOnce() + Send + Sync + 'static) {
+    RCU_THREAD_BLOCK.with(|block| {
+        block.has_pending_callbacks.set(true);
+    });
+
     // Even though we push the callback to the front of the stack, we reverse the order of the stack
     // when we pop the callbacks from the stack to ensure that the callbacks are run in the order in
     // which they were scheduled.
@@ -222,7 +232,7 @@ pub(crate) fn rcu_call(callback: impl FnOnce() + Send + Sync + 'static) {
 ///
 /// To wait until the object is dropped, call `rcu_synchronize()`. The object might be dropped from
 /// an arbitrary thread.
-pub(crate) fn rcu_drop<T: Send + Sync + 'static>(value: T) {
+pub fn rcu_drop<T: Send + Sync + 'static>(value: T) {
     rcu_call(move || {
         std::mem::drop(value);
     });
@@ -304,8 +314,25 @@ fn rcu_grace_period() {
 
 /// Block until all in-flight read operations and callbacks have completed.
 pub fn rcu_synchronize() {
-    assert!(!rcu_holding_read_lock());
+    RCU_THREAD_BLOCK.with(|block| {
+        assert!(!block.holding_read_lock());
+        block.has_pending_callbacks.set(false);
+    });
     for _ in 0..QUEUE_LENGTH {
         rcu_grace_period();
     }
+}
+
+/// Run all callbacks that have been scheduled from this thread.
+///
+/// If any callbacks have been scheduled from this thread, this function will block until all
+/// callbacks have been run. If no callbacks have been scheduled from this thread, this function
+/// will return immediately.
+pub fn rcu_run_callbacks() {
+    RCU_THREAD_BLOCK.with(|block| {
+        assert!(!block.holding_read_lock());
+        if block.has_pending_callbacks.get() {
+            rcu_synchronize();
+        }
+    })
 }
