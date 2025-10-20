@@ -65,7 +65,7 @@ pub fn nanohub_device_init(locked: &mut Locked<Unlocked>, current_task: &Current
 
 async fn register_datachannel_devices(kernel: Arc<Kernel>) {
     let current_task = kernel.kthreads.system_task();
-    let service = match Service::open(fnanohub::DataChannelServiceMarker) {
+    let service = match Service::open(fnanohub::StarnixDataChannelServiceMarker) {
         Ok(service) => service,
         Err(e) => {
             log_warn!("Failed to open DriverService: {:?}", e);
@@ -82,7 +82,7 @@ async fn register_datachannel_devices(kernel: Arc<Kernel>) {
 
     while let Ok(Some(data_channel_service_proxy)) = watcher.try_next().await {
         let name = match (|| {
-            let device_proxy = data_channel_service_proxy.connect_to_device_sync()?;
+            let device_proxy = data_channel_service_proxy.connect_to_waitable_sync()?;
             let id = device_proxy.get_identifier(zx::MonotonicInstant::INFINITE)?;
             Ok::<std::option::Option<std::string::String>, fidl::Error>(id.name)
         })() {

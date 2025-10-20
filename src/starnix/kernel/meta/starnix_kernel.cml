@@ -83,7 +83,7 @@
             from: "parent",
         },
         {
-            service: "fuchsia.hardware.google.nanohub.DataChannelService",
+            service: "fuchsia.hardware.google.nanohub.StarnixDataChannelService",
             from: "parent",
         },
         {

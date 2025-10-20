@@ -4,7 +4,7 @@
 
 use component_events::events::{EventStream, ExitStatus, Stopped};
 use component_events::matcher::EventMatcher;
-use fake_datachannel::MockDataChannel;
+use fake_datachannel::FakeDataChannel;
 use fake_display_server::{DisplayRequests, mock_display_server};
 use fake_nanohub_server::mock_nanohub_server;
 use fake_socket_tunnel::mock_socket_tunnel;
@@ -99,7 +99,7 @@ async fn main() {
         .add_local_child(
             "mock1",
             move |handles: LocalComponentHandles| {
-                Box::pin(MockDataChannel::mock_driverservice(
+                Box::pin(FakeDataChannel::fake_driverservice(
                     "test_endpoint1".to_string(),
                     "test_endpoint1_data".to_string(),
                     handles,
@@ -114,7 +114,7 @@ async fn main() {
         .add_local_child(
             "mock2",
             move |handles: LocalComponentHandles| {
-                Box::pin(MockDataChannel::mock_driverservice(
+                Box::pin(FakeDataChannel::fake_driverservice(
                     "test_endpoint2".to_string(),
                     "test_endpoint2_data".to_string(),
                     handles,
@@ -128,7 +128,7 @@ async fn main() {
     builder
         .add_route(
             Route::new()
-                .capability(Capability::service::<fnanohub::DataChannelServiceMarker>())
+                .capability(Capability::service::<fnanohub::StarnixDataChannelServiceMarker>())
                 .from(&mock1)
                 .to(Ref::child("kernel")),
         )
@@ -138,7 +138,7 @@ async fn main() {
     builder
         .add_route(
             Route::new()
-                .capability(Capability::service::<fnanohub::DataChannelServiceMarker>())
+                .capability(Capability::service::<fnanohub::StarnixDataChannelServiceMarker>())
                 .from(&mock2)
                 .to(Ref::child("kernel")),
         )

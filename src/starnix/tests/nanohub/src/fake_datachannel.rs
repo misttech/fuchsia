@@ -5,15 +5,15 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Error};
-use fidl_fuchsia_hardware_google_nanohub as fuchsia_nanohub;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::LocalComponentHandles;
 use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
-use log::info;
+use log::{error, info};
 use zx::AsHandleRef;
+use {fidl_fuchsia_hardware_google_nanohub as fuchsia_nanohub, fuchsia_async};
 
-pub struct MockDataChannel {
+pub struct FakeDataChannel {
     stat_flags: Arc<Mutex<u32>>,
     event: Arc<Mutex<Option<zx::Event>>>,
     channel_name: String,
@@ -21,12 +21,12 @@ pub struct MockDataChannel {
 }
 
 enum Incoming {
-    Svc(fuchsia_nanohub::DataChannelServiceRequest),
+    StarnixDataChannelService(fuchsia_nanohub::StarnixDataChannelServiceRequest),
 }
 
-impl MockDataChannel {
+impl FakeDataChannel {
     pub fn new(channel_name: String, read_data: String) -> Self {
-        MockDataChannel {
+        FakeDataChannel {
             stat_flags: Arc::new(Mutex::new(fuchsia_nanohub::SIGNAL_WRITABLE)),
             event: Arc::new(Mutex::new(None)),
             channel_name,
@@ -34,26 +34,71 @@ impl MockDataChannel {
         }
     }
 
-    async fn handle_device_stream(
-        mut stream: fuchsia_nanohub::DataChannelRequestStream,
-        stat_flags: Arc<Mutex<u32>>,
-        shared_event: Arc<Mutex<Option<zx::Event>>>,
-        channel_name: String,
-        read_data: String,
+    async fn handle_unbound_waitable_stream(
+        self: Arc<Self>,
+        mut stream: fuchsia_nanohub::UnboundWaitableDataChannelRequestStream,
     ) -> Result<(), Error> {
         while let Some(request) = stream.try_next().await.context("failed request")? {
             match request {
-                fuchsia_nanohub::DataChannelRequest::Read { payload: _, responder } => {
-                    let response = fuchsia_nanohub::DataChannelReadResponse {
-                        data: Some(read_data.as_bytes().to_vec()),
+                fuchsia_nanohub::UnboundWaitableDataChannelRequest::GetIdentifier { responder } => {
+                    let response =
+                        fuchsia_nanohub::UnboundWaitableDataChannelGetIdentifierResponse {
+                            name: Some(self.channel_name.clone()),
+                            ..Default::default()
+                        };
+
+                    let _ = responder.send(&response);
+                }
+                fuchsia_nanohub::UnboundWaitableDataChannelRequest::Bind { payload, responder } => {
+                    let stream = payload
+                        .server
+                        .expect("Server end of waitableDataChannel not provided")
+                        .into_stream();
+
+                    let event = payload.event.expect("Event not provided");
+                    if let Err(e) = event.signal_handle(
+                        zx::Signals::empty(),
+                        zx::Signals::from_bits_truncate(*self.stat_flags.lock().await),
+                    ) {
+                        info!("Failed to signal event: {:?}", e);
+                    }
+                    let mut event_lock = self.event.lock().await;
+                    *event_lock = Some(event);
+
+                    let self_clone = self.clone();
+                    fuchsia_async::Task::spawn(async move {
+                        if let Err(e) = self_clone.handle_waitable_stream(stream).await {
+                            error!("Error handling bound waitable device stream: {:?}", e);
+                        }
+                    })
+                    .detach();
+                    let _ = responder.send(Ok(()));
+                }
+                _ => {
+                    error!("unexpected waitable request");
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn handle_waitable_stream(
+        &self,
+        mut stream: fuchsia_nanohub::WaitableDataChannelRequestStream,
+    ) -> Result<(), Error> {
+        while let Some(request) = stream.try_next().await.context("failed request")? {
+            match request {
+                fuchsia_nanohub::WaitableDataChannelRequest::Read { responder } => {
+                    let response = fuchsia_nanohub::WaitableDataChannelReadResponse {
+                        data: Some(self.read_data.as_bytes().to_vec()),
                         ..Default::default()
                     };
                     let _ = responder.send(Ok(response));
                 }
-                fuchsia_nanohub::DataChannelRequest::Write { payload: _, responder } => {
-                    let mut stat_flags = stat_flags.lock().await;
+                fuchsia_nanohub::WaitableDataChannelRequest::Write { payload: _, responder } => {
+                    let mut stat_flags = self.stat_flags.lock().await;
                     *stat_flags |= fuchsia_nanohub::SIGNAL_READABLE;
-                    if let Some(event) = &*shared_event.lock().await {
+                    if let Some(event) = &*self.event.lock().await {
                         if let Err(e) = event.signal_handle(
                             zx::Signals::empty(),
                             zx::Signals::from_bits_truncate(*stat_flags),
@@ -63,68 +108,38 @@ impl MockDataChannel {
                     }
                     let _ = responder.send(Ok(()));
                 }
-                fuchsia_nanohub::DataChannelRequest::Register { event, responder } => {
-                    let stat_flags = stat_flags.lock().await;
-                    if let Err(e) = event.signal_handle(
-                        zx::Signals::empty(),
-                        zx::Signals::from_bits_truncate(*stat_flags),
-                    ) {
-                        info!("failed to signal event: {:?}", e);
-                    }
-                    let mut event_lock = shared_event.lock().await;
-                    *event_lock = Some(event);
-                    let _ = responder.send(Ok(()));
-                }
-                fuchsia_nanohub::DataChannelRequest::GetIdentifier { responder } => {
-                    let id = fuchsia_nanohub::DataChannelGetIdentifierResponse {
-                        name: Some(channel_name.clone()),
-                        ..Default::default()
-                    };
-                    let _ = responder.send(&id);
-                }
                 _ => {}
             }
         }
         Ok(())
     }
 
-    pub async fn mock_driverservice(
+    pub async fn fake_driverservice(
         channel_name: String,
         read_data: String,
         handles: LocalComponentHandles,
     ) -> Result<(), Error> {
-        let mock = Self::new(channel_name, read_data);
+        let fake = Arc::new(Self::new(channel_name, read_data));
         let mut fs = ServiceFs::new();
-        let stat_flags = mock.stat_flags.clone();
-        let shared_event = mock.event.clone();
-        let channel_name = mock.channel_name.clone();
-        let read_data = mock.read_data.clone();
 
-        fs.dir("svc").add_fidl_service_instance("default", Incoming::Svc);
+        fs.dir("svc").add_fidl_service_instance("default", Incoming::StarnixDataChannelService);
 
         fs.serve_connection(handles.outgoing_dir)?;
 
         fs.for_each_concurrent(0, move |request| {
-            let stat_flags = stat_flags.clone();
-            let shared_event = shared_event.clone();
-            let channel_name = channel_name.clone();
-            let read_data = read_data.clone();
+            let fake = fake.clone();
             async move {
                 match request {
-                    Incoming::Svc(fuchsia_nanohub::DataChannelServiceRequest::Device(stream)) => {
-                        if let Err(e) = Self::handle_device_stream(
-                            stream,
-                            stat_flags,
-                            shared_event,
-                            channel_name,
-                            read_data,
-                        )
-                        .await
-                        {
-                            info!("Error handling device stream: {:?}", e);
+                    Incoming::StarnixDataChannelService(
+                        fuchsia_nanohub::StarnixDataChannelServiceRequest::Waitable(stream),
+                    ) => {
+                        if let Err(e) = fake.handle_unbound_waitable_stream(stream).await {
+                            error!("Error handling waitable stream: {:?}", e);
                         }
                     }
-                    _ => {}
+                    _ => {
+                        error!("Unexpected request");
+                    }
                 }
             }
         })

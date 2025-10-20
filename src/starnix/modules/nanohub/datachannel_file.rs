@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl::endpoints::create_sync_proxy;
 use starnix_core::device::DeviceOps;
 use starnix_core::task::{
     CurrentTask, EventHandler, SignalHandler, SignalHandlerInner, WaitCanceler, Waiter,
@@ -24,11 +25,11 @@ use fuchsia_runtime;
 #[derive(Clone)]
 pub struct DataChannelDevice {
     manager: Arc<frunner::ManagerSynchronousProxy>,
-    service_proxy: Arc<fnanohub::DataChannelServiceProxy>,
+    service_proxy: Arc<fnanohub::StarnixDataChannelServiceProxy>,
 }
 
 impl DataChannelDevice {
-    pub fn new(service_proxy: fnanohub::DataChannelServiceProxy) -> Self {
+    pub fn new(service_proxy: fnanohub::StarnixDataChannelServiceProxy) -> Self {
         let manager = Arc::new(
             fuchsia_component::client::connect_to_protocol_sync::<frunner::ManagerMarker>()
                 .expect("failed to create runner proxy"),
@@ -47,25 +48,25 @@ impl DeviceOps for DataChannelDevice {
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
-        let device_proxy = self
+        let unbound_proxy = self
             .service_proxy
-            .connect_to_device_sync()
-            .map_err(|_: fidl::Error| errno!(EIO, "Failed to get data channel device"))?;
-        Ok(Box::new(DataChannelFile::new(Arc::new(device_proxy), self.manager.clone())?))
+            .connect_to_waitable_sync()
+            .map_err(|_| errno!(EIO, "Failed to get unbound data channel device"))?;
+
+        Ok(Box::new(DataChannelFile::new(Arc::new(unbound_proxy), self.manager.clone())?))
     }
 }
 
 pub struct DataChannelFile {
     manager: Arc<frunner::ManagerSynchronousProxy>,
-
-    client: Arc<fnanohub::DataChannelSynchronousProxy>,
+    waitable_client: Arc<fnanohub::WaitableDataChannelSynchronousProxy>,
     // Event used to determine when data is available to read or write.
     event: Arc<zx::Event>,
 }
 
 impl DataChannelFile {
     pub fn new(
-        client: Arc<fnanohub::DataChannelSynchronousProxy>,
+        unbound_waitable_client: Arc<fnanohub::UnboundWaitableDataChannelSynchronousProxy>,
         manager: Arc<frunner::ManagerSynchronousProxy>,
     ) -> Result<Self, Errno> {
         let event = zx::Event::create();
@@ -92,12 +93,25 @@ impl DataChannelFile {
             })
             .map_err(|e| errno!(EIO, e))?;
 
-        client
-            .register(event, zx::MonotonicInstant::INFINITE)
+        let (data_channel_proxy, server_end) =
+            create_sync_proxy::<fnanohub::WaitableDataChannelMarker>();
+
+        let req = fnanohub::UnboundWaitableDataChannelBindRequest {
+            server: Some(server_end),
+            event: Some(event_dup),
+            ..Default::default()
+        };
+
+        unbound_waitable_client
+            .bind(req, zx::MonotonicInstant::INFINITE)
             .map_err(|e| errno!(EIO, e))?
             .map_err(|e| errno!(EIO, e))?;
 
-        Ok(DataChannelFile { manager, client, event: Arc::new(event_dup) })
+        Ok(DataChannelFile {
+            manager,
+            waitable_client: Arc::new(data_channel_proxy),
+            event: Arc::new(event),
+        })
     }
 }
 
@@ -139,20 +153,13 @@ impl FileOps for DataChannelFile {
     ) -> Result<usize, Errno> {
         file.blocking_op(locked, current_task, FdEvents::POLLIN | FdEvents::POLLHUP, None, |_| {
             match self
-                .client
-                .read(
-                    &fnanohub::DataChannelReadRequest {
-                        blocking: Some(false),
-                        ..Default::default()
-                    },
-                    zx::MonotonicInstant::INFINITE,
-                )
+                .waitable_client
+                .read(zx::MonotonicInstant::INFINITE)
                 .map_err(|e| errno!(EIO, e))?
             {
                 Ok(response) => {
                     // Keep the wake lease alive until the data has been processed.
                     // The lease is dropped at the end of this scope.
-                    let _wake_lease = response.wake_lease;
                     if let Some(d) = response.data {
                         if d.len() > data.available() {
                             log_warn!("Data returned by datachannel too large for buffer");
@@ -182,12 +189,12 @@ impl FileOps for DataChannelFile {
         let len = data_vector.len();
 
         file.blocking_op(locked, current_task, FdEvents::POLLOUT | FdEvents::POLLHUP, None, |_| {
-            let request = fnanohub::DataChannelWriteRequest {
+            let request = fnanohub::WaitableDataChannelWriteRequest {
                 data: Some(data_vector.clone()),
                 ..Default::default()
             };
             match self
-                .client
+                .waitable_client
                 .write(&request, zx::MonotonicInstant::INFINITE)
                 .map_err(|e| errno!(EIO, e))?
             {
