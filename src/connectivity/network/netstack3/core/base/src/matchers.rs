@@ -578,7 +578,20 @@ pub struct AddressMatcher<A: IpAddress> {
 
 impl<A: IpAddress> InspectableValue for AddressMatcher<A> {
     fn record<I: Inspector>(&self, name: &str, inspector: &mut I) {
-        inspector.record_debug(name, self);
+        let AddressMatcher { matcher, invert } = self;
+
+        inspector.record_child(name, |inspector| {
+            inspector.record_bool("invert", *invert);
+            match matcher {
+                AddressMatcherType::Subnet(SubnetMatcher(subnet)) => {
+                    inspector.record_display("subnet", subnet)
+                }
+                AddressMatcherType::Range(range) => {
+                    inspector.record_display("start", range.start());
+                    inspector.record_display("end", range.end());
+                }
+            }
+        })
     }
 }
 

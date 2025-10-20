@@ -2576,10 +2576,10 @@ async fn inspect_filtering_state(name: &str) {
                                 // Note that this rule is only included in the IPv4 filtering state
                                 // because it has an address matcher with an IPv4 subnet.
                                 "matchers": {
-                                    "dst_address": "AddressMatcher { \
-                                        matcher: SubnetMatcher(127.0.0.0/8), \
-                                        invert: false \
-                                    }",
+                                    "dst_address": {
+                                        "subnet": "127.0.0.0/8",
+                                        "invert": false,
+                                    },
                                 },
                                 "action": "Jump(UninstalledRoutine(1))",
                             },
