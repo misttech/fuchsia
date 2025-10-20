@@ -203,7 +203,7 @@ class SkipBlockTest : public zxtest::Test {
   void CreatePayload(size_t size, zx::vmo* out) {
     zx::vmo vmo;
     fzl::VmoMapper mapper;
-    ASSERT_OK(mapper.CreateAndMap(fbl::round_up(size, ZX_PAGE_SIZE),
+    ASSERT_OK(mapper.CreateAndMap(fbl::round_up(size, zx_system_get_page_size()),
                                   ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, nullptr, &vmo));
     memset(mapper.start(), 0x4a, mapper.size());
     *out = std::move(vmo);
@@ -291,7 +291,7 @@ TEST_F(SkipBlockTest, GrowBadBlock) {
   nand().set_result(ZX_OK);
 
   zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(fbl::round_up(kBlockSize, ZX_PAGE_SIZE), 0, &vmo));
+  ASSERT_OK(zx::vmo::create(fbl::round_up(kBlockSize, zx_system_get_page_size()), 0, &vmo));
   nand::ReadWriteOperation op = {};
   op.vmo = std::move(vmo);
   op.block = 5;
@@ -320,7 +320,7 @@ TEST_F(SkipBlockTest, GrowMultipleBadBlock) {
   nand().set_result(ZX_OK);
 
   zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(fbl::round_up(kBlockSize, ZX_PAGE_SIZE), 0, &vmo));
+  ASSERT_OK(zx::vmo::create(fbl::round_up(kBlockSize, zx_system_get_page_size()), 0, &vmo));
   nand::ReadWriteOperation op = {};
   op.vmo = std::move(vmo);
   op.block = 5;
@@ -344,7 +344,7 @@ TEST_F(SkipBlockTest, MappingFailure) {
   nand().set_result(ZX_ERR_INVALID_ARGS);
 
   zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(fbl::round_up(kBlockSize, ZX_PAGE_SIZE), 0, &vmo));
+  ASSERT_OK(zx::vmo::create(fbl::round_up(kBlockSize, zx_system_get_page_size()), 0, &vmo));
   nand::ReadWriteOperation op = {};
   op.vmo = std::move(vmo);
   op.block = 5;
@@ -400,7 +400,7 @@ TEST_F(SkipBlockTest, ReadSuccess) {
   nand().set_result(ZX_OK);
 
   zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(fbl::round_up(kBlockSize, ZX_PAGE_SIZE), 0, &vmo));
+  ASSERT_OK(zx::vmo::create(fbl::round_up(kBlockSize, zx_system_get_page_size()), 0, &vmo));
   nand::ReadWriteOperation op = {};
   op.vmo = std::move(vmo);
   op.block = 5;
@@ -418,7 +418,7 @@ TEST_F(SkipBlockTest, ReadFailure) {
   nand().set_result(ZX_ERR_INVALID_ARGS);
 
   zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(fbl::round_up(kBlockSize, ZX_PAGE_SIZE), 0, &vmo));
+  ASSERT_OK(zx::vmo::create(fbl::round_up(kBlockSize, zx_system_get_page_size()), 0, &vmo));
   nand::ReadWriteOperation op = {};
   op.vmo = std::move(vmo);
   op.block = 7;
@@ -443,7 +443,7 @@ TEST_F(SkipBlockTest, ReadMultipleCopies) {
   nand().set_result(ZX_OK);
 
   zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(fbl::round_up(kBlockSize, ZX_PAGE_SIZE), 0, &vmo));
+  ASSERT_OK(zx::vmo::create(fbl::round_up(kBlockSize, zx_system_get_page_size()), 0, &vmo));
   nand::ReadWriteOperation op = {};
   op.vmo = std::move(vmo);
   op.block = 1;
@@ -470,7 +470,7 @@ TEST_F(SkipBlockTest, ReadMultipleCopiesNoneSucceeds) {
   nand().set_result(ZX_ERR_IO);
 
   zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(fbl::round_up(kBlockSize, ZX_PAGE_SIZE), 0, &vmo));
+  ASSERT_OK(zx::vmo::create(fbl::round_up(kBlockSize, zx_system_get_page_size()), 0, &vmo));
   nand::ReadWriteOperation op = {};
   op.vmo = std::move(vmo);
   op.block = 0;

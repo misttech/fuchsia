@@ -27,7 +27,7 @@ namespace nand {
 namespace {
 
 // It is convenient for mapping for nand page size to be same as DRAM page size.
-constexpr uint32_t kPageSize = ZX_PAGE_SIZE;
+constexpr uint32_t kPageSize = 4096;
 constexpr uint32_t kPagesPerBlock = 16;
 constexpr uint32_t kNumBlocks = 100;
 constexpr uint32_t kOobSize = 8;

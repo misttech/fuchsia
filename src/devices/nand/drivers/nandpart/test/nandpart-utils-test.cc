@@ -15,7 +15,7 @@
 namespace nand {
 namespace {
 
-constexpr uint32_t kPageSize = ZX_PAGE_SIZE;
+constexpr uint32_t kPageSize = 4096;
 constexpr uint32_t kPagesPerBlock = 2;
 constexpr uint32_t kNumBlocks = 5;
 constexpr uint32_t kOobSize = 8;

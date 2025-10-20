@@ -510,9 +510,10 @@ zx_status_t SkipBlockDevice::ReadPartialBlocksLocked(WriteBytesOperation op, uin
 
   // Copy from input vmo to newly created one.
   fzl::VmoMapper mapper;
-  const size_t vmo_page_offset = op.vmo_offset % ZX_PAGE_SIZE;
-  status = mapper.Map(op.vmo, fbl::round_down(op.vmo_offset, ZX_PAGE_SIZE),
-                      fbl::round_up(vmo_page_offset + op.size, ZX_PAGE_SIZE), ZX_VM_PERM_READ);
+  const size_t page_size = zx_system_get_page_size();
+  const size_t vmo_page_offset = op.vmo_offset % page_size;
+  status = mapper.Map(op.vmo, fbl::round_down(op.vmo_offset, page_size),
+                      fbl::round_up(vmo_page_offset + op.size, page_size), ZX_VM_PERM_READ);
   if (status != ZX_OK) {
     return status;
   }
