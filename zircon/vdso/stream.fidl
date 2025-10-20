@@ -129,10 +129,12 @@ closed protocol Stream {
     /// will attempt to increase the content size of the stream in order to receive the
     /// given data, filling any new, unwritten content with zero bytes.
     ///
-    /// If the resize operation fails after some amount of data was written to the
-    /// stream, the function will return successfully.  If no bytes were written to
-    /// stream, the operation will return `ZX_ERR_FILE_BIG`, `ZX_ERR_OUT_OF_RANGE`, or
-    /// `ZX_ERR_NO_SPACE`, as appropriate.
+    /// The content size of the stream is bound by the size of the underlying VMO.
+    /// If the size of the VMO is insufficient to receive the entire given data, the
+    /// operation is considered a partial write. If no bytes are written, the operation
+    /// will return `ZX_ERR_FILE_BIG`, `ZX_ERR_OUT_OF_RANGE` or `ZX_ERR_NO_SPACE`, as
+    /// appropriate. Otherwise during a partial write, `ZX_OK` will be returned and
+    /// *actual* will be less than the sum of the capacities of the buffers.
     ///
     /// If a NULL *actual* is passed in, it will be ignored.
     ///
@@ -224,10 +226,12 @@ closed protocol Stream {
     /// will attempt to increase the content size of the stream in order to receive the
     /// given data, filling any new, unwritten content with zero bytes.
     ///
-    /// If the resize operation fails after some amount of data was written to the
-    /// stream, the function will return successfully.  If no bytes were written to
-    /// stream, the operation will return `ZX_ERR_FILE_BIG`, `ZX_ERR_OUT_OF_RANGE`, or
-    /// `ZX_ERR_NO_SPACE`, as appropriate.
+    /// The content size of the stream is bound by the size of the underlying VMO.
+    /// If the size of the VMO is insufficient to receive the entire given data, the
+    /// operation is considered a partial write. If no bytes are written, the operation
+    /// will return `ZX_ERR_FILE_BIG`, `ZX_ERR_OUT_OF_RANGE` or `ZX_ERR_NO_SPACE`, as
+    /// appropriate. Otherwise during a partial write, `ZX_OK` will be returned and
+    /// *actual* will be less than the sum of the capacities of the buffers.
     ///
     /// If a NULL *actual* is passed in, it will be ignored.
     ///

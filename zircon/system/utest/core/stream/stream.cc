@@ -412,7 +412,7 @@ TEST(StreamTestCase, WriteExtendsContentSize) {
   EXPECT_EQ(4096u, GetContentSize(vmo));
 }
 
-TEST(StreamTestCase, WriteExtendsVMOSize) {
+TEST(StreamTestCase, WriteDoesntExtendVMOSize) {
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), ZX_VMO_RESIZABLE, &vmo));
   size_t content_size = 0u;
@@ -436,19 +436,24 @@ TEST(StreamTestCase, WriteExtendsVMOSize) {
 
   actual = 9823u;
   ASSERT_OK(stream.writev(0, &vec, 1, &actual));
-  EXPECT_EQ(10u, actual);
-  EXPECT_EQ(4100u, GetContentSize(vmo));
+  EXPECT_EQ(6u, actual);
+  EXPECT_EQ(zx_system_get_page_size(), GetContentSize(vmo));
+
+  // Assert that there is no remaining capacity in the underlying VMO by trying
+  // to write one byte.
+  vec.capacity = 1;
+  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, stream.writev(0, &vec, 1, nullptr));
 
   uint64_t vmo_size = 839u;
   ASSERT_OK(vmo.get_size(&vmo_size));
-  EXPECT_EQ(zx_system_get_page_size() * 2, vmo_size);
+  EXPECT_EQ(zx_system_get_page_size(), vmo_size);
 
   vec.capacity = UINT64_MAX;
   actual = 5423u;
   ASSERT_EQ(ZX_ERR_FILE_BIG, stream.writev(0, &vec, 1, &actual));
 
   ASSERT_OK(vmo.get_size(&vmo_size));
-  EXPECT_EQ(zx_system_get_page_size() * 2, vmo_size);
+  EXPECT_EQ(zx_system_get_page_size(), vmo_size);
 }
 
 TEST(StreamTestCase, ReadVAt) {
@@ -524,20 +529,21 @@ TEST(StreamTestCase, WriteVAt) {
   vec.capacity = 10u;
   actual = 9823u;
   ASSERT_OK(stream.writev_at(0, 4090, &vec, 1, &actual));
-  EXPECT_EQ(10u, actual);
-  EXPECT_EQ(4100u, GetContentSize(vmo));
+  EXPECT_EQ(6u, actual);
+  EXPECT_EQ(zx_system_get_page_size(), GetContentSize(vmo));
 
   uint64_t vmo_size = 839u;
   ASSERT_OK(vmo.get_size(&vmo_size));
-  EXPECT_EQ(zx_system_get_page_size() * 2, vmo_size);
+  EXPECT_EQ(zx_system_get_page_size(), vmo_size);
 
   vec.capacity = UINT64_MAX;
   actual = 5423u;
   ASSERT_EQ(ZX_ERR_FILE_BIG, stream.writev_at(0, 5414u, &vec, 1, &actual));
 
+  // did not change the size of the VMO
   ASSERT_OK(vmo.get_size(&vmo_size));
-  EXPECT_EQ(zx_system_get_page_size() * 2, vmo_size);
-  EXPECT_EQ(4100u, GetContentSize(vmo));
+  EXPECT_EQ(zx_system_get_page_size(), vmo_size);
+  EXPECT_EQ(zx_system_get_page_size(), GetContentSize(vmo));
 
   zx_iovec_t bad_vec = {
       .buffer = nullptr,
@@ -546,7 +552,7 @@ TEST(StreamTestCase, WriteVAt) {
 
   actual = 5423u;
   ASSERT_NOT_OK(stream.writev_at(0, 5000u, &bad_vec, 1, &actual));
-  ASSERT_EQ(4100u, GetContentSize(vmo));
+  ASSERT_EQ(zx_system_get_page_size(), GetContentSize(vmo));
 }
 
 TEST(StreamTestCase, ReadVectorAlias) {
@@ -957,7 +963,7 @@ TEST(StreamTestCase, WriteShrinkRace) {
     ASSERT_TRUE(pager.Init());
 
     pager_tests::Vmo* vmo;
-    ASSERT_TRUE(pager.CreateVmoWithOptions(initial_vmo_num_pages, ZX_VMO_RESIZABLE, &vmo));
+    ASSERT_TRUE(pager.CreateUnboundedVmo(0, 0, &vmo));
 
     zx::stream stream;
     ASSERT_OK(zx::stream::create(ZX_STREAM_MODE_WRITE, vmo->vmo(), 0u, &stream));
@@ -996,7 +1002,7 @@ TEST(StreamTestCase, WriteShrinkRace) {
     });
 
     // Simultaneously try to truncate.
-    std::thread truncate_thread([&] { ASSERT_OK(vmo->vmo().set_size(truncate_to_size)); });
+    std::thread truncate_thread([&] { ASSERT_OK(vmo->vmo().set_stream_size(truncate_to_size)); });
 
     boundary_write_thread.join();
     full_write_thread.join();
@@ -1325,63 +1331,6 @@ TEST(StreamTestCase, RaceWriteResizeVecLarger) {
     write_thread.join();
     resize_thread.join();
   }
-}
-
-// Tests that ZX_RIGHT_RESIZE is required on the VMO that the stream is created against for the
-// stream to be able to expand the VMO.
-TEST(StreamTestCase, ExpandVmoResizeRight) {
-  // Create a resizable VMO.
-  zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), ZX_VMO_RESIZABLE, &vmo));
-
-  // The VMO handle has the resize right.
-  zx_info_handle_basic_t info;
-  ASSERT_OK(vmo.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
-  EXPECT_EQ(info.rights & ZX_RIGHT_RESIZE, ZX_RIGHT_RESIZE);
-
-  // Create a duplicate handle without the resize right.
-  zx::vmo vmo_no_resize;
-  ASSERT_OK(vmo.duplicate(info.rights & ~ZX_RIGHT_RESIZE, &vmo_no_resize));
-
-  // Create streams against both the handles.
-  const size_t seek = zx_system_get_page_size() - 1;
-  zx::stream stream, stream_no_resize;
-  ASSERT_OK(zx::stream::create(ZX_STREAM_MODE_WRITE, vmo, seek, &stream));
-  ASSERT_OK(zx::stream::create(ZX_STREAM_MODE_WRITE, vmo_no_resize, seek, &stream_no_resize));
-
-  char buffer[] = "012345678";
-  zx_iovec_t vec = {
-      .buffer = buffer,
-      .capacity = sizeof(buffer),
-  };
-
-  // Should be able to write to the current VMO size without the resize right.
-  size_t actual;
-  ASSERT_OK(stream_no_resize.writev(0, &vec, 1, &actual));
-  EXPECT_EQ(1u, actual);
-
-  // Should not be able to write any further as that would require expanding the VMO.
-  actual = 0;
-  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, stream_no_resize.writev(0, &vec, 1, &actual));
-  EXPECT_EQ(0u, actual);
-
-  // Verify that the VMO has not been resized.
-  uint64_t vmo_size;
-  ASSERT_OK(vmo.get_size(&vmo_size));
-  EXPECT_EQ(zx_system_get_page_size(), vmo_size);
-
-  // Should be able to expand the VMO with the resize right.
-  ASSERT_OK(stream.writev(0, &vec, 1, &actual));
-  EXPECT_EQ(10u, actual);
-
-  // Verify new VMO size.
-  ASSERT_OK(vmo.get_size(&vmo_size));
-  EXPECT_EQ(zx_system_get_page_size() * 2, vmo_size);
-
-  // Verify written contents.
-  char data[sizeof(buffer)];
-  ASSERT_OK(vmo.read(data, seek, sizeof(buffer)));
-  EXPECT_STREQ(buffer, data);
 }
 
 TEST(StreamTestCase, PartialVmoDirty) {

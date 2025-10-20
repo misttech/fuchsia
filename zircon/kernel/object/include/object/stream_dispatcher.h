@@ -49,19 +49,9 @@ class StreamDispatcher final : public SoloDispatcher<StreamDispatcher, ZX_DEFAUL
   explicit StreamDispatcher(uint32_t options, fbl::RefPtr<VmObjectPaged> vmo,
                             fbl::RefPtr<ContentSizeManager> content_size_mgr, zx_off_t seek);
 
-  zx_status_t CreateWriteOpAndExpandVmo(size_t total_capacity, zx_off_t offset,
-                                        uint64_t* out_length,
-                                        ktl::optional<uint64_t>* out_prev_content_size,
-                                        ContentSizeManager::Operation* out_op);
-
-  // Tries to expand the VMO to a requested (byte-aligned) size, if the VMO is smaller than that
-  // size. Whether the VMO can be expanded is controlled by |can_resize_vmo|. Note that this will
-  // not modify the content size.
-  //
-  // Returns the actual size of the VMO in |out_actual| after attempting to expand. This value is
-  // set, even in the case of a failure.
-  zx_status_t ExpandIfNecessary(uint64_t requested_vmo_size, bool can_resize_vmo,
-                                uint64_t* out_actual);
+  zx_status_t CreateWriteOp(size_t total_capacity, zx_off_t offset, uint64_t* out_length,
+                            ktl::optional<uint64_t>* out_prev_content_size,
+                            ContentSizeManager::Operation* out_op);
 
   uint32_t options_ TA_GUARDED(get_lock());
 

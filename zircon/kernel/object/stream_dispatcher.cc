@@ -199,8 +199,7 @@ ktl::pair<zx_status_t, size_t> StreamDispatcher::WriteVector(user_in_iovec_t use
   Guard<Mutex> seek_guard{&seek_lock_};
 
   {
-    zx_status_t status =
-        CreateWriteOpAndExpandVmo(total_capacity, seek_, &length, &prev_content_size, &op);
+    zx_status_t status = CreateWriteOp(total_capacity, seek_, &length, &prev_content_size, &op);
     if (status != ZX_OK) {
       return {status, 0};
     }
@@ -258,8 +257,7 @@ ktl::pair<zx_status_t, size_t> StreamDispatcher::WriteVectorAt(user_in_iovec_t u
   ktl::optional<uint64_t> prev_content_size;
 
   {
-    zx_status_t status =
-        CreateWriteOpAndExpandVmo(total_capacity, offset, &length, &prev_content_size, &op);
+    zx_status_t status = CreateWriteOp(total_capacity, offset, &length, &prev_content_size, &op);
     if (status != ZX_OK) {
       return {status, 0};
     }
@@ -309,8 +307,6 @@ ktl::pair<zx_status_t, size_t> StreamDispatcher::AppendVector(user_in_iovec_t us
     }
   }
 
-  const bool can_resize_vmo = CanResizeVmo();
-
   size_t length = 0u;
   uint64_t offset = 0u;
   ContentSizeManager::Operation op(content_size_mgr_.get());
@@ -330,20 +326,12 @@ ktl::pair<zx_status_t, size_t> StreamDispatcher::AppendVector(user_in_iovec_t us
 
     offset = new_content_size - total_capacity;
 
-    uint64_t vmo_size = 0u;
-    status = ExpandIfNecessary(new_content_size, can_resize_vmo, &vmo_size);
-    if (status != ZX_OK) {
-      if (vmo_size <= offset) {
-        // Unable to expand to requested size and cannot even perform partial write.
-        op.CancelLocked();
-
-        // Return `ZX_ERR_OUT_OF_RANGE` for range errors. Otherwise, clients expect all other errors
-        // related to resize failure to be `ZX_ERR_NO_SPACE`.
-        return {status == ZX_ERR_OUT_OF_RANGE ? status : ZX_ERR_NO_SPACE, 0};
-      }
+    uint64_t vmo_size = vmo_->size();
+    if (vmo_size <= offset) {
+      // We can't even perform a partial write
+      op.CancelLocked();
+      return {ZX_ERR_OUT_OF_RANGE, 0};
     }
-
-    DEBUG_ASSERT(vmo_size > offset);
 
     if (vmo_size < new_content_size) {
       // Unable to expand to requested size but able to perform a partial write.
@@ -457,14 +445,14 @@ bool StreamDispatcher::CanResizeVmo() const {
   return options_ & kCanResizeVmo;
 }
 
-zx_status_t StreamDispatcher::CreateWriteOpAndExpandVmo(
-    size_t total_capacity, zx_off_t offset, uint64_t* out_length,
-    ktl::optional<uint64_t>* out_prev_content_size, ContentSizeManager::Operation* out_op) {
+zx_status_t StreamDispatcher::CreateWriteOp(size_t total_capacity, zx_off_t offset,
+                                            uint64_t* out_length,
+                                            ktl::optional<uint64_t>* out_prev_content_size,
+                                            ContentSizeManager::Operation* out_op) {
   DEBUG_ASSERT(out_op);
   DEBUG_ASSERT(out_length);
 
   zx_status_t status = ZX_OK;
-  const bool can_resize_vmo = CanResizeVmo();
 
   {
     Guard<Mutex> content_size_guard{AliasedLock, content_size_mgr_->lock(), out_op->lock()};
@@ -477,20 +465,12 @@ zx_status_t StreamDispatcher::CreateWriteOpAndExpandVmo(
     content_size_mgr_->BeginWriteLocked(requested_content_size, &content_size_guard,
                                         out_prev_content_size, out_op);
 
-    uint64_t vmo_size = 0u;
-    status = ExpandIfNecessary(requested_content_size, can_resize_vmo, &vmo_size);
-    if (status != ZX_OK) {
-      if (vmo_size <= offset) {
-        // Unable to expand to requested size and cannot even perform partial write.
-        out_op->CancelLocked();
-
-        // Return `ZX_ERR_OUT_OF_RANGE` for range errors. Otherwise, clients expect all other errors
-        // related to resize failure to be `ZX_ERR_NO_SPACE`.
-        return status == ZX_ERR_OUT_OF_RANGE ? status : ZX_ERR_NO_SPACE;
-      }
+    uint64_t vmo_size = vmo_->size();
+    if (vmo_size <= offset) {
+      // We can't even perform a partial write
+      out_op->CancelLocked();
+      return ZX_ERR_OUT_OF_RANGE;
     }
-
-    DEBUG_ASSERT(vmo_size > offset);
 
     // Allow writing up to the minimum of the VMO size and requested content size, since we want to
     // write at most the requested size but don't want to write beyond the VMO size.
@@ -511,35 +491,6 @@ zx_status_t StreamDispatcher::CreateWriteOpAndExpandVmo(
       out_op->CancelLocked();
       return status;
     }
-  }
-
-  return ZX_OK;
-}
-
-zx_status_t StreamDispatcher::ExpandIfNecessary(uint64_t requested_vmo_size, bool can_resize_vmo,
-                                                uint64_t* out_actual) {
-  uint64_t current_vmo_size = vmo_->size();
-  *out_actual = current_vmo_size;
-
-  uint64_t required_vmo_size = ROUNDUP_PAGE_SIZE(requested_vmo_size);
-  // Overflow when rounding up.
-  if (required_vmo_size < requested_vmo_size) {
-    return ZX_ERR_OUT_OF_RANGE;
-  }
-
-  if (required_vmo_size > current_vmo_size) {
-    if (!can_resize_vmo) {
-      // VmObjectPaged::Resize returns ZX_ERR_OUT_OF_RANGE when it is given a properly
-      // page-aligned but too large request. Mirror that here.
-      return ZX_ERR_OUT_OF_RANGE;
-    }
-    zx_status_t status = vmo_->Resize(required_vmo_size);
-    if (status != ZX_OK) {
-      // Resizing failed but the rest of the current VMO size can be used.
-      return status;
-    }
-
-    *out_actual = required_vmo_size;
   }
 
   return ZX_OK;
