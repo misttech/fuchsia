@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Sequence
 
-_CPP_EXTENSIONS = [".cc", ".c", ".cpp"]
+_CPP_EXTENSIONS = [".cc", ".c", ".cpp", ".cxx", ".S", ".s"]
 
 _FUCHSIA_CPU_MAP = {"aarch64": "arm64", "x86_64": "x64"}
 
@@ -99,7 +99,10 @@ def extract_file_from_args(args: Sequence[str]) -> str:
             return ""
 
     files = [arg for arg in args if get_ext(arg) in _CPP_EXTENSIONS]
-    assert len(files) == 1, "Should only be compiling a single file"
+    if len(files) != 1:
+        raise ValueError(
+            f"Should only be compiling a single file, got {files} from args {args}"
+        )
     return files[0]
 
 

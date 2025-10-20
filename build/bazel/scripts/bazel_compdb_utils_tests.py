@@ -31,13 +31,13 @@ class BazelCompdbUtilsTests(unittest.TestCase):
             bazel_compdb_utils.extract_file_from_args(["clang", "baz.c"]),
             "baz.c",
         )
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             bazel_compdb_utils.extract_file_from_args(
                 ["gcc", "foo.cc", "bar.cc"]
             )
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             bazel_compdb_utils.extract_file_from_args(["gcc", "foo.h"])
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             bazel_compdb_utils.extract_file_from_args([])
 
     def test_action_init(self):
