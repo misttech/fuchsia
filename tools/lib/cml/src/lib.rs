@@ -4388,18 +4388,26 @@ pub trait SpannedCapabilityClause: Clone + PartialEq + std::fmt::Debug {
                     .map(|k| format!("\"{}\"", k))
                     .collect::<Vec<_>>()
                     .join(", ");
-                Err(Error::validate(format!(
-                    "`{}` declaration is missing a capability keyword, one of: {}",
-                    self.decl_type(),
-                    supported_keywords,
-                )))
+                Err(Error::validate_with_span(
+                    format!(
+                        "`{}` declaration is missing a capability keyword, one of: {}",
+                        self.decl_type(),
+                        supported_keywords,
+                    ),
+                    None,
+                    None,
+                ))
             }
             1 => Ok(types[0]),
-            _ => Err(Error::validate(format!(
-                "{} declaration has multiple capability types defined: {:?}",
-                self.decl_type(),
-                types
-            ))),
+            _ => Err(Error::validate_with_span(
+                format!(
+                    "{} declaration has multiple capability types defined: {:?}",
+                    self.decl_type(),
+                    types
+                ),
+                None,
+                None,
+            )),
         }
     }
 

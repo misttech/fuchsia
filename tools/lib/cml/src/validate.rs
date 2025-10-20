@@ -194,9 +194,11 @@ struct ValidationContextWithSpan<'a> {
     current_file_path: Option<&'a Path>,
     current_file_source: Option<&'a String>,
     all_children: HashMap<&'a BorrowedName, &'a SpannedChild>,
+    all_collections: HashSet<&'a BorrowedName>,
     capability_ids: HashMap<String, CapabilityId<'a>>,
     use_ids: HashMap<String, CapabilityId<'a>>,
     expose_ids: HashMap<String, CapabilityId<'a>>,
+    framework_expose_ids: HashMap<String, CapabilityId<'a>>,
 }
 
 impl<'a> ValidationContextWithSpan<'a> {
@@ -210,9 +212,11 @@ impl<'a> ValidationContextWithSpan<'a> {
             current_file_path: None,
             current_file_source: None,
             all_children: HashMap::new(),
+            all_collections: HashSet::new(),
             capability_ids: HashMap::new(),
             use_ids: HashMap::new(),
             expose_ids: HashMap::new(),
+            framework_expose_ids: HashMap::new(),
         }
     }
 
@@ -231,6 +235,7 @@ impl<'a> ValidationContextWithSpan<'a> {
             if let Some(collections) = &document.collections {
                 for collection in collections {
                     self.validate_collection(&collection)?;
+                    self.all_collections.insert(&collection.name);
                 }
             }
 
@@ -427,7 +432,15 @@ which is almost certainly a mistake: {}",
     }
 
     fn validate_use(&mut self, use_: &'a Spanned<SpannedUse>) -> Result<(), Error> {
-        use_.capability_type()?;
+        let mut res = use_.capability_type();
+        if let Err(Error::ValidateWithSpan { location, filename, .. }) = &mut res {
+            *location = byte_index_to_location(self.current_file_source, use_.span().0);
+            if let Some(file) = self.current_file_path {
+                *filename = Some(file.to_string_lossy().into_owned());
+            }
+
+            return res.map(|_| ());
+        }
 
         if use_.from.as_ref().map(|s| s.clone().into_inner()) == Some(UseFromRef::Debug)
             && use_.protocol.is_none()
@@ -721,6 +734,15 @@ which is almost certainly a mistake: {}",
     }
 
     fn validate_expose(&mut self, expose: &'a Spanned<SpannedExpose>) -> Result<(), Error> {
+        let mut res = expose.capability_type();
+        if let Err(Error::ValidateWithSpan { location, filename, .. }) = &mut res {
+            *location = byte_index_to_location(self.current_file_source, expose.span().0);
+            if let Some(file) = self.current_file_path {
+                *filename = Some(file.to_string_lossy().into_owned());
+            }
+
+            return res.map(|_| ());
+        }
         // Ensure directory rights are valid.
         if let Some(_) = expose.directory.as_ref() {
             if expose.from.iter().any(|r| *r == ExposeFromRef::Self_) || expose.rights.is_some() {
@@ -823,10 +845,11 @@ which is almost certainly a mistake: {}",
             self.current_file_source,
         )?;
         for capability_id in capability_ids {
+            let mut ids = &mut self.expose_ids;
             if expose.to.as_ref().map(|s| s.clone().into_inner()) == Some(ExposeToRef::Framework) {
-                continue;
+                ids = &mut self.framework_expose_ids;
             }
-            if self.expose_ids.insert(capability_id.to_string(), capability_id.clone()).is_some() {
+            if ids.insert(capability_id.to_string(), capability_id.clone()).is_some() {
                 if let CapabilityId::Service(_) = capability_id {
                     // Services may have duplicates (aggregation).
                 } else {
@@ -4128,6 +4151,38 @@ mod tests {
             }),
             Err(Error::ValidateWithSpan { err, .. }) if &err == "This use statement requires a `rights` field. Refer to: https://fuchsia.dev/go/components/directory#consumer."
         ),
+        test_cml_use_missing_props(
+            json!({
+                "use": [ { "path": "/svc/fuchsia.logger.Log" } ]
+            }),
+            Err(Error::ValidateWithSpan { err, .. }) if &err == "`use` declaration is missing a capability keyword, one of: \"service\", \"protocol\", \"directory\", \"storage\", \"event_stream\", \"runner\", \"config\", \"dictionary\""
+        ),
+
+        test_cml_use_two_types_bad(
+            r##"{"use": [
+                {
+                    "protocol": "fuchsia.protocol.MyProtocol",
+                    "service": "fuchsia.service.MyService"
+                }
+            ]
+        }"##,
+            Err(Error::ValidateWithSpan {err, location, ..})
+            if &err == "use declaration has multiple capability types defined: [\"service\", \"protocol\"]" &&
+                location == Some(Location {line: 2, column: 17})
+            ),
+    test_cml_expose_two_types_bad(
+        r##"{"expose": [
+            {
+                "protocol": "fuchsia.protocol.MyProtocol",
+                "service": "fuchsia.service.MyService",
+                "from" : "self"
+            }
+        ]
+    }"##,
+        Err(Error::ValidateWithSpan {err, location, ..})
+        if &err == "expose declaration has multiple capability types defined: [\"service\", \"protocol\"]" &&
+        location == Some(Location {line: 2, column: 13})
+        ),
     }
 
     test_validate_cml! {
@@ -4544,7 +4599,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "\"from: self\" cannot be used with \"runner\""
         ),
-        test_cml_use_missing_props(
+        test_cml_use_missing_props_no_span(
             json!({
                 "use": [ { "path": "/svc/fuchsia.logger.Log" } ]
             }),
@@ -8557,7 +8612,7 @@ mod tests {
     }),
     Ok(())
         ),
-    test_cml_use_two_types_bad(
+    test_cml_use_two_types_bad_no_span(
         json!({"use": [
             {
                 "protocol": "fuchsia.protocol.MyProtocol",
@@ -8581,7 +8636,7 @@ mod tests {
         Err(Error::Validate {err, ..})
         if &err == "offer declaration has multiple capability types defined: [\"service\", \"protocol\"]"
         ),
-    test_cml_expose_two_types_bad(
+    test_cml_expose_two_types_bad_no_span(
         json!({"expose": [
             {
                 "protocol": "fuchsia.protocol.MyProtocol",
