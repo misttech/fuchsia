@@ -520,10 +520,11 @@ impl<P: PersistenceProvider, CR: CollaborativeRebootScheduler, R: CrashReporter>
             self.persisted.rollback = Some(new_state);
             self.update_collaborative_reboot().await;
             self.persist();
-        }
-        if let rollback::Persisted::HealthcheckFailures(f) = new_state {
-            if f >= HEALTHCHECK_FAILURE_THRESHOLD_FOR_CRASH_REPORTS {
-                self.crash_reporter.file_report(CrashReportReason::FailedHealthcheck).await;
+
+            if let rollback::Persisted::HealthcheckFailures(f) = new_state {
+                if f >= HEALTHCHECK_FAILURE_THRESHOLD_FOR_CRASH_REPORTS {
+                    self.crash_reporter.file_report(CrashReportReason::FailedHealthcheck).await;
+                }
             }
         }
     }
@@ -2386,5 +2387,24 @@ mod tests {
         assert_eq!(migration.collaborative_reboot.scheduler.req, None);
         // The current_boot should reflect that we're retrying migrations to NS3.
         assert_eq!(migration.current_boot, RollbackNetstackVersion::Netstack3);
+    }
+
+    #[fuchsia::test]
+    async fn noop_rollback_state_update() {
+        let rollback_state = rollback::Persisted::HealthcheckFailures(
+            HEALTHCHECK_FAILURE_THRESHOLD_FOR_CRASH_REPORTS,
+        );
+        let mut m = Migration::new(
+            InMemory::with_persisted(Persisted {
+                user: None,
+                automated: Some(NetstackVersion::Netstack3),
+                rollback: Some(rollback_state),
+                rollback_history: None,
+            }),
+            // Expect not to see a Collaborative Reboot or a Crash Report.
+            NoCollaborativeReboot,
+            NoCrashReports,
+        );
+        m.update_rollback_state(rollback_state).await;
     }
 }
