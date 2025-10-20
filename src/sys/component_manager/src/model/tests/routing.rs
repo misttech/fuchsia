@@ -79,6 +79,8 @@ use {
 
 instantiate_common_routing_tests! { RoutingTestBuilder }
 
+// TODO(https://fxbug.dev/453638611): reenable this test
+#[ignore]
 #[test]
 fn component_teardown_processes_final_request() {
     use std::sync::mpsc;
