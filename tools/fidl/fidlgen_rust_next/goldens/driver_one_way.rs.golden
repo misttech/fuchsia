@@ -519,11 +519,11 @@ pub mod one_way {
 
         type Request = crate::wire::OneWaySendRequest;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::OneWay
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::OneWay
         where
             ___T: ::fidl_next::Transport,
         {

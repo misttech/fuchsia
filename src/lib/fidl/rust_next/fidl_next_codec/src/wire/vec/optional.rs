@@ -187,7 +187,7 @@ where
     V::IntoIter: ExactSizeIterator,
     V::Item: Encode<E, Encoded = T::Encoded>,
     E: Encoder + ?Sized,
-    T: Encode<E>,
+    T: Encodable,
 {
     let (_length_constraint, member_constraint) = constraint;
 
@@ -244,17 +244,17 @@ where
     }
 }
 
-impl<T: Encodable> EncodableOption for &[T] {
+impl<T: Encodable> EncodableOption for [T] {
     type EncodedOption = WireOptionalVector<'static, T::Encoded>;
 }
 
-unsafe impl<E, T> EncodeOption<E> for &[T]
+unsafe impl<E, T> EncodeOptionRef<E> for [T]
 where
     E: Encoder + ?Sized,
     T: EncodeRef<E>,
 {
-    fn encode_option(
-        this: Option<Self>,
+    fn encode_option_ref(
+        this: Option<&Self>,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::EncodedOption>,
         constraint: <Self::EncodedOption as Constrained>::Constraint,

@@ -27,7 +27,6 @@ impl EchoServerHandler<Channel> for EchoServer {
     ) {
         let EchoEchoStringRequest { value } = request.take();
         let response = format!("{}: {}", self.prefix, value);
-        let response = EchoEchoStringResponse { response };
 
         if responder.respond(response).await.is_err() {
             self.server.close();
@@ -72,9 +71,8 @@ impl EchoLauncherServerHandler<Channel> for EchoLauncherServer {
         let (client_end, server_end) = self.client.create_channel();
         let client_end = fidl_next::ClientEnd::<Echo, _>::from_untyped(client_end);
         let server_end = fidl_next::ServerEnd::<Echo, _>::from_untyped(server_end);
-        let response = EchoLauncherGetEchoResponse { response: client_end };
 
-        if responder.respond(response).await.is_err() {
+        if responder.respond(client_end).await.is_err() {
             self.server.close();
             return;
         }

@@ -8674,7 +8674,7 @@ pub mod another_discoverable_protocol {
     }
 
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::AnotherDiscoverableProtocol
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::AnotherDiscoverableProtocol
         where
             ___T: ::fidl_next::Transport,
         {
@@ -8805,7 +8805,7 @@ pub mod channel_protocol {
 
         type Request = crate::wire::ChannelProtocolMethodARequest;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     pub struct EventA;
@@ -8815,7 +8815,7 @@ pub mod channel_protocol {
 
         type Protocol = crate::ChannelProtocol;
 
-        type Request = ::fidl_next::Never;
+        type Request = ::fidl_next::util::Never;
 
         type Response = crate::wire::ChannelProtocolEventARequest;
     }
@@ -8832,6 +8832,14 @@ pub mod channel_protocol {
         type Response = crate::wire::ChannelProtocolMethodBResponse;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for MethodB {
+        type Output = crate::generic::ChannelProtocolMethodBResponse<___R>;
+
+        fn respond(response: ___R) -> Self::Output {
+            crate::generic::ChannelProtocolMethodBResponse { result: response }
+        }
+    }
+
     pub struct TakeHandle;
 
     impl ::fidl_next::Method for TakeHandle {
@@ -8842,6 +8850,14 @@ pub mod channel_protocol {
         type Request = crate::wire::ChannelProtocolTakeHandleRequest;
 
         type Response = ();
+    }
+
+    impl<___R> ::fidl_next::Respond<___R> for TakeHandle {
+        type Output = ___R;
+
+        fn respond(response: ___R) -> Self::Output {
+            response
+        }
     }
 
     pub struct MutateSocket;
@@ -8856,8 +8872,16 @@ pub mod channel_protocol {
         type Response = crate::wire::ChannelProtocolMutateSocketResponse;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for MutateSocket {
+        type Output = crate::generic::ChannelProtocolMutateSocketResponse<___R>;
+
+        fn respond(response: ___R) -> Self::Output {
+            crate::generic::ChannelProtocolMutateSocketResponse { b: response }
+        }
+    }
+
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::ChannelProtocol
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::ChannelProtocol
         where
             ___T: ::fidl_next::Transport,
         {
@@ -9260,11 +9284,11 @@ pub mod discoverable_protocol {
 
         type Request = ();
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::DiscoverableProtocol
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::DiscoverableProtocol
         where
             ___T: ::fidl_next::Transport,
         {
@@ -9404,7 +9428,7 @@ pub mod handle_rights_protocol {
 
         type Request = crate::wire::HandleRightsProtocolNoResponseMethodRequest;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     pub struct ResponseMethod;
@@ -9419,6 +9443,14 @@ pub mod handle_rights_protocol {
         type Response = crate::wire::HandleRightsProtocolResponseMethodResponse;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for ResponseMethod {
+        type Output = crate::generic::HandleRightsProtocolResponseMethodResponse<___R>;
+
+        fn respond(response: ___R) -> Self::Output {
+            crate::generic::HandleRightsProtocolResponseMethodResponse { h: response }
+        }
+    }
+
     pub struct AnEvent;
 
     impl ::fidl_next::Method for AnEvent {
@@ -9426,13 +9458,13 @@ pub mod handle_rights_protocol {
 
         type Protocol = crate::HandleRightsProtocol;
 
-        type Request = ::fidl_next::Never;
+        type Request = ::fidl_next::util::Never;
 
         type Response = crate::wire::HandleRightsProtocolAnEventRequest;
     }
 
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::HandleRightsProtocol
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::HandleRightsProtocol
         where
             ___T: ::fidl_next::Transport,
         {
@@ -9714,11 +9746,11 @@ pub mod many_parameters {
 
         type Request = crate::wire::ManyParametersFifteenRequest;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::ManyParameters
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::ManyParameters
         where
             ___T: ::fidl_next::Transport,
         {
@@ -9990,8 +10022,16 @@ pub mod method_with_union {
         type Response = crate::wire::MethodWithUnionUnionMethodResponse<'static>;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for UnionMethod {
+        type Output = crate::generic::MethodWithUnionUnionMethodResponse<___R>;
+
+        fn respond(response: ___R) -> Self::Output {
+            crate::generic::MethodWithUnionUnionMethodResponse { u: response }
+        }
+    }
+
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::MethodWithUnion
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::MethodWithUnion
         where
             ___T: ::fidl_next::Transport,
         {
@@ -10164,7 +10204,7 @@ pub mod platform_server {
     }
 
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::PlatformServer
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::PlatformServer
         where
             ___T: ::fidl_next::Transport,
         {
@@ -10293,7 +10333,7 @@ pub mod with_and_without_request_response {
 
         type Request = ();
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     pub struct NoRequestEmptyResponse;
@@ -10306,6 +10346,14 @@ pub mod with_and_without_request_response {
         type Request = ();
 
         type Response = ();
+    }
+
+    impl<___R> ::fidl_next::Respond<___R> for NoRequestEmptyResponse {
+        type Output = ___R;
+
+        fn respond(response: ___R) -> Self::Output {
+            response
+        }
     }
 
     pub struct NoRequestWithResponse;
@@ -10321,6 +10369,17 @@ pub mod with_and_without_request_response {
             crate::wire::WithAndWithoutRequestResponseNoRequestWithResponseResponse<'static>;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for NoRequestWithResponse {
+        type Output =
+            crate::generic::WithAndWithoutRequestResponseNoRequestWithResponseResponse<___R>;
+
+        fn respond(response: ___R) -> Self::Output {
+            crate::generic::WithAndWithoutRequestResponseNoRequestWithResponseResponse {
+                ret: response,
+            }
+        }
+    }
+
     pub struct WithRequestNoResponse;
 
     impl ::fidl_next::Method for WithRequestNoResponse {
@@ -10331,7 +10390,7 @@ pub mod with_and_without_request_response {
         type Request =
             crate::wire::WithAndWithoutRequestResponseWithRequestNoResponseRequest<'static>;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     pub struct WithRequestEmptyResponse;
@@ -10345,6 +10404,14 @@ pub mod with_and_without_request_response {
             crate::wire::WithAndWithoutRequestResponseWithRequestEmptyResponseRequest<'static>;
 
         type Response = ();
+    }
+
+    impl<___R> ::fidl_next::Respond<___R> for WithRequestEmptyResponse {
+        type Output = ___R;
+
+        fn respond(response: ___R) -> Self::Output {
+            response
+        }
     }
 
     pub struct WithRequestWithResponse;
@@ -10361,6 +10428,17 @@ pub mod with_and_without_request_response {
             crate::wire::WithAndWithoutRequestResponseWithRequestWithResponseResponse<'static>;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for WithRequestWithResponse {
+        type Output =
+            crate::generic::WithAndWithoutRequestResponseWithRequestWithResponseResponse<___R>;
+
+        fn respond(response: ___R) -> Self::Output {
+            crate::generic::WithAndWithoutRequestResponseWithRequestWithResponseResponse {
+                ret: response,
+            }
+        }
+    }
+
     pub struct OnEmptyResponse;
 
     impl ::fidl_next::Method for OnEmptyResponse {
@@ -10368,7 +10446,7 @@ pub mod with_and_without_request_response {
 
         type Protocol = crate::WithAndWithoutRequestResponse;
 
-        type Request = ::fidl_next::Never;
+        type Request = ::fidl_next::util::Never;
 
         type Response = ();
     }
@@ -10380,13 +10458,13 @@ pub mod with_and_without_request_response {
 
         type Protocol = crate::WithAndWithoutRequestResponse;
 
-        type Request = ::fidl_next::Never;
+        type Request = ::fidl_next::util::Never;
 
         type Response = crate::wire::WithAndWithoutRequestResponseOnWithResponseRequest<'static>;
     }
 
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::WithAndWithoutRequestResponse
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::WithAndWithoutRequestResponse
         where
             ___T: ::fidl_next::Transport,
         {
@@ -10853,6 +10931,26 @@ pub mod with_error_syntax {
         >;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for ResponseAsStruct {
+        type Output =
+            ::core::result::Result<___R, ::fidl_next::util::EncodableNever<::fidl_next::WireU32>>;
+
+        fn respond(response: ___R) -> Self::Output {
+            ::core::result::Result::Ok(response)
+        }
+    }
+
+    impl<___R> ::fidl_next::RespondErr<___R> for ResponseAsStruct {
+        type Output = ::core::result::Result<
+            ::fidl_next::util::EncodableNever<crate::wire::WithErrorSyntaxResponseAsStructResponse>,
+            ___R,
+        >;
+
+        fn respond_err(response: ___R) -> Self::Output {
+            ::core::result::Result::Err(response)
+        }
+    }
+
     pub struct ErrorAsPrimitive;
 
     impl ::fidl_next::Method for ErrorAsPrimitive {
@@ -10867,6 +10965,26 @@ pub mod with_error_syntax {
             crate::wire::WithErrorSyntaxErrorAsPrimitiveResponse,
             ::fidl_next::WireU32,
         >;
+    }
+
+    impl<___R> ::fidl_next::Respond<___R> for ErrorAsPrimitive {
+        type Output =
+            ::core::result::Result<___R, ::fidl_next::util::EncodableNever<::fidl_next::WireU32>>;
+
+        fn respond(response: ___R) -> Self::Output {
+            ::core::result::Result::Ok(response)
+        }
+    }
+
+    impl<___R> ::fidl_next::RespondErr<___R> for ErrorAsPrimitive {
+        type Output = ::core::result::Result<
+            ::fidl_next::util::EncodableNever<crate::wire::WithErrorSyntaxErrorAsPrimitiveResponse>,
+            ___R,
+        >;
+
+        fn respond_err(response: ___R) -> Self::Output {
+            ::core::result::Result::Err(response)
+        }
     }
 
     pub struct ErrorAsEnum;
@@ -10885,6 +11003,26 @@ pub mod with_error_syntax {
         >;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for ErrorAsEnum {
+        type Output =
+            ::core::result::Result<___R, ::fidl_next::util::EncodableNever<crate::wire::ErrorEnum>>;
+
+        fn respond(response: ___R) -> Self::Output {
+            ::core::result::Result::Ok(response)
+        }
+    }
+
+    impl<___R> ::fidl_next::RespondErr<___R> for ErrorAsEnum {
+        type Output = ::core::result::Result<
+            ::fidl_next::util::EncodableNever<crate::wire::WithErrorSyntaxErrorAsEnumResponse>,
+            ___R,
+        >;
+
+        fn respond_err(response: ___R) -> Self::Output {
+            ::core::result::Result::Err(response)
+        }
+    }
+
     pub struct HandleInResult;
 
     impl ::fidl_next::Method for HandleInResult {
@@ -10901,8 +11039,32 @@ pub mod with_error_syntax {
         >;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for HandleInResult {
+        type Output = ::core::result::Result<
+            crate::generic::WithErrorSyntaxHandleInResultResponse<___R>,
+            ::fidl_next::util::EncodableNever<::fidl_next::WireU32>,
+        >;
+
+        fn respond(response: ___R) -> Self::Output {
+            ::core::result::Result::Ok(crate::generic::WithErrorSyntaxHandleInResultResponse {
+                h: response,
+            })
+        }
+    }
+
+    impl<___R> ::fidl_next::RespondErr<___R> for HandleInResult {
+        type Output = ::core::result::Result<
+            ::fidl_next::util::EncodableNever<crate::wire::WithErrorSyntaxHandleInResultResponse>,
+            ___R,
+        >;
+
+        fn respond_err(response: ___R) -> Self::Output {
+            ::core::result::Result::Err(response)
+        }
+    }
+
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::WithErrorSyntax
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::WithErrorSyntax
         where
             ___T: ::fidl_next::Transport,
         {
@@ -11126,6 +11288,14 @@ pub mod with_protocol_ends {
         type Response = crate::wire::WithProtocolEndsClientEndsResponse;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for ClientEnds {
+        type Output = crate::generic::WithProtocolEndsClientEndsResponse<___R>;
+
+        fn respond(response: ___R) -> Self::Output {
+            crate::generic::WithProtocolEndsClientEndsResponse { out: response }
+        }
+    }
+
     pub struct ServerEnds;
 
     impl ::fidl_next::Method for ServerEnds {
@@ -11136,6 +11306,14 @@ pub mod with_protocol_ends {
         type Request = crate::wire::WithProtocolEndsServerEndsRequest;
 
         type Response = crate::wire::WithProtocolEndsServerEndsResponse;
+    }
+
+    impl<___R> ::fidl_next::Respond<___R> for ServerEnds {
+        type Output = crate::generic::WithProtocolEndsServerEndsResponse<___R>;
+
+        fn respond(response: ___R) -> Self::Output {
+            crate::generic::WithProtocolEndsServerEndsResponse { out: response }
+        }
     }
 
     pub struct StructContainingEnds;
@@ -11150,8 +11328,16 @@ pub mod with_protocol_ends {
         type Response = crate::wire::WithProtocolEndsStructContainingEndsResponse;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for StructContainingEnds {
+        type Output = crate::generic::WithProtocolEndsStructContainingEndsResponse<___R>;
+
+        fn respond(response: ___R) -> Self::Output {
+            crate::generic::WithProtocolEndsStructContainingEndsResponse { out: response }
+        }
+    }
+
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::WithProtocolEnds
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::WithProtocolEnds
         where
             ___T: ::fidl_next::Transport,
         {

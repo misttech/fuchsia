@@ -475,10 +475,7 @@ impl<D> fidl_next::HasExecutor for DriverChannel<D> {
 mod test {
     use fidl_next::{ClientDispatcher, ClientEnd, Responder, ServerDispatcher, ServerEnd};
     use fidl_next_fuchsia_examples_gizmo::device::{GetEvent, GetHardwareId};
-    use fidl_next_fuchsia_examples_gizmo::{
-        Device, DeviceClientHandler, DeviceGetEventResponse, DeviceGetHardwareIdResponse,
-        DeviceServerHandler,
-    };
+    use fidl_next_fuchsia_examples_gizmo::{Device, DeviceClientHandler, DeviceServerHandler};
     use fuchsia_async::OnSignals;
     use zx::{AsHandleRef, Event, Signals};
 
@@ -489,17 +486,13 @@ mod test {
     struct DeviceServer;
     impl DeviceServerHandler<DriverChannel> for DeviceServer {
         async fn get_hardware_id(&mut self, responder: Responder<GetHardwareId, DriverChannel>) {
-            responder
-                .respond(Result::<_, i32>::Ok(DeviceGetHardwareIdResponse { response: 4004 }))
-                .await
-                .unwrap();
+            responder.respond(4004u32).await.unwrap();
         }
 
         async fn get_event(&mut self, responder: Responder<GetEvent, DriverChannel>) {
             let event = Event::create();
             event.signal_handle(Signals::empty(), Signals::USER_0).unwrap();
-            let response = DeviceGetEventResponse { event };
-            responder.respond(response).await.unwrap();
+            responder.respond(event).await.unwrap();
         }
     }
 

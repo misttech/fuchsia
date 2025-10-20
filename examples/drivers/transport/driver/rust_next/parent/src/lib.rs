@@ -4,12 +4,9 @@
 
 use fdf_component::{Driver, DriverContext, Node, NodeBuilder, ServiceOffer, driver_register};
 use fdf_fidl::DriverChannel;
-use fidl_next::{FlexibleResult, Request, Responder, ServerEnd};
+use fidl_next::{Request, Responder, ServerEnd};
 use fidl_next_fuchsia_hardware_i2cimpl::device::{GetMaxTransferSize, SetBitrate, Transact};
-use fidl_next_fuchsia_hardware_i2cimpl::{
-    self as i2cimpl, DeviceGetMaxTransferSizeResponse, DeviceSetBitrateResponse,
-    DeviceTransactResponse, ReadData,
-};
+use fidl_next_fuchsia_hardware_i2cimpl::{self as i2cimpl, DeviceSetBitrateResponse, ReadData};
 use fuchsia_async::{Scope, ScopeHandle};
 use fuchsia_component::server::ServiceFs;
 use futures::StreamExt as _;
@@ -38,9 +35,7 @@ impl i2cimpl::DeviceServerHandler<DriverChannel> for DeviceServer {
         responder: Responder<GetMaxTransferSize, DriverChannel>,
     ) {
         responder
-            .respond(FlexibleResult::Ok::<_, i32>(DeviceGetMaxTransferSizeResponse {
-                size: 0x1234ABCD,
-            }))
+            .respond(0x1234ABCDu64)
             .await
             .unwrap_or_else(|err| warn!("Failed to send get_max_transfer_size response: {err:?}"));
     }
@@ -52,16 +47,12 @@ impl i2cimpl::DeviceServerHandler<DriverChannel> for DeviceServer {
     ) {
         if request.take().bitrate == 5 {
             responder
-                .respond(FlexibleResult::Ok::<DeviceSetBitrateResponse, i32>(
-                    DeviceSetBitrateResponse {},
-                ))
+                .respond(DeviceSetBitrateResponse {})
                 .await
                 .unwrap_or_else(|err| warn!("Failed to send set_bitrate response: {err:?}"));
         } else {
             responder
-                .respond(FlexibleResult::Err::<DeviceSetBitrateResponse, i32>(
-                    Status::INVALID_ARGS.into_raw(),
-                ))
+                .respond_err(Status::INVALID_ARGS.into_raw())
                 .await
                 .unwrap_or_else(|err| warn!("Failed to send set_bitrate response: {err:?}"));
         }
@@ -73,9 +64,7 @@ impl i2cimpl::DeviceServerHandler<DriverChannel> for DeviceServer {
         responder: Responder<Transact, DriverChannel>,
     ) {
         responder
-            .respond(FlexibleResult::Ok::<_, i32>(DeviceTransactResponse {
-                read: vec![ReadData { data: vec![0, 1, 2] }],
-            }))
+            .respond(vec![ReadData { data: vec![0, 1, 2] }])
             .await
             .unwrap_or_else(|err| warn!("Failed to send transact response: {err:?}"));
     }

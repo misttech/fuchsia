@@ -8,7 +8,7 @@ use core::ops::Deref;
 
 use fidl_next_protocol::{self as protocol, ClientHandler, IgnoreEvents, ProtocolError, Transport};
 
-use crate::{ClientEnd, Protocol};
+use crate::{ClientEnd, HasConnectionHandles};
 
 /// A strongly typed client.
 #[repr(transparent)]
@@ -46,7 +46,7 @@ impl<P, T: Transport> Clone for Client<P, T> {
     }
 }
 
-impl<P: Protocol<T>, T: Transport> Deref for Client<P, T> {
+impl<P: HasConnectionHandles<T>, T: Transport> Deref for Client<P, T> {
     type Target = P::Client;
 
     fn deref(&self) -> &Self::Target {

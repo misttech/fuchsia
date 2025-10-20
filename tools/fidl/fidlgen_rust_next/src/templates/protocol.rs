@@ -10,8 +10,8 @@ use super::{Context, Contextual, filters};
 use crate::ident_ext::IdentExt as _;
 use crate::templates::reserved::escape;
 use fidl_ir::{
-    CompoundIdentifier, Protocol, ProtocolMethod, ProtocolMethodKind, ProtocolOpenness, Struct,
-    Type, TypeKind,
+    CompoundIdent, CompoundIdentifier, Protocol, ProtocolMethod, ProtocolMethodKind,
+    ProtocolOpenness, Struct, Type, TypeKind,
 };
 use fidl_ir_util::TypeShapeExt;
 
@@ -52,26 +52,70 @@ impl<'a> ProtocolTemplate<'a> {
         }
     }
 
-    fn get_method_args_struct(&self, method: &ProtocolMethod) -> Option<&Struct> {
+    fn get_struct(&self, identifier: &CompoundIdent) -> Option<&Struct> {
+        self.library()
+            .struct_declarations
+            .get(identifier)
+            .or_else(|| self.library().external_struct_declarations.get(identifier))
+    }
+
+    fn get_request_args_struct(&self, method: &ProtocolMethod) -> Option<&Struct> {
         match method.kind {
             ProtocolMethodKind::OneWay | ProtocolMethodKind::TwoWay => {
-                if let Some(args) = &method.maybe_request_payload {
-                    if let TypeKind::Identifier { identifier, .. } = &args.kind {
-                        return self.library().struct_declarations.get(identifier).or_else(|| {
-                            self.library().external_struct_declarations.get(identifier)
-                        });
-                    }
+                let args = method.maybe_request_payload.as_ref()?;
+                if let TypeKind::Identifier { identifier, .. } = &args.kind {
+                    return self.get_struct(identifier);
                 }
             }
             ProtocolMethodKind::Event => {
                 if !method.has_error {
-                    if let Some(args) = &method.maybe_response_payload {
-                        if let TypeKind::Identifier { identifier, .. } = &args.kind {
-                            return self.library().struct_declarations.get(identifier).or_else(
-                                || self.library().external_struct_declarations.get(identifier),
-                            );
-                        }
+                    let args = method.maybe_response_payload.as_ref()?;
+                    if let TypeKind::Identifier { identifier, .. } = &args.kind {
+                        return self.get_struct(identifier);
                     }
+                }
+            }
+        }
+        None
+    }
+
+    fn get_response_struct(&self, method: &ProtocolMethod) -> Option<&Struct> {
+        if let ProtocolMethodKind::TwoWay = method.kind {
+            let payload = if method.is_strict {
+                method.maybe_response_payload.as_ref()
+            } else {
+                method.maybe_response_success_type.as_ref()
+            };
+            if let TypeKind::Identifier { identifier, .. } = &payload?.kind {
+                let response_struct = self.get_struct(identifier)?;
+                if response_struct.members.len() == 1 {
+                    return Some(response_struct);
+                }
+            }
+        }
+        None
+    }
+
+    fn get_response_success_struct(&self, method: &ProtocolMethod) -> Option<&Struct> {
+        if let ProtocolMethodKind::TwoWay = method.kind {
+            let args = method.maybe_response_success_type.as_ref()?;
+            if let TypeKind::Identifier { identifier, .. } = &args.kind {
+                let response_struct = self.get_struct(identifier)?;
+                if response_struct.members.len() == 1 {
+                    return Some(response_struct);
+                }
+            }
+        }
+        None
+    }
+
+    fn get_response_error_struct(&self, method: &ProtocolMethod) -> Option<&Struct> {
+        if let ProtocolMethodKind::TwoWay = method.kind {
+            let args = method.maybe_response_err_type.as_ref()?;
+            if let TypeKind::Identifier { identifier, .. } = &args.kind {
+                let response_struct = self.get_struct(identifier)?;
+                if response_struct.members.len() == 1 {
+                    return Some(response_struct);
                 }
             }
         }

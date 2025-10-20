@@ -2099,7 +2099,7 @@ pub mod main_protocol {
 
         type Request = ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayComposed;
@@ -2112,6 +2112,15 @@ pub mod main_protocol {
         type Request = ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload;
 
         type Response = ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload;
+    }
+
+    impl<___R> ::fidl_next::Respond<___R> for TwoWayComposed {
+        type Output =
+            ::fidl_next_test_protocolpayloads_imported::generic::ImportStructPayload<___R>;
+
+        fn respond(response: ___R) -> Self::Output {
+            ::fidl_next_test_protocolpayloads_imported::generic::ImportStructPayload { a: response }
+        }
     }
 
     pub struct TwoWayComposedWithError;
@@ -2130,6 +2139,34 @@ pub mod main_protocol {
         >;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for TwoWayComposedWithError {
+        type Output = ::core::result::Result<
+            ::fidl_next_test_protocolpayloads_imported::generic::ImportStructPayload<___R>,
+            ::fidl_next::util::EncodableNever<::fidl_next::WireU32>,
+        >;
+
+        fn respond(response: ___R) -> Self::Output {
+            ::core::result::Result::Ok(
+                ::fidl_next_test_protocolpayloads_imported::generic::ImportStructPayload {
+                    a: response,
+                },
+            )
+        }
+    }
+
+    impl<___R> ::fidl_next::RespondErr<___R> for TwoWayComposedWithError {
+        type Output = ::core::result::Result<
+            ::fidl_next::util::EncodableNever<
+                ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload,
+            >,
+            ___R,
+        >;
+
+        fn respond_err(response: ___R) -> Self::Output {
+            ::core::result::Result::Err(response)
+        }
+    }
+
     pub struct OnComposed;
 
     impl ::fidl_next::Method for OnComposed {
@@ -2137,7 +2174,7 @@ pub mod main_protocol {
 
         type Protocol = crate::MainProtocol;
 
-        type Request = ::fidl_next::Never;
+        type Request = ::fidl_next::util::Never;
 
         type Response = ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload;
     }
@@ -2151,7 +2188,7 @@ pub mod main_protocol {
 
         type Request = crate::wire::LocalStructPayload;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayLocal;
@@ -2164,6 +2201,14 @@ pub mod main_protocol {
         type Request = crate::wire::LocalStructPayload;
 
         type Response = crate::wire::LocalStructPayload;
+    }
+
+    impl<___R> ::fidl_next::Respond<___R> for TwoWayLocal {
+        type Output = ___R;
+
+        fn respond(response: ___R) -> Self::Output {
+            response
+        }
     }
 
     pub struct TwoWayLocalWithError;
@@ -2179,6 +2224,26 @@ pub mod main_protocol {
             ::fidl_next::WireResult<'static, crate::wire::LocalStructPayload, ::fidl_next::WireU32>;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for TwoWayLocalWithError {
+        type Output =
+            ::core::result::Result<___R, ::fidl_next::util::EncodableNever<::fidl_next::WireU32>>;
+
+        fn respond(response: ___R) -> Self::Output {
+            ::core::result::Result::Ok(response)
+        }
+    }
+
+    impl<___R> ::fidl_next::RespondErr<___R> for TwoWayLocalWithError {
+        type Output = ::core::result::Result<
+            ::fidl_next::util::EncodableNever<crate::wire::LocalStructPayload>,
+            ___R,
+        >;
+
+        fn respond_err(response: ___R) -> Self::Output {
+            ::core::result::Result::Err(response)
+        }
+    }
+
     pub struct OnLocal;
 
     impl ::fidl_next::Method for OnLocal {
@@ -2186,7 +2251,7 @@ pub mod main_protocol {
 
         type Protocol = crate::MainProtocol;
 
-        type Request = ::fidl_next::Never;
+        type Request = ::fidl_next::util::Never;
 
         type Response = crate::wire::LocalStructPayload;
     }
@@ -2200,7 +2265,7 @@ pub mod main_protocol {
 
         type Request = ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayImport;
@@ -2213,6 +2278,15 @@ pub mod main_protocol {
         type Request = ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload;
 
         type Response = ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload;
+    }
+
+    impl<___R> ::fidl_next::Respond<___R> for TwoWayImport {
+        type Output =
+            ::fidl_next_test_protocolpayloads_imported::generic::ImportStructPayload<___R>;
+
+        fn respond(response: ___R) -> Self::Output {
+            ::fidl_next_test_protocolpayloads_imported::generic::ImportStructPayload { a: response }
+        }
     }
 
     pub struct TwoWayImportWithError;
@@ -2231,6 +2305,34 @@ pub mod main_protocol {
         >;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for TwoWayImportWithError {
+        type Output = ::core::result::Result<
+            ::fidl_next_test_protocolpayloads_imported::generic::ImportStructPayload<___R>,
+            ::fidl_next::util::EncodableNever<::fidl_next::WireU32>,
+        >;
+
+        fn respond(response: ___R) -> Self::Output {
+            ::core::result::Result::Ok(
+                ::fidl_next_test_protocolpayloads_imported::generic::ImportStructPayload {
+                    a: response,
+                },
+            )
+        }
+    }
+
+    impl<___R> ::fidl_next::RespondErr<___R> for TwoWayImportWithError {
+        type Output = ::core::result::Result<
+            ::fidl_next::util::EncodableNever<
+                ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload,
+            >,
+            ___R,
+        >;
+
+        fn respond_err(response: ___R) -> Self::Output {
+            ::core::result::Result::Err(response)
+        }
+    }
+
     pub struct OnImport;
 
     impl ::fidl_next::Method for OnImport {
@@ -2238,7 +2340,7 @@ pub mod main_protocol {
 
         type Protocol = crate::MainProtocol;
 
-        type Request = ::fidl_next::Never;
+        type Request = ::fidl_next::util::Never;
 
         type Response = ::fidl_next_test_protocolpayloads_imported::wire::ImportStructPayload;
     }
@@ -2252,7 +2354,7 @@ pub mod main_protocol {
 
         type Request = crate::wire::MainProtocolOneWayAnonRequest;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayAnon;
@@ -2265,6 +2367,14 @@ pub mod main_protocol {
         type Request = crate::wire::MainProtocolTwoWayAnonRequest;
 
         type Response = crate::wire::MainProtocolTwoWayAnonResponse;
+    }
+
+    impl<___R> ::fidl_next::Respond<___R> for TwoWayAnon {
+        type Output = ___R;
+
+        fn respond(response: ___R) -> Self::Output {
+            response
+        }
     }
 
     pub struct TwoWayAnonWithError;
@@ -2283,6 +2393,26 @@ pub mod main_protocol {
         >;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for TwoWayAnonWithError {
+        type Output =
+            ::core::result::Result<___R, ::fidl_next::util::EncodableNever<::fidl_next::WireU32>>;
+
+        fn respond(response: ___R) -> Self::Output {
+            ::core::result::Result::Ok(response)
+        }
+    }
+
+    impl<___R> ::fidl_next::RespondErr<___R> for TwoWayAnonWithError {
+        type Output = ::core::result::Result<
+            ::fidl_next::util::EncodableNever<crate::wire::MainProtocolTwoWayAnonWithErrorResponse>,
+            ___R,
+        >;
+
+        fn respond_err(response: ___R) -> Self::Output {
+            ::core::result::Result::Err(response)
+        }
+    }
+
     pub struct OnAnon;
 
     impl ::fidl_next::Method for OnAnon {
@@ -2290,13 +2420,13 @@ pub mod main_protocol {
 
         type Protocol = crate::MainProtocol;
 
-        type Request = ::fidl_next::Never;
+        type Request = ::fidl_next::util::Never;
 
         type Response = crate::wire::MainProtocolOnAnonRequest;
     }
 
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::MainProtocol
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::MainProtocol
         where
             ___T: ::fidl_next::Transport,
         {

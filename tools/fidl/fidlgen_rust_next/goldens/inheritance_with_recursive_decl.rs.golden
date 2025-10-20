@@ -441,11 +441,11 @@ pub mod parent {
 
         type Request = crate::wire::ParentFirstRequest;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::Parent
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::Parent
         where
             ___T: ::fidl_next::Transport,
         {
@@ -615,7 +615,7 @@ pub mod child {
 
         type Request = crate::wire::ParentFirstRequest;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     pub struct Second;
@@ -627,11 +627,11 @@ pub mod child {
 
         type Request = crate::wire::ChildSecondRequest;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::Child
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::Child
         where
             ___T: ::fidl_next::Transport,
         {

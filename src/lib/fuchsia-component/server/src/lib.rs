@@ -426,9 +426,7 @@ macro_rules! add_functions {
         /// `Discoverable` annotation in the FIDL source.
         pub fn add_fidl_next_protocol<P, H>(&mut self, handler: H) -> &mut Self
         where
-            P: ::fidl_next::Protocol<zx::Channel>
-                + ::fidl_next::Discoverable
-                + ::fidl_next::DispatchServerMessage<H, zx::Channel>,
+            P: ::fidl_next::Discoverable + ::fidl_next::DispatchServerMessage<H, zx::Channel>,
             H: Clone + Send + Sync + 'static,
         {
             self.dir

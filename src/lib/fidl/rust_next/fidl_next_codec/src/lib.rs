@@ -251,6 +251,7 @@ pub mod fuchsia;
 mod into_natural;
 mod primitives;
 mod slot;
+pub mod util;
 mod validate;
 mod wire;
 

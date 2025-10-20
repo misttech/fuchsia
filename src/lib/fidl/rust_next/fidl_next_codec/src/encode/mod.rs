@@ -48,7 +48,7 @@ pub unsafe trait Encode<E: ?Sized>: Encodable + Sized {
 /// # Safety
 ///
 /// `encode` must initialize all non-padding bytes of `out`.
-pub unsafe trait EncodeRef<E: ?Sized>: Encode<E> {
+pub unsafe trait EncodeRef<E: ?Sized>: Encodable {
     /// Encodes this reference into an encoder and output.
     fn encode_ref(
         &self,
@@ -84,7 +84,7 @@ pub unsafe trait EncodeOption<E: ?Sized>: EncodableOption + Sized {
 /// # Safety
 ///
 /// `encode_option_ref` must initialize all non-padding bytes of `out`.
-pub unsafe trait EncodeOptionRef<E: ?Sized>: EncodeOption<E> {
+pub unsafe trait EncodeOptionRef<E: ?Sized>: EncodableOption {
     /// Encodes this optional reference into an encoder and output.
     fn encode_option_ref(
         this: Option<&Self>,
@@ -94,11 +94,11 @@ pub unsafe trait EncodeOptionRef<E: ?Sized>: EncodeOption<E> {
     ) -> Result<(), EncodeError>;
 }
 
-impl<T: Encodable> Encodable for &T {
+impl<T: Encodable + ?Sized> Encodable for &T {
     type Encoded = T::Encoded;
 }
 
-unsafe impl<E: ?Sized, T: EncodeRef<E>> Encode<E> for &T {
+unsafe impl<E: ?Sized, T: EncodeRef<E> + ?Sized> Encode<E> for &T {
     fn encode(
         self,
         encoder: &mut E,
@@ -109,11 +109,22 @@ unsafe impl<E: ?Sized, T: EncodeRef<E>> Encode<E> for &T {
     }
 }
 
-impl<T: EncodableOption> EncodableOption for &T {
+unsafe impl<E: ?Sized, T: EncodeRef<E> + ?Sized> EncodeRef<E> for &T {
+    fn encode_ref(
+        &self,
+        encoder: &mut E,
+        out: &mut MaybeUninit<Self::Encoded>,
+        constraint: <<Self as Encodable>::Encoded as Constrained>::Constraint,
+    ) -> Result<(), EncodeError> {
+        T::encode_ref(*self, encoder, out, constraint)
+    }
+}
+
+impl<T: EncodableOption + ?Sized> EncodableOption for &T {
     type EncodedOption = T::EncodedOption;
 }
 
-unsafe impl<E: ?Sized, T: EncodeOptionRef<E>> EncodeOption<E> for &T {
+unsafe impl<E: ?Sized, T: EncodeOptionRef<E> + ?Sized> EncodeOption<E> for &T {
     fn encode_option(
         this: Option<Self>,
         encoder: &mut E,
@@ -121,6 +132,17 @@ unsafe impl<E: ?Sized, T: EncodeOptionRef<E>> EncodeOption<E> for &T {
         constraint: <<Self as EncodableOption>::EncodedOption as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
         T::encode_option_ref(this, encoder, out, constraint)
+    }
+}
+
+unsafe impl<E: ?Sized, T: EncodeOptionRef<E> + ?Sized> EncodeOptionRef<E> for &T {
+    fn encode_option_ref(
+        this: Option<&Self>,
+        encoder: &mut E,
+        out: &mut MaybeUninit<Self::EncodedOption>,
+        constraint: <<Self as EncodableOption>::EncodedOption as Constrained>::Constraint,
+    ) -> Result<(), EncodeError> {
+        T::encode_option_ref(this.copied(), encoder, out, constraint)
     }
 }
 
@@ -292,7 +314,7 @@ where
     A: AsRef<[T]> + IntoIterator,
     A::Item: Encode<E, Encoded = T::Encoded>,
     E: ?Sized,
-    T: Encode<E>,
+    T: Encodable,
 {
     if T::COPY_OPTIMIZATION.is_enabled() {
         // SAFETY: `T` has copy optimization enabled and so is safe to copy to the output.

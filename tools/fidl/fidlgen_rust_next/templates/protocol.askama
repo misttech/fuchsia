@@ -42,13 +42,13 @@ pub mod {{ module_name }} {
                     type Request = ();
                 {% endif %}
             {% else %}
-                type Request = ::fidl_next::Never;
+                type Request = ::fidl_next::util::Never;
             {% endif %}
 
             type Response =
                 {% match method.kind %}
                     {% when ProtocolMethodKind::OneWay %}
-                        ::fidl_next::Never
+                        ::fidl_next::util::Never
                     {% when ProtocolMethodKind::TwoWay %}
                         {% if method.has_error %}
                             {% if !method.is_strict %}
@@ -94,10 +94,174 @@ pub mod {{ module_name }} {
                 {% endmatch %}
                 ;
         }
+
+        {% if matches!(method.kind, ProtocolMethodKind::TwoWay) %}
+            {% if !method.has_error %}
+                {% if let Some(response_struct) = self.get_response_struct(method) %}
+                    {% let member = &response_struct.members[0] %}
+
+                    impl<___R> ::fidl_next::Respond<___R> for {{ method_name }} {
+                        type Output =
+                            {% if !method.is_strict %}
+                                ::fidl_next::Flexible<{{ self.generic_id(response_struct.name) }}<___R>>
+                            {% else %}
+                                {{ self.generic_id(response_struct.name) }}<___R>
+                            {% endif %}
+                        ;
+
+                        fn respond(response: ___R) -> Self::Output {
+                            {% if !method.is_strict %}
+                                ::fidl_next::Flexible::Ok(
+                                    {{ self.generic_id(response_struct.name) }} {
+                                        {{ member.name|snake }}: response,
+                                    }
+                                )
+                            {% else %}
+                                {{ self.generic_id(response_struct.name) }} {
+                                    {{ member.name|snake }}: response,
+                                }
+                            {% endif %}
+                        }
+                    }
+                {% else %}
+                    impl<___R> ::fidl_next::Respond<___R> for {{ method_name }} {
+                        type Output = ___R;
+
+                        fn respond(response: ___R) -> Self::Output {
+                            response
+                        }
+                    }
+                {% endif %}
+            {% else %}
+                {% if let Some(response_struct) = self.get_response_success_struct(method) %}
+                    {% let member = &response_struct.members[0] %}
+
+                    impl<___R> ::fidl_next::Respond<___R> for {{ method_name }} {
+                        type Output =
+                            {% if !method.is_strict %}
+                                ::fidl_next::FlexibleResult
+                            {% else %}
+                                ::core::result::Result
+                            {% endif %}
+                            <
+                                {{ self.generic_id(response_struct.name) }}<___R>,
+                                ::fidl_next::util::EncodableNever<
+                                    {% if let Some(error) = method.maybe_response_err_type.as_ref() %}
+                                        {{ self.static_wire_type(error) }},
+                                    {% else %}
+                                        (),
+                                    {% endif %}
+                                >,
+                            >;
+
+                        fn respond(response: ___R) -> Self::Output {
+                            {% if !method.is_strict %}
+                                ::fidl_next::FlexibleResult::Ok
+                            {% else %}
+                                ::core::result::Result::Ok
+                            {% endif %}
+                            ({{ self.generic_id(response_struct.name) }} {
+                                {{ member.name|snake }}: response,
+                            })
+                        }
+                    }
+                {% else %}
+                    impl<___R> ::fidl_next::Respond<___R> for {{ method_name }} {
+                        type Output =
+                            {% if !method.is_strict %}
+                                ::fidl_next::FlexibleResult
+                            {% else %}
+                                ::core::result::Result
+                            {% endif %}
+                            <
+                                ___R,
+                                ::fidl_next::util::EncodableNever<
+                                    {% if let Some(error) = method.maybe_response_err_type.as_ref() %}
+                                        {{ self.static_wire_type(error) }},
+                                    {% else %}
+                                        (),
+                                    {% endif %}
+                                >,
+                            >;
+
+                        fn respond(response: ___R) -> Self::Output {
+                            {% if !method.is_strict %}
+                                ::fidl_next::FlexibleResult::Ok
+                            {% else %}
+                                ::core::result::Result::Ok
+                            {% endif %}
+                            (response)
+                        }
+                    }
+                {% endif %}
+
+                {% if let Some(response_struct) = self.get_response_error_struct(method) %}
+                    {% let member = &response_struct.members[0] %}
+
+                    impl<___R> ::fidl_next::RespondErr<___R> for {{ method_name }} {
+                        type Output =
+                            {% if !method.is_strict %}
+                                ::fidl_next::FlexibleResult
+                            {% else %}
+                                ::core::result::Result
+                            {% endif %}
+                            <
+                                ::fidl_next::util::EncodableNever<
+                                    {% if let Some(success) = method.maybe_response_success_type.as_ref() %}
+                                        {{ self.static_wire_type(success) }},
+                                    {% else %}
+                                        (),
+                                    {% endif %}
+                                >,
+                                {{ self.generic_id(response_struct.name) }}<___R>,
+                            >;
+
+                        fn respond_err(response: ___R) -> Self::Output {
+                            {% if !method.is_strict %}
+                                ::fidl_next::FlexibleResult::Err
+                            {% else %}
+                                ::core::result::Result::Err
+                            {% endif %}
+                            ({{ self.generic_id(response_struct.name) }} {
+                                {{ member.name|snake }}: response,
+                            })
+                        }
+                    }
+                {% else %}
+                    impl<___R> ::fidl_next::RespondErr<___R> for {{ method_name }} {
+                        type Output =
+                            {% if !method.is_strict %}
+                                ::fidl_next::FlexibleResult
+                            {% else %}
+                                ::core::result::Result
+                            {% endif %}
+                            <
+                                ::fidl_next::util::EncodableNever<
+                                    {% if let Some(success) = method.maybe_response_success_type.as_ref() %}
+                                        {{ self.static_wire_type(success) }},
+                                    {% else %}
+                                        (),
+                                    {% endif %}
+                                >,
+                                ___R,
+                            >;
+
+                        fn respond_err(response: ___R) -> Self::Output {
+                            {% if !method.is_strict %}
+                                ::fidl_next::FlexibleResult::Err
+                            {% else %}
+                                ::core::result::Result::Err
+                            {% endif %}
+                            (response)
+                        }
+                    }
+                {% endif %}
+            {% endif %}
+        {% endif %}
     {% endfor %}
 
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::{{ protocol_name }}
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::{{ protocol_name }}
         where
             ___T: ::fidl_next::Transport,
         {
@@ -122,7 +286,7 @@ pub mod {{ module_name }} {
 
                 {% match method.kind %}
                     {% when ProtocolMethodKind::OneWay %}
-                        {% if let Some(args) = self.get_method_args_struct(method) %}
+                        {% if let Some(args) = self.get_request_args_struct(method) %}
                             {% let is_static = args.shape.is_static() %}
 
                             {{ self.doc_string(method.attributes) -}}
@@ -178,7 +342,7 @@ pub mod {{ module_name }} {
                             }
                         {% endif %}
                     {% when ProtocolMethodKind::TwoWay %}
-                        {% if let Some(args) = self.get_method_args_struct(method) %}
+                        {% if let Some(args) = self.get_request_args_struct(method) %}
                             {% let is_static = args.shape.is_static() %}
 
                             {{ self.doc_string(method.attributes) -}}
@@ -253,7 +417,7 @@ pub mod {{ module_name }} {
                 {% let method_type_name = filters::escape_camel(method.name) %}
 
                 {% if method.kind == ProtocolMethodKind::Event %}
-                    {% if let Some(args) = self.get_method_args_struct(method) %}
+                    {% if let Some(args) = self.get_request_args_struct(method) %}
                         {% let is_static = args.shape.is_static() %}
 
                         {{ self.doc_string(method.attributes) -}}

@@ -235,7 +235,7 @@ where
     V::IntoIter: ExactSizeIterator,
     V::Item: Encode<E, Encoded = T::Encoded>,
     E: Encoder + ?Sized,
-    T: Encode<E>,
+    T: Encodable,
 {
     let len = value.as_ref().len();
     let (_length_constraint, member_constraint) = constraint;
@@ -297,17 +297,17 @@ where
     }
 }
 
-impl<T: Encodable> Encodable for &[T] {
+impl<T: Encodable> Encodable for [T] {
     type Encoded = WireVector<'static, T::Encoded>;
 }
 
-unsafe impl<E, T> Encode<E> for &[T]
+unsafe impl<E, T> EncodeRef<E> for [T]
 where
     E: Encoder + ?Sized,
     T: EncodeRef<E>,
 {
-    fn encode(
-        self,
+    fn encode_ref(
+        &self,
         encoder: &mut E,
         out: &mut MaybeUninit<Self::Encoded>,
         constraint: <Self::Encoded as Constrained>::Constraint,

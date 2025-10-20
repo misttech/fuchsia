@@ -69,11 +69,11 @@ pub mod first_protocol {
 
         type Request = ();
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::FirstProtocol
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::FirstProtocol
         where
             ___T: ::fidl_next::Transport,
         {
@@ -425,11 +425,11 @@ pub mod second_protocol {
 
         type Request = ();
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::SecondProtocol
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::SecondProtocol
         where
             ___T: ::fidl_next::Transport,
         {

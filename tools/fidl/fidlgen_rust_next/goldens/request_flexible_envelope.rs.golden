@@ -1841,6 +1841,14 @@ pub mod protocol {
         type Response = crate::wire::ProtocolRequestStrictResponseFlexibleResponse<'static>;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for RequestStrictResponseFlexible {
+        type Output = crate::generic::ProtocolRequestStrictResponseFlexibleResponse<___R>;
+
+        fn respond(response: ___R) -> Self::Output {
+            crate::generic::ProtocolRequestStrictResponseFlexibleResponse { f: response }
+        }
+    }
+
     pub struct RequestFlexibleResponseStrict;
 
     impl ::fidl_next::Method for RequestFlexibleResponseStrict {
@@ -1853,8 +1861,16 @@ pub mod protocol {
         type Response = crate::wire::ProtocolRequestFlexibleResponseStrictResponse<'static>;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for RequestFlexibleResponseStrict {
+        type Output = crate::generic::ProtocolRequestFlexibleResponseStrictResponse<___R>;
+
+        fn respond(response: ___R) -> Self::Output {
+            crate::generic::ProtocolRequestFlexibleResponseStrictResponse { f: response }
+        }
+    }
+
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::Protocol
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::Protocol
         where
             ___T: ::fidl_next::Transport,
         {

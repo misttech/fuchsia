@@ -3,8 +3,7 @@
 // found in the LICENSE file.
 
 use fidl_next::{
-    Client, ClientEnd, Flexible, FlexibleResult, Request, Responder, Response, Server, ServerEnd,
-    Transport,
+    Client, ClientEnd, FlexibleResult, Request, Responder, Response, Server, ServerEnd, Transport,
 };
 use fidl_next_examples_calculator::calculator::prelude::*;
 
@@ -45,8 +44,7 @@ impl<T: Transport> CalculatorServerHandler<T> for MyCalculatorServer {
         let sum = request.a + request.b;
         self.last_result = Some(sum);
 
-        let response = Flexible::Ok(CalculatorAddResponse { sum });
-        let _ = responder.respond(response).await;
+        let _ = responder.respond(sum).await;
     }
 
     async fn divide(
@@ -66,7 +64,7 @@ impl<T: Transport> CalculatorServerHandler<T> for MyCalculatorServer {
             FlexibleResult::Err(DivisionError::DivideByZero)
         };
 
-        let _ = responder.respond(response).await;
+        let _ = responder.respond_with(response).await;
     }
 
     async fn clear(&mut self) {

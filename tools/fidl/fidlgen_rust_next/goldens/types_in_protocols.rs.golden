@@ -7468,7 +7468,7 @@ pub mod protocol {
 
         type Request = crate::wire::Basic<'static>;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayBasic;
@@ -7481,6 +7481,14 @@ pub mod protocol {
         type Request = crate::wire::Basic<'static>;
 
         type Response = crate::wire::Basic<'static>;
+    }
+
+    impl<___R> ::fidl_next::Respond<___R> for TwoWayBasic {
+        type Output = ___R;
+
+        fn respond(response: ___R) -> Self::Output {
+            response
+        }
     }
 
     pub struct ErrorBasic;
@@ -7496,6 +7504,26 @@ pub mod protocol {
             ::fidl_next::WireResult<'static, crate::wire::Basic<'static>, ::fidl_next::WireU32>;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for ErrorBasic {
+        type Output =
+            ::core::result::Result<___R, ::fidl_next::util::EncodableNever<::fidl_next::WireU32>>;
+
+        fn respond(response: ___R) -> Self::Output {
+            ::core::result::Result::Ok(response)
+        }
+    }
+
+    impl<___R> ::fidl_next::RespondErr<___R> for ErrorBasic {
+        type Output = ::core::result::Result<
+            ::fidl_next::util::EncodableNever<crate::wire::Basic<'static>>,
+            ___R,
+        >;
+
+        fn respond_err(response: ___R) -> Self::Output {
+            ::core::result::Result::Err(response)
+        }
+    }
+
     pub struct EventBasic;
 
     impl ::fidl_next::Method for EventBasic {
@@ -7503,7 +7531,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ::fidl_next::Never;
+        type Request = ::fidl_next::util::Never;
 
         type Response = crate::wire::Basic<'static>;
     }
@@ -7517,7 +7545,7 @@ pub mod protocol {
 
         type Request = crate::wire::Compound<'static>;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayCompound;
@@ -7530,6 +7558,14 @@ pub mod protocol {
         type Request = crate::wire::Compound<'static>;
 
         type Response = crate::wire::Compound<'static>;
+    }
+
+    impl<___R> ::fidl_next::Respond<___R> for TwoWayCompound {
+        type Output = ___R;
+
+        fn respond(response: ___R) -> Self::Output {
+            response
+        }
     }
 
     pub struct ErrorCompound;
@@ -7545,6 +7581,26 @@ pub mod protocol {
             ::fidl_next::WireResult<'static, crate::wire::Compound<'static>, ::fidl_next::WireU32>;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for ErrorCompound {
+        type Output =
+            ::core::result::Result<___R, ::fidl_next::util::EncodableNever<::fidl_next::WireU32>>;
+
+        fn respond(response: ___R) -> Self::Output {
+            ::core::result::Result::Ok(response)
+        }
+    }
+
+    impl<___R> ::fidl_next::RespondErr<___R> for ErrorCompound {
+        type Output = ::core::result::Result<
+            ::fidl_next::util::EncodableNever<crate::wire::Compound<'static>>,
+            ___R,
+        >;
+
+        fn respond_err(response: ___R) -> Self::Output {
+            ::core::result::Result::Err(response)
+        }
+    }
+
     pub struct EventCompound;
 
     impl ::fidl_next::Method for EventCompound {
@@ -7552,7 +7608,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ::fidl_next::Never;
+        type Request = ::fidl_next::util::Never;
 
         type Response = crate::wire::Compound<'static>;
     }
@@ -7566,7 +7622,7 @@ pub mod protocol {
 
         type Request = crate::wire::ArrayBasic<'static>;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayArrayBasic;
@@ -7579,6 +7635,14 @@ pub mod protocol {
         type Request = crate::wire::ArrayBasic<'static>;
 
         type Response = crate::wire::ArrayBasic<'static>;
+    }
+
+    impl<___R> ::fidl_next::Respond<___R> for TwoWayArrayBasic {
+        type Output = ___R;
+
+        fn respond(response: ___R) -> Self::Output {
+            response
+        }
     }
 
     pub struct ErrorArrayBasic;
@@ -7597,6 +7661,26 @@ pub mod protocol {
         >;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for ErrorArrayBasic {
+        type Output =
+            ::core::result::Result<___R, ::fidl_next::util::EncodableNever<::fidl_next::WireU32>>;
+
+        fn respond(response: ___R) -> Self::Output {
+            ::core::result::Result::Ok(response)
+        }
+    }
+
+    impl<___R> ::fidl_next::RespondErr<___R> for ErrorArrayBasic {
+        type Output = ::core::result::Result<
+            ::fidl_next::util::EncodableNever<crate::wire::ArrayBasic<'static>>,
+            ___R,
+        >;
+
+        fn respond_err(response: ___R) -> Self::Output {
+            ::core::result::Result::Err(response)
+        }
+    }
+
     pub struct EventArrayBasic;
 
     impl ::fidl_next::Method for EventArrayBasic {
@@ -7604,7 +7688,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ::fidl_next::Never;
+        type Request = ::fidl_next::util::Never;
 
         type Response = crate::wire::ArrayBasic<'static>;
     }
@@ -7618,7 +7702,7 @@ pub mod protocol {
 
         type Request = crate::wire::ArrayCompound<'static>;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayArrayCompound;
@@ -7631,6 +7715,14 @@ pub mod protocol {
         type Request = crate::wire::ArrayCompound<'static>;
 
         type Response = crate::wire::ArrayCompound<'static>;
+    }
+
+    impl<___R> ::fidl_next::Respond<___R> for TwoWayArrayCompound {
+        type Output = ___R;
+
+        fn respond(response: ___R) -> Self::Output {
+            response
+        }
     }
 
     pub struct ErrorArrayCompound;
@@ -7649,6 +7741,26 @@ pub mod protocol {
         >;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for ErrorArrayCompound {
+        type Output =
+            ::core::result::Result<___R, ::fidl_next::util::EncodableNever<::fidl_next::WireU32>>;
+
+        fn respond(response: ___R) -> Self::Output {
+            ::core::result::Result::Ok(response)
+        }
+    }
+
+    impl<___R> ::fidl_next::RespondErr<___R> for ErrorArrayCompound {
+        type Output = ::core::result::Result<
+            ::fidl_next::util::EncodableNever<crate::wire::ArrayCompound<'static>>,
+            ___R,
+        >;
+
+        fn respond_err(response: ___R) -> Self::Output {
+            ::core::result::Result::Err(response)
+        }
+    }
+
     pub struct EventArrayCompound;
 
     impl ::fidl_next::Method for EventArrayCompound {
@@ -7656,7 +7768,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ::fidl_next::Never;
+        type Request = ::fidl_next::util::Never;
 
         type Response = crate::wire::ArrayCompound<'static>;
     }
@@ -7670,7 +7782,7 @@ pub mod protocol {
 
         type Request = crate::wire::VectorBasic<'static>;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayVectorBasic;
@@ -7683,6 +7795,14 @@ pub mod protocol {
         type Request = crate::wire::VectorBasic<'static>;
 
         type Response = crate::wire::VectorBasic<'static>;
+    }
+
+    impl<___R> ::fidl_next::Respond<___R> for TwoWayVectorBasic {
+        type Output = ___R;
+
+        fn respond(response: ___R) -> Self::Output {
+            response
+        }
     }
 
     pub struct ErrorVectorBasic;
@@ -7701,6 +7821,26 @@ pub mod protocol {
         >;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for ErrorVectorBasic {
+        type Output =
+            ::core::result::Result<___R, ::fidl_next::util::EncodableNever<::fidl_next::WireU32>>;
+
+        fn respond(response: ___R) -> Self::Output {
+            ::core::result::Result::Ok(response)
+        }
+    }
+
+    impl<___R> ::fidl_next::RespondErr<___R> for ErrorVectorBasic {
+        type Output = ::core::result::Result<
+            ::fidl_next::util::EncodableNever<crate::wire::VectorBasic<'static>>,
+            ___R,
+        >;
+
+        fn respond_err(response: ___R) -> Self::Output {
+            ::core::result::Result::Err(response)
+        }
+    }
+
     pub struct EventVectorBasic;
 
     impl ::fidl_next::Method for EventVectorBasic {
@@ -7708,7 +7848,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ::fidl_next::Never;
+        type Request = ::fidl_next::util::Never;
 
         type Response = crate::wire::VectorBasic<'static>;
     }
@@ -7722,7 +7862,7 @@ pub mod protocol {
 
         type Request = crate::wire::VectorCompound<'static>;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayVectorCompound;
@@ -7735,6 +7875,14 @@ pub mod protocol {
         type Request = crate::wire::VectorCompound<'static>;
 
         type Response = crate::wire::VectorCompound<'static>;
+    }
+
+    impl<___R> ::fidl_next::Respond<___R> for TwoWayVectorCompound {
+        type Output = ___R;
+
+        fn respond(response: ___R) -> Self::Output {
+            response
+        }
     }
 
     pub struct ErrorVectorCompound;
@@ -7753,6 +7901,26 @@ pub mod protocol {
         >;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for ErrorVectorCompound {
+        type Output =
+            ::core::result::Result<___R, ::fidl_next::util::EncodableNever<::fidl_next::WireU32>>;
+
+        fn respond(response: ___R) -> Self::Output {
+            ::core::result::Result::Ok(response)
+        }
+    }
+
+    impl<___R> ::fidl_next::RespondErr<___R> for ErrorVectorCompound {
+        type Output = ::core::result::Result<
+            ::fidl_next::util::EncodableNever<crate::wire::VectorCompound<'static>>,
+            ___R,
+        >;
+
+        fn respond_err(response: ___R) -> Self::Output {
+            ::core::result::Result::Err(response)
+        }
+    }
+
     pub struct EventVectorCompound;
 
     impl ::fidl_next::Method for EventVectorCompound {
@@ -7760,7 +7928,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ::fidl_next::Never;
+        type Request = ::fidl_next::util::Never;
 
         type Response = crate::wire::VectorCompound<'static>;
     }
@@ -7774,7 +7942,7 @@ pub mod protocol {
 
         type Request = crate::wire::VectorOptional<'static>;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayVectorOptional;
@@ -7787,6 +7955,14 @@ pub mod protocol {
         type Request = crate::wire::VectorOptional<'static>;
 
         type Response = crate::wire::VectorOptional<'static>;
+    }
+
+    impl<___R> ::fidl_next::Respond<___R> for TwoWayVectorOptional {
+        type Output = ___R;
+
+        fn respond(response: ___R) -> Self::Output {
+            response
+        }
     }
 
     pub struct ErrorVectorOptional;
@@ -7805,6 +7981,26 @@ pub mod protocol {
         >;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for ErrorVectorOptional {
+        type Output =
+            ::core::result::Result<___R, ::fidl_next::util::EncodableNever<::fidl_next::WireU32>>;
+
+        fn respond(response: ___R) -> Self::Output {
+            ::core::result::Result::Ok(response)
+        }
+    }
+
+    impl<___R> ::fidl_next::RespondErr<___R> for ErrorVectorOptional {
+        type Output = ::core::result::Result<
+            ::fidl_next::util::EncodableNever<crate::wire::VectorOptional<'static>>,
+            ___R,
+        >;
+
+        fn respond_err(response: ___R) -> Self::Output {
+            ::core::result::Result::Err(response)
+        }
+    }
+
     pub struct EventVectorOptional;
 
     impl ::fidl_next::Method for EventVectorOptional {
@@ -7812,7 +8008,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ::fidl_next::Never;
+        type Request = ::fidl_next::util::Never;
 
         type Response = crate::wire::VectorOptional<'static>;
     }
@@ -7826,7 +8022,7 @@ pub mod protocol {
 
         type Request = crate::wire::ArrayVectorNested<'static>;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayArrayVectorNested;
@@ -7839,6 +8035,14 @@ pub mod protocol {
         type Request = crate::wire::ArrayVectorNested<'static>;
 
         type Response = crate::wire::ArrayVectorNested<'static>;
+    }
+
+    impl<___R> ::fidl_next::Respond<___R> for TwoWayArrayVectorNested {
+        type Output = ___R;
+
+        fn respond(response: ___R) -> Self::Output {
+            response
+        }
     }
 
     pub struct ErrorArrayVectorNested;
@@ -7857,6 +8061,26 @@ pub mod protocol {
         >;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for ErrorArrayVectorNested {
+        type Output =
+            ::core::result::Result<___R, ::fidl_next::util::EncodableNever<::fidl_next::WireU32>>;
+
+        fn respond(response: ___R) -> Self::Output {
+            ::core::result::Result::Ok(response)
+        }
+    }
+
+    impl<___R> ::fidl_next::RespondErr<___R> for ErrorArrayVectorNested {
+        type Output = ::core::result::Result<
+            ::fidl_next::util::EncodableNever<crate::wire::ArrayVectorNested<'static>>,
+            ___R,
+        >;
+
+        fn respond_err(response: ___R) -> Self::Output {
+            ::core::result::Result::Err(response)
+        }
+    }
+
     pub struct EventArrayVectorNested;
 
     impl ::fidl_next::Method for EventArrayVectorNested {
@@ -7864,7 +8088,7 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ::fidl_next::Never;
+        type Request = ::fidl_next::util::Never;
 
         type Response = crate::wire::ArrayVectorNested<'static>;
     }
@@ -7878,7 +8102,7 @@ pub mod protocol {
 
         type Request = crate::wire::Resource<'static>;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TwoWayResource;
@@ -7891,6 +8115,14 @@ pub mod protocol {
         type Request = crate::wire::Resource<'static>;
 
         type Response = crate::wire::Resource<'static>;
+    }
+
+    impl<___R> ::fidl_next::Respond<___R> for TwoWayResource {
+        type Output = ___R;
+
+        fn respond(response: ___R) -> Self::Output {
+            response
+        }
     }
 
     pub struct ErrorResource;
@@ -7906,6 +8138,26 @@ pub mod protocol {
             ::fidl_next::WireResult<'static, crate::wire::Resource<'static>, ::fidl_next::WireU32>;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for ErrorResource {
+        type Output =
+            ::core::result::Result<___R, ::fidl_next::util::EncodableNever<::fidl_next::WireU32>>;
+
+        fn respond(response: ___R) -> Self::Output {
+            ::core::result::Result::Ok(response)
+        }
+    }
+
+    impl<___R> ::fidl_next::RespondErr<___R> for ErrorResource {
+        type Output = ::core::result::Result<
+            ::fidl_next::util::EncodableNever<crate::wire::Resource<'static>>,
+            ___R,
+        >;
+
+        fn respond_err(response: ___R) -> Self::Output {
+            ::core::result::Result::Err(response)
+        }
+    }
+
     pub struct EventResource;
 
     impl ::fidl_next::Method for EventResource {
@@ -7913,13 +8165,13 @@ pub mod protocol {
 
         type Protocol = crate::Protocol;
 
-        type Request = ::fidl_next::Never;
+        type Request = ::fidl_next::util::Never;
 
         type Response = crate::wire::Resource<'static>;
     }
 
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::Protocol
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::Protocol
         where
             ___T: ::fidl_next::Transport,
         {

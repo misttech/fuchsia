@@ -35,8 +35,16 @@ pub mod top {
         type Response = ::fidl_next_test_bottom::wire::BottomGetFooResponse;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for GetFoo {
+        type Output = ::fidl_next_test_bottom::generic::BottomGetFooResponse<___R>;
+
+        fn respond(response: ___R) -> Self::Output {
+            ::fidl_next_test_bottom::generic::BottomGetFooResponse { foo: response }
+        }
+    }
+
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::Top
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::Top
         where
             ___T: ::fidl_next::Transport,
         {

@@ -1403,11 +1403,11 @@ pub mod example_protocol {
 
         type Request = crate::wire::ExampleProtocolMethodRequest;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::ExampleProtocol
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::ExampleProtocol
         where
             ___T: ::fidl_next::Transport,
         {

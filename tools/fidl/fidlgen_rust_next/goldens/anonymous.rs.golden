@@ -3112,8 +3112,32 @@ pub mod some_protocol {
         >;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for SomeMethod {
+        type Output = ::core::result::Result<
+            crate::generic::SomeProtocolSomeMethodResponse<___R>,
+            ::fidl_next::util::EncodableNever<crate::wire::SomeProtocolSomeMethodError>,
+        >;
+
+        fn respond(response: ___R) -> Self::Output {
+            ::core::result::Result::Ok(crate::generic::SomeProtocolSomeMethodResponse {
+                bits_member: response,
+            })
+        }
+    }
+
+    impl<___R> ::fidl_next::RespondErr<___R> for SomeMethod {
+        type Output = ::core::result::Result<
+            ::fidl_next::util::EncodableNever<crate::wire::SomeProtocolSomeMethodResponse>,
+            ___R,
+        >;
+
+        fn respond_err(response: ___R) -> Self::Output {
+            ::core::result::Result::Err(response)
+        }
+    }
+
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::SomeProtocol
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::SomeProtocol
         where
             ___T: ::fidl_next::Transport,
         {

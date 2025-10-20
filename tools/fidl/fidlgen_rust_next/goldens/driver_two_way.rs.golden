@@ -568,8 +568,16 @@ pub mod two_way {
         type Response = crate::wire::TwoWayAddResponse;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for Add {
+        type Output = crate::generic::TwoWayAddResponse<___R>;
+
+        fn respond(response: ___R) -> Self::Output {
+            crate::generic::TwoWayAddResponse { sum: response }
+        }
+    }
+
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::TwoWay
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::TwoWay
         where
             ___T: ::fidl_next::Transport,
         {

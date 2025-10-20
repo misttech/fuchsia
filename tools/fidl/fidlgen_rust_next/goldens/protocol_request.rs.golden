@@ -843,7 +843,7 @@ pub mod child {
     }
 
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::Child
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::Child
         where
             ___T: ::fidl_next::Transport,
         {
@@ -968,6 +968,14 @@ pub mod parent {
         type Response = crate::wire::ParentGetChildResponse;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for GetChild {
+        type Output = crate::generic::ParentGetChildResponse<___R>;
+
+        fn respond(response: ___R) -> Self::Output {
+            crate::generic::ParentGetChildResponse { c: response }
+        }
+    }
+
     pub struct GetChildRequest;
 
     impl ::fidl_next::Method for GetChildRequest {
@@ -980,6 +988,14 @@ pub mod parent {
         type Response = crate::wire::ParentGetChildRequestResponse;
     }
 
+    impl<___R> ::fidl_next::Respond<___R> for GetChildRequest {
+        type Output = crate::generic::ParentGetChildRequestResponse<___R>;
+
+        fn respond(response: ___R) -> Self::Output {
+            crate::generic::ParentGetChildRequestResponse { r: response }
+        }
+    }
+
     pub struct TakeChild;
 
     impl ::fidl_next::Method for TakeChild {
@@ -989,7 +1005,7 @@ pub mod parent {
 
         type Request = crate::wire::ParentTakeChildRequest;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     pub struct TakeChildRequest;
@@ -1001,11 +1017,11 @@ pub mod parent {
 
         type Request = crate::wire::ParentTakeChildRequestRequest;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::Parent
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::Parent
         where
             ___T: ::fidl_next::Transport,
         {

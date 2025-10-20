@@ -16,10 +16,7 @@
 
 use anyhow::Context;
 use fidl_next::{Request, Responder};
-use fidl_next_fuchsia_examples_calculator::{
-    Calculator, CalculatorAddResponse, CalculatorDivideResponse, CalculatorMultiplyResponse,
-    CalculatorPowResponse, CalculatorServerHandler, CalculatorSubtractResponse, calculator,
-};
+use fidl_next_fuchsia_examples_calculator::{Calculator, CalculatorServerHandler, calculator};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::component;
 use fuchsia_inspect::health::Reporter;
@@ -34,7 +31,7 @@ impl CalculatorServerHandler<fidl_next::fuchsia::zx::Channel> for CalculatorServ
         request: Request<calculator::Add>,
         responder: Responder<calculator::Add>,
     ) {
-        responder.respond(CalculatorAddResponse { sum: *request.a + *request.b }).await.unwrap();
+        responder.respond(*request.a + *request.b).await.unwrap();
     }
 
     async fn subtract(
@@ -42,10 +39,7 @@ impl CalculatorServerHandler<fidl_next::fuchsia::zx::Channel> for CalculatorServ
         request: Request<calculator::Subtract>,
         responder: Responder<calculator::Subtract>,
     ) {
-        responder
-            .respond(CalculatorSubtractResponse { difference: *request.a - *request.b })
-            .await
-            .unwrap();
+        responder.respond(*request.a - *request.b).await.unwrap();
     }
 
     async fn multiply(
@@ -53,10 +47,7 @@ impl CalculatorServerHandler<fidl_next::fuchsia::zx::Channel> for CalculatorServ
         request: Request<calculator::Multiply>,
         responder: Responder<calculator::Multiply>,
     ) {
-        responder
-            .respond(CalculatorMultiplyResponse { product: *request.a * *request.b })
-            .await
-            .unwrap();
+        responder.respond(*request.a * *request.b).await.unwrap();
     }
 
     async fn divide(
@@ -64,10 +55,7 @@ impl CalculatorServerHandler<fidl_next::fuchsia::zx::Channel> for CalculatorServ
         request: Request<calculator::Divide>,
         responder: Responder<calculator::Divide>,
     ) {
-        responder
-            .respond(CalculatorDivideResponse { quotient: *request.dividend / *request.divisor })
-            .await
-            .unwrap();
+        responder.respond(*request.dividend / *request.divisor).await.unwrap();
     }
 
     async fn pow(
@@ -75,10 +63,7 @@ impl CalculatorServerHandler<fidl_next::fuchsia::zx::Channel> for CalculatorServ
         request: Request<calculator::Pow>,
         responder: Responder<calculator::Pow>,
     ) {
-        responder
-            .respond(CalculatorPowResponse { power: request.base.powf(*request.exponent) })
-            .await
-            .unwrap();
+        responder.respond(request.base.powf(*request.exponent)).await.unwrap();
     }
 }
 

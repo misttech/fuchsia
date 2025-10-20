@@ -9,7 +9,7 @@ use core::ops::Deref;
 use fidl_next_codec::{Constrained, Encode};
 use fidl_next_protocol::{self as protocol, ProtocolError, ServerHandler, Transport};
 
-use crate::{Method, Protocol, RespondFuture, ServerEnd};
+use crate::{HasConnectionHandles, Method, Respond, RespondErr, RespondFuture, ServerEnd};
 
 /// A strongly typed server.
 #[repr(transparent)]
@@ -52,7 +52,7 @@ impl<P, T: Transport> Clone for Server<P, T> {
     }
 }
 
-impl<P: Protocol<T>, T: Transport> Deref for Server<P, T> {
+impl<P: HasConnectionHandles<T>, T: Transport> Deref for Server<P, T> {
     type Target = P::Server;
 
     fn deref(&self) -> &Self::Target {
@@ -190,11 +190,34 @@ impl<M, T: Transport> Responder<M, T> {
     }
 
     /// Responds to the client.
+    ///
+    /// For methods which return a result, this method implicitly returns `Ok`
+    /// of the given response.
     pub fn respond<R>(self, response: R) -> RespondFuture<T>
     where
-        M: Method,
-        R: Encode<T::SendBuffer, Encoded = M::Response>,
+        M: Method + Respond<R>,
         M::Response: Constrained<Constraint = ()>,
+        <M as Respond<R>>::Output: Encode<T::SendBuffer, Encoded = M::Response>,
+    {
+        self.respond_with(M::respond(response))
+    }
+
+    /// Responds `Err` to the client.
+    pub fn respond_err<R>(self, response: R) -> RespondFuture<T>
+    where
+        M: Method + RespondErr<R>,
+        M::Response: Constrained<Constraint = ()>,
+        <M as RespondErr<R>>::Output: Encode<T::SendBuffer, Encoded = M::Response>,
+    {
+        self.respond_with(M::respond_err(response))
+    }
+
+    /// Responds to the client.
+    pub fn respond_with<R>(self, response: R) -> RespondFuture<T>
+    where
+        M: Method,
+        M::Response: Constrained<Constraint = ()>,
+        R: Encode<T::SendBuffer, Encoded = M::Response>,
     {
         RespondFuture::from_untyped(self.responder.respond(M::ORDINAL, response))
     }

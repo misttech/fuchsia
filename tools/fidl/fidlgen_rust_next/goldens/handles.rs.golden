@@ -2061,7 +2061,7 @@ pub mod driver_protocol {
     }
 
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::DriverProtocol
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::DriverProtocol
         where
             ___T: ::fidl_next::Transport,
         {
@@ -2169,7 +2169,7 @@ pub mod some_protocol {
     }
 
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::SomeProtocol
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::SomeProtocol
         where
             ___T: ::fidl_next::Transport,
         {

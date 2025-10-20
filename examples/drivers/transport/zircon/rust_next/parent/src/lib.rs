@@ -33,21 +33,11 @@ impl i2c::DeviceServerHandler for DeviceServer {
         _: Request<i2c::device::Transfer>,
         responder: Responder<i2c::device::Transfer>,
     ) {
-        responder
-            .respond(Ok::<_, i32>(i2c::DeviceTransferResponse {
-                read_data: vec![vec![0x1u8, 0x2, 0x3]],
-            }))
-            .await
-            .unwrap();
+        responder.respond(vec![vec![0x1u8, 0x2, 0x3]]).await.unwrap();
     }
 
     async fn get_name(&mut self, responder: Responder<i2c::device::GetName>) {
-        responder
-            .respond(Ok::<_, i32>(i2c::DeviceGetNameResponse {
-                name: "rust i2c server".to_string(),
-            }))
-            .await
-            .unwrap();
+        responder.respond("rust i2c server").await.unwrap();
     }
 }
 

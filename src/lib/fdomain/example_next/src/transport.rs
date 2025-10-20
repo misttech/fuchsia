@@ -51,7 +51,7 @@ impl EchoServerHandler<fidl::Channel> for EchoServer {
         if !self.quiet {
             log::info!("Received echo request for string {:?}", value);
         }
-        let response = EchoEchoStringResponse { response: format!("{}{value}", self.prefix) };
+        let response = format!("{}{value}", self.prefix);
 
         if responder.respond(response).await.is_err() {
             self.server.close()
@@ -93,9 +93,7 @@ impl EchoLauncherServerHandler<fidl::Channel> for EchoLauncherServer {
             )
             .detach_on_drop();
 
-        let response = EchoLauncherGetEchoResponse { response: client_end };
-
-        if responder.respond(response).await.is_err() {
+        if responder.respond(client_end).await.is_err() {
             self.server.close();
         } else if !self.quiet {
             log::info!("echo launcher response sent successfully");

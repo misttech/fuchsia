@@ -854,7 +854,7 @@ pub mod driver_protocol {
     }
 
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::DriverProtocol
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::DriverProtocol
         where
             ___T: ::fidl_next::Transport,
         {
@@ -973,11 +973,11 @@ pub mod handles_in_protocol {
 
         type Request = crate::wire::HandlesInProtocolSendHandlesRequest<'static>;
 
-        type Response = ::fidl_next::Never;
+        type Response = ::fidl_next::util::Never;
     }
 
     mod ___detail {
-        unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::HandlesInProtocol
+        unsafe impl<___T> ::fidl_next::HasConnectionHandles<___T> for crate::HandlesInProtocol
         where
             ___T: ::fidl_next::Transport,
         {
