@@ -6,7 +6,7 @@ use core::future::Future;
 use core::marker::PhantomData;
 use core::ops::Deref;
 
-use fidl_next_protocol::{self as protocol, ClientHandler, IgnoreEvents, ProtocolError, Transport};
+use fidl_next_protocol::{self as protocol, ClientHandler, Flexibility, ProtocolError, Transport};
 
 use crate::{ClientEnd, HasConnectionHandles};
 
@@ -67,6 +67,7 @@ pub trait DispatchClientMessage<
     fn on_event(
         handler: &mut H,
         ordinal: u64,
+        flexibility: Flexibility,
         buffer: T::RecvBuffer,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 }
@@ -94,9 +95,10 @@ where
     fn on_event(
         &mut self,
         ordinal: u64,
+        flexibility: Flexibility,
         buffer: T::RecvBuffer,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send {
-        P::on_event(&mut self.handler, ordinal, buffer)
+        P::on_event(&mut self.handler, ordinal, flexibility, buffer)
     }
 }
 
@@ -148,7 +150,13 @@ impl<P, T: Transport> ClientDispatcher<P, T> {
     }
 
     /// Runs the client, ignoring any incoming events.
-    pub async fn run_client(self) -> Result<(), ProtocolError<T::Error>> {
-        self.dispatcher.run(IgnoreEvents).await.map(|_| ())
+    pub async fn run_client(self) -> Result<(), ProtocolError<T::Error>>
+    where
+        P: DispatchClientMessage<IgnoreEvents, T>,
+    {
+        self.run(IgnoreEvents).await.map(|_| ())
     }
 }
+
+/// A handler which ignores incoming events.
+pub struct IgnoreEvents;

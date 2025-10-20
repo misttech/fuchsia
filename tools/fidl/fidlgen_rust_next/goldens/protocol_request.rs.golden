@@ -880,6 +880,8 @@ pub trait ChildClientHandler<
 {
 }
 
+impl<___T> ChildClientHandler<___T> for ::fidl_next::IgnoreEvents where ___T: ::fidl_next::Transport {}
+
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Child
 where
     ___H: ChildClientHandler<___T> + ::core::marker::Send,
@@ -888,10 +890,11 @@ where
     async fn on_event(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }
@@ -914,19 +917,21 @@ where
     async fn on_one_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 
     async fn on_two_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
@@ -934,7 +939,7 @@ where
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }
@@ -960,6 +965,8 @@ pub mod parent {
 
     impl ::fidl_next::Method for GetChild {
         const ORDINAL: u64 = 881818649151440699;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Parent;
 
@@ -980,6 +987,8 @@ pub mod parent {
 
     impl ::fidl_next::Method for GetChildRequest {
         const ORDINAL: u64 = 1096855814967598201;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Parent;
 
@@ -1000,6 +1009,8 @@ pub mod parent {
 
     impl ::fidl_next::Method for TakeChild {
         const ORDINAL: u64 = 4470101341872267920;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Parent;
 
@@ -1012,6 +1023,8 @@ pub mod parent {
 
     impl ::fidl_next::Method for TakeChildRequest {
         const ORDINAL: u64 = 2333981071306416007;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Parent;
 
@@ -1041,17 +1054,21 @@ pub mod parent {
             ___T: ::fidl_next::Transport,
         {
             pub fn get_child(&self) -> ::fidl_next::TwoWayFuture<'_, super::GetChild, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(881818649151440699, ()),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    881818649151440699,
+                    <super::GetChild as ::fidl_next::Method>::FLEXIBILITY,
+                    (),
+                ))
             }
 
             pub fn get_child_request(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::GetChildRequest, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(1096855814967598201, ()),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    1096855814967598201,
+                    <super::GetChildRequest as ::fidl_next::Method>::FLEXIBILITY,
+                    (),
+                ))
             }
 
             pub fn take_child(
@@ -1080,9 +1097,11 @@ pub mod parent {
                         Encoded = crate::wire::ParentTakeChildRequest,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(4470101341872267920, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    4470101341872267920,
+                    <super::TakeChild as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn take_child_request(
@@ -1114,9 +1133,11 @@ pub mod parent {
                         Encoded = crate::wire::ParentTakeChildRequestRequest,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(2333981071306416007, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    2333981071306416007,
+                    <super::TakeChildRequest as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
         }
 
@@ -1140,6 +1161,9 @@ pub trait ParentClientHandler<
 {
 }
 
+impl<___T> ParentClientHandler<___T> for ::fidl_next::IgnoreEvents where ___T: ::fidl_next::Transport
+{}
+
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Parent
 where
     ___H: ParentClientHandler<___T> + ::core::marker::Send,
@@ -1152,10 +1176,11 @@ where
     async fn on_event(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }
@@ -1205,6 +1230,7 @@ where
     async fn on_one_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<
         (),
@@ -1233,13 +1259,14 @@ where
                 }),
             },
 
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 
     async fn on_two_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
@@ -1261,7 +1288,7 @@ where
                 Ok(())
             }
 
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }

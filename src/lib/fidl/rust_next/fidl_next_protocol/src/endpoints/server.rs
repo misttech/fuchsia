@@ -17,7 +17,7 @@ use pin_project::pin_project;
 use crate::concurrency::sync::Arc;
 use crate::concurrency::sync::atomic::{AtomicI64, Ordering};
 use crate::endpoints::connection::{Connection, SendFutureOutput, SendFutureState};
-use crate::{ProtocolError, SendFuture, Transport, decode_header, encode_header};
+use crate::{Flexibility, ProtocolError, SendFuture, Transport, decode_header, encode_header};
 
 struct ServerInner<T: Transport> {
     connection: Connection<T>,
@@ -61,13 +61,18 @@ impl<T: Transport> Server<T> {
     }
 
     /// Send an event.
-    pub fn send_event<M>(&self, ordinal: u64, event: M) -> Result<SendFuture<'_, T>, EncodeError>
+    pub fn send_event<M>(
+        &self,
+        ordinal: u64,
+        flexibility: Flexibility,
+        event: M,
+    ) -> Result<SendFuture<'_, T>, EncodeError>
     where
         M: Encode<T::SendBuffer>,
         M::Encoded: Constrained<Constraint = ()>,
     {
         self.inner.connection.send_message(|buffer| {
-            encode_header::<T>(buffer, 0, ordinal)?;
+            encode_header::<T>(buffer, 0, ordinal, flexibility)?;
             buffer.encode_next(event, ())
         })
     }
@@ -93,6 +98,7 @@ pub trait ServerHandler<T: Transport> {
     fn on_one_way(
         &mut self,
         ordinal: u64,
+        flexibility: Flexibility,
         buffer: T::RecvBuffer,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 
@@ -104,6 +110,7 @@ pub trait ServerHandler<T: Transport> {
     fn on_two_way(
         &mut self,
         ordinal: u64,
+        flexibility: Flexibility,
         buffer: T::RecvBuffer,
         responder: Responder<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
@@ -201,13 +208,13 @@ impl<T: Transport> ServerDispatcher<T> {
         // SAFETY: The caller guaranteed that the connection is not terminated.
         let mut buffer = unsafe { self.inner.connection.recv(&mut self.exclusive).await? };
 
-        let (txid, ordinal) =
+        let (txid, ordinal, flexibility) =
             decode_header::<T>(&mut buffer).map_err(ProtocolError::InvalidMessageHeader)?;
         if let Some(txid) = NonZeroU32::new(txid) {
             let responder = Responder { server: self.server(), txid };
-            handler.on_two_way(ordinal, buffer, responder).await?;
+            handler.on_two_way(ordinal, flexibility, buffer, responder).await?;
         } else {
-            handler.on_one_way(ordinal, buffer).await?;
+            handler.on_one_way(ordinal, flexibility, buffer).await?;
         }
 
         Ok(())
@@ -229,13 +236,18 @@ impl<T: Transport> Drop for Responder<T> {
 
 impl<T: Transport> Responder<T> {
     /// Send a response to a two-way message.
-    pub fn respond<M>(self, ordinal: u64, response: M) -> Result<RespondFuture<T>, EncodeError>
+    pub fn respond<M>(
+        self,
+        ordinal: u64,
+        flexibility: Flexibility,
+        response: M,
+    ) -> Result<RespondFuture<T>, EncodeError>
     where
         M: Encode<T::SendBuffer>,
         M::Encoded: Constrained<Constraint = ()>,
     {
         let state = self.server.inner.connection.send_message_raw(|buffer| {
-            encode_header::<T>(buffer, self.txid.get(), ordinal)?;
+            encode_header::<T>(buffer, self.txid.get(), ordinal, flexibility)?;
             buffer.encode_next(response, ())
         })?;
 

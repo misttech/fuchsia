@@ -7463,6 +7463,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for OneWayBasic {
         const ORDINAL: u64 = 8948968077914418681;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7475,6 +7477,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for TwoWayBasic {
         const ORDINAL: u64 = 2331618702752598159;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7495,6 +7499,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for ErrorBasic {
         const ORDINAL: u64 = 5016634351643393939;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7528,6 +7534,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for EventBasic {
         const ORDINAL: u64 = 5892309624949902400;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7540,6 +7548,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for OneWayCompound {
         const ORDINAL: u64 = 3153289648860022476;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7552,6 +7562,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for TwoWayCompound {
         const ORDINAL: u64 = 8787219719097524529;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7572,6 +7584,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for ErrorCompound {
         const ORDINAL: u64 = 2990809657626249085;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7605,6 +7619,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for EventCompound {
         const ORDINAL: u64 = 7024581948727571669;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7617,6 +7633,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for OneWayArrayBasic {
         const ORDINAL: u64 = 7125516817014311449;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7629,6 +7647,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for TwoWayArrayBasic {
         const ORDINAL: u64 = 5309034178175279380;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7649,6 +7669,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for ErrorArrayBasic {
         const ORDINAL: u64 = 1084731895342694265;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7685,6 +7707,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for EventArrayBasic {
         const ORDINAL: u64 = 5888282827283820590;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7697,6 +7721,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for OneWayArrayCompound {
         const ORDINAL: u64 = 5064659223443251357;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7709,6 +7735,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for TwoWayArrayCompound {
         const ORDINAL: u64 = 849744466051983995;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7729,6 +7757,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for ErrorArrayCompound {
         const ORDINAL: u64 = 5919277476782807556;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7765,6 +7795,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for EventArrayCompound {
         const ORDINAL: u64 = 2189769767733851157;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7777,6 +7809,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for OneWayVectorBasic {
         const ORDINAL: u64 = 5733220720079947351;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7789,6 +7823,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for TwoWayVectorBasic {
         const ORDINAL: u64 = 8674156353091415668;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7809,6 +7845,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for ErrorVectorBasic {
         const ORDINAL: u64 = 875941614196965234;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7845,6 +7883,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for EventVectorBasic {
         const ORDINAL: u64 = 4583890770109526006;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7857,6 +7897,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for OneWayVectorCompound {
         const ORDINAL: u64 = 1853985797298830992;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7869,6 +7911,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for TwoWayVectorCompound {
         const ORDINAL: u64 = 3968024057912959924;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7889,6 +7933,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for ErrorVectorCompound {
         const ORDINAL: u64 = 8506780203315865989;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7925,6 +7971,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for EventVectorCompound {
         const ORDINAL: u64 = 6026375226599919603;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7937,6 +7985,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for OneWayVectorOptional {
         const ORDINAL: u64 = 1530215841195476271;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7949,6 +7999,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for TwoWayVectorOptional {
         const ORDINAL: u64 = 1030024737742222323;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -7969,6 +8021,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for ErrorVectorOptional {
         const ORDINAL: u64 = 6406191217027936606;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -8005,6 +8059,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for EventVectorOptional {
         const ORDINAL: u64 = 1684763340073130077;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -8017,6 +8073,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for OneWayArrayVectorNested {
         const ORDINAL: u64 = 5912603762133524183;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -8029,6 +8087,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for TwoWayArrayVectorNested {
         const ORDINAL: u64 = 5351275678438791132;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -8049,6 +8109,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for ErrorArrayVectorNested {
         const ORDINAL: u64 = 9085604921605802151;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -8085,6 +8147,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for EventArrayVectorNested {
         const ORDINAL: u64 = 1228201560727880574;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -8097,6 +8161,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for OneWayResource {
         const ORDINAL: u64 = 6553996787849601058;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -8109,6 +8175,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for TwoWayResource {
         const ORDINAL: u64 = 1802709005492464987;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -8129,6 +8197,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for ErrorResource {
         const ORDINAL: u64 = 6568609240497354166;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -8162,6 +8232,8 @@ pub mod protocol {
 
     impl ::fidl_next::Method for EventResource {
         const ORDINAL: u64 = 5745997765922613643;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Protocol;
 
@@ -8295,9 +8367,11 @@ pub mod protocol {
                         Encoded = crate::wire::Basic<'static>,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(8948968077914418681, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    8948968077914418681,
+                    <super::OneWayBasic as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn two_way_basic(
@@ -8405,15 +8479,19 @@ pub mod protocol {
                         Encoded = crate::wire::Basic<'static>,
                     >,
             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(2331618702752598159, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    2331618702752598159,
+                    <super::TwoWayBasic as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn error_basic(&self) -> ::fidl_next::TwoWayFuture<'_, super::ErrorBasic, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(5016634351643393939, ()),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    5016634351643393939,
+                    <super::ErrorBasic as ::fidl_next::Method>::FLEXIBILITY,
+                    (),
+                ))
             }
 
             pub fn one_way_compound(
@@ -8486,9 +8564,11 @@ pub mod protocol {
                         Encoded = crate::wire::Compound<'static>,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(3153289648860022476, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    3153289648860022476,
+                    <super::OneWayCompound as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn two_way_compound(
@@ -8561,17 +8641,21 @@ pub mod protocol {
                         Encoded = crate::wire::Compound<'static>,
                     >,
             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(8787219719097524529, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    8787219719097524529,
+                    <super::TwoWayCompound as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn error_compound(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorCompound, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(2990809657626249085, ()),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    2990809657626249085,
+                    <super::ErrorCompound as ::fidl_next::Method>::FLEXIBILITY,
+                    (),
+                ))
             }
 
             pub fn one_way_array_basic(
@@ -8679,9 +8763,11 @@ pub mod protocol {
                         Encoded = crate::wire::ArrayBasic<'static>,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(7125516817014311449, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    7125516817014311449,
+                    <super::OneWayArrayBasic as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn two_way_array_basic(
@@ -8789,17 +8875,21 @@ pub mod protocol {
                         Encoded = crate::wire::ArrayBasic<'static>,
                     >,
             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(5309034178175279380, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    5309034178175279380,
+                    <super::TwoWayArrayBasic as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn error_array_basic(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorArrayBasic, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(1084731895342694265, ()),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    1084731895342694265,
+                    <super::ErrorArrayBasic as ::fidl_next::Method>::FLEXIBILITY,
+                    (),
+                ))
             }
 
             pub fn one_way_array_compound(
@@ -8872,9 +8962,11 @@ pub mod protocol {
                         Encoded = crate::wire::ArrayCompound<'static>,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(5064659223443251357, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    5064659223443251357,
+                    <super::OneWayArrayCompound as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn two_way_array_compound(
@@ -8947,17 +9039,21 @@ pub mod protocol {
                         Encoded = crate::wire::ArrayCompound<'static>,
                     >,
             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(849744466051983995, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    849744466051983995,
+                    <super::TwoWayArrayCompound as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn error_array_compound(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorArrayCompound, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(5919277476782807556, ()),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    5919277476782807556,
+                    <super::ErrorArrayCompound as ::fidl_next::Method>::FLEXIBILITY,
+                    (),
+                ))
             }
 
             pub fn one_way_vector_basic(
@@ -9068,9 +9164,11 @@ pub mod protocol {
                         Encoded = crate::wire::VectorBasic<'static>,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(5733220720079947351, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    5733220720079947351,
+                    <super::OneWayVectorBasic as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn two_way_vector_basic(
@@ -9181,17 +9279,21 @@ pub mod protocol {
                         Encoded = crate::wire::VectorBasic<'static>,
                     >,
             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(8674156353091415668, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    8674156353091415668,
+                    <super::TwoWayVectorBasic as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn error_vector_basic(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorVectorBasic, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(875941614196965234, ()),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    875941614196965234,
+                    <super::ErrorVectorBasic as ::fidl_next::Method>::FLEXIBILITY,
+                    (),
+                ))
             }
 
             pub fn one_way_vector_compound(
@@ -9270,9 +9372,11 @@ pub mod protocol {
                         Encoded = crate::wire::VectorCompound<'static>,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(1853985797298830992, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    1853985797298830992,
+                    <super::OneWayVectorCompound as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn two_way_vector_compound(
@@ -9351,17 +9455,21 @@ pub mod protocol {
                         Encoded = crate::wire::VectorCompound<'static>,
                     >,
             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(3968024057912959924, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    3968024057912959924,
+                    <super::TwoWayVectorCompound as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn error_vector_compound(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorVectorCompound, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(8506780203315865989, ()),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    8506780203315865989,
+                    <super::ErrorVectorCompound as ::fidl_next::Method>::FLEXIBILITY,
+                    (),
+                ))
             }
 
             pub fn one_way_vector_optional(
@@ -9419,9 +9527,11 @@ pub mod protocol {
                         Encoded = crate::wire::VectorOptional<'static>,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(1530215841195476271, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    1530215841195476271,
+                    <super::OneWayVectorOptional as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn two_way_vector_optional(
@@ -9479,17 +9589,21 @@ pub mod protocol {
                         Encoded = crate::wire::VectorOptional<'static>,
                     >,
             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(1030024737742222323, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    1030024737742222323,
+                    <super::TwoWayVectorOptional as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn error_vector_optional(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorVectorOptional, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(6406191217027936606, ()),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    6406191217027936606,
+                    <super::ErrorVectorOptional as ::fidl_next::Method>::FLEXIBILITY,
+                    (),
+                ))
             }
 
             pub fn one_way_array_vector_nested(
@@ -9544,9 +9658,11 @@ pub mod protocol {
                         Encoded = crate::wire::ArrayVectorNested<'static>,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(5912603762133524183, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    5912603762133524183,
+                    <super::OneWayArrayVectorNested as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn two_way_array_vector_nested(
@@ -9601,17 +9717,21 @@ pub mod protocol {
                         Encoded = crate::wire::ArrayVectorNested<'static>,
                     >,
             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(5351275678438791132, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    5351275678438791132,
+                    <super::TwoWayArrayVectorNested as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn error_array_vector_nested(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorArrayVectorNested, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(9085604921605802151, ()),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    9085604921605802151,
+                    <super::ErrorArrayVectorNested as ::fidl_next::Method>::FLEXIBILITY,
+                    (),
+                ))
             }
 
             pub fn one_way_resource(
@@ -9849,9 +9969,11 @@ pub mod protocol {
                         Encoded = crate::wire::Resource<'static>,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(6553996787849601058, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    6553996787849601058,
+                    <super::OneWayResource as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn two_way_resource(
@@ -10089,17 +10211,21 @@ pub mod protocol {
                         Encoded = crate::wire::Resource<'static>,
                     >,
             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(1802709005492464987, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    1802709005492464987,
+                    <super::TwoWayResource as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn error_resource(
                 &self,
             ) -> ::fidl_next::TwoWayFuture<'_, super::ErrorResource, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(6568609240497354166, ()),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    6568609240497354166,
+                    <super::ErrorResource as ::fidl_next::Method>::FLEXIBILITY,
+                    (),
+                ))
             }
         }
 
@@ -10215,9 +10341,11 @@ pub mod protocol {
                         Encoded = <super::EventBasic as ::fidl_next::Method>::Response,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.server.send_event(5892309624949902400, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.server.send_event(
+                    5892309624949902400,
+                    <super::EventBasic as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn event_compound(
@@ -10290,9 +10418,11 @@ pub mod protocol {
                         Encoded = <super::EventCompound as ::fidl_next::Method>::Response,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.server.send_event(7024581948727571669, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.server.send_event(
+                    7024581948727571669,
+                    <super::EventCompound as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn event_array_basic(
@@ -10400,9 +10530,11 @@ pub mod protocol {
                         Encoded = <super::EventArrayBasic as ::fidl_next::Method>::Response,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.server.send_event(5888282827283820590, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.server.send_event(
+                    5888282827283820590,
+                    <super::EventArrayBasic as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn event_array_compound(
@@ -10475,9 +10607,11 @@ pub mod protocol {
                         Encoded = <super::EventArrayCompound as ::fidl_next::Method>::Response,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.server.send_event(2189769767733851157, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.server.send_event(
+                    2189769767733851157,
+                    <super::EventArrayCompound as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn event_vector_basic(
@@ -10588,9 +10722,11 @@ pub mod protocol {
                         Encoded = <super::EventVectorBasic as ::fidl_next::Method>::Response,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.server.send_event(4583890770109526006, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.server.send_event(
+                    4583890770109526006,
+                    <super::EventVectorBasic as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn event_vector_compound(
@@ -10669,9 +10805,11 @@ pub mod protocol {
                         Encoded = <super::EventVectorCompound as ::fidl_next::Method>::Response,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.server.send_event(6026375226599919603, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.server.send_event(
+                    6026375226599919603,
+                    <super::EventVectorCompound as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn event_vector_optional(
@@ -10729,9 +10867,11 @@ pub mod protocol {
                         Encoded = <super::EventVectorOptional as ::fidl_next::Method>::Response,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.server.send_event(1684763340073130077, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.server.send_event(
+                    1684763340073130077,
+                    <super::EventVectorOptional as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn event_array_vector_nested(
@@ -10786,9 +10926,11 @@ pub mod protocol {
                         Encoded = <super::EventArrayVectorNested as ::fidl_next::Method>::Response,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.server.send_event(1228201560727880574, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.server.send_event(
+                    1228201560727880574,
+                    <super::EventArrayVectorNested as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn event_resource(
@@ -11026,9 +11168,11 @@ pub mod protocol {
                         Encoded = <super::EventResource as ::fidl_next::Method>::Response,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.server.send_event(5745997765922613643, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.server.send_event(
+                    5745997765922613643,
+                    <super::EventResource as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
         }
     }
@@ -11097,6 +11241,59 @@ pub trait ProtocolClientHandler<
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
+impl<___T> ProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents
+where
+    ___T: ::fidl_next::Transport,
+{
+    async fn event_basic(&mut self, _: ::fidl_next::Response<protocol::EventBasic, ___T>) {}
+
+    async fn event_compound(&mut self, _: ::fidl_next::Response<protocol::EventCompound, ___T>) {}
+
+    async fn event_array_basic(
+        &mut self,
+
+        _: ::fidl_next::Response<protocol::EventArrayBasic, ___T>,
+    ) {
+    }
+
+    async fn event_array_compound(
+        &mut self,
+
+        _: ::fidl_next::Response<protocol::EventArrayCompound, ___T>,
+    ) {
+    }
+
+    async fn event_vector_basic(
+        &mut self,
+
+        _: ::fidl_next::Response<protocol::EventVectorBasic, ___T>,
+    ) {
+    }
+
+    async fn event_vector_compound(
+        &mut self,
+
+        _: ::fidl_next::Response<protocol::EventVectorCompound, ___T>,
+    ) {
+    }
+
+    async fn event_vector_optional(
+        &mut self,
+
+        _: ::fidl_next::Response<protocol::EventVectorOptional, ___T>,
+    ) {
+    }
+
+    async fn event_array_vector_nested(
+        &mut self,
+
+        _: ::fidl_next::Response<protocol::EventArrayVectorNested, ___T>,
+    ) {
+    }
+
+    async fn event_resource(&mut self, _: ::fidl_next::Response<protocol::EventResource, ___T>) {}
+}
+
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Protocol
 where
     ___H: ProtocolClientHandler<___T> + ::core::marker::Send,
@@ -11159,6 +11356,7 @@ where
     async fn on_event(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
@@ -11261,7 +11459,7 @@ where
                 }),
             },
 
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }
@@ -11499,6 +11697,7 @@ where
     async fn on_one_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<
         (),
@@ -11604,13 +11803,14 @@ where
                 }),
             },
 
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 
     async fn on_two_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
@@ -11816,7 +12016,7 @@ where
                 Ok(())
             }
 
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }

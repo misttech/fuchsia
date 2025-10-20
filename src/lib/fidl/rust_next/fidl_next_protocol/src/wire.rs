@@ -6,10 +6,40 @@ use core::mem::MaybeUninit;
 
 use fidl_next_codec::{
     Constrained, Decode, DecodeError, Encodable, Encode, EncodeError, EncodeRef, Slot,
-    Unconstrained, Wire, WireI32, WireU32, WireU64,
+    Unconstrained, Wire, WireI32, WireU32, WireU64, bitflags,
 };
 
 use zerocopy::IntoBytes;
+
+/// The transactional message header flags in byte 0.
+#[derive(Clone, Copy, Debug, IntoBytes)]
+#[repr(transparent)]
+pub struct MessageHeaderFlags0(u8);
+
+/// The transactional message header flags in byte 1.
+#[derive(Clone, Copy, Debug, IntoBytes)]
+#[repr(transparent)]
+pub struct MessageHeaderFlags1(u8);
+
+/// The transactional message header flags in byte 2.
+#[derive(Clone, Copy, Debug, IntoBytes)]
+#[repr(transparent)]
+pub struct MessageHeaderFlags2(u8);
+
+bitflags::bitflags! {
+    impl MessageHeaderFlags0: u8 {
+        /// The bit set to indicate that the FIDL wire format is version 2.
+        const WIRE_FORMAT_V2 = 1 << 1;
+    }
+
+    impl MessageHeaderFlags1: u8 {
+    }
+
+    impl MessageHeaderFlags2: u8 {
+        /// The bit set to indicate that the FIDL method is flexible.
+        const FLEXIBLE_METHOD = 1 << 7;
+    }
+}
 
 /// A FIDL protocol message header
 #[derive(Clone, Copy, Debug, IntoBytes)]
@@ -17,8 +47,12 @@ use zerocopy::IntoBytes;
 pub struct WireMessageHeader {
     /// The transaction ID of the message header
     pub txid: WireU32,
-    /// Flags
-    pub flags: [u8; 3],
+    /// Flags byte 0
+    pub flags_0: MessageHeaderFlags0,
+    /// Flags byte 1
+    pub flags_1: MessageHeaderFlags1,
+    /// Flags byte 2
+    pub flags_2: MessageHeaderFlags2,
     /// Magic number
     pub magic_number: u8,
     /// The ordinal of the message following this header
@@ -33,9 +67,6 @@ unsafe impl Wire for WireMessageHeader {
         // Wire message headers have no padding
     }
 }
-
-/// The flag 0 bit indicating that the wire format is v2.
-pub const FLAG_0_WIRE_FORMAT_V2_BIT: u8 = 0b0000_0010;
 
 /// The magic number indicating FIDL protocol compatibility.
 pub const MAGIC_NUMBER: u8 = 0x01;

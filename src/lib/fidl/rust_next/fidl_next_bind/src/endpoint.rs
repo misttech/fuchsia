@@ -15,7 +15,7 @@ use fidl_next_protocol::{ProtocolError, Transport};
 
 use crate::{
     Client, ClientDispatcher, DispatchClientMessage, DispatchServerMessage, Executor, HasExecutor,
-    Server, ServerDispatcher,
+    IgnoreEvents, Server, ServerDispatcher,
 };
 
 macro_rules! endpoint {
@@ -423,7 +423,7 @@ impl<P, T: Transport> ClientEnd<P, T> {
     /// client and a join handle for the spawned task.
     pub fn spawn_full_on<E>(self, executor: &E) -> (Client<P, T>, HandlerTask<T, (), E>)
     where
-        P: 'static,
+        P: DispatchClientMessage<IgnoreEvents, T>,
         T: 'static,
         E: Executor,
     {
@@ -438,7 +438,7 @@ impl<P, T: Transport> ClientEnd<P, T> {
     /// client.
     pub fn spawn_on<E>(self, executor: &E) -> Client<P, T>
     where
-        P: 'static,
+        P: DispatchClientMessage<IgnoreEvents, T>,
         T: 'static,
         E: Executor,
     {
@@ -454,7 +454,7 @@ impl<P, T: Transport> ClientEnd<P, T> {
     /// client and a join handle for the spawned task.
     pub fn spawn_full(self) -> (Client<P, T>, HandlerTask<T, ()>)
     where
-        P: 'static,
+        P: DispatchClientMessage<IgnoreEvents, T>,
         T: HasExecutor + 'static,
     {
         let executor = self.executor();
@@ -468,7 +468,7 @@ impl<P, T: Transport> ClientEnd<P, T> {
     /// client.
     pub fn spawn(self) -> Client<P, T>
     where
-        P: 'static,
+        P: DispatchClientMessage<IgnoreEvents, T>,
         T: HasExecutor + 'static,
     {
         let executor = self.executor();

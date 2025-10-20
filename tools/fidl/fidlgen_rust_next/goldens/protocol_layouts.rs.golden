@@ -2461,6 +2461,8 @@ pub mod main_protocol {
 
     impl ::fidl_next::Method for OneWayAnonComposed {
         const ORDINAL: u64 = 467706262354916833;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::MainProtocol;
 
@@ -2473,6 +2475,8 @@ pub mod main_protocol {
 
     impl ::fidl_next::Method for TwoWayAnonComposed {
         const ORDINAL: u64 = 1634702755099390832;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::MainProtocol;
 
@@ -2501,6 +2505,8 @@ pub mod main_protocol {
 
     impl ::fidl_next::Method for TwoWayAnonComposedWithError {
         const ORDINAL: u64 = 3374101322700362141;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::MainProtocol;
 
@@ -2558,6 +2564,8 @@ pub mod main_protocol {
 
     impl ::fidl_next::Method for OnAnonComposed {
         const ORDINAL: u64 = 9198778981238868491;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::MainProtocol;
 
@@ -2571,6 +2579,8 @@ pub mod main_protocol {
 
     impl ::fidl_next::Method for OneWayNamedComposed {
         const ORDINAL: u64 = 6735359826241449560;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::MainProtocol;
 
@@ -2583,6 +2593,8 @@ pub mod main_protocol {
 
     impl ::fidl_next::Method for TwoWayNamedComposed {
         const ORDINAL: u64 = 1110122450485917712;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::MainProtocol;
 
@@ -2604,6 +2616,8 @@ pub mod main_protocol {
 
     impl ::fidl_next::Method for TwoWayNamedComposedWithError {
         const ORDINAL: u64 = 3520341666774118271;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::MainProtocol;
 
@@ -2642,6 +2656,8 @@ pub mod main_protocol {
 
     impl ::fidl_next::Method for OnNamedComposed {
         const ORDINAL: u64 = 6802961197456477674;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::MainProtocol;
 
@@ -2654,6 +2670,8 @@ pub mod main_protocol {
 
     impl ::fidl_next::Method for OneWayImport {
         const ORDINAL: u64 = 374039999976906043;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::MainProtocol;
 
@@ -2666,6 +2684,8 @@ pub mod main_protocol {
 
     impl ::fidl_next::Method for TwoWayImport {
         const ORDINAL: u64 = 3167860988423964164;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::MainProtocol;
 
@@ -2687,6 +2707,8 @@ pub mod main_protocol {
 
     impl ::fidl_next::Method for TwoWayImportWithError {
         const ORDINAL: u64 = 4837028007581646602;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::MainProtocol;
 
@@ -2725,6 +2747,8 @@ pub mod main_protocol {
 
     impl ::fidl_next::Method for OnImport {
         const ORDINAL: u64 = 6584793811321990352;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::MainProtocol;
 
@@ -2737,6 +2761,8 @@ pub mod main_protocol {
 
     impl ::fidl_next::Method for OneWayLocal {
         const ORDINAL: u64 = 6085941264859402051;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::MainProtocol;
 
@@ -2749,6 +2775,8 @@ pub mod main_protocol {
 
     impl ::fidl_next::Method for TwoWayLocal {
         const ORDINAL: u64 = 7763901300032164763;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::MainProtocol;
 
@@ -2769,6 +2797,8 @@ pub mod main_protocol {
 
     impl ::fidl_next::Method for TwoWayLocalWithError {
         const ORDINAL: u64 = 5609487496960056151;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::MainProtocol;
 
@@ -2805,6 +2835,8 @@ pub mod main_protocol {
 
     impl ::fidl_next::Method for OnLocal {
         const ORDINAL: u64 = 4199259762307646332;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::MainProtocol;
 
@@ -2817,6 +2849,8 @@ pub mod main_protocol {
 
     impl ::fidl_next::Method for OneWayAnon {
         const ORDINAL: u64 = 4203317713771984620;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::MainProtocol;
 
@@ -2829,6 +2863,8 @@ pub mod main_protocol {
 
     impl ::fidl_next::Method for TwoWayAnon {
         const ORDINAL: u64 = 7435080039097281487;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::MainProtocol;
 
@@ -2849,6 +2885,8 @@ pub mod main_protocol {
 
     impl ::fidl_next::Method for TwoWayAnonWithError {
         const ORDINAL: u64 = 7770394869745610225;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::MainProtocol;
 
@@ -2887,6 +2925,8 @@ pub mod main_protocol {
 
     impl ::fidl_next::Method for OnAnon {
         const ORDINAL: u64 = 7275479350674227467;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::MainProtocol;
 
@@ -2925,9 +2965,11 @@ pub mod main_protocol {
                                     Encoded = ::fidl_next_test_protocollayouts_imported::wire::ComposedProtocolOneWayAnonComposedRequest<'static>,
                                 >,
                             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(467706262354916833, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    467706262354916833,
+                    <super::OneWayAnonComposed as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
 
@@ -2949,9 +2991,11 @@ pub mod main_protocol {
                                     Encoded = ::fidl_next_test_protocollayouts_imported::wire::ComposedProtocolTwoWayAnonComposedRequest,
                                 >,
                             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(1634702755099390832, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    1634702755099390832,
+                    <super::TwoWayAnonComposed as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
 
@@ -2973,9 +3017,11 @@ pub mod main_protocol {
                                     Encoded = ::fidl_next_test_protocollayouts_imported::wire::ComposedProtocolTwoWayAnonComposedWithErrorRequest<'static>,
                                 >,
                             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(3374101322700362141, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    3374101322700362141,
+                    <super::TwoWayAnonComposedWithError as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
 
@@ -3003,9 +3049,11 @@ pub mod main_protocol {
                                     Encoded = ::fidl_next_test_protocollayouts_imported::wire::ImportTablePayload<'static>,
                                 >,
                             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(6735359826241449560, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    6735359826241449560,
+                    <super::OneWayNamedComposed as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
 
@@ -3027,9 +3075,11 @@ pub mod main_protocol {
                                     Encoded = ::fidl_next_test_protocollayouts_imported::wire::ImportUnionPayload,
                                 >,
                             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(1110122450485917712, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    1110122450485917712,
+                    <super::TwoWayNamedComposed as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
 
@@ -3051,9 +3101,11 @@ pub mod main_protocol {
                                     Encoded = ::fidl_next_test_protocollayouts_imported::wire::ImportTablePayload<'static>,
                                 >,
                             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(3520341666774118271, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    3520341666774118271,
+                    <super::TwoWayNamedComposedWithError as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
 
@@ -3081,9 +3133,11 @@ pub mod main_protocol {
                                     Encoded = ::fidl_next_test_protocollayouts_imported::wire::ImportTablePayload<'static>,
                                 >,
                             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(374039999976906043, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    374039999976906043,
+                    <super::OneWayImport as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
 
@@ -3105,9 +3159,11 @@ pub mod main_protocol {
                                     Encoded = ::fidl_next_test_protocollayouts_imported::wire::ImportUnionPayload,
                                 >,
                             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(3167860988423964164, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    3167860988423964164,
+                    <super::TwoWayImport as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
 
@@ -3129,9 +3185,11 @@ pub mod main_protocol {
                                     Encoded = ::fidl_next_test_protocollayouts_imported::wire::ImportTablePayload<'static>,
                                 >,
                             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(4837028007581646602, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    4837028007581646602,
+                    <super::TwoWayImportWithError as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn one_way_local_with<___R>(
@@ -3144,9 +3202,11 @@ pub mod main_protocol {
                         Encoded = crate::wire::LocalTablePayload<'static>,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(6085941264859402051, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    6085941264859402051,
+                    <super::OneWayLocal as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn two_way_local_with<___R>(
@@ -3159,9 +3219,11 @@ pub mod main_protocol {
                         Encoded = crate::wire::LocalUnionPayload<'static>,
                     >,
             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(7763901300032164763, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    7763901300032164763,
+                    <super::TwoWayLocal as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn two_way_local_with_error_with<___R>(
@@ -3174,9 +3236,11 @@ pub mod main_protocol {
                         Encoded = crate::wire::LocalTablePayload<'static>,
                     >,
             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(5609487496960056151, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    5609487496960056151,
+                    <super::TwoWayLocalWithError as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn one_way_anon_with<___R>(
@@ -3189,9 +3253,11 @@ pub mod main_protocol {
                         Encoded = crate::wire::MainProtocolOneWayAnonRequest<'static>,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(4203317713771984620, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    4203317713771984620,
+                    <super::OneWayAnon as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn two_way_anon_with<___R>(
@@ -3204,9 +3270,11 @@ pub mod main_protocol {
                         Encoded = crate::wire::MainProtocolTwoWayAnonRequest<'static>,
                     >,
             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(7435080039097281487, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    7435080039097281487,
+                    <super::TwoWayAnon as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn two_way_anon_with_error_with<___R>(
@@ -3219,9 +3287,11 @@ pub mod main_protocol {
                         Encoded = crate::wire::MainProtocolTwoWayAnonWithErrorRequest<'static>,
                     >,
             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(7770394869745610225, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    7770394869745610225,
+                    <super::TwoWayAnonWithError as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
         }
 
@@ -3245,9 +3315,11 @@ pub mod main_protocol {
                         Encoded = <super::OnAnonComposed as ::fidl_next::Method>::Response,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.server.send_event(9198778981238868491, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.server.send_event(
+                    9198778981238868491,
+                    <super::OnAnonComposed as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn on_named_composed_with<___R>(
@@ -3260,9 +3332,11 @@ pub mod main_protocol {
                         Encoded = <super::OnNamedComposed as ::fidl_next::Method>::Response,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.server.send_event(6802961197456477674, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.server.send_event(
+                    6802961197456477674,
+                    <super::OnNamedComposed as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn on_import_with<___R>(&self, request: ___R) -> ::fidl_next::SendFuture<'_, ___T>
@@ -3272,9 +3346,11 @@ pub mod main_protocol {
                         Encoded = <super::OnImport as ::fidl_next::Method>::Response,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.server.send_event(6584793811321990352, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.server.send_event(
+                    6584793811321990352,
+                    <super::OnImport as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn on_local_with<___R>(&self, request: ___R) -> ::fidl_next::SendFuture<'_, ___T>
@@ -3284,9 +3360,11 @@ pub mod main_protocol {
                         Encoded = <super::OnLocal as ::fidl_next::Method>::Response,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.server.send_event(4199259762307646332, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.server.send_event(
+                    4199259762307646332,
+                    <super::OnLocal as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn on_anon_with<___R>(&self, request: ___R) -> ::fidl_next::SendFuture<'_, ___T>
@@ -3296,9 +3374,11 @@ pub mod main_protocol {
                         Encoded = <super::OnAnon as ::fidl_next::Method>::Response,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.server.send_event(7275479350674227467, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.server.send_event(
+                    7275479350674227467,
+                    <super::OnAnon as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
         }
     }
@@ -3343,6 +3423,31 @@ pub trait MainProtocolClientHandler<
     ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
+impl<___T> MainProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents
+where
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_anon_composed(
+        &mut self,
+
+        _: ::fidl_next::Response<main_protocol::OnAnonComposed, ___T>,
+    ) {
+    }
+
+    async fn on_named_composed(
+        &mut self,
+
+        _: ::fidl_next::Response<main_protocol::OnNamedComposed, ___T>,
+    ) {
+    }
+
+    async fn on_import(&mut self, _: ::fidl_next::Response<main_protocol::OnImport, ___T>) {}
+
+    async fn on_local(&mut self, _: ::fidl_next::Response<main_protocol::OnLocal, ___T>) {}
+
+    async fn on_anon(&mut self, _: ::fidl_next::Response<main_protocol::OnAnon, ___T>) {}
+}
+
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for MainProtocol
 where
     ___H: MainProtocolClientHandler<___T> + ::core::marker::Send,
@@ -3381,6 +3486,7 @@ where
     async fn on_event(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
@@ -3439,7 +3545,7 @@ where
                 }),
             },
 
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }
@@ -3601,6 +3707,7 @@ where
     async fn on_one_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<
         (),
@@ -3662,13 +3769,14 @@ where
                 }),
             },
 
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 
     async fn on_two_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
@@ -3826,7 +3934,7 @@ where
                 }
             }
 
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }
@@ -3872,6 +3980,8 @@ pub mod open_protocol {
 
     impl ::fidl_next::Method for FlexibleOneWay {
         const ORDINAL: u64 = 3516779973873009953;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Flexible;
 
         type Protocol = crate::OpenProtocol;
 
@@ -3884,6 +3994,8 @@ pub mod open_protocol {
 
     impl ::fidl_next::Method for FlexibleTwoWayNoError {
         const ORDINAL: u64 = 5572735551219638488;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Flexible;
 
         type Protocol = crate::OpenProtocol;
 
@@ -3923,6 +4035,8 @@ pub mod open_protocol {
 
     impl ::fidl_next::Method for FlexibleTwoWayWithError {
         const ORDINAL: u64 = 3504132377779779458;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Flexible;
 
         type Protocol = crate::OpenProtocol;
 
@@ -3994,6 +4108,8 @@ pub mod open_protocol {
 
     impl ::fidl_next::Method for FlexibleEvent {
         const ORDINAL: u64 = 9152311661656086484;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Flexible;
 
         type Protocol = crate::OpenProtocol;
 
@@ -4012,6 +4128,8 @@ pub mod open_protocol {
 
     impl ::fidl_next::Method for StrictOneWay {
         const ORDINAL: u64 = 8790149921168801703;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::OpenProtocol;
 
@@ -4024,6 +4142,8 @@ pub mod open_protocol {
 
     impl ::fidl_next::Method for StrictTwoWayNoError {
         const ORDINAL: u64 = 3690935745864999300;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::OpenProtocol;
 
@@ -4058,6 +4178,8 @@ pub mod open_protocol {
 
     impl ::fidl_next::Method for StrictTwoWayWithError {
         const ORDINAL: u64 = 5364624536440098871;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::OpenProtocol;
 
@@ -4129,6 +4251,8 @@ pub mod open_protocol {
 
     impl ::fidl_next::Method for StrictEvent {
         const ORDINAL: u64 = 3921073878922106269;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::OpenProtocol;
 
@@ -4142,6 +4266,8 @@ pub mod open_protocol {
 
     impl ::fidl_next::Method for FlexibleOneWayNamedPayload {
         const ORDINAL: u64 = 1525606789639046512;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Flexible;
 
         type Protocol = crate::OpenProtocol;
 
@@ -4201,9 +4327,11 @@ pub mod open_protocol {
                                     Encoded = ::fidl_next_test_protocollayouts_imported::wire::ComposedOpenProtocolFlexibleOneWayRequest,
                                 >,
                             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(3516779973873009953, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    3516779973873009953,
+                    <super::FlexibleOneWay as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn flexible_two_way_no_error(
@@ -4237,9 +4365,11 @@ pub mod open_protocol {
                                     Encoded = ::fidl_next_test_protocollayouts_imported::wire::ComposedOpenProtocolFlexibleTwoWayNoErrorRequest,
                                 >,
                             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(5572735551219638488, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    5572735551219638488,
+                    <super::FlexibleTwoWayNoError as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn flexible_two_way_with_error(
@@ -4273,9 +4403,11 @@ pub mod open_protocol {
                                     Encoded = ::fidl_next_test_protocollayouts_imported::wire::ComposedOpenProtocolFlexibleTwoWayWithErrorRequest,
                                 >,
                             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(3504132377779779458, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    3504132377779779458,
+                    <super::FlexibleTwoWayWithError as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn strict_one_way(
@@ -4309,9 +4441,11 @@ pub mod open_protocol {
                                     Encoded = ::fidl_next_test_protocollayouts_imported::wire::ComposedOpenProtocolStrictOneWayRequest,
                                 >,
                             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(8790149921168801703, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    8790149921168801703,
+                    <super::StrictOneWay as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn strict_two_way_no_error(
@@ -4345,9 +4479,11 @@ pub mod open_protocol {
                                     Encoded = ::fidl_next_test_protocollayouts_imported::wire::ComposedOpenProtocolStrictTwoWayNoErrorRequest,
                                 >,
                             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(3690935745864999300, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    3690935745864999300,
+                    <super::StrictTwoWayNoError as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn strict_two_way_with_error(
@@ -4381,9 +4517,11 @@ pub mod open_protocol {
                                     Encoded = ::fidl_next_test_protocollayouts_imported::wire::ComposedOpenProtocolStrictTwoWayWithErrorRequest,
                                 >,
                             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(5364624536440098871, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    5364624536440098871,
+                    <super::StrictTwoWayWithError as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn flexible_one_way_named_payload(
@@ -4417,9 +4555,11 @@ pub mod open_protocol {
                                     Encoded = ::fidl_next_test_protocollayouts_imported::wire::ImportStructPayload,
                                 >,
                             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(1525606789639046512, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    1525606789639046512,
+                    <super::FlexibleOneWayNamedPayload as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
         }
 
@@ -4462,9 +4602,11 @@ pub mod open_protocol {
                         Encoded = <super::FlexibleEvent as ::fidl_next::Method>::Response,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.server.send_event(9152311661656086484, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.server.send_event(
+                    9152311661656086484,
+                    <super::FlexibleEvent as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn strict_event(
@@ -4496,9 +4638,11 @@ pub mod open_protocol {
                         Encoded = <super::StrictEvent as ::fidl_next::Method>::Response,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.server.send_event(3921073878922106269, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.server.send_event(
+                    3921073878922106269,
+                    <super::StrictEvent as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
         }
     }
@@ -4527,14 +4671,25 @@ pub trait OpenProtocolClientHandler<
     fn on_unknown_interaction(
         &mut self,
         ordinal: u64,
-    ) -> impl ::core::future::Future<
-        Output = ::core::result::Result<
-            (),
-            ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
-        >,
-    > + ::core::marker::Send {
-        ::core::future::ready(Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)))
+    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
+        ::core::future::ready(())
     }
+}
+
+impl<___T> OpenProtocolClientHandler<___T> for ::fidl_next::IgnoreEvents
+where
+    ___T: ::fidl_next::Transport,
+{
+    async fn flexible_event(
+        &mut self,
+
+        _: ::fidl_next::Response<open_protocol::FlexibleEvent, ___T>,
+    ) {
+    }
+
+    async fn strict_event(&mut self, _: ::fidl_next::Response<open_protocol::StrictEvent, ___T>) {}
+
+    async fn on_unknown_interaction(&mut self, _: u64) {}
 }
 
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for OpenProtocol
@@ -4557,6 +4712,7 @@ where
     async fn on_event(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
@@ -4582,7 +4738,14 @@ where
                 }),
             },
 
-            ordinal => handler.on_unknown_interaction(ordinal).await,
+            ordinal => {
+                handler.on_unknown_interaction(ordinal).await;
+                if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                    Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
+                } else {
+                    Ok(())
+                }
+            }
         }
     }
 }
@@ -4648,13 +4811,8 @@ pub trait OpenProtocolServerHandler<
     fn on_unknown_interaction(
         &mut self,
         ordinal: u64,
-    ) -> impl ::core::future::Future<
-        Output = ::core::result::Result<
-            (),
-            ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
-        >,
-    > + ::core::marker::Send {
-        ::core::future::ready(Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)))
+    ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
+        ::core::future::ready(())
     }
 }
 
@@ -4680,6 +4838,7 @@ where
     async fn on_one_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<
         (),
@@ -4719,13 +4878,21 @@ where
                 }),
             },
 
-            ordinal => handler.on_unknown_interaction(ordinal).await,
+            ordinal => {
+                handler.on_unknown_interaction(ordinal).await;
+                if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                    Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
+                } else {
+                    Ok(())
+                }
+            }
         }
     }
 
     async fn on_two_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
@@ -4793,7 +4960,24 @@ where
                 }
             }
 
-            ordinal => handler.on_unknown_interaction(ordinal).await,
+            ordinal => {
+                handler.on_unknown_interaction(ordinal).await;
+                if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                    Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
+                } else {
+                    responder
+                        .respond(
+                            ordinal,
+                            flexibility,
+                            ::fidl_next::Flexible::<()>::FrameworkErr(
+                                ::fidl_next::FrameworkError::UnknownMethod,
+                            ),
+                        )
+                        .expect("encoding a framework error should never fail")
+                        .await?;
+                    Ok(())
+                }
+            }
         }
     }
 }

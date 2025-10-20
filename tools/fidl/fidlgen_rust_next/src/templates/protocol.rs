@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 
 use askama::Template;
 
-use super::{Context, Contextual, filters};
+use super::{Context, Contextual};
 use crate::ident_ext::IdentExt as _;
 use crate::templates::reserved::escape;
 use fidl_ir::{
@@ -14,6 +14,21 @@ use fidl_ir::{
     ProtocolOpenness, Struct, Type, TypeKind,
 };
 use fidl_ir_util::TypeShapeExt;
+
+mod filters {
+    pub use crate::templates::filters::*;
+
+    pub fn is_strict_to_flexibility(
+        is_strict: &bool,
+        _: &dyn askama::Values,
+    ) -> askama::Result<&'static str> {
+        if *is_strict {
+            Ok("::fidl_next::protocol::Flexibility::Strict")
+        } else {
+            Ok("::fidl_next::protocol::Flexibility::Flexible")
+        }
+    }
+}
 
 #[derive(Template)]
 #[template(path = "protocol.askama", whitespace = "preserve")]

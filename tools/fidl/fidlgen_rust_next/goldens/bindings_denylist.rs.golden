@@ -8595,6 +8595,8 @@ pub mod allowed {
 
     impl ::fidl_next::Method for Denied {
         const ORDINAL: u64 = 3826178105137551123;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Allowed;
 
@@ -8648,9 +8650,11 @@ pub mod allowed {
             ___T: ::fidl_next::Transport,
         {
             pub fn denied(&self) -> ::fidl_next::TwoWayFuture<'_, super::Denied, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(3826178105137551123, ()),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    3826178105137551123,
+                    <super::Denied as ::fidl_next::Method>::FLEXIBILITY,
+                    (),
+                ))
             }
         }
 
@@ -8674,6 +8678,11 @@ pub trait AllowedClientHandler<
 {
 }
 
+impl<___T> AllowedClientHandler<___T> for ::fidl_next::IgnoreEvents where
+    ___T: ::fidl_next::Transport
+{
+}
+
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Allowed
 where
     ___H: AllowedClientHandler<___T> + ::core::marker::Send,
@@ -8684,10 +8693,11 @@ where
     async fn on_event(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }
@@ -8715,19 +8725,21 @@ where
     async fn on_one_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 
     async fn on_two_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
@@ -8742,7 +8754,7 @@ where
                 Ok(())
             }
 
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }
@@ -8797,6 +8809,11 @@ pub trait ContainsAllowedClientHandler<
 {
 }
 
+impl<___T> ContainsAllowedClientHandler<___T> for ::fidl_next::IgnoreEvents where
+    ___T: ::fidl_next::Transport
+{
+}
+
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for ContainsAllowed
 where
     ___H: ContainsAllowedClientHandler<___T> + ::core::marker::Send,
@@ -8805,10 +8822,11 @@ where
     async fn on_event(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }
@@ -8831,19 +8849,21 @@ where
     async fn on_one_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 
     async fn on_two_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
@@ -8851,7 +8871,7 @@ where
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }
@@ -8871,6 +8891,8 @@ pub mod denied {
 
     impl ::fidl_next::Method for ShouldNeverAppearInAnyBinding {
         const ORDINAL: u64 = 5338181991150205725;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Denied;
 
@@ -8943,9 +8965,11 @@ pub mod denied {
                         Encoded = crate::wire::DeniedShouldNeverAppearInAnyBindingRequest<'static>,
                     >,
             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(5338181991150205725, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    5338181991150205725,
+                    <super::ShouldNeverAppearInAnyBinding as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
         }
 
@@ -8969,6 +8993,9 @@ pub trait DeniedClientHandler<
 {
 }
 
+impl<___T> DeniedClientHandler<___T> for ::fidl_next::IgnoreEvents where ___T: ::fidl_next::Transport
+{}
+
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Denied
 where
     ___H: DeniedClientHandler<___T> + ::core::marker::Send,
@@ -8977,10 +9004,11 @@ where
     async fn on_event(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }
@@ -9010,6 +9038,7 @@ where
     async fn on_one_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<
         (),
@@ -9027,13 +9056,14 @@ where
                 }),
             },
 
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 
     async fn on_two_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
@@ -9041,7 +9071,7 @@ where
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }
@@ -9086,6 +9116,8 @@ pub mod deny_each_binding {
 
     impl ::fidl_next::Method for OnlyDenyCpp {
         const ORDINAL: u64 = 2957648440141224850;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::DenyEachBinding;
 
@@ -9126,6 +9158,8 @@ pub mod deny_each_binding {
 
     impl ::fidl_next::Method for OnlyDenyDart {
         const ORDINAL: u64 = 8446571910689294295;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::DenyEachBinding;
 
@@ -9166,6 +9200,8 @@ pub mod deny_each_binding {
 
     impl ::fidl_next::Method for OnlyDenyGo {
         const ORDINAL: u64 = 7311125300308839833;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::DenyEachBinding;
 
@@ -9206,6 +9242,8 @@ pub mod deny_each_binding {
 
     impl ::fidl_next::Method for OnlyDenyPython {
         const ORDINAL: u64 = 3010747198252652930;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::DenyEachBinding;
 
@@ -9246,6 +9284,8 @@ pub mod deny_each_binding {
 
     impl ::fidl_next::Method for OnlyDenyRust {
         const ORDINAL: u64 = 3719805222870932662;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::DenyEachBinding;
 
@@ -9286,6 +9326,8 @@ pub mod deny_each_binding {
 
     impl ::fidl_next::Method for OnlyDenySyzkaller {
         const ORDINAL: u64 = 2319043834522757514;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::DenyEachBinding;
 
@@ -9369,9 +9411,11 @@ pub mod deny_each_binding {
                         Encoded = crate::wire::DenyEachBindingOnlyDenyCppRequest,
                     >,
             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(2957648440141224850, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    2957648440141224850,
+                    <super::OnlyDenyCpp as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn only_deny_dart(
@@ -9399,9 +9443,11 @@ pub mod deny_each_binding {
                         Encoded = crate::wire::DenyEachBindingOnlyDenyDartRequest,
                     >,
             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(8446571910689294295, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    8446571910689294295,
+                    <super::OnlyDenyDart as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn only_deny_go(
@@ -9429,9 +9475,11 @@ pub mod deny_each_binding {
                         Encoded = crate::wire::DenyEachBindingOnlyDenyGoRequest,
                     >,
             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(7311125300308839833, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    7311125300308839833,
+                    <super::OnlyDenyGo as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn only_deny_python(
@@ -9461,9 +9509,11 @@ pub mod deny_each_binding {
                         Encoded = crate::wire::DenyEachBindingOnlyDenyPythonRequest,
                     >,
             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(3010747198252652930, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    3010747198252652930,
+                    <super::OnlyDenyPython as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn only_deny_rust(
@@ -9491,9 +9541,11 @@ pub mod deny_each_binding {
                         Encoded = crate::wire::DenyEachBindingOnlyDenyRustRequest,
                     >,
             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(3719805222870932662, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    3719805222870932662,
+                    <super::OnlyDenyRust as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn only_deny_syzkaller(
@@ -9523,9 +9575,11 @@ pub mod deny_each_binding {
                         Encoded = crate::wire::DenyEachBindingOnlyDenySyzkallerRequest,
                     >,
             {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(2319043834522757514, request),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    2319043834522757514,
+                    <super::OnlyDenySyzkaller as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
         }
 
@@ -9549,6 +9603,11 @@ pub trait DenyEachBindingClientHandler<
 {
 }
 
+impl<___T> DenyEachBindingClientHandler<___T> for ::fidl_next::IgnoreEvents where
+    ___T: ::fidl_next::Transport
+{
+}
+
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for DenyEachBinding
 where
     ___H: DenyEachBindingClientHandler<___T> + ::core::marker::Send,
@@ -9569,10 +9628,11 @@ where
     async fn on_event(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }
@@ -9654,19 +9714,21 @@ where
     async fn on_one_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 
     async fn on_two_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
@@ -9764,7 +9826,7 @@ where
                 }
             }
 
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }
@@ -9787,6 +9849,8 @@ pub mod imports_same_name_context {
 
     impl ::fidl_next::Method for AlwaysDenied {
         const ORDINAL: u64 = 6808317417318106526;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::ImportsSameNameContext;
 
@@ -9799,6 +9863,8 @@ pub mod imports_same_name_context {
 
     impl ::fidl_next::Method for Unattributed {
         const ORDINAL: u64 = 475191379775102607;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::ImportsSameNameContext;
 
@@ -9811,6 +9877,8 @@ pub mod imports_same_name_context {
 
     impl ::fidl_next::Method for AlwaysAppearsInImportingLibrary {
         const ORDINAL: u64 = 2914965219653596920;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::ImportsSameNameContext;
 
@@ -9868,21 +9936,27 @@ pub mod imports_same_name_context {
                                     Encoded = ::fidl_next_test_dependent::wire::ContainsDeniedAlwaysDeniedRequest,
                                 >,
                             {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(6808317417318106526, request),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    6808317417318106526,
+                    <super::AlwaysDenied as ::fidl_next::Method>::FLEXIBILITY,
+                    request,
+                ))
             }
 
             pub fn unattributed(&self) -> ::fidl_next::SendFuture<'_, ___T> {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(475191379775102607, ()),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    475191379775102607,
+                    <super::Unattributed as ::fidl_next::Method>::FLEXIBILITY,
+                    (),
+                ))
             }
 
             pub fn always_appears_in_importing_library(&self) -> ::fidl_next::SendFuture<'_, ___T> {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(2914965219653596920, ()),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    2914965219653596920,
+                    <super::AlwaysAppearsInImportingLibrary as ::fidl_next::Method>::FLEXIBILITY,
+                    (),
+                ))
             }
         }
 
@@ -9906,6 +9980,11 @@ pub trait ImportsSameNameContextClientHandler<
 {
 }
 
+impl<___T> ImportsSameNameContextClientHandler<___T> for ::fidl_next::IgnoreEvents where
+    ___T: ::fidl_next::Transport
+{
+}
+
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for ImportsSameNameContext
 where
     ___H: ImportsSameNameContextClientHandler<___T> + ::core::marker::Send,
@@ -9914,10 +9993,11 @@ where
     async fn on_event(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }
@@ -9953,6 +10033,7 @@ where
     async fn on_one_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<
         (),
@@ -9980,13 +10061,14 @@ where
                 Ok(())
             }
 
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 
     async fn on_two_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
@@ -9994,7 +10076,7 @@ where
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }
@@ -10049,6 +10131,11 @@ pub trait OnlyCppAndDepsClientHandler<
 {
 }
 
+impl<___T> OnlyCppAndDepsClientHandler<___T> for ::fidl_next::IgnoreEvents where
+    ___T: ::fidl_next::Transport
+{
+}
+
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for OnlyCppAndDeps
 where
     ___H: OnlyCppAndDepsClientHandler<___T> + ::core::marker::Send,
@@ -10057,10 +10144,11 @@ where
     async fn on_event(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }
@@ -10083,19 +10171,21 @@ where
     async fn on_one_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 
     async fn on_two_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
@@ -10103,7 +10193,7 @@ where
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }

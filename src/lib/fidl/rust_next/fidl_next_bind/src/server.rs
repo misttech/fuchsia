@@ -7,7 +7,7 @@ use core::marker::PhantomData;
 use core::ops::Deref;
 
 use fidl_next_codec::{Constrained, Encode};
-use fidl_next_protocol::{self as protocol, ProtocolError, ServerHandler, Transport};
+use fidl_next_protocol::{self as protocol, Flexibility, ProtocolError, ServerHandler, Transport};
 
 use crate::{HasConnectionHandles, Method, Respond, RespondErr, RespondFuture, ServerEnd};
 
@@ -73,6 +73,7 @@ pub trait DispatchServerMessage<
     fn on_one_way(
         handler: &mut H,
         ordinal: u64,
+        flexibility: Flexibility,
         buffer: T::RecvBuffer,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 
@@ -80,6 +81,7 @@ pub trait DispatchServerMessage<
     fn on_two_way(
         handler: &mut H,
         ordinal: u64,
+        flexibility: Flexibility,
         buffer: T::RecvBuffer,
         responder: protocol::Responder<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
@@ -108,18 +110,20 @@ where
     fn on_one_way(
         &mut self,
         ordinal: u64,
+        flexibility: Flexibility,
         buffer: T::RecvBuffer,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send {
-        P::on_one_way(&mut self.handler, ordinal, buffer)
+        P::on_one_way(&mut self.handler, ordinal, flexibility, buffer)
     }
 
     fn on_two_way(
         &mut self,
         ordinal: u64,
+        flexibility: Flexibility,
         buffer: <T as Transport>::RecvBuffer,
         responder: protocol::Responder<T>,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send {
-        P::on_two_way(&mut self.handler, ordinal, buffer, responder)
+        P::on_two_way(&mut self.handler, ordinal, flexibility, buffer, responder)
     }
 }
 
@@ -219,6 +223,6 @@ impl<M, T: Transport> Responder<M, T> {
         M::Response: Constrained<Constraint = ()>,
         R: Encode<T::SendBuffer, Encoded = M::Response>,
     {
-        RespondFuture::from_untyped(self.responder.respond(M::ORDINAL, response))
+        RespondFuture::from_untyped(self.responder.respond(M::ORDINAL, M::FLEXIBILITY, response))
     }
 }

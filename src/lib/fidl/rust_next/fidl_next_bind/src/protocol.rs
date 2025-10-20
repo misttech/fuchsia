@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use fidl_next_codec::Constrained;
+use fidl_next_protocol::Flexibility;
 
 /// A FIDL protocol which has associated connection handles.
 ///
@@ -30,6 +31,9 @@ pub trait Discoverable {
 pub trait Method {
     /// The ordinal associated with the method;
     const ORDINAL: u64;
+
+    /// The flexibility of the method.
+    const FLEXIBILITY: Flexibility;
 
     /// The protocol the method is a member of.
     type Protocol;

@@ -9,8 +9,8 @@ use fidl_next_codec::{
 use fuchsia_async::Task;
 
 use crate::{
-    Client, ClientDispatcher, ClientHandler, NonBlockingTransport, ProtocolError, Responder,
-    ServerDispatcher, ServerHandler, Transport,
+    Client, ClientDispatcher, ClientHandler, Flexibility, NonBlockingTransport, ProtocolError,
+    Responder, ServerDispatcher, ServerHandler, Transport,
 };
 
 pub fn assert_encoded<T: Encode<Vec<Chunk>>>(value: T, chunks: &[Chunk])
@@ -84,6 +84,19 @@ unsafe impl<E: Encoder + ?Sized> Encode<E> for TestMessage {
     }
 }
 
+struct IgnoreEvents;
+
+impl<T: Transport> ClientHandler<T> for IgnoreEvents {
+    async fn on_event(
+        &mut self,
+        _: u64,
+        _: Flexibility,
+        _: T::RecvBuffer,
+    ) -> Result<(), ProtocolError<T::Error>> {
+        Ok(())
+    }
+}
+
 pub async fn test_close_on_drop<T>(make_ends: impl FnOnce() -> (T, T))
 where
     T: Transport + 'static,
@@ -94,6 +107,7 @@ where
         async fn on_one_way(
             &mut self,
             _: u64,
+            _: Flexibility,
             _: T::RecvBuffer,
         ) -> Result<(), ProtocolError<T::Error>> {
             panic!("unexpected event");
@@ -102,6 +116,7 @@ where
         async fn on_two_way(
             &mut self,
             ordinal: u64,
+            _: Flexibility,
             buffer: T::RecvBuffer,
             responder: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
@@ -110,7 +125,7 @@ where
             assert_eq!(message.as_str(), "Ping");
 
             responder
-                .respond(42, TestMessage::new("Pong"))
+                .respond(42, Flexibility::Strict, TestMessage::new("Pong"))
                 .expect("failed to encode response")
                 .await
                 .expect("failed to send response");
@@ -122,11 +137,11 @@ where
     let (client_end, server_end) = make_ends();
     let client_dispatcher = ClientDispatcher::new(client_end);
     let client = client_dispatcher.client();
-    let client_task = Task::spawn(client_dispatcher.run_client());
+    let client_task = Task::spawn(client_dispatcher.run(IgnoreEvents));
     let server_task = Task::spawn(ServerDispatcher::new(server_end).run(TestServer));
 
     let message = client
-        .send_two_way(42, TestMessage::new("Ping"))
+        .send_two_way(42, Flexibility::Strict, TestMessage::new("Ping"))
         .expect("client failed to encode request")
         .await
         .expect("client failed to send request")
@@ -153,6 +168,7 @@ where
         async fn on_one_way(
             &mut self,
             ordinal: u64,
+            _: Flexibility,
             buffer: T::RecvBuffer,
         ) -> Result<(), ProtocolError<T::Error>> {
             assert_eq!(ordinal, 42);
@@ -165,6 +181,7 @@ where
         async fn on_two_way(
             &mut self,
             _: u64,
+            _: Flexibility,
             _: T::RecvBuffer,
             _: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
@@ -175,11 +192,11 @@ where
     let (client_end, server_end) = make_ends();
     let client_dispatcher = ClientDispatcher::new(client_end);
     let client = client_dispatcher.client();
-    let client_task = Task::spawn(client_dispatcher.run_client());
+    let client_task = Task::spawn(client_dispatcher.run(IgnoreEvents));
     let server_task = Task::spawn(ServerDispatcher::new(server_end).run(TestServer));
 
     client
-        .send_one_way(42, TestMessage::new("Hello world"))
+        .send_one_way(42, Flexibility::Strict, TestMessage::new("Hello world"))
         .expect("client failed to encode request")
         .await
         .expect("client failed to send request");
@@ -200,6 +217,7 @@ where
         async fn on_one_way(
             &mut self,
             _: u64,
+            _: Flexibility,
             _: T::RecvBuffer,
         ) -> Result<(), ProtocolError<T::Error>> {
             panic!("unexpected event");
@@ -208,6 +226,7 @@ where
         async fn on_two_way(
             &mut self,
             ordinal: u64,
+            _: Flexibility,
             buffer: T::RecvBuffer,
             responder: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
@@ -216,7 +235,7 @@ where
             assert_eq!(message.as_str(), "Ping");
 
             responder
-                .respond(42, TestMessage::new("Pong"))
+                .respond(42, Flexibility::Strict, TestMessage::new("Pong"))
                 .expect("failed to encode response")
                 .await
                 .expect("failed to send response");
@@ -228,11 +247,11 @@ where
     let (client_end, server_end) = make_ends();
     let client_dispatcher = ClientDispatcher::new(client_end);
     let client = client_dispatcher.client();
-    let client_task = Task::spawn(client_dispatcher.run_client());
+    let client_task = Task::spawn(client_dispatcher.run(IgnoreEvents));
     let server_task = Task::spawn(ServerDispatcher::new(server_end).run(TestServer));
 
     let message = client
-        .send_two_way(42, TestMessage::new("Ping"))
+        .send_two_way(42, Flexibility::Strict, TestMessage::new("Ping"))
         .expect("client failed to encode request")
         .await
         .expect("client failed to send request")
@@ -258,6 +277,7 @@ where
         async fn on_one_way(
             &mut self,
             _: u64,
+            _: Flexibility,
             _: T::RecvBuffer,
         ) -> Result<(), ProtocolError<T::Error>> {
             panic!("unexpected event");
@@ -266,6 +286,7 @@ where
         async fn on_two_way(
             &mut self,
             ordinal: u64,
+            _: Flexibility,
             buffer: T::RecvBuffer,
             responder: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
@@ -281,7 +302,7 @@ where
             assert_eq!(message.as_str(), response);
 
             responder
-                .respond(ordinal, TestMessage::new(response))
+                .respond(ordinal, Flexibility::Strict, TestMessage::new(response))
                 .expect("server failed to encode response")
                 .await
                 .expect("server failed to send response");
@@ -293,21 +314,21 @@ where
     let (client_end, server_end) = make_ends();
     let client_dispatcher = ClientDispatcher::new(client_end);
     let client = client_dispatcher.client();
-    let client_task = Task::spawn(client_dispatcher.run_client());
+    let client_task = Task::spawn(client_dispatcher.run(IgnoreEvents));
     let server_task = Task::spawn(ServerDispatcher::new(server_end).run(TestServer));
 
     let send_one = client
-        .send_two_way(1, TestMessage::new("One"))
+        .send_two_way(1, Flexibility::Strict, TestMessage::new("One"))
         .expect("client failed to encode request")
         .await
         .expect("client failed to send request");
     let send_two = client
-        .send_two_way(2, TestMessage::new("Two"))
+        .send_two_way(2, Flexibility::Strict, TestMessage::new("Two"))
         .expect("client failed to encode request")
         .await
         .expect("client failed to send request");
     let send_three = client
-        .send_two_way(3, TestMessage::new("Three"))
+        .send_two_way(3, Flexibility::Strict, TestMessage::new("Three"))
         .expect("client failed to encode request")
         .await
         .expect("client failed to send request");
@@ -350,6 +371,7 @@ where
         async fn on_event(
             &mut self,
             ordinal: u64,
+            _: Flexibility,
             buffer: T::RecvBuffer,
         ) -> Result<(), ProtocolError<T::Error>> {
             assert_eq!(ordinal, 10);
@@ -368,6 +390,7 @@ where
         async fn on_one_way(
             &mut self,
             _: u64,
+            _: Flexibility,
             _: T::RecvBuffer,
         ) -> Result<(), ProtocolError<T::Error>> {
             Ok(())
@@ -376,6 +399,7 @@ where
         async fn on_two_way(
             &mut self,
             _: u64,
+            _: Flexibility,
             _: T::RecvBuffer,
             _: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
@@ -392,7 +416,7 @@ where
     let server_task = Task::spawn(server_dispatcher.run(TestServer));
 
     server
-        .send_event(10, TestMessage::new("Surprise!"))
+        .send_event(10, Flexibility::Strict, TestMessage::new("Surprise!"))
         .expect("server failed to encode response")
         .await
         .expect("server failed to send response");
@@ -411,6 +435,7 @@ where
         async fn on_one_way(
             &mut self,
             ordinal: u64,
+            _: Flexibility,
             buffer: T::RecvBuffer,
         ) -> Result<(), ProtocolError<T::Error>> {
             assert_eq!(ordinal, 42);
@@ -423,6 +448,7 @@ where
         async fn on_two_way(
             &mut self,
             _: u64,
+            _: Flexibility,
             _: T::RecvBuffer,
             _: Responder<T>,
         ) -> Result<(), ProtocolError<T::Error>> {
@@ -433,11 +459,11 @@ where
     let (client_end, server_end) = make_ends();
     let client_dispatcher = ClientDispatcher::new(client_end);
     let client = client_dispatcher.client();
-    let client_task = Task::spawn(client_dispatcher.run_client());
+    let client_task = Task::spawn(client_dispatcher.run(IgnoreEvents));
     let server_task = Task::spawn(ServerDispatcher::new(server_end).run(TestServer));
 
     client
-        .send_one_way(42, TestMessage::new("Hello world"))
+        .send_one_way(42, Flexibility::Strict, TestMessage::new("Hello world"))
         .expect("client failed to encode request")
         .send_immediately()
         .expect("client failed to send request");

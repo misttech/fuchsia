@@ -32,6 +32,13 @@ pub mod {{ module_name }} {
 
         impl ::fidl_next::Method for {{ method_name }} {
             const ORDINAL: u64 = {{ method.ordinal }};
+            const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+                {% if method.is_strict %}
+                    ::fidl_next::protocol::Flexibility::Strict
+                {% else %}
+                    ::fidl_next::protocol::Flexibility::Flexible
+                {% endif %}
+            ;
 
             type Protocol = crate::{{ protocol_name }};
 
@@ -329,7 +336,11 @@ pub mod {{ module_name }} {
                                 >,
                             {
                                 ::fidl_next::SendFuture::from_untyped(
-                                    self.client.send_one_way({{ method.ordinal }}, request)
+                                    self.client.send_one_way(
+                                        {{ method.ordinal }},
+                                        <super::{{ method_type_name }} as ::fidl_next::Method>::FLEXIBILITY,
+                                        request,
+                                    )
                                 )
                             }
                         {% else %}
@@ -337,7 +348,11 @@ pub mod {{ module_name }} {
                                 &self,
                             ) -> ::fidl_next::SendFuture<'_, ___T> {
                                 ::fidl_next::SendFuture::from_untyped(
-                                    self.client.send_one_way({{ method.ordinal }}, ())
+                                    self.client.send_one_way(
+                                        {{ method.ordinal }},
+                                        <super::{{ method_type_name }} as ::fidl_next::Method>::FLEXIBILITY,
+                                        (),
+                                    )
                                 )
                             }
                         {% endif %}
@@ -385,7 +400,11 @@ pub mod {{ module_name }} {
                                 >,
                             {
                                 ::fidl_next::TwoWayFuture::from_untyped(
-                                    self.client.send_two_way({{ method.ordinal }}, request)
+                                    self.client.send_two_way(
+                                        {{ method.ordinal }},
+                                        <super::{{ method_type_name }} as ::fidl_next::Method>::FLEXIBILITY,
+                                        request,
+                                    )
                                 )
                             }
                         {% else %}
@@ -393,7 +412,11 @@ pub mod {{ module_name }} {
                                 &self,
                             ) -> ::fidl_next::TwoWayFuture<'_, super::{{ method_type_name }}, ___T> {
                                 ::fidl_next::TwoWayFuture::from_untyped(
-                                    self.client.send_two_way({{ method.ordinal }}, ())
+                                    self.client.send_two_way(
+                                        {{ method.ordinal }},
+                                        <super::{{ method_type_name }} as ::fidl_next::Method>::FLEXIBILITY,
+                                        (),
+                                    )
                                 )
                             }
                         {% endif %}
@@ -461,7 +484,11 @@ pub mod {{ module_name }} {
                             >,
                         {
                             ::fidl_next::SendFuture::from_untyped(
-                                self.server.send_event({{ method.ordinal }}, request)
+                                self.server.send_event(
+                                    {{ method.ordinal }},
+                                    <super::{{ method_type_name }} as ::fidl_next::Method>::FLEXIBILITY,
+                                    request,
+                                )
                             )
                         }
                     {% else %}
@@ -469,7 +496,11 @@ pub mod {{ module_name }} {
                             &self,
                         ) -> ::fidl_next::SendFuture<'_, ___T> {
                             ::fidl_next::SendFuture::from_untyped(
-                                self.server.send_event({{ method.ordinal }}, ())
+                                self.server.send_event(
+                                    {{ method.ordinal }},
+                                    <super::{{ method_type_name }} as ::fidl_next::Method>::FLEXIBILITY,
+                                    (),
+                                )
                             )
                         }
                     {% endif %}
@@ -507,14 +538,35 @@ pub trait {{ client_handler_name }}<
         fn on_unknown_interaction(
             &mut self,
             ordinal: u64,
-        ) -> impl ::core::future::Future<
-            Output = ::core::result::Result<
-                (),
-                ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
-            >
-        > + ::core::marker::Send {
-            ::core::future::ready(Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)))
+        ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
+            ::core::future::ready(())
         }
+    {% endif %}
+}
+
+impl<___T> {{ client_handler_name }}<___T> for ::fidl_next::IgnoreEvents
+where
+    ___T: ::fidl_next::Transport,
+{
+    {% for method in protocol.methods %}
+        {% if method.kind == ProtocolMethodKind::Event %}
+            {% let method_name = filters::escape_snake(method.name) %}
+            {% let method_type_name = filters::escape_camel(method.name) %}
+
+            async fn {{ method_name }}(
+                &mut self,
+                {% if method.maybe_response_payload.is_some() %}
+                    _: ::fidl_next::Response<{{ module_name }}::{{ method_type_name }}, ___T>,
+                {% endif %}
+            ) {}
+        {% endif %}
+    {% endfor %}
+
+    {% if protocol.openness != ProtocolOpenness::Closed %}
+        async fn on_unknown_interaction(
+            &mut self,
+            _: u64,
+        ) {}
     {% endif %}
 }
 
@@ -533,6 +585,7 @@ where
     async fn on_event(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
@@ -558,11 +611,18 @@ where
                     }
                 {% endif %}
             {% endfor %}
-            {% if protocol.openness != ProtocolOpenness::Closed %}
-                ordinal => handler.on_unknown_interaction(ordinal).await,
-            {% else %}
-                ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
-            {% endif %}
+            ordinal => {
+                {% if protocol.openness == ProtocolOpenness::Closed %}
+                    Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
+                {% else %}
+                    handler.on_unknown_interaction(ordinal).await;
+                    if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                        Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
+                    } else {
+                        Ok(())
+                    }
+                {% endif %}
+            }
         }
     }
 }
@@ -606,13 +666,8 @@ pub trait {{ server_handler_name }}<
         fn on_unknown_interaction(
             &mut self,
             ordinal: u64,
-        ) -> impl ::core::future::Future<
-            Output = ::core::result::Result<
-                (),
-                ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
-            >
-        > + ::core::marker::Send {
-            ::core::future::ready(Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)))
+        ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
+            ::core::future::ready(())
         }
     {% endif %}
 }
@@ -632,6 +687,7 @@ where
     async fn on_one_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
         match ordinal {
@@ -657,17 +713,25 @@ where
                     }
                 {% endif %}
             {% endfor %}
-            {% if protocol.openness != ProtocolOpenness::Closed %}
-                ordinal => handler.on_unknown_interaction(ordinal).await,
-            {% else %}
-                ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
-            {% endif %}
+            ordinal => {
+                {% if protocol.openness == ProtocolOpenness::Closed %}
+                    Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
+                {% else %}
+                    handler.on_unknown_interaction(ordinal).await;
+                    if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                        Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
+                    } else {
+                        Ok(())
+                    }
+                {% endif %}
+            }
         }
     }
 
     async fn on_two_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
@@ -695,11 +759,29 @@ where
                     }
                 {% endif %}
             {% endfor %}
-            {% if protocol.openness != ProtocolOpenness::Closed %}
-                ordinal => handler.on_unknown_interaction(ordinal).await,
-            {% else %}
-                ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
-            {% endif %}
+            ordinal => {
+                {% match protocol.openness %}
+                    {% when ProtocolOpenness::Closed %}
+                        Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
+                    {% when ProtocolOpenness::Ajar %}
+                        handler.on_unknown_interaction(ordinal).await;
+                        Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
+                    {% when ProtocolOpenness::Open %}
+                        handler.on_unknown_interaction(ordinal).await;
+                        if ::core::matches!(flexibility, ::fidl_next::protocol::Flexibility::Strict) {
+                            Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal))
+                        } else {
+                            responder.respond(
+                                ordinal,
+                                flexibility,
+                                ::fidl_next::Flexible::<()>::FrameworkErr(::fidl_next::FrameworkError::UnknownMethod),
+                            )
+                            .expect("encoding a framework error should never fail")
+                            .await?;
+                            Ok(())
+                        }
+                {% endmatch %}
+            }
         }
     }
 }

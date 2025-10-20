@@ -15,7 +15,9 @@ use crate::concurrency::future::AtomicWaker;
 use crate::concurrency::hint::unreachable_unchecked;
 use crate::concurrency::sync::Mutex;
 use crate::concurrency::sync::atomic::{AtomicUsize, Ordering};
-use crate::{NonBlockingTransport, ProtocolError, Transport, encode_epitaph, encode_header};
+use crate::{
+    Flexibility, NonBlockingTransport, ProtocolError, Transport, encode_epitaph, encode_header,
+};
 
 pub const ORDINAL_EPITAPH: u64 = 0xffff_ffff_ffff_ffff;
 
@@ -265,7 +267,7 @@ impl<T: Transport> Connection<T> {
         let shared = unsafe { self.get_shared_unchecked() };
 
         let mut buffer = T::acquire(shared);
-        encode_header::<T>(&mut buffer, 0, ORDINAL_EPITAPH).unwrap();
+        encode_header::<T>(&mut buffer, 0, ORDINAL_EPITAPH, Flexibility::Strict).unwrap();
         encode_epitaph::<T>(&mut buffer, error).unwrap();
         let future_state = T::begin_send(shared, buffer);
 

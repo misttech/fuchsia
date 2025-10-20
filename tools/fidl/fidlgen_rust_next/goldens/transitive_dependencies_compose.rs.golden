@@ -27,6 +27,8 @@ pub mod top {
 
     impl ::fidl_next::Method for GetFoo {
         const ORDINAL: u64 = 2618685789258237543;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Top;
 
@@ -64,9 +66,11 @@ pub mod top {
             ___T: ::fidl_next::Transport,
         {
             pub fn get_foo(&self) -> ::fidl_next::TwoWayFuture<'_, super::GetFoo, ___T> {
-                ::fidl_next::TwoWayFuture::from_untyped(
-                    self.client.send_two_way(2618685789258237543, ()),
-                )
+                ::fidl_next::TwoWayFuture::from_untyped(self.client.send_two_way(
+                    2618685789258237543,
+                    <super::GetFoo as ::fidl_next::Method>::FLEXIBILITY,
+                    (),
+                ))
             }
         }
 
@@ -90,6 +94,8 @@ pub trait TopClientHandler<
 {
 }
 
+impl<___T> TopClientHandler<___T> for ::fidl_next::IgnoreEvents where ___T: ::fidl_next::Transport {}
+
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Top
 where
     ___H: TopClientHandler<___T> + ::core::marker::Send,
@@ -100,10 +106,11 @@ where
     async fn on_event(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }
@@ -131,19 +138,21 @@ where
     async fn on_one_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<
         (),
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 
     async fn on_two_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
@@ -158,7 +167,7 @@ where
                 Ok(())
             }
 
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }

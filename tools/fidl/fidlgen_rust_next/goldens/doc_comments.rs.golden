@@ -1776,6 +1776,8 @@ pub mod interface {
 
     impl ::fidl_next::Method for Method {
         const ORDINAL: u64 = 5017051197196532121;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Interface;
 
@@ -1788,6 +1790,8 @@ pub mod interface {
 
     impl ::fidl_next::Method for OnEvent {
         const ORDINAL: u64 = 28780186509098736;
+        const FLEXIBILITY: ::fidl_next::protocol::Flexibility =
+            ::fidl_next::protocol::Flexibility::Strict;
 
         type Protocol = crate::Interface;
 
@@ -1818,9 +1822,11 @@ pub mod interface {
         {
             #[doc = " method comment #1\n\n method comment #3\n"]
             pub fn method(&self) -> ::fidl_next::SendFuture<'_, ___T> {
-                ::fidl_next::SendFuture::from_untyped(
-                    self.client.send_one_way(5017051197196532121, ()),
-                )
+                ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(
+                    5017051197196532121,
+                    <super::Method as ::fidl_next::Method>::FLEXIBILITY,
+                    (),
+                ))
             }
         }
 
@@ -1836,7 +1842,11 @@ pub mod interface {
         {
             #[doc = " event comment #1\n\n event comment #3\n"]
             pub fn on_event(&self) -> ::fidl_next::SendFuture<'_, ___T> {
-                ::fidl_next::SendFuture::from_untyped(self.server.send_event(28780186509098736, ()))
+                ::fidl_next::SendFuture::from_untyped(self.server.send_event(
+                    28780186509098736,
+                    <super::OnEvent as ::fidl_next::Method>::FLEXIBILITY,
+                    (),
+                ))
             }
         }
     }
@@ -1854,6 +1864,13 @@ pub trait InterfaceClientHandler<
     fn on_event(&mut self) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
 }
 
+impl<___T> InterfaceClientHandler<___T> for ::fidl_next::IgnoreEvents
+where
+    ___T: ::fidl_next::Transport,
+{
+    async fn on_event(&mut self) {}
+}
+
 impl<___H, ___T> ::fidl_next::DispatchClientMessage<___H, ___T> for Interface
 where
     ___H: InterfaceClientHandler<___T> + ::core::marker::Send,
@@ -1862,6 +1879,7 @@ where
     async fn on_event(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
@@ -1870,7 +1888,7 @@ where
                 Ok(())
             }
 
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }
@@ -1895,6 +1913,7 @@ where
     async fn on_one_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
     ) -> ::core::result::Result<
         (),
@@ -1906,13 +1925,14 @@ where
                 Ok(())
             }
 
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 
     async fn on_two_way(
         handler: &mut ___H,
         ordinal: u64,
+        flexibility: ::fidl_next::protocol::Flexibility,
         buffer: ___T::RecvBuffer,
         responder: ::fidl_next::protocol::Responder<___T>,
     ) -> ::core::result::Result<
@@ -1920,7 +1940,7 @@ where
         ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>,
     > {
         match ordinal {
-            ordinal => Err(::fidl_next::ProtocolError::InvalidOrdinal(ordinal)),
+            ordinal => Err(::fidl_next::ProtocolError::UnknownOrdinal(ordinal)),
         }
     }
 }

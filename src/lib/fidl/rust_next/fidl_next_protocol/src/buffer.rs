@@ -6,18 +6,36 @@ use fidl_next_codec::{
     DecodeError, DecoderExt as _, EncodeError, EncoderExt as _, WireI32, WireU32, WireU64,
 };
 
-use crate::{FLAG_0_WIRE_FORMAT_V2_BIT, MAGIC_NUMBER, Transport, WireEpitaph, WireMessageHeader};
+use crate::{
+    MAGIC_NUMBER, MessageHeaderFlags0, MessageHeaderFlags1, MessageHeaderFlags2, Transport,
+    WireEpitaph, WireMessageHeader,
+};
+
+/// The flexibility of a method.
+#[derive(Clone, Copy, Debug)]
+pub enum Flexibility {
+    /// The method is strict.
+    Strict,
+    /// The method is flexible.
+    Flexible,
+}
 
 /// Encodes a message into the given buffer.
 pub fn encode_header<T: Transport>(
     buffer: &mut T::SendBuffer,
     txid: u32,
     ordinal: u64,
+    flexibility: Flexibility,
 ) -> Result<(), EncodeError> {
     buffer.encode_next(
         WireMessageHeader {
             txid: WireU32(txid),
-            flags: [FLAG_0_WIRE_FORMAT_V2_BIT, 0, 0],
+            flags_0: MessageHeaderFlags0::WIRE_FORMAT_V2,
+            flags_1: MessageHeaderFlags1::empty(),
+            flags_2: match flexibility {
+                Flexibility::Strict => MessageHeaderFlags2::empty(),
+                Flexibility::Flexible => MessageHeaderFlags2::FLEXIBLE_METHOD,
+            },
             magic_number: MAGIC_NUMBER,
             ordinal: WireU64(ordinal),
         },
@@ -28,13 +46,16 @@ pub fn encode_header<T: Transport>(
 /// Parses the transaction ID and ordinal from the given buffer.
 pub fn decode_header<T: Transport>(
     mut buffer: &mut T::RecvBuffer,
-) -> Result<(u32, u64), DecodeError> {
-    let (txid, ordinal) = {
-        let header = buffer.decode_owned::<WireMessageHeader>()?;
-        (*header.txid, *header.ordinal)
+) -> Result<(u32, u64, Flexibility), DecodeError> {
+    let header = buffer.decode_owned::<WireMessageHeader>()?;
+
+    let flexibility = if header.flags_2.contains(MessageHeaderFlags2::FLEXIBLE_METHOD) {
+        Flexibility::Flexible
+    } else {
+        Flexibility::Strict
     };
 
-    Ok((txid, ordinal))
+    Ok((*header.txid, *header.ordinal, flexibility))
 }
 
 /// Encodes an epitaph into the given buffer.

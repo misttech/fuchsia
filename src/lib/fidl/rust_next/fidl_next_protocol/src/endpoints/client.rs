@@ -14,7 +14,9 @@ use pin_project::{pin_project, pinned_drop};
 use crate::concurrency::sync::{Arc, Mutex};
 use crate::endpoints::connection::{Connection, ORDINAL_EPITAPH};
 use crate::endpoints::lockers::{LockerError, Lockers};
-use crate::{ProtocolError, SendFuture, Transport, decode_epitaph, decode_header, encode_header};
+use crate::{
+    Flexibility, ProtocolError, SendFuture, Transport, decode_epitaph, decode_header, encode_header,
+};
 
 struct ClientInner<T: Transport> {
     connection: Connection<T>,
@@ -52,19 +54,21 @@ impl<T: Transport> Client<T> {
     pub fn send_one_way<M>(
         &self,
         ordinal: u64,
+        flexibility: Flexibility,
         request: M,
     ) -> Result<SendFuture<'_, T>, EncodeError>
     where
         M: Encode<T::SendBuffer>,
         M::Encoded: Constrained<Constraint = ()>,
     {
-        self.send_message(0, ordinal, request)
+        self.send_message(0, ordinal, flexibility, request)
     }
 
     /// Send a request and await for a response.
     pub fn send_two_way<M>(
         &self,
         ordinal: u64,
+        flexibility: Flexibility,
         request: M,
     ) -> Result<TwoWayRequestFuture<'_, T>, EncodeError>
     where
@@ -74,7 +78,7 @@ impl<T: Transport> Client<T> {
         let index = self.inner.responses.lock().unwrap().alloc(ordinal);
 
         // Send with txid = index + 1 because indices start at 0.
-        match self.send_message(index + 1, ordinal, request) {
+        match self.send_message(index + 1, ordinal, flexibility, request) {
             Ok(send_future) => {
                 Ok(TwoWayRequestFuture { inner: &self.inner, index: Some(index), send_future })
             }
@@ -89,6 +93,7 @@ impl<T: Transport> Client<T> {
         &self,
         txid: u32,
         ordinal: u64,
+        flexibility: Flexibility,
         message: M,
     ) -> Result<SendFuture<'_, T>, EncodeError>
     where
@@ -96,7 +101,7 @@ impl<T: Transport> Client<T> {
         M::Encoded: Constrained<Constraint = ()>,
     {
         self.inner.connection.send_message(|buffer| {
-            encode_header::<T>(buffer, txid, ordinal)?;
+            encode_header::<T>(buffer, txid, ordinal, flexibility)?;
             buffer.encode_next(message, ())
         })
     }
@@ -205,6 +210,7 @@ pub trait ClientHandler<T: Transport> {
     fn on_event(
         &mut self,
         ordinal: u64,
+        flexibility: Flexibility,
         buffer: T::RecvBuffer,
     ) -> impl Future<Output = Result<(), ProtocolError<T::Error>>> + Send;
 }
@@ -303,7 +309,7 @@ impl<T: Transport> ClientDispatcher<T> {
         // SAFETY: The caller guaranteed that the connection is not terminated.
         let mut buffer = unsafe { self.inner.connection.recv(&mut self.exclusive).await? };
 
-        let (txid, ordinal) =
+        let (txid, ordinal, flexibility) =
             decode_header::<T>(&mut buffer).map_err(ProtocolError::InvalidMessageHeader)?;
 
         if ordinal == ORDINAL_EPITAPH {
@@ -311,7 +317,7 @@ impl<T: Transport> ClientDispatcher<T> {
                 decode_epitaph::<T>(&mut buffer).map_err(ProtocolError::InvalidEpitaphBody)?;
             return Err(ProtocolError::PeerClosedWithEpitaph(epitaph));
         } else if txid == 0 {
-            handler.on_event(ordinal, buffer).await?;
+            handler.on_event(ordinal, flexibility, buffer).await?;
         } else {
             let mut responses = self.inner.responses.lock().unwrap();
             let locker = responses
@@ -332,20 +338,6 @@ impl<T: Transport> ClientDispatcher<T> {
             }
         }
 
-        Ok(())
-    }
-
-    /// Runs the client with the [`IgnoreEvents`] handler.
-    pub async fn run_client(self) -> Result<(), ProtocolError<T::Error>> {
-        self.run(IgnoreEvents).await.map(|_| ())
-    }
-}
-
-/// A client handler which ignores any incoming events.
-pub struct IgnoreEvents;
-
-impl<T: Transport> ClientHandler<T> for IgnoreEvents {
-    async fn on_event(&mut self, _: u64, _: T::RecvBuffer) -> Result<(), ProtocolError<T::Error>> {
         Ok(())
     }
 }
