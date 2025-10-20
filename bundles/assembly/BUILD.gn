@@ -4179,6 +4179,17 @@ assembly_input_bundle("factory_reset") {
       [ "//src/recovery/factory_reset/meta/factory_reset.core_shard.cml" ]
 }
 
+assembly_input_bundle("factory_reset_tee") {
+  core_shards =
+      [ "//src/recovery/factory_reset/meta/factory_reset.tee.core_shard.cml" ]
+}
+
+assembly_input_bundle("factory_reset_no_tee") {
+  core_shards = [
+    "//src/recovery/factory_reset/meta/factory_reset.no_tee.core_shard.cml",
+  ]
+}
+
 # Assembly support for recovery-fdr
 assembly_input_bundle("recovery_fdr") {
   base_packages = [ "//src/recovery/system:system_recovery_fdr" ]

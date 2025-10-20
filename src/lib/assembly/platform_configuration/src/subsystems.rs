@@ -529,7 +529,7 @@ fn configure_subsystems(
 
     tee::TeeConfig::define_configuration(
         &context_base.for_subsystem("tee"),
-        &(&product.tee, &product.tee_clients, &platform.session),
+        &(&product.tee, &product.tee_clients, &platform.recovery, &platform.session),
         builder,
     )
     .context("configuring the 'tee' subsystem")?;

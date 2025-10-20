@@ -9,6 +9,7 @@ use camino::Utf8PathBuf;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::FeatureSetLevel;
 use crate::common::option_path_schema;
 
 /// Platform configuration options for recovery.
@@ -46,6 +47,15 @@ pub struct RecoveryConfig {
     /// Perform a managed-mode check before doing an FDR.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub check_for_managed_mode: bool,
+}
+
+impl RecoveryConfig {
+    /// Returns true if the configuration includes the `factory_reset` component.
+    pub fn has_factory_reset(&self, feature_set_level: FeatureSetLevel) -> bool {
+        // factory_reset is required by the standard feature set level, and when system_recovery
+        // is enabled.
+        feature_set_level == FeatureSetLevel::Standard || self.system_recovery.is_some()
+    }
 }
 
 /// Which system recovery implementation to include in the image

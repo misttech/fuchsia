@@ -6,6 +6,7 @@ use crate::subsystems::prelude::*;
 use crate::util;
 use anyhow::{Context as _, anyhow, bail};
 use assembly_config_schema::BoardConfig;
+use assembly_config_schema::platform_settings::recovery_config::RecoveryConfig;
 use assembly_config_schema::platform_settings::session_config::PlatformSessionConfig;
 use assembly_config_schema::product_config::{
     CompiledComponentDefinition, CompiledPackageDefinition,
@@ -18,17 +19,27 @@ use fuchsia_url::AbsoluteComponentUrl;
 use std::io::Write as _;
 
 pub(crate) struct TeeConfig;
-impl DefineSubsystemConfiguration<(&Tee, &Vec<GlobalPlatformTeeClient>, &PlatformSessionConfig)>
-    for TeeConfig
+impl
+    DefineSubsystemConfiguration<(
+        &Tee,
+        &Vec<GlobalPlatformTeeClient>,
+        &RecoveryConfig,
+        &PlatformSessionConfig,
+    )> for TeeConfig
 {
     fn define_configuration(
         context: &ConfigurationContext<'_>,
-        product_config: &(&Tee, &Vec<GlobalPlatformTeeClient>, &PlatformSessionConfig),
+        product_config: &(
+            &Tee,
+            &Vec<GlobalPlatformTeeClient>,
+            &RecoveryConfig,
+            &PlatformSessionConfig,
+        ),
         builder: &mut dyn ConfigurationBuilder,
     ) -> anyhow::Result<()> {
         let global_platform_trusted_app_guids =
             get_global_platform_tee_trusted_app_guids(context.board_config)?;
-        let (tee, transitional_tee_clients, session) = *product_config;
+        let (tee, transitional_tee_clients, recovery_config, session) = *product_config;
         if tee != &Tee::Undefined && !transitional_tee_clients.is_empty() {
             bail!(
                 "Conflicting TEE configuration: product configuration may contain `tee` or `tee_clients`, but not both"
@@ -40,6 +51,7 @@ impl DefineSubsystemConfiguration<(&Tee, &Vec<GlobalPlatformTeeClient>, &Platfor
             Tee::Undefined => define_global_platform_tee_configuration(
                 context,
                 transitional_tee_clients,
+                recovery_config,
                 global_platform_trusted_app_guids,
                 session.enabled,
                 builder,
@@ -48,14 +60,19 @@ impl DefineSubsystemConfiguration<(&Tee, &Vec<GlobalPlatformTeeClient>, &Platfor
                 define_global_platform_tee_configuration(
                     context,
                     clients,
+                    recovery_config,
                     global_platform_trusted_app_guids,
                     session.enabled,
                     builder,
                 )
             }
-            Tee::Proprietary(proprietary_tee) => {
-                define_proprietary_tee_configuration(context, proprietary_tee, session, builder)
-            }
+            Tee::Proprietary(proprietary_tee) => define_proprietary_tee_configuration(
+                context,
+                proprietary_tee,
+                recovery_config,
+                session,
+                builder,
+            ),
         }
     }
 }
@@ -72,6 +89,7 @@ fn create_name(name: &str) -> Result<cml::Name, anyhow::Error> {
 fn define_global_platform_tee_configuration(
     context: &ConfigurationContext<'_>,
     product_config: &Vec<GlobalPlatformTeeClient>,
+    recovery_config: &RecoveryConfig,
     tee_trusted_app_guids: &Vec<uuid::Uuid>,
     session_enabled: bool,
     builder: &mut dyn ConfigurationBuilder,
@@ -86,8 +104,14 @@ fn define_global_platform_tee_configuration(
     // to serve from it.
     if !tee_trusted_app_guids.is_empty() {
         create_tee_manager(tee_trusted_app_guids, context, builder)?;
+        if recovery_config.has_factory_reset(*context.feature_set_level) {
+            builder.platform_bundle("factory_reset_tee");
+        }
     } else {
         builder.core_shard(&context.get_resource("no_tee_manager.core_shard.cml"));
+        if recovery_config.has_factory_reset(*context.feature_set_level) {
+            builder.platform_bundle("factory_reset_no_tee");
+        }
         if session_enabled {
             builder.core_shard(&context.get_resource("no_tee_manager.session.core_shard.cml"));
         }
@@ -388,6 +412,7 @@ fn get_global_platform_tee_trusted_app_guids(
 fn define_proprietary_tee_configuration(
     context: &ConfigurationContext<'_>,
     proprietary_tee: &ProprietaryTee,
+    recovery_config: &RecoveryConfig,
     session: &PlatformSessionConfig,
     builder: &mut dyn ConfigurationBuilder,
 ) -> anyhow::Result<()> {
@@ -401,7 +426,11 @@ fn define_proprietary_tee_configuration(
         core_shard_template,
         context,
         builder,
-    )
+    )?;
+    if recovery_config.has_factory_reset(*context.feature_set_level) {
+        builder.platform_bundle("factory_reset_no_tee");
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -468,6 +497,7 @@ mod tests {
         define_global_platform_tee_configuration(
             &context,
             &tee_client_config,
+            &RecoveryConfig::default(),
             &tee_trusted_app_guids,
             true,
             &mut builder,
@@ -600,6 +630,7 @@ mod tests {
         define_global_platform_tee_configuration(
             &context,
             &tee_client_config,
+            &RecoveryConfig::default(),
             &tee_trusted_app_guids,
             true,
             &mut builder,
@@ -755,7 +786,7 @@ mod tests {
             let mut builder = ConfigurationBuilderImpl::default();
             TeeConfig::define_configuration(
                 &context,
-                &(&Default::default(), &tee_clients, &Default::default()),
+                &(&Default::default(), &tee_clients, &Default::default(), &Default::default()),
                 &mut builder,
             )
             .expect("default (undefined) `tee` and `tee_clients` together is valid");
@@ -778,7 +809,7 @@ mod tests {
                 let mut builder = ConfigurationBuilderImpl::default();
                 TeeConfig::define_configuration(
                     &context,
-                    &(&tee_config, &tee_clients, &Default::default()),
+                    &(&tee_config, &tee_clients, &Default::default(), &Default::default()),
                     &mut builder,
                 )
                 .expect_err("`tee` and `tee_clients` together is invalid");
@@ -790,7 +821,7 @@ mod tests {
             &context_with_global_platform_trusted_app_guids_and_tee_trusted_app_guids(
                 resource_dir.path(),
             ),
-            &(&Default::default(), &Default::default(), &Default::default()),
+            &(&Default::default(), &Default::default(), &Default::default(), &Default::default()),
             &mut builder,
         )
         .expect_err(
@@ -813,7 +844,7 @@ mod tests {
                 let mut builder = ConfigurationBuilderImpl::default();
                 TeeConfig::define_configuration(
                     &context,
-                    &(&tee_config, &Default::default(), &Default::default()),
+                    &(&tee_config, &Default::default(), &Default::default(), &Default::default()),
                     &mut builder,
                 )
                 .expect("defined `tee` and empty `tee_clients` together is valid");
@@ -833,7 +864,7 @@ mod tests {
                 let mut builder = ConfigurationBuilderImpl::default();
                 TeeConfig::define_configuration(
                     &context,
-                    &(&tee_config, &Default::default(), &session),
+                    &(&tee_config, &Default::default(), &Default::default(), &session),
                     &mut builder,
                 )
                 .expect("defined `tee` and empty `tee_clients` together is valid");

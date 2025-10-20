@@ -62,11 +62,7 @@ impl DefineSubsystemConfiguration<(&RecoveryConfig, &VolumeConfig)> for Recovery
                 .context("Adding factory-reset-trigger config data entry")?;
         }
 
-        if *context.feature_set_level == FeatureSetLevel::Standard
-            || config.system_recovery.is_some()
-        {
-            // factory_reset is required by the standard feature set level, and when system_recovery
-            // is enabled.
+        if config.has_factory_reset(*context.feature_set_level) {
             builder.platform_bundle("factory_reset");
         }
 

@@ -365,6 +365,8 @@ user_platform_aib_names =
       # Recovery
       "factory_reset",
       "factory_reset_trigger",
+      "factory_reset_no_tee",
+      "factory_reset_tee",
       "recovery_fdr",
 
       # Starnix
