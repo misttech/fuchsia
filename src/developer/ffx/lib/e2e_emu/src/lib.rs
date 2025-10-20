@@ -31,6 +31,8 @@ pub struct IsolatedEmulator {
 }
 
 impl IsolatedEmulator {
+    pub(crate) const DEFAULT_STARTUP_TIMEOUT_SECONDS: u32 = 120;
+
     /// Create an isolated ffx environment and start an emulator in it using the default product
     /// bundle and package repository from the Fuchsia build directory. Streams logs in the
     /// background and allows resolving packages from universe.
@@ -39,7 +41,13 @@ impl IsolatedEmulator {
             .expect("PACKAGE_REPOSITORY_PATH env var must be set -- run this test with 'fx test'");
         let symbol_index_path = std::env::var("SYMBOL_INDEX_PATH")
             .expect("SYMBOL_INDEX_PATH env var must be set -- run this test with 'fx test'");
-        Self::start_internal(name, Some(&amber_files_path), Some(&symbol_index_path)).await
+        Self::start_internal(
+            name,
+            Some(&amber_files_path),
+            Some(&symbol_index_path),
+            Self::DEFAULT_STARTUP_TIMEOUT_SECONDS,
+        )
+        .await
     }
 
     // This is private to be used for testing with a path to a different package repo. Path
@@ -49,6 +57,7 @@ impl IsolatedEmulator {
         name: &str,
         amber_files_path: Option<&str>,
         symbol_index_path: Option<&str>,
+        startup_timeout_seconds: u32,
     ) -> anyhow::Result<Self> {
         let emu_name = format!("{name}-emu");
 
@@ -122,7 +131,7 @@ impl IsolatedEmulator {
             "--log",
             &*emulator_log,
             "--startup-timeout",
-            "120",
+            &format!("{}", startup_timeout_seconds),
             "--kernel-args",
             "TERM=dumb",
             &product_bundle_path,
@@ -419,10 +428,14 @@ mod tests {
     async fn public_apis_succeed() {
         let amber_files_path = std::env::var("PACKAGE_REPOSITORY_PATH")
             .expect("PACKAGE_REPOSITORY_PATH env var must be set -- run this test with 'fx test'");
-        let emu =
-            IsolatedEmulator::start_internal("e2e-emu-public-apis", Some(&amber_files_path), None)
-                .await
-                .expect("Couldn't start emulator");
+        let emu = IsolatedEmulator::start_internal(
+            "e2e-emu-public-apis",
+            Some(&amber_files_path),
+            None,
+            240,
+        )
+        .await
+        .expect("Couldn't start emulator");
 
         info!("Checking target monotonic time to ensure we can connect and get stdout");
         let time = emu.ffx_output(&["target", "get-time"]).await.unwrap();
@@ -456,10 +469,14 @@ mod tests {
         let test_package_name = std::env::var("TEST_PACKAGE_NAME")
             .expect("TEST_PACKAGE_NAME env var must be set -- run this test with 'fx test'");
         let test_package_url = format!("fuchsia-pkg://fuchsia.com/{test_package_name}");
-        let emu =
-            IsolatedEmulator::start_internal("pkg-resolve", Some(&test_amber_files_path), None)
-                .await
-                .unwrap();
+        let emu = IsolatedEmulator::start_internal(
+            "pkg-resolve",
+            Some(&test_amber_files_path),
+            None,
+            IsolatedEmulator::DEFAULT_STARTUP_TIMEOUT_SECONDS,
+        )
+        .await
+        .unwrap();
         emu.ssh(&["pkgctl", "resolve", &test_package_url]).await.unwrap();
     }
 
@@ -467,7 +484,14 @@ mod tests {
     /// demonstrating that the same package is unavailable when there's no server running.
     #[fuchsia::test]
     async fn fail_to_resolve_package_when_no_package_server_running() {
-        let emu = IsolatedEmulator::start_internal("pkg-resolve-fail", None, None).await.unwrap();
+        let emu = IsolatedEmulator::start_internal(
+            "pkg-resolve-fail",
+            None,
+            None,
+            IsolatedEmulator::DEFAULT_STARTUP_TIMEOUT_SECONDS,
+        )
+        .await
+        .unwrap();
         let test_package_name = std::env::var("TEST_PACKAGE_NAME")
             .expect("TEST_PACKAGE_NAME env var must be set -- run this test with 'fx test'");
         let test_package_url = format!("fuchsia-pkg://fuchsia.com/{test_package_name}");
