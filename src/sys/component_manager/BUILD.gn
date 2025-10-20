@@ -285,6 +285,8 @@ _component_manager_bin = {
     # "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:serde_json5($current_toolchain)",
   ]
+
+  exclude_toolchain_tags = [ "heapdump" ]
 }
 
 _deps_for_tracing = [

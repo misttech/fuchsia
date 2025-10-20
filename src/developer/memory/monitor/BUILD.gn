@@ -75,6 +75,11 @@ executable("bin_with_memory_sampler") {
   output_name = "memory_monitor_with_memory_sampler"
   sources = [ "main.cc" ]
   deps = _common_deps + [ "//src/performance/memory/sampler/instrumentation" ]
+
+  # Do not automatically instrument this program with Heapdump for now, because
+  # Sampler needs to intercept the same hooks as Heapdump, and there is no way
+  # to share them.
+  exclude_toolchain_tags = [ "heapdump" ]
 }
 
 fuchsia_component_manifest("memory_monitor_manifest") {

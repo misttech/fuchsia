@@ -127,4 +127,8 @@ all_variant_tags = [
   # should only/never be applied to toolchains where current_os == "fuchsia".
   "fuchsia-excluded",
   "fuchsia-only",
+
+  # The `heapdump` tag is used for variants that link the Heapdump
+  # instrumentation library into the final executables.
+  "heapdump",
 ]

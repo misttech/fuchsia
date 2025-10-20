@@ -14,6 +14,8 @@ executable("bind") {
     "//src/performance/memory/heapdump/instrumentation",
     "//zircon/system/ulib/zx",
   ]
+
+  exclude_toolchain_tags = [ "heapdump" ]
 }
 
 fuchsia_unittest_component("bind-test") {

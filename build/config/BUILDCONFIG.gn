@@ -518,6 +518,18 @@ declare_args() {
         experimental_cxx_version = 20
       }
     },
+
+    {
+      configs = [ "//build/config/profile:heapdump" ]
+      tags = [
+        "fuchsia-only",
+        "heapdump",
+        "instrumented",
+        "instrumentation-runtime",
+        "kernel-excluded",
+        "needs-compiler-abi",
+      ]
+    },
   ]
 
   # Additional variant toolchain configs to support.
@@ -1352,6 +1364,10 @@ is_host_lto_variant =
 
 # Deprecated alias for is_fuchsia_lto_variant
 is_lto_variant = is_fuchsia_lto_variant
+
+# Whether heapdump variant is enabled.
+is_heapdump = fuchsia_toolchain_tags + [ "heapdump" ] - [ "heapdump" ] !=
+              fuchsia_toolchain_tags
 
 # Prepend the prefix configs, if any, before the default ones.
 default_common_binary_configs = toolchain_variant.prefix_configs

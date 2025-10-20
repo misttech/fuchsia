@@ -268,3 +268,9 @@ variant("profile-use-rust") {
         [ "-Cprofile-use=" + rebase_path(pgo_profile_path, root_build_dir) ]
   }
 }
+
+variant("heapdump") {
+  configs = [ ":variant-libprefix" ]
+  executable_deps =
+      [ "//src/performance/memory/heapdump/instrumentation:autobind" ]
+}
