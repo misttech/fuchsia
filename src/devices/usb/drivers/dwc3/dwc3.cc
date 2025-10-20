@@ -38,6 +38,7 @@ namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 namespace fendpoint = fuchsia_hardware_usb_endpoint;
 namespace fhi = fuchsia_hardware_interconnect;
 namespace fpdev = fuchsia_hardware_platform_device;
+namespace fphy = fuchsia_hardware_usb_phy;
 namespace fvreg = fuchsia_hardware_vreg;
 
 namespace {
@@ -241,6 +242,11 @@ zx_status_t CacheFlushInvalidate(dma_buffer::ContiguousBuffer* buffer, zx_off_t 
 }
 
 zx::result<> Dwc3::Start() {
+  auto phy_client_end = incoming()->Connect<fphy::Service::Device>("dwc3-phy");
+  if (phy_client_end.is_ok()) {
+    phy_.Bind(*std::move(phy_client_end));
+  }
+
   // Set up Inspect data.
   metrics_.Init();
   dwc3_root_ = inspector().root().CreateLazyNode(
@@ -595,6 +601,12 @@ void Dwc3::ResetConfiguration() {
           }
         });
   }
+
+  if (phy_.is_valid()) {
+    if (fidl::Result result = phy_->ConnectStatusChanged(true); result.is_error()) {
+      fdf::warn("Call to ConnectStatusChanged on USB phy failed: {}", result.error_value());
+    }
+  }
 }
 
 void Dwc3::HandleResetEvent() {
@@ -689,6 +701,12 @@ void Dwc3::HandleDisconnectedEvent() {
   }
 
   ResetEndpoints();
+
+  if (phy_.is_valid()) {
+    if (fidl::Result result = phy_->ConnectStatusChanged(false); result.is_error()) {
+      fdf::warn("Call to ConnectStatusChanged on USB phy failed: {}", result.error_value());
+    }
+  }
 }
 
 void Dwc3::Stop() {

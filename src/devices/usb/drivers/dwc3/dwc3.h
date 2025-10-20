@@ -351,6 +351,8 @@ class Dwc3 : public fdf::DriverBase,
 
   std::unique_ptr<PlatformExtension> platform_extension_;
 
+  fidl::SyncClient<fuchsia_hardware_usb_phy::UsbPhy> phy_;
+
   fidl::ServerBindingGroup<fuchsia_hardware_usb_dci::UsbDci> bindings_;
   fidl::SyncClient<fuchsia_driver_framework::NodeController> child_;
 

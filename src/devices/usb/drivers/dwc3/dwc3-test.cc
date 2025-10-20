@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.hardware.interconnect/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
 
 #include <fake-mmio-reg/fake-mmio-reg.h>
 #include <gtest/gtest.h>
@@ -17,8 +18,32 @@
 
 namespace dwc3 {
 
-namespace fpdev = fuchsia_hardware_platform_device;
 namespace fhi = fuchsia_hardware_interconnect;
+namespace fpdev = fuchsia_hardware_platform_device;
+namespace fphy = fuchsia_hardware_usb_phy;
+
+class FakeUsbPhy : public fidl::Server<fphy::UsbPhy> {
+ public:
+  fuchsia_hardware_usb_phy::Service::InstanceHandler GetInstanceHandler(
+      async_dispatcher_t* dispatcher) {
+    return fuchsia_hardware_usb_phy::Service::InstanceHandler({
+        .device = bindings_.CreateHandler(this, dispatcher, fidl::kIgnoreBindingClosure),
+    });
+  }
+
+ private:
+  void ConnectStatusChanged(ConnectStatusChangedRequest& request,
+                            ConnectStatusChangedCompleter::Sync& completer) override {
+    completer.Reply(zx::ok());
+  }
+
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_usb_phy::UsbPhy> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {
+    FDF_LOG(ERROR, "Unknown method %lu", metadata.method_ordinal);
+  }
+
+  fidl::ServerBindingGroup<fuchsia_hardware_usb_phy::UsbPhy> bindings_;
+};
 
 class FakePath final : public fidl::Server<fhi::Path> {
  public:
@@ -71,6 +96,10 @@ class Environment : public fdf_testing::Environment {
                                                     "interconnect-ddr-usb");
     EXPECT_TRUE(result.is_ok());
 
+    result =
+        directory.AddService<fphy::Service>(usb_phy_.GetInstanceHandler(dispatcher), "dwc3-phy");
+    EXPECT_TRUE(result.is_ok());
+
     return zx::ok();
   }
 
@@ -84,6 +113,7 @@ class Environment : public fdf_testing::Environment {
   fdf_fake::FakePDev pdev_;
   ddk_fake::FakeMmioRegRegion reg_region_{kRegSize, kRegCount};
   FakePath path_;
+  FakeUsbPhy usb_phy_;
 };
 
 class Config final {
