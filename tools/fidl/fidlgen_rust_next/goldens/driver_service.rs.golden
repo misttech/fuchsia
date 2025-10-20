@@ -8,6 +8,8 @@ pub mod wire {}
 
 pub mod wire_optional {}
 
+pub mod generic {}
+
 pub use self::natural::*;
 
 /// The type corresponding to the DriverOnlyService service.
@@ -94,7 +96,6 @@ pub mod some_driver_protocol {
     }
 
     mod ___detail {
-
         unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::SomeDriverProtocol
         where
             ___T: ::fidl_next::Transport,

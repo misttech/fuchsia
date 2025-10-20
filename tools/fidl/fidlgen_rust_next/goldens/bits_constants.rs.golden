@@ -138,6 +138,8 @@ pub mod wire {
 
 pub mod wire_optional {}
 
+pub mod generic {}
+
 pub use self::natural::*;
 
 pub const CONST0: crate::natural::BitsType = crate::natural::BitsType::from_bits_retain(0);

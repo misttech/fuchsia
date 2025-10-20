@@ -699,6 +699,146 @@ pub mod wire {
 
 pub mod wire_optional {}
 
+pub mod generic {
+
+    pub struct ClientEndWrapper<T0> {
+        pub value: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for ClientEndWrapper<T0>
+    where
+        T0: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::ClientEnd<
+                    crate::DriverProtocol,
+                    ::fdf_fidl::WireDriverChannel,
+                >,
+            >,
+    {
+        type Encoded = crate::wire::ClientEndWrapper;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for ClientEndWrapper<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        T0: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::ClientEnd<
+                    crate::DriverProtocol,
+                    ::fdf_fidl::WireDriverChannel,
+                >,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    value,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.value, encoder_, value, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct HandlesInProtocolSendHandlesRequest<T0> {
+        pub t: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for HandlesInProtocolSendHandlesRequest<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = crate::wire::T<'static>>,
+    {
+        type Encoded = crate::wire::HandlesInProtocolSendHandlesRequest<'static>;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for HandlesInProtocolSendHandlesRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        T0: ::fidl_next::Encode<___E, Encoded = crate::wire::T<'static>>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    t,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.t, encoder_, t, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct ServerEndWrapper<T0> {
+        pub value: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for ServerEndWrapper<T0>
+    where
+        T0: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::ServerEnd<
+                    crate::DriverProtocol,
+                    ::fdf_fidl::WireDriverChannel,
+                >,
+            >,
+    {
+        type Encoded = crate::wire::ServerEndWrapper;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for ServerEndWrapper<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        T0: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::ServerEnd<
+                    crate::DriverProtocol,
+                    ::fdf_fidl::WireDriverChannel,
+                >,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    value,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.value, encoder_, value, ())?;
+
+            Ok(())
+        }
+    }
+}
+
 pub use self::natural::*;
 
 /// The type corresponding to the DriverProtocol protocol.
@@ -714,7 +854,6 @@ pub mod driver_protocol {
     }
 
     mod ___detail {
-
         unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::DriverProtocol
         where
             ___T: ::fidl_next::Transport,
@@ -838,45 +977,6 @@ pub mod handles_in_protocol {
     }
 
     mod ___detail {
-
-        pub struct SendHandles<T0> {
-            t: T0,
-        }
-
-        impl<T0> ::fidl_next::Encodable for SendHandles<T0>
-        where
-            T0: ::fidl_next::Encodable<Encoded = crate::wire::T<'static>>,
-        {
-            type Encoded = crate::wire::HandlesInProtocolSendHandlesRequest<'static>;
-        }
-
-        unsafe impl<___E, T0> ::fidl_next::Encode<___E> for SendHandles<T0>
-        where
-            ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-            ___E: ::fidl_next::Encoder,
-            ___E: ::fidl_next::fuchsia::HandleEncoder,
-            T0: ::fidl_next::Encode<___E, Encoded = crate::wire::T<'static>>,
-        {
-            #[inline]
-            fn encode(
-                self,
-                encoder_: &mut ___E,
-                out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-                _: (),
-            ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-                ::fidl_next::munge! {
-                    let Self::Encoded {
-                        t,
-
-                    } = out_;
-                }
-
-                ::fidl_next::Encode::encode(self.t, encoder_, t, ())?;
-
-                Ok(())
-            }
-        }
-
         unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::HandlesInProtocol
         where
             ___T: ::fidl_next::Transport,
@@ -910,7 +1010,7 @@ pub mod handles_in_protocol {
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::Encoder,
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::fuchsia::HandleEncoder,
             {
-                self.send_handles_with(SendHandles { t })
+                self.send_handles_with(crate::generic::HandlesInProtocolSendHandlesRequest { t })
             }
 
             pub fn send_handles_with<___R>(

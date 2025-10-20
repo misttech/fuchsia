@@ -2402,6 +2402,424 @@ pub mod wire_optional {
     impl ::fidl_next::Unconstrained for SimpleUnion {}
 }
 
+pub mod generic {
+
+    pub struct Int32Wrapper<T0> {
+        pub val: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for Int32Wrapper<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded = crate::wire::Int32Wrapper;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for Int32Wrapper<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    val,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.val, encoder_, val, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct SimpleProtocolAddRequest<T0, T1> {
+        pub a: T0,
+
+        pub b: T1,
+    }
+
+    impl<T0, T1> ::fidl_next::Encodable for SimpleProtocolAddRequest<T0, T1>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+        T1: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded = crate::wire::SimpleProtocolAddRequest;
+    }
+
+    unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for SimpleProtocolAddRequest<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+        T1: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct SimpleProtocolAddResponse<T0> {
+        pub sum: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for SimpleProtocolAddResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded = crate::wire::SimpleProtocolAddResponse;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for SimpleProtocolAddResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    sum,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.sum, encoder_, sum, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct StructWithNullableHandle<T0> {
+        pub val: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for StructWithNullableHandle<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::fuchsia::WireOptionalVmo>,
+    {
+        type Encoded = crate::wire::StructWithNullableHandle;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for StructWithNullableHandle<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::fuchsia::WireOptionalVmo>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    val,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.val, encoder_, val, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct StructWithNullableProtocol<T0> {
+        pub val: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for StructWithNullableProtocol<T0>
+    where
+        T0: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::ClientEnd<
+                    crate::SimpleProtocol,
+                    ::fidl_next::fuchsia::WireOptionalChannel,
+                >,
+            >,
+    {
+        type Encoded = crate::wire::StructWithNullableProtocol;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for StructWithNullableProtocol<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        T0: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::ClientEnd<
+                    crate::SimpleProtocol,
+                    ::fidl_next::fuchsia::WireOptionalChannel,
+                >,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    val,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.val, encoder_, val, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct StructWithNullableRequest<T0> {
+        pub val: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for StructWithNullableRequest<T0>
+    where
+        T0: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::ServerEnd<
+                    crate::SimpleProtocol,
+                    ::fidl_next::fuchsia::WireOptionalChannel,
+                >,
+            >,
+    {
+        type Encoded = crate::wire::StructWithNullableRequest;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for StructWithNullableRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        T0: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::ServerEnd<
+                    crate::SimpleProtocol,
+                    ::fidl_next::fuchsia::WireOptionalChannel,
+                >,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    val,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.val, encoder_, val, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct StructWithNullableString<T0> {
+        pub val: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for StructWithNullableString<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireOptionalString<'static>>,
+    {
+        type Encoded = crate::wire::StructWithNullableString<'static>;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for StructWithNullableString<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireOptionalString<'static>>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    val,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.val, encoder_, val, 4294967295)?;
+
+            Ok(())
+        }
+    }
+
+    pub struct StructWithNullableStruct<T0> {
+        pub val: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for StructWithNullableStruct<T0>
+    where
+        T0: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::WireBox<'static, crate::wire::Int32Wrapper>,
+            >,
+    {
+        type Encoded = crate::wire::StructWithNullableStruct<'static>;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for StructWithNullableStruct<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        T0: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::WireBox<'static, crate::wire::Int32Wrapper>,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    val,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.val, encoder_, val, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct StructWithNullableUnion<T0> {
+        pub val: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for StructWithNullableUnion<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = crate::wire_optional::SimpleUnion>,
+    {
+        type Encoded = crate::wire::StructWithNullableUnion;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for StructWithNullableUnion<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = crate::wire_optional::SimpleUnion>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    val,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.val, encoder_, val, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct StructWithNullableVector<T0> {
+        pub val: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for StructWithNullableVector<T0>
+    where
+        T0: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::WireOptionalVector<'static, ::fidl_next::WireI32>,
+            >,
+    {
+        type Encoded = crate::wire::StructWithNullableVector<'static>;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for StructWithNullableVector<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        T0: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::WireOptionalVector<'static, ::fidl_next::WireI32>,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    val,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.val, encoder_, val, (4294967295, ()))?;
+
+            Ok(())
+        }
+    }
+}
+
 pub use self::natural::*;
 
 /// The type corresponding to the SimpleProtocol protocol.
@@ -2433,50 +2851,6 @@ pub mod simple_protocol {
     }
 
     mod ___detail {
-
-        pub struct Add<T0, T1> {
-            a: T0,
-
-            b: T1,
-        }
-
-        impl<T0, T1> ::fidl_next::Encodable for Add<T0, T1>
-        where
-            T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
-            T1: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
-        {
-            type Encoded = crate::wire::SimpleProtocolAddRequest;
-        }
-
-        unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for Add<T0, T1>
-        where
-            ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-            T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
-            T1: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
-        {
-            #[inline]
-            fn encode(
-                self,
-                encoder_: &mut ___E,
-                out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-                _: (),
-            ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-                ::fidl_next::munge! {
-                    let Self::Encoded {
-                        a,
-                        b,
-
-                    } = out_;
-                }
-
-                ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
-
-                ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
-
-                Ok(())
-            }
-        }
-
         unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::SimpleProtocol
         where
             ___T: ::fidl_next::Transport,
@@ -2513,7 +2887,7 @@ pub mod simple_protocol {
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
             {
-                self.add_with(Add { a, b })
+                self.add_with(crate::generic::SimpleProtocolAddRequest { a, b })
             }
 
             pub fn add_with<___R>(

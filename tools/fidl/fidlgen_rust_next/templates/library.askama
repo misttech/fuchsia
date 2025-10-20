@@ -93,6 +93,28 @@ pub mod wire_optional {
     {% endfor %}
 }
 
+pub mod generic {
+    {% for ident in self.library().declaration_order %}
+        {% if !matches!(self.rust_next_denylist(ident), Denylist::Denied) %}
+            {% match self.library().declarations[ident] %}
+                {% when DeclType::Alias %}
+                {% when DeclType::Bits %}
+                {% when DeclType::Const %}
+                {% when DeclType::Enum %}
+                {% when DeclType::Struct %}
+                    {{ self.strct(self.library().struct_declarations[ident]).generic() }}
+                {% when DeclType::Table %}
+                {% when DeclType::Union %}
+                {% when DeclType::NewType %}
+                {% when DeclType::Overlay %}
+                {% when DeclType::Protocol %}
+                {% when DeclType::ExperimentalResource %}
+                {% when DeclType::Service %}
+            {% endmatch %}
+        {% endif %}
+    {% endfor %}
+}
+
 pub use self::natural::*;
 
 {% for ident in self.library().declaration_order %}

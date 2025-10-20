@@ -1653,6 +1653,163 @@ pub mod wire_optional {
     impl ::fidl_next::Unconstrained for StrictFoo<'static> {}
 }
 
+pub mod generic {
+
+    pub struct ProtocolRequestStrictResponseFlexibleRequest<T0> {
+        pub s: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for ProtocolRequestStrictResponseFlexibleRequest<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = crate::wire::StrictFoo<'static>>,
+    {
+        type Encoded = crate::wire::ProtocolRequestStrictResponseFlexibleRequest<'static>;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for ProtocolRequestStrictResponseFlexibleRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        T0: ::fidl_next::Encode<___E, Encoded = crate::wire::StrictFoo<'static>>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    s,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.s, encoder_, s, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct ProtocolRequestStrictResponseFlexibleResponse<T0> {
+        pub f: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for ProtocolRequestStrictResponseFlexibleResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = crate::wire::FlexibleFoo<'static>>,
+    {
+        type Encoded = crate::wire::ProtocolRequestStrictResponseFlexibleResponse<'static>;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for ProtocolRequestStrictResponseFlexibleResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        T0: ::fidl_next::Encode<___E, Encoded = crate::wire::FlexibleFoo<'static>>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    f,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.f, encoder_, f, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct ProtocolRequestFlexibleResponseStrictRequest<T0> {
+        pub s: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for ProtocolRequestFlexibleResponseStrictRequest<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = crate::wire::FlexibleFoo<'static>>,
+    {
+        type Encoded = crate::wire::ProtocolRequestFlexibleResponseStrictRequest<'static>;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for ProtocolRequestFlexibleResponseStrictRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        T0: ::fidl_next::Encode<___E, Encoded = crate::wire::FlexibleFoo<'static>>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    s,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.s, encoder_, s, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct ProtocolRequestFlexibleResponseStrictResponse<T0> {
+        pub f: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for ProtocolRequestFlexibleResponseStrictResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = crate::wire::StrictFoo<'static>>,
+    {
+        type Encoded = crate::wire::ProtocolRequestFlexibleResponseStrictResponse<'static>;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for ProtocolRequestFlexibleResponseStrictResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        T0: ::fidl_next::Encode<___E, Encoded = crate::wire::StrictFoo<'static>>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    f,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.f, encoder_, f, ())?;
+
+            Ok(())
+        }
+    }
+}
+
 pub use self::natural::*;
 
 /// The type corresponding to the Protocol protocol.
@@ -1697,81 +1854,6 @@ pub mod protocol {
     }
 
     mod ___detail {
-
-        pub struct RequestStrictResponseFlexible<T0> {
-            s: T0,
-        }
-
-        impl<T0> ::fidl_next::Encodable for RequestStrictResponseFlexible<T0>
-        where
-            T0: ::fidl_next::Encodable<Encoded = crate::wire::StrictFoo<'static>>,
-        {
-            type Encoded = crate::wire::ProtocolRequestStrictResponseFlexibleRequest<'static>;
-        }
-
-        unsafe impl<___E, T0> ::fidl_next::Encode<___E> for RequestStrictResponseFlexible<T0>
-        where
-            ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-            ___E: ::fidl_next::Encoder,
-            T0: ::fidl_next::Encode<___E, Encoded = crate::wire::StrictFoo<'static>>,
-        {
-            #[inline]
-            fn encode(
-                self,
-                encoder_: &mut ___E,
-                out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-                _: (),
-            ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-                ::fidl_next::munge! {
-                    let Self::Encoded {
-                        s,
-
-                    } = out_;
-                }
-
-                ::fidl_next::Encode::encode(self.s, encoder_, s, ())?;
-
-                Ok(())
-            }
-        }
-
-        pub struct RequestFlexibleResponseStrict<T0> {
-            s: T0,
-        }
-
-        impl<T0> ::fidl_next::Encodable for RequestFlexibleResponseStrict<T0>
-        where
-            T0: ::fidl_next::Encodable<Encoded = crate::wire::FlexibleFoo<'static>>,
-        {
-            type Encoded = crate::wire::ProtocolRequestFlexibleResponseStrictRequest<'static>;
-        }
-
-        unsafe impl<___E, T0> ::fidl_next::Encode<___E> for RequestFlexibleResponseStrict<T0>
-        where
-            ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-            ___E: ::fidl_next::Encoder,
-            T0: ::fidl_next::Encode<___E, Encoded = crate::wire::FlexibleFoo<'static>>,
-        {
-            #[inline]
-            fn encode(
-                self,
-                encoder_: &mut ___E,
-                out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-                _: (),
-            ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-                ::fidl_next::munge! {
-                    let Self::Encoded {
-                        s,
-
-                    } = out_;
-                }
-
-                ::fidl_next::Encode::encode(self.s, encoder_, s, ())?;
-
-                Ok(())
-            }
-        }
-
         unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::Protocol
         where
             ___T: ::fidl_next::Transport,
@@ -1804,7 +1886,9 @@ pub mod protocol {
                     ::fidl_next::encoder::InternalHandleEncoder,
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::Encoder,
             {
-                self.request_strict_response_flexible_with(RequestStrictResponseFlexible { s })
+                self.request_strict_response_flexible_with(
+                    crate::generic::ProtocolRequestStrictResponseFlexibleRequest { s },
+                )
             }
 
             pub fn request_strict_response_flexible_with<___R>(
@@ -1837,7 +1921,9 @@ pub mod protocol {
                     ::fidl_next::encoder::InternalHandleEncoder,
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::Encoder,
             {
-                self.request_flexible_response_strict_with(RequestFlexibleResponseStrict { s })
+                self.request_flexible_response_strict_with(
+                    crate::generic::ProtocolRequestFlexibleResponseStrictRequest { s },
+                )
             }
 
             pub fn request_flexible_response_strict_with<___R>(

@@ -721,6 +721,39 @@ pub mod wire_optional {
     impl ::fidl_next::Unconstrained for SerializableUnion {}
 }
 
+pub mod generic {
+
+    pub struct SerializableStruct {}
+
+    impl ::fidl_next::Encodable for SerializableStruct {
+        type Encoded = crate::wire::SerializableStruct;
+    }
+
+    unsafe impl<___E> ::fidl_next::Encode<___E> for SerializableStruct
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                        _empty,
+
+
+                } = out_;
+            }
+
+            Ok(())
+        }
+    }
+}
+
 pub use self::natural::*;
 
 /// Compatibility shims which mimic some API surfaces of the current Rust bindings.

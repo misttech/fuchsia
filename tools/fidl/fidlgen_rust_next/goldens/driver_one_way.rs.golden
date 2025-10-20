@@ -420,6 +420,83 @@ pub mod wire {
 
 pub mod wire_optional {}
 
+pub mod generic {
+
+    pub struct Payload<T0> {
+        pub value: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for Payload<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU32>,
+    {
+        type Encoded = crate::wire::Payload;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for Payload<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    value,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.value, encoder_, value, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct OneWaySendRequest<T0> {
+        pub payload: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for OneWaySendRequest<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = crate::wire::Payload>,
+    {
+        type Encoded = crate::wire::OneWaySendRequest;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for OneWaySendRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = crate::wire::Payload>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    payload,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.payload, encoder_, payload, ())?;
+
+            Ok(())
+        }
+    }
+}
+
 pub use self::natural::*;
 
 /// The type corresponding to the OneWay protocol.
@@ -446,43 +523,6 @@ pub mod one_way {
     }
 
     mod ___detail {
-
-        pub struct Send<T0> {
-            payload: T0,
-        }
-
-        impl<T0> ::fidl_next::Encodable for Send<T0>
-        where
-            T0: ::fidl_next::Encodable<Encoded = crate::wire::Payload>,
-        {
-            type Encoded = crate::wire::OneWaySendRequest;
-        }
-
-        unsafe impl<___E, T0> ::fidl_next::Encode<___E> for Send<T0>
-        where
-            ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-            T0: ::fidl_next::Encode<___E, Encoded = crate::wire::Payload>,
-        {
-            #[inline]
-            fn encode(
-                self,
-                encoder_: &mut ___E,
-                out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-                _: (),
-            ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-                ::fidl_next::munge! {
-                    let Self::Encoded {
-                        payload,
-
-                    } = out_;
-                }
-
-                ::fidl_next::Encode::encode(self.payload, encoder_, payload, ())?;
-
-                Ok(())
-            }
-        }
-
         unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::OneWay
         where
             ___T: ::fidl_next::Transport,
@@ -514,7 +554,7 @@ pub mod one_way {
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
             {
-                self.send_with(Send { payload })
+                self.send_with(crate::generic::OneWaySendRequest { payload })
             }
 
             pub fn send_with<___R>(&self, request: ___R) -> ::fidl_next::SendFuture<'_, ___T>

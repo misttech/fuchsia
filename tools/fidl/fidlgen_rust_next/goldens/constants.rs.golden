@@ -915,6 +915,80 @@ pub mod wire {
 
 pub mod wire_optional {}
 
+pub mod generic {
+
+    pub struct Struct<T0, T1, T2, T3, T4> {
+        pub int64_with_default: T0,
+
+        pub string_with_default: T1,
+
+        pub bool_with_default: T2,
+
+        pub enum_with_default: T3,
+
+        pub bits_with_default: T4,
+    }
+
+    impl<T0, T1, T2, T3, T4> ::fidl_next::Encodable for Struct<T0, T1, T2, T3, T4>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI64>,
+        T1: ::fidl_next::Encodable<Encoded = ::fidl_next::WireString<'static>>,
+        T2: ::fidl_next::Encodable<Encoded = bool>,
+        T3: ::fidl_next::Encodable<Encoded = crate::wire::Enum>,
+        T4: ::fidl_next::Encodable<Encoded = crate::wire::Bits>,
+    {
+        type Encoded = crate::wire::Struct<'static>;
+    }
+
+    unsafe impl<___E, T0, T1, T2, T3, T4> ::fidl_next::Encode<___E> for Struct<T0, T1, T2, T3, T4>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI64>,
+        T1: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireString<'static>>,
+        T2: ::fidl_next::Encode<___E, Encoded = bool>,
+        T3: ::fidl_next::Encode<___E, Encoded = crate::wire::Enum>,
+        T4: ::fidl_next::Encode<___E, Encoded = crate::wire::Bits>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    int64_with_default,
+                    string_with_default,
+                    bool_with_default,
+                    enum_with_default,
+                    bits_with_default,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.int64_with_default, encoder_, int64_with_default, ())?;
+
+            ::fidl_next::Encode::encode(
+                self.string_with_default,
+                encoder_,
+                string_with_default,
+                4294967295,
+            )?;
+
+            ::fidl_next::Encode::encode(self.bool_with_default, encoder_, bool_with_default, ())?;
+
+            ::fidl_next::Encode::encode(self.enum_with_default, encoder_, enum_with_default, ())?;
+
+            ::fidl_next::Encode::encode(self.bits_with_default, encoder_, bits_with_default, ())?;
+
+            Ok(())
+        }
+    }
+}
+
 pub use self::natural::*;
 
 pub const BOOL: bool = true as bool;

@@ -184,6 +184,39 @@ pub mod wire {
 
 pub mod wire_optional {}
 
+pub mod generic {
+
+    pub struct MyStruct {}
+
+    impl ::fidl_next::Encodable for MyStruct {
+        type Encoded = crate::wire::MyStruct;
+    }
+
+    unsafe impl<___E> ::fidl_next::Encode<___E> for MyStruct
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                        _empty,
+
+
+                } = out_;
+            }
+
+            Ok(())
+        }
+    }
+}
+
 pub use self::natural::*;
 
 pub const BITS_MEMBER: ::fidl_next_test_dependent::natural::MyBits =

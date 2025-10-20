@@ -80,6 +80,10 @@ pub trait Contextual<'a> {
         CompoundIdentifierTemplate::wire_optional(compound_ident, self.context())
     }
 
+    fn generic_id(&self, compound_ident: &'a CompoundIdent) -> CompoundIdentifierTemplate<'a> {
+        CompoundIdentifierTemplate::generic(compound_ident, self.context())
+    }
+
     fn natural_int(&self, int: &'a IntType) -> NaturalIntTemplate<'a> {
         NaturalIntTemplate(int)
     }

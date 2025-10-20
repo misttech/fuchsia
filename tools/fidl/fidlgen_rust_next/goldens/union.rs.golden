@@ -10659,6 +10659,330 @@ pub mod wire_optional {
     impl ::fidl_next::Unconstrained for UnionWithAttributes<'static> {}
 }
 
+pub mod generic {
+
+    pub struct Empty {}
+
+    impl ::fidl_next::Encodable for Empty {
+        type Encoded = crate::wire::Empty;
+    }
+
+    unsafe impl<___E> ::fidl_next::Encode<___E> for Empty
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                        _empty,
+
+
+                } = out_;
+            }
+
+            Ok(())
+        }
+    }
+
+    pub struct Pizza<T0> {
+        pub toppings: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for Pizza<T0>
+    where
+        T0: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
+            >,
+    {
+        type Encoded = crate::wire::Pizza<'static>;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for Pizza<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        T0: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
+            >,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    toppings,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.toppings, encoder_, toppings, (4294967295, 16))?;
+
+            Ok(())
+        }
+    }
+
+    pub struct Pasta<T0> {
+        pub sauce: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for Pasta<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireString<'static>>,
+    {
+        type Encoded = crate::wire::Pasta<'static>;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for Pasta<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireString<'static>>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    sauce,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.sauce, encoder_, sauce, 16)?;
+
+            Ok(())
+        }
+    }
+
+    pub struct NullableUnionStruct<T0> {
+        pub the_union: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for NullableUnionStruct<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = crate::wire_optional::Union<'static>>,
+    {
+        type Encoded = crate::wire::NullableUnionStruct<'static>;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for NullableUnionStruct<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        T0: ::fidl_next::Encode<___E, Encoded = crate::wire_optional::Union<'static>>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    the_union,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.the_union, encoder_, the_union, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct StructWithNullableUnion<T0> {
+        pub x1: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for StructWithNullableUnion<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = crate::wire_optional::OlderSimpleUnion<'static>>,
+    {
+        type Encoded = crate::wire::StructWithNullableUnion<'static>;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for StructWithNullableUnion<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        T0: ::fidl_next::Encode<___E, Encoded = crate::wire_optional::OlderSimpleUnion<'static>>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    x1,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.x1, encoder_, x1, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse<T0> {
+        pub xu: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable
+        for TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = crate::wire::StrictBoundedUnion<'static>>,
+    {
+        type Encoded =
+            crate::wire::TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse<'static>;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        T0: ::fidl_next::Encode<___E, Encoded = crate::wire::StrictBoundedUnion<'static>>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    xu,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.xu, encoder_, xu, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse<T0> {
+        pub xu: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable
+        for TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = crate::wire::OlderSimpleUnion<'static>>,
+    {
+        type Encoded =
+            crate::wire::TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse<'static>;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        T0: ::fidl_next::Encode<___E, Encoded = crate::wire::OlderSimpleUnion<'static>>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    xu,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.xu, encoder_, xu, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct UnionSandwich<T0, T1, T2> {
+        pub a: T0,
+
+        pub u: T1,
+
+        pub b: T2,
+    }
+
+    impl<T0, T1, T2> ::fidl_next::Encodable for UnionSandwich<T0, T1, T2>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU32>,
+        T1: ::fidl_next::Encodable<Encoded = crate::wire::ExplicitFlexibleUnion<'static>>,
+        T2: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU32>,
+    {
+        type Encoded = crate::wire::UnionSandwich<'static>;
+    }
+
+    unsafe impl<___E, T0, T1, T2> ::fidl_next::Encode<___E> for UnionSandwich<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU32>,
+        T1: ::fidl_next::Encode<___E, Encoded = crate::wire::ExplicitFlexibleUnion<'static>>,
+        T2: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    a,
+                    u,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(self.u, encoder_, u, ())?;
+
+            ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+}
+
 pub use self::natural::*;
 
 /// The type corresponding to the TestProtocol protocol.
@@ -10703,7 +11027,6 @@ pub mod test_protocol {
     }
 
     mod ___detail {
-
         unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::TestProtocol
         where
             ___T: ::fidl_next::Transport,

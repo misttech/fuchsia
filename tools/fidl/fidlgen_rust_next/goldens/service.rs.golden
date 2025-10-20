@@ -8,6 +8,8 @@ pub mod wire {}
 
 pub mod wire_optional {}
 
+pub mod generic {}
+
 pub use self::natural::*;
 
 /// The type corresponding to the EmptyService service.
@@ -71,7 +73,6 @@ pub mod first_protocol {
     }
 
     mod ___detail {
-
         unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::FirstProtocol
         where
             ___T: ::fidl_next::Transport,
@@ -428,7 +429,6 @@ pub mod second_protocol {
     }
 
     mod ___detail {
-
         unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::SecondProtocol
         where
             ___T: ::fidl_next::Transport,

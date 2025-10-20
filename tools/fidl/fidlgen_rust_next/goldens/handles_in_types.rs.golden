@@ -1411,6 +1411,135 @@ pub mod wire_optional {
     impl ::fidl_next::Unconstrained for UnionWithHandle<'static> {}
 }
 
+pub mod generic {
+
+    pub struct EmptyResourceStruct {}
+
+    impl ::fidl_next::Encodable for EmptyResourceStruct {
+        type Encoded = crate::wire::EmptyResourceStruct;
+    }
+
+    unsafe impl<___E> ::fidl_next::Encode<___E> for EmptyResourceStruct
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                        _empty,
+
+
+                } = out_;
+            }
+
+            Ok(())
+        }
+    }
+
+    pub struct HandlesInTypes<T0, T1, T2, T3, T4, T5> {
+        pub normal_handle: T0,
+
+        pub handle_in_vec: T1,
+
+        pub handle_in_array: T2,
+
+        pub handle_in_mixed_vec_array: T3,
+
+        pub table_with_handle: T4,
+
+        pub union_with_handle: T5,
+    }
+
+    impl<T0, T1, T2, T3, T4, T5> ::fidl_next::Encodable for HandlesInTypes<T0, T1, T2, T3, T4, T5>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::fuchsia::WireVmo>,
+        T1: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::fuchsia::WireVmo>,
+            >,
+        T2: ::fidl_next::Encodable<Encoded = [::fidl_next::fuchsia::WireVmo; 5]>,
+        T3: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::WireVector<'static, [::fidl_next::fuchsia::WireVmo; 5]>,
+            >,
+        T4: ::fidl_next::Encodable<Encoded = crate::wire::TableWithHandle<'static>>,
+        T5: ::fidl_next::Encodable<Encoded = crate::wire::UnionWithHandle<'static>>,
+    {
+        type Encoded = crate::wire::HandlesInTypes<'static>;
+    }
+
+    unsafe impl<___E, T0, T1, T2, T3, T4, T5> ::fidl_next::Encode<___E>
+        for HandlesInTypes<T0, T1, T2, T3, T4, T5>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::fuchsia::WireVmo>,
+        T1: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::fuchsia::WireVmo>,
+            >,
+        T2: ::fidl_next::Encode<___E, Encoded = [::fidl_next::fuchsia::WireVmo; 5]>,
+        T3: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::WireVector<'static, [::fidl_next::fuchsia::WireVmo; 5]>,
+            >,
+        T4: ::fidl_next::Encode<___E, Encoded = crate::wire::TableWithHandle<'static>>,
+        T5: ::fidl_next::Encode<___E, Encoded = crate::wire::UnionWithHandle<'static>>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    normal_handle,
+                    handle_in_vec,
+                    handle_in_array,
+                    handle_in_mixed_vec_array,
+                    table_with_handle,
+                    union_with_handle,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.normal_handle, encoder_, normal_handle, ())?;
+
+            ::fidl_next::Encode::encode(
+                self.handle_in_vec,
+                encoder_,
+                handle_in_vec,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(self.handle_in_array, encoder_, handle_in_array, ())?;
+
+            ::fidl_next::Encode::encode(
+                self.handle_in_mixed_vec_array,
+                encoder_,
+                handle_in_mixed_vec_array,
+                (4294967295, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(self.table_with_handle, encoder_, table_with_handle, ())?;
+
+            ::fidl_next::Encode::encode(self.union_with_handle, encoder_, union_with_handle, ())?;
+
+            Ok(())
+        }
+    }
+}
+
 pub use self::natural::*;
 
 /// Compatibility shims which mimic some API surfaces of the current Rust bindings.

@@ -615,6 +615,155 @@ pub mod wire {
 
 pub mod wire_optional {}
 
+pub mod generic {
+
+    pub struct ExampleOfUseOfAliases<T0, T1, T2, T3, T4, T5, T6, T7> {
+        pub field_of_u32: T0,
+
+        pub field_of_vec_of_strings: T1,
+
+        pub field_of_vec_of_strings_at_most_nine: T2,
+
+        pub field_of_vec_of_strings_at_most_5: T3,
+
+        pub field_of_vec_of_ref_me_at_most_5: T4,
+
+        pub field_of_channel: T5,
+
+        pub field_of_client_end: T6,
+
+        pub field_of_nullable_client_end: T7,
+    }
+
+    impl<T0, T1, T2, T3, T4, T5, T6, T7> ::fidl_next::Encodable
+        for ExampleOfUseOfAliases<T0, T1, T2, T3, T4, T5, T6, T7>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU32>,
+        T1: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
+            >,
+        T2: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
+            >,
+        T3: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
+            >,
+        T4: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::WireVector<
+                    'static,
+                    ::fidl_next_test_someotherlibrary::wire::ReferenceMe,
+                >,
+            >,
+        T5: ::fidl_next::Encodable<Encoded = ::fidl_next::fuchsia::WireChannel>,
+        T6: ::fidl_next::Encodable<Encoded = ::fidl_next::fuchsia::WireChannel>,
+        T7: ::fidl_next::Encodable<Encoded = ::fidl_next::fuchsia::WireOptionalChannel>,
+    {
+        type Encoded = crate::wire::ExampleOfUseOfAliases<'static>;
+    }
+
+    unsafe impl<___E, T0, T1, T2, T3, T4, T5, T6, T7> ::fidl_next::Encode<___E>
+        for ExampleOfUseOfAliases<T0, T1, T2, T3, T4, T5, T6, T7>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU32>,
+        T1: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
+            >,
+        T2: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
+            >,
+        T3: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
+            >,
+        T4: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::WireVector<
+                    'static,
+                    ::fidl_next_test_someotherlibrary::wire::ReferenceMe,
+                >,
+            >,
+        T5: ::fidl_next::Encode<___E, Encoded = ::fidl_next::fuchsia::WireChannel>,
+        T6: ::fidl_next::Encode<___E, Encoded = ::fidl_next::fuchsia::WireChannel>,
+        T7: ::fidl_next::Encode<___E, Encoded = ::fidl_next::fuchsia::WireOptionalChannel>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    field_of_u32,
+                    field_of_vec_of_strings,
+                    field_of_vec_of_strings_at_most_nine,
+                    field_of_vec_of_strings_at_most_5,
+                    field_of_vec_of_ref_me_at_most_5,
+                    field_of_channel,
+                    field_of_client_end,
+                    field_of_nullable_client_end,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.field_of_u32, encoder_, field_of_u32, ())?;
+
+            ::fidl_next::Encode::encode(
+                self.field_of_vec_of_strings,
+                encoder_,
+                field_of_vec_of_strings,
+                (4294967295, 4294967295),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                self.field_of_vec_of_strings_at_most_nine,
+                encoder_,
+                field_of_vec_of_strings_at_most_nine,
+                (9, 4294967295),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                self.field_of_vec_of_strings_at_most_5,
+                encoder_,
+                field_of_vec_of_strings_at_most_5,
+                (5, 4294967295),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                self.field_of_vec_of_ref_me_at_most_5,
+                encoder_,
+                field_of_vec_of_ref_me_at_most_5,
+                (5, ()),
+            )?;
+
+            ::fidl_next::Encode::encode(self.field_of_channel, encoder_, field_of_channel, ())?;
+
+            ::fidl_next::Encode::encode(
+                self.field_of_client_end,
+                encoder_,
+                field_of_client_end,
+                (),
+            )?;
+
+            ::fidl_next::Encode::encode(
+                self.field_of_nullable_client_end,
+                encoder_,
+                field_of_nullable_client_end,
+                (),
+            )?;
+
+            Ok(())
+        }
+    }
+}
+
 pub use self::natural::*;
 
 /// Compatibility shims which mimic some API surfaces of the current Rust bindings.

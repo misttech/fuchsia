@@ -65,6 +65,7 @@ if (is_host) {
       "templates/compat/table.askama",
       "templates/compat/union.askama",
       "templates/const.askama",
+      "templates/generic/struct.askama",
       "templates/library.askama",
       "templates/protocol.askama",
       "templates/service.askama",

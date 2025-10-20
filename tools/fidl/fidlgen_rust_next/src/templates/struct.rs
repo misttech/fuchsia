@@ -55,6 +55,10 @@ impl<'a> StructTemplate<'a> {
     pub fn wire(self) -> WireStructTemplate<'a> {
         WireStructTemplate { template: self }
     }
+
+    pub fn generic(self) -> GenericStructTemplate<'a> {
+        GenericStructTemplate { template: self }
+    }
 }
 
 impl<'a> Contextual<'a> for StructTemplate<'a> {
@@ -105,6 +109,20 @@ pub struct WireStructTemplate<'a> {
 }
 
 impl<'a> Deref for WireStructTemplate<'a> {
+    type Target = StructTemplate<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.template
+    }
+}
+
+#[derive(Template)]
+#[template(path = "generic/struct.askama", whitespace = "preserve")]
+pub struct GenericStructTemplate<'a> {
+    template: StructTemplate<'a>,
+}
+
+impl<'a> Deref for GenericStructTemplate<'a> {
     type Target = StructTemplate<'a>;
 
     fn deref(&self) -> &Self::Target {

@@ -836,6 +836,508 @@ pub mod wire {
 
 pub mod wire_optional {}
 
+pub mod generic {
+
+    pub struct Testing<
+        T0,
+        T1,
+        T2,
+        T3,
+        T4,
+        T5,
+        T6,
+        T7,
+        T8,
+        T9,
+        T10,
+        T11,
+        T12,
+        T13,
+        T14,
+        T15,
+        T16,
+        T17,
+        T18,
+        T19,
+        T20,
+        T21,
+        T22,
+        T23,
+        T24,
+        T25,
+        T26,
+        T27,
+    > {
+        pub u1: T0,
+
+        pub u2: T1,
+
+        pub u3: T2,
+
+        pub u4: T3,
+
+        pub u5: T4,
+
+        pub u6: T5,
+
+        pub u7: T6,
+
+        pub v1: T7,
+
+        pub v2: T8,
+
+        pub v3: T9,
+
+        pub a1: T10,
+
+        pub a2: T11,
+
+        pub a3: T12,
+
+        pub r1: T13,
+
+        pub r2: T14,
+
+        pub r3: T15,
+
+        pub b1: T16,
+
+        pub b2: T17,
+
+        pub b3: T18,
+
+        pub s1: T19,
+
+        pub s2: T20,
+
+        pub s3: T21,
+
+        pub vv1: T22,
+
+        pub vv2: T23,
+
+        pub vv3: T24,
+
+        pub aa1: T25,
+
+        pub aa2: T26,
+
+        pub aa3: T27,
+    }
+
+    impl<
+        T0,
+        T1,
+        T2,
+        T3,
+        T4,
+        T5,
+        T6,
+        T7,
+        T8,
+        T9,
+        T10,
+        T11,
+        T12,
+        T13,
+        T14,
+        T15,
+        T16,
+        T17,
+        T18,
+        T19,
+        T20,
+        T21,
+        T22,
+        T23,
+        T24,
+        T25,
+        T26,
+        T27,
+    > ::fidl_next::Encodable
+        for Testing<
+            T0,
+            T1,
+            T2,
+            T3,
+            T4,
+            T5,
+            T6,
+            T7,
+            T8,
+            T9,
+            T10,
+            T11,
+            T12,
+            T13,
+            T14,
+            T15,
+            T16,
+            T17,
+            T18,
+            T19,
+            T20,
+            T21,
+            T22,
+            T23,
+            T24,
+            T25,
+            T26,
+            T27,
+        >
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU64>,
+        T1: ::fidl_next::Encodable<Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireU64>>,
+        T2: ::fidl_next::Encodable<Encoded = [::fidl_next::WireU64; 1]>,
+        T3: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::WireVector<
+                    'static,
+                    ::fidl_next::WireVector<'static, ::fidl_next::WireU64>,
+                >,
+            >,
+        T4: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::WireVector<'static, [::fidl_next::WireU64; 1]>,
+            >,
+        T5: ::fidl_next::Encodable<
+                Encoded = [::fidl_next::WireVector<'static, ::fidl_next::WireU64>; 4],
+            >,
+        T6: ::fidl_next::Encodable<Encoded = [[::fidl_next::WireU64; 1]; 4]>,
+        T7: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::WireOptionalVector<'static, ::fidl_next::WireU64>,
+            >,
+        T8: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::WireVector<
+                    'static,
+                    ::fidl_next::WireOptionalVector<'static, ::fidl_next::WireU64>,
+                >,
+            >,
+        T9: ::fidl_next::Encodable<
+                Encoded = [::fidl_next::WireOptionalVector<'static, ::fidl_next::WireU64>; 4],
+            >,
+        T10: ::fidl_next::Encodable<Encoded = [::fidl_next::WireU64; 1]>,
+        T11: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::WireVector<'static, [::fidl_next::WireU64; 1]>,
+            >,
+        T12: ::fidl_next::Encodable<Encoded = [[::fidl_next::WireU64; 1]; 4]>,
+        T13: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::ServerEnd<
+                    crate::MyProtocol,
+                    ::fidl_next::fuchsia::WireOptionalChannel,
+                >,
+            >,
+        T14: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::WireVector<
+                    'static,
+                    ::fidl_next::ServerEnd<
+                        crate::MyProtocol,
+                        ::fidl_next::fuchsia::WireOptionalChannel,
+                    >,
+                >,
+            >,
+        T15: ::fidl_next::Encodable<
+                Encoded = [::fidl_next::ServerEnd<
+                    crate::MyProtocol,
+                    ::fidl_next::fuchsia::WireOptionalChannel,
+                >; 4],
+            >,
+        T16: ::fidl_next::Encodable<Encoded = ::fidl_next::WireVector<'static, u8>>,
+        T17: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireVector<'static, u8>>,
+            >,
+        T18: ::fidl_next::Encodable<Encoded = [::fidl_next::WireVector<'static, u8>; 4]>,
+        T19: ::fidl_next::Encodable<Encoded = ::fidl_next::WireString<'static>>,
+        T20: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
+            >,
+        T21: ::fidl_next::Encodable<Encoded = [::fidl_next::WireString<'static>; 4]>,
+        T22: ::fidl_next::Encodable<Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireU64>>,
+        T23: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::WireVector<
+                    'static,
+                    ::fidl_next::WireVector<'static, ::fidl_next::WireU64>,
+                >,
+            >,
+        T24: ::fidl_next::Encodable<
+                Encoded = [::fidl_next::WireVector<'static, ::fidl_next::WireU64>; 3],
+            >,
+        T25: ::fidl_next::Encodable<Encoded = [::fidl_next::WireU64; 2]>,
+        T26: ::fidl_next::Encodable<
+                Encoded = ::fidl_next::WireVector<'static, [::fidl_next::WireU64; 2]>,
+            >,
+        T27: ::fidl_next::Encodable<Encoded = [[::fidl_next::WireU64; 2]; 3]>,
+    {
+        type Encoded = crate::wire::Testing<'static>;
+    }
+
+    unsafe impl<
+        ___E,
+        T0,
+        T1,
+        T2,
+        T3,
+        T4,
+        T5,
+        T6,
+        T7,
+        T8,
+        T9,
+        T10,
+        T11,
+        T12,
+        T13,
+        T14,
+        T15,
+        T16,
+        T17,
+        T18,
+        T19,
+        T20,
+        T21,
+        T22,
+        T23,
+        T24,
+        T25,
+        T26,
+        T27,
+    > ::fidl_next::Encode<___E>
+        for Testing<
+            T0,
+            T1,
+            T2,
+            T3,
+            T4,
+            T5,
+            T6,
+            T7,
+            T8,
+            T9,
+            T10,
+            T11,
+            T12,
+            T13,
+            T14,
+            T15,
+            T16,
+            T17,
+            T18,
+            T19,
+            T20,
+            T21,
+            T22,
+            T23,
+            T24,
+            T25,
+            T26,
+            T27,
+        >
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU64>,
+        T1: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireU64>,
+            >,
+        T2: ::fidl_next::Encode<___E, Encoded = [::fidl_next::WireU64; 1]>,
+        T3: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::WireVector<
+                    'static,
+                    ::fidl_next::WireVector<'static, ::fidl_next::WireU64>,
+                >,
+            >,
+        T4: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::WireVector<'static, [::fidl_next::WireU64; 1]>,
+            >,
+        T5: ::fidl_next::Encode<
+                ___E,
+                Encoded = [::fidl_next::WireVector<'static, ::fidl_next::WireU64>; 4],
+            >,
+        T6: ::fidl_next::Encode<___E, Encoded = [[::fidl_next::WireU64; 1]; 4]>,
+        T7: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::WireOptionalVector<'static, ::fidl_next::WireU64>,
+            >,
+        T8: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::WireVector<
+                    'static,
+                    ::fidl_next::WireOptionalVector<'static, ::fidl_next::WireU64>,
+                >,
+            >,
+        T9: ::fidl_next::Encode<
+                ___E,
+                Encoded = [::fidl_next::WireOptionalVector<'static, ::fidl_next::WireU64>; 4],
+            >,
+        T10: ::fidl_next::Encode<___E, Encoded = [::fidl_next::WireU64; 1]>,
+        T11: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::WireVector<'static, [::fidl_next::WireU64; 1]>,
+            >,
+        T12: ::fidl_next::Encode<___E, Encoded = [[::fidl_next::WireU64; 1]; 4]>,
+        T13: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::ServerEnd<
+                    crate::MyProtocol,
+                    ::fidl_next::fuchsia::WireOptionalChannel,
+                >,
+            >,
+        T14: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::WireVector<
+                    'static,
+                    ::fidl_next::ServerEnd<
+                        crate::MyProtocol,
+                        ::fidl_next::fuchsia::WireOptionalChannel,
+                    >,
+                >,
+            >,
+        T15: ::fidl_next::Encode<
+                ___E,
+                Encoded = [::fidl_next::ServerEnd<
+                    crate::MyProtocol,
+                    ::fidl_next::fuchsia::WireOptionalChannel,
+                >; 4],
+            >,
+        T16: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireVector<'static, u8>>,
+        T17: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireVector<'static, u8>>,
+            >,
+        T18: ::fidl_next::Encode<___E, Encoded = [::fidl_next::WireVector<'static, u8>; 4]>,
+        T19: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireString<'static>>,
+        T20: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
+            >,
+        T21: ::fidl_next::Encode<___E, Encoded = [::fidl_next::WireString<'static>; 4]>,
+        T22: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireU64>,
+            >,
+        T23: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::WireVector<
+                    'static,
+                    ::fidl_next::WireVector<'static, ::fidl_next::WireU64>,
+                >,
+            >,
+        T24: ::fidl_next::Encode<
+                ___E,
+                Encoded = [::fidl_next::WireVector<'static, ::fidl_next::WireU64>; 3],
+            >,
+        T25: ::fidl_next::Encode<___E, Encoded = [::fidl_next::WireU64; 2]>,
+        T26: ::fidl_next::Encode<
+                ___E,
+                Encoded = ::fidl_next::WireVector<'static, [::fidl_next::WireU64; 2]>,
+            >,
+        T27: ::fidl_next::Encode<___E, Encoded = [[::fidl_next::WireU64; 2]; 3]>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    u1,
+                    u2,
+                    u3,
+                    u4,
+                    u5,
+                    u6,
+                    u7,
+                    v1,
+                    v2,
+                    v3,
+                    a1,
+                    a2,
+                    a3,
+                    r1,
+                    r2,
+                    r3,
+                    b1,
+                    b2,
+                    b3,
+                    s1,
+                    s2,
+                    s3,
+                    vv1,
+                    vv2,
+                    vv3,
+                    aa1,
+                    aa2,
+                    aa3,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.u1, encoder_, u1, ())?;
+
+            ::fidl_next::Encode::encode(self.u2, encoder_, u2, (1, ()))?;
+
+            ::fidl_next::Encode::encode(self.u3, encoder_, u3, ())?;
+
+            ::fidl_next::Encode::encode(self.u4, encoder_, u4, (4294967295, (1, ())))?;
+
+            ::fidl_next::Encode::encode(self.u5, encoder_, u5, (4294967295, ()))?;
+
+            ::fidl_next::Encode::encode(self.u6, encoder_, u6, (1, ()))?;
+
+            ::fidl_next::Encode::encode(self.u7, encoder_, u7, ())?;
+
+            ::fidl_next::Encode::encode(self.v1, encoder_, v1, (4294967295, ()))?;
+
+            ::fidl_next::Encode::encode(self.v2, encoder_, v2, (4294967295, (4294967295, ())))?;
+
+            ::fidl_next::Encode::encode(self.v3, encoder_, v3, (4294967295, ()))?;
+
+            ::fidl_next::Encode::encode(self.a1, encoder_, a1, ())?;
+
+            ::fidl_next::Encode::encode(self.a2, encoder_, a2, (4294967295, ()))?;
+
+            ::fidl_next::Encode::encode(self.a3, encoder_, a3, ())?;
+
+            ::fidl_next::Encode::encode(self.r1, encoder_, r1, ())?;
+
+            ::fidl_next::Encode::encode(self.r2, encoder_, r2, (4294967295, ()))?;
+
+            ::fidl_next::Encode::encode(self.r3, encoder_, r3, ())?;
+
+            ::fidl_next::Encode::encode(self.b1, encoder_, b1, (4294967295, ()))?;
+
+            ::fidl_next::Encode::encode(self.b2, encoder_, b2, (4294967295, (4294967295, ())))?;
+
+            ::fidl_next::Encode::encode(self.b3, encoder_, b3, (4294967295, ()))?;
+
+            ::fidl_next::Encode::encode(self.s1, encoder_, s1, 4294967295)?;
+
+            ::fidl_next::Encode::encode(self.s2, encoder_, s2, (4294967295, 4294967295))?;
+
+            ::fidl_next::Encode::encode(self.s3, encoder_, s3, 4294967295)?;
+
+            ::fidl_next::Encode::encode(self.vv1, encoder_, vv1, (2, ()))?;
+
+            ::fidl_next::Encode::encode(self.vv2, encoder_, vv2, (3, (2, ())))?;
+
+            ::fidl_next::Encode::encode(self.vv3, encoder_, vv3, (2, ()))?;
+
+            ::fidl_next::Encode::encode(self.aa1, encoder_, aa1, ())?;
+
+            ::fidl_next::Encode::encode(self.aa2, encoder_, aa2, (3, ()))?;
+
+            ::fidl_next::Encode::encode(self.aa3, encoder_, aa3, ())?;
+
+            Ok(())
+        }
+    }
+}
+
 pub use self::natural::*;
 
 /// The type corresponding to the MyProtocol protocol.
@@ -850,7 +1352,6 @@ pub mod my_protocol {
     }
 
     mod ___detail {
-
         unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::MyProtocol
         where
             ___T: ::fidl_next::Transport,

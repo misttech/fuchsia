@@ -1595,6 +1595,83 @@ pub mod wire_optional {
     impl ::fidl_next::Unconstrained for UnionSmallArray<'static> {}
 }
 
+pub mod generic {
+
+    pub struct StructLargeArray<T0> {
+        pub a: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for StructLargeArray<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = [::fidl_next::WireU32; 100]>,
+    {
+        type Encoded = crate::wire::StructLargeArray;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for StructLargeArray<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = [::fidl_next::WireU32; 100]>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    a,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct StructSmallArray<T0> {
+        pub a: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for StructSmallArray<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = [::fidl_next::WireU32; 2]>,
+    {
+        type Encoded = crate::wire::StructSmallArray;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for StructSmallArray<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = [::fidl_next::WireU32; 2]>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    a,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            Ok(())
+        }
+    }
+}
+
 pub use self::natural::*;
 
 /// Compatibility shims which mimic some API surfaces of the current Rust bindings.

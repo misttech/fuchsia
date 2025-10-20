@@ -589,6 +589,8 @@ pub mod wire {
 
 pub mod wire_optional {}
 
+pub mod generic {}
+
 pub use self::natural::*;
 
 /// Compatibility shims which mimic some API surfaces of the current Rust bindings.

@@ -3792,6 +3792,749 @@ pub mod wire {
 
 pub mod wire_optional {}
 
+pub mod generic {
+
+    pub struct Padding1ByteEnd<T0, T1> {
+        pub a: T0,
+
+        pub b: T1,
+    }
+
+    impl<T0, T1> ::fidl_next::Encodable for Padding1ByteEnd<T0, T1>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU16>,
+        T1: ::fidl_next::Encodable<Encoded = u8>,
+    {
+        type Encoded = crate::wire::Padding1ByteEnd;
+    }
+
+    unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for Padding1ByteEnd<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU16>,
+        T1: ::fidl_next::Encode<___E, Encoded = u8>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct Padding1ByteMiddle<T0, T1> {
+        pub a: T0,
+
+        pub b: T1,
+    }
+
+    impl<T0, T1> ::fidl_next::Encodable for Padding1ByteMiddle<T0, T1>
+    where
+        T0: ::fidl_next::Encodable<Encoded = u8>,
+        T1: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU16>,
+    {
+        type Encoded = crate::wire::Padding1ByteMiddle;
+    }
+
+    unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for Padding1ByteMiddle<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = u8>,
+        T1: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU16>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct Padding2ByteAlignmentLength6<T0, T1, T2> {
+        pub a: T0,
+
+        pub b: T1,
+
+        pub c: T2,
+    }
+
+    impl<T0, T1, T2> ::fidl_next::Encodable for Padding2ByteAlignmentLength6<T0, T1, T2>
+    where
+        T0: ::fidl_next::Encodable<Encoded = u8>,
+        T1: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU16>,
+        T2: ::fidl_next::Encodable<Encoded = u8>,
+    {
+        type Encoded = crate::wire::Padding2ByteAlignmentLength6;
+    }
+
+    unsafe impl<___E, T0, T1, T2> ::fidl_next::Encode<___E> for Padding2ByteAlignmentLength6<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = u8>,
+        T1: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU16>,
+        T2: ::fidl_next::Encode<___E, Encoded = u8>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    a,
+                    b,
+                    c,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            ::fidl_next::Encode::encode(self.c, encoder_, c, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct Padding2ByteEnd<T0, T1> {
+        pub a: T0,
+
+        pub b: T1,
+    }
+
+    impl<T0, T1> ::fidl_next::Encodable for Padding2ByteEnd<T0, T1>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU32>,
+        T1: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU16>,
+    {
+        type Encoded = crate::wire::Padding2ByteEnd;
+    }
+
+    unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for Padding2ByteEnd<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU32>,
+        T1: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU16>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct Padding2ByteMiddle<T0, T1> {
+        pub a: T0,
+
+        pub b: T1,
+    }
+
+    impl<T0, T1> ::fidl_next::Encodable for Padding2ByteMiddle<T0, T1>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU16>,
+        T1: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU32>,
+    {
+        type Encoded = crate::wire::Padding2ByteMiddle;
+    }
+
+    unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for Padding2ByteMiddle<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU16>,
+        T1: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct Padding3ByteEnd<T0, T1> {
+        pub a: T0,
+
+        pub b: T1,
+    }
+
+    impl<T0, T1> ::fidl_next::Encodable for Padding3ByteEnd<T0, T1>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU32>,
+        T1: ::fidl_next::Encodable<Encoded = u8>,
+    {
+        type Encoded = crate::wire::Padding3ByteEnd;
+    }
+
+    unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for Padding3ByteEnd<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU32>,
+        T1: ::fidl_next::Encode<___E, Encoded = u8>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct Padding3ByteMiddle<T0, T1> {
+        pub a: T0,
+
+        pub b: T1,
+    }
+
+    impl<T0, T1> ::fidl_next::Encodable for Padding3ByteMiddle<T0, T1>
+    where
+        T0: ::fidl_next::Encodable<Encoded = u8>,
+        T1: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU32>,
+    {
+        type Encoded = crate::wire::Padding3ByteMiddle;
+    }
+
+    unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for Padding3ByteMiddle<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = u8>,
+        T1: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct Padding4ByteAlignmentLength12<T0, T1, T2, T3> {
+        pub a: T0,
+
+        pub b: T1,
+
+        pub c: T2,
+
+        pub d: T3,
+    }
+
+    impl<T0, T1, T2, T3> ::fidl_next::Encodable for Padding4ByteAlignmentLength12<T0, T1, T2, T3>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU32>,
+        T1: ::fidl_next::Encodable<Encoded = u8>,
+        T2: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU16>,
+        T3: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU16>,
+    {
+        type Encoded = crate::wire::Padding4ByteAlignmentLength12;
+    }
+
+    unsafe impl<___E, T0, T1, T2, T3> ::fidl_next::Encode<___E>
+        for Padding4ByteAlignmentLength12<T0, T1, T2, T3>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU32>,
+        T1: ::fidl_next::Encode<___E, Encoded = u8>,
+        T2: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU16>,
+        T3: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU16>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    a,
+                    b,
+                    c,
+                    d,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            ::fidl_next::Encode::encode(self.c, encoder_, c, ())?;
+
+            ::fidl_next::Encode::encode(self.d, encoder_, d, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct Padding4ByteEnd<T0, T1> {
+        pub a: T0,
+
+        pub b: T1,
+    }
+
+    impl<T0, T1> ::fidl_next::Encodable for Padding4ByteEnd<T0, T1>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU64>,
+        T1: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU32>,
+    {
+        type Encoded = crate::wire::Padding4ByteEnd;
+    }
+
+    unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for Padding4ByteEnd<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU64>,
+        T1: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct Padding4ByteMiddle<T0, T1> {
+        pub a: T0,
+
+        pub b: T1,
+    }
+
+    impl<T0, T1> ::fidl_next::Encodable for Padding4ByteMiddle<T0, T1>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU32>,
+        T1: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU64>,
+    {
+        type Encoded = crate::wire::Padding4ByteMiddle;
+    }
+
+    unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for Padding4ByteMiddle<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU32>,
+        T1: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU64>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct Padding5ByteEnd<T0, T1, T2> {
+        pub a: T0,
+
+        pub b: T1,
+
+        pub c: T2,
+    }
+
+    impl<T0, T1, T2> ::fidl_next::Encodable for Padding5ByteEnd<T0, T1, T2>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU64>,
+        T1: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU16>,
+        T2: ::fidl_next::Encodable<Encoded = u8>,
+    {
+        type Encoded = crate::wire::Padding5ByteEnd;
+    }
+
+    unsafe impl<___E, T0, T1, T2> ::fidl_next::Encode<___E> for Padding5ByteEnd<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU64>,
+        T1: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU16>,
+        T2: ::fidl_next::Encode<___E, Encoded = u8>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    a,
+                    b,
+                    c,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            ::fidl_next::Encode::encode(self.c, encoder_, c, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct Padding5ByteMiddle<T0, T1, T2> {
+        pub a: T0,
+
+        pub b: T1,
+
+        pub c: T2,
+    }
+
+    impl<T0, T1, T2> ::fidl_next::Encodable for Padding5ByteMiddle<T0, T1, T2>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU16>,
+        T1: ::fidl_next::Encodable<Encoded = u8>,
+        T2: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU64>,
+    {
+        type Encoded = crate::wire::Padding5ByteMiddle;
+    }
+
+    unsafe impl<___E, T0, T1, T2> ::fidl_next::Encode<___E> for Padding5ByteMiddle<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU16>,
+        T1: ::fidl_next::Encode<___E, Encoded = u8>,
+        T2: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU64>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    a,
+                    b,
+                    c,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            ::fidl_next::Encode::encode(self.c, encoder_, c, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct Padding6ByteEnd<T0, T1> {
+        pub a: T0,
+
+        pub b: T1,
+    }
+
+    impl<T0, T1> ::fidl_next::Encodable for Padding6ByteEnd<T0, T1>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU64>,
+        T1: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU16>,
+    {
+        type Encoded = crate::wire::Padding6ByteEnd;
+    }
+
+    unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for Padding6ByteEnd<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU64>,
+        T1: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU16>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct Padding6ByteMiddle<T0, T1> {
+        pub a: T0,
+
+        pub b: T1,
+    }
+
+    impl<T0, T1> ::fidl_next::Encodable for Padding6ByteMiddle<T0, T1>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU16>,
+        T1: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU64>,
+    {
+        type Encoded = crate::wire::Padding6ByteMiddle;
+    }
+
+    unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for Padding6ByteMiddle<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU16>,
+        T1: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU64>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct Padding7ByteEnd<T0, T1> {
+        pub a: T0,
+
+        pub b: T1,
+    }
+
+    impl<T0, T1> ::fidl_next::Encodable for Padding7ByteEnd<T0, T1>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU64>,
+        T1: ::fidl_next::Encodable<Encoded = u8>,
+    {
+        type Encoded = crate::wire::Padding7ByteEnd;
+    }
+
+    unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for Padding7ByteEnd<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU64>,
+        T1: ::fidl_next::Encode<___E, Encoded = u8>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct Padding7ByteMiddle<T0, T1> {
+        pub a: T0,
+
+        pub b: T1,
+    }
+
+    impl<T0, T1> ::fidl_next::Encodable for Padding7ByteMiddle<T0, T1>
+    where
+        T0: ::fidl_next::Encodable<Encoded = u8>,
+        T1: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU64>,
+    {
+        type Encoded = crate::wire::Padding7ByteMiddle;
+    }
+
+    unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for Padding7ByteMiddle<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = u8>,
+        T1: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU64>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    a,
+                    b,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.a, encoder_, a, ())?;
+
+            ::fidl_next::Encode::encode(self.b, encoder_, b, ())?;
+
+            Ok(())
+        }
+    }
+}
+
 pub use self::natural::*;
 
 /// Compatibility shims which mimic some API surfaces of the current Rust bindings.

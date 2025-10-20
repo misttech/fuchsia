@@ -209,6 +209,46 @@ pub mod wire {
 
 pub mod wire_optional {}
 
+pub mod generic {
+
+    pub struct ByteAndBytes<T0> {
+        pub single_byte: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for ByteAndBytes<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = u8>,
+    {
+        type Encoded = crate::wire::ByteAndBytes;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for ByteAndBytes<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = u8>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    single_byte,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.single_byte, encoder_, single_byte, ())?;
+
+            Ok(())
+        }
+    }
+}
+
 pub use self::natural::*;
 
 /// Compatibility shims which mimic some API surfaces of the current Rust bindings.

@@ -2903,6 +2903,180 @@ pub mod wire_optional {
     impl ::fidl_next::Unconstrained for UnionMember<'static> {}
 }
 
+pub mod generic {
+
+    pub struct OverrideTest<T0, T1, T2> {
+        pub op: T0,
+
+        pub left: T1,
+
+        pub right: T2,
+    }
+
+    impl<T0, T1, T2> ::fidl_next::Encodable for OverrideTest<T0, T1, T2>
+    where
+        T0: ::fidl_next::Encodable<Encoded = crate::wire::Op>,
+        T1: ::fidl_next::Encodable<Encoded = crate::wire_optional::Expression<'static>>,
+        T2: ::fidl_next::Encodable<Encoded = crate::wire_optional::Expression<'static>>,
+    {
+        type Encoded = crate::wire::OverrideTest<'static>;
+    }
+
+    unsafe impl<___E, T0, T1, T2> ::fidl_next::Encode<___E> for OverrideTest<T0, T1, T2>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        T0: ::fidl_next::Encode<___E, Encoded = crate::wire::Op>,
+        T1: ::fidl_next::Encode<___E, Encoded = crate::wire_optional::Expression<'static>>,
+        T2: ::fidl_next::Encode<___E, Encoded = crate::wire_optional::Expression<'static>>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    op,
+                    left,
+                    right,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.op, encoder_, op, ())?;
+
+            ::fidl_next::Encode::encode(self.left, encoder_, left, ())?;
+
+            ::fidl_next::Encode::encode(self.right, encoder_, right, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct TableData<T0> {
+        pub data: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for TableData<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = u8>,
+    {
+        type Encoded = crate::wire::TableData;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for TableData<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = u8>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    data,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.data, encoder_, data, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct SomeProtocolSomeMethodRequest<T0, T1> {
+        pub union_member: T0,
+
+        pub table_member: T1,
+    }
+
+    impl<T0, T1> ::fidl_next::Encodable for SomeProtocolSomeMethodRequest<T0, T1>
+    where
+        T0: ::fidl_next::Encodable<Encoded = crate::wire::UnionMember<'static>>,
+        T1: ::fidl_next::Encodable<Encoded = crate::wire::TableMember<'static>>,
+    {
+        type Encoded = crate::wire::SomeProtocolSomeMethodRequest<'static>;
+    }
+
+    unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for SomeProtocolSomeMethodRequest<T0, T1>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::Encoder,
+        T0: ::fidl_next::Encode<___E, Encoded = crate::wire::UnionMember<'static>>,
+        T1: ::fidl_next::Encode<___E, Encoded = crate::wire::TableMember<'static>>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    union_member,
+                    table_member,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.union_member, encoder_, union_member, ())?;
+
+            ::fidl_next::Encode::encode(self.table_member, encoder_, table_member, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct SomeProtocolSomeMethodResponse<T0> {
+        pub bits_member: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for SomeProtocolSomeMethodResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = crate::wire::BitsMember>,
+    {
+        type Encoded = crate::wire::SomeProtocolSomeMethodResponse;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for SomeProtocolSomeMethodResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = crate::wire::BitsMember>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    bits_member,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.bits_member, encoder_, bits_member, ())?;
+
+            Ok(())
+        }
+    }
+}
+
 pub use self::natural::*;
 
 /// The type corresponding to the SomeProtocol protocol.
@@ -2939,51 +3113,6 @@ pub mod some_protocol {
     }
 
     mod ___detail {
-
-        pub struct SomeMethod<T0, T1> {
-            union_member: T0,
-
-            table_member: T1,
-        }
-
-        impl<T0, T1> ::fidl_next::Encodable for SomeMethod<T0, T1>
-        where
-            T0: ::fidl_next::Encodable<Encoded = crate::wire::UnionMember<'static>>,
-            T1: ::fidl_next::Encodable<Encoded = crate::wire::TableMember<'static>>,
-        {
-            type Encoded = crate::wire::SomeProtocolSomeMethodRequest<'static>;
-        }
-
-        unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for SomeMethod<T0, T1>
-        where
-            ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-            ___E: ::fidl_next::Encoder,
-            T0: ::fidl_next::Encode<___E, Encoded = crate::wire::UnionMember<'static>>,
-            T1: ::fidl_next::Encode<___E, Encoded = crate::wire::TableMember<'static>>,
-        {
-            #[inline]
-            fn encode(
-                self,
-                encoder_: &mut ___E,
-                out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-                _: (),
-            ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-                ::fidl_next::munge! {
-                    let Self::Encoded {
-                        union_member,
-                        table_member,
-
-                    } = out_;
-                }
-
-                ::fidl_next::Encode::encode(self.union_member, encoder_, union_member, ())?;
-
-                ::fidl_next::Encode::encode(self.table_member, encoder_, table_member, ())?;
-
-                Ok(())
-            }
-        }
-
         unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::SomeProtocol
         where
             ___T: ::fidl_next::Transport,
@@ -3021,7 +3150,11 @@ pub mod some_protocol {
                     ::fidl_next::encoder::InternalHandleEncoder,
                 <___T as ::fidl_next::Transport>::SendBuffer: ::fidl_next::Encoder,
             {
-                self.some_method_with(SomeMethod { union_member, table_member })
+                self.some_method_with(crate::generic::SomeProtocolSomeMethodRequest {
+                    union_member,
+
+                    table_member,
+                })
             }
 
             pub fn some_method_with<___R>(

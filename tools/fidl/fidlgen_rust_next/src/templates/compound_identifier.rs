@@ -15,6 +15,7 @@ enum Module {
     Natural,
     Wire,
     WireOptional,
+    Generic,
 }
 
 pub struct CompoundIdentifierTemplate<'a> {
@@ -43,6 +44,10 @@ impl<'a> CompoundIdentifierTemplate<'a> {
     pub fn wire_optional(id: &'a CompoundIdent, context: Context<'a>) -> Self {
         Self::new(id, Module::WireOptional, context)
     }
+
+    pub fn generic(id: &'a CompoundIdent, context: Context<'a>) -> Self {
+        Self::new(id, Module::Generic, context)
+    }
 }
 
 impl<'a> Contextual<'a> for CompoundIdentifierTemplate<'a> {
@@ -58,7 +63,7 @@ impl fmt::Display for CompoundIdentifierTemplate<'_> {
         // Special case: zx::ObjType
         if lib == "zx" {
             match self.module {
-                Module::None => (),
+                Module::None | Module::Generic => (),
                 Module::Natural => {
                     // Natural type
                     match ty.non_canonical() {
@@ -88,6 +93,7 @@ impl fmt::Display for CompoundIdentifierTemplate<'_> {
             Module::Natural => write!(f, "natural::")?,
             Module::Wire => write!(f, "wire::")?,
             Module::WireOptional => write!(f, "wire_optional::")?,
+            Module::Generic => write!(f, "generic::")?,
         }
 
         // Type name

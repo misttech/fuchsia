@@ -21231,6 +21231,819 @@ pub mod wire_optional {
     impl ::fidl_next::Unconstrained for UnknownInteractionsProtocolFlexibleEventUnionRequest<'static> {}
 }
 
+pub mod generic {
+
+    pub struct UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse<T0> {
+        pub some_field: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable
+        for UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded = crate::wire::UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse<T0> {
+        pub some_field: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable
+        for UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded =
+            crate::wire::UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for UnknownInteractionsAjarDriverProtocolStrictTwoWayFieldsErrResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse<T0> {
+        pub some_field: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded = crate::wire::UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for UnknownInteractionsAjarProtocolStrictTwoWayFieldsResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse<T0> {
+        pub some_field: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded = crate::wire::UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for UnknownInteractionsAjarProtocolStrictTwoWayFieldsErrResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct UnknownInteractionsAjarProtocolStrictEventFieldsRequest<T0> {
+        pub some_field: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for UnknownInteractionsAjarProtocolStrictEventFieldsRequest<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded = crate::wire::UnknownInteractionsAjarProtocolStrictEventFieldsRequest;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for UnknownInteractionsAjarProtocolStrictEventFieldsRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest<T0> {
+        pub some_field: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded = crate::wire::UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse<T0> {
+        pub some_field: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable
+        for UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded =
+            crate::wire::UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse<T0> {
+        pub some_field: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable
+        for UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded =
+            crate::wire::UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for UnknownInteractionsClosedDriverProtocolStrictTwoWayFieldsErrResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse<T0> {
+        pub some_field: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded = crate::wire::UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for UnknownInteractionsClosedProtocolStrictTwoWayFieldsResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse<T0> {
+        pub some_field: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable
+        for UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded = crate::wire::UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for UnknownInteractionsClosedProtocolStrictTwoWayFieldsErrResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct UnknownInteractionsClosedProtocolStrictEventFieldsRequest<T0> {
+        pub some_field: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for UnknownInteractionsClosedProtocolStrictEventFieldsRequest<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded = crate::wire::UnknownInteractionsClosedProtocolStrictEventFieldsRequest;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for UnknownInteractionsClosedProtocolStrictEventFieldsRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse<T0> {
+        pub some_field: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded = crate::wire::UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for UnknownInteractionsDriverProtocolStrictTwoWayFieldsResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct UnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse<T0> {
+        pub some_field: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable
+        for UnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded = crate::wire::UnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for UnknownInteractionsDriverProtocolStrictTwoWayFieldsErrResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse<T0> {
+        pub some_field: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable
+        for UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded = crate::wire::UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse<T0> {
+        pub some_field: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable
+        for UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded =
+            crate::wire::UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for UnknownInteractionsDriverProtocolFlexibleTwoWayFieldsErrResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct UnknownInteractionsProtocolStrictTwoWayFieldsResponse<T0> {
+        pub some_field: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for UnknownInteractionsProtocolStrictTwoWayFieldsResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded = crate::wire::UnknownInteractionsProtocolStrictTwoWayFieldsResponse;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for UnknownInteractionsProtocolStrictTwoWayFieldsResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct UnknownInteractionsProtocolStrictTwoWayFieldsErrResponse<T0> {
+        pub some_field: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for UnknownInteractionsProtocolStrictTwoWayFieldsErrResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded = crate::wire::UnknownInteractionsProtocolStrictTwoWayFieldsErrResponse;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for UnknownInteractionsProtocolStrictTwoWayFieldsErrResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct UnknownInteractionsProtocolFlexibleTwoWayFieldsResponse<T0> {
+        pub some_field: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for UnknownInteractionsProtocolFlexibleTwoWayFieldsResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded = crate::wire::UnknownInteractionsProtocolFlexibleTwoWayFieldsResponse;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for UnknownInteractionsProtocolFlexibleTwoWayFieldsResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse<T0> {
+        pub some_field: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded = crate::wire::UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for UnknownInteractionsProtocolFlexibleTwoWayFieldsErrResponse<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct UnknownInteractionsProtocolStrictEventFieldsRequest<T0> {
+        pub some_field: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for UnknownInteractionsProtocolStrictEventFieldsRequest<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded = crate::wire::UnknownInteractionsProtocolStrictEventFieldsRequest;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for UnknownInteractionsProtocolStrictEventFieldsRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+
+    pub struct UnknownInteractionsProtocolFlexibleEventFieldsRequest<T0> {
+        pub some_field: T0,
+    }
+
+    impl<T0> ::fidl_next::Encodable for UnknownInteractionsProtocolFlexibleEventFieldsRequest<T0>
+    where
+        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
+    {
+        type Encoded = crate::wire::UnknownInteractionsProtocolFlexibleEventFieldsRequest;
+    }
+
+    unsafe impl<___E, T0> ::fidl_next::Encode<___E>
+        for UnknownInteractionsProtocolFlexibleEventFieldsRequest<T0>
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+    {
+        #[inline]
+        fn encode(
+            self,
+            encoder_: &mut ___E,
+            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            _: (),
+        ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
+            ::fidl_next::munge! {
+                let Self::Encoded {
+
+                    some_field,
+
+                } = out_;
+            }
+
+            ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
+
+            Ok(())
+        }
+    }
+}
+
 pub use self::natural::*;
 
 /// The type corresponding to the UnknownInteractionsAjarDriverProtocol protocol.
@@ -21401,7 +22214,6 @@ pub mod unknown_interactions_ajar_driver_protocol {
     }
 
     mod ___detail {
-
         unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::UnknownInteractionsAjarDriverProtocol
         where
             ___T: ::fidl_next::Transport,
@@ -22104,79 +22916,6 @@ pub mod unknown_interactions_ajar_protocol {
     }
 
     mod ___detail {
-
-        pub struct StrictEventFields<T0> {
-            some_field: T0,
-        }
-
-        impl<T0> ::fidl_next::Encodable for StrictEventFields<T0>
-        where
-            T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
-        {
-            type Encoded = crate::wire::UnknownInteractionsAjarProtocolStrictEventFieldsRequest;
-        }
-
-        unsafe impl<___E, T0> ::fidl_next::Encode<___E> for StrictEventFields<T0>
-        where
-            ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-            T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
-        {
-            #[inline]
-            fn encode(
-                self,
-                encoder_: &mut ___E,
-                out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-                _: (),
-            ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-                ::fidl_next::munge! {
-                    let Self::Encoded {
-                        some_field,
-
-                    } = out_;
-                }
-
-                ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
-
-                Ok(())
-            }
-        }
-
-        pub struct FlexibleEventFields<T0> {
-            some_field: T0,
-        }
-
-        impl<T0> ::fidl_next::Encodable for FlexibleEventFields<T0>
-        where
-            T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
-        {
-            type Encoded = crate::wire::UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest;
-        }
-
-        unsafe impl<___E, T0> ::fidl_next::Encode<___E> for FlexibleEventFields<T0>
-        where
-            ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-            T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
-        {
-            #[inline]
-            fn encode(
-                self,
-                encoder_: &mut ___E,
-                out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-                _: (),
-            ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-                ::fidl_next::munge! {
-                    let Self::Encoded {
-                        some_field,
-
-                    } = out_;
-                }
-
-                ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
-
-                Ok(())
-            }
-        }
-
         unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::UnknownInteractionsAjarProtocol
         where
             ___T: ::fidl_next::Transport,
@@ -22301,7 +23040,11 @@ pub mod unknown_interactions_ajar_protocol {
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
             {
-                self.strict_event_fields_with(StrictEventFields { some_field })
+                self.strict_event_fields_with(
+                    crate::generic::UnknownInteractionsAjarProtocolStrictEventFieldsRequest {
+                        some_field,
+                    },
+                )
             }
 
             pub fn strict_event_fields_with<___R>(
@@ -22367,7 +23110,11 @@ pub mod unknown_interactions_ajar_protocol {
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
             {
-                self.flexible_event_fields_with(FlexibleEventFields { some_field })
+                self.flexible_event_fields_with(
+                    crate::generic::UnknownInteractionsAjarProtocolFlexibleEventFieldsRequest {
+                        some_field,
+                    },
+                )
             }
 
             pub fn flexible_event_fields_with<___R>(
@@ -22954,7 +23701,6 @@ pub mod unknown_interactions_closed_driver_protocol {
     }
 
     mod ___detail {
-
         unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::UnknownInteractionsClosedDriverProtocol
         where
             ___T: ::fidl_next::Transport,
@@ -23546,43 +24292,6 @@ pub mod unknown_interactions_closed_protocol {
     }
 
     mod ___detail {
-
-        pub struct StrictEventFields<T0> {
-            some_field: T0,
-        }
-
-        impl<T0> ::fidl_next::Encodable for StrictEventFields<T0>
-        where
-            T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
-        {
-            type Encoded = crate::wire::UnknownInteractionsClosedProtocolStrictEventFieldsRequest;
-        }
-
-        unsafe impl<___E, T0> ::fidl_next::Encode<___E> for StrictEventFields<T0>
-        where
-            ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-            T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
-        {
-            #[inline]
-            fn encode(
-                self,
-                encoder_: &mut ___E,
-                out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-                _: (),
-            ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-                ::fidl_next::munge! {
-                    let Self::Encoded {
-                        some_field,
-
-                    } = out_;
-                }
-
-                ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
-
-                Ok(())
-            }
-        }
-
         unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::UnknownInteractionsClosedProtocol
         where
             ___T: ::fidl_next::Transport,
@@ -23701,7 +24410,11 @@ pub mod unknown_interactions_closed_protocol {
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
             {
-                self.strict_event_fields_with(StrictEventFields { some_field })
+                self.strict_event_fields_with(
+                    crate::generic::UnknownInteractionsClosedProtocolStrictEventFieldsRequest {
+                        some_field,
+                    },
+                )
             }
 
             pub fn strict_event_fields_with<___R>(
@@ -24337,7 +25050,6 @@ pub mod unknown_interactions_driver_protocol {
     }
 
     mod ___detail {
-
         unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::UnknownInteractionsDriverProtocol
         where
             ___T: ::fidl_next::Transport,
@@ -25435,79 +26147,6 @@ pub mod unknown_interactions_protocol {
     }
 
     mod ___detail {
-
-        pub struct StrictEventFields<T0> {
-            some_field: T0,
-        }
-
-        impl<T0> ::fidl_next::Encodable for StrictEventFields<T0>
-        where
-            T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
-        {
-            type Encoded = crate::wire::UnknownInteractionsProtocolStrictEventFieldsRequest;
-        }
-
-        unsafe impl<___E, T0> ::fidl_next::Encode<___E> for StrictEventFields<T0>
-        where
-            ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-            T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
-        {
-            #[inline]
-            fn encode(
-                self,
-                encoder_: &mut ___E,
-                out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-                _: (),
-            ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-                ::fidl_next::munge! {
-                    let Self::Encoded {
-                        some_field,
-
-                    } = out_;
-                }
-
-                ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
-
-                Ok(())
-            }
-        }
-
-        pub struct FlexibleEventFields<T0> {
-            some_field: T0,
-        }
-
-        impl<T0> ::fidl_next::Encodable for FlexibleEventFields<T0>
-        where
-            T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
-        {
-            type Encoded = crate::wire::UnknownInteractionsProtocolFlexibleEventFieldsRequest;
-        }
-
-        unsafe impl<___E, T0> ::fidl_next::Encode<___E> for FlexibleEventFields<T0>
-        where
-            ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-            T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
-        {
-            #[inline]
-            fn encode(
-                self,
-                encoder_: &mut ___E,
-                out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
-                _: (),
-            ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-                ::fidl_next::munge! {
-                    let Self::Encoded {
-                        some_field,
-
-                    } = out_;
-                }
-
-                ::fidl_next::Encode::encode(self.some_field, encoder_, some_field, ())?;
-
-                Ok(())
-            }
-        }
-
         unsafe impl<___T> ::fidl_next::Protocol<___T> for crate::UnknownInteractionsProtocol
         where
             ___T: ::fidl_next::Transport,
@@ -25696,7 +26335,11 @@ pub mod unknown_interactions_protocol {
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
             {
-                self.strict_event_fields_with(StrictEventFields { some_field })
+                self.strict_event_fields_with(
+                    crate::generic::UnknownInteractionsProtocolStrictEventFieldsRequest {
+                        some_field,
+                    },
+                )
             }
 
             pub fn strict_event_fields_with<___R>(
@@ -25762,7 +26405,11 @@ pub mod unknown_interactions_protocol {
                 <___T as ::fidl_next::Transport>::SendBuffer:
                     ::fidl_next::encoder::InternalHandleEncoder,
             {
-                self.flexible_event_fields_with(FlexibleEventFields { some_field })
+                self.flexible_event_fields_with(
+                    crate::generic::UnknownInteractionsProtocolFlexibleEventFieldsRequest {
+                        some_field,
+                    },
+                )
             }
 
             pub fn flexible_event_fields_with<___R>(
