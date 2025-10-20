@@ -12,9 +12,9 @@ icu_rustc_library("icu_data") {
   with_unit_tests = true
 
   icu_deps = [
-    "//third_party/rust_crates:rust_icu_common-v5_0_0",
-    "//third_party/rust_crates:rust_icu_ucal-v5_0_0",
-    "//third_party/rust_crates:rust_icu_udata-v5_0_0",
+    "//third_party/rust_crates:rust_icu_common-v5_4_0",
+    "//third_party/rust_crates:rust_icu_ucal-v5_4_0",
+    "//third_party/rust_crates:rust_icu_udata-v5_4_0",
   ]
 
   deps = [
