@@ -15,15 +15,15 @@ use std::sync::Arc;
 mod transport;
 
 struct EchoServer {
-    server: fidl_next::Server<Echo, Channel>,
+    server: fidl_next::Server<Echo>,
     prefix: String,
 }
 
-impl EchoServerHandler<Channel> for EchoServer {
+impl EchoServerHandler for EchoServer {
     async fn echo_string(
         &mut self,
-        request: fidl_next::Request<echo::EchoString, Channel>,
-        responder: fidl_next::Responder<echo::EchoString, Channel>,
+        request: fidl_next::Request<echo::EchoString>,
+        responder: fidl_next::Responder<echo::EchoString>,
     ) {
         let EchoEchoStringRequest { value } = request.take();
         let response = format!("{}: {}", self.prefix, value);
@@ -33,20 +33,20 @@ impl EchoServerHandler<Channel> for EchoServer {
         }
     }
 
-    async fn send_string(&mut self, _request: fidl_next::Request<echo::SendString, Channel>) {
+    async fn send_string(&mut self, _request: fidl_next::Request<echo::SendString>) {
         // The SendString request is not used in this example, so just
         // ignore it
     }
 }
 
 struct EchoLauncherServer {
-    server: fidl_next::Server<EchoLauncher, Channel>,
+    server: fidl_next::Server<EchoLauncher>,
     client: Arc<Client>,
     scope: fuchsia_async::Scope,
 }
 
 impl EchoLauncherServer {
-    fn run_echo_server(&self, server: fidl_next::ServerEnd<Echo, Channel>, echo_prefix: String) {
+    fn run_echo_server(&self, server: fidl_next::ServerEnd<Echo>, echo_prefix: String) {
         self.scope.spawn(async move {
             println!("Running echo server with prefix {echo_prefix}");
             let dispatcher = fidl_next::ServerDispatcher::new(server);
@@ -60,11 +60,11 @@ impl EchoLauncherServer {
     }
 }
 
-impl EchoLauncherServerHandler<Channel> for EchoLauncherServer {
+impl EchoLauncherServerHandler for EchoLauncherServer {
     async fn get_echo(
         &mut self,
-        request: fidl_next::Request<echo_launcher::GetEcho, Channel>,
-        responder: fidl_next::Responder<echo_launcher::GetEcho, Channel>,
+        request: fidl_next::Request<echo_launcher::GetEcho>,
+        responder: fidl_next::Responder<echo_launcher::GetEcho>,
     ) {
         println!("Got non pipelined request");
         let EchoLauncherGetEchoRequest { echo_prefix } = request.take();
@@ -81,7 +81,7 @@ impl EchoLauncherServerHandler<Channel> for EchoLauncherServer {
 
     async fn get_echo_pipelined(
         &mut self,
-        request: fidl_next::Request<echo_launcher::GetEchoPipelined, Channel>,
+        request: fidl_next::Request<echo_launcher::GetEchoPipelined>,
     ) {
         let EchoLauncherGetEchoPipelinedRequest { echo_prefix, request } = request.take();
         println!("Got pipelined request");
@@ -91,7 +91,7 @@ impl EchoLauncherServerHandler<Channel> for EchoLauncherServer {
 
 async fn run_server(
     client: &Arc<Client>,
-    server_end: fidl_next::ServerEnd<EchoLauncher, Channel>,
+    server_end: fidl_next::ServerEnd<EchoLauncher>,
 ) -> anyhow::Result<()> {
     let dispatcher = fidl_next::ServerDispatcher::new(server_end);
     let server = dispatcher.server();

@@ -547,6 +547,11 @@ pub use self::natural::*;
 #[derive(PartialEq, Debug)]
 pub struct TwoWay;
 
+#[cfg(feature = "driver")]
+impl ::fidl_next::HasTransport for TwoWay {
+    type Transport = ::fdf_fidl::DriverChannel;
+}
+
 pub mod two_way {
     pub mod prelude {
         pub use crate::{TwoWay, TwoWayClientHandler, TwoWayServerHandler, two_way};
@@ -650,8 +655,8 @@ pub mod two_way {
 ///
 /// See [`TwoWay`] for more details.
 pub trait TwoWayClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(feature = "driver")] ___T: ::fidl_next::Transport = ::fdf_fidl::DriverChannel,
+    #[cfg(not(feature = "driver"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -682,8 +687,8 @@ where
 ///
 /// See [`TwoWay`] for more details.
 pub trait TwoWayServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(feature = "driver")] ___T: ::fidl_next::Transport = ::fdf_fidl::DriverChannel,
+    #[cfg(not(feature = "driver"))] ___T: ::fidl_next::Transport,
 >
 {
     fn add(

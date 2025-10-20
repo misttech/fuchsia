@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use fidl_next_codec::Constrained;
-use fidl_next_protocol::Flexibility;
+use fidl_next_protocol::{Flexibility, Transport};
 
 /// A FIDL protocol which has associated connection handles.
 ///
@@ -64,4 +64,10 @@ pub trait RespondErr<R> {
 
     /// Makes an `Err` response from the given input.
     fn respond_err(response: R) -> Self::Output;
+}
+
+/// A protocol which has a default transport type.
+pub trait HasTransport {
+    /// The default transport type for this protocol.
+    type Transport: Transport;
 }

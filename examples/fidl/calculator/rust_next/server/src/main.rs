@@ -25,7 +25,7 @@ use futures::prelude::*;
 #[derive(Clone)]
 pub struct CalculatorServer;
 
-impl CalculatorServerHandler<fidl_next::fuchsia::zx::Channel> for CalculatorServer {
+impl CalculatorServerHandler for CalculatorServer {
     async fn add(
         &mut self,
         request: Request<calculator::Add>,

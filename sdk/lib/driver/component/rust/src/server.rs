@@ -237,7 +237,7 @@ mod tests {
 
     #[derive(Debug)]
     struct DriverClient;
-    impl DriverClientHandler<fdf_fidl::DriverChannel> for DriverClient {}
+    impl DriverClientHandler for DriverClient {}
 
     #[test]
     fn register_driver() {

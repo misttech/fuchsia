@@ -8584,6 +8584,11 @@ pub const ALL_BINDINGS: u32 = 0 as u32;
 #[derive(PartialEq, Debug)]
 pub struct Allowed;
 
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for Allowed {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
+
 pub mod allowed {
     pub mod prelude {
         pub use crate::{Allowed, AllowedClientHandler, AllowedServerHandler, allowed};
@@ -8672,8 +8677,8 @@ pub mod allowed {
 ///
 /// See [`Allowed`] for more details.
 pub trait AllowedClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -8706,8 +8711,8 @@ where
 ///
 /// See [`Allowed`] for more details.
 pub trait AllowedServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn denied(
@@ -8763,6 +8768,11 @@ where
 #[derive(PartialEq, Debug)]
 pub struct ContainsAllowed;
 
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for ContainsAllowed {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
+
 pub mod contains_allowed {
     pub mod prelude {
         pub use crate::{
@@ -8803,8 +8813,8 @@ pub mod contains_allowed {
 ///
 /// See [`ContainsAllowed`] for more details.
 pub trait ContainsAllowedClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -8835,8 +8845,8 @@ where
 ///
 /// See [`ContainsAllowed`] for more details.
 pub trait ContainsAllowedServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -8879,6 +8889,11 @@ where
 /// The type corresponding to the Denied protocol.
 #[derive(PartialEq, Debug)]
 pub struct Denied;
+
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for Denied {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
 
 pub mod denied {
     pub mod prelude {
@@ -8987,8 +9002,8 @@ pub mod denied {
 ///
 /// See [`Denied`] for more details.
 pub trait DeniedClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -9017,8 +9032,8 @@ where
 ///
 /// See [`Denied`] for more details.
 pub trait DeniedServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn should_never_appear_in_any_binding(
@@ -9079,6 +9094,11 @@ where
 /// The type corresponding to the DenyEachBinding protocol.
 #[derive(PartialEq, Debug)]
 pub struct DenyEachBinding;
+
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for DenyEachBinding {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
 
 pub mod deny_each_binding {
     pub mod prelude {
@@ -9597,8 +9617,8 @@ pub mod deny_each_binding {
 ///
 /// See [`DenyEachBinding`] for more details.
 pub trait DenyEachBindingClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -9641,8 +9661,8 @@ where
 ///
 /// See [`DenyEachBinding`] for more details.
 pub trait DenyEachBindingServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn only_deny_cpp(
@@ -9835,6 +9855,11 @@ where
 #[derive(PartialEq, Debug)]
 pub struct ImportsSameNameContext;
 
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for ImportsSameNameContext {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
+
 pub mod imports_same_name_context {
     pub mod prelude {
         pub use crate::{
@@ -9974,8 +9999,8 @@ pub mod imports_same_name_context {
 ///
 /// See [`ImportsSameNameContext`] for more details.
 pub trait ImportsSameNameContextClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -10006,8 +10031,8 @@ where
 ///
 /// See [`ImportsSameNameContext`] for more details.
 pub trait ImportsSameNameContextServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn always_denied(
@@ -10085,6 +10110,11 @@ where
 #[derive(PartialEq, Debug)]
 pub struct OnlyCppAndDeps;
 
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for OnlyCppAndDeps {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
+
 pub mod only_cpp_and_deps {
     pub mod prelude {
         pub use crate::{
@@ -10125,8 +10155,8 @@ pub mod only_cpp_and_deps {
 ///
 /// See [`OnlyCppAndDeps`] for more details.
 pub trait OnlyCppAndDepsClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -10157,8 +10187,8 @@ where
 ///
 /// See [`OnlyCppAndDeps`] for more details.
 pub trait OnlyCppAndDepsServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }

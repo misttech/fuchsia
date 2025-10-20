@@ -537,6 +537,11 @@ pub use self::natural::*;
 #[derive(PartialEq, Debug)]
 pub struct ExampleUseOfErrorSyntax;
 
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for ExampleUseOfErrorSyntax {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
+
 pub mod example_use_of_error_syntax {
     pub mod prelude {
         pub use crate::{
@@ -781,8 +786,8 @@ pub mod example_use_of_error_syntax {
 ///
 /// See [`ExampleUseOfErrorSyntax`] for more details.
 pub trait ExampleUseOfErrorSyntaxClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -817,8 +822,8 @@ where
 ///
 /// See [`ExampleUseOfErrorSyntax`] for more details.
 pub trait ExampleUseOfErrorSyntaxServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn composed_call_which_may_fail(

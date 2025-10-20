@@ -1248,6 +1248,11 @@ pub use self::natural::*;
 #[derive(PartialEq, Debug)]
 pub struct EmptyProtocol;
 
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for EmptyProtocol {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
+
 pub mod empty_protocol {
     pub mod prelude {
         pub use crate::{
@@ -1441,8 +1446,8 @@ pub mod empty_protocol {
 ///
 /// See [`EmptyProtocol`] for more details.
 pub trait EmptyProtocolClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn receive(
@@ -1495,8 +1500,8 @@ where
 ///
 /// See [`EmptyProtocol`] for more details.
 pub trait EmptyProtocolServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn send(

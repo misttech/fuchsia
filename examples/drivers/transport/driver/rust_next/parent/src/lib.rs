@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use fdf_component::{Driver, DriverContext, Node, NodeBuilder, ServiceOffer, driver_register};
-use fdf_fidl::DriverChannel;
 use fidl_next::{Request, Responder, ServerEnd};
 use fidl_next_fuchsia_hardware_i2cimpl::device::{GetMaxTransferSize, SetBitrate, Transact};
 use fidl_next_fuchsia_hardware_i2cimpl::{self as i2cimpl, DeviceSetBitrateResponse, ReadData};
@@ -29,11 +28,8 @@ driver_register!(DriverTransportParent);
 
 struct DeviceServer;
 
-impl i2cimpl::DeviceServerHandler<DriverChannel> for DeviceServer {
-    async fn get_max_transfer_size(
-        &mut self,
-        responder: Responder<GetMaxTransferSize, DriverChannel>,
-    ) {
+impl i2cimpl::DeviceServerHandler for DeviceServer {
+    async fn get_max_transfer_size(&mut self, responder: Responder<GetMaxTransferSize>) {
         responder
             .respond(0x1234ABCDu64)
             .await
@@ -42,8 +38,8 @@ impl i2cimpl::DeviceServerHandler<DriverChannel> for DeviceServer {
 
     async fn set_bitrate(
         &mut self,
-        request: Request<SetBitrate, DriverChannel>,
-        responder: Responder<SetBitrate, DriverChannel>,
+        request: Request<SetBitrate>,
+        responder: Responder<SetBitrate>,
     ) {
         if request.take().bitrate == 5 {
             responder
@@ -58,11 +54,7 @@ impl i2cimpl::DeviceServerHandler<DriverChannel> for DeviceServer {
         }
     }
 
-    async fn transact(
-        &mut self,
-        _request: Request<Transact, DriverChannel>,
-        responder: Responder<Transact, DriverChannel>,
-    ) {
+    async fn transact(&mut self, _request: Request<Transact>, responder: Responder<Transact>) {
         responder
             .respond(vec![ReadData { data: vec![0, 1, 2] }])
             .await
@@ -75,7 +67,7 @@ struct Service {
 }
 
 impl i2cimpl::ServiceHandler for Service {
-    fn device(&self, server_end: ServerEnd<i2cimpl::Device, DriverChannel>) {
+    fn device(&self, server_end: ServerEnd<i2cimpl::Device>) {
         server_end.spawn_on(DeviceServer, &self.scope).detach_on_drop();
     }
 }

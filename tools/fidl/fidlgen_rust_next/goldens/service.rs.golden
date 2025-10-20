@@ -53,6 +53,11 @@ where
 #[derive(PartialEq, Debug)]
 pub struct FirstProtocol;
 
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for FirstProtocol {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
+
 pub mod first_protocol {
     pub mod prelude {
         pub use crate::{
@@ -117,8 +122,8 @@ pub mod first_protocol {
 ///
 /// See [`FirstProtocol`] for more details.
 pub trait FirstProtocolClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -149,8 +154,8 @@ where
 ///
 /// See [`FirstProtocol`] for more details.
 pub trait FirstProtocolServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn method_on_first(
@@ -420,6 +425,11 @@ where
 #[derive(PartialEq, Debug)]
 pub struct SecondProtocol;
 
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for SecondProtocol {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
+
 pub mod second_protocol {
     pub mod prelude {
         pub use crate::{
@@ -485,8 +495,8 @@ pub mod second_protocol {
 ///
 /// See [`SecondProtocol`] for more details.
 pub trait SecondProtocolClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -517,8 +527,8 @@ where
 ///
 /// See [`SecondProtocol`] for more details.
 pub trait SecondProtocolServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn method_on_second(

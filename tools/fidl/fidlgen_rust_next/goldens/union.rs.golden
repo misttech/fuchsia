@@ -10989,6 +10989,11 @@ pub use self::natural::*;
 #[derive(PartialEq, Debug)]
 pub struct TestProtocol;
 
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for TestProtocol {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
+
 pub mod test_protocol {
     pub mod prelude {
         pub use crate::{
@@ -11119,8 +11124,8 @@ pub mod test_protocol {
 ///
 /// See [`TestProtocol`] for more details.
 pub trait TestProtocolClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -11155,8 +11160,8 @@ where
 ///
 /// See [`TestProtocol`] for more details.
 pub trait TestProtocolServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn strict_union_hence_response_may_be_stack_allocated(

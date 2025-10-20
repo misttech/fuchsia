@@ -13,6 +13,13 @@ pub struct {{ protocol_name }};
     }
 {% endif %}
 
+{% if let Some(transport) = transport %}
+    #[cfg({{ transport.cfg }})]
+    impl ::fidl_next::HasTransport for {{ protocol_name }} {
+        type Transport = {{ transport.natural_ty }};
+    }
+{% endif %}
+
 pub mod {{ module_name }} {
     pub mod prelude {
         pub use crate::{
@@ -514,10 +521,12 @@ pub mod {{ module_name }} {
 ///
 /// See [`{{ protocol_name }}`] for more details.
 pub trait {{ client_handler_name }}<
-    #[cfg(not(feature = "fuchsia"))]
+    {% if let Some(transport) = transport %}
+        #[cfg({{ transport.cfg }})]
+        ___T: ::fidl_next::Transport = {{ transport.natural_ty }},
+        #[cfg(not({{ transport.cfg }}))]
+    {% endif %}
     ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")]
-    ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
 > {
     {% for method in protocol.methods %}
         {% if method.kind == ProtocolMethodKind::Event %}
@@ -631,10 +640,12 @@ where
 ///
 /// See [`{{ protocol_name }}`] for more details.
 pub trait {{ server_handler_name }}<
-    #[cfg(not(feature = "fuchsia"))]
+    {% if let Some(transport) = transport %}
+        #[cfg({{ transport.cfg }})]
+        ___T: ::fidl_next::Transport = {{ transport.natural_ty }},
+        #[cfg(not({{ transport.cfg }}))]
+    {% endif %}
     ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")]
-    ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
 > {
     {% for method in protocol.methods %}
         {% let method_name = filters::escape_snake(method.name) %}

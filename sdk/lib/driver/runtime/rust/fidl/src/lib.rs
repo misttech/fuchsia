@@ -473,6 +473,12 @@ impl<D> fidl_next::HasExecutor for DriverChannel<D> {
 
 #[cfg(test)]
 mod test {
+    // Normally, the FIDL types and traits used here would omit the `DriverChannel` type argument,
+    // since it can be inferred from the protocol. However, this test is in the crate which defines
+    // `DriverChannel` and the build system is set up in such a way that the generated FIDL crate we
+    // pull in references `DriverChannel` from a different crate. So for now, these have to keep
+    // their transport type arguments.
+
     use fidl_next::{ClientDispatcher, ClientEnd, Responder, ServerDispatcher, ServerEnd};
     use fidl_next_fuchsia_examples_gizmo::device::{GetEvent, GetHardwareId};
     use fidl_next_fuchsia_examples_gizmo::{Device, DeviceClientHandler, DeviceServerHandler};

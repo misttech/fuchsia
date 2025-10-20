@@ -16,6 +16,11 @@ pub use self::natural::*;
 #[derive(PartialEq, Debug)]
 pub struct Top;
 
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for Top {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
+
 pub mod top {
     pub mod prelude {
         pub use crate::{Top, TopClientHandler, TopServerHandler, top};
@@ -88,8 +93,8 @@ pub mod top {
 ///
 /// See [`Top`] for more details.
 pub trait TopClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -119,8 +124,8 @@ where
 ///
 /// See [`Top`] for more details.
 pub trait TopServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn get_foo(

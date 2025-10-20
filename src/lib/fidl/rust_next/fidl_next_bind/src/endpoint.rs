@@ -15,7 +15,7 @@ use fidl_next_protocol::{ProtocolError, Transport};
 
 use crate::{
     Client, ClientDispatcher, DispatchClientMessage, DispatchServerMessage, Executor, HasExecutor,
-    IgnoreEvents, Server, ServerDispatcher,
+    HasTransport, IgnoreEvents, Server, ServerDispatcher,
 };
 
 macro_rules! endpoint {
@@ -28,10 +28,7 @@ macro_rules! endpoint {
         #[repr(transparent)]
         pub struct $name<
             P,
-            #[cfg(feature = "fuchsia")]
-            T = zx::Channel,
-            #[cfg(not(feature = "fuchsia"))]
-            T,
+            T = <P as HasTransport>::Transport,
         > {
             transport: T,
             _protocol: PhantomData<P>,

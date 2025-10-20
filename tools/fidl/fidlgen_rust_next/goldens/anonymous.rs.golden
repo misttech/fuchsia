@@ -3083,6 +3083,11 @@ pub use self::natural::*;
 #[derive(PartialEq, Debug)]
 pub struct SomeProtocol;
 
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for SomeProtocol {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
+
 pub mod some_protocol {
     pub mod prelude {
         pub use crate::{
@@ -3215,8 +3220,8 @@ pub mod some_protocol {
 ///
 /// See [`SomeProtocol`] for more details.
 pub trait SomeProtocolClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -3249,8 +3254,8 @@ where
 ///
 /// See [`SomeProtocol`] for more details.
 pub trait SomeProtocolServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn some_method(

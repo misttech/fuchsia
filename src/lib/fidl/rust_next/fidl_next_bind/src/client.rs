@@ -8,15 +8,11 @@ use core::ops::Deref;
 
 use fidl_next_protocol::{self as protocol, ClientHandler, Flexibility, ProtocolError, Transport};
 
-use crate::{ClientEnd, HasConnectionHandles};
+use crate::{ClientEnd, HasConnectionHandles, HasTransport};
 
 /// A strongly typed client.
 #[repr(transparent)]
-pub struct Client<
-    P,
-    #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
-    #[cfg(not(feature = "fuchsia"))] T: Transport,
-> {
+pub struct Client<P, T: Transport = <P as HasTransport>::Transport> {
     client: protocol::Client<T>,
     _protocol: PhantomData<P>,
 }
@@ -57,12 +53,7 @@ impl<P: HasConnectionHandles<T>, T: Transport> Deref for Client<P, T> {
 }
 
 /// A protocol which dispatches incoming client messages to a handler.
-pub trait DispatchClientMessage<
-    H,
-    #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
-    #[cfg(not(feature = "fuchsia"))] T: Transport,
->: Sized + 'static
-{
+pub trait DispatchClientMessage<H, T: Transport>: Sized + 'static {
     /// Handles a received client event with the given handler.
     fn on_event(
         handler: &mut H,
@@ -103,11 +94,7 @@ where
 }
 
 /// A strongly typed client dispatcher.
-pub struct ClientDispatcher<
-    P,
-    #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
-    #[cfg(not(feature = "fuchsia"))] T: Transport,
-> {
+pub struct ClientDispatcher<P, T: Transport = <P as HasTransport>::Transport> {
     dispatcher: protocol::ClientDispatcher<T>,
     _protocol: PhantomData<P>,
 }

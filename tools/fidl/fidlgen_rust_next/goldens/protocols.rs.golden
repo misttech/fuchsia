@@ -8665,6 +8665,11 @@ impl ::fidl_next::Discoverable for AnotherDiscoverableProtocol {
     const PROTOCOL_NAME: &'static str = "fake.library.FakeProtocol";
 }
 
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for AnotherDiscoverableProtocol {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
+
 pub mod another_discoverable_protocol {
     pub mod prelude {
         pub use crate::{
@@ -8705,8 +8710,8 @@ pub mod another_discoverable_protocol {
 ///
 /// See [`AnotherDiscoverableProtocol`] for more details.
 pub trait AnotherDiscoverableProtocolClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -8737,8 +8742,8 @@ where
 ///
 /// See [`AnotherDiscoverableProtocol`] for more details.
 pub trait AnotherDiscoverableProtocolServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -8781,6 +8786,11 @@ where
 /// The type corresponding to the ChannelProtocol protocol.
 #[derive(PartialEq, Debug)]
 pub struct ChannelProtocol;
+
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for ChannelProtocol {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
 
 pub mod channel_protocol {
     pub mod prelude {
@@ -9107,8 +9117,8 @@ pub mod channel_protocol {
 ///
 /// See [`ChannelProtocol`] for more details.
 pub trait ChannelProtocolClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn event_a(
@@ -9163,8 +9173,8 @@ where
 ///
 /// See [`ChannelProtocol`] for more details.
 pub trait ChannelProtocolServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn method_a(
@@ -9305,6 +9315,11 @@ impl ::fidl_next::Discoverable for DiscoverableProtocol {
     const PROTOCOL_NAME: &'static str = "test.protocols.DiscoverableProtocol";
 }
 
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for DiscoverableProtocol {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
+
 pub mod discoverable_protocol {
     pub mod prelude {
         pub use crate::{
@@ -9370,8 +9385,8 @@ pub mod discoverable_protocol {
 ///
 /// See [`DiscoverableProtocol`] for more details.
 pub trait DiscoverableProtocolClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -9402,8 +9417,8 @@ where
 ///
 /// See [`DiscoverableProtocol`] for more details.
 pub trait DiscoverableProtocolServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn method(&mut self) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send;
@@ -9452,6 +9467,11 @@ where
 /// The type corresponding to the HandleRightsProtocol protocol.
 #[derive(PartialEq, Debug)]
 pub struct HandleRightsProtocol;
+
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for HandleRightsProtocol {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
 
 pub mod handle_rights_protocol {
     pub mod prelude {
@@ -9657,8 +9677,8 @@ pub mod handle_rights_protocol {
 ///
 /// See [`HandleRightsProtocol`] for more details.
 pub trait HandleRightsProtocolClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn an_event(
@@ -9711,8 +9731,8 @@ where
 ///
 /// See [`HandleRightsProtocol`] for more details.
 pub trait HandleRightsProtocolServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn no_response_method(
@@ -9798,6 +9818,11 @@ where
 /// The type corresponding to the ManyParameters protocol.
 #[derive(PartialEq, Debug)]
 pub struct ManyParameters;
+
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for ManyParameters {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
 
 pub mod many_parameters {
     pub mod prelude {
@@ -9987,8 +10012,8 @@ pub mod many_parameters {
 ///
 /// See [`ManyParameters`] for more details.
 pub trait ManyParametersClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -10019,8 +10044,8 @@ where
 ///
 /// See [`ManyParameters`] for more details.
 pub trait ManyParametersServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn fifteen(
@@ -10081,6 +10106,11 @@ where
 /// The type corresponding to the MethodWithUnion protocol.
 #[derive(PartialEq, Debug)]
 pub struct MethodWithUnion;
+
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for MethodWithUnion {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
 
 pub mod method_with_union {
     pub mod prelude {
@@ -10184,8 +10214,8 @@ pub mod method_with_union {
 ///
 /// See [`MethodWithUnion`] for more details.
 pub trait MethodWithUnionClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -10218,8 +10248,8 @@ where
 ///
 /// See [`MethodWithUnion`] for more details.
 pub trait MethodWithUnionServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn union_method(
@@ -10291,6 +10321,11 @@ impl ::fidl_next::Discoverable for PlatformServer {
     const PROTOCOL_NAME: &'static str = "test.protocols.PlatformServer";
 }
 
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for PlatformServer {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
+
 pub mod platform_server {
     pub mod prelude {
         pub use crate::{
@@ -10331,8 +10366,8 @@ pub mod platform_server {
 ///
 /// See [`PlatformServer`] for more details.
 pub trait PlatformServerClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -10363,8 +10398,8 @@ where
 ///
 /// See [`PlatformServer`] for more details.
 pub trait PlatformServerServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -10407,6 +10442,11 @@ where
 /// The type corresponding to the WithAndWithoutRequestResponse protocol.
 #[derive(PartialEq, Debug)]
 pub struct WithAndWithoutRequestResponse;
+
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for WithAndWithoutRequestResponse {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
 
 pub mod with_and_without_request_response {
     pub mod prelude {
@@ -10809,8 +10849,8 @@ pub mod with_and_without_request_response {
 ///
 /// See [`WithAndWithoutRequestResponse`] for more details.
 pub trait WithAndWithoutRequestResponseClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn on_empty_response(
@@ -10881,8 +10921,8 @@ where
 ///
 /// See [`WithAndWithoutRequestResponse`] for more details.
 pub trait WithAndWithoutRequestResponseServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn no_request_no_response(
@@ -11049,6 +11089,11 @@ where
 /// The type corresponding to the WithErrorSyntax protocol.
 #[derive(PartialEq, Debug)]
 pub struct WithErrorSyntax;
+
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for WithErrorSyntax {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
 
 pub mod with_error_syntax {
     pub mod prelude {
@@ -11297,8 +11342,8 @@ pub mod with_error_syntax {
 ///
 /// See [`WithErrorSyntax`] for more details.
 pub trait WithErrorSyntaxClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -11337,8 +11382,8 @@ where
 ///
 /// See [`WithErrorSyntax`] for more details.
 pub trait WithErrorSyntaxServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn response_as_struct(
@@ -11432,6 +11477,11 @@ where
 /// The type corresponding to the WithProtocolEnds protocol.
 #[derive(PartialEq, Debug)]
 pub struct WithProtocolEnds;
+
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for WithProtocolEnds {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
 
 pub mod with_protocol_ends {
     pub mod prelude {
@@ -11661,8 +11711,8 @@ pub mod with_protocol_ends {
 ///
 /// See [`WithProtocolEnds`] for more details.
 pub trait WithProtocolEndsClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -11699,8 +11749,8 @@ where
 ///
 /// See [`WithProtocolEnds`] for more details.
 pub trait WithProtocolEndsServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn client_ends(

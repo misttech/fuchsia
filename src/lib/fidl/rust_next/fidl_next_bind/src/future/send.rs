@@ -55,8 +55,7 @@ macro_rules! define_send_future {
         #[pin_project]
         pub struct $name<
             $($lifetime,)?
-            #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
-            #[cfg(not(feature = "fuchsia"))] T: Transport,
+            T: Transport,
         > {
             #[pin]
             state: $state<$($lifetime,)? T>,
@@ -102,8 +101,7 @@ macro_rules! define_send_future {
         #[pin_project]
         pub struct $encoded<
             $($lifetime,)?
-            #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
-            #[cfg(not(feature = "fuchsia"))] T: Transport,
+            T: Transport,
         > {
             #[pin]
             state: $state<$($lifetime,)? T>,

@@ -87,6 +87,11 @@ where
 #[derive(PartialEq, Debug)]
 pub struct SomeDriverProtocol;
 
+#[cfg(feature = "driver")]
+impl ::fidl_next::HasTransport for SomeDriverProtocol {
+    type Transport = ::fdf_fidl::DriverChannel;
+}
+
 pub mod some_driver_protocol {
     pub mod prelude {
         pub use crate::{
@@ -127,8 +132,8 @@ pub mod some_driver_protocol {
 ///
 /// See [`SomeDriverProtocol`] for more details.
 pub trait SomeDriverProtocolClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(feature = "driver")] ___T: ::fidl_next::Transport = ::fdf_fidl::DriverChannel,
+    #[cfg(not(feature = "driver"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -159,8 +164,8 @@ where
 ///
 /// See [`SomeDriverProtocol`] for more details.
 pub trait SomeDriverProtocolServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(feature = "driver")] ___T: ::fidl_next::Transport = ::fdf_fidl::DriverChannel,
+    #[cfg(not(feature = "driver"))] ___T: ::fidl_next::Transport,
 >
 {
 }

@@ -837,6 +837,11 @@ pub use self::natural::*;
 #[derive(PartialEq, Debug)]
 pub struct Child;
 
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for Child {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
+
 pub mod child {
     pub mod prelude {
         pub use crate::{Child, ChildClientHandler, ChildServerHandler, child};
@@ -874,8 +879,8 @@ pub mod child {
 ///
 /// See [`Child`] for more details.
 pub trait ChildClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -903,8 +908,8 @@ where
 ///
 /// See [`Child`] for more details.
 pub trait ChildServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -947,6 +952,11 @@ where
 /// The type corresponding to the Parent protocol.
 #[derive(PartialEq, Debug)]
 pub struct Parent;
+
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for Parent {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
 
 pub mod parent {
     pub mod prelude {
@@ -1155,8 +1165,8 @@ pub mod parent {
 ///
 /// See [`Parent`] for more details.
 pub trait ParentClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -1189,8 +1199,8 @@ where
 ///
 /// See [`Parent`] for more details.
 pub trait ParentServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn get_child(

@@ -52,7 +52,7 @@ impl Driver for DriverTransportChild {
 
 fn get_i2cimpl_device(
     context: &DriverContext,
-) -> Result<fidl_next::ClientEnd<i2cimpl::Device, fdf_fidl::DriverChannel>, Status> {
+) -> Result<fidl_next::ClientEnd<i2cimpl::Device>, Status> {
     let service_proxy: ServiceInstance<i2cimpl::Service> =
         context.incoming.service().connect_next()?;
 

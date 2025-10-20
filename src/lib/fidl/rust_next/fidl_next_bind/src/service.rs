@@ -75,12 +75,7 @@ impl<T> InstanceFromServiceTransport<T> for T {
 }
 
 /// A service which dispatches incoming connections to a handler.
-pub trait DispatchServiceHandler<
-    H,
-    #[cfg(feature = "fuchsia")] T = zx::Channel,
-    #[cfg(not(feature = "fuchsia"))] T,
->
-{
+pub trait DispatchServiceHandler<H, T> {
     /// Handles a received connection request with the given handler.
     fn on_connection(handler: &H, member: &str, server_end: T);
 }

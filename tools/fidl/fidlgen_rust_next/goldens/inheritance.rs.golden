@@ -491,6 +491,11 @@ pub use self::natural::*;
 #[derive(PartialEq, Debug)]
 pub struct Super;
 
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for Super {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
+
 pub mod super_ {
     pub mod prelude {
         pub use crate::{Super, SuperClientHandler, SuperServerHandler, super_};
@@ -590,8 +595,8 @@ pub mod super_ {
 ///
 /// See [`Super`] for more details.
 pub trait SuperClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -621,8 +626,8 @@ where
 ///
 /// See [`Super`] for more details.
 pub trait SuperServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn foo(
@@ -689,6 +694,11 @@ where
 /// The type corresponding to the sub protocol.
 #[derive(PartialEq, Debug)]
 pub struct Sub;
+
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for Sub {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
 
 pub mod sub {
     pub mod prelude {
@@ -789,8 +799,8 @@ pub mod sub {
 ///
 /// See [`Sub`] for more details.
 pub trait SubClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -820,8 +830,8 @@ where
 ///
 /// See [`Sub`] for more details.
 pub trait SubServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn foo(

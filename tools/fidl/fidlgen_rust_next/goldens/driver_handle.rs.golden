@@ -845,6 +845,11 @@ pub use self::natural::*;
 #[derive(PartialEq, Debug)]
 pub struct DriverProtocol;
 
+#[cfg(feature = "driver")]
+impl ::fidl_next::HasTransport for DriverProtocol {
+    type Transport = ::fdf_fidl::DriverChannel;
+}
+
 pub mod driver_protocol {
     pub mod prelude {
         pub use crate::{
@@ -885,8 +890,8 @@ pub mod driver_protocol {
 ///
 /// See [`DriverProtocol`] for more details.
 pub trait DriverProtocolClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(feature = "driver")] ___T: ::fidl_next::Transport = ::fdf_fidl::DriverChannel,
+    #[cfg(not(feature = "driver"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -917,8 +922,8 @@ where
 ///
 /// See [`DriverProtocol`] for more details.
 pub trait DriverProtocolServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(feature = "driver")] ___T: ::fidl_next::Transport = ::fdf_fidl::DriverChannel,
+    #[cfg(not(feature = "driver"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -961,6 +966,11 @@ where
 /// The type corresponding to the HandlesInProtocol protocol.
 #[derive(PartialEq, Debug)]
 pub struct HandlesInProtocol;
+
+#[cfg(feature = "driver")]
+impl ::fidl_next::HasTransport for HandlesInProtocol {
+    type Transport = ::fdf_fidl::DriverChannel;
+}
 
 pub mod handles_in_protocol {
     pub mod prelude {
@@ -1055,8 +1065,8 @@ pub mod handles_in_protocol {
 ///
 /// See [`HandlesInProtocol`] for more details.
 pub trait HandlesInProtocolClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(feature = "driver")] ___T: ::fidl_next::Transport = ::fdf_fidl::DriverChannel,
+    #[cfg(not(feature = "driver"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -1087,8 +1097,8 @@ where
 ///
 /// See [`HandlesInProtocol`] for more details.
 pub trait HandlesInProtocolServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(feature = "driver")] ___T: ::fidl_next::Transport = ::fdf_fidl::DriverChannel,
+    #[cfg(not(feature = "driver"))] ___T: ::fidl_next::Transport,
 >
 {
     fn send_handles(

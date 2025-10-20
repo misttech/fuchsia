@@ -11,7 +11,7 @@ use super::{Error, SVC_DIR, connect_channel_to_protocol_at_path};
 /// Connect to a FIDL protocol using the provided server end and namespace
 /// prefix.
 pub fn connect_server_end_to_protocol_at<P: Discoverable>(
-    server_end: ServerEnd<P>,
+    server_end: ServerEnd<P, zx::Channel>,
     service_directory_path: &str,
 ) -> Result<(), Error> {
     let protocol_path = format!("{}/{}", service_directory_path, P::PROTOCOL_NAME);
@@ -21,7 +21,7 @@ pub fn connect_server_end_to_protocol_at<P: Discoverable>(
 /// Connect to a FIDL protocol using the provided namespace prefix.
 pub fn connect_to_protocol_at<P: Discoverable>(
     service_prefix: &str,
-) -> Result<ClientEnd<P>, Error> {
+) -> Result<ClientEnd<P, zx::Channel>, Error> {
     let (client_end, server_end) = fidl_next::fuchsia::create_channel();
     let () = connect_server_end_to_protocol_at(server_end, service_prefix)?;
     Ok(client_end)
@@ -29,6 +29,6 @@ pub fn connect_to_protocol_at<P: Discoverable>(
 
 /// Connect to a FIDL protocol in the `/svc` directory of the application's root
 /// namespace.
-pub fn connect_to_protocol<P: Discoverable>() -> Result<ClientEnd<P>, Error> {
+pub fn connect_to_protocol<P: Discoverable>() -> Result<ClientEnd<P, zx::Channel>, Error> {
     connect_to_protocol_at(SVC_DIR)
 }

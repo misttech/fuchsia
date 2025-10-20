@@ -136,8 +136,7 @@ macro_rules! two_way_futures {
             pub struct $future<
                 'a,
                 M: Method,
-                #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
-                #[cfg(not(feature = "fuchsia"))] T: Transport,
+                T: Transport,
             > {
                 #[pin]
                 state: TwoWayFutureState<'a, T>,

@@ -45,11 +45,27 @@ pub struct ProtocolTemplate<'a> {
 
     server_name: String,
     server_handler_name: String,
+
+    transport: Option<Transport<'a>>,
+}
+
+struct Transport<'a> {
+    natural_ty: &'a str,
+    cfg: &'a str,
 }
 
 impl<'a> ProtocolTemplate<'a> {
     pub fn new(protocol: &'a Protocol, context: Context<'a>) -> Self {
         let base_name = protocol.name.decl_name().camel();
+
+        let name = protocol.transport().unwrap_or("Channel");
+        let natural_ty = &context.resource_bindings().endpoint(name).natural_path;
+        let transport = match name {
+            // TODO: We should eventually replace this with feature = "fuchsia"
+            "Channel" => Some(Transport { cfg: "target_os = \"fuchsia\"", natural_ty }),
+            "Driver" => Some(Transport { cfg: "feature = \"driver\"", natural_ty }),
+            _ => None,
+        };
 
         Self {
             protocol,
@@ -64,6 +80,8 @@ impl<'a> ProtocolTemplate<'a> {
 
             server_name: escape(format!("{base_name}Server")),
             server_handler_name: escape(format!("{base_name}ServerHandler")),
+
+            transport,
         }
     }
 

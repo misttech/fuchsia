@@ -491,6 +491,11 @@ pub use self::natural::*;
 #[derive(PartialEq, Debug)]
 pub struct Example;
 
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for Example {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
+
 pub mod example {
     pub mod prelude {
         pub use crate::{Example, ExampleClientHandler, ExampleServerHandler, example};
@@ -605,8 +610,8 @@ pub mod example {
 ///
 /// See [`Example`] for more details.
 pub trait ExampleClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
 }
@@ -639,8 +644,8 @@ where
 ///
 /// See [`Example`] for more details.
 pub trait ExampleServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     fn foo(

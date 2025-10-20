@@ -1767,6 +1767,11 @@ pub const C: i32 = 4 as i32;
 #[derive(PartialEq, Debug)]
 pub struct Interface;
 
+#[cfg(target_os = "fuchsia")]
+impl ::fidl_next::HasTransport for Interface {
+    type Transport = ::fidl_next::fuchsia::zx::Channel;
+}
+
 pub mod interface {
     pub mod prelude {
         pub use crate::{Interface, InterfaceClientHandler, InterfaceServerHandler, interface};
@@ -1856,8 +1861,8 @@ pub mod interface {
 ///
 /// See [`Interface`] for more details.
 pub trait InterfaceClientHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     #[doc = " event comment #1\n\n event comment #3\n"]
@@ -1897,8 +1902,8 @@ where
 ///
 /// See [`Interface`] for more details.
 pub trait InterfaceServerHandler<
-    #[cfg(not(feature = "fuchsia"))] ___T: ::fidl_next::Transport,
-    #[cfg(feature = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(target_os = "fuchsia")] ___T: ::fidl_next::Transport = ::fidl_next::fuchsia::zx::Channel,
+    #[cfg(not(target_os = "fuchsia"))] ___T: ::fidl_next::Transport,
 >
 {
     #[doc = " method comment #1\n\n method comment #3\n"]

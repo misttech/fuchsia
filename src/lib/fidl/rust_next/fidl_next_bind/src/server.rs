@@ -9,15 +9,13 @@ use core::ops::Deref;
 use fidl_next_codec::{Constrained, Encode};
 use fidl_next_protocol::{self as protocol, Flexibility, ProtocolError, ServerHandler, Transport};
 
-use crate::{HasConnectionHandles, Method, Respond, RespondErr, RespondFuture, ServerEnd};
+use crate::{
+    HasConnectionHandles, HasTransport, Method, Respond, RespondErr, RespondFuture, ServerEnd,
+};
 
 /// A strongly typed server.
 #[repr(transparent)]
-pub struct Server<
-    P,
-    #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
-    #[cfg(not(feature = "fuchsia"))] T: Transport,
-> {
+pub struct Server<P, T: Transport = <P as HasTransport>::Transport> {
     server: protocol::Server<T>,
     _protocol: PhantomData<P>,
 }
@@ -63,12 +61,7 @@ impl<P: HasConnectionHandles<T>, T: Transport> Deref for Server<P, T> {
 }
 
 /// A protocol which dispatches incoming server messages to a handler.
-pub trait DispatchServerMessage<
-    H,
-    #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
-    #[cfg(not(feature = "fuchsia"))] T: Transport,
->: Sized + 'static
-{
+pub trait DispatchServerMessage<H, T: Transport>: Sized + 'static {
     /// Handles a received server one-way message with the given handler.
     fn on_one_way(
         handler: &mut H,
@@ -128,11 +121,7 @@ where
 }
 
 /// A strongly typed server.
-pub struct ServerDispatcher<
-    P,
-    #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
-    #[cfg(not(feature = "fuchsia"))] T: Transport,
-> {
+pub struct ServerDispatcher<P, T: Transport = <P as HasTransport>::Transport> {
     dispatcher: protocol::ServerDispatcher<T>,
     _protocol: PhantomData<P>,
 }
@@ -178,11 +167,7 @@ impl<P, T: Transport> ServerDispatcher<P, T> {
 
 /// A strongly typed `Responder`.
 #[must_use]
-pub struct Responder<
-    M,
-    #[cfg(feature = "fuchsia")] T: Transport = zx::Channel,
-    #[cfg(not(feature = "fuchsia"))] T: Transport,
-> {
+pub struct Responder<M, T: Transport = <<M as Method>::Protocol as HasTransport>::Transport> {
     responder: protocol::Responder<T>,
     _method: PhantomData<M>,
 }
