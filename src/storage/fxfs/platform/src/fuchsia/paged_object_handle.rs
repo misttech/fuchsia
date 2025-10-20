@@ -594,7 +594,7 @@ impl PagedObjectHandle {
         }
 
         // Before releasing the reservation, mark those pages as cleaned, since they weren't used.
-        self.owner().report_pager_clean(*reservation_guard);
+        self.owner().report_pager_clean(*reservation_guard * (zx::system_get_page_size() as u64));
         dismiss_scopeguard(reservation_guard);
 
         Ok(())
