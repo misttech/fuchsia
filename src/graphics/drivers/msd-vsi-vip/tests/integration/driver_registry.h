@@ -15,7 +15,7 @@
 
 #include "magma_vendor_queries.h"
 
-inline void RestartAndWait(std::string driver_url) {
+inline void RestartAndWait(std::string driver_url, const char* directory_path) {
   auto manager = component::Connect<fuchsia_driver_development::Manager>();
 
   fidl::WireSyncClient manager_client(*std::move(manager));
@@ -40,7 +40,7 @@ inline void RestartAndWait(std::string driver_url) {
   // Loop until a new device with the correct specs is found.
   auto deadline_time = zx::clock::get_monotonic() + zx::sec(10);
   while (zx::clock::get_monotonic() < deadline_time) {
-    for (auto& p : std::filesystem::directory_iterator("/svc/fuchsia.gpu.magma.Service")) {
+    for (auto& p : std::filesystem::directory_iterator(directory_path)) {
       auto magma_client = component::Connect<fuchsia_gpu_magma::TestDevice>(
           static_cast<std::string>(p.path()) + "/device");
 

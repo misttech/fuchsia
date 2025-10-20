@@ -48,7 +48,7 @@ TEST(UnitTests, UnitTests) {
     ASSERT_FALSE(result->is_error()) << result->error_value();
   }
 
-  RestartAndWait(kProductionDriver);
+  RestartAndWait(kProductionDriver, "/svc/fuchsia.gpu.magma.TestService");
 
   auto cleanup = fit::defer([&]() {
     // Ignore errors when trying to get the existing driver back to a working state.
@@ -56,7 +56,7 @@ TEST(UnitTests, UnitTests) {
                                        fidl::StringView());
     (void)manager_client->DisableDriver(fidl::StringView::FromExternal(kTestDriver),
                                         fidl::StringView());
-    RestartAndWait(kTestDriver);
+    RestartAndWait(kTestDriver, "/svc/fuchsia.gpu.magma.Service");
   });
 
   {
