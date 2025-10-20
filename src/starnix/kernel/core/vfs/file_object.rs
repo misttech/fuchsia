@@ -28,7 +28,6 @@ use starnix_uapi::user_address::ArchSpecific;
 
 use fidl::HandleBased;
 use fuchsia_inspect_contrib::profile_duration;
-use hkdf::Hkdf;
 use linux_uapi::{FSCRYPT_MODE_AES_256_CTS, FSCRYPT_MODE_AES_256_XTS};
 use starnix_logging::{
     CATEGORY_STARNIX_MM, impossible_error, log_error, trace_duration, track_stub,
@@ -54,9 +53,9 @@ use starnix_uapi::{
     FIBMAP, FIGETBSZ, FIONBIO, FIONREAD, FIOQSIZE, FS_CASEFOLD_FL, FS_IOC_ADD_ENCRYPTION_KEY,
     FS_IOC_ENABLE_VERITY, FS_IOC_FSGETXATTR, FS_IOC_FSSETXATTR, FS_IOC_MEASURE_VERITY,
     FS_IOC_READ_VERITY_METADATA, FS_IOC_REMOVE_ENCRYPTION_KEY, FS_IOC_SET_ENCRYPTION_POLICY,
-    FS_VERITY_FL, FSCRYPT_KEY_IDENTIFIER_SIZE, FSCRYPT_KEY_SPEC_TYPE_IDENTIFIER, FSCRYPT_POLICY_V2,
-    SEEK_CUR, SEEK_DATA, SEEK_END, SEEK_HOLE, SEEK_SET, TCGETS, errno, error, fscrypt_add_key_arg,
-    fscrypt_identifier, fsxattr, off_t, pid_t, uapi,
+    FS_VERITY_FL, FSCRYPT_KEY_SPEC_TYPE_IDENTIFIER, FSCRYPT_POLICY_V2, SEEK_CUR, SEEK_DATA,
+    SEEK_END, SEEK_HOLE, SEEK_SET, TCGETS, errno, error, fscrypt_add_key_arg, fscrypt_identifier,
+    fsxattr, off_t, pid_t, uapi,
 };
 use std::collections::HashMap;
 use std::fmt;
@@ -65,13 +64,6 @@ use std::sync::{Arc, Weak};
 use zerocopy::IntoBytes;
 
 pub const MAX_LFS_FILESIZE: usize = 0x7fff_ffff_ffff_ffff;
-
-// In this implementation of fscrypt, we use a HKDF (Hmac Key Derivation Function) to derive a
-// a wrapping key and wrapping key id from the raw key bytes passed in by a user on
-// FS_IOC_ADD_ENCRYPTION_KEY. HKDFs requires an input "info" string. We define constants for the
-// respective "info" strings here.
-const FSCRYPT_KEY_IDENTIFIER_INFO: &'static str = "fscrypt0";
-const FSCRYPT_WRAPPING_KEY_INFO: &'static str = "fscrypt1";
 
 pub fn checked_add_offset_and_length(offset: usize, length: usize) -> Result<usize, Errno> {
     let end = offset.checked_add(length).ok_or_else(|| errno!(EINVAL))?;
@@ -141,20 +133,6 @@ fn add_equivalent_fd_events(mut events: FdEvents) -> FdEvents {
         events |= FdEvents::POLLWRNORM;
     }
     events
-}
-
-/// Uses an HKDF to derive an fscrypt wrapping key and key identifier from a raw user key.
-pub fn derive_wrapping_key(
-    raw_key: &[u8],
-) -> ([u8; FSCRYPT_KEY_IDENTIFIER_SIZE as usize], [u8; AES256_KEY_SIZE]) {
-    let hk = Hkdf::<sha2::Sha256>::new(None, raw_key);
-    let mut key_identifier = [0u8; FSCRYPT_KEY_IDENTIFIER_SIZE as usize];
-    hk.expand(FSCRYPT_KEY_IDENTIFIER_INFO.as_bytes(), &mut key_identifier)
-        .expect("FSCRYPT_KEY_IDENTIFIER_SIZE is a valid length for Sha256 to output");
-    let mut wrapping_key = [0u8; AES256_KEY_SIZE];
-    hk.expand(FSCRYPT_WRAPPING_KEY_INFO.as_bytes(), &mut wrapping_key)
-        .expect("AES256_KEY_SIZE is a valid length for Sha256 to output");
-    (key_identifier, wrapping_key)
 }
 
 /// Corresponds to struct file_operations in Linux, plus any filesystem-specific data.
@@ -1037,10 +1015,13 @@ pub fn default_ioctl(
             let key = current_task
                 .read_memory_to_vec(key_ref_addr, fscrypt_add_key_arg.raw_size as usize)?;
             let user_id = current_task.with_current_creds(|creds| creds.uid);
-            let (key_identifier, wrapping_key) = derive_wrapping_key(key.as_bytes());
+            let (key_identifier, cipher) = current_task
+                .kernel()
+                .crypt_service
+                .derive_fxfs_wrapping_key_id_and_cipher(key.as_bytes());
             current_task.kernel().crypt_service.add_wrapping_key(
                 key_identifier,
-                wrapping_key.to_vec(),
+                starnix_crypt::UserKey::FxfsKey { cipher },
                 user_id,
             )?;
             fscrypt_add_key_arg.key_spec.u.identifier =

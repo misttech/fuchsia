@@ -56,7 +56,9 @@ rustc_library("vmo_backed_block_server") {
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-sync",
+    "//src/storage/fxfs/crypto",
     "//src/storage/lib/fs_management/rust:fs_management",
+    "//src/storage/lib/fscrypt",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:rand",
   ]
