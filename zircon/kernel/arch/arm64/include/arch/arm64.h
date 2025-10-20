@@ -10,6 +10,7 @@
 
 #ifndef __ASSEMBLER__
 
+#include <lib/arch/asm.h>
 #include <stdbool.h>
 #include <sys/types.h>
 #include <zircon/compiler.h>
@@ -92,11 +93,9 @@ void arm64_context_switch(vaddr_t* old_sp, vaddr_t new_sp, vaddr_t new_tpidr);
 void arm64_uspace_entry(iframe_t* iframe, vaddr_t kstack) __NO_RETURN;
 #endif
 
-// These are not actually functions, but special code addresses.
-using VbarFunction = void();
-VbarFunction arm64_el1_exception;
-VbarFunction arm64_el1_exception_smccc11_workaround;
-VbarFunction arm64_el1_exception_smccc10_workaround;
+extern arch::AsmLabel arm64_el1_exception;
+extern arch::AsmLabel arm64_el1_exception_smccc11_workaround;
+extern arch::AsmLabel arm64_el1_exception_smccc10_workaround;
 
 void arm64_sync_exception(iframe_t* iframe, uint exception_flags, uint32_t esr);
 

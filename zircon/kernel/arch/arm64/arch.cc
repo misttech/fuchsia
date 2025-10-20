@@ -169,15 +169,15 @@ void SetupCntkctlEl1() {
   __isb(ARM_MB_SY);
 }
 
-VbarFunction* arm64_select_vbar_via_smccc11(arch::ArmSmcccFunction function) {
-  constexpr auto no_workaround = []() -> VbarFunction* {
+uintptr_t arm64_select_vbar_via_smccc11(arch::ArmSmcccFunction function) {
+  constexpr auto no_workaround = []() -> uintptr_t {
     // No mitigation is needed on this CPU.
     WRITE_PERCPU_FIELD(should_invalidate_bp_on_el0_exception, false);
     WRITE_PERCPU_FIELD(should_invalidate_bp_on_context_switch, false);
-    return nullptr;
+    return 0;
   };
 
-  constexpr auto use_workaround = []() -> VbarFunction* {
+  constexpr auto use_workaround = []() -> uintptr_t {
     // The workaround replaces the other EL0 entry mitigations.
     WRITE_PERCPU_FIELD(should_invalidate_bp_on_el0_exception, false);
 
@@ -185,7 +185,7 @@ VbarFunction* arm64_select_vbar_via_smccc11(arch::ArmSmcccFunction function) {
     // mitigation too.
     WRITE_PERCPU_FIELD(should_invalidate_bp_on_context_switch, false);
 
-    return arm64_el1_exception_smccc11_workaround;
+    return arch::kAsmLabelAddress<arm64_el1_exception_smccc11_workaround>;
   };
 
   const unsigned int cpu_num = arch_curr_cpu_num();
@@ -222,12 +222,12 @@ VbarFunction* arm64_select_vbar_via_smccc11(arch::ArmSmcccFunction function) {
               ktl::bit_cast<int64_t>(value), static_cast<uint32_t>(function), cpu_num);
   }
 
-  return nullptr;
+  return 0;
 }
 
 // Select the alternate exception vector to use for the current CPU.
 // Returns nullptr to keep using the default one.
-VbarFunction* arm64_select_vbar() {
+uintptr_t arm64_select_vbar() {
   // In auto mode, the physboot detection code has "selected" a firmware option
   // if it's available generally.  The logic here then chooses whether this
   // particular CPU needs to use that firmware option by asking the firmware.
@@ -240,12 +240,12 @@ VbarFunction* arm64_select_vbar() {
       // TODO(https://fxbug.dev/322202704): Auto-select based on core IDs?
       dprintf(INFO, "CPU %u using SMCCC 1.1 PSCI_VERSION in lieu of SMCCC_ARCH_WORKAROUND\n",
               arch_curr_cpu_num());
-      return arm64_el1_exception_smccc11_workaround;
+      return arch::kAsmLabelAddress<arm64_el1_exception_smccc11_workaround>;
     case Arm64AlternateVbar::kSmccc10:
       // TODO(https://fxbug.dev/322202704): Auto-select based on core IDs?
       dprintf(INFO, "CPU %u using SMCCC 1.0 PSCI_VERSION in lieu of SMCCC 1.1 support\n",
               arch_curr_cpu_num());
-      return arm64_el1_exception_smccc10_workaround;
+      return arch::kAsmLabelAddress<arm64_el1_exception_smccc10_workaround>;
     case Arm64AlternateVbar::kNone:
       if (gBootOptions->arm64_alternate_vbar == Arm64AlternateVbar::kNone) {
         dprintf(INFO, "CPU %u not using any workaround by explicit boot option\n",
@@ -261,12 +261,12 @@ VbarFunction* arm64_select_vbar() {
       ZX_PANIC("physboot handoff should have performed auto-selection!");
       break;
   }
-  return nullptr;
+  return 0;
 }
 
 // Set the vector base.
-void arm64_install_vbar(VbarFunction* table) {
-  arch::ArmVbarEl1::Write(reinterpret_cast<uintptr_t>(table));
+void arm64_install_vbar(uintptr_t table) {
+  arch::ArmVbarEl1::Write(table);
   __isb(ARM_MB_SY);
 }
 
@@ -276,7 +276,7 @@ void arm64_cpu_early_init() {
 
   // Initially use the primary vector table.
   // arch_late_init_percpu may change its mind.
-  arm64_install_vbar(arm64_el1_exception);
+  arm64_install_vbar(arch::kAsmLabelAddress<arm64_el1_exception>);
 
   // Set up main control bits for this cpu.
   // Taken from ARM DDI 0487 rev L.a section D24.2.167.
@@ -395,7 +395,7 @@ void arch_late_init_percpu(void) {
   WRITE_PERCPU_FIELD(should_invalidate_bp_on_el0_exception, need_spectre_v2_mitigation);
 
   // Decide if this CPU needs an alternative exception vector table.
-  if (VbarFunction* vector_table = arm64_select_vbar()) {
+  if (uintptr_t vector_table = arm64_select_vbar()) {
     arm64_install_vbar(vector_table);
   }
 }
