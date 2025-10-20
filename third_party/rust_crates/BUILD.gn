@@ -2073,7 +2073,7 @@ rustc_library("askama_parser-v0_14_0") {
   deps += [ ":memchr-v2_7_4" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_derive-v1_0_228($host_toolchain)" ]
-  deps += [ ":winnow-v0_7_12" ]
+  deps += [ ":winnow-v0_7_13" ]
 
   rustenv = []
 
@@ -19036,7 +19036,7 @@ rustc_library("toml-v0_9_5") {
   deps += [ ":toml_datetime-v0_7_3" ]
   deps += [ ":toml_parser-v1_0_2" ]
   deps += [ ":toml_writer-v1_0_4" ]
-  deps += [ ":winnow-v0_7_12" ]
+  deps += [ ":winnow-v0_7_13" ]
 
   rustenv = []
 
@@ -19146,7 +19146,7 @@ rustc_library("toml_parser-v1_0_2") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":winnow-v0_7_12" ]
+  deps += [ ":winnow-v0_7_13" ]
 
   rustenv = []
 
@@ -21426,16 +21426,16 @@ rustc_library("windows-targets-v0_52_6") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
-license("winnow-v0_7_12.license") {
+license("winnow-v0_7_13.license") {
   public_package_name = "winnow"
   license_files =
-      [ "//third_party/rust_crates/vendor/winnow-0.7.12/LICENSE-MIT" ]
+      [ "//third_party/rust_crates/vendor/winnow-0.7.13/LICENSE-MIT" ]
 }
 
-rustc_library("winnow-v0_7_12") {
+rustc_library("winnow-v0_7_13") {
   crate_name = "winnow"
-  source_root = "//third_party/rust_crates/vendor/winnow-0.7.12/src/lib.rs"
-  output_name = "winnow-57853aa61cdfa9cc"
+  source_root = "//third_party/rust_crates/vendor/winnow-0.7.13/src/lib.rs"
+  output_name = "winnow-ebf53e8e4431caf3"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -21448,8 +21448,8 @@ rustc_library("winnow-v0_7_12") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=57853aa61cdfa9cc",
-    "-Cextra-filename=-57853aa61cdfa9cc",
+    "-Cmetadata=ebf53e8e4431caf3",
+    "-Cextra-filename=-ebf53e8e4431caf3",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
@@ -21457,7 +21457,7 @@ rustc_library("winnow-v0_7_12") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":winnow-v0_7_12.license" ]
+  applicable_licenses = [ ":winnow-v0_7_13.license" ]
 }
 
 license("x509-cert-v0_2_5.license") {
