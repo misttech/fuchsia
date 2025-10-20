@@ -251,6 +251,7 @@ class FakePlatformDevice : public MsdVsiPlatformDevice {
   FakePlatformDevice() : MsdVsiPlatformDevice(nullptr) {}
 
   std::optional<uint64_t> GetExternalSramPhysicalBase() const override { return std::nullopt; }
+  magma_status_t ResetPower() override { return MAGMA_STATUS_OK; }
 };
 
 TEST_F(MsdVsiDeviceTest, UnmapInvalidSram) {

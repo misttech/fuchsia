@@ -741,16 +741,23 @@ bool MsdVsiDevice::CompleteInterruptEvent(uint32_t event_id) {
 
 bool MsdVsiDevice::HardwareReset() {
   DLOG("HardwareReset start");
+  // This number was chosen arbitrarily and can be adjusted as needed.
+  constexpr uint32_t kMaxResetAttempts = 3;
 
-  constexpr uint32_t kResetTimeoutMs = 100;
+  bool initial_reset_succeeded = false;
+  uint32_t failed_resets = 0;
+  while (failed_resets < kMaxResetAttempts) {
+    if (initial_reset_succeeded) {
+      // We have been seeing issues where a soft reset is not enough to restart the hardware and
+      // the hardware is hung forever. A simple fix for this is to fully reset the device's power.
+      // The device needs to be idle to do a power reset, so we have to do one soft reset first.
+      // The flow is: Soft Reset -> Hard Reset -> Soft Reset.
+      magma_status_t status = platform_device_->ResetPower();
+      if (status != MAGMA_STATUS_OK) {
+        MAGMA_LOG(ERROR, "Failed to reset power");
+      }
+    }
 
-  auto start = std::chrono::steady_clock::now();
-
-  bool is_idle, is_idle_3d;
-
-  while (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
-                                                               start)
-             .count() < kResetTimeoutMs) {
     // Power on is needed to write to pulse-eater.
     PowerOn();
 
@@ -789,16 +796,27 @@ bool MsdVsiDevice::HardwareReset() {
 
     clock_control = registers::ClockControl::Get().ReadFrom(register_io_.get());
 
-    is_idle = IsIdle();
-    is_idle_3d = clock_control.IsIdle();
-
-    if (is_idle && is_idle_3d) {
-      DLOG("HardwareReset complete");
-      return true;
+    bool is_idle = IsIdle();
+    bool is_idle_3d = clock_control.idle_3d();
+    // Try again if we did not become idle.
+    if (!is_idle || !is_idle_3d) {
+      failed_resets += 1;
+      MAGMA_LOG(WARNING, "Hardware reset attempt failed %d/%d: is_idle %d is_idle_3d %d",
+                failed_resets, kMaxResetAttempts, is_idle, is_idle_3d);
+      continue;
     }
+
+    // If we haven't power cycled yet then go back through the loop.
+    if (!initial_reset_succeeded) {
+      initial_reset_succeeded = true;
+      continue;
+    }
+
+    DLOG("HardwareReset complete");
+    return true;
   }
 
-  MAGMA_LOG(WARNING, "Hardware reset failed: is_idle %d is_idle_3d %d", is_idle, is_idle_3d);
+  MAGMA_LOG(WARNING, "Hardware reset failed fully, returning false");
   return false;
 }
 

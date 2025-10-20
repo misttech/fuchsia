@@ -6,6 +6,7 @@
 #define SRC_DEVICES_ML_DRIVERS_AML_NNA_AML_NNA_H_
 
 #include <fidl/fuchsia.hardware.registers/cpp/wire.h>
+#include <fidl/fuchsia.hardware.vsi/cpp/wire.h>
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/mmio/cpp/mmio.h>
@@ -20,7 +21,8 @@ constexpr uint32_t kNnaPowerDomain = 1;
 
 namespace aml_nna {
 
-class AmlNnaDriver : public fdf::DriverBase {
+class AmlNnaDriver : public fdf::DriverBase,
+                     public fidl::WireServer<fuchsia_hardware_vsi::PowerParent> {
  public:
   struct NnaPowerDomainBlock {
     // Power Domain MMIO.
@@ -72,6 +74,10 @@ class AmlNnaDriver : public fdf::DriverBase {
   zx_status_t PowerDomainControl(bool turn_on);
 
  private:
+  void Reset(ResetCompleter::Sync& completer) override;
+
+  zx::result<> Reset();
+
   std::optional<fdf::MmioBuffer> hiu_mmio_;
   std::optional<fdf::MmioBuffer> power_mmio_;
   std::optional<fdf::MmioBuffer> memory_pd_mmio_;
@@ -79,6 +85,8 @@ class AmlNnaDriver : public fdf::DriverBase {
 
   // Control PowerDomain
   zx::resource smc_monitor_;
+
+  fidl::WireSyncClient<fuchsia_hardware_registers::Device> reset_register_;
 
   fidl::ClientEnd<fuchsia_driver_framework::NodeController> child_;
   compat::SyncInitializedDeviceServer compat_server_;

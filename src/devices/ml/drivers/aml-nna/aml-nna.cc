@@ -38,6 +38,43 @@ zx_status_t AmlNnaDriver::PowerDomainControl(bool turn_on) {
   return status;
 }
 
+zx::result<> AmlNnaDriver::Reset() {
+  if (nna_block_.nna_power_version == kNnaPowerDomain) {
+    fdf::error("Reset not yet supported for PowerDomainControl\n");
+    return zx::error(ZX_ERR_NOT_SUPPORTED);
+  }
+
+  // set bit[12]=0
+  auto clear_result = reset_register_->WriteRegister32(nna_block_.nna_regs.reset_level2_offset,
+                                                       aml_registers::NNA_RESET2_LEVEL_MASK, 0);
+  if (!clear_result.ok()) {
+    fdf::error("Failed to send request to clear reset register: {}", clear_result.status_string());
+    return zx::error(clear_result.status());
+  }
+  if (clear_result->is_error()) {
+    fdf::error("Failed to clear reset register: {}",
+               zx_status_get_string(clear_result->error_value()));
+    return clear_result->take_error();
+  }
+
+  // set bit[12]=1
+  auto set_result = reset_register_->WriteRegister32(nna_block_.nna_regs.reset_level2_offset,
+                                                     aml_registers::NNA_RESET2_LEVEL_MASK,
+                                                     aml_registers::NNA_RESET2_LEVEL_MASK);
+  if (!set_result.ok()) {
+    fdf::error("Failed to send request to set reset register: {}", set_result.status_string());
+    return zx::error(set_result.status());
+  }
+  if (set_result->is_error()) {
+    fdf::error("Failed to set reset register: {}", zx_status_get_string(set_result->error_value()));
+    return set_result->take_error();
+  }
+
+  return zx::ok();
+}
+
+void AmlNnaDriver::Reset(ResetCompleter::Sync& completer) { completer.Reply(Reset()); }
+
 zx::result<> AmlNnaDriver::Start() {
   {
     zx::result<> result = compat_server_.Initialize(
@@ -53,8 +90,9 @@ zx::result<> AmlNnaDriver::Start() {
     fdf::error("Failed to connect to reset register: {}", reset_register_client_end);
     return reset_register_client_end.take_error();
   }
-  fidl::WireSyncClient<fuchsia_hardware_registers::Device> reset_register{
-      std::move(reset_register_client_end.value())};
+
+  reset_register_ = fidl::WireSyncClient<fuchsia_hardware_registers::Device>(
+      std::move(reset_register_client_end.value()));
 
   zx::result pdev_client_end =
       incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>(
@@ -161,8 +199,8 @@ zx::result<> AmlNnaDriver::Start() {
     memory_pd_mmio_->Write32(0, nna_block_.nna_regs.hhi_mem_pd_reg1_offset);
 
     // set bit[12]=0
-    auto clear_result = reset_register->WriteRegister32(nna_block_.nna_regs.reset_level2_offset,
-                                                        aml_registers::NNA_RESET2_LEVEL_MASK, 0);
+    auto clear_result = reset_register_->WriteRegister32(nna_block_.nna_regs.reset_level2_offset,
+                                                         aml_registers::NNA_RESET2_LEVEL_MASK, 0);
     if (!clear_result.ok()) {
       fdf::error("Failed to send request to clear reset register: {}",
                  clear_result.status_string());
@@ -178,9 +216,9 @@ zx::result<> AmlNnaDriver::Start() {
                              nna_block_.nna_regs.domain_power_iso_offset);
 
     // set bit[12]=1
-    auto set_result = reset_register->WriteRegister32(nna_block_.nna_regs.reset_level2_offset,
-                                                      aml_registers::NNA_RESET2_LEVEL_MASK,
-                                                      aml_registers::NNA_RESET2_LEVEL_MASK);
+    auto set_result = reset_register_->WriteRegister32(nna_block_.nna_regs.reset_level2_offset,
+                                                       aml_registers::NNA_RESET2_LEVEL_MASK,
+                                                       aml_registers::NNA_RESET2_LEVEL_MASK);
     if (!set_result.ok()) {
       fdf::error("Failed to send request to set reset register: {}", set_result.status_string());
       return zx::error(set_result.status());
@@ -215,8 +253,21 @@ zx::result<> AmlNnaDriver::Start() {
     return result.take_error();
   }
 
+  result = outgoing()->AddService<fuchsia_hardware_vsi::PowerParentService>(
+      fuchsia_hardware_vsi::PowerParentService::InstanceHandler({
+          .power =
+              [this](fidl::ServerEnd<fuchsia_hardware_vsi::PowerParent> server) {
+                fidl::BindServer(dispatcher(), std::move(server), this);
+              },
+      }));
+  if (result.is_error()) {
+    fdf::error("Failed to add nna service: {}", result);
+    return result.take_error();
+  }
+
   std::vector offers = compat_server_.CreateOffers2();
   offers.push_back(fdf::MakeOffer2<fuchsia_hardware_platform_device::Service>());
+  offers.push_back(fdf::MakeOffer2<fuchsia_hardware_vsi::PowerParentService>());
 
   std::vector properties = {
       fdf::MakeProperty(bind_fuchsia::PROTOCOL, bind_fuchsia_platform::BIND_PROTOCOL_DEVICE),

@@ -46,6 +46,7 @@ source_set("src") {
   ]
   deps = [
     "//sdk/fidl/fuchsia.driver.compat:fuchsia.driver.compat_cpp",
+    "//sdk/fidl/fuchsia.hardware.vsi:fuchsia.hardware.vsi_cpp",
     "//sdk/lib/driver/incoming/cpp",
     "//src/graphics/magma/lib/magma/platform:barriers",
     "//src/graphics/magma/lib/magma/platform:buffer",

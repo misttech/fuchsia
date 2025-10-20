@@ -40,6 +40,7 @@ source_set("common") {
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.registers:fuchsia.hardware.registers_cpp",
+    "//sdk/fidl/fuchsia.hardware.vsi:fuchsia.hardware.vsi_cpp",
     "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/mmio/cpp",

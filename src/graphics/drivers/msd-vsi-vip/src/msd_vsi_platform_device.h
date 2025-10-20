@@ -19,6 +19,7 @@ class MsdVsiPlatformDevice {
   magma::PlatformDevice* platform_device() { return platform_device_.get(); }
 
   virtual std::optional<uint64_t> GetExternalSramPhysicalBase() const = 0;
+  virtual magma_status_t ResetPower() = 0;
 
   static std::unique_ptr<MsdVsiPlatformDevice> Create(void* platform_device_handle);
 
