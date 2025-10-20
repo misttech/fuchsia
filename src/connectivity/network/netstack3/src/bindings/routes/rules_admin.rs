@@ -18,7 +18,6 @@ use futures::TryStreamExt as _;
 use futures::channel::{mpsc, oneshot};
 use net_types::ip::Ip;
 use {
-    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
     fidl_fuchsia_net_routes_admin as fnet_routes_admin,
     fidl_fuchsia_net_routes_ext as fnet_routes_ext, fuchsia_async as fasync,
 };
@@ -26,37 +25,6 @@ use {
 use crate::bindings::util::{IntoCore as _, ScopeExt as _, TryFromFidl, TryIntoCore as _};
 use crate::bindings::{BindingsCtx, Ctx, MatcherBindingsTypes, routes};
 pub(super) use witness::AddableMatcher;
-
-impl TryFromFidl<fnet_matchers_ext::BoundInterface>
-    for netstack3_core::device::BoundInterfaceMatcher<
-        <BindingsCtx as MatcherBindingsTypes>::DeviceClass,
-    >
-{
-    type Error = std::convert::Infallible;
-
-    fn try_from_fidl(fidl: fnet_matchers_ext::BoundInterface) -> Result<Self, Self::Error> {
-        match fidl {
-            fnet_matchers_ext::BoundInterface::Bound(fnet_matchers_ext::Interface::Name(name)) => {
-                Ok(netstack3_core::device::BoundInterfaceMatcher::Bound(
-                    netstack3_core::device::InterfaceMatcher::Name(name),
-                ))
-            }
-            fnet_matchers_ext::BoundInterface::Bound(fnet_matchers_ext::Interface::Id(id)) => {
-                Ok(netstack3_core::device::BoundInterfaceMatcher::Bound(
-                    netstack3_core::device::InterfaceMatcher::Id(id),
-                ))
-            }
-            fnet_matchers_ext::BoundInterface::Bound(fnet_matchers_ext::Interface::PortClass(
-                class,
-            )) => Ok(netstack3_core::device::BoundInterfaceMatcher::Bound(
-                netstack3_core::device::InterfaceMatcher::DeviceClass(class.into()),
-            )),
-            fnet_matchers_ext::BoundInterface::Unbound => {
-                Ok(netstack3_core::device::BoundInterfaceMatcher::Unbound)
-            }
-        }
-    }
-}
 
 impl<I: Ip> TryFromFidl<RuleMatcher<I>>
     for netstack3_core::routes::RuleMatcher<I, <BindingsCtx as MatcherBindingsTypes>::DeviceClass>
@@ -84,33 +52,17 @@ impl<I: Ip> TryFromFidl<RuleMatcher<I>>
             (Some(false), Some(_)) => return Err(fnet_routes_admin::RuleSetError::InvalidMatcher),
         };
 
-        fn to_core_mark_matcher(
-            matcher: fnet_matchers_ext::Mark,
-        ) -> netstack3_core::ip::MarkMatcher {
-            match matcher {
-                fnet_matchers_ext::Mark::Unmarked => netstack3_core::ip::MarkMatcher::Unmarked,
-                fnet_matchers_ext::Mark::Marked { mask, between, invert } => {
-                    netstack3_core::ip::MarkMatcher::Marked {
-                        mask,
-                        start: *between.start(),
-                        end: *between.end(),
-                        invert,
-                    }
-                }
-            }
-        }
-
         Ok(netstack3_core::routes::RuleMatcher {
             source_address_matcher: from.map(netstack3_core::ip::SubnetMatcher),
             traffic_origin_matcher,
             mark_matchers: netstack3_core::ip::MarkMatchers::new(
                 mark_1
                     .into_iter()
-                    .map(|m| (netstack3_core::ip::MarkDomain::Mark1, to_core_mark_matcher(m)))
+                    .map(|m| (netstack3_core::ip::MarkDomain::Mark1, m.into_core()))
                     .chain(
-                        mark_2.into_iter().map(|m| {
-                            (netstack3_core::ip::MarkDomain::Mark2, to_core_mark_matcher(m))
-                        }),
+                        mark_2
+                            .into_iter()
+                            .map(|m| (netstack3_core::ip::MarkDomain::Mark2, m.into_core())),
                     ),
             ),
         })
@@ -541,6 +493,7 @@ mod tests {
     use test_case::test_case;
 
     use super::*;
+    use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
 
     #[test_case(None, false => Ok(CoreRuleMatcher {
         traffic_origin_matcher: None,

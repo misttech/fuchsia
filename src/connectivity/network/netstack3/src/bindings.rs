@@ -29,6 +29,7 @@ mod inspect;
 mod interface_config;
 mod interfaces_admin;
 mod interfaces_watcher;
+mod matchers;
 mod multicast_admin;
 mod name_worker;
 mod ndp_watcher;

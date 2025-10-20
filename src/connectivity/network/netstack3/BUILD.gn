@@ -135,6 +135,7 @@ common_sources = [
   "src/bindings/interface_config.rs",
   "src/bindings/interfaces_admin.rs",
   "src/bindings/interfaces_watcher.rs",
+  "src/bindings/matchers.rs",
   "src/bindings/multicast_admin.rs",
   "src/bindings/name_worker.rs",
   "src/bindings/ndp_watcher.rs",

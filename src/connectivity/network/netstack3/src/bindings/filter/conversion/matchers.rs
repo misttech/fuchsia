@@ -13,6 +13,7 @@ use {
 };
 
 use super::{ConversionResult, IpVersionMismatchError, IpVersionStrictness, TryConvertToCoreState};
+use crate::bindings::util::IntoCore;
 
 impl TryConvertToCoreState for fnet_filter_ext::Matchers {
     type CoreState<I: IpExt> = netstack3_core::filter::PacketMatcher<I, fnet_interfaces::PortClass>;
@@ -23,22 +24,9 @@ impl TryConvertToCoreState for fnet_filter_ext::Matchers {
     ) -> Result<ConversionResult<Self::CoreState<I>>, IpVersionMismatchError> {
         let Self { in_interface, out_interface, src_addr, dst_addr, transport_protocol } = self;
 
-        let in_interface = match in_interface
-            .map(|matcher| matcher.try_convert::<I>(ip_version_strictness))
-            .transpose()?
-        {
-            Some(ConversionResult::Omit) => return Ok(ConversionResult::Omit),
-            Some(ConversionResult::State(matcher)) => Some(matcher),
-            None => None,
-        };
-        let out_interface = match out_interface
-            .map(|matcher| matcher.try_convert::<I>(ip_version_strictness))
-            .transpose()?
-        {
-            Some(ConversionResult::Omit) => return Ok(ConversionResult::Omit),
-            Some(ConversionResult::State(matcher)) => Some(matcher),
-            None => None,
-        };
+        let in_interface = in_interface.map(|matcher| matcher.into_core());
+        let out_interface = out_interface.map(|matcher| matcher.into_core());
+
         let src_address = match src_addr
             .map(|matcher| matcher.try_convert::<I>(ip_version_strictness))
             .transpose()?
@@ -71,24 +59,6 @@ impl TryConvertToCoreState for fnet_filter_ext::Matchers {
             dst_address,
             transport_protocol,
         }))
-    }
-}
-
-impl TryConvertToCoreState for fnet_matchers_ext::Interface {
-    type CoreState<I: IpExt> = netstack3_core::device::InterfaceMatcher<fnet_interfaces::PortClass>;
-
-    fn try_convert<I: IpExt>(
-        self,
-        _ip_version_strictness: IpVersionStrictness,
-    ) -> Result<ConversionResult<Self::CoreState<I>>, IpVersionMismatchError> {
-        let matcher = match self {
-            Self::Id(id) => netstack3_core::device::InterfaceMatcher::Id(id),
-            Self::Name(name) => netstack3_core::device::InterfaceMatcher::Name(name),
-            Self::PortClass(port_class) => {
-                netstack3_core::device::InterfaceMatcher::DeviceClass(port_class.into())
-            }
-        };
-        Ok(ConversionResult::State(matcher))
     }
 }
 
@@ -203,12 +173,6 @@ impl TryConvertToCoreState for fnet_matchers_ext::TransportProtocol {
             Result<ConversionResult<I::Proto>, IpVersionMismatchError>,
         );
 
-        let into_core_port_matcher =
-            |matcher: fnet_matchers_ext::Port| netstack3_core::ip::PortMatcher {
-                range: matcher.range().clone(),
-                invert: matcher.invert,
-            };
-
         let matcher = match self {
             fnet_matchers_ext::TransportProtocol::Tcp { src_port, dst_port } => {
                 netstack3_core::filter::TransportProtocolMatcher {
@@ -217,8 +181,8 @@ impl TryConvertToCoreState for fnet_matchers_ext::TransportProtocol {
                         |()| Ipv4Proto::Proto(IpProto::Tcp),
                         |()| Ipv6Proto::Proto(IpProto::Tcp),
                     ),
-                    src_port: src_port.map(into_core_port_matcher),
-                    dst_port: dst_port.map(into_core_port_matcher),
+                    src_port: src_port.map(IntoCore::into_core),
+                    dst_port: dst_port.map(IntoCore::into_core),
                 }
             }
             fnet_matchers_ext::TransportProtocol::Udp { src_port, dst_port } => {
@@ -228,8 +192,8 @@ impl TryConvertToCoreState for fnet_matchers_ext::TransportProtocol {
                         |()| Ipv4Proto::Proto(IpProto::Udp),
                         |()| Ipv6Proto::Proto(IpProto::Udp),
                     ),
-                    src_port: src_port.map(into_core_port_matcher),
-                    dst_port: dst_port.map(into_core_port_matcher),
+                    src_port: src_port.map(IntoCore::into_core),
+                    dst_port: dst_port.map(IntoCore::into_core),
                 }
             }
             fnet_matchers_ext::TransportProtocol::Icmp => {
