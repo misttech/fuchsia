@@ -5,9 +5,11 @@
 //! Implements a clock backed by memory mapped into this process' virtual address
 //! space.  See [MappedClock] for details.
 
-use std::ptr;
 use zx::HandleBased;
 use zx_status::Status;
+
+/// The size of the memory region used by the memory mapped clock.
+pub const CLOCK_SIZE: usize = 4096;
 
 /// A clock backed by memory mapped into this process' virtual address space.
 ///
@@ -25,22 +27,26 @@ pub struct MappedClock<Reference: zx::Timeline, Output: zx::Timeline> {
     // so we can unmap the range when this struct goes out of scope.
     parent_vmar: zx::Vmar,
     // The pointer to the beginning of the memory area for this mappable clock.
-    addr: ptr::NonNull<u8>,
+    addr: usize,
     // The size of the memory area used by this mappable clock.
     clock_size: usize,
+    // Unmap the clock when dropping MappedClock.
+    unmap_on_drop: bool,
     _mark: std::marker::PhantomData<(Reference, Output)>,
 }
 
 impl<Reference: zx::Timeline, Output: zx::Timeline> Drop for MappedClock<Reference, Output> {
     fn drop(&mut self) {
-        unsafe {
-            // SAFETY: try_new ensures `addr` and `clock_size` are correctly initialized and
-            // valid while this struct lives. The only way for the unmap to fail is if vmar
-            // is somehow invalid, or if someone already called unmap for this clock, both of
-            // which require unsafe code, which can not happen by accident.
-            self.parent_vmar
-                .unmap(self.raw_addr(), self.clock_size)
-                .expect("address should be unmappable");
+        if self.unmap_on_drop {
+            unsafe {
+                // SAFETY: try_new ensures `addr` and `clock_size` are correctly initialized and
+                // valid while this struct lives. The only way for the unmap to fail is if vmar
+                // is somehow invalid, or if someone already called unmap for this clock, both of
+                // which require unsafe code, which can not happen by accident.
+                self.parent_vmar
+                    .unmap(self.raw_addr(), self.clock_size)
+                    .expect("address should be unmappable");
+            }
         }
     }
 }
@@ -76,6 +82,40 @@ impl<Reference: zx::Timeline, Output: zx::Timeline> MappedClock<Reference, Outpu
         clock: zx::Clock<Reference, Output>,
         parent_vmar: &zx::Vmar,
     ) -> Result<MappedClock<Reference, Output>, Status> {
+        Self::try_new_internal(clock, parent_vmar, /*unmap_on_drop=*/ true, /*offset=*/ 0)
+    }
+
+    pub fn try_new_with_offset(
+        clock: zx::Clock<Reference, Output>,
+        parent_vmar: &zx::Vmar,
+        offset: u64,
+    ) -> Result<MappedClock<Reference, Output>, Status> {
+        Self::try_new_internal(clock, parent_vmar, /*unmap_on_drop=*/ true, offset)
+    }
+
+    /// Same as `try_new`, but does not unmap the clock at end of this struct's lifetime.
+    pub fn try_new_without_unmap(
+        clock: zx::Clock<Reference, Output>,
+        parent_vmar: &zx::Vmar,
+        offset: u64,
+    ) -> Result<MappedClock<Reference, Output>, Status> {
+        Self::try_new_internal(clock, parent_vmar, /*unmap_on_drop=*/ false, offset)
+    }
+
+    fn try_new_internal(
+        clock: zx::Clock<Reference, Output>,
+        parent_vmar: &zx::Vmar,
+        unmap_on_drop: bool,
+        offset: u64,
+    ) -> Result<MappedClock<Reference, Output>, Status> {
+        let offset: usize = offset.try_into().map_err(|err| {
+            log::error!(
+                "[{}:{}] could not convert into usize: {offset:?}: {err:?}",
+                file!(),
+                line!()
+            );
+            zx::Status::INTERNAL
+        })?;
         // The easiest way to ensure we can drop() without affecting the caller
         // API. Consider changing if it becomes a problem.
         let parent_vmar = parent_vmar
@@ -90,24 +130,22 @@ impl<Reference: zx::Timeline, Output: zx::Timeline> MappedClock<Reference, Outpu
         //   .inspect_err(|err| log::error!("in get_mapped_size: {err:?}"))?;
         // ```
         // instead "just" do this:
-        /// The size of the memory-mapped clock object. Should be replaced with a call
-        /// to get the size from a syscall.
-        const PAGE_SIZE: usize = 4096;
-        let mapping = parent_vmar
-            .map_clock(zx::VmarFlags::PERM_READ, 0, &clock, PAGE_SIZE)
+        let addr = parent_vmar
+            .map_clock(zx::VmarFlags::PERM_READ, offset, &clock, CLOCK_SIZE)
             .inspect_err(|err| log::error!("MappedClock: map_clock: {err:?}"))?;
 
-        let addr = unsafe {
-            // SAFETY: map_clock will not return an invalid pointer, but will
-            // return an error instead.
-            ptr::NonNull::<u8>::new_unchecked(mapping as *mut u8)
-        };
-        Ok(Self { parent_vmar, addr, clock_size: PAGE_SIZE, _mark: std::marker::PhantomData })
+        Ok(Self {
+            parent_vmar,
+            addr,
+            clock_size: CLOCK_SIZE,
+            unmap_on_drop,
+            _mark: std::marker::PhantomData,
+        })
     }
 
     /// Returns the raw value of the address this clock is mapped to.
     pub fn raw_addr(&self) -> usize {
-        self.addr.as_ptr() as usize
+        self.addr
     }
 
     /// The size of the memory region occupied by this memory mapped clock.
@@ -121,7 +159,9 @@ impl<Reference: zx::Timeline, Output: zx::Timeline> MappedClock<Reference, Outpu
     pub fn read(&self) -> Result<zx::Instant<Output>, Status> {
         unsafe {
             // SAFETY: try_new ensures self.addr is correctly initialized.
-            zx::Clock::<Reference, Output>::read_mapped(self.addr.as_ptr() as *const u8)
+            // TODO(fmil): Change the signature of get_details_mapped to take
+            // just `usize`.
+            zx::Clock::<Reference, Output>::read_mapped(self.addr as *const u8)
         }
     }
 
@@ -131,7 +171,9 @@ impl<Reference: zx::Timeline, Output: zx::Timeline> MappedClock<Reference, Outpu
     pub fn get_details(&self) -> Result<zx::ClockDetails<Reference, Output>, Status> {
         unsafe {
             // SAFETY: try_new ensures self.addr is correctly initialized.
-            zx::Clock::<Reference, Output>::get_details_mapped(self.addr.as_ptr() as *const u8)
+            // TODO(fmil): Change the signature of get_details_mapped to take
+            // just `usize`.
+            zx::Clock::<Reference, Output>::get_details_mapped(self.addr as *const u8)
         }
     }
 }
