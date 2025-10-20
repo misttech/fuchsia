@@ -88,12 +88,12 @@ pub async fn serve_to_inspect(
         let Digest { buckets } = {
             let attribution_data = attribution_data_service.get_attribution_data()?;
             // Compute the aggregation.
-            let digest = Digest::compute_from_attribution_data(
+            let digest = Digest::compute(
                 &attribution_data,
                 &kmem_stats,
                 &kmem_stats_compression,
                 bucket_definitions,
-            );
+            )?;
             let summary = attribute_vmos(attribution_data).summary();
             _current = inspect_root
                 .create_string("current", record_summary(summary, timestamp, &kmem_stats));
@@ -221,17 +221,42 @@ fn record_summary(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use attribution_processing::testing::FakeAttributionDataProvider;
     use attribution_processing::{
         Attribution, AttributionData, Principal, PrincipalDescription, PrincipalIdentifier,
-        PrincipalType, Resource, ResourceReference, ZXName,
+        PrincipalType, Resource, ResourceEnumerator, ResourceReference, ResourcesVisitor, ZXName,
     };
+
     use diagnostics_assertions::{NonZeroIntProperty, assert_data_tree};
     use futures::FutureExt;
     use futures::task::Poll;
     use std::time::Duration;
 
     use fidl_fuchsia_memory_attribution_plugin as fplugin;
+
+    pub struct FakeAttributionDataProvider {
+        pub attribution_data: AttributionData,
+    }
+
+    impl AttributionDataProvider for FakeAttributionDataProvider {
+        fn get_attribution_data(&self) -> Result<AttributionData, anyhow::Error> {
+            Ok(AttributionData {
+                principals_vec: self.attribution_data.principals_vec.clone(),
+                resources_vec: self.attribution_data.resources_vec.clone(),
+                resource_names: self.attribution_data.resource_names.clone(),
+                attributions: self.attribution_data.attributions.clone(),
+            })
+        }
+    }
+
+    impl ResourceEnumerator for FakeAttributionDataProvider {
+        fn for_each_resource(
+            &self,
+            _visitor: &mut impl ResourcesVisitor,
+        ) -> Result<(), anyhow::Error> {
+            unimplemented!();
+        }
+    }
+
     async fn serve_kernel_stats(
         mut request_stream: fkernel::StatsRequestStream,
     ) -> Result<(), fidl::Error> {

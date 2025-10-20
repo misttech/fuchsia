@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::fplugin::Vmo;
-use crate::{AttributionData, AttributionDataProvider, ResourcesVisitor, ZXName};
+use crate::{ResourceEnumerator, ResourcesVisitor, ZXName};
 use anyhow::Result;
 use regex::bytes::Regex;
 use serde::de::Error;
@@ -156,143 +156,99 @@ impl ResourcesVisitor for DigestComputer<'_> {
     }
 }
 
-fn produce_buckets<'a>(
-    total_vmo_size: u64,
-    undigested_vmos: impl Iterator<Item = &'a Vmo>,
-    kmem_stats: &fkernel::MemoryStats,
-    kmem_stats_compression: &fkernel::MemoryStatsCompression,
-) -> Vec<Bucket> {
-    vec![
-        // This bucket contains the total size of the VMOs that have not been covered by any
-        // other bucket.
-        Bucket {
-            name: UNDIGESTED.to_string(),
-            size: undigested_vmos.filter_map(|vmo| vmo.scaled_committed_bytes).sum(),
-        },
-        // This bucket accounts for VMO bytes that have been allocated by the kernel, but not
-        // claimed by any VMO (anymore).
-        Bucket {
-            name: ORPHANED.to_string(),
-            size: kmem_stats.vmo_bytes.unwrap_or(0).saturating_sub(total_vmo_size),
-        },
-        // This bucket aggregates overall kernel memory usage.
-        Bucket {
-            name: KERNEL.to_string(),
-            size: (|| {
-                Some(
-                    kmem_stats.wired_bytes?
-                        + kmem_stats.total_heap_bytes?
-                        + kmem_stats.mmu_overhead_bytes?
-                        + kmem_stats.ipc_bytes?
-                        + kmem_stats.other_bytes?,
-                )
-            })()
-            .unwrap_or(0),
-        },
-        // This bucket contains the amount of free memory in the system.
-        Bucket { name: FREE.to_string(), size: kmem_stats.free_bytes.unwrap_or(0) },
-        // Those buckets contain pager related information.
-        Bucket {
-            name: PAGER_TOTAL.to_string(),
-            size: kmem_stats.vmo_reclaim_total_bytes.unwrap_or(0),
-        },
-        Bucket {
-            name: PAGER_NEWEST.to_string(),
-            size: kmem_stats.vmo_reclaim_newest_bytes.unwrap_or(0),
-        },
-        Bucket {
-            name: PAGER_OLDEST.to_string(),
-            size: kmem_stats.vmo_reclaim_oldest_bytes.unwrap_or(0),
-        },
-        // Those buckets account for discardable memory.
-        Bucket {
-            name: DISCARDABLE_LOCKED.to_string(),
-            size: kmem_stats.vmo_discardable_locked_bytes.unwrap_or(0),
-        },
-        Bucket {
-            name: DISCARDABLE_UNLOCKED.to_string(),
-            size: kmem_stats.vmo_discardable_unlocked_bytes.unwrap_or(0),
-        },
-        // This bucket accounts for compressed memory.
-        Bucket {
-            name: ZRAM_COMPRESSED_BYTES.to_string(),
-            size: kmem_stats_compression.compressed_storage_bytes.unwrap_or(0),
-        },
-    ]
-}
 impl Digest {
     /// Given means to query the system for memory usage, and a specification, this function
     /// aggregates the current memory usage into human displayable units we call buckets.
-    pub fn compute_from_attribution_data_provider(
-        attribution_data_service: &impl AttributionDataProvider,
+    pub fn compute(
+        resource_enumerator: &impl ResourceEnumerator,
         kmem_stats: &fkernel::MemoryStats,
         kmem_stats_compression: &fkernel::MemoryStatsCompression,
         bucket_definitions: &[BucketDefinition],
     ) -> Result<Digest> {
         let mut digest_visitor = DigestComputer::new(bucket_definitions);
-        attribution_data_service.for_each_resource(&mut digest_visitor)?;
+        resource_enumerator.for_each_resource(&mut digest_visitor)?;
         let mut buckets: Vec<Bucket> =
             digest_visitor.buckets.drain(..).map(|(_, bucket)| bucket).collect();
 
-        let vmo_size: u64 = buckets.iter().map(|Bucket { size, .. }| size).sum();
+        let total_vmo_size: u64 = buckets.iter().map(|Bucket { size, .. }| size).sum();
+
         // Extend the configured aggregation with a number of additional, occasionally useful meta
         // aggregations.
-        buckets.extend(produce_buckets(
-            vmo_size,
-            digest_visitor.undigested_vmos.values().map(|(vmo, _)| vmo),
-            kmem_stats,
-            kmem_stats_compression,
-        ));
+        buckets.extend([
+            // This bucket contains the total size of the VMOs that have not been covered by any
+            // other bucket.
+            Bucket {
+                name: UNDIGESTED.to_string(),
+                size: digest_visitor
+                    .undigested_vmos
+                    .values()
+                    .filter_map(|vmo| vmo.0.scaled_committed_bytes)
+                    .sum(),
+            },
+            // This bucket accounts for VMO bytes that have been allocated by the kernel, but not
+            // claimed by any VMO (anymore).
+            Bucket {
+                name: ORPHANED.to_string(),
+                size: kmem_stats.vmo_bytes.unwrap_or(0).saturating_sub(total_vmo_size),
+            },
+            // This bucket aggregates overall kernel memory usage.
+            Bucket {
+                name: KERNEL.to_string(),
+                size: (|| {
+                    Some(
+                        kmem_stats.wired_bytes?
+                            + kmem_stats.total_heap_bytes?
+                            + kmem_stats.mmu_overhead_bytes?
+                            + kmem_stats.ipc_bytes?
+                            + kmem_stats.other_bytes?,
+                    )
+                })()
+                .unwrap_or(0),
+            },
+            // This bucket contains the amount of free memory in the system.
+            Bucket { name: FREE.to_string(), size: kmem_stats.free_bytes.unwrap_or(0) },
+            // Those buckets contain pager related information.
+            Bucket {
+                name: PAGER_TOTAL.to_string(),
+                size: kmem_stats.vmo_reclaim_total_bytes.unwrap_or(0),
+            },
+            Bucket {
+                name: PAGER_NEWEST.to_string(),
+                size: kmem_stats.vmo_reclaim_newest_bytes.unwrap_or(0),
+            },
+            Bucket {
+                name: PAGER_OLDEST.to_string(),
+                size: kmem_stats.vmo_reclaim_oldest_bytes.unwrap_or(0),
+            },
+            // Those buckets account for discardable memory.
+            Bucket {
+                name: DISCARDABLE_LOCKED.to_string(),
+                size: kmem_stats.vmo_discardable_locked_bytes.unwrap_or(0),
+            },
+            Bucket {
+                name: DISCARDABLE_UNLOCKED.to_string(),
+                size: kmem_stats.vmo_discardable_unlocked_bytes.unwrap_or(0),
+            },
+            // This bucket accounts for compressed memory.
+            Bucket {
+                name: ZRAM_COMPRESSED_BYTES.to_string(),
+                size: kmem_stats_compression.compressed_storage_bytes.unwrap_or(0),
+            },
+        ]);
         Ok(Digest { buckets })
-    }
-
-    pub fn compute_from_attribution_data(
-        attribution_data: &AttributionData,
-        kmem_stats: &fkernel::MemoryStats,
-        kmem_stats_compression: &fkernel::MemoryStatsCompression,
-        bucket_definitions: &[BucketDefinition],
-    ) -> Digest {
-        let mut digest_visitor = DigestComputer::new(bucket_definitions);
-        attribution_data.resources_vec.iter().for_each(|resource| {
-            match &resource.resource_type {
-                fplugin::ResourceType::Process(process) => digest_visitor.on_process(
-                    resource.koid,
-                    &attribution_data.resource_names[resource.name_index],
-                    process.clone(),
-                ),
-                fplugin::ResourceType::Vmo(vmo) => digest_visitor.on_vmo(
-                    resource.koid,
-                    &attribution_data.resource_names[resource.name_index],
-                    vmo.clone(),
-                ),
-                _ => Ok(()),
-            }
-            .unwrap_or_default()
-        });
-        let mut buckets: Vec<Bucket> =
-            digest_visitor.buckets.drain(..).map(|(_, bucket)| bucket).collect();
-        let vmo_size: u64 = buckets.iter().map(|Bucket { size, .. }| size).sum();
-        buckets.extend(produce_buckets(
-            vmo_size,
-            digest_visitor.undigested_vmos.values().map(|(vmo, _)| vmo),
-            kmem_stats,
-            kmem_stats_compression,
-        ));
-        Digest { buckets }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::FakeAttributionDataProvider;
     use crate::{
         Attribution, AttributionData, Principal, PrincipalDescription, PrincipalIdentifier,
         PrincipalType, Resource, ResourceReference,
     };
     use fidl_fuchsia_memory_attribution_plugin as fplugin;
 
-    fn get_attribution_data_provider() -> FakeAttributionDataProvider {
+    fn get_attribution_data() -> AttributionData {
         let attribution_data = AttributionData {
             principals_vec: vec![Principal {
                 identifier: PrincipalIdentifier(1),
@@ -348,7 +304,7 @@ mod tests {
                 resources: vec![ResourceReference::KernelObject(10)],
             }],
         };
-        FakeAttributionDataProvider { attribution_data }
+        attribution_data
     }
 
     fn get_kernel_stats() -> (fkernel::MemoryStats, fkernel::MemoryStatsCompression) {
@@ -398,8 +354,8 @@ mod tests {
     #[test]
     fn test_digest_no_definitions() {
         let (kernel_stats, kernel_stats_compression) = get_kernel_stats();
-        let digest = Digest::compute_from_attribution_data_provider(
-            &get_attribution_data_provider(),
+        let digest = Digest::compute(
+            &get_attribution_data(),
             &kernel_stats,
             &kernel_stats_compression,
             &vec![],
@@ -424,8 +380,8 @@ mod tests {
     #[test]
     fn test_digest_with_matching_vmo() -> Result<(), anyhow::Error> {
         let (kernel_stats, kernel_stats_compression) = get_kernel_stats();
-        let digest = Digest::compute_from_attribution_data_provider(
-            &get_attribution_data_provider(),
+        let digest = Digest::compute(
+            &get_attribution_data(),
             &kernel_stats,
             &kernel_stats_compression,
             &vec![BucketDefinition {
@@ -457,8 +413,8 @@ mod tests {
     #[test]
     fn test_digest_with_matching_process() -> Result<(), anyhow::Error> {
         let (kernel_stats, kernel_stats_compression) = get_kernel_stats();
-        let digest = Digest::compute_from_attribution_data_provider(
-            &get_attribution_data_provider(),
+        let digest = Digest::compute(
+            &get_attribution_data(),
             &kernel_stats,
             &kernel_stats_compression,
             &vec![BucketDefinition {
@@ -490,8 +446,8 @@ mod tests {
     #[test]
     fn test_digest_with_matching_process_and_vmo() -> Result<(), anyhow::Error> {
         let (kernel_stats, kernel_stats_compression) = get_kernel_stats();
-        let digest = Digest::compute_from_attribution_data_provider(
-            &get_attribution_data_provider(),
+        let digest = Digest::compute(
+            &get_attribution_data(),
             &kernel_stats,
             &kernel_stats_compression,
             &vec![BucketDefinition {
@@ -517,31 +473,6 @@ mod tests {
         ];
 
         assert_eq!(digest.buckets, expected_buckets);
-        Ok(())
-    }
-
-    #[test]
-    fn test_digest_with_attribution_data() -> Result<(), anyhow::Error> {
-        let (kernel_stats, kernel_stats_compression) = get_kernel_stats();
-        let bucket_definitions = vec![BucketDefinition {
-            name: "matched".to_string(),
-            process: Some(Regex::new("matched")?),
-            vmo: Some(Regex::new("matched")?),
-            event_code: Default::default(),
-        }];
-        let digest_from_data_provider = Digest::compute_from_attribution_data_provider(
-            &get_attribution_data_provider(),
-            &kernel_stats,
-            &kernel_stats_compression,
-            &bucket_definitions,
-        )?;
-        let digest_from_data = Digest::compute_from_attribution_data(
-            &get_attribution_data_provider().attribution_data,
-            &kernel_stats,
-            &kernel_stats_compression,
-            &bucket_definitions,
-        );
-        assert_eq!(digest_from_data_provider, digest_from_data);
         Ok(())
     }
 }

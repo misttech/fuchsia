@@ -8,7 +8,7 @@ use crate::resources::{Job, KernelResources};
 use anyhow::Context;
 use attribution_processing::{
     Attribution, AttributionData, AttributionDataProvider, Principal, PrincipalDescription,
-    PrincipalType, ResourceReference, ResourcesVisitor,
+    PrincipalType, ResourceEnumerator, ResourceReference, ResourcesVisitor,
 };
 use fuchsia_sync::Mutex;
 use fuchsia_trace::duration;
@@ -107,7 +107,9 @@ impl AttributionDataProvider for AttributionDataProviderImpl {
             attributions,
         })
     }
+}
 
+impl ResourceEnumerator for AttributionDataProviderImpl {
     fn for_each_resource(&self, visitor: &mut impl ResourcesVisitor) -> Result<(), anyhow::Error> {
         let attribution_state = self.attribution_client.get_attributions();
         crate::resources::KernelResourcesExplorer::default()

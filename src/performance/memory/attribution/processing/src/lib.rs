@@ -414,15 +414,6 @@ impl Into<fplugin::ResourceReference> for ResourceReference {
     }
 }
 
-/// Capture of the current memory usage of a device, as retrieved through the memory attribution
-/// protocol. In this object, memory attribution is not resolved.
-pub struct AttributionData {
-    pub principals_vec: Vec<Principal>,
-    pub resources_vec: Vec<Resource>,
-    pub resource_names: Vec<ZXName>,
-    pub attributions: Vec<Attribution>,
-}
-
 // TODO(b/411121120): Use zx::Koid when available on host code.
 /// The post-order traversal of the Jobs->Process->VMOs tree guarantees that when
 /// a visitor processes a Process, it has already seen its associated VMOs.
@@ -447,11 +438,62 @@ pub trait ResourcesVisitor {
     ) -> Result<(), zx_status::Status>;
 }
 
-pub trait AttributionDataProvider: Send + Sync {
-    /// Collects and returns a structure with all memory resources and attribution specifications.
-    fn get_attribution_data(&self) -> Result<AttributionData, anyhow::Error>;
+pub trait ResourceEnumerator {
     /// Enumerates Jobs, Processes and VMOs and call back the visitor.
     fn for_each_resource(&self, visitor: &mut impl ResourcesVisitor) -> Result<(), anyhow::Error>;
+}
+
+/// Capture of the current memory usage of a device, as retrieved through the memory attribution
+/// protocol. In this object, memory attribution is not resolved.
+pub struct AttributionData {
+    pub principals_vec: Vec<Principal>,
+    pub resources_vec: Vec<Resource>,
+    pub resource_names: Vec<ZXName>,
+    pub attributions: Vec<Attribution>,
+}
+
+impl ResourceEnumerator for AttributionData {
+    fn for_each_resource(&self, visitor: &mut impl ResourcesVisitor) -> Result<(), anyhow::Error> {
+        for resource in &self.resources_vec {
+            if let Resource {
+                koid,
+                name_index,
+                resource_type: fplugin::ResourceType::Vmo(vmo),
+                ..
+            } = &resource
+            {
+                visitor.on_vmo(*koid, &self.resource_names[*name_index], vmo.clone())?;
+            }
+        }
+        for resource in &self.resources_vec {
+            if let Resource {
+                koid,
+                name_index,
+                resource_type: fplugin::ResourceType::Process(process),
+                ..
+            } = &resource
+            {
+                visitor.on_process(*koid, &self.resource_names[*name_index], process.clone())?;
+            }
+        }
+        for resource in &self.resources_vec {
+            if let Resource {
+                koid,
+                name_index,
+                resource_type: fplugin::ResourceType::Job(job),
+                ..
+            } = &resource
+            {
+                visitor.on_job(*koid, &self.resource_names[*name_index], job.clone())?;
+            }
+        }
+        Ok(())
+    }
+}
+
+pub trait AttributionDataProvider: ResourceEnumerator + Send + Sync {
+    /// Collects and returns a structure with all memory resources and attribution specifications.
+    fn get_attribution_data(&self) -> Result<AttributionData, anyhow::Error>;
 }
 
 /// Processed snapshot of the memory usage of a device, with attribution of memory resources to
@@ -673,72 +715,6 @@ pub fn attribute_vmos(attribution_data: AttributionData) -> ProcessedAttribution
     }
 
     ProcessedAttributionData::new(principals, resources, attribution_data.resource_names)
-}
-
-pub mod testing {
-    use crate::{AttributionData, AttributionDataProvider, Resource, ResourcesVisitor};
-    use fidl_fuchsia_memory_attribution_plugin::ResourceType;
-
-    pub struct FakeAttributionDataProvider {
-        pub attribution_data: AttributionData,
-    }
-
-    impl AttributionDataProvider for FakeAttributionDataProvider {
-        fn get_attribution_data(&self) -> Result<AttributionData, anyhow::Error> {
-            Ok(AttributionData {
-                principals_vec: self.attribution_data.principals_vec.clone(),
-                resources_vec: self.attribution_data.resources_vec.clone(),
-                resource_names: self.attribution_data.resource_names.clone(),
-                attributions: self.attribution_data.attributions.clone(),
-            })
-        }
-
-        fn for_each_resource(
-            &self,
-            visitor: &mut impl ResourcesVisitor,
-        ) -> Result<(), anyhow::Error> {
-            for resource in &self.attribution_data.resources_vec {
-                if let Resource {
-                    koid, name_index, resource_type: ResourceType::Vmo(vmo), ..
-                } = resource
-                {
-                    visitor.on_vmo(
-                        *koid,
-                        &self.attribution_data.resource_names[*name_index],
-                        vmo.clone(),
-                    )?;
-                }
-            }
-            for resource in &self.attribution_data.resources_vec {
-                if let Resource {
-                    koid,
-                    name_index,
-                    resource_type: ResourceType::Process(process),
-                    ..
-                } = resource
-                {
-                    visitor.on_process(
-                        *koid,
-                        &self.attribution_data.resource_names[*name_index],
-                        process.clone(),
-                    )?;
-                }
-            }
-            for resource in &self.attribution_data.resources_vec {
-                if let Resource {
-                    koid, name_index, resource_type: ResourceType::Job(job), ..
-                } = resource
-                {
-                    visitor.on_job(
-                        *koid,
-                        &self.attribution_data.resource_names[*name_index],
-                        job.clone(),
-                    )?;
-                }
-            }
-            Ok(())
-        }
-    }
 }
 
 #[cfg(test)]

@@ -209,7 +209,7 @@ async fn collect_metrics_once(
         kernel_stats_proxy.get_memory_stats().map_err(anyhow::Error::from),
         kernel_stats_proxy.get_memory_stats_compression().map_err(anyhow::Error::from)
     )?;
-    let digest = Digest::compute_from_attribution_data_provider(
+    let digest = Digest::compute(
         &*attribution_data_service,
         &kmem_stats,
         &kmem_stats_compression,
@@ -230,17 +230,38 @@ async fn collect_metrics_once(
 mod tests {
     use super::*;
     use anyhow::anyhow;
-    use attribution_processing::testing::FakeAttributionDataProvider;
     use attribution_processing::{
         Attribution, AttributionData, Principal, PrincipalDescription, PrincipalIdentifier,
-        PrincipalType, Resource, ResourceReference, ZXName,
+        PrincipalType, Resource, ResourceEnumerator, ResourceReference, ResourcesVisitor, ZXName,
     };
     use futures::TryStreamExt;
     use futures::task::Poll;
     use regex::bytes::Regex;
     use std::time::Duration;
     use {fidl_fuchsia_memory_attribution_plugin as fplugin, fuchsia_async as fasync};
+    pub struct FakeAttributionDataProvider {
+        pub attribution_data: AttributionData,
+    }
 
+    impl AttributionDataProvider for FakeAttributionDataProvider {
+        fn get_attribution_data(&self) -> Result<AttributionData, anyhow::Error> {
+            Ok(AttributionData {
+                principals_vec: self.attribution_data.principals_vec.clone(),
+                resources_vec: self.attribution_data.resources_vec.clone(),
+                resource_names: self.attribution_data.resource_names.clone(),
+                attributions: self.attribution_data.attributions.clone(),
+            })
+        }
+    }
+
+    impl ResourceEnumerator for FakeAttributionDataProvider {
+        fn for_each_resource(
+            &self,
+            visitor: &mut impl ResourcesVisitor,
+        ) -> Result<(), anyhow::Error> {
+            self.get_attribution_data()?.for_each_resource(visitor)
+        }
+    }
     fn get_attribution_data_provider() -> Arc<impl AttributionDataProvider + 'static> {
         let attribution_data = AttributionData {
             principals_vec: vec![Principal {

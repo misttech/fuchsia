@@ -13,7 +13,7 @@ use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use attribution_processing::summary::{ComponentSummaryProfileResult, MemorySummary};
 use attribution_processing::{
-    AttributionData, AttributionDataProvider, Principal, Resource, ResourcesVisitor, ZXName, digest,
+    AttributionData, Principal, Resource, ResourceEnumerator, ResourcesVisitor, ZXName, digest,
 };
 use errors::ffx_error;
 use ffx_profile_memory_components_args::ComponentsCommand;
@@ -194,7 +194,7 @@ pub struct SnapshotAttributionDataProvider<'a> {
     resource_names: &'a Vec<fplugin::ResourceName>,
 }
 
-impl<'a> AttributionDataProvider for SnapshotAttributionDataProvider<'a> {
+impl<'a> ResourceEnumerator for SnapshotAttributionDataProvider<'a> {
     fn for_each_resource(&self, visitor: &mut impl ResourcesVisitor) -> Result<(), anyhow::Error> {
         for resource in self.resources {
             if let Resource { koid, name_index, resource_type: ResourceType::Vmo(vmo), .. } =
@@ -225,10 +225,6 @@ impl<'a> AttributionDataProvider for SnapshotAttributionDataProvider<'a> {
 
         Ok(())
     }
-
-    fn get_attribution_data(&self) -> Result<AttributionData, anyhow::Error> {
-        todo!()
-    }
 }
 
 fn process_snapshot_summary(snapshot: fplugin::Snapshot) -> ComponentSummaryProfileResult {
@@ -254,7 +250,7 @@ fn process_snapshot_summary(snapshot: fplugin::Snapshot) -> ComponentSummaryProf
             event_code: 0, // The information is unavailable client side.
         })
         .collect();
-    let digest = digest::Digest::compute_from_attribution_data_provider(
+    let digest = digest::Digest::compute(
         &SnapshotAttributionDataProvider {
             resources: &resources,
             resource_names: snapshot.resource_names.as_ref().unwrap(),
