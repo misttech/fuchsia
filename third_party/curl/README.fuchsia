@@ -3,7 +3,7 @@ URL: https://curl.haxx.se/
 License: MIT/X derivate
 License File: src/COPYING
 Upstream Git: https://github.com/curl/curl
-CPEPrefix: cpe:/a:haxx:curl:8.6.0
+CPEPrefix: cpe:/a:haxx:curl:8.15.0
 Description:
 
 Curl is a command-line tool for transferring data specified with URL
