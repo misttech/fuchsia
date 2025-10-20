@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.66"
+rust-version = "1.76"
 name = "toml_parser"
-version = "1.0.2"
+version = "1.0.4"
 build = false
 include = [
     "build.rs",
@@ -46,46 +46,43 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/toml-rs/toml"
 
 [package.metadata.docs.rs]
-features = []
-rustdoc-args = [
-    "--cfg",
-    "docsrs",
-]
+all-features = true
+rustdoc-args = ["--generate-link-to-definition"]
 
 [[package.metadata.release.pre-release-replacements]]
 file = "CHANGELOG.md"
-min = 1
-replace = "{{version}}"
 search = "Unreleased"
-
-[[package.metadata.release.pre-release-replacements]]
-exactly = 1
-file = "CHANGELOG.md"
-replace = "...{{tag_name}}"
-search = '\.\.\.HEAD'
-
-[[package.metadata.release.pre-release-replacements]]
-file = "CHANGELOG.md"
+replace = "{{version}}"
 min = 1
-replace = "{{date}}"
-search = "ReleaseDate"
 
 [[package.metadata.release.pre-release-replacements]]
-exactly = 1
 file = "CHANGELOG.md"
+search = '\.\.\.HEAD'
+replace = "...{{tag_name}}"
+exactly = 1
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "ReleaseDate"
+replace = "{{date}}"
+min = 1
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "<!-- next-header -->"
 replace = """
 <!-- next-header -->
 ## [Unreleased] - ReleaseDate
 """
-search = "<!-- next-header -->"
+exactly = 1
 
 [[package.metadata.release.pre-release-replacements]]
-exactly = 1
 file = "CHANGELOG.md"
+search = "<!-- next-url -->"
 replace = """
 <!-- next-url -->
 [Unreleased]: https://github.com/toml-rs/toml/compare/{{tag_name}}...HEAD"""
-search = "<!-- next-url -->"
+exactly = 1
 
 [features]
 alloc = []
@@ -104,23 +101,23 @@ name = "toml_parser"
 path = "src/lib.rs"
 
 [dependencies.anstream]
-version = "0.6.15"
+version = "0.6.20"
 optional = true
 
 [dependencies.anstyle]
-version = "1.0.8"
+version = "1.0.11"
 optional = true
 
 [dependencies.winnow]
-version = "0.7.10"
+version = "0.7.13"
 default-features = false
 
 [dev-dependencies.anstream]
-version = "0.6.15"
+version = "0.6.20"
 features = ["test"]
 
 [dev-dependencies.snapbox]
-version = "0.6.0"
+version = "0.6.21"
 
 [lints.clippy]
 bool_assert_comparison = "allow"

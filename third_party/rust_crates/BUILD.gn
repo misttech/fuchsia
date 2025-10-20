@@ -19034,7 +19034,7 @@ rustc_library("toml-v0_9_5") {
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_spanned-v1_0_2" ]
   deps += [ ":toml_datetime-v0_7_3" ]
-  deps += [ ":toml_parser-v1_0_2" ]
+  deps += [ ":toml_parser-v1_0_4" ]
   deps += [ ":toml_writer-v1_0_4" ]
   deps += [ ":winnow-v0_7_13" ]
 
@@ -19128,18 +19128,18 @@ rustc_library("toml_edit-v0_2_1") {
   applicable_licenses = [ ":toml_edit-v0_2_1.license" ]
 }
 
-license("toml_parser-v1_0_2.license") {
+license("toml_parser-v1_0_4.license") {
   public_package_name = "toml_parser"
   license_files = [
-    "//third_party/rust_crates/vendor/toml_parser-1.0.2/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/toml_parser-1.0.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/toml_parser-1.0.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/toml_parser-1.0.4/LICENSE-MIT",
   ]
 }
 
-rustc_library("toml_parser-v1_0_2") {
+rustc_library("toml_parser-v1_0_4") {
   crate_name = "toml_parser"
-  source_root = "//third_party/rust_crates/vendor/toml_parser-1.0.2/src/lib.rs"
-  output_name = "toml_parser-efa3f7db71c8c351"
+  source_root = "//third_party/rust_crates/vendor/toml_parser-1.0.4/src/lib.rs"
+  output_name = "toml_parser-2ec8c3767ba3b2ff"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -19152,15 +19152,15 @@ rustc_library("toml_parser-v1_0_2") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=efa3f7db71c8c351",
-    "-Cextra-filename=-efa3f7db71c8c351",
+    "-Cmetadata=2ec8c3767ba3b2ff",
+    "-Cextra-filename=-2ec8c3767ba3b2ff",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":toml_parser-v1_0_2.license" ]
+  applicable_licenses = [ ":toml_parser-v1_0_4.license" ]
 }
 
 license("toml_writer-v1_0_4.license") {
