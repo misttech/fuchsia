@@ -1103,8 +1103,8 @@ if (current_os == "fuchsia") {
   is_dwarf = true
   is_elf = true
 } else if (current_os == "mac") {
-  is_mac = true
-  is_dwarf = true
+  assert(
+      "MacOS is not supported by the Fuchsia build, see https://fxbug.dev/408241554")
 } else if (current_os == "win") {
   is_win = true
   is_pecoff = true

@@ -14,7 +14,8 @@ if (is_fuchsia) {
 } else if (is_linux) {
   current_target_tuple = "${clang_cpu}-unknown-linux-gnu"
 } else if (is_mac) {
-  current_target_tuple = "${clang_cpu}-apple-darwin"
+  assert(
+      "MacOS is not supported by the Fuchsia build, see https://fxbug.dev/408241554")
 } else if (current_os == "win") {
   current_target_tuple = "${clang_cpu}-pc-windows-msvc"
 } else {
