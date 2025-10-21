@@ -462,6 +462,7 @@ func buildConfigs(absOutputDir string, absFFXPath string, sshInfo SSHInfo, extra
 		"emu.instance_dir":             filepath.Join(absOutputDir, "emu/instances"),
 		"ssh.priv":                     sshInfo.SshPriv,
 		"ssh.pub":                      sshInfo.SshPub,
+		"shared_data":                  filepath.Join(absOutputDir, "shared"),
 	}
 	for _, settings := range extraConfigSettings {
 		if settings.Level == "global" {
