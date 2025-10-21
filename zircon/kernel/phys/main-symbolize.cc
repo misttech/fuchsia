@@ -8,6 +8,7 @@
 #include <lib/elfldltl/self.h>
 
 #include <fbl/no_destructor.h>
+#include <ktl/span.h>
 #include <phys/elf-image.h>
 #include <phys/stack.h>
 #include <phys/symbolize.h>
@@ -66,7 +67,7 @@ void InitSelf(MainSymbolize& main) {}
 #endif  // __ELF__
 
 void MainSymbolize::set_self(const ElfImage* self) {
-  ReplaceModulesStorage(ModuleList{cpp20::span{&self_, 1}});
+  ReplaceModulesStorage(ModuleList{ktl::span{&self_, 1}});
   OnLoad(*self);
   set_main_module(*self);
 }

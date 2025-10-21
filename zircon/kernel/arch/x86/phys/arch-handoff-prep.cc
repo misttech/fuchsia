@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/arch/x86/msr.h>
 #include <lib/code-patching/code-patches.h>
 #include <lib/zbi-format/graphics.h>
 #include <lib/zbi-format/zbi.h>

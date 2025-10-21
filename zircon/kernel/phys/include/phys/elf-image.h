@@ -7,6 +7,7 @@
 #ifndef ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_ELF_IMAGE_H_
 #define ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_ELF_IMAGE_H_
 
+#include <lib/arch/paging.h>
 #include <lib/code-patching/code-patching.h>
 #include <lib/elfldltl/init-fini.h>
 #include <lib/elfldltl/load.h>
@@ -29,8 +30,10 @@
 #include <ktl/type_traits.h>
 #include <ktl/utility.h>
 
-#include "address-space.h"
 #include "allocation.h"
+
+// Forward declaration; declared in <phys/address-space.h>.
+class AddressSpace;
 
 class ElfImage {
  public:
@@ -54,7 +57,7 @@ class ElfImage {
 
   using PrintPatchFunction = fit::inline_function<void(ktl::initializer_list<ktl::string_view>)>;
 
-  using MapSegmentFunction = fit::inline_function<fit::result<AddressSpace::MapError>(
+  using MapSegmentFunction = fit::inline_function<fit::result<arch::MapError>(
       uintptr_t vaddr, size_type offset, size_type filesz, size_type memsz,
       arch::AccessPermissions)>;
 
@@ -209,14 +212,14 @@ class ElfImage {
   // Maps the image at its loaded address, mapping each of its load segments
   // with appropriate access permissions (modulo the execute-only exception of
   // AddressSpace::Map()). Must be called after Load().
-  fit::result<AddressSpace::MapError> MapInto(AddressSpace& aspace) const;
+  fit::result<arch::MapError> MapInto(AddressSpace& aspace) const;
 
   // Generalized form of MapInto uses a MapSegmentFunction callback in place of
   // aspace.Map; the translation from image() offset to paddr is handled by the
   // callback.  The callback need not require Load() beforehand, if can handle
   // memsz > filesz (.bss) without adding physically contiguous space past the
   // end of the original image() of ELF file contents left by Init().
-  fit::result<AddressSpace::MapError> MapInto(MapSegmentFunction map_segment) const;
+  fit::result<arch::MapError> MapInto(MapSegmentFunction map_segment) const;
 
   // Panic if the loaded file doesn't have a PT_INTERP matching the hex string
   // corresponding to this build ID note; the prefix is used in panic messages.

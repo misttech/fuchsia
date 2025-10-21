@@ -279,7 +279,6 @@ common_test("memory-test") {
   sources = [ "phys-memory-test.cc" ]
   deps = [
     ":test-main",
-    "..:address-space",
     "..:allocation",
     "..:new",
     "..:uart",
@@ -287,8 +286,13 @@ common_test("memory-test") {
     "//zircon/kernel/lib/libc",
   ]
 
-  have_allocation_pool = toolchain_environment != "kernel.efi"
-  defines = [ "HAVE_ALLOCATION_POOL=$have_allocation_pool" ]
+  # TODO(https://fxbug.dev/42126526): Replace usage of this with
+  # `#ifdef __UEFI__` once possible.
+  defines = [ "EFI=$is_efi_toolchain" ]
+
+  if (!is_efi_toolchain) {
+    deps += [ "..:address-space" ]
+  }
 
   # TODO(https://fxbug.dev/42079666): Remove if this doesn't help
   # because that means the timeout is likely not the issue.

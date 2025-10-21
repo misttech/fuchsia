@@ -20,6 +20,7 @@
 
 #include <ktl/tuple.h>
 #include <ktl/utility.h>
+#include <phys/address-space.h>
 #include <phys/allocation.h>
 #include <phys/arch/arch-handoff.h>
 #include <phys/boot-constants.h>

@@ -477,7 +477,7 @@ if (toolchain_environment == "kernel.phys" ||
     public_configs = [ ":includes" ]
   }
 
-  if (toolchain_environment != "kernel.efi") {
+  if (!is_efi_toolchain) {
     # This is only linked into a main phys executable and not into secondary
     # modules, which only get the pool set up here handed off.  It's not used
     # at all for UEFI, where efi:allocation handles everything.
@@ -654,14 +654,12 @@ if (toolchain_environment == "kernel.phys" ||
 
     public = [ "include/phys/elf-image.h" ]
     sources = [
-      "elf-image-mapinto.cc",
       "elf-image-self-vmos.cc",
       "elf-image-vmos.cc",
       "elf-image.cc",
     ]
     public_configs = [ ":includes" ]
     public_deps = [
-      ":address-space.header",
       "//sdk/lib/fit",
       "//src/lib/elfldltl",
       "//src/lib/zbitl",
@@ -679,6 +677,13 @@ if (toolchain_environment == "kernel.phys" ||
       # Indirect dep via circular :symbolize dep.
       "//src/lib/symbolizer-markup",
     ]
+
+    # UEFI is already virtually addressed by nature, so we do not need
+    # AddressSpace-related logic in that environment.
+    if (!is_efi_toolchain) {
+      sources += [ "elf-image-mapinto.cc" ]
+      deps += [ ":address-space.header" ]
+    }
   }
 
   source_set("log") {
