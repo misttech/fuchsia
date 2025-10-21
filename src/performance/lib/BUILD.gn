@@ -6,7 +6,7 @@ group("tests") {
   testonly = true
   deps = [
     "//src/performance/lib/fxt:tests",
-    "//src/performance/lib/perf_publish:tests",
+    "//src/performance/lib/perf_publish/tests($host_toolchain)",
     "//src/performance/lib/perfmon:tests",
     "//src/performance/lib/trace_converters:tests",
     "//src/performance/lib/trace_processing/tests($host_toolchain)",

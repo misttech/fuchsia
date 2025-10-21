@@ -17,8 +17,3 @@ python_library("perf_publish") {
   data_package_name = "data"
   data_sources = [ "${root_out_dir}/catapult_converter" ]
 }
-
-group("tests") {
-  testonly = true
-  public_deps = [ "tests" ]
-}
