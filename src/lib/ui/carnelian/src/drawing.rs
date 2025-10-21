@@ -10,9 +10,9 @@
 use crate::color::Color;
 use crate::geometry::{Coord, Corners, Point, Rect, Size};
 use crate::render::{Context as RenderContext, Path, PathBuilder, Raster, RasterBuilder};
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use euclid::default::{Box2D, Size2D, Transform2D, Vector2D};
-use euclid::{point2, size2, vec2, Angle};
+use euclid::{Angle, point2, size2, vec2};
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -426,11 +426,7 @@ pub fn measure_text_size(face: &FontFace, size: f32, text: &str, visual: bool) -
             x += w;
         }
     }
-    if visual {
-        bounding_box.size
-    } else {
-        size2(x, size)
-    }
+    if visual { bounding_box.size } else { size2(x, size) }
 }
 
 /// Break up text into chunks guaranteed to be no wider than max_width when rendered with
@@ -732,15 +728,15 @@ impl TextGrid {
 #[cfg(test)]
 mod tests {
     use super::{GlyphMap, Size, Text, TextGrid};
-    use crate::drawing::{measure_text_size, DisplayRotation, FontFace};
+    use crate::drawing::{DisplayRotation, FontFace, measure_text_size};
     use crate::render::generic::{self, Backend};
     use crate::render::{Context as RenderContext, ContextInner};
     use euclid::approxeq::ApproxEq;
     use euclid::{size2, vec2};
     use fuchsia_async::{self as fasync, MonotonicInstant, TimeoutExt};
-    use fuchsia_framebuffer::sysmem::BufferCollectionAllocator;
     use fuchsia_framebuffer::FrameUsage;
-    use once_cell::sync::Lazy;
+    use fuchsia_framebuffer::sysmem::BufferCollectionAllocator;
+    use std::sync::LazyLock;
 
     const DEFAULT_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(5);
 
@@ -749,8 +745,8 @@ mod tests {
     static FONT_DATA: &'static [u8] = include_bytes!(
         "../../../../../prebuilt/third_party/fonts/robotoslab/RobotoSlab-Regular.ttf"
     );
-    static FONT_FACE: Lazy<FontFace> =
-        Lazy::new(|| FontFace::new(&FONT_DATA).expect("Failed to create font"));
+    static FONT_FACE: LazyLock<FontFace> =
+        LazyLock::new(|| FontFace::new(&FONT_DATA).expect("Failed to create font"));
 
     #[fasync::run_singlethreaded(test)]
     async fn test_text_bounding_box() {

@@ -5,10 +5,10 @@
 use super::LayerGroup;
 use crate::color::Color;
 use crate::drawing::{
-    linebreak_text, measure_text_size, path_for_rectangle, path_for_rounded_rectangle, FontFace,
-    GlyphMap, Text,
+    FontFace, GlyphMap, Text, linebreak_text, measure_text_size, path_for_rectangle,
+    path_for_rounded_rectangle,
 };
-use crate::render::rive::{load_rive, RenderCache as RiveRenderCache};
+use crate::render::rive::{RenderCache as RiveRenderCache, load_rive};
 use crate::render::{
     BlendMode, Context as RenderContext, Fill, FillRule, Layer, Raster, Shed, Style,
 };
@@ -672,13 +672,13 @@ impl Facet for RiveFacet {
 mod tests {
     use crate::drawing::FontFace;
     use crate::scene::facets::{TextFacet, TextFacetOptions};
-    use once_cell::sync::Lazy;
+    use std::sync::LazyLock;
 
     static FONT_DATA: &'static [u8] = include_bytes!(
         "../../../../../../prebuilt/third_party/fonts/robotoslab/RobotoSlab-Regular.ttf"
     );
-    static FONT_FACE: Lazy<FontFace> =
-        Lazy::new(|| FontFace::new(&FONT_DATA).expect("Failed to create font"));
+    static FONT_FACE: LazyLock<FontFace> =
+        LazyLock::new(|| FontFace::new(&FONT_DATA).expect("Failed to create font"));
 
     const SAMPLE_TEXT: &'static str = "Lorem ipsum dolor sit amet, consectetur \
     adipisicing elit, sed do eiusmod tempor incididunt ut labore et dolore magna \

@@ -22,7 +22,6 @@ use fuchsia_trace::duration;
 use futures::StreamExt;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
 use futures::future::{Either, Future};
-use once_cell::sync::OnceCell;
 use serde::Deserialize;
 use std::any::Any;
 use std::collections::BTreeMap;
@@ -30,6 +29,7 @@ use std::fmt::Debug;
 use std::fs;
 use std::path::PathBuf;
 use std::pin::{Pin, pin};
+use std::sync::OnceLock;
 
 pub(crate) mod strategies;
 
@@ -201,7 +201,7 @@ impl Default for Config {
     }
 }
 
-pub(crate) static CONFIG: OnceCell<Config> = OnceCell::new();
+pub(crate) static CONFIG: OnceLock<Config> = OnceLock::new();
 
 pub(crate) type InternalSender = UnboundedSender<MessageInternal>;
 

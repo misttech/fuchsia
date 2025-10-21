@@ -86,7 +86,6 @@ once_cell_visibility = [
   "//src/connectivity/network/netstack3/core/filter:*",
   "//src/graphics/lib/compute/rive-rs:*",
   "//src/lib/async-utils:*",
-  "//src/lib/ui/carnelian:*",
   "//src/starnix/kernel/core:*",
   "//src/starnix/modules/ashmem:*",
   "//src/starnix/modules/ext4:*",
