@@ -37,7 +37,12 @@ JSON: TypeAlias = (
 )
 
 
-class Unit(enum.StrEnum):
+class Direction(enum.StrEnum):
+    biggerIsBetter = "biggerIsBetter"
+    smallerIsBetter = "smallerIsBetter"
+
+
+class Unit(enum.Enum):
     """The set of valid Unit constants.
 
     This should be kept in sync with the list of supported units in the results
@@ -55,9 +60,8 @@ class Unit(enum.StrEnum):
     framesPerSecond = "frames/second"
     # Percentage-based units.
     percent = "percent"
-    # Count-based units.
-    countSmallerIsBetter = "count_smallerIsBetter"
-    countBiggerIsBetter = "count_biggerIsBetter"
+    # Count-based units. ("count" can't be used a StrEnum)
+    count = "count"
     # Power-based units.
     watts = "W"
 
@@ -90,6 +94,7 @@ class TestCaseResult:
     unit: Unit
     values: tuple[float, ...]
     doc: str
+    direction: Direction | None = None
 
     def __init__(
         self,
@@ -97,18 +102,26 @@ class TestCaseResult:
         unit: Unit,
         values: Sequence[float],
         doc: str = "",
+        direction: Direction | None = None,
     ):
         """Allows any Sequence to be used for values while staying hashable."""
         object.__setattr__(self, "label", label)
         object.__setattr__(self, "unit", unit)
         object.__setattr__(self, "values", tuple(values))
         object.__setattr__(self, "doc", doc)
+        # If unspecified, Capapult has its own notion of which units default
+        # to which directions which we defer to for compatibility.
+        if direction:
+            object.__setattr__(self, "direction", direction)
 
     def to_json(self, test_suite: str) -> dict[str, Any]:
         return {
             "label": self.label,
             "test_suite": test_suite,
-            "unit": str(self.unit),
+            "unit": str(
+                self.unit.value
+                + (f"_{self.direction}" if self.direction else "")
+            ),
             "values": list(self.values),
         }
 
