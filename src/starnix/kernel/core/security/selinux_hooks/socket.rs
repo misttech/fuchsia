@@ -4,10 +4,7 @@
 
 use super::audit::Auditable;
 use super::fs_node::compute_new_fs_node_sid;
-use super::{
-    check_permission, current_task_state, fs_node_effective_sid_and_class, todo_check_permission,
-};
-use crate::TODO_DENY;
+use super::{check_permission, current_task_state, fs_node_effective_sid_and_class};
 use crate::security::selinux_hooks::{FsNodeSidAndClass, superblock};
 use crate::task::CurrentTask;
 use crate::vfs::socket::{
@@ -21,7 +18,7 @@ use selinux::{
     CommonFsNodePermission, CommonSocketPermission, ForClass, FsNodeClass, InitialSid,
     KernelPermission, SecurityId, SecurityServer, SocketClass, UnixStreamSocketPermission,
 };
-use starnix_logging::{BugRef, track_stub};
+use starnix_logging::track_stub;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::errors::Errno;
 
@@ -78,44 +75,6 @@ fn has_socket_permission_for_sid(
         socket_sid,
         permission,
         audit_context,
-    )
-}
-
-/// Checks that `current_task` has the specified `permission` for the `socket_node`, with
-/// "todo_deny" on denial.
-fn todo_has_socket_permission(
-    bug: BugRef,
-    permission_check: &PermissionCheck<'_>,
-    current_task: &CurrentTask,
-    subject_sid: SecurityId,
-    socket_node: &FsNode,
-    permission: impl ForClass<SocketClass>,
-    audit_context: Auditable<'_>,
-) -> Result<(), Errno> {
-    let FsNodeSidAndClass { sid: socket_sid, class: socket_class } =
-        fs_node_effective_sid_and_class(socket_node);
-    let FsNodeClass::Socket(socket_class) = socket_class else {
-        panic!("socket API called for non-Socket class")
-    };
-
-    // TODO: https://fxbug.dev/364569010 - check if there are additional cases when the socket is
-    // for kernel-internal use.
-    if Anon::is_private(socket_node)
-        || subject_sid == InitialSid::Kernel.into()
-        || socket_sid == InitialSid::Kernel.into()
-    {
-        return Ok(());
-    }
-
-    let audit_context = [audit_context, socket_node.into()];
-    todo_check_permission(
-        bug,
-        permission_check,
-        current_task,
-        subject_sid,
-        socket_sid,
-        permission.for_class(socket_class),
-        (&audit_context).into(),
     )
 }
 
@@ -462,8 +421,7 @@ pub(in crate::security) fn check_socket_getname_access(
     };
 
     let current_sid = current_task_state(current_task).lock().current_sid;
-    todo_has_socket_permission(
-        TODO_DENY!("https://fxbug.dev/411396154", "Enforce socket_getname checks."),
+    has_socket_permission(
         &security_server.as_permission_check(),
         current_task,
         current_sid,
