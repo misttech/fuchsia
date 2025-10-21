@@ -57,6 +57,10 @@ enum arm64_microarch {
 
   APPLE_UNKNOWN,
 
+  AMPERE_UNKNOWN,
+  AMPERE_1,
+  AMPERE_1A,
+
   QEMU_TCG,
 };
 

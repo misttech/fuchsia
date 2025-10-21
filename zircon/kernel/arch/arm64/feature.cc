@@ -240,7 +240,16 @@ enum arm64_microarch midr_to_microarch(uint64_t midr) {
     // For the moment, qemu via HVF does not seem to return
     // a meaningful part number.
     return APPLE_UNKNOWN;
-
+  } else if (implementer == 0xc0) {
+    // Ampere
+    switch (partnum) {
+      case 0xac3:
+        return AMPERE_1;
+      case 0xac4:
+        return AMPERE_1A;
+      default:
+        return AMPERE_UNKNOWN;
+    }
   } else if (implementer == 0) {
     // software implementation
     switch (partnum) {
@@ -368,6 +377,15 @@ static void midr_to_core_string(uint64_t midr, char* str, size_t len) {
       break;
     case APPLE_UNKNOWN:
       partnum_str = "Unknown Apple Silicon";
+      break;
+    case AMPERE_UNKNOWN:
+      partnum_str = "Unkown Ampere CPU";
+      break;
+    case AMPERE_1:
+      partnum_str = "Ampere 1";
+      break;
+    case AMPERE_1A:
+      partnum_str = "Ampere 1A";
       break;
     case QEMU_TCG:
       partnum_str = "QEMU TCG";
