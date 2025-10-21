@@ -43,6 +43,25 @@ enum class GracefulShutdownReason {
   kNotParseable,
 };
 
+// Feedback's internal representation of how a device shutdown gracefully.
+//
+// These values should not be used to understand how a device has shutdown outside of this
+// component.
+enum class GracefulShutdownAction : std::uint8_t {
+  kPoweroff,
+  kReboot,
+  kRebootToRecovery,
+  kRebootToBootloader,
+  kNotParseable,
+};
+
+struct GracefulShutdownInfo {
+  GracefulShutdownAction action;
+  std::vector<GracefulShutdownReason> reasons;
+
+  auto operator<=>(const GracefulShutdownInfo&) const = default;
+};
+
 std::string ToString(GracefulShutdownReason reason);
 
 std::vector<GracefulShutdownReason> ToGracefulShutdownReasons(
@@ -62,16 +81,18 @@ std::string ToLegacyFileContentForTesting(const std::vector<GracefulShutdownReas
 // `kNotSupported`.
 std::vector<std::string> ToReasonStrings(const std::vector<GracefulShutdownReason>& reasons);
 
-// The input is limited to values corresponding to |power::statecontrol::ShutdownReason|.
+// The input is limited to GracefulShutdownActions that map to |power::statecontrol::ShutdownAction|
+// and GracefulShutdownReasons that map to |power::statecontrol::ShutdownReason|.
 //
 // The format is expected to be:
 // {
+//   action: "action",
 //   reasons: [
 //     "Reason 1",
 //     "Reason 2"
 //   ]
 // }
-std::vector<GracefulShutdownReason> FromJson(const std::string& content);
+GracefulShutdownInfo FromJson(const std::string& content);
 
 // The input is limited to GracefulShutdownReasons that map to
 // |power::statecontrol::ShutdownReason|.

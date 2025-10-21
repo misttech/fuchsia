@@ -192,25 +192,38 @@ std::optional<std::string> ExtractDlogAndLogRebootLog(const std::string& reboot_
   return std::string(fxl::TrimString(dlog, " \f\n\r\t\v"));
 }
 
-std::vector<GracefulShutdownReason> ExtractLegacyGracefulRebootInfo(
+std::optional<GracefulShutdownInfo> ExtractLegacyGracefulRebootInfo(
     const std::string& legacy_graceful_reboot_log_path) {
   if (!files::IsFile(legacy_graceful_reboot_log_path)) {
-    return {};
+    return std::nullopt;
   }
 
   std::string file_content;
   if (!files::ReadFileToString(legacy_graceful_reboot_log_path, &file_content)) {
-    return {GracefulShutdownReason::kNotParseable};
+    return GracefulShutdownInfo{
+        .action = GracefulShutdownAction::kNotParseable,
+        .reasons = {GracefulShutdownReason::kNotParseable},
+    };
   }
 
   if (file_content.empty()) {
-    return {GracefulShutdownReason::kNotParseable};
+    return GracefulShutdownInfo{
+        .action = GracefulShutdownAction::kNotParseable,
+        .reasons = {GracefulShutdownReason::kNotParseable},
+    };
   }
 
-  return FromLegacyTxtFile(file_content);
+  // If an older version of Fuchsia persisted a legacy .txt file, then that means that the _reboot_
+  // signal was received since other shutdown actions were not yet sending the shutdown signal to
+  // Feedback.
+  return GracefulShutdownInfo{
+      .action = GracefulShutdownAction::kReboot,
+      .reasons = FromLegacyTxtFile(file_content),
+  };
 }
 
-std::vector<GracefulShutdownReason> ExtractGracefulShutdownInfo(
+// Returns std::nullopt if neither the json nor legacy txt file is present.
+std::optional<GracefulShutdownInfo> ExtractGracefulShutdownInfo(
     const std::string& graceful_shutdown_info_path,
     const std::string& legacy_graceful_reboot_log_path) {
   if (!files::IsFile(graceful_shutdown_info_path)) {
@@ -219,11 +232,17 @@ std::vector<GracefulShutdownReason> ExtractGracefulShutdownInfo(
 
   std::string file_content;
   if (!files::ReadFileToString(graceful_shutdown_info_path, &file_content)) {
-    return {GracefulShutdownReason::kNotParseable};
+    return GracefulShutdownInfo{
+        .action = GracefulShutdownAction::kNotParseable,
+        .reasons = {GracefulShutdownReason::kNotParseable},
+    };
   }
 
   if (file_content.empty()) {
-    return {GracefulShutdownReason::kNotParseable};
+    return GracefulShutdownInfo{
+        .action = GracefulShutdownAction::kNotParseable,
+        .reasons = {GracefulShutdownReason::kNotParseable},
+    };
   }
 
   return FromJson(file_content);
@@ -271,10 +290,12 @@ RebootReason FromGracefulShutdownReason(const GracefulShutdownReason& reason) {
 }
 
 RebootReason ConsolidateGracefulShutdownReasons(
-    const std::vector<GracefulShutdownReason>& reasons) {
-  if (reasons.empty()) {
+    const std::optional<GracefulShutdownInfo>& graceful_info) {
+  if (!graceful_info.has_value() || graceful_info->reasons.empty()) {
     return RebootReason::kGenericGraceful;
   }
+
+  const std::vector<GracefulShutdownReason>& reasons = graceful_info->reasons;
 
   // If there's only one reason, consolidation is trivial.
   if (reasons.size() == 1) {
@@ -295,7 +316,7 @@ RebootReason ConsolidateGracefulShutdownReasons(
 }
 
 RebootReason DetermineRebootReason(const ZirconRebootReason zircon_reason,
-                                   const std::vector<GracefulShutdownReason>& graceful_reasons,
+                                   const std::optional<GracefulShutdownInfo>& graceful_info,
                                    const bool not_a_fdr) {
   switch (zircon_reason) {
     case ZirconRebootReason::kCold:
@@ -320,7 +341,7 @@ RebootReason DetermineRebootReason(const ZirconRebootReason zircon_reason,
       if (!not_a_fdr) {
         return RebootReason::kFdr;
       }
-      return ConsolidateGracefulShutdownReasons(graceful_reasons);
+      return ConsolidateGracefulShutdownReasons(graceful_info);
     case ZirconRebootReason::kNotSet:
       FX_LOGS(FATAL) << "|zircon_reason| must be set";
       return RebootReason::kNotParseable;
@@ -328,13 +349,16 @@ RebootReason DetermineRebootReason(const ZirconRebootReason zircon_reason,
 }
 
 std::string MakeRebootLog(const std::optional<std::string>& zircon_reboot_log,
-                          const std::vector<GracefulShutdownReason>& graceful_reasons,
+                          const std::optional<GracefulShutdownInfo>& graceful_info,
                           const RebootReason reboot_reason) {
   std::vector<std::string> lines;
 
   if (zircon_reboot_log.has_value()) {
     lines.push_back(zircon_reboot_log.value());
   }
+
+  const std::vector<GracefulShutdownReason> graceful_reasons =
+      graceful_info.has_value() ? graceful_info->reasons : std::vector<GracefulShutdownReason>();
 
   // TODO(https://fxbug.dev/414413282): rename output to "shutdown" reasons once any
   // dependencies are ready for the migration. To make it a cleaner break this can be done once the
@@ -362,11 +386,11 @@ RebootLog RebootLog::ParseRebootLog(const std::string& zircon_reboot_log_path,
       ExtractZirconRebootInfo(zircon_reboot_log_path, &zircon_reboot_log, &last_boot_uptime,
                               &last_boot_runtime, &critical_process);
 
-  const std::vector<GracefulShutdownReason> graceful_reasons =
+  const std::optional<GracefulShutdownInfo> graceful_info =
       ExtractGracefulShutdownInfo(graceful_shutdown_info_path, legacy_graceful_reboot_log_path);
 
-  const auto reboot_reason = DetermineRebootReason(zircon_reason, graceful_reasons, not_a_fdr);
-  const auto reboot_log = MakeRebootLog(zircon_reboot_log, graceful_reasons, reboot_reason);
+  const auto reboot_reason = DetermineRebootReason(zircon_reason, graceful_info, not_a_fdr);
+  const auto reboot_log = MakeRebootLog(zircon_reboot_log, graceful_info, reboot_reason);
   const std::optional<std::string> dlog = ExtractDlogAndLogRebootLog(reboot_log);
 
   return RebootLog(reboot_reason, reboot_log, dlog, last_boot_uptime, last_boot_runtime,

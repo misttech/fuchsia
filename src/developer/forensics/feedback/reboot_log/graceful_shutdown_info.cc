@@ -23,6 +23,11 @@ namespace forensics {
 namespace feedback {
 namespace {
 
+constexpr char kActionPoweroff[] = "POWEROFF";
+constexpr char kActionReboot[] = "REBOOT";
+constexpr char kActionRebootToRecovery[] = "REBOOT_TO_RECOVERY";
+constexpr char kActionRebootToBootloader[] = "REBOOT_TO_BOOTLOADER";
+
 constexpr char kReasonNotSet[] = "NOT SET";
 constexpr char kReasonUserRequest[] = "USER REQUEST";
 constexpr char kReasonSystemUpdate[] = "SYSTEM UPDATE";
@@ -50,6 +55,7 @@ constexpr char kDeliminator[] = ",";
 // empty vector rather than a `GracefulShutdownReasons`, when read from file.
 constexpr char kNoReasons[] = "NONE";
 
+constexpr char kActionKey[] = "action";
 constexpr char kReasonsKey[] = "reasons";
 
 // This schema cannot become more strict over time because future versions of Fuchsia may read json
@@ -59,6 +65,15 @@ constexpr char kReasonsKey[] = "reasons";
 constexpr char kJsonSchema[] = R"({
   "type": "object",
   "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+          "POWEROFF",
+          "REBOOT",
+          "REBOOT_TO_RECOVERY",
+          "REBOOT_TO_BOOTLOADER"
+        ]
+    },
     "reasons": {
       "type": "array",
       "items": {
@@ -90,6 +105,24 @@ bool IsSchemaValid(const rapidjson::Document& json) {
   }
 
   return true;
+}
+
+GracefulShutdownAction GracefulShutdownActionFromString(const std::string_view action) {
+  if (action == kActionPoweroff) {
+    return GracefulShutdownAction::kPoweroff;
+  }
+  if (action == kActionReboot) {
+    return GracefulShutdownAction::kReboot;
+  }
+  if (action == kActionRebootToRecovery) {
+    return GracefulShutdownAction::kRebootToRecovery;
+  }
+  if (action == kActionRebootToBootloader) {
+    return GracefulShutdownAction::kRebootToBootloader;
+  }
+
+  FX_LOGS(ERROR) << "Invalid persisted graceful shutdown action: " << action;
+  return GracefulShutdownAction::kNotParseable;
 }
 
 }  // namespace
@@ -137,7 +170,7 @@ std::string ToString(const GracefulShutdownReason reason) {
   return kReasonNotSet;
 }
 
-GracefulShutdownReason FromString(const std::string_view reason) {
+GracefulShutdownReason GracefulShutdownReasonFromString(const std::string_view reason) {
   if (reason == kReasonUserRequest) {
     return GracefulShutdownReason::kUserRequest;
   } else if (reason == kReasonSystemUpdate) {
@@ -287,29 +320,38 @@ std::vector<GracefulShutdownReason> FromLegacyTxtFile(const std::string reasons)
   std::vector<GracefulShutdownReason> graceful_reasons;
   graceful_reasons.reserve(reason_strings.size());
   for (const auto& reason : reason_strings) {
-    graceful_reasons.push_back(FromString(reason));
+    graceful_reasons.push_back(GracefulShutdownReasonFromString(reason));
   }
   return graceful_reasons;
 }
 
-std::vector<GracefulShutdownReason> FromJson(const std::string& content) {
+GracefulShutdownInfo FromJson(const std::string& content) {
   rapidjson::Document json;
   if (const rapidjson::ParseResult result = json.Parse(content.c_str()); !result) {
     FX_LOGS(ERROR) << "Error parsing shutdown info as JSON at offset " << result.Offset() << " "
                    << rapidjson::GetParseError_En(result.Code());
-    return {};
+    return GracefulShutdownInfo{
+        .action = GracefulShutdownAction::kNotParseable,
+        .reasons = {GracefulShutdownReason::kNotParseable},
+    };
   }
 
   if (!IsSchemaValid(json)) {
     FX_LOGS(ERROR) << "Failed to parse content: " << content;
-    return {};
+    return GracefulShutdownInfo{
+        .action = GracefulShutdownAction::kNotParseable,
+        .reasons = {GracefulShutdownReason::kNotParseable},
+    };
   }
 
   rapidjson::Document schema;
   if (const rapidjson::ParseResult result = schema.Parse(kJsonSchema); !result) {
     FX_LOGS(ERROR) << "Error parsing shutdown info schema at offset " << result.Offset() << " "
                    << rapidjson::GetParseError_En(result.Code());
-    return {};
+    return GracefulShutdownInfo{
+        .action = GracefulShutdownAction::kNotParseable,
+        .reasons = {GracefulShutdownReason::kNotParseable},
+    };
   }
 
   rapidjson::SchemaDocument schema_doc(schema);
@@ -318,15 +360,30 @@ std::vector<GracefulShutdownReason> FromJson(const std::string& content) {
     validator.GetInvalidSchemaPointer().StringifyUriFragment(buf);
     FX_LOGS(ERROR) << "Shutdown info json does not match schema, violating '"
                    << validator.GetInvalidSchemaKeyword() << "' rule";
-    return {};
+    return GracefulShutdownInfo{
+        .action = GracefulShutdownAction::kNotParseable,
+        .reasons = {GracefulShutdownReason::kNotParseable},
+    };
   }
 
-  std::vector<GracefulShutdownReason> reasons;
+  GracefulShutdownInfo shutdown_info;
+  if (json.HasMember(kActionKey) && json[kActionKey].IsString()) {
+    shutdown_info.action = GracefulShutdownActionFromString(json[kActionKey].GetString());
+  } else {
+    // The fuchsia.hardware.power.statecontrol/Admin Shutdown method requires that clients supply an
+    // action. If the file is present but the action is missing, that means that the build
+    // persisting the json was new enough to be persisting the reasons as json, but not new enough
+    // to be persisting the action as well. During this timeframe, only 'REBOOT' actions were
+    // triggering the ShutdownWatcher protocol so we can infer that the action in this case is
+    // 'REBOOT.'
+    shutdown_info.action = GracefulShutdownAction::kReboot;
+  }
+
   for (const auto& k : json[kReasonsKey].GetArray()) {
-    reasons.push_back(FromString(k.GetString()));
+    shutdown_info.reasons.push_back(GracefulShutdownReasonFromString(k.GetString()));
   }
 
-  return reasons;
+  return shutdown_info;
 }
 
 GracefulShutdownReason FromReason(

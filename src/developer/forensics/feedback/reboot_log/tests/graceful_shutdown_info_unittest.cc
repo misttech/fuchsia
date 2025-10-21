@@ -22,6 +22,18 @@ namespace forensics {
 namespace feedback {
 namespace {
 
+constexpr char kFilename[] = "graceful_shutdown_info.json";
+
+std::string BuildJsonWithAction(const std::string_view action) {
+  // Use {{ and }} to escape the curly braces for std::format.
+  return std::format(
+      R"({{
+    "action": "{}",
+    "reasons": []
+}})",
+      action);
+}
+
 TEST(GracefulShutdownInfoTest, VerifyLegacyContentConversion) {
   // ToLegacyFileContentForTesting() & FromLegacyTxtFile() for shutdown reasons from
   // |power::statecontrol::ShutdownReason| should be reversible.
@@ -93,7 +105,7 @@ TEST(GracefulShutdownInfoTest, VerifyContentConversion) {
   };
 
   for (const auto reason : reasons) {
-    EXPECT_THAT(FromJson(ToJson({reason})), testing::ElementsAre(reason));
+    EXPECT_THAT(FromJson(ToJson({reason})).reasons, testing::ElementsAre(reason));
   }
 }
 
@@ -115,24 +127,84 @@ TEST(GracefulShutdownInfoTest, VerifyContentConversionWithMultipleReasons) {
   };
 
   // Verify all reasons at once.
-  EXPECT_THAT(FromJson(ToJson(reasons)), testing::ElementsAreArray(reasons));
+  EXPECT_THAT(FromJson(ToJson(reasons)).reasons, testing::ElementsAreArray(reasons));
+}
+
+struct ReadActionTestParam {
+  std::string test_name;
+  std::string input_action;
+  GracefulShutdownAction expected_action;
+};
+
+class ReadActionTest : public UnitTestFixture,
+                       public testing::WithParamInterface<ReadActionTestParam> {};
+
+INSTANTIATE_TEST_SUITE_P(WithVariousShutdownActions, ReadActionTest,
+                         ::testing::ValuesIn(std::vector<ReadActionTestParam>({
+                             {
+                                 "Poweroff",
+                                 "POWEROFF",
+                                 GracefulShutdownAction::kPoweroff,
+                             },
+                             {
+                                 "Reboot",
+                                 "REBOOT",
+                                 GracefulShutdownAction::kReboot,
+                             },
+                             {
+                                 "RebootToRecovery",
+                                 "REBOOT_TO_RECOVERY",
+                                 GracefulShutdownAction::kRebootToRecovery,
+                             },
+                             {
+                                 "RebootToBootloader",
+                                 "REBOOT_TO_BOOTLOADER",
+                                 GracefulShutdownAction::kRebootToBootloader,
+                             },
+                             {
+                                 "NotParseable",
+                                 "SOMETHING_INVALID",
+                                 GracefulShutdownAction::kNotParseable,
+                             },
+                         })),
+                         [](const testing::TestParamInfo<ReadActionTestParam>& info) {
+                           return info.param.test_name;
+                         });
+
+TEST_P(ReadActionTest, FromJson) {
+  const ReadActionTestParam& param = GetParam();
+  EXPECT_THAT(FromJson(BuildJsonWithAction(param.input_action)).action, param.expected_action);
 }
 
 TEST(GracefulShutdownInfoTest, VerifyContentConversionWithNoReasons) {
   // ToJson() & FromJson() for shutdown reasons from
   // |power::statecontrol::ShutdownReason| should be reversible when there are no reasons.
-  EXPECT_TRUE(FromJson(ToJson({})).empty());
+  EXPECT_TRUE(FromJson(ToJson({})).reasons.empty());
+}
+
+TEST(GracefulShutdownInfoTest, ActionIsNotAString) {
+  EXPECT_EQ(FromJson(R"({ "action": [], "reasons" : [] })"),
+            (GracefulShutdownInfo{
+                .action = GracefulShutdownAction::kNotParseable,
+                .reasons = {GracefulShutdownReason::kNotParseable},
+            }));
 }
 
 TEST(GracefulShutdownInfoTest, ReasonsIsNotAnArray) {
-  EXPECT_TRUE(FromJson(R"({ "reasons" : "not-an-array" })").empty());
+  EXPECT_EQ(FromJson(R"({ "reasons" : "not-an-array" })"),
+            (GracefulShutdownInfo{
+                .action = GracefulShutdownAction::kNotParseable,
+                .reasons = {GracefulShutdownReason::kNotParseable},
+            }));
 }
 
 TEST(GracefulShutdownInfoTest, SpuriousField) {
-  EXPECT_TRUE(FromJson(R"({ "reasons" : [], "spurious_field": "spurious-value" })").empty());
+  EXPECT_EQ(FromJson(R"({ "reasons" : [], "spurious_field": "spurious-value" })"),
+            (GracefulShutdownInfo{
+                .action = GracefulShutdownAction::kNotParseable,
+                .reasons = {GracefulShutdownReason::kNotParseable},
+            }));
 }
-
-constexpr char kFilename[] = "graceful_shutdown_info.json";
 
 struct TestParam {
   std::string test_name;

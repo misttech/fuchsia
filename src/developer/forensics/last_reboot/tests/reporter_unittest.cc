@@ -617,7 +617,7 @@ INSTANTIATE_TEST_SUITE_P(
         {
             "InvalidSchema",
             R"({ "reasons": "not-an-array" })",
-            {},
+            {GracefulShutdownReason::kNotParseable},
             "FINAL REBOOT REASON (GENERIC GRACEFUL)",
             "fuchsia-undetermined-userspace-reboot",
             zx::msec(65487494),
