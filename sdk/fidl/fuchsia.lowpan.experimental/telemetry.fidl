@@ -650,4 +650,10 @@ type Telemetry = table {
     ///
     /// Only present on Thread networks.
     26: multi_ail_detected bool;
+
+    /// The Extended PAN ID of the currently associated Thread network. This 8-byte unique
+    /// identifier is used to distinguish different Thread networks.
+    ///
+    /// Only present on Thread networks.
+    27: extended_pan_id uint64;
 };
