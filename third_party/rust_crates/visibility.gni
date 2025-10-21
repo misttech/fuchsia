@@ -39,30 +39,6 @@ sha1_visibility = [
   "//src/microfuchsia/tee/runtime/api_impl:*",
 ]
 
-lazy_static_visibility = [
-  #  ________  _________  ________  ________
-  # |\   ____\|\___   ___\\   __  \|\   __  \
-  # \ \  \___|\|___ \  \_\ \  \|\  \ \  \|\  \
-  #  \ \_____  \   \ \  \ \ \  \\\  \ \   ____\
-  #   \|____|\  \   \ \  \ \ \  \\\  \ \  \___|
-  #     ____\_\  \   \ \__\ \ \_______\ \__\
-  #    |\_________\   \|__|  \|_______|\|__|
-  #    \|_________|
-  #
-  # This is an allowlist of targets that use the `lazy_static` Rust library, as
-  # of Rust 1.80, LazyLock is now stable which should cover most of the use
-  # cases for `lazy_static`.
-  #
-  # Only add to this list if you have a use case that isn't supported by the
-  # standard library APIs.
-  #
-  # To regenerate, run:
-  # (cd $FUCHSIA_DIR && git grep  --files-with-matches '//third_party/rust_crates:lazy_static' -- '*BUILD.gn' | sed 's|\(.*\)/BUILD.gn|"//\1:*",|')
-
-  # At this time we are not enforcing restrictions on the below.
-  "//third_party/*",
-]
-
 once_cell_visibility = [
   #  ________  _________  ________  ________
   # |\   ____\|\___   ___\\   __  \|\   __  \

@@ -1648,7 +1648,6 @@ dependencies = [
  "itoa 1.0.15",
  "json-spanned-value",
  "json5format",
- "lazy_static",
  "libc",
  "libm",
  "linked-hash-map",

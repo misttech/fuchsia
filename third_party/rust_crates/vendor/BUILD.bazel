@@ -1435,18 +1435,6 @@ alias(
 )
 
 alias(
-    name = "lazy_static-1.5.0",
-    actual = "//third_party/rust_crates/vendor/lazy_static-1.5.0:lazy_static",
-    tags = ["manual"],
-)
-
-alias(
-    name = "lazy_static",
-    actual = "//third_party/rust_crates/vendor/lazy_static-1.5.0:lazy_static",
-    tags = ["manual"],
-)
-
-alias(
     name = "libc-0.2.174",
     actual = "//third_party/rust_crates/vendor/libc-0.2.174:libc",
     tags = ["manual"],

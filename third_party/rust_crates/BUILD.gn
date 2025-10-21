@@ -513,14 +513,6 @@ group("json5format") {
   public_deps = [ ":json5format-v0_2_6" ]
 }
 
-import("//third_party/rust_crates/visibility.gni")
-
-group("lazy_static") {
-  public_deps = [ ":lazy_static-v1_5_0" ]
-
-  visibility = lazy_static_visibility
-}
-
 group("libc") {
   public_deps = [ ":libc-v0_2_174" ]
 }
@@ -563,6 +555,8 @@ group("maplit") {
 group("maybe-owned") {
   public_deps = [ ":maybe-owned-v0_3_4" ]
 }
+
+import("//third_party/rust_crates/visibility.gni")
 
 group("md-5") {
   public_deps = [ ":md-5-v0_10_6" ]
