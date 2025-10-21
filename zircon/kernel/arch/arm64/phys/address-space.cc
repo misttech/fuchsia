@@ -6,6 +6,7 @@
 
 #include "phys/address-space.h"
 
+#include <lib/arch/arm64/page-table.h>
 #include <lib/arch/arm64/system.h>
 #include <lib/arch/cache.h>
 #include <lib/arch/paging.h>
@@ -50,6 +51,10 @@ template <typename TcrReg, typename SctlrReg, typename Ttbr0Reg, typename Ttbr1R
           typename MairReg>
 void EnablePagingForEl(const AddressSpace& aspace) {
   constexpr bool kConfigureUpper = !ktl::is_void_v<Ttbr1Reg>;
+  constexpr auto kTcrTg0 =
+      ArmGranuleSizeToTcr<arch::ArmTcrTg0Value>(ArchLowerPagingTraits::kGranuleSize);
+  constexpr auto kTcrTg1 =
+      ArmGranuleSizeToTcr<arch::ArmTcrTg1Value>(ArchUpperPagingTraits::kGranuleSize);
 
   // Ensure caches and MMU disabled.
   arch::ArmSystemControlRegister sctlr_reg = SctlrReg::Read();
@@ -67,13 +72,13 @@ void EnablePagingForEl(const AddressSpace& aspace) {
 
   // Configure the page table layout of TTBR0 and enable page table caching.
   TcrReg tcr;
-  tcr.set_tg0(arch::ArmTcrTg0Value::k4KiB)                            // Use 4 KiB granules.
+  tcr.set_tg0(kTcrTg0)
       .set_t0sz(64 - AddressSpace::LowerPaging::kVirtualAddressSize)  // Set region size.
       .set_sh0(aspace.state().shareability)
       .set_orgn0(kArchNormalMemoryType.outer)
       .set_irgn0(kArchNormalMemoryType.inner);
   if constexpr (kConfigureUpper) {
-    tcr.set_tg1(arch::ArmTcrTg1Value::k4KiB)
+    tcr.set_tg1(kTcrTg1)
         .set_t1sz(64 - AddressSpace::UpperPaging::kVirtualAddressSize)
         .set_sh1(aspace.state().shareability)
         .set_orgn1(kArchNormalMemoryType.outer)

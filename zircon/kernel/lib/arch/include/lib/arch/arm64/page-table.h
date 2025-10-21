@@ -7,6 +7,7 @@
 #ifndef ZIRCON_KERNEL_LIB_ARCH_INCLUDE_LIB_ARCH_ARM64_PAGE_TABLE_H_
 #define ZIRCON_KERNEL_LIB_ARCH_INCLUDE_LIB_ARCH_ARM64_PAGE_TABLE_H_
 
+#include <lib/arch/arm64/system.h>
 #include <lib/arch/paging.h>
 #include <zircon/assert.h>
 #include <zircon/compiler.h>
@@ -16,7 +17,6 @@
 #include <optional>
 #include <span>
 #include <type_traits>
-#include <utility>
 
 #include <fbl/bits.h>
 #include <hwreg/bitfields.h>
@@ -38,11 +38,29 @@ enum class ArmMaximumVirtualAddressWidth {
 };
 
 // [arm/v8]: D5.2.4  Memory translation granule size
+//
+// Numeric value gives the base-2 logarithm of the size in bytes for
+// convenience in page-related arithmetic.
 enum class ArmGranuleSize {
   k4KiB = 12,
   k16KiB = 14,
   k64KiB = 16,
 };
+
+// Convert from granule size to either arch::ArmTcrTg0Value or arch::ArmTcrTg1Value
+template <typename TcrValueField>
+  requires(std::is_same_v<TcrValueField, ArmTcrTg0Value> ||
+           std::is_same_v<TcrValueField, ArmTcrTg1Value>)
+constexpr TcrValueField ArmGranuleSizeToTcr(arch::ArmGranuleSize granule) {
+  switch (granule) {
+    case arch::ArmGranuleSize::k4KiB:
+      return TcrValueField::k4KiB;
+    case arch::ArmGranuleSize::k16KiB:
+      return TcrValueField::k16KiB;
+    case arch::ArmGranuleSize::k64KiB:
+      return TcrValueField::k64KiB;
+  }
+}
 
 // [arm/v8]: D5.2 The VMSAv8-64 address translation system
 enum class ArmAddressTranslationLevel {
@@ -100,9 +118,7 @@ struct ArmSystemPagingState {
 
 using ArmPagingSettings = internal::PagingSettings<ArmMairAttribute>;
 
-// VirtualAddressSize represents the value of 64 - TnSZ, which restricts the
-// addressable virtual address range and may result in few levels of paging.
-template <ArmVirtualAddressRange Range, unsigned int VirtualAddressSize = 48>
+template <ArmVirtualAddressRange Range, ArmGranuleSize GranuleSize, unsigned int NumberOfLevels>
 struct ArmPagingTraits {
   using LevelType = ArmAddressTranslationLevel;
 
@@ -113,21 +129,19 @@ struct ArmPagingTraits {
   using PagingSettings = ArmPagingSettings;
 
   template <ArmAddressTranslationLevel Level>
-  using TableEntry = ArmAddressTranslationDescriptor<Level, ArmGranuleSize::k4KiB,
-                                                     ArmMaximumVirtualAddressWidth::k48Bits>;
+  using TableEntry =
+      ArmAddressTranslationDescriptor<Level, GranuleSize, ArmMaximumVirtualAddressWidth::k48Bits>;
+
+  static constexpr ArmGranuleSize kGranuleSize = GranuleSize;
 
   static constexpr unsigned int kMaxPhysicalAddressSize = 48;
 
-  static constexpr unsigned int kTableAlignmentLog2 = 12;
+  static constexpr unsigned int kTableAlignmentLog2 = static_cast<int>(GranuleSize);
 
   template <ArmAddressTranslationLevel Level>
-  static constexpr unsigned int kNumTableEntriesLog2 = 9;
+  static constexpr unsigned int kNumTableEntriesLog2 = static_cast<int>(GranuleSize) - 3;
 
   static constexpr bool kNonTerminalAccessPermissions = true;
-
-  static_assert(16 <= VirtualAddressSize);
-  static_assert(VirtualAddressSize <= 48);
-  static constexpr std::optional<unsigned int> kVirtualAddressSizeOverride = VirtualAddressSize;
 
   static constexpr auto kVirtualAddressExtension = Range == ArmVirtualAddressRange::kLower
                                                        ? VirtualAddressExtension::k0
@@ -140,23 +154,9 @@ struct ArmPagingTraits {
       ArmAddressTranslationLevel::k3,
   };
 
-  // [arm/v8]: Table D5-13 TCR_ELx.TnSZ values and IA ranges, 4KB granule with no concatenation of
-  // tables
-  //
-  // Restrictions of the virtual address space can result in fewer levels.
-  static constexpr unsigned int kFirstLevelIndex = []() {
-    switch (VirtualAddressSize) {
-      case 40 ... 48:
-        return 0;
-      case 31 ... 39:
-        return 1;
-      case 22 ... 30:
-        return 2;
-      case 16 ... 21:
-        return 3;
-    }
-  }();
-  static constexpr auto kLevels = std::span{kAllLevels}.subspan(kFirstLevelIndex);
+  static_assert(0 < NumberOfLevels);
+  static_assert(NumberOfLevels <= (GranuleSize == ArmGranuleSize::k64KiB ? 3 : 4));
+  static constexpr auto kLevels = std::span{kAllLevels}.last(NumberOfLevels);
 
   static constexpr bool kExecuteOnlyAllowed = false;
 
@@ -168,8 +168,13 @@ struct ArmPagingTraits {
   }
 };
 
-using ArmLowerPagingTraits = ArmPagingTraits<ArmVirtualAddressRange::kLower>;
-using ArmUpperPagingTraits = ArmPagingTraits<ArmVirtualAddressRange::kUpper>;
+template <ArmGranuleSize GranuleSize, unsigned int NumberOfLevels>
+using ArmLowerPagingTraits =
+    ArmPagingTraits<ArmVirtualAddressRange::kLower, GranuleSize, NumberOfLevels>;
+
+template <ArmGranuleSize GranuleSize, unsigned int NumberOfLevels>
+using ArmUpperPagingTraits =
+    ArmPagingTraits<ArmVirtualAddressRange::kUpper, GranuleSize, NumberOfLevels>;
 
 //
 // Forward declarations of the different descriptor layouts; defined below.

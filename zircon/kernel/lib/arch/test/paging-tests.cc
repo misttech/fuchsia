@@ -41,6 +41,11 @@ using ArmPagingLevel = arch::ArmAddressTranslationLevel;
 using ArmPagingSettings = arch::ArmPagingSettings;
 using ArmSystemState = arch::ArmSystemPagingState;
 
+using ArmLowerPagingTraits =
+    arch::ArmLowerPagingTraits<arch::ArmGranuleSize::k4KiB, /*NumberOfLevels=*/4>;
+using ArmUpperPagingTraits =
+    arch::ArmUpperPagingTraits<arch::ArmGranuleSize::k4KiB, /*NumberOfLevels=*/4>;
+
 using RiscvMemoryType = arch::RiscvMemoryType;
 using RiscvPagingLevel = arch::RiscvPagingLevel;
 using RiscvPagingSettings = arch::RiscvPagingTraitsBase::PagingSettings;
@@ -1990,8 +1995,8 @@ TEST(PagingTests, Compilation) {
   PagingCompilationTest<arch::RiscvSv57PagingTraits>();
   PagingCompilationTest<arch::X86FourLevelPagingTraits>();
   PagingCompilationTest<arch::X86FiveLevelPagingTraits>();
-  PagingCompilationTest<arch::ArmLowerPagingTraits>();
-  PagingCompilationTest<arch::ArmUpperPagingTraits>();
+  PagingCompilationTest<ArmLowerPagingTraits>();
+  PagingCompilationTest<ArmUpperPagingTraits>();
 }
 
 // The following macros are expected to be used on test cases given as
@@ -2007,12 +2012,12 @@ TEST(PagingTests, Compilation) {
   TEST_FOR_RISCV(name)            \
   TEST_FOR_X86(name)
 
-#define TEST_FOR_ARM(name)                                                          \
-  TEST(PagingTests, ArmLower##name) {                                               \
-    name<arch::ArmLowerPagingTraits, /*VaddrHighBits=*/0x0000'0000'0000'0000u>({}); \
-  }                                                                                 \
-  TEST(PagingTests, ArmUpper##name) {                                               \
-    name<arch::ArmUpperPagingTraits, /*VaddrHighBits=*/0xffff'0000'0000'0000u>({}); \
+#define TEST_FOR_ARM(name)                                                    \
+  TEST(PagingTests, ArmLower##name) {                                         \
+    name<ArmLowerPagingTraits, /*VaddrHighBits=*/0x0000'0000'0000'0000u>({}); \
+  }                                                                           \
+  TEST(PagingTests, ArmUpper##name) {                                         \
+    name<ArmUpperPagingTraits, /*VaddrHighBits=*/0xffff'0000'0000'0000u>({}); \
   }
 
 #define TEST_FOR_RISCV(name) \
