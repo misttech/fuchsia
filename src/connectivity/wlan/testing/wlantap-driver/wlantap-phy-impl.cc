@@ -261,6 +261,22 @@ void WlanPhyImplDevice::SetBtCoexistenceMode(SetBtCoexistenceModeRequestView req
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
+void WlanPhyImplDevice::SetTxPowerScenario(SetTxPowerScenarioRequestView request, fdf::Arena& arena,
+                                           SetTxPowerScenarioCompleter::Sync& completer) {
+  FDF_LOG(WARNING, "%s: SetTxPowerScenario() not supported", name_.c_str());
+  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+void WlanPhyImplDevice::ResetTxPowerScenario(fdf::Arena& arena,
+                                             ResetTxPowerScenarioCompleter::Sync& completer) {
+  FDF_LOG(WARNING, "%s: ResetTxPowerScenario() not supported", name_.c_str());
+  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+void WlanPhyImplDevice::GetTxPowerScenario(fdf::Arena& arena,
+                                           GetTxPowerScenarioCompleter::Sync& completer) {
+  FDF_LOG(WARNING, "%s: GetTxPowerScenario() not supported", name_.c_str());
+  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
 zx_status_t WlanPhyImplDevice::CreateWlanSoftmac(wlan_common::WlanMacRole role,
                                                  zx::channel mlme_channel) {
   static size_t n = 0;

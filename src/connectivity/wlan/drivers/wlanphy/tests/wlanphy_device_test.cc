@@ -167,6 +167,23 @@ class FakeWlanPhyImpl : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl
     completer.buffer(arena).ReplySuccess();
     test_completion_.Signal();
   }
+  void SetTxPowerScenario(SetTxPowerScenarioRequestView request, fdf::Arena& arena,
+                          SetTxPowerScenarioCompleter::Sync& completer) override {
+    tx_power_scenario_ = request->scenario();
+    completer.buffer(arena).ReplySuccess();
+    test_completion_.Signal();
+  }
+  void ResetTxPowerScenario(fdf::Arena& arena,
+                            ResetTxPowerScenarioCompleter::Sync& completer) override {
+    tx_power_scenario_ = fuchsia_wlan_phyimpl::wire::TxPowerScenario::kDefault;
+    completer.buffer(arena).ReplySuccess();
+    test_completion_.Signal();
+  }
+  void GetTxPowerScenario(fdf::Arena& arena,
+                          GetTxPowerScenarioCompleter::Sync& completer) override {
+    completer.buffer(arena).ReplySuccess(tx_power_scenario_);
+    test_completion_.Signal();
+  }
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_wlan_phyimpl::WlanPhyImpl> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {}
@@ -194,6 +211,10 @@ class FakeWlanPhyImpl : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl
 
   // Record the bt coexistence mode data when fake phyimpl device gets it.
   fuchsia_wlan_phyimpl::wire::BtCoexistenceMode bt_coex_mode_;
+
+  // Record the tx power scenario data when fake phyimpl device gets it.
+  fuchsia_wlan_phyimpl::wire::TxPowerScenario tx_power_scenario_ =
+      fuchsia_wlan_phyimpl::wire::TxPowerScenario::kDefault;
 
   static constexpr fuchsia_wlan_common::wire::WlanMacRole kFakeMacRole =
       fuchsia_wlan_common::wire::WlanMacRole::kAp;
@@ -425,6 +446,93 @@ TEST_F(WlanphyDeviceTest, SetBtCoexistenceMode) {
           [](TestEnvironment& env) { return env.fake_phyimpl_parent_.GetBtCoexMode(); }),
       fuchsia_wlan_phyimpl::wire::BtCoexistenceMode::kModeAuto);
 }
+
+using TxPowerScenarioParam = std::pair<fuchsia_wlan_internal::wire::TxPowerScenario,
+                                       fuchsia_wlan_phyimpl::wire::TxPowerScenario>;
+
+struct TxPowerScenarioTest : public WlanphyDeviceTest,
+                             public testing::WithParamInterface<TxPowerScenarioParam> {
+  static fuchsia_wlan_internal::wire::TxPowerScenario InternalTxPowerScenario() {
+    return GetParam().first;
+  }
+  static fuchsia_wlan_phyimpl::wire::TxPowerScenario PhyImplTxPowerScenario() {
+    return GetParam().second;
+  }
+};
+
+TEST_P(TxPowerScenarioTest, SetTxPowerScenario) {
+  auto result = client_phy_->SetTxPowerScenario(InternalTxPowerScenario());
+  ASSERT_TRUE(result.ok());
+  WaitForCommandCompletion();
+  EXPECT_EQ(driver_test().RunInEnvironmentTypeContext<fuchsia_wlan_phyimpl::wire::TxPowerScenario>(
+                [](TestEnvironment& env) { return env.fake_phyimpl_parent_.tx_power_scenario_; }),
+            PhyImplTxPowerScenario());
+}
+
+TEST_P(TxPowerScenarioTest, ResetTxPowerScenario) {
+  driver_test().RunInEnvironmentTypeContext([&](TestEnvironment& env) {
+    env.fake_phyimpl_parent_.tx_power_scenario_ = PhyImplTxPowerScenario();
+  });
+
+  auto result = client_phy_->ResetTxPowerScenario();
+  ASSERT_TRUE(result.ok());
+  WaitForCommandCompletion();
+  // No matter what scenario was set, the test reset implementation sets the scenario to default.
+  EXPECT_EQ(driver_test().RunInEnvironmentTypeContext<fuchsia_wlan_phyimpl::wire::TxPowerScenario>(
+                [](TestEnvironment& env) { return env.fake_phyimpl_parent_.tx_power_scenario_; }),
+            fuchsia_wlan_phyimpl::wire::TxPowerScenario::kDefault);
+}
+
+TEST_P(TxPowerScenarioTest, GetTxPowerScenario) {
+  driver_test().RunInEnvironmentTypeContext([&](TestEnvironment& env) {
+    env.fake_phyimpl_parent_.tx_power_scenario_ = PhyImplTxPowerScenario();
+  });
+
+  auto result = client_phy_->GetTxPowerScenario();
+  ASSERT_TRUE(result.ok());
+  EXPECT_EQ(result.value()->scenario, InternalTxPowerScenario());
+  WaitForCommandCompletion();
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    TxPowerScenarioTests, TxPowerScenarioTest,
+    testing::Values(
+        TxPowerScenarioParam(fuchsia_wlan_internal::wire::TxPowerScenario::kDefault,
+                             fuchsia_wlan_phyimpl::wire::TxPowerScenario::kDefault),
+        TxPowerScenarioParam(fuchsia_wlan_internal::wire::TxPowerScenario::kVoiceCall,
+                             fuchsia_wlan_phyimpl::wire::TxPowerScenario::kVoiceCall),
+        TxPowerScenarioParam(fuchsia_wlan_internal::wire::TxPowerScenario::kHeadCellOff,
+                             fuchsia_wlan_phyimpl::wire::TxPowerScenario::kHeadCellOff),
+        TxPowerScenarioParam(fuchsia_wlan_internal::wire::TxPowerScenario::kHeadCellOn,
+                             fuchsia_wlan_phyimpl::wire::TxPowerScenario::kHeadCellOn),
+        TxPowerScenarioParam(fuchsia_wlan_internal::wire::TxPowerScenario::kBodyCellOff,
+                             fuchsia_wlan_phyimpl::wire::TxPowerScenario::kBodyCellOff),
+        TxPowerScenarioParam(fuchsia_wlan_internal::wire::TxPowerScenario::kBodyCellOn,
+                             fuchsia_wlan_phyimpl::wire::TxPowerScenario::kBodyCellOn),
+        TxPowerScenarioParam(fuchsia_wlan_internal::wire::TxPowerScenario::kBodyBtActive,
+                             fuchsia_wlan_phyimpl::wire::TxPowerScenario::kBodyBtActive)),
+    [](const testing::TestParamInfo<TxPowerScenarioTest::ParamType>& info) {
+      // Generate a suffix for the test name.
+      switch (info.param.first) {
+        case fuchsia_wlan_internal::wire::TxPowerScenario::kDefault:
+          return "Default";
+        case fuchsia_wlan_internal::wire::TxPowerScenario::kVoiceCall:
+          return "VoiceCall";
+        case fuchsia_wlan_internal::wire::TxPowerScenario::kHeadCellOff:
+          return "HeadCellOff";
+        case fuchsia_wlan_internal::wire::TxPowerScenario::kHeadCellOn:
+          return "HeadCellOn";
+        case fuchsia_wlan_internal::wire::TxPowerScenario::kBodyCellOff:
+          return "BodyCellOff";
+        case fuchsia_wlan_internal::wire::TxPowerScenario::kBodyCellOn:
+          return "BodyCellOn";
+        case fuchsia_wlan_internal::wire::TxPowerScenario::kBodyBtActive:
+          return "BodyBtActive";
+        default:
+          // Make sure that each pair in the testing::Values list has a matching case statement.
+          ZX_PANIC("Unhandled TX power scenario: %u", static_cast<uint32_t>(info.param.first));
+      }
+    });
 
 }  // namespace
 }  // namespace wlanphy

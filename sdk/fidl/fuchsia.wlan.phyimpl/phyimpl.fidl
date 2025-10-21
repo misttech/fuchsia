@@ -17,6 +17,18 @@ using zx;
 
 const WLANPHY_ALPHA2_LEN uint8 = 2;
 
+/// Specific absorption rate scenarios that can be applied to WLAN PHY devices.
+@available(added=HEAD)
+type TxPowerScenario = flexible enum {
+    DEFAULT = 0;
+    VOICE_CALL = 1;
+    HEAD_CELL_OFF = 2;
+    HEAD_CELL_ON = 3;
+    BODY_CELL_OFF = 4;
+    BODY_CELL_ON = 5;
+    BODY_BT_ACTIVE = 6;
+};
+
 type WlanPhyCountry = flexible union {
     /// ISO Alpha-2 takes two octet alphabet characters.
     /// This needs to be expanded if at least one WLAN device driver or firmware
@@ -187,6 +199,19 @@ open protocol WlanPhyImpl {
     flexible SetBtCoexistenceMode(table {
         1: mode BtCoexistenceMode;
     }) -> () error zx.Status;
+
+    @available(added=HEAD)
+    flexible SetTxPowerScenario(table {
+        1: scenario TxPowerScenario;
+    }) -> () error zx.Status;
+
+    @available(added=HEAD)
+    flexible ResetTxPowerScenario() -> () error zx.Status;
+
+    @available(added=HEAD)
+    flexible GetTxPowerScenario() -> (struct {
+        scenario TxPowerScenario;
+    }) error zx.Status;
 };
 
 service Service {

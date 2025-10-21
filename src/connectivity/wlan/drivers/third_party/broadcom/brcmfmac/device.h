@@ -99,6 +99,11 @@ class Device : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl>,
   void GetPowerState(fdf::Arena& arena, GetPowerStateCompleter::Sync& completer) override;
   void SetBtCoexistenceMode(SetBtCoexistenceModeRequestView request, fdf::Arena& arena,
                             SetBtCoexistenceModeCompleter::Sync& completer) override;
+  void SetTxPowerScenario(SetTxPowerScenarioRequestView request, fdf::Arena& arena,
+                          SetTxPowerScenarioCompleter::Sync& completer) override;
+  void ResetTxPowerScenario(fdf::Arena& arena,
+                            ResetTxPowerScenarioCompleter::Sync& completer) override;
+  void GetTxPowerScenario(fdf::Arena& arena, GetTxPowerScenarioCompleter::Sync& completer) override;
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_wlan_phyimpl::WlanPhyImpl> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {}

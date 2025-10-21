@@ -619,6 +619,20 @@ void Device::SetBtCoexistenceMode(SetBtCoexistenceModeRequestView request, fdf::
   completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
+void Device::SetTxPowerScenario(SetTxPowerScenarioRequestView request, fdf::Arena& arena,
+                                SetTxPowerScenarioCompleter::Sync& completer) {
+  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
+void Device::ResetTxPowerScenario(fdf::Arena& arena,
+                                  ResetTxPowerScenarioCompleter::Sync& completer) {
+  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
+void Device::GetTxPowerScenario(fdf::Arena& arena, GetTxPowerScenarioCompleter::Sync& completer) {
+  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
 void Device::ServiceConnectHandler(fdf_dispatcher_t* dispatcher,
                                    fdf::ServerEnd<fuchsia_wlan_phyimpl::WlanPhyImpl> server_end) {
   bindings_.AddBinding(dispatcher, std::move(server_end), this, [](fidl::UnbindInfo info) {
