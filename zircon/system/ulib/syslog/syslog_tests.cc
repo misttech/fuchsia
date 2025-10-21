@@ -4,7 +4,7 @@
 
 #include <zircon/availability.h>
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 
 #include <errno.h>
 #include <fcntl.h>
@@ -329,4 +329,4 @@ TEST(SyslogTests, test_reconfigure_with_log_sink_channel_not_supported) {
 
 }  // namespace
 
-#endif  // FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)

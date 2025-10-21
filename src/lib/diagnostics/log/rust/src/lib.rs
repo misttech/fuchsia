@@ -9,16 +9,16 @@
 //! This library isn't Fuchsia-specific and provides a general `log::Log` that allows
 //! the library to also be used in the host.
 
-#[cfg(all(target_os = "fuchsia", fuchsia_api_level_at_least = "NEXT"))]
+#[cfg(all(target_os = "fuchsia", fuchsia_api_level_at_least = "29"))]
 mod fuchsia;
-#[cfg(all(target_os = "fuchsia", fuchsia_api_level_at_least = "NEXT"))]
+#[cfg(all(target_os = "fuchsia", fuchsia_api_level_at_least = "29"))]
 use self::fuchsia as implementation;
 
 // Version 28 of the SDK was the last version that used sockets for the Rust
 // client. The latest uses IOBuffers.
-#[cfg(all(target_os = "fuchsia", not(fuchsia_api_level_at_least = "NEXT")))]
+#[cfg(all(target_os = "fuchsia", not(fuchsia_api_level_at_least = "29")))]
 mod fuchsia_28;
-#[cfg(all(target_os = "fuchsia", not(fuchsia_api_level_at_least = "NEXT")))]
+#[cfg(all(target_os = "fuchsia", not(fuchsia_api_level_at_least = "29")))]
 use self::fuchsia_28 as implementation;
 
 #[cfg(not(target_os = "fuchsia"))]

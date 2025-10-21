@@ -23,7 +23,7 @@ closed protocol TouchScreen {
         1: tap_location fuchsia.math.Vec;
         // The duration of delay between tap down and up. It is useful to control
         // the delay to produce short tap or long tap.
-        @available(added=NEXT)
+        @available(added=29)
         2: duration zx.Duration;
     }) -> ();
 

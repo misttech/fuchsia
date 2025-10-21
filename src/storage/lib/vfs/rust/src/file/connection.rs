@@ -554,7 +554,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
         match req {
             #[cfg(any(
                 fuchsia_api_level_at_least = "PLATFORM",
-                not(fuchsia_api_level_at_least = "NEXT")
+                not(fuchsia_api_level_at_least = "29")
             ))]
             fio::FileRequest::DeprecatedClone { flags, object, control_handle: _ } => {
                 trace::duration!(c"storage", c"File::DeprecatedClone");

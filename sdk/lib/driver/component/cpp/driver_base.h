@@ -32,7 +32,7 @@ namespace fdf {
 
 using DriverStartArgs = fuchsia_driver_framework::DriverStartArgs;
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 // Used to indicate if we should wait for the initial interest change for the driver's logger.
 extern bool logger_wait_for_initial_interest;
 #endif
@@ -177,7 +177,7 @@ class DriverBase {
     return StructuredConfig::CreateFromVmo(std::move(config_vmo.value()));
   }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(29)
   zx::unowned_vmar vmar() {
     auto& vmar = start_args_.vmar();
     if (vmar.has_value()) {

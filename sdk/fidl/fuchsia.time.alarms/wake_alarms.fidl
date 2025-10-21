@@ -16,7 +16,7 @@ using fuchsia.power.system;
 alias AlarmId = string:128;
 
 /// A timestamp denoting an instant on the UTC timeline.
-@available(added=NEXT)
+@available(added=29)
 type InstantUtc = struct {
     /// `timestamp_utc` is the number of nanoseconds since the start of the Unix
     /// epoch, relative to the UTC timezone.
@@ -181,7 +181,7 @@ open protocol WakeAlarms {
     /// Refer to [SetAndWait] documentation for the functionality details, and
     /// especially see the section "Return value" for the return value
     /// subtleties.
-    @available(added=NEXT)
+    @available(added=29)
     SetAndWaitUtc(@generated_name("SetAndWaitUtcArgs") resource struct {
         /// The deadline at which the timer is supposed to fire. This
         /// corresponds to a time instant on the UTC timeline.
@@ -263,6 +263,6 @@ type WakeAlarmsError = flexible enum {
     INTERNAL = 3;
     /// A parameter provided by the user is incorrect. For example, providing
     /// an empty value for `alarm_id`.
-    @available(added=NEXT)
+    @available(added=29)
     INVALID_ARGS = 4;
 };

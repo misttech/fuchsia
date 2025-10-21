@@ -135,6 +135,6 @@ open protocol ScoConnection {
     /// protocol once the underlying connection is disconnected. This can be used to order
     /// events to happen after the connection is dropped. If this is not necessary, the
     /// server will always disconnect the SCO when this protocol is closed by the client.
-    @available(added=NEXT)
+    @available(added=29)
     flexible RequestDisconnect();
 };

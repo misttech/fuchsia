@@ -119,7 +119,7 @@ type PacketInfo = struct {
 };
 
 /// Legacy protocol name. Use the generated discoverable protocol name instead.
-@available(removed=NEXT)
+@available(removed=29)
 const SOCKET_PROTOCOL_NAME string = "fuchsia.posix.socket.packet/Socket";
 
 /// A packet socket.

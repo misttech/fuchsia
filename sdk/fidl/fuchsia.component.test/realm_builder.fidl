@@ -219,7 +219,7 @@ type Protocol = table {
 
     /// Optional. If set, the path to the dictionary routed by `from` which contains
     /// the capability. Superseded by [`Realm.AddRouteFromDictionary`].
-    @available(added=25, removed=NEXT)
+    @available(added=25, removed=29)
     6: from_dictionary string:MAX;
 };
 
@@ -260,7 +260,7 @@ type Directory = table {
 
     /// Optional. If set, the path to the dictionary routed by `from` which contains
     /// the capability. Superseded by [`Realm.AddRouteFromDictionary`].
-    @available(added=25, removed=NEXT)
+    @available(added=25, removed=29)
     8: from_dictionary string:MAX;
 };
 
@@ -310,7 +310,7 @@ type Service = table {
 
     /// Optional. If set, the path to the dictionary routed by `from` which contains
     /// the capability. Superseded by [`Realm.AddRouteFromDictionary`].
-    @available(added=25, removed=NEXT)
+    @available(added=25, removed=29)
     5: from_dictionary string:MAX;
 };
 
@@ -389,7 +389,7 @@ type Dictionary = table {
 
     /// Optional. If set, the path to the dictionary routed by `from` which contains
     /// the capability. Superseded by [`Realm.AddRouteFromDictionary`].
-    @available(added=25, removed=NEXT)
+    @available(added=25, removed=29)
     5: from_dictionary string:MAX;
 };
 
@@ -411,7 +411,7 @@ type Resolver = table {
 
     /// Optional. If set, the path to the dictionary routed by `from` which contains
     /// the capability. Superseded by [`Realm.AddRouteFromDictionary`].
-    @available(added=25, removed=NEXT)
+    @available(added=25, removed=29)
     4: from_dictionary string:MAX;
 };
 
@@ -433,7 +433,7 @@ type Runner = table {
 
     /// Optional. If set, the path to the dictionary routed by `from` which contains
     /// the capability. Superseded by [`Realm.AddRouteFromDictionary`].
-    @available(added=25, removed=NEXT)
+    @available(added=25, removed=29)
     4: from_dictionary string:MAX;
 };
 
@@ -723,7 +723,7 @@ closed protocol Realm {
 
     /// Identical to `AddRouteFromDictionary`, except it does not accept `from_dictionary` which
     /// it always sets to ".".
-    @available(deprecated=NEXT)
+    @available(deprecated=29)
     @deprecated("use AddRouteFromDictionary instead")
     strict AddRoute(struct {
         /// The capabilities that are to be routed.
@@ -751,7 +751,7 @@ closed protocol Realm {
     ///   involved manifests to fail validation.
     /// - `BUILD_ALREADY_CALLED`: The `Builder.Build` function has been called
     ///   for this realm, and thus this `Realm` channel can no longer be used.
-    @available(added=NEXT)
+    @available(added=29)
     strict AddRouteFromDictionary(struct {
         /// The capabilities that are to be routed.
         capabilities vector<Capability>:MAX;

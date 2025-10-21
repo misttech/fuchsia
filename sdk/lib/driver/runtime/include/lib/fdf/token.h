@@ -114,7 +114,7 @@ zx_status_t fdf_token_register(zx_handle_t token, fdf_dispatcher_t* dispatcher,
 //
 // ZX_ERR_NOT_FOUND: The |token|'s pair has not been transferred before this
 // call.
-zx_status_t fdf_token_receive(zx_handle_t token, fdf_handle_t* handle) ZX_AVAILABLE_SINCE(NEXT);
+zx_status_t fdf_token_receive(zx_handle_t token, fdf_handle_t* handle) ZX_AVAILABLE_SINCE(29);
 
 // Transfers the fdf handle to the owner of the channel peer of |token|.
 //

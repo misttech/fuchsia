@@ -172,7 +172,7 @@ async fn handle_inspect_writer(
                 component::health().set_ok();
                 responder.send().expect("response succeeds")
             }
-            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            #[cfg(fuchsia_api_level_at_least = "29")]
             fpuppet::InspectWriterRequest::SetHealthStartingUp { responder } => {
                 component::health().set_starting_up();
                 responder.send().expect("response succeeds")
@@ -425,7 +425,7 @@ async fn record_lazy_values(
             }
             #[cfg(fuchsia_api_level_at_least = "28")]
             fpuppet::LazyInspectPuppetRequest::RecordLazyValues { .. } => unimplemented!(),
-            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            #[cfg(fuchsia_api_level_at_least = "29")]
             fpuppet::LazyInspectPuppetRequest::SetHealthStartingUp { .. } => unimplemented!(),
         };
     }

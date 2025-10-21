@@ -4,7 +4,7 @@
 
 #include <zircon/availability.h>
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 
 #include <fidl/fuchsia.logger/cpp/wire.h>
 #include <lib/syslog/cpp/macros.h>  //nogncheck
@@ -178,7 +178,7 @@ zx_status_t fx_logger::VLogWriteToSocket(fx_log_severity_t severity, const char*
     }
     auto buffer = builder
                       .WithMsg(fmt_string)
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
                       .WithSocket(this->socket_.get())
 #endif
                       .Build();
@@ -193,7 +193,7 @@ zx_status_t fx_logger::VLogWriteToSocket(fx_log_severity_t severity, const char*
     if (tag) {
       buffer.WriteKeyValue("tag", tag);
     }
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
     if (!buffer.Flush()) {
       return ZX_ERR_IO;
     }
@@ -429,4 +429,4 @@ zx_status_t fx_logger::SetTags(const char* const* tags, size_t ntags) {
   return ZX_OK;
 }
 
-#endif  // FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)

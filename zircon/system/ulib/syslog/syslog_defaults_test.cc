@@ -4,7 +4,7 @@
 
 #include <lib/syslog/global.h>
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 
 #include <zxtest/zxtest.h>
 
@@ -19,4 +19,4 @@ TEST(SyslogTests, test_log_severity_invalid) {
   EXPECT_EQ(FX_LOG_INFO, fx_logger_get_min_severity(logger));
 }
 
-#endif  // FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)

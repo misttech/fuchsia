@@ -18,15 +18,15 @@ open protocol RealmFactory {
         3: device_pixel_ratio float32;
 
         /// Optional. If it has a value, the width and height must not be zero.
-        @available(added=NEXT)
+        @available(added=29)
         4: display_dimensions fuchsia.math.SizeU;
 
         /// Optional. If it has a value, it must not be zero.
-        @available(added=NEXT)
+        @available(added=29)
         5: display_refresh_rate_millihertz uint32;
 
         /// Optional. If it has a value, it must not be zero.
-        @available(added=NEXT)
+        @available(added=29)
         6: display_max_layer_count uint32;
     }) -> () error fuchsia.testing.harness.OperationError;
 };
@@ -53,15 +53,15 @@ open protocol ScenicRealmFactory {
         4: display_composition bool;
 
         /// Optional. If it has a value, the width and height must not be zero.
-        @available(added=NEXT)
+        @available(added=29)
         5: display_dimensions fuchsia.math.SizeU;
 
         /// Optional. If it has a value, it must not be zero.
-        @available(added=NEXT)
+        @available(added=29)
         6: display_refresh_rate_millihertz uint32;
 
         /// Optional. If it has a value, it must not be zero.
-        @available(added=NEXT)
+        @available(added=29)
         7: display_max_layer_count uint32;
     }) -> () error fuchsia.testing.harness.OperationError;
 };

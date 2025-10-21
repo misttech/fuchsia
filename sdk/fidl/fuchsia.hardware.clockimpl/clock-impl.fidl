@@ -6,10 +6,10 @@ library fuchsia.hardware.clockimpl;
 
 using zx;
 
-@available(added=NEXT)
+@available(added=29)
 const MAX_NAME_LEN uint32 = 256;
 
-@available(added=NEXT)
+@available(added=29)
 const MAX_CLOCKS uint32 = 200;
 
 @available(added=HEAD)
@@ -32,7 +32,7 @@ type ClockIdsMetadata = table {
     1: clock_nodes vector<ClockNodeDescriptor>:MAX;
 };
 
-@available(added=NEXT)
+@available(added=29)
 type ClockProperties = table {
     1: clock_id uint32;
     2: clock_name string:MAX_NAME_LEN;
@@ -93,7 +93,7 @@ open protocol ClockImpl {
         index uint32;
     }) error zx.Status;
 
-    @available(added=NEXT)
+    @available(added=29)
     flexible GetClockProperties() -> (struct {
         clock_properties vector<ClockProperties>:MAX_CLOCKS;
     }) error zx.Status;

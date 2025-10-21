@@ -39,7 +39,7 @@ type RebootReason = strict enum {
 
 /// Why the system reboots.
 // Contact OWNERS before adding a new value.
-@available(added=26, deprecated=NEXT, note="use ShutdownReason")
+@available(added=26, deprecated=29, note="use ShutdownReason")
 // TODO(https://fxbug.dev/385742868): Rename this to `RebootReason` once the
 // original `RebootReason` is removed.
 type RebootReason2 = flexible enum {
@@ -88,10 +88,10 @@ type RebootReason2 = flexible enum {
     ANDROID_UNEXPECTED_REASON = 12;
 
     /// Android called for the "RescueParty".
-    @available(added=NEXT)
+    @available(added=29)
     ANDROID_RESCUE_PARTY = 14;
 
     /// A critical Android process failed.
-    @available(added=NEXT)
+    @available(added=29)
     ANDROID_CRITICAL_PROCESS_FAILURE = 15;
 };

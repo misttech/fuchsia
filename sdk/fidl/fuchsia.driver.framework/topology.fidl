@@ -236,7 +236,7 @@ type NodeAddArgs = resource table {
     9: offers_dictionary fuchsia.component.sandbox.DictionaryRef;
 };
 
-@available(added=NEXT)
+@available(added=29)
 type DriverResult = flexible resource union {
     /// The token that belongs to the node that a driver has started successfully on.
     1: driver_started_node_token zx.Handle:EVENT;
@@ -270,7 +270,7 @@ open protocol NodeController {
 
     /// Event that is triggered when the associated `Node` is bound to a driver.
     /// Replaced with WaitForDriver.
-    @available(removed=NEXT)
+    @available(removed=29)
     flexible -> OnBind(resource table {
         /// Provides a token representing this node which can be exchanged with the
         /// driver framework to discern additional information about this node.
@@ -284,7 +284,7 @@ open protocol NodeController {
     /// node that the driver started on.
     /// If an error happens we wait until bootup is complete, which is when all drivers that
     /// can bind and start have done so, before returning the error.
-    @available(added=NEXT)
+    @available(added=29)
     flexible WaitForDriver() -> (DriverResult) error zx.Status;
 };
 
@@ -324,11 +324,11 @@ type NodeError = flexible enum {
     DUPLICATE_PROPERTY_KEYS = 13;
 
     /// The Node is missing source instance filters,
-    @available(added=NEXT)
+    @available(added=29)
     OFFER_SOURCE_INSTANCE_FILTER_MISSING = 14;
 
     /// The Node is missing renamed instances,
-    @available(added=NEXT)
+    @available(added=29)
     OFFER_RENAMED_INSTANCES_MISSING = 15;
 };
 

@@ -4,7 +4,7 @@
 
 #include <zircon/availability.h>
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 
 #include <lib/driver/component/cpp/driver_base.h>
 

@@ -257,7 +257,7 @@ type NodeAttributes2 = struct {
 };
 
 // Legacy protocol identifier. Use generated discoverable protocol name instead.
-@available(removed=NEXT)
+@available(removed=29)
 const NODE_PROTOCOL_NAME string = "fuchsia.io/Node";
 
 /// The fields of 'attributes' which are used to update the Node are indicated
@@ -323,7 +323,7 @@ open protocol Node {
     });
 
     /// DEPRECATED - Use `fuchsia.unknown/Cloneable.Clone` instead.
-    @available(added=26, deprecated=27, removed=NEXT)
+    @available(added=26, deprecated=27, removed=29)
     @selector("fuchsia.io1/Node.Clone")
     flexible DeprecatedClone(resource struct {
         flags OpenFlags;

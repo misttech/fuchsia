@@ -13,7 +13,7 @@ type DirectoryInfo = table {
 };
 
 // Legacy protocol identifier. Use generated discoverable protocol name instead.
-@available(removed=NEXT)
+@available(removed=29)
 const DIRECTORY_PROTOCOL_NAME string = "fuchsia.io/Directory";
 
 /// Flags used to specify how a node should be opened. Note that ranges of bits are reserved

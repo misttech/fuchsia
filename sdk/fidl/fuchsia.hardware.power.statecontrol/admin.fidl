@@ -8,12 +8,12 @@ using zx;
 /// The maxium number of seconds the server will wait for responses from all RebootMethodsWatchers
 /// before changing the system power state.
 // TODO(https://fxbug.dev/42129558): Track how long it takes to persist the reboot reason and adjust this value.
-@available(deprecated=NEXT, note="renamed to MAX_SHUTDOWN_WATCHER_RESPONSE_TIME_SECONDS")
+@available(deprecated=29, note="renamed to MAX_SHUTDOWN_WATCHER_RESPONSE_TIME_SECONDS")
 const MAX_REBOOT_WATCHER_RESPONSE_TIME_SECONDS uint32 = 5;
 
 /// The maximum number of seconds the server will wait for responses from all ShutdownWatchers
 /// before changing the system power state.
-@available(added=NEXT)
+@available(added=29)
 const MAX_SHUTDOWN_WATCHER_RESPONSE_TIME_SECONDS uint32 = 5;
 
 /// Provides methods to request that the system be transitioned into a supported power state.
@@ -33,7 +33,7 @@ const MAX_SHUTDOWN_WATCHER_RESPONSE_TIME_SECONDS uint32 = 5;
 @discoverable(server="platform")
 closed protocol Admin {
     /// Asks the device to enter a fully on state.
-    @available(deprecated=NEXT, note="not used or supported")
+    @available(deprecated=29, note="not used or supported")
     strict PowerFullyOn() -> () error zx.Status;
 
     /// Asks the device to enter the state specified by `options.action`.
@@ -43,7 +43,7 @@ closed protocol Admin {
     ///              `ZX_ERR_INVALID_ARGS` is returned if `action` is absent.
     ///              `reasons` may be omitted, but adding a new enum value
     ///              instead is strongly encouraged.
-    @available(added=NEXT)
+    @available(added=29)
     strict Shutdown(struct {
         options ShutdownOptions;
     }) -> () error zx.Status;
@@ -69,7 +69,7 @@ closed protocol Admin {
     ///
     /// Use Shutdown, which allows callers to specify the intended action and reasons for the
     /// action.
-    @available(added=26, deprecated=NEXT, note="use Shutdown")
+    @available(added=26, deprecated=29, note="use Shutdown")
     strict PerformReboot(struct {
         options RebootOptions;
     }) -> () error zx.Status;
@@ -80,7 +80,7 @@ closed protocol Admin {
     ///
     /// Use Shutdown, which allows callers to specify reasons why they are requesting a reboot to
     /// bootloader.
-    @available(deprecated=NEXT, note="use Shutdown")
+    @available(deprecated=29, note="use Shutdown")
     strict RebootToBootloader() -> () error zx.Status;
 
     /// Asks the device to reboot into the recovery partition.
@@ -89,7 +89,7 @@ closed protocol Admin {
     ///
     /// Use Shutdown, which allows callers to specify reasons why they are requesting a reboot to
     /// recovery.
-    @available(deprecated=NEXT, note="use Shutdown")
+    @available(deprecated=29, note="use Shutdown")
     strict RebootToRecovery() -> () error zx.Status;
 
     /// Asks all devices to enter a powered off state.
@@ -97,7 +97,7 @@ closed protocol Admin {
     /// # Deprecation
     ///
     /// Use Shutdown, which allows callers to specify reasons why they are requesting a poweroff.
-    @available(deprecated=NEXT, note="use Shutdown")
+    @available(deprecated=29, note="use Shutdown")
     strict Poweroff() -> () error zx.Status;
 
     /// Performs a kernel mexec.
@@ -119,16 +119,16 @@ closed protocol Admin {
 
 /// The maximum number of reboot reasons that can be attributed to a single
 /// reboot request.
-@available(added=26, deprecated=NEXT, note="use MAX_SHUTDOWN_REASONS")
+@available(added=26, deprecated=29, note="use MAX_SHUTDOWN_REASONS")
 const MAX_REBOOT_REASONS uint8 = 100;
 
 /// The maximum number of shutdown reasons that can be attributed to a single
 /// shutdown request.
-@available(added=NEXT)
+@available(added=29)
 const MAX_SHUTDOWN_REASONS uint8 = 100;
 
 /// The options specified when a reboot is requested.
-@available(added=26, deprecated=NEXT, note="use ShutdownOptions")
+@available(added=26, deprecated=29, note="use ShutdownOptions")
 type RebootOptions = table {
     /// The set of reboot reasons that are responsible for this reboot request.
     // When calling `Admin.PerformReboot`, the majority of clients need only
@@ -137,7 +137,7 @@ type RebootOptions = table {
     1: reasons vector<RebootReason2>:MAX_REBOOT_REASONS;
 };
 
-@available(added=NEXT)
+@available(added=29)
 type ShutdownAction = flexible enum {
     POWEROFF = 1;
     REBOOT = 2;
@@ -146,7 +146,7 @@ type ShutdownAction = flexible enum {
 };
 
 /// The options specified when a shutdown is requested.
-@available(added=NEXT)
+@available(added=29)
 type ShutdownOptions = table {
     1: action ShutdownAction;
 
@@ -162,7 +162,7 @@ type ShutdownOptions = table {
 /// reboot reasons. Consider relying on Component Framework's orderly shutdown
 /// if you're looking at using this protocol.
 @discoverable(server="platform")
-@available(deprecated=NEXT, note="use ShutdownWatcherRegister")
+@available(deprecated=29, note="use ShutdownWatcherRegister")
 closed protocol RebootMethodsWatcherRegister {
     /// Register a watcher to be notified when a Reboot method is called. The
     /// Register channel will be used at most once to notify the watcher of an
@@ -228,7 +228,7 @@ closed protocol RebootMethodsWatcherRegister {
 /// shutdown reasons. Consider relying on Component Framework's orderly shutdown
 /// if you're looking at using this protocol.
 @discoverable(server="platform")
-@available(added=NEXT)
+@available(added=29)
 open protocol ShutdownWatcherRegister {
     /// Registers a watcher to be notified when the Shutdown method is called.
     ///
@@ -271,7 +271,7 @@ closed protocol RebootMethodsWatcher {
 /// before the system power state is changed. The channel will be used once to
 /// send a notification to the watcher. Once the watcher responds or the timeout
 /// expires, the channel will be closed by the client of RebootWatcher.
-@available(added=26, deprecated=NEXT, note="Use ShutdownWatcher")
+@available(added=26, deprecated=29, note="Use ShutdownWatcher")
 closed protocol RebootWatcher {
     strict OnReboot(struct {
         options RebootOptions;
@@ -283,7 +283,7 @@ closed protocol RebootWatcher {
 /// before the system power state is changed. The channel will be used once to
 /// send a notification to the watcher. Once the watcher responds or the timeout
 /// expires, the channel will be closed by the client of ShutdownWatcher.
-@available(added=NEXT)
+@available(added=29)
 open protocol ShutdownWatcher {
     flexible OnShutdown(struct {
         options ShutdownOptions;

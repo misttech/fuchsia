@@ -742,9 +742,9 @@ impl<'a> ValidationContext<'a> {
                     u.dependency_type.as_ref(),
                     u.availability.as_ref(),
                 );
-                #[cfg(not(fuchsia_api_level_at_least = "NEXT"))]
+                #[cfg(not(fuchsia_api_level_at_least = "29"))]
                 let has_numbered_handle = false;
-                #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                #[cfg(fuchsia_api_level_at_least = "29")]
                 let has_numbered_handle = u.numbered_handle.is_some();
                 if u.target_path.is_none() && !has_numbered_handle {
                     self.errors.push(Error::missing_field(decl, "target_path"));
@@ -869,7 +869,7 @@ impl<'a> ValidationContext<'a> {
                     u.availability.as_ref(),
                 );
             }
-            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            #[cfg(fuchsia_api_level_at_least = "29")]
             fdecl::Use::Dictionary(u) => {
                 let decl = DeclType::UseDictionary;
                 self.validate_use_fields(
@@ -959,7 +959,7 @@ impl<'a> ValidationContext<'a> {
                     PathCapability { decl: DeclType::UseStorage, dir: Path::new(path), use_ },
                     path,
                 ),
-                #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                #[cfg(fuchsia_api_level_at_least = "29")]
                 fdecl::Use::Dictionary(fdecl::UseDictionary {
                     target_path: Some(path), ..
                 }) => (
@@ -996,12 +996,12 @@ impl<'a> ValidationContext<'a> {
 
                 // Dictionary capabilities can be prefixes of protocols and services, but not the
                 // other way around.
-                #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                #[cfg(fuchsia_api_level_at_least = "29")]
                 (fdecl::Use::Dictionary(_), _) => {
                     capability_b.dir != capability_a.dir
                         && capability_b.dir.starts_with(capability_a.dir)
                 }
-                #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                #[cfg(fuchsia_api_level_at_least = "29")]
                 (_, fdecl::Use::Dictionary(_)) => {
                     capability_b.dir != capability_a.dir
                         && capability_a.dir.starts_with(capability_b.dir)
@@ -3224,7 +3224,7 @@ mod tests {
         },
     }
 
-    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+    #[cfg(fuchsia_api_level_at_least = "29")]
     test_validate_any_result! {
         test_validate_use_dictionary => {
             input = {

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 #include <zircon/availability.h>
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(29)
 #include <elf-search.h>
 #include <fidl/fuchsia.memory.sampler/cpp/fidl.h>
 #include <fidl/fuchsia.memory.sampler/cpp/natural_types.h>
@@ -189,4 +189,4 @@ Recorder Recorder::CreateRecorderForTesting(
   return Recorder{std::move(client), std::move(get_poisson_sampler)};
 }
 }  // namespace memory_sampler
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(29)

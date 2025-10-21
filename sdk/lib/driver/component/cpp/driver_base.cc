@@ -12,7 +12,7 @@
 
 namespace fdf {
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 __WEAK bool logger_wait_for_initial_interest = true;
 #endif
 
@@ -30,7 +30,7 @@ DriverBase::DriverBase(std::string_view name, DriverStartArgs start_args,
   }();
   logger_ = [&incoming, this]() {
     auto logger = Logger::Create2(incoming, dispatcher_, name_, FUCHSIA_LOG_INFO
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
                                   ,
                                   logger_wait_for_initial_interest
 #endif

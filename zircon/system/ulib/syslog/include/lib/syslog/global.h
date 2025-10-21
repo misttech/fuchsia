@@ -10,7 +10,7 @@
 
 #include <zircon/availability.h>
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 
 #include <lib/syslog/logger.h>
 
@@ -153,5 +153,5 @@ zx_status_t fx_log_reconfigure(const fx_logger_config_t* config);
 
 __END_CDECLS
 
-#endif  // f FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#endif  // f FUCHSIA_API_LEVEL_LESS_THAN(29)
 #endif  // LIB_SYSLOG_GLOBAL_H_

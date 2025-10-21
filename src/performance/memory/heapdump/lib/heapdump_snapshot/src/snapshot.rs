@@ -156,9 +156,9 @@ impl Snapshot {
                                 }
                             }
 
-                            #[cfg(not(fuchsia_api_level_at_least = "NEXT"))]
+                            #[cfg(not(fuchsia_api_level_at_least = "29"))]
                             let count = 1;
-                            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                            #[cfg(fuchsia_api_level_at_least = "29")]
                             let count = allocation.count.unwrap_or(1);
 
                             let size = read_field!(allocation => Allocation, size)?;

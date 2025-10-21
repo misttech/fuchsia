@@ -13,7 +13,7 @@
 #include <lib/async/default.h>
 #include <lib/syslog/cpp/log_level.h>
 #include <lib/syslog/cpp/log_settings.h>
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(29)
 #include <lib/syslog/cpp/log_settings_internal.h>
 #endif
 #include <lib/syslog/cpp/logging_backend_fuchsia_globals.h>
@@ -42,7 +42,7 @@ using FidlInterest = fuchsia_diagnostics::wire::Interest;
 
 }  // namespace
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 
 class GlobalStateLock;
 
@@ -109,7 +109,7 @@ class GlobalStateLock {
   ~GlobalStateLock() { internal::FuchsiaLogReleaseState(); }
 };
 
-#endif  // FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
 
 namespace {
 
@@ -127,7 +127,7 @@ zx_koid_t ProcessSelfKoid() {
 zx_koid_t globalPid = ProcessSelfKoid();
 const char kTagFieldName[] = "tag";
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(29)
 
 void FixDefaultSettings(RawLogSettings& settings, bool interest_listener_enabled) {
   // If now handle is provided, try the incoming namespace.
@@ -170,7 +170,7 @@ void BeginRecordInternal(LogBuffer* buffer, fuchsia_logging::RawLogSeverity seve
   }
   buffer->BeginRecord(severity, file_name, line, msg, 0, globalPid,
                       internal::FuchsiaLogGetCurrentThreadKoid());
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
   GlobalStateLock log_state;
   for (size_t i = 0; i < log_state->tags().size(); i++) {
     buffer->WriteKeyValue(kTagFieldName, log_state->tags()[i]);
@@ -189,7 +189,7 @@ void BeginRecord(LogBuffer* buffer, fuchsia_logging::RawLogSeverity severity,
                  internal::NullSafeStringView file, unsigned int line,
                  internal::NullSafeStringView msg, internal::NullSafeStringView condition) {
   BeginRecordInternal(buffer, severity, file, line, msg, condition);
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
   internal::SetFlushCallback(*buffer, [](cpp20::span<const uint8_t> data, FlushConfig config) {
     return internal::FlushToSocket(std::get<0>(GlobalStateLock()->descriptor()).get(), data,
                                    config);
@@ -197,7 +197,7 @@ void BeginRecord(LogBuffer* buffer, fuchsia_logging::RawLogSeverity severity,
 #endif
 }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 void BeginRecordWithSocket(LogBuffer* buffer, fuchsia_logging::RawLogSeverity severity,
                            internal::NullSafeStringView file_name, unsigned int line,
                            internal::NullSafeStringView msg, internal::NullSafeStringView condition,
@@ -211,7 +211,7 @@ void BeginRecordWithSocket(LogBuffer* buffer, fuchsia_logging::RawLogSeverity se
 #endif
 
 void SetLogSettings(const fuchsia_logging::LogSettings& settings) {
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
   GlobalStateLock lock(false);
   internal::LogState::Set(settings, lock);
 #else
@@ -226,7 +226,7 @@ void SetLogSettings(const fuchsia_logging::LogSettings& settings) {
 
 }  // namespace
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 
 void internal::LogState::PollInterest() {
   log_sink_->WaitForInterestChange().Then(
@@ -342,7 +342,7 @@ zx::result<> FlushToGlobalLogger(LogBuffer& buffer) {
       internal::FuchsiaLogGetGlobalLogger(GetDefaultSettings), data.data(), data.size()));
 }
 
-#endif  // FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
 
 // Sets the default log severity. If not explicitly set,
 // this defaults to INFO, or to the value specified by Archivist.
@@ -358,7 +358,7 @@ LogSettingsBuilder& LogSettingsBuilder::DisableInterestListener() {
   return *this;
 }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 // Disables waiting for the initial interest from Archivist.
 // The level specified in SetMinLogSeverity or INFO will be used
 // as the default.
@@ -410,13 +410,13 @@ LogSettingsBuilder& LogSettingsBuilder::WithTags(const std::initializer_list<std
 // Configures the log settings.
 void LogSettingsBuilder::BuildAndInitialize() { SetLogSettings(settings_); }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 RawLogSeverity GetMinLogSeverity() { return GlobalStateLock()->min_severity(); }
 #endif
 
 LogBuffer LogBufferBuilder::Build() {
   LogBuffer buffer;
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
   if (socket_) {
     fuchsia_logging::BeginRecordWithSocket(
         &buffer, severity_,

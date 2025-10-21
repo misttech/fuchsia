@@ -32,7 +32,7 @@ type LastReboot = table {
     2: reason RebootReason;
 
     /// How a device last shutdown.
-    @available(added=NEXT)
+    @available(added=29)
     6: action ShutdownAction;
 
     /// The uptime of the device before it rebooted. This is the amount of time since boot,
@@ -135,11 +135,11 @@ type RebootReason = strict(removed=9) flexible(added=9) enum : uint16 {
     ANDROID_UNEXPECTED_REASON = 21;
 
     /// The device rebooted because Android called for the "RescueParty".
-    @available(added=NEXT)
+    @available(added=29)
     ANDROID_RESCUE_PARTY = 23;
 
     /// The device rebooted because one of Android critical processes failed.
-    @available(added=NEXT)
+    @available(added=29)
     ANDROID_CRITICAL_PROCESS_FAILURE = 24;
 
     // ///////////////////////////////////////////////////////////////////////////////////////////
@@ -157,7 +157,7 @@ type RebootReason = strict(removed=9) flexible(added=9) enum : uint16 {
 };
 
 /// How a device last shutdown.
-@available(added=NEXT)
+@available(added=29)
 type ShutdownAction = flexible enum {
     POWEROFF = 1;
     REBOOT = 2;

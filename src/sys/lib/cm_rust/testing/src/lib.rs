@@ -594,7 +594,7 @@ pub struct UseBuilder {
     source: cm_rust::UseSource,
     target_name: Option<Name>,
     target_path: Option<Path>,
-    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+    #[cfg(fuchsia_api_level_at_least = "29")]
     numbered_handle: Option<cm_types::HandleType>,
     dependency_type: cm_rust::DependencyType,
     availability: cm_rust::Availability,
@@ -645,7 +645,7 @@ impl UseBuilder {
             source_name: None,
             target_name: None,
             target_path: None,
-            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            #[cfg(fuchsia_api_level_at_least = "29")]
             numbered_handle: None,
             source_dictionary: Default::default(),
             rights: fio::R_STAR_DIR,
@@ -700,7 +700,7 @@ impl UseBuilder {
         self
     }
 
-    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+    #[cfg(fuchsia_api_level_at_least = "29")]
     pub fn numbered_handle(mut self, h: impl Into<cm_types::HandleType>) -> Self {
         assert_matches!(self.type_, CapabilityTypeName::Protocol);
         self.numbered_handle = Some(h.into());
@@ -788,9 +788,9 @@ impl UseBuilder {
     pub fn build(self) -> cm_rust::UseDecl {
         match self.type_ {
             CapabilityTypeName::Protocol => {
-                #[cfg(not(fuchsia_api_level_at_least = "NEXT"))]
+                #[cfg(not(fuchsia_api_level_at_least = "29"))]
                 let has_numbered_handle = false;
-                #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                #[cfg(fuchsia_api_level_at_least = "29")]
                 let has_numbered_handle = self.numbered_handle.is_some();
                 if !has_numbered_handle && self.target_path.is_none() {
                     panic!("path not set");
@@ -803,7 +803,7 @@ impl UseBuilder {
                     source_name: self.source_name.expect("name not set"),
                     source_dictionary: self.source_dictionary,
                     target_path: self.target_path,
-                    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                    #[cfg(fuchsia_api_level_at_least = "29")]
                     numbered_handle: self.numbered_handle,
                     dependency_type: self.dependency_type,
                     availability: self.availability,

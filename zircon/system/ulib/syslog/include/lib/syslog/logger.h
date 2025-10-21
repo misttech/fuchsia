@@ -10,7 +10,7 @@
 
 #include <zircon/availability.h>
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 
 #include <stdarg.h>
 #include <unistd.h>
@@ -211,5 +211,5 @@ void fx_logger_get_tags(fx_logger_t* logger, void (*callback)(void* context, con
 
 __END_CDECLS
 
-#endif  // f FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#endif  // f FUCHSIA_API_LEVEL_LESS_THAN(29)
 #endif  // LIB_SYSLOG_LOGGER_H_

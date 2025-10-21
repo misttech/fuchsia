@@ -21,7 +21,7 @@
 namespace magma {
 namespace {
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 bool g_is_logging_initialized = false;
 // Intentionally leaked on shutdown to ensure there are no destructor ordering problems.
 zx_handle_t log_socket;
@@ -36,7 +36,7 @@ fuchsia_logging::Logger& GetGlobalLogger() {
 }  // namespace
 
 bool PlatformLoggerProvider::IsInitialized() {
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
   return g_is_logging_initialized;
 #else
   return GetGlobalLogger().IsValid();
@@ -44,7 +44,7 @@ bool PlatformLoggerProvider::IsInitialized() {
 }
 
 bool PlatformLoggerProvider::Initialize(std::unique_ptr<PlatformHandle> channel) {
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
   zx::socket local_socket, remote_socket;
   zx_status_t status = zx::socket::create(ZX_SOCKET_DATAGRAM, &local_socket, &remote_socket);
   if (status != ZX_OK)
@@ -122,7 +122,7 @@ void PlatformLogger::LogVa(LogLevel level, const char* file, int line, const cha
   fuchsia_logging::LogBuffer log_buffer;
   uint64_t tid = PlatformThreadId().id();
   uint64_t pid = PlatformProcessHelper::GetCurrentProcessId();
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
   log_buffer.BeginRecord(get_severity(level), file_str, line, fmt_string,
                          zx::unowned_socket(log_socket), 0, pid, tid);
   log_buffer.WriteKeyValue("tag", "magma");

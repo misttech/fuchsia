@@ -39,7 +39,7 @@ const EVENT_WINDOW_SIZE uint32 = 8;
 const EVENT_MASK uint32 = 15;
 
 /// Legacy protocol name. Use the generated discoverable protocol name instead.
-@available(removed=NEXT)
+@available(removed=29)
 const DEVICE_PROTOCOL_NAME string = "fuchsia.hardware.pty/Device";
 
 @discoverable

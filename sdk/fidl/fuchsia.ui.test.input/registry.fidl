@@ -32,11 +32,11 @@ type CoordinateUnit = flexible enum {
 
     /// The physical display is mapped to a coordinate space from argument of
     /// RegisterTouchScreen.
-    @available(added=NEXT)
+    @available(added=29)
     REGISTERED_DIMENSIONS = 2;
 };
 
-@available(added=NEXT)
+@available(added=29)
 type DisplayDimensions = struct {
     /// min_x of the display.
     min_x int64;
@@ -73,7 +73,7 @@ closed protocol Registry {
 
         /// the dimensions of the display, only used when coordinate_unit is
         /// `REGISTERED_DIMENSIONS`.
-        @available(added=NEXT)
+        @available(added=29)
         3: display_dimensions DisplayDimensions;
     }) -> ();
 
@@ -95,7 +95,7 @@ closed protocol Registry {
 
         /// the dimensions of the display, only used when coordinate_unit is
         /// `REGISTERED_DIMENSIONS`.
-        @available(added=NEXT)
+        @available(added=29)
         3: display_dimensions DisplayDimensions;
     }) -> (resource table {
         1: device_id uint32;

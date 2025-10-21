@@ -17,7 +17,7 @@ type Use = flexible union {
     8: runner UseRunner;
     @available(added=20)
     9: config UseConfiguration;
-    @available(added=NEXT)
+    @available(added=29)
     10: dictionary UseDictionary;
 };
 
@@ -97,7 +97,7 @@ type UseProtocol = table {
     ///
     /// If this is set, we still require `target_path` to also be set, although we could relax this
     /// restriction in the future.
-    @available(added=NEXT)
+    @available(added=29)
     7: numbered_handle uint8;
 
     /// (Required) The dependency type this use represents.
@@ -270,7 +270,7 @@ type UseConfiguration = table {
     7: source_dictionary dictionary_path;
 };
 
-@available(added=NEXT)
+@available(added=29)
 type UseDictionary = table {
     /// (Required) The provider of the dictionary relative to the component
     /// itself.

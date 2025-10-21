@@ -14,7 +14,7 @@ type Component = resource table {
     /// The resolved URL of the component.
     /// This is the canonical URL obtained by the component resolver after
     /// following redirects and resolving relative paths.
-    @available(removed=NEXT)
+    @available(removed=29)
     1: url string:MAX_COMPONENT_URL_LENGTH;
 
     /// Binary representation of the component's declaration (`fuchsia.component.decl.Component`).

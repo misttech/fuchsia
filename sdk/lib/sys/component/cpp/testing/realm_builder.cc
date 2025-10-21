@@ -149,7 +149,7 @@ Realm& Realm::AddRoute(Route route) {
     target.push_back(std::move(t.first));
   }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(29)
   fuchsia::component::test::Realm_AddRouteFromDictionary_Result result;
   ZX_COMPONENT_ASSERT_STATUS_AND_RESULT_OK(
       "Realm/AddRouteFromDictionary",

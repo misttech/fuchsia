@@ -309,17 +309,17 @@ impl NativeIntoFidl<fdecl::DeliveryType> for DeliveryType {
     }
 }
 
-#[cfg(fuchsia_api_level_at_least = "NEXT")]
+#[cfg(fuchsia_api_level_at_least = "29")]
 pub use cm_types::HandleType;
 
-#[cfg(fuchsia_api_level_at_least = "NEXT")]
+#[cfg(fuchsia_api_level_at_least = "29")]
 impl FidlIntoNative<HandleType> for u8 {
     fn fidl_into_native(self) -> HandleType {
         self.into()
     }
 }
 
-#[cfg(fuchsia_api_level_at_least = "NEXT")]
+#[cfg(fuchsia_api_level_at_least = "29")]
 impl NativeIntoFidl<u8> for HandleType {
     fn native_into_fidl(self) -> u8 {
         self.into()
@@ -349,7 +349,7 @@ pub enum UseDecl {
     #[cfg(fuchsia_api_level_at_least = "HEAD")]
     Runner(UseRunnerDecl),
     Config(UseConfigurationDecl),
-    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+    #[cfg(fuchsia_api_level_at_least = "29")]
     Dictionary(UseDictionaryDecl),
 }
 
@@ -376,7 +376,7 @@ pub struct UseProtocolDecl {
     #[fidl_decl(default_preserve_none)]
     pub source_dictionary: RelativePath,
     pub target_path: Option<Path>,
-    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+    #[cfg(fuchsia_api_level_at_least = "29")]
     pub numbered_handle: Option<HandleType>,
     pub dependency_type: DependencyType,
     #[fidl_decl(default)]
@@ -459,7 +459,7 @@ pub struct UseRunnerDecl {
     pub source_dictionary: RelativePath,
 }
 
-#[cfg(fuchsia_api_level_at_least = "NEXT")]
+#[cfg(fuchsia_api_level_at_least = "29")]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[derive(FidlDecl, UseDeclCommon, Debug, Clone, PartialEq, Eq)]
 #[fidl_decl(fidl_table = "fdecl::UseDictionary", source_path = "dictionary")]
@@ -733,7 +733,7 @@ impl UseDeclCommon for UseDecl {
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
             UseDecl::Runner(u) => u.source(),
             UseDecl::Config(u) => u.source(),
-            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            #[cfg(fuchsia_api_level_at_least = "29")]
             UseDecl::Dictionary(u) => u.source(),
         }
     }
@@ -748,7 +748,7 @@ impl UseDeclCommon for UseDecl {
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
             UseDecl::Runner(u) => u.availability(),
             UseDecl::Config(u) => u.availability(),
-            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            #[cfg(fuchsia_api_level_at_least = "29")]
             UseDecl::Dictionary(u) => u.availability(),
         }
     }
@@ -2007,7 +2007,7 @@ impl UseDecl {
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
             UseDecl::Runner(_) => None,
             UseDecl::Config(_) => None,
-            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            #[cfg(fuchsia_api_level_at_least = "29")]
             UseDecl::Dictionary(d) => Some(&d.target_path),
         }
     }
@@ -2020,7 +2020,7 @@ impl UseDecl {
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
             UseDecl::Runner(_) => None,
             UseDecl::Config(_) => None,
-            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            #[cfg(fuchsia_api_level_at_least = "29")]
             UseDecl::Dictionary(_) => None,
         }
     }
@@ -2037,7 +2037,7 @@ impl SourceName for UseDecl {
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
             UseDecl::Runner(runner_decl) => &runner_decl.source_name,
             UseDecl::Config(u) => &u.source_name,
-            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            #[cfg(fuchsia_api_level_at_least = "29")]
             UseDecl::Dictionary(dictionary_decl) => &dictionary_decl.source_name,
         }
     }
@@ -2054,7 +2054,7 @@ impl SourcePath for UseDecl {
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
             UseDecl::Runner(u) => u.source_path(),
             UseDecl::Config(u) => u.source_path(),
-            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            #[cfg(fuchsia_api_level_at_least = "29")]
             UseDecl::Dictionary(u) => u.source_path(),
         }
     }
@@ -2170,7 +2170,7 @@ impl From<&UseDecl> for CapabilityTypeName {
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
             UseDecl::Runner(_) => Self::Runner,
             UseDecl::Config(_) => Self::Config,
-            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            #[cfg(fuchsia_api_level_at_least = "29")]
             UseDecl::Dictionary(_) => Self::Dictionary,
         }
     }
@@ -3030,7 +3030,7 @@ mod tests {
                         }),
                         ..Default::default()
                     }),
-                    #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                    #[cfg(fuchsia_api_level_at_least = "29")]
                     fdecl::Use::Dictionary(fdecl::UseDictionary {
                         dependency_type: Some(fdecl::DependencyType::Strong),
                         source: Some(fdecl::Ref::Parent(fdecl::ParentRef {})),
@@ -3508,7 +3508,7 @@ mod tests {
                             default: None,
                             source_dictionary: ".".parse().unwrap(),
                         }),
-                        #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                        #[cfg(fuchsia_api_level_at_least = "29")]
                         UseDecl::Dictionary(UseDictionaryDecl {
                             dependency_type: DependencyType::Strong,
                             source: UseSource::Parent,

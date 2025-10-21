@@ -176,7 +176,7 @@ void TestNode::RequestBind(RequestBindRequestView request, RequestBindCompleter:
   completer.ReplySuccess();
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(29)
 void TestNode::WaitForDriver(WaitForDriverCompleter::Sync& completer) {
   completer.ReplySuccess(
       fuchsia_driver_framework::wire::DriverResult::WithMatchError(ZX_ERR_NOT_FOUND));

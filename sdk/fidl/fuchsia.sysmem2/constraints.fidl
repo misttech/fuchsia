@@ -23,7 +23,7 @@ const MAX_COUNT_IMAGE_FORMAT_CONSTRAINTS_COLOR_SPACES uint32 = 32;
 /// [`fuchsia.sysmem2/ImageFormatConstraints.pixel_format_and_modifiers`].
 const MAX_COUNT_PIXEL_FORMAT_AND_MODIFIERS uint32 = 64;
 
-@available(added=NEXT)
+@available(added=29)
 const MAX_COUNT_IMAGE_FORMAT_CONSTRAINTS_REQUIRED_MAX_SIZE_LIST uint32 = 64;
 
 /// Constraints on allocated buffers and, optionally, constraints on images
@@ -684,7 +684,7 @@ type ImageFormatConstraints = table {
     /// using required_max_size_list.
     ///
     /// Please don't add additional usages of this field.
-    @available(deprecated=NEXT, note="use required_max_size_list instead")
+    @available(deprecated=29, note="use required_max_size_list instead")
     12: required_max_size fuchsia.math.SizeU;
 
     /// If an entry in this list has width or height greater than max_size width
@@ -738,7 +738,7 @@ type ImageFormatConstraints = table {
     /// used to store images of a few different aspect ratios at up to the
     /// listed size per aspect ratio. In the response from the server, redundant
     /// entries are removed.
-    @available(added=NEXT)
+    @available(added=29)
     18: required_max_size_list
             vector<fuchsia.math.SizeU>:MAX_COUNT_IMAGE_FORMAT_CONSTRAINTS_REQUIRED_MAX_SIZE_LIST;
 

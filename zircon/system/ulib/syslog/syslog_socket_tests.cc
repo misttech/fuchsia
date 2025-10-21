@@ -4,7 +4,7 @@
 
 #include <zircon/availability.h>
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 
 #include <errno.h>
 #include <fcntl.h>
@@ -353,4 +353,4 @@ TEST(SyslogSocketTests, TestLogReconfiguration) {
 
 }  // namespace
 
-#endif  // FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)

@@ -86,7 +86,7 @@ open protocol InspectWriter {
     flexible SetHealthOk() -> ();
 
     /// Emits a health inspect node with STARTING_UP status.
-    @available(added=NEXT)
+    @available(added=29)
     flexible SetHealthStartingUp() -> ();
 
     /// Records a string inspect property.

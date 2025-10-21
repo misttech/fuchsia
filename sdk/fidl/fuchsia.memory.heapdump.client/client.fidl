@@ -50,7 +50,7 @@ type Allocation = table {
 
     /// Number of allocated memory blocks that have been aggregated into this element.
     /// 1 by default.
-    @available(added=NEXT)
+    @available(added=29)
     6: count uint64;
 
     /// Stack trace of the allocation site.

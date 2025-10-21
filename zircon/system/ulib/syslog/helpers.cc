@@ -4,7 +4,7 @@
 
 #include "helpers.h"
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 
 #include <cstring>
 
@@ -34,4 +34,4 @@ const char* StripFile(const char* file, fx_log_severity_t severity) {
 }  // namespace internal
 }  // namespace syslog
 
-#endif  // FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)

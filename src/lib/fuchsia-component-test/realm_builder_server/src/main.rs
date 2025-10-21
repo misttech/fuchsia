@@ -596,7 +596,7 @@ impl Realm {
                         }
                     }
                 }
-                #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                #[cfg(fuchsia_api_level_at_least = "29")]
                 ftest::RealmRequest::AddRouteFromDictionary {
                     capabilities,
                     from,
@@ -1904,7 +1904,7 @@ async fn nested_component_manager_decl(
                     Path::new(format!("{CLIENT_CAPABILITY_PASSTHROUGH_PATH}/{}", decl.source_name))
                         .unwrap(),
                 ),
-                #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                #[cfg(fuchsia_api_level_at_least = "29")]
                 numbered_handle: None,
                 dependency_type: DependencyType::Strong,
                 availability: Availability::default(),
@@ -2540,7 +2540,7 @@ fn create_use_decl(
                 source_name,
                 source_dictionary,
                 target_path: Some(target_path),
-                #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                #[cfg(fuchsia_api_level_at_least = "29")]
                 numbered_handle: None,
                 dependency_type,
                 availability: check_and_unwrap_use_availability(protocol.availability)?,

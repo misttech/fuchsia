@@ -4,7 +4,7 @@
 
 #include "lib/syslog/global.h"
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 
 #include <lib/syslog/logger.h>
 #include <lib/zx/process.h>
@@ -84,4 +84,4 @@ bool fx_vlog_is_enabled(uint8_t verbosity) {
   return logger && fx_log_severity_from_verbosity(verbosity) >= fx_logger_get_min_severity(logger);
 }
 
-#endif  // FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)

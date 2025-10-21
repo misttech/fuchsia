@@ -120,7 +120,7 @@ void DirectoryConnection::Unbind() {
     binding_->Unbind();
 }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29) || FUCHSIA_API_LEVEL_AT_LEAST(PLATFORM)
 void DirectoryConnection::DeprecatedClone(DeprecatedCloneRequestView request,
                                           DeprecatedCloneCompleter::Sync& completer) {
   fidl::ServerEnd<fio::Node> server_end{std::move(request->object)};

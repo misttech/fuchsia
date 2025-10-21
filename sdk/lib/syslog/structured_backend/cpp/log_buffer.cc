@@ -469,7 +469,7 @@ std::string_view StripDots(std::string_view path) {
 
 namespace internal {
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 void SetFlushCallback(LogBuffer& buffer, internal::FlushCallback flush_callback) {
   buffer.flush_callback_ = std::move(flush_callback);
 }
@@ -504,7 +504,7 @@ bool FlushToSocket(zx_handle_t socket_handle, cpp20::span<const uint8_t> data,
 
 }  // namespace internal
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 void LogBuffer::BeginRecord(FuchsiaLogSeverity severity, std::optional<std::string_view> file_name,
                             unsigned int line, std::optional<std::string_view> message,
                             zx::unowned_socket socket, uint32_t dropped_count, zx_koid_t pid,
@@ -609,7 +609,7 @@ void LogBuffer::WriteKeyValue(std::string_view key, bool value) {
   encoder.AppendArgumentValue(*state, value);
 }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 bool LogBuffer::FlushRecord(FlushConfig flush_config) {
   auto span = EndRecord();
   if (span.empty() || !flush_callback_) {

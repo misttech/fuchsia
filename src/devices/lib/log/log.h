@@ -61,7 +61,7 @@ namespace fdf_log {
 zx_koid_t GetCurrentThread();
 class Logger {
  public:
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
   // Initializes a logger.
   Logger(zx_koid_t pid, zx::socket socket) : pid_(pid), socket_(std::move(socket)) {}
 
@@ -87,7 +87,7 @@ class Logger {
 
   // Gets the minimum severity of the logger
   FuchsiaLogSeverity GetSeverity() const {
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
     return severity_;
 #else
     return logger_.GetMinSeverity();
@@ -103,7 +103,7 @@ class Logger {
   void VLogWrite(FuchsiaLogSeverity severity, const char* tag, const char* msg, va_list args,
                  const char* file = nullptr, uint32_t line = 0) const;
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
   // Flushes a log record to the socket, used by internal macros only.
   void FlushRecord(fuchsia_logging::LogBuffer& buffer, FuchsiaLogSeverity severity) const;
 
@@ -126,7 +126,7 @@ class Logger {
   zx_koid_t pid_;
   bool use_stdout_ = false;
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
   FuchsiaLogSeverity severity_ = FUCHSIA_LOG_INFO;
   std::vector<std::string> global_tags_;
   zx::socket socket_;
@@ -135,7 +135,7 @@ class Logger {
 #endif
 };
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 // Creates a logger.
 zx::result<Logger> CreateLogger();
 #endif

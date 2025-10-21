@@ -54,7 +54,7 @@ class LogBufferBuilder {
     return *this;
   }
 
-#if defined(__Fuchsia__) && FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if defined(__Fuchsia__) && FUCHSIA_API_LEVEL_LESS_THAN(29)
   /// Sets the socket for the log message
   LogBufferBuilder& WithSocket(zx_handle_t socket) {
     socket_ = socket;
@@ -69,7 +69,7 @@ class LogBufferBuilder {
   unsigned int line_ = 0;
   std::optional<std::string_view> msg_;
   std::optional<std::string_view> condition_;
-#if defined(__Fuchsia__) && FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if defined(__Fuchsia__) && FUCHSIA_API_LEVEL_LESS_THAN(29)
   zx_handle_t socket_ = ZX_HANDLE_INVALID;
 #endif
   fuchsia_logging::RawLogSeverity severity_;
@@ -80,7 +80,7 @@ class LogMessageVoidify final {
   void operator&(std::ostream&) {}
 };
 
-#if !defined(__Fuchsia__) || FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if !defined(__Fuchsia__) || FUCHSIA_API_LEVEL_AT_LEAST(29)
 // Flushes `buffer` to the global logger.
 zx::result<> FlushToGlobalLogger(LogBuffer& buffer);
 #endif
@@ -148,7 +148,7 @@ void WriteStructuredLog(fuchsia_logging::LogSeverity severity, const char* file,
   }
   auto buffer = builder.Build();
   (buffer.Encode(args), ...);
-#if defined(__Fuchsia__) && FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if defined(__Fuchsia__) && FUCHSIA_API_LEVEL_LESS_THAN(29)
   buffer.Flush();
 #else
   [[maybe_unused]] zx::result<> result = FlushToGlobalLogger(buffer);
@@ -193,7 +193,7 @@ class LogFirstNState final {
 
 RawLogSeverity GetMinLogSeverity();
 
-#if defined(__Fuchsia__) && FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if defined(__Fuchsia__) && FUCHSIA_API_LEVEL_AT_LEAST(29)
 inline RawLogSeverity GetMinLogSeverity() { return internal::FuchsiaLogGetGlobalMinSeverity(); }
 #endif
 
@@ -203,7 +203,7 @@ inline bool IsSeverityEnabled(RawLogSeverity severity) { return severity >= GetM
 
 }  // namespace fuchsia_logging
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 
 namespace syslog_runtime {
 

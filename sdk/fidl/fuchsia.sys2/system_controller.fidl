@@ -14,7 +14,7 @@ closed protocol SystemController {
 };
 
 @discoverable(server="platform")
-@available(added=NEXT)
+@available(added=29)
 open protocol BootController {
     // Notify the component manager that boot has completed.
     //
@@ -22,6 +22,6 @@ open protocol BootController {
     // any side effects. For example, component manager may use this to decide to release memory
     // capacity. Component manager will send the response when it is finished performing these
     // actions.
-    @available(added=NEXT)
+    @available(added=29)
     flexible Notify() -> ();
 };

@@ -27,6 +27,6 @@ type DriverError = flexible enum {
 
     /// A fatal error has occurred in the driver. The connection is no longer
     /// usable and the client should close it.
-    @available(added=NEXT)
+    @available(added=29)
     FATAL_ERROR = 6;
 };

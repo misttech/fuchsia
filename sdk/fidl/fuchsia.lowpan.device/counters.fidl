@@ -74,7 +74,7 @@ type AllCounters = table {
     7: ip_rx IpCounters;
 
     /// Border agent related counters.
-    @available(added=NEXT)
+    @available(added=29)
     8: border_agent BorderAgentCounters;
 };
 
@@ -224,7 +224,7 @@ type IpCounters = table {
 };
 
 /// Counters associated with border agent functionality.
-@available(added=NEXT)
+@available(added=29)
 type BorderAgentCounters = table {
     /// The number of ePSKc activations.
     1: epskc_activations uint32;

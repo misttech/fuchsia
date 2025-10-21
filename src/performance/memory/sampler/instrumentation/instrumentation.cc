@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 #include <zircon/availability.h>
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(29)
 
 #include "recorder.h"
 #include "scoped_reentrancy_guard.h"
@@ -52,4 +52,4 @@ __attribute__((visibility("default"))) void __scudo_deallocate_hook(void* ptr) {
 }
 }
 
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(29)

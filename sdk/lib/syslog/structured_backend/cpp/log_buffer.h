@@ -10,7 +10,7 @@
 #include <lib/syslog/structured_backend/fuchsia_syslog.h>
 #include <zircon/availability.h>
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 #include <lib/zx/socket.h>
 #else
 #include <zircon/types.h>
@@ -46,7 +46,7 @@ struct LogBufferData {
   uint64_t data[4096];
 };
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 using FlushCallback = fit::callback<bool(cpp20::span<const uint8_t>, FlushConfig)>;
 void SetFlushCallback(LogBuffer& buffer, FlushCallback flush_callback);
 #endif
@@ -101,7 +101,7 @@ class LogBuffer final {
                    unsigned int line, std::optional<std::string_view> message,
                    uint32_t dropped_count, zx_koid_t pid, zx_koid_t tid);
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
   void BeginRecord(FuchsiaLogSeverity severity, std::optional<std::string_view> file_name,
                    unsigned int line, std::optional<std::string_view> message,
                    zx::unowned_socket socket, uint32_t dropped_count, zx_koid_t pid, zx_koid_t tid);
@@ -200,7 +200,7 @@ class LogBuffer final {
   // Encodes a boolean value
   void Encode(KeyValue<const char*, bool> value) { WriteKeyValue(value.key(), value.value()); }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
   // Writes the LogBuffer to the socket.
   bool FlushRecord(FlushConfig flush_config = {});
 
@@ -209,12 +209,12 @@ class LogBuffer final {
 #endif
 
  private:
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
   friend void internal::SetFlushCallback(LogBuffer&, internal::FlushCallback flush_callback);
 #endif
 
   internal::LogBufferData data_;
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
   internal::FlushCallback flush_callback_;
 #endif
 };

@@ -63,7 +63,7 @@ zx_koid_t GetKoid(zx_handle_t handle) {
   return status == ZX_OK ? info.koid : ZX_KOID_INVALID;
 }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 
 Logger& GetOrCreateLogger() {
   static fbl::NoDestructor<Logger> logger = [] {
@@ -173,7 +173,7 @@ void Logger::VLogWrite(FuchsiaLogSeverity severity, const char* tag, const char*
     file = StripFile(file, severity);
   }
   BeginRecord(buffer, severity, file, line, fmt_string);
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
   for (const auto& global_tag : global_tags_) {
     buffer.WriteKeyValue("tag", global_tag);
   }
@@ -181,7 +181,7 @@ void Logger::VLogWrite(FuchsiaLogSeverity severity, const char* tag, const char*
   if (tag) {
     buffer.WriteKeyValue("tag", tag);
   }
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
   FlushRecord(buffer, severity);
 #else
   [[maybe_unused]] zx::result<> result = logger_.FlushBuffer(buffer);
@@ -192,13 +192,13 @@ void Logger::BeginRecord(fuchsia_logging::LogBuffer& buffer, FuchsiaLogSeverity 
                          std::optional<std::string_view> file_name, unsigned int line,
                          std::optional<std::string_view> msg) const {
   buffer.BeginRecord(severity, file_name, line, msg,
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
                      socket_.borrow(),
 #endif
                      0, pid_, GetCurrentThread());
 }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 void Logger::FlushRecord(fuchsia_logging::LogBuffer& buffer, FuchsiaLogSeverity severity) const {
   buffer.FlushRecord();
 }

@@ -43,7 +43,7 @@ zx_koid_t GetKoid(zx_handle_t handle) {
 
 }  // namespace
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(29)
 
 // This is internal::Logger which is distinct from the public one. This is currently only used for
 // the global logger.
@@ -125,7 +125,7 @@ zx_koid_t FuchsiaLogGetCurrentThreadKoid() {
   return tls_thread_koid;
 }
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 // FuchsiaLogSetStateLocked, FuchsiaLogAcquireState, FuchsiaLogReleaseState and
 // FuchsiaLogGetStateLocked can can be removed once the API level mentioned above and all preceding
 // levels, have been retired.
@@ -141,7 +141,7 @@ __EXPORT void FuchsiaLogReleaseState() __TA_NO_THREAD_SAFETY_ANALYSIS { state_lo
 __EXPORT
 LogState* FuchsiaLogGetStateLocked() { return state; }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(29)
 
 __EXPORT
 void FuchsiaLogInitGlobalLogger(const RawLogSettings* settings) {
@@ -167,7 +167,7 @@ void FuchsiaLogForEachTag(const Logger* logger, void* context,
       [callback, context](const std::string& tag) { callback(context, tag.c_str()); });
 }
 
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(29)
 
 }  // extern "C"
 

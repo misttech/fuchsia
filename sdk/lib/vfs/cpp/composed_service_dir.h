@@ -56,7 +56,7 @@ class ComposedServiceDir final : public Node {
   // Sets the fallback directory for services. Services in this directory can be connected to, but
   // will not be enumerated. This method may only be called once.
   void set_fallback(fidl::InterfaceHandle<fuchsia::io::Directory> fallback_dir)
-      ZX_REMOVED_SINCE(1, 25, NEXT, "Replaced by SetFallback().") {
+      ZX_REMOVED_SINCE(1, 25, 29, "Replaced by SetFallback().") {
     ZX_ASSERT(vfs_internal_composed_svc_dir_set_fallback(
                   handle(), fallback_dir.TakeChannel().release()) == ZX_OK);
   }

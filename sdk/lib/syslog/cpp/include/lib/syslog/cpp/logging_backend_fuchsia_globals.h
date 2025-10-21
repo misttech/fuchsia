@@ -23,7 +23,7 @@ extern "C" {
 // Returns the current thread's koid.
 zx_koid_t FuchsiaLogGetCurrentThreadKoid();
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 
 class LogState;
 

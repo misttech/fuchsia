@@ -81,7 +81,7 @@ type Ipv6ChecksumConfiguration = strict union {
 };
 
 /// Legacy protocol name. Use the generated discoverable protocol name instead.
-@available(removed=NEXT)
+@available(removed=29)
 const SOCKET_PROTOCOL_NAME string = "fuchsia.posix.socket.raw/Socket";
 
 /// A raw network socket.

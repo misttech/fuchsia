@@ -164,7 +164,7 @@ impl<N: Node> Connection<N> {
         match req {
             #[cfg(any(
                 fuchsia_api_level_at_least = "PLATFORM",
-                not(fuchsia_api_level_at_least = "NEXT")
+                not(fuchsia_api_level_at_least = "29")
             ))]
             fio::NodeRequest::DeprecatedClone { flags, object, control_handle: _ } => {
                 crate::common::send_on_open_with_error(

@@ -70,7 +70,7 @@ class Logger final {
   static std::unique_ptr<Logger> Create2(const Namespace& ns, async_dispatcher_t* dispatcher,
                                          std::string_view name,
                                          FuchsiaLogSeverity min_severity = FUCHSIA_LOG_INFO
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
                                          ,
                                          bool wait_for_initial_interest = true
 #endif
@@ -79,7 +79,7 @@ class Logger final {
   static zx::result<std::unique_ptr<Logger>> Create(
       const Namespace& ns, async_dispatcher_t* dispatcher, std::string_view name,
       FuchsiaLogSeverity min_severity = FUCHSIA_LOG_INFO
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
       ,
       bool wait_for_initial_interest = true
 #endif
@@ -93,7 +93,7 @@ class Logger final {
   // A no-op logger.
   Logger() = default;
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
   Logger(std::string_view name, FuchsiaLogSeverity min_severity, zx::socket socket,
          fidl::WireClient<fuchsia_logger::LogSink> log_sink)
       : tag_(name),
@@ -112,7 +112,7 @@ class Logger final {
 
   FuchsiaLogSeverity GetSeverity();
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
   void SetSeverity(FuchsiaLogSeverity severity);
 #endif
 
@@ -166,7 +166,7 @@ class Logger final {
   // on LogBuffer directly.
   bool FlushRecord(fuchsia_logging::LogBuffer& buffer, uint32_t dropped);
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
   bool IsNoOp() const { return !socket_.is_valid(); }
 #else
   bool IsNoOp() const { return !logger_.IsValid(); }
@@ -179,7 +179,7 @@ class Logger final {
   static zx::result<std::unique_ptr<Logger>> MaybeCreate(
       const Namespace& ns, async_dispatcher_t* dispatcher, std::string_view name,
       FuchsiaLogSeverity min_severity = FUCHSIA_LOG_INFO
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
       ,
       bool wait_for_initial_interest = true
 #endif
@@ -187,7 +187,7 @@ class Logger final {
 
   static std::unique_ptr<Logger> NoOp();
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 #if FUCHSIA_API_LEVEL_AT_LEAST(27)
   void HandleInterest(fuchsia_diagnostics_types::wire::Interest interest);
 #else

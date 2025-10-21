@@ -37,6 +37,6 @@ type Error = strict(removed=20) flexible(added=20) enum {
     @available(added=14)
     INSTANCE_ALREADY_STARTED = 14;
     /// A capability route would have created a dependency cycle.
-    @available(added=NEXT)
+    @available(added=29)
     DEPENDENCY_CYCLE = 15;
 };

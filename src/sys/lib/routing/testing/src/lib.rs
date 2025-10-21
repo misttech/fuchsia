@@ -4427,7 +4427,7 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 source_name: "A".parse().unwrap(),
                 source_dictionary: "my_dict".parse().unwrap(),
                 target_path: Some("/svc/B".parse().unwrap()),
-                #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                #[cfg(fuchsia_api_level_at_least = "29")]
                 numbered_handle: None,
                 dependency_type: DependencyType::Strong,
                 availability: Availability::Required,
@@ -4499,7 +4499,7 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 source_name: "A".parse().unwrap(),
                 source_dictionary: Default::default(),
                 target_path: Some("/svc/dict_protocol".parse().unwrap()),
-                #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                #[cfg(fuchsia_api_level_at_least = "29")]
                 numbered_handle: None,
                 dependency_type: DependencyType::Strong,
                 availability: Availability::Required,
@@ -4566,7 +4566,7 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 source_name: "A".parse().unwrap(),
                 source_dictionary: Default::default(),
                 target_path: Some("/svc/dict_protocol".parse().unwrap()),
-                #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                #[cfg(fuchsia_api_level_at_least = "29")]
                 numbered_handle: None,
                 dependency_type: DependencyType::Strong,
                 availability: Availability::Required,

@@ -7,7 +7,7 @@
 
 #include <zircon/availability.h>
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 
 #include <lib/syslog/structured_backend/cpp/log_buffer.h>
 #include <lib/zx/clock.h>

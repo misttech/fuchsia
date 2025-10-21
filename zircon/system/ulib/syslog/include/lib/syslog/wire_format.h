@@ -9,7 +9,7 @@
 
 #include <zircon/availability.h>
 
-#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#if FUCHSIA_API_LEVEL_LESS_THAN(29)
 
 #include <lib/syslog/logger.h>
 #include <zircon/types.h>
@@ -37,5 +37,5 @@ typedef struct fx_log_packet {
   char data[FX_LOG_MAX_DATAGRAM_LEN - sizeof(fx_log_metadata_t)];
 } fx_log_packet_t;
 
-#endif  // f FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
+#endif  // f FUCHSIA_API_LEVEL_LESS_THAN(29)
 #endif  // LIB_SYSLOG_WIRE_FORMAT_H_

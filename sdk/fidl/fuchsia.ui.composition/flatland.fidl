@@ -46,7 +46,7 @@ type BlendMode = strict enum {
 
 /// The set of possible blending functions to choose from when determining how an image should
 /// be composited on top of other images.
-@available(added=NEXT)
+@available(added=29)
 type BlendMode2 = flexible enum {
     /// Indicates that the source pixels replace the destination pixels. In other words,
     /// the source pixels are treated as opaque, regardless of what alpha values are set.
@@ -889,7 +889,7 @@ closed protocol Flatland {
     /// a call to |CreateImage| or |CreateFilledRect|. For details on the different blend functions
     /// that are available, please refer to the BlendMode2 enum. If this function is not called,
     /// the default blendmode is BlendMode2::REPLACE.
-    @available(added=NEXT)
+    @available(added=29)
     strict SetImageBlendMode(struct {
         image_id ContentId;
         blend_mode BlendMode2;

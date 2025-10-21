@@ -180,7 +180,7 @@ __EXPORT zx_status_t fdf_token_register(zx_handle_t token, fdf_dispatcher_t* dis
   return driver_runtime::DispatcherCoordinator::TokenRegister(token, dispatcher, handler);
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(29)
 __EXPORT zx_status_t fdf_token_receive(zx_handle_t token, fdf_handle_t* handle) {
   return driver_runtime::DispatcherCoordinator::TokenReceive(token, handle);
 }
@@ -346,7 +346,7 @@ __EXPORT void fdf_env_scan_threads_for_stalls(void) {
 }
 #endif
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(29)
 __EXPORT zx_duration_mono_t fdf_env_scan_threads_for_stalls2(void) {
   return driver_runtime::GetDispatcherCoordinator().ScanThreadsForStalls();
 }

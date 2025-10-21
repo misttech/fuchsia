@@ -694,7 +694,7 @@ type SendMsgMeta = table {
 const FAST_UDP_WAIT_MANY_MAXIMUM_ITEMS uint32 = 63;
 
 /// Legacy protocol name. Use the generated discoverable protocol name instead.
-@available(removed=NEXT)
+@available(removed=29)
 const DATAGRAM_SOCKET_PROTOCOL_NAME string = "fuchsia.posix.socket/DatagramSocket";
 
 /// A datagram socket.
@@ -791,7 +791,7 @@ closed protocol DatagramSocket {
 };
 
 /// Legacy protocol name. Use the generated discoverable protocol name instead.
-@available(removed=NEXT)
+@available(removed=29)
 const SYNCHRONOUS_DATAGRAM_SOCKET_PROTOCOL_NAME string
         = "fuchsia.posix.socket/SynchronousDatagramSocket";
 
@@ -860,7 +860,7 @@ closed protocol SynchronousDatagramSocket {
 };
 
 /// Legacy protocol name. Use the generated discoverable protocol name instead.
-@available(removed=NEXT)
+@available(removed=29)
 const STREAM_SOCKET_PROTOCOL_NAME string = "fuchsia.posix.socket/StreamSocket";
 
 /// A stream socket.
@@ -1034,7 +1034,7 @@ type TcpCongestionControl = strict enum {
 };
 
 /// TCP state machine state.
-@available(added=11, replaced=NEXT)
+@available(added=11, replaced=29)
 type TcpState = strict enum {
     ESTABLISHED = 1;
     SYN_SENT = 2;
@@ -1049,7 +1049,7 @@ type TcpState = strict enum {
     CLOSING = 11;
 };
 
-@available(added=NEXT)
+@available(added=29)
 alias TcpState = fuchsia.net.tcp.State;
 
 /// TCP congestion control state machine state.

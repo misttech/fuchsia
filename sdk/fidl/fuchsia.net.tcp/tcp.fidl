@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 /// TCP types used across multiple FIDL endpoints.
-@available(added=NEXT)
+@available(added=29)
 library fuchsia.net.tcp;
 
 /// TCP congestion control state machine state.

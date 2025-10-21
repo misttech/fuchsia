@@ -110,6 +110,6 @@ type DriverStartArgs = resource table {
 
     /// Root VMAR the driver is mapped into. All child mappings should be placed into this VMAR
     /// if they want to have the same scheduler profile applied to them.
-    @available(added=NEXT)
+    @available(added=29)
     13: vmar zx.Handle:VMAR;
 };

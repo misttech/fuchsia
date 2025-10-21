@@ -100,7 +100,7 @@ impl<T: Symlink> Connection<T> {
         match req {
             #[cfg(any(
                 fuchsia_api_level_at_least = "PLATFORM",
-                not(fuchsia_api_level_at_least = "NEXT")
+                not(fuchsia_api_level_at_least = "29")
             ))]
             fio::SymlinkRequest::DeprecatedClone { flags, object, control_handle: _ } => {
                 crate::common::send_on_open_with_error(

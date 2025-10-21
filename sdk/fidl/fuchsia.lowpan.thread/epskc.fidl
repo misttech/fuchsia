@@ -8,12 +8,12 @@ using zx;
 
 /// Maximum length of the ephemeral key used by OpenThread Border Agent.
 /// See https://openthread.io/reference/group/api-border-agent for more details.
-@available(added=NEXT)
+@available(added=29)
 const OT_BORDER_AGENT_MAX_EPHEMERAL_KEY_LENGTH uint32 = 32;
 
 /// Protocol for connecting to [`Epskc`] on a LoWPAN device.
 @discoverable
-@available(added=NEXT)
+@available(added=29)
 open protocol EpskcConnector {
     /// Connects to the [`Epskc`] protocol on the
     /// named LoWPAN device.
@@ -41,7 +41,7 @@ open protocol EpskcConnector {
 ///
 /// This allows callers to interact with the Thread stack's ePSKc functionality
 /// to produce or invalidate ephemeral keys.
-@available(added=NEXT)
+@available(added=29)
 open protocol Epskc {
     /// Starts the ephemeral key handler.
     ///

@@ -75,7 +75,7 @@ RefPathPair ConvertRefToFidl(const Ref& ref, RefContext ctx) {
     return std::make_pair(
         fuchsia::component::decl::Ref::WithSelf(fuchsia::component::decl::SelfRef()), ".");
   }
-#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+#if FUCHSIA_API_LEVEL_AT_LEAST(29)
   if (auto dictionary_ref = std::get_if<DictionaryRef>(&ref)) {
     auto path = std::string(dictionary_ref->path);
     const auto* base_ref = &dictionary_ref->base_ref;
