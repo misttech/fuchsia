@@ -26,9 +26,10 @@ pub struct MappedClock<Reference: zx::Timeline, Output: zx::Timeline> {
     // The address range that the clock is mapped into.  We keep a reference
     // so we can unmap the range when this struct goes out of scope.
     parent_vmar: zx::Vmar,
-    // The pointer to the beginning of the memory area for this mappable clock.
+    // The virtual address of the memory mapped clock.
     addr: usize,
-    // The size of the memory area used by this mappable clock.
+    // The size of the memory area used by this mappable clock. It is constant
+    // for the lifetime of the clock. This value is set by Zircon.
     clock_size: usize,
     // Unmap the clock when dropping MappedClock.
     unmap_on_drop: bool,
@@ -159,9 +160,7 @@ impl<Reference: zx::Timeline, Output: zx::Timeline> MappedClock<Reference, Outpu
     pub fn read(&self) -> Result<zx::Instant<Output>, Status> {
         unsafe {
             // SAFETY: try_new ensures self.addr is correctly initialized.
-            // TODO(fmil): Change the signature of get_details_mapped to take
-            // just `usize`.
-            zx::Clock::<Reference, Output>::read_mapped(self.addr as *const u8)
+            zx::Clock::<Reference, Output>::read_mapped(self.addr)
         }
     }
 
@@ -171,9 +170,7 @@ impl<Reference: zx::Timeline, Output: zx::Timeline> MappedClock<Reference, Outpu
     pub fn get_details(&self) -> Result<zx::ClockDetails<Reference, Output>, Status> {
         unsafe {
             // SAFETY: try_new ensures self.addr is correctly initialized.
-            // TODO(fmil): Change the signature of get_details_mapped to take
-            // just `usize`.
-            zx::Clock::<Reference, Output>::get_details_mapped(self.addr as *const u8)
+            zx::Clock::<Reference, Output>::get_details_mapped(self.addr)
         }
     }
 }

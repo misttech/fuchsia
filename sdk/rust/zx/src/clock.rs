@@ -5,8 +5,9 @@
 //! Type-safe bindings for Zircon clock objects.
 
 use crate::{
-    object_get_info_single, ok, sys, AsHandleRef, BootTimeline, ClockUpdate, Handle, HandleBased,
-    HandleRef, Instant, MonotonicTimeline, ObjectQuery, SyntheticTimeline, Timeline, Topic,
+    AsHandleRef, BootTimeline, ClockUpdate, Handle, HandleBased, HandleRef, Instant,
+    MonotonicTimeline, ObjectQuery, SyntheticTimeline, Timeline, Topic, object_get_info_single, ok,
+    sys,
 };
 use bitflags::bitflags;
 use std::mem::MaybeUninit;
@@ -106,9 +107,12 @@ impl<Reference: Timeline, Output: Timeline> Clock<Reference, Output> {
     /// mapping which has been unmapped (completely or partially) will result in undefined behavior.
     ///
     /// [zx_clock_read]: https://fuchsia.dev/fuchsia-src/reference/syscalls/clock_read_mapped
-    pub unsafe fn read_mapped(clock_addr: *const u8) -> Result<Instant<Output>, Status> {
+    pub unsafe fn read_mapped(clock_addr: usize) -> Result<Instant<Output>, Status> {
         let mut now = 0;
-        let status = unsafe { sys::zx_clock_read_mapped(clock_addr, &mut now) };
+        let status = unsafe {
+            // SAFETY: see function docs above.
+            sys::zx_clock_read_mapped(clock_addr as *const u8, &mut now)
+        };
         ok(status)?;
         Ok(Instant::<Output>::from_nanos(now))
     }
@@ -143,12 +147,13 @@ impl<Reference: Timeline, Output: Timeline> Clock<Reference, Output> {
     ///
     /// [zx_clock_get_details_mapped]: https://fuchsia.dev/fuchsia-src/reference/syscalls/clock_get_details_mapped
     pub unsafe fn get_details_mapped(
-        clock_addr: *const u8,
+        clock_addr: usize,
     ) -> Result<ClockDetails<Reference, Output>, Status> {
         let mut out_details = MaybeUninit::<sys::zx_clock_details_v1_t>::uninit();
         let status = unsafe {
+            // SAFETY: see safety notes in the function docs above.
             sys::zx_clock_get_details_mapped(
-                clock_addr,
+                clock_addr as *const u8,
                 sys::ZX_CLOCK_ARGS_VERSION_1,
                 out_details.as_mut_ptr().cast::<u8>(),
             )
