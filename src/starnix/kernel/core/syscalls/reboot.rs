@@ -216,10 +216,10 @@ pub fn sys_reboot(
     }
 }
 
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 mod arch32 {
     pub use super::sys_reboot as sys_arch32_reboot;
 }
 
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 pub use arch32::*;

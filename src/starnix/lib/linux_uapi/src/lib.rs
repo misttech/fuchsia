@@ -32,21 +32,21 @@ pub mod riscv64;
 pub use riscv64::*;
 
 // Bring in arm under 'arch32' for aarch64.
-#[cfg(all(target_arch = "aarch64", feature = "arch32"))]
+#[cfg(all(target_arch = "aarch64"))]
 mod arm;
-#[cfg(all(target_arch = "aarch64", feature = "arch32"))]
+#[cfg(all(target_arch = "aarch64"))]
 mod arm_manual;
-#[cfg(all(target_arch = "aarch64", feature = "arch32"))]
+#[cfg(all(target_arch = "aarch64"))]
 mod arm_manual_kgsl;
 
-#[cfg(all(target_arch = "aarch64", feature = "arch32"))]
+#[cfg(all(target_arch = "aarch64"))]
 pub mod arch32 {
     pub use crate::arm::*;
 }
 
-#[cfg(not(feature = "arch32"))]
+#[cfg(not(target_arch = "aarch64"))]
 mod arch32_stub;
-#[cfg(not(feature = "arch32"))]
+#[cfg(not(target_arch = "aarch64"))]
 pub mod arch32 {
     pub use crate::arch32_stub::*;
 }

@@ -242,7 +242,7 @@ template("syscall_test") {
     }
   }
 
-  if (starnix_enable_arch32) {
+  if (current_cpu == "arm64") {
     _resource_from_executables_target_name_arch32 =
         "${target_name}_resource_from_executables_arch32"
     _resource_from_executables(_resource_from_executables_target_name_arch32) {

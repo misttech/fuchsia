@@ -304,7 +304,7 @@ macro_rules! arch_translate_data {
         $($token:tt)*
     } => {
         $crate::translate_data! {
-            #[cfg(feature = "arch32")]
+            #[cfg(target_arch = "aarch64")]
             TryFrom<$crate::$type_name> for $crate::arch32::$type_name {
                 $(
                     $field = $field;
@@ -322,7 +322,7 @@ macro_rules! arch_translate_data {
         $($token:tt)*
     } => {
         $crate::translate_data! {
-            #[cfg(feature = "arch32")]
+            #[cfg(target_arch = "aarch64")]
             From<$crate::arch32::$type_name> for $crate::$type_name {
                 $(
                     $field = $field;
@@ -354,7 +354,7 @@ macro_rules! arch_map_data {
                 )*
                 ..$($d)?, Default::default()
             }
-            #[cfg(feature = "arch32")]
+            #[cfg(target_arch = "aarch64")]
             BidiTryFrom<$type_name1, $crate::arch32::$type_name2> {
                 $(
                     $field1 = $field2;

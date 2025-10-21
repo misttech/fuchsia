@@ -45,11 +45,6 @@ rustc_library("starnix_types") {
 
   test_deps = [ "//src/lib/fuchsia" ]
 
-  features = []
-  if (starnix_enable_arch32) {
-    features += [ "arch32" ]
-  }
-
   configs += [ "//src/starnix/config:starnix_clippy_lints" ]
 }
 

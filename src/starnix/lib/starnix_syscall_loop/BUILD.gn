@@ -31,14 +31,6 @@ rustc_library("starnix_syscall_loop") {
     "//third_party/rust_crates:scopeguard",
   ]
 
-  features = []
-  if (starnix_enable_arch32) {
-    features += [ "arch32" ]
-  }
-  if (starnix_syscall_stats) {
-    features += [ "syscall_stats" ]
-  }
-
   configs += [ "//src/starnix/config:starnix_clippy_lints" ]
 }
 

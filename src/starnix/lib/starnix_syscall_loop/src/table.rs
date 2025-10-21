@@ -56,7 +56,7 @@ macro_rules! syscall_match {
     }
 }
 
-#[cfg(all(target_arch = "aarch64", feature = "arch32"))]
+#[cfg(all(target_arch = "aarch64"))]
 macro_rules! arch32_syscall_match {
     {
         $($token:tt)*
@@ -136,7 +136,7 @@ pub fn dispatch_syscall(
     #[cfg(target_arch = "aarch64")]
     use starnix_core::arch::syscalls::sys_renameat;
 
-    #[cfg(all(target_arch = "aarch64", feature = "arch32"))]
+    #[cfg(all(target_arch = "aarch64"))]
     mod aarch64_arch32 {
         pub use starnix_core::arch::syscalls::{
             sys_arch32_ARM_cacheflush, sys_arch32_ARM_set_tls, sys_arch32_vfork,
@@ -244,7 +244,7 @@ pub fn dispatch_syscall(
             sys_write as sys_arch32_write, sys_writev as sys_arch32_writev,
         };
     }
-    #[cfg(all(target_arch = "aarch64", feature = "arch32"))]
+    #[cfg(all(target_arch = "aarch64"))]
     #[allow(clippy::wildcard_imports)]
     use aarch64_arch32::*;
 
@@ -265,7 +265,7 @@ pub fn dispatch_syscall(
 
     let args = (syscall.arg0, syscall.arg1, syscall.arg2, syscall.arg3, syscall.arg4, syscall.arg5);
 
-    #[cfg(all(target_arch = "aarch64", feature = "arch32"))]
+    #[cfg(all(target_arch = "aarch64"))]
     if current_task.is_arch32() {
         return arch32_syscall_match! {
             locked; current_task; syscall.decl.number; args;

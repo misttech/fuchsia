@@ -232,7 +232,7 @@ group("tests") {
     ":starnix_syscalls_cpp_flaky_tests",
     ":starnix_syscalls_cpp_tests",
   ]
-  if (starnix_enable_arch32) {
+  if (current_cpu == "arm64") {
     deps += [
       ":starnix_arch32_syscalls_cpp_flaky_tests",
       ":starnix_arch32_syscalls_cpp_tests",
@@ -584,7 +584,7 @@ fuchsia_test_package("starnix_syscalls_cpp_tests") {
   }
 }
 
-if (starnix_enable_arch32) {
+if (current_cpu == "arm64") {
   fuchsia_test_package("starnix_arch32_syscalls_cpp_tests") {
     test_components = []
     deps = []

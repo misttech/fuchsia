@@ -163,7 +163,7 @@ macro_rules! arch_union_wrapper {
                 }
             }
 
-            #[cfg(feature = "arch32")]
+            #[cfg(target_arch = "aarch64")]
             impl From<[u8; std::mem::size_of::<starnix_uapi::arch32::$ty>()]> for $wrapper {
                 fn from(bytes: [u8; std::mem::size_of::<starnix_uapi::arch32::$ty>()]) -> Self {
                     Self([<$wrapper Inner>]::Arch32(zerocopy::transmute!(bytes)))
@@ -183,7 +183,7 @@ macro_rules! arch_union_wrapper {
                 }
             }
 
-            #[cfg(feature = "arch32")]
+            #[cfg(target_arch = "aarch64")]
             impl TryFrom<$wrapper> for [u8; std::mem::size_of::<starnix_uapi::arch32::$ty>()] {
                 type Error = ();
                 fn try_from(v: $wrapper) -> Result<Self, ()> {

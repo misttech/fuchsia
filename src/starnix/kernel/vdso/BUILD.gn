@@ -94,7 +94,7 @@ resource("vdso_data") {
 
 group("vdso") {
   deps = [ ":vdso_data($bionic_linux_toolchain)" ]
-  if (starnix_enable_arch32) {
+  if (current_cpu == "arm64") {
     deps += [ ":vdso_data($bionic_linux_arch32_toolchain)" ]
   }
 }

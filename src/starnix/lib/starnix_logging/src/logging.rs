@@ -46,15 +46,10 @@ impl fmt::Display for TaskDebugInfo {
 }
 
 #[inline]
-pub const fn logs_enabled() -> bool {
-    !cfg!(feature = "disable_logging")
-}
-
-#[inline]
 pub const fn trace_debug_logs_enabled() -> bool {
     // Allow trace and debug logs if we are in a debug (non-release) build
     // or feature `trace_and_debug_logs_in_release` is enabled.
-    logs_enabled() && (cfg!(debug_assertions) || cfg!(feature = "trace_and_debug_logs_in_release"))
+    cfg!(debug_assertions) || cfg!(feature = "trace_and_debug_logs_in_release")
 }
 
 #[macro_export]
@@ -125,23 +120,19 @@ macro_rules! log_error {
 #[macro_export]
 macro_rules! log {
     ($lvl:expr, $($key:tt $(:$capture:tt)? $(= $value:expr)?),+; $($arg:tt)+) => {
-        if $crate::logs_enabled() {
-            $crate::with_current_task_info(|_task_info| {
-                $crate::__log::log!(
-                    $lvl,
-                    tag:% = _task_info,
-                    $($key $(:$capture)* $(= $value)*),+;
-                    $($arg)*
-                );
-            });
-        }
+        $crate::with_current_task_info(|_task_info| {
+            $crate::__log::log!(
+                $lvl,
+                tag:% = _task_info,
+                $($key $(:$capture)* $(= $value)*),+;
+                $($arg)*
+            );
+        });
     };
     ($lvl:expr, $($arg:tt)+) => {
-        if $crate::logs_enabled() {
-            $crate::with_current_task_info(|_task_info| {
-                $crate::__log::log!($lvl, tag:% = _task_info; $($arg)*);
-            });
-        }
+        $crate::with_current_task_info(|_task_info| {
+            $crate::__log::log!($lvl, tag:% = _task_info; $($arg)*);
+        });
     };
 }
 

@@ -346,7 +346,7 @@ template("gvisor_test_package") {
     _base_shard =
         "//src/starnix/tests/gvisor/meta/gvisor_with_expectations.shard.cml"
 
-    _expectations = "//src/starnix/tests/gvisor/expectations/default_no_unified_aspace.json5"
+    _expectations = "//src/starnix/tests/gvisor/expectations/default.json5"
     if (defined(invoker.expectations)) {
       _expectations = invoker.expectations
     }

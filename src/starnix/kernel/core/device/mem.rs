@@ -18,7 +18,7 @@ use crate::vfs::{
     Anon, FileHandle, FileObject, FileOps, FsNodeInfo, NamespaceNode, SeekTarget,
     fileops_impl_noop_sync, fileops_impl_seekless,
 };
-use starnix_logging::{Level, log_info, track_stub};
+use starnix_logging::{Level, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_type::DeviceType;
@@ -66,22 +66,13 @@ impl FileOps for DevNull {
         _offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
+        // TODO(https://fxbug.dev/453758455) align /dev/null behavior with Linux
         // Writes to /dev/null on Linux treat the input buffer in an unconventional way. The actual
         // data is not touched and if the input parameters are plausible the device claims to
         // successfully write up to MAX_RW_COUNT bytes.  If the input parameters are outside of the
         // user accessible address space, writes will return EFAULT.
-
-        // For debugging log up to 4096 bytes from the input buffer. We don't care about errors when
-        // trying to read data to log. The amount of data logged is chosen arbitrarily.
-        let bytes_to_log = std::cmp::min(4096, data.available());
-        let log_buffer = data.read_to_vec_limited(bytes_to_log);
-        let bytes_logged = match log_buffer {
-            Ok(bytes) => {
-                if cfg!(feature = "starnix_log_dev_null_writes_at_info") {
-                    log_info!("write to devnull: {:?}", String::from_utf8_lossy(&bytes));
-                }
-                bytes.len()
-            }
+        let bytes_logged = match data.read_to_vec_limited(data.available()) {
+            Ok(bytes) => bytes.len(),
             Err(_) => 0,
         };
 

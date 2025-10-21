@@ -69,8 +69,7 @@ pub const ZX_VM_SPECIFIC_OVERWRITE: zx::VmarFlags =
     zx::VmarFlags::from_bits_retain(zx::VmarFlagsExtended::SPECIFIC_OVERWRITE.bits());
 
 // We do not create shared processes in unit tests.
-pub(crate) const UNIFIED_ASPACES_ENABLED: bool =
-    cfg!(not(test)) && cfg!(feature = "unified_aspace");
+pub(crate) const UNIFIED_ASPACES_ENABLED: bool = cfg!(not(test));
 
 /// Initializes the usercopy utilities.
 ///

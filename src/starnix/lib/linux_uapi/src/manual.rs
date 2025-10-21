@@ -110,7 +110,7 @@ macro_rules! impl_debug {
                 fmt.debug_struct(std::any::type_name::<Self>()).finish()
             }
         }
-        #[cfg(feature = "arch32")]
+        #[cfg(target_arch = "aarch64")]
         impl std::fmt::Debug for crate::arch32::$name {
             fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
                 fmt.debug_struct(std::any::type_name::<Self>()).finish()

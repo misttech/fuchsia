@@ -51,7 +51,7 @@ use zerocopy::FromBytes;
 #[cfg(target_arch = "x86_64")]
 use starnix_uapi::{PTRACE_GETREGS, user};
 
-#[cfg(all(target_arch = "aarch64", feature = "arch32"))]
+#[cfg(all(target_arch = "aarch64"))]
 use starnix_uapi::arch32::PTRACE_GETREGS;
 
 type UserRegsStructPtr =
@@ -363,7 +363,7 @@ impl PtraceState {
                 let registers = captured.thread_state.registers;
                 info.instruction_pointer = registers.instruction_pointer_register();
                 info.stack_pointer = registers.stack_pointer_register();
-                #[cfg(feature = "arch32")]
+                #[cfg(target_arch = "aarch64")]
                 if captured.thread_state.arch_width.is_arch32() {
                     // If any additional arch32 archs are added, just use a cfg
                     // macro here.
@@ -914,7 +914,7 @@ where
             }
             error!(ESRCH)
         }
-        #[cfg(any(target_arch = "x86_64", all(target_arch = "aarch64", feature = "arch32")))]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         PTRACE_GETREGS => {
             if let Some(ref mut captured) = &mut state.captured_thread_state {
                 let mut len = usize::MAX;

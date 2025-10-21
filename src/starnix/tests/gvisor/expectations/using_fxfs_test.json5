@@ -7,6 +7,14 @@
         {
             include: "default.json5",
         },
+        {
+            type: "expect_pass",
+            matchers: [
+                // partial usercopy
+                "WriteTest.PartialWriteSIGSEGV",
+                "WriteTest.PartialWriteSIGBUS",
+            ],
+        },
 
         // Define tests that failed when running on Fxfs
         {

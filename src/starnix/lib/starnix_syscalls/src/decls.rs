@@ -89,7 +89,7 @@ macro_rules! for_each_arch_syscall {
 
 // This macro ensures there is a unique way to identify syscalls that have a
 // distinct implementation from the primary architecture.
-#[cfg(all(target_arch = "aarch64", feature = "arch32"))]
+#[cfg(all(target_arch = "aarch64"))]
 #[macro_export]
 macro_rules! for_each_arch_arch32_syscall {
     {$callback:ident; $($context:ident;)* ; $($common_name:ident,)*} => {
@@ -604,7 +604,7 @@ pub struct SyscallDecl {
 ///
 /// Additionally, common syscalls are excluded if they have a different
 /// implementation when compared to the main arch.
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 #[macro_export]
 macro_rules! for_each_arch32_syscall {
     {$callback:ident $(,$context:ident)*} => {
@@ -899,7 +899,7 @@ macro_rules! syscall_number_to_name_literal_callback {
 
 // As above, but for the arch32 namespace.
 //)
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 #[macro_export]
 macro_rules! syscall_arch32_number_to_name_literal_callback {
     {$number:ident; $($name:ident,)*} => {
@@ -920,7 +920,7 @@ impl SyscallDecl {
         number: u64,
         #[allow(unused_variables)] arch_width: ArchWidth,
     ) -> SyscallDecl {
-        #[cfg(feature = "arch32")]
+        #[cfg(target_arch = "aarch64")]
         if arch_width.is_arch32() {
             // We are looking up the SyscallDecl from the number but we use the
             // arch32 module for the list.

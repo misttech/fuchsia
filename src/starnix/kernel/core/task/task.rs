@@ -341,7 +341,7 @@ impl From<uapi::robust_list> for RobustList {
     }
 }
 
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 impl From<uapi::arch32::robust_list> for RobustList {
     fn from(robust_list: uapi::arch32::robust_list) -> Self {
         Self { next: RobustListPtr::from(robust_list.next) }
@@ -366,7 +366,7 @@ impl From<uapi::robust_list_head> for RobustListHead {
     }
 }
 
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 impl From<uapi::arch32::robust_list_head> for RobustListHead {
     fn from(robust_list_head: uapi::arch32::robust_list_head) -> Self {
         Self {

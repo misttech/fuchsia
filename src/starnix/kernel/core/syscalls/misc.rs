@@ -14,7 +14,7 @@ use starnix_sync::{Locked, Unlocked};
 use starnix_syscalls::{
     SUCCESS, SyscallResult, for_each_syscall, syscall_number_to_name_literal_callback,
 };
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 use starnix_syscalls::{for_each_arch32_syscall, syscall_arch32_number_to_name_literal_callback};
 use starnix_types::user_buffer::MAX_RW_COUNT;
 use starnix_uapi::auth::{CAP_SYS_ADMIN, CAP_SYS_MODULE};
@@ -26,7 +26,7 @@ use starnix_uapi::{
     EFAULT, GRND_NONBLOCK, GRND_RANDOM, c_char, errno, error, from_status_like_fdio, uapi, utsname,
 };
 
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 use starnix_uapi::user_address::ArchSpecific;
 
 uapi::check_arch_independent_layout! {
@@ -244,7 +244,7 @@ pub fn sys_unknown(
     #[allow(unused_variables)] current_task: &CurrentTask,
     syscall_number: u64,
 ) -> Result<SyscallResult, Errno> {
-    #[cfg(feature = "arch32")]
+    #[cfg(target_arch = "aarch64")]
     if current_task.is_arch32() {
         let name = for_each_arch32_syscall! { syscall_arch32_number_to_name_literal_callback, syscall_number };
         starnix_logging::track_stub_log!(
@@ -290,10 +290,10 @@ pub fn sys_delete_module(
 }
 
 // Syscalls for arch32 usage
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 mod arch32 {
     pub use super::{sys_sysinfo as sys_arch32_sysinfo, sys_uname as sys_arch32_uname};
 }
 
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 pub use arch32::*;

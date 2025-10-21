@@ -25,9 +25,6 @@ use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::SIGKILL;
 
-#[cfg(feature = "syscall_stats")]
-use fuchsia_inspect::NumericProperty;
-
 mod table;
 
 pub fn enter(locked: &mut Locked<Unlocked>, current_task: &mut CurrentTask) -> ExitStatus {
@@ -501,9 +498,6 @@ pub fn execute_syscall(
     current_task: &mut CurrentTask,
     syscall_decl: SyscallDecl,
 ) -> Option<ErrorContext> {
-    #[cfg(feature = "syscall_stats")]
-    crate::syscalls::syscall_stats::syscall_stats_property(syscall_decl.number).add(1);
-
     let syscall = new_syscall(syscall_decl, current_task);
 
     current_task.thread_state.registers.save_registers_for_restart(syscall.decl.number);

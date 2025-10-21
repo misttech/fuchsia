@@ -911,7 +911,7 @@ fn negate_pid(pid: pid_t) -> Result<pid_t, Errno> {
 }
 
 // Syscalls for arch32 usage
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 mod arch32 {
     use crate::task::CurrentTask;
     use crate::vfs::FdNumber;
@@ -941,7 +941,7 @@ mod arch32 {
     };
 }
 
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 pub use arch32::*;
 
 #[cfg(test)]

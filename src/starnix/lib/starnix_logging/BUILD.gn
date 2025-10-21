@@ -40,15 +40,6 @@ rustc_library("starnix_logging") {
   test_deps = [ "//third_party/rust_crates:pretty_assertions" ]
 
   features = []
-  if (starnix_disable_logging) {
-    features += [ "disable_logging" ]
-  }
-  if (starnix_enable_tracing) {
-    features += [ "tracing" ]
-  }
-  if (starnix_enable_tracing_firehose) {
-    features += [ "tracing_firehose" ]
-  }
   if (starnix_enable_trace_and_debug_logs_in_release) {
     features += [ "trace_and_debug_logs_in_release" ]
   }

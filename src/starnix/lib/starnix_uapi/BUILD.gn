@@ -45,10 +45,8 @@ rustc_library("starnix_uapi") {
     "src/vfs.rs",
   ]
 
-  if (starnix_enable_arch32) {
-    if (current_cpu == "arm64") {
-      sources += [ "src/arm.rs" ]
-    }
+  if (current_cpu == "arm64") {
+    sources += [ "src/arm.rs" ]
   }
 
   deps = [

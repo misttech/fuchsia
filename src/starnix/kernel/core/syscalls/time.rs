@@ -607,7 +607,7 @@ pub fn sys_times(
 }
 
 // Syscalls for arch32 usage
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 mod arch32 {
     use crate::task::{CurrentTask, TimerId};
     use starnix_sync::{Locked, Unlocked};
@@ -653,7 +653,7 @@ mod arch32 {
     };
 }
 
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 pub use arch32::*;
 
 #[cfg(test)]

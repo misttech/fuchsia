@@ -646,10 +646,10 @@ pub fn sys_bpf(
 }
 
 // Syscalls for arch32 usage
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 mod arch32 {
     pub use super::sys_bpf as sys_arch32_bpf;
 }
 
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 pub use arch32::*;

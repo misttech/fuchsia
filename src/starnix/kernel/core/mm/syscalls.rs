@@ -824,7 +824,7 @@ pub fn sys_mincore(
 }
 
 // Syscalls for arch32 usage
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 mod arch32 {
     use crate::mm::PAGE_SIZE;
     use crate::mm::syscalls::{UserAddress, sys_mmap};
@@ -887,7 +887,7 @@ mod arch32 {
     };
 }
 
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 pub use arch32::*;
 
 #[cfg(test)]

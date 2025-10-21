@@ -18,7 +18,7 @@ use starnix_types::arch::ArchWidth;
 use starnix_types::math::round_up_to_system_page_size;
 use starnix_types::thread_start_info::ThreadStartInfo;
 use starnix_types::time::SCHEDULER_CLOCK_HZ;
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 use starnix_uapi::AT_PLATFORM;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
@@ -39,7 +39,7 @@ use zx::{
 };
 
 // TODO(https://fxbug.dev/380427153): move anything depending on this to arch/arm64, etc.
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 use starnix_uapi::uapi::arch32;
 
 #[derive(Debug)]
@@ -113,7 +113,7 @@ fn populate_initial_stack(
     write_stack(&random_seed, random_seed_addr)?;
 
     // TODO(https://fxbug.dev/380427153): Move to arch specific inclusion
-    #[cfg(feature = "arch32")]
+    #[cfg(target_arch = "aarch64")]
     if arch_width.is_arch32() {
         let platform = b"v7l\0";
         stack_pointer = (stack_pointer - platform.len())?;
@@ -284,7 +284,7 @@ fn load_elf(
     usage: LoadElfUsage,
 ) -> Result<LoadedElf, Errno> {
     let vmo = elf_memory.as_vmo().ok_or_else(|| errno!(EINVAL))?;
-    let headers = if cfg!(feature = "arch32") {
+    let headers = if cfg!(target_arch = "aarch64") {
         elf_parse::Elf64Headers::from_vmo_with_arch32(vmo).map_err(elf_parse_error_to_errno)?
     } else {
         elf_parse::Elf64Headers::from_vmo(vmo).map_err(elf_parse_error_to_errno)?
@@ -514,7 +514,7 @@ fn resolve_elf(
     security_state: security::ResolvedElfState,
 ) -> Result<ResolvedElf, Errno> {
     let vmo = memory.as_vmo().ok_or_else(|| errno!(EINVAL))?;
-    let elf_headers = if cfg!(feature = "arch32") {
+    let elf_headers = if cfg!(target_arch = "aarch64") {
         elf_parse::Elf64Headers::from_vmo_with_arch32(vmo).map_err(elf_parse_error_to_errno)?
     } else {
         elf_parse::Elf64Headers::from_vmo(vmo).map_err(elf_parse_error_to_errno)?
@@ -755,7 +755,7 @@ pub fn load_executable(
 }
 
 fn get_arch_width(#[allow(unused_variables)] headers: &elf_parse::Elf64Headers) -> ArchWidth {
-    #[cfg(feature = "arch32")]
+    #[cfg(target_arch = "aarch64")]
     if headers.file_header().ident.is_arch32() {
         return ArchWidth::Arch32;
     }

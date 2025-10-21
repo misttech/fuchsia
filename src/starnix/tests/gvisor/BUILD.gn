@@ -136,9 +136,6 @@ gvisor_tests_group("starnix_gvisor_tests") {
 # GVisor tests with persistent storage on fxfs.
 gvisor_tests_group("starnix_gvisor_tests_on_fxfs") {
   expectations = "expectations/using_fxfs_test.json5"
-  if (!starnix_unified_aspace) {
-    expectations = "expectations/using_fxfs_test_no_unified_aspace.json5"
-  }
   use_persistent_storage = true
   suffix = "_on_fxfs"
 }

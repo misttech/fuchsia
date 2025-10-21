@@ -273,13 +273,6 @@ To view the thread groups currently running, run:
 ffx inspect show core/starnix_runner/alpine:root/container/kernel/thread_groups
 ```
 
-You can also view the number of syscalls that have been executed (after enabling
-the "syscall_stats" feature):
-
-```
-ffx inspect show core/starnix_runner/alpine:root:syscall_stats
-```
-
 ## Logging
 
 By default, starnix compiles-out trace and debug logging in release builds for

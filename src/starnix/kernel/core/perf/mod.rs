@@ -877,12 +877,12 @@ pub fn sys_perf_event_open(
     }
 }
 // Syscalls for arch32 usage
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 mod arch32 {
     pub use super::sys_perf_event_open as sys_arch32_perf_event_open;
 }
 
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 pub use arch32::*;
 
 use crate::mm::memory::MemoryObject;

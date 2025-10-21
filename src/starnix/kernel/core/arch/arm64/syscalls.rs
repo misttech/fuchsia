@@ -51,7 +51,7 @@ pub fn sys_renameat(
 }
 
 // Syscalls for arch32 usage
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 mod arch32 {
     use crate::task::CurrentTask;
     use crate::task::syscalls::do_clone;
@@ -104,5 +104,5 @@ mod arch32 {
     }
 }
 
-#[cfg(feature = "arch32")]
+#[cfg(target_arch = "aarch64")]
 pub use arch32::*;

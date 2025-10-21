@@ -8,14 +8,14 @@ use starnix_uapi::user_address::ArchSpecific;
 pub enum ArchWidth {
     #[default]
     Arch64,
-    #[cfg(feature = "arch32")]
+    #[cfg(target_arch = "aarch64")]
     Arch32,
 }
 
 impl ArchSpecific for ArchWidth {
     fn is_arch32(&self) -> bool {
         cfg_if::cfg_if! {
-            if #[cfg(feature = "arch32")] {
+            if #[cfg(target_arch = "aarch64")] {
                 self == &Self::Arch32
             } else {
                 false
