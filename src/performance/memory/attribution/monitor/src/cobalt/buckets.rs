@@ -4,16 +4,15 @@
 
 use crate::error_from_metrics_error;
 use anyhow::Result;
-use attribution_processing::AttributionDataProvider;
+use attribution_processing::ResourceEnumerator;
 use attribution_processing::digest::{BucketDefinition, Digest};
 use cobalt_client::traits::{AsEventCode, AsEventCodes};
+use cobalt_registry::MemoryLeakMigratedMetricDimensionTimeSinceBoot as TimeSinceBoot;
 use futures::stream::StreamExt;
 use futures::{TryFutureExt, try_join};
 use memory_metrics_registry::cobalt_registry;
 use std::collections::HashMap;
 use std::sync::Arc;
-
-use cobalt_registry::MemoryLeakMigratedMetricDimensionTimeSinceBoot as TimeSinceBoot;
 use {fidl_fuchsia_kernel as fkernel, fidl_fuchsia_metrics as fmetrics};
 
 /// Sorted list mapping durations to the largest event that is lower.
@@ -117,7 +116,7 @@ fn digest_events<'a>(
 
 /// Periodically upload metrics related to memory usage.
 pub async fn collect_metrics_forever(
-    attribution_data_service: Arc<impl AttributionDataProvider + 'static>,
+    resource_enumerator: Arc<impl ResourceEnumerator + 'static>,
     kernel_stats_proxy: fkernel::StatsProxy,
     metric_event_logger: fmetrics::MetricEventLoggerProxy,
     bucket_definitions: Arc<[BucketDefinition]>,
@@ -183,7 +182,7 @@ pub async fn collect_metrics_forever(
         timer.next().await;
 
         let result = collect_metrics_once(
-            &*attribution_data_service,
+            &*resource_enumerator,
             &kernel_stats_proxy,
             &metric_event_logger,
             &bucket_definitions,
@@ -198,7 +197,7 @@ pub async fn collect_metrics_forever(
 }
 
 async fn collect_metrics_once(
-    attribution_data_service: &impl AttributionDataProvider,
+    resource_enumerator: &impl ResourceEnumerator,
     kernel_stats_proxy: &fkernel::StatsProxy,
     metric_event_logger: &fmetrics::MetricEventLoggerProxy,
     bucket_definitions: &[BucketDefinition],
@@ -210,7 +209,7 @@ async fn collect_metrics_once(
         kernel_stats_proxy.get_memory_stats_compression().map_err(anyhow::Error::from)
     )?;
     let digest = Digest::compute(
-        &*attribution_data_service,
+        &*resource_enumerator,
         &kmem_stats,
         &kmem_stats_compression,
         &bucket_definitions,
@@ -232,37 +231,15 @@ mod tests {
     use anyhow::anyhow;
     use attribution_processing::{
         Attribution, AttributionData, Principal, PrincipalDescription, PrincipalIdentifier,
-        PrincipalType, Resource, ResourceEnumerator, ResourceReference, ResourcesVisitor, ZXName,
+        PrincipalType, Resource, ResourceEnumerator, ResourceReference, ZXName,
     };
     use futures::TryStreamExt;
     use futures::task::Poll;
     use regex::bytes::Regex;
     use std::time::Duration;
     use {fidl_fuchsia_memory_attribution_plugin as fplugin, fuchsia_async as fasync};
-    pub struct FakeAttributionDataProvider {
-        pub attribution_data: AttributionData,
-    }
 
-    impl AttributionDataProvider for FakeAttributionDataProvider {
-        fn get_attribution_data(&self) -> Result<AttributionData, anyhow::Error> {
-            Ok(AttributionData {
-                principals_vec: self.attribution_data.principals_vec.clone(),
-                resources_vec: self.attribution_data.resources_vec.clone(),
-                resource_names: self.attribution_data.resource_names.clone(),
-                attributions: self.attribution_data.attributions.clone(),
-            })
-        }
-    }
-
-    impl ResourceEnumerator for FakeAttributionDataProvider {
-        fn for_each_resource(
-            &self,
-            visitor: &mut impl ResourcesVisitor,
-        ) -> Result<(), anyhow::Error> {
-            self.get_attribution_data()?.for_each_resource(visitor)
-        }
-    }
-    fn get_attribution_data_provider() -> Arc<impl AttributionDataProvider + 'static> {
+    fn get_resource_enumerator() -> Arc<impl ResourceEnumerator + 'static> {
         let attribution_data = AttributionData {
             principals_vec: vec![Principal {
                 identifier: PrincipalIdentifier(1),
@@ -321,7 +298,7 @@ mod tests {
                 resources: vec![ResourceReference::KernelObject(10)],
             }],
         };
-        Arc::new(FakeAttributionDataProvider { attribution_data })
+        Arc::new(attribution_data)
     }
 
     async fn serve_kernel_stats(
@@ -394,7 +371,7 @@ mod tests {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
 
         // Setup mock data providers.
-        let data_provider = get_attribution_data_provider();
+        let resource_enumerator = get_resource_enumerator();
         let (stats_provider, stats_request_stream) =
             fidl::endpoints::create_proxy_and_stream::<fkernel::StatsMarker>();
         fasync::Task::spawn(async move {
@@ -415,7 +392,7 @@ mod tests {
 
         // Service under test.
         let mut metrics_collector = fuchsia_async::Task::spawn(collect_metrics_forever(
-            data_provider,
+            resource_enumerator,
             stats_provider,
             metric_event_logger,
             bucket_definitions,
