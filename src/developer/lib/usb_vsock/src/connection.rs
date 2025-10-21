@@ -5,14 +5,14 @@
 use futures::channel::{mpsc, oneshot};
 use futures::lock::{Mutex, OwnedMutexGuard};
 use log::{debug, trace, warn};
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::future::Future;
 use std::io::{Error, ErrorKind};
 use std::ops::DerefMut;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{ready, Context, Poll, Waker};
+use std::task::{Context, Poll, Waker, ready};
 
 use fuchsia_async::Scope;
 use futures::io::{ReadHalf, WriteHalf};
@@ -394,12 +394,11 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
                     if status.overflowed() {
                         if self.protocol_version.has_pause_packets() {
                             let header = &mut Header::new(PacketType::Pause);
+                            let payload = &PausePacket::Pause.bytes();
                             header.set_address(&address);
+                            header.payload_len.set(payload.len() as u32);
                             self.packet_filler
-                                .write_vsock_packet(&Packet {
-                                    header,
-                                    payload: &PausePacket::Pause.bytes(),
-                                })
+                                .write_vsock_packet(&Packet { header, payload })
                                 .await
                                 .expect(
                                     "pause packet should never be too large to fit in a usb packet",
@@ -423,9 +422,11 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
                                 }
                             } else if has_pause_packets {
                                 let header = &mut Header::new(PacketType::Pause);
+                                let payload = &PausePacket::UnPause.bytes();
                                 header.set_address(&address);
+                                header.payload_len.set(payload.len() as u32);
                                 packet_filler
-                                    .write_vsock_packet(&Packet { header, payload: &PausePacket::UnPause.bytes() })
+                                    .write_vsock_packet(&Packet { header, payload })
                                     .await
                                     .expect("pause packet should never be too large to fit in a usb packet");
                             }

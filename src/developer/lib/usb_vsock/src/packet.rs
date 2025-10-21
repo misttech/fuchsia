@@ -113,8 +113,8 @@ pub struct Header {
     /// port fields are also zero, in which case it is a control stream packet. Must be zero for any
     /// other packet type.
     pub host_port: little_endian::U32,
-    /// The length of the packet payload. This must be zero for any packet type other than Sync or
-    /// Data.
+    /// The length of the packet payload. This must be zero for any packet type other than Data,
+    /// Echo, EchoReply, or Pause.
     pub payload_len: little_endian::U32,
 }
 
@@ -211,8 +211,9 @@ impl<'a> Packet<'a> {
     /// Panics if the buffer is not large enough for the packet.
     pub fn write_to_unchecked(&'a self, buf: &'a mut [u8]) -> &'a mut [u8] {
         let (packet, remain) = buf.split_at_mut(self.size());
+        let payload_len = u32::from(self.header.payload_len) as usize;
         self.header.write_to_prefix(packet).unwrap();
-        self.payload.write_to_suffix(packet).unwrap();
+        self.payload[..payload_len].write_to_suffix(packet).unwrap();
         remain
     }
 }
@@ -336,7 +337,8 @@ where
     }
 
     /// Writes the given packet into the buffer. The packet and header must be able to fit
-    /// within the buffer provided at creation time.
+    /// within the buffer provided at creation time, and `header.payload_length` must be correctly
+    /// set.
     pub fn write_vsock_packet(&mut self, packet: &Packet<'_>) -> Result<(), PacketTooBigError> {
         let packet_size = packet.size();
         if self.available() >= packet_size {
@@ -495,6 +497,17 @@ mod tests {
         if let Poll::Ready(_) = poll!(fut) {
             panic!("Future was ready when it shouldn't have been");
         }
+    }
+    #[test]
+    fn packet_write_doesnt_clobber_header_with_incorrect_len() {
+        let header = &mut Header::new(PacketType::Pause);
+        let payload = &[1];
+        let packet = Packet { header, payload };
+        let mut buf = vec![0; packet.size()];
+        packet.write_to_unchecked(&mut buf);
+
+        let read_packet = Packet::parse_next(&buf).unwrap().0;
+        assert_eq!(&read_packet.header, &packet.header);
     }
 
     #[fuchsia::test]
