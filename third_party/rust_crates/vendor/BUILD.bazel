@@ -547,14 +547,14 @@ alias(
 )
 
 alias(
-    name = "chrono-0.4.41",
-    actual = "//third_party/rust_crates/vendor/chrono-0.4.41:chrono",
+    name = "chrono-0.4.42",
+    actual = "//third_party/rust_crates/vendor/chrono-0.4.42:chrono",
     tags = ["manual"],
 )
 
 alias(
     name = "chrono",
-    actual = "//third_party/rust_crates/vendor/chrono-0.4.41:chrono",
+    actual = "//third_party/rust_crates/vendor/chrono-0.4.42:chrono",
     tags = ["manual"],
 )
 
@@ -3115,14 +3115,14 @@ alias(
 )
 
 alias(
-    name = "tuf-0.3.0-beta13",
-    actual = "//third_party/rust_crates/vendor/tuf-0.3.0-beta13:tuf",
+    name = "tuf-0.3.0-beta14",
+    actual = "//third_party/rust_crates/vendor/tuf-0.3.0-beta14:tuf",
     tags = ["manual"],
 )
 
 alias(
     name = "tuf",
-    actual = "//third_party/rust_crates/vendor/tuf-0.3.0-beta13:tuf",
+    actual = "//third_party/rust_crates/vendor/tuf-0.3.0-beta14:tuf",
     tags = ["manual"],
 )
 

@@ -250,7 +250,7 @@ tracing = { version = "0.1.40", default-features = false, features = ["std", "at
 tracing-core = "0.1.32"
 tracing-log = "0.2.0"
 tracing-mutex = { version = "0.3.1", features = ["experimental", "lockapi", "parkinglot"] }
-tuf = { version = "=0.3.0-beta13", default-features = false, features = ["hyper"] }
+tuf = { version = "=0.3.0-beta14", default-features = false, features = ["hyper"] }
 typed-builder = "0.10.0"
 unic-char-range = "0.9"
 unic-ucd-block = "0.9"
@@ -386,7 +386,6 @@ walkdir = { path = "ask2patch/walkdir" }
 
 ### Empty Forks: empty forks kept only for satisfying cargo's resolution
 # keep-sorted start
-android-tzdata = { path = "empty/android-tzdata" }
 android_system_properties = { path = "empty/android_system_properties" }
 backtrace = { path = "empty/backtrace" }
 cc = { path = "empty/cc" }
@@ -412,7 +411,7 @@ winapi = { path = "empty/winapi" }
 winapi-util = { path = "empty/winapi-util" }
 windows-0_61_3 = { package = "windows", path = "empty/windows-0.61.3" }
 windows-core = { path = "empty/windows-core" }
-windows-link-0_1_3 = { package = "windows-link", path = "empty/windows-link-0.1.3" }
+windows-link-0_2_1 = { package = "windows-link", path = "empty/windows-link-0.2.1" }
 windows-sys-0_45_0 = { package = "windows-sys", path = "empty/windows-sys-0.45.0" }
 windows-sys-0_48_0 = { package = "windows-sys", path = "empty/windows-sys-0.48.0" }
 windows-sys-0_52_0 = { package = "windows-sys", path = "empty/windows-sys-0.52.0" }
@@ -908,11 +907,11 @@ visibility = [
   ":sct-v0_7_1.aux.deps.deps",
   ":sct-v0_7_1.aux.deps.transdeps",
   ":sct-v0_7_1.actual.rust_compilation_deps",
-  ":tuf-v0_3_0-beta13.actual",
-  ":tuf-v0_3_0-beta13.rustdoc",
-  ":tuf-v0_3_0-beta13.aux.deps.deps",
-  ":tuf-v0_3_0-beta13.aux.deps.transdeps",
-  ":tuf-v0_3_0-beta13.actual.rust_compilation_deps",
+  ":tuf-v0_3_0-beta14.actual",
+  ":tuf-v0_3_0-beta14.rustdoc",
+  ":tuf-v0_3_0-beta14.aux.deps.deps",
+  ":tuf-v0_3_0-beta14.aux.deps.transdeps",
+  ":tuf-v0_3_0-beta14.actual.rust_compilation_deps",
 ]
 deps = [ "//third_party/rust_crates/compat/ring-0.17.8:ring-core" ]
 env_vars = [ "RING_CORE_PREFIX=ring_core_0_17_8_" ]

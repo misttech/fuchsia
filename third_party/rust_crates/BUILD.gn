@@ -190,7 +190,7 @@ group("chacha20") {
 }
 
 group("chrono") {
-  public_deps = [ ":chrono-v0_4_41" ]
+  public_deps = [ ":chrono-v0_4_42" ]
 }
 
 group("chrono-english") {
@@ -1192,7 +1192,7 @@ if (current_os == "fuchsia") {
 }
 
 group("tuf") {
-  public_deps = [ ":tuf-v0_3_0-beta13" ]
+  public_deps = [ ":tuf-v0_3_0-beta14" ]
 }
 
 group("typed-builder") {
@@ -1601,30 +1601,6 @@ rustc_library("android_system_properties-v0_1_5") {
     "--cap-lints=allow",
     "-Cmetadata=fb55b1f486b3c828",
     "-Cextra-filename=-fb55b1f486b3c828",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
-}
-
-rustc_library("android-tzdata-v0_1_1") {
-  crate_name = "android_tzdata"
-  source_root = "//third_party/rust_crates/empty/android-tzdata/src/lib.rs"
-  output_name = "android_tzdata-a1a30826099c6222"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=a1a30826099c6222",
-    "-Cextra-filename=-a1a30826099c6222",
   ]
 
   visibility = [ ":*" ]
@@ -3819,16 +3795,16 @@ rustc_library("chacha20-v0_9_1") {
   applicable_licenses = [ ":chacha20-v0_9_1.license" ]
 }
 
-license("chrono-v0_4_41.license") {
+license("chrono-v0_4_42.license") {
   public_package_name = "chrono"
   license_files =
-      [ "//third_party/rust_crates/vendor/chrono-0.4.41/LICENSE.txt" ]
+      [ "//third_party/rust_crates/vendor/chrono-0.4.42/LICENSE.txt" ]
 }
 
-rustc_library("chrono-v0_4_41") {
+rustc_library("chrono-v0_4_42") {
   crate_name = "chrono"
-  source_root = "//third_party/rust_crates/vendor/chrono-0.4.41/src/lib.rs"
-  output_name = "chrono-7c74aecc16d22af4"
+  source_root = "//third_party/rust_crates/vendor/chrono-0.4.42/src/lib.rs"
+  output_name = "chrono-f8a7062d0885b45b"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -3841,24 +3817,20 @@ rustc_library("chrono-v0_4_41") {
     deps += [ ":js-sys-v0_3_68" ]
     deps += [ ":wasm-bindgen-v0_2_91" ]
   }
-  if (false) {
-    deps += [ ":android-tzdata-v0_1_1" ]
-  }
   if (true) {
     deps += [ ":iana-time-zone-v0_1_60" ]
   }
   if (false) {
-    deps += [ ":windows-link-v0_1_3" ]
+    deps += [ ":windows-link-v0_2_1" ]
   }
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=7c74aecc16d22af4",
-    "-Cextra-filename=-7c74aecc16d22af4",
+    "-Cmetadata=f8a7062d0885b45b",
+    "-Cextra-filename=-f8a7062d0885b45b",
     "--cfg=feature=\"alloc\"",
-    "--cfg=feature=\"android-tzdata\"",
     "--cfg=feature=\"clock\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"iana-time-zone\"",
@@ -3875,7 +3847,7 @@ rustc_library("chrono-v0_4_41") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":chrono-v0_4_41.license" ]
+  applicable_licenses = [ ":chrono-v0_4_42.license" ]
 }
 
 license("chrono-english-v0_1_7.license") {
@@ -3895,7 +3867,7 @@ rustc_library("chrono-english-v0_1_7") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":chrono-v0_4_41" ]
+  deps += [ ":chrono-v0_4_42" ]
   deps += [ ":scanlex-v0_1_4" ]
 
   rustenv = []
@@ -6478,7 +6450,7 @@ rustc_library("fatfs-v0_3_6") {
   deps = []
   deps += [ ":byteorder-v1_5_0" ]
   deps += [ ":bitflags-v1_3_2" ]
-  deps += [ ":chrono-v0_4_41" ]
+  deps += [ ":chrono-v0_4_42" ]
   deps += [ ":log-v0_4_27" ]
 
   rustenv = []
@@ -11412,7 +11384,7 @@ rustc_library("omaha_client-v0_2_3") {
 
   deps = []
   deps += [ ":anyhow-v1_0_98" ]
-  deps += [ ":chrono-v0_4_41" ]
+  deps += [ ":chrono-v0_4_42" ]
   deps += [ ":ecdsa-v0_14_8" ]
   deps += [ ":elliptic-curve-v0_12_3" ]
   deps += [ ":futures-v0_3_31" ]
@@ -14954,11 +14926,11 @@ rustc_library("ring-v0_17_8") {
   visibility += [ ":sct-v0_7_1.aux.deps.deps" ]
   visibility += [ ":sct-v0_7_1.aux.deps.transdeps" ]
   visibility += [ ":sct-v0_7_1.actual.rust_compilation_deps" ]
-  visibility += [ ":tuf-v0_3_0-beta13.actual" ]
-  visibility += [ ":tuf-v0_3_0-beta13.rustdoc" ]
-  visibility += [ ":tuf-v0_3_0-beta13.aux.deps.deps" ]
-  visibility += [ ":tuf-v0_3_0-beta13.aux.deps.transdeps" ]
-  visibility += [ ":tuf-v0_3_0-beta13.actual.rust_compilation_deps" ]
+  visibility += [ ":tuf-v0_3_0-beta14.actual" ]
+  visibility += [ ":tuf-v0_3_0-beta14.rustdoc" ]
+  visibility += [ ":tuf-v0_3_0-beta14.aux.deps.deps" ]
+  visibility += [ ":tuf-v0_3_0-beta14.aux.deps.transdeps" ]
+  visibility += [ ":tuf-v0_3_0-beta14.actual.rust_compilation_deps" ]
 
   applicable_licenses = [ ":ring-v0_17_8.license" ]
 }
@@ -15981,7 +15953,7 @@ rustc_library("schemars-v0_8_22") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":chrono-v0_4_41" ]
+  deps += [ ":chrono-v0_4_42" ]
   deps += [ ":dyn-clone-v1_0_19" ]
   deps += [ ":indexmap-v1_9_2" ]
   deps += [ ":schemars_derive-v0_8_22($host_toolchain)" ]
@@ -17201,7 +17173,7 @@ rustc_library("simplelog-v0_10_2") {
 
   deps = []
   deps += [ ":termcolor-v1_1_2" ]
-  deps += [ ":chrono-v0_4_41" ]
+  deps += [ ":chrono-v0_4_42" ]
   deps += [ ":log-v0_4_27" ]
 
   rustenv = []
@@ -19111,7 +19083,7 @@ rustc_library("toml_edit-v0_2_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":chrono-v0_4_41" ]
+  deps += [ ":chrono-v0_4_42" ]
   deps += [ ":combine-v4_6_7" ]
   deps += [ ":linked-hash-map-v0_5_6" ]
 
@@ -19628,18 +19600,18 @@ rustc_library("ttf-parser-v0_10_1") {
   applicable_licenses = [ ":ttf-parser-v0_10_1.license" ]
 }
 
-license("tuf-v0_3_0-beta13.license") {
+license("tuf-v0_3_0-beta14.license") {
   public_package_name = "tuf"
   license_files = [
-    "//third_party/rust_crates/vendor/tuf-0.3.0-beta13/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/tuf-0.3.0-beta13/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/tuf-0.3.0-beta14/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/tuf-0.3.0-beta14/LICENSE-MIT",
   ]
 }
 
-rustc_library("tuf-v0_3_0-beta13") {
+rustc_library("tuf-v0_3_0-beta14") {
   crate_name = "tuf"
-  source_root = "//third_party/rust_crates/vendor/tuf-0.3.0-beta13/src/lib.rs"
-  output_name = "tuf-d81b942ee08d5c9e"
+  source_root = "//third_party/rust_crates/vendor/tuf-0.3.0-beta14/src/lib.rs"
+  output_name = "tuf-43a6ddff2ae51e74"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -19647,7 +19619,7 @@ rustc_library("tuf-v0_3_0-beta13") {
 
   deps = []
   deps += [ ":ring-v0_17_8" ]
-  deps += [ ":chrono-v0_4_41" ]
+  deps += [ ":chrono-v0_4_42" ]
   deps += [ ":data-encoding-v2_9_0" ]
   deps += [ ":futures-io-v0_3_31" ]
   deps += [ ":futures-util-v0_3_31" ]
@@ -19657,10 +19629,9 @@ rustc_library("tuf-v0_3_0-beta13") {
   deps += [ ":log-v0_4_27" ]
   deps += [ ":percent-encoding-v2_3_1" ]
   deps += [ ":serde-v1_0_228" ]
-  deps += [ ":serde_derive-v1_0_228($host_toolchain)" ]
   deps += [ ":serde_json-v1_0_145" ]
   deps += [ ":tempfile-v3_2_0" ]
-  deps += [ ":thiserror-v1_0_69" ]
+  deps += [ ":thiserror-v2_0_12" ]
   deps += [ ":untrusted-v0_9_0" ]
   deps += [ ":url-v2_3_1" ]
 
@@ -19668,14 +19639,14 @@ rustc_library("tuf-v0_3_0-beta13") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d81b942ee08d5c9e",
-    "-Cextra-filename=-d81b942ee08d5c9e",
+    "-Cmetadata=43a6ddff2ae51e74",
+    "-Cextra-filename=-43a6ddff2ae51e74",
     "--cfg=feature=\"hyper\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":tuf-v0_3_0-beta13.license" ]
+  applicable_licenses = [ ":tuf-v0_3_0-beta14.license" ]
 }
 
 license("typed-arena-v1_4_1.license") {
@@ -20647,7 +20618,7 @@ rustc_library("valico-v2_4_2") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":chrono-v0_4_41" ]
+  deps += [ ":chrono-v0_4_42" ]
   deps += [ ":jsonway-v2_0_0" ]
   deps += [ ":phf-v0_7_24" ]
   deps += [ ":publicsuffix-v1_5_4" ]
@@ -21234,10 +21205,10 @@ rustc_library("windows-core-v0_52_0") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
-rustc_library("windows-link-v0_1_3") {
+rustc_library("windows-link-v0_2_1") {
   crate_name = "windows_link"
-  source_root = "//third_party/rust_crates/empty/windows-link-0.1.3/src/lib.rs"
-  output_name = "windows_link-90970d45ed4b7f20"
+  source_root = "//third_party/rust_crates/empty/windows-link-0.2.1/src/lib.rs"
+  output_name = "windows_link-51a5d43ba1d45860"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -21249,8 +21220,8 @@ rustc_library("windows-link-v0_1_3") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=90970d45ed4b7f20",
-    "-Cextra-filename=-90970d45ed4b7f20",
+    "-Cmetadata=51a5d43ba1d45860",
+    "-Cextra-filename=-51a5d43ba1d45860",
   ]
 
   visibility = [ ":*" ]
