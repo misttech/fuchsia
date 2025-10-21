@@ -322,6 +322,7 @@
 
                 // fork_test
                 "ForkTest.Affinity",
+                "CloneTest.NewUserMountNamespace",
                 "CloneTest.NewUserNamespacePermitsAllOtherNamespaces",
                 "CloneTest.NonCanonicalTLS",
 
@@ -356,6 +357,7 @@
                 // ioctl_test
                 "IoctlTest/IoctlTestSIOCGIFCONF.ValidateNoArrayGetsLength/*",
                 "IoctlTest.FIOASYNCFails",
+                "IoctlTest.FIOASYNCHandlesFuseFD",
                 "IoctlTest.FIOASYNCSucceeds",
                 "IoctlTest.FIOASYNCNoTarget",
                 "IoctlTest.FIOASYNCSelfTarget",
@@ -571,6 +573,7 @@
                 "PivotRootTest.MovesOldRoot",
                 "PivotRootTest.LockedNewRootFails",
                 "PivotRootTest.OldRootUnlocked",
+                "PivotRootTest.UnreachableNewRootFails",
 
                 // prctl_setuid_test
                 "PrctlKeepCapsSetuidTest.NoKeepCapsAfterNewUserNamespace",
@@ -789,6 +792,10 @@
                 "AllUnixDomainSockets/UnixStreamSocketPairTest.CoalescedCredsNoPasscred/*",
                 "AllUnixDomainSockets/UnixStreamSocketPairTest.CoalescedCreds2/*",
                 "AllUnixDomainSockets/UnixStreamSocketPairTest.CoalescedDifferingCreds/*",
+                "AllUnixDomainSockets/UnixSocketPeerCredTest.AfterConnectServerPeerCred/0",
+                "AllUnixDomainSockets/UnixSocketPeerCredTest.AfterConnectServerPeerCred/6",
+                "AllUnixDomainSockets/UnixSocketPeerCredTest.PeerCredAfterListen/0",
+                "AllUnixDomainSockets/UnixSocketPeerCredTest.PeerCredAfterListen/6",
 
                 // statfs_test
                 "FstatfsTest.BlocksFree",
@@ -891,6 +898,12 @@
                 // partial usercopy
                 "WriteTest.PartialWriteSIGSEGV",
                 "WriteTest.PartialWriteSIGBUS",
+
+                // chown_test
+                "ChownTest.SetGroupIdBitDeniedWithoutCapFsetIdOrRelevantGroup",
+
+                // raw_socket_test
+                "RawSocketTest.SolIPSetSockOptOnRawV6SocketFails",
             ],
         },
         {
@@ -1052,10 +1065,6 @@
                 // Causes some other wait tests to fail.
                 "WaitTest.TraceeWALL",
 
-                // Fails in updated image, but passes with current. Will be removed after rolling
-                // new images.
-                "RlimitTest.SetRlimitHigher",
-
                 // Requires investigation into error `libgcc_s.so.1 must be
                 // installed for pthread_exit to work`.  It is likely a problem
                 // where we are statically linking libgcc_s and dynamically linking
@@ -1129,12 +1138,6 @@
                 // TODO(b/3023404 Save XMM registers in signal handlers on x64.
                 "FPSigTest.NestedSignals",
 
-                // Skip for roll
-                "PivotRootTest.UnreachableNewRootFails",
-
-                // Skip for roll
-                "RtSignalTest.ValueDelivered",
-
                 // Depend on missing timer feature.
                 "FifoTest.OpenBlockedAndInterrupted",
 
@@ -1173,9 +1176,6 @@
                 "IPv4UDPSockets/IPv4UDPUnboundSocketTest.IpMulticastLoopbackNic/0",
                 "IPv4UDPSockets/IPv4UDPUnboundSocketTest.IpMulticastLoopbackAddr/0",
 
-                // New failing test. Ignoring for rollers.
-                "CloneTest.NewUserMountNamespace",
-
                 // TODO(https://fxbug.dev/379127911): Investigate and re-enable
                 "TimerTest.RlimitCpuInheritedAcrossFork",
 
@@ -1199,17 +1199,6 @@
 
                 // TODO(https://fxbug.dev/361175318): FUTEX_TRYLOCK_PI is not supported yet
                 "SharedPrivate/PrivateAndSharedFutexTest.PITryLock*",
-
-                // New test needs to be disabled
-                "ChownTest.SetGroupIdBitDeniedWithoutCapFsetIdOrRelevantGroup",
-                "AllUnixDomainSockets/UnixSocketPeerCredTest.AfterConnectServerPeerCred/0",
-                "AllUnixDomainSockets/UnixSocketPeerCredTest.AfterConnectServerPeerCred/6",
-                "AllUnixDomainSockets/UnixSocketPeerCredTest.PeerCredAfterListen/0",
-                "AllUnixDomainSockets/UnixSocketPeerCredTest.PeerCredAfterListen/6",
-
-                // New failing tests; Disable for the roll to succeed
-                "RawSocketTest.SolIPSetSockOptOnRawV6SocketFails",
-                "IoctlTest.FIOASYNCHandlesFuseFD",
             ],
         },
     ],
