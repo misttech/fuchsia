@@ -79,25 +79,43 @@ template("rustc_test_internal") {
       }
     }
 
+    _test_data_target = "${target_name}_rust_test_data"
+    crate_binary_path = ""
+    test_args = []
+    if (defined(args)) {
+      test_args = args
+    }
+    if (defined(invoker.output_dir)) {
+      crate_binary_path = "${invoker.output_dir}/${_crate_name}"
+    } else if (use_unstripped_binary_for_host_tests) {
+      # Default to using the unstripped binary so that stack traces are easier to read.
+      # Override the name to still use the old path for consistency with previous test results.
+      # For instance, if the stripped binary is host_x64/foo_test and unstripped is
+      # host_x64/foo_test_unstripped, name should still be host_x64/foo_test.
+      crate_binary_path = "${root_out_dir}/${_crate_name}_unstripped"
+      test_name =
+          rebase_path("${root_out_dir}/${_crate_name}", "${root_out_dir}/..")
+      test_args += [ "env RUST_BACKTRACE=1" ]
+    } else {
+      # For asan targets use the normal binary path.
+      crate_binary_path = "${root_out_dir}/${_crate_name}"
+    }
+    host_test_data(_test_data_target) {
+      sources = [ crate_binary_path ]
+      deps = [ ":${exe_target_name}" ]
+    }
+
     host_test(target_name) {
-      if (defined(invoker.output_dir)) {
-        binary_path = "${invoker.output_dir}/${_crate_name}"
-      } else if (use_unstripped_binary_for_host_tests) {
-        # Default to using the unstripped binary so that stack traces are easier to read.
-        # Override the name to still use the old path for consistency with previous test results.
-        # For instance, if the stripped binary is host_x64/foo_test and unstripped is
-        # host_x64/foo_test_unstripped, name should still be host_x64/foo_test.
-        binary_path = "${root_out_dir}/${_crate_name}_unstripped"
-        name =
-            rebase_path("${root_out_dir}/${_crate_name}", "${root_out_dir}/..")
-        if (!defined(args)) {
-          args = []
-        }
-        args += [ "env RUST_BACKTRACE=1" ]
-      } else {
-        # For asan targets use the normal binary path.
-        binary_path = "${root_out_dir}/${_crate_name}"
+      binary_path = get_label_info("//tools/rust_test_parser", "root_out_dir") +
+                    "/rust_test_parser"
+
+      if (defined(test_name)) {
+        name = test_name
+      } else if (test_args == []) {
+        name = rebase_path(crate_binary_path, root_build_dir)
       }
+      args = []
+      args = [ rebase_path(crate_binary_path, root_build_dir) ] + test_args
 
       # The host test should only depend on the _actual_ binary, because only
       # the binary is able to properly depend on the toolchain variants
@@ -110,7 +128,11 @@ template("rustc_test_internal") {
       # know how to properly switch to the correct variant toolchain.  So this
       # instead deps on the group that combines both clippy and the binary.  But
       # it doesn't depend on any other deps.
-      deps = [ ":${exe_target_name}" ]
+      deps = [
+        ":${_test_data_target}",
+        ":${exe_target_name}",
+        "//tools/rust_test_parser",
+      ]
 
       if (use_unstripped_binary_for_host_tests) {
         deps += [ ":${unstripped_copy_target_name}" ]

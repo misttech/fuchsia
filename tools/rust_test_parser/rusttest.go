@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package testparser
+package rust_test_parser
 
 import (
+	"bytes"
 	"fmt"
 	"regexp"
 	"strings"
@@ -31,6 +32,20 @@ var (
 	// "failures:" - this seem to be the last section in rusttest that reports a list of test fails
 	rustTestCaseStderrEnd = regexp.MustCompile(`^(stack backtrace|failures):$`)
 )
+
+// Parse takes stdout from a rust test program and returns structured results.
+// If no structured results were identified, an empty slice is returned.
+func Parse(stdout []byte) []runtests.TestCaseResult {
+	lines := bytes.Split(stdout, []byte{'\n'})
+	cases := parseRustTest(lines)
+
+	// Ensure that an empty set of cases is serialized to JSON as an empty
+	// array, not as null.
+	if cases == nil {
+		cases = []runtests.TestCaseResult{}
+	}
+	return cases
+}
 
 func parseRustTest(lines [][]byte) []runtests.TestCaseResult {
 	var res []runtests.TestCaseResult
