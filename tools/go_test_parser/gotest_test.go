@@ -73,17 +73,20 @@ ok 8 host_x64/fake_tests (4.378744489s)
 			DisplayName: "TestParseGoogleTest",
 			CaseName:    "TestParseGoogleTest",
 			Status:      runtests.TestFailure,
+			FailReason:  "TestParseGoogleTest: experimental/users/shayba/testparser/testparser_test.go:15: Parse(invalid).Parse() = [{SynonymDictTest.IsInitializedEmpty Pass 4} {SynonymDictTest.ReadingEmptyFileReturnsFalse Pass 3} {SynonymDictTest.ReadingNonexistentFileReturnsFalse Pass 4} {SynonymDictTest.LoadDictionary Pass 4} {SynonymDictTest.GetSynonymsReturnsListOfWords Pass 4} {SynonymDictTest.GetSynonymsWhenNoSynonymsAreAvailable Pass 4} {SynonymDictTest.AllWordsAreSynonymsOfEachOther Pass 4} {SynonymDictTest.GetSynonymsReturnsListOfWordsWithStubs Fail 4} {SynonymDictTest.CompoundWordBug Skip 4}]; want []",
 			Duration:    3000000000,
 			Format:      "Go",
 		}, {
 			DisplayName: "TestFail",
 			CaseName:    "TestFail",
 			Status:      runtests.TestFailure,
+			FailReason:  "TestFail: experimental/users/shayba/testparser/testparser_test.go:68: Oops!",
 			Format:      "Go",
 		}, {
 			DisplayName: "TestSkip",
 			CaseName:    "TestSkip",
 			Status:      runtests.TestSkipped,
+			FailReason:  "TestSkip: experimental/users/shayba/testparser/testparser_test.go:72: Huh?",
 			Format:      "Go",
 		}, {
 			DisplayName: "TestAdd",
@@ -179,6 +182,7 @@ created by testing.(*T).Run
 			DisplayName: "TestReboot",
 			CaseName:    "TestReboot",
 			Status:      runtests.TestFailure,
+			FailReason:  "panic: test timed out after 1s",
 			Duration:    1000000000,
 			Format:      "Go",
 		},

@@ -158,7 +158,7 @@ func testCaseToResultSink(testCases []runtests.TestCaseResult, tags []*resultpb.
 
 	// Ignore error, testStatus will be set to resultpb.TestStatus_STATUS_UNSPECIFIED if error != nil.
 	// And when passed to determineExpected, resultpb.TestStatus_STATUS_UNSPECIFIED will be handled correctly.
-	testStatus, _ := resultDBStatus(testDetail.Result)
+	testStatus, _ := resultDBStatus(testDetail.Status)
 
 	for _, testCase := range testCases {
 		testID := fmt.Sprintf("%s/%s:%s", testDetail.Name, testCase.SuiteName, testCase.CaseName)
@@ -236,7 +236,7 @@ func testDetailsToResultSink(tags []*resultpb.StringPair, testDetail *runtests.T
 		TestId: testDetail.Name,
 		Tags:   testTags,
 	}
-	testStatus, err := resultDBStatus(testDetail.Result)
+	testStatus, err := resultDBStatus(testDetail.Status)
 	if err != nil {
 		log.Printf("[Warn] Skip uploading test target: %s to ResultDB due to error: %v", testDetail.Name, err)
 		return nil, testsSkipped, err
@@ -326,7 +326,7 @@ func determineExpected(testStatus resultpb.TestStatus, testCaseStatus resultpb.T
 	return false
 }
 
-func resultDBStatus(result runtests.TestResult) (resultpb.TestStatus, error) {
+func resultDBStatus(result runtests.TestStatus) (resultpb.TestStatus, error) {
 	switch result {
 	case runtests.TestSuccess:
 		return resultpb.TestStatus_PASS, nil

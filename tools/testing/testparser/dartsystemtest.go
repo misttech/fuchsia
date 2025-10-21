@@ -43,7 +43,7 @@ func parseDartSystemTest(lines [][]byte) []runtests.TestCaseResult {
 	var res []runtests.TestCaseResult
 	for _, testGroup := range parsed.TestGroups {
 		for _, testCase := range testGroup.TestCases {
-			var status runtests.TestResult
+			var status runtests.TestStatus
 			switch testCase.Result {
 			case "PASSED":
 				status = runtests.TestSuccess

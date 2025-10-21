@@ -46,12 +46,12 @@ func mkTempFile(t *testing.T, content []byte) string {
 func TestIgnoreTestsForFlakeAnalysis(t *testing.T) {
 	summary := runtests.TestSummary{
 		Tests: []runtests.TestDetails{
-			{Name: "test 1", Result: runtests.TestFailure},
-			{Name: "test 2", Result: runtests.TestAborted},
-			{Name: "test 3", Result: runtests.TestAborted},
-			{Name: "test 4", Result: runtests.TestAborted},
-			{Name: "test 5", Result: runtests.TestFailure},
-			{Name: "test 6", Result: runtests.TestInfraFailure},
+			{Name: "test 1", Status: runtests.TestFailure},
+			{Name: "test 2", Status: runtests.TestAborted},
+			{Name: "test 3", Status: runtests.TestAborted},
+			{Name: "test 4", Status: runtests.TestAborted},
+			{Name: "test 5", Status: runtests.TestFailure},
+			{Name: "test 6", Status: runtests.TestInfraFailure},
 		},
 	}
 	testCases := []struct {
@@ -91,7 +91,7 @@ func TestIgnoreTestsForFlakeAnalysis(t *testing.T) {
 
 			for _, test := range summary.Tests {
 				hasFlakeAnalysisIgnoreTag := false
-				isFailure := runtests.IsFailure(test.Result)
+				isFailure := runtests.IsFailure(test.Status)
 				for _, tag := range test.Tags {
 					if tag.Key == "flake_analysis_ignore" && tag.Value == "true" {
 						hasFlakeAnalysisIgnoreTag = true

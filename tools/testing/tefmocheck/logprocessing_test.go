@@ -165,7 +165,7 @@ func TestSplitLogByTest(t *testing.T) {
 func testDetailsForTests(tests []string) []runtests.TestDetails {
 	var testDetails []runtests.TestDetails
 	for _, testName := range tests {
-		testDetails = append(testDetails, runtests.TestDetails{Name: testName, OutputDir: testName})
+		testDetails = append(testDetails, runtests.TestDetails{Name: testName, TestResult: runtests.TestResult{OutputDir: testName}})
 	}
 	return testDetails
 }

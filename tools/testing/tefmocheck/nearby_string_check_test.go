@@ -157,8 +157,8 @@ func TestNearbyStringCheckWithSwarming(t *testing.T) {
 			swarmingResult: &SwarmingRpcsTaskResult{State: "COMPLETED"},
 			testSummary: &runtests.TestSummary{
 				Tests: []runtests.TestDetails{
-					{Name: passedTest1, Result: runtests.TestSuccess},
-					{Name: passedTest2, Result: runtests.TestSuccess},
+					{Name: passedTest1, Status: runtests.TestSuccess},
+					{Name: passedTest2, Status: runtests.TestSuccess},
 				},
 			},
 			expectedCheck: false,
@@ -175,8 +175,8 @@ func TestNearbyStringCheckWithSwarming(t *testing.T) {
 			swarmingResult: &SwarmingRpcsTaskResult{State: "COMPLETED"},
 			testSummary: &runtests.TestSummary{
 				Tests: []runtests.TestDetails{
-					{Name: passedTest1, Result: runtests.TestSuccess},
-					{Name: failedTest1, Result: runtests.TestFailure},
+					{Name: passedTest1, Status: runtests.TestSuccess},
+					{Name: failedTest1, Status: runtests.TestFailure},
 				},
 			},
 			expectedCheck: true,
@@ -194,8 +194,8 @@ func TestNearbyStringCheckWithSwarming(t *testing.T) {
 			swarmingResult: &SwarmingRpcsTaskResult{State: "COMPLETED"},
 			testSummary: &runtests.TestSummary{
 				Tests: []runtests.TestDetails{
-					{Name: failedTest1, Result: runtests.TestFailure},
-					{Name: failedTest1, Result: runtests.TestSuccess},
+					{Name: failedTest1, Status: runtests.TestFailure},
+					{Name: failedTest1, Status: runtests.TestSuccess},
 				},
 			},
 			expectedCheck: false,
@@ -225,8 +225,8 @@ func TestNearbyStringCheckWithSwarming(t *testing.T) {
 			swarmingResult: &SwarmingRpcsTaskResult{State: "COMPLETED", Failure: true},
 			testSummary: &runtests.TestSummary{
 				Tests: []runtests.TestDetails{
-					{Name: failedTest1, Result: runtests.TestFailure},
-					{Name: passedTest1, Result: runtests.TestSuccess},
+					{Name: failedTest1, Status: runtests.TestFailure},
+					{Name: passedTest1, Status: runtests.TestSuccess},
 				},
 			},
 			swarmingOutputPerTest: []TestLog{
@@ -247,8 +247,8 @@ func TestNearbyStringCheckWithSwarming(t *testing.T) {
 			swarmingResult: &SwarmingRpcsTaskResult{State: "COMPLETED", Failure: true},
 			testSummary: &runtests.TestSummary{
 				Tests: []runtests.TestDetails{
-					{Name: failedTest1, Result: runtests.TestFailure},
-					{Name: passedTest1, Result: runtests.TestSuccess},
+					{Name: failedTest1, Status: runtests.TestFailure},
+					{Name: passedTest1, Status: runtests.TestSuccess},
 				},
 			},
 			swarmingOutputPerTest: []TestLog{
@@ -270,9 +270,9 @@ func TestNearbyStringCheckWithSwarming(t *testing.T) {
 			swarmingResult: &SwarmingRpcsTaskResult{State: "COMPLETED", Failure: true},
 			testSummary: &runtests.TestSummary{
 				Tests: []runtests.TestDetails{
-					{Name: failedTest1, Result: runtests.TestFailure},
-					{Name: failedTest2, Result: runtests.TestFailure},
-					{Name: failedTest2, Result: runtests.TestSuccess},
+					{Name: failedTest1, Status: runtests.TestFailure},
+					{Name: failedTest2, Status: runtests.TestFailure},
+					{Name: failedTest2, Status: runtests.TestSuccess},
 				},
 			},
 			swarmingOutputPerTest: []TestLog{

@@ -86,7 +86,7 @@ func (c *stringInLogCheck) Check(to *TestingOutputs) bool {
 		if c.SkipAllPassedTests {
 			failedTests := make(map[string]struct{})
 			for _, test := range to.TestSummary.Tests {
-				if test.Result != runtests.TestSuccess {
+				if test.Status != runtests.TestSuccess {
 					failedTests[test.Name] = struct{}{}
 				} else if c.IgnoreFlakes {
 					// If a later run of a failed test passed,
@@ -122,9 +122,9 @@ func (c *stringInLogCheck) Check(to *TestingOutputs) bool {
 		}
 		failedTestsMap := make(map[string]testdata)
 		for i, testLog := range to.SwarmingOutputPerTest {
-			var testResult runtests.TestResult
+			var testResult runtests.TestStatus
 			if to.TestSummary != nil {
-				testResult = to.TestSummary.Tests[i].Result
+				testResult = to.TestSummary.Tests[i].Status
 			}
 			if c.SkipPassedTest && testResult == runtests.TestSuccess {
 				if c.IgnoreFlakes {

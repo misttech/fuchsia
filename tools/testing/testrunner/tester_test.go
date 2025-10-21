@@ -128,7 +128,7 @@ func TestSubprocessTester(t *testing.T) {
 		name           string
 		test           build.Test
 		runErrs        []error
-		expectedResult runtests.TestResult
+		expectedStatus runtests.TestStatus
 		useSandboxing  bool
 		env            map[string]string
 		wantCmd        []string
@@ -137,12 +137,12 @@ func TestSubprocessTester(t *testing.T) {
 		{
 			name:           "no path",
 			test:           build.Test{},
-			expectedResult: runtests.TestFailure,
+			expectedStatus: runtests.TestFailure,
 		},
 		{
 			name:           "test passes with profile",
 			test:           build.Test{Path: passingTest},
-			expectedResult: runtests.TestSuccess,
+			expectedStatus: runtests.TestSuccess,
 			wantCmd:        []string{"./" + passingTest},
 			wantDataSinks: runtests.DataSinkMap{
 				"llvm-profile": []runtests.DataSink{
@@ -160,7 +160,7 @@ func TestSubprocessTester(t *testing.T) {
 			env: map[string]string{
 				llvmProfileEnvKey: "fake/llvm/profile/path/p.profraw",
 			},
-			expectedResult: runtests.TestSuccess,
+			expectedStatus: runtests.TestSuccess,
 			wantCmd: []string{
 				"./fake_nsjail",
 				"--disable_clone_newcgroup",
@@ -269,7 +269,7 @@ func TestSubprocessTester(t *testing.T) {
 		{
 			name:           "test passes without profile",
 			test:           build.Test{Path: "uninstrumented_test"},
-			expectedResult: runtests.TestSuccess,
+			expectedStatus: runtests.TestSuccess,
 			wantCmd:        []string{"./uninstrumented_test"},
 			wantDataSinks:  nil,
 		},
@@ -277,7 +277,7 @@ func TestSubprocessTester(t *testing.T) {
 			name:           "test fails",
 			test:           build.Test{Path: failingTest},
 			runErrs:        []error{fmt.Errorf("test failed")},
-			expectedResult: runtests.TestFailure,
+			expectedStatus: runtests.TestFailure,
 			wantCmd:        []string{"./" + failingTest},
 			wantDataSinks: runtests.DataSinkMap{
 				"llvm-profile": []runtests.DataSink{
@@ -336,8 +336,8 @@ func TestSubprocessTester(t *testing.T) {
 			if err != nil {
 				t.Errorf("tester.Test got error: %s, want nil", err)
 			}
-			if c.expectedResult != testResult.Result {
-				t.Errorf("tester.Test got result: %s, want: %s", testResult.Result, c.expectedResult)
+			if c.expectedStatus != testResult.Status {
+				t.Errorf("tester.Test got result: %s, want: %s", testResult.Status, c.expectedStatus)
 			}
 			if _, statErr := os.Stat(outDir); statErr != nil {
 				t.Error("tester.Test did not create a readable outDir:", statErr)
@@ -354,7 +354,7 @@ func TestSubprocessTester(t *testing.T) {
 				t.Errorf("Unexpected command run (-want +got):\n%s", diff)
 			}
 
-			sinks := testResult.DataSinks.Sinks
+			sinks := testResult.DataSinks
 			if diff := cmp.Diff(c.wantDataSinks, sinks); diff != "" {
 				t.Errorf("Diff in data sinks (-want +got):\n%s", diff)
 			}
@@ -372,12 +372,12 @@ func (c *fakeDataSinkCopier) GetAllDataSinks(remoteDir string) ([]runtests.DataS
 	return []runtests.DataSink{{Name: "sink", File: filepath.Join("sink_type", "sink")}}, nil
 }
 
-func (c *fakeDataSinkCopier) GetReferences(remoteDir string) (map[string]runtests.DataSinkReference, error) {
+func (c *fakeDataSinkCopier) GetReferences(remoteDir string) (map[string]runtests.DataSinkMap, error) {
 	c.remoteDirs[remoteDir] = struct{}{}
-	return map[string]runtests.DataSinkReference{}, nil
+	return map[string]runtests.DataSinkMap{}, nil
 }
 
-func (*fakeDataSinkCopier) Copy(_ []runtests.DataSinkReference, _ string) (runtests.DataSinkMap, error) {
+func (*fakeDataSinkCopier) Copy(_ []runtests.DataSinkMap, _ string) (runtests.DataSinkMap, error) {
 	return runtests.DataSinkMap{}, nil
 }
 
@@ -397,34 +397,34 @@ func (*fakeDataSinkCopier) Close() error {
 func TestFFXTester(t *testing.T) {
 	cases := []struct {
 		name           string
-		expectedResult runtests.TestResult
+		expectedStatus runtests.TestStatus
 		connErr        bool
 		experiments    []string
 		output         string
 	}{
 		{
 			name:           "run v2 tests with ffx",
-			expectedResult: runtests.TestSuccess,
+			expectedStatus: runtests.TestSuccess,
 			experiments:    []string{"use_ffx_test", "use_ffx_test_parallel"},
 		},
 		{
 			name:           "ffx test fails",
-			expectedResult: runtests.TestFailure,
+			expectedStatus: runtests.TestFailure,
 			experiments:    []string{"use_ffx_test"},
 		},
 		{
 			name:           "ffx test times out",
-			expectedResult: runtests.TestAborted,
+			expectedStatus: runtests.TestAborted,
 			experiments:    []string{"use_ffx_test"},
 		},
 		{
 			name:           "ffx test skipped",
-			expectedResult: runtests.TestSkipped,
+			expectedStatus: runtests.TestSkipped,
 			experiments:    []string{"use_ffx_test"},
 		},
 		{
 			name:           "ffx test returns ssh connection failure",
-			expectedResult: runtests.TestFailure,
+			expectedStatus: runtests.TestFailure,
 			connErr:        true,
 			experiments:    []string{"use_ffx_test"},
 			output:         sshutilconstants.ProcessTerminatedMsg + "\n" + ffxutilconstants.ClientChannelClosedMsg,
@@ -433,7 +433,7 @@ func TestFFXTester(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			var outcome string
-			switch c.expectedResult {
+			switch c.expectedStatus {
 			case runtests.TestSuccess:
 				outcome = ffxutil.TestPassed
 			case runtests.TestFailure:
@@ -471,8 +471,8 @@ func TestFFXTester(t *testing.T) {
 			} else if !c.connErr && err != nil {
 				t.Errorf("tester.Test got unexpected error: %s", err)
 			}
-			if testResult.Result != c.expectedResult {
-				t.Errorf("tester.Test got result: %s, want result: %s", testResult.Result, c.expectedResult)
+			if testResult.Status != c.expectedStatus {
+				t.Errorf("tester.Test got result: %s, want result: %s", testResult.Status, c.expectedStatus)
 			}
 
 			testArgs := []string{}
@@ -487,7 +487,7 @@ func TestFFXTester(t *testing.T) {
 				t.Errorf("called `ffx test` %d times, expected 1", numRuns)
 			}
 			expectedCaseStatus := runtests.TestSuccess
-			if c.expectedResult != runtests.TestSuccess {
+			if c.expectedStatus != runtests.TestSuccess {
 				expectedCaseStatus = runtests.TestFailure
 			}
 			if len(testResult.Cases) != 1 {
@@ -512,7 +512,7 @@ func TestFFXTester(t *testing.T) {
 			// Call EnsureSinks() for v2 tests to set the copier.remoteDir to the data output dir for v2 tests.
 			// v1 tests will already have set the appropriate remoteDir value within Test().
 			outputs := &TestOutputs{OutDir: t.TempDir()}
-			if err = tester.EnsureSinks(ctx, []runtests.DataSinkReference{testResult.DataSinks}, outputs); err != nil {
+			if err = tester.EnsureSinks(ctx, []runtests.DataSinkMap{testResult.DataSinks}, outputs); err != nil {
 				t.Errorf("failed to collect sinks: %s", err)
 			}
 			foundEarlyBootSinks := false
@@ -685,7 +685,7 @@ func TestSerialTester(t *testing.T) {
 		name           string
 		test           testsharder.Test
 		expectedCmd    string
-		expectedResult runtests.TestResult
+		expectedStatus runtests.TestStatus
 		wantErr        bool
 		wantRetry      bool
 		startedStr     string
@@ -695,7 +695,7 @@ func TestSerialTester(t *testing.T) {
 			name:           "test passes",
 			test:           fooTest,
 			expectedCmd:    fooExpectedCmd,
-			expectedResult: runtests.TestSuccess,
+			expectedStatus: runtests.TestSuccess,
 			startedStr:     fooStarted,
 			returnStr:      runtests.SuccessSignature + fooTest.Name,
 		},
@@ -703,7 +703,7 @@ func TestSerialTester(t *testing.T) {
 			name:           "packaged test passes",
 			test:           pkgTest,
 			expectedCmd:    pkgExpectedCmd,
-			expectedResult: runtests.TestSuccess,
+			expectedStatus: runtests.TestSuccess,
 			startedStr:     pkgStarted,
 			returnStr:      pkgTest.PackageURL + " completed with result: PASSED",
 		},
@@ -711,7 +711,7 @@ func TestSerialTester(t *testing.T) {
 			name:           "test fails",
 			test:           fooTest,
 			expectedCmd:    fooExpectedCmd,
-			expectedResult: runtests.TestFailure,
+			expectedStatus: runtests.TestFailure,
 			startedStr:     fooStarted,
 			returnStr:      runtests.FailureSignature + fooTest.Name,
 		},
@@ -719,7 +719,7 @@ func TestSerialTester(t *testing.T) {
 			name:           "packaged test fails",
 			test:           pkgTest,
 			expectedCmd:    pkgExpectedCmd,
-			expectedResult: runtests.TestFailure,
+			expectedStatus: runtests.TestFailure,
 			startedStr:     pkgStarted,
 			returnStr:      pkgTest.PackageURL + " completed with result: FAILED",
 		},
@@ -727,7 +727,7 @@ func TestSerialTester(t *testing.T) {
 			name:           "packaged test skipped",
 			test:           pkgTest,
 			expectedCmd:    pkgExpectedCmd,
-			expectedResult: runtests.TestSkipped,
+			expectedStatus: runtests.TestSkipped,
 			startedStr:     pkgStarted,
 			returnStr:      pkgTest.PackageURL + " completed with result: SKIPPED",
 		},
@@ -735,7 +735,7 @@ func TestSerialTester(t *testing.T) {
 			name:           "packaged test canceled",
 			test:           pkgTest,
 			expectedCmd:    pkgExpectedCmd,
-			expectedResult: runtests.TestAborted,
+			expectedStatus: runtests.TestAborted,
 			startedStr:     pkgStarted,
 			returnStr:      pkgTest.PackageURL + " completed with result: CANCELLED",
 		},
@@ -743,7 +743,7 @@ func TestSerialTester(t *testing.T) {
 			name:           "test does not start on first try",
 			test:           fooTest,
 			expectedCmd:    fooExpectedCmd,
-			expectedResult: runtests.TestSuccess,
+			expectedStatus: runtests.TestSuccess,
 			wantRetry:      true,
 			startedStr:     fooStarted,
 			returnStr:      runtests.SuccessSignature + fooTest.Name,
@@ -752,7 +752,7 @@ func TestSerialTester(t *testing.T) {
 			name:           "packaged test does not start on first try",
 			test:           pkgTest,
 			expectedCmd:    pkgExpectedCmd,
-			expectedResult: runtests.TestSuccess,
+			expectedStatus: runtests.TestSuccess,
 			wantRetry:      true,
 			startedStr:     pkgStarted,
 			returnStr:      pkgTest.PackageURL + " completed with result: PASSED",
@@ -788,7 +788,7 @@ func TestSerialTester(t *testing.T) {
 			}
 
 			type testResult struct {
-				result *TestResult
+				result *runtests.TestDetails
 				err    error
 			}
 			results := make(chan testResult)
@@ -859,8 +859,8 @@ func TestSerialTester(t *testing.T) {
 				if !tc.wantErr && r.result == nil {
 					t.Error("got nil test result")
 				}
-				if !tc.wantErr && tc.expectedResult != r.result.Result {
-					t.Errorf("test got result: %s, want: %s", r.result.Result, tc.expectedResult)
+				if !tc.wantErr && tc.expectedStatus != r.result.Status {
+					t.Errorf("test got result: %s, want: %s", r.result.Status, tc.expectedStatus)
 				}
 			}
 			stdoutBytes := stdout.Bytes()
@@ -1141,11 +1141,10 @@ func TestBaseTestResultFromTest(t *testing.T) {
 			ComponentID: 1478143,
 		},
 	}
-	expected := TestResult{
-		Name:      "fuchsia-pkg://fuchsia.com/sparky-sparky-boom-test#meta/sparky-sparky-boom-test.cm",
-		GNLabel:   "//src/sys:foo_test(//build/toolchain/fuchsia:x64)",
-		Result:    runtests.TestFailure,
-		DataSinks: runtests.DataSinkReference{},
+	expected := runtests.TestDetails{
+		Name:    "fuchsia-pkg://fuchsia.com/sparky-sparky-boom-test#meta/sparky-sparky-boom-test.cm",
+		GNLabel: "//src/sys:foo_test(//build/toolchain/fuchsia:x64)",
+		Status:  runtests.TestFailure,
 		Tags: []build.TestTag{
 			{
 				Key:   "key",

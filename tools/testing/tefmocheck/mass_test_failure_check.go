@@ -18,7 +18,7 @@ type MassTestFailureCheck struct {
 func (c MassTestFailureCheck) Check(to *TestingOutputs) bool {
 	failedTests := make(map[string]bool)
 	for _, test := range to.TestSummary.Tests {
-		if _, ok := failedTests[test.Name]; !ok && runtests.IsFailure(test.Result) {
+		if _, ok := failedTests[test.Name]; !ok && runtests.IsFailure(test.Status) {
 			failedTests[test.Name] = true
 			if len(failedTests) > c.MaxFailed {
 				return true

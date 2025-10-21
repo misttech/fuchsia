@@ -39,22 +39,22 @@ const (
 )
 
 type fakeTester struct {
-	runTest     func(context.Context, testsharder.Test, io.Writer, io.Writer, string) (*TestResult, error)
+	runTest     func(context.Context, testsharder.Test, io.Writer, io.Writer, string) (*runtests.TestDetails, error)
 	reconnect   func(context.Context, testsharder.Test) error
 	funcCalls   []string
 	outDirs     map[string]bool
 	lastTestRun testsharder.Test
 }
 
-func testResult(test testsharder.Test, result runtests.TestResult) *TestResult {
-	return &TestResult{
+func testResult(test testsharder.Test, result runtests.TestStatus) *runtests.TestDetails {
+	return &runtests.TestDetails{
 		Name:    test.Name,
 		GNLabel: test.Label,
-		Result:  result,
+		Status:  result,
 	}
 }
 
-func (t *fakeTester) Test(ctx context.Context, test testsharder.Test, stdout, stderr io.Writer, outDir string) (*TestResult, error) {
+func (t *fakeTester) Test(ctx context.Context, test testsharder.Test, stdout, stderr io.Writer, outDir string) (*runtests.TestDetails, error) {
 	t.funcCalls = append(t.funcCalls, testFunc)
 	if t.outDirs == nil {
 		t.outDirs = make(map[string]bool)
@@ -69,7 +69,7 @@ func (t *fakeTester) Test(ctx context.Context, test testsharder.Test, stdout, st
 	return testResult(test, result), nil
 }
 
-func (t *fakeTester) ProcessResult(ctx context.Context, test testsharder.Test, outDir string, testResult *TestResult, err error) (*TestResult, error) {
+func (t *fakeTester) ProcessResult(ctx context.Context, test testsharder.Test, outDir string, testResult *runtests.TestDetails, err error) (*runtests.TestDetails, error) {
 	return testResult, err
 }
 
@@ -78,7 +78,7 @@ func (t *fakeTester) Close() error {
 	return nil
 }
 
-func (t *fakeTester) EnsureSinks(_ context.Context, _ []runtests.DataSinkReference, _ *TestOutputs) error {
+func (t *fakeTester) EnsureSinks(_ context.Context, _ []runtests.DataSinkMap, _ *TestOutputs) error {
 	t.funcCalls = append(t.funcCalls, copySinksFunc)
 	return nil
 }
@@ -224,13 +224,15 @@ func testOutDir(testName string, runIndex int) string {
 	return filepath.Join(testName, strconv.Itoa(runIndex))
 }
 
-func testDetails(name string, runIndex int, duration time.Duration, result runtests.TestResult) runtests.TestDetails {
+func testDetails(name string, runIndex int, duration time.Duration, result runtests.TestStatus) runtests.TestDetails {
 	return runtests.TestDetails{
-		Name:           name,
-		Result:         result,
+		Name:   name,
+		Status: result,
+		TestResult: runtests.TestResult{
+			OutputFiles: []string{runtests.TestOutputFilename},
+			OutputDir:   testOutDir(name, runIndex),
+		},
 		DurationMillis: duration.Milliseconds(),
-		OutputFiles:    []string{runtests.TestOutputFilename},
-		OutputDir:      testOutDir(name, runIndex),
 	}
 }
 
@@ -858,8 +860,8 @@ func TestRunAndOutputTests(t *testing.T) {
 			}
 
 			runCounts := make(map[string]int)
-			testerForTest := func(testsharder.Test) (Tester, *[]runtests.DataSinkReference, error) {
-				return &fakeTester{runTest: func(ctx context.Context, test testsharder.Test, stdout, stderr io.Writer, outdir string) (*TestResult, error) {
+			testerForTest := func(testsharder.Test) (Tester, *[]runtests.DataSinkMap, error) {
+				return &fakeTester{runTest: func(ctx context.Context, test testsharder.Test, stdout, stderr io.Writer, outdir string) (*runtests.TestDetails, error) {
 					runIndex := runCounts[test.Name]
 					runCounts[test.Name]++
 					behavior := tc.behavior[fmt.Sprintf("%s/%d", test.Name, runIndex)]
@@ -888,16 +890,16 @@ func TestRunAndOutputTests(t *testing.T) {
 						c := make(chan struct{})
 						t.Cleanup(func() { close(c) })
 						<-c
-						result.Result = runtests.TestAborted
+						result.Status = runtests.TestAborted
 						return result, nil
 					} else if behavior.fatal {
-						result.Result = ""
+						result.Status = ""
 						return result, fmt.Errorf("fatal error")
 					} else if behavior.fail {
-						result.Result = runtests.TestFailure
+						result.Status = runtests.TestFailure
 						return result, nil
 					} else if behavior.connErr {
-						result.Result = runtests.TestFailure
+						result.Status = runtests.TestFailure
 						return result, connectionError{fmt.Errorf("conn err")}
 					}
 
@@ -918,7 +920,7 @@ func TestRunAndOutputTests(t *testing.T) {
 						return fmt.Errorf("reconnect failed")
 					}
 					return nil
-				}}, &[]runtests.DataSinkReference{}, nil
+				}}, &[]runtests.DataSinkMap{}, nil
 			}
 
 			resultsDir := mkdtemp(t, "results")

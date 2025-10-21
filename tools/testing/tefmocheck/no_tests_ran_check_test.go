@@ -22,7 +22,7 @@ func TestNoTestsRanCheck(t *testing.T) {
 	if !c.Check(&to) {
 		t.Errorf("NoTestsRanCheck.Check() returned false with no tests, expected true")
 	}
-	summary.Tests = append(summary.Tests, runtests.TestDetails{Result: runtests.TestFailure})
+	summary.Tests = append(summary.Tests, runtests.TestDetails{Status: runtests.TestFailure})
 	if c.Check(&to) {
 		t.Errorf("NoTestsRanCheck.Check() returned true with one test run, expected false")
 	}

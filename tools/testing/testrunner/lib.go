@@ -197,7 +197,7 @@ func execute(
 	outDir string,
 	opts Options,
 ) error {
-	var fuchsiaSinks, localSinks []runtests.DataSinkReference
+	var fuchsiaSinks, localSinks []runtests.DataSinkMap
 	var fuchsiaTester, localTester Tester
 
 	localEnv := append(os.Environ(),
@@ -232,7 +232,7 @@ func execute(
 	// because it requires a lot of network requests and environment inspection,
 	// so we use dependency injection and pass it as a parameter to
 	// `runAndOutputTests` to make that function more easily testable.
-	testerForTest := func(test testsharder.Test) (Tester, *[]runtests.DataSinkReference, error) {
+	testerForTest := func(test testsharder.Test) (Tester, *[]runtests.DataSinkMap, error) {
 		switch test.OS {
 		case "fuchsia":
 			if fuchsiaTester == nil {
@@ -277,7 +277,7 @@ func execute(
 	if localTester != nil {
 		defer localTester.Close()
 	}
-	finalize := func(t Tester, sinks []runtests.DataSinkReference) error {
+	finalize := func(t Tester, sinks []runtests.DataSinkMap) error {
 		if t != nil {
 			cleanupCtx := ctx
 			if ctx.Err() != nil {
@@ -379,7 +379,7 @@ type testToRun struct {
 func runAndOutputTests(
 	ctx context.Context,
 	tests []testsharder.Test,
-	testerForTest func(testsharder.Test) (Tester, *[]runtests.DataSinkReference, error),
+	testerForTest func(testsharder.Test) (Tester, *[]runtests.DataSinkMap, error),
 	outputs *TestOutputs,
 	globalOutDir string,
 	fuchsiaTester Tester,
@@ -418,7 +418,7 @@ func runAndOutputTests(
 			return err
 		}
 
-		var result *TestResult
+		var result *runtests.TestDetails
 		var outDir string
 		if err := retryOnConnectionFailure(ctx, t, func() error {
 			runIndex := test.previousRuns
@@ -526,7 +526,7 @@ func setPowerState(ctx context.Context, r *subprocess.Runner, state string) erro
 // shouldKeepGoing returns whether we should schedule another run of the test.
 // It'll return true if we haven't yet exceeded the time limit for reruns, or
 // if the most recent test run didn't meet the stop condition for this test.
-func shouldKeepGoing(test testsharder.Test, lastResult *TestResult, testTotalDuration time.Duration) bool {
+func shouldKeepGoing(test testsharder.Test, lastResult *runtests.TestDetails, testTotalDuration time.Duration) bool {
 	stopRepeatingDuration := time.Duration(test.StopRepeatingAfterSecs) * time.Second
 	if stopRepeatingDuration > 0 && testTotalDuration >= stopRepeatingDuration {
 		return false
@@ -564,7 +564,7 @@ func runTestOnce(
 	t Tester,
 	outDir string,
 	testIndex int,
-) (*TestResult, error) {
+) (*runtests.TestDetails, error) {
 	// The test case parser specifically uses stdout, so we need to have a
 	// dedicated stdout buffer.
 	stdoutForParsing := new(bytes.Buffer)
@@ -611,7 +611,7 @@ func runTestOnce(
 	// so no timeout will be enforced, which is what we want.
 
 	type testResult struct {
-		result *TestResult
+		result *runtests.TestDetails
 		err    error
 	}
 	ch := make(chan testResult, 1)
@@ -638,7 +638,7 @@ func runTestOnce(
 		result, err = t.ProcessResult(testCtx, test, outDir, res.result, res.err)
 		timeout = test.Timeout
 	case <-timeoutCh:
-		result.Result = runtests.TestAborted
+		result.Status = runtests.TestAborted
 		timeout = outerTestTimeout
 		cancelTest()
 	}
@@ -655,9 +655,9 @@ func runTestOnce(
 		return nil, ctx.Err()
 	}
 
-	switch result.Result {
+	switch result.Status {
 	case runtests.TestFailure:
-		logger.Errorf(ctx, "Test %s failed: %s", test.Name, result.FailReason)
+		logger.Errorf(ctx, "Test %s failed: %s", test.Name, result.FailureReason)
 	case runtests.TestAborted:
 		logger.Errorf(ctx, "Test %s timed out after %s", test.Name, timeout)
 	}

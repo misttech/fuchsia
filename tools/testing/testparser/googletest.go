@@ -25,7 +25,7 @@ func parseGoogleTest(lines [][]byte) []runtests.TestCaseResult {
 		if m == nil {
 			continue
 		}
-		var status runtests.TestResult
+		var status runtests.TestStatus
 		switch m[1] {
 		case "       OK ":
 			status = runtests.TestSuccess

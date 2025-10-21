@@ -241,7 +241,7 @@ func TestCheck(t *testing.T) {
 					Tests: []runtests.TestDetails{
 						{
 							Name:   "test1",
-							Result: runtests.TestSuccess,
+							Status: runtests.TestSuccess,
 						},
 					},
 				},
@@ -258,11 +258,11 @@ func TestCheck(t *testing.T) {
 					Tests: []runtests.TestDetails{
 						{
 							Name:   "test1",
-							Result: runtests.TestFailure,
+							Status: runtests.TestFailure,
 						},
 						{
 							Name:   "test1",
-							Result: runtests.TestSuccess,
+							Status: runtests.TestSuccess,
 						},
 					},
 				},
@@ -280,7 +280,7 @@ func TestCheck(t *testing.T) {
 					Tests: []runtests.TestDetails{
 						{
 							Name:   "test1",
-							Result: runtests.TestFailure,
+							Status: runtests.TestFailure,
 						},
 					},
 				},
@@ -298,11 +298,11 @@ func TestCheck(t *testing.T) {
 					Tests: []runtests.TestDetails{
 						{
 							Name:   "test1",
-							Result: runtests.TestFailure,
+							Status: runtests.TestFailure,
 						},
 						{
 							Name:   "test1",
-							Result: runtests.TestSuccess,
+							Status: runtests.TestSuccess,
 						},
 					},
 				},
@@ -320,11 +320,11 @@ func TestCheck(t *testing.T) {
 					Tests: []runtests.TestDetails{
 						{
 							Name:   "test1",
-							Result: runtests.TestFailure,
+							Status: runtests.TestFailure,
 						},
 						{
 							Name:   "test2",
-							Result: runtests.TestSuccess,
+							Status: runtests.TestSuccess,
 						},
 					},
 				},
@@ -353,15 +353,15 @@ func TestCheck(t *testing.T) {
 					Tests: []runtests.TestDetails{
 						{
 							Name:   "test1",
-							Result: runtests.TestFailure,
+							Status: runtests.TestFailure,
 						},
 						{
 							Name:   "test1",
-							Result: runtests.TestSuccess,
+							Status: runtests.TestSuccess,
 						},
 						{
 							Name:   "test2",
-							Result: runtests.TestFailure,
+							Status: runtests.TestFailure,
 						},
 					},
 				},
@@ -400,15 +400,15 @@ func TestCheck(t *testing.T) {
 					Tests: []runtests.TestDetails{
 						{
 							Name:   "test1",
-							Result: runtests.TestFailure,
+							Status: runtests.TestFailure,
 						},
 						{
 							Name:   "test1",
-							Result: runtests.TestSuccess,
+							Status: runtests.TestSuccess,
 						},
 						{
 							Name:   "test2",
-							Result: runtests.TestFailure,
+							Status: runtests.TestFailure,
 						},
 					},
 				},
@@ -446,11 +446,11 @@ func TestCheck(t *testing.T) {
 					Tests: []runtests.TestDetails{
 						{
 							Name:   "test1",
-							Result: runtests.TestFailure,
+							Status: runtests.TestFailure,
 						},
 						{
 							Name:   "test1",
-							Result: runtests.TestSuccess,
+							Status: runtests.TestSuccess,
 						},
 					},
 				},
@@ -480,7 +480,7 @@ func TestCheck(t *testing.T) {
 					Tests: []runtests.TestDetails{
 						{
 							Name:   "test1",
-							Result: runtests.TestFailure,
+							Status: runtests.TestFailure,
 						},
 					},
 				},
@@ -497,11 +497,11 @@ func TestCheck(t *testing.T) {
 					Tests: []runtests.TestDetails{
 						{
 							Name:   "test1",
-							Result: runtests.TestFailure,
+							Status: runtests.TestFailure,
 						},
 						{
 							Name:   "test2",
-							Result: runtests.TestSuccess,
+							Status: runtests.TestSuccess,
 						},
 					},
 				},
@@ -532,11 +532,11 @@ func TestCheck(t *testing.T) {
 					Tests: []runtests.TestDetails{
 						{
 							Name:   "test1",
-							Result: runtests.TestSuccess,
+							Status: runtests.TestSuccess,
 						},
 						{
 							Name:   "test2",
-							Result: runtests.TestFailure,
+							Status: runtests.TestFailure,
 						},
 					},
 				},
@@ -568,11 +568,11 @@ func TestCheck(t *testing.T) {
 					Tests: []runtests.TestDetails{
 						{
 							Name:   "test1",
-							Result: runtests.TestFailure,
+							Status: runtests.TestFailure,
 						},
 						{
 							Name:   "test2",
-							Result: runtests.TestSuccess,
+							Status: runtests.TestSuccess,
 						},
 					},
 				},

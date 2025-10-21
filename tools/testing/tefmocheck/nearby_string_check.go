@@ -86,7 +86,7 @@ func (c *NearbyStringCheck) Check(outputs *TestingOutputs) bool {
 		if c.SkipAllPassedTests {
 			failedTests := make(map[string]struct{})
 			for _, test := range outputs.TestSummary.Tests {
-				if test.Result != runtests.TestSuccess {
+				if test.Status != runtests.TestSuccess {
 					failedTests[test.Name] = struct{}{}
 				} else if c.IgnoreFlakes {
 					// If a later run of a failed test passed,
@@ -110,11 +110,11 @@ func (c *NearbyStringCheck) Check(outputs *TestingOutputs) bool {
 		}
 		failedTestsMap := make(map[string]testdata)
 		for i, testLog := range outputs.SwarmingOutputPerTest {
-			var testResult runtests.TestResult
+			var testStatus runtests.TestStatus
 			if outputs.TestSummary != nil && i < len(outputs.TestSummary.Tests) {
-				testResult = outputs.TestSummary.Tests[i].Result
+				testStatus = outputs.TestSummary.Tests[i].Status
 			}
-			if testResult == runtests.TestSuccess {
+			if testStatus == runtests.TestSuccess {
 				if c.IgnoreFlakes {
 					if test, ok := failedTestsMap[testLog.TestName]; ok {
 						test.isFlake = true

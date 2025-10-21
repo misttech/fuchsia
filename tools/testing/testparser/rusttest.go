@@ -82,7 +82,7 @@ func createRustTestCase(suiteName, caseName, result string) runtests.TestCaseRes
 	if suiteName != "" {
 		displayName = fmt.Sprintf("%s::%s", suiteName, caseName)
 	}
-	var status runtests.TestResult
+	var status runtests.TestStatus
 	switch result {
 	case "ok":
 		status = runtests.TestSuccess

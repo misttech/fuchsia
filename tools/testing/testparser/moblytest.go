@@ -97,7 +97,7 @@ func parseMoblyTest(lines [][]byte) []runtests.TestCaseResult {
 			continue
 		}
 
-		var status runtests.TestResult
+		var status runtests.TestStatus
 		switch tc.Result {
 		case "PASS":
 			status = runtests.TestSuccess

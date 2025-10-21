@@ -113,7 +113,7 @@ func parseTrfTest(lines [][]byte) []runtests.TestCaseResult {
 }
 
 func createTRFTestCase(caseName, result string) runtests.TestCaseResult {
-	var status runtests.TestResult
+	var status runtests.TestStatus
 	switch result {
 	case "PASSED":
 		status = runtests.TestSuccess

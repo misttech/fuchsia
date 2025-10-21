@@ -54,47 +54,47 @@ func TestRecordingOfOutputs(t *testing.T) {
 	if err := writeFiles(outDir, origOutputs); err != nil {
 		t.Errorf("failed to write output files: %s", err)
 	}
-	results := []TestResult{
+	results := []runtests.TestDetails{
 		{
 			Name:      "fuchsia-pkg://foo#test_a",
 			GNLabel:   "//a/b/c:test_a(//toolchain)",
-			Result:    runtests.TestFailure,
 			StartTime: start,
 			EndTime:   start.Add(5 * time.Millisecond),
-			DataSinks: runtests.DataSinkReference{
-				Sinks: runtests.DataSinkMap{
-					"sinks": []runtests.DataSink{
-						{
-							Name: "SINK_A1",
-							File: "sink_a1.txt",
-						},
-						{
-							Name: "SINK_A2",
-							File: "sink_a2.txt",
-						},
+			DataSinks: runtests.DataSinkMap{
+				"sinks": []runtests.DataSink{
+					{
+						Name: "SINK_A1",
+						File: "sink_a1.txt",
+					},
+					{
+						Name: "SINK_A2",
+						File: "sink_a2.txt",
 					},
 				},
 			},
-			Cases: []runtests.TestCaseResult{
-				{
-					DisplayName: "case1",
-					CaseName:    "case1",
-					Status:      runtests.TestFailure,
-					Format:      "FTF",
-					// Test having the OutputFile be a filename.
-					OutputFiles: []string{filepath.Base(caseOutputFile)},
-					OutputDir:   filepath.Join(outDir, testAOutDir, "case1"),
+			Status: runtests.TestFailure,
+			TestResult: runtests.TestResult{
+				Cases: []runtests.TestCaseResult{
+					{
+						DisplayName: "case1",
+						CaseName:    "case1",
+						Status:      runtests.TestFailure,
+						Format:      "FTF",
+						// Test having the OutputFile be a filename.
+						OutputFiles: []string{filepath.Base(caseOutputFile)},
+						OutputDir:   filepath.Join(outDir, testAOutDir, "case1"),
+					},
 				},
+				// Test having the OutputFile be a directory name.
+				OutputFiles: []string{suiteOutputDir},
+				OutputDir:   filepath.Join(outDir, testAOutDir),
 			},
-			// Test having the OutputFile be a directory name.
-			OutputFiles: []string{suiteOutputDir},
-			OutputDir:   filepath.Join(outDir, testAOutDir),
-			Stdio:       []byte("STDOUT_A"),
+			Stdio: []byte("STDOUT_A"),
 		},
 		{
 			Name:      "test_b",
 			GNLabel:   "//a/b/c:test_b(//toolchain)",
-			Result:    runtests.TestSuccess,
+			Status:    runtests.TestSuccess,
 			StartTime: start,
 			EndTime:   start.Add(10 * time.Millisecond),
 			Stdio:     []byte("STDERR_B"),
@@ -116,12 +116,23 @@ func TestRecordingOfOutputs(t *testing.T) {
 		Tests: []runtests.TestDetails{{
 			Name:    "fuchsia-pkg://foo#test_a",
 			GNLabel: "//a/b/c:test_a(//toolchain)",
-			// The expected OutputFiles in TestSummary should contain only files.
-			// If any of the TestResult OutputFiles point to directories, TestOutputs.Record()
-			// should list out all the files in those directories here.
-			OutputFiles:    []string{suiteOutputFile1, suiteOutputFile2, filepath.Base(testAStdout)},
-			OutputDir:      testAOutDir,
-			Result:         runtests.TestFailure,
+			Status:  runtests.TestFailure,
+			TestResult: runtests.TestResult{
+				// The expected OutputFiles in TestSummary should contain only files.
+				// If any of the TestResult OutputFiles point to directories, TestOutputs.Record()
+				// should list out all the files in those directories here.
+				OutputFiles: []string{suiteOutputFile1, suiteOutputFile2, filepath.Base(testAStdout)},
+				OutputDir:   testAOutDir,
+				Cases: []runtests.TestCaseResult{
+					{
+						DisplayName: "case1",
+						CaseName:    "case1",
+						Status:      runtests.TestFailure,
+						Format:      "FTF",
+						OutputFiles: []string{caseOutputFile},
+					},
+				},
+			},
 			StartTime:      start,
 			DurationMillis: 5,
 			DataSinks: runtests.DataSinkMap{
@@ -136,21 +147,14 @@ func TestRecordingOfOutputs(t *testing.T) {
 					},
 				},
 			},
-			Cases: []runtests.TestCaseResult{
-				{
-					DisplayName: "case1",
-					CaseName:    "case1",
-					Status:      runtests.TestFailure,
-					Format:      "FTF",
-					OutputFiles: []string{caseOutputFile},
-				},
-			},
 		}, {
-			Name:           "test_b",
-			GNLabel:        "//a/b/c:test_b(//toolchain)",
-			OutputFiles:    []string{filepath.Base(testBStdout)},
-			OutputDir:      testBOutDir,
-			Result:         runtests.TestSuccess,
+			Name:    "test_b",
+			GNLabel: "//a/b/c:test_b(//toolchain)",
+			Status:  runtests.TestSuccess,
+			TestResult: runtests.TestResult{
+				OutputFiles: []string{filepath.Base(testBStdout)},
+				OutputDir:   testBOutDir,
+			},
 			StartTime:      start,
 			DurationMillis: 10,
 			// The data sinks will be added through a call to updateDataSinks().
@@ -203,14 +207,12 @@ func TestRecordingOfOutputs(t *testing.T) {
 			t.Fatalf("failed to record result of %q: %v", result.Name, err)
 		}
 	}
-	o.updateDataSinks(map[string]runtests.DataSinkReference{
+	o.updateDataSinks(map[string]runtests.DataSinkMap{
 		"test_b": {
-			Sinks: runtests.DataSinkMap{
-				"sinks": []runtests.DataSink{
-					{
-						Name: "SINK_B",
-						File: "sink_b.txt",
-					},
+			"sinks": []runtests.DataSink{
+				{
+					Name: "SINK_B",
+					File: "sink_b.txt",
 				},
 			},
 		},

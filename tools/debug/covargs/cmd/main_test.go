@@ -55,7 +55,7 @@ func TestReadSummary(t *testing.T) {
 			Tests: []runtests.TestDetails{
 				{
 					Name:      fmt.Sprintf("foo%d", i),
-					Result:    runtests.TestSuccess,
+					Status:    runtests.TestSuccess,
 					DataSinks: runtests.DataSinkMap{"llvm-profile": []runtests.DataSink{{Name: fmt.Sprintf("profile%d", i), File: fmt.Sprintf("llvm-profile/profile%d", i)}}},
 				},
 			},

@@ -980,7 +980,7 @@ func TestMarkShardsSkipped(t *testing.T) {
 			s.Tests = append(s.Tests, runtests.TestDetails{
 				Name:    test.Name,
 				GNLabel: test.Label,
-				Result:  runtests.TestSkipped,
+				Status:  runtests.TestSkipped,
 				Tags:    test.Tags,
 			})
 		}

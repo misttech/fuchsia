@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
@@ -36,15 +37,17 @@ func Parse(stdout []byte) []runtests.TestCaseResult {
 func parseGoTest(lines [][]byte) []runtests.TestCaseResult {
 	var res []runtests.TestCaseResult
 	var preambleName string
+	var stdoutForCase []string
 	for _, line := range lines {
 		var matched bool
 		line := string(line)
 		m := goTestPreamblePattern.FindStringSubmatch(line)
 		if m != nil {
 			preambleName = m[1]
+			stdoutForCase = []string{}
 			continue
 		}
-		var status runtests.TestResult
+		var status runtests.TestStatus
 		var displayName string
 		var suiteName string
 		var caseName string
@@ -56,6 +59,7 @@ func parseGoTest(lines [][]byte) []runtests.TestCaseResult {
 			displayName = preambleName
 			duration, _ = time.ParseDuration(m[1])
 			matched = true
+			stdoutForCase = []string{line}
 		}
 		m = goTestCasePattern.FindStringSubmatch(line)
 		if m != nil {
@@ -79,15 +83,22 @@ func parseGoTest(lines [][]byte) []runtests.TestCaseResult {
 			matched = true
 		}
 		if matched {
-			res = append(res, runtests.TestCaseResult{
+			caseResult := runtests.TestCaseResult{
 				DisplayName: displayName,
 				SuiteName:   suiteName,
 				CaseName:    caseName,
 				Status:      status,
 				Duration:    duration,
 				Format:      "Go",
-			})
+			}
+			if caseResult.Status != runtests.TestSuccess {
+				caseResult.FailReason = strings.TrimSpace(strings.Join(stdoutForCase, "\n"))
+			}
+			res = append(res, caseResult)
+			stdoutForCase = []string{}
+			continue
 		}
+		stdoutForCase = append(stdoutForCase, line)
 	}
 	return res
 }

@@ -78,10 +78,10 @@ const (
 
 // Tester describes the interface for all different types of testers.
 type Tester interface {
-	Test(context.Context, testsharder.Test, io.Writer, io.Writer, string) (*TestResult, error)
-	ProcessResult(context.Context, testsharder.Test, string, *TestResult, error) (*TestResult, error)
+	Test(context.Context, testsharder.Test, io.Writer, io.Writer, string) (*runtests.TestDetails, error)
+	ProcessResult(context.Context, testsharder.Test, string, *runtests.TestDetails, error) (*runtests.TestDetails, error)
 	Close() error
-	EnsureSinks(context.Context, []runtests.DataSinkReference, *TestOutputs) error
+	EnsureSinks(context.Context, []runtests.DataSinkMap, *TestOutputs) error
 	RunSnapshot(context.Context, string) error
 	Reconnect(context.Context) error
 }
@@ -109,14 +109,13 @@ type serialClient interface {
 // BaseTestResultFromTest returns a TestResult for a Tester.Test() to modify
 // and return with some pre-filled values and a starting failure result which
 // should be changed as needed within the tester's Test() method.
-func BaseTestResultFromTest(test testsharder.Test) *TestResult {
-	return &TestResult{
-		Name:      test.Name,
-		GNLabel:   test.Label,
-		Result:    runtests.TestFailure,
-		DataSinks: runtests.DataSinkReference{},
-		Tags:      test.Tags,
-		Metadata:  test.Metadata,
+func BaseTestResultFromTest(test testsharder.Test) *runtests.TestDetails {
+	return &runtests.TestDetails{
+		Name:     test.Name,
+		GNLabel:  test.Label,
+		Status:   runtests.TestFailure,
+		Tags:     test.Tags,
+		Metadata: test.Metadata,
 	}
 }
 
@@ -182,15 +181,15 @@ func (t *SubprocessTester) getTestRun(test testsharder.Test) string {
 	return profileRelDir
 }
 
-func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdout io.Writer, stderr io.Writer, outDir string) (*TestResult, error) {
+func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdout io.Writer, stderr io.Writer, outDir string) (*runtests.TestDetails, error) {
 	testResult := BaseTestResultFromTest(test)
 	if test.Path == "" {
-		testResult.FailReason = fmt.Sprintf("test %q has no `path` set", test.Name)
+		testResult.FailureReason = fmt.Sprintf("test %q has no `path` set", test.Name)
 		return testResult, nil
 	}
 	// Some tests read TestOutDirEnvKey so ensure they get their own output dir.
 	if err := os.MkdirAll(outDir, 0o770); err != nil {
-		testResult.FailReason = err.Error()
+		testResult.FailureReason = err.Error()
 		return testResult, nil
 	}
 
@@ -205,7 +204,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 
 	testOutputSummaryDir := filepath.Join(t.localOutputDir, "test_output_summary", test.Path)
 	if err := os.MkdirAll(testOutputSummaryDir, os.ModePerm); err != nil {
-		testResult.FailReason = err.Error()
+		testResult.FailureReason = err.Error()
 		return testResult, nil
 	}
 	defer os.RemoveAll(filepath.Join(t.localOutputDir, "test_output_summary"))
@@ -293,12 +292,12 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 		if t.sProps.mountUserHome {
 			currentUser, err := user.Current()
 			if err != nil {
-				testResult.FailReason = err.Error()
+				testResult.FailureReason = err.Error()
 				return testResult, nil
 			}
 			pwdFile, err := os.Open("/etc/passwd")
 			if err != nil {
-				testResult.FailReason = err.Error()
+				testResult.FailureReason = err.Error()
 				return testResult, nil
 			}
 			defer pwdFile.Close()
@@ -317,7 +316,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 				}
 			}
 			if pwdScanner.Err() != nil {
-				testResult.FailReason = pwdScanner.Err().Error()
+				testResult.FailureReason = pwdScanner.Err().Error()
 				return testResult, nil
 			}
 		}
@@ -327,7 +326,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 		// instead.
 		tmpDir, err := newTempDir("", "")
 		if err != nil {
-			testResult.FailReason = err.Error()
+			testResult.FailureReason = err.Error()
 			return testResult, nil
 		}
 		defer os.RemoveAll(tmpDir)
@@ -360,7 +359,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 		if t.sProps.nsjailRoot != "" {
 			absRoot, err := filepath.Abs(t.sProps.nsjailRoot)
 			if err != nil {
-				testResult.FailReason = err.Error()
+				testResult.FailureReason = err.Error()
 				return testResult, nil
 			}
 			testCmdBuilder.MountPoints = append(
@@ -383,12 +382,12 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 			}
 			b, err := os.ReadFile(testbedConfigPath)
 			if err != nil {
-				testResult.FailReason = err.Error()
+				testResult.FailureReason = err.Error()
 				return testResult, nil
 			}
 			var testbedConfig []targetInfo
 			if err := json.Unmarshal(b, &testbedConfig); err != nil {
-				testResult.FailReason = err.Error()
+				testResult.FailureReason = err.Error()
 				return testResult, nil
 			}
 			serialSockets := make(map[string]struct{})
@@ -404,7 +403,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 			for socket := range serialSockets {
 				absSocketPath, err := filepath.Abs(socket)
 				if err != nil {
-					testResult.FailReason = err.Error()
+					testResult.FailureReason = err.Error()
 					return testResult, nil
 				}
 				testCmdBuilder.MountPoints = append(testCmdBuilder.MountPoints, &MountPt{
@@ -415,7 +414,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 			for key := range sshKeys {
 				absKeyPath, err := filepath.Abs(key)
 				if err != nil {
-					testResult.FailReason = err.Error()
+					testResult.FailureReason = err.Error()
 					return testResult, nil
 				}
 				testCmdBuilder.MountPoints = append(testCmdBuilder.MountPoints, &MountPt{
@@ -428,7 +427,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 		if luciCtx := os.Getenv("LUCI_CONTEXT"); luciCtx != "" {
 			absPath, err := filepath.Abs(luciCtx)
 			if err != nil {
-				testResult.FailReason = err.Error()
+				testResult.FailureReason = err.Error()
 				return testResult, nil
 			}
 			testCmdBuilder.MountPoints = append(testCmdBuilder.MountPoints, &MountPt{
@@ -438,7 +437,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 		testCmdBuilder.AddDefaultMounts()
 		testCmd, err = testCmdBuilder.Build(testCmd)
 		if err != nil {
-			testResult.FailReason = err.Error()
+			testResult.FailureReason = err.Error()
 			return testResult, nil
 		}
 	}
@@ -446,9 +445,9 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 	t.setTestRun(test, profileRelDir)
 	var exitErr *exec.ExitError
 	if err == nil {
-		testResult.Result = runtests.TestSuccess
+		testResult.Status = runtests.TestSuccess
 	} else if errors.Is(err, context.DeadlineExceeded) {
-		testResult.Result = runtests.TestAborted
+		testResult.Status = runtests.TestAborted
 	} else if againstDevice() && errors.As(err, &exitErr) {
 		// Exit code 40 signals that the device is in a bad state and
 		// needs to be power-cycled. See https://fxbug.dev/425675837.
@@ -461,20 +460,23 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 				return testResult, fmt.Errorf("failed to power cycle target: %w", err)
 			}
 		}
-		testResult.FailReason = err.Error()
+		testResult.FailureReason = err.Error()
 	} else {
-		testResult.FailReason = err.Error()
+		testResult.FailureReason = err.Error()
 	}
 
 	if bytes, err := os.ReadFile(testOutputSummaryPath); !os.IsNotExist(err) {
 		if err != nil {
 			return testResult, fmt.Errorf("failed to read test case summary: %s", err)
 		} else {
-			var caseResults []runtests.TestCaseResult
-			if err := json.Unmarshal(bytes, &caseResults); err != nil {
+			var resultDetails runtests.TestResult
+			if err := json.Unmarshal(bytes, &resultDetails); err != nil {
 				return testResult, fmt.Errorf("failed to unmarshal case results: %s", err)
 			} else {
-				testResult.Cases = caseResults
+				if resultDetails.FailureReason == "" {
+					resultDetails.FailureReason = testResult.FailureReason
+				}
+				testResult.TestResult = resultDetails
 			}
 		}
 	}
@@ -482,7 +484,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 	return testResult, nil
 }
 
-func (t *SubprocessTester) ProcessResult(ctx context.Context, test testsharder.Test, outDir string, testResult *TestResult, err error) (*TestResult, error) {
+func (t *SubprocessTester) ProcessResult(ctx context.Context, test testsharder.Test, outDir string, testResult *runtests.TestDetails, err error) (*runtests.TestDetails, error) {
 	profileRelDir := t.getTestRun(test)
 	if profileRelDir == "" {
 		return testResult, err
@@ -509,20 +511,20 @@ func (t *SubprocessTester) ProcessResult(ctx context.Context, test testsharder.T
 		logger.Errorf(ctx, "unable to determine whether profiles were emitted: %s", profileErr)
 	}
 	if len(sinks) > 0 {
-		testResult.DataSinks.Sinks = runtests.DataSinkMap{
+		testResult.DataSinks = runtests.DataSinkMap{
 			llvmProfileSinkType: sinks,
 		}
 	}
 	return testResult, err
 }
 
-func (t *SubprocessTester) EnsureSinks(ctx context.Context, sinkRefs []runtests.DataSinkReference, _ *TestOutputs) error {
+func (t *SubprocessTester) EnsureSinks(ctx context.Context, sinkRefs []runtests.DataSinkMap, _ *TestOutputs) error {
 	// Nothing to actually copy; if any profiles were emitted, they would have
 	// been written directly to the output directory. We verify here that all
 	// recorded data sinks are actually present.
 	numSinks := 0
 	for _, ref := range sinkRefs {
-		for _, sinks := range ref.Sinks {
+		for _, sinks := range ref {
 			for _, sink := range sinks {
 				abs := filepath.Join(t.localOutputDir, sink.File)
 				exists, err := osmisc.FileExists(abs)
@@ -598,7 +600,7 @@ type FFXTester struct {
 
 	llvmProfdata      string
 	llvmVersion       string
-	sinksPerTest      map[string]runtests.DataSinkReference
+	sinksPerTest      map[string]runtests.DataSinkMap
 	debuginfodServers []string
 	debuginfodCache   string
 
@@ -644,7 +646,7 @@ func NewFFXTester(ctx context.Context, ffx FFXInstance, localOutputDir string, e
 		testRuns:          make(map[string]ffxTestRun),
 		llvmProfdata:      llvmProfdata,
 		llvmVersion:       llvmVersion,
-		sinksPerTest:      make(map[string]runtests.DataSinkReference),
+		sinksPerTest:      make(map[string]runtests.DataSinkMap),
 		debuginfodServers: debuginfodServers,
 		debuginfodCache:   debuginfodCache,
 		wg:                sync.WaitGroup{},
@@ -653,7 +655,7 @@ func NewFFXTester(ctx context.Context, ffx FFXInstance, localOutputDir string, e
 	}, nil
 }
 
-func (t *FFXTester) Test(ctx context.Context, test testsharder.Test, stdout, stderr io.Writer, outDir string) (*TestResult, error) {
+func (t *FFXTester) Test(ctx context.Context, test testsharder.Test, stdout, stderr io.Writer, outDir string) (*runtests.TestDetails, error) {
 	return BaseTestResultFromTest(test), t.testWithFile(ctx, test, stdout, stderr, outDir)
 }
 
@@ -712,7 +714,7 @@ func containsError(output string, errMsgs []string) (bool, string) {
 	return false, ""
 }
 
-func (t *FFXTester) ProcessResult(ctx context.Context, test testsharder.Test, outDir string, testResult *TestResult, err error) (*TestResult, error) {
+func (t *FFXTester) ProcessResult(ctx context.Context, test testsharder.Test, outDir string, testResult *runtests.TestDetails, err error) (*runtests.TestDetails, error) {
 	finalTestResult := testResult
 	testRun := t.testRuns[test.PackageURL]
 	if testRun.result != nil {
@@ -736,9 +738,9 @@ func (t *FFXTester) ProcessResult(ctx context.Context, test testsharder.Test, ou
 		}()
 	}
 	if err != nil {
-		finalTestResult.FailReason = err.Error()
+		finalTestResult.FailureReason = err.Error()
 	} else if testResult == nil {
-		finalTestResult.FailReason = "expected 1 test result, got none"
+		finalTestResult.FailureReason = "expected 1 test result, got none"
 	} else {
 		finalTestResult = testResult
 	}
@@ -747,7 +749,7 @@ func (t *FFXTester) ProcessResult(ctx context.Context, test testsharder.Test, ou
 	for i, testCase := range finalTestResult.Cases {
 		finalTestResult.Cases[i].Tags = append(testCase.Tags, ffxTag)
 	}
-	if finalTestResult.Result != runtests.TestSuccess {
+	if finalTestResult.Status != runtests.TestSuccess {
 		if ok, errMsg := containsError(testRun.output, []string{
 			sshutilconstants.ProcessTerminatedMsg, ffxutilconstants.TimeoutReachingTargetMsg, ffxutilconstants.UnableToResolveAddressMsg}); ok {
 			if err == nil {
@@ -759,7 +761,7 @@ func (t *FFXTester) ProcessResult(ctx context.Context, test testsharder.Test, ou
 	return finalTestResult, nil
 }
 
-func processTestResult(runResult *ffxutil.TestRunResult, test testsharder.Test, totalDuration time.Duration, removeProfiles bool) (*TestResult, error) {
+func processTestResult(runResult *ffxutil.TestRunResult, test testsharder.Test, totalDuration time.Duration, removeProfiles bool) (*runtests.TestDetails, error) {
 	testOutDir := runResult.GetTestOutputDir()
 	suiteResults, err := runResult.GetSuiteResults()
 	if err != nil {
@@ -774,13 +776,13 @@ func processTestResult(runResult *ffxutil.TestRunResult, test testsharder.Test, 
 
 	switch suiteResult.Outcome {
 	case ffxutil.TestPassed:
-		testResult.Result = runtests.TestSuccess
+		testResult.Status = runtests.TestSuccess
 	case ffxutil.TestTimedOut:
-		testResult.Result = runtests.TestAborted
+		testResult.Status = runtests.TestAborted
 	case ffxutil.TestNotStarted:
-		testResult.Result = runtests.TestSkipped
+		testResult.Status = runtests.TestSkipped
 	default:
-		testResult.Result = runtests.TestFailure
+		testResult.Status = runtests.TestFailure
 	}
 	testResult.Tags = append(testResult.Tags, build.TestTag{Key: "test_outcome", Value: suiteResult.Outcome})
 
@@ -810,7 +812,7 @@ func processTestResult(runResult *ffxutil.TestRunResult, test testsharder.Test, 
 
 	var cases []runtests.TestCaseResult
 	for _, testCase := range suiteResult.Cases {
-		var status runtests.TestResult
+		var status runtests.TestStatus
 		switch testCase.Outcome {
 		case ffxutil.TestPassed:
 			status = runtests.TestSuccess
@@ -920,7 +922,7 @@ func (t *FFXTester) Close() error {
 	return nil
 }
 
-func (t *FFXTester) EnsureSinks(ctx context.Context, sinks []runtests.DataSinkReference, outputs *TestOutputs) error {
+func (t *FFXTester) EnsureSinks(ctx context.Context, sinks []runtests.DataSinkMap, outputs *TestOutputs) error {
 	defer func() {
 		if err := os.RemoveAll(t.debuginfodCache); err != nil {
 			logger.Debugf(ctx, "failed to remove debuginfod cache: %s", err)
@@ -946,9 +948,9 @@ func (t *FFXTester) EnsureSinks(ctx context.Context, sinks []runtests.DataSinkRe
 	// If there were early boot sinks, record the "early_boot_sinks" test in the outputs
 	// so that the test result can be updated with the early boot sinks.
 	if _, ok := sinksPerTest[earlyBootSinksTestName]; ok {
-		earlyBootSinksTest := &TestResult{
+		earlyBootSinksTest := &runtests.TestDetails{
 			Name:   earlyBootSinksTestName,
-			Result: runtests.TestSuccess,
+			Status: runtests.TestSuccess,
 		}
 		outputs.Record(ctx, *earlyBootSinksTest)
 	}
@@ -956,14 +958,14 @@ func (t *FFXTester) EnsureSinks(ctx context.Context, sinks []runtests.DataSinkRe
 		outputs.updateDataSinks(sinksPerTest, "v2")
 	}
 	for _, sinkRef := range sinks {
-		if len(sinkRef.Sinks) > 0 {
+		if len(sinkRef) > 0 {
 			return fmt.Errorf("Found v1 sinks when there should be none: %v", sinks)
 		}
 	}
 	return nil
 }
 
-func (t *FFXTester) getEarlyBootProfiles(ctx context.Context, sinksPerTest map[string]runtests.DataSinkReference) error {
+func (t *FFXTester) getEarlyBootProfiles(ctx context.Context, sinksPerTest map[string]runtests.DataSinkMap) error {
 	testOutDir := filepath.Join(t.localOutputDir, "early-boot-profiles")
 	if err := os.MkdirAll(testOutDir, os.ModePerm); err != nil {
 		return err
@@ -974,7 +976,7 @@ func (t *FFXTester) getEarlyBootProfiles(ctx context.Context, sinksPerTest map[s
 	return t.getSinks(ctx, testOutDir, sinksPerTest, false)
 }
 
-func (t *FFXTester) getSinks(ctx context.Context, testOutDir string, sinksPerTest map[string]runtests.DataSinkReference, ignoreEarlyBoot bool) error {
+func (t *FFXTester) getSinks(ctx context.Context, testOutDir string, sinksPerTest map[string]runtests.DataSinkMap, ignoreEarlyBoot bool) error {
 	runResult, err := ffxutil.GetRunResult(testOutDir)
 	if err != nil {
 		return err
@@ -1014,7 +1016,7 @@ func (t *FFXTester) getSinks(ctx context.Context, testOutDir string, sinksPerTes
 	return nil
 }
 
-func (t *FFXTester) getSinksFromArtifactDir(ctx context.Context, artifactDir string, sinksPerTest map[string]runtests.DataSinkReference, seen map[string]struct{}, ignoreEarlyBoot bool) error {
+func (t *FFXTester) getSinksFromArtifactDir(ctx context.Context, artifactDir string, sinksPerTest map[string]runtests.DataSinkMap, seen map[string]struct{}, ignoreEarlyBoot bool) error {
 	// If the artifact dir contains a summary.json, parse it and copy all profiles to the
 	// localOutputDir. Otherwise, copy all contents to the localOutputDir and record them
 	// as early boot sinks.
@@ -1040,7 +1042,7 @@ func (t *FFXTester) getSinksFromArtifactDir(ctx context.Context, artifactDir str
 
 // getSinksPerTest moves sinks from sinkDir to the localOutputDir and records
 // the sinks in sinksPerTest.
-func (t *FFXTester) getSinksPerTest(ctx context.Context, sinkDir string, summary runtests.TestSummary, sinksPerTest map[string]runtests.DataSinkReference, seen map[string]struct{}) error {
+func (t *FFXTester) getSinksPerTest(ctx context.Context, sinkDir string, summary runtests.TestSummary, sinksPerTest map[string]runtests.DataSinkMap, seen map[string]struct{}) error {
 	for _, details := range summary.Tests {
 		for i, sinks := range details.DataSinks {
 			for j, sink := range sinks {
@@ -1056,14 +1058,14 @@ func (t *FFXTester) getSinksPerTest(ctx context.Context, sinkDir string, summary
 				}
 			}
 		}
-		sinksPerTest[details.Name] = runtests.DataSinkReference{Sinks: details.DataSinks}
+		sinksPerTest[details.Name] = details.DataSinks
 	}
 	return nil
 }
 
 // getEarlyBootSinks moves the early boot sinks to the localOutputDir and records it with
 // an "early_boot_sinks" test in sinksPerTest.
-func (t *FFXTester) getEarlyBootSinks(ctx context.Context, sinkDir string, sinksPerTest map[string]runtests.DataSinkReference, seen map[string]struct{}) error {
+func (t *FFXTester) getEarlyBootSinks(ctx context.Context, sinkDir string, sinksPerTest map[string]runtests.DataSinkMap, seen map[string]struct{}) error {
 	return filepath.WalkDir(sinkDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -1090,15 +1092,15 @@ func (t *FFXTester) getEarlyBootSinks(ctx context.Context, sinkDir string, sinks
 		}
 		earlyBootSinks, ok := sinksPerTest[earlyBootSinksTestName]
 		if !ok {
-			earlyBootSinks = runtests.DataSinkReference{Sinks: runtests.DataSinkMap{}}
+			earlyBootSinks = runtests.DataSinkMap{}
 		}
 
 		// The directory under sinkDir is named after the type of sinks it contains.
 		sinkType := strings.Split(filepath.ToSlash(sinkFile), "/")[0]
-		if _, ok := earlyBootSinks.Sinks[sinkType]; !ok {
-			earlyBootSinks.Sinks[sinkType] = []runtests.DataSink{}
+		if _, ok := earlyBootSinks[sinkType]; !ok {
+			earlyBootSinks[sinkType] = []runtests.DataSink{}
 		}
-		earlyBootSinks.Sinks[sinkType] = append(earlyBootSinks.Sinks[sinkType], runtests.DataSink{Name: sinkFile, File: sinkFile})
+		earlyBootSinks[sinkType] = append(earlyBootSinks[sinkType], runtests.DataSink{Name: sinkFile, File: sinkFile})
 
 		sinksPerTest[earlyBootSinksTestName] = earlyBootSinks
 		return nil
@@ -1359,11 +1361,11 @@ func (r *parseOutKernelReader) lineWithoutKernelLog(line []byte, isTruncated boo
 	return line
 }
 
-func (t *FuchsiaSerialTester) Test(ctx context.Context, test testsharder.Test, stdout, _ io.Writer, _ string) (*TestResult, error) {
+func (t *FuchsiaSerialTester) Test(ctx context.Context, test testsharder.Test, stdout, _ io.Writer, _ string) (*runtests.TestDetails, error) {
 	testResult := BaseTestResultFromTest(test)
 	command, err := commandForTest(&test, true, test.Timeout)
 	if err != nil {
-		testResult.FailReason = err.Error()
+		testResult.FailureReason = err.Error()
 		return testResult, nil
 	}
 	logger.Debugf(ctx, "starting: %s", command)
@@ -1433,35 +1435,35 @@ func (t *FuchsiaSerialTester) Test(ctx context.Context, test testsharder.Test, s
 		match, err := iomisc.ReadUntilMatchString(ctx, testOutputReader, res_success, res_failed, res_inconclusive, res_timed_out, res_errored, res_skipped, res_canceled, res_dnf)
 		if err != nil {
 			err = fmt.Errorf("unable to derive test result from run-test-suite output: %w", err)
-			testResult.FailReason = err.Error()
+			testResult.FailureReason = err.Error()
 			return testResult, nil
 		}
 
 		if match == res_success {
-			testResult.Result = runtests.TestSuccess
+			testResult.Status = runtests.TestSuccess
 			return testResult, nil
 		}
 
 		if match == res_timed_out || match == res_canceled {
-			testResult.FailReason = "test timed out or canceled"
-			testResult.Result = runtests.TestAborted
+			testResult.FailureReason = "test timed out or canceled"
+			testResult.Status = runtests.TestAborted
 			return testResult, nil
 		}
 
 		if match == res_skipped {
-			testResult.FailReason = "test skipped"
-			testResult.Result = runtests.TestSkipped
+			testResult.FailureReason = "test skipped"
+			testResult.Status = runtests.TestSkipped
 			return testResult, nil
 		}
 
 		logger.Errorf(ctx, "%s", match)
-		testResult.FailReason = "test failed"
-		testResult.Result = runtests.TestFailure
+		testResult.FailureReason = "test failed"
+		testResult.Status = runtests.TestFailure
 		return testResult, nil
 	}
 
 	if success, err := runtests.TestPassed(ctx, testOutputReader, test.Name); err != nil {
-		testResult.FailReason = err.Error()
+		testResult.FailureReason = err.Error()
 		return testResult, nil
 	} else if !success {
 		if errors.Is(err, io.EOF) {
@@ -1470,18 +1472,18 @@ func (t *FuchsiaSerialTester) Test(ctx context.Context, test testsharder.Test, s
 			// to keep running tests.
 			return nil, err
 		}
-		testResult.FailReason = "test failed"
+		testResult.FailureReason = "test failed"
 		return testResult, nil
 	}
-	testResult.Result = runtests.TestSuccess
+	testResult.Status = runtests.TestSuccess
 	return testResult, nil
 }
 
-func (t *FuchsiaSerialTester) ProcessResult(ctx context.Context, test testsharder.Test, outDir string, testResult *TestResult, err error) (*TestResult, error) {
+func (t *FuchsiaSerialTester) ProcessResult(ctx context.Context, test testsharder.Test, outDir string, testResult *runtests.TestDetails, err error) (*runtests.TestDetails, error) {
 	return testResult, err
 }
 
-func (t *FuchsiaSerialTester) EnsureSinks(_ context.Context, _ []runtests.DataSinkReference, _ *TestOutputs) error {
+func (t *FuchsiaSerialTester) EnsureSinks(_ context.Context, _ []runtests.DataSinkMap, _ *TestOutputs) error {
 	return nil
 }
 

@@ -263,8 +263,8 @@ func createTestSummary(testCount int) *runtests.TestSummary {
 		t = append(t, runtests.TestDetails{
 			Name:                 fmt.Sprintf("test_%d", i),
 			GNLabel:              "some label",
-			OutputFiles:          []string{"some file path"},
-			Result:               runtests.TestSuccess,
+			TestResult:           runtests.TestResult{OutputFiles: []string{"some file path"}},
+			Status:               runtests.TestSuccess,
 			StartTime:            time.Now(),
 			DurationMillis:       39797,
 			IsTestingFailureMode: false,
@@ -294,15 +294,17 @@ func createTestDetailWithTestCase(testCase int, outputRoot string) *runtests.Tes
 		})
 	}
 	return &runtests.TestDetails{
-		Name:                 "foo",
-		GNLabel:              "some label",
-		OutputFiles:          []string{"dir-1/outputfile", "dir#2/outputfile"},
-		OutputDir:            "foo",
-		Result:               runtests.TestSuccess,
+		Name:    "foo",
+		GNLabel: "some label",
+		TestResult: runtests.TestResult{
+			OutputFiles: []string{"dir-1/outputfile", "dir#2/outputfile"},
+			OutputDir:   "foo",
+			Cases:       t,
+		},
+		Status:               runtests.TestSuccess,
 		StartTime:            time.Now(),
 		DurationMillis:       39797,
 		IsTestingFailureMode: false,
-		Cases:                t,
 	}
 }
 
@@ -342,14 +344,16 @@ func createTestDetailWithPassedAndFailedTestCase(passedTestCase int, failedTestC
 		finalResult = runtests.TestFailure
 	}
 	return &runtests.TestDetails{
-		Name:                 "foo",
-		GNLabel:              "some label",
-		OutputFiles:          []string{"dir-1/outputfile", "dir#2/outputfile"},
-		Result:               finalResult,
+		Name:    "foo",
+		GNLabel: "some label",
+		TestResult: runtests.TestResult{
+			OutputFiles: []string{"dir-1/outputfile", "dir#2/outputfile"},
+			Cases:       t,
+		},
+		Status:               finalResult,
 		StartTime:            time.Now(),
 		DurationMillis:       39797,
 		IsTestingFailureMode: false,
-		Cases:                t,
 	}
 }
 

@@ -36,7 +36,7 @@ func parseVulkanCtsTest(lines [][]byte) []runtests.TestCaseResult {
 		if m == nil {
 			continue
 		}
-		var status runtests.TestResult
+		var status runtests.TestStatus
 		// List of results is in framework/qphelper/qpTestLog.c
 		switch m[1] {
 		case "Pass", "QualityWarning", "CompatibilityWarning":

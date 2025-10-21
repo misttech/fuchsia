@@ -50,7 +50,7 @@ func IgnoreTestsForFlakeAnalysis(tests []runtests.TestDetails, checkTests []runt
 		return tests
 	}
 	for i, test := range tests {
-		if runtests.IsFailure(test.Result) {
+		if runtests.IsFailure(test.Status) {
 			tests[i].Tags = append(tests[i].Tags, build.TestTag{Key: "flake_analysis_ignore", Value: "true"})
 		}
 	}
@@ -59,7 +59,7 @@ func IgnoreTestsForFlakeAnalysis(tests []runtests.TestDetails, checkTests []runt
 
 func hasFailingTest(tests []runtests.TestDetails) bool {
 	for _, test := range tests {
-		if runtests.IsFailure(test.Result) {
+		if runtests.IsFailure(test.Status) {
 			return true
 		}
 	}

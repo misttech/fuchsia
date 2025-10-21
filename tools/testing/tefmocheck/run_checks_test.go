@@ -129,20 +129,20 @@ func TestRunChecks(t *testing.T) {
 			want: []runtests.TestDetails{
 				{
 					Name:                 path.Join(checkTestNamePrefix, flakeCheck.Name()),
-					Result:               runtests.TestFailure,
+					Status:               runtests.TestFailure,
 					IsTestingFailureMode: true,
-					OutputFiles:          []string{debugPathForCheck(flakeCheck)},
+					TestResult:           runtests.TestResult{OutputFiles: []string{debugPathForCheck(flakeCheck)}},
 				},
 				{
 					Name:                 path.Join(checkTestNamePrefix, flakeCheck.Name()),
-					Result:               runtests.TestSuccess,
+					Status:               runtests.TestSuccess,
 					IsTestingFailureMode: true,
 				},
 				{
 					Name:                 path.Join(checkTestNamePrefix, trueCheck.Name()),
-					Result:               runtests.TestFailure,
+					Status:               runtests.TestFailure,
 					IsTestingFailureMode: true,
-					OutputFiles:          []string{debugPathForCheck(trueCheck)},
+					TestResult:           runtests.TestResult{OutputFiles: []string{debugPathForCheck(trueCheck)}},
 				},
 			},
 		}, {
@@ -151,9 +151,9 @@ func TestRunChecks(t *testing.T) {
 			want: []runtests.TestDetails{
 				{
 					Name:                 path.Join(checkTestNamePrefix, infraFailCheck.Name()),
-					Result:               runtests.TestInfraFailure,
+					Status:               runtests.TestInfraFailure,
 					IsTestingFailureMode: true,
-					OutputFiles:          []string{debugPathForCheck(infraFailCheck)},
+					TestResult:           runtests.TestResult{OutputFiles: []string{debugPathForCheck(infraFailCheck)}},
 				},
 			},
 		},

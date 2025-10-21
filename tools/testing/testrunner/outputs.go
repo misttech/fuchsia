@@ -66,7 +66,7 @@ func (o *TestOutputs) rebaseOutputFiles(outputFiles []string, oldOutputDir, newO
 }
 
 // Record writes the test result to initialized outputs.
-func (o *TestOutputs) Record(ctx context.Context, result TestResult) error {
+func (o *TestOutputs) Record(ctx context.Context, result runtests.TestDetails) error {
 	// Sponge doesn't seem to like the path if we just put Name in there.
 	nameForPath := url.PathEscape(strings.ReplaceAll(result.Name, ":", ""))
 	outputRelPath := filepath.Join(nameForPath, strconv.Itoa(result.RunIndex))
@@ -128,15 +128,17 @@ func (o *TestOutputs) Record(ctx context.Context, result TestResult) error {
 	// ensures that even if writing the output files fails, the summary won't
 	// reference nonexistent files.
 	o.Summary.Tests = append(o.Summary.Tests, runtests.TestDetails{
-		Name:           result.Name,
-		GNLabel:        result.GNLabel,
-		OutputFiles:    suiteOutputFiles,
-		OutputDir:      outputRelPath,
-		Result:         result.Result,
-		Cases:          cases,
+		Name:    result.Name,
+		GNLabel: result.GNLabel,
+		Status:  result.Status,
+		TestResult: runtests.TestResult{
+			OutputFiles: suiteOutputFiles,
+			OutputDir:   outputRelPath,
+			Cases:       cases,
+		},
 		StartTime:      result.StartTime,
 		DurationMillis: duration.Milliseconds(),
-		DataSinks:      result.DataSinks.Sinks,
+		DataSinks:      result.DataSinks,
 		Affected:       result.Affected,
 		Tags:           result.Tags,
 		Metadata:       result.Metadata,
@@ -155,13 +157,13 @@ func (o *TestOutputs) Record(ctx context.Context, result TestResult) error {
 // o.outDir, that path should be provided as the `insertPrefixPath` which will
 // get prepended to the sink file paths so that they point to the correct paths
 // relative to o.outDir.
-func (o *TestOutputs) updateDataSinks(newSinks map[string]runtests.DataSinkReference, insertPrefixPath string) {
+func (o *TestOutputs) updateDataSinks(newSinks map[string]runtests.DataSinkMap, insertPrefixPath string) {
 	for i, test := range o.Summary.Tests {
 		if sinkRef, ok := newSinks[test.Name]; ok {
 			if test.DataSinks == nil {
 				test.DataSinks = runtests.DataSinkMap{}
 			}
-			for name, sinks := range sinkRef.Sinks {
+			for name, sinks := range sinkRef {
 				for _, sink := range sinks {
 					sink.File = filepath.Join(insertPrefixPath, sink.File)
 					test.DataSinks[name] = append(test.DataSinks[name], sink)

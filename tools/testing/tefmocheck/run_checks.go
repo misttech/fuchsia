@@ -39,20 +39,22 @@ func RunChecks(checks []FailureModeCheck, to *TestingOutputs, outputsDir string)
 		testDetails := runtests.TestDetails{
 			Name:                 path.Join(checkTestNamePrefix, check.Name()),
 			IsTestingFailureMode: true,
-			// Specify an empty slice so it gets serialized to an empty JSON
-			// array instead of null.
-			Cases:         []runtests.TestCaseResult{},
-			Result:        runtests.TestFailure,
-			StartTime:     time.Now(), // needed by ResultDB
-			Tags:          check.Tags(),
-			FailureReason: check.FailureReason(),
+			Status:               runtests.TestFailure,
+			TestResult: runtests.TestResult{
+				// Specify an empty slice so it gets serialized to an empty JSON
+				// array instead of null.
+				Cases:         []runtests.TestCaseResult{},
+				FailureReason: check.FailureReason(),
+			},
+			StartTime: time.Now(), // needed by ResultDB
+			Tags:      check.Tags(),
 		}
 		// Check if failure is an infrastructure failure.
 		if check.IsInfraFailure() {
-			// Infra failures will have result value of "INFRA_FAIL"
+			// Infra failures will have status value of "INFRA_FAIL"
 			// in summary.json. This will help distinguish regular failures
-			// which have result value "FAIL" from infra failures.
-			testDetails.Result = runtests.TestInfraFailure
+			// which have status value "FAIL" from infra failures.
+			testDetails.Status = runtests.TestInfraFailure
 		}
 
 		if len(outputsDir) > 0 {
@@ -81,10 +83,12 @@ func RunChecks(checks []FailureModeCheck, to *TestingOutputs, outputsDir string)
 			checkTests = append(checkTests, runtests.TestDetails{
 				Name:                 path.Join(checkTestNamePrefix, check.Name()),
 				IsTestingFailureMode: true,
-				// Specify an empty slice so it gets serialized to an empty JSON
-				// array instead of null.
-				Cases:     []runtests.TestCaseResult{},
-				Result:    runtests.TestSuccess,
+				TestResult: runtests.TestResult{
+					// Specify an empty slice so it gets serialized to an empty JSON
+					// array instead of null.
+					Cases: []runtests.TestCaseResult{},
+				},
+				Status:    runtests.TestSuccess,
 				StartTime: time.Now(), // needed by ResultDB
 			})
 			// If this check was a flake, continue to see if we get another failure.

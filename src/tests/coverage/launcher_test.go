@@ -209,7 +209,7 @@ func runCoverageTest(t *testing.T, testOutDir string) string {
 	}
 
 	if !*host {
-		var sinks []runtests.DataSinkReference
+		var sinks []runtests.DataSinkMap
 		// Copy profiles to the host.
 		err = tester.EnsureSinks(ctx, sinks, outputs)
 		if err != nil {

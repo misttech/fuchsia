@@ -172,7 +172,7 @@ func GetCoverageDataFromTest(t *testing.T, outDir string, config *Config) []stri
 		t.Fatalf("Failed to record data sinks. Reason: %s", err)
 	}
 
-	var sinks []runtests.DataSinkReference
+	var sinks []runtests.DataSinkMap
 
 	err = ffxRunner.EnsureSinks(ctx, sinks, outputs)
 	if err != nil {

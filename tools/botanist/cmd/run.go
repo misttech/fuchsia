@@ -391,7 +391,7 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 				ffx := primaryTarget.GetFFX()
 				port := strings.TrimSpace(os.Getenv(constants.FFXMonitorPort))
 				if len(port) == 0 {
-					logger.Warningf(ctx, "%s is empty, using default port %d", constants.FFXMonitorPort, constants.DefaultFFXMonitorPort)
+					logger.Warningf(ctx, "%s is empty, using default port %s", constants.FFXMonitorPort, constants.DefaultFFXMonitorPort)
 					port = constants.DefaultFFXMonitorPort
 				}
 

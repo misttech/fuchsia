@@ -15,6 +15,7 @@ import (
 
 	"go.fuchsia.dev/fuchsia/tools/go_test_parser"
 	"go.fuchsia.dev/fuchsia/tools/lib/subprocess"
+	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 	"go.fuchsia.dev/fuchsia/tools/testing/testrunner/constants"
 )
 
@@ -50,7 +51,10 @@ func mainImpl() error {
 	}
 
 	if outputSummaryPath := os.Getenv(constants.TestOutputSummaryPathEnvKey); outputSummaryPath != "" {
-		result := go_test_parser.Parse(stdoutForParsing.Bytes())
+		cases := go_test_parser.Parse(stdoutForParsing.Bytes())
+		result := runtests.TestResult{
+			Cases: cases,
+		}
 		jsonData, err := json.Marshal(result)
 		if err != nil {
 			return fmt.Errorf("Error marshaling JSON: %w", err)

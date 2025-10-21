@@ -25,31 +25,31 @@ const (
 	TestOutputFilename = "stdout-and-stderr.txt"
 )
 
-// TestResult is the exit result of a test.
-type TestResult string
+// TestStatus is the exit status of a test.
+type TestStatus string
 
 // Possible test statuses, names chosen for consistency with ResultDB:
 // https://chromium.googlesource.com/infra/luci/luci-go/+/15458901113063d2a0d95be2e27a245c4cfd5690/resultdb/proto/v1/test_result.proto#142
 const (
 	// TestSuccess represents a passed test.
-	TestSuccess TestResult = "PASS"
+	TestSuccess TestStatus = "PASS"
 
 	// TestFailure represents a failed test.
-	TestFailure TestResult = "FAIL"
+	TestFailure TestStatus = "FAIL"
 
 	// TestAborted represents an aborted test (likely a timeout).
-	TestAborted TestResult = "ABORT"
+	TestAborted TestStatus = "ABORT"
 
 	// TestSkipped represents a skipped test.
-	TestSkipped TestResult = "SKIP"
+	TestSkipped TestStatus = "SKIP"
 
 	// TestInfraFailure means that the test failed because of infra related issue.
-	TestInfraFailure TestResult = "INFRA_FAIL"
+	TestInfraFailure TestStatus = "INFRA_FAIL"
 )
 
 // IsFailure returns whether a test result corresponds to any failure condition
 // (failure, timeout, etc.).
-func IsFailure(tr TestResult) bool {
+func IsFailure(tr TestStatus) bool {
 	return tr != TestSuccess && tr != TestSkipped
 }
 
@@ -79,29 +79,25 @@ type DataSinkMap map[string][]DataSink
 
 // TestDetails contains the details of a test run.
 type TestDetails struct {
+	TestResult
+
 	// Name is the name of the test.
 	Name string `json:"name"`
 
 	// GNLabel is label of the test target (with toolchain).
 	GNLabel string `json:"gn_label"`
 
-	// OutputFiles are paths to the test's output files relative to the OutputDir.
-	OutputFiles []string `json:"output_files"`
-
-	// OutputDir is the common dir that all the OutputFiles should be located in.
-	OutputDir string `json:"output_dir"`
-
-	// Result is the result of the test.
-	Result TestResult `json:"result"`
-
-	// Cases is individual test case results.
-	Cases []TestCaseResult `json:"cases"`
+	// Status is the status of the test.
+	Status TestStatus `json:"result"`
 
 	// DataSinks gives the data sinks attached to a test.
 	DataSinks DataSinkMap `json:"data_sinks,omitempty"`
 
 	// StartTime is the UTC time when the test was started.
 	StartTime time.Time `json:"start_time"`
+
+	// EndTime is the UTC time when the test completed. Used to calculate the DurationMillis.
+	EndTime time.Time `json:"-"`
 
 	// Duration is how long the test execution took.
 	DurationMillis int64 `json:"duration_milliseconds"`
@@ -116,11 +112,42 @@ type TestDetails struct {
 	// Tags contain test metadata.
 	Tags []build.TestTag `json:"tags"`
 
-	// FailureReason is an optional human-readable error message or explanation of the failure.
-	FailureReason string `json:"error_line,omitempty"`
-
 	// Test metadata
 	Metadata metadata.TestMetadata `json:"metadata,omitempty"`
+
+	// RunIndex is the index of this test run among all the runs of the same test.
+	RunIndex int `json:"-"`
+
+	// The combined stdout and stderr from this test.
+	Stdio []byte `json:"-"`
+}
+
+// Passed indicates whether the test completed successfully. This will be false
+// if the test timed out or failed.
+func (r TestDetails) Passed() bool {
+	return r.Status == TestSuccess
+}
+
+func (r TestDetails) Duration() time.Duration {
+	return r.EndTime.Sub(r.StartTime)
+}
+
+// TestResult contains the details of a test run. A test can structure its results
+// in this format and write it to TEST_OUTPUT_SUMMARY_PATH.
+type TestResult struct {
+	// OutputFiles are paths to the test's output files relative to the OutputDir.
+	OutputFiles []string `json:"output_files"`
+
+	// OutputDir is the common dir that all the OutputFiles should be located in.
+	OutputDir string `json:"output_dir"`
+
+	// Cases is individual test case results.
+	Cases []TestCaseResult `json:"cases"`
+
+	// FailureReason is an optional human-readable error message or explanation of the failure.
+	// This will be ignored if the test status is a success. Host tests must exit with
+	// a non-zero exit code to be considered a failure.
+	FailureReason string `json:"error_line,omitempty"`
 }
 
 // TestCaseResult contains the details of a single test case, nested within a
@@ -129,7 +156,7 @@ type TestCaseResult struct {
 	DisplayName string        `json:"display_name"`
 	SuiteName   string        `json:"suite_name"`
 	CaseName    string        `json:"case_name"`
-	Status      TestResult    `json:"status"`
+	Status      TestStatus    `json:"status"`
 	Duration    time.Duration `json:"duration_nanos"`
 	// Format is the test runner used to execute the test.
 	Format string `json:"format"`
