@@ -24,12 +24,22 @@ bazel_build_group("host_examples") {
   no_sdk = true
   subtargets = [
     {
-      bazel_target = "//build/bazel/examples/hello_host"
-      gn_target_name = "hello_host"
+      bazel_target = "//build/bazel/examples/hello_host:hello_host_cc"
+      gn_target_name = "hello_host_cc"
       copy_outputs = [
         {
           bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}"
-          ninja = "hello_host_from_bazel"
+          ninja = "hello_host_cc_from_bazel"
+        },
+      ]
+    },
+    {
+      bazel_target = "//build/bazel/examples/hello_host:hello_host_rust"
+      gn_target_name = "hello_host_rust"
+      copy_outputs = [
+        {
+          bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}"
+          ninja = "hello_host_rust_from_bazel"
         },
       ]
     },
@@ -57,12 +67,22 @@ if (host_cpu == "x64") {
     bazel_platform = "linux_arm64"
     subtargets = [
       {
-        bazel_target = "//build/bazel/examples/hello_host"
-        gn_target_name = "hello_host_arm64"
+        bazel_target = "//build/bazel/examples/hello_host:hello_host_cc"
+        gn_target_name = "hello_host_cc_arm64"
         copy_outputs = [
           {
             bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}"
-            ninja = "hello_host_arm64_from_bazel"
+            ninja = "hello_host_cc_arm64_from_bazel"
+          },
+        ]
+      },
+      {
+        bazel_target = "//build/bazel/examples/hello_host:hello_host_rust"
+        gn_target_name = "hello_host_rust_arm64"
+        copy_outputs = [
+          {
+            bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}"
+            ninja = "hello_host_rust_arm64_from_bazel"
           },
         ]
       },
