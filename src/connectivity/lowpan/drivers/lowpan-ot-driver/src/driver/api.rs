@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use super::*;
-use crate::ot::{create_ephemeral_key, BorderAgentEphemeralKeyState};
+use crate::ot::{BorderAgentEphemeralKeyState, create_ephemeral_key};
 use anyhow::Error;
 use async_trait::async_trait;
 use core::future::ready;
@@ -1042,6 +1042,9 @@ where
                 fidl_fuchsia_lowpan_device::BorderAgentCounters::from_ext(counters)
             });
 
+        // Get whether multi-ail (Adjacent Infrastructure Link) scenario is detected or not.
+        let multi_ail_detected = driver_state.ot_instance.border_routing_is_multi_ail_detected();
+
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
             partition_id: Some(ot.get_partition_id()),
@@ -1093,6 +1096,7 @@ where
             }),
             link_metrics_entries: Some(link_metrics_entries),
             border_agent_counters,
+            multi_ail_detected: Some(multi_ail_detected),
             ..Default::default()
         })
     }

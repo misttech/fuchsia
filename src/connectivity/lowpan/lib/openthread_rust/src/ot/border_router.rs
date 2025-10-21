@@ -86,7 +86,7 @@ pub trait BorderRouter {
 
     /// Get the DHCPv6 PD state change stream
     fn border_routing_dhcp6_pd_state_change_stream(&self)
-        -> BorderRoutingDhcp6PdStateChangedStream;
+    -> BorderRoutingDhcp6PdStateChangedStream;
 
     /// Functional equivalent of
     /// [`otsys::otBorderRoutingGetPdOmrPrefix`](crate::otsys::otBorderRoutingGetPdOmrPrefix).
@@ -107,6 +107,10 @@ pub trait BorderRouter {
     /// Functional equivalent of
     /// [`otsys::otBorderRoutingGetPdProcessedRaInfo`](crate::otsys::otBorderRoutingGetPdProcessedRaInfo).
     fn border_routing_get_pd_processed_ra_info(&self) -> PdProcessedRaInfo;
+
+    /// Functional equivalent of
+    /// [`otsys::otBorderRoutingIsMultiAilDetected`](crate::otsys::otBorderRoutingIsMultiAilDetected).
+    fn border_routing_is_multi_ail_detected(&self) -> bool;
 
     /// Functional equivalent of
     /// [`otsys::otBorderRouterGetNextRoute`](crate::otsys::otBorderRouterGetNextRoute).
@@ -211,6 +215,10 @@ impl<T: BorderRouter + Boxable> BorderRouter for ot::Box<T> {
 
     fn border_routing_get_pd_processed_ra_info(&self) -> PdProcessedRaInfo {
         self.as_ref().border_routing_get_pd_processed_ra_info()
+    }
+
+    fn border_routing_is_multi_ail_detected(&self) -> bool {
+        self.as_ref().border_routing_is_multi_ail_detected()
     }
 
     fn iter_next_local_external_route(
@@ -384,6 +392,10 @@ impl BorderRouter for Instance {
             otBorderRoutingGetPdProcessedRaInfo(self.as_ot_ptr(), info.as_ot_mut_ptr());
         }
         info
+    }
+
+    fn border_routing_is_multi_ail_detected(&self) -> bool {
+        unsafe { otBorderRoutingIsMultiAilDetected(self.as_ot_ptr()) }
     }
 
     fn iter_next_local_external_route(
