@@ -1239,7 +1239,7 @@ void Device<RxDescriptor>::GetInfo(
       .rx_threshold(kRxDepth / 2)
       .max_buffer_parts(1)
       .max_buffer_length(kMaxBufferLength)
-      .buffer_alignment(ZX_PAGE_SIZE / 2)
+      .buffer_alignment(kBufferAlignment)
       .min_rx_buffer_length(kMinRxBufferLength)
       .min_tx_buffer_length(kMinTxBufferLength)
       .tx_head_length(0)

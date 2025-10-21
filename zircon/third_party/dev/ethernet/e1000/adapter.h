@@ -51,7 +51,9 @@ constexpr size_t kTxResultsPerBatch =
 constexpr uint32_t kEthMtu = 1500;
 constexpr uint32_t kMaxFrameSize = kEthMtu + ETHER_HDR_LEN + ETHER_CRC_LEN;
 
-constexpr uint32_t kMaxBufferLength = ZX_PAGE_SIZE / 2;
+constexpr uint32_t kMaxBufferLength = 2048;
+constexpr uint32_t kBufferAlignment = 2048;
+
 // The closest power of two that exceeds the max frame size.
 constexpr uint32_t kMinRxBufferLength = cpp20::bit_ceil(kMaxFrameSize);
 // Minimum ethernet frame size (minus frame check sequence)

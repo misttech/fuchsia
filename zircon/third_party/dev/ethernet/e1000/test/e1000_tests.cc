@@ -442,8 +442,8 @@ TEST_F(E1000Test, NetworkDeviceImplGetInfo) {
   EXPECT_EQ(info.rx_depth(), e1000::kRxDepth);
   EXPECT_EQ(info.rx_threshold(), e1000::kRxDepth / 2);
   EXPECT_EQ(info.max_buffer_parts(), 1U);
-  EXPECT_EQ(info.max_buffer_length(), ZX_PAGE_SIZE / 2);
-  EXPECT_EQ(info.buffer_alignment(), ZX_PAGE_SIZE / 2);
+  EXPECT_EQ(info.max_buffer_length(), e1000::kMaxBufferLength);
+  EXPECT_EQ(info.buffer_alignment(), e1000::kBufferAlignment);
   EXPECT_EQ(info.min_rx_buffer_length(), e1000::kMinRxBufferLength);
   EXPECT_EQ(info.min_tx_buffer_length(), e1000::kMinTxBufferLength);
   EXPECT_EQ(info.tx_head_length(), 0U);
