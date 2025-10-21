@@ -184,6 +184,9 @@ zx::result<> AmlNnaDriver::Start() {
       return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
+  const bool is_power_domain = nna_block_.nna_power_version == kNnaPowerDomain;
+  fdf::info("Starting hardware: {} ", is_power_domain ? "PowerDomain" : "Registers");
+
   if (nna_block_.nna_power_version == kNnaPowerDomain) {
     zx_status_t status = PowerDomainControl(true);
     if (status != ZX_OK) {

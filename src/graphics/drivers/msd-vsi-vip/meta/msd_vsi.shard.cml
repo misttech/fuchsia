@@ -24,7 +24,7 @@
         { protocol: "fuchsia.scheduler.RoleManager" },
         { service: "fuchsia.hardware.platform.device.Service" },
         { service: "fuchsia.driver.compat.Service" },
-        { service: "fuchsia.hardware.vsi.ParentService" },
+        { service: "fuchsia.hardware.vsi.PowerParentService" },
     ],
     expose: [
         {

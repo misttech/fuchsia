@@ -16,7 +16,7 @@
     },
     capabilities: [
         { service: "fuchsia.hardware.platform.device.Service" },
-        { service: "fuchsia.hardware.vsi.ParentService" },
+        { service: "fuchsia.hardware.vsi.PowerParentService" },
     ],
     use: [
         { service: "fuchsia.hardware.registers.Service" },
@@ -28,7 +28,7 @@
             from: "self",
         },
         {
-            service: "fuchsia.hardware.vsi.ParentService",
+            service: "fuchsia.hardware.vsi.PowerParentService",
             from: "self",
         },
     ],
