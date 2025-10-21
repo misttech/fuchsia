@@ -12230,7 +12230,7 @@ rustc_library("pest-v2_7_8") {
   deps = []
   deps += [ ":memchr-v2_7_4" ]
   deps += [ ":thiserror-v1_0_69" ]
-  deps += [ ":ucd-trie-v0_1_6" ]
+  deps += [ ":ucd-trie-v0_1_7" ]
 
   rustenv = []
 
@@ -19747,18 +19747,18 @@ rustc_library("typenum-v1_18_0") {
   applicable_licenses = [ ":typenum-v1_18_0.license" ]
 }
 
-license("ucd-trie-v0_1_6.license") {
+license("ucd-trie-v0_1_7.license") {
   public_package_name = "ucd_trie"
   license_files = [
-    "//third_party/rust_crates/vendor/ucd-trie-0.1.6/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/ucd-trie-0.1.6/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/ucd-trie-0.1.7/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/ucd-trie-0.1.7/LICENSE-MIT",
   ]
 }
 
-rustc_library("ucd-trie-v0_1_6") {
+rustc_library("ucd-trie-v0_1_7") {
   crate_name = "ucd_trie"
-  source_root = "//third_party/rust_crates/vendor/ucd-trie-0.1.6/src/lib.rs"
-  output_name = "ucd_trie-53958726f307bc9"
+  source_root = "//third_party/rust_crates/vendor/ucd-trie-0.1.7/src/lib.rs"
+  output_name = "ucd_trie-36fb572bedce5950"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -19770,14 +19770,14 @@ rustc_library("ucd-trie-v0_1_6") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=53958726f307bc9",
-    "-Cextra-filename=-53958726f307bc9",
+    "-Cmetadata=36fb572bedce5950",
+    "-Cextra-filename=-36fb572bedce5950",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":ucd-trie-v0_1_6.license" ]
+  applicable_licenses = [ ":ucd-trie-v0_1_7.license" ]
 }
 
 license("unarray-v0_1_4.license") {

@@ -81,6 +81,6 @@ rust_library(
     deps = [
         "//third_party/rust_crates/ask2patch/memchr",
         "//third_party/rust_crates/vendor/thiserror-1.0.69:thiserror",
-        "//third_party/rust_crates/vendor/ucd-trie-0.1.6:ucd_trie",
+        "//third_party/rust_crates/vendor/ucd-trie-0.1.7:ucd_trie",
     ],
 )
