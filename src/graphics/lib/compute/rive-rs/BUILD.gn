@@ -12,7 +12,6 @@ rustc_library("rive-rs") {
   edition = "2021"
   deps = [
     "//third_party/rust_crates:bitflags",
-    "//third_party/rust_crates:once_cell",
     "//third_party/rust_crates:smallvec",
   ]
 
