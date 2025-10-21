@@ -47,6 +47,9 @@ constexpr static size_t kEthTxBufCount =
 constexpr static size_t kEthTxBufSize = 2048;  // Size of each Tx frame buffer.
 constexpr static size_t kEthTxDescSize = 16;
 
+static constexpr size_t kEthRxTxMaxBufSize = 2048;
+static constexpr size_t kEthRxTxBufAlignment = 2048;
+
 constexpr static uint8_t kPortId = 1;
 constexpr static size_t kEtherMtu = 1500;
 constexpr static size_t kEtherAddrLen = 6;

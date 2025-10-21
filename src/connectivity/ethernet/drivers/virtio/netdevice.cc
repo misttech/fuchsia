@@ -446,7 +446,7 @@ void NetworkDevice::NetworkDeviceImplGetInfo(device_impl_info_t* out_info) {
       .rx_threshold = static_cast<uint16_t>(rx_depth_ / 2),
       .max_buffer_parts = 1,
       .max_buffer_length = kFrameSize,
-      .buffer_alignment = ZX_PAGE_SIZE / 2,
+      .buffer_alignment = kBufferAlignment,
       .min_rx_buffer_length = kFrameSize,
       // Minimum Ethernet frame size on the wire according to IEEE 802.3, minus
       // the frame check sequence.

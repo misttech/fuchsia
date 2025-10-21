@@ -15,7 +15,7 @@ namespace network::testing {
 class TestSession {
  public:
   static constexpr uint16_t kDefaultDescriptorCount = 256;
-  static constexpr uint64_t kDefaultBufferLength = ZX_PAGE_SIZE / 2;
+  static constexpr uint64_t kDefaultBufferLength = 2048;
 
   TestSession() = default;
 

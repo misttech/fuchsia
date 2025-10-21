@@ -12,7 +12,7 @@ namespace network {
 namespace tun {
 namespace testing {
 
-constexpr uint64_t kVmoSize = ZX_PAGE_SIZE;
+const uint64_t kVmoSize = zx_system_get_page_size();
 constexpr uint8_t kVmoId = 0x06;
 
 class BufferTest : public ::testing::Test {

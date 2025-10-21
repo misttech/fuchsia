@@ -12,13 +12,15 @@
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/time.h>
 #include <zircon/status.h>
+#include <zircon/types.h>
+
 namespace network {
 namespace client {
 
 namespace {
 // The maximum FIFO depth that this client can handle.
 // Set to the maximum number of `uint16`s that a zx FIFO can hold.
-constexpr uint64_t kMaxDepth = ZX_PAGE_SIZE / sizeof(uint16_t);
+constexpr uint64_t kMaxDepth = ZX_FIFO_MAX_SIZE_BYTES / sizeof(uint16_t);
 
 constexpr zx_signals_t kFifoWaitReads = ZX_FIFO_READABLE | ZX_FIFO_PEER_CLOSED;
 constexpr zx_signals_t kFifoWaitWrites = ZX_FIFO_WRITABLE;
@@ -589,7 +591,6 @@ zx::result<netdev::wire::SessionInfo> NetworkDeviceClient::MakeSessionInfo(fidl:
   ZX_DEBUG_ASSERT_MSG(descriptor_length_words <= std::numeric_limits<uint8_t>::max(),
                       "session descriptor length %ld (%ld words) overflows uint8_t",
                       session_config_.descriptor_length, descriptor_length_words);
-
 
   zx::vmo data_vmo;
   zx_status_t status;

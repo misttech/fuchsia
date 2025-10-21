@@ -23,7 +23,8 @@ namespace network::testing {
 constexpr uint16_t kDefaultRxDepth = 16;
 constexpr uint16_t kDefaultTxDepth = 16;
 constexpr uint16_t kDefaultDescriptorCount = 256;
-constexpr uint64_t kDefaultBufferLength = ZX_PAGE_SIZE / 2;
+constexpr uint64_t kDefaultBufferLength = 2048;
+constexpr uint64_t kBufferAlignment = 4096;
 constexpr uint32_t kAutoReturnRxLength = 512;
 
 class RxReturnTransaction;

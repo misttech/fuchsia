@@ -23,6 +23,8 @@ class FakeDeviceImpl : public ddk::NetworkPortProtocol<FakeDeviceImpl>,
                        public ddk::NetworkDeviceImplProtocol<FakeDeviceImpl> {
  public:
   static constexpr uint16_t kDepth = 256;
+  static constexpr uint32_t kMaxBufferLength = 2048;
+  static constexpr uint32_t kBufferAlignment = 4096;
   static constexpr uint16_t kPortId = 1;
   static constexpr uint32_t kMtu = 1500;
   static constexpr uint8_t kRxFrameTypes[] = {
@@ -62,8 +64,8 @@ class FakeDeviceImpl : public ddk::NetworkPortProtocol<FakeDeviceImpl>,
         .tx_depth = kDepth,
         .rx_depth = kDepth,
         .rx_threshold = kDepth,
-        .max_buffer_length = ZX_PAGE_SIZE / 2,
-        .buffer_alignment = ZX_PAGE_SIZE,
+        .max_buffer_length = kMaxBufferLength,
+        .buffer_alignment = kBufferAlignment,
     };
   }
 

@@ -278,8 +278,8 @@ TEST_F(IgcInterfaceTest, NetworkDeviceImplGetInfo) {
   EXPECT_EQ(info.rx_depth(), ei::kEthRxBufCount);
   EXPECT_EQ(info.rx_threshold(), info.rx_depth() / 2);
   EXPECT_EQ(info.max_buffer_parts(), 1U);
-  EXPECT_EQ(info.max_buffer_length(), ZX_PAGE_SIZE / 2);
-  EXPECT_EQ(info.buffer_alignment(), ZX_PAGE_SIZE / 2);
+  EXPECT_EQ(info.max_buffer_length(), ei::kEthRxTxMaxBufSize);
+  EXPECT_EQ(info.buffer_alignment(), ei::kEthRxTxBufAlignment);
   EXPECT_EQ(info.min_rx_buffer_length(), 2048U);
   EXPECT_EQ(info.min_tx_buffer_length(), 60U);
   EXPECT_EQ(info.tx_head_length(), 0U);

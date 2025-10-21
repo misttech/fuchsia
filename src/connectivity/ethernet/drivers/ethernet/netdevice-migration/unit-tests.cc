@@ -15,6 +15,11 @@
 #include "src/lib/fxl/strings/string_printf.h"
 #include "src/lib/testing/predicates/status.h"
 
+namespace {
+constexpr size_t kMaxBufferSize = netdevice_migration::NetdeviceMigration::kMaxBufferSize;
+constexpr size_t kVmoSize = 2 * kMaxBufferSize;
+}  // namespace
+
 namespace netdevice_migration {
 
 class NetdeviceMigrationTestHelper {
@@ -180,7 +185,7 @@ class NetdeviceMigrationTest : public ::testing::Test {
 
   void NetdevImplPrepareVmo(uint8_t vmo_id) {
     zx::vmo vmo;
-    ASSERT_OK(zx::vmo::create(ZX_PAGE_SIZE, 0, &vmo));
+    ASSERT_OK(zx::vmo::create(kVmoSize, 0, &vmo));
     NetdevImplPrepareVmo(vmo_id, std::move(vmo));
   }
 
@@ -443,7 +448,6 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, EthernetIfcStatusCalledFromEthernetIm
 }
 
 TEST_F(NetdeviceMigrationEthernetDmaSetupTest, NetworkDeviceImplPrepareReleaseVmo) {
-  constexpr size_t kVmoSize = ZX_PAGE_SIZE;
   constexpr uint8_t kVMOs = 3;
   std::array<fake_bti_pinned_vmo_info_t, kVMOs> pinned_vmos;
   size_t pinned;
@@ -457,13 +461,12 @@ TEST_F(NetdeviceMigrationEthernetDmaSetupTest, NetworkDeviceImplPrepareReleaseVm
     ASSERT_OK(fake_bti_get_pinned_vmos(helper.Bti().get(), pinned_vmos.data(), pinned_vmos.size(),
                                        &pinned));
     ASSERT_EQ(pinned, vmo_id);
-    helper.WithVmoStore<void>(
-        [vmo_id, kVmoSize](netdevice_migration::NetdeviceMigrationVmoStore& vmo_store) {
-          auto* stored = vmo_store.GetVmo(vmo_id);
-          ASSERT_NE(stored, nullptr);
-          auto data = stored->data();
-          ASSERT_EQ(data.size(), kVmoSize);
-        });
+    helper.WithVmoStore<void>([vmo_id](netdevice_migration::NetdeviceMigrationVmoStore& vmo_store) {
+      auto* stored = vmo_store.GetVmo(vmo_id);
+      ASSERT_NE(stored, nullptr);
+      auto data = stored->data();
+      ASSERT_EQ(data.size(), kVmoSize);
+    });
   }
 
   for (uint8_t vmo_id = pinned_vmos.size(); vmo_id > 0;) {
@@ -522,7 +525,7 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, NetworkDeviceImplQueueRxSpace) {
           .region =
               {
                   .offset = 0,
-                  .length = ZX_PAGE_SIZE / 2,
+                  .length = kMaxBufferSize,
               },
       },
       {
@@ -577,30 +580,29 @@ TEST_P(QueueRxSpaceFailedPreconditionTest, RemovesDriver) {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    NetdeviceMigration, QueueRxSpaceFailedPreconditionTest, testing::Values(ZX_PAGE_SIZE, 0),
+    NetdeviceMigration, QueueRxSpaceFailedPreconditionTest, testing::Values(2 * kMaxBufferSize, 0),
     [](const testing::TestParamInfo<QueueRxSpaceFailedPreconditionTest::ParamType>& info) {
-      switch (info.param) {
-        case ZX_PAGE_SIZE:
-          return std::string("TooBig");
-        case 0:
-          return std::string("TooSmall");
-        default:
-          return fxl::StringPrintf("UnknownParam_%lu", info.param);
+      if (info.param == 2 * kMaxBufferSize) {
+        return std::string("TooBig");
       }
+      if (info.param == 0) {
+        return std::string("TooSmall");
+      }
+      return fxl::StringPrintf("UnknownParam_%lu", info.param);
     });
 
 TEST_F(NetdeviceMigrationDefaultSetupTest, EthernetIfcRecv) {
   constexpr uint32_t kSpaceId = 42;
   ASSERT_NO_FATAL_FAILURE(NetdevImplPrepareVmo(kVmoId));
   ASSERT_NO_FATAL_FAILURE(NetdevImplStart(ZX_OK));
-  constexpr rx_space_buffer_t spaces[] = {
+  const rx_space_buffer_t spaces[] = {
       {
           .id = kSpaceId,
           .region =
               {
                   .vmo = kVmoId,
                   .offset = 0,
-                  .length = ZX_PAGE_SIZE / 2,
+                  .length = kMaxBufferSize,
               },
       },
   };
@@ -659,7 +661,7 @@ TEST_P(RecvFailedPreconditionTest, RemovesDriver) {
               {
                   .vmo = input.vmo_id,
                   .offset = 0,
-                  .length = ZX_PAGE_SIZE / 2,
+                  .length = kMaxBufferSize,
               },
       },
   };
@@ -680,7 +682,7 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         RecvFailedPreconditionInput{
             .name = "BufferTooBig",
-            .buf_len = ZX_PAGE_SIZE,
+            .buf_len = 2 * kMaxBufferSize,
             .vmo_id = kVmoId,
         },
         RecvFailedPreconditionInput{
@@ -717,7 +719,6 @@ TEST_P(FillTxQueueTest, Succeeds) {
   FillTxQueueInput input = std::get<0>(GetParam());
   OutOfLineCallbacks ool = std::get<1>(GetParam());
   zx::vmo vmo;
-  constexpr uint64_t kVmoSize = ZX_PAGE_SIZE;
   ASSERT_OK(zx::vmo::create(kVmoSize, 0, &vmo));
   ASSERT_NO_FATAL_FAILURE(NetdevImplPrepareVmo(kVmoId, std::move(vmo)));
   netdevice_migration::NetdeviceMigrationTestHelper helper(Device());
@@ -820,7 +821,7 @@ TEST_F(NetdeviceMigrationEthernetDmaSetupTest, NetworkDeviceImplQueueTxOutOfRang
   ASSERT_NO_FATAL_FAILURE(NetdevImplPrepareVmo(kVmoId));
   ASSERT_NO_FATAL_FAILURE(NetdevImplStart(ZX_OK));
   constexpr uint32_t kBufId = 42;
-  buffer_region_t part = {.vmo = kVmoId, .offset = ZX_PAGE_SIZE, .length = ETH_MTU_SIZE};
+  buffer_region_t part = {.vmo = kVmoId, .offset = kVmoSize, .length = ETH_MTU_SIZE};
   tx_buffer_t buf = {.id = kBufId, .data_list = &part, .data_count = 1};
   EXPECT_CALL(
       MockNetworkDevice(),
@@ -881,7 +882,7 @@ INSTANTIATE_TEST_SUITE_P(
         QueueTxFailedPreconditionInput{.name = "BufferTooLong",
                                        .bufs = 1,
                                        .parts = 1,
-                                       .buf_len = ZX_PAGE_SIZE,
+                                       .buf_len = 2 * kMaxBufferSize,
                                        .vmo_id = kVmoId},
         QueueTxFailedPreconditionInput{.name = "UnknownVmoId",
                                        .bufs = 1,

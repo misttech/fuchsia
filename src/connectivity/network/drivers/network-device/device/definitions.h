@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.hardware.network.driver/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.network/cpp/wire.h>
+#include <zircon/types.h>
 
 #include <array>
 
@@ -15,7 +16,7 @@
 namespace network {
 namespace netdev = fuchsia_hardware_network;
 namespace netdriver = fuchsia_hardware_network_driver;
-constexpr uint16_t kMaxFifoDepth = ZX_PAGE_SIZE / sizeof(uint16_t);
+constexpr uint16_t kMaxFifoDepth = ZX_FIFO_MAX_SIZE_BYTES / sizeof(uint16_t);
 
 namespace internal {
 template <typename T>

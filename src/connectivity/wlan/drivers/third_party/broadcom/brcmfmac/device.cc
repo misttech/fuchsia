@@ -37,6 +37,8 @@ constexpr uint8_t kClientInterfaceId = 0;
 constexpr char kApInterfaceName[] = "brcmfmac-wlan-fullmac-ap";
 constexpr uint8_t kApInterfaceId = 1;
 constexpr uint8_t kMaxBufferParts = 1;
+constexpr uint32_t kMaxBufferLength = 4096;
+constexpr uint32_t kBufferAlignment = 4096;
 constexpr char kNetDevDriverName[] = "brcmfmac-netdev";
 
 struct InterfaceInfo {
@@ -695,8 +697,8 @@ void Device::NetDevGetInfo(fuchsia_hardware_network_driver::DeviceImplInfo* out_
   out_info->rx_depth() = rx_depth;
   out_info->rx_threshold() = rx_depth / 3;
   out_info->max_buffer_parts() = kMaxBufferParts;
-  out_info->max_buffer_length() = ZX_PAGE_SIZE;
-  out_info->buffer_alignment() = ZX_PAGE_SIZE;
+  out_info->max_buffer_length() = kMaxBufferLength;
+  out_info->buffer_alignment() = kBufferAlignment;
   out_info->min_rx_buffer_length() = IEEE80211_MSDU_SIZE_MAX;
   out_info->tx_head_length() = drvr()->hdrlen;
   out_info->tx_tail_length() = tx_tail_length;

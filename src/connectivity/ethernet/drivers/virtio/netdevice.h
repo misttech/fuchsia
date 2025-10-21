@@ -55,6 +55,8 @@ class NetworkDevice : public Device,
   static constexpr size_t kMtu = 1514;
   static constexpr size_t kFrameSize = sizeof(virtio_net_hdr_t) + kMtu;
 
+  static constexpr size_t kBufferAlignment = 2048;
+
   // Queue identifiers.
   static constexpr uint16_t kRxId = 0u;
   static constexpr uint16_t kTxId = 1u;
@@ -86,8 +88,7 @@ class NetworkDevice : public Device,
   void NetworkPortGetStatus(port_status_t* out_status);
   void NetworkPortSetActive(bool active);
   void NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc);
-  void NetworkPortRemoved() { /* do nothing, we never remove our port */
-  }
+  void NetworkPortRemoved() { /* do nothing, we never remove our port */ }
   // MacAddr protocol:
   void MacAddrGetAddress(mac_address_t* out_mac);
   void MacAddrGetFeatures(features_t* out_features);

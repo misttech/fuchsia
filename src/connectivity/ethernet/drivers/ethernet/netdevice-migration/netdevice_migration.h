@@ -41,6 +41,7 @@ class NetdeviceMigration
   // Equivalent to old ethernet driver FIFO depth; see
   // https://cs.opensource.google/fuchsia/fuchsia/+/main:src/connectivity/ethernet/drivers/ethernet/ethernet.h;l=169;drc=bd653b0d513ea6cc0d2ec85d38ae31bf084f0651
   static constexpr uint32_t kFifoDepth = 256;
+  static constexpr uint32_t kMaxBufferSize = 2048;
   static constexpr supported_mac_filter_mode_t kSupportedMacFilteringModes =
       SUPPORTED_MAC_FILTER_MODE_MULTICAST_FILTER | SUPPORTED_MAC_FILTER_MODE_MULTICAST_PROMISCUOUS |
       SUPPORTED_MAC_FILTER_MODE_PROMISCUOUS;
@@ -111,7 +112,7 @@ class NetdeviceMigration
             // Per fuchsia.hardware.network.driver banjo API:
             // "Devices that do not support scatter-gather DMA may set this to a value smaller than
             // a page size to guarantee compatibility."
-            .max_buffer_length = ZX_PAGE_SIZE / 2,
+            .max_buffer_length = kMaxBufferSize,
             // NetdeviceMigration has no alignment requirements.
             .buffer_alignment = 1,
             // Ensures that an rx buffer will always be large enough to the ethernet MTU.

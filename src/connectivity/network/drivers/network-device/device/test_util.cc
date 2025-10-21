@@ -239,8 +239,8 @@ FakeNetworkDeviceImpl::FakeNetworkDeviceImpl(fdf_dispatcher_t* dispatcher)
           .tx_depth = kDefaultTxDepth,
           .rx_depth = kDefaultRxDepth,
           .rx_threshold = kDefaultRxDepth / 2,
-          .max_buffer_length = ZX_PAGE_SIZE / 2,
-          .buffer_alignment = ZX_PAGE_SIZE,
+          .max_buffer_length = kDefaultBufferLength,
+          .buffer_alignment = kBufferAlignment,
       }) {
   EXPECT_OK(zx::event::create(0, &event_));
 }
