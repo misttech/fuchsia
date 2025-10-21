@@ -18,8 +18,8 @@
 namespace {
 
 DECLARE_SINGLETON_MUTEX(GuestMutex);
-size_t num_guests TA_GUARDED(GuestMutex::Get()) = 0;
 fbl::Array<VmxPage> vmxon_pages TA_GUARDED(GuestMutex::Get());
+ktl::atomic<size_t> num_guests = 0;
 // This starts at an assumption of false and is only made true if every CPU supports ept large
 // pages.
 ktl::atomic<bool> ept_supports_large_pages = false;
@@ -159,8 +159,7 @@ void broadcast_invept(uint64_t eptp) {
   // fault. When vmx is turned back on we will perform a global context invalidation anyway, so this
   // is safe. The reason ept invalidations might occur after vmx has been turned off is that the
   // EPT itself can outlive the guests due to user space having their own handles to the EPT aspace.
-  Guard<Mutex> guard(GuestMutex::Get());
-  if (num_guests != 0) {
+  if (num_guests.load() != 0) {
     mp_sync_exec(
         mp_ipi_target::ALL, 0,
         [](void* eptp) { invept(InvEpt::SINGLE_CONTEXT, *static_cast<uint64_t*>(eptp)); }, &eptp);
@@ -228,7 +227,7 @@ zx::result<> VmxPage::Alloc(const VmxInfo& vmx_info, uint8_t fill) {
 
 zx::result<> alloc_vmx_state() {
   Guard<Mutex> guard(GuestMutex::Get());
-  if (num_guests == 0) {
+  if (num_guests.load() == 0) {
     fbl::AllocChecker ac;
     size_t num_cpus = arch_max_num_cpus();
     VmxPage* pages_ptr = new (&ac) VmxPage[num_cpus];
@@ -256,14 +255,14 @@ zx::result<> alloc_vmx_state() {
 
     vmxon_pages = ktl::move(pages);
   }
-  num_guests++;
+  num_guests.fetch_add(1);
   return zx::ok();
 }
 
 void free_vmx_state() {
   Guard<Mutex> guard(GuestMutex::Get());
-  num_guests--;
-  if (num_guests == 0) {
+  num_guests.fetch_sub(1);
+  if (num_guests.load() == 0) {
     mp_sync_exec(mp_ipi_target::ALL, 0, vmxoff_task, nullptr);
     vmxon_pages.reset();
   }
