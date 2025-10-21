@@ -27,7 +27,12 @@
         { protocol: "fuchsia.power.broker.Topology" },
 
         // Used by //sdk/lib/driver/power/cpp
-        { protocol: "fuchsia.power.system.ActivityGovernor" },
+        {
+            protocol: [
+                "fuchsia.power.system.ActivityGovernor",
+                "fuchsia.power.system.CpuElementManager",
+            ],
+        },
         { service: "fuchsia.hardware.pci.Service" },
     ],
     expose: [

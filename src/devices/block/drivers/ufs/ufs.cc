@@ -25,9 +25,12 @@ namespace ufs {
 namespace {
 
 // TODO(b/329588116): Relocate this power config.
-// This power element represents the SDMMC controller hardware. Its opportunistic dependency on
-// SAG's (Execution State, wake handling) allows for orderly power down of the hardware before the
-// CPU suspends scheduling.
+// This power element represents the SDMMC controller hardware.
+//
+// The "boot" level is an implementation detail, allowing the driver to keep the hardware powered on
+// during initialization. The external system depends on the higher "on" level, so the driver can
+// observe when the element is required on due to external factors and then drop its self-lease on
+// the "boot" level.
 fuchsia_hardware_power::PowerElementConfiguration GetHardwarePowerConfig() {
   auto transitions_from_off =
       std::vector<fuchsia_hardware_power::Transition>{fuchsia_hardware_power::Transition{{
@@ -35,91 +38,58 @@ fuchsia_hardware_power::PowerElementConfiguration GetHardwarePowerConfig() {
           // TODO(b/42075643): Fill it in later with appropriate numbers.
           .latency_us = 0,
       }}};
+  auto transitions_from_boot =
+      std::vector<fuchsia_hardware_power::Transition>{fuchsia_hardware_power::Transition{{
+          .target_level = Ufs::kPowerLevelOn,
+          // TODO(b/42075643): Fill it in later with appropriate numbers.
+          .latency_us = 0,
+      }}};
   auto transitions_from_on =
       std::vector<fuchsia_hardware_power::Transition>{fuchsia_hardware_power::Transition{{
           .target_level = Ufs::kPowerLevelOff,
           // TODO(b/42075643): Fill it in later with appropriate numbers.
           .latency_us = 0,
       }}};
+
   fuchsia_hardware_power::PowerLevel off = {
       {.level = Ufs::kPowerLevelOff, .name = "off", .transitions = transitions_from_off}};
+  fuchsia_hardware_power::PowerLevel boot = {
+      {.level = Ufs::kPowerLevelBoot, .name = "boot", .transitions = transitions_from_boot}};
   fuchsia_hardware_power::PowerLevel on = {
       {.level = Ufs::kPowerLevelOn, .name = "on", .transitions = transitions_from_on}};
+
   fuchsia_hardware_power::PowerElement hardware_power = {{
       .name = Ufs::kHardwarePowerElementName,
-      .levels = {{off, on}},
+      .levels = {{off, boot, on}},
   }};
 
-  fuchsia_hardware_power::LevelTuple on_to_wake_handling = {{
+  fuchsia_hardware_power::LevelTuple on_to_cpu = {{
       .child_level = Ufs::kPowerLevelOn,
       .parent_level = static_cast<uint8_t>(fuchsia_power_system::ExecutionStateLevel::kSuspending),
   }};
-  fuchsia_hardware_power::PowerDependency opportunistic_on_exec_state_wake_handling = {{
+  fuchsia_hardware_power::PowerDependency on_to_cpu_dependency = {{
       .child = Ufs::kHardwarePowerElementName,
-      .parent = fuchsia_hardware_power::ParentElement::WithSag(
-          fuchsia_hardware_power::SagElement::kExecutionState),
-      .level_deps = {{on_to_wake_handling}},
-      .strength = fuchsia_hardware_power::RequirementType::kOpportunistic,
+      .parent = fuchsia_hardware_power::ParentElement::WithCpuControl(
+          fuchsia_hardware_power::CpuPowerElement::kCpu),
+      .level_deps = {{on_to_cpu}},
+      .strength = fuchsia_hardware_power::RequirementType::kAssertive,
   }};
 
   fuchsia_hardware_power::PowerElementConfiguration hardware_power_config = {
-      {.element = hardware_power, .dependencies = {{opportunistic_on_exec_state_wake_handling}}}};
+      {.element = hardware_power, .dependencies = {{on_to_cpu_dependency}}}};
   return hardware_power_config;
 }
 
 // TODO(b/329588116): Relocate this power config.
-// This power element does not represent real hardware. Its active dependency on SAG's
-// (Wake Handling, active) is used to secure the (Execution State, wake handling) necessary to
-// satisfy the hardware power element's dependency, thus allowing the hardware to wake up and serve
-// incoming requests.
-fuchsia_hardware_power::PowerElementConfiguration GetSystemWakeOnRequestPowerConfig() {
-  auto transitions_from_off =
-      std::vector<fuchsia_hardware_power::Transition>{fuchsia_hardware_power::Transition{{
-          .target_level = Ufs::kPowerLevelOn,
-          .latency_us = 0,
-      }}};
-  auto transitions_from_on =
-      std::vector<fuchsia_hardware_power::Transition>{fuchsia_hardware_power::Transition{{
-          .target_level = Ufs::kPowerLevelOff,
-          .latency_us = 0,
-      }}};
-  fuchsia_hardware_power::PowerLevel off = {
-      {.level = Ufs::kPowerLevelOff, .name = "off", .transitions = transitions_from_off}};
-  fuchsia_hardware_power::PowerLevel on = {
-      {.level = Ufs::kPowerLevelOn, .name = "on", .transitions = transitions_from_on}};
-  fuchsia_hardware_power::PowerElement wake_on_request = {{
-      .name = Ufs::kSystemWakeOnRequestPowerElementName,
-      .levels = {{off, on}},
-  }};
-
-  fuchsia_hardware_power::LevelTuple on_to_active = {{
-      .child_level = Ufs::kPowerLevelOn,
-      .parent_level = static_cast<uint8_t>(fuchsia_power_system::ExecutionStateLevel::kSuspending),
-  }};
-  fuchsia_hardware_power::PowerDependency assertive_on_wake_handling_active = {{
-      .child = Ufs::kSystemWakeOnRequestPowerElementName,
-      .parent = fuchsia_hardware_power::ParentElement::WithSag(
-          fuchsia_hardware_power::SagElement::kExecutionState),
-      .level_deps = {{on_to_active}},
-      .strength = fuchsia_hardware_power::RequirementType::kAssertive,
-  }};
-
-  fuchsia_hardware_power::PowerElementConfiguration wake_on_request_config = {
-      {.element = wake_on_request, .dependencies = {{assertive_on_wake_handling_active}}}};
-  return wake_on_request_config;
-}
-
-// TODO(b/329588116): Relocate this power config.
 std::vector<fuchsia_hardware_power::PowerElementConfiguration> GetAllPowerConfigs() {
-  return std::vector<fuchsia_hardware_power::PowerElementConfiguration>{
-      GetHardwarePowerConfig(), GetSystemWakeOnRequestPowerConfig()};
+  return std::vector<fuchsia_hardware_power::PowerElementConfiguration>{GetHardwarePowerConfig()};
 }
 
 }  // namespace
 
-zx::result<fidl::ClientEnd<fuchsia_power_broker::LeaseControl>> Ufs::AcquireLease(
+zx::result<fidl::ClientEnd<fuchsia_power_broker::LeaseControl>> Ufs::AcquireInitLease(
     const fidl::WireSyncClient<fuchsia_power_broker::Lessor>& lessor_client) {
-  const fidl::WireResult result = lessor_client->Lease(kPowerLevelOn);
+  const fidl::WireResult result = lessor_client->Lease(Ufs::kPowerLevelBoot);
   if (!result.ok()) {
     FDF_LOG(ERROR, "Call to Lease failed: %s", result.status_string());
     return zx::error(result.status());
@@ -450,9 +420,6 @@ int Ufs::IoLoop() {
     }
     sync_completion_reset(&io_signal_);
 
-    bool wake_on_request = false;
-    fidl::ClientEnd<fuchsia_power_broker::LeaseControl> wake_on_request_lease_control_client_end;
-
     {
       std::lock_guard<std::mutex> lock(lock_);
       if (driver_shutdown_) {
@@ -460,25 +427,9 @@ int Ufs::IoLoop() {
         break;
       }
 
+      // If the driver is suspended, wait for it to resume before continuing.
       if (!device_manager_->IsResumed()) {
-        wake_on_request = true;
         wait_for_power_resumed_.Reset();
-
-        // Acquire lease on wake-on-request power element. This indirectly raises SAG's Execution
-        // State, satisfying the hardware power element's lease status (which is opportunistically
-        // dependent on SAG's Execution State), and thus resuming power.
-        ZX_ASSERT(!wake_on_request_lease_control_client_end.is_valid());
-        zx::result lease_control_client_end = AcquireLease(wake_on_request_lessor_client_);
-        if (!lease_control_client_end.is_ok()) {
-          FDF_LOG(ERROR, "Failed to acquire lease during wake-on-request: %s",
-                  zx_status_get_string(lease_control_client_end.status_value()));
-          return thrd_error;
-        };
-        wake_on_request_lease_control_client_end = std::move(lease_control_client_end.value());
-        ZX_ASSERT(wake_on_request_lease_control_client_end.is_valid());
-
-        properties_.wake_on_request_count.Add(1);
-
         lock_.unlock();
         wait_for_power_resumed_.Wait();
         lock_.lock();
@@ -494,15 +445,6 @@ int Ufs::IoLoop() {
     // Unable to send I/O when in suspend.
     if (device_manager_->IsResumed()) {
       ProcessIoSubmissions();
-    }
-
-    if (wake_on_request) {
-      // Drop lease on wake-on-request power element. This lets the hardware power element's lease
-      // status revert to pending, unless there are other entities that are raising SAG's
-      // Execution State.
-      ZX_ASSERT(wake_on_request_lease_control_client_end.is_valid());
-      wake_on_request_lease_control_client_end.channel().reset();
-      ZX_ASSERT(!wake_on_request_lease_control_client_end.is_valid());
     }
   }
   return thrd_success;
@@ -727,7 +669,6 @@ zx_status_t Ufs::Init() {
   logical_unit_count_ = lun_count.value();
   properties_.logical_unit_count =
       controller_node.CreateUint("logical_unit_count", logical_unit_count_);
-  properties_.wake_on_request_count = inspect_node_.CreateUint("wake_on_request_count", 0);
   // 14 buckets spanning from 1us to ~8ms.
   properties_.wake_latency_us = inspect_node_.CreateExponentialUintHistogram(
       "wake_latency_us", /*floor=*/1, /*initial_step=*/1, /*step_multiplier=*/2,
@@ -1342,8 +1283,7 @@ zx::result<> Ufs::ConfigurePowerManagement() {
       return zx::error(ZX_ERR_INTERNAL);
     }
 
-    assertive_power_dep_tokens_.push_back(std::move(description.assertive_token));
-    opportunistic_power_dep_tokens_.push_back(std::move(description.opportunistic_token));
+    hardware_power_assertive_token_ = std::move(description.assertive_token);
 
     if (config.element.name == kHardwarePowerElementName) {
       hardware_power_element_control_client_ =
@@ -1354,24 +1294,48 @@ zx::result<> Ufs::ConfigurePowerManagement() {
       hardware_power_element_runner_server_binding_.emplace(
           fdf::Dispatcher::GetCurrent()->async_dispatcher(), std::move(element_runner.server),
           &this->hardware_power_element_runner_server_, fidl::kIgnoreBindingClosure);
-    } else if (config.element.name == kSystemWakeOnRequestPowerElementName) {
-      wake_on_request_element_control_client_ =
-          fidl::WireSyncClient<fuchsia_power_broker::ElementControl>(
-              std::move(description.element_control_client.value()));
-      wake_on_request_lessor_client_ = fidl::WireSyncClient<fuchsia_power_broker::Lessor>(
-          std::move(description.lessor_client.value()));
-      wake_on_request_element_runner_server_binding_.emplace(
-          fdf::Dispatcher::GetCurrent()->async_dispatcher(), std::move(element_runner.server),
-          &this->wake_on_request_element_runner_server_, fidl::kIgnoreBindingClosure);
     } else {
       FDF_LOG(ERROR, "Unexpected power element: %s", std::string(config.element.name).c_str());
       return zx::error(ZX_ERR_BAD_STATE);
     }
   }
 
-  // The lease request on the hardware power element remains persistent throughout the lifetime
-  // of this driver.
-  zx::result lease_control_client_end = AcquireLease(hardware_power_lessor_client_);
+  // Register Execution State's dependency on our power element.
+  zx::result connect_to_cpu_element_manager =
+      driver_incoming()->Connect<fuchsia_power_system::CpuElementManager>();
+  if (connect_to_cpu_element_manager.is_error()) {
+    FDF_LOG(ERROR, "CpuElementManager unavailable: %s",
+            zx_status_get_string(connect_to_cpu_element_manager.error_value()));
+    return connect_to_cpu_element_manager.take_error();
+  }
+
+  fidl::SyncClient<fuchsia_power_system::CpuElementManager> cpu_element_manager(
+      std::move(connect_to_cpu_element_manager.value()));
+  zx::event clone;
+  ZX_ASSERT(hardware_power_assertive_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &clone) == ZX_OK);
+  fidl::Result<fuchsia_power_system::CpuElementManager::AddExecutionStateDependency> result =
+      cpu_element_manager->AddExecutionStateDependency(
+          {{.dependency_token = std::move(clone), .power_level = 1}});
+  if (result.is_error()) {
+    FDF_LOG(ERROR, "CpuElementManager token registration failed: %s",
+            result.error_value().FormatDescription().c_str());
+    if (result.error_value().is_framework_error()) {
+      return zx::error(result.error_value().framework_error().status());
+    }
+
+    switch (result.error_value().domain_error()) {
+      case fuchsia_power_system::AddExecutionStateDependencyError::kInvalidArgs:
+        return zx::error(ZX_ERR_INVALID_ARGS);
+      case fuchsia_power_system::AddExecutionStateDependencyError::kBadState:
+        return zx::error(ZX_ERR_BAD_STATE);
+      default:
+        return zx::error(ZX_ERR_INTERNAL);
+    }
+  }
+
+  // The lease request on the hardware power element remains until we register
+  // our power element token with the CpuElementManager protocol
+  zx::result lease_control_client_end = AcquireInitLease(hardware_power_lessor_client_);
   if (!lease_control_client_end.is_ok()) {
     FDF_LOG(ERROR, "Failed to acquire lease on hardware power: %s",
             zx_status_get_string(lease_control_client_end.status_value()));
@@ -1389,6 +1353,12 @@ void Ufs::HardwareElementRunner::SetLevel(
   switch (required_level) {
     case kPowerLevelOn: {
       const zx::time start = zx::clock::get_monotonic();
+
+      // If we're rising above the boot power level, it must because an
+      // external lease raised our power level. This means we can drop
+      // our self-lease and allow the external entity to drive our power
+      // state.
+      parent_.hardware_power_lease_control_client_end_.reset();
 
       // Actually raise the hardware's power level.
       zx::result result = parent_.device_manager_->ResumePower();
@@ -1430,25 +1400,6 @@ void Ufs::HardwareElementRunner::SetLevel(
 }
 
 void Ufs::HardwareElementRunner::handle_unknown_method(
-    fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> metadata,
-    fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(ERROR, "ElementRunner received unknown method %lu", metadata.method_ordinal);
-}
-
-void Ufs::WakeOnRequestElementRunner::SetLevel(
-    fuchsia_power_broker::ElementRunnerSetLevelRequest& request,
-    SetLevelCompleter::Sync& set_level_completer) {
-  const fuchsia_power_broker::PowerLevel required_level = request.level();
-  if ((required_level != kPowerLevelOn) && (required_level != kPowerLevelOff)) {
-    FDF_LOG(ERROR, "Unexpected power level for wake-on-request power element: %u", required_level);
-    set_level_completer.Close(ZX_ERR_INTERNAL);
-    return;
-  }
-
-  set_level_completer.Reply();
-}
-
-void Ufs::WakeOnRequestElementRunner::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
   FDF_LOG(ERROR, "ElementRunner received unknown method %lu", metadata.method_ordinal);

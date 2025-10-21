@@ -87,8 +87,7 @@ struct IoCommand {
 
 struct InspectProperties {
   inspect::BoolProperty power_suspended;              // Updated whenever power state changes.
-  inspect::UintProperty wake_on_request_count;        // Updated whenever wake-on-request occurs.
-  inspect::ExponentialUintHistogram wake_latency_us;  // Updated whenever wake-on-request occurs.
+  inspect::ExponentialUintHistogram wake_latency_us;  // Updated whenever the controller powers on.
   // Controller
   inspect::UintProperty max_transfer_bytes;  // Set once by the init thread.
   inspect::UintProperty logical_unit_count;  // Set once by the init thread.
@@ -152,11 +151,10 @@ class Ufs : public fdf::DriverBase, public scsi::Controller {
  public:
   static constexpr char kDriverName[] = "ufs";
   static constexpr char kHardwarePowerElementName[] = "ufs-hardware";
-  static constexpr char kSystemWakeOnRequestPowerElementName[] = "ufs-system-wake-on-request";
-  // Common to hardware power and wake-on-request power elements.
   // TODO(https://fxbug.dev/42075643): We need to add sleep(low-power) level
   static constexpr fuchsia_power_broker::PowerLevel kPowerLevelOff = 0;
   static constexpr fuchsia_power_broker::PowerLevel kPowerLevelOn = 1;
+  static constexpr fuchsia_power_broker::PowerLevel kPowerLevelBoot = 2;
 
   Ufs(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
       : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)),
@@ -294,9 +292,9 @@ class Ufs : public fdf::DriverBase, public scsi::Controller {
   // this method simply returns success.
   zx::result<> ConfigurePowerManagement();
 
-  // Acquires a lease on a power element via the supplied |lessor_client|, returning the resulting
-  // lease control client end.
-  zx::result<fidl::ClientEnd<fuchsia_power_broker::LeaseControl>> AcquireLease(
+  // Acquires a lease during initialization that holds the power element at its "boot" level until
+  // an external dependency pulls it to "on".
+  zx::result<fidl::ClientEnd<fuchsia_power_broker::LeaseControl>> AcquireInitLease(
       const fidl::WireSyncClient<fuchsia_power_broker::Lessor> &lessor_client);
 
   // Adjusts the hardware power level in response to SetLevel calls from the Power Broker.
@@ -316,22 +314,6 @@ class Ufs : public fdf::DriverBase, public scsi::Controller {
   HardwareElementRunner hardware_power_element_runner_server_;
   std::optional<fidl::ServerBinding<fuchsia_power_broker::ElementRunner>>
       hardware_power_element_runner_server_binding_;
-
-  // Responds to wake-on-request power level changes from the Power Broker. Does not directly
-  // affect any real power level change of storage hardware. That happens in
-  // HardwareElementRunner::SetLevel().
-  class WakeOnRequestElementRunner : public fidl::Server<fuchsia_power_broker::ElementRunner> {
-   public:
-    void SetLevel(fuchsia_power_broker::ElementRunnerSetLevelRequest &request,
-                  SetLevelCompleter::Sync &completer) override;
-    void handle_unknown_method(
-        fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> metadata,
-        fidl::UnknownMethodCompleter::Sync &completer) override;
-  };
-
-  WakeOnRequestElementRunner wake_on_request_element_runner_server_;
-  std::optional<fidl::ServerBinding<fuchsia_power_broker::ElementRunner>>
-      wake_on_request_element_runner_server_binding_;
 
   void Serve(fidl::ServerEnd<fuchsia_hardware_ufs::Ufs> server_end);
 
@@ -402,17 +384,9 @@ class Ufs : public fdf::DriverBase, public scsi::Controller {
   fidl::WireSyncClient<fuchsia_driver_framework::Node> root_node_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> node_controller_;
 
-  std::vector<zx::event> assertive_power_dep_tokens_;
-  std::vector<zx::event> opportunistic_power_dep_tokens_;
-
   fidl::WireSyncClient<fuchsia_power_broker::ElementControl> hardware_power_element_control_client_;
   fidl::WireSyncClient<fuchsia_power_broker::Lessor> hardware_power_lessor_client_;
   zx::event hardware_power_assertive_token_;
-
-  fidl::WireSyncClient<fuchsia_power_broker::ElementControl>
-      wake_on_request_element_control_client_;
-  fidl::WireSyncClient<fuchsia_power_broker::Lessor> wake_on_request_lessor_client_;
-
   fidl::ClientEnd<fuchsia_power_broker::LeaseControl> hardware_power_lease_control_client_end_;
 };
 

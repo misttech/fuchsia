@@ -115,43 +115,54 @@ class FakePci : public fidl::WireServer<fuchsia_hardware_pci::Device> {
   ufs_mock_device::UfsMockDevice* mock_device_;
 };
 
-class FakeSystemActivityGovernor
-    : public fidl::testing::TestBase<fuchsia_power_system::ActivityGovernor> {
+class FakeCpuElementManager
+    : public fidl::testing::TestBase<fuchsia_power_system::CpuElementManager> {
  public:
-  FakeSystemActivityGovernor(zx::event exec_state_opportunistic, zx::event wake_handling_assertive)
-      : exec_state_opportunistic_(std::move(exec_state_opportunistic)),
-        wake_handling_assertive_(std::move(wake_handling_assertive)) {}
+  FakeCpuElementManager() { zx::event::create(0, &cpu_dep_token_); }
 
-  fidl::ProtocolHandler<fuchsia_power_system::ActivityGovernor> CreateHandler() {
+  fidl::ProtocolHandler<fuchsia_power_system::CpuElementManager> CreateHandler() {
     return bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
                                    fidl::kIgnoreBindingClosure);
   }
 
-  void GetPowerElements(GetPowerElementsCompleter::Sync& completer) override {
-    fuchsia_power_system::PowerElements elements;
-    zx::event execution_element;
-    exec_state_opportunistic_.duplicate(ZX_RIGHT_SAME_RIGHTS, &execution_element);
+  bool execution_state_dependency_added() const { return dependency_token_.is_valid(); }
 
-    fuchsia_power_system::ExecutionState exec_state = {
-        {.opportunistic_dependency_token = std::move(execution_element)}};
+  void GetCpuDependencyToken(GetCpuDependencyTokenCompleter::Sync& completer) override {
+    zx::event copy;
+    cpu_dep_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &copy);
+    completer.Reply({{std::move(copy)}});
+  }
 
-    elements = {{.execution_state = std::move(exec_state)}};
+  void AddExecutionStateDependency(AddExecutionStateDependencyRequest& request,
+                                   AddExecutionStateDependencyCompleter::Sync& completer) override {
+    if (!request.power_level() || *request.power_level() != Ufs::kPowerLevelOn ||
+        !request.dependency_token()) {
+      completer.Reply(
+          fit::error(fuchsia_power_system::AddExecutionStateDependencyError::kInvalidArgs));
+      return;
+    }
+    if (dependency_token_.is_valid()) {
+      completer.Reply(
+          fit::error(fuchsia_power_system::AddExecutionStateDependencyError::kInvalidArgs));
+      return;
+    }
 
-    completer.Reply({{std::move(elements)}});
+    dependency_token_ = *std::move(request.dependency_token());
+    completer.Reply(fit::success());
   }
 
   void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
-    ADD_FAILURE() << "Unexpected SCSI command";
+    ADD_FAILURE() << name << " is not implemented";
   }
 
-  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_system::ActivityGovernor> md,
-                             fidl::UnknownMethodCompleter::Sync& completer) override {}
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_power_system::CpuElementManager> md,
+      fidl::UnknownMethodCompleter::Sync& completer) override {}
 
  private:
-  fidl::ServerBindingGroup<fuchsia_power_system::ActivityGovernor> bindings_;
-
-  zx::event exec_state_opportunistic_;
-  zx::event wake_handling_assertive_;
+  fidl::ServerBindingGroup<fuchsia_power_system::CpuElementManager> bindings_;
+  zx::event cpu_dep_token_;
+  zx::event dependency_token_;
 };
 
 class FakeLessor : public fidl::Server<fuchsia_power_broker::Lessor> {
@@ -212,8 +223,6 @@ class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology> {
     auto lessor_impl = std::make_unique<FakeLessor>();
     if (req.element_name() == Ufs::kHardwarePowerElementName) {
       hardware_power_lessor_ = lessor_impl.get();
-    } else if (req.element_name() == Ufs::kSystemWakeOnRequestPowerElementName) {
-      wake_on_request_lessor_ = lessor_impl.get();
     } else {
       ZX_ASSERT_MSG(0, "Unexpected power element.");
     }
@@ -237,15 +246,6 @@ class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology> {
               });
       hardware_power_element_runner_client_ = std::move(element_runner_client);
     }
-    if (wake_on_request_lessor_) {
-      wake_on_request_lessor_->AddSideEffect([&]() {
-        hardware_power_element_runner_client_->SetLevel({Ufs::kPowerLevelOn})
-            .ThenExactlyOnce(
-                [&](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
-                  EXPECT_TRUE(result.is_ok());
-                });
-      });
-    }
     servers_.emplace_back(std::move(element_control_binding), std::move(lessor_binding));
 
     completer.Reply(fit::success());
@@ -255,7 +255,6 @@ class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology> {
                              fidl::UnknownMethodCompleter::Sync& completer) override {}
 
   FakeLessor* hardware_power_lessor_ = nullptr;
-  FakeLessor* wake_on_request_lessor_ = nullptr;
   fidl::Client<fuchsia_power_broker::ElementRunner> hardware_power_element_runner_client_;
 
  private:
@@ -297,18 +296,11 @@ class Environment : public fdf_testing::Environment {
         pci_server_.GetInstanceHandler(), "pci");
     EXPECT_EQ(ZX_OK, result.status_value());
 
-    // Serve (fake) system_activity_governor.
-    zx::event::create(0, &exec_opportunistic_);
-    zx::event::create(0, &wake_assertive_);
-    zx::event exec_opportunistic_dupe, wake_assertive_dupe;
-    EXPECT_EQ(exec_opportunistic_.duplicate(ZX_RIGHT_SAME_RIGHTS, &exec_opportunistic_dupe), ZX_OK);
-    EXPECT_EQ(wake_assertive_.duplicate(ZX_RIGHT_SAME_RIGHTS, &wake_assertive_dupe), ZX_OK);
-    system_activity_governor_.emplace(std::move(exec_opportunistic_dupe),
-                                      std::move(wake_assertive_dupe));
-    auto result_sag =
-        to_driver_vfs.component().AddUnmanagedProtocol<fuchsia_power_system::ActivityGovernor>(
-            system_activity_governor_->CreateHandler());
-    EXPECT_EQ(ZX_OK, result_sag.status_value());
+    // Serve (fake) cpu_element_manager.
+    auto result_cpu_manager =
+        to_driver_vfs.component().AddUnmanagedProtocol<fuchsia_power_system::CpuElementManager>(
+            cpu_element_manager_.CreateHandler());
+    EXPECT_EQ(ZX_OK, result_cpu_manager.status_value());
 
     // Serve (fake) power_broker.
     auto result_pb = to_driver_vfs.component().AddUnmanagedProtocol<fuchsia_power_broker::Topology>(
@@ -320,13 +312,11 @@ class Environment : public fdf_testing::Environment {
 
   FakePci& pci_server() { return pci_server_; }
   FakePowerBroker& power_broker() { return power_broker_; }
-  FakeSystemActivityGovernor& system_activity_governor() { return *system_activity_governor_; }
 
  private:
   FakePci pci_server_;
   compat::DeviceServer device_server_;
-  zx::event exec_opportunistic_, wake_assertive_;
-  std::optional<FakeSystemActivityGovernor> system_activity_governor_;
+  FakeCpuElementManager cpu_element_manager_;
   FakePowerBroker power_broker_;
 };
 

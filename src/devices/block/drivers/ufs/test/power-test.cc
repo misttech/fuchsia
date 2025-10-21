@@ -66,10 +66,6 @@ TEST_F(PowerTest, PowerSuspendResume) {
       ufs->node().get_property<inspect::BoolPropertyValue>("power_suspended");
   ASSERT_NE(power_suspended, nullptr);
   EXPECT_TRUE(power_suspended->value());
-  const auto* wake_on_request_count =
-      ufs->node().get_property<inspect::UintPropertyValue>("wake_on_request_count");
-  ASSERT_NE(wake_on_request_count, nullptr);
-  EXPECT_EQ(wake_on_request_count->value(), 0U);
 
   // 2. Issue request while power is suspended.
   awake_complete.Reset();
@@ -105,8 +101,26 @@ TEST_F(PowerTest, PowerSuspendResume) {
           },
   };
   block_device->BlockImplQueue(op, callback, &done);
+
+  // The driver should stay suspended, and the block operation incomplete.
+  zx_status_t status;
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync(
+      [&]() { status = awake_complete.Wait(zx::msec(100)); }));
+  EXPECT_EQ(status, ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(sync_completion_wait(&done, zx_duration_from_msec(100)), ZX_ERR_TIMED_OUT);
+
+  // Wake up the driver.
+  driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
+    env.power_broker()
+        .hardware_power_element_runner_client_->SetLevel({Ufs::kPowerLevelOn})
+        .ThenExactlyOnce([&](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
+          EXPECT_TRUE(result.is_ok());
+        });
+  });
+
   EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([&]() { awake_complete.Wait(); }));
   sync_completion_wait(&done, ZX_TIME_INFINITE);
+  ASSERT_TRUE(dut_->IsResumed());
 
   // Return the driver to the suspended state.
   driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
@@ -135,10 +149,6 @@ TEST_F(PowerTest, PowerSuspendResume) {
   power_suspended = ufs->node().get_property<inspect::BoolPropertyValue>("power_suspended");
   ASSERT_NE(power_suspended, nullptr);
   EXPECT_TRUE(power_suspended->value());
-  wake_on_request_count =
-      ufs->node().get_property<inspect::UintPropertyValue>("wake_on_request_count");
-  ASSERT_NE(wake_on_request_count, nullptr);
-  EXPECT_EQ(wake_on_request_count->value(), 1U);
 
   // 3. Trigger power level change to kPowerLevelOn.
   awake_complete.Reset();
@@ -168,10 +178,6 @@ TEST_F(PowerTest, PowerSuspendResume) {
   power_suspended = ufs->node().get_property<inspect::BoolPropertyValue>("power_suspended");
   ASSERT_NE(power_suspended, nullptr);
   EXPECT_FALSE(power_suspended->value());
-  wake_on_request_count =
-      ufs->node().get_property<inspect::UintPropertyValue>("wake_on_request_count");
-  ASSERT_NE(wake_on_request_count, nullptr);
-  EXPECT_EQ(wake_on_request_count->value(), 1U);
 
   // 4. Trigger power level change to kPowerLevelOff.
   sleep_complete.Reset();
@@ -201,10 +207,6 @@ TEST_F(PowerTest, PowerSuspendResume) {
   power_suspended = ufs->node().get_property<inspect::BoolPropertyValue>("power_suspended");
   ASSERT_NE(power_suspended, nullptr);
   EXPECT_TRUE(power_suspended->value());
-  wake_on_request_count =
-      ufs->node().get_property<inspect::UintPropertyValue>("wake_on_request_count");
-  ASSERT_NE(wake_on_request_count, nullptr);
-  EXPECT_EQ(wake_on_request_count->value(), 1U);
 }
 
 TEST_F(PowerTest, BackgroundOperations) {
