@@ -712,6 +712,7 @@ common_permission_enum! {
         Bpf("bpf"),
         MacAdmin("mac_admin"),
         MacOverride("mac_override"),
+        Perfmon("perfmon"),
         Syslog("syslog"),
         WakeAlarm("wake_alarm"),
 

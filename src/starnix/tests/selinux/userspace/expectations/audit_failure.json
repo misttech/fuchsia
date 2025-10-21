@@ -34,16 +34,6 @@
         "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/28",
         "NetlinkSocketTests/NetlinkSocketTest/CheckNetlinkMsgPermission/29",
 
-        // No logging is done for this on Starnix.
-        "PerfEventTest/PerfEventOpenCpuEventsOnCurrentTask",
-        "PerfEventTest/PerfEventOpenKernelEventsOnCurrentTask",
-
-        // TODO(https://fxbug.dev/451611382) - Check capabilities on `perf_event` hooks.
-        "PerfEventTest/PerfEventOpenAllTasksFailsOnUnauthorisedCurrentTask",
-        "PerfEventTest/PerfEventFailingCpuEvents/PerfEventOpenFailsOnMissingPermissions/1",
-        "PerfEventTest/PerfEventFailingKernelEvents/PerfEventOpenFailsOnMissingPermissions/1",
-        "PerfEventTest/PerfEventFailingKernelEvents/PerfEventOpenFailsOnMissingPermissions/2",
-
         // The permission is checked correctly, but Linux adds multiple logs for the same denial.
         "SyslogTest/ProcKmsgReadDeniedIfDroppedPermission"
     ]

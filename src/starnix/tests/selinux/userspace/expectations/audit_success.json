@@ -116,7 +116,7 @@
                 "avc:  denied  { associate } for name=\"fifo_label_test\" scontext=test_u:object_r:test_fifo_file_t:s0 tcontext=system_u:object_r:tmpfs_t:s0 tclass=filesystem permissive=1",
                 "avc:  denied  { getattr } for name=\"fifo_label_test\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:pipe_test_t:s0 tcontext=test_u:object_r:test_fifo_file_t:s0 tclass=fifo_file permissive=1",
                 "avc:  denied  { read write } for name=\"fifo_label_test\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:pipe_test_t:s0 tcontext=test_u:object_r:test_fifo_file_t:s0 tclass=fifo_file permissive=1",
-                "avc:  denied  { search } for name=\"64\" dev=\"proc\" ino=270 scontext=test_u:test_r:pipe_test_t:s0 tcontext=test_u:test_r:pipe_test_t:s0 tclass=dir permissive=1",
+                "avc:  denied  { search } for name=\"63\" dev=\"proc\" ino=270 scontext=test_u:test_r:pipe_test_t:s0 tcontext=test_u:test_r:pipe_test_t:s0 tclass=dir permissive=1",
                 "avc:  denied  { search } for name=\"attr\" dev=\"proc\" ino=271 scontext=test_u:test_r:pipe_test_t:s0 tcontext=test_u:test_r:pipe_test_t:s0 tclass=dir permissive=1",
                 "avc:  denied  { write } for name=\"current\" dev=\"proc\" ino=272 scontext=test_u:test_r:pipe_test_t:s0 tcontext=test_u:test_r:pipe_test_t:s0 tclass=file permissive=1",
                 "avc:  denied  { dyntransition } for scontext=test_u:test_r:pipe_test_t:s0 tcontext=system_u:unconfined_r:unconfined_t:s0 tclass=process permissive=1"
@@ -147,7 +147,7 @@
         {
             "name": "InheritTest/FdUseDeniedFdRemappedToNull",
             "audit_expectations": [
-                "avc:  denied  { use } for path=\"/tmp/inherit_test_file:YVjrwE\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_inherit_parent_t:s0 tclass=fd permissive=0",
+                "avc:  denied  { use } for path=\"/tmp/inherit_test_file:85Vf9x\" dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_inherit_parent_t:s0 tclass=fd permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_bridge_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_bridge_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0"
             ]
@@ -155,7 +155,7 @@
         {
             "name": "InheritTest/FsNodePermissionDeniedFdRemappedToNull",
             "audit_expectations": [
-                "avc:  denied  { read } for path=\"/tmp/inherit_test_file:TUn4dh\" dev=\"tmpfs\" ino=4 scontext=test_u:test_r:test_inherit_child_no_read_file_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0",
+                "avc:  denied  { read } for path=\"/tmp/inherit_test_file:89f16a\" dev=\"tmpfs\" ino=4 scontext=test_u:test_r:test_inherit_child_no_read_file_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_read_file_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_read_file_t:s0 tclass=process permissive=0"
             ]
@@ -163,8 +163,8 @@
         {
             "name": "InheritTest/NullFileDescriptorIsDuplicated",
             "audit_expectations": [
-                "avc:  denied  { use } for path=\"/tmp/inherit_test_file:6GXtRY\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_inherit_parent_t:s0 tclass=fd permissive=0",
-                "avc:  denied  { use } for path=\"/tmp/inherit_test_file:6GXtRY\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_inherit_parent_t:s0 tclass=fd permissive=0",
+                "avc:  denied  { use } for path=\"/tmp/inherit_test_file:vzUPQQ\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_inherit_parent_t:s0 tclass=fd permissive=0",
+                "avc:  denied  { use } for path=\"/tmp/inherit_test_file:vzUPQQ\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_inherit_parent_t:s0 tclass=fd permissive=0",
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_bridge_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0",
                 "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_bridge_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0"
             ]
@@ -244,31 +244,31 @@
         {
             "name": "IoctlTest/BasicCommandDenied",
             "audit_expectations": [
-                "avc:  denied  { ioctl } for path=\"/tmp/ioctl_test_file:enJAzY\" dev=\"tmpfs\" ino=3 ioctlcmd=0xabcd scontext=test_u:test_r:test_ioctl_denied_t:s0 tcontext=test_u:object_r:test_ioctl_file_t:s0 tclass=file permissive=0"
+                "avc:  denied  { ioctl } for path=\"/tmp/ioctl_test_file:Y0n8TX\" dev=\"tmpfs\" ino=3 ioctlcmd=0xabcd scontext=test_u:test_r:test_ioctl_denied_t:s0 tcontext=test_u:object_r:test_ioctl_file_t:s0 tclass=file permissive=0"
             ]
         },
         {
             "name": "IoctlTest/FilteredCommandDenied",
             "audit_expectations": [
-                "avc:  denied  { ioctl } for path=\"/tmp/ioctl_test_file:PAZwcW\" dev=\"tmpfs\" ino=7 ioctlcmd=0xabcc scontext=test_u:test_r:test_ioctl_xperms_filtered_t:s0 tcontext=test_u:object_r:test_ioctl_file_t:s0 tclass=file permissive=0"
+                "avc:  denied  { ioctl } for path=\"/tmp/ioctl_test_file:H5hdTW\" dev=\"tmpfs\" ino=7 ioctlcmd=0xabcc scontext=test_u:test_r:test_ioctl_xperms_filtered_t:s0 tcontext=test_u:object_r:test_ioctl_file_t:s0 tclass=file permissive=0"
             ]
         },
         {
             "name": "IoctlTest/FilteredCommandDeniedByPermission",
             "audit_expectations": [
-                "avc:  denied  { ioctl } for path=\"/tmp/ioctl_test_file:9StzFZ\" dev=\"tmpfs\" ino=8 ioctlcmd=0xabcd scontext=test_u:test_r:test_ioctl_xperms_only_t:s0 tcontext=test_u:object_r:test_ioctl_file_t:s0 tclass=file permissive=0"
+                "avc:  denied  { ioctl } for path=\"/tmp/ioctl_test_file:NrQbVW\" dev=\"tmpfs\" ino=8 ioctlcmd=0xabcd scontext=test_u:test_r:test_ioctl_xperms_only_t:s0 tcontext=test_u:object_r:test_ioctl_file_t:s0 tclass=file permissive=0"
             ]
         },
         {
             "name": "IoctlTest/GetAttrCommandDenied",
             "audit_expectations": [
-                "avc:  denied  { getattr } for path=\"/tmp/ioctl_test_file:7WEfOX\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_ioctl_figetbsz_denied_t:s0 tcontext=test_u:object_r:test_ioctl_file_t:s0 tclass=file permissive=0"
+                "avc:  denied  { getattr } for path=\"/tmp/ioctl_test_file:qZKzVX\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_ioctl_figetbsz_denied_t:s0 tcontext=test_u:object_r:test_ioctl_file_t:s0 tclass=file permissive=0"
             ]
         },
         {
             "name": "MProtectExecmod/MProtectExecmod/ExecMod/ExecmodNo_PrivateMapping_Modification_MprotectFailure",
             "audit_expectations": [
-                "avc:  denied  { execmod } for path=\"/tmp/testdirWOGMld/test_file\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:mprotect_execmod_no_test_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0"
+                "avc:  denied  { execmod } for path=\"/tmp/testdirD9IrNe/test_file\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:mprotect_execmod_no_test_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0"
             ]
         },
         {
@@ -662,6 +662,534 @@
             ]
         },
         {
+            "name": "PerfEventTest/OpenEventsBreakpointNoCpu",
+            "audit_expectations": [
+                "avc:  denied  { cpu } for scontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tcontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tclass=perf_event permissive=0",
+                "avc:  denied  { cpu } for scontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tcontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenEventsBreakpointNoKernel",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0",
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenEventsNoPerfmon",
+            "audit_expectations": [
+                "avc:  denied  { perfmon } for capability=38  scontext=test_u:test_r:test_perf_no_perfmon_t:s0 tcontext=test_u:test_r:test_perf_no_perfmon_t:s0 tclass=capability2 permissive=0",
+                "avc:  denied  { sys_admin } for capability=21  scontext=test_u:test_r:test_perf_no_perfmon_t:s0 tcontext=test_u:test_r:test_perf_no_perfmon_t:s0 tclass=capability permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenEventsNoTracepoint",
+            "audit_expectations": [
+                "avc:  denied  { tracepoint } for scontext=test_u:test_r:test_perf_event_no_tracepoint_t:s0 tcontext=test_u:test_r:test_perf_event_no_tracepoint_t:s0 tclass=perf_event permissive=0",
+                "avc:  denied  { tracepoint } for scontext=test_u:test_r:test_perf_event_no_tracepoint_t:s0 tcontext=test_u:test_r:test_perf_event_no_tracepoint_t:s0 tclass=perf_event permissive=0",
+                "avc:  denied  { tracepoint } for scontext=test_u:test_r:test_perf_event_no_tracepoint_t:s0 tcontext=test_u:test_r:test_perf_event_no_tracepoint_t:s0 tclass=perf_event permissive=0",
+                "avc:  denied  { tracepoint } for scontext=test_u:test_r:test_perf_event_no_tracepoint_t:s0 tcontext=test_u:test_r:test_perf_event_no_tracepoint_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenEventsRawNoCpu",
+            "audit_expectations": [
+                "avc:  denied  { cpu } for scontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tcontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tclass=perf_event permissive=0",
+                "avc:  denied  { cpu } for scontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tcontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenEventsRawNoKernel",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0",
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHWCacheOrTracepoint/OpenEventsNoCpu/0",
+            "audit_expectations": [
+                "avc:  denied  { cpu } for scontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tcontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tclass=perf_event permissive=0",
+                "avc:  denied  { cpu } for scontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tcontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHWCacheOrTracepoint/OpenEventsNoCpu/1",
+            "audit_expectations": [
+                "avc:  denied  { cpu } for scontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tcontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tclass=perf_event permissive=0",
+                "avc:  denied  { cpu } for scontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tcontext=test_u:test_r:test_perf_event_no_cpu_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHWCacheOrTracepoint/OpenEventsNoKernel/0",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0",
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHWCacheOrTracepoint/OpenEventsNoKernel/1",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0",
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/0",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/1",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/10",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/11",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/12",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/13",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/14",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/15",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/2",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/3",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/4",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/5",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/6",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/7",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/8",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFails/9",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/0",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/1",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/10",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/11",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/12",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/13",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/14",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/15",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/2",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/3",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/4",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/5",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/6",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/7",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/8",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeHardware/OpenEventsNoKernelFailures/9",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/0",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/1",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/10",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/11",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/12",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/13",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/14",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/15",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/16",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/17",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/18",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/19",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/2",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/20",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/21",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/3",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/4",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/5",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/6",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/7",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/8",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFails/9",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/0",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/1",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/10",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/11",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/12",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/13",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/14",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/15",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/16",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/17",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/18",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/19",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/2",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/20",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/21",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/3",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/4",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/5",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/6",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/7",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/8",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
+            "name": "PerfEventTest/OpenTypeSoftware/OpenEventsNoKernelFailures/9",
+            "audit_expectations": [
+                "avc:  denied  { kernel } for scontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tcontext=test_u:test_r:test_perf_event_no_kernel_t:s0 tclass=perf_event permissive=0"
+            ]
+        },
+        {
             "name": "PerfEventTest/PerfEventFailingCpuEvents/PerfEventOpenFailsOnMissingPermissions/0",
             "audit_expectations": [
                 "avc:  denied  { open } for scontext=test_u:test_r:test_perf_event_no_open_t:s0 tcontext=test_u:test_r:test_perf_event_no_open_t:s0 tclass=perf_event permissive=0"
@@ -836,10 +1364,7 @@
         {
             "name": "SocketTest/ListenDenied",
             "audit_expectations": [
-                "avc:  denied  { read } for scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { nlmsg_write } for scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_test_t:s0 tclass=netlink_audit_socket permissive=1",
-                "avc:  denied  { audit_control } for capability=30  scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_test_t:s0 tclass=capability permissive=1",
-                "avc:  denied  { listen } for lport=34157 scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_no_t:s0 tclass=tcp_socket permissive=0",
+                "avc:  denied  { listen } for lport=57673 scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_no_t:s0 tclass=tcp_socket permissive=0",
                 "avc:  denied  { create } for scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_test_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { write } for scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_test_t:s0 tclass=netlink_audit_socket permissive=1",
                 "avc:  denied  { nlmsg_relay } for scontext=test_u:test_r:socket_listen_test_t:s0 tcontext=test_u:test_r:socket_listen_test_t:s0 tclass=netlink_audit_socket permissive=1",
