@@ -24,8 +24,6 @@ uint32_t arm64_isa_features;
 // Whether FEAT_PMUv3 is implemented.
 bool feat_pmuv3_enabled;
 
-static arm64_cache_info cache_info[SMP_MAX_CPUS];
-
 // MMU features
 struct arm64_mmu_features arm64_mmu_features;
 
@@ -33,6 +31,35 @@ struct arm64_mmu_features arm64_mmu_features;
 uint32_t arm64_zva_size = 32;
 uint32_t arm64_icache_size = 32;
 uint32_t arm64_dcache_size = 32;
+
+namespace {
+
+struct arm64_cache_desc {
+  uint8_t ctype;
+  uint32_t num_sets;
+  uint32_t associativity;
+  uint32_t line_size;
+};
+
+struct arm64_cache_info {
+  // from CLIDR_EL1
+  uint8_t inner_boundary;
+  uint8_t lou_u;
+  uint8_t loc;
+  uint8_t lou_is;
+  // from CTR_EL0
+  uint8_t imin_line;
+  uint8_t dmin_line;
+  uint8_t cache_writeback_granule;
+  uint8_t l1_instruction_cache_policy;
+  bool idc;  // requires icache invalidate to pou for instruction to data coherence
+  bool dic;  // requires data clean to pou for data to instruction coherence
+  // via iterating each cache level
+  arm64_cache_desc level_data_type[7];
+  arm64_cache_desc level_inst_type[7];
+};
+
+arm64_cache_info cache_info[SMP_MAX_CPUS];
 
 void arm64_get_cache_info(arm64_cache_info* info) {
   *info = {};
@@ -151,6 +178,8 @@ void arm64_dump_cache_info(cpu_num_t cpu) {
   }
 }
 
+}  // namespace
+
 enum arm64_microarch midr_to_microarch(uint64_t midr) {
   uint64_t implementer = BITS_SHIFT(midr, 31, 24);
   uint64_t partnum = BITS_SHIFT(midr, 15, 4);
@@ -263,7 +292,9 @@ enum arm64_microarch midr_to_microarch(uint64_t midr) {
   }
 }
 
-static void midr_to_core_string(uint64_t midr, char* str, size_t len) {
+namespace {
+
+void midr_to_core_string(uint64_t midr, char* str, size_t len) {
   auto microarch = midr_to_microarch(midr);
   uint64_t implementer = BITS_SHIFT(midr, 31, 24);
   uint64_t variant = BITS_SHIFT(midr, 23, 20);
@@ -400,21 +431,7 @@ static void midr_to_core_string(uint64_t midr, char* str, size_t len) {
 
   snprintf(str, len, "%s r%lup%lu", partnum_str, variant, revision);
 }
-
-static void print_cpu_info() {
-  uint64_t midr = __arm_rsr64("midr_el1");
-  char cpu_name[128];
-  midr_to_core_string(midr, cpu_name, sizeof(cpu_name));
-
-  uint64_t mpidr = __arm_rsr64("mpidr_el1");
-
-  dprintf(INFO, "ARM cpu %u: midr %#lx '%s' mpidr %#" PRIx64 " aff %u:%u:%u:%u\n",
-          arch_curr_cpu_num(), midr, cpu_name, mpidr,
-          (uint32_t)((mpidr & MPIDR_AFF3_MASK) >> MPIDR_AFF3_SHIFT),
-          (uint32_t)((mpidr & MPIDR_AFF2_MASK) >> MPIDR_AFF2_SHIFT),
-          (uint32_t)((mpidr & MPIDR_AFF1_MASK) >> MPIDR_AFF1_SHIFT),
-          (uint32_t)((mpidr & MPIDR_AFF0_MASK) >> MPIDR_AFF0_SHIFT));
-}
+}  // namespace
 
 bool arm64_feature_current_is_first_in_cluster() {
   const uint64_t mpidr = __arm_rsr64("mpidr_el1");
@@ -644,7 +661,24 @@ void arm64_feature_init() {
   arm64_get_cache_info(&(cache_info[cpu]));
 }
 
-static void print_isa_features() {
+namespace {
+
+void print_cpu_info() {
+  uint64_t midr = __arm_rsr64("midr_el1");
+  char cpu_name[128];
+  midr_to_core_string(midr, cpu_name, sizeof(cpu_name));
+
+  uint64_t mpidr = __arm_rsr64("mpidr_el1");
+
+  dprintf(INFO, "ARM cpu %u: midr %#lx '%s' mpidr %#" PRIx64 " aff %u:%u:%u:%u\n",
+          arch_curr_cpu_num(), midr, cpu_name, mpidr,
+          (uint32_t)((mpidr & MPIDR_AFF3_MASK) >> MPIDR_AFF3_SHIFT),
+          (uint32_t)((mpidr & MPIDR_AFF2_MASK) >> MPIDR_AFF2_SHIFT),
+          (uint32_t)((mpidr & MPIDR_AFF1_MASK) >> MPIDR_AFF1_SHIFT),
+          (uint32_t)((mpidr & MPIDR_AFF0_MASK) >> MPIDR_AFF0_SHIFT));
+}
+
+void print_isa_features() {
   constexpr struct {
     uint32_t bit;
     const char* name;
@@ -662,21 +696,32 @@ static void print_isa_features() {
       {ZX_ARM64_FEATURE_ISA_ARM32, "arm32"},     {ZX_ARM64_FEATURE_ISA_MOPS, "mops"},
   };
 
-  printf("ARM ISA Features: ");
+  uint line = 0;
   uint col = 0;
   for (const auto& feature : kFeatures) {
     if (arm64_feature_test(feature.bit)) {
+      if (col == 0) {
+        if (line == 0) {
+          col += printf("ARM ISA Features: ");
+        } else {
+          col += printf("                  ");
+        }
+      }
       col += printf("%s ", feature.name);
-    }
-    if (col >= 80) {
-      printf("\n");
-      col = 0;
+      if (col >= 100) {
+        printf("\n");
+        col = 0;
+        line++;
+      }
     }
   }
+
   if (col > 0) {
     printf("\n");
   }
 }
+
+}  // namespace
 
 // dump the feature set
 // print additional information if full is passed
