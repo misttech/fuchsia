@@ -99,11 +99,14 @@ impl UtcClock {
     /// The `real_utc_clock` is a handle to an underlying Fuchsia UTC clock. It will
     /// be used once started.
     pub fn new(real_utc_clock: UtcClockHandle) -> Self {
-        let offset = real_utc_clock.get_details().unwrap().backstop.into_nanos()
-            - zx::BootInstant::get().into_nanos();
         let current_transform = zx::ClockTransformation {
-            reference_offset: zx::BootInstant::default(),
-            synthetic_offset: UtcInstant::from_nanos(offset),
+            // The boot timeline always starts at zero on boot.
+            reference_offset: zx::BootInstant::ZERO,
+            // By definition, absent other information, a zero reference offset
+            // represents a backstop UTC time instant.
+            synthetic_offset: real_utc_clock.get_details().unwrap().backstop,
+            // Default rate of 1 synthetic second per 1 reference second disregards
+            // any device variations.
             rate: zx::sys::zx_clock_rate_t { synthetic_ticks: 1, reference_ticks: 1 },
         };
         let mut utc_clock =
