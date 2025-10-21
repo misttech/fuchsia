@@ -1318,6 +1318,9 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                         if let Some(x) = telemetry_data.multi_ail_detected {
                             inspector.root().record_bool("multi_ail_detected", x.into());
                         }
+                        if let Some(x) = telemetry_data.extended_pan_id {
+                            inspector.root().record_uint("extended_pan_id", x.into());
+                        }
                     }
                     Err(e) => {
                         warn!("Error in logging telemetry. Error: {}", e);

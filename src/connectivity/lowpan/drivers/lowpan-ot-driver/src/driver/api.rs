@@ -1045,6 +1045,9 @@ where
         // Get whether multi-ail (Adjacent Infrastructure Link) scenario is detected or not.
         let multi_ail_detected = driver_state.ot_instance.border_routing_is_multi_ail_detected();
 
+        // Get the extended pan id of current Thread network.
+        let extended_pan_id = u64::from_ne_bytes(ot.get_extended_pan_id().into_array());
+
         Ok(Telemetry {
             rssi: Some(ot.get_rssi()),
             partition_id: Some(ot.get_partition_id()),
@@ -1097,6 +1100,7 @@ where
             link_metrics_entries: Some(link_metrics_entries),
             border_agent_counters,
             multi_ail_detected: Some(multi_ail_detected),
+            extended_pan_id: Some(extended_pan_id),
             ..Default::default()
         })
     }
