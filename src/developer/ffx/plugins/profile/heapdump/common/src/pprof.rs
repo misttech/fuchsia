@@ -456,7 +456,7 @@ mod tests {
         let st = |index: i64| profile.string_table[usize::try_from(index).unwrap()].as_str();
         let h = ProfileHelper::new(profile);
 
-        // Helper function to resolce location IDs.
+        // Helper function to resolve location IDs.
         let loc = |location_id: u64| profile.location.iter().find(|e| e.id == location_id).unwrap();
 
         // Verify the string table.
@@ -508,6 +508,7 @@ mod tests {
             assert_eq!(allocation2.location_id.len(), STACK_TRACE_B.len());
             assert_eq!(loc(allocation2.location_id[0]).address, STACK_TRACE_B[0]);
             assert_eq!(loc(allocation2.location_id[1]).address, STACK_TRACE_B[1]);
+            assert_eq!(loc(allocation2.location_id[2]).address, STACK_TRACE_B[2]);
             assert_eq!(h.timestamp(allocation2), Some(ALLOC_2_TIMESTAMP.into_nanos()));
             assert_eq!(
                 h.thread(allocation2),
@@ -521,6 +522,7 @@ mod tests {
             assert_eq!(allocation3.location_id.len(), STACK_TRACE_B.len());
             assert_eq!(loc(allocation3.location_id[0]).address, STACK_TRACE_B[0]);
             assert_eq!(loc(allocation3.location_id[1]).address, STACK_TRACE_B[1]);
+            assert_eq!(loc(allocation3.location_id[2]).address, STACK_TRACE_B[2]);
             assert_eq!(h.timestamp(allocation3), Some(ALLOC_3_TIMESTAMP.into_nanos()));
             assert_eq!(
                 h.thread(allocation3),
@@ -543,6 +545,7 @@ mod tests {
             assert_eq!(group2.location_id.len(), STACK_TRACE_B.len());
             assert_eq!(loc(group2.location_id[0]).address, STACK_TRACE_B[0]);
             assert_eq!(loc(group2.location_id[1]).address, STACK_TRACE_B[1]);
+            assert_eq!(loc(group2.location_id[2]).address, STACK_TRACE_B[2]);
         }
 
         // Identify the mappings from their addresses and verify them.
@@ -663,7 +666,7 @@ mod tests {
         // Helper function to access the string table.
         let st = |index: i64| profile.string_table[usize::try_from(index).unwrap()].as_str();
 
-        // Helper function to resolce location IDs.
+        // Helper function to resolve location IDs.
         let loc = |location_id: u64| profile.location.iter().find(|e| e.id == location_id).unwrap();
 
         // Verify the string table.
@@ -678,7 +681,6 @@ mod tests {
 
         if with_tags {
             // Verify the tags' labels.
-
             for sample in &profile.sample {
                 assert_eq!(sample.value.len(), profile.sample_type.len());
                 assert_eq!(sample.label.len(), 1);
@@ -705,6 +707,7 @@ mod tests {
             assert_eq!(allocation2.location_id.len(), STACK_TRACE_B.len());
             assert_eq!(loc(allocation2.location_id[0]).address, STACK_TRACE_B[0]);
             assert_eq!(loc(allocation2.location_id[1]).address, STACK_TRACE_B[1]);
+            assert_eq!(loc(allocation2.location_id[2]).address, STACK_TRACE_B[2]);
 
             let allocation3 =
                 profile.sample.iter().find(|s| s.label[0].num == ALLOC_3_SIZE).unwrap();
@@ -713,6 +716,7 @@ mod tests {
             assert_eq!(allocation3.location_id.len(), STACK_TRACE_B.len());
             assert_eq!(loc(allocation3.location_id[0]).address, STACK_TRACE_B[0]);
             assert_eq!(loc(allocation3.location_id[1]).address, STACK_TRACE_B[1]);
+            assert_eq!(loc(allocation2.location_id[2]).address, STACK_TRACE_B[2]);
         } else {
             // Verify that the samples were aggregated by stack trace correctly.
             assert_eq!(profile.sample.len(), 2);
@@ -730,6 +734,7 @@ mod tests {
             assert_eq!(group2.location_id.len(), STACK_TRACE_B.len());
             assert_eq!(loc(group2.location_id[0]).address, STACK_TRACE_B[0]);
             assert_eq!(loc(group2.location_id[1]).address, STACK_TRACE_B[1]);
+            assert_eq!(loc(group2.location_id[2]).address, STACK_TRACE_B[2]);
         }
 
         // Identify the mappings from their addresses and verify them.
