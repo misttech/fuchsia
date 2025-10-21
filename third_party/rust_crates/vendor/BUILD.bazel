@@ -3115,14 +3115,14 @@ alias(
 )
 
 alias(
-    name = "typed-builder-0.10.0",
-    actual = "//third_party/rust_crates/vendor/typed-builder-0.10.0:typed_builder",
+    name = "typed-builder-0.21.2",
+    actual = "//third_party/rust_crates/vendor/typed-builder-0.21.2:typed_builder",
     tags = ["manual"],
 )
 
 alias(
     name = "typed-builder",
-    actual = "//third_party/rust_crates/vendor/typed-builder-0.10.0:typed_builder",
+    actual = "//third_party/rust_crates/vendor/typed-builder-0.21.2:typed_builder",
     tags = ["manual"],
 )
 

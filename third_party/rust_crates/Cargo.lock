@@ -1788,7 +1788,7 @@ dependencies = [
  "trust-dns-resolver",
  "ttf-parser",
  "tuf",
- "typed-builder",
+ "typed-builder 0.21.2",
  "unic-char-range",
  "unic-ucd-block",
  "unicase",
@@ -2972,7 +2972,7 @@ dependencies = [
  "signature 1.6.4",
  "thiserror 2.0.12",
  "tracing",
- "typed-builder",
+ "typed-builder 0.10.0",
  "uuid 1.1.2",
 ]
 
@@ -5274,6 +5274,26 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.98",
+]
+
+[[package]]
+name = "typed-builder"
+version = "0.21.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fef81aec2ca29576f9f6ae8755108640d0a86dd3161b2e8bca6cfa554e98f77d"
+dependencies = [
+ "typed-builder-macro",
+]
+
+[[package]]
+name = "typed-builder-macro"
+version = "0.21.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ecb9ecf7799210407c14a8cfdfe0173365780968dc57973ed082211958e0b18"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.103",
 ]
 
 [[package]]

@@ -484,6 +484,7 @@ _NORMAL_DEPENDENCIES = {
             "tracing-mutex": Label("//third_party/rust_crates/vendor/tracing-mutex-0.3.1:tracing_mutex"),
             "tracing-subscriber": Label("//third_party/rust_crates/vendor/tracing-subscriber-0.3.18:tracing_subscriber"),
             "tuf": Label("//third_party/rust_crates/vendor/tuf-0.3.0-beta14:tuf"),
+            "typed-builder": Label("//third_party/rust_crates/vendor/typed-builder-0.21.2:typed_builder"),
             "unic-char-range": Label("//third_party/rust_crates/vendor/unic-char-range-0.9.0:unic_char_range"),
             "unic-ucd-block": Label("//third_party/rust_crates/vendor/unic-ucd-block-0.9.0:unic_ucd_block"),
             "unicase": Label("//third_party/rust_crates/vendor/unicase-2.8.1:unicase"),
@@ -608,7 +609,6 @@ _PROC_MACRO_DEPENDENCIES = {
             "serde_derive": Label("//third_party/rust_crates/vendor/serde_derive-1.0.228:serde_derive"),
             "serde_repr": Label("//third_party/rust_crates/vendor/serde_repr-0.1.7:serde_repr"),
             "strum_macros": Label("//third_party/rust_crates/vendor/strum_macros-0.27.2:strum_macros"),
-            "typed-builder": Label("//third_party/rust_crates/vendor/typed-builder-0.10.0:typed_builder"),
         },
         "cfg(not(target_os = \"fuchsia\"))": {
             "indoc": Label("//third_party/rust_crates/vendor/indoc-2.0.6:indoc"),

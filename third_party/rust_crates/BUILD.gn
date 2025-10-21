@@ -1190,7 +1190,7 @@ group("tuf") {
 }
 
 group("typed-builder") {
-  public_deps = [ ":typed-builder-v0_10_0($host_toolchain)" ]
+  public_deps = [ ":typed-builder-v0_21_2" ]
 }
 
 group("unic-char-range") {
@@ -19709,6 +19709,76 @@ rustc_macro("typed-builder-v0_10_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":typed-builder-v0_10_0.license" ]
+}
+
+license("typed-builder-v0_21_2.license") {
+  public_package_name = "typed_builder"
+  license_files = [
+    "//third_party/rust_crates/vendor/typed-builder-0.21.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/typed-builder-0.21.2/LICENSE-MIT",
+  ]
+}
+
+rustc_library("typed-builder-v0_21_2") {
+  crate_name = "typed_builder"
+  source_root =
+      "//third_party/rust_crates/vendor/typed-builder-0.21.2/src/lib.rs"
+  output_name = "typed_builder-b2fd8aa8c7a16593"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":typed-builder-macro-v0_21_2($host_toolchain)" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=b2fd8aa8c7a16593",
+    "-Cextra-filename=-b2fd8aa8c7a16593",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":typed-builder-v0_21_2.license" ]
+}
+
+license("typed-builder-macro-v0_21_2.license") {
+  public_package_name = "typed_builder_macro"
+  license_files = [
+    "//third_party/rust_crates/vendor/typed-builder-macro-0.21.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/typed-builder-macro-0.21.2/LICENSE-MIT",
+  ]
+}
+
+rustc_macro("typed-builder-macro-v0_21_2") {
+  crate_name = "typed_builder_macro"
+  source_root =
+      "//third_party/rust_crates/vendor/typed-builder-macro-0.21.2/src/lib.rs"
+  output_name = "typed_builder_macro-7510605f9acb39f5"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":proc-macro2-v1_0_97" ]
+  deps += [ ":quote-v1_0_40" ]
+  deps += [ ":syn-v2_0_103" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=7510605f9acb39f5",
+    "-Cextra-filename=-7510605f9acb39f5",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":typed-builder-macro-v0_21_2.license" ]
 }
 
 license("typenum-v1_18_0.license") {

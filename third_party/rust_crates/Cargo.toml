@@ -250,7 +250,7 @@ tracing-core = "0.1.32"
 tracing-log = "0.2.0"
 tracing-mutex = { version = "0.3.1", features = ["experimental", "lockapi", "parkinglot"] }
 tuf = { version = "=0.3.0-beta14", default-features = false, features = ["hyper"] }
-typed-builder = "0.10.0"
+typed-builder = "0.21.2"
 unic-char-range = "0.9"
 unic-ucd-block = "0.9"
 unicase = "2.8.1"
