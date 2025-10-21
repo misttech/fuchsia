@@ -15,5 +15,5 @@ rustc_macro("filter_methods_macro") {
 
   sources = [ "src/lib.rs" ]
 
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 }

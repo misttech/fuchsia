@@ -15,3 +15,18 @@ python_binary("generate_container_config_shard") {
   main_callable = "main"
   deps = [ "//third_party/pyjson5" ]
 }
+
+# Add this config to any libraries that are only used by the Starnix kernel binary.
+config("kernel_library_config") {
+  configs = [ "//src/starnix/config:starnix_clippy_lints" ]
+
+  # Enable performance features in release mode.
+  if (compilation_mode == "release") {
+    # Enable linker-plugin-based LTO to only generate LLVM bitcode for
+    # this library because it is only used in a binary that has LTO enabled.
+    configs += [ "//build/config/lto:lto-rust-linker-plugin" ]
+
+    # Enable moderate level of optimization for better performance.
+    configs += [ "//build/config:optimize_moderate" ]
+  }
+}

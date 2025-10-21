@@ -32,7 +32,7 @@ rustc_library("starnix_lifecycle") {
     "//third_party/rust_crates:futures",
   ]
 
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 }
 
 fuchsia_unittest_package("starnix_lifecycle-tests") {

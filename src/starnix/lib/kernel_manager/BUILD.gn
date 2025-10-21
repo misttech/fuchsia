@@ -54,7 +54,7 @@ rustc_library("kernel_manager") {
 
   test_deps = [ "//src/lib/fuchsia" ]
 
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 }
 
 fuchsia_unittest_package("starnix_kernel_manager-tests") {

@@ -44,7 +44,7 @@ rustc_library("starnix_logging") {
     features += [ "trace_and_debug_logs_in_release" ]
   }
 
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 }
 
 fuchsia_unittest_package("starnix_logging-tests") {

@@ -17,7 +17,7 @@ rustc_library("gralloc") {
     "lib.rs",
   ]
 
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 
   deps = [
     "//sdk/fidl/fuchsia.starnix.gralloc:fuchsia.starnix.gralloc_rust",

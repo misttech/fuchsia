@@ -17,7 +17,7 @@ rustc_library("starnix_features") {
     "//third_party/rust_crates:strum_macros",
     "//third_party/rust_crates:thiserror",
   ]
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 }
 
 fuchsia_unittest_package("starnix_features-tests") {

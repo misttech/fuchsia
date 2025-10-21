@@ -31,7 +31,7 @@ rustc_library("starnix_syscall_loop") {
     "//third_party/rust_crates:scopeguard",
   ]
 
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 }
 
 static_library("restricted_trampoline") {

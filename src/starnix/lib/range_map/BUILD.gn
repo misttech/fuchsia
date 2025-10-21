@@ -10,7 +10,7 @@ rustc_library("range_map") {
   sources = [ "src/lib.rs" ]
   deps = [ "//third_party/rust_crates:arrayvec" ]
 
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 }
 
 # Include starnix in the name for easier dashboarding of flakes.

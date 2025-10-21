@@ -44,7 +44,7 @@ rustc_library("starnix_sync") {
     "src/port_event.rs",
   ]
 
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 
   if (starnix_detect_lock_cycles) {
     configs += [ ":detect_lock_cycles" ]

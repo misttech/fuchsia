@@ -18,15 +18,15 @@ Two common use cases for Starnix modules are device drivers and file systems.
 ## Configuration
 
 To ensure code quality and consistency across all Starnix modules, each
-module's `BUILD.gn` file must include the common clippy lint configuration.
+module's `BUILD.gn` file must include the common clippy lint configuration and
+other compiler flags.
 
 This is done by adding the following to the `configs` list of your
 `rustc_library` target:
 
 ```gn
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 ```
 
-This configuration enforces a standard set of lints, helping to catch common
-errors and maintain a uniform coding style throughout the Starnix module
-ecosystem.
+This configuration enforces a standard set of lints and aligns other flags with
+the library's use in the Starnix kernel binary.

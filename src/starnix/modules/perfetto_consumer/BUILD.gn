@@ -18,7 +18,7 @@ rustc_library("perfetto_consumer") {
     "lib.rs",
   ]
 
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 
   # TODO(https://fxbug.dev/42059075): Re-enable starnix in these environments.
   exclude_toolchain_tags = [

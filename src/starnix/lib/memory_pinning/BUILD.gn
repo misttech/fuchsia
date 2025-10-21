@@ -30,7 +30,7 @@ rustc_library("memory_pinning") {
     "//third_party/rust_crates:futures",
   ]
 
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 }
 
 fuchsia_unittest_package("memory_pinning_tests") {

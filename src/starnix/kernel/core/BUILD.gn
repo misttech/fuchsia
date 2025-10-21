@@ -368,8 +368,6 @@ _starnix_core_inputs = [
   "//src/starnix/lib/selinux/testdata/composite_policies/compiled/bounded_transition_policy.pp",
 ]
 
-_starnix_core_configs = [ "//src/starnix/config:starnix_clippy_lints" ]
-
 rustc_library("core") {
   name = "starnix_core"
   edition = _starnix_core_edition
@@ -382,17 +380,7 @@ rustc_library("core") {
   features = _starnix_core_features
   inputs = _starnix_core_inputs
 
-  configs += _starnix_core_configs
-
-  # Enable performance features in release mode.
-  if (compilation_mode == "release") {
-    # Enable linker-plugin-based LTO to only generate LLVM bitcode for
-    # this library because it is only used in a binary that has LTO enabled.
-    configs += [ "//build/config/lto:lto-rust-linker-plugin" ]
-
-    # Enable moderate level of optimization for better performance.
-    configs += [ "//build/config:optimize_moderate" ]
-  }
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 
   # Allows binaries that depend on this library to link.
   public_configs = [ "//build/config/fuchsia:static_cpp_standard_library" ]
@@ -430,7 +418,7 @@ rustc_test("starnix_core_test") {
   ]
 
   inputs = _starnix_core_inputs
-  configs += _starnix_core_configs
+  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
 
   # Linking the lib tests requires a lot of memory.
   # Notes: if (is_asan || target_cpu == "riscv64"), linking is known to

@@ -40,7 +40,7 @@ rustc_library("lib") {
     deps += [ ":riscv64_vector" ]
   }
 
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 }
 
 rustc_binary("bin") {

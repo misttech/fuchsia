@@ -32,7 +32,7 @@ rustc_library("fastrpc") {
     "hwasan",
   ]
 
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 
   deps = [
     "//sdk/fidl/fuchsia.hardware.qualcomm.fastrpc:fuchsia.hardware.qualcomm.fastrpc_rust",

@@ -28,7 +28,7 @@ rustc_library("ext4") {
     "hwasan",
   ]
 
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 
   deps = [
     "//sdk/fidl/fuchsia.starnix.runner:fuchsia.starnix.runner_rust",

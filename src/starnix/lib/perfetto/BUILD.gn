@@ -9,7 +9,7 @@ import("//tools/protobuf/rust_proto_library.gni")
 rustc_library("perfetto") {
   edition = "2021"
   sources = [ "src/lib.rs" ]
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
   deps = [
     ":perfetto_protos",
     "//src/starnix/kernel/core",

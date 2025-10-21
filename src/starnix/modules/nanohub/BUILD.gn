@@ -52,7 +52,7 @@ rustc_library("nanohub") {
     "sysfs.rs",
   ]
 
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 
   deps = [
     "//sdk/fidl/fuchsia.hardware.backlight:fuchsia.hardware.backlight_rust",

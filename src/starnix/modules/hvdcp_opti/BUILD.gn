@@ -24,7 +24,7 @@ rustc_library("hvdcp_opti_module") {
     "utils.rs",
   ]
 
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 
   deps = [
     "//sdk/fidl/fuchsia.hardware.qcom.hvdcpopti:fuchsia.hardware.qcom.hvdcpopti_rust",

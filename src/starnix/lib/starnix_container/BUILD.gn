@@ -52,7 +52,7 @@ rustc_library("starnix_container") {
   # The test needs ROOT_OUT_DIR to find the test data.
   rustenv = [ "ROOT_OUT_DIR=$relative_root_out_dir" ]
 
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 }
 
 group("tests") {

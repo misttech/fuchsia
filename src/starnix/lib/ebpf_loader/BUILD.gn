@@ -34,7 +34,7 @@ rustc_library("ebpf_loader") {
     "//src/starnix/lib/ebpf_api",
   ]
 
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 
   with_unit_tests = true
 }

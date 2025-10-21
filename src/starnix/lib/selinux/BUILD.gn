@@ -83,7 +83,7 @@ rustc_library("selinux") {
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json5",
   ]
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 
   if (is_host) {
     # Host builds use `parking_lot` for lock primitives.

@@ -20,7 +20,7 @@ rustc_library("bootreason") {
     "//third_party/rust_crates:log",
   ]
 
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 }
 
 group("tests") {

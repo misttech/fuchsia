@@ -12,7 +12,7 @@ rustc_library("tun") {
 
   sources = [ "lib.rs" ]
 
-  configs += [ "//src/starnix/config:starnix_clippy_lints" ]
+  configs += [ "//src/starnix/build:kernel_library_config" ]
 
   deps = [
     "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_rust",
