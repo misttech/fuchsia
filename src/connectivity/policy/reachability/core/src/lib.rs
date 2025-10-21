@@ -24,7 +24,6 @@ use fidl_fuchsia_net_ext::{self as fnet_ext, IpExt};
 use fuchsia_inspect::{Inspector, Node as InspectNode};
 use futures::channel::mpsc;
 use inspect::InspectInfo;
-use itertools::Itertools;
 use log::{debug, error, info};
 use named_timer::DeadlineId;
 use net_declare::{fidl_subnet, std_ip};
@@ -672,6 +671,8 @@ struct NetworkCheckContext {
     fetches_expected: usize,
     // The quantity of fetches that have been completed.
     fetches_completed: usize,
+    // TODO(https://fxbug.dev/454029356): Combine the discovered_state fields
+    // into a single IpVersions struct.
     // The current calculated v4 state.
     discovered_state_v4: State,
     // The current calculated v6 state.
@@ -679,9 +680,9 @@ struct NetworkCheckContext {
     // Whether the network check should ping internet regardless of if the gateway pings fail.
     always_ping_internet: bool,
     // Whether an online router was discoverable via neighbor discovery.
-    router_discoverable: bool,
+    router_discoverable: IpVersions<bool>,
     // Whether the gateway successfully responded to pings.
-    gateway_pingable: bool,
+    gateway_pingable: IpVersions<bool>,
     // Context that persists between check cycles
     persistent_context: PersistentNetworkCheckContext,
     // TODO(https://fxbug.dev/42074525): Add tombstone marker to inform NetworkCheck that the interface has
@@ -739,8 +740,8 @@ impl Default for NetworkCheckContext {
             discovered_state_v4: State { link: LinkState::None, ..Default::default() },
             discovered_state_v6: State { link: LinkState::None, ..Default::default() },
             always_ping_internet: true,
-            router_discoverable: false,
-            gateway_pingable: false,
+            router_discoverable: Default::default(),
+            gateway_pingable: Default::default(),
             persistent_context: Default::default(),
         }
     }
@@ -979,13 +980,13 @@ impl<Time: TimeProvider> Monitor<Time> {
         };
 
         let gateway_event_v4 = TelemetryEvent::GatewayProbe {
-            gateway_discoverable: ctx.router_discoverable,
-            gateway_pingable: ctx.gateway_pingable,
+            gateway_discoverable: ctx.router_discoverable.ipv4,
+            gateway_pingable: ctx.gateway_pingable.ipv4,
             internet_available: ctx.discovered_state_v4.has_internet(),
         };
         let gateway_event_v6 = TelemetryEvent::GatewayProbe {
-            gateway_discoverable: ctx.router_discoverable,
-            gateway_pingable: ctx.gateway_pingable,
+            gateway_discoverable: ctx.router_discoverable.ipv6,
+            gateway_pingable: ctx.gateway_pingable.ipv6,
             internet_available: ctx.discovered_state_v6.has_internet(),
         };
 
@@ -1108,17 +1109,16 @@ impl<Time: TimeProvider> Monitor<Time> {
 
     fn handle_ping_success(ctx: &mut NetworkCheckContext, addr: &std::net::SocketAddr) {
         match ctx.checker_state {
-            NetworkCheckState::PingGateway => {
-                ctx.gateway_pingable = true;
-                match addr {
-                    std::net::SocketAddr::V4 { .. } => {
-                        ctx.discovered_state_v4.set_link_state(LinkState::Gateway)
-                    }
-                    std::net::SocketAddr::V6 { .. } => {
-                        ctx.discovered_state_v6.set_link_state(LinkState::Gateway)
-                    }
+            NetworkCheckState::PingGateway => match addr {
+                std::net::SocketAddr::V4 { .. } => {
+                    ctx.gateway_pingable.ipv4 = true;
+                    ctx.discovered_state_v4.set_link_state(LinkState::Gateway);
                 }
-            }
+                std::net::SocketAddr::V6 { .. } => {
+                    ctx.gateway_pingable.ipv6 = true;
+                    ctx.discovered_state_v6.set_link_state(LinkState::Gateway);
+                }
+            },
             NetworkCheckState::PingInternet => match addr {
                 std::net::SocketAddr::V4 { .. } => {
                     ctx.discovered_state_v4.set_link_state(LinkState::Internet)
@@ -1214,18 +1214,13 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
             return self.update_state_from_context(id, name);
         }
 
-        // TODO(https://fxbug.dev/42154208) Check if packet count has increased, and if so upgrade the
-        // state to LinkLayerUp.
-        let (discovered_online_neighbor, discovered_online_router) =
-            scan_neighbor_health(neighbors, &device_routes);
+        // TODO(https://fxbug.dev/42154208) Check if packet count has increased, and if so upgrade
+        // the state to LinkLayerUp.
+        let neighbor_scan_health = scan_neighbor_health(neighbors, &device_routes);
 
-        if !discovered_online_neighbor && discovered_online_router {
-            return Err(anyhow!(
-                "invalid state: cannot have router discovered while neighbors are undiscovered"
-            ));
-        }
-
-        if !discovered_online_neighbor && !discovered_online_router {
+        if neighbor_scan_health.ipv4 == NeighborHealthScanResult::NoneHealthy
+            && neighbor_scan_health.ipv6 == NeighborHealthScanResult::NoneHealthy
+        {
             let discovered_state =
                 if device_routes.is_empty() { LinkState::Up } else { LinkState::Local };
             ctx.set_global_link_state(discovered_state);
@@ -1273,7 +1268,10 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
             .collect::<Vec<_>>();
 
         // A router is determined to be discoverable if it is online (marked as healthy by ND).
-        ctx.router_discoverable = discovered_online_router;
+        ctx.router_discoverable = IpVersions {
+            ipv4: neighbor_scan_health.ipv4 == NeighborHealthScanResult::HealthyRouter,
+            ipv6: neighbor_scan_health.ipv6 == NeighborHealthScanResult::HealthyRouter,
+        };
         if gateway_ping_addrs.is_empty() {
             // When there are no gateway addresses to ping, the gateway is not pingable. The list
             // of Gateway addresses is obtained by filtering the default IPv4 and IPv6 routes.
@@ -1286,7 +1284,9 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
             // a router may have a very specific target prefix that is routable. The device could
             // access a remote set of addresses through this local router and not view it as being
             // accessed through a default route.
-            if discovered_online_router {
+            if neighbor_scan_health.ipv4 == NeighborHealthScanResult::HealthyRouter
+                || neighbor_scan_health.ipv6 == NeighborHealthScanResult::HealthyRouter
+            {
                 // Setup to ping internet addresses, skipping over gateway pings.
                 // Internet can be pinged when either an online router is discovered or the gateway
                 // is pingable. In this case, the discovery of a router enables the internet ping.
@@ -1313,11 +1313,20 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
             }
         } else {
             // Setup to ping gateway addresses.
-            ctx.set_global_link_state(if discovered_online_router {
-                LinkState::Gateway
-            } else {
-                LinkState::Local
-            });
+            ctx.discovered_state_v4.set_link_state(
+                if neighbor_scan_health.ipv4 == NeighborHealthScanResult::HealthyRouter {
+                    LinkState::Gateway
+                } else {
+                    LinkState::Local
+                },
+            );
+            ctx.discovered_state_v6.set_link_state(
+                if neighbor_scan_health.ipv6 == NeighborHealthScanResult::HealthyRouter {
+                    LinkState::Gateway
+                } else {
+                    LinkState::Local
+                },
+            );
             ctx.initiate_ping(
                 id,
                 name,
@@ -1501,46 +1510,68 @@ fn log_state(info: Option<&mut InspectInfo>, proto: Proto, state: State) {
     info.into_iter().for_each(|info| info.log_link_state(proto, state.link))
 }
 
+#[derive(Default, PartialEq)]
+enum NeighborHealthScanResult {
+    // No healthy neighbors were discovered.
+    #[default]
+    NoneHealthy,
+    // A healthy neighbor was discovered.
+    HealthyNeighbor,
+    // A healthy router was discovered. Takes precedence over
+    // `HealthyNeighbor` since an healthy router implies
+    // a healthy neighbor.
+    HealthyRouter,
+}
+
+impl NeighborHealthScanResult {
+    // A neighbor was discovered. Update the state based on whether the neighbor
+    // is a router.
+    fn update_scan_result(&mut self, is_router: bool) {
+        *self = match (&self, is_router) {
+            // HealthyRouter should never degrade to HealthyNeighbor.
+            (_, true) | (Self::HealthyRouter, _) => Self::HealthyRouter,
+            _ => Self::HealthyNeighbor,
+        }
+    }
+}
+
 // Determines whether any online neighbors or online gateways are discoverable via neighbor
 // discovery. The definition of a Healthy neighbor correlates to a neighbor being online.
 fn scan_neighbor_health(
     neighbors: Option<&InterfaceNeighborCache>,
     device_routes: &Vec<route_table::Route>,
-) -> (bool, bool) {
+) -> IpVersions<NeighborHealthScanResult> {
     match neighbors {
-        None => (false, false),
+        None => Default::default(),
         Some(neighbors) => {
-            neighbors
-                .iter_health()
-                .fold_while(
-                    (false, false),
-                    |(discovered_online_neighbor, _discovered_online_router),
-                     (neighbor, health)| {
-                        let is_router = device_routes.iter().any(
-                            |Route { destination: _, outbound_interface: _, next_hop }| {
-                                next_hop.map(|next_hop| *neighbor == next_hop).unwrap_or(false)
-                            },
-                        );
-                        match health {
-                            // When we find an unhealthy or unknown neighbor, continue,
-                            // keeping whether we've previously found a healthy neighbor.
-                            neighbor_cache::NeighborHealth::Unhealthy { .. }
-                            | neighbor_cache::NeighborHealth::Unknown => {
-                                itertools::FoldWhile::Continue((discovered_online_neighbor, false))
-                            }
-                            // If there's a healthy router, then we're done. If the neighbor
-                            // is not a router, then we know we have a healthy neighbor, but
-                            // not a healthy router.
-                            neighbor_cache::NeighborHealth::Healthy { .. } => {
-                                if !is_router {
-                                    return itertools::FoldWhile::Continue((true, false));
-                                }
-                                itertools::FoldWhile::Done((true, true))
-                            }
+            neighbors.iter_health().fold(
+                Default::default(),
+                |mut neighbor_health_scan, (neighbor, health)| {
+                    let is_router = device_routes.iter().any(
+                        |Route { destination: _, outbound_interface: _, next_hop }| {
+                            next_hop.map(|next_hop| *neighbor == next_hop).unwrap_or(false)
+                        },
+                    );
+                    match health {
+                        // When we find an unhealthy or unknown neighbor, continue,
+                        // keeping whether we've previously found a healthy neighbor.
+                        neighbor_cache::NeighborHealth::Unhealthy { .. }
+                        | neighbor_cache::NeighborHealth::Unknown => neighbor_health_scan,
+                        // If there's a healthy router, then we're done. If the neighbor
+                        // is not a router, then we know we have a healthy neighbor, but
+                        // not a healthy router.
+                        neighbor_cache::NeighborHealth::Healthy { .. } => {
+                            let scan = match neighbor {
+                                fnet::IpAddress::Ipv4(..) => &mut neighbor_health_scan.ipv4,
+                                fnet::IpAddress::Ipv6(..) => &mut neighbor_health_scan.ipv6,
+                            };
+
+                            scan.update_scan_result(is_router);
+                            neighbor_health_scan
                         }
-                    },
-                )
-                .into_inner()
+                    }
+                },
+            )
         }
     }
 }
@@ -1570,6 +1601,10 @@ mod tests {
     const ETHERNET_INTERFACE_NAME: &str = "eth1";
     const ID1: u64 = 1;
     const ID2: u64 = 2;
+    // RFC5737§3 specifies the reserved IPv4 address prefix for tests and documentation.
+    const IPV4_ADDR: fnet::IpAddress = fidl_ip!("192.168.0.1");
+    // RFC-3849§4 specifies the global IPv6 unicast address prefix for tests and documentation.
+    const IPV6_ADDR: fnet::IpAddress = fidl_ip!("2001:db8::");
 
     // A trait for writing helper constructors.
     //
@@ -1960,6 +1995,128 @@ mod tests {
             None,
         )
         .map(|res| res.and_then(|mut v| v.pop()))
+    }
+
+    #[test]
+    fn test_network_check_ipv6_gateway_only() {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+        let time = fasync::MonotonicInstant::from_nanos(1_000_000_000);
+        let () = exec.set_fake_time(time.into());
+
+        // The next_hop of the default route must be the same as a known neighbor. This is used
+        // to determine this neighbor as a valid gateway.
+        let routes = testutil::build_route_table_from_flattened_routes([Route {
+            destination: UNSPECIFIED_V6,
+            outbound_interface: ID1,
+            next_hop: Some(IPV6_ADDR),
+        }]);
+        let properties = &fnet_interfaces_ext::Properties {
+            id: ID1.try_into().expect("should be nonzero"),
+            name: ETHERNET_INTERFACE_NAME.to_string(),
+            port_class: fnet_interfaces_ext::PortClass::Ethernet,
+            online: true,
+            addresses: vec![],
+            has_default_ipv4_route: false,
+            has_default_ipv6_route: true,
+        };
+        let neighbors = InterfaceNeighborCache {
+            neighbors: [(
+                IPV6_ADDR,
+                NeighborState::new(NeighborHealth::Healthy {
+                    last_observed: zx::MonotonicInstant::default(),
+                }),
+            )]
+            .into_iter()
+            .collect::<HashMap<fnet::IpAddress, NeighborState>>(),
+        };
+
+        let got = run_network_check(
+            &mut exec,
+            properties,
+            &routes,
+            Some(&neighbors),
+            FakePing::default(),
+            FakeDig::default(),
+            FakeFetch::default(),
+        )
+        .expect("run_network_check failed")
+        .expect("interface state not found");
+
+        let want_ipv4 =
+            StateEvent { state: State { link: LinkState::Local, ..Default::default() }, time };
+        let want_ipv6 =
+            StateEvent { state: State { link: LinkState::Gateway, ..Default::default() }, time };
+        assert_eq!(got.ipv4, want_ipv4);
+        assert_eq!(got.ipv6, want_ipv6);
+    }
+
+    #[fuchsia::test]
+    fn test_network_check_ipv4_and_ipv6_gateway() {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+        let time = fasync::MonotonicInstant::from_nanos(1_000_000_000);
+        let () = exec.set_fake_time(time.into());
+
+        // The next_hop of the default route must be the same as a known neighbor. This is used
+        // to determine this neighbor as a valid gateway.
+        let routes = testutil::build_route_table_from_flattened_routes([
+            Route {
+                destination: UNSPECIFIED_V4,
+                outbound_interface: ID1,
+                next_hop: Some(IPV4_ADDR),
+            },
+            Route {
+                destination: UNSPECIFIED_V6,
+                outbound_interface: ID1,
+                next_hop: Some(IPV6_ADDR),
+            },
+        ]);
+        let properties = &fnet_interfaces_ext::Properties {
+            id: ID1.try_into().expect("should be nonzero"),
+            name: ETHERNET_INTERFACE_NAME.to_string(),
+            port_class: fnet_interfaces_ext::PortClass::Ethernet,
+            online: true,
+            addresses: vec![],
+            has_default_ipv4_route: true,
+            has_default_ipv6_route: true,
+        };
+        let neighbors = InterfaceNeighborCache {
+            neighbors: [
+                (
+                    IPV4_ADDR,
+                    NeighborState::new(NeighborHealth::Healthy {
+                        last_observed: zx::MonotonicInstant::default(),
+                    }),
+                ),
+                (
+                    IPV6_ADDR,
+                    NeighborState::new(NeighborHealth::Healthy {
+                        last_observed: zx::MonotonicInstant::default(),
+                    }),
+                ),
+            ]
+            .into_iter()
+            .collect::<HashMap<fnet::IpAddress, NeighborState>>(),
+        };
+
+        let got = run_network_check(
+            &mut exec,
+            properties,
+            &routes,
+            Some(&neighbors),
+            FakePing::default(),
+            FakeDig::default(),
+            FakeFetch::default(),
+        )
+        .expect("run_network_check failed")
+        .expect("interface state not found");
+
+        assert_eq!(
+            got,
+            IpVersions::construct(StateEvent {
+                state: State { link: LinkState::Gateway, ..Default::default() },
+                time
+            })
+        );
     }
 
     #[test]
