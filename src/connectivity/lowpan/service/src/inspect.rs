@@ -1315,6 +1315,9 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                 },
                             )
                         }
+                        if let Some(x) = telemetry_data.multi_ail_detected {
+                            inspector.root().record_bool("multi_ail_detected", x.into());
+                        }
                     }
                     Err(e) => {
                         warn!("Error in logging telemetry. Error: {}", e);
@@ -1350,7 +1353,7 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fuchsia_async as fasync;
     use fuchsia_async::{MonotonicInstant, TimeoutExt};
     use fuchsia_component_test::ScopedInstanceFactory;
