@@ -48,6 +48,7 @@ pub struct KernelResources {
 
 #[derive(Default)]
 struct KernelResourcesBuilder {
+    /// Map of resource Koid to resource definition.
     resources: HashMap<zx::Koid, fplugin::Resource>,
     /// Map of resource name to unique identifier.
     ///
@@ -400,59 +401,43 @@ impl KernelResourcesExplorer {
         process_mapped: &HashMap<zx::Koid, CollectionRequest>,
     ) -> Result<(), zx::Status> {
         let job_name = job.get_name()?;
-        let child_jobs = job.children()?;
-        let processes = job.processes()?;
-        for child_job_koid in &child_jobs {
+        let child_job_koids = job.children()?;
+        let child_process_koids = job.processes()?;
+        for child_job_koid in &child_job_koids {
             // Here and below: jobs and processes can disappear while we explore the job
             // and process hierarchy. Therefore, we don't stop the exploration if we don't
             // find a previously mentioned job or process, but we just ignore it silently.
             let child_job = match job.get_child_job(child_job_koid, zx::Rights::SAME_RIGHTS) {
-                Err(s) => {
-                    if s == zx::Status::NOT_FOUND {
-                        continue;
-                    } else {
-                        Err(s)?
-                    }
-                }
+                Err(zx::Status::NOT_FOUND) => continue,
+                Err(status) => return Err(status),
                 Ok(child) => child,
             };
-            if let Err(status) =
-                self.explore_job(visitor, child_job_koid, child_job.as_ref(), process_mapped)
-            {
+            match self.explore_job(visitor, child_job_koid, child_job.as_ref(), process_mapped) {
                 // If the job disappeared while being explored, we get a BAD_STATE error. In that
                 // case, we want to go to the next job but not fail the entire collection.
-                if status != zx::Status::BAD_STATE {
-                    return Err(status);
-                }
+                Err(zx::Status::BAD_STATE) => {}
+                Err(status) => return Err(status),
+                Ok(_) => {}
             }
         }
 
-        for process_koid in &processes {
-            let child_process = match job.get_child_process(process_koid, zx::Rights::SAME_RIGHTS) {
-                Err(s) => {
-                    if s == zx::Status::NOT_FOUND {
-                        continue;
-                    } else {
-                        Err(s)?
-                    }
-                }
-                Ok(child) => child,
-            };
+        for child_process_koid in &child_process_koids {
+            let child_process =
+                match job.get_child_process(child_process_koid, zx::Rights::SAME_RIGHTS) {
+                    Err(zx::Status::NOT_FOUND) => continue,
+                    Err(s) => return Err(s),
+                    Ok(child) => child,
+                };
             match self.explore_process(
                 visitor,
-                process_koid,
+                child_process_koid,
                 child_process.as_ref(),
-                process_mapped.get(process_koid),
+                process_mapped.get(child_process_koid),
             ) {
-                Err(s) => {
-                    // If the process disappeared while being explored, we get a BAD_STATE error. In
-                    // that case, we want to go to the next job but not fail the entire collection.
-                    if s == zx::Status::BAD_STATE {
-                        continue;
-                    } else {
-                        Err(s)?
-                    }
-                }
+                // If the process disappeared while being explored, we get a BAD_STATE error. In
+                // that case, we want to go to the next job but not fail the entire collection.
+                Err(zx::Status::BAD_STATE) => continue,
+                Err(s) => return Err(s),
                 Ok(_) => continue,
             };
         }
@@ -460,8 +445,8 @@ impl KernelResourcesExplorer {
             job_koid.raw_koid(),
             into_zx_name(&job_name)?,
             fplugin::Job {
-                child_jobs: Some(child_jobs.iter().map(zx::Koid::raw_koid).collect()),
-                processes: Some(processes.iter().map(zx::Koid::raw_koid).collect()),
+                child_jobs: Some(child_job_koids.iter().map(zx::Koid::raw_koid).collect()),
+                processes: Some(child_process_koids.iter().map(zx::Koid::raw_koid).collect()),
                 ..Default::default()
             },
         )?;
