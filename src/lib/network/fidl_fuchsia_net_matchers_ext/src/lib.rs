@@ -380,7 +380,7 @@ impl TryFrom<fnet_matchers::Address> for Address {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Port {
     range: RangeInclusive<u16>,
-    pub invert: bool,
+    invert: bool,
 }
 
 /// Errors when creating a `Port`.
@@ -408,6 +408,10 @@ impl Port {
 
     pub fn end(&self) -> u16 {
         *self.range.end()
+    }
+
+    pub fn invert(&self) -> bool {
+        self.invert
     }
 }
 

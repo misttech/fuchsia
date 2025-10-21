@@ -63,6 +63,6 @@ impl TryFromFidl<fnet_matchers_ext::Port> for netstack3_core::ip::PortMatcher {
     type Error = Never;
 
     fn try_from_fidl(fidl: fnet_matchers_ext::Port) -> Result<Self, Self::Error> {
-        Ok(netstack3_core::ip::PortMatcher { range: fidl.range().clone(), invert: fidl.invert })
+        Ok(netstack3_core::ip::PortMatcher { range: fidl.range().clone(), invert: fidl.invert() })
     }
 }
