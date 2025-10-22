@@ -4,6 +4,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// LINT.IfChange
+
 #![allow(dead_code)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
@@ -1449,3 +1451,36 @@ impl Default for __va_list_tag {
         }
     }
 }
+
+// LINT.ThenChange(
+//    //sdk/lib/zxio/include/lib/zxio/bsdsocket.h |
+//    //sdk/lib/zxio/include/lib/zxio/fault_catcher.h |
+//    //sdk/lib/zxio/include/lib/zxio/types.h |
+//    //sdk/lib/zxio/include/lib/zxio/zxio.h |
+//    //src/starnix/lib/syncio/stub/missing_includes.h |
+//    //src/starnix/lib/syncio/wrapper.h |
+//    //third_party/llvm-libc/src/include/__llvm-libc-common.h |
+//    //zircon/system/public/zircon/availability.h |
+//    //zircon/system/public/zircon/availability_levels.inc |
+//    //zircon/system/public/zircon/compiler.h |
+//    //zircon/system/public/zircon/errors.h |
+//    //zircon/system/public/zircon/limits.h |
+//    //zircon/system/public/zircon/rights.h |
+//    //zircon/system/public/zircon/syscalls/iob.h |
+//    //zircon/system/public/zircon/syscalls/object.h |
+//    //zircon/system/public/zircon/time.h |
+//    //zircon/system/public/zircon/types.h |
+//    //zircon/third_party/ulib/musl/include/bits/alltypes.h |
+//    //zircon/third_party/ulib/musl/include/bits/errno.h |
+//    //zircon/third_party/ulib/musl/include/bits/null.h |
+//    //zircon/third_party/ulib/musl/include/errno.h |
+//    //zircon/third_party/ulib/musl/include/features.h |
+//    //zircon/third_party/ulib/musl/include/inttypes.h |
+//    //zircon/third_party/ulib/musl/include/netinet/in.h |
+//    //zircon/third_party/ulib/musl/include/string.h |
+//    //zircon/third_party/ulib/musl/include/strings.h |
+//    //zircon/third_party/ulib/musl/include/sys/select.h |
+//    //zircon/third_party/ulib/musl/include/sys/socket.h |
+//    //zircon/third_party/ulib/musl/include/sys/time.h |
+//    //zircon/third_party/ulib/musl/include/time.h
+//)

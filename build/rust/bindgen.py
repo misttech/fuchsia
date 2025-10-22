@@ -7,6 +7,7 @@ import datetime
 import os
 import re
 import subprocess
+import tempfile
 
 # All other paths are relative to here (main changes to this directory on startup).
 ROOT_PATH = os.path.join(os.path.dirname(__file__), "..", "..")
@@ -121,6 +122,7 @@ class Bindgen:
     def run_bindgen(self, input_file, output_file):
         # Bindgen arguments.
         raw_lines = self.notice_header
+        raw_lines += f"// LINT.IfChange\n\n"
         if self.generate_allows:
             raw_lines += GENERATED_FILE_HEADER
         raw_lines += self.raw_lines
@@ -166,30 +168,60 @@ class Bindgen:
 
         args += [input_file]
 
-        # Clang arguments (after the "--").
-        args += [
-            "--",
-            "-target",
-            self.clang_target,
-            "-DIS_BINDGEN=1",
-        ]
+        with tempfile.NamedTemporaryFile() as depfile:
+            args += [
+                "--depfile",
+                depfile.name,
+            ]
 
-        if not self.enable_stdlib_include_dirs:
-            args += ["-nostdlibinc"]
+            # Clang arguments (after the "--").
+            args += [
+                "--",
+                "-target",
+                self.clang_target,
+                "-DIS_BINDGEN=1",
+            ]
 
-        if self.fuchsia_api_level:
-            args += [f"-D__Fuchsia_API_level__={self.fuchsia_api_level}"]
+            if not self.enable_stdlib_include_dirs:
+                args += ["-nostdlibinc"]
 
-        for i in self.include_dirs:
-            args += ["-I", i]
-        args += ["-I", "."]
+            if self.fuchsia_api_level:
+                args += [f"-D__Fuchsia_API_level__={self.fuchsia_api_level}"]
 
-        args += self.additional_clang_flags
+            for i in self.include_dirs:
+                args += ["-I", i]
+            args += ["-I", "."]
 
-        subprocess.check_call(
-            args,
-            env={"RUSTFMT": os.path.abspath(RUSTFMT_PATH)},
-        )
+            args += self.additional_clang_flags
+
+            subprocess.check_call(
+                args,
+                env={"RUSTFMT": os.path.abspath(RUSTFMT_PATH)},
+            )
+
+            depfile_contents = depfile.read().decode("utf-8")
+            # The colon delimits the output file from all the input files.
+            all_input_files = depfile_contents.split(": ")[1]
+            all_input_files = all_input_files.split(" ")
+            fuchsia_input_files = []
+            for path in all_input_files:
+                if not path.startswith("/"):
+                    if path.startswith("./"):
+                        clean_path = path[2:]
+                    else:
+                        clean_path = path
+                    fuchsia_input_files.append("//" + clean_path)
+
+            if len(fuchsia_input_files) > 1:
+                # go/ifthisthenthatlint#disjunction
+                ifttt_matcher = (
+                    "\n//    " + " |\n//    ".join(fuchsia_input_files) + "\n//"
+                )
+            else:
+                ifttt_matcher = fuchsia_input_files[0]
+
+        with open(output_file, "a") as f:
+            f.write(f"\n// LINT.ThenChange({ifttt_matcher})\n")
 
     def get_auto_derive_traits(self, line):
         """Returns true if the given line defines a Rust structure with a name
