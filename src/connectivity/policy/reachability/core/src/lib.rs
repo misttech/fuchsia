@@ -671,12 +671,8 @@ struct NetworkCheckContext {
     fetches_expected: usize,
     // The quantity of fetches that have been completed.
     fetches_completed: usize,
-    // TODO(https://fxbug.dev/454029356): Combine the discovered_state fields
-    // into a single IpVersions struct.
-    // The current calculated v4 state.
-    discovered_state_v4: State,
-    // The current calculated v6 state.
-    discovered_state_v6: State,
+    // The current calculated state.
+    discovered_state: IpVersions<State>,
     // Whether the network check should ping internet regardless of if the gateway pings fail.
     always_ping_internet: bool,
     // Whether an online router was discoverable via neighbor discovery.
@@ -693,8 +689,8 @@ struct NetworkCheckContext {
 
 impl NetworkCheckContext {
     fn set_global_link_state(&mut self, link: LinkState) {
-        self.discovered_state_v4.set_link_state(link);
-        self.discovered_state_v6.set_link_state(link);
+        self.discovered_state.ipv4.set_link_state(link);
+        self.discovered_state.ipv6.set_link_state(link);
     }
 
     fn initiate_ping(
@@ -737,8 +733,10 @@ impl Default for NetworkCheckContext {
             pings_completed: 0usize,
             fetches_expected: 0usize,
             fetches_completed: 0usize,
-            discovered_state_v4: State { link: LinkState::None, ..Default::default() },
-            discovered_state_v6: State { link: LinkState::None, ..Default::default() },
+            discovered_state: IpVersions {
+                ipv4: State { link: LinkState::None, ..Default::default() },
+                ipv6: State { link: LinkState::None, ..Default::default() },
+            },
             always_ping_internet: true,
             router_discoverable: Default::default(),
             gateway_pingable: Default::default(),
@@ -970,11 +968,11 @@ impl<Time: TimeProvider> Monitor<Time> {
 
         let info = IpVersions {
             ipv4: StateEvent {
-                state: ctx.discovered_state_v4,
+                state: ctx.discovered_state.ipv4,
                 time: fasync::MonotonicInstant::now(),
             },
             ipv6: StateEvent {
-                state: ctx.discovered_state_v6,
+                state: ctx.discovered_state.ipv6,
                 time: fasync::MonotonicInstant::now(),
             },
         };
@@ -982,12 +980,12 @@ impl<Time: TimeProvider> Monitor<Time> {
         let gateway_event_v4 = TelemetryEvent::GatewayProbe {
             gateway_discoverable: ctx.router_discoverable.ipv4,
             gateway_pingable: ctx.gateway_pingable.ipv4,
-            internet_available: ctx.discovered_state_v4.has_internet(),
+            internet_available: ctx.discovered_state.ipv4.has_internet(),
         };
         let gateway_event_v6 = TelemetryEvent::GatewayProbe {
             gateway_discoverable: ctx.router_discoverable.ipv6,
             gateway_pingable: ctx.gateway_pingable.ipv6,
-            internet_available: ctx.discovered_state_v6.has_internet(),
+            internet_available: ctx.discovered_state.ipv6.has_internet(),
         };
 
         if let Some(telemetry_sender) = &mut self.telemetry_sender {
@@ -1006,22 +1004,22 @@ impl<Time: TimeProvider> Monitor<Time> {
                     ipv4: LinkProperties {
                         has_address: telemetry_context.has_v4_address,
                         has_default_route: telemetry_context.has_default_ipv4_route,
-                        has_dns: ctx.discovered_state_v4.has_dns(),
-                        has_http_reachability: ctx.discovered_state_v4.has_http(),
+                        has_dns: ctx.discovered_state.ipv4.has_dns(),
+                        has_http_reachability: ctx.discovered_state.ipv4.has_http(),
                     },
                     ipv6: LinkProperties {
                         has_address: telemetry_context.has_v6_address,
                         has_default_route: telemetry_context.has_default_ipv6_route,
-                        has_dns: ctx.discovered_state_v6.has_dns(),
-                        has_http_reachability: ctx.discovered_state_v6.has_http(),
+                        has_dns: ctx.discovered_state.ipv6.has_dns(),
+                        has_http_reachability: ctx.discovered_state.ipv6.has_http(),
                     },
                 },
             });
             telemetry_sender.send(TelemetryEvent::LinkStateUpdate {
                 interface_identifiers: interface_identifiers.clone(),
                 link_state: IpVersions {
-                    ipv4: ctx.discovered_state_v4.link,
-                    ipv6: ctx.discovered_state_v6.link,
+                    ipv4: ctx.discovered_state.ipv4.link,
+                    ipv6: ctx.discovered_state.ipv6.link,
                 },
             });
         }
@@ -1091,10 +1089,10 @@ impl<Time: TimeProvider> Monitor<Time> {
         match ctx.checker_state {
             NetworkCheckState::FetchHttp => match ip {
                 IpAddr::V4(_) => {
-                    ctx.discovered_state_v4.application.http_fetch_succeeded = true;
+                    ctx.discovered_state.ipv4.application.http_fetch_succeeded = true;
                 }
                 IpAddr::V6(_) => {
-                    ctx.discovered_state_v6.application.http_fetch_succeeded = true;
+                    ctx.discovered_state.ipv6.application.http_fetch_succeeded = true;
                 }
             },
             NetworkCheckState::PingGateway
@@ -1112,19 +1110,19 @@ impl<Time: TimeProvider> Monitor<Time> {
             NetworkCheckState::PingGateway => match addr {
                 std::net::SocketAddr::V4 { .. } => {
                     ctx.gateway_pingable.ipv4 = true;
-                    ctx.discovered_state_v4.set_link_state(LinkState::Gateway);
+                    ctx.discovered_state.ipv4.set_link_state(LinkState::Gateway);
                 }
                 std::net::SocketAddr::V6 { .. } => {
                     ctx.gateway_pingable.ipv6 = true;
-                    ctx.discovered_state_v6.set_link_state(LinkState::Gateway);
+                    ctx.discovered_state.ipv6.set_link_state(LinkState::Gateway);
                 }
             },
             NetworkCheckState::PingInternet => match addr {
                 std::net::SocketAddr::V4 { .. } => {
-                    ctx.discovered_state_v4.set_link_state(LinkState::Internet)
+                    ctx.discovered_state.ipv4.set_link_state(LinkState::Internet)
                 }
                 std::net::SocketAddr::V6 { .. } => {
-                    ctx.discovered_state_v6.set_link_state(LinkState::Internet)
+                    ctx.discovered_state.ipv6.set_link_state(LinkState::Internet)
                 }
             },
             NetworkCheckState::FetchHttp
@@ -1242,10 +1240,10 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
             ctx.always_ping_internet = false;
         }
         if has_route.ipv4 || neighbor_scan_health.ipv4.is_healthy() {
-            ctx.discovered_state_v4.set_link_state(LinkState::Local);
+            ctx.discovered_state.ipv4.set_link_state(LinkState::Local);
         }
         if has_route.ipv6 || neighbor_scan_health.ipv6.is_healthy() {
-            ctx.discovered_state_v6.set_link_state(LinkState::Local);
+            ctx.discovered_state.ipv6.set_link_state(LinkState::Local);
         }
 
         let gateway_ping_addrs = relevant_routes
@@ -1327,10 +1325,10 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
         } else {
             // Setup to ping gateway addresses.
             if neighbor_scan_health.ipv4.is_healthy_router() {
-                ctx.discovered_state_v4.set_link_state(LinkState::Gateway);
+                ctx.discovered_state.ipv4.set_link_state(LinkState::Gateway);
             }
             if neighbor_scan_health.ipv6.is_healthy_router() {
-                ctx.discovered_state_v6.set_link_state(LinkState::Gateway);
+                ctx.discovered_state.ipv6.set_link_state(LinkState::Gateway);
             }
             ctx.initiate_ping(
                 id,
@@ -1404,10 +1402,10 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
                             );
                             if let Some(ips) = ctx.persistent_context.resolved_addrs.get(GSTATIC) {
                                 if !ips.v4.is_empty() {
-                                    ctx.discovered_state_v4.application.dns_resolved = true;
+                                    ctx.discovered_state.ipv4.application.dns_resolved = true;
                                 }
                                 if !ips.v6.is_empty() {
-                                    ctx.discovered_state_v6.application.dns_resolved = true;
+                                    ctx.discovered_state.ipv6.application.dns_resolved = true;
                                 }
                             }
                             return self.resume(
@@ -1440,10 +1438,10 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
 
                 if let Some(ips) = ips {
                     if !ips.v4.is_empty() {
-                        ctx.discovered_state_v4.application.dns_resolved = true;
+                        ctx.discovered_state.ipv4.application.dns_resolved = true;
                     }
                     if !ips.v6.is_empty() {
-                        ctx.discovered_state_v6.application.dns_resolved = true;
+                        ctx.discovered_state.ipv6.application.dns_resolved = true;
                     }
                     ctx.persistent_context.resolved_time = self.time_provider.now();
                     let _: Option<ResolvedIps> =
@@ -1705,8 +1703,8 @@ mod tests {
 
         let mut ctx = NetworkCheckContext { checker_state, ..Default::default() };
         // Initial state.
-        assert_eq!(ctx.discovered_state_v4, expected_state_v4);
-        assert_eq!(ctx.discovered_state_v6, expected_state_v6);
+        assert_eq!(ctx.discovered_state.ipv4, expected_state_v4);
+        assert_eq!(ctx.discovered_state.ipv6, expected_state_v6);
 
         let expected_state = match ctx.checker_state {
             NetworkCheckState::PingGateway => LinkState::Gateway.into(),
@@ -1733,8 +1731,8 @@ mod tests {
             }
         });
         // Final state.
-        assert_eq!(ctx.discovered_state_v4, expected_state_v4);
-        assert_eq!(ctx.discovered_state_v6, expected_state_v6);
+        assert_eq!(ctx.discovered_state.ipv4, expected_state_v4);
+        assert_eq!(ctx.discovered_state.ipv6, expected_state_v6);
     }
 
     #[derive(Default, Clone)]
@@ -3396,8 +3394,8 @@ mod tests {
         // Confirm that the LinkState discovered from the network check was `Down` and
         // not `Removed`.
         let interface_context = monitor.interface_context.get(&ID1).unwrap();
-        assert_matches!(interface_context.discovered_state_v4.link, LinkState::Down);
-        assert_matches!(interface_context.discovered_state_v6.link, LinkState::Down);
+        assert_matches!(interface_context.discovered_state.ipv4.link, LinkState::Down);
+        assert_matches!(interface_context.discovered_state.ipv6.link, LinkState::Down);
 
         // Assert that the state is still `Removed`, and was not updated to `Down`
         // by the completed network check's result.
