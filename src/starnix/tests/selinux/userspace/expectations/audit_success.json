@@ -109,6 +109,25 @@
             ]
         },
         {
+            "name": "CapabilitiesTest/GetCapDenied",
+            "audit_expectations": [
+                "avc:  denied  { getcap } for scontext=test_u:test_r:test_deny_getcap_self_t:s0 tcontext=test_u:test_r:test_deny_getcap_self_t:s0 tclass=process permissive=0"
+            ]
+        },
+        {
+            "name": "CapabilitiesTest/SetCapDenied",
+            "audit_expectations": [
+                "avc:  denied  { setcap } for scontext=test_u:test_r:test_deny_setcap_self_t:s0 tcontext=test_u:test_r:test_deny_setcap_self_t:s0 tclass=process permissive=0"
+            ]
+        },
+        {
+            "name": "CapabilitiesTest/SetCapDeniedExpandPermittedSet",
+            "audit_expectations": [
+                "avc:  denied  { getcap } for scontext=test_u:test_r:test_deny_setcap_self_t:s0 tcontext=test_u:test_r:test_deny_setcap_self_t:s0 tclass=process permissive=1",
+                "avc:  denied  { setcap } for scontext=test_u:test_r:test_deny_setcap_self_t:s0 tcontext=test_u:test_r:test_deny_setcap_self_t:s0 tclass=process permissive=1"
+            ]
+        },
+        {
             "name": "FifoTest/LabeledFromFilesystem",
             "audit_expectations": [
                 "avc:  denied  { add_name } for name=\"fifo_label_test\" scontext=test_u:test_r:pipe_test_t:s0 tcontext=system_u:object_r:tmpfs_t:s0 tclass=dir permissive=1",

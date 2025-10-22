@@ -69,6 +69,14 @@ _COMPOSITE_POLICY_PATHS = [
         [
             "base_policy.conf",
             "new_file/test_policy.conf",
+            "new_file/capabilities_policy.conf",
+        ],
+        "capabilities_policy.pp",
+    ),
+    (
+        [
+            "base_policy.conf",
+            "new_file/test_policy.conf",
             "new_file/inherit_policy.conf",
         ],
         "inherit_policy.pp",
