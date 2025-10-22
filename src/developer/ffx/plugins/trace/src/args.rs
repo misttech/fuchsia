@@ -297,6 +297,9 @@ fn buffering_mode_from_str(val: &str) -> Result<BufferingMode, String> {
 fn parse_categories(value: &str) -> Result<TraceCategories, String> {
     let mut cats = Vec::new();
 
+    // Remove opening and closing double smart quote
+    let value = value.replace(['“', '”'], "");
+
     if value.is_empty() {
         return Err("no categories specified".to_string());
     }
