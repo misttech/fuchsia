@@ -603,21 +603,21 @@ impl<A: IpAddress> Matcher<A> for AddressMatcher<A> {
 }
 
 /// An address matcher that matches any IP version as specified at runtime.
-pub enum AgnosticAddressMatcher {
+pub enum AddressMatcherEither {
     /// The top-level IPv4 address matcher.
     V4(AddressMatcher<Ipv4Addr>),
     /// The top-level IPv6 address matcher.
     V6(AddressMatcher<Ipv6Addr>),
 }
 
-impl Matcher<IpAddr> for AgnosticAddressMatcher {
+impl Matcher<IpAddr> for AddressMatcherEither {
     fn matches(&self, addr: &IpAddr) -> bool {
         match self {
-            AgnosticAddressMatcher::V4(matcher) => match addr {
+            AddressMatcherEither::V4(matcher) => match addr {
                 IpAddr::V4(addr) => matcher.matches(addr),
                 IpAddr::V6(_) => false,
             },
-            AgnosticAddressMatcher::V6(matcher) => match addr {
+            AddressMatcherEither::V6(matcher) => match addr {
                 IpAddr::V4(_) => false,
                 IpAddr::V6(addr) => matcher.matches(addr),
             },
@@ -633,11 +633,11 @@ pub trait IpSocketProperties<DeviceClass> {
 
     /// Returns whether the provided address matcher matches the socket's source
     /// address.
-    fn src_addr_matches(&self, addr: &AgnosticAddressMatcher) -> bool;
+    fn src_addr_matches(&self, addr: &AddressMatcherEither) -> bool;
 
     /// Returns whether the provided address matcher matches the socket's
     /// destination address.
-    fn dst_addr_matches(&self, addr: &AgnosticAddressMatcher) -> bool;
+    fn dst_addr_matches(&self, addr: &AddressMatcherEither) -> bool;
 
     /// Returns whether the transport protocol matches the socket's
     /// transport-layer information.
@@ -664,9 +664,9 @@ pub enum IpSocketMatcher<DeviceClass> {
     /// Matches the socket's address family.
     Family(net_types::ip::IpVersion),
     /// Matches the socket's source address.
-    SrcAddr(AgnosticAddressMatcher),
+    SrcAddr(AddressMatcherEither),
     /// Matches the socket's destination address.
-    DstAddr(AgnosticAddressMatcher),
+    DstAddr(AddressMatcherEither),
     /// Matches the socket's transport protocol.
     Proto(SocketTransportProtocolMatcher),
     /// Matches the socket's bound interface.
@@ -1199,11 +1199,11 @@ mod tests {
             *family == I::VERSION
         }
 
-        fn src_addr_matches(&self, addr: &AgnosticAddressMatcher) -> bool {
+        fn src_addr_matches(&self, addr: &AddressMatcherEither) -> bool {
             addr.matches(&self.src_ip.into())
         }
 
-        fn dst_addr_matches(&self, addr: &AgnosticAddressMatcher) -> bool {
+        fn dst_addr_matches(&self, addr: &AddressMatcherEither) -> bool {
             addr.matches(&self.dst_ip.into())
         }
 
@@ -1638,14 +1638,14 @@ mod tests {
         let v4_subnet = Subnet::new(Ipv4Addr::new([192, 0, 2, 0]), 24).unwrap();
         let v6_subnet = Subnet::new(Ipv6Addr::new([0x2001, 0xdb8, 0, 0, 0, 0, 0, 0]), 32).unwrap();
 
-        let v4_matcher = AgnosticAddressMatcher::V4(AddressMatcher {
+        let v4_matcher = AddressMatcherEither::V4(AddressMatcher {
             matcher: AddressMatcherType::Subnet(SubnetMatcher(v4_subnet)),
             invert: false,
         });
         assert!(v4_matcher.matches(&v4_addr));
         assert!(!v4_matcher.matches(&v6_addr));
 
-        let v6_matcher = AgnosticAddressMatcher::V6(AddressMatcher {
+        let v6_matcher = AddressMatcherEither::V6(AddressMatcher {
             matcher: AddressMatcherType::Subnet(SubnetMatcher(v6_subnet)),
             invert: false,
         });
@@ -1655,19 +1655,19 @@ mod tests {
 
     #[test_case(IpSocketMatcher::Family(IpVersion::V4) => true; "v4 family matcher on v4 socket")]
     #[test_case(IpSocketMatcher::Family(IpVersion::V6) => false; "v6 family matcher on v4 socket")]
-    #[test_case(IpSocketMatcher::SrcAddr(AgnosticAddressMatcher::V4(AddressMatcher {
+    #[test_case(IpSocketMatcher::SrcAddr(AddressMatcherEither::V4(AddressMatcher {
         matcher: AddressMatcherType::Subnet(SubnetMatcher(Ipv4::TEST_ADDRS.subnet)),
         invert: false,
     })) => true; "src_addr match")]
-    #[test_case(IpSocketMatcher::SrcAddr(AgnosticAddressMatcher::V4(AddressMatcher {
+    #[test_case(IpSocketMatcher::SrcAddr(AddressMatcherEither::V4(AddressMatcher {
         matcher: AddressMatcherType::Subnet(SubnetMatcher(Subnet::new(Ipv4Addr::new([0, 0, 0, 0]), 32).unwrap())),
         invert: false,
     })) => false; "src_addr no match")]
-    #[test_case(IpSocketMatcher::DstAddr(AgnosticAddressMatcher::V4(AddressMatcher {
+    #[test_case(IpSocketMatcher::DstAddr(AddressMatcherEither::V4(AddressMatcher {
         matcher: AddressMatcherType::Subnet(SubnetMatcher(Ipv4::TEST_ADDRS.subnet)),
         invert: false,
     })) => true; "dst_addr match")]
-    #[test_case(IpSocketMatcher::DstAddr(AgnosticAddressMatcher::V4(AddressMatcher {
+    #[test_case(IpSocketMatcher::DstAddr(AddressMatcherEither::V4(AddressMatcher {
         matcher: AddressMatcherType::Subnet(SubnetMatcher(Subnet::new(Ipv4Addr::new([0, 0, 0, 0]), 32).unwrap())),
         invert: false,
     })) => false; "dst_addr no match")]
@@ -1690,19 +1690,19 @@ mod tests {
 
     #[test_case(IpSocketMatcher::Family(IpVersion::V4) => false; "v4 family matcher on v6 socket")]
     #[test_case(IpSocketMatcher::Family(IpVersion::V6) => true; "v6 family matcher on v6 socket")]
-    #[test_case(IpSocketMatcher::SrcAddr(AgnosticAddressMatcher::V6(AddressMatcher {
+    #[test_case(IpSocketMatcher::SrcAddr(AddressMatcherEither::V6(AddressMatcher {
         matcher: AddressMatcherType::Subnet(SubnetMatcher(Ipv6::TEST_ADDRS.subnet)),
         invert: false,
     })) => true; "src_addr match v6")]
-    #[test_case(IpSocketMatcher::SrcAddr(AgnosticAddressMatcher::V6(AddressMatcher {
+    #[test_case(IpSocketMatcher::SrcAddr(AddressMatcherEither::V6(AddressMatcher {
         matcher: AddressMatcherType::Subnet(SubnetMatcher(Subnet::new(Ipv6Addr::new([0; 8]), 128).unwrap())),
         invert: false,
     })) => false; "src_addr no match v6")]
-    #[test_case(IpSocketMatcher::DstAddr(AgnosticAddressMatcher::V6(AddressMatcher {
+    #[test_case(IpSocketMatcher::DstAddr(AddressMatcherEither::V6(AddressMatcher {
         matcher: AddressMatcherType::Subnet(SubnetMatcher(Ipv6::TEST_ADDRS.subnet)),
         invert: false,
     })) => true; "dst_addr match v6")]
-    #[test_case(IpSocketMatcher::DstAddr(AgnosticAddressMatcher::V6(AddressMatcher {
+    #[test_case(IpSocketMatcher::DstAddr(AddressMatcherEither::V6(AddressMatcher {
         matcher: AddressMatcherType::Subnet(SubnetMatcher(Subnet::new(Ipv6Addr::new([0; 8]), 128).unwrap())),
         invert: false,
     })) => false; "dst_addr no match v6")]

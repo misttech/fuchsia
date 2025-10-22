@@ -144,7 +144,7 @@ pub mod ip {
 
     // Re-exported types.
     pub use netstack3_base::{
-        AddressMatcher, AddressMatcherType, AgnosticAddressMatcher, Mark, MarkDomain, MarkMatcher,
+        AddressMatcher, AddressMatcherEither, AddressMatcherType, Mark, MarkDomain, MarkMatcher,
         MarkMatchers, Marks, PortMatcher, SubnetMatcher, WrapBroadcastMarker,
     };
     pub use netstack3_ip::device::{
