@@ -1214,24 +1214,38 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
             return self.update_state_from_context(id, name);
         }
 
+        ctx.set_global_link_state(LinkState::Up);
+
         // TODO(https://fxbug.dev/42154208) Check if packet count has increased, and if so upgrade
         // the state to LinkLayerUp.
         let neighbor_scan_health = scan_neighbor_health(neighbors, &device_routes);
 
+        let has_route = IpVersions {
+            ipv4: device_routes
+                .iter()
+                .any(|route| matches!(route.destination.addr, fnet::IpAddress::Ipv4(_))),
+            ipv6: device_routes
+                .iter()
+                .any(|route| matches!(route.destination.addr, fnet::IpAddress::Ipv6(_))),
+        };
+
         if neighbor_scan_health.ipv4 == NeighborHealthScanResult::NoneHealthy
             && neighbor_scan_health.ipv6 == NeighborHealthScanResult::NoneHealthy
         {
-            let discovered_state =
-                if device_routes.is_empty() { LinkState::Up } else { LinkState::Local };
-            ctx.set_global_link_state(discovered_state);
-
-            if discovered_state == LinkState::Up {
+            if !has_route.ipv4 && !has_route.ipv6 {
+                // Both protocols are `Up`, no need to perform any further calculations.
                 return self.update_state_from_context(id, name);
-            } else {
-                // When a router is not discoverable via ND, the internet should only be pinged
-                // if the gateway ping succeeds.
-                ctx.always_ping_internet = false;
             }
+
+            // When a router is not discoverable via ND, the internet should only be pinged
+            // if the gateway ping succeeds.
+            ctx.always_ping_internet = false;
+        }
+        if has_route.ipv4 || neighbor_scan_health.ipv4.is_healthy() {
+            ctx.discovered_state_v4.set_link_state(LinkState::Local);
+        }
+        if has_route.ipv6 || neighbor_scan_health.ipv6.is_healthy() {
+            ctx.discovered_state_v6.set_link_state(LinkState::Local);
         }
 
         let gateway_ping_addrs = relevant_routes
@@ -1308,25 +1322,16 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
                 // The router is not online and the gateway cannot be pinged; therefore, the
                 // internet pings can be skipped and the final reachability state can be
                 // determined.
-                ctx.set_global_link_state(LinkState::Local);
                 return self.update_state_from_context(id, name);
             }
         } else {
             // Setup to ping gateway addresses.
-            ctx.discovered_state_v4.set_link_state(
-                if neighbor_scan_health.ipv4 == NeighborHealthScanResult::HealthyRouter {
-                    LinkState::Gateway
-                } else {
-                    LinkState::Local
-                },
-            );
-            ctx.discovered_state_v6.set_link_state(
-                if neighbor_scan_health.ipv6 == NeighborHealthScanResult::HealthyRouter {
-                    LinkState::Gateway
-                } else {
-                    LinkState::Local
-                },
-            );
+            if neighbor_scan_health.ipv4.is_healthy_router() {
+                ctx.discovered_state_v4.set_link_state(LinkState::Gateway);
+            }
+            if neighbor_scan_health.ipv6.is_healthy_router() {
+                ctx.discovered_state_v6.set_link_state(LinkState::Gateway);
+            }
             ctx.initiate_ping(
                 id,
                 name,
@@ -1531,6 +1536,20 @@ impl NeighborHealthScanResult {
             // HealthyRouter should never degrade to HealthyNeighbor.
             (_, true) | (Self::HealthyRouter, _) => Self::HealthyRouter,
             _ => Self::HealthyNeighbor,
+        }
+    }
+
+    fn is_healthy(&self) -> bool {
+        match self {
+            Self::NoneHealthy => false,
+            Self::HealthyNeighbor | Self::HealthyRouter => true,
+        }
+    }
+
+    fn is_healthy_router(&self) -> bool {
+        match self {
+            Self::NoneHealthy | Self::HealthyNeighbor => false,
+            Self::HealthyRouter => true,
         }
     }
 }
@@ -1998,6 +2017,94 @@ mod tests {
     }
 
     #[test]
+    fn test_network_check_ipv6_local_only() {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+        let time = fasync::MonotonicInstant::from_nanos(1_000_000_000);
+        let () = exec.set_fake_time(time.into());
+
+        // The next_hop of the default route must be the same as a known neighbor. This is used
+        // to determine this neighbor as a valid gateway.
+        let routes = testutil::build_route_table_from_flattened_routes([Route {
+            destination: UNSPECIFIED_V6,
+            outbound_interface: ID1,
+            next_hop: Some(IPV6_ADDR),
+        }]);
+        let properties = &fnet_interfaces_ext::Properties {
+            id: ID1.try_into().expect("should be nonzero"),
+            name: ETHERNET_INTERFACE_NAME.to_string(),
+            port_class: fnet_interfaces_ext::PortClass::Ethernet,
+            online: true,
+            addresses: vec![],
+            has_default_ipv4_route: false,
+            has_default_ipv6_route: true,
+        };
+        let neighbors = InterfaceNeighborCache::default();
+
+        let got = run_network_check(
+            &mut exec,
+            properties,
+            &routes,
+            Some(&neighbors),
+            FakePing::default(),
+            FakeDig::default(),
+            FakeFetch::default(),
+        )
+        .expect("run_network_check failed")
+        .expect("interface state not found");
+
+        let want_ipv4 =
+            StateEvent { state: State { link: LinkState::Up, ..Default::default() }, time };
+        let want_ipv6 =
+            StateEvent { state: State { link: LinkState::Local, ..Default::default() }, time };
+        assert_eq!(got.ipv4, want_ipv4);
+        assert_eq!(got.ipv6, want_ipv6);
+    }
+
+    #[test]
+    fn test_network_check_ipv6_local_only_not_default_route() {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+        let time = fasync::MonotonicInstant::from_nanos(1_000_000_000);
+        let () = exec.set_fake_time(time.into());
+
+        // The next_hop of the default route must be the same as a known neighbor. This is used
+        // to determine this neighbor as a valid gateway.
+        let routes = testutil::build_route_table_from_flattened_routes([Route {
+            destination: fidl_subnet!("::/1"),
+            outbound_interface: ID1,
+            next_hop: Some(IPV6_ADDR),
+        }]);
+        let properties = &fnet_interfaces_ext::Properties {
+            id: ID1.try_into().expect("should be nonzero"),
+            name: ETHERNET_INTERFACE_NAME.to_string(),
+            port_class: fnet_interfaces_ext::PortClass::Ethernet,
+            online: true,
+            addresses: vec![],
+            has_default_ipv4_route: false,
+            has_default_ipv6_route: true,
+        };
+        let neighbors = InterfaceNeighborCache::default();
+
+        let got = run_network_check(
+            &mut exec,
+            properties,
+            &routes,
+            Some(&neighbors),
+            FakePing::default(),
+            FakeDig::default(),
+            FakeFetch::default(),
+        )
+        .expect("run_network_check failed")
+        .expect("interface state not found");
+
+        let want_ipv4 =
+            StateEvent { state: State { link: LinkState::Up, ..Default::default() }, time };
+        let want_ipv6 =
+            StateEvent { state: State { link: LinkState::Local, ..Default::default() }, time };
+        assert_eq!(got.ipv4, want_ipv4);
+        assert_eq!(got.ipv6, want_ipv6);
+    }
+
+    #[test]
     fn test_network_check_ipv6_gateway_only() {
         let mut exec = fasync::TestExecutor::new_with_fake_time();
         let time = fasync::MonotonicInstant::from_nanos(1_000_000_000);
@@ -2043,7 +2150,7 @@ mod tests {
         .expect("interface state not found");
 
         let want_ipv4 =
-            StateEvent { state: State { link: LinkState::Local, ..Default::default() }, time };
+            StateEvent { state: State { link: LinkState::Up, ..Default::default() }, time };
         let want_ipv6 =
             StateEvent { state: State { link: LinkState::Gateway, ..Default::default() }, time };
         assert_eq!(got.ipv4, want_ipv4);
@@ -2885,11 +2992,18 @@ mod tests {
                 },
             ],
         };
-        let local_routes = testutil::build_route_table_from_flattened_routes([Route {
-            destination: fidl_subnet!("1.2.3.0/24"),
-            outbound_interface: ID1,
-            next_hop: None,
-        }]);
+        let local_routes = testutil::build_route_table_from_flattened_routes([
+            Route {
+                destination: fidl_subnet!("1.2.3.0/24"),
+                outbound_interface: ID1,
+                next_hop: None,
+            },
+            Route {
+                destination: fidl_subnet!("123::/64"),
+                outbound_interface: ID1,
+                next_hop: None,
+            },
+        ]);
         let route_table = testutil::build_route_table_from_flattened_routes([
             Route {
                 destination: fidl_subnet!("0.0.0.0/0"),
