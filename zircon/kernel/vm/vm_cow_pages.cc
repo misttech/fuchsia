@@ -35,8 +35,9 @@
 
 #define LOCAL_TRACE VM_GLOBAL_TRACE(0)
 
+// TODO(https://fxbug.dev/454120531): Re-enable for LK_DEBUGLEVEL > 2 once methods are fixed.
 // add expensive code to do a full validation of the VMO at various points.
-#define VMO_VALIDATION (0 || (LK_DEBUGLEVEL > 2))
+#define VMO_VALIDATION (0)
 
 // Assertion that is only enabled if VMO_VALIDATION is enabled.
 #define VMO_VALIDATION_ASSERT(x) \
@@ -46,10 +47,11 @@
     }                            \
   } while (0)
 
+// TODO(https://fxbug.dev/454120531): Re-enable for LK_DEBUGLEVEL > 2 once methods are fixed.
 // Add not-as-expensive code to do some extra validation at various points.  This is off in normal
 // debug builds because it can add O(n) validation to an O(1) operation, so can still make things
 // slower, despite not being as slow as VMO_VALIDATION.
-#define VMO_FRUGAL_VALIDATION (0 || (LK_DEBUGLEVEL > 2))
+#define VMO_FRUGAL_VALIDATION (0)
 
 // Assertion that is only enabled if VMO_FRUGAL_VALIDATION is enabled.
 #define VMO_FRUGAL_VALIDATION_ASSERT(x) \
