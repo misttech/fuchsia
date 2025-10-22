@@ -494,9 +494,6 @@ async fn handle_touchscreen_request_stream(
         match request {
             Ok(TouchScreenRequest::SimulateTap { payload, responder }) => {
                 let tap_location = payload.tap_location.expect("missing tap location");
-                let duration_nanos = payload.duration.unwrap_or(0);
-                let delay = fasync::MonotonicDuration::from_nanos(duration_nanos);
-
                 {
                     fuchsia_trace::duration!(c"input", c"simulate_tap_down");
                     let trace_id = fuchsia_trace::Id::random();
@@ -508,8 +505,6 @@ async fn handle_touchscreen_request_stream(
                         ))
                         .expect("Failed to send touch down input report");
                 }
-
-                delay.sleep();
 
                 // Send a report with an empty set of touch contacts, so that input
                 // pipeline generates a pointer event with phase == UP.

@@ -850,12 +850,6 @@
     },
     {
         "kind": "table/member",
-        "name": "fuchsia.ui.test.input/TouchScreenSimulateTapRequest.duration",
-        "ordinal": "2",
-        "type": "int64"
-    },
-    {
-        "kind": "table/member",
         "name": "fuchsia.ui.test.input/TouchScreenSimulateTapRequest.tap_location",
         "ordinal": "1",
         "type": "fuchsia.math/Vec"

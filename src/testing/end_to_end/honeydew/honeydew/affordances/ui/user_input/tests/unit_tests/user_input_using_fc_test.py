@@ -6,6 +6,7 @@
 import unittest
 from unittest import mock
 
+import fidl_fuchsia_input_report as f_input_report
 import fidl_fuchsia_math as f_math
 import fidl_fuchsia_ui_test_input as f_test_input
 
@@ -92,7 +93,7 @@ class UserInputFCTests(unittest.TestCase):
 
     @mock.patch.object(
         f_test_input.TouchScreenClient,
-        "simulate_tap",
+        "simulate_touch_event",
         new_callable=mock.AsyncMock,
     )
     @mock.patch.object(
@@ -101,18 +102,35 @@ class UserInputFCTests(unittest.TestCase):
         new_callable=mock.AsyncMock,
         return_value=None,
     )
-    def test_tap_only_required(self, unused_register_touch_screen, simulate_tap) -> None:  # type: ignore[no-untyped-def]
+    def test_tap_only_required(self, unused_register_touch_screen, simulate_touch_event) -> None:  # type: ignore[no-untyped-def]
         """Test for UserInput.tap() method with only required params."""
 
         touch_device = self.user_input().create_touch_device()
         touch_device.tap(location=ui_custom_types.Coordinate(x=1, y=2))
-        simulate_tap.assert_called_once_with(
-            tap_location=f_math.Vec(x=1, y=2), duration=0
+        simulate_touch_event.assert_has_calls(
+            [
+                mock.call(
+                    report=f_input_report.TouchInputReport(
+                        contacts=[
+                            f_input_report.ContactInputReport(
+                                contact_id=1,
+                                position_x=1,
+                                position_y=2,
+                            ),
+                        ],
+                    ),
+                ),
+                mock.call(
+                    report=f_input_report.TouchInputReport(
+                        contacts=[],
+                    ),
+                ),
+            ]
         )
 
     @mock.patch.object(
         f_test_input.TouchScreenClient,
-        "simulate_tap",
+        "simulate_touch_event",
         new_callable=mock.AsyncMock,
     )
     @mock.patch.object(
@@ -121,7 +139,7 @@ class UserInputFCTests(unittest.TestCase):
         new_callable=mock.AsyncMock,
         return_value=None,
     )
-    def test_tap_all_params(self, unused_register_touch_screen, simulate_tap) -> None:  # type: ignore[no-untyped-def]
+    def test_tap_all_params(self, unused_register_touch_screen, simulate_touch_event) -> None:  # type: ignore[no-untyped-def]
         """Test for UserInput.tap() method with all params."""
 
         touch_device = self.user_input().create_touch_device(
@@ -133,16 +151,55 @@ class UserInputFCTests(unittest.TestCase):
             duration_ms=6,
             duration_of_one_tap_ms=2,
         )
-        simulate_tap.assert_has_calls(
+        simulate_touch_event.assert_has_calls(
             [
                 mock.call(
-                    tap_location=f_math.Vec(x=1, y=2), duration=2 * 1000000
+                    report=f_input_report.TouchInputReport(
+                        contacts=[
+                            f_input_report.ContactInputReport(
+                                contact_id=1,
+                                position_x=1,
+                                position_y=2,
+                            ),
+                        ],
+                    ),
                 ),
                 mock.call(
-                    tap_location=f_math.Vec(x=1, y=2), duration=2 * 1000000
+                    report=f_input_report.TouchInputReport(
+                        contacts=[],
+                    ),
                 ),
                 mock.call(
-                    tap_location=f_math.Vec(x=1, y=2), duration=2 * 1000000
+                    report=f_input_report.TouchInputReport(
+                        contacts=[
+                            f_input_report.ContactInputReport(
+                                contact_id=1,
+                                position_x=1,
+                                position_y=2,
+                            ),
+                        ],
+                    ),
+                ),
+                mock.call(
+                    report=f_input_report.TouchInputReport(
+                        contacts=[],
+                    ),
+                ),
+                mock.call(
+                    report=f_input_report.TouchInputReport(
+                        contacts=[
+                            f_input_report.ContactInputReport(
+                                contact_id=1,
+                                position_x=1,
+                                position_y=2,
+                            ),
+                        ],
+                    ),
+                ),
+                mock.call(
+                    report=f_input_report.TouchInputReport(
+                        contacts=[],
+                    ),
                 ),
             ]
         )

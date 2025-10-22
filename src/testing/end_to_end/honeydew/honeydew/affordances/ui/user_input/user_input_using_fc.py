@@ -6,6 +6,7 @@
 import asyncio
 import time
 
+import fidl_fuchsia_input_report as f_input_report
 import fidl_fuchsia_math as f_math
 import fidl_fuchsia_ui_test_input as f_test_input
 import fuchsia_controller_py as fcp
@@ -106,12 +107,29 @@ class TouchDevice(user_input.TouchDevice):
 
             for _ in range(tap_event_count):
                 asyncio.run(
-                    self._touch_screen_proxy.simulate_tap(
-                        tap_location=f_math.Vec(x=location.x, y=location.y),
-                        duration=duration_of_one_tap_ms
-                        * 1000000,  # milliseconds to nanoseconds
+                    self._touch_screen_proxy.simulate_touch_event(
+                        report=f_input_report.TouchInputReport(
+                            contacts=[
+                                f_input_report.ContactInputReport(
+                                    contact_id=1,
+                                    position_x=location.x,
+                                    position_y=location.y,
+                                ),
+                            ],
+                        ),
                     )
                 )
+
+                time.sleep(duration_of_one_tap_ms / 1000)
+
+                asyncio.run(
+                    self._touch_screen_proxy.simulate_touch_event(
+                        report=f_input_report.TouchInputReport(
+                            contacts=[],
+                        ),
+                    )
+                )
+
                 time.sleep(
                     interval / 1000 - duration_of_one_tap_ms / 1000
                 )  # Sleep in seconds

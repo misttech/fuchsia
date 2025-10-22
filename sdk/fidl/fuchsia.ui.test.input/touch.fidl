@@ -21,10 +21,6 @@ closed protocol TouchScreen {
         /// Location of the tap event, in the coordinate units specified during
         /// registration.
         1: tap_location fuchsia.math.Vec;
-        // The duration of delay between tap down and up. It is useful to control
-        // the delay to produce short tap or long tap.
-        @available(added=29)
-        2: duration zx.Duration;
     }) -> ();
 
     /// Simulates multi finger tap at the requested locations.
