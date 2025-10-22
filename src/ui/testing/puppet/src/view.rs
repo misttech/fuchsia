@@ -6,17 +6,16 @@ use crate::presentation_loop;
 use async_utils::event::Event as AsyncEvent;
 use async_utils::hanging_get::client::HangingGetStream;
 use euclid::{Point2D, Transform2D};
-use fidl::endpoints::{create_proxy, create_request_stream, ServerEnd};
+use fidl::endpoints::{ServerEnd, create_proxy, create_request_stream};
 use fidl_fuchsia_ui_input3::{self as ui_input3, KeyEvent};
 use fidl_fuchsia_ui_pointer::{
     self as ui_pointer, MouseEvent, TouchEvent, TouchInteractionId, TouchInteractionStatus,
     TouchResponse,
 };
-use futures::channel::{mpsc, oneshot};
 use futures::StreamExt;
+use futures::channel::{mpsc, oneshot};
 use log::info;
-use once_cell::unsync::OnceCell;
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::slice::Iter;

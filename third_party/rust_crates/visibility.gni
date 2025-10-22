@@ -71,7 +71,6 @@ once_cell_visibility = [
   "//src/storage/fxfs/tools:*",
   "//src/storage/stress-tests/genericfs:*",
   "//src/testing/sl4f:*",
-  "//src/ui/testing/puppet:*",
   "//tools/shush:*",
 
   # At this time we are not enforcing restrictions on the below.
