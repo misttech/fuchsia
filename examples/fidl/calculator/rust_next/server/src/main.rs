@@ -79,7 +79,7 @@ async fn main() -> Result<(), anyhow::Error> {
     );
     component::health().set_starting_up();
 
-    service_fs.dir("svc").add_fidl_next_protocol::<Calculator, _>(CalculatorServer);
+    service_fs.dir("svc").add_fidl_next_protocol::<Calculator, _>(|_| CalculatorServer);
 
     service_fs.take_and_serve_directory_handle().context("failed to serve outgoing namespace")?;
 

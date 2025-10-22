@@ -424,22 +424,31 @@ macro_rules! add_functions {
         ///
         /// The FIDL protocol will be hosted at the name provided by the
         /// `Discoverable` annotation in the FIDL source.
-        pub fn add_fidl_next_protocol<P, H>(&mut self, handler: H) -> &mut Self
+        pub fn add_fidl_next_protocol<P, H>(
+            &mut self,
+            create_handler: impl Fn(::fidl_next::Server<P, zx::Channel>) -> H
+            + Send
+            + Sync
+            + Clone
+            + 'static,
+        ) -> &mut Self
         where
             P: ::fidl_next::Discoverable + ::fidl_next::DispatchServerMessage<H, zx::Channel>,
-            H: Clone + Send + Sync + 'static,
+            H: Send + Sync + 'static,
         {
             self.dir
                 .add_entry_impl(
                     String::from(P::PROTOCOL_NAME).try_into().expect("Invalid path"),
                     endpoint(move |_, channel| {
-                        let handler = handler.clone();
+                        let create_handler = create_handler.clone();
                         fasync::Task::spawn(async move {
                             // TODO: logging?
                             let server_end = ::fidl_next::ServerEnd::<P, zx::Channel>::from_untyped(
                                 channel.into_zx_channel(),
                             );
-                            ::fidl_next::ServerDispatcher::new(server_end)
+                            let dispatcher = ::fidl_next::ServerDispatcher::new(server_end);
+                            let handler = create_handler(dispatcher.server());
+                            dispatcher
                                 .run(handler)
                                 .await
                                 .expect("Protocol service was terminated ");
