@@ -91,6 +91,7 @@ group_with_no_dir_target_deps("workbench_vim3_stable_tests") {
 group_with_no_dir_target_deps("workbench_vim3_unstable_tests") {
   testonly = true
   public_deps = [
+    "//scripts/memory:components_sql_test($host_toolchain)",
     "//src/developer/ffx/lib/fuchsia-controller/end_to_end_tests/mobly:fuchsia_controller_tests_staging",
     "//src/firmware/tests/lacewing:lacewing($host_toolchain)",
     "//src/performance/memory/attribution/monitor/tests/e2e:memory_monitor2_e2e_test($host_toolchain)",
