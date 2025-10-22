@@ -186,16 +186,21 @@ impl Assembler {
     ///
     /// [RFC 2018 section 4]:
     ///     https://datatracker.ietf.org/doc/html/rfc2018#section-4
-    pub(crate) fn sack_blocks(&self) -> SackBlocks {
+    pub(crate) fn sack_blocks(&self, size_limits: SackBlockSizeLimiters) -> SackBlocks {
         let Self { nxt: _, generation: _, outstanding } = self;
         // Fast exit, no outstanding blocks.
         if outstanding.is_empty() {
             return SackBlocks::default();
         }
 
+        // Create a heap with storage to hold the maximum allowed number of
+        // blocks, but the number of blocks allowed for this connection may be
+        // lower based on the other TCP options in use.
         let mut heap = ArrayVec::<&SeqRange<_>, { SackBlocks::MAX_BLOCKS }>::new();
+        let num_blocks_allowed = size_limits.num_blocks_allowed();
+
         for block in outstanding.iter() {
-            if heap.is_full() {
+            if heap.len() >= num_blocks_allowed {
                 if heap.last().is_some_and(|l| l.meta() < block.meta()) {
                     // New block is later than the earliest block in the heap.
                     let _: Option<_> = heap.pop();
@@ -212,6 +217,21 @@ impl Assembler {
         }
 
         SackBlocks::from_iter(heap.into_iter().map(|block| block.to_sack_block()))
+    }
+}
+
+pub(crate) struct SackBlockSizeLimiters {
+    pub(crate) timestamp_enabled: bool,
+}
+
+impl SackBlockSizeLimiters {
+    fn num_blocks_allowed(&self) -> usize {
+        let Self { timestamp_enabled } = self;
+        if *timestamp_enabled {
+            SackBlocks::MAX_BLOCKS_WITH_TIMESTAMP
+        } else {
+            SackBlocks::MAX_BLOCKS
+        }
     }
 }
 
@@ -948,9 +968,23 @@ mod test {
             let _: usize = assembler.insert(SeqNum::new(*start)..SeqNum::new(*end));
         }
         assembler
-            .sack_blocks()
+            .sack_blocks(SackBlockSizeLimiters { timestamp_enabled: false })
             .try_iter()
             .map(|r| r.expect("invalid block").into_range_u32())
+            .collect()
+    }
+
+    #[test_case(false => vec![10..11, 7..8, 4..5, 1..2]; "4_blocks_with_timestamp_disabled")]
+    #[test_case(true => vec![10..11, 7..8, 4..5]; "3_blocks_with_timestamp_disabled")]
+    fn assembler_sack_blocks_with_timestamp(timestamp_enabled: bool) -> Vec<Range<u32>> {
+        let mut assembler = Assembler::new(SeqNum::new(0));
+        for Range { start, end } in [1..2, 4..5, 7..8, 10..11] {
+            let _: usize = assembler.insert(SeqNum::new(start)..SeqNum::new(end));
+        }
+        assembler
+            .sack_blocks(SackBlockSizeLimiters { timestamp_enabled })
+            .try_iter()
+            .map(|r| r.expect("invalid_block").into_range_u32())
             .collect()
     }
 

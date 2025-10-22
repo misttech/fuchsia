@@ -28,7 +28,9 @@ use replace_with::{replace_with, replace_with_and};
 use crate::internal::base::{
     BufferSizes, BuffersRefMut, ConnectionError, IcmpErrorResult, KeepAlive, SocketOptions,
 };
-use crate::internal::buffer::{Assembler, BufferLimits, IntoBuffers, ReceiveBuffer, SendBuffer};
+use crate::internal::buffer::{
+    Assembler, BufferLimits, IntoBuffers, ReceiveBuffer, SackBlockSizeLimiters, SendBuffer,
+};
 use crate::internal::congestion::{
     CongestionControl, CongestionControlSendOutcome, LossRecoveryMode, LossRecoverySegment,
 };
@@ -987,7 +989,10 @@ impl<I, R> Recv<I, R> {
     fn sack_blocks(&self) -> SackBlocks {
         if self.sack_permitted {
             match &self.buffer {
-                RecvBufferState::Open { buffer: _, assembler } => assembler.sack_blocks(),
+                RecvBufferState::Open { buffer: _, assembler } => {
+                    // TODO(https://fxbug.dev/360401604): Support timestamps.
+                    assembler.sack_blocks(SackBlockSizeLimiters { timestamp_enabled: false })
+                }
                 RecvBufferState::Closed { buffer_size: _, nxt: _ } => SackBlocks::default(),
             }
         } else {
@@ -8098,7 +8103,8 @@ mod test {
                     // Setup the assembler with a gap to simulate having
                     // received data out of order.
                     assert_eq!(assembler.insert(gap_start..gap_start + 1), 0);
-                    let expected_sack_blocks = assembler.sack_blocks();
+                    let expected_sack_blocks =
+                        assembler.sack_blocks(SackBlockSizeLimiters { timestamp_enabled: false });
                     assert!(!expected_sack_blocks.is_empty());
                     expected_sack_blocks
                 } else {
@@ -8890,8 +8896,11 @@ mod test {
                 if seq.after_or_eq(receiver.nxt()) {
                     let _: usize = receiver.insert(seq..(seq + len));
                 }
-                let sack_blocks =
-                    if generate_sack { receiver.sack_blocks() } else { SackBlocks::default() };
+                let sack_blocks = if generate_sack {
+                    receiver.sack_blocks(SackBlockSizeLimiters { timestamp_enabled: false })
+                } else {
+                    SackBlocks::default()
+                };
                 pending_acks.push((receiver.nxt(), sack_blocks));
             }
         }

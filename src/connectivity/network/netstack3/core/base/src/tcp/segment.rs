@@ -321,6 +321,14 @@ impl SackBlocks {
     /// [RFC 2018 section 3] https://www.rfc-editor.org/rfc/rfc2018#section-3
     pub const MAX_BLOCKS: usize = MAX_SACK_BLOCKS;
 
+    /// The maximum number of selective ack blocks that can be in a TCP segment
+    /// that includes the timestamp option.
+    ///
+    /// See [RFC 2018 section 3].
+    ///
+    /// [RFC 2018 section 3] https://www.rfc-editor.org/rfc/rfc2018#section-3
+    pub const MAX_BLOCKS_WITH_TIMESTAMP: usize = 3;
+
     /// Returns the contained selective ACKs as a TCP option.
     ///
     /// Returns `None` if this [`SackBlocks`] is empty.
