@@ -4,7 +4,7 @@
 
 use crate::rcu_ptr::{RcuPtr, RcuReadGuard};
 use crate::rcu_read_scope::RcuReadScope;
-use crate::state_machine::{rcu_drop, rcu_synchronize};
+use crate::state_machine::rcu_drop;
 
 /// An RCU (Read-Copy-Update) version of `Cell`.
 ///
@@ -40,52 +40,30 @@ impl<T: Send + Sync + 'static> RcuCell<T> {
 
     /// Write the value of the RCU Cell.
     ///
-    /// Blocks until all concurrent readers have dropped their read guards.
-    ///
-    /// Cannot be called while this thread holds an RCU read guard.
-    pub fn update_sync(&self, data: T) {
-        self.replace_sync(Box::into_raw(Box::new(data)));
-    }
-
-    /// Write the value of the RCU Cell.
-    ///
     /// Concurrent readers may continue to see the old value of the Cell until the RCU state machine
     /// has made sufficient progress to ensure that no concurrent readers are holding read guards.
     pub fn update(&self, data: T) {
-        let new_ptr = Box::into_raw(Box::new(data));
-        let ptr = self.ptr.replace(new_ptr);
-        // SAFETY: `ptr` was created by `Box::into_raw`.
-        let value = unsafe { Box::from_raw(ptr) };
-        rcu_drop(value);
+        let ptr = Box::into_raw(Box::new(data));
+        // SAFETY: We can pass `Box::into_raw` to `Self::replace`.
+        unsafe { self.replace(ptr) };
     }
 
-    #[must_use]
     /// Replace the pointer in the RCU Cell with a new pointer.
     ///
     /// # Safety
     ///
-    /// The caller must defer the drop of the returned object until the RCU state machine has made
-    /// sufficient progress to ensure that no concurrent readers are holding read guards.
-    unsafe fn replace_ptr(&self, ptr: *mut T) -> Box<T> {
+    /// The pointer must have been created by `Box::into_raw` or from `std::ptr::null_mut`.
+    unsafe fn replace(&self, ptr: *mut T) {
         let old_ptr = self.ptr.replace(ptr);
-        Box::from_raw(old_ptr)
-    }
-
-    /// Replace the pointer in the RCU Cell with a new pointer.
-    ///
-    /// Blocks until all concurrent readers have dropped their read guards.
-    fn replace_sync(&self, ptr: *mut T) {
-        // SAFETY: We call `rcu_synchronize` before dropping the old value to ensure that no
-        // concurrent readers are holding read guards.
-        let value = unsafe { self.replace_ptr(ptr) };
-        rcu_synchronize();
-        std::mem::drop(value);
+        let object = Box::from_raw(old_ptr);
+        rcu_drop(object);
     }
 }
 
 impl<T: Send + Sync + 'static> Drop for RcuCell<T> {
     fn drop(&mut self) {
-        self.replace_sync(std::ptr::null_mut());
+        // SAFETY: We can pass `std::ptr::null_mut` to `Self::replace`.
+        unsafe { self.replace(std::ptr::null_mut()) };
     }
 }
 
@@ -111,6 +89,7 @@ impl<T: Send + Sync + 'static> From<Box<T>> for RcuCell<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state_machine::rcu_synchronize;
     use std::ops::Deref;
 
     #[test]
@@ -125,13 +104,6 @@ mod tests {
         value.update(43);
         assert_eq!(value.read().deref(), &43);
         rcu_synchronize();
-    }
-
-    #[test]
-    fn test_rcu_cell_set_sync() {
-        let value = RcuCell::new(42);
-        value.update_sync(43);
-        assert_eq!(value.read().deref(), &43);
     }
 
     #[test]

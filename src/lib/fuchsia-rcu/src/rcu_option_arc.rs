@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::rcu_ptr::{RcuPtr, RcuReadGuard};
-use crate::state_machine::{rcu_drop, rcu_synchronize};
+use crate::state_machine::rcu_drop;
 use std::sync::Arc;
 
 /// An RCU (Read-Copy-Update) version of `Option<Arc<...>>`.
@@ -32,23 +32,12 @@ impl<T: Send + Sync + 'static> RcuOptionArc<T> {
 
     /// Write the value of the `RcuOptionArc`.
     ///
-    /// Blocks until all concurrent readers have dropped their read guards.
-    ///
-    /// Cannot be called while this thread holds an RCU read guard.
-    pub fn update_sync(&self, data: Option<Arc<T>>) {
-        self.replace_sync(Self::into_ptr(data));
-    }
-
-    /// Write the value of the `RcuOptionArc`.
-    ///
     /// Concurrent readers may continue to see the old value of the Arc until the RCU state machine
     /// has made sufficient progress to ensure that no concurrent readers are holding read guards.
     pub fn update(&self, data: Option<Arc<T>>) {
         let ptr = Self::into_ptr(data);
-        // SAFETY: `rcu_drop` defers the drop of the object until the RCU state machine has made
-        // sufficient progress to ensure that no concurrent readers are holding read guards.
-        let arc = unsafe { self.replace(ptr) };
-        rcu_drop(arc);
+        // SAFETY: We can pass `Self::into_ptr` to `Self::replace`.
+        unsafe { self.replace(ptr) };
     }
 
     /// Create a new `Option<Arc<T>>` to the object referenced by the `RcuOptionArc`.
@@ -81,32 +70,20 @@ impl<T: Send + Sync + 'static> RcuOptionArc<T> {
     ///
     /// # Safety
     ///
-    /// The caller must defer the drop of the object until the RCU state machine has made
-    /// sufficient progress to ensure that no concurrent readers are holding read guards.
-    #[must_use]
-    unsafe fn replace(&self, ptr: *mut T) -> Option<Arc<T>> {
+    /// The caller must have obtained the pointer from `Self::into_ptr` or from `std::ptr::null_mut`.
+    unsafe fn replace(&self, ptr: *mut T) {
         let old_ptr = self.ptr.replace(ptr);
-        if old_ptr.is_null() { None } else { Some(Arc::from_raw(old_ptr)) }
-    }
-
-    /// Replace the pointer in the `RcuOptionArc` with a new pointer.
-    ///
-    /// This function blocks until the RCU state machine has made sufficient progress to ensure
-    /// that no concurrent readers are holding read guards.
-    fn replace_sync(&self, ptr: *mut T) {
-        // SAFETY: `rcu_synchronize` blocks until the RCU state machine has made sufficient
-        // progress to ensure that no concurrent readers are holding read guards.
-        let maybe_arc = unsafe { self.replace(ptr) };
-        if let Some(arc) = maybe_arc {
-            rcu_synchronize();
-            std::mem::drop(arc);
+        if !old_ptr.is_null() {
+            let arc = Arc::from_raw(old_ptr);
+            rcu_drop(arc);
         }
     }
 }
 
 impl<T: Send + Sync + 'static> Drop for RcuOptionArc<T> {
     fn drop(&mut self) {
-        self.replace_sync(std::ptr::null_mut());
+        // SAFETY: We can pass `std::ptr::null_mut`.
+        unsafe { self.replace(std::ptr::null_mut()) };
     }
 }
 
@@ -131,6 +108,7 @@ impl<T: Send + Sync + 'static> Default for RcuOptionArc<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state_machine::rcu_synchronize;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct DropCounter {
@@ -151,7 +129,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rcu_option_arc_deferred() {
+    fn test_rcu_option_arc() {
         let object = DropCounter::new(42);
         let drops = object.drops.clone();
 
@@ -167,20 +145,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rcu_option_arc_sync() {
-        let object = DropCounter::new(42);
-        let drops = object.drops.clone();
-
-        let arc = RcuOptionArc::from(Some(object));
-        assert_eq!(arc.read().unwrap().value, 42);
-        assert_eq!(drops.load(Ordering::Relaxed), 0);
-        arc.update_sync(Some(DropCounter::new(43)));
-        assert_eq!(arc.read().unwrap().value, 43);
-        assert_eq!(drops.load(Ordering::Relaxed), 1);
-    }
-
-    #[test]
-    fn test_rcu_option_arc_deferred_none() {
+    fn test_rcu_option_arc_none() {
         let object = DropCounter::new(42);
         let drops = object.drops.clone();
 
@@ -194,23 +159,6 @@ mod tests {
 
         rcu_synchronize();
         assert_eq!(drops.load(Ordering::Relaxed), 1);
-    }
-
-    #[test]
-    fn test_rcu_option_arc_sync_none() {
-        let object = DropCounter::new(42);
-        let drops = object.drops.clone();
-
-        let arc = RcuOptionArc::from(Some(object));
-        assert_eq!(arc.read().unwrap().value, 42);
-        assert_eq!(drops.load(Ordering::Relaxed), 0);
-
-        arc.update_sync(None);
-        assert!(arc.read().is_none());
-        assert_eq!(drops.load(Ordering::Relaxed), 1);
-
-        arc.update_sync(Some(DropCounter::new(43)));
-        assert_eq!(arc.read().unwrap().value, 43);
     }
 
     #[test]

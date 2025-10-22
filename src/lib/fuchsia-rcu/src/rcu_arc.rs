@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::rcu_ptr::{RcuPtr, RcuReadGuard};
-use crate::state_machine::{rcu_drop, rcu_synchronize};
+use crate::state_machine::rcu_drop;
 use std::sync::Arc;
 
 /// An RCU (Read-Copy-Update) version of `Arc`.
@@ -32,23 +32,12 @@ impl<T: Send + Sync + 'static> RcuArc<T> {
 
     /// Write the value of the RCU Arc.
     ///
-    /// Blocks until all concurrent readers have dropped their read guards.
-    ///
-    /// Cannot be called while this thread holds an RCU read guard.
-    pub fn update_sync(&self, data: Arc<T>) {
-        self.replace_sync(Self::into_ptr(data));
-    }
-
-    /// Write the value of the RCU Arc.
-    ///
     /// Concurrent readers may continue to see the old value of the Arc until the RCU state machine
     /// has made sufficient progress to ensure that no concurrent readers are holding read guards.
     pub fn update(&self, data: Arc<T>) {
         let ptr = Self::into_ptr(data);
-        // SAFETY: `rcu_drop` defers the drop of the object until the RCU state machine has made
-        // sufficient progress to ensure that no concurrent readers are holding read guards.
-        let arc = unsafe { self.replace(ptr) };
-        rcu_drop(arc);
+        // SAFETY: We can pass `Self::into_ptr` to `Self::replace`.
+        unsafe { self.replace(ptr) };
     }
 
     /// Create a new `Arc` to the object referenced by the RCU Arc.
@@ -78,30 +67,18 @@ impl<T: Send + Sync + 'static> RcuArc<T> {
     ///
     /// # Safety
     ///
-    /// The caller must defer the drop of the object until the RCU state machine has made
-    /// sufficient progress to ensure that no concurrent readers are holding read guards.
-    #[must_use]
-    unsafe fn replace(&self, ptr: *mut T) -> Arc<T> {
+    /// The caller must have obtained the pointer from `Self::into_ptr` or from `std::ptr::null_mut`.
+    unsafe fn replace(&self, ptr: *mut T) {
         let old_ptr = self.ptr.replace(ptr);
-        Arc::from_raw(old_ptr)
-    }
-
-    /// Replace the pointer in the RCU Arc with a new pointer.
-    ///
-    /// This function blocks until the RCU state machine has made sufficient progress to ensure
-    /// that no concurrent readers are holding read guards.
-    fn replace_sync(&self, ptr: *mut T) {
-        // SAFETY: `rcu_synchronize` blocks until the RCU state machine has made sufficient
-        // progress to ensure that no concurrent readers are holding read guards.
-        let arc = unsafe { self.replace(ptr) };
-        rcu_synchronize();
-        std::mem::drop(arc);
+        let arc = Arc::from_raw(old_ptr);
+        rcu_drop(arc);
     }
 }
 
 impl<T: Send + Sync + 'static> Drop for RcuArc<T> {
     fn drop(&mut self) {
-        self.replace_sync(std::ptr::null_mut());
+        // SAFETY: We can pass `std::ptr::null_mut`.
+        unsafe { self.replace(std::ptr::null_mut()) };
     }
 }
 
@@ -126,6 +103,7 @@ impl<T: Default + Send + Sync + 'static> Default for RcuArc<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state_machine::rcu_synchronize;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct DropCounter {
@@ -146,7 +124,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rcu_arc_deferred() {
+    fn test_rcu_arc_update() {
         let object = DropCounter::new(42);
         let drops = object.drops.clone();
 
@@ -158,19 +136,6 @@ mod tests {
         assert_eq!(drops.load(Ordering::Relaxed), 0);
 
         rcu_synchronize();
-        assert_eq!(drops.load(Ordering::Relaxed), 1);
-    }
-
-    #[test]
-    fn test_rcu_arc_sync() {
-        let object = DropCounter::new(42);
-        let drops = object.drops.clone();
-
-        let arc = RcuArc::from(object);
-        assert_eq!(arc.read().value, 42);
-        assert_eq!(drops.load(Ordering::Relaxed), 0);
-        arc.update_sync(DropCounter::new(43));
-        assert_eq!(arc.read().value, 43);
         assert_eq!(drops.load(Ordering::Relaxed), 1);
     }
 }
