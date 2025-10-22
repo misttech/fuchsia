@@ -42,6 +42,18 @@
     {
       "kind": {
         "Option": {
+          "arg_name": "recovery-product-config"
+        }
+      },
+      "optionality": "optional",
+      "long": "--recovery-product-config",
+      "short": null,
+      "description": "path to the product config to use for the recovery image.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
           "arg_name": "board-config"
         }
       },

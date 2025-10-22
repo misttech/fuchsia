@@ -92,6 +92,9 @@ struct SanitizedCreateCommand {
     /// The product config to use.
     pub product_config: String,
 
+    /// The product config to use for the recovery image.
+    pub recovery_product_config: Option<String>,
+
     /// The board config to use.
     pub board_config: String,
 
@@ -158,11 +161,19 @@ impl TryFrom<CreateCommand> for SanitizedCreateCommand {
                 (p, b)
             };
 
-        let CreateCommand { output_name, output_version, tuf_keys, ota_manifest_key, auth, .. } =
-            cmd;
+        let CreateCommand {
+            output_name,
+            output_version,
+            tuf_keys,
+            ota_manifest_key,
+            auth,
+            recovery_product_config,
+            ..
+        } = cmd;
         Ok(Self {
             platform,
             product_config,
+            recovery_product_config,
             board_config,
             output_name,
             output_version,
@@ -203,7 +214,8 @@ async fn sanitized_product_bundle_create(
 
     let cache = ArtifactCache::new(build_dir, gcs_client)?;
     let assembly =
-        Assembly::new(&cache, cmd.platform, cmd.product_config, cmd.board_config).await?;
+        Assembly::new(&cache, cmd.platform.clone(), cmd.product_config, cmd.board_config.clone())
+            .await?;
     writer
         .line(format!("Staged the artifacts\n{}", assembly.version_string()))
         .map_err(|e| ArtifactError::new(anyhow::anyhow!("{}", e)))?;
@@ -247,6 +259,25 @@ async fn sanitized_product_bundle_create(
     if let Some(tuf_keys) = cmd.tuf_keys {
         builder = builder.repository(DeliveryBlobType::Type1, tuf_keys);
     }
+
+    // Build the recovery image if requested.
+    if let Some(recovery_product_config) = cmd.recovery_product_config {
+        let recovery_assembly = Assembly::new(
+            &cache,
+            cmd.platform.clone(),
+            recovery_product_config,
+            cmd.board_config.clone(),
+        )
+        .await?;
+        let recovery_system = Box::pin(recovery_assembly.create_system(
+            context,
+            should_configure_example,
+            &tmp_path.join("recovery_system"),
+        ))
+        .await?;
+        builder = builder.system(recovery_system, Slot::R);
+    }
+
     let _ = builder.build(Box::new(tools), &out).await?;
     cache.purge()?;
 

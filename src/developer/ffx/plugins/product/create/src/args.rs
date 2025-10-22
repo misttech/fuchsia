@@ -72,6 +72,10 @@ pub struct CreateCommand {
     #[argh(option)]
     pub product_config: Option<String>,
 
+    /// path to the product config to use for the recovery image.
+    #[argh(option)]
+    pub recovery_product_config: Option<String>,
+
     /// the board config to use. See ARTIFACT below.
     #[argh(option)]
     pub board_config: Option<String>,
