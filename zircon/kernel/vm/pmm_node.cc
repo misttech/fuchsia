@@ -1265,7 +1265,6 @@ zx::result<vm_page_t*> PmmNode::WaitForSinglePageAllocation(Deadline deadline) {
   }
 
   if (res.is_error()) {
-    ZX_DEBUG_ASSERT(res.error_value() == ZX_ERR_SHOULD_WAIT);
     return res.take_error();
   }
   return res;
