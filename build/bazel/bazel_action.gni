@@ -7,6 +7,7 @@ import("//build/bazel/config/bazel_args.gni")
 import("//build/bazel/config/logging.gni")
 import("//build/bazel/remote_services.gni")
 import("//build/licenses/generated_licenses_spdx.gni")
+import("//build/rust/config.gni")
 
 declare_args() {
   # Output extra information when Bazel build actions fail.
@@ -681,6 +682,9 @@ template("bazel_action") {
   _rebased_debug_symbols_manifest =
       rebase_path(_debug_symbols_manifest, root_build_dir)
 
+  _rust_project_json = "${target_out_dir}/${target_name}.rust-project.json"
+  _rebased_rust_project_json = rebase_path(_rust_project_json, root_build_dir)
+
   action(target_name) {
     forward_variables_from(invoker,
                            [
@@ -702,6 +706,7 @@ template("bazel_action") {
                # Imported by bazel_action.py
                "//build/api/debug_symbols.py",
                "//build/bazel/scripts/bazel_compdb_utils.py",
+               "//build/bazel/scripts/bazel_rust_analyzer_utils.py",
                "//build/bazel/scripts/build_utils.py",
                "//build/bazel/scripts/thread_pool_helpers.py",
                "//build/bazel/scripts/workspace_utils.py",
@@ -718,6 +723,7 @@ template("bazel_action") {
       _path_mapping,
       _bazel_command_file,
       _debug_symbols_manifest,
+      _rust_project_json,
       _timings_file,
     ]
 
@@ -768,6 +774,10 @@ template("bazel_action") {
              _rebased_path_mapping,
              "--debug-symbols-manifest",
              _rebased_debug_symbols_manifest,
+             "--rust-sysroot",
+             rebased_rustc_prefix,
+             "--rust-project-json",
+             _rebased_rust_project_json,
              "--stamp-files",
            ]
     foreach(s, _dedupe_stamps) {
@@ -981,6 +991,7 @@ template("bazel_action") {
             path_mapping = _rebased_path_mapping
             timings_file = _rebased_timings_file
             build_events_log_json = _rebased_bazel_build_events_log_json
+            bazel_rust_project_json = _rebased_rust_project_json
 
             if (bazel_auto_refresh_compdb) {
               bazel_compdb_file = _rebased_compdb_file

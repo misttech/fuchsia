@@ -21,6 +21,7 @@ from pathlib import Path
 _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
 import bazel_compdb_utils
+import bazel_rust_analyzer_utils
 import build_utils
 import thread_pool_helpers
 import workspace_utils
@@ -1370,7 +1371,17 @@ def main() -> int:
     parser.add_argument(
         "--compdb-file",
         type=Path,
-        help="If specified, write compile_commands.json to file.",
+        help="If specified, write compile_commands.json for the Bazel targets built to file.",
+    )
+    parser.add_argument(
+        "--rust-sysroot",
+        type=Path,
+        help="Path to Rust sysroot directory.",
+    )
+    parser.add_argument(
+        "--rust-project-json",
+        type=Path,
+        help="If specified, write rust-project.json for the Bazel targets built to file.",
     )
     parser.add_argument(
         "--verbose_failures",
@@ -1861,6 +1872,34 @@ def main() -> int:
         write_file_if_changed(
             args.compdb_file,
             json.dumps(bazel_compdb_utils.dedupe(compile_commands), indent=2),
+        )
+
+    if args.rust_project_json:
+        time_profile.start(
+            "generate_rust_project_json",
+            "Generate {}".format(args.rust_project_json),
+        )
+        rust_project_json = (
+            bazel_rust_analyzer_utils.generate_rust_project_json_crates(
+                bazel_paths,
+                configured_args,
+                args.bazel_targets,
+            )
+        )
+        _sysroot_src_subdir = Path("lib/rustlib/src/rust/library")
+        write_file_if_changed(
+            args.rust_project_json,
+            json.dumps(
+                {
+                    "sysroot": str(args.rust_sysroot.resolve().absolute()),
+                    "sysroot_src": str(
+                        args.rust_sysroot.resolve().absolute()
+                        / _sysroot_src_subdir
+                    ),
+                    "crates": rust_project_json,
+                },
+                indent=2,
+            ),
         )
 
     time_profile.stop()

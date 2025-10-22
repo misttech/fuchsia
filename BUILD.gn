@@ -2190,6 +2190,11 @@ build_api_module("nuc11_fastboot_images_location") {
 #         Bazel targets built by this bazel_action().
 #     - Type: string
 #
+#   bazel_rust_project_json
+#     - Optional: Path to a file including JSON rust project information for the
+#         Rust targets built by this bazel_action().
+#     - Type: string
+#
 #   path_mapping
 #     - Optional: Path to a file used to map Bazel artifacts to their copy location in the
 #         Ninja build directory. Only used for debugging.
