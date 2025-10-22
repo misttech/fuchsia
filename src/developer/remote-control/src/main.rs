@@ -10,7 +10,7 @@ use futures::channel::mpsc::unbounded;
 use futures::join;
 use futures::prelude::*;
 use log::{debug, error, info};
-use remote_control::{ConnectionRequest, RemoteControlService};
+use remote_control::{ConnectionRequest, RemoteControlService, http};
 use remote_control_config::Config;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -132,8 +132,14 @@ async fn exec_server(config: &Config) -> Result<(), Error> {
 #[fasync::run_singlethreaded]
 async fn main() -> Result<(), Error> {
     let config = Config::take_from_startup_handle();
-    if let Err(err) = exec_server(&config).await {
-        error!(err:%; "Error executing server");
+    let rcs_fut = exec_server(&config);
+    let http_fut = http::run_http_server();
+    let (rcs_res, http_res) = join!(rcs_fut, http_fut);
+    if let Err(err) = rcs_res {
+        error!(err:%; "Error executing rcs server");
+    }
+    if let Err(err) = http_res {
+        error!(err:%; "Error executing http server");
     }
     Ok(())
 }

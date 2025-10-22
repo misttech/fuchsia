@@ -230,6 +230,7 @@
                 source_name: "data",
                 capability: "directory",
                 target_monikers: [
+                    "/core/remote-control",
                     "/core/sshd-host",
 
                     // TODO(https://fxbug.dev/42080863): Remove once the shell tools that use this

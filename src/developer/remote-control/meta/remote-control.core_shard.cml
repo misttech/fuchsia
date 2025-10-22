@@ -83,5 +83,10 @@
             from: "parent",
             to: "#remote-control",
         },
+        {
+            directory: "data",
+            from: "parent",
+            to: "#remote-control",
+        },
     ],
 }

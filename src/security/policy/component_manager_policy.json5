@@ -295,6 +295,7 @@
                 source_name: "data",
                 capability: "directory",
                 target_monikers: [
+                    "/core/remote-control",
                     "/core/sshd-host",
                     "/core/sshd-host/shell:**",
 

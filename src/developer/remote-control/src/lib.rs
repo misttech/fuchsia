@@ -22,6 +22,7 @@ use {
 };
 
 mod host_identifier;
+pub mod http;
 
 pub struct RemoteControlService {
     ids: RefCell<Vec<Weak<RefCell<Vec<u64>>>>>,

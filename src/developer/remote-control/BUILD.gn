@@ -55,6 +55,7 @@ rustc_library("lib") {
     "//sdk/rust/zx",
     "//src/developer/remote-control/fidl:fuchsia.developer.remotecontrol.connector_rust",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
     "//src/lib/fuchsia-runtime",
@@ -71,11 +72,11 @@ rustc_library("lib") {
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//src/lib/fidl/rust/fidl_test_util",
     "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
   ]
 
   sources = [
     "src/host_identifier.rs",
+    "src/http.rs",
     "src/lib.rs",
   ]
 }
@@ -83,6 +84,7 @@ rustc_library("lib") {
 rustc_binary("bin") {
   output_name = "remote_control_bin"
   edition = "2021"
+  with_unit_tests = true
 
   deps = [
     ":lib",

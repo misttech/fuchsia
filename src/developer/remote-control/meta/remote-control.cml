@@ -13,6 +13,11 @@
     ],
     use: [
         {
+            directory: "data",
+            rights: [ "r*" ],
+            path: "/data",
+        },
+        {
             // Whether we should use hardcoded identity or query the system for identifying
             // information.
             config: "fuchsia.rcs.UseDefaultIdentity",
@@ -24,6 +29,7 @@
         {
             protocol: [
                 "fuchsia.boot.Arguments",
+                "fuchsia.posix.socket.Provider",
                 "fuchsia.sys2.LifecycleController.root",
                 "fuchsia.sys2.RealmQuery.root",
                 "fuchsia.sys2.RouteValidator.root",
@@ -37,7 +43,6 @@
                 "fuchsia.hwinfo.Device",
                 "fuchsia.kernel.Stats",
                 "fuchsia.net.interfaces.State",
-                "fuchsia.posix.socket.Provider",
                 "fuchsia.sysinfo.SysInfo",
                 "fuchsia.test.manager.SuiteRunner",
                 "fuchsia.test.manager.TestCaseEnumerator",
