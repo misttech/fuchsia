@@ -76,8 +76,8 @@ void PrintDumpfile(const InstrumentationDataVmo& data, ktl::initializer_list<FIL
   ktl::string_view vmo_name{name_buffer, sizeof(name_buffer)};
   vmo_name = vmo_name.substr(0, vmo_name.find_first_of('\0'));
 
-  size_t content_size = vmo->GetContentSize();
-  size_t scaled_size = content_size / data.scale;
+  size_t stream_size = vmo->GetStreamSize();
+  size_t scaled_size = stream_size / data.scale;
 
   for (FILE* f : streams) {
     fprintf(f, "%.*s: {{{dumpfile:%.*s:%.*s}}} maximum %zu %.*s.\n",

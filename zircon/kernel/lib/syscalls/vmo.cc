@@ -182,7 +182,7 @@ zx_status_t sys_vmo_get_stream_size(zx_handle_t handle, user_out_ptr<uint64_t> _
   if (status != ZX_OK)
     return status;
 
-  uint64_t size = vmo->GetContentSize();
+  uint64_t size = vmo->GetStreamSize();
   return _size.copy_to_user(size);
 }
 

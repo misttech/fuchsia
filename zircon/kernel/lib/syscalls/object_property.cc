@@ -150,7 +150,7 @@ zx_status_t sys_object_get_property(zx_handle_t handle_value, uint32_t property,
         return ZX_ERR_WRONG_TYPE;
       }
 
-      uint64_t value = vmo->GetContentSize();
+      uint64_t value = vmo->GetStreamSize();
       return _value.reinterpret<uint64_t>().copy_to_user(value);
     }
     case ZX_PROP_STREAM_MODE_APPEND: {

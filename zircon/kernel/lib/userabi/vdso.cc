@@ -536,7 +536,7 @@ void VDso::CreateVariant(Variant variant, KernelHandle<VmObjectDispatcher>* vmo_
   }
 
   zx_rights_t rights;
-  status = VmObjectDispatcher::Create(ktl::move(new_vmo), dispatcher()->GetContentSize(),
+  status = VmObjectDispatcher::Create(ktl::move(new_vmo), dispatcher()->GetStreamSize(),
                                       VmObjectDispatcher::InitialMutability::kMutable,
                                       vmo_kernel_handle, &rights);
   ASSERT(status == ZX_OK);

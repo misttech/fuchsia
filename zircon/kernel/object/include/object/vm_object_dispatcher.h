@@ -85,7 +85,10 @@ class VmObjectDispatcher final : public SoloDispatcher<VmObjectDispatcher, ZX_DE
   // content is not guaranteed to be zero.
   zx_status_t SetLegacyPropVmoContentSize(uint64_t);
 
-  uint64_t GetContentSize() const;
+  // Returns the number of bytes in the data stream stored within the VMO.
+  //
+  // This returns the property previously known as the content size.
+  uint64_t GetStreamSize() const;
 
   const fbl::RefPtr<VmObject>& vmo() const { return vmo_; }
   zx_koid_t pager_koid() const { return vmo_->GetPageSourceKoid().value_or(ZX_KOID_INVALID); }

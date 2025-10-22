@@ -386,7 +386,7 @@ zx_status_t VmObjectDispatcher::SetStreamSize(uint64_t stream_size) {
   return ZX_OK;
 }
 
-uint64_t VmObjectDispatcher::GetContentSize() const {
+uint64_t VmObjectDispatcher::GetStreamSize() const {
   canary_.Assert();
 
   // Stream size is always reported as 0 for physical & contiguous VMOs.
