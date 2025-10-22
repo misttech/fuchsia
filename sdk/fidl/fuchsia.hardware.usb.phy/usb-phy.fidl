@@ -18,6 +18,23 @@ service Service {
     device client_end:UsbPhy;
 };
 
+@discoverable
+open protocol ConnectionWatcher {
+    /// Hanging-get that notifies callers when USB has been connected or
+    /// disconnected. Returns immediately on the first call, or if the
+    /// connection status has changed since the last call.
+    ///
+    /// Returns:
+    ///   - `ZX_ERR_BAD_STATE`: A hanging-get call was already pending.
+    flexible WatchConnectStatusChanged() -> (struct {
+        connected bool;
+    }) error zx.Status;
+};
+
+service ConnectionWatcherService {
+    watcher client_end:ConnectionWatcher;
+};
+
 type ProtocolVersion = flexible enum {
     USB_2_0 = 2;
     USB_3_0 = 3;
