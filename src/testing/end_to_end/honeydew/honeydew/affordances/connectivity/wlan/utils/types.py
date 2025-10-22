@@ -786,6 +786,8 @@ class CountryCode(enum.StrEnum):
     TAIWAN = "TW"
     UNITED_STATES_OF_AMERICA = "US"
     WORLDWIDE = "WW"
+    # WW and 00 both refer to worldwide mode
+    WORLDWIDE_ZEROES = "00"
 
 
 class ConnectivityMode(enum.IntEnum):
