@@ -728,6 +728,7 @@ class CommandLauncher(object):
             stdout=None if print_stdout else subprocess.PIPE,
             stderr=None if print_stderr else subprocess.PIPE,
             text=True,
+            encoding="utf-8",
         )
         return CommandResult(ret.returncode, ret.stdout, ret.stderr, ret.args)
 
