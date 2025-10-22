@@ -9,7 +9,7 @@ import("../libc.gni")
 libc_source_set("threads") {
   sources = []
   libc_deps = [
-    ":thread-storage",
+    ":thread-storage-allocate",
 
     # TODO(https://fxbug.dev/342469121): This is still needed by the musl
     # threads code post-startup.  When thread creation uses ThreadStorage
@@ -25,6 +25,9 @@ source_set("shadow-call-stack") {
   sources = []
 }
 
+# This reaches only the self-contained code involved in the ThreadStorage
+# destructor and move operations, which has no dependencies on other libc code
+# except pure compiler dependencies and system calls and wrappers, etc.
 libc_source_set("thread-storage") {
   public = [ "thread-storage.h" ]
   libc_public_deps = [ "../zircon:vmar" ]
@@ -40,6 +43,17 @@ libc_source_set("thread-storage") {
   deps = [ "//zircon/third_party/ulib/musl:musl_internal" ]
 }
 
+# This defines ThreadStorage::Allocate, which has dependencies that are not
+# available in every hermetic basic_abi libc_source_set() and is not needed
+# everywhere that the ThreadStorage destructor and such are needed.
+libc_source_set("thread-storage-allocate") {
+  sources = [ "thread-storage-allocate.cc" ]
+  deps = [
+    ":thread-storage",
+    "//zircon/third_party/ulib/musl:musl_internal",
+  ]
+}
+
 group("unittests") {
   testonly = true
   deps = [ ":thread-storage-tests" ]
@@ -49,6 +63,7 @@ libc_test("thread-storage-tests") {
   sources = [ "thread-storage-tests.cc" ]
   include_dirs = [ "//sdk/lib/ld/test/modules" ]
   deps = [
+    ":thread-storage-allocate.testonly",
     ":thread-storage.testonly",
     "../test:safe-zero-construction",
     "//sdk/lib/fit",

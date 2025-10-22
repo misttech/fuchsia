@@ -300,11 +300,14 @@ libc_source_set("start-compiler-abi") {
   public_deps = [ ":headers" ]
 
   sources = [ "start-compiler-abi.cc" ]
+  libc_deps = [
+    "../threads:thread-storage",
+    "../threads:thread-storage-allocate",
+  ]
   deps = [
     ":startup-random",
     "../ld:log.headers",
     "../threads:shadow-call-stack",
-    "../threads:thread-storage",
     "../threads:zxr-tls",
     "//zircon/system/ulib/zx",
     "//zircon/third_party/ulib/musl:musl_internal",
