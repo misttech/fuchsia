@@ -66,7 +66,7 @@ class VmObjectPhysical final : public VmObject, public VmDeferredDeleter<VmObjec
     // Unpin is a no-op for physical VMOs as they are always pinned.
   }
 
-  void SetUserStreamSize(fbl::RefPtr<ContentSizeManager> csm) override {
+  void SetUserStreamSize(fbl::RefPtr<StreamSizeManager> ssm) override {
     // Physical VMOs have no operations that can be told to use the user stream size, so can safely
     // just ignore this request.
   }

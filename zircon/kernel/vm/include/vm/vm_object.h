@@ -32,8 +32,8 @@
 #include <kernel/mutex.h>
 #include <ktl/utility.h>
 #include <vm/attribution.h>
-#include <vm/content_size_manager.h>
 #include <vm/page.h>
+#include <vm/stream_size_manager.h>
 #include <vm/vm.h>
 #include <vm/vm_mapping_subtree_state.h>
 #include <vm/vm_page_list.h>
@@ -497,7 +497,7 @@ class VmObject : public fbl::ContainableBaseClasses<
   // on this value unless instructed by user operations, and it is therefore the responsibility of
   // the user to ensure any synchronization of the reported value with the operation being
   // requested.
-  virtual void SetUserStreamSize(fbl::RefPtr<ContentSizeManager> csm) = 0;
+  virtual void SetUserStreamSize(fbl::RefPtr<StreamSizeManager> ssm) = 0;
 
   // The associated VmObjectDispatcher will set an observer to notify user mode.
   void SetChildObserver(VmObjectChildObserver* child_observer);

@@ -4,22 +4,22 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include "vm/content_size_manager.h"
+#include "vm/stream_size_manager.h"
 
 #include <ktl/limits.h>
 #include <ktl/utility.h>
 
 // static
-zx::result<fbl::RefPtr<ContentSizeManager>> ContentSizeManager::Create(uint64_t content_size) {
+zx::result<fbl::RefPtr<StreamSizeManager>> StreamSizeManager::Create(uint64_t stream_size) {
   fbl::AllocChecker ac;
-  fbl::RefPtr<ContentSizeManager> csm = fbl::AdoptRef(new (&ac) ContentSizeManager(content_size));
+  fbl::RefPtr<StreamSizeManager> ssm = fbl::AdoptRef(new (&ac) StreamSizeManager(stream_size));
   if (!ac.check()) {
     return zx::error(ZX_ERR_NO_MEMORY);
   }
-  return zx::ok(csm);
+  return zx::ok(ssm);
 }
 
-uint64_t ContentSizeManager::Operation::GetSizeLocked() const {
+uint64_t StreamSizeManager::Operation::GetSizeLocked() const {
   DEBUG_ASSERT(IsValid());
   // Reading the size for `Append` operations should only occur after it's been initialized.
   DEBUG_ASSERT(type_ != OperationType::Append || size_ > 0);
@@ -27,49 +27,49 @@ uint64_t ContentSizeManager::Operation::GetSizeLocked() const {
   return size_;
 }
 
-void ContentSizeManager::Operation::ShrinkSizeLocked(uint64_t new_size) {
+void StreamSizeManager::Operation::ShrinkSizeLocked(uint64_t new_size) {
   DEBUG_ASSERT(IsValid());
   // If `new_size` is 0, the operation should be cancelled instead.
   DEBUG_ASSERT(new_size > 0);
-  // This function may only be called on expanding content write operations.
+  // This function may only be called on expanding stream write operations.
   ASSERT(type_ == OperationType::Append || type_ == OperationType::Write);
   ASSERT(new_size <= size_);
 #if DEBUG_ASSERT_IMPLEMENTED
-  DEBUG_ASSERT(new_size >= committed_content_size_);
+  DEBUG_ASSERT(new_size >= committed_stream_size_);
 #endif
 
   size_ = new_size;
 }
 
-void ContentSizeManager::Operation::CommitLocked() {
+void StreamSizeManager::Operation::CommitLocked() {
   DEBUG_ASSERT(IsValid());
 
   parent()->CommitAndDequeueOperationLocked(this);
 }
 
-void ContentSizeManager::Operation::CancelLocked() {
+void StreamSizeManager::Operation::CancelLocked() {
   DEBUG_ASSERT(IsValid());
 #if DEBUG_ASSERT_IMPLEMENTED
-  DEBUG_ASSERT(committed_content_size_ == 0);
+  DEBUG_ASSERT(committed_stream_size_ == 0);
 #endif
 
   parent()->DequeueOperationLocked(this);
 }
 
-void ContentSizeManager::Operation::UpdateContentSizeFromProgress(uint64_t new_content_size) {
+void StreamSizeManager::Operation::UpdateStreamSizeFromProgress(uint64_t new_stream_size) {
   DEBUG_ASSERT(IsValid());
   DEBUG_ASSERT(type_ == OperationType::Write || type_ == OperationType::Append);
-  DEBUG_ASSERT(new_content_size <= size_);
-  DEBUG_ASSERT(new_content_size > parent_->GetContentSize());
+  DEBUG_ASSERT(new_stream_size <= size_);
+  DEBUG_ASSERT(new_stream_size > parent_->GetStreamSize());
 #if DEBUG_ASSERT_IMPLEMENTED
-  committed_content_size_ = new_content_size;
+  committed_stream_size_ = new_stream_size;
 #endif
 
-  parent_->SetContentSize(new_content_size);
+  parent_->SetStreamSize(new_stream_size);
 }
 
-void ContentSizeManager::Operation::Initialize(ContentSizeManager* parent, uint64_t size,
-                                               OperationType type) {
+void StreamSizeManager::Operation::Initialize(StreamSizeManager* parent, uint64_t size,
+                                              OperationType type) {
   DEBUG_ASSERT(!IsValid());
   DEBUG_ASSERT(parent_ == parent);
 
@@ -78,8 +78,8 @@ void ContentSizeManager::Operation::Initialize(ContentSizeManager* parent, uint6
   type_ = type;
 }
 
-zx_status_t ContentSizeManager::BeginAppendLocked(uint64_t append_size, Guard<Mutex>* lock_guard,
-                                                  Operation* out_op) {
+zx_status_t StreamSizeManager::BeginAppendLocked(uint64_t append_size, Guard<Mutex>* lock_guard,
+                                                 Operation* out_op) {
   DEBUG_ASSERT(out_op);
   DEBUG_ASSERT(append_size > 0);
 
@@ -88,25 +88,25 @@ zx_status_t ContentSizeManager::BeginAppendLocked(uint64_t append_size, Guard<Mu
   write_q_.push_back(out_op);
 
   // Block until head if there are any of the following operations preceding this one:
-  //   * Appends or writes that exceed the current content size.
+  //   * Appends or writes that exceed the current stream size.
   //   * Set size
   //
-  // Effectively, this checks for any content size modifying operations.
+  // Effectively, this checks for any stream size modifying operations.
   bool should_block = false;
   auto iter = --write_q_.make_iterator(*out_op);
 
-  // It's okay to read the content size once here, since the lock is held. This means that content
-  // size can only be increased if the front-most content size modifying operation is an expanding
-  // write or append. Not re-reading content size and seeing a potentially smaller content size here
+  // It's okay to read the stream size once here, since the lock is held. This means that stream
+  // size can only be increased if the front-most stream size modifying operation is an expanding
+  // write or append. Not re-reading stream size and seeing a potentially smaller stream size here
   // is valid, since it will only pessimize (i.e. blocking until head) this operation for a very
   // small number of cases within an extremely narrow timing window. There are no correctness
   // issues with pessimization. Since the pessimizing case is so rare, prefer reading once over
   // continuously re-reading the atomic in a loop.
-  uint64_t cur_content_size = GetContentSize();
+  uint64_t cur_stream_size = GetStreamSize();
   while (iter.IsValid()) {
     iter->AssertParentLockHeld();
     if (iter->GetType() == OperationType::SetSize || iter->GetType() == OperationType::Append ||
-        (iter->GetType() == OperationType::Write && iter->GetSizeLocked() > cur_content_size)) {
+        (iter->GetType() == OperationType::Write && iter->GetSizeLocked() > cur_stream_size)) {
       should_block = true;
       break;
     }
@@ -116,17 +116,17 @@ zx_status_t ContentSizeManager::BeginAppendLocked(uint64_t append_size, Guard<Mu
   if (should_block) {
     BlockUntilHeadLocked(out_op, lock_guard);
 
-    // Must re-read the content size here, since `BlockUntilHeadLocked` would have dropped the lock,
-    // and content size may have been modified by the operations in front of this one.
-    cur_content_size = GetContentSize();
+    // Must re-read the stream size here, since `BlockUntilHeadLocked` would have dropped the lock,
+    // and stream size may have been modified by the operations in front of this one.
+    cur_stream_size = GetStreamSize();
   }
 
-  // Using the previously read content size. In the case where this operation blocked until it was
-  // the head, content size was re-read with the lock held and with this operation at the head of
-  // the queue (no other content size mutating operations can proceed before this). In all other
-  // cases, the previous loop verified that no content size mutating operations are in front of this
+  // Using the previously read stream size. In the case where this operation blocked until it was
+  // the head, stream size was re-read with the lock held and with this operation at the head of
+  // the queue (no other stream size mutating operations can proceed before this). In all other
+  // cases, the previous loop verified that no stream size mutating operations are in front of this
   // operation.
-  if (add_overflow(cur_content_size, append_size, &out_op->size_)) {
+  if (add_overflow(cur_stream_size, append_size, &out_op->size_)) {
     // Dequeue operation since this change should not be committed.
     DequeueOperationLocked(out_op);
     return ZX_ERR_OUT_OF_RANGE;
@@ -135,18 +135,18 @@ zx_status_t ContentSizeManager::BeginAppendLocked(uint64_t append_size, Guard<Mu
   return ZX_OK;
 }
 
-void ContentSizeManager::BeginWriteLocked(uint64_t target_size, Guard<Mutex>* lock_guard,
-                                          ktl::optional<uint64_t>* out_prev_content_size,
-                                          Operation* out_op) {
-  DEBUG_ASSERT(out_prev_content_size);
+void StreamSizeManager::BeginWriteLocked(uint64_t target_size, Guard<Mutex>* lock_guard,
+                                         ktl::optional<uint64_t>* out_prev_stream_size,
+                                         Operation* out_op) {
+  DEBUG_ASSERT(out_prev_stream_size);
   DEBUG_ASSERT(out_op);
 
-  *out_prev_content_size = ktl::nullopt;
+  *out_prev_stream_size = ktl::nullopt;
 
   out_op->Initialize(this, target_size, OperationType::Write);
   write_q_.push_back(out_op);
 
-  // Check if there are any set size operations in front of this that sets the content size smaller
+  // Check if there are any set size operations in front of this that sets the stream size smaller
   // than `target_size`.
   bool block_due_to_set = false;
   auto iter = --write_q_.make_iterator(*out_op);
@@ -159,53 +159,53 @@ void ContentSizeManager::BeginWriteLocked(uint64_t target_size, Guard<Mutex>* lo
     --iter;
   }
 
-  // If this write can potentially create a scenario where it expands content, block until it is the
+  // If this write can potentially create a scenario where it expands stream, block until it is the
   // head of the queue.
-  if (block_due_to_set || target_size > GetContentSize()) {
+  if (block_due_to_set || target_size > GetStreamSize()) {
     BlockUntilHeadLocked(out_op, lock_guard);
 
-    // Must re-read the content size here, since `BlockUntilHeadLocked` would have dropped the lock,
-    // and content size may have been modified by the operations in front of this one.
-    uint64_t cur_content_size = GetContentSize();
-    if (target_size > cur_content_size) {
-      *out_prev_content_size = cur_content_size;
+    // Must re-read the stream size here, since `BlockUntilHeadLocked` would have dropped the lock,
+    // and stream size may have been modified by the operations in front of this one.
+    uint64_t cur_stream_size = GetStreamSize();
+    if (target_size > cur_stream_size) {
+      *out_prev_stream_size = cur_stream_size;
     }
   }
 }
 
-void ContentSizeManager::BeginReadLocked(uint64_t target_size, uint64_t* out_content_size_limit,
-                                         Operation* out_op) {
-  DEBUG_ASSERT(out_content_size_limit);
+void StreamSizeManager::BeginReadLocked(uint64_t target_size, uint64_t* out_stream_size_limit,
+                                        Operation* out_op) {
+  DEBUG_ASSERT(out_stream_size_limit);
   DEBUG_ASSERT(out_op);
 
   // Allow reads up to the smallest outstanding size.
   // Other concurrent, in-flight operations may or may not complete before this read, so it is okay
   // to be more conservative here and only read up to the guaranteed valid region.
-  *out_content_size_limit = GetContentSize();
+  *out_stream_size_limit = GetStreamSize();
   for (auto& op : read_q_) {
     if (op.GetType() != OperationType::SetSize) {
       continue;
     }
 
     op.AssertParentLockHeld();
-    *out_content_size_limit = ktl::min(op.GetSizeLocked(), *out_content_size_limit);
+    *out_stream_size_limit = ktl::min(op.GetSizeLocked(), *out_stream_size_limit);
   }
-  *out_content_size_limit = ktl::min(target_size, *out_content_size_limit);
+  *out_stream_size_limit = ktl::min(target_size, *out_stream_size_limit);
 
-  out_op->Initialize(this, *out_content_size_limit, OperationType::Read);
+  out_op->Initialize(this, *out_stream_size_limit, OperationType::Read);
   read_q_.push_back(out_op);
 }
 
-void ContentSizeManager::BeginSetContentSizeLocked(uint64_t target_size, Operation* out_op,
-                                                   Guard<Mutex>* lock_guard) {
+void StreamSizeManager::BeginSetStreamSizeLocked(uint64_t target_size, Operation* out_op,
+                                                 Guard<Mutex>* lock_guard) {
   out_op->Initialize(this, target_size, OperationType::SetSize);
 
   write_q_.push_back(out_op);
   read_q_.push_back(out_op);
 
   // Block until head if there are any of the following operations preceding this one:
-  //   * Appends or writes that exceed either the current content size or the target size.
-  //      - If it exceeds the current content size, the overlap is in the region in which the set
+  //   * Appends or writes that exceed either the current stream size or the target size.
+  //      - If it exceeds the current stream size, the overlap is in the region in which the set
   //        size will zero content and the write will commit data.
   //      - If it exceeds the target size, the overlap is in the region in which the set size will
   //        invalidate pages/data and the write will commit data.
@@ -214,20 +214,20 @@ void ContentSizeManager::BeginSetContentSizeLocked(uint64_t target_size, Operati
   bool should_block = false;
   auto write_iter = --write_q_.make_iterator(*out_op);
 
-  // It's okay to read the content size once here, since the lock is held. This means that content
-  // size can only be increased if the front-most content size modifying operation is an expanding
-  // write or append. Not re-reading content size and seeing a potentially smaller content size here
+  // It's okay to read the stream size once here, since the lock is held. This means that stream
+  // size can only be increased if the front-most stream size modifying operation is an expanding
+  // write or append. Not re-reading stream size and seeing a potentially smaller stream size here
   // is valid, since it will only pessimize (i.e. blocking until head) this operation for a very
   // small number of cases within an extremely narrow timing window. There are no correctness
   // issues with pessimization. Since the pessimizing case is so rare, prefer reading once over
   // continuously re-reading the atomic in a loop.
-  uint64_t cur_content_size = GetContentSize();
+  uint64_t cur_stream_size = GetStreamSize();
   while (write_iter.IsValid()) {
     write_iter->AssertParentLockHeld();
     if (write_iter->GetType() == OperationType::SetSize ||
         write_iter->GetType() == OperationType::Append ||
         (write_iter->GetType() == OperationType::Write &&
-         write_iter->GetSizeLocked() > ktl::min(cur_content_size, target_size))) {
+         write_iter->GetSizeLocked() > ktl::min(cur_stream_size, target_size))) {
       should_block = true;
       break;
     }
@@ -249,7 +249,7 @@ void ContentSizeManager::BeginSetContentSizeLocked(uint64_t target_size, Operati
   }
 }
 
-void ContentSizeManager::BlockUntilHeadLocked(Operation* op, Guard<Mutex>* lock_guard) {
+void StreamSizeManager::BlockUntilHeadLocked(Operation* op, Guard<Mutex>* lock_guard) {
   DEBUG_ASSERT(op->parent_ == this);
 
   if (fbl::InContainer<WriteQueueTag>(*op)) {
@@ -265,7 +265,7 @@ void ContentSizeManager::BlockUntilHeadLocked(Operation* op, Guard<Mutex>* lock_
   }
 }
 
-void ContentSizeManager::CommitAndDequeueOperationLocked(Operation* op) {
+void StreamSizeManager::CommitAndDequeueOperationLocked(Operation* op) {
   if (!op->IsValid()) {
     DEBUG_ASSERT(!fbl::InContainer<WriteQueueTag>(*op));
     DEBUG_ASSERT(!fbl::InContainer<ReadQueueTag>(*op));
@@ -275,11 +275,11 @@ void ContentSizeManager::CommitAndDequeueOperationLocked(Operation* op) {
   op->AssertParentLockHeld();
   switch (op->type_) {
     case OperationType::Write:
-      SetContentSize(ktl::max(op->GetSizeLocked(), GetContentSize()));
+      SetStreamSize(ktl::max(op->GetSizeLocked(), GetStreamSize()));
       break;
     case OperationType::Append:
     case OperationType::SetSize:
-      SetContentSize(op->GetSizeLocked());
+      SetStreamSize(op->GetSizeLocked());
       break;
     case OperationType::Read:
       // No-op
@@ -289,7 +289,7 @@ void ContentSizeManager::CommitAndDequeueOperationLocked(Operation* op) {
   DequeueOperationLocked(op);
 }
 
-void ContentSizeManager::DequeueOperationLocked(Operation* op) {
+void StreamSizeManager::DequeueOperationLocked(Operation* op) {
   DEBUG_ASSERT(op->IsValid());
   DEBUG_ASSERT(op->parent_ == this);
 

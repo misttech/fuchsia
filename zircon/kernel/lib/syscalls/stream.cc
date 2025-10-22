@@ -53,15 +53,15 @@ zx_status_t sys_stream_create(uint32_t options, zx_handle_t vmo_handle, zx_off_t
   }
 
   // Remember whether this stream can resize the underlying VMO when required. Note that it might be
-  // possible for stream writes / appends to proceed by manipulating only the content size, without
+  // possible for stream writes / appends to proceed by manipulating only the stream size, without
   // having to change the VMO size. This flag will be checked only for stream operations that would
   // require manipulating the VMO size, more specifically when expanding the VMO size if the
-  // requested content size needs to surpass the current VMO size.
+  // requested stream size needs to surpass the current VMO size.
   if (actual_vmo_rights & ZX_RIGHT_RESIZE) {
     stream_options |= StreamDispatcher::kCanResizeVmo;
   }
 
-  auto result = disp->content_size_manager();
+  auto result = disp->stream_size_manager();
   if (result.is_error()) {
     return result.status_value();
   }

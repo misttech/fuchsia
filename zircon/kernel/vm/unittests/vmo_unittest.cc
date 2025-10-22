@@ -4275,12 +4275,12 @@ static bool vmo_user_stream_size_test() {
   }
 
   // Give VMO a user-defined stream size of 2 pages.
-  fbl::RefPtr<ContentSizeManager> csm;
-  auto csm_result = ContentSizeManager::Create(2 * PAGE_SIZE);
-  ASSERT_OK(csm_result.status_value());
-  csm = ktl::move(*csm_result);
+  fbl::RefPtr<StreamSizeManager> ssm;
+  auto ssm_result = StreamSizeManager::Create(2 * PAGE_SIZE);
+  ASSERT_OK(ssm_result.status_value());
+  ssm = ktl::move(*ssm_result);
 
-  vmo->SetUserStreamSize(csm);
+  vmo->SetUserStreamSize(ssm);
 
   {
     Guard<CriticalMutex> guard{vmo->lock()};

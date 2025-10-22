@@ -96,7 +96,7 @@ class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPa
       return ktl::nullopt;
     }
 
-    return user_stream_size_->GetContentSize();
+    return user_stream_size_->GetStreamSize();
   }
 
   // Calculates the minimum of the VMO size and the page-aligned user stream size.
@@ -105,7 +105,7 @@ class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPa
       return ktl::nullopt;
     }
 
-    uint64_t user_stream_size = user_stream_size_->GetContentSize();
+    uint64_t user_stream_size = user_stream_size_->GetStreamSize();
     uint64_t vmo_size = size_locked();
 
     // If user stream size is larger, trim to the VMO.
@@ -296,9 +296,9 @@ class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPa
   }
 
   // See VmObject::SetUserStreamSize
-  void SetUserStreamSize(fbl::RefPtr<ContentSizeManager> csm) override {
+  void SetUserStreamSize(fbl::RefPtr<StreamSizeManager> ssm) override {
     Guard<CriticalMutex> guard{lock()};
-    user_stream_size_ = ktl::move(csm);
+    user_stream_size_ = ktl::move(ssm);
   }
 
   void Dump(uint depth, bool verbose) override {
@@ -524,7 +524,7 @@ class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPa
 
   // A user supplied stream size that can be queried. By itself this has no semantic meaning and is
   // only read and used specifically when requested by the user. See VmObject::SetUserStreamSize.
-  fbl::RefPtr<ContentSizeManager> user_stream_size_ TA_GUARDED(lock());
+  fbl::RefPtr<StreamSizeManager> user_stream_size_ TA_GUARDED(lock());
 };
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_VM_OBJECT_PAGED_H_

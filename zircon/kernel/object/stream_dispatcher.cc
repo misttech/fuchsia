@@ -52,11 +52,11 @@ zx_status_t StreamDispatcher::parse_create_syscall_flags(uint32_t flags, uint32_
 
 // static
 zx_status_t StreamDispatcher::Create(uint32_t options, fbl::RefPtr<VmObjectPaged> vmo,
-                                     fbl::RefPtr<ContentSizeManager> csm, zx_off_t seek,
+                                     fbl::RefPtr<StreamSizeManager> ssm, zx_off_t seek,
                                      KernelHandle<StreamDispatcher>* handle, zx_rights_t* rights) {
   fbl::AllocChecker ac;
   KernelHandle new_handle(
-      fbl::AdoptRef(new (&ac) StreamDispatcher(options, ktl::move(vmo), ktl::move(csm), seek)));
+      fbl::AdoptRef(new (&ac) StreamDispatcher(options, ktl::move(vmo), ktl::move(ssm), seek)));
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }
@@ -76,10 +76,10 @@ zx_status_t StreamDispatcher::Create(uint32_t options, fbl::RefPtr<VmObjectPaged
 }
 
 StreamDispatcher::StreamDispatcher(uint32_t options, fbl::RefPtr<VmObjectPaged> vmo,
-                                   fbl::RefPtr<ContentSizeManager> content_size_mgr, zx_off_t seek)
+                                   fbl::RefPtr<StreamSizeManager> stream_size_mgr, zx_off_t seek)
     : options_(options),
       vmo_(ktl::move(vmo)),
-      content_size_mgr_(ktl::move(content_size_mgr)),
+      stream_size_mgr_(ktl::move(stream_size_mgr)),
       seek_(seek) {
   kcounter_add(dispatcher_stream_create_count, 1);
   (void)options_;
@@ -103,14 +103,14 @@ ktl::pair<zx_status_t, size_t> StreamDispatcher::ReadVector(user_out_iovec_t use
 
   size_t length = 0u;
   uint64_t offset = 0u;
-  ContentSizeManager::Operation op(content_size_mgr_.get());
+  StreamSizeManager::Operation op(stream_size_mgr_.get());
 
   Guard<Mutex> seek_guard{&seek_lock_};
   {
-    Guard<Mutex> content_size_guard{AliasedLock, content_size_mgr_->lock(), op.lock()};
+    Guard<Mutex> stream_size_guard{AliasedLock, stream_size_mgr_->lock(), op.lock()};
 
     uint64_t size_limit = 0u;
-    content_size_mgr_->BeginReadLocked(seek_ + total_capacity, &size_limit, &op);
+    stream_size_mgr_->BeginReadLocked(seek_ + total_capacity, &size_limit, &op);
     if (size_limit <= seek_) {
       // Return |ZX_OK| since there is nothing to be read.
       op.CancelLocked();
@@ -125,7 +125,7 @@ ktl::pair<zx_status_t, size_t> StreamDispatcher::ReadVector(user_out_iovec_t use
   seek_ += read_bytes;
 
   // Reacquire the lock to commit the operation.
-  Guard<Mutex> content_size_guard{op.lock()};
+  Guard<Mutex> stream_size_guard{op.lock()};
   op.CommitLocked();
 
   return {read_bytes > 0 ? ZX_OK : status, read_bytes};
@@ -147,13 +147,13 @@ ktl::pair<zx_status_t, size_t> StreamDispatcher::ReadVectorAt(user_out_iovec_t u
   }
 
   size_t length = 0u;
-  ContentSizeManager::Operation op(content_size_mgr_.get());
+  StreamSizeManager::Operation op(stream_size_mgr_.get());
 
   {
-    Guard<Mutex> content_size_guard{AliasedLock, content_size_mgr_->lock(), op.lock()};
+    Guard<Mutex> stream_size_guard{AliasedLock, stream_size_mgr_->lock(), op.lock()};
 
     uint64_t size_limit = 0u;
-    content_size_mgr_->BeginReadLocked(offset + total_capacity, &size_limit, &op);
+    stream_size_mgr_->BeginReadLocked(offset + total_capacity, &size_limit, &op);
     if (size_limit <= offset) {
       // Return |ZX_OK| since there is nothing to be read.
       op.CancelLocked();
@@ -166,7 +166,7 @@ ktl::pair<zx_status_t, size_t> StreamDispatcher::ReadVectorAt(user_out_iovec_t u
   auto [status, read_bytes] = vmo_->ReadUserVector(user_data, offset, length);
 
   // Reacquire the lock to commit the operation.
-  Guard<Mutex> content_size_guard{op.lock()};
+  Guard<Mutex> stream_size_guard{op.lock()};
   op.CommitLocked();
 
   return {read_bytes > 0 ? ZX_OK : status, read_bytes};
@@ -193,13 +193,13 @@ ktl::pair<zx_status_t, size_t> StreamDispatcher::WriteVector(user_in_iovec_t use
   }
 
   size_t length = 0u;
-  ContentSizeManager::Operation op(content_size_mgr_.get());
-  ktl::optional<uint64_t> prev_content_size;
+  StreamSizeManager::Operation op(stream_size_mgr_.get());
+  ktl::optional<uint64_t> prev_stream_size;
 
   Guard<Mutex> seek_guard{&seek_lock_};
 
   {
-    zx_status_t status = CreateWriteOp(total_capacity, seek_, &length, &prev_content_size, &op);
+    zx_status_t status = CreateWriteOp(total_capacity, seek_, &length, &prev_stream_size, &op);
     if (status != ZX_OK) {
       return {status, 0};
     }
@@ -207,16 +207,16 @@ ktl::pair<zx_status_t, size_t> StreamDispatcher::WriteVector(user_in_iovec_t use
 
   auto [status, written] = vmo_->WriteUserVector(
         user_data, seek_, length,
-        prev_content_size ? [&prev_content_size, &op](const uint64_t write_offset, const size_t len) {
-          if (write_offset + len > *prev_content_size) {
-            op.UpdateContentSizeFromProgress(write_offset + len);
+        prev_stream_size ? [&prev_stream_size, &op](const uint64_t write_offset, const size_t len) {
+          if (write_offset + len > *prev_stream_size) {
+            op.UpdateStreamSizeFromProgress(write_offset + len);
           }
         } : VmObject::OnWriteBytesTransferredCallback());
 
   // Reacquire the lock to potentially shrink and commit the operation.
-  Guard<Mutex> content_size_guard{op.lock()};
+  Guard<Mutex> stream_size_guard{op.lock()};
 
-  // Update the content size operation if operation was partially successful.
+  // Update the stream size operation if operation was partially successful.
   if (written < length) {
     DEBUG_ASSERT(status != ZX_OK);
 
@@ -253,11 +253,11 @@ ktl::pair<zx_status_t, size_t> StreamDispatcher::WriteVectorAt(user_in_iovec_t u
   }
 
   size_t length = 0u;
-  ContentSizeManager::Operation op(content_size_mgr_.get());
-  ktl::optional<uint64_t> prev_content_size;
+  StreamSizeManager::Operation op(stream_size_mgr_.get());
+  ktl::optional<uint64_t> prev_stream_size;
 
   {
-    zx_status_t status = CreateWriteOp(total_capacity, offset, &length, &prev_content_size, &op);
+    zx_status_t status = CreateWriteOp(total_capacity, offset, &length, &prev_stream_size, &op);
     if (status != ZX_OK) {
       return {status, 0};
     }
@@ -265,16 +265,16 @@ ktl::pair<zx_status_t, size_t> StreamDispatcher::WriteVectorAt(user_in_iovec_t u
 
   auto [status, written] = vmo_->WriteUserVector(
         user_data, offset, length,
-        prev_content_size ? [&prev_content_size, &op](const uint64_t write_offset, const size_t len) {
-          if (write_offset + len > *prev_content_size) {
-            op.UpdateContentSizeFromProgress(write_offset + len);
+        prev_stream_size ? [&prev_stream_size, &op](const uint64_t write_offset, const size_t len) {
+          if (write_offset + len > *prev_stream_size) {
+            op.UpdateStreamSizeFromProgress(write_offset + len);
           }
         } : VmObject::OnWriteBytesTransferredCallback());
 
   // Reacquire the lock to potentially shrink and commit the operation.
-  Guard<Mutex> content_size_guard{op.lock()};
+  Guard<Mutex> stream_size_guard{op.lock()};
 
-  // Update the content size operation if operation was partially successful.
+  // Update the stream size operation if operation was partially successful.
   if (written < length) {
     DEBUG_ASSERT(status != ZX_OK);
 
@@ -309,22 +309,22 @@ ktl::pair<zx_status_t, size_t> StreamDispatcher::AppendVector(user_in_iovec_t us
 
   size_t length = 0u;
   uint64_t offset = 0u;
-  ContentSizeManager::Operation op(content_size_mgr_.get());
+  StreamSizeManager::Operation op(stream_size_mgr_.get());
   Guard<Mutex> seek_guard{&seek_lock_};
 
   // This section expands the VMO if necessary and bumps the |seek_| pointer if successful.
   {
-    Guard<Mutex> content_size_guard{AliasedLock, content_size_mgr_->lock(), op.lock()};
+    Guard<Mutex> stream_size_guard{AliasedLock, stream_size_mgr_->lock(), op.lock()};
 
     zx_status_t status =
-        content_size_mgr_->BeginAppendLocked(total_capacity, &content_size_guard, &op);
+        stream_size_mgr_->BeginAppendLocked(total_capacity, &stream_size_guard, &op);
     if (status != ZX_OK) {
       return {status, 0};
     }
 
-    uint64_t new_content_size = op.GetSizeLocked();
+    uint64_t new_stream_size = op.GetSizeLocked();
 
-    offset = new_content_size - total_capacity;
+    offset = new_stream_size - total_capacity;
 
     uint64_t vmo_size = vmo_->size();
     if (vmo_size <= offset) {
@@ -333,24 +333,24 @@ ktl::pair<zx_status_t, size_t> StreamDispatcher::AppendVector(user_in_iovec_t us
       return {ZX_ERR_OUT_OF_RANGE, 0};
     }
 
-    if (vmo_size < new_content_size) {
+    if (vmo_size < new_stream_size) {
       // Unable to expand to requested size but able to perform a partial write.
       op.ShrinkSizeLocked(vmo_size);
     }
 
-    length = ktl::min(vmo_size, new_content_size) - offset;
+    length = ktl::min(vmo_size, new_stream_size) - offset;
   }
 
   auto [status, written] = vmo_->WriteUserVector(
       user_data, offset, length, [&op](const uint64_t write_offset, const size_t len) {
-        op.UpdateContentSizeFromProgress(write_offset + len);
+        op.UpdateStreamSizeFromProgress(write_offset + len);
       });
   seek_ = offset + written;
 
   // Reacquire the lock to potentially shrink and commit the operation.
-  Guard<Mutex> content_size_guard{AliasedLock, content_size_mgr_->lock(), op.lock()};
+  Guard<Mutex> stream_size_guard{AliasedLock, stream_size_mgr_->lock(), op.lock()};
 
-  // Update the content size operation if operation was partially successful.
+  // Update the stream size operation if operation was partially successful.
   if (written < length) {
     DEBUG_ASSERT(status != ZX_OK);
 
@@ -389,8 +389,8 @@ zx_status_t StreamDispatcher::Seek(zx_stream_seek_origin_t whence, int64_t offse
       break;
     }
     case ZX_STREAM_SEEK_ORIGIN_END: {
-      uint64_t content_size = content_size_mgr_->GetContentSize();
-      if (add_overflow(content_size, offset, &target)) {
+      uint64_t stream_size = stream_size_mgr_->GetStreamSize();
+      if (add_overflow(stream_size, offset, &target)) {
         return ZX_ERR_INVALID_ARGS;
       }
       break;
@@ -436,7 +436,8 @@ zx_info_stream_t StreamDispatcher::GetInfo() const {
   return {
       .options = options,
       .seek = seek_,
-      .content_size = content_size_mgr_->GetContentSize(),
+      // |content_size| is the legacy name for the stream size
+      .content_size = stream_size_mgr_->GetStreamSize(),
   };
 }
 
@@ -447,23 +448,23 @@ bool StreamDispatcher::CanResizeVmo() const {
 
 zx_status_t StreamDispatcher::CreateWriteOp(size_t total_capacity, zx_off_t offset,
                                             uint64_t* out_length,
-                                            ktl::optional<uint64_t>* out_prev_content_size,
-                                            ContentSizeManager::Operation* out_op) {
+                                            ktl::optional<uint64_t>* out_prev_stream_size,
+                                            StreamSizeManager::Operation* out_op) {
   DEBUG_ASSERT(out_op);
   DEBUG_ASSERT(out_length);
 
   zx_status_t status = ZX_OK;
 
   {
-    Guard<Mutex> content_size_guard{AliasedLock, content_size_mgr_->lock(), out_op->lock()};
+    Guard<Mutex> stream_size_guard{AliasedLock, stream_size_mgr_->lock(), out_op->lock()};
 
-    size_t requested_content_size;
-    if (add_overflow(offset, total_capacity, &requested_content_size)) {
+    size_t requested_stream_size;
+    if (add_overflow(offset, total_capacity, &requested_stream_size)) {
       return ZX_ERR_FILE_BIG;
     }
 
-    content_size_mgr_->BeginWriteLocked(requested_content_size, &content_size_guard,
-                                        out_prev_content_size, out_op);
+    stream_size_mgr_->BeginWriteLocked(requested_stream_size, &stream_size_guard,
+                                       out_prev_stream_size, out_op);
 
     uint64_t vmo_size = vmo_->size();
     if (vmo_size <= offset) {
@@ -472,22 +473,21 @@ zx_status_t StreamDispatcher::CreateWriteOp(size_t total_capacity, zx_off_t offs
       return ZX_ERR_OUT_OF_RANGE;
     }
 
-    // Allow writing up to the minimum of the VMO size and requested content size, since we want to
+    // Allow writing up to the minimum of the VMO size and requested stream size, since we want to
     // write at most the requested size but don't want to write beyond the VMO size.
-    const uint64_t target_content_size = ktl::min(vmo_size, requested_content_size);
-    *out_length = target_content_size - offset;
+    const uint64_t target_stream_size = ktl::min(vmo_size, requested_stream_size);
+    *out_length = target_stream_size - offset;
 
-    if (target_content_size != requested_content_size) {
-      out_op->ShrinkSizeLocked(target_content_size);
+    if (target_stream_size != requested_stream_size) {
+      out_op->ShrinkSizeLocked(target_stream_size);
     }
   }
 
-  // Zero content between the previous content size and the start of the write.
-  if (out_prev_content_size->has_value() && out_prev_content_size->value() < offset) {
-    status =
-        vmo_->ZeroRange(out_prev_content_size->value(), offset - out_prev_content_size->value());
+  // Zero content between the previous stream size and the start of the write.
+  if (out_prev_stream_size->has_value() && out_prev_stream_size->value() < offset) {
+    status = vmo_->ZeroRange(out_prev_stream_size->value(), offset - out_prev_stream_size->value());
     if (status != ZX_OK) {
-      Guard<Mutex> content_size_guard{out_op->lock()};
+      Guard<Mutex> stream_size_guard{out_op->lock()};
       out_op->CancelLocked();
       return status;
     }

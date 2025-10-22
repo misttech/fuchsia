@@ -14,7 +14,7 @@
 #include <object/dispatcher.h>
 #include <object/handle.h>
 #include <object/vm_object_dispatcher.h>
-#include <vm/content_size_manager.h>
+#include <vm/stream_size_manager.h>
 #include <vm/vm_aspace.h>
 
 class StreamDispatcher final : public SoloDispatcher<StreamDispatcher, ZX_DEFAULT_STREAM_RIGHTS> {
@@ -28,7 +28,7 @@ class StreamDispatcher final : public SoloDispatcher<StreamDispatcher, ZX_DEFAUL
                                                 zx_rights_t* out_required_vmo_rights);
 
   static zx_status_t Create(uint32_t options, fbl::RefPtr<VmObjectPaged> vmo,
-                            fbl::RefPtr<ContentSizeManager> csm, zx_off_t seek,
+                            fbl::RefPtr<StreamSizeManager> ssm, zx_off_t seek,
                             KernelHandle<StreamDispatcher>* handle, zx_rights_t* rights);
   ~StreamDispatcher();
 
@@ -47,16 +47,16 @@ class StreamDispatcher final : public SoloDispatcher<StreamDispatcher, ZX_DEFAUL
 
  private:
   explicit StreamDispatcher(uint32_t options, fbl::RefPtr<VmObjectPaged> vmo,
-                            fbl::RefPtr<ContentSizeManager> content_size_mgr, zx_off_t seek);
+                            fbl::RefPtr<StreamSizeManager> stream_size_mgr, zx_off_t seek);
 
   zx_status_t CreateWriteOp(size_t total_capacity, zx_off_t offset, uint64_t* out_length,
-                            ktl::optional<uint64_t>* out_prev_content_size,
-                            ContentSizeManager::Operation* out_op);
+                            ktl::optional<uint64_t>* out_prev_stream_size,
+                            StreamSizeManager::Operation* out_op);
 
   uint32_t options_ TA_GUARDED(get_lock());
 
   fbl::RefPtr<VmObjectPaged> const vmo_;
-  fbl::RefPtr<ContentSizeManager> const content_size_mgr_;
+  fbl::RefPtr<StreamSizeManager> const stream_size_mgr_;
 
   // The seek_lock_ is used to make vmo_ operations and updates to seek atomic.
   mutable DECLARE_MUTEX(StreamDispatcher, lockdep::LockFlagsActiveListDisabled) seek_lock_;

@@ -335,13 +335,13 @@ zx_status_t sys_vmo_create_child(zx_handle_t handle, uint32_t options, uint64_t 
   KernelHandle<VmObjectDispatcher> kernel_handle;
   zx_rights_t default_rights;
 
-  // A reference child shares the same content size manager as the parent.
+  // A reference child shares the same stream size manager as the parent.
   if (options & ZX_VMO_CHILD_REFERENCE) {
-    auto result = vmo->content_size_manager();
+    auto result = vmo->stream_size_manager();
     if (result.is_error()) {
       return result.status_value();
     }
-    status = VmObjectDispatcher::CreateWithCsm(ktl::move(child_vmo), ktl::move(*result),
+    status = VmObjectDispatcher::CreateWithSsm(ktl::move(child_vmo), ktl::move(*result),
                                                initial_mutability, &kernel_handle, &default_rights);
   } else {
     status = VmObjectDispatcher::Create(ktl::move(child_vmo), size, initial_mutability,

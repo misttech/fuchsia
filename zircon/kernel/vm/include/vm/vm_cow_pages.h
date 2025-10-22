@@ -24,11 +24,11 @@
 #include <fbl/ref_ptr.h>
 #include <kernel/mutex.h>
 #include <vm/compressor.h>
-#include <vm/content_size_manager.h>
 #include <vm/page_source.h>
 #include <vm/physical_page_borrowing_config.h>
 #include <vm/pmm.h>
 #include <vm/pmm_node.h>
+#include <vm/stream_size_manager.h>
 #include <vm/vm.h>
 #include <vm/vm_aspace.h>
 #include <vm/vm_object.h>

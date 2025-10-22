@@ -61,19 +61,19 @@ zx::result<VmObjectDispatcher::CreateStats> VmObjectDispatcher::parse_create_sys
   return zx::ok(res);
 }
 
-zx_status_t VmObjectDispatcher::CreateWithCsm(fbl::RefPtr<VmObject> vmo,
-                                              fbl::RefPtr<ContentSizeManager> content_size_manager,
+zx_status_t VmObjectDispatcher::CreateWithSsm(fbl::RefPtr<VmObject> vmo,
+                                              fbl::RefPtr<StreamSizeManager> stream_size_manager,
                                               InitialMutability initial_mutability,
                                               KernelHandle<VmObjectDispatcher>* handle,
                                               zx_rights_t* rights) {
   fbl::AllocChecker ac;
   KernelHandle new_handle(fbl::AdoptRef(
-      new (&ac) VmObjectDispatcher(ktl::move(vmo), content_size_manager, initial_mutability)));
+      new (&ac) VmObjectDispatcher(ktl::move(vmo), stream_size_manager, initial_mutability)));
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }
 
-  new_handle.dispatcher()->vmo()->SetUserStreamSize(ktl::move(content_size_manager));
+  new_handle.dispatcher()->vmo()->SetUserStreamSize(ktl::move(stream_size_manager));
 
   new_handle.dispatcher()->vmo()->set_user_id(new_handle.dispatcher()->get_koid());
   *rights =
@@ -82,41 +82,41 @@ zx_status_t VmObjectDispatcher::CreateWithCsm(fbl::RefPtr<VmObject> vmo,
   return ZX_OK;
 }
 
-zx_status_t VmObjectDispatcher::Create(fbl::RefPtr<VmObject> vmo, uint64_t content_size,
+zx_status_t VmObjectDispatcher::Create(fbl::RefPtr<VmObject> vmo, uint64_t stream_size,
                                        InitialMutability initial_mutability,
                                        KernelHandle<VmObjectDispatcher>* handle,
                                        zx_rights_t* rights) {
-  fbl::RefPtr<ContentSizeManager> csm;
-  // If the initial content size we want to track is exactly equal to the current VMO size then we
-  // can defer creating the content size manager till later.
-  if (content_size != vmo->size()) {
-    auto result = ContentSizeManager::Create(content_size);
+  fbl::RefPtr<StreamSizeManager> ssm;
+  // If the initial stream size we want to track is exactly equal to the current VMO size then we
+  // can defer creating the stream size manager till later.
+  if (stream_size != vmo->size()) {
+    auto result = StreamSizeManager::Create(stream_size);
     if (result.is_error()) {
       return result.status_value();
     }
-    csm = ktl::move(*result);
+    ssm = ktl::move(*result);
 
-    uint64_t aligned_content_size = ROUNDUP_PAGE_SIZE(content_size);
-    // The content_size cannot be larger than the VMO size, so this cannot overflow.
-    DEBUG_ASSERT(aligned_content_size >= content_size);
-    if (aligned_content_size < vmo->size()) {
-      // The range beyond the (rounded up) content size to the VMO size is dirty-untracked zero.
+    uint64_t aligned_stream_size = ROUNDUP_PAGE_SIZE(stream_size);
+    // The stream_size cannot be larger than the VMO size, so this cannot overflow.
+    DEBUG_ASSERT(aligned_stream_size >= stream_size);
+    if (aligned_stream_size < vmo->size()) {
+      // The range beyond the (rounded up) stream size to the VMO size is dirty-untracked zero.
       zx_status_t status =
-          vmo->ZeroRangeUntracked(aligned_content_size, vmo->size() - aligned_content_size);
+          vmo->ZeroRangeUntracked(aligned_stream_size, vmo->size() - aligned_stream_size);
       if (status != ZX_OK) {
         return status;
       }
     }
   }
-  return CreateWithCsm(ktl::move(vmo), ktl::move(csm), initial_mutability, handle, rights);
+  return CreateWithSsm(ktl::move(vmo), ktl::move(ssm), initial_mutability, handle, rights);
 }
 
 VmObjectDispatcher::VmObjectDispatcher(fbl::RefPtr<VmObject> vmo,
-                                       fbl::RefPtr<ContentSizeManager> content_size_manager,
+                                       fbl::RefPtr<StreamSizeManager> stream_size_manager,
                                        InitialMutability initial_mutability)
     : SoloDispatcher(ZX_VMO_ZERO_CHILDREN),
       vmo_(ktl::move(vmo)),
-      content_size_mgr_(ktl::move(content_size_manager)),
+      stream_size_mgr_(ktl::move(stream_size_manager)),
       initial_mutability_(initial_mutability) {
   kcounter_add(dispatcher_vmo_create_count, 1);
   vmo_->SetChildObserver(this);
@@ -186,15 +186,15 @@ zx_status_t VmObjectDispatcher::SetSize(uint64_t size) {
   // TODO(https://fxbug.dev/341218975) SetSize should only change stream size to maintain invariant
   // that stream size isn't larger than VMO size.
 
-  auto csm = content_size_manager();
-  if (csm.is_error()) {
-    return csm.status_value();
+  auto ssm = stream_size_manager();
+  if (ssm.is_error()) {
+    return ssm.status_value();
   }
 
-  ContentSizeManager::Operation op((*csm).get());
-  Guard<Mutex> guard{AliasedLock, csm->lock(), op.lock()};
+  StreamSizeManager::Operation op((*ssm).get());
+  Guard<Mutex> guard{AliasedLock, ssm->lock(), op.lock()};
 
-  csm->BeginSetContentSizeLocked(size, &op, &guard);
+  ssm->BeginSetStreamSizeLocked(size, &op, &guard);
 
   uint64_t size_aligned = ROUNDUP_PAGE_SIZE(size);
   // Check for overflow when rounding up.
@@ -292,7 +292,7 @@ zx_info_vmo_t VmObjectDispatcher::GetVmoInfo(zx_rights_t rights) {
   return info;
 }
 
-zx_status_t VmObjectDispatcher::SetLegacyPropVmoContentSize(uint64_t content_size) {
+zx_status_t VmObjectDispatcher::SetLegacyPropVmoContentSize(uint64_t stream_size) {
   canary_.Assert();
 
   // Set stream size is not supported for physical or contiguous VMOs.
@@ -300,23 +300,23 @@ zx_status_t VmObjectDispatcher::SetLegacyPropVmoContentSize(uint64_t content_siz
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  auto csm = content_size_manager();
-  if (csm.is_error()) {
-    return csm.status_value();
+  auto ssm = stream_size_manager();
+  if (ssm.is_error()) {
+    return ssm.status_value();
   }
 
-  ContentSizeManager::Operation op((*csm).get());
-  Guard<Mutex> guard{AliasedLock, csm->lock(), op.lock()};
-  csm->BeginSetContentSizeLocked(content_size, &op, &guard);
+  StreamSizeManager::Operation op((*ssm).get());
+  Guard<Mutex> guard{AliasedLock, ssm->lock(), op.lock()};
+  ssm->BeginSetStreamSizeLocked(stream_size, &op, &guard);
 
   uint64_t vmo_size = vmo_->size();
-  if (content_size < vmo_size) {
+  if (stream_size < vmo_size) {
     // TODO(https://fxbug.dev/42053728): Determine whether failure to ZeroRange here should undo
     // this operation.
     //
     // Dropping the lock here is fine, as an `Operation` only needs to be locked when initializing,
     // committing, or cancelling.
-    guard.CallUnlocked([&] { vmo_->ZeroRange(content_size, vmo_size - content_size); });
+    guard.CallUnlocked([&] { vmo_->ZeroRange(stream_size, vmo_size - stream_size); });
   }
 
   op.CommitLocked();
@@ -331,16 +331,16 @@ zx_status_t VmObjectDispatcher::SetStreamSize(uint64_t stream_size) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  auto csm = content_size_manager();
-  if (csm.is_error()) {
-    return csm.status_value();
+  auto ssm = stream_size_manager();
+  if (ssm.is_error()) {
+    return ssm.status_value();
   }
 
-  ContentSizeManager::Operation op((*csm).get());
-  Guard<Mutex> guard{AliasedLock, csm->lock(), op.lock()};
+  StreamSizeManager::Operation op((*ssm).get());
+  Guard<Mutex> guard{AliasedLock, ssm->lock(), op.lock()};
 
   uint64_t vmo_size = vmo_->size();
-  uint64_t old_stream_size = csm->GetContentSize();
+  uint64_t old_stream_size = ssm->GetStreamSize();
 
   if (stream_size == old_stream_size) {
     return ZX_OK;
@@ -351,7 +351,7 @@ zx_status_t VmObjectDispatcher::SetStreamSize(uint64_t stream_size) {
     return ZX_ERR_OUT_OF_RANGE;
   }
 
-  csm->BeginSetContentSizeLocked(stream_size, &op, &guard);
+  ssm->BeginSetStreamSizeLocked(stream_size, &op, &guard);
 
   // Zero the range from min(stream size, old stream size) to the end of the VMO.
   uint64_t zero_start = ktl::min(stream_size, old_stream_size);
@@ -374,7 +374,7 @@ zx_status_t VmObjectDispatcher::SetStreamSize(uint64_t stream_size) {
   }
 
   // Ensure pages between min(stream size, old stream size) and the end of the VMO are unmapped
-  // before before committing new content size.
+  // before before committing new stream size.
   VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(vmo_.get());
   DEBUG_ASSERT(paged);
   {
@@ -396,16 +396,16 @@ uint64_t VmObjectDispatcher::GetStreamSize() const {
 
   // Retrieving the stream size needs to be a non-fallible operation, so we avoid allocating one
   // if it doesn't exist, since the allocation could fail.
-  ContentSizeManager* csm;
+  StreamSizeManager* ssm;
   {
     Guard<CriticalMutex> guard{get_lock()};
-    if (!content_size_mgr_) {
+    if (!stream_size_mgr_) {
       return vmo_->size();
     }
-    csm = content_size_mgr_.get();
+    ssm = stream_size_mgr_.get();
   }
 
-  return csm->GetContentSize();
+  return ssm->GetStreamSize();
 }
 
 zx_status_t VmObjectDispatcher::RangeOp(uint32_t op, uint64_t offset, uint64_t size,
@@ -595,19 +595,19 @@ zx_status_t VmObjectDispatcher::CreateChild(uint32_t options, uint64_t offset, u
   return status;
 }
 
-zx::result<fbl::RefPtr<ContentSizeManager>> VmObjectDispatcher::content_size_manager() {
+zx::result<fbl::RefPtr<StreamSizeManager>> VmObjectDispatcher::stream_size_manager() {
   Guard<CriticalMutex> guard{get_lock()};
-  if (unlikely(!content_size_mgr_)) {
+  if (unlikely(!stream_size_mgr_)) {
     // Physical & contiguous VMOs can't have associated stream.
     if (!vmo_->is_paged() || vmo_->is_contiguous()) {
       return zx::error(ZX_ERR_NOT_SUPPORTED);
     }
-    auto result = ContentSizeManager::Create(vmo_->size());
+    auto result = StreamSizeManager::Create(vmo_->size());
     if (result.is_error()) {
       return result.take_error();
     }
-    content_size_mgr_ = ktl::move(*result);
-    vmo_->SetUserStreamSize(content_size_mgr_);
+    stream_size_mgr_ = ktl::move(*result);
+    vmo_->SetUserStreamSize(stream_size_mgr_);
   }
-  return zx::ok(content_size_mgr_);
+  return zx::ok(stream_size_mgr_);
 }
