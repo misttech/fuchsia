@@ -10,6 +10,7 @@
 #include <linux/prctl.h>
 #include <linux/securebits.h>
 
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 // These are missing from our sys/prctl.h.
@@ -80,37 +81,6 @@ TEST(PrctlTest, DropCapabilities) {
   });
 }
 
-TEST(PrctlTest, CapGet) {
-  test_helper::ForkHelper helper;
-
-  __user_cap_header_struct header;
-  memset(&header, 0, sizeof(header));
-  header.version = _LINUX_CAPABILITY_VERSION_3;
-  __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3];
-  ASSERT_EQ(syscall(SYS_capget, &header, &caps), 0);
-
-  pid_t parent_pid = getpid();
-
-  helper.RunInForkedProcess([&parent_pid] {
-    __user_cap_header_struct header;
-    memset(&header, 0, sizeof(header));
-    header.version = _LINUX_CAPABILITY_VERSION_3;
-    header.pid = parent_pid;
-    __user_cap_data_struct caps[_LINUX_CAPABILITY_U32S_3];
-    ASSERT_EQ(syscall(SYS_capget, &header, &caps), 0);
-
-    header.pid = 0;
-    ASSERT_EQ(syscall(SYS_capset, &header, &caps), 0);
-
-    pid_t child_pid = getpid();
-    header.pid = child_pid;
-    ASSERT_EQ(syscall(SYS_capset, &header, &caps), 0);
-
-    header.pid = parent_pid;
-    ASSERT_EQ(syscall(SYS_capset, &header, &caps), -1);
-  });
-}
-
 TEST(PrctlTest, AmbientCapabilitiesBasicOperations) {
   test_helper::ForkHelper helper;
 
@@ -129,6 +99,243 @@ TEST(PrctlTest, AmbientCapabilitiesBasicOperations) {
               0);
     ASSERT_EQ(SAFE_SYSCALL(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_IS_SET, CAP_DAC_OVERRIDE, 0, 0)),
               0);
+  });
+}
+
+class CapGetSetTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    memset(&header_, 0, sizeof(header_));
+    memset(&caps_, 0, sizeof(caps_));
+  }
+
+  __user_cap_header_struct header_;
+  __user_cap_data_struct caps_[_LINUX_CAPABILITY_U32S_3];
+};
+
+/// `capget` should succeed when the header is valid and the target
+/// thread is the caller.
+TEST_F(CapGetSetTest, CapGet) {
+  // The calling process can be referenced using either a header
+  // `pid` value of 0, or the caller's PID.
+  header_.version = _LINUX_CAPABILITY_VERSION_3;
+  header_.pid = 0;
+  EXPECT_THAT(syscall(SYS_capget, &header_, &caps_), SyscallSucceeds());
+
+  header_.pid = getpid();
+  EXPECT_THAT(syscall(SYS_capget, &header_, &caps_), SyscallSucceeds());
+}
+
+/// `capget` should succeed when the header is valid and the target
+/// thread is different from the caller.
+TEST_F(CapGetSetTest, CapGetDifferentPid) {
+  test_helper::ForkHelper helper;
+
+  pid_t parent_pid = getpid();
+
+  helper.RunInForkedProcess([&parent_pid, this] {
+    header_.version = _LINUX_CAPABILITY_VERSION_3;
+    header_.pid = parent_pid;
+    EXPECT_THAT(syscall(SYS_capget, &header_, &caps_), SyscallSucceeds());
+  });
+}
+
+/// `capget` populates the header version field with the preferred capability
+/// version and fails with EINVAL when the header contains an invalid capability
+/// version and the pointer to the capability data struct is non-null.
+TEST_F(CapGetSetTest, CapGetInvalidCapabilityVersion) {
+  EXPECT_THAT(syscall(SYS_capget, &header_, &caps_), SyscallFailsWithErrno(EINVAL));
+  EXPECT_EQ(header_.version, static_cast<__u32>(_LINUX_CAPABILITY_VERSION_3));
+}
+
+/// `capget` fails with EINVAL when the header contains an invalid pid
+/// and the pointer to the capability data struct is non-null.
+TEST_F(CapGetSetTest, CapGetInvalidPid) {
+  header_.version = _LINUX_CAPABILITY_VERSION_3;
+  header_.pid = -1;
+  EXPECT_THAT(syscall(SYS_capget, &header_, &caps_), SyscallFailsWithErrno(EINVAL));
+}
+
+/// `capget` fails with EINVAL when the header contains an invalid pid
+/// and version, and the pointer to the capability data struct is non-null.
+/// The header is updated with the preferred capability version.
+/// TODO(https://fxbug.dev/452426191): Modify the header on Starnix in this case.
+TEST_F(CapGetSetTest, CapGetInvalidVersionAndPid) {
+  header_.pid = -1;
+  EXPECT_THAT(syscall(SYS_capget, &header_, &caps_), SyscallFailsWithErrno(EINVAL));
+  EXPECT_EQ(header_.version, static_cast<__u32>(_LINUX_CAPABILITY_VERSION_3));
+}
+
+/// `capget` fails with EFAULT when the pointer to the header argument is null,
+/// whether or not the pointer to the capability data struct is non-null.
+TEST_F(CapGetSetTest, CapGetNullHeader) {
+  EXPECT_THAT(syscall(SYS_capget, NULL, &caps_), SyscallFailsWithErrno(EFAULT));
+  EXPECT_THAT(syscall(SYS_capget, NULL, NULL), SyscallFailsWithErrno(EFAULT));
+}
+
+/// `capget` succeeds and does not modify the header's version field when
+/// the provided header contains a valid but non-preferred capability version.
+TEST_F(CapGetSetTest, CapGetNonPreferredHeaderVersion) {
+  header_.version = _LINUX_CAPABILITY_VERSION_1;
+  EXPECT_THAT(syscall(SYS_capget, &header_, &caps_), SyscallSucceeds());
+  EXPECT_EQ(header_.version, static_cast<__u32>(_LINUX_CAPABILITY_VERSION_1));
+}
+
+/// `capget` succeeds and does not modify the header's version field when
+/// the provided header contains a valid version and the pointer to the
+/// capability data struct is null.
+/// TODO(https://fxbug.dev/452426191): Don't modify the header on Starnix.
+TEST_F(CapGetSetTest, CapGetNullUserDataAndValidHeaderVersion) {
+  header_.version = _LINUX_CAPABILITY_VERSION_1;
+  EXPECT_THAT(syscall(SYS_capget, &header_, NULL), SyscallSucceeds());
+  EXPECT_EQ(header_.version, static_cast<__u32>(_LINUX_CAPABILITY_VERSION_1));
+}
+
+/// `capget` succeeds and populates the header's version field with the
+/// preferred capability version when the header contains an invalid version
+/// and a valid pid, and the pointer to the capability data struct is null.
+TEST_F(CapGetSetTest, CapGetNullUserDataAndInvalidHeaderVersion) {
+  EXPECT_THAT(syscall(SYS_capget, &header_, NULL), SyscallSucceeds());
+  EXPECT_EQ(header_.version, static_cast<__u32>(_LINUX_CAPABILITY_VERSION_3));
+}
+
+/// `capget` succeeds and populates the header's version field with the
+/// preferred capability version when the header contains an invalid version
+/// and an invalid pid, and the pointer to the capability data struct is null.
+TEST_F(CapGetSetTest, CapGetNullUserDataAndInvalidHeaderVersionAndPid) {
+  header_.pid = -1;
+  EXPECT_THAT(syscall(SYS_capget, &header_, NULL), SyscallSucceeds());
+  EXPECT_EQ(header_.version, static_cast<__u32>(_LINUX_CAPABILITY_VERSION_3));
+}
+
+/// `capset` should succeed when the target PID is the same as the caller's,
+/// the header version is valid, and the new capability set is consistent
+/// with the rules described in https://man7.org/linux/man-pages/man2/capget.2.html.
+TEST_F(CapGetSetTest, CapSet) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([this] {
+    header_.version = _LINUX_CAPABILITY_VERSION_3;
+
+    header_.pid = 0;
+    EXPECT_THAT(syscall(SYS_capset, &header_, &caps_), SyscallSucceeds());
+
+    header_.pid = getpid();
+    EXPECT_THAT(syscall(SYS_capset, &header_, &caps_), SyscallSucceeds());
+  });
+}
+
+// Attempting to set capabilities on a thread other than the caller should
+// cause `capset` to fail with `EPERM`. For kernels that support file capabilities,
+// this is true whether or not the caller has the `CAP_SETPCAP` capability;
+// otherwise, callers with `CAP_SETPCAP` may set capabilities for other threads.
+// A negative PID should result in either success (in the case that file caps are
+// not supported, and assuming sufficient privilege) or `EPERM`.
+//
+// TODO(https://fxbug.dev/453731091): Include a test involving `CAP_SETPCAP`
+// once we have decided which behavior we need, and test success cases for negative
+// PIDs if file caps are not supported.
+TEST_F(CapGetSetTest, CapSetDifferentPid) {
+  test_helper::ForkHelper helper;
+
+  pid_t parent_pid = getpid();
+
+  helper.RunInForkedProcess([&parent_pid, this] {
+    header_.version = _LINUX_CAPABILITY_VERSION_3;
+    header_.pid = parent_pid;
+    EXPECT_THAT(syscall(SYS_capset, &header_, &caps_), SyscallFailsWithErrno(EPERM));
+
+    header_.pid = -1;
+    EXPECT_THAT(syscall(SYS_capset, &header_, &caps_), SyscallFailsWithErrno(EPERM));
+  });
+}
+
+/// `capset` populates the header version field with the preferred capability
+/// version and fails with EINVAL when the header contains an invalid capability
+/// version and the pointer to the capability data struct is non-null.
+TEST_F(CapGetSetTest, CapSetInvalidCapabilityVersion) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([this] {
+    EXPECT_THAT(syscall(SYS_capset, &header_, &caps_), SyscallFailsWithErrno(EINVAL));
+    EXPECT_EQ(header_.version, static_cast<__u32>(_LINUX_CAPABILITY_VERSION_3));
+  });
+}
+
+/// `capset` populates the header version field with the preferred capability
+/// version and fails with EINVAL when the header contains an invalid capability
+/// version and the target PID is different from the caller's PID.
+/// TODO(https://fxbug.dev/452426191): Modify the header on Starnix in this case.
+TEST_F(CapGetSetTest, CapSetInvalidCapabilityVersionAndDifferentPid) {
+  test_helper::ForkHelper helper;
+
+  pid_t parent_pid = getpid();
+
+  helper.RunInForkedProcess([&parent_pid, this] {
+    header_.pid = parent_pid;
+    EXPECT_THAT(syscall(SYS_capset, &header_, &caps_), SyscallFailsWithErrno(EINVAL));
+    EXPECT_EQ(header_.version, static_cast<__u32>(_LINUX_CAPABILITY_VERSION_3));
+  });
+}
+
+/// `capset` fails with `EFAULT` when the provided header is valid and the
+/// pointer to the capability data is null.
+TEST_F(CapGetSetTest, CapSetNullData) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([this] {
+    header_.version = _LINUX_CAPABILITY_VERSION_3;
+    EXPECT_THAT(syscall(SYS_capset, &header_, NULL), SyscallFailsWithErrno(EFAULT));
+  });
+}
+
+/// `capset` fails with `EINVAL` when the provided header has an invalid
+/// capability version and the pointer to the capability data is null.
+/// The header version is set to the preferred capability version.
+TEST_F(CapGetSetTest, CapSetInvalidCapabilityVersionAndNullData) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([this] {
+    EXPECT_THAT(syscall(SYS_capset, &header_, NULL), SyscallFailsWithErrno(EINVAL));
+    EXPECT_EQ(header_.version, static_cast<__u32>(_LINUX_CAPABILITY_VERSION_3));
+  });
+}
+
+/// `capset` fails with `EINVAL` when the provided header has a non-permitted
+/// target PID and the pointer to the capability data is null.
+TEST_F(CapGetSetTest, CapSetDifferentPidAndNullData) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([this] {
+    header_.version = _LINUX_CAPABILITY_VERSION_3;
+    header_.pid = -1;
+    EXPECT_THAT(syscall(SYS_capset, &header_, NULL), SyscallFailsWithErrno(EPERM));
+  });
+}
+
+// `capset` should fail with `EPERM` on attempts to add a new capability to the
+// permitted set.
+TEST_F(CapGetSetTest, CapSetExpandPermittedSet) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([this] {
+    header_.version = _LINUX_CAPABILITY_VERSION_3;
+    ASSERT_THAT(syscall(SYS_capget, &header_, &caps_), SyscallSucceeds());
+
+    // Drop the `CAP_SYS_ADMIN` capability from the effective and permitted sets.
+    caps_[CAP_TO_INDEX(CAP_SYS_ADMIN)].effective &= ~CAP_TO_MASK(CAP_SYS_ADMIN);
+    caps_[CAP_TO_INDEX(CAP_SYS_ADMIN)].permitted &= ~CAP_TO_MASK(CAP_SYS_ADMIN);
+    ASSERT_THAT(syscall(SYS_capset, &header_, &caps_), SyscallSucceeds());
+
+    // Attempt to add the `CAP_SYS_ADMIN` capability back to the permitted set.
+    caps_[CAP_TO_INDEX(CAP_SYS_ADMIN)].permitted |= CAP_TO_MASK(CAP_SYS_ADMIN);
+    EXPECT_THAT(syscall(SYS_capset, &header_, &caps_), SyscallFailsWithErrno(EPERM));
+
+    // The same request with an invalid `version` field in the header should
+    // result in failure with `EINVAL`.
+    header_.version = 0;
+    EXPECT_THAT(syscall(SYS_capset, &header_, &caps_), SyscallFailsWithErrno(EINVAL));
+    EXPECT_EQ(header_.version, static_cast<__u32>(_LINUX_CAPABILITY_VERSION_3));
   });
 }
 
