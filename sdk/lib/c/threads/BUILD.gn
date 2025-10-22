@@ -152,8 +152,8 @@ libc_source_set("zxr-thread") {
   sources = [ "zxr-thread.cc" ]
   deps = [
     "//src/lib/elfldltl:headers",
-    "//src/zircon/lib/zircon:zircon.as-needed",
     "//zircon/system/ulib/zircon-internal",
+    "//zircon/system/ulib/zx",
   ]
 
   # This code is used in early startup, where safe-stack is not ready yet.

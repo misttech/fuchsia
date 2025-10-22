@@ -6,11 +6,13 @@
 
 #include <lib/elfldltl/machine.h>
 #include <lib/zircon-internal/unique-backtrace.h>
+#include <lib/zx/thread.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <zircon/syscalls.h>
 
 #include <atomic>
+#include <utility>
 
 // An zxr_thread_t starts its life JOINABLE.
 // - If someone calls zxr_thread_join on it, it transitions to JOINED.
@@ -29,12 +31,6 @@ enum {
   DONE,
   FREED,
 };
-
-zx_status_t zxr_thread_destroy(zxr_thread_t* thread) {
-  const zx_handle_t handle = thread->handle;
-  thread->handle = ZX_HANDLE_INVALID;
-  return handle == ZX_HANDLE_INVALID ? ZX_OK : _zx_handle_close(handle);
-}
 
 // Put the thread into EXITING state.  Returns the previous state.
 static int begin_exit(zxr_thread_t* thread) {
@@ -164,7 +160,7 @@ zx_status_t zxr_thread_start(zxr_thread_t* thread, uintptr_t stack_addr, size_t 
       _zx_thread_start(thread->handle, reinterpret_cast<uintptr_t>(thread_trampoline), sp,
                        reinterpret_cast<uintptr_t>(thread), reinterpret_cast<uintptr_t>(arg));
   if (status != ZX_OK) {
-    zxr_thread_destroy(thread);
+    zx::thread{std::exchange(thread->handle, ZX_HANDLE_INVALID)}.reset();
   }
 
   return status;
