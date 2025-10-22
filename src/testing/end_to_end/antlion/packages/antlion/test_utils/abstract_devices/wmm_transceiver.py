@@ -10,7 +10,6 @@ import logging
 import multiprocessing
 import time
 from datetime import datetime
-from multiprocessing.managers import DictProxy
 from typing import Any, Mapping
 from uuid import UUID, uuid4
 
@@ -262,8 +261,6 @@ class WmmTransceiver(object):
             client,
             server_ip,
             server_port,
-            self._active_streams,
-            self._stream_results,
             access_category=access_category,
             bandwidth=bandwidth,
             stream_time=stream_time,
@@ -332,14 +329,7 @@ class WmmTransceiver(object):
 
             process = multiprocessing.Process(
                 target=self._run_traffic,
-                args=[
-                    uuid,
-                    client,
-                    server_ip,
-                    server_port,
-                    self._active_streams,
-                    self._stream_results,
-                ],
+                args=[uuid, client, server_ip, server_port],
                 kwargs={
                     "access_category": access_category,
                     "bandwidth": bandwidth,
@@ -424,8 +414,6 @@ class WmmTransceiver(object):
         client: iperf_client.IPerfClientBase,
         server_ip: str,
         server_port: int,
-        active_streams: DictProxy[Any, Any],
-        stream_results: DictProxy[Any, Any],
         access_category: str | None = None,
         bandwidth: int | None = None,
         stream_time: int = DEFAULT_STREAM_TIME,
@@ -443,8 +431,6 @@ class WmmTransceiver(object):
             client: IPerfClient object on device
             server_ip: IP address of IPerfServer for stream
             server_port: port of the IPerfServer for stream
-            active_streams: holds stream UUIDs of active streams on the device
-            stream_results: maps stream UUIDs of streams to IPerfResult objects
             access_category: WMM access category to use with iperf (AC_BK, AC_BE, AC_VI,
                 AC_VO). Unset if None.
             bandwidth: Bandwidth in mbps to use with iperf. Implies UDP. Unlimited if
@@ -453,7 +439,7 @@ class WmmTransceiver(object):
             start_time: Time, seconds since epoch, at which to start the stream (for
                 better synchronicity). If None, start immediately.
         """
-        active_streams[uuid] = True
+        self._active_streams[uuid] = True
 
         ac_flag = ""
         bandwidth_flag = ""
@@ -489,11 +475,11 @@ class WmmTransceiver(object):
             while current_time < start_time:
                 current_time = time.time()
         path = client.start(server_ip, iperf_flags, f"{uuid}")
-        stream_results[uuid] = iperf_server.IPerfResult(
+        self._stream_results[uuid] = iperf_server.IPerfResult(
             path, reporting_speed_units="mbps"
         )
 
-        active_streams.pop(uuid)
+        self._active_streams.pop(uuid)
 
     def _get_stream_resources(self, uuid, receiver, subnet):
         """Reserves an IPerfClient and IPerfServer for a stream.
