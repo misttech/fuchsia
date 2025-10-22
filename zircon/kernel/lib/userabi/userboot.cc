@@ -362,7 +362,7 @@ void bootstrap_vmos(HandoffEnd handoff_end, ktl::span<Handle*, userboot::kHandle
       CounterDesc().VmoData(), CounterDesc().VmoDataSize(), true, &kcountdesc_vmo));
   kcountdesc_vmo->set_name(counters::DescriptorVmo::kVmoName,
                            sizeof(counters::DescriptorVmo::kVmoName) - 1);
-  RETURN_IF_NOT_OK(get_vmo_handle(ktl::move(kcountdesc_vmo), true, CounterDesc().VmoContentSize(),
+  RETURN_IF_NOT_OK(get_vmo_handle(ktl::move(kcountdesc_vmo), true, CounterDesc().VmoStreamSize(),
                                   nullptr, &handles[userboot::kCounterNames]));
 
   // kcounters live data.
@@ -371,7 +371,7 @@ void bootstrap_vmos(HandoffEnd handoff_end, ktl::span<Handle*, userboot::kHandle
       CounterArena().VmoData(), CounterArena().VmoDataSize(), false, &kcounters_vmo));
   kcounters_vmo_ref = kcounters_vmo;
   kcounters_vmo->set_name(counters::kArenaVmoName, sizeof(counters::kArenaVmoName) - 1);
-  RETURN_IF_NOT_OK(get_vmo_handle(ktl::move(kcounters_vmo), true, CounterArena().VmoContentSize(),
+  RETURN_IF_NOT_OK(get_vmo_handle(ktl::move(kcounters_vmo), true, CounterArena().VmoStreamSize(),
                                   nullptr, &handles[userboot::kCounters]));
 
   out_userboot.emplace(ktl::move(handoff_end.userboot), ktl::move(handoff_end.vdso));

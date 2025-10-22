@@ -90,7 +90,7 @@ class CounterDesc {
     return (reinterpret_cast<uintptr_t>(vmo_end_) - reinterpret_cast<uintptr_t>(&vmo_begin_));
   }
 
-  size_t VmoContentSize() const {
+  size_t VmoStreamSize() const {
     return (reinterpret_cast<uintptr_t>(end_) - reinterpret_cast<uintptr_t>(&vmo_begin_));
   }
 
@@ -116,7 +116,7 @@ class CounterArena {
     return (reinterpret_cast<uintptr_t>(arena_page_end_) - reinterpret_cast<uintptr_t>(arena_));
   }
 
-  size_t VmoContentSize() const {
+  size_t VmoStreamSize() const {
     return (reinterpret_cast<uintptr_t>(arena_end_) - reinterpret_cast<uintptr_t>(arena_));
   }
 
