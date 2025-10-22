@@ -317,6 +317,173 @@ class TestBazelRustAnalyzerUtils(unittest.TestCase):
         mock_aquery.assert_called_once_with(mock_paths, bazel_args, targets)
         self.assertEqual(result, [])
 
+    def test_merge_rust_project_jsons_basic(self) -> None:
+        base_json = {
+            "sysroot": "sysroot",
+            "crates": [
+                {
+                    "crate_id": 0,
+                    "root_module": "a.rs",
+                    "target": "host",
+                    "deps": [],
+                }
+            ],
+        }
+        merge_json = {
+            "sysroot": "sysroot",
+            "crates": [
+                {
+                    "crate_id": 0,
+                    "root_module": "b.rs",
+                    "target": "host",
+                    "deps": [{"crate": 0, "name": "self_dep"}],
+                }
+            ],
+        }
+        expected_json = {
+            "sysroot": "sysroot",
+            "crates": [
+                {
+                    "crate_id": 0,
+                    "root_module": "a.rs",
+                    "target": "host",
+                    "deps": [],
+                },
+                {
+                    "crate_id": 1,  # Remapped from 0 + (0 + 1)
+                    "root_module": "b.rs",
+                    "target": "host",
+                    "deps": [{"crate": 1, "name": "self_dep"}],
+                },
+            ],
+        }
+        result = bazel_rust_analyzer_utils.merge_rust_project_jsons(
+            base_json, [merge_json]
+        )
+        self.assertEqual(result, expected_json)
+
+    def test_merge_rust_project_jsons_deduplication(self) -> None:
+        base_json = {
+            "crates": [{"crate_id": 0, "root_module": "a.rs", "target": "host"}]
+        }
+        merge_json = {
+            "crates": [
+                {"crate_id": 5, "root_module": "a.rs", "target": "host"},
+                {
+                    "crate_id": 6,
+                    "root_module": "b.rs",
+                    "target": "host",
+                    "deps": [{"crate": 5, "name": "a"}],
+                },
+            ]
+        }
+        expected_json = {
+            "crates": [
+                {
+                    "crate_id": 0,
+                    "root_module": "a.rs",
+                    "target": "host",
+                },
+                {
+                    "crate_id": 7,  # Remapped from 6 + (0 + 1)
+                    "root_module": "b.rs",
+                    "target": "host",
+                    # Dependency 5 (a.rs) in merge_json is deduplicated to base crate 0.
+                    "deps": [{"crate": 0, "name": "a"}],
+                },
+            ]
+        }
+        result = bazel_rust_analyzer_utils.merge_rust_project_jsons(
+            base_json, [merge_json]
+        )
+        self.assertEqual(result, expected_json)
+
+    def test_merge_rust_project_jsons_multiple_merges(self) -> None:
+        base_json = {
+            "crates": [{"crate_id": 0, "root_module": "base.rs", "target": "t"}]
+        }
+        merge1 = {
+            "crates": [{"crate_id": 0, "root_module": "m1.rs", "target": "t"}]
+        }
+        merge2 = {
+            "crates": [{"crate_id": 0, "root_module": "m2.rs", "target": "t"}]
+        }
+
+        expected_json = {
+            "crates": [
+                {"crate_id": 0, "root_module": "base.rs", "target": "t"},
+                {
+                    "crate_id": 1,
+                    "root_module": "m1.rs",
+                    "target": "t",
+                },  # 0 + (0 + 1)
+                {
+                    "crate_id": 2,
+                    "root_module": "m2.rs",
+                    "target": "t",
+                },  # 0 + (0 + 1 + 0 + 1)
+            ]
+        }
+        result = bazel_rust_analyzer_utils.merge_rust_project_jsons(
+            base_json, [merge1, merge2]
+        )
+        self.assertEqual(result, expected_json)
+
+    def test_merge_rust_project_jsons_empty_base(self) -> None:
+        base_json = {"crates": []}
+        merge_json = {
+            "crates": [{"crate_id": 10, "root_module": "a.rs", "target": "t"}]
+        }
+        # Offset starts at -1 + 1 = 0. New ID = 10 + 0 = 10.
+        expected_json = {
+            "crates": [
+                {
+                    "crate_id": 10,
+                    "root_module": "a.rs",
+                    "target": "t",
+                }
+            ]
+        }
+        result = bazel_rust_analyzer_utils.merge_rust_project_jsons(
+            base_json, [merge_json]
+        )
+        self.assertEqual(result, expected_json)
+
+    def test_merge_rust_project_jsons_broken_dependency(self) -> None:
+        base_json = {
+            "crates": [{"crate_id": 0, "root_module": "a.rs", "target": "t"}]
+        }
+        merge_json = {
+            "crates": [
+                {
+                    "crate_id": 0,
+                    "root_module": "b.rs",
+                    "target": "t",
+                    "deps": [{"crate": 999, "name": "missing"}],
+                }
+            ]
+        }
+        # Broken dependency should be dropped to avoid invalid crate references.
+        expected_json = {
+            "crates": [
+                {
+                    "crate_id": 0,
+                    "root_module": "a.rs",
+                    "target": "t",
+                },
+                {
+                    "crate_id": 1,
+                    "root_module": "b.rs",
+                    "target": "t",
+                    "deps": [{"crate": 1000, "name": "missing"}],
+                },
+            ]
+        }
+        result = bazel_rust_analyzer_utils.merge_rust_project_jsons(
+            base_json, [merge_json]
+        )
+        self.assertEqual(result, expected_json)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -401,3 +401,100 @@ def generate_rust_project_json_crates(
         for file_path in output_files
     ]
     return convert_crate_specs_to_rust_project_crates(crate_specs)
+
+
+def merge_rust_project_jsons(
+    base_json: dict[str, T.Any], jsons_to_merge: list[dict[str, T.Any]]
+) -> dict[str, T.Any]:
+    """
+    Merges multiple rust-project.json structures into a base one.
+
+    Deduplicates crates based on (root_module, target) pair.
+    Renumbers crate IDs in merged JSONs to avoid conflicts with the base JSON.
+
+    NOTE: Input dictionaries are modified in-place to avoid copying for efficiency reasons. If this
+    is a problem, make a copy at the call site.
+
+    Args:
+        base_json: The base rust-project.json dict.
+        jsons_to_merge: A list of rust-project.json dicts to merge into the base.
+
+    Returns:
+        The base rust-project.json dict with merged crates.
+    """
+    merged_json = base_json
+    base_crates = merged_json["crates"]
+
+    # Create a lookup set for existing crates in the base JSON for deduplication.
+    # Also map (root_module, target) to the base crate_id for dependency resolution.
+    existing_crates = {}
+    base_max_crate_id = -1
+    for crate in base_crates:
+        root_module = crate["root_module"]
+        target = crate["target"]
+        crate_id = crate["crate_id"]
+
+        existing_crates[(root_module, target)] = crate_id
+        base_max_crate_id = max(base_max_crate_id, crate_id)
+
+    current_offset = base_max_crate_id + 1
+
+    for json_to_merge in jsons_to_merge:
+        crates_to_merge = json_to_merge["crates"]
+        current_json_max_id = -1
+
+        # First pass: Identify crates to keep and build a remapping table for this JSON.
+        id_remap = {}
+        crates_to_add = []
+
+        for crate in crates_to_merge:
+            root_module = crate["root_module"]
+            target = crate["target"]
+            crate_id = crate["crate_id"]
+
+            current_json_max_id = max(current_json_max_id, crate_id)
+
+            if (root_module, target) in existing_crates:
+                # If it's a duplicate, map its local ID to the existing base ID.
+                id_remap[crate_id] = existing_crates[(root_module, target)]
+                continue
+
+            # It's a new crate, needs remapping.
+            new_id = crate_id + current_offset
+            id_remap[crate_id] = new_id
+            # Add to existing_crates so subsequent JSONs also deduplicate against this one.
+            existing_crates[(root_module, target)] = new_id
+
+            crates_to_add.append(crate)
+
+        # Second pass: Apply remapping and add to merged list.
+        for crate in crates_to_add:
+            crate["crate_id"] = id_remap[crate["crate_id"]]
+
+            # Remap dependencies
+            new_deps = []
+            for dep in crate.get("deps", []):
+                original_dep_crate = dep["crate"]
+
+                if original_dep_crate in id_remap:
+                    dep["crate"] = id_remap[original_dep_crate]
+                else:
+                    # If dependency isn't found, simply add the current offset. Although this likely
+                    # means the crate is invalid.
+                    if _DEBUG:
+                        print(
+                            f"Warning: Dependency {original_dep_crate} not found in remapping.",
+                            file=sys.stderr,
+                        )
+                    dep["crate"] = original_dep_crate + current_offset
+
+                new_deps.append(dep)
+
+            if new_deps:
+                crate["deps"] = new_deps
+            merged_json["crates"].append(crate)
+
+        # Update offset for the next JSON file to merge.
+        current_offset += current_json_max_id + 1
+
+    return merged_json
