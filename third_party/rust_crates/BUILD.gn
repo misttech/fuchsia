@@ -7007,17 +7007,17 @@ rustc_library("fs_extra-v1_2_0") {
   applicable_licenses = [ ":fs_extra-v1_2_0.license" ]
 }
 
-license("fsevent-sys-v4_0_0.license") {
+license("fsevent-sys-v4_1_0.license") {
   public_package_name = "fsevent_sys"
   license_files =
-      [ "//third_party/rust_crates/vendor/fsevent-sys-4.0.0/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/fsevent-sys-4.1.0/LICENSE" ]
 }
 
-rustc_library("fsevent-sys-v4_0_0") {
+rustc_library("fsevent-sys-v4_1_0") {
   crate_name = "fsevent_sys"
-  source_root = "//third_party/rust_crates/vendor/fsevent-sys-4.0.0/src/lib.rs"
-  output_name = "fsevent_sys-2cc9241b509ff4e3"
-  edition = "2015"
+  source_root = "//third_party/rust_crates/vendor/fsevent-sys-4.1.0/src/lib.rs"
+  output_name = "fsevent_sys-458f832fb964880d"
+  edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -7029,13 +7029,13 @@ rustc_library("fsevent-sys-v4_0_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=2cc9241b509ff4e3",
-    "-Cextra-filename=-2cc9241b509ff4e3",
+    "-Cmetadata=458f832fb964880d",
+    "-Cextra-filename=-458f832fb964880d",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":fsevent-sys-v4_0_0.license" ]
+  applicable_licenses = [ ":fsevent-sys-v4_1_0.license" ]
 }
 
 group("fuchsia-cprng-v0_1_1") {
@@ -10834,7 +10834,7 @@ rustc_library("notify-v5_2_0") {
     deps += [ ":mio-v0_8_9" ]
   }
   if (current_os == "mac") {
-    deps += [ ":fsevent-sys-v4_0_0" ]
+    deps += [ ":fsevent-sys-v4_1_0" ]
   }
   if (false) {
     deps += [ ":windows-sys-v0_45_0" ]
