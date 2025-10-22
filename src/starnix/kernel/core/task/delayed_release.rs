@@ -16,11 +16,9 @@ pub fn register_delayed_release<
     to_release: T,
 ) {
     RELEASERS.with(|cell| {
-        cell.borrow_mut()
-            .as_mut()
-            .expect("DelayedReleaser hasn't been finalized yet")
-            .releasables
-            .push(Box::new(Some(to_release)));
+        let mut cell = cell.borrow_mut();
+        let list = &mut cell.as_mut().expect("DelayedReleaser hasn't been finalized").releasables;
+        list.push(Box::new(Some(to_release)));
     });
 }
 
@@ -105,13 +103,8 @@ impl DelayedReleaser {
     /// releasables for the last time.
     pub fn finalize() {
         RELEASERS.with(|cell| {
-            assert!(
-                cell.borrow()
-                    .as_ref()
-                    .expect("DelayedReleaser hasn't been finalized yet")
-                    .is_empty()
-            );
-            *cell.borrow_mut() = None;
+            let list = cell.borrow_mut().take().expect("DelayedReleaser hasn't been finalized");
+            assert!(list.is_empty());
         });
     }
 }
