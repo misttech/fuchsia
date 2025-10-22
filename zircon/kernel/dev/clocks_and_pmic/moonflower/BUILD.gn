@@ -11,6 +11,7 @@ library_headers("headers") {
 
 source_set("moonflower") {
   sources = [
+    "moonflower_alpha_pll.cc",
     "moonflower_clocks_and_pmic.cc",
     "moonflower_qupv3_clock.cc",
     "moonflower_rcg_clock.cc",
@@ -19,6 +20,7 @@ source_set("moonflower") {
   deps = [
     "//zircon/kernel/dev/pdev/clocks_and_pmic",
     "//zircon/kernel/lib/debuglog",
+    "//zircon/kernel/lib/jtrace:headers",
     "//zircon/kernel/lib/ktl",
     "//zircon/system/ulib/hwreg",
   ]

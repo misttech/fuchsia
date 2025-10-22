@@ -14,6 +14,7 @@
 #include <kernel/spinlock.h>
 #include <pdev/clocks_and_pmic.h>
 
+#include "moonflower_alpha_pll.h"
 #include "moonflower_clock_defs.h"
 #include "moonflower_qupv3_clock.h"
 #include "moonflower_rcg_clock.h"
@@ -71,15 +72,18 @@ class MoonflowerClocksAndPmic {
   MoonflowerRcgClock gcc_qupv3_wrap0_s6_clk_src_{
       gcc_parent_map_1,
       ftbl_gcc_qupv3_wrap0_s5_clk_src,
-      0x1f88c,  // rcgr_offset
-      16,       // mnd_width
-      5,        // hid_width
+      0x1f88c,                                     // rcgr_offset
+      16,                                          // mnd_width
+      5,                                           // hid_width
       MoonflowerRcgClock::FLAG_HW_CLK_CTRL_MODE};  // flags
+
+  // GPLL0 is final PLL we need to turn off after we've shut off everything else.
+  TA_GUARDED(lock_) MoonflowerAlphaPll gcc_gpll0_ { 0, 0 };
 };
 
 zx_status_t MoonflowerClocksAndPmic::Init() {
-  hwreg::RegisterMmio io{reinterpret_cast<volatile void*>(periph_paddr_to_vaddr(0x1400000))};
-  vaddr_t reg_base = periph_paddr_to_vaddr(0x1400000);
+  constexpr paddr_t kPhysRegBase = 0x1400000;
+  vaddr_t reg_base = periph_paddr_to_vaddr(kPhysRegBase);
   if (reg_base == 0) {
     return ZX_ERR_NO_RESOURCES;
   }
@@ -119,7 +123,10 @@ void MoonflowerClocksAndPmic::SetClocksEnabled(bool enabled) {
     // Stash the state of the clocks as we halt.
     qup_v3_clockstate_at_halt_time_ = clk_reg_state;
   } else {
-    // enabled the source PLL clock first
+    // Turn on GPLL0 first.
+    gcc_gpll0_.Enable(io_);
+
+    // Enable the S6 src PLL next.
     constexpr uint64_t kEnabledS6SrcFreq = 7372800;
     gcc_qupv3_wrap0_s6_clk_src_.Enable(io_, kEnabledS6SrcFreq);
   }
@@ -152,9 +159,12 @@ void MoonflowerClocksAndPmic::SetClocksEnabled(bool enabled) {
     }
   }
 
-  // Disable the source PLL clock last
   if (!enabled) {
+    // Disable the S6 source PLL.
     gcc_qupv3_wrap0_s6_clk_src_.Disable(io_);
+
+    // Turn off GPLL0 last.
+    gcc_gpll0_.Disable(io_, MoonflowerAlphaPll::ResetOnDisable::No);
   }
 }
 
