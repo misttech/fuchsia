@@ -621,7 +621,7 @@ void Riscv64ArchVmAspace::FlushTLBEntryRun(vaddr_t vaddr, size_t count) const {
     // Flush just the aspace's asid.
     SfenceVmaArgs args{.range = SfenceVmaArgs::Range{.base = vaddr, .size = size}, .asid = asid_};
     // If this is a restricted aspace, we must also flush the associated unified aspace's ASID.
-    if (IsRestricted()) {
+    if (IsRestricted() && get_unified_aspace()) {
       args.unified_asid = get_unified_aspace()->asid();
     }
     mp_sync_exec(mp_ipi_target::ALL, /* cpu_mask */ 0, &SfenceVma, &args);
@@ -643,7 +643,7 @@ void Riscv64ArchVmAspace::FlushAsid() const {
     // Perform a full flush of all cpus of a single ASID
     SfenceVmaArgs args{.asid = asid_};
     // If this is a restricted aspace, we must also flush the associated unified aspace's ASID.
-    if (IsRestricted()) {
+    if (IsRestricted() && get_unified_aspace()) {
       args.unified_asid = get_unified_aspace()->asid();
     }
     mp_sync_exec(mp_ipi_target::ALL, /* cpu_mask */ 0, &SfenceVma, &args);
@@ -1517,6 +1517,12 @@ zx_status_t Riscv64ArchVmAspace::DestroyUnified() {
     // The restricted_aspace_ page table can only be referenced by a singular unified page table.
     DEBUG_ASSERT(restricted->num_references_ == 1);
     restricted->num_references_--;
+
+    // The unified aspace references the original restricted aspace. Ensure we
+    // don't accidentally reference this aspace by the restricted one once it's
+    // been destroyed.
+    DEBUG_ASSERT(restricted->get_unified_aspace() == this);
+    restricted->referenced_aspace_ = nullptr;
   }
 
   Guard<Mutex> a{AssertOrderedLock, &lock_, LockOrder()};
