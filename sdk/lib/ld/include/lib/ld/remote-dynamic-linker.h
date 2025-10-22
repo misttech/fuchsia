@@ -576,9 +576,9 @@ class RemoteDynamicLinker {
     // must happen before Allocate.
     zx::result abi_result =
         remote_abi_.Init(diag, abi_stub_, abi_stub_module(), modules_, max_tls_modid_);
-    if (abi_result.is_error() &&
-        !diag.SystemError("cannot initialize remote ABI heap",
-                          elfldltl::ZirconError{abi_result.error_value()})) {
+    if (abi_result.is_error()) {
+      diag.SystemError("cannot initialize remote ABI heap",
+                       elfldltl::ZirconError{abi_result.error_value()});
       return {};
     }
 
