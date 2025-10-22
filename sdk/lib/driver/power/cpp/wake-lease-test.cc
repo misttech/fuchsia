@@ -2,8 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/async/cpp/task.h>
 #include <lib/async/default.h>
 #include <lib/driver/power/cpp/wake-lease.h>
+#include <lib/fit/function.h>
+#include <lib/fpromise/single_threaded_executor.h>
+#include <lib/inspect/cpp/inspector.h>
+#include <lib/inspect/cpp/reader.h>
+#include <lib/inspect/cpp/vmo/types.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/eventpair.h>
 #include <lib/zx/time.h>
@@ -27,6 +33,7 @@ namespace power_lib_test {
 class WakeLeaseTest : public gtest::RealLoopFixture {};
 
 namespace {
+
 // Prepares the resources needed to run the fake SAG server.
 void PrepFakeSag(
     fbl::RefPtr<fs::Service>& sag,
@@ -96,7 +103,33 @@ void CheckLeaseAcquired(const std::shared_ptr<fdf_power::ManualWakeLease>& op, a
   loop.Quit();
 }
 
-}  // namespace
+struct ExpectedInspectValues {
+  uint64_t requests_over_threshold;
+  uint64_t acquisitions_over_threshold;
+  uint64_t total_acquisitions;
+};
+
+void CheckLeaseInspectData(const std::shared_ptr<inspect::Inspector>& inspector,
+                           ExpectedInspectValues values) {
+  fpromise::result<inspect::Hierarchy> hierarchy =
+      fpromise::run_single_threaded(inspect::ReadFromInspector(*inspector));
+  EXPECT_TRUE(hierarchy.is_ok());
+  EXPECT_EQ(hierarchy.value()
+                .node()
+                .get_property<inspect::UintPropertyValue>("Lease acquisitions exceeding threshold")
+                ->value(),
+            values.acquisitions_over_threshold);
+  EXPECT_EQ(hierarchy.value()
+                .node()
+                .get_property<inspect::UintPropertyValue>("Leases requested longer than threshold")
+                ->value(),
+            values.requests_over_threshold);
+  EXPECT_EQ(hierarchy.value()
+                .node()
+                .get_property<inspect::UintPropertyValue>("Total Lease Acquisitions")
+                ->value(),
+            values.total_acquisitions);
+}
 
 // Run a `TimeoutWakeLease` test with a fake SAG where the fake SAG and the
 // client run on their own threads. This creates a `TimeoutWakeLease` which is
@@ -110,10 +143,11 @@ void CheckLeaseAcquired(const std::shared_ptr<fdf_power::ManualWakeLease>& op, a
 // terminating.
 template <typename WakeLease>
 void DoWakeLeaseTest(
-    const std::function<void(std::shared_ptr<WakeLease>, async::Loop&,
-                             std::shared_ptr<SystemActivityGovernor>&, async::Loop&)>&
-        test_operations,
-    const std::function<void(std::shared_ptr<SystemActivityGovernor>)>& sag_operations) {
+    const std::function<
+        void(std::shared_ptr<WakeLease>, async::Loop&, std::shared_ptr<inspect::Inspector>,
+             std::shared_ptr<SystemActivityGovernor>&, async::Loop&)>& test_operations,
+    const std::function<void(std::shared_ptr<SystemActivityGovernor>)>& sag_operations,
+    uint32_t long_duration_threshold_ms = 100) {
   async::Loop server_loop(&kAsyncLoopConfigNoAttachToCurrentThread);
   server_loop.StartThread("server-loop");
 
@@ -131,39 +165,42 @@ void DoWakeLeaseTest(
   fidl::Endpoints<fuchsia_power_system::ActivityGovernor> sag_endpoints =
       fidl::Endpoints<fuchsia_power_system::ActivityGovernor>::Create();
 
-  async::PostTask(
-      server_loop.dispatcher(), [&client_loop, &server_loop, &sag_server, &bindings, &sag,
-                                 &sag_endpoints, test_operations, sag_operations]() mutable {
-        // First create SAG and related entities.
-        PrepFakeSag(sag, bindings, server_loop, sag_server);
+  std::shared_ptr<inspect::Inspector> inspector = std::make_shared<inspect::Inspector>();
+  async::PostTask(server_loop.dispatcher(), [&client_loop, &server_loop, &sag_server, &bindings,
+                                             &sag, &sag_endpoints, test_operations, sag_operations,
+                                             &inspector, long_duration_threshold_ms]() mutable {
+    // First create SAG and related entities.
+    PrepFakeSag(sag, bindings, server_loop, sag_server);
 
-        sag->ConnectService(sag_endpoints.server.TakeChannel());
+    sag->ConnectService(sag_endpoints.server.TakeChannel());
 
-        // Extract the channel from the client end, because passing a ClientEnd to
-        // another thread causes problems with thread unsafe FIDL bindings.
-        zx::channel client = sag_endpoints.client.TakeChannel();
+    // Extract the channel from the client end, because passing a ClientEnd to
+    // another thread causes problems with thread unsafe FIDL bindings.
+    zx::channel client = sag_endpoints.client.TakeChannel();
 
-        // Now that we've initialized the server, initialize the client side.
-        async::PostTask(
-            client_loop.dispatcher(), [&client_loop, &server_loop, client = std::move(client),
-                                       &sag_server, test_operations, sag_operations]() mutable {
-              // Create the wake lease on the client's thread so the client
-              // because the FIDL bindings are not threadsafe.
-              std::shared_ptr<WakeLease> op = std::make_shared<WakeLease>(
-                  client_loop.dispatcher(), "test-operation",
-                  fidl::ClientEnd<fuchsia_power_system::ActivityGovernor>(std::move(client)));
+    // Now that we've initialized the server, initialize the client side.
+    async::PostTask(client_loop.dispatcher(), [&client_loop, &server_loop,
+                                               client = std::move(client), &sag_server,
+                                               test_operations, sag_operations, &inspector,
+                                               long_duration_threshold_ms]() mutable {
+      // Create the wake lease on the client's thread so the client
+      // because the FIDL bindings are not threadsafe.
+      std::shared_ptr<WakeLease> op = std::make_shared<WakeLease>(
+          client_loop.dispatcher(), "test-operation",
+          fidl::ClientEnd<fuchsia_power_system::ActivityGovernor>(std::move(client)),
+          &inspector->GetRoot(), false, long_duration_threshold_ms);
 
-              // Run whatever the test wants us to run on the server's thread.
-              async::PostTask(server_loop.dispatcher(),
-                              [&sag_server, sag_operations]() { sag_operations(sag_server); });
+      // Run whatever the test wants us to run on the server's thread.
+      async::PostTask(server_loop.dispatcher(),
+                      [&sag_server, sag_operations]() { sag_operations(sag_server); });
 
-              // Run the function provided by the test code.
-              async::PostTask(client_loop.dispatcher(),
-                              [op, &server_loop, &client_loop, test_operations, &sag_server]() {
-                                test_operations(op, client_loop, sag_server, server_loop);
-                              });
-            });
-      });
+      // Run the function provided by the test code.
+      async::PostTask(client_loop.dispatcher(),
+                      [op, &server_loop, &client_loop, inspector, test_operations, &sag_server]() {
+                        test_operations(op, client_loop, inspector, sag_server, server_loop);
+                      });
+    });
+  });
 
   // The client will quit its loop after doing its work, so wait for it.
   client_loop.JoinThreads();
@@ -181,18 +218,24 @@ void DoWakeLeaseTest(
   server_loop.JoinThreads();
 }
 
+}  // namespace
+
 // Create an ManualWakeLease and allow it to observe a resume signal. Then
 // check that no actual lease is taken.
 TEST_F(WakeLeaseTest, TestManualWakeLeaseWhenResumed) {
   const std::function<void(const std::shared_ptr<fdf_power::ManualWakeLease>, async::Loop&,
+                           const std::shared_ptr<inspect::Inspector>,
                            const std::shared_ptr<SystemActivityGovernor>&, async::Loop&)>
       test_func =
           [&test_func](const std::shared_ptr<fdf_power::ManualWakeLease> op, async::Loop& loop,
+                       const std::shared_ptr<inspect::Inspector>& inspector,
                        const std::shared_ptr<SystemActivityGovernor>& sag, async::Loop& sag_loop) {
             if (op->IsSuspended()) {
               async::PostDelayedTask(
                   loop.dispatcher(),
-                  [op, &loop, sag, &sag_loop, &test_func]() { test_func(op, loop, sag, sag_loop); },
+                  [op, &loop, sag, inspector, &sag_loop, &test_func]() {
+                    test_func(op, loop, inspector, sag, sag_loop);
+                  },
                   zx::msec(100));
               return;
             }
@@ -210,16 +253,20 @@ TEST_F(WakeLeaseTest, TestManualWakeLeaseWhenResumed) {
 // verify it works as expected when the operation starts and ends.
 TEST_F(WakeLeaseTest, TestManualWakeLeaseStartAndEndAfterResumeIsObserved) {
   const std::function<void(const std::shared_ptr<fdf_power::ManualWakeLease>, async::Loop&,
+                           const std::shared_ptr<inspect::Inspector>,
                            const std::shared_ptr<SystemActivityGovernor>&, async::Loop&)>
       test_func =
           [&test_func](const std::shared_ptr<fdf_power::ManualWakeLease> op, async::Loop& loop,
+                       const std::shared_ptr<inspect::Inspector>& inspector,
                        const std::shared_ptr<SystemActivityGovernor>& sag, async::Loop& sag_loop) {
             // Wait for us to be in a resumed state so the atomic op obesrved the
             // system state change
             if (op->IsSuspended()) {
               async::PostDelayedTask(
                   loop.dispatcher(),
-                  [op, &loop, sag, &sag_loop, &test_func]() { test_func(op, loop, sag, sag_loop); },
+                  [op, &loop, inspector, sag, &sag_loop, &test_func]() {
+                    test_func(op, loop, inspector, sag, sag_loop);
+                  },
                   zx::msec(100));
               return;
             }
@@ -242,8 +289,10 @@ TEST_F(WakeLeaseTest, TestManualWakeLeaseStartAndEndAfterResumeIsObserved) {
 // check that duplicate `Start` calls result in taking only one lease.
 TEST_F(WakeLeaseTest, TestManualWakeLeaseWhenSuspended) {
   std::function<void(const std::shared_ptr<fdf_power::ManualWakeLease>, async::Loop&,
+                     const std::shared_ptr<inspect::Inspector>,
                      const std::shared_ptr<SystemActivityGovernor>&, async::Loop&)>
       test_func = [](const std::shared_ptr<fdf_power::ManualWakeLease> op, async::Loop& loop,
+                     const std::shared_ptr<inspect::Inspector>& inspector,
                      const std::shared_ptr<SystemActivityGovernor>& sag, async::Loop& sag_loop) {
         EXPECT_TRUE(op->IsSuspended());
         EXPECT_TRUE(op->Start());
@@ -260,16 +309,248 @@ TEST_F(WakeLeaseTest, TestManualWakeLeaseWhenSuspended) {
 // end it without error.
 TEST_F(WakeLeaseTest, TestManualWakeLeaseStartAndEndWhileSuspended) {
   std::function<void(const std::shared_ptr<fdf_power::ManualWakeLease>, async::Loop&,
+                     const std::shared_ptr<inspect::Inspector>,
                      const std::shared_ptr<SystemActivityGovernor>&, async::Loop&)>
       test_func = [](const std::shared_ptr<fdf_power::ManualWakeLease> op, async::Loop& loop,
+                     const std::shared_ptr<inspect::Inspector>& inspector,
                      const std::shared_ptr<SystemActivityGovernor>& sag, async::Loop& sag_loop) {
         EXPECT_TRUE(op->IsSuspended());
         EXPECT_TRUE(op->Start());
         EXPECT_TRUE(op->End().is_ok());
         loop.Quit();
       };
+
   DoWakeLeaseTest<fdf_power::ManualWakeLease>(
       test_func, [](const std::shared_ptr<SystemActivityGovernor>& sag) {});
+}
+
+// Test that inspect data for long durations changes as expected. This runs through various
+// lease starts and ends when the lease object things the system is suspended and resumed and for
+// durations that are above or below the duration threshold.
+TEST_F(WakeLeaseTest, TestInspectBasicData) {
+  uint32_t long_sleep_us = 200 * 1000;
+  uint32_t short_sleep_us = long_sleep_us / 20;
+  uint32_t long_duration_ms = (long_sleep_us / 2) / 1000;
+
+  std::function<void(const std::shared_ptr<fdf_power::ManualWakeLease>,
+                     std::shared_ptr<inspect::Inspector>, async::Loop&,
+                     const std::shared_ptr<SystemActivityGovernor>&)>
+      acquired_tester = [&acquired_tester, long_sleep_us, short_sleep_us](
+                            const std::shared_ptr<fdf_power::ManualWakeLease>& lease,
+                            const std::shared_ptr<inspect::Inspector>& inspect, async::Loop& loop,
+                            const std::shared_ptr<SystemActivityGovernor>& sag) {
+        if (!lease->IsSuspended()) {
+          async::PostDelayedTask(
+              loop.dispatcher(),
+              [&acquired_tester, lease, inspect, &loop, sag]() {
+                acquired_tester(lease, inspect, loop, sag);
+              },
+              zx::msec(10));
+          return;
+        }
+
+        CheckLeaseInspectData(inspect, {.requests_over_threshold = 2,
+                                        .acquisitions_over_threshold = 0,
+                                        .total_acquisitions = 0});
+
+        lease->Start();
+        usleep(long_sleep_us);
+        zx::result<zx::eventpair> ep = lease->End();
+
+        CheckLeaseInspectData(inspect, {
+                                           .requests_over_threshold = 3,
+                                           .acquisitions_over_threshold = 1,
+                                           .total_acquisitions = 1,
+                                       });
+
+        lease->Start();
+        usleep(short_sleep_us);
+        ep = lease->End();
+
+        CheckLeaseInspectData(inspect, {
+                                           .requests_over_threshold = 3,
+                                           .acquisitions_over_threshold = 1,
+                                           .total_acquisitions = 2,
+                                       });
+
+        lease->Start();
+        usleep(long_sleep_us);
+        ep = lease->End();
+        CheckLeaseInspectData(inspect, {
+                                           .requests_over_threshold = 4,
+                                           .acquisitions_over_threshold = 2,
+                                           .total_acquisitions = 3,
+                                       });
+
+        loop.Quit();
+      };
+
+  std::function<void(const std::shared_ptr<fdf_power::ManualWakeLease>,
+                     std::shared_ptr<inspect::Inspector>, async::Loop&,
+                     const std::shared_ptr<SystemActivityGovernor>&, async::Loop&)>
+      request_tester = [&request_tester, &acquired_tester, long_sleep_us](
+                           const std::shared_ptr<fdf_power::ManualWakeLease>& lease,
+                           const std::shared_ptr<inspect::Inspector>& inspect, async::Loop& loop,
+                           const std::shared_ptr<SystemActivityGovernor>& sag,
+                           async::Loop& sag_loop) {
+        if (lease->IsSuspended()) {
+          async::PostDelayedTask(
+              loop.dispatcher(),
+              [&request_tester, lease, inspect, &loop, sag, &sag_loop]() {
+                request_tester(lease, inspect, loop, sag, sag_loop);
+              },
+              zx::msec(50));
+          return;
+        }
+        CheckLeaseInspectData(inspect, {
+                                           .requests_over_threshold = 0,
+                                           .acquisitions_over_threshold = 0,
+                                           .total_acquisitions = 0,
+                                       });
+
+        lease->Start();
+        usleep(long_sleep_us);
+        zx::result<zx::eventpair> ep = lease->End();
+
+        CheckLeaseInspectData(inspect, {
+                                           .requests_over_threshold = 1,
+                                           .acquisitions_over_threshold = 0,
+                                           .total_acquisitions = 0,
+                                       });
+
+        lease->Start();
+        usleep(long_sleep_us);
+        ep = lease->End();
+        CheckLeaseInspectData(inspect, {
+                                           .requests_over_threshold = 2,
+                                           .acquisitions_over_threshold = 0,
+                                           .total_acquisitions = 0,
+                                       });
+
+        async::PostTask(sag_loop.dispatcher(), [sag]() { sag->SendBeforeSuspend(); });
+
+        acquired_tester(lease, inspect, loop, sag);
+      };
+
+  std::function<void(const std::shared_ptr<fdf_power::ManualWakeLease>, async::Loop&,
+                     const std::shared_ptr<inspect::Inspector>,
+                     const std::shared_ptr<SystemActivityGovernor>&, async::Loop&)>
+      test_fn = [&request_tester](
+                    const std::shared_ptr<fdf_power::ManualWakeLease>& lease,
+                    async::Loop& lease_loop, const std::shared_ptr<inspect::Inspector>& inspector,
+                    const std::shared_ptr<SystemActivityGovernor>& sag, async::Loop& sag_loop) {
+        request_tester(lease, inspector, lease_loop, sag, sag_loop);
+      };
+
+  DoWakeLeaseTest<fdf_power::ManualWakeLease>(
+      test_fn, [](const std::shared_ptr<SystemActivityGovernor>& sag) { sag->SendAfterResume(); },
+      long_duration_ms);
+}
+
+// Tests that inspect data updates as expected when a lease is started while suspended, held
+// longer than the threshold, and then dropped after resume.
+TEST_F(WakeLeaseTest, TestLongInspectAcrossSuspend) {
+  uint32_t sleep_us = 200 * 1000;
+  uint32_t long_duration_ms = (sleep_us / 2) / 1000;
+
+  std::function<void(const std::shared_ptr<fdf_power::ManualWakeLease>, async::Loop&,
+                     std::shared_ptr<inspect::Inspector>,
+                     const std::shared_ptr<SystemActivityGovernor>&, async::Loop&)>
+      post_resume =
+          [sleep_us, &post_resume](
+              const std::shared_ptr<fdf_power::ManualWakeLease>& lease, async::Loop& client_loop,
+              const std::shared_ptr<inspect::Inspector>& inspect,
+              const std::shared_ptr<SystemActivityGovernor>& sag, async::Loop& server_loop) {
+            if (lease->IsSuspended()) {
+              async::PostDelayedTask(
+                  client_loop.dispatcher(),
+                  [post_resume, lease, &client_loop, inspect, sag, &server_loop]() {
+                    post_resume(lease, client_loop, inspect, sag, server_loop);
+                  },
+                  zx::msec(10));
+              return;
+            }
+
+            usleep(sleep_us);
+            zx::result<zx::eventpair> ep = lease->End();
+
+            CheckLeaseInspectData(inspect, {
+                                               .requests_over_threshold = 1,
+                                               .acquisitions_over_threshold = 1,
+                                               .total_acquisitions = 1,
+                                           });
+
+            client_loop.Quit();
+          };
+
+  std::function<void(const std::shared_ptr<fdf_power::ManualWakeLease>, async::Loop&,
+                     std::shared_ptr<inspect::Inspector>,
+                     const std::shared_ptr<SystemActivityGovernor>&, async::Loop&)>
+      pre_resume = [&post_resume](const std::shared_ptr<fdf_power::ManualWakeLease>& lease,
+                                  async::Loop& client_loop,
+                                  std::shared_ptr<inspect::Inspector> inspect,
+                                  const std::shared_ptr<SystemActivityGovernor>& sag,
+                                  async::Loop& server_loop) {
+        lease->Start();
+        async::PostTask(server_loop.dispatcher(), [sag]() { sag->SendAfterResume(); });
+        post_resume(lease, client_loop, std::move(inspect), sag, server_loop);
+      };
+
+  DoWakeLeaseTest<fdf_power::ManualWakeLease>(
+      pre_resume, [](const std::shared_ptr<SystemActivityGovernor>& sag) {}, long_duration_ms);
+}
+
+// Tests that inspect data updates as expected when a lease held less time than the threshold
+// is started while suspended and then dropped after resume.
+TEST_F(WakeLeaseTest, TestShortInspectAcrossSuspend) {
+  uint32_t sleep_us = 1000;                              // 1 ms
+  uint32_t long_duration_ms = (sleep_us * 1000) / 1000;  // 1 sec
+
+  std::function<void(const std::shared_ptr<fdf_power::ManualWakeLease>, async::Loop&,
+                     std::shared_ptr<inspect::Inspector>,
+                     const std::shared_ptr<SystemActivityGovernor>&, async::Loop&)>
+      post_resume =
+          [sleep_us, &post_resume](
+              const std::shared_ptr<fdf_power::ManualWakeLease>& lease, async::Loop& client_loop,
+              const std::shared_ptr<inspect::Inspector>& inspect,
+              const std::shared_ptr<SystemActivityGovernor>& sag, async::Loop& server_loop) {
+            if (lease->IsSuspended()) {
+              async::PostDelayedTask(
+                  client_loop.dispatcher(),
+                  [post_resume, lease, &client_loop, inspect, sag, &server_loop]() {
+                    post_resume(lease, client_loop, inspect, sag, server_loop);
+                  },
+                  zx::msec(10));
+              return;
+            }
+
+            usleep(sleep_us);
+            zx::result<zx::eventpair> ep = lease->End();
+
+            CheckLeaseInspectData(inspect, {
+                                               .requests_over_threshold = 0,
+                                               .acquisitions_over_threshold = 0,
+                                               .total_acquisitions = 1,
+                                           });
+
+            client_loop.Quit();
+          };
+
+  std::function<void(const std::shared_ptr<fdf_power::ManualWakeLease>, async::Loop&,
+                     std::shared_ptr<inspect::Inspector>,
+                     const std::shared_ptr<SystemActivityGovernor>&, async::Loop&)>
+      pre_resume = [&post_resume](const std::shared_ptr<fdf_power::ManualWakeLease>& lease,
+                                  async::Loop& client_loop,
+                                  std::shared_ptr<inspect::Inspector> inspect,
+                                  const std::shared_ptr<SystemActivityGovernor>& sag,
+                                  async::Loop& server_loop) {
+        lease->Start();
+        async::PostTask(server_loop.dispatcher(), [sag]() { sag->SendAfterResume(); });
+        post_resume(lease, client_loop, std::move(inspect), sag, server_loop);
+      };
+
+  DoWakeLeaseTest<fdf_power::ManualWakeLease>(
+      pre_resume, [](const std::shared_ptr<SystemActivityGovernor>& sag) {}, long_duration_ms);
 }
 
 // Tests what happens happens when an ManualWakeLease observes a resume signal
@@ -461,16 +742,18 @@ TEST_F(WakeLeaseTest, ActiveTimeoutWakeLeaseGetsLeaseOnSuspend) {
   // which won't take a wake lease until we see a suspend. After that it
   // triggers a suspend and starts the run_after_suspend_observed function.
   const std::function<void(const std::shared_ptr<fdf_power::TimeoutWakeLease>, async::Loop&,
+                           const std::shared_ptr<inspect::Inspector>,
                            const std::shared_ptr<SystemActivityGovernor>&, async::Loop&)>
       run_after_resume_observed =
           [&run_after_resume_observed, &run_after_suspend_observed](
               const std::shared_ptr<fdf_power::TimeoutWakeLease> op, async::Loop& client_loop,
+              const std::shared_ptr<inspect::Inspector>& inspector,
               const std::shared_ptr<SystemActivityGovernor>& sag, async::Loop& sag_loop) {
             if (!op->IsResumed()) {
               async::PostDelayedTask(
                   client_loop.dispatcher(),
-                  [op, &client_loop, &sag, &sag_loop, &run_after_resume_observed]() {
-                    run_after_resume_observed(op, client_loop, sag, sag_loop);
+                  [op, &client_loop, inspector, &sag, &sag_loop, &run_after_resume_observed]() {
+                    run_after_resume_observed(op, client_loop, inspector, sag, sag_loop);
                   },
                   zx::msec(100));
               return;
@@ -533,16 +816,18 @@ TEST_F(WakeLeaseTest, InactiveTimeoutWakeLeaseDoesNothingOnSuspend) {
   // takes it back, meaning the wake lease should not be active. After that it
   // triggers a suspend and starts running `run_after_suspend_observed`.
   const std::function<void(const std::shared_ptr<fdf_power::TimeoutWakeLease>, async::Loop&,
+                           const std::shared_ptr<inspect::Inspector>,
                            const std::shared_ptr<SystemActivityGovernor>&, async::Loop&)>
       run_after_resume_observed =
           [&run_after_resume_observed, &h1, &run_after_suspend_observed](
               const std::shared_ptr<fdf_power::TimeoutWakeLease> op, async::Loop& client_loop,
+              const std::shared_ptr<inspect::Inspector>& inspector,
               const std::shared_ptr<SystemActivityGovernor>& sag, async::Loop& sag_loop) {
             if (!op->IsResumed()) {
               async::PostDelayedTask(
                   client_loop.dispatcher(),
-                  [op, &client_loop, &sag, &sag_loop, &run_after_resume_observed]() {
-                    run_after_resume_observed(op, client_loop, sag, sag_loop);
+                  [op, &client_loop, inspector, &sag, &sag_loop, &run_after_resume_observed]() {
+                    run_after_resume_observed(op, client_loop, inspector, sag, sag_loop);
                   },
                   zx::msec(100));
               return;
@@ -587,7 +872,6 @@ TEST_F(WakeLeaseTest, TestWakeLeaseTimeouts) {
   test_lease.SetSuspended(true);
   EXPECT_TRUE(test_lease.TakeWakeLease().is_error());
 
-  // TODO this might be unnecessary
   test_lease.SetSuspended(false);
 
   EXPECT_EQ(test_lease.GetNextTimeout(), ZX_TIME_INFINITE);

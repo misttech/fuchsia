@@ -29,8 +29,13 @@ namespace fdf_power {
 // avoid certain operations vs a series of shorter-lived `WakeLease` instances.
 ManualWakeLease::ManualWakeLease(async_dispatcher_t* dispatcher, std::string_view name,
                                  fidl::ClientEnd<fuchsia_power_system::ActivityGovernor> sag,
-                                 inspect::Node* parent_node, bool log)
-    : lease_name_(name), log_(log) {
+                                 inspect::Node* parent_node, bool log,
+                                 uint32_t long_duration_threshold_ms)
+    : lease_name_(name),
+      log_(log),
+      long_threshold_(long_duration_threshold_ms > 0
+                          ? static_cast<zx_duration_t>(long_duration_threshold_ms * 1000000)
+                          : zx::duration::infinite_past().get()) {
   if (sag) {
     sag_client_.Bind(std::move(sag));
 
@@ -58,6 +63,9 @@ ManualWakeLease::ManualWakeLease(async_dispatcher_t* dispatcher, std::string_vie
     }
   }
 
+  last_request_time_ = zx::time::infinite_past();
+  last_acquisition_time_ = zx::time::infinite_past();
+
   if (parent_node) {
     total_lease_acquisitions_ = parent_node->CreateUint("Total Lease Acquisitions", 0);
     wake_lease_held_ = parent_node->CreateBool("Wake Lease Held", false);
@@ -68,6 +76,13 @@ ManualWakeLease::ManualWakeLease(async_dispatcher_t* dispatcher, std::string_vie
         parent_node->CreateUint("Wake Lease Last Acquired Timestamp (ns)", 0);
     wake_lease_last_refreshed_timestamp_ =
         parent_node->CreateUint("Wake Lease Last Refreshed Timestamp (ns)", 0);
+    long_duration_threshold_ =
+        parent_node->CreateUint("Long lease duration threshold (ns)",
+                                long_threshold_.get() > 0 ? long_threshold_.get() : 0);
+    requested_duration_exceeding_threshold_ =
+        parent_node->CreateUint("Leases requested longer than threshold", 0);
+    acquisitions_exceeding_threshold_ =
+        parent_node->CreateUint("Lease acquisitions exceeding threshold", 0);
   }
 }
 
@@ -78,6 +93,10 @@ ManualWakeLease::ManualWakeLease(async_dispatcher_t* dispatcher, std::string_vie
 // the second call would may return false, assuming the lease from taken
 // because of the first call is still held.
 bool ManualWakeLease::Start(bool ignore_system_state) {
+  if (!active_ && LongDurationRecordingActive()) {
+    last_request_time_ = zx::clock::get_monotonic();
+  }
+
   // Why do we care about ignore_system_state here?
   // Because we might have previously called this method with `false` which
   // set active_ to true and as a result we might not have acquired a lease.
@@ -96,6 +115,20 @@ bool ManualWakeLease::Start(bool ignore_system_state) {
 // use this instance to start a new atomic operation in the future. Returns
 // the wake lease currently currently held, if any.
 zx::result<zx::eventpair> ManualWakeLease::End() {
+  if (active_ && LongDurationRecordingActive()) {
+    auto current_time = zx::clock::get_monotonic();
+    if (last_request_time_ != zx::time::infinite_past() &&
+        last_request_time_ + long_threshold_ < current_time) {
+      requested_duration_exceeding_threshold_.Add(1);
+    }
+    last_request_time_ = zx::time::infinite_past();
+
+    if (last_acquisition_time_ != zx::time::infinite_past() &&
+        last_acquisition_time_ + long_threshold_ < current_time) {
+      acquisitions_exceeding_threshold_.Add(1);
+    }
+    last_acquisition_time_ = zx::time::infinite_past();
+  }
   active_ = false;
   return TakeWakeLease();
 }
@@ -103,6 +136,11 @@ zx::result<zx::eventpair> ManualWakeLease::End() {
 // Stores the wake lease in the instance. The wake lease will be retained
 // until `End` or `TakeWakeLease` is called.
 void ManualWakeLease::DepositWakeLease(zx::eventpair wake_lease) {
+  if (!active_ && LongDurationRecordingActive()) {
+    last_request_time_ = zx::clock::get_monotonic();
+    last_acquisition_time_ = zx::clock::get_monotonic();
+  }
+
   lease_ = std::move(wake_lease);
   active_ = true;
 
@@ -206,6 +244,7 @@ bool ManualWakeLease::AcquireLease(bool ignore_system_state) {
     return false;
   }
 
+  last_acquisition_time_ = zx::clock::get_monotonic();
   lease_ = std::move(result_lease->value()->token);
   if (log_) {
     fdf::info("Created a wake lease due to new request.");
@@ -222,8 +261,9 @@ bool ManualWakeLease::AcquireLease(bool ignore_system_state) {
 TimeoutWakeLease::TimeoutWakeLease(
     async_dispatcher_t* dispatcher, std::string_view lease_name,
     fidl::ClientEnd<fuchsia_power_system::ActivityGovernor> sag_client, inspect::Node* parent_node,
-    bool log)
-    : lease_(dispatcher, lease_name, std::move(sag_client), parent_node, log),
+    bool log, uint32_t long_duration_threshold)
+    : lease_(dispatcher, lease_name, std::move(sag_client), parent_node, log,
+             long_duration_threshold),
       dispatcher_(dispatcher),
       log_(log),
       lease_name_(lease_name) {}

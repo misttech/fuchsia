@@ -37,7 +37,8 @@ class ManualWakeLease : public fidl::WireServer<fuchsia_power_system::SuspendBlo
  public:
   ManualWakeLease(async_dispatcher_t* dispatcher, std::string_view name,
                   fidl::ClientEnd<fuchsia_power_system::ActivityGovernor> sag,
-                  inspect::Node* parent_node = nullptr, bool log = false);
+                  inspect::Node* parent_node = nullptr, bool log = false,
+                  uint32_t long_duration_threshold_ms = 0);
 
   // Start an atomic operation. If `ActivityGovernor` protocol connection is
   // valid the system is guaranteed to stay running until `End()` is called or
@@ -94,6 +95,8 @@ class ManualWakeLease : public fidl::WireServer<fuchsia_power_system::SuspendBlo
 
   bool AcquireLease(bool ignore_system_state = false);
 
+  bool LongDurationRecordingActive() const { return long_threshold_.get() > 0; }
+
   std::string lease_name_;
   bool log_;
   fidl::WireSyncClient<fuchsia_power_system::ActivityGovernor> sag_client_;
@@ -103,12 +106,22 @@ class ManualWakeLease : public fidl::WireServer<fuchsia_power_system::SuspendBlo
 
   zx::eventpair lease_;
 
+  // Leases requested or acquired for longer than this duration are recorded.
+  zx::duration long_threshold_;
+  // The last time a wake lease was requested, i.e. `Start` was called.
+  zx::time last_request_time_;
+  // The last time a lease was acquired.
+  zx::time last_acquisition_time_;
+
   inspect::UintProperty total_lease_acquisitions_;
   inspect::BoolProperty wake_lease_held_;
   inspect::BoolProperty wake_lease_grabbable_;
   inspect::UintProperty wake_lease_last_attempted_acquisition_timestamp_;
   inspect::UintProperty wake_lease_last_acquired_timestamp_;
   inspect::UintProperty wake_lease_last_refreshed_timestamp_;
+  inspect::UintProperty requested_duration_exceeding_threshold_;
+  inspect::UintProperty acquisitions_exceeding_threshold_;
+  inspect::UintProperty long_duration_threshold_;
 };
 
 // Wrapper around usage of fuchsia.power.system/ActivityGovernor.AcquireWakeLease. The wrapper
@@ -120,7 +133,8 @@ class TimeoutWakeLease {
   // An invalid |sag_client| will result in silently disabling wake lease acquisition.
   TimeoutWakeLease(async_dispatcher_t* dispatcher, std::string_view lease_name,
                    fidl::ClientEnd<fuchsia_power_system::ActivityGovernor> sag_client,
-                   inspect::Node* parent_node = nullptr, bool log = false);
+                   inspect::Node* parent_node = nullptr, bool log = false,
+                   uint32_t long_duration_threshold = 0);
 
   // Ensure that the system stays awake until the timeout is reached. To accomplish this we either:
   //   * obtain a SAG wake lease immediately if the system is currently suspended
