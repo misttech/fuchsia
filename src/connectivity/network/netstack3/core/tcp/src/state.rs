@@ -17,9 +17,9 @@ use assert_matches::assert_matches;
 use derivative::Derivative;
 use explicit::ResultExt as _;
 use netstack3_base::{
-    Control, EffectiveMss, HandshakeOptions, IcmpErrorCode, Instant, Mss, Options, Payload,
-    PayloadLen as _, ResetOptions, SackBlocks, Segment, SegmentHeader, SegmentOptions, SeqNum,
-    UnscaledWindowSize, WindowScale, WindowSize,
+    Control, EffectiveMss, HandshakeOptions, IcmpErrorCode, Instant, Mss, MssSizeLimiters, Options,
+    Payload, PayloadLen as _, ResetOptions, SackBlocks, Segment, SegmentHeader, SegmentOptions,
+    SeqNum, UnscaledWindowSize, WindowScale, WindowSize,
 };
 use netstack3_trace::{TraceResourceId, trace_instant};
 use packet_formats::utils::NonZeroDuration;
@@ -319,7 +319,11 @@ impl Listen {
                     ),
                     simultaneous_open: None,
                     buffer_sizes,
-                    smss: EffectiveMss::from_mss(smss, false),
+                    // TODO(https://fxbug.dev/1338804): Support the Timestamp Option
+                    smss: EffectiveMss::from_mss(
+                        smss,
+                        MssSizeLimiters { timestamp_enabled: false },
+                    ),
                     rcv_wnd_scale,
                     snd_wnd_scale: options.window_scale(),
                     sack_permitted,
@@ -446,7 +450,9 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
             }
             Some(Control::SYN) => {
                 let smss = options.mss().unwrap_or(default_mss).min(device_mss);
-                let smss = EffectiveMss::from_mss(smss, false);
+                // TODO(https://fxbug.dev/1338804): Support the Timestamp Option
+                let smss =
+                    EffectiveMss::from_mss(smss, MssSizeLimiters { timestamp_enabled: false });
                 let sack_permitted = options.sack_permitted();
                 // Per RFC 793 (https://tools.ietf.org/html/rfc793#page-67):
                 //   fourth check the SYN bit
@@ -3717,7 +3723,10 @@ mod test {
 
     const DEVICE_MAXIMUM_SEGMENT_SIZE: Mss = Mss::new(1400).unwrap();
 
-    const TEST_MSS: EffectiveMss = EffectiveMss::from_mss(Mss::new(256).unwrap(), false);
+    const TEST_MSS: EffectiveMss = EffectiveMss::from_mss(
+        Mss::new(256).unwrap(),
+        MssSizeLimiters { timestamp_enabled: false },
+    );
     // Support Buffering up to three MSS.
     const BUFFER_SIZE: usize = (TEST_MSS.get() as usize) * 3;
     // One MSS worth of test data.
@@ -3729,7 +3738,10 @@ mod test {
     fn default_quickack_counter() -> usize {
         quickack_counter(
             BufferLimits { capacity: WindowSize::DEFAULT.into(), len: 0 },
-            EffectiveMss::from_mss(DEVICE_MAXIMUM_SEGMENT_SIZE, false),
+            EffectiveMss::from_mss(
+                DEVICE_MAXIMUM_SEGMENT_SIZE,
+                MssSizeLimiters { timestamp_enabled: false },
+            ),
         )
     }
 
@@ -3932,7 +3944,10 @@ mod test {
                 retrans_timer: RetransTimer::new(instant, Rto::DEFAULT, None, DEFAULT_MAX_RETRIES),
                 simultaneous_open: Some(()),
                 buffer_sizes: Default::default(),
-                smss: EffectiveMss::from_mss(DEVICE_MAXIMUM_SEGMENT_SIZE, false),
+                smss: EffectiveMss::from_mss(
+                    DEVICE_MAXIMUM_SEGMENT_SIZE,
+                    MssSizeLimiters { timestamp_enabled: false },
+                ),
                 rcv_wnd_scale: WindowScale::default(),
                 snd_wnd_scale: Some(WindowScale::default()),
                 sack_permitted: SACK_PERMITTED,
@@ -3962,7 +3977,7 @@ mod test {
                 timer: None,
                 congestion_control: CongestionControl::cubic_with_mss(EffectiveMss::from_mss(
                     DEVICE_MAXIMUM_SEGMENT_SIZE,
-                    false,
+                    MssSizeLimiters { timestamp_enabled: false },
                 )),
                 wnd_scale: WindowScale::default(),
             }
@@ -3980,7 +3995,10 @@ mod test {
             Self {
                 buffer: RecvBufferState::Open { buffer, assembler: Assembler::new(seq) },
                 timer: None,
-                mss: EffectiveMss::from_mss(DEVICE_MAXIMUM_SEGMENT_SIZE, false),
+                mss: EffectiveMss::from_mss(
+                    DEVICE_MAXIMUM_SEGMENT_SIZE,
+                    MssSizeLimiters { timestamp_enabled: false },
+                ),
                 remaining_quickacks: 0,
                 last_segment_at: None,
                 wnd_scale: WindowScale::default(),
@@ -4088,7 +4106,9 @@ mod test {
             ),
             simultaneous_open: None,
             buffer_sizes: BufferSizes::default(),
-            smss: EffectiveMss::from_mss(Mss::DEFAULT_IPV4, false),
+            smss: EffectiveMss::from_mss(
+                Mss::DEFAULT_IPV4, MssSizeLimiters { timestamp_enabled: false }
+            ),
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
             sack_permitted: false,
@@ -4179,7 +4199,9 @@ mod test {
                 ),
                 simultaneous_open: None,
                 buffer_sizes: BufferSizes::default(),
-                smss: EffectiveMss::from_mss(Mss::DEFAULT_IPV4, false),
+                smss: EffectiveMss::from_mss(
+                    Mss::DEFAULT_IPV4, MssSizeLimiters { timestamp_enabled: false }
+                ),
                 sack_permitted: false,
                 rcv_wnd_scale: WindowScale::default(),
                 snd_wnd_scale: Some(WindowScale::default()),
@@ -4250,7 +4272,9 @@ mod test {
                     remaining_quickacks: quickack_counter(BufferLimits {
                         capacity: WindowSize::DEFAULT.into(),
                         len: 0,
-                    }, EffectiveMss::from_mss(DEVICE_MAXIMUM_SEGMENT_SIZE, false)),
+                    }, EffectiveMss::from_mss(
+                        DEVICE_MAXIMUM_SEGMENT_SIZE, MssSizeLimiters { timestamp_enabled: false }
+                    )),
                     ..Recv::default_for_test(RingBuffer::default())
                 }.into(),
             }
@@ -4735,7 +4759,10 @@ mod test {
             ),
             simultaneous_open: None,
             buffer_sizes: Default::default(),
-            smss: EffectiveMss::from_mss(DEVICE_MAXIMUM_SEGMENT_SIZE, false),
+            smss: EffectiveMss::from_mss(
+                DEVICE_MAXIMUM_SEGMENT_SIZE,
+                MssSizeLimiters {timestamp_enabled: false}
+            ),
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
             sack_permitted,
@@ -4931,7 +4958,10 @@ mod test {
             ),
             simultaneous_open: Some(()),
             buffer_sizes: BufferSizes::default(),
-            smss: EffectiveMss::from_mss(DEVICE_MAXIMUM_SEGMENT_SIZE, false),
+            smss: EffectiveMss::from_mss(
+                DEVICE_MAXIMUM_SEGMENT_SIZE,
+                MssSizeLimiters { timestamp_enabled: false}
+            ),
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
             sack_permitted: SACK_PERMITTED,
@@ -4953,7 +4983,10 @@ mod test {
             ),
             simultaneous_open: Some(()),
             buffer_sizes: BufferSizes::default(),
-            smss: EffectiveMss::from_mss(DEVICE_MAXIMUM_SEGMENT_SIZE, false),
+            smss: EffectiveMss::from_mss(
+                DEVICE_MAXIMUM_SEGMENT_SIZE,
+                MssSizeLimiters { timestamp_enabled: false }
+            ),
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
             sack_permitted: SACK_PERMITTED,
@@ -5007,7 +5040,7 @@ mod test {
                     rtt_estimator: Estimator::Measured { srtt: RTT, rtt_var: RTT / 2 },
                     congestion_control: CongestionControl::cubic_with_mss(EffectiveMss::from_mss(
                         Mss::DEFAULT_IPV4,
-                        false,
+                        MssSizeLimiters { timestamp_enabled: false },
                     )),
                     ..Send::default_for_test_at(ISS_1 + 1, RingBuffer::default())
                 }
@@ -5030,7 +5063,7 @@ mod test {
                     rtt_estimator: Estimator::Measured { srtt: RTT, rtt_var: RTT / 2 },
                     congestion_control: CongestionControl::cubic_with_mss(EffectiveMss::from_mss(
                         Mss::DEFAULT_IPV4,
-                        false,
+                        MssSizeLimiters { timestamp_enabled: false },
                     )),
                     ..Send::default_for_test_at(ISS_2 + 1, RingBuffer::default())
                 }
@@ -5646,7 +5679,10 @@ mod test {
             },
             simultaneous_open: Some(()),
             buffer_sizes: Default::default(),
-            smss: EffectiveMss::from_mss(Mss::DEFAULT_IPV4, false),
+            smss: EffectiveMss::from_mss(
+                Mss::DEFAULT_IPV4,
+                MssSizeLimiters { timestamp_enabled: false },
+            ),
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
             sack_permitted: SACK_PERMITTED,
@@ -6099,7 +6135,9 @@ mod test {
             },
             simultaneous_open: None,
             buffer_sizes: BufferSizes::default(),
-            smss: EffectiveMss::from_mss(Mss::DEFAULT_IPV4, false),
+            smss: EffectiveMss::from_mss(
+                Mss::DEFAULT_IPV4, MssSizeLimiters { timestamp_enabled: false }
+            ),
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
             sack_permitted: SACK_PERMITTED,
@@ -6147,7 +6185,7 @@ mod test {
             snd: Send {
                 congestion_control: CongestionControl::cubic_with_mss(EffectiveMss::from_mss(
                     Mss::DEFAULT_IPV4,
-                    false,
+                    MssSizeLimiters { timestamp_enabled: false },
                 )),
                 ..Send::default_for_test_at(TEST_ISS, send_buffer.clone())
             }
@@ -7172,7 +7210,9 @@ mod test {
             ),
             simultaneous_open: None,
             buffer_sizes: BufferSizes::default(),
-            smss: EffectiveMss::from_mss(Mss::DEFAULT_IPV4, false),
+            smss: EffectiveMss::from_mss(
+                Mss::DEFAULT_IPV4, MssSizeLimiters { timestamp_enabled: false }
+            ),
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
             sack_permitted: SACK_PERMITTED,
@@ -7327,7 +7367,10 @@ mod test {
             ),
             simultaneous_open: None,
             buffer_sizes: BufferSizes { send: 0, receive: receive_buf_size },
-            smss: EffectiveMss::from_mss(Mss::DEFAULT_IPV4, false),
+            smss: EffectiveMss::from_mss(
+                Mss::DEFAULT_IPV4,
+                MssSizeLimiters { timestamp_enabled: false },
+            ),
             rcv_wnd_scale,
             snd_wnd_scale: WindowScale::new(1),
             sack_permitted: SACK_PERMITTED,
@@ -7945,7 +7988,9 @@ mod test {
             ),
             simultaneous_open: None,
             buffer_sizes: BufferSizes { send: 0, receive: 0 },
-            smss: EffectiveMss::from_mss(Mss::DEFAULT_IPV4, false),
+            smss: EffectiveMss::from_mss(
+                Mss::DEFAULT_IPV4, MssSizeLimiters { timestamp_enabled: false }
+            ),
             rcv_wnd_scale: WindowScale::new(0).unwrap(),
             snd_wnd_scale: WindowScale::new(0),
             sack_permitted: SACK_PERMITTED,
@@ -8103,7 +8148,7 @@ mod test {
         const MSS: Mss = Mss::new(65000).unwrap();
         const WINDOW: WindowSize = WindowSize::from_u32(500).unwrap();
         let mut recv = Recv::<FakeInstant, _> {
-            mss: EffectiveMss::from_mss(MSS, false),
+            mss: EffectiveMss::from_mss(MSS, MssSizeLimiters { timestamp_enabled: false }),
             last_window_update: (TEST_IRS + 1, WindowSize::from_u32(1).unwrap()),
             ..Recv::default_for_test(RingBuffer::new(WINDOW.into()))
         };
@@ -8532,7 +8577,10 @@ mod test {
 
     #[test]
     fn sack_recovery_rearms_rto() {
-        let mss = EffectiveMss::from_mss(DEVICE_MAXIMUM_SEGMENT_SIZE, false);
+        let mss = EffectiveMss::from_mss(
+            DEVICE_MAXIMUM_SEGMENT_SIZE,
+            MssSizeLimiters { timestamp_enabled: false },
+        );
         let una = TEST_ISS + 1;
         let nxt = una + (u32::from(DUP_ACK_THRESHOLD) + 1) * u32::from(mss);
 
@@ -8663,7 +8711,10 @@ mod test {
     fn congestion_window_limiting(theoretical_window: u32, sack_permitted: SackPermitted) {
         netstack3_base::testutil::set_logger_for_test();
 
-        let mss = EffectiveMss::from_mss(DEVICE_MAXIMUM_SEGMENT_SIZE, false);
+        let mss = EffectiveMss::from_mss(
+            DEVICE_MAXIMUM_SEGMENT_SIZE,
+            MssSizeLimiters { timestamp_enabled: false },
+        );
         let generate_sack = match sack_permitted {
             SackPermitted::Yes => true,
             SackPermitted::No => false,
@@ -8867,7 +8918,10 @@ mod test {
     #[test]
     fn out_of_order_ack_with_sack_blocks() {
         let send_segments = u32::from(DUP_ACK_THRESHOLD + 2);
-        let mss = EffectiveMss::from_mss(DEVICE_MAXIMUM_SEGMENT_SIZE, false);
+        let mss = EffectiveMss::from_mss(
+            DEVICE_MAXIMUM_SEGMENT_SIZE,
+            MssSizeLimiters { timestamp_enabled: false },
+        );
 
         let send_bytes = send_segments * u32::from(mss);
         // Ensure we're not going to ever be blocked by the receiver window.
@@ -8983,7 +9037,10 @@ mod test {
     #[test]
     fn push_segments() {
         let send_segments = 16;
-        let mss = EffectiveMss::from_mss(DEVICE_MAXIMUM_SEGMENT_SIZE, false);
+        let mss = EffectiveMss::from_mss(
+            DEVICE_MAXIMUM_SEGMENT_SIZE,
+            MssSizeLimiters { timestamp_enabled: false },
+        );
         let send_bytes = send_segments * u32::from(mss);
         // Use a receiver window that can take 4 Mss at a time, so we should set
         // the PSH bit every 2 MSS.

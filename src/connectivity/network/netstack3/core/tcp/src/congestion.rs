@@ -1067,14 +1067,16 @@ mod test {
 
     use assert_matches::assert_matches;
     use netstack3_base::testutil::FakeInstant;
-    use netstack3_base::{EffectiveMss, SackBlock};
+    use netstack3_base::{EffectiveMss, MssSizeLimiters, SackBlock};
     use test_case::{test_case, test_matrix};
 
     use super::*;
     use crate::internal::testutil;
 
-    const MSS_1: EffectiveMss = EffectiveMss::from_mss(Mss::DEFAULT_IPV4, false);
-    const MSS_2: EffectiveMss = EffectiveMss::from_mss(Mss::DEFAULT_IPV6, false);
+    const MSS_1: EffectiveMss =
+        EffectiveMss::from_mss(Mss::DEFAULT_IPV4, MssSizeLimiters { timestamp_enabled: false });
+    const MSS_2: EffectiveMss =
+        EffectiveMss::from_mss(Mss::DEFAULT_IPV6, MssSizeLimiters { timestamp_enabled: false });
 
     enum StartingAck {
         One,

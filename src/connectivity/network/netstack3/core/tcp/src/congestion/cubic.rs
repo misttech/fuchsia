@@ -245,12 +245,13 @@ impl<I: Instant, const FAST_CONVERGENCE: bool> Cubic<I, FAST_CONVERGENCE> {
 #[cfg(test)]
 mod tests {
     use netstack3_base::testutil::FakeInstantCtx;
-    use netstack3_base::{EffectiveMss, InstantContext as _, Mss};
+    use netstack3_base::{EffectiveMss, InstantContext as _, Mss, MssSizeLimiters};
     use test_case::test_case;
 
     use super::*;
 
-    const DEFAULT_MSS: EffectiveMss = EffectiveMss::from_mss(Mss::DEFAULT_IPV4, false);
+    const DEFAULT_MSS: EffectiveMss =
+        EffectiveMss::from_mss(Mss::DEFAULT_IPV4, MssSizeLimiters { timestamp_enabled: false });
     impl<I: Instant, const FAST_CONVERGENCE: bool> Cubic<I, FAST_CONVERGENCE> {
         // Helper function in test that takes a u32 instead of a NonZeroU32
         // as we know we never pass 0 in the test and it's a bit clumsy to

@@ -335,14 +335,17 @@ fn sacked_bytes_threshold(mss: EffectiveMss) -> u32 {
 #[cfg(test)]
 mod test {
     use core::ops::Range;
-    use netstack3_base::Mss;
+    use netstack3_base::{Mss, MssSizeLimiters};
     use test_case::test_case;
 
     use super::*;
     use crate::internal::seq_ranges::SeqRange;
     use crate::internal::testutil;
 
-    const TEST_MSS: EffectiveMss = EffectiveMss::from_mss(Mss::new(256).unwrap(), false);
+    const TEST_MSS: EffectiveMss = EffectiveMss::from_mss(
+        Mss::new(256).unwrap(),
+        MssSizeLimiters { timestamp_enabled: false },
+    );
 
     fn seq_ranges(iter: impl IntoIterator<Item = Range<u32>>) -> SeqRanges<()> {
         iter.into_iter()

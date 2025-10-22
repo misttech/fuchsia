@@ -155,11 +155,12 @@ impl EffectiveMss {
     const ALIGNED_TIMESTAMP_OPTION_LENGTH: u16 = 12;
 
     /// Constructs an [`EffectiveMss`] from an [`Mss`]
-    pub const fn from_mss(mss: Mss, timestamp_option_enabled: bool) -> Self {
+    pub const fn from_mss(mss: Mss, size_limits: MssSizeLimiters) -> Self {
+        let MssSizeLimiters { timestamp_enabled } = size_limits;
         // NB: When adding additional fixed size options in the future, authors
         // should take care to account for the alignment only once.
         let fixed_tcp_options_size =
-            if timestamp_option_enabled { Self::ALIGNED_TIMESTAMP_OPTION_LENGTH } else { 0 };
+            if timestamp_enabled { Self::ALIGNED_TIMESTAMP_OPTION_LENGTH } else { 0 };
         EffectiveMss { mss, fixed_tcp_options_size }
     }
 
@@ -195,6 +196,12 @@ impl EffectiveMss {
         let Self { mss, fixed_tcp_options_size } = *self;
         mss.get() - fixed_tcp_options_size
     }
+}
+
+/// Factors that may limit the space available from the MSS.
+pub struct MssSizeLimiters {
+    /// True if the TCP Timestamp Option is enabled.
+    pub timestamp_enabled: bool,
 }
 
 impl From<EffectiveMss> for u32 {
@@ -563,10 +570,11 @@ mod test {
 
     #[test_case(true; "timestamp_enabled")]
     #[test_case(false; "timestamp_disabled")]
-    fn effective_mss_accounts_for_fixed_size_tcp_options(timestamp: bool) {
+    fn effective_mss_accounts_for_fixed_size_tcp_options(timestamp_enabled: bool) {
         const SIZE: u16 = 1000;
-        let mss = EffectiveMss::from_mss(Mss::new(SIZE).unwrap(), timestamp);
-        if timestamp {
+        let mss =
+            EffectiveMss::from_mss(Mss::new(SIZE).unwrap(), MssSizeLimiters { timestamp_enabled });
+        if timestamp_enabled {
             assert_eq!(mss.get(), SIZE - EffectiveMss::ALIGNED_TIMESTAMP_OPTION_LENGTH)
         } else {
             assert_eq!(mss.get(), SIZE);
@@ -599,8 +607,9 @@ mod test {
 
     fn effective_mss_accounts_for_variable_size_tcp_options(options: SegmentOptions) {
         const SIZE: u16 = 1000;
-        let timestamp = options.timestamp.is_some();
-        let mss = EffectiveMss::from_mss(Mss::new(SIZE).unwrap(), timestamp);
+        let timestamp_enabled = options.timestamp.is_some();
+        let mss =
+            EffectiveMss::from_mss(Mss::new(SIZE).unwrap(), MssSizeLimiters { timestamp_enabled });
         let options_len =
             u16::try_from(packet_formats::tcp::aligned_options_length(options.iter())).unwrap();
         assert_eq!(mss.payload_size(&options).get(), SIZE - options_len);
