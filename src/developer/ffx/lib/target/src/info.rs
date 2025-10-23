@@ -1,0 +1,146 @@
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+use addr::TargetAddr;
+use fidl_fuchsia_developer_ffx as ffx;
+
+#[derive(Debug, Clone)]
+pub enum RemoteControlState {
+    Up,
+    Down,
+    Unknown,
+}
+
+#[derive(Clone)]
+pub enum TargetState {
+    Unknown,
+    Product,
+    Fastboot,
+    Zedboot,
+}
+
+#[derive(Clone)]
+pub enum VSockNamespace {
+    Vsock,
+    Usb,
+}
+
+#[derive(Clone)]
+pub struct VSockCtx {
+    pub cid: u32,
+    pub namespace: VSockNamespace,
+}
+
+impl From<VSockCtx> for ffx::TargetVSockCtx {
+    fn from(value: VSockCtx) -> Self {
+        let namespace = match value.namespace {
+            VSockNamespace::Vsock => ffx::TargetVSockNamespace::Vsock,
+            VSockNamespace::Usb => ffx::TargetVSockNamespace::Usb,
+        };
+        ffx::TargetVSockCtx { cid: value.cid, namespace }
+    }
+}
+
+impl From<ffx::TargetVSockCtx> for VSockCtx {
+    fn from(value: ffx::TargetVSockCtx) -> Self {
+        let namespace = match value.namespace {
+            ffx::TargetVSockNamespace::Vsock => VSockNamespace::Vsock,
+            ffx::TargetVSockNamespace::Usb => VSockNamespace::Usb,
+        };
+        VSockCtx { cid: value.cid, namespace }
+    }
+}
+
+#[derive(Clone)]
+pub struct TargetInfo {
+    pub nodename: Option<String>,
+    pub addresses: Vec<TargetAddr>,
+    pub rcs_state: RemoteControlState,
+    pub target_state: TargetState,
+    pub product_config: Option<String>,
+    pub board_config: Option<String>,
+    pub serial_number: Option<String>,
+    pub is_manual: bool,
+}
+
+impl Default for TargetInfo {
+    fn default() -> Self {
+        Self {
+            nodename: None,
+            addresses: vec![],
+            rcs_state: RemoteControlState::Unknown,
+            target_state: TargetState::Unknown,
+            product_config: None,
+            board_config: None,
+            serial_number: None,
+            is_manual: false,
+        }
+    }
+}
+
+impl From<TargetInfo> for ffx::TargetInfo {
+    fn from(info: TargetInfo) -> Self {
+        let nodename = info.nodename;
+        let rcs_state = match info.rcs_state {
+            RemoteControlState::Up => ffx::RemoteControlState::Up,
+            RemoteControlState::Down => ffx::RemoteControlState::Down,
+            RemoteControlState::Unknown => ffx::RemoteControlState::Unknown,
+        };
+        let target_state = match info.target_state {
+            TargetState::Unknown => ffx::TargetState::Unknown,
+            TargetState::Product => ffx::TargetState::Product,
+            TargetState::Fastboot => ffx::TargetState::Fastboot,
+            TargetState::Zedboot => ffx::TargetState::Zedboot,
+        };
+        Self {
+            nodename,
+            addresses: Some(info.addresses.into_iter().map(|a| a.into()).collect()),
+            rcs_state: Some(rcs_state),
+            target_state: Some(target_state),
+            product_config: info.product_config,
+            board_config: info.board_config,
+            serial_number: info.serial_number,
+            is_manual: Some(info.is_manual),
+            ..Default::default()
+        }
+    }
+}
+
+impl From<ffx::TargetInfo> for TargetInfo {
+    fn from(info: ffx::TargetInfo) -> Self {
+        let addresses = match info.addresses {
+            None => vec![],
+            Some(addrs) => addrs.into_iter().map(|a| a.into()).collect(),
+        };
+        let rcs_state = info.rcs_state.map_or(RemoteControlState::Unknown, |s| match s {
+            ffx::RemoteControlState::Up => RemoteControlState::Up,
+            ffx::RemoteControlState::Down => RemoteControlState::Down,
+            ffx::RemoteControlState::Unknown => RemoteControlState::Unknown,
+        });
+        let target_state = info.target_state.map_or(TargetState::Unknown, |s| match s {
+            ffx::TargetState::Unknown | ffx::TargetState::Disconnected => TargetState::Unknown,
+            ffx::TargetState::Product => TargetState::Product,
+            ffx::TargetState::Fastboot => TargetState::Fastboot,
+            ffx::TargetState::Zedboot => TargetState::Zedboot,
+        });
+        Self {
+            nodename: info.nodename,
+            addresses,
+            rcs_state,
+            target_state,
+            product_config: info.product_config,
+            board_config: info.board_config,
+            serial_number: info.serial_number,
+            is_manual: info.is_manual.unwrap_or(false),
+            ..Default::default()
+        }
+    }
+}
+
+impl From<discovery::TargetHandle> for TargetInfo {
+    fn from(handle: discovery::TargetHandle) -> Self {
+        let fidl_th: ffx::TargetInfo = handle.into();
+        fidl_th.into()
+    }
+}

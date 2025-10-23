@@ -62,6 +62,7 @@ rustc_library("lib") {
     "src/connection.rs",
     "src/fdomain_transport.rs",
     "src/fidl_pipe.rs",
+    "src/info.rs",
     "src/lib.rs",
     "src/list.rs",
     "src/resolve.rs",

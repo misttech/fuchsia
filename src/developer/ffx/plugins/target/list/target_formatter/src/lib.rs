@@ -5,6 +5,7 @@
 use addr::{TargetAddr, TargetIpAddr};
 use anyhow::{Error, Result, anyhow};
 use ffx_list_args::{AddressTypes, Format};
+use ffx_target::TargetInfo;
 use fidl_fuchsia_developer_ffx as ffx;
 use fidl_fuchsia_net::IpAddress;
 use schemars::JsonSchema;
@@ -270,6 +271,16 @@ impl TryFrom<Vec<ffx::TargetInfo>> for JsonTargetFormatter {
             .flat_map(JsonTarget::try_from)
             .collect::<Vec<_>>();
         Ok(Self { targets })
+    }
+}
+
+impl TryFrom<Vec<TargetInfo>> for JsonTargetFormatter {
+    type Error = Error;
+
+    fn try_from(targets: Vec<TargetInfo>) -> Result<Self> {
+        let ffx_targets: Vec<ffx::TargetInfo> =
+            targets.into_iter().map(|ti: TargetInfo| ti.into()).collect();
+        Self::try_from(ffx_targets)
     }
 }
 

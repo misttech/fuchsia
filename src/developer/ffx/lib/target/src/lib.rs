@@ -11,7 +11,7 @@ use fidl::endpoints::create_proxy;
 use fidl::prelude::*;
 use fidl_fuchsia_developer_ffx::{
     self as ffx, DaemonError, DaemonProxy, TargetCollectionMarker, TargetCollectionProxy,
-    TargetInfo, TargetMarker, TargetQuery,
+    TargetMarker, TargetQuery,
 };
 use fidl_fuchsia_developer_remotecontrol::{RemoteControlMarker, RemoteControlProxy};
 use fidl_fuchsia_net as net;
@@ -29,6 +29,7 @@ use timeout::timeout;
 use mockall::predicate::*;
 
 pub mod connection;
+pub mod info;
 pub mod list;
 pub mod ssh_connector;
 pub mod usb_connector;
@@ -43,6 +44,7 @@ pub use connection::{Connection, ConnectionError};
 pub use discovery::desc::{Description, FastbootInterface};
 pub use discovery::query::TargetInfoQuery;
 pub use fidl_pipe::{FidlPipe, create_overnet_socket};
+pub use info::TargetInfo;
 pub use list::list_targets;
 pub use resolve::{
     DefaultTargetResolver, Resolution, TargetResolver, get_discovered_targets,
@@ -71,7 +73,7 @@ pub async fn get_remote_proxy(
     target_spec: &TargetInfoQuery,
     daemon_proxy: DaemonProxy,
     proxy_timeout: Duration,
-    mut target_info: Option<&mut Option<TargetInfo>>,
+    mut target_info: Option<&mut Option<ffx::TargetInfo>>,
     context: &EnvironmentContext,
 ) -> Result<RemoteControlProxy> {
     let mut target_info_out = None;
@@ -110,7 +112,7 @@ pub async fn get_remote_proxy(
         }
     };
     if let Some(ref mut info_out) = target_info {
-        **info_out = target_info_out.clone();
+        **info_out = target_info_out.into();
     }
     res
 }
@@ -119,7 +121,7 @@ async fn get_remote_proxy_impl(
     target_spec: &TargetInfoQuery,
     daemon_proxy: &DaemonProxy,
     proxy_timeout: &Duration,
-    target_info: &mut Option<TargetInfo>,
+    target_info: &mut Option<ffx::TargetInfo>,
     context: &EnvironmentContext,
 ) -> Result<RemoteControlProxy> {
     // See if we need to do local resolution. (Do it here not in
@@ -152,7 +154,7 @@ async fn get_remote_proxy_impl(
         }
     };
     let info = target_proxy.identity().await?;
-    *target_info = Some(info.clone());
+    *target_info = Some(info.into());
     match res {
         Ok(_) => Ok(remote_proxy),
         Err(err) => Err(anyhow::Error::new(FfxTargetError::TargetConnectionError {

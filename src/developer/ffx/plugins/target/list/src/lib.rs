@@ -62,6 +62,9 @@ impl FfxMain for ListTool {
                 connect_to_rcs,
             )
             .await?
+            .into_iter()
+            .map(|ti| ti.into())
+            .collect()
         } else {
             list_targets(self.tc_proxy.await?, &cmd).await?
         };
