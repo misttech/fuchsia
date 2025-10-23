@@ -332,6 +332,9 @@ class Dwc3 : public fdf::DriverBase,
   void HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_status_t status,
                  const zx_packet_interrupt_t* interrupt);
 
+  void OnConnectStatusChanged(
+      fidl::Result<fuchsia_hardware_usb_phy::ConnectionWatcher::WatchConnectStatusChanged>& result);
+
   fdf::PDev pdev_;
 
   fidl::WireClient<fuchsia_hardware_usb_dci::UsbDciInterface> dci_intf_;
@@ -352,6 +355,7 @@ class Dwc3 : public fdf::DriverBase,
   std::unique_ptr<PlatformExtension> platform_extension_;
 
   fidl::SyncClient<fuchsia_hardware_usb_phy::UsbPhy> phy_;
+  fidl::Client<fuchsia_hardware_usb_phy::ConnectionWatcher> connection_watcher_;
 
   fidl::ServerBindingGroup<fuchsia_hardware_usb_dci::UsbDci> bindings_;
   fidl::SyncClient<fuchsia_driver_framework::NodeController> child_;

@@ -8,6 +8,8 @@
 #include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
 
+#include <optional>
+
 #include <fake-mmio-reg/fake-mmio-reg.h>
 #include <gtest/gtest.h>
 
@@ -15,19 +17,30 @@
 #include "lib/driver/testing/cpp/driver_test.h"
 #include "src/devices/usb/drivers/dwc3/dwc3-regs.h"
 #include "src/devices/usb/drivers/dwc3/dwc3_config.h"
-
 namespace dwc3 {
 
 namespace fhi = fuchsia_hardware_interconnect;
 namespace fpdev = fuchsia_hardware_platform_device;
 namespace fphy = fuchsia_hardware_usb_phy;
 
-class FakeUsbPhy : public fidl::Server<fphy::UsbPhy> {
+class FakeUsbPhy : public fidl::Server<fphy::UsbPhy>, public fidl::Server<fphy::ConnectionWatcher> {
  public:
-  fuchsia_hardware_usb_phy::Service::InstanceHandler GetInstanceHandler(
+  ~FakeUsbPhy() override {
+    EXPECT_TRUE(watch_connection_status_changed_called_);
+    EXPECT_TRUE(completer_.has_value());
+  }
+
+  fuchsia_hardware_usb_phy::Service::InstanceHandler GetUsbPhyInstanceHandler(
       async_dispatcher_t* dispatcher) {
     return fuchsia_hardware_usb_phy::Service::InstanceHandler({
         .device = bindings_.CreateHandler(this, dispatcher, fidl::kIgnoreBindingClosure),
+    });
+  }
+
+  fuchsia_hardware_usb_phy::ConnectionWatcherService::InstanceHandler
+  GetConnectionWatcherInstanceHandler(async_dispatcher_t* dispatcher) {
+    return fuchsia_hardware_usb_phy::ConnectionWatcherService::InstanceHandler({
+        .watcher = watcher_bindings_.CreateHandler(this, dispatcher, fidl::kIgnoreBindingClosure),
     });
   }
 
@@ -42,7 +55,28 @@ class FakeUsbPhy : public fidl::Server<fphy::UsbPhy> {
     FDF_LOG(ERROR, "Unknown method %lu", metadata.method_ordinal);
   }
 
+  void WatchConnectStatusChanged(WatchConnectStatusChangedCompleter::Sync& completer) override {
+    if (!watch_connection_status_changed_called_) {
+      completer.Reply(zx::ok(false));
+      watch_connection_status_changed_called_ = true;
+      return;
+    }
+
+    ASSERT_FALSE(completer_.has_value());
+    completer_.emplace(completer.ToAsync());
+  }
+
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_usb_phy::ConnectionWatcher> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {
+    FDF_LOG(ERROR, "Unknown method %lu", metadata.method_ordinal);
+  }
+
   fidl::ServerBindingGroup<fuchsia_hardware_usb_phy::UsbPhy> bindings_;
+  fidl::ServerBindingGroup<fuchsia_hardware_usb_phy::ConnectionWatcher> watcher_bindings_;
+
+  bool watch_connection_status_changed_called_ = false;
+  std::optional<WatchConnectStatusChangedCompleter::Async> completer_;
 };
 
 class FakePath final : public fidl::Server<fhi::Path> {
@@ -96,8 +130,12 @@ class Environment : public fdf_testing::Environment {
                                                     "interconnect-ddr-usb");
     EXPECT_TRUE(result.is_ok());
 
-    result =
-        directory.AddService<fphy::Service>(usb_phy_.GetInstanceHandler(dispatcher), "dwc3-phy");
+    result = directory.AddService<fphy::Service>(usb_phy_.GetUsbPhyInstanceHandler(dispatcher),
+                                                 "dwc3-phy");
+    EXPECT_TRUE(result.is_ok());
+
+    result = directory.AddService<fphy::ConnectionWatcherService>(
+        usb_phy_.GetConnectionWatcherInstanceHandler(dispatcher), "dwc3-phy");
     EXPECT_TRUE(result.is_ok());
 
     return zx::ok();

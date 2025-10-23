@@ -247,6 +247,17 @@ zx::result<> Dwc3::Start() {
     phy_.Bind(*std::move(phy_client_end));
   }
 
+  auto connection_watcher_client_end =
+      incoming()->Connect<fphy::ConnectionWatcherService::Watcher>("dwc3-phy");
+  if (connection_watcher_client_end.is_ok()) {
+    connection_watcher_.Bind(*std::move(connection_watcher_client_end),
+                             fdf::Dispatcher::GetCurrent()->async_dispatcher());
+
+    // Start the hanging-get call loop.
+    connection_watcher_->WatchConnectStatusChanged().Then(
+        fit::bind_member<&Dwc3::OnConnectStatusChanged>(this));
+  }
+
   // Set up Inspect data.
   metrics_.Init();
   dwc3_root_ = inspector().root().CreateLazyNode(
@@ -990,6 +1001,23 @@ void Dwc3::ResetEndpoints() {
   Ep0Reset();
   for (UserEndpoint& uep : user_endpoints_) {
     UserEpReset(uep);
+  }
+}
+
+void Dwc3::OnConnectStatusChanged(
+    fidl::Result<fuchsia_hardware_usb_phy::ConnectionWatcher::WatchConnectStatusChanged>& result) {
+  if (result.is_error() && result.error_value().is_framework_error()) {
+    // Something happened to the FIDL connection, so don't make repeated calls.
+    return;
+  }
+
+  connection_watcher_->WatchConnectStatusChanged().Then(
+      fit::bind_member<&Dwc3::OnConnectStatusChanged>(this));
+
+  if (result.is_error()) {
+    fdf::error("WatchConnectStatusChanged returned {}",
+               zx_status_get_string(result.error_value().domain_error()));
+    return;
   }
 }
 
