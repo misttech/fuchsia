@@ -16,13 +16,12 @@ use fxfs::object_store::{
     ObjectKind, ObjectStore, ObjectValue, StoreOptions, Timestamp,
 };
 use fxfs_crypto::Crypt;
-use once_cell::sync::OnceCell;
 use rustc_hash::FxHashMap as HashMap;
 use std::ffi::OsStr;
 use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
 use std::process;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use storage_device::DeviceHolder;
 use storage_device::fake_device::FakeDevice;
 use storage_device::file_backed_device::FileBackedDevice;
@@ -40,7 +39,7 @@ const DEFAULT_VOLUME_NAME: &str = "fxfs";
 const IN_MEMORY_DEVICE_BLOCK_COUNT: u64 = 8192;
 
 /// CLOSE_EVENT listens to the signals from user to gracefully close the filesystem.
-static CLOSE_EVENT: OnceCell<Event> = OnceCell::new();
+static CLOSE_EVENT: OnceLock<Event> = OnceLock::new();
 
 fn register_signal_handlers() {
     unsafe {
