@@ -16,7 +16,7 @@ use std::num::NonZeroU64;
 use std::ops::RangeInclusive;
 
 use fidl::marker::SourceBreaking;
-use fidl_fuchsia_net_ext::IntoExt;
+use fidl_fuchsia_net_ext::{FromExt, IntoExt};
 use thiserror::Error;
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces as fnet_interfaces,
@@ -126,7 +126,7 @@ impl TryFrom<fnet_matchers::BoundInterface> for BoundInterface {
 /// no greater than the number of bits in the IP address, and that no host bits
 /// in the network address are set.
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
-pub struct Subnet(fnet::Subnet);
+pub struct Subnet(net_types::ip::SubnetEither);
 
 /// Errors when creating a [`Subnet`].
 #[derive(Debug, Error, PartialEq)]
@@ -137,17 +137,19 @@ pub enum SubnetError {
     HostBitsSet,
 }
 
-impl Subnet {
-    pub fn get(&self) -> fnet::Subnet {
-        let Subnet(subnet) = &self;
-        *subnet
+impl From<Subnet> for net_types::ip::SubnetEither {
+    fn from(subnet: Subnet) -> Self {
+        let Subnet(subnet) = subnet;
+        subnet
     }
 }
 
 impl From<Subnet> for fnet::Subnet {
     fn from(subnet: Subnet) -> Self {
         let Subnet(subnet) = subnet;
-        subnet
+        let (addr, prefix_len) = subnet.net_prefix();
+
+        Self { addr: fnet::IpAddress::from_ext(addr), prefix_len }
     }
 }
 
@@ -157,66 +159,34 @@ impl TryFrom<fnet::Subnet> for Subnet {
     fn try_from(subnet: fnet::Subnet) -> Result<Self, Self::Error> {
         let fnet::Subnet { addr, prefix_len } = subnet;
 
-        // We convert to `net_types::ip::Subnet` to validate the subnet's
-        // properties, but we don't store the subnet as that type because we
-        // want to avoid forcing all `Resource` types in this library to be
-        // parameterized on IP version.
-        let result = match addr {
-            fnet::IpAddress::Ipv4(v4) => {
-                net_types::ip::Subnet::<net_types::ip::Ipv4Addr>::new(v4.into_ext(), prefix_len)
-                    .map(|_| Subnet(subnet))
-            }
-            fnet::IpAddress::Ipv6(v6) => {
-                net_types::ip::Subnet::<net_types::ip::Ipv6Addr>::new(v6.into_ext(), prefix_len)
-                    .map(|_| Subnet(subnet))
-            }
-        };
-        result.map_err(|e| match e {
-            net_types::ip::SubnetError::PrefixTooLong => SubnetError::PrefixTooLong,
-            net_types::ip::SubnetError::HostBitsSet => SubnetError::HostBitsSet,
-        })
+        match net_types::ip::SubnetEither::new(addr.into_ext(), prefix_len) {
+            Ok(inner) => Ok(Self(inner)),
+            Err(err) => Err(match err {
+                net_types::ip::SubnetError::PrefixTooLong => SubnetError::PrefixTooLong,
+                net_types::ip::SubnetError::HostBitsSet => SubnetError::HostBitsSet,
+            }),
+        }
     }
 }
 
 impl Debug for Subnet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let fnet::Subnet { addr, prefix_len } = self.0;
-
-        match addr {
-            fnet::IpAddress::Ipv4(v4) => {
-                let subnet = net_types::ip::Subnet::<net_types::ip::Ipv4Addr>::new(
-                    v4.into_ext(),
-                    prefix_len,
-                );
-
-                match subnet {
-                    Ok(inner) => inner.fmt(f),
-                    Err(err) => err.fmt(f),
-                }
-            }
-            fnet::IpAddress::Ipv6(v6) => {
-                let subnet = net_types::ip::Subnet::<net_types::ip::Ipv6Addr>::new(
-                    v6.into_ext(),
-                    prefix_len,
-                );
-
-                match subnet {
-                    Ok(inner) => inner.fmt(f),
-                    Err(err) => err.fmt(f),
-                }
-            }
+        let Self(subnet) = self;
+        match subnet {
+            net_types::ip::SubnetEither::V4(subnet) => subnet.fmt(f),
+            net_types::ip::SubnetEither::V6(subnet) => subnet.fmt(f),
         }
     }
 }
 
 /// Extension type for [`fnet_matchers::AddressRange`].
 ///
-/// This type witnesses to the invariant that `start` is in the same IP family
-/// as `end`, and that `start <= end`. (Comparisons are performed on the
+/// This type witnesses that `start <= end`. (Comparisons are performed on the
 /// numerical big-endian representation of the IP address.)
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AddressRange {
-    range: RangeInclusive<fnet::IpAddress>,
+pub enum AddressRange {
+    V4(RangeInclusive<fnet::Ipv4Address>),
+    V6(RangeInclusive<fnet::Ipv6Address>),
 }
 
 /// Errors when creating an [`AddressRange`].
@@ -228,19 +198,14 @@ pub enum AddressRangeError {
     FamilyMismatch,
 }
 
-impl AddressRange {
-    pub fn start(&self) -> fnet::IpAddress {
-        *self.range.start()
-    }
-
-    pub fn end(&self) -> fnet::IpAddress {
-        *self.range.end()
-    }
-}
-
 impl From<AddressRange> for fnet_matchers::AddressRange {
     fn from(range: AddressRange) -> Self {
-        Self { start: range.start(), end: range.end() }
+        let (start, end) = match range {
+            AddressRange::V4(range) => ((*range.start()).into_ext(), (*range.end()).into_ext()),
+            AddressRange::V6(range) => ((*range.start()).into_ext(), (*range.end()).into_ext()),
+        };
+
+        Self { start, end }
     }
 }
 
@@ -250,24 +215,18 @@ impl TryFrom<fnet_matchers::AddressRange> for AddressRange {
     fn try_from(range: fnet_matchers::AddressRange) -> Result<Self, Self::Error> {
         let fnet_matchers::AddressRange { start, end } = range;
         match (start, end) {
-            (
-                fnet::IpAddress::Ipv4(fnet::Ipv4Address { addr: start_bytes }),
-                fnet::IpAddress::Ipv4(fnet::Ipv4Address { addr: end_bytes }),
-            ) => {
-                if u32::from_be_bytes(start_bytes) > u32::from_be_bytes(end_bytes) {
+            (fnet::IpAddress::Ipv4(start), fnet::IpAddress::Ipv4(end)) => {
+                if u32::from_be_bytes(start.addr) > u32::from_be_bytes(end.addr) {
                     Err(AddressRangeError::Invalid)
                 } else {
-                    Ok(Self { range: start..=end })
+                    Ok(Self::V4(start..=end))
                 }
             }
-            (
-                fnet::IpAddress::Ipv6(fnet::Ipv6Address { addr: start_bytes }),
-                fnet::IpAddress::Ipv6(fnet::Ipv6Address { addr: end_bytes }),
-            ) => {
-                if u128::from_be_bytes(start_bytes) > u128::from_be_bytes(end_bytes) {
+            (fnet::IpAddress::Ipv6(start), fnet::IpAddress::Ipv6(end)) => {
+                if u128::from_be_bytes(start.addr) > u128::from_be_bytes(end.addr) {
                     Err(AddressRangeError::Invalid)
                 } else {
-                    Ok(Self { range: start..=end })
+                    Ok(Self::V6(start..=end))
                 }
             }
             _ => Err(AddressRangeError::FamilyMismatch),
@@ -738,7 +697,7 @@ impl From<SocketTransportProtocol> for fnet_matchers::SocketTransportProtocol {
 
 #[cfg(test)]
 mod tests {
-    use net_declare::{fidl_ip, fidl_subnet};
+    use net_declare::{fidl_ip, fidl_ip_v4, fidl_ip_v6, fidl_subnet, net_subnet_v4, net_subnet_v6};
     use test_case::test_case;
 
     use super::*;
@@ -774,29 +733,44 @@ mod tests {
     )]
     #[test_case(
         fnet_matchers::AddressMatcherType::Subnet(fidl_subnet!("192.0.2.0/24")),
-        AddressMatcherType::Subnet(Subnet(fidl_subnet!("192.0.2.0/24")));
-        "AddressMatcherType"
+        AddressMatcherType::Subnet(Subnet(net_subnet_v4!("192.0.2.0/24").into()));
+        "AddressMatcherTypeV4"
+    )]
+    #[test_case(
+        fnet_matchers::AddressMatcherType::Subnet(fidl_subnet!("2001:db8::/64")),
+        AddressMatcherType::Subnet(Subnet(net_subnet_v6!("2001:db8::/64").into()));
+        "AddressMatcherTypeV6"
     )]
     #[test_case(
         fnet_matchers::Address {
-            matcher: fnet_matchers::AddressMatcherType::Subnet(fidl_subnet!("192.0.2.0/24")),
+            matcher: fnet_matchers::AddressMatcherType::Subnet(fidl_subnet!("2001:db8::/64")),
             invert: true,
         },
         Address {
-            matcher: AddressMatcherType::Subnet(Subnet(fidl_subnet!("192.0.2.0/24"))),
+            matcher: AddressMatcherType::Subnet(Subnet(net_subnet_v6!("2001:db8::/64").into())),
             invert: true,
         };
-        "Address"
+        "AddressV6"
     )]
     #[test_case(
         fnet_matchers::AddressRange {
             start: fidl_ip!("192.0.2.0"),
             end: fidl_ip!("192.0.2.1"),
         },
-        AddressRange {
-            range: fidl_ip!("192.0.2.0")..=fidl_ip!("192.0.2.1"),
-        };
-        "AddressRange"
+        AddressRange::V4(
+            fidl_ip_v4!("192.0.2.0")..=fidl_ip_v4!("192.0.2.1"),
+        );
+        "AddressRangeV4"
+    )]
+    #[test_case(
+        fnet_matchers::AddressRange {
+            start: fidl_ip!("2001:db8::0"),
+            end: fidl_ip!("2001:db8::8"),
+        },
+        AddressRange::V6(
+            fidl_ip_v6!("2001:db8::0")..=fidl_ip_v6!("2001:db8::8"),
+        );
+        "AddressRangeV6"
     )]
     #[test_case(
         fnet_matchers::PacketTransportProtocol::Udp(fnet_matchers::UdpPacket {

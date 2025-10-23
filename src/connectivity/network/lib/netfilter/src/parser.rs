@@ -6,7 +6,7 @@ use pest::Parser;
 use pest::iterators::Pair;
 
 use {
-    fidl_fuchsia_net_filter_ext as filter_ext,
+    fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter_ext as filter_ext,
     fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
     fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
 };
@@ -223,7 +223,10 @@ fn validate_rule(rule: &filter_ext::Rule) -> Result<(), Error> {
             fnet_matchers_ext::AddressMatcherType::Subnet(dst_subnet),
         ) = (&src_subnet.matcher, &dst_subnet.matcher)
         {
-            if !util::ip_version_eq(&src_subnet.get().addr, &dst_subnet.get().addr) {
+            if !util::ip_version_eq(
+                &fnet::Subnet::from(*src_subnet).addr,
+                &fnet::Subnet::from(*dst_subnet).addr,
+            ) {
                 return Err(Error::Invalid(InvalidReason::MixedIPVersions));
             }
         }

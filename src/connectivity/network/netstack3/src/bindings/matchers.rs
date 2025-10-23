@@ -6,6 +6,7 @@ use std::convert::Infallible as Never;
 
 use crate::bindings::util::{IntoCore, TryFromFidl};
 use crate::bindings::{BindingsCtx, MatcherBindingsTypes};
+use fidl_fuchsia_net_ext::IntoExt as _;
 use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
 
 impl TryFromFidl<fnet_matchers_ext::Interface>
@@ -64,5 +65,58 @@ impl TryFromFidl<fnet_matchers_ext::Port> for netstack3_core::ip::PortMatcher {
 
     fn try_from_fidl(fidl: fnet_matchers_ext::Port) -> Result<Self, Self::Error> {
         Ok(netstack3_core::ip::PortMatcher { range: fidl.range().clone(), invert: fidl.invert() })
+    }
+}
+
+impl TryFromFidl<fnet_matchers_ext::Address> for netstack3_core::ip::AddressMatcherEither {
+    type Error = Never;
+
+    fn try_from_fidl(fidl: fnet_matchers_ext::Address) -> Result<Self, Self::Error> {
+        let fnet_matchers_ext::Address { matcher, invert } = fidl;
+
+        let core_matcher = match matcher {
+            fnet_matchers_ext::AddressMatcherType::Subnet(subnet) => {
+                let subnet: net_types::ip::SubnetEither = subnet.into();
+
+                match subnet {
+                    net_types::ip::SubnetEither::V4(subnet) => {
+                        Self::V4(netstack3_core::ip::AddressMatcher {
+                            matcher: netstack3_core::ip::AddressMatcherType::Subnet(
+                                netstack3_core::ip::SubnetMatcher(subnet),
+                            ),
+                            invert,
+                        })
+                    }
+                    net_types::ip::SubnetEither::V6(subnet) => {
+                        Self::V6(netstack3_core::ip::AddressMatcher {
+                            matcher: netstack3_core::ip::AddressMatcherType::Subnet(
+                                netstack3_core::ip::SubnetMatcher(subnet),
+                            ),
+                            invert,
+                        })
+                    }
+                }
+            }
+            fnet_matchers_ext::AddressMatcherType::Range(range) => match range {
+                fnet_matchers_ext::AddressRange::V4(range) => {
+                    Self::V4(netstack3_core::ip::AddressMatcher {
+                        matcher: netstack3_core::ip::AddressMatcherType::Range(
+                            (*range.start()).into_ext()..=(*range.end()).into_ext(),
+                        ),
+                        invert,
+                    })
+                }
+                fnet_matchers_ext::AddressRange::V6(range) => {
+                    Self::V6(netstack3_core::ip::AddressMatcher {
+                        matcher: netstack3_core::ip::AddressMatcherType::Range(
+                            (*range.start()).into_ext()..=(*range.end()).into_ext(),
+                        ),
+                        invert,
+                    })
+                }
+            },
+        };
+
+        Ok(core_matcher)
     }
 }

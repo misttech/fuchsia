@@ -2,13 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_net_ext::IntoExt as _;
 use net_types::ip::{GenericOverIp, Ip};
-use netstack3_core::ip::SubnetMatcher;
 use packet_formats::ip::{IpExt, IpProto, Ipv4Proto, Ipv6Proto};
 use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter_ext as fnet_filter_ext,
-    fidl_fuchsia_net_interfaces as fnet_interfaces,
+    fidl_fuchsia_net_filter_ext as fnet_filter_ext, fidl_fuchsia_net_interfaces as fnet_interfaces,
     fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
 };
 
@@ -73,90 +70,33 @@ impl TryConvertToCoreState for fnet_matchers_ext::Address {
         #[generic_over_ip(I, Ip)]
         pub(super) struct Wrap<I: IpExt>(
             Result<
-                ConversionResult<netstack3_core::ip::AddressMatcherType<I::Addr>>,
+                ConversionResult<netstack3_core::ip::AddressMatcher<I::Addr>>,
                 IpVersionMismatchError,
             >,
         );
 
-        let Self { matcher, invert } = self;
-        let matcher = match matcher {
-            fnet_matchers_ext::AddressMatcherType::Subnet(subnet) => {
-                let fnet::Subnet { addr, prefix_len } = subnet.into();
-                let addr = addr.into_ext();
-                let Wrap(result) = I::map_ip::<_, Wrap<I>>(
-                    (),
-                    |()| match addr {
-                        net_types::ip::IpAddr::V4(addr) => {
-                            let subnet = net_types::ip::Subnet::new(addr, prefix_len)
-                                .expect("subnet should be validated when change is pushed");
-                            Wrap(Ok(ConversionResult::State(
-                                netstack3_core::ip::AddressMatcherType::Subnet(SubnetMatcher(
-                                    subnet,
-                                )),
-                            )))
-                        }
-                        net_types::ip::IpAddr::V6(_) => {
-                            Wrap(ip_version_strictness.mismatch_result())
-                        }
-                    },
-                    |()| match addr {
-                        net_types::ip::IpAddr::V4(_) => {
-                            Wrap(ip_version_strictness.mismatch_result())
-                        }
-                        net_types::ip::IpAddr::V6(addr) => {
-                            let subnet = net_types::ip::Subnet::new(addr, prefix_len)
-                                .expect("subnet should be validated when change is pushed");
-                            Wrap(Ok(ConversionResult::State(
-                                netstack3_core::ip::AddressMatcherType::Subnet(SubnetMatcher(
-                                    subnet,
-                                )),
-                            )))
-                        }
-                    },
-                );
-                match result? {
-                    ConversionResult::State(matcher) => matcher,
-                    ConversionResult::Omit => return Ok(ConversionResult::Omit),
+        let either_matcher: netstack3_core::ip::AddressMatcherEither = self.into_core();
+        let Wrap(result) = I::map_ip_out::<_, Wrap<I>>(
+            either_matcher,
+            |either_matcher| match either_matcher {
+                netstack3_core::ip::AddressMatcherEither::V4(matcher) => {
+                    Wrap(Ok(ConversionResult::State(matcher)))
                 }
-            }
-            fnet_matchers_ext::AddressMatcherType::Range(range) => {
-                let (start, end) = (range.start().into_ext(), range.end().into_ext());
-                let Wrap(result) = I::map_ip::<_, Wrap<I>>(
-                    (),
-                    |()| match (start, end) {
-                        (net_types::ip::IpAddr::V4(start), net_types::ip::IpAddr::V4(end)) => {
-                            Wrap(Ok(ConversionResult::State(
-                                netstack3_core::ip::AddressMatcherType::Range(start..=end),
-                            )))
-                        }
-                        (net_types::ip::IpAddr::V6(_), net_types::ip::IpAddr::V6(_)) => {
-                            Wrap(ip_version_strictness.mismatch_result())
-                        }
-                        _ => {
-                            panic!("address range should be validated when change is pushed")
-                        }
-                    },
-                    |()| match (start, end) {
-                        (net_types::ip::IpAddr::V4(_), net_types::ip::IpAddr::V4(_)) => {
-                            Wrap(ip_version_strictness.mismatch_result())
-                        }
-                        (net_types::ip::IpAddr::V6(start), net_types::ip::IpAddr::V6(end)) => {
-                            Wrap(Ok(ConversionResult::State(
-                                netstack3_core::ip::AddressMatcherType::Range(start..=end),
-                            )))
-                        }
-                        _ => {
-                            panic!("address range should be validated when change is pushed")
-                        }
-                    },
-                );
-                match result? {
-                    ConversionResult::State(matcher) => matcher,
-                    ConversionResult::Omit => return Ok(ConversionResult::Omit),
+                netstack3_core::ip::AddressMatcherEither::V6(_) => {
+                    Wrap(ip_version_strictness.mismatch_result())
                 }
-            }
-        };
-        Ok(ConversionResult::State(netstack3_core::ip::AddressMatcher { matcher, invert }))
+            },
+            |either_matcher| match either_matcher {
+                netstack3_core::ip::AddressMatcherEither::V4(_) => {
+                    Wrap(ip_version_strictness.mismatch_result())
+                }
+                netstack3_core::ip::AddressMatcherEither::V6(matcher) => {
+                    Wrap(Ok(ConversionResult::State(matcher)))
+                }
+            },
+        );
+
+        result
     }
 }
 
