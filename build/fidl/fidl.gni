@@ -195,15 +195,7 @@ template("fidl") {
   enable_bindlib = !defined(invoker.enable_bindlib) || invoker.enable_bindlib
   enable_cpp = !defined(invoker.enable_cpp) || invoker.enable_cpp
   enable_rust = !defined(invoker.enable_rust) || invoker.enable_rust
-  enable_fdomain = enable_rust
   enable_python = !defined(invoker.enable_python) || invoker.enable_python
-  if (defined(invoker.enable_fdomain)) {
-    enable_fdomain = invoker.enable_fdomain
-  }
-
-  # FDomain bindings are a subtype of rust binding. Trying to build FDomain
-  # bindings without Rust does nothing.
-  assert(!enable_fdomain || enable_rust)
 
   # These bindings are not:
   enable_banjo = defined(invoker.enable_banjo) && invoker.enable_banjo
@@ -499,7 +491,6 @@ template("fidl") {
                                [
                                  "applicable_licenses",
                                  "disable_rustdoc",
-                                 "enable_fdomain",
                                  "public_deps",
                                  "testonly",
                                  "visibility",
@@ -542,22 +533,20 @@ template("fidl") {
         }
       }
 
-      if (enable_fdomain) {
-        # Define the FDomain bindings.
-        fidl_rust_next("${target_name}_rust_fdomain_next") {
-          fdomain = true
-          forward_variables_from(invoker,
-                                 [
-                                   "applicable_licenses",
-                                   "testonly",
-                                   "visibility",
-                                   "public_deps",
-                                   "disable_rustdoc",
-                                 ])
-          forward_variables_from(common_parameters, "*")
-          deps = [ "//sdk/categories:marker-${marker_category}" ]
-          fidl_gen_dir += "/rust_next"
-        }
+      # Define the FDomain bindings.
+      fidl_rust_next("${target_name}_rust_fdomain_next") {
+        fdomain = true
+        forward_variables_from(invoker,
+                               [
+                                 "applicable_licenses",
+                                 "testonly",
+                                 "visibility",
+                                 "public_deps",
+                                 "disable_rustdoc",
+                               ])
+        forward_variables_from(common_parameters, "*")
+        deps = [ "//sdk/categories:marker-${marker_category}" ]
+        fidl_gen_dir += "/rust_next"
       }
     }
 

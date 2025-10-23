@@ -213,10 +213,6 @@ template("_flex_crate") {
 #    - Required: The label of the target that generates the FIDL IR JSON file.
 #    - Type: label
 #
-#  * enable_fdomain
-#    - Optional: Build FDomain bindings
-#    - Type: boolean
-#
 #  * contains_drivers
 #    - Optional: The FIDL library contains drivers
 #    - Type: boolean
@@ -331,45 +327,41 @@ template("fidl_rust") {
   }
 
   # FDomain bindings.
-  if (defined(invoker.enable_fdomain) && invoker.enable_fdomain) {
-    _fidl_rust_crate(fdomain_target_name) {
-      forward_variables_from(invoker,
-                             [
-                               "applicable_licenses",
-                               "disable_rustdoc",
-                               "fidl_gen_dir",
-                               "fidl_ir_json",
-                               "fidl_ir_target",
-                               "public_deps",
-                               "testonly",
-                               "visibility",
-                             ])
-      crate_name = fdomain_crate_name
-      features = shared_features
-      fidl_dep_suffix = "rust_fdomain"
-      deps = shared_deps + [
-               ":${common_target_name}",
-               "//src/lib/fdomain/client",
-             ]
-      fidlgen_args = shared_fidlgen_args + [
-                       "--fdomain=true",
-                       "--use_common=${common_crate_name}",
-                     ]
-    }
+  _fidl_rust_crate(fdomain_target_name) {
+    forward_variables_from(invoker,
+                           [
+                             "applicable_licenses",
+                             "disable_rustdoc",
+                             "fidl_gen_dir",
+                             "fidl_ir_json",
+                             "fidl_ir_target",
+                             "public_deps",
+                             "testonly",
+                             "visibility",
+                           ])
+    crate_name = fdomain_crate_name
+    features = shared_features
+    fidl_dep_suffix = "rust_fdomain"
+    deps = shared_deps + [
+             ":${common_target_name}",
+             "//src/lib/fdomain/client",
+           ]
+    fidlgen_args = shared_fidlgen_args + [
+                     "--fdomain=true",
+                     "--use_common=${common_crate_name}",
+                   ]
+  }
 
-    _flex_crate("${target_name}_fdomain_flex") {
-      forward_variables_from(invoker,
-                             [
-                               "applicable_licenses",
-                               "testonly",
-                               "visibility",
-                             ])
+  _flex_crate("${target_name}_fdomain_flex") {
+    forward_variables_from(invoker,
+                           [
+                             "applicable_licenses",
+                             "testonly",
+                             "visibility",
+                           ])
 
-      original_target_name = fdomain_target_name
-      original_crate_name = fdomain_crate_name
-      crate_name = flex_crate_name
-    }
-  } else {
-    not_needed([ "fdomain_target_name" ])
+    original_target_name = fdomain_target_name
+    original_crate_name = fdomain_crate_name
+    crate_name = flex_crate_name
   }
 }
