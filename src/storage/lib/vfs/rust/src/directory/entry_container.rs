@@ -111,6 +111,25 @@ pub trait Directory: Node {
     /// receive events.
     fn unregister_watcher(self: Arc<Self>, key: usize);
 
+    /// List extended attributes.
+    fn list_extended_attributes(&self) -> impl Future<Output = Result<Vec<Vec<u8>>, Status>> + Send
+    where
+        Self: Sized,
+    {
+        ready(Err(Status::NOT_SUPPORTED))
+    }
+
+    /// Get the value for an extended attribute.
+    fn get_extended_attribute(
+        &self,
+        _name: Vec<u8>,
+    ) -> impl Future<Output = Result<Vec<u8>, Status>> + Send
+    where
+        Self: Sized,
+    {
+        ready(Err(Status::NOT_SUPPORTED))
+    }
+
     /// DEPRECATED - Do not implement unless required for backwards compatibility. Called when
     /// handling a fuchsia.io/Directory.DeprecatedOpen request.
     fn deprecated_open(
@@ -180,25 +199,6 @@ pub trait MutableDirectory: Directory + Send + Sync {
         _target: Vec<u8>,
         _connection: Option<ServerEnd<fio::SymlinkMarker>>,
     ) -> impl Future<Output = Result<(), Status>> + Send
-    where
-        Self: Sized,
-    {
-        ready(Err(Status::NOT_SUPPORTED))
-    }
-
-    /// List extended attributes.
-    fn list_extended_attributes(&self) -> impl Future<Output = Result<Vec<Vec<u8>>, Status>> + Send
-    where
-        Self: Sized,
-    {
-        ready(Err(Status::NOT_SUPPORTED))
-    }
-
-    /// Get the value for an extended attribute.
-    fn get_extended_attribute(
-        &self,
-        _name: Vec<u8>,
-    ) -> impl Future<Output = Result<Vec<u8>, Status>> + Send
     where
         Self: Sized,
     {

@@ -4,10 +4,7 @@
 
 //! Connection to a directory that can be modified by the client though a FIDL connection.
 
-use crate::common::{
-    decode_extended_attribute_value, encode_extended_attribute_value, extended_attributes_sender,
-    io1_to_io2_attrs,
-};
+use crate::common::{decode_extended_attribute_value, io1_to_io2_attrs};
 use crate::directory::connection::{BaseConnection, ConnectionState};
 use crate::directory::entry_container::MutableDirectory;
 use crate::execution_scope::ExecutionScope;
@@ -21,7 +18,6 @@ use crate::{ObjectRequestRef, ProtocolsExt};
 
 use anyhow::Error;
 use fidl::Handle;
-use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
 use std::ops::ControlFlow;
 use std::pin::Pin;
@@ -119,23 +115,6 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
                             .map_err(Status::into_raw),
                     )?;
                 }
-            }
-            fio::DirectoryRequest::ListExtendedAttributes { iterator, control_handle: _ } => {
-                this.handle_list_extended_attribute(iterator)
-                    .trace(trace::trace_future_args!(
-                        c"storage",
-                        c"Directory::ListExtendedAttributes"
-                    ))
-                    .await;
-            }
-            fio::DirectoryRequest::GetExtendedAttribute { name, responder } => {
-                async move {
-                    let res =
-                        this.handle_get_extended_attribute(name).await.map_err(Status::into_raw);
-                    responder.send(res)
-                }
-                .trace(trace::trace_future_args!(c"storage", c"Directory::GetExtendedAttribute"))
-                .await?;
             }
             fio::DirectoryRequest::SetExtendedAttribute { name, value, mode, responder } => {
                 async move {
@@ -239,34 +218,6 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
         };
 
         dst_parent.clone().rename(self.base.directory.clone(), src, dst).await
-    }
-
-    async fn handle_list_extended_attribute(
-        &self,
-        iterator: ServerEnd<fio::ExtendedAttributeIteratorMarker>,
-    ) {
-        let attributes = match self.base.directory.list_extended_attributes().await {
-            Ok(attributes) => attributes,
-            Err(status) => {
-                #[cfg(any(test, feature = "use_log"))]
-                log::error!(status:?; "list extended attributes failed");
-                #[allow(clippy::unnecessary_lazy_evaluations)]
-                iterator.close_with_epitaph(status).unwrap_or_else(|_error| {
-                    #[cfg(any(test, feature = "use_log"))]
-                    log::error!(_error:?; "failed to send epitaph")
-                });
-                return;
-            }
-        };
-        self.base.scope.spawn(extended_attributes_sender(iterator, attributes));
-    }
-
-    async fn handle_get_extended_attribute(
-        &self,
-        name: Vec<u8>,
-    ) -> Result<fio::ExtendedAttributeValue, Status> {
-        let value = self.base.directory.get_extended_attribute(name).await?;
-        encode_extended_attribute_value(value)
     }
 
     async fn handle_set_extended_attribute(

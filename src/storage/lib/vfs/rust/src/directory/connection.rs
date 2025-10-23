@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::common::send_on_open_with_error;
+use crate::common::{
+    encode_extended_attribute_value, extended_attributes_sender, send_on_open_with_error,
+};
 use crate::directory::common::check_child_connection_flags;
 use crate::directory::entry_container::{Directory, DirectoryWatcher};
 use crate::directory::traversal_position::TraversalPosition;
@@ -146,13 +148,22 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                 // TODO(https://fxbug.dev/324112547): Handle unimplemented io2 method.
                 responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
             }
-            fio::DirectoryRequest::ListExtendedAttributes { iterator, .. } => {
-                trace::duration!(c"storage", c"Directory::ListExtendedAttributes");
-                iterator.close_with_epitaph(Status::NOT_SUPPORTED)?;
+            fio::DirectoryRequest::ListExtendedAttributes { iterator, control_handle: _ } => {
+                self.handle_list_extended_attribute(iterator)
+                    .trace(trace::trace_future_args!(
+                        c"storage",
+                        c"Directory::ListExtendedAttributes"
+                    ))
+                    .await;
             }
-            fio::DirectoryRequest::GetExtendedAttribute { responder, .. } => {
-                trace::duration!(c"storage", c"Directory::GetExtendedAttribute");
-                responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
+            fio::DirectoryRequest::GetExtendedAttribute { name, responder } => {
+                async move {
+                    let res =
+                        self.handle_get_extended_attribute(name).await.map_err(Status::into_raw);
+                    responder.send(res)
+                }
+                .trace(trace::trace_future_args!(c"storage", c"Directory::GetExtendedAttribute"))
+                .await?;
             }
             fio::DirectoryRequest::SetExtendedAttribute { responder, .. } => {
                 trace::duration!(c"storage", c"Directory::SetExtendedAttribute");
@@ -518,6 +529,34 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
     ) -> Result<(), Status> {
         let directory = self.directory.clone();
         directory.register_watcher(self.scope.clone(), mask, watcher)
+    }
+
+    async fn handle_list_extended_attribute(
+        &self,
+        iterator: ServerEnd<fio::ExtendedAttributeIteratorMarker>,
+    ) {
+        let attributes = match self.directory.list_extended_attributes().await {
+            Ok(attributes) => attributes,
+            Err(status) => {
+                #[cfg(any(test, feature = "use_log"))]
+                log::error!(status:?; "list extended attributes failed");
+                #[allow(clippy::unnecessary_lazy_evaluations)]
+                iterator.close_with_epitaph(status).unwrap_or_else(|_error| {
+                    #[cfg(any(test, feature = "use_log"))]
+                    log::error!(_error:?; "failed to send epitaph")
+                });
+                return;
+            }
+        };
+        self.scope.spawn(extended_attributes_sender(iterator, attributes));
+    }
+
+    async fn handle_get_extended_attribute(
+        &self,
+        name: Vec<u8>,
+    ) -> Result<fio::ExtendedAttributeValue, Status> {
+        let value = self.directory.get_extended_attribute(name).await?;
+        encode_extended_attribute_value(value)
     }
 }
 

@@ -63,7 +63,9 @@ pub fn construct_fs(source: FsSourceType) -> Result<Arc<ExtDirectory>, Construct
 fn build_fs_dir(parser: &Parser, ino: u32) -> Result<Arc<ExtDirectory>, ConstructFsError> {
     let inode = parser.inode(ino)?;
     let entries = parser.entries_from_inode(&inode)?;
-    let dir = ExtDirectory::new(ino as u64, ExtAttributes::from_inode(inode));
+    let attributes = ExtAttributes::from_inode(inode);
+    let xattrs = parser.inode_xattrs(ino)?;
+    let dir = ExtDirectory::new(ino as u64, attributes, xattrs);
 
     for entry in entries {
         let entry_name = entry.name()?;
@@ -92,8 +94,10 @@ fn build_fs_dir(parser: &Parser, ino: u32) -> Result<Arc<ExtDirectory>, Construc
 
 fn build_fs_file(parser: &Parser, ino: u32) -> Result<Arc<ExtFile>, ConstructFsError> {
     let inode = parser.inode(ino)?;
+    let attributes = ExtAttributes::from_inode(inode);
+    let xattrs = parser.inode_xattrs(ino)?;
     let data = parser.read_data(ino)?;
-    let file = ExtFile::from_data(ino as u64, ExtAttributes::from_inode(inode), data)
+    let file = ExtFile::from_data(ino as u64, attributes, xattrs, data)
         .map_err(ConstructFsError::NodeError)?;
     Ok(file)
 }

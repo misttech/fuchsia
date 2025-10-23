@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use ext4_read_only::parser::XattrMap;
 use fidl_fuchsia_io as fio;
+use std::future::ready;
 use std::sync::Arc;
 use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
 use vfs::execution_scope::ExecutionScope;
@@ -18,19 +20,21 @@ use crate::types::ExtAttributes;
 pub struct ExtFile {
     inode: u64,
     attributes: ExtAttributes,
+    xattrs: XattrMap,
     vmo: Vmo,
 }
 
 impl ExtFile {
     /// Creates a new [`ExtFile`] with the given `inode`, `attributes`, and `vmo`.
-    pub fn new(inode: u64, attributes: ExtAttributes, vmo: Vmo) -> Arc<Self> {
-        Arc::new(Self { inode, attributes, vmo })
+    pub fn new(inode: u64, attributes: ExtAttributes, xattrs: XattrMap, vmo: Vmo) -> Arc<Self> {
+        Arc::new(Self { inode, attributes, xattrs, vmo })
     }
 
     /// Creates a new [`ExtFile`] with the given `inode`, `attributes`, and `data`.
     pub fn from_data(
         inode: u64,
         attributes: ExtAttributes,
+        xattrs: XattrMap,
         data: impl AsRef<[u8]>,
     ) -> Result<Arc<Self>, Status> {
         let bytes = data.as_ref();
@@ -38,7 +42,7 @@ impl ExtFile {
         if !bytes.is_empty() {
             vmo.write(bytes, 0)?;
         }
-        Ok(Self::new(inode, attributes, vmo))
+        Ok(Self::new(inode, attributes, xattrs, vmo))
     }
 }
 
@@ -143,6 +147,19 @@ impl File for ExtFile {
         Err(Status::NOT_SUPPORTED)
     }
 
+    fn list_extended_attributes(
+        &self,
+    ) -> impl Future<Output = Result<Vec<Vec<u8>>, Status>> + Send {
+        ready(Ok(self.xattrs.keys().map(Clone::clone).collect()))
+    }
+
+    fn get_extended_attribute(
+        &self,
+        name: Vec<u8>,
+    ) -> impl Future<Output = Result<Vec<u8>, Status>> + Send {
+        ready(self.xattrs.get(&name).map(Clone::clone).ok_or(Status::NOT_FOUND))
+    }
+
     async fn sync(&self, _mode: SyncMode) -> Result<(), Status> {
         Ok(())
     }
@@ -183,13 +200,20 @@ fn vmo_flags_to_rights(vmo_flags: fio::VmoFlags) -> zx::Rights {
 
 #[cfg(test)]
 mod tests {
+    use fidl_fuchsia_io::ExtendedAttributeValue;
+
     use super::*;
 
     #[fuchsia::test]
     async fn test_read() {
         let expected_content = b"Read only test";
-        let file = ExtFile::from_data(fio::INO_UNKNOWN, ExtAttributes::default(), expected_content)
-            .expect("from_data error");
+        let file = ExtFile::from_data(
+            fio::INO_UNKNOWN,
+            ExtAttributes::default(),
+            XattrMap::default(),
+            expected_content,
+        )
+        .expect("from_data error");
         let proxy = vfs::file::serve_proxy(file, fio::PERM_READABLE);
 
         let content = proxy
@@ -213,6 +237,7 @@ mod tests {
         let file = ExtFile::from_data(
             123,
             ExtAttributes { mode: 0x8124, uid: 456, gid: 789 },
+            XattrMap::default(),
             b"Read only test",
         )
         .expect("from_data error");
@@ -242,10 +267,39 @@ mod tests {
     }
 
     #[fuchsia::test]
+    async fn test_get_extended_attributes() {
+        let xattrs =
+            [(b"attr".into(), b"value".into()), (b"attr2".into(), b"value2".into())].into();
+        let file = ExtFile::from_data(123, ExtAttributes::default(), xattrs, b"Read only test")
+            .expect("from_data error");
+        let proxy = vfs::file::serve_proxy(file, fio::PERM_READABLE);
+
+        let value = proxy
+            .get_extended_attribute(b"attr2")
+            .await
+            .expect("get_extended_attribute FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect("get_extended_attribute error");
+        assert_eq!(value, ExtendedAttributeValue::Bytes(b"value2".into()));
+
+        proxy
+            .close()
+            .await
+            .expect("close FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect("close error");
+    }
+
+    #[fuchsia::test]
     async fn test_get_backing_memory() {
         let expected_content = b"Read only test";
-        let file = ExtFile::from_data(fio::INO_UNKNOWN, ExtAttributes::default(), expected_content)
-            .expect("from_data error");
+        let file = ExtFile::from_data(
+            fio::INO_UNKNOWN,
+            ExtAttributes::default(),
+            XattrMap::default(),
+            expected_content,
+        )
+        .expect("from_data error");
         let proxy = vfs::file::serve_proxy(file, fio::PERM_READABLE);
 
         async fn assert_get_vmo(

@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use ext4_read_only::parser::XattrMap;
 use fidl_fuchsia_io as fio;
 use fuchsia_sync::Mutex;
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
+use std::future::ready;
 use std::iter;
 use std::sync::Arc;
 use vfs::directory::dirents_sink;
@@ -29,6 +31,7 @@ use crate::types::ExtAttributes;
 #[derive(Debug)]
 pub struct ExtDirectory {
     inode: u64,
+    xattrs: XattrMap,
     data: Mutex<ExtDirectoryData>,
 }
 
@@ -49,9 +52,10 @@ impl std::fmt::Debug for ExtDirectoryData {
 
 impl ExtDirectory {
     /// Creates a new [`ExtDirectory`] with the given `inode` and `attributes`.
-    pub fn new(inode: u64, attributes: ExtAttributes) -> Arc<Self> {
+    pub fn new(inode: u64, attributes: ExtAttributes, xattrs: XattrMap) -> Arc<Self> {
         Arc::new(Self {
             inode,
+            xattrs,
             data: Mutex::new(ExtDirectoryData {
                 attributes,
                 children: BTreeMap::new(),
@@ -256,46 +260,125 @@ impl Directory for ExtDirectory {
         let mut data = self.data.lock();
         data.watchers.remove(key);
     }
+
+    fn list_extended_attributes(
+        &self,
+    ) -> impl Future<Output = Result<Vec<Vec<u8>>, Status>> + Send {
+        ready(Ok(self.xattrs.keys().map(Clone::clone).collect()))
+    }
+
+    fn get_extended_attribute(
+        &self,
+        name: Vec<u8>,
+    ) -> impl Future<Output = Result<Vec<u8>, Status>> + Send {
+        ready(self.xattrs.get(&name).map(Clone::clone).ok_or(Status::NOT_FOUND))
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use fidl_fuchsia_io::ExtendedAttributeValue;
+
     use super::*;
 
     #[test]
     fn insert_child_success() {
-        let dir = ExtDirectory::new(0, ExtAttributes::default());
-        dir.insert_child("path_without_separators", ExtDirectory::new(1, ExtAttributes::default()))
-            .expect("insert_child with valid filename should succeed");
+        let dir = ExtDirectory::new(0, ExtAttributes::default(), XattrMap::default());
+        dir.insert_child(
+            "path_without_separators",
+            ExtDirectory::new(1, ExtAttributes::default(), XattrMap::default()),
+        )
+        .expect("insert_child with valid filename should succeed");
     }
 
     #[test]
     fn insert_child_error_duplicate() {
-        let dir = ExtDirectory::new(0, ExtAttributes::default());
-        dir.insert_child("a", ExtDirectory::new(1, ExtAttributes::default()))
+        let dir = ExtDirectory::new(0, ExtAttributes::default(), XattrMap::default());
+        dir.insert_child("a", ExtDirectory::new(1, ExtAttributes::default(), XattrMap::default()))
             .expect("insert_child with valid filename should succeed");
 
         let status = dir
-            .insert_child("a", ExtDirectory::new(1, ExtAttributes::default()))
+            .insert_child("a", ExtDirectory::new(1, ExtAttributes::default(), XattrMap::default()))
             .expect_err("insert_child with duplicate filename should fail");
         assert_eq!(status, Status::ALREADY_EXISTS);
     }
 
     #[test]
     fn insert_child_error_name_with_path_separator() {
-        let dir = ExtDirectory::new(0, ExtAttributes::default());
+        let dir = ExtDirectory::new(0, ExtAttributes::default(), XattrMap::default());
         let status = dir
-            .insert_child("path/with/separators", ExtDirectory::new(1, ExtAttributes::default()))
+            .insert_child(
+                "path/with/separators",
+                ExtDirectory::new(1, ExtAttributes::default(), XattrMap::default()),
+            )
             .expect_err("insert_child with path separator in filename should fail");
         assert_eq!(status, Status::INVALID_ARGS);
     }
 
     #[test]
     fn insert_child_error_name_too_long() {
-        let dir = ExtDirectory::new(0, ExtAttributes::default());
+        let dir = ExtDirectory::new(0, ExtAttributes::default(), XattrMap::default());
         let status = dir
-            .insert_child("a".repeat(1000), ExtDirectory::new(1, ExtAttributes::default()))
+            .insert_child(
+                "a".repeat(1000),
+                ExtDirectory::new(1, ExtAttributes::default(), XattrMap::default()),
+            )
             .expect_err("insert_child whose name is too long should fail");
         assert_eq!(status, Status::BAD_PATH);
+    }
+
+    #[fuchsia::test]
+    async fn test_get_dac_attributes() {
+        let directory = ExtDirectory::new(
+            123,
+            ExtAttributes { mode: 0x8124, uid: 456, gid: 789 },
+            XattrMap::default(),
+        );
+        let proxy = vfs::directory::serve_read_only(directory);
+
+        let attributes_query = fio::NodeAttributesQuery::ID
+            | fio::NodeAttributesQuery::MODE
+            | fio::NodeAttributesQuery::UID
+            | fio::NodeAttributesQuery::GID;
+        let (mutable_attributes, immutable_attributes) = proxy
+            .get_attributes(attributes_query)
+            .await
+            .expect("get_attributes FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect("get_attributes error");
+        assert_eq!(immutable_attributes.id.expect("missing id attribute"), 123);
+        assert_eq!(mutable_attributes.mode.expect("missing mode attribute"), 0x8124);
+        assert_eq!(mutable_attributes.uid.expect("missing uid attribute"), 456);
+        assert_eq!(mutable_attributes.gid.expect("missing gid attribute"), 789);
+
+        proxy
+            .close()
+            .await
+            .expect("close FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect("close error");
+    }
+
+    #[fuchsia::test]
+    async fn test_get_extended_attributes() {
+        let xattrs =
+            [(b"attr".into(), b"value".into()), (b"attr2".into(), b"value2".into())].into();
+        let directory = ExtDirectory::new(123, ExtAttributes::default(), xattrs);
+        let proxy = vfs::directory::serve_read_only(directory);
+
+        let value = proxy
+            .get_extended_attribute(b"attr2")
+            .await
+            .expect("get_extended_attribute FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect("get_extended_attribute error");
+        assert_eq!(value, ExtendedAttributeValue::Bytes(b"value2".into()));
+
+        proxy
+            .close()
+            .await
+            .expect("close FIDL error")
+            .map_err(zx::Status::from_raw)
+            .expect("close error");
     }
 }

@@ -822,14 +822,6 @@ impl MutableDirectory for FxDirectory {
         .map_err(map_to_status)
     }
 
-    async fn list_extended_attributes(&self) -> Result<Vec<Vec<u8>>, zx::Status> {
-        self.directory.list_extended_attributes().await.map_err(map_to_status)
-    }
-
-    async fn get_extended_attribute(&self, name: Vec<u8>) -> Result<Vec<u8>, zx::Status> {
-        self.directory.get_extended_attribute(name).await.map_err(map_to_status)
-    }
-
     async fn set_extended_attribute(
         &self,
         name: Vec<u8>,
@@ -1129,6 +1121,14 @@ impl VfsDirectory for FxDirectory {
 
     fn unregister_watcher(self: Arc<Self>, key: usize) {
         self.watchers.lock().remove(key);
+    }
+
+    async fn list_extended_attributes(&self) -> Result<Vec<Vec<u8>>, zx::Status> {
+        self.directory.list_extended_attributes().await.map_err(map_to_status)
+    }
+
+    async fn get_extended_attribute(&self, name: Vec<u8>) -> Result<Vec<u8>, zx::Status> {
+        self.directory.get_extended_attribute(name).await.map_err(map_to_status)
     }
 }
 
