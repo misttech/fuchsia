@@ -9,7 +9,7 @@ use crate::experimental::event::Event;
 use crate::experimental::event::reactor::{Context, Reactor};
 use crate::experimental::series::interpolation::InterpolationKind;
 use crate::experimental::series::statistic::{FoldError, Metadata, SerialStatistic, Statistic};
-use crate::experimental::series::{MatrixSampler, SamplingProfile, TimeMatrix};
+use crate::experimental::series::{SamplingProfile, TimeMatrix, TimeMatrixFold};
 use crate::experimental::serve::{InspectSender, InspectedTimeMatrix, TimeMatrixClient};
 
 /// A type that maps the presence of an optional builder field to another type.
@@ -83,7 +83,7 @@ where
         interpolation: P::Output<F::Sample>,
     ) -> impl Reactor<F::Sample, S, Response = (), Error = FoldError>
     where
-        TimeMatrix<F, P>: 'static + MatrixSampler<F::Sample> + Send,
+        TimeMatrix<F, P>: 'static + TimeMatrixFold<F::Sample> + Send,
         Metadata<F>: 'static + Send + Sync,
         F: SerialStatistic<P>,
         F::Sample: Send,
@@ -132,7 +132,7 @@ where
         interpolation: P::Output<F::Sample>,
     ) -> impl Reactor<F::Sample, S, Response = (), Error = FoldError>
     where
-        TimeMatrix<F, P>: 'static + MatrixSampler<F::Sample> + Send,
+        TimeMatrix<F, P>: 'static + TimeMatrixFold<F::Sample> + Send,
         Metadata<F>: 'static + Send + Sync,
         F: SerialStatistic<P>,
         F::Sample: Send,

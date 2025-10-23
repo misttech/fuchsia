@@ -35,31 +35,30 @@ use crate::experimental::series::statistic::{
 pub use crate::experimental::series::buffer::Capacity;
 pub use crate::experimental::series::interval::{SamplingInterval, SamplingProfile};
 
-pub trait Interpolator {
-    /// Interpolates samples to the given timestamp.
-    ///
-    /// This function queries the aggregations of the series. Typically, the timestamp is the
-    /// current time.
-    fn interpolate(&mut self, timestamp: Timestamp) -> Result<(), FoldError>;
+/// A [`TimeMatrix`] type that can be advanced forward in time.
+///
+/// This trait provides tick operations for `[TimeMatrix`] types. Ticking a [`TimeMatrix`] causes
+/// sample interpolation within and aggregation propagation across [`SamplingInterval`]s.
+///
+/// Importantly, this trait is `dyn` compatible and type erased; it can be used to tick a
+/// [`TimeMatrix`] regardless of its input type parameters (sample type, interpolation type, etc.).
+///
+/// See also the [`TimeMatrixFold`] subtrait.
+pub trait TimeMatrixTick {
+    fn tick(&mut self, timestamp: Timestamp) -> Result<(), FoldError>;
 
-    /// Interpolates samples to the given timestamp and gets the serialized aggregation buffers.
-    ///
-    /// This function queries the aggregations of the series. Typically, the timestamp is the
-    /// current time.
-    fn interpolate_and_get_buffers(
-        &mut self,
-        timestamp: Timestamp,
-    ) -> Result<SerializedBuffer, FoldError>;
+    fn tick_and_get_buffers(&mut self, timestamp: Timestamp)
+    -> Result<SerializedBuffer, FoldError>;
 }
 
-/// A buffered round-robin sampler over [timed samples][`Timed`] (e.g., a [`TimeMatrix`]).
+/// A [`TimeMatrix`] type that can sample data.
 ///
-/// Round-robin samplers aggregate samples into buffered time series and produce a serialized
-/// buffer of aggregations per series.
+/// This trait provides fold operations for `TimeMatrix` types. Folding samples updates
+/// aggregations and advances a [`TimeMatrix`] forward in time.
 ///
-/// [`Timed`]: crate::experimental::clock::Timed
-/// [`TimeMatrix`]: crate::experimental::series::TimeMatrix
-pub trait MatrixSampler<T>: Interpolator {
+/// See also the [`TimeMatrixTick`] supertrait. This trait supports both ticking and sampling, but
+/// is not completely type erased: the sample input type parameter `T` is needed.
+pub trait TimeMatrixFold<T>: TimeMatrixTick {
     fn fold(&mut self, sample: Timed<T>) -> Result<(), FoldError>;
 }
 
@@ -510,32 +509,7 @@ where
     }
 }
 
-impl<F, P> Interpolator for TimeMatrix<F, P>
-where
-    F: SerialStatistic<P>,
-    P: InterpolationKind,
-{
-    fn interpolate(&mut self, timestamp: Timestamp) -> Result<(), FoldError> {
-        let tick = self.last.tick(timestamp.into(), false)?;
-        Ok(for buffer in self.buffers.iter_mut() {
-            buffer.interpolate(tick)?;
-        })
-    }
-
-    fn interpolate_and_get_buffers(
-        &mut self,
-        timestamp: Timestamp,
-    ) -> Result<SerializedBuffer, FoldError> {
-        self.interpolate(timestamp)?;
-        let series_buffers = self
-            .buffers
-            .try_map_ref(BufferedTimeSeries::serialize_and_get_buffer)
-            .map_err::<FoldError, _>(From::from)?;
-        self.serialize(series_buffers).map_err(From::from)
-    }
-}
-
-impl<F, P> MatrixSampler<F::Sample> for TimeMatrix<F, P>
+impl<F, P> TimeMatrixFold<F::Sample> for TimeMatrix<F, P>
 where
     F: SerialStatistic<P>,
     P: InterpolationKind,
@@ -549,6 +523,31 @@ where
     }
 }
 
+impl<F, P> TimeMatrixTick for TimeMatrix<F, P>
+where
+    F: SerialStatistic<P>,
+    P: InterpolationKind,
+{
+    fn tick(&mut self, timestamp: Timestamp) -> Result<(), FoldError> {
+        let tick = self.last.tick(timestamp.into(), false)?;
+        Ok(for buffer in self.buffers.iter_mut() {
+            buffer.interpolate(tick)?;
+        })
+    }
+
+    fn tick_and_get_buffers(
+        &mut self,
+        timestamp: Timestamp,
+    ) -> Result<SerializedBuffer, FoldError> {
+        self.tick(timestamp)?;
+        let series_buffers = self
+            .buffers
+            .try_map_ref(BufferedTimeSeries::serialize_and_get_buffer)
+            .map_err::<FoldError, _>(From::from)?;
+        self.serialize(series_buffers).map_err(From::from)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use fuchsia_async as fasync;
@@ -558,13 +557,15 @@ mod tests {
     use crate::experimental::series::statistic::{
         ArithmeticMean, LatchMax, Max, PostAggregation, Sum, Transform, Union,
     };
-    use crate::experimental::series::{Interpolator, MatrixSampler, SamplingProfile, TimeMatrix};
+    use crate::experimental::series::{
+        SamplingProfile, TimeMatrix, TimeMatrixFold, TimeMatrixTick,
+    };
 
-    fn fold_and_interpolate_f32(sampler: &mut impl MatrixSampler<f32>) {
-        sampler.fold(Timed::now(0.0)).unwrap();
-        sampler.fold(Timed::now(1.0)).unwrap();
-        sampler.fold(Timed::now(2.0)).unwrap();
-        let _buffers = sampler.interpolate(Timestamp::now()).unwrap();
+    fn fold_and_interpolate_f32(matrix: &mut impl TimeMatrixFold<f32>) {
+        matrix.fold(Timed::now(0.0)).unwrap();
+        matrix.fold(Timed::now(1.0)).unwrap();
+        matrix.fold(Timed::now(2.0)).unwrap();
+        matrix.tick(Timestamp::now()).unwrap();
     }
 
     // TODO(https://fxbug.dev/356218503): Replace this with meaningful unit tests that assert the
@@ -634,7 +635,7 @@ mod tests {
             SamplingProfile::highly_granular(),
             ConstantSample::default(),
         );
-        let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
+        let buffer = time_matrix.tick_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
             buffer.data,
             vec![
@@ -653,7 +654,7 @@ mod tests {
 
         time_matrix.fold(Timed::now(f32::from_bits(42u32))).unwrap();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(10_000_000_000));
-        let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
+        let buffer = time_matrix.tick_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
             buffer.data,
             vec![
@@ -673,7 +674,7 @@ mod tests {
 
         // Advance several time steps to test ring buffer's `fill`
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(50_000_000_000));
-        let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
+        let buffer = time_matrix.tick_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
             buffer.data,
             vec![
@@ -704,7 +705,7 @@ mod tests {
             SamplingProfile::highly_granular(),
             ConstantSample::default(),
         );
-        let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
+        let buffer = time_matrix.tick_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
             buffer.data,
             vec![
@@ -727,7 +728,7 @@ mod tests {
 
         time_matrix.fold(Timed::now(15)).unwrap();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(10_000_000_000));
-        let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
+        let buffer = time_matrix.tick_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
             buffer.data,
             vec![
@@ -752,7 +753,7 @@ mod tests {
 
         // Advance several time steps to test ring buffer's `fill`
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(50_000_000_000));
-        let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
+        let buffer = time_matrix.tick_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
             buffer.data,
             vec![
@@ -784,7 +785,7 @@ mod tests {
             SamplingProfile::highly_granular(),
             ConstantSample::default(),
         );
-        let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
+        let buffer = time_matrix.tick_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
             buffer.data,
             vec![
@@ -807,7 +808,7 @@ mod tests {
 
         time_matrix.fold(Timed::now(-8)).unwrap();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(10_000_000_000));
-        let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
+        let buffer = time_matrix.tick_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
             buffer.data,
             vec![
@@ -832,7 +833,7 @@ mod tests {
 
         // Advance several time steps to test ring buffer's `fill`
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(50_000_000_000));
-        let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
+        let buffer = time_matrix.tick_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
             buffer.data,
             vec![
@@ -864,7 +865,7 @@ mod tests {
             SamplingProfile::highly_granular(),
             LastSample::or(0),
         );
-        let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
+        let buffer = time_matrix.tick_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
             buffer.data,
             vec![
@@ -887,7 +888,7 @@ mod tests {
 
         time_matrix.fold(Timed::now(42)).unwrap();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(10_000_000_000));
-        let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
+        let buffer = time_matrix.tick_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
             buffer.data,
             vec![
@@ -911,7 +912,7 @@ mod tests {
 
         time_matrix.fold(Timed::now(57)).unwrap();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(20_000_000_000));
-        let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
+        let buffer = time_matrix.tick_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
             buffer.data,
             vec![
@@ -937,7 +938,7 @@ mod tests {
 
         // Advance several time steps to test ring buffer's `fill`
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(50_000_000_000));
-        let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
+        let buffer = time_matrix.tick_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
             buffer.data,
             vec![
@@ -970,7 +971,7 @@ mod tests {
             SamplingProfile::highly_granular(),
             LastSample::or(0),
         );
-        let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
+        let buffer = time_matrix.tick_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
             buffer.data,
             vec![
@@ -993,7 +994,7 @@ mod tests {
 
         time_matrix.fold(Timed::now(42)).unwrap();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(10_000_000_000));
-        let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
+        let buffer = time_matrix.tick_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
             buffer.data,
             vec![
@@ -1017,7 +1018,7 @@ mod tests {
 
         time_matrix.fold(Timed::now(34)).unwrap();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(20_000_000_000));
-        let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
+        let buffer = time_matrix.tick_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
             buffer.data,
             vec![
@@ -1043,7 +1044,7 @@ mod tests {
 
         // Advance several time steps to test ring buffer's `fill`
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(50_000_000_000));
-        let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
+        let buffer = time_matrix.tick_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
             buffer.data,
             vec![
@@ -1076,7 +1077,7 @@ mod tests {
             SamplingProfile::highly_granular(),
             LastSample::or(0),
         );
-        let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
+        let buffer = time_matrix.tick_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
             buffer.data,
             vec![
@@ -1099,7 +1100,7 @@ mod tests {
 
         time_matrix.fold(Timed::now(1)).unwrap();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(10_000_000_000));
-        let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
+        let buffer = time_matrix.tick_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
             buffer.data,
             vec![
@@ -1123,7 +1124,7 @@ mod tests {
 
         time_matrix.fold(Timed::now(u64::MAX)).unwrap();
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(20_000_000_000));
-        let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
+        let buffer = time_matrix.tick_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
             buffer.data,
             vec![
@@ -1149,7 +1150,7 @@ mod tests {
 
         // Advance several time steps to test ring buffer's `fill`
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(50_000_000_000));
-        let buffer = time_matrix.interpolate_and_get_buffers(Timestamp::now()).unwrap();
+        let buffer = time_matrix.tick_and_get_buffers(Timestamp::now()).unwrap();
         assert_eq!(
             buffer.data,
             vec![

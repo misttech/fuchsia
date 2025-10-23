@@ -14,7 +14,7 @@ use {async_channel as mpmc, fuchsia_async as fasync};
 use crate::experimental::clock::{Timed, Timestamp};
 use crate::experimental::series::interpolation::InterpolationKind;
 use crate::experimental::series::statistic::{FoldError, Metadata, SerialStatistic};
-use crate::experimental::series::{Interpolator, MatrixSampler, SerializedBuffer, TimeMatrix};
+use crate::experimental::series::{SerializedBuffer, TimeMatrix, TimeMatrixFold, TimeMatrixTick};
 use crate::experimental::vec1::Vec1;
 
 // TODO(https://fxbug.dev/375489301): It is not possible to inject a mock time matrix into this
@@ -45,7 +45,7 @@ pub fn serve_time_matrix_inspection(
         let _node = node;
         let mut matrices = vec![];
 
-        let mut interpolation = fasync::Interval::new(INTERPOLATION_PERIOD);
+        let mut tick = fasync::Interval::new(INTERPOLATION_PERIOD);
         loop {
             select! {
                 // Incorporate time matrices received from the client.
@@ -60,7 +60,7 @@ pub fn serve_time_matrix_inspection(
                     }
                 }
                 // Periodically fold buffered samples into and interpolate time matrices.
-                _ = interpolation.next() => {
+                _ = tick.next() => {
                     // TODO(https://fxbug.dev/375255877): Log more information, such as the name
                     //                                    associated with the matrix.
                     for matrix in matrices.iter() {
@@ -75,8 +75,8 @@ pub fn serve_time_matrix_inspection(
                         // arrive as a buffer is being drained. The current timestamp must be
                         // queried after the drain is complete to guarantee that it is more recent
                         // than any timestamp associated with a sample.
-                        if let Err(error) = matrix.interpolate(Timestamp::now()) {
-                            warn!("failed to interpolate time matrix: {:?}", error);
+                        if let Err(error) = matrix.tick(Timestamp::now()) {
+                            warn!("failed to tick time matrix: {:?}", error);
                         }
                     }
                 }
@@ -86,13 +86,13 @@ pub fn serve_time_matrix_inspection(
     (client, server)
 }
 
-pub trait ServedTimeMatrix: Interpolator + Send {
+pub trait ServedTimeMatrix: TimeMatrixTick + Send {
     fn fold_buffered_samples(&mut self) -> Result<(), FoldError>;
 }
 
 pub struct BufferedSampler<T, M>
 where
-    M: MatrixSampler<T>,
+    M: TimeMatrixFold<T>,
 {
     receiver: mpmc::Receiver<Timed<T>>,
     matrix: M,
@@ -100,7 +100,7 @@ where
 
 impl<T, M> BufferedSampler<T, M>
 where
-    M: MatrixSampler<T>,
+    M: TimeMatrixFold<T>,
 {
     pub fn from_time_matrix(matrix: M) -> (mpmc::Sender<Timed<T>>, Self) {
         /// The buffer capacity of the MPMC channel through which timed samples are sent to
@@ -112,26 +112,26 @@ where
     }
 }
 
-impl<T, M> Interpolator for BufferedSampler<T, M>
+impl<T, M> TimeMatrixTick for BufferedSampler<T, M>
 where
-    M: MatrixSampler<T>,
+    M: TimeMatrixFold<T>,
 {
-    fn interpolate(&mut self, timestamp: Timestamp) -> Result<(), FoldError> {
-        self.matrix.interpolate(timestamp)
+    fn tick(&mut self, timestamp: Timestamp) -> Result<(), FoldError> {
+        self.matrix.tick(timestamp)
     }
 
-    fn interpolate_and_get_buffers(
+    fn tick_and_get_buffers(
         &mut self,
         timestamp: Timestamp,
     ) -> Result<SerializedBuffer, FoldError> {
-        self.matrix.interpolate_and_get_buffers(timestamp)
+        self.matrix.tick_and_get_buffers(timestamp)
     }
 }
 
 impl<T, M> ServedTimeMatrix for BufferedSampler<T, M>
 where
     T: Send,
-    M: MatrixSampler<T> + Send,
+    M: TimeMatrixFold<T> + Send,
 {
     fn fold_buffered_samples(&mut self) -> Result<(), FoldError> {
         let mut errors = vec![];
@@ -169,7 +169,7 @@ pub trait InspectSender {
         matrix: TimeMatrix<F, P>,
     ) -> InspectedTimeMatrix<F::Sample>
     where
-        TimeMatrix<F, P>: 'static + MatrixSampler<F::Sample> + Send,
+        TimeMatrix<F, P>: 'static + TimeMatrixFold<F::Sample> + Send,
         Metadata<F>: 'static + Send + Sync,
         F: SerialStatistic<P>,
         F::Sample: Send,
@@ -190,7 +190,7 @@ pub trait InspectSender {
         metadata: impl Into<Metadata<F>>,
     ) -> InspectedTimeMatrix<F::Sample>
     where
-        TimeMatrix<F, P>: 'static + MatrixSampler<F::Sample> + Send,
+        TimeMatrix<F, P>: 'static + TimeMatrixFold<F::Sample> + Send,
         Metadata<F>: 'static + Send + Sync,
         F: SerialStatistic<P>,
         F::Sample: Send,
@@ -219,7 +219,7 @@ impl TimeMatrixClient {
         record: R,
     ) -> InspectedTimeMatrix<F::Sample>
     where
-        TimeMatrix<F, P>: 'static + MatrixSampler<F::Sample> + Send,
+        TimeMatrix<F, P>: 'static + TimeMatrixFold<F::Sample> + Send,
         Metadata<F>: 'static + Send + Sync,
         F: SerialStatistic<P>,
         F::Sample: Send,
@@ -250,7 +250,7 @@ impl InspectSender for TimeMatrixClient {
         matrix: TimeMatrix<F, P>,
     ) -> InspectedTimeMatrix<F::Sample>
     where
-        TimeMatrix<F, P>: 'static + MatrixSampler<F::Sample> + Send,
+        TimeMatrix<F, P>: 'static + TimeMatrixFold<F::Sample> + Send,
         Metadata<F>: 'static + Send + Sync,
         F: SerialStatistic<P>,
         F::Sample: Send,
@@ -266,7 +266,7 @@ impl InspectSender for TimeMatrixClient {
         metadata: impl Into<Metadata<F>>,
     ) -> InspectedTimeMatrix<F::Sample>
     where
-        TimeMatrix<F, P>: 'static + MatrixSampler<F::Sample> + Send,
+        TimeMatrix<F, P>: 'static + TimeMatrixFold<F::Sample> + Send,
         Metadata<F>: 'static + Send + Sync,
         F: SerialStatistic<P>,
         F::Sample: Send,
@@ -330,7 +330,7 @@ fn record_lazy_time_matrix_with<F>(
                 let mut matrix = matrix.lock().await;
                 if let Err(error) = matrix
                     .fold_buffered_samples()
-                    .and_then(|_| matrix.interpolate_and_get_buffers(Timestamp::now()))
+                    .and_then(|_| matrix.tick_and_get_buffers(Timestamp::now()))
                     .map(|buffer| {
                         inspector.root().atomic_update(|node| {
                             node.record_string("type", buffer.data_semantic);
