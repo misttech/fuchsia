@@ -21,6 +21,7 @@
 #include "src/developer/debug/ipc/filter_utils.h"
 #include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/ipc/records.h"
+#include "src/developer/debug/shared/logging/logging.h"
 #include "src/developer/debug/shared/message_loop.h"
 
 namespace debug_agent {
@@ -244,9 +245,9 @@ uint32_t DebugAgentServer::AttachToFilterMatches(
     // We may get an error if we're already attached to this process, or in the case of job-only,
     // attached to an ancestor. DebugAgent already prints a trace log for this, and it's not a
     // problem for clients if we're already attached to what they care about, so this case is
-    // ignored. Other errors will produce a warning log.
+    // ignored.
     if (reply.status.has_error() && reply.status.type() != debug::Status::Type::kAlreadyExists) {
-      FX_LOGS(WARNING) << " attach to koid " << koid << " failed: " << reply.status.message();
+      DEBUG_LOG(Agent) << " attach to koid " << koid << " failed: " << reply.status.message();
     } else {
       // Normal case where we attached to something.
       attaches++;
