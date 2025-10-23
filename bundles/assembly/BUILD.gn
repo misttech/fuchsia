@@ -2565,6 +2565,7 @@ assembly_input_bundle("fshost_storage_host_fxfs") {
       ]
     },
   ]
+  memory_buckets = [ "//src/developer/memory/buckets/fxfs_buckets.json5" ]
   bootfs_packages = [
     "//src/storage/gpt/component:package",
     "//src/storage/fxfs:package",
@@ -2597,6 +2598,10 @@ assembly_input_bundle("fshost_storage_host_gpt_fvm_minfs") {
         },
       ]
     },
+  ]
+  memory_buckets = [
+    "//src/developer/memory/buckets/blobfs_buckets.json5",
+    "//src/developer/memory/buckets/minfs_buckets.json5",
   ]
   bootfs_packages = [
     "//src/storage/gpt/component:package",
@@ -2632,6 +2637,7 @@ assembly_input_bundle("fshost_storage_host_gpt_fvm_f2fs") {
       ]
     },
   ]
+  memory_buckets = [ "//src/developer/memory/buckets/blobfs_buckets.json5" ]
   bootfs_packages = [
     "//src/storage/gpt/component:package",
     "//src/storage/blobfs/bin:package",
@@ -2665,6 +2671,10 @@ assembly_input_bundle("fshost_storage_host_fvm_minfs") {
         },
       ]
     },
+  ]
+  memory_buckets = [
+    "//src/developer/memory/buckets/minfs_buckets.json5",
+    "//src/developer/memory/buckets/blobfs_buckets.json5",
   ]
   bootfs_packages = [
     "//src/storage/blobfs/bin:package",
