@@ -300,23 +300,34 @@ func (r *TestOrchestrator) startEmulator(productDir string) error {
 /* Step 4 - Serving packages. */
 /*
 Serving packages requires:
-* Creating the package repository or having a downloaded product bundle.
-* Publishing a package to make sure the metadata is up to date. (Can we use --refresh metadata instead?)
+* Creating a new package repository
+* Publishing all packages from the product bundle into the repository.
+* Publshing any user provided packages, which may replace the packages from the product bundle.
 * Starting the package server process
 * Registering the package server on the target device.
-* Package servers are managed by name. or if using product bundles, the product bundle directory.
+* Package servers are managed by name.
 
 */
 func (r *TestOrchestrator) servePackages(in *RunInput, productDir string) error {
-	// It is important to always publish, even if there is nothing in
-	// in.Target().PackageArchives, because it will force the package metadata
-	// to be refreshed (see b/309847820).
-	publishArgs := []string{"repository", "publish", productDir}
-	for _, far := range in.Target().PackageArchives {
-		publishArgs = append(publishArgs, "--package-archive", far)
+	wd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("os.Getwd: %w", err)
 	}
-	if out, err := r.ffx.RunCmdSync(publishArgs...); err != nil {
-		return fmt.Errorf("ffx %v: %w out: %v", publishArgs, err, out)
+	repoDir := filepath.Join(wd, "repo")
+	if out, err := r.ffx.RunCmdSync("repository", "create", repoDir); err != nil {
+		return fmt.Errorf("ffx repository create: %w out: %s", err, out)
+	}
+	if out, err := r.ffx.RunCmdSync("repository", "publish", repoDir, "--product-bundle", productDir); err != nil {
+		return fmt.Errorf("ffx repository add-from-pm: %w out: %s", err, out)
+	}
+	if len(in.Target().PackageArchives) > 0 {
+		publishArgs := []string{"repository", "publish", repoDir}
+		for _, far := range in.Target().PackageArchives {
+			publishArgs = append(publishArgs, "--package-archive", far)
+		}
+		if out, err := r.ffx.RunCmdSync(publishArgs...); err != nil {
+			return fmt.Errorf("ffx %v: %w out: %v", publishArgs, err, out)
+		}
 	}
 	for _, buildID := range in.Target().BuildIds {
 		if out, err := r.ffx.RunCmdSync("debug", "symbol-index", "add", buildID); err != nil {
@@ -324,7 +335,7 @@ func (r *TestOrchestrator) servePackages(in *RunInput, productDir string) error 
 		}
 	}
 
-	if err := r.serveAndWait(productDir); err != nil {
+	if err := r.serveAndWait(repoDir); err != nil {
 		return fmt.Errorf("serveAndWait: %w", err)
 	}
 
@@ -334,7 +345,7 @@ func (r *TestOrchestrator) servePackages(in *RunInput, productDir string) error 
 	return nil
 }
 
-func (r *TestOrchestrator) serveAndWait(productDir string) error {
+func (r *TestOrchestrator) serveAndWait(repoDir string) error {
 	port := os.Getenv("FUCHSIA_PACKAGE_SERVER_PORT")
 	if port == "" {
 		// Use a dynamic port unless the environment is specific.
@@ -345,9 +356,7 @@ func (r *TestOrchestrator) serveAndWait(productDir string) error {
 		"repository", "server", "start",
 		"--background", "--no-device",
 		"--address", addr,
-		// TODO(https://fxbug.dev/335008631): Handle publishing to a product-bundle repo
-		// until then use the product bundle as a repo_path.
-		"--repo-path", productDir,
+		"--repo-path", repoDir,
 		"--repository", r.repoName,
 		"--refresh-metadata",
 	}
