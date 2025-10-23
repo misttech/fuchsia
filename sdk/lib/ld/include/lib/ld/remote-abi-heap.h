@@ -208,6 +208,8 @@ class RemoteAbiHeap {
   using AbiPtr = elfldltl::AbiPtr<T, Elf, AbiTraits>;
   template <typename T>
   using AbiSpan = elfldltl::AbiSpan<T, std::dynamic_extent, Elf, AbiTraits>;
+  using LoadInfo = typename RemoteModule::LoadInfo;
+  using StubConstantSegment = typename LoadInfo::ConstantSegment;
 
   RemoteAbiHeap(RemoteAbiHeap&&) = default;
   RemoteAbiHeap& operator=(RemoteAbiHeap&&) = default;
@@ -350,50 +352,11 @@ class RemoteAbiHeap {
     };
   }
 
-  // When a RemoteAbiHeap has been filled and is ready to be mapped into a
-  // process, Commit() yields the VMO.  It should then be mapped at the same
-  // vaddr that was used in Remote calls when filling pointers in the data.
-  // This must be the last method called and must be called using std::move.
-  // This invalidates all previous return values from Local.
-  zx::result<> Commit() && {
-    if (auto* copied = std::get_if<Copied>(&data_)) {
-      // The data is in a local buffer, so it has to be written to the VMO.
-      std::unique_ptr buffer = std::exchange(copied->buffer, {});
-      assert(*copied->vmo);
-      zx_status_t status = copied->vmo->write(buffer.get(), 0, size_bytes_);
-      if (status != ZX_OK) {
-        return zx::error{status};
-      }
-    }
-    return zx::ok();
-  }
-
- private:
-  using LoadInfo = typename RemoteModule::LoadInfo;
-  using StubSegment = typename LoadInfo::Segment;
-  using StubConstantSegment = typename LoadInfo::ConstantSegment;
-
-  // Tune this to trade off vmo_write syscall vs map/unmap overhead.
-  static inline const size_t kVmoWriteMapThreshold = zx_system_get_page_size();
-
-  RemoteAbiHeap() = default;
-
-  struct Copied {
-    std::unique_ptr<std::byte[]> buffer;
-    zx::unowned_vmo vmo;
-  };
-  using Mapped = elfldltl::MappedVmoFile;
-
-  std::span<std::byte> image() {
-    if (auto* mapped = std::get_if<Mapped>(&data_)) {
-      return mapped->image();
-    }
-    return {std::get<Copied>(data_).buffer.get(), size_bytes_};
-  }
-
   // Remove the original mutable segment and turn it into the larger
   // read-only segment.  It can be either a DataWithZeroFillSegment that
   // might have an existing VMO, or a ZeroFillSegment that never does.
+  //
+  // Private subroutine of Create; public only for unit testing.
   template <class Diagnostics, class Segment>
   static zx::result<StubConstantSegment> ReplaceSegment(Diagnostics& diagnostics,
                                                         Segment&& old_segment,
@@ -491,6 +454,45 @@ class RemoteAbiHeap {
     }
 
     return zero_fill();
+  }
+
+  // When a RemoteAbiHeap has been filled and is ready to be mapped into a
+  // process, Commit() yields the VMO.  It should then be mapped at the same
+  // vaddr that was used in Remote calls when filling pointers in the data.
+  // This must be the last method called and must be called using std::move.
+  // This invalidates all previous return values from Local.
+  zx::result<> Commit() && {
+    if (auto* copied = std::get_if<Copied>(&data_)) {
+      // The data is in a local buffer, so it has to be written to the VMO.
+      std::unique_ptr buffer = std::exchange(copied->buffer, {});
+      assert(*copied->vmo);
+      zx_status_t status = copied->vmo->write(buffer.get(), 0, size_bytes_);
+      if (status != ZX_OK) {
+        return zx::error{status};
+      }
+    }
+    return zx::ok();
+  }
+
+ private:
+  using StubSegment = typename LoadInfo::Segment;
+
+  // Tune this to trade off vmo_write syscall vs map/unmap overhead.
+  static inline const size_t kVmoWriteMapThreshold = zx_system_get_page_size();
+
+  RemoteAbiHeap() = default;
+
+  struct Copied {
+    std::unique_ptr<std::byte[]> buffer;
+    zx::unowned_vmo vmo;
+  };
+  using Mapped = elfldltl::MappedVmoFile;
+
+  std::span<std::byte> image() {
+    if (auto* mapped = std::get_if<Mapped>(&data_)) {
+      return mapped->image();
+    }
+    return {std::get<Copied>(data_).buffer.get(), size_bytes_};
   }
 
   zx::result<> MapData(size_type stub_data_size, const zx::vmo& vmo) {
