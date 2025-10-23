@@ -2,16 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use addr::{TargetAddr, TargetIpAddr};
-use anyhow::{Error, Result, anyhow};
+use addr::TargetAddr;
+use anyhow::{Error, Result, bail};
 use ffx_list_args::{AddressTypes, Format};
 use ffx_target::TargetInfo;
-use fidl_fuchsia_developer_ffx as ffx;
-use fidl_fuchsia_net::IpAddress;
+use ffx_target::info::{RemoteControlState, TargetState};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::cmp::max;
-use std::fmt::{self, Display, Write};
+use std::fmt::Write;
 
 const NAME: &'static str = "NAME";
 const SERIAL: &'static str = "SERIAL";
@@ -50,7 +49,7 @@ fn nodename_to_string(index: Option<usize>, nodename: Option<String>) -> String 
     }
 }
 
-fn has_multiple_unknown_targets(targets: &Vec<ffx::TargetInfo>) -> bool {
+fn has_multiple_unknown_targets(targets: &Vec<TargetInfo>) -> bool {
     let mut unknown_count = 0;
     for target in targets.iter() {
         if target.nodename.is_none() {
@@ -63,62 +62,31 @@ fn has_multiple_unknown_targets(targets: &Vec<ffx::TargetInfo>) -> bool {
     false
 }
 
-fn is_ipv4(info: &ffx::TargetAddrInfo) -> bool {
-    let ip = match info {
-        ffx::TargetAddrInfo::Ip(ip) => ip.ip,
-        ffx::TargetAddrInfo::IpPort(ip) => ip.ip,
-        ffx::TargetAddrInfo::Vsock(_) => return false,
-    };
-    match ip {
-        IpAddress::Ipv4(_) => true,
-        IpAddress::Ipv6(_) => false,
-    }
+fn is_ipv4(addr: &TargetAddr) -> bool {
+    matches!(addr, TargetAddr::Net(a) if a.is_ipv4())
 }
 
-fn is_ipv4_ip(info: &ffx::TargetIpAddrInfo) -> bool {
-    let ip = match info {
-        ffx::TargetIpAddrInfo::Ip(ip) => ip.ip,
-        ffx::TargetIpAddrInfo::IpPort(ip) => ip.ip,
-    };
-    match ip {
-        IpAddress::Ipv4(_) => true,
-        IpAddress::Ipv6(_) => false,
-    }
+fn is_ipv6(addr: &TargetAddr) -> bool {
+    matches!(addr, TargetAddr::Net(a) if a.is_ipv6())
 }
 
 pub fn filter_targets_by_address_types(
-    targets: Vec<ffx::TargetInfo>,
+    targets: Vec<TargetInfo>,
     address_types: AddressTypes,
-) -> Vec<ffx::TargetInfo> {
+) -> Vec<TargetInfo> {
     targets
         .into_iter()
         .filter_map(|mut target| match address_types {
             AddressTypes::All => Some(target),
             AddressTypes::None => None,
             AddressTypes::Ipv4Only => {
-                target.addresses.as_mut().map(|addresses| addresses.retain(|addr| is_ipv4(addr)));
-                target.ssh_address = target.ssh_address.filter(|addr| is_ipv4_ip(addr));
-
+                target.addresses.retain(is_ipv4);
                 Some(target)
             }
             AddressTypes::Ipv6Only => {
-                target.addresses.as_mut().map(|addresses| addresses.retain(|addr| !is_ipv4(addr)));
-                target.ssh_address = target.ssh_address.filter(|addr| !is_ipv4_ip(addr));
-
+                target.addresses.retain(is_ipv6);
                 Some(target)
             }
-        })
-        .map(|mut target| {
-            if target.ssh_address.is_none() {
-                for address in target.addresses.as_ref().into_iter().flatten() {
-                    let addr = TargetAddr::from(address);
-                    if let Ok(addr) = addr.try_into() {
-                        target.ssh_address = Some(addr);
-                        break;
-                    }
-                }
-            }
-            target
         })
         .collect()
 }
@@ -128,10 +96,10 @@ pub trait TargetFormatter {
     fn lines(&self, default_nodename: Option<&str>) -> Vec<String>;
 }
 
-impl TryFrom<(Format, AddressTypes, Vec<ffx::TargetInfo>)> for Box<dyn TargetFormatter> {
+impl TryFrom<(Format, AddressTypes, Vec<TargetInfo>)> for Box<dyn TargetFormatter> {
     type Error = Error;
 
-    fn try_from(tup: (Format, AddressTypes, Vec<ffx::TargetInfo>)) -> Result<Self> {
+    fn try_from(tup: (Format, AddressTypes, Vec<TargetInfo>)) -> Result<Self> {
         let (format, address_types, targets) = tup;
         let targets = filter_targets_by_address_types(targets, address_types);
         Ok(match format {
@@ -146,25 +114,22 @@ impl TryFrom<(Format, AddressTypes, Vec<ffx::TargetInfo>)> for Box<dyn TargetFor
 
 pub struct AddressesTarget(TargetAddr);
 
-impl TryFrom<ffx::TargetInfo> for AddressesTarget {
+impl TryFrom<TargetInfo> for AddressesTarget {
     type Error = Error;
 
-    fn try_from(t: ffx::TargetInfo) -> Result<Self> {
-        let addr = if let Some(addr) = t
+    fn try_from(t: TargetInfo) -> Result<Self> {
+        // Prefer Usb or Vsock connections
+        if let Some(addr) = t
             .addresses
             .iter()
-            .flatten()
-            .map(TargetAddr::from)
             .find(|x| matches!(x, TargetAddr::UsbCtx(_) | TargetAddr::VSockCtx(_)))
         {
-            addr
-        } else {
-            t.ssh_address
-                .map(|x| TargetAddr::from(TargetIpAddr::from(x)))
-                .ok_or_else(|| anyhow!("must contain an address"))?
-        };
-
-        Ok(Self(addr))
+            return Ok(Self(*addr));
+        }
+        if t.addresses.is_empty() {
+            bail!("must contain an address");
+        }
+        Ok(Self(t.addresses[0]))
     }
 }
 
@@ -172,10 +137,10 @@ pub struct AddressesTargetFormatter {
     targets: Vec<AddressesTarget>,
 }
 
-impl TryFrom<Vec<ffx::TargetInfo>> for AddressesTargetFormatter {
+impl TryFrom<Vec<TargetInfo>> for AddressesTargetFormatter {
     type Error = Error;
 
-    fn try_from(targets: Vec<ffx::TargetInfo>) -> Result<Self> {
+    fn try_from(targets: Vec<TargetInfo>) -> Result<Self> {
         let targets = targets.into_iter().flat_map(AddressesTarget::try_from).collect::<Vec<_>>();
         Ok(Self { targets })
     }
@@ -189,12 +154,10 @@ impl TargetFormatter for AddressesTargetFormatter {
 
 pub struct NameOnlyTarget(String);
 
-impl TryFrom<(Option<usize>, ffx::TargetInfo)> for NameOnlyTarget {
-    type Error = Error;
-
-    fn try_from((index, target): (Option<usize>, ffx::TargetInfo)) -> Result<Self> {
+impl From<(Option<usize>, TargetInfo)> for NameOnlyTarget {
+    fn from((index, target): (Option<usize>, TargetInfo)) -> Self {
         let name = nodename_to_string(index, target.nodename);
-        Ok(Self(name))
+        Self(name)
     }
 }
 
@@ -202,10 +165,10 @@ pub struct NameOnlyTargetFormatter {
     targets: Vec<NameOnlyTarget>,
 }
 
-impl TryFrom<Vec<ffx::TargetInfo>> for NameOnlyTargetFormatter {
+impl TryFrom<Vec<TargetInfo>> for NameOnlyTargetFormatter {
     type Error = Error;
 
-    fn try_from(targets: Vec<ffx::TargetInfo>) -> Result<Self> {
+    fn try_from(targets: Vec<TargetInfo>) -> Result<Self> {
         let use_index = has_multiple_unknown_targets(&targets);
         let targets = targets
             .into_iter()
@@ -229,10 +192,10 @@ pub struct SimpleTargetFormatter {
     targets: Vec<SimpleTarget>,
 }
 
-impl TryFrom<Vec<ffx::TargetInfo>> for SimpleTargetFormatter {
+impl TryFrom<Vec<TargetInfo>> for SimpleTargetFormatter {
     type Error = Error;
 
-    fn try_from(targets: Vec<ffx::TargetInfo>) -> Result<Self> {
+    fn try_from(targets: Vec<TargetInfo>) -> Result<Self> {
         let targets = targets.into_iter().flat_map(SimpleTarget::try_from).collect::<Vec<_>>();
         Ok(Self { targets })
     }
@@ -244,10 +207,10 @@ impl TargetFormatter for SimpleTargetFormatter {
     }
 }
 
-impl TryFrom<ffx::TargetInfo> for SimpleTarget {
+impl TryFrom<TargetInfo> for SimpleTarget {
     type Error = Error;
 
-    fn try_from(t: ffx::TargetInfo) -> Result<Self> {
+    fn try_from(t: TargetInfo) -> Result<Self> {
         let nodename = t.nodename.clone().unwrap_or_else(|| "".to_string());
         let AddressesTarget(addr) = t.try_into()?;
 
@@ -259,10 +222,8 @@ pub struct JsonTargetFormatter {
     pub targets: Vec<JsonTarget>,
 }
 
-impl TryFrom<Vec<ffx::TargetInfo>> for JsonTargetFormatter {
-    type Error = Error;
-
-    fn try_from(targets: Vec<ffx::TargetInfo>) -> Result<Self> {
+impl From<Vec<TargetInfo>> for JsonTargetFormatter {
+    fn from(targets: Vec<TargetInfo>) -> Self {
         let use_index = has_multiple_unknown_targets(&targets);
         let targets = targets
             .into_iter()
@@ -270,17 +231,7 @@ impl TryFrom<Vec<ffx::TargetInfo>> for JsonTargetFormatter {
             .map(|(i, t)| (if use_index { Some(i) } else { None }, t))
             .flat_map(JsonTarget::try_from)
             .collect::<Vec<_>>();
-        Ok(Self { targets })
-    }
-}
-
-impl TryFrom<Vec<TargetInfo>> for JsonTargetFormatter {
-    type Error = Error;
-
-    fn try_from(targets: Vec<TargetInfo>) -> Result<Self> {
-        let ffx_targets: Vec<ffx::TargetInfo> =
-            targets.into_iter().map(|ti: TargetInfo| ti.into()).collect();
-        Self::try_from(ffx_targets)
+        Self { targets }
     }
 }
 
@@ -425,13 +376,11 @@ pub enum JsonTargetAddress {
     Usb { cid: u32 },
 }
 
-impl From<ffx::TargetAddrInfo> for JsonTargetAddress {
-    fn from(info: ffx::TargetAddrInfo) -> Self {
-        let tai: TargetAddr = info.into();
-
-        match &tai {
+impl From<TargetAddr> for JsonTargetAddress {
+    fn from(addr: TargetAddr) -> Self {
+        match &addr {
             TargetAddr::Net(_) => {
-                JsonTargetAddress::Ip { ip: tai.to_string(), ssh_port: tai.port().unwrap() }
+                JsonTargetAddress::Ip { ip: addr.to_string(), ssh_port: addr.port().unwrap() }
             }
             TargetAddr::VSockCtx(cid) => JsonTargetAddress::VSock { cid: *cid },
             TargetAddr::UsbCtx(cid) => JsonTargetAddress::Usb { cid: *cid },
@@ -461,45 +410,30 @@ make_structs_and_support_functions!(
     is_manual,
 );
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum StringifyError {
-    MissingAddresses,
-    MissingRcsState,
-    MissingTargetState,
-}
-
-impl Display for StringifyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "stringification error: {:?}", self)
-    }
-}
-
-impl std::error::Error for StringifyError {}
-
 impl StringifiedTarget {
-    fn from_target_addr_info(a: ffx::TargetAddrInfo) -> String {
-        TargetAddr::from(a).optional_port_str()
+    fn from_target_addr(addr: TargetAddr) -> String {
+        addr.optional_port_str()
     }
 
-    fn from_addresses(mut v: Vec<ffx::TargetAddrInfo>) -> String {
+    fn from_addresses(mut v: Vec<TargetAddr>) -> String {
         format!(
             "[{}]",
             v.drain(..)
-                .map(|a| StringifiedTarget::from_target_addr_info(a))
+                .map(|a| StringifiedTarget::from_target_addr(a))
                 .collect::<Vec<_>>()
                 .join(",; ")
         )
     }
 
-    fn field_from_addresses(v: Vec<ffx::TargetAddrInfo>) -> StringifiedField {
+    fn field_from_addresses(v: Vec<TargetAddr>) -> StringifiedField {
         let all_addresses = StringifiedTarget::from_addresses(v);
         StringifiedField::Array(all_addresses.split(';').map(String::from).collect::<Vec<_>>())
     }
 
-    fn from_rcs_state(r: ffx::RemoteControlState) -> String {
+    fn from_rcs_state(r: RemoteControlState) -> String {
         match r {
-            ffx::RemoteControlState::Down | ffx::RemoteControlState::Unknown => "N".to_string(),
-            ffx::RemoteControlState::Up => "Y".to_string(),
+            RemoteControlState::Down | RemoteControlState::Unknown => "N".to_string(),
+            RemoteControlState::Up => "Y".to_string(),
         }
     }
 
@@ -512,78 +446,66 @@ impl StringifiedTarget {
         }
     }
 
-    fn from_target_state(t: ffx::TargetState) -> String {
+    fn from_target_state(t: TargetState) -> String {
         match t {
-            ffx::TargetState::Unknown => "Unknown".to_string(),
-            ffx::TargetState::Disconnected => "Disconnected".to_string(),
-            ffx::TargetState::Product => "Product".to_string(),
-            ffx::TargetState::Fastboot => "Fastboot".to_string(),
-            ffx::TargetState::Zedboot => "Zedboot (R)".to_string(),
+            TargetState::Unknown => "Unknown".to_string(),
+            TargetState::Product => "Product".to_string(),
+            TargetState::Fastboot => "Fastboot".to_string(),
+            TargetState::Zedboot => "Zedboot (R)".to_string(),
         }
     }
 
-    fn from_is_manual(is_manual: Option<bool>) -> String {
-        String::from(if is_manual.unwrap_or(false) { "Y" } else { "N" })
+    fn from_is_manual(is_manual: bool) -> String {
+        String::from(if is_manual { "Y" } else { "N" })
     }
 }
 
-impl TryFrom<(Option<usize>, ffx::TargetInfo)> for StringifiedTarget {
-    type Error = StringifyError;
-
-    fn try_from((index, target): (Option<usize>, ffx::TargetInfo)) -> Result<Self, Self::Error> {
+impl From<(Option<usize>, TargetInfo)> for StringifiedTarget {
+    fn from((index, target): (Option<usize>, TargetInfo)) -> Self {
         let target_type = StringifiedTarget::from_target_type(
             target.board_config.as_deref(),
             target.product_config.as_deref(),
         );
-        Ok(Self {
+        Self {
             nodename: StringifiedField::String(nodename_to_string(index, target.nodename)),
             serial: StringifiedField::String(
                 target.serial_number.unwrap_or_else(|| UNKNOWN.to_string()),
             ),
-            addresses: StringifiedTarget::field_from_addresses(
-                target.addresses.ok_or(StringifyError::MissingAddresses)?,
-            ),
+            addresses: StringifiedTarget::field_from_addresses(target.addresses),
             rcs_state: StringifiedField::String(StringifiedTarget::from_rcs_state(
-                target.rcs_state.ok_or(StringifyError::MissingRcsState)?,
+                target.rcs_state,
             )),
             target_type: StringifiedField::String(target_type),
             target_state: StringifiedField::String(StringifiedTarget::from_target_state(
-                target.target_state.ok_or(StringifyError::MissingTargetState)?,
+                target.target_state,
             )),
             is_manual: StringifiedField::String(StringifiedTarget::from_is_manual(
                 target.is_manual,
             )),
             ..Default::default()
-        })
+        }
     }
 }
 
-impl TryFrom<(Option<usize>, ffx::TargetInfo)> for JsonTarget {
-    type Error = StringifyError;
-
-    fn try_from((index, target): (Option<usize>, ffx::TargetInfo)) -> Result<Self, Self::Error> {
-        Ok(Self {
+impl From<(Option<usize>, TargetInfo)> for JsonTarget {
+    fn from((index, target): (Option<usize>, TargetInfo)) -> Self {
+        Self {
             nodename: nodename_to_string(index, target.nodename),
             serial: target.serial_number.unwrap_or_else(|| UNKNOWN.to_string()),
             addresses: target
                 .addresses
-                .unwrap_or(vec![])
-                .drain(..)
+                .into_iter()
                 .map(JsonTargetAddress::from)
                 .collect::<Vec<_>>(),
-            rcs_state: StringifiedTarget::from_rcs_state(
-                target.rcs_state.ok_or(StringifyError::MissingRcsState)?,
-            ),
+            rcs_state: StringifiedTarget::from_rcs_state(target.rcs_state),
             target_type: StringifiedTarget::from_target_type(
                 target.board_config.as_deref(),
                 target.product_config.as_deref(),
             ),
-            target_state: StringifiedTarget::from_target_state(
-                target.target_state.ok_or(StringifyError::MissingTargetState)?,
-            ),
+            target_state: StringifiedTarget::from_target_state(target.target_state),
             is_default: false.into(),
-            is_manual: target.is_manual.unwrap_or(false),
-        })
+            is_manual: target.is_manual,
+        }
     }
 }
 
@@ -601,10 +523,8 @@ impl TargetFormatter for TabularTargetFormatter {
     }
 }
 
-impl TryFrom<Vec<ffx::TargetInfo>> for TabularTargetFormatter {
-    type Error = StringifyError;
-
-    fn try_from(mut targets: Vec<ffx::TargetInfo>) -> Result<Self, Self::Error> {
+impl From<Vec<TargetInfo>> for TabularTargetFormatter {
+    fn from(mut targets: Vec<TargetInfo>) -> Self {
         // First target is the table header in this case, since the formatting
         // for the table header is (for now) identical to the rest of the
         // targets
@@ -623,56 +543,47 @@ impl TryFrom<Vec<ffx::TargetInfo>> for TabularTargetFormatter {
 
         let acc = Self { targets: initial, limits };
         let use_index = has_multiple_unknown_targets(&targets);
-        Ok(targets.drain(..).enumerate().try_fold(acc, |mut a, (index, t)| {
+        targets.drain(..).enumerate().fold(acc, |mut a, (index, t)| {
             let index = if use_index { Some(index) } else { None };
-            let mut s = StringifiedTarget::try_from((index, t))?;
+            let mut s = StringifiedTarget::from((index, t));
             a.limits.update(&mut s);
             a.targets.push(s);
-            Ok(a)
-        })?)
+            a
+        })
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_net::{Ipv4Address, Ipv6Address};
     use std::collections::HashMap;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
     use std::sync::LazyLock;
 
-    fn make_target(
-        addr: fidl_fuchsia_developer_ffx::TargetAddrInfo,
-    ) -> fidl_fuchsia_developer_ffx::TargetInfo {
-        let ssh_address = TargetAddr::from(&addr).try_into().ok();
-        ffx::TargetInfo {
+    fn make_target(addr: TargetAddr) -> TargetInfo {
+        TargetInfo {
             nodename: Some("lorberding".to_string()),
-            addresses: Some(vec![addr]),
-            ssh_address,
-            rcs_state: Some(ffx::RemoteControlState::Unknown),
-            target_state: Some(ffx::TargetState::Unknown),
+            addresses: vec![addr],
+            rcs_state: RemoteControlState::Unknown,
+            target_state: TargetState::Unknown,
             ..Default::default()
         }
     }
 
-    fn make_ip_v4_port_info(port: u16) -> fidl_fuchsia_developer_ffx::TargetAddrInfo {
-        ffx::TargetAddrInfo::IpPort(ffx::TargetIpPort {
-            ip: IpAddress::Ipv4(Ipv4Address { addr: [127, 0, 0, 1] }),
-            scope_id: 0,
-            port,
-        })
+    fn make_ip_v4_addr(port: u16) -> TargetAddr {
+        TargetAddr::new(IpAddr::from(Ipv4Addr::new(127, 0, 0, 1)), 0, port)
     }
 
-    fn make_ip_v6_port_info(
-        scope_id: u32,
-        port: u16,
-    ) -> fidl_fuchsia_developer_ffx::TargetAddrInfo {
-        ffx::TargetAddrInfo::IpPort(ffx::TargetIpPort {
-            ip: IpAddress::Ipv6(Ipv6Address {
-                addr: [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1],
-            }),
-            scope_id: scope_id,
-            port: port,
-        })
+    fn make_ip_v6_port_info(scope_id: u32, port: u16) -> TargetAddr {
+        TargetAddr::new(
+            IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 1, 0x101, 0x101, 0x101)),
+            scope_id,
+            port,
+        )
+    }
+
+    fn make_usb_addr(ctx: u32) -> TargetAddr {
+        TargetAddr::UsbCtx(ctx)
     }
 
     static EMPTY_FORMATTER_GOLDEN: LazyLock<String> = LazyLock::new(|| {
@@ -773,53 +684,36 @@ mod test {
             .to_owned()
     });
 
-    fn make_valid_target() -> ffx::TargetInfo {
-        ffx::TargetInfo {
+    fn make_valid_target() -> TargetInfo {
+        TargetInfo {
             nodename: Some("fooberdoober".to_string()),
-            addresses: Some(vec![
-                ffx::TargetAddrInfo::Ip(ffx::TargetIp {
-                    ip: IpAddress::Ipv6(Ipv6Address {
-                        addr: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-                    }),
-                    scope_id: 198,
-                }),
-                ffx::TargetAddrInfo::Ip(ffx::TargetIp {
-                    ip: IpAddress::Ipv4(Ipv4Address { addr: [122, 24, 25, 25] }),
-                    scope_id: 186,
-                }),
-            ]),
-            ssh_address: Some(ffx::TargetIpAddrInfo::Ip(ffx::TargetIp {
-                ip: IpAddress::Ipv6(Ipv6Address {
-                    addr: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-                }),
-                scope_id: 198,
-            })),
-            rcs_state: Some(ffx::RemoteControlState::Unknown),
-            target_state: Some(ffx::TargetState::Unknown),
+            addresses: vec![
+                TargetAddr::new(
+                    IpAddr::from(Ipv6Addr::new(
+                        0x101, 0x101, 0x101, 0x101, 0x101, 0x101, 0x101, 0x101,
+                    )),
+                    198,
+                    0,
+                ),
+                TargetAddr::new(IpAddr::from(Ipv4Addr::new(122, 24, 25, 25)), 186, 0),
+            ],
             ..Default::default()
         }
     }
 
-    fn make_valid_ipv4_only_target() -> ffx::TargetInfo {
-        ffx::TargetInfo {
+    fn make_valid_ipv4_only_target() -> TargetInfo {
+        TargetInfo {
             nodename: Some("fooberdoober4".to_string()),
-            addresses: Some(vec![ffx::TargetAddrInfo::Ip(ffx::TargetIp {
-                ip: IpAddress::Ipv4(Ipv4Address { addr: [122, 24, 25, 25] }),
-                scope_id: 186,
-            })]),
-            ssh_address: Some(ffx::TargetIpAddrInfo::Ip(ffx::TargetIp {
-                ip: IpAddress::Ipv4(Ipv4Address { addr: [122, 24, 25, 25] }),
-                scope_id: 186,
-            })),
-            rcs_state: Some(ffx::RemoteControlState::Unknown),
-            target_state: Some(ffx::TargetState::Unknown),
+            addresses: vec![TargetAddr::new(IpAddr::from(Ipv4Addr::new(122, 24, 25, 25)), 186, 0)],
+            rcs_state: RemoteControlState::Unknown,
+            target_state: TargetState::Unknown,
             ..Default::default()
         }
     }
 
     #[test]
     fn test_empty_formatter() {
-        let formatter = TabularTargetFormatter::try_from(Vec::<ffx::TargetInfo>::new()).unwrap();
+        let formatter = TabularTargetFormatter::try_from(Vec::<TargetInfo>::new()).unwrap();
         let lines = formatter.lines(None);
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].len(), 60); // Just some manual math.
@@ -830,16 +724,15 @@ mod test {
     async fn test_formatter_one_target() {
         let formatter = TabularTargetFormatter::try_from(vec![
             make_valid_target(),
-            ffx::TargetInfo {
+            TargetInfo {
                 nodename: Some("lorberding".to_string()),
-                addresses: Some(vec![ffx::TargetAddrInfo::Ip(ffx::TargetIp {
-                    ip: IpAddress::Ipv6(Ipv6Address {
-                        addr: [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1],
-                    }),
-                    scope_id: 137,
-                })]),
-                rcs_state: Some(ffx::RemoteControlState::Unknown),
-                target_state: Some(ffx::TargetState::Unknown),
+                addresses: vec![TargetAddr::new(
+                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
+                    137,
+                    0,
+                )],
+                rcs_state: RemoteControlState::Unknown,
+                target_state: TargetState::Unknown,
                 ..Default::default()
             },
         ])
@@ -857,16 +750,15 @@ mod test {
     async fn test_formatter_empty_nodename() {
         let formatter = TabularTargetFormatter::try_from(vec![
             make_valid_target(),
-            ffx::TargetInfo {
+            TargetInfo {
                 nodename: None,
-                addresses: Some(vec![ffx::TargetAddrInfo::Ip(ffx::TargetIp {
-                    ip: IpAddress::Ipv6(Ipv6Address {
-                        addr: [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1],
-                    }),
-                    scope_id: 137,
-                })]),
-                rcs_state: Some(ffx::RemoteControlState::Unknown),
-                target_state: Some(ffx::TargetState::Unknown),
+                addresses: vec![TargetAddr::new(
+                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
+                    137,
+                    0,
+                )],
+                rcs_state: RemoteControlState::Unknown,
+                target_state: TargetState::Unknown,
                 serial_number: Some("cereal".to_owned()),
                 ..Default::default()
             },
@@ -885,29 +777,27 @@ mod test {
     async fn test_formatter_multiple_empty_nodename() {
         let formatter = TabularTargetFormatter::try_from(vec![
             make_valid_target(),
-            ffx::TargetInfo {
+            TargetInfo {
                 nodename: None,
-                addresses: Some(vec![ffx::TargetAddrInfo::Ip(ffx::TargetIp {
-                    ip: IpAddress::Ipv6(Ipv6Address {
-                        addr: [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1],
-                    }),
-                    scope_id: 137,
-                })]),
-                rcs_state: Some(ffx::RemoteControlState::Unknown),
-                target_state: Some(ffx::TargetState::Unknown),
+                addresses: vec![TargetAddr::new(
+                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
+                    137,
+                    0,
+                )],
+                rcs_state: RemoteControlState::Unknown,
+                target_state: TargetState::Unknown,
                 serial_number: Some("cereal".to_owned()),
                 ..Default::default()
             },
-            ffx::TargetInfo {
+            TargetInfo {
                 nodename: None,
-                addresses: Some(vec![ffx::TargetAddrInfo::Ip(ffx::TargetIp {
-                    ip: IpAddress::Ipv6(Ipv6Address {
-                        addr: [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0],
-                    }),
-                    scope_id: 42,
-                })]),
-                rcs_state: Some(ffx::RemoteControlState::Unknown),
-                target_state: Some(ffx::TargetState::Unknown),
+                addresses: vec![TargetAddr::new(
+                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x100)),
+                    42,
+                    0,
+                )],
+                rcs_state: RemoteControlState::Unknown,
+                target_state: TargetState::Unknown,
                 ..Default::default()
             },
         ])
@@ -924,22 +814,15 @@ mod test {
     async fn test_simple_formatter() {
         let formatter = SimpleTargetFormatter::try_from(vec![
             make_valid_target(),
-            ffx::TargetInfo {
+            TargetInfo {
                 nodename: None,
-                addresses: Some(vec![ffx::TargetAddrInfo::Ip(ffx::TargetIp {
-                    ip: IpAddress::Ipv6(Ipv6Address {
-                        addr: [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1],
-                    }),
-                    scope_id: 137,
-                })]),
-                ssh_address: Some(ffx::TargetIpAddrInfo::Ip(ffx::TargetIp {
-                    ip: IpAddress::Ipv6(Ipv6Address {
-                        addr: [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1],
-                    }),
-                    scope_id: 137,
-                })),
-                rcs_state: Some(ffx::RemoteControlState::Unknown),
-                target_state: Some(ffx::TargetState::Unknown),
+                addresses: vec![TargetAddr::new(
+                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
+                    137,
+                    0,
+                )],
+                rcs_state: RemoteControlState::Unknown,
+                target_state: TargetState::Unknown,
                 ..Default::default()
             },
         ])
@@ -966,9 +849,8 @@ mod test {
             })
             .collect::<Vec<_>>();
 
-        targets[1].addresses = None;
-        targets[1].ssh_address = None;
-        targets[3].rcs_state = None;
+        targets[1].addresses = vec![];
+        targets[3].rcs_state = RemoteControlState::Unknown;
 
         let formatter = SimpleTargetFormatter::try_from(targets).unwrap();
         assert_eq!(formatter.targets.len(), 5);
@@ -978,16 +860,15 @@ mod test {
     async fn test_name_only_formatter() {
         let formatter = NameOnlyTargetFormatter::try_from(vec![
             make_valid_target(),
-            ffx::TargetInfo {
+            TargetInfo {
                 nodename: None,
-                addresses: Some(vec![ffx::TargetAddrInfo::Ip(ffx::TargetIp {
-                    ip: IpAddress::Ipv6(Ipv6Address {
-                        addr: [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1],
-                    }),
-                    scope_id: 137,
-                })]),
-                rcs_state: Some(ffx::RemoteControlState::Unknown),
-                target_state: Some(ffx::TargetState::Unknown),
+                addresses: vec![TargetAddr::new(
+                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
+                    137,
+                    0,
+                )],
+                rcs_state: RemoteControlState::Unknown,
+                target_state: TargetState::Unknown,
                 ..Default::default()
             },
         ])
@@ -1005,28 +886,26 @@ mod test {
     async fn test_name_only_multiple_unknown_formatter() {
         let formatter = NameOnlyTargetFormatter::try_from(vec![
             make_valid_target(),
-            ffx::TargetInfo {
+            TargetInfo {
                 nodename: None,
-                addresses: Some(vec![ffx::TargetAddrInfo::Ip(ffx::TargetIp {
-                    ip: IpAddress::Ipv6(Ipv6Address {
-                        addr: [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1],
-                    }),
-                    scope_id: 137,
-                })]),
-                rcs_state: Some(ffx::RemoteControlState::Unknown),
-                target_state: Some(ffx::TargetState::Unknown),
+                addresses: vec![TargetAddr::new(
+                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
+                    137,
+                    0,
+                )],
+                rcs_state: RemoteControlState::Unknown,
+                target_state: TargetState::Unknown,
                 ..Default::default()
             },
-            ffx::TargetInfo {
+            TargetInfo {
                 nodename: None,
-                addresses: Some(vec![ffx::TargetAddrInfo::Ip(ffx::TargetIp {
-                    ip: IpAddress::Ipv6(Ipv6Address {
-                        addr: [0xfe, 0x80, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1],
-                    }),
-                    scope_id: 42,
-                })]),
-                rcs_state: Some(ffx::RemoteControlState::Unknown),
-                target_state: Some(ffx::TargetState::Unknown),
+                addresses: vec![TargetAddr::new(
+                    IpAddr::from(Ipv6Addr::new(0xfe80, 0, 0, 0, 0x101, 0x101, 0x101, 0x101)),
+                    42,
+                    0,
+                )],
+                rcs_state: RemoteControlState::Unknown,
+                target_state: TargetState::Unknown,
                 ..Default::default()
             },
         ])
@@ -1059,33 +938,12 @@ mod test {
             })
             .collect::<Vec<_>>();
 
-        targets[1].addresses = None;
-        targets[3].rcs_state = None;
+        targets[1].addresses = vec![];
+        targets[3].rcs_state = RemoteControlState::Unknown;
 
         let formatter = NameOnlyTargetFormatter::try_from(targets).unwrap();
         // NameOnlyTargetFormatter is infalliable
         assert_eq!(formatter.targets.len(), 6);
-    }
-
-    #[test]
-    fn test_stringified_target_missing_state() {
-        let mut t = make_valid_target();
-        t.target_state = None;
-        assert_eq!(StringifiedTarget::try_from((None, t)), Err(StringifyError::MissingTargetState));
-    }
-
-    #[test]
-    fn test_stringified_target_missing_rcs_state() {
-        let mut t = make_valid_target();
-        t.rcs_state = None;
-        assert_eq!(StringifiedTarget::try_from((None, t)), Err(StringifyError::MissingRcsState));
-    }
-
-    #[test]
-    fn test_stringified_target_missing_addresses() {
-        let mut t = make_valid_target();
-        t.addresses = None;
-        assert_eq!(StringifiedTarget::try_from((None, t)), Err(StringifyError::MissingAddresses));
     }
 
     #[test]
@@ -1180,28 +1038,21 @@ mod test {
     #[test]
     fn test_stringified_product_state() {
         let mut t = make_valid_target();
-        t.target_state = Some(ffx::TargetState::Product);
+        t.target_state = TargetState::Product;
         assert!(StringifiedTarget::try_from((None, t)).is_ok());
     }
 
     #[test]
     fn test_stringified_fastboot_state() {
         let mut t = make_valid_target();
-        t.target_state = Some(ffx::TargetState::Fastboot);
+        t.target_state = TargetState::Fastboot;
         assert!(StringifiedTarget::try_from((None, t)).is_ok());
     }
 
     #[test]
     fn test_stringified_unknown_state() {
         let mut t = make_valid_target();
-        t.target_state = Some(ffx::TargetState::Unknown);
-        assert!(StringifiedTarget::try_from((None, t)).is_ok());
-    }
-
-    #[test]
-    fn test_stringified_disconnected_state() {
-        let mut t = make_valid_target();
-        t.target_state = Some(ffx::TargetState::Disconnected);
+        t.target_state = TargetState::Unknown;
         assert!(StringifiedTarget::try_from((None, t)).is_ok());
     }
 
@@ -1218,11 +1069,9 @@ mod test {
             })
             .collect::<Vec<_>>();
 
-        targets[1].addresses = None;
-        targets[1].ssh_address = None;
-        targets[3].rcs_state = None;
-        targets[4].addresses = None;
-        targets[4].ssh_address = None;
+        targets[1].addresses = vec![];
+        targets[3].rcs_state = RemoteControlState::Unknown;
+        targets[4].addresses = vec![];
 
         let formatter = AddressesTargetFormatter::try_from(targets).unwrap();
         assert_eq!(formatter.targets.len(), 4);
@@ -1242,26 +1091,6 @@ mod test {
 
         let formatter = JsonTargetFormatter::try_from(targets).unwrap();
         assert_eq!(formatter.targets.len(), 6);
-    }
-
-    #[test]
-    fn test_json_target_formatter_some_invalid() {
-        let names =
-            vec!["nodename0", "nodename1", "nodename2", "nodename3", "nodename4", "nodename5"];
-        let mut targets = names
-            .into_iter()
-            .map(|name| {
-                let mut t = make_valid_target();
-                t.nodename = Some(name.to_string());
-                t
-            })
-            .collect::<Vec<_>>();
-
-        targets[1].target_state = None;
-        targets[3].rcs_state = None;
-
-        let formatter = JsonTargetFormatter::try_from(targets).unwrap();
-        assert_eq!(formatter.targets.len(), 4);
     }
 
     #[test]
@@ -1347,7 +1176,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_nonstandard_port_ipv4() {
-        let target = make_target(make_ip_v4_port_info(1234));
+        let target = make_target(make_ip_v4_addr(1234));
         let formatter = JsonTargetFormatter::try_from(vec![target.clone()]).unwrap();
         let json = formatter.lines(None)[0].clone();
         let (first_ip, first_port) = get_first_address(&json);
@@ -1384,7 +1213,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_addresses_std_ports() {
-        let target = make_target(make_ip_v4_port_info(0));
+        let target = make_target(make_ip_v4_addr(0));
 
         let formatter = AddressesTargetFormatter::try_from(vec![target.clone()]).unwrap();
         let out = formatter.lines(None)[0].clone();
@@ -1394,5 +1223,14 @@ mod test {
         let formatter = AddressesTargetFormatter::try_from(vec![target.clone()]).unwrap();
         let out = formatter.lines(None)[0].clone();
         assert_eq!(out, "[fe80::1:101:101:101]:22".to_string());
+    }
+
+    #[fuchsia::test]
+    async fn test_address_target() {
+        let mut t = make_target(make_ip_v4_addr(0));
+        let usb_addr = make_usb_addr(1);
+        t.addresses.push(usb_addr);
+        let addr_target = AddressesTarget::try_from(t).unwrap();
+        assert_eq!(addr_target.0, usb_addr);
     }
 }

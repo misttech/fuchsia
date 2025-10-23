@@ -11,8 +11,6 @@ rustc_library("target_formatter") {
   edition = "2024"
   with_unit_tests = true
   deps = [
-    "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
-    "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
     "//src/developer/ffx/lib/addr:lib",
     "//src/developer/ffx/lib/target:lib",
     "//src/developer/ffx/lib/target_errors:lib",

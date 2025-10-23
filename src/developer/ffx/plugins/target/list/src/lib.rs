@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use errors::{ffx_bail, ffx_bail_with_code};
 use ffx_config::EnvironmentContext;
 use ffx_list_args::{AddressTypes, ListCommand};
-use ffx_target::TargetInfoQuery;
+use ffx_target::{TargetInfo, TargetInfoQuery};
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{Deferred, FfxMain, FfxTool, deferred};
 use fidl_fuchsia_developer_ffx::{self as ffx};
@@ -62,11 +62,12 @@ impl FfxMain for ListTool {
                 connect_to_rcs,
             )
             .await?
-            .into_iter()
-            .map(|ti| ti.into())
-            .collect()
         } else {
-            list_targets(self.tc_proxy.await?, &cmd).await?
+            list_targets(self.tc_proxy.await?, &cmd)
+                .await?
+                .into_iter()
+                .map(|ti| ti.into())
+                .collect()
         };
         emit_device_stats_event(infos.len(), &cmd.nodename).await;
         show_targets(cmd, infos, &mut writer, &self.context).await?;
@@ -91,7 +92,7 @@ impl ListTool {
 
 async fn show_targets(
     cmd: ListCommand,
-    mut infos: Vec<ffx::TargetInfo>,
+    mut infos: Vec<TargetInfo>,
     writer: &mut VerifiedMachineWriter<Vec<JsonTarget>>,
     context: &EnvironmentContext,
 ) -> Result<()> {
@@ -191,9 +192,10 @@ mod test {
     use addr::TargetAddr;
     use ffx_command::{Ffx, FfxCommandLine};
     use ffx_list_args::Format;
+    use ffx_target::info::{RemoteControlState, TargetState};
     use ffx_writer::TestBuffers;
     use fidl_fuchsia_developer_ffx as ffx;
-    use fidl_fuchsia_developer_ffx::{TargetInfo as FidlTargetInfo, TargetState};
+    use fidl_fuchsia_developer_ffx::TargetInfo as FidlTargetInfo;
     use regex::Regex;
     use std::net::IpAddr;
     use target_holders::fake_proxy;
@@ -217,7 +219,7 @@ mod test {
             addresses: Some(vec![addr.into()]),
             age_ms: Some(101),
             rcs_state: Some(ffx::RemoteControlState::Up),
-            target_state: Some(TargetState::Unknown),
+            target_state: Some(ffx::TargetState::Unknown),
             ..Default::default()
         }
     }
@@ -268,7 +270,7 @@ mod test {
         let proxy = setup_fake_target_collection_server(num_tests, vsock);
         let test_buffers = TestBuffers::default();
         let mut writer = VerifiedMachineWriter::new_test(None, &test_buffers);
-        let infos = list_targets(proxy, &cmd).await?;
+        let infos = list_targets(proxy, &cmd).await?.into_iter().map(|ti| ti.into()).collect();
         show_targets(cmd, infos, &mut writer, context).await?;
         Ok(test_buffers.into_stdout_str())
     }
@@ -290,7 +292,12 @@ mod test {
         let mut writer =
             VerifiedMachineWriter::new_test(Some(ffx_writer::Format::Json), &test_buffers);
         let cmd = ListCommand { format: Format::Tabular, ..Default::default() };
-        let infos = list_targets(proxy, &cmd).await.expect("list targets");
+        let infos = list_targets(proxy, &cmd)
+            .await
+            .expect("list targets")
+            .into_iter()
+            .map(|ti| ti.into())
+            .collect();
         show_targets(cmd, infos, &mut writer, &env.context).await.expect("show_targets");
         let data_str = test_buffers.into_stdout_str();
         let data = serde_json::from_str(&data_str).expect("json value");
@@ -310,7 +317,12 @@ mod test {
         let mut writer =
             VerifiedMachineWriter::new_test(Some(ffx_writer::Format::Json), &test_buffers);
         let cmd = ListCommand { format: Format::Tabular, ..Default::default() };
-        let infos = list_targets(proxy, &cmd).await.expect("list targets");
+        let infos = list_targets(proxy, &cmd)
+            .await
+            .expect("list targets")
+            .into_iter()
+            .map(|ti| ti.into())
+            .collect();
         show_targets(cmd, infos, &mut writer, &env.context).await.expect("show_targets");
         let data_str = test_buffers.into_stdout_str();
         let data = serde_json::from_str(&data_str).expect("json value");
@@ -470,14 +482,14 @@ mod test {
         let cmd = ListCommand::default();
         let test_buffers = TestBuffers::default();
         let mut writer = VerifiedMachineWriter::new_test(None, &test_buffers);
-        let ti1 = ffx::TargetInfo {
+        let ti1 = TargetInfo {
             nodename: Some(String::from("z")),
-            addresses: Some(vec![]),
-            rcs_state: Some(ffx::RemoteControlState::Unknown),
-            target_state: Some(ffx::TargetState::Unknown),
+            addresses: vec![],
+            rcs_state: RemoteControlState::Unknown,
+            target_state: TargetState::Unknown,
             ..Default::default()
         };
-        let ti2 = ffx::TargetInfo { nodename: Some(String::from("a")), ..ti1.clone() };
+        let ti2 = TargetInfo { nodename: Some(String::from("a")), ..ti1.clone() };
         let infos = vec![ti1, ti2];
         show_targets(cmd, infos, &mut writer, &env.context).await?;
         let out: Vec<String> =
