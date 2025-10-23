@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/elfldltl/testing/diagnostics.h>
+#include <lib/ld/remote-abi-heap.h>
 #include <lib/ld/remote-abi-stub.h>
 #include <lib/ld/remote-dynamic-linker.h>
 #include <lib/ld/remote-perfect-symbol-filter.h>
@@ -22,6 +23,7 @@ using ::testing::Field;
 using ::testing::IsTrue;
 using ::testing::Pointee;
 using ::testing::Property;
+using ::testing::VariantWith;
 
 // These tests reuse the fixture that supports the LdLoadTests (load-tests.cc)
 // for the common handling of creating and launching a Zircon process.  The
@@ -604,6 +606,41 @@ TEST_F(LdRemoteTests, Zygote) {
     ExpectLog("");
     bootstrap_sender().reset();
   }
+}
+
+// Clang doesn't generate test binaries with `DataWithZeroFillSegment`s, so our
+// other tests don't cover operations involving them. Artificially create this
+// type of segment.
+TEST_F(LdRemoteTests, ReplaceSegmentDataWithZeroFillSegment) {
+  using DataWithZeroFillSegment = typename Linker::Module::LoadInfo::DataWithZeroFillSegment;
+  using RemoteAbiHeap = typename ld::RemoteAbiHeap<Linker::Module, elfldltl::RemoteAbiTraits>;
+  using Phdr = typename elfldltl::Elf<>::Phdr;
+
+  auto diag = elfldltl::testing::ExpectOkDiagnostics();
+
+  const size_t kFilesz = kPageSize;
+  const size_t kMemsz = kPageSize * 5;  // must be larger than filesz
+
+  zx::vmo exec_vmo;
+  {
+    zx_status_t status = zx::vmo::create(kFilesz, 0, &exec_vmo);
+    ASSERT_EQ(status, ZX_OK) << zx_status_get_string(status);
+  }
+
+  Linker::Module::LoadInfo load_info;
+
+  Phdr phdr{.flags = Phdr::kRead | Phdr::kWrite, .filesz = kFilesz, .memsz = kMemsz};
+  ASSERT_TRUE(load_info.AddSegment(diag, kPageSize, phdr));
+
+  auto last_segment_var = load_info.RemoveLastSegment();
+  ASSERT_THAT(last_segment_var, VariantWith<DataWithZeroFillSegment>(::testing::_));
+  DataWithZeroFillSegment& last_segment = std::get<DataWithZeroFillSegment>(last_segment_var);
+
+  zx::result<RemoteAbiHeap::StubConstantSegment> r =
+      RemoteAbiHeap::ReplaceSegment(diag, std::move(last_segment), exec_vmo, kMemsz);
+  // TODO(https://fxbug.dev/452023377): ReplaceSegment does not correctly
+  // handle `DataWithZeroFillSegment`s.
+  EXPECT_EQ(r.status_value(), ZX_ERR_INVALID_ARGS) << r.status_string();
 }
 
 TEST_F(LdRemoteTests, RemoteAbiStub) {
