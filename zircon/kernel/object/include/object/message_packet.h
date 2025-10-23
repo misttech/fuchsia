@@ -102,6 +102,14 @@ class MessagePacket final : public fbl::DoublyLinkedListable<MessagePacketPtr> {
     return FidlHeader{};
   }
 
+  // The first chunk of payload.
+  // Eventually we'd want to actually get the whole message out.
+  ktl::span<const uint8_t> start_of_payload() const {
+    return ktl::span<const uint8_t>(
+        static_cast<const uint8_t*>(payload()),
+        ktl::min(static_cast<uint32_t>(BufferChain::kRawDataSize) - payload_offset_, data_size_));
+  }
+
  private:
   // A private constructor ensures that users must use the static factory
   // Create method to create a MessagePacket.  This, in turn, guarantees that

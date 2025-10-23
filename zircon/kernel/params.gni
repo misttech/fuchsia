@@ -141,6 +141,10 @@ declare_args() {
   # TODO(https://fxbug.dev/322207536): Stop resetting start and finish times
   # when unblocking once we solve races higher in the stack.
   experimental_force_enable_new_wakeup_accounting = false
+
+  # Include partial channel message bodies in IPC traces. # This is intended as
+  # a local debugging feature and is not intended for production use.
+  channel_message_body_tracing_enabled = false
 }
 
 declare_args() {
