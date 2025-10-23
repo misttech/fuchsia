@@ -104,14 +104,16 @@ class VmSlotPageStorage final : public VmCompressedStorage {
     // Number of slots referenced by this data. By definition zero sized data may not be stored,
     // and so this must always be > 0.
     uint8_t num_slots = 0;
-    // Amount of data stored in the last slot. This is between [1, kSlotSize)
-    uint8_t last_slot_bytes = 0;
     // As we're using 8-bit values, ensure that a slot index or offset will not overflow.
     static_assert(kNumSlotBits <= 8);
-    static_assert(kSlotSizeBits <= 8);
+    // Amount of data stored in the last slot. This is between [1, kSlotSize)
+    uint16_t last_slot_bytes = 0;
+    static_assert(kSlotSizeBits <= 16);
     // Metadata that we are obligated to track for the user for each allocation.
     uint32_t metadata = 0;
   };
+  static_assert(sizeof(Allocation) == 16);
+
   CompressedRef AllocToRefLocked(const Allocation* alloc) const TA_REQ(lock_) {
     static_assert(ktl::bit_width(kMaxStorageItems) + CompressedRef::kAlignBits <= 32);
     return CompressedRef(allocator_.ObjectToId(alloc) << CompressedRef::kAlignBits);

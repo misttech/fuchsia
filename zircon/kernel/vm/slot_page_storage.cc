@@ -72,7 +72,7 @@ constexpr uint8_t SlotsNeeded(uint64_t len) {
   return static_cast<uint8_t>(((len - 1) / kSlotSize) + 1);
 }
 
-constexpr uint8_t LastSlotBytes(uint64_t len) {
+constexpr uint16_t LastSlotBytes(uint64_t len) {
   DEBUG_ASSERT(len > 0);
   return ((len - 1) % kSlotSize) + 1;
 }
@@ -186,8 +186,8 @@ void VmSlotPageStorage::Free(CompressedRef ref) {
     page->zram.free_block_mask |= free_mask;
     allocator_.Delete(data);
 
-    // Remove the page from its current list since it's cheaper to potentially re-insert than to work
-    // out what list it's currently in.
+    // Remove the page from its current list since it's cheaper to potentially re-insert than to
+    // work out what list it's currently in.
     list_delete(&page->queue_node);
     const uint64_t contig_free = ContigFree(page->zram.free_block_mask);
     if (contig_free != kNumSlots) {
