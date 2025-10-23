@@ -26,26 +26,25 @@
 zx_status_t IommuDispatcher::Create(uint32_t type, ktl::unique_ptr<const uint8_t[]> desc,
                                     size_t desc_len, KernelHandle<IommuDispatcher>* handle,
                                     zx_rights_t* rights) {
-  fbl::RefPtr<Iommu> iommu;
-  zx_status_t status;
+  zx::result<fbl::RefPtr<Iommu>> result;
   switch (type) {
     case ZX_IOMMU_TYPE_DUMMY:
-      status = DummyIommu::Create(ktl::move(desc), desc_len, &iommu);
+      result = DummyIommu::Create(ktl::move(desc), desc_len);
       break;
 #if ARCH_X86
     case ZX_IOMMU_TYPE_INTEL:
-      status = IntelIommu::Create(ktl::move(desc), desc_len, &iommu);
+      result = IntelIommu::Create(ktl::move(desc), desc_len);
       break;
 #endif
     default:
       return ZX_ERR_NOT_SUPPORTED;
   }
-  if (status != ZX_OK) {
-    return status;
+  if (result.is_error()) {
+    return result.error_value();
   }
 
   fbl::AllocChecker ac;
-  KernelHandle new_handle(fbl::AdoptRef(new (&ac) IommuDispatcher(ktl::move(iommu))));
+  KernelHandle new_handle(fbl::AdoptRef(new (&ac) IommuDispatcher(ktl::move(result.value()))));
   if (!ac.check())
     return ZX_ERR_NO_MEMORY;
 

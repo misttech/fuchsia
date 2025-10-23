@@ -46,11 +46,11 @@ IommuImpl::IommuImpl(volatile void* register_base, ktl::unique_ptr<const uint8_t
   desc_len_ = desc_len;
 }
 
-zx_status_t IommuImpl::Create(ktl::unique_ptr<const uint8_t[]> desc_bytes, size_t desc_len,
-                              fbl::RefPtr<Iommu>* out) {
+zx::result<fbl::RefPtr<Iommu>> IommuImpl::Create(ktl::unique_ptr<const uint8_t[]> desc_bytes,
+                                                 size_t desc_len) {
   zx_status_t status = ValidateIommuDesc(desc_bytes, desc_len);
   if (status != ZX_OK) {
-    return status;
+    return zx::error(status);
   }
 
   auto desc = reinterpret_cast<const zx_iommu_desc_intel_t*>(desc_bytes.get());
@@ -67,24 +67,23 @@ zx_status_t IommuImpl::Create(ktl::unique_ptr<const uint8_t[]> desc_bytes, size_
       "iommu", PAGE_SIZE, &vaddr, PAGE_SIZE_SHIFT, register_base, 0,
       ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE | ARCH_MMU_FLAG_UNCACHED);
   if (status != ZX_OK) {
-    return status;
+    return zx::error(status);
   }
 
   fbl::AllocChecker ac;
-  auto instance =
+  fbl::RefPtr<IommuImpl> instance =
       fbl::AdoptRef<IommuImpl>(new (&ac) IommuImpl(vaddr, ktl::move(desc_bytes), desc_len));
   if (!ac.check()) {
     kernel_aspace->FreeRegion(reinterpret_cast<vaddr_t>(vaddr));
-    return ZX_ERR_NO_MEMORY;
+    return zx::error(ZX_ERR_NO_MEMORY);
   }
 
   status = instance->Initialize();
   if (status != ZX_OK) {
-    return status;
+    return zx::error(status);
   }
 
-  *out = ktl::move(instance);
-  return ZX_OK;
+  return zx::ok(ktl::move(instance));
 }
 
 IommuImpl::~IommuImpl() {

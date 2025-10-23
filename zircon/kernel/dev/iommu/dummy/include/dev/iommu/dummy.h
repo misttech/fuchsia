@@ -15,8 +15,8 @@
 
 class DummyIommu final : public Iommu {
  public:
-  static zx_status_t Create(ktl::unique_ptr<const uint8_t[]> desc, size_t desc_len,
-                            fbl::RefPtr<Iommu>* out);
+  static zx::result<fbl::RefPtr<Iommu>> Create(ktl::unique_ptr<const uint8_t[]> desc,
+                                               size_t desc_len);
 
   bool IsValidBusTxnId(uint64_t bus_txn_id) const final;
 

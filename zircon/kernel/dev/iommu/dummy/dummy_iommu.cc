@@ -22,19 +22,20 @@
 
 DummyIommu::DummyIommu() {}
 
-zx_status_t DummyIommu::Create(ktl::unique_ptr<const uint8_t[]> desc, size_t desc_len,
-                               fbl::RefPtr<Iommu>* out) {
+zx::result<fbl::RefPtr<Iommu>> DummyIommu::Create(ktl::unique_ptr<const uint8_t[]> desc,
+                                                  size_t desc_len) {
   if (desc_len != sizeof(zx_iommu_desc_dummy_t)) {
-    return ZX_ERR_INVALID_ARGS;
+    return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
   fbl::AllocChecker ac;
-  auto instance = fbl::AdoptRef<DummyIommu>(new (&ac) DummyIommu());
+  fbl::RefPtr<DummyIommu> instance = fbl::AdoptRef<DummyIommu>(new (&ac) DummyIommu());
+
   if (!ac.check()) {
-    return ZX_ERR_NO_MEMORY;
+    return zx::error(ZX_ERR_NO_MEMORY);
   }
-  *out = ktl::move(instance);
-  return ZX_OK;
+
+  return zx::ok(ktl::move(instance));
 }
 
 DummyIommu::~DummyIommu() {}
