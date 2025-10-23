@@ -19,14 +19,12 @@ import (
 )
 
 const (
-	moblyTestPreamblePatternStr         = `^======== Mobly config content ========$`
 	moblyTestResultYAMLHeaderPatternStr = `^\[=====MOBLY RESULTS=====\]$`
 	moblyTestCaseType                   = "Record"
 	moblySummaryType                    = "Summary"
 )
 
 var (
-	moblyTestPreamblePattern         = regexp.MustCompile(moblyTestPreamblePatternStr)
 	moblyTestResultYAMLHeaderPattern = regexp.MustCompile(moblyTestResultYAMLHeaderPatternStr)
 )
 

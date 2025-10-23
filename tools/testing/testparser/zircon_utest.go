@@ -13,7 +13,6 @@ import (
 )
 
 var (
-	zirconUtestPreamblePattern = regexp.MustCompile(`^CASE\s*(.*?)\s*\[STARTED\]$`)
 	zirconUtestPassCasePattern = regexp.MustCompile(`^    (.*?)\s{1,51}\[RUNNING\] \[PASSED\] \((\d+) ms\)$`)
 	zirconUtestFailCasePattern = regexp.MustCompile(`^    (.*?)\s{1,51}\[RUNNING\] \[FAILED\] \((\d+) ms\)$`)
 	zirconUtestSkipCasePattern = regexp.MustCompile(`^    (.*?)\s{1,51}\[IGNORED\]$`)

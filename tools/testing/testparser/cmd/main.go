@@ -52,7 +52,11 @@ func main() {
 		}
 	}
 
-	result := testparser.Parse(inputBytes)
+	result, err := testparser.Parse(inputBytes)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing input: %s\n", err)
+		os.Exit(1)
+	}
 	jsonData, err := json.Marshal(result)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error marshaling JSON: %s\n", err)

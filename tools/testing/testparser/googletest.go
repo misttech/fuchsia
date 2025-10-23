@@ -13,8 +13,7 @@ import (
 )
 
 var (
-	googleTestPreamblePattern = regexp.MustCompile(`^\[==========\] Running \d* tests? from \d* test (?:(?:suites?)|(?:cases?))\.$`)
-	googleTestCasePattern     = regexp.MustCompile(`^\[(       OK |  FAILED  |  SKIPPED )\] (.*?)\.(.*?) \((\d+) ms\)$`)
+	googleTestCasePattern = regexp.MustCompile(`^\[(       OK |  FAILED  |  SKIPPED )\] (.*?)\.(.*?) \((\d+) ms\)$`)
 )
 
 func parseGoogleTest(lines [][]byte) []runtests.TestCaseResult {

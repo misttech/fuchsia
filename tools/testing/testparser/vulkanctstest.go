@@ -12,7 +12,6 @@ import (
 )
 
 var (
-	ctsTestPreamblePattern  = regexp.MustCompile(`^dEQP Core .* starting\.\.$`)
 	ctsTestCaseStartPattern = regexp.MustCompile(`^Test case '(.*)'\.\.$`)
 	ctsTestCasePattern      = regexp.MustCompile(`^(Pass|Fail|QualityWarning|CompatibilityWarning|Pending|NotSupported|ResourceError|InternalError|Crash|Timeout) \(.*\)$`)
 )

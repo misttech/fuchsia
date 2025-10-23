@@ -13,10 +13,20 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 )
 
+var (
+	moblyTestPreamblePatternStr   = `^======== Mobly config content ========$`
+	moblyTestPreamblePattern      = regexp.MustCompile(moblyTestPreamblePatternStr)
+	ctsTestPreamblePattern        = regexp.MustCompile(`^dEQP Core .* starting\.\.$`)
+	dartSystemTestPreamblePattern = regexp.MustCompile(`^\[----------\] Test results JSON:$`)
+	trfTestPreamblePattern        = regexp.MustCompile(`^Running test 'fuchsia-pkg:\/\/.*$`)
+	googleTestPreamblePattern     = regexp.MustCompile(`^\[==========\] Running \d* tests? from \d* test (?:(?:suites?)|(?:cases?))\.$`)
+	zirconUtestPreamblePattern    = regexp.MustCompile(`^CASE\s*(.*?)\s*\[STARTED\]$`)
+)
+
 // Parse takes stdout from a test program and returns structured results.
 // Internally, a variety of test program stdout formats are supported.
 // If no structured results were identified, an empty slice is returned.
-func Parse(stdout []byte) []runtests.TestCaseResult {
+func Parse(stdout []byte) ([]runtests.TestCaseResult, error) {
 	lines := bytes.Split(stdout, []byte{'\n'})
 	res := []*regexp.Regexp{
 		moblyTestPreamblePattern,
@@ -29,6 +39,9 @@ func Parse(stdout []byte) []runtests.TestCaseResult {
 	}
 	remainingLines, match := firstMatch(lines, res)
 
+	// TODO(https://fxbug.dev/435723394): Replace each case with
+	// `return nil, fmt.Errorf("this test did not parse its own test cases")`
+	// when removing support for the test type.
 	var cases []runtests.TestCaseResult
 	switch match {
 	case moblyTestPreamblePattern:
@@ -52,7 +65,7 @@ func Parse(stdout []byte) []runtests.TestCaseResult {
 	if cases == nil {
 		cases = []runtests.TestCaseResult{}
 	}
-	return cases
+	return cases, nil
 }
 
 func firstMatch(

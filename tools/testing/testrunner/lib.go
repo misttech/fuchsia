@@ -670,17 +670,30 @@ func runTestOnce(
 	// so only parse the stdout for test cases if both are missing.
 	// parse the stdout for test cases and check the outdir for output files.
 	if len(result.Cases) == 0 && len(result.OutputFiles) == 0 {
-		result.Cases = testparser.Parse(stdoutForParsing.Bytes())
+		cases, err := testparser.Parse(stdoutForParsing.Bytes())
+		if err != nil {
+			result.Status = runtests.TestFailure
+			logger.Errorf(ctx, "Failed to parse test cases: %s", err)
+			result.FailureReason = fmt.Sprintf("failed to parse test cases: %s", err)
+		} else {
+			result.Cases = cases
+		}
 	} else {
 		// TODO(b/311443213): Some tests rely on testparser to add tags to test case results.
 		// Remove this hack once tags are properly handled by `ffx test`.
-		cases := testparser.Parse(stdoutForParsing.Bytes())
-		caseToTags := make(map[string][]build.TestTag)
-		for _, tc := range cases {
-			caseToTags[tc.DisplayName] = tc.Tags
-		}
-		for i, tc := range result.Cases {
-			result.Cases[i].Tags = append(result.Cases[i].Tags, caseToTags[tc.DisplayName]...)
+		cases, err := testparser.Parse(stdoutForParsing.Bytes())
+		if err != nil && len(result.Cases) == 0 {
+			result.Status = runtests.TestFailure
+			logger.Errorf(ctx, "Failed to parse test cases: %s", err)
+			result.FailureReason = fmt.Sprintf("failed to parse test cases: %s", err)
+		} else if err == nil {
+			caseToTags := make(map[string][]build.TestTag)
+			for _, tc := range cases {
+				caseToTags[tc.DisplayName] = tc.Tags
+			}
+			for i, tc := range result.Cases {
+				result.Cases[i].Tags = append(result.Cases[i].Tags, caseToTags[tc.DisplayName]...)
+			}
 		}
 	}
 	// Check the outdir for output files if not handled by the tester.

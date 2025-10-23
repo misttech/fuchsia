@@ -7,13 +7,10 @@ package testparser
 import (
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"time"
 
 	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 )
-
-var dartSystemTestPreamblePattern = regexp.MustCompile(`^\[----------\] Test results JSON:$`)
 
 type dartSystemTestResults struct {
 	TestGroups []TestGroup

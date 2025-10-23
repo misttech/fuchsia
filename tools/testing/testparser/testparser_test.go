@@ -32,7 +32,8 @@ func indentJSON(jsonBytes []byte) []byte {
 
 func testCase(t *testing.T, stdout string, want string) {
 	t.Helper()
-	actual, _ := json.Marshal(Parse([]byte(stdout)))
+	r, _ := Parse([]byte(stdout))
+	actual, _ := json.Marshal(r)
 	if !bytes.Equal(actual, compactJSON([]byte(want))) {
 		actualIndented := string(indentJSON(actual))
 		wantIndented := string(indentJSON([]byte(want)))
@@ -45,7 +46,7 @@ func testCase(t *testing.T, stdout string, want string) {
 }
 
 func testCaseCmp(t *testing.T, stdout string, want []runtests.TestCaseResult) {
-	r := Parse([]byte(stdout))
+	r, _ := Parse([]byte(stdout))
 	if diff := cmp.Diff(want, r, cmpopts.SortSlices(func(a, b runtests.TestCaseResult) bool { return a.DisplayName < b.DisplayName })); diff != "" {
 		t.Errorf("Found mismatch in %s (-want +got):\n%s", stdout, diff)
 	}

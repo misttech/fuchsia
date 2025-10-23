@@ -13,7 +13,6 @@ import (
 )
 
 var (
-	trfTestPreamblePattern = regexp.MustCompile(`^Running test 'fuchsia-pkg:\/\/.*$`)
 	// ex: "[PASSED]	InlineDirTest.InlineDirPino"
 	trfTestCasePattern = regexp.MustCompile(`\[(PASSED|FAILED|INCONCLUSIVE|TIMED_OUT|ERROR|SKIPPED)\]\t(.*)$`)
 	// ex: "[stderr - NodeManagerTest.TruncateExceptionCase]"
