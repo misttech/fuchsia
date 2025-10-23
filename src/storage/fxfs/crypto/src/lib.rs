@@ -17,7 +17,6 @@ use zx_status as zx;
 mod cipher;
 pub mod ff1;
 
-pub use cipher::fscrypt_ino_lblk32::FscryptSoftwareInoLblk32FileCipher;
 pub use cipher::fxfs::FxfsCipher;
 pub use cipher::{Cipher, CipherSet, FindKeyResult};
 pub use fidl_fuchsia_fxfs::{

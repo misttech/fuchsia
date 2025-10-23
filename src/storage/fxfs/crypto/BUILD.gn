@@ -44,7 +44,6 @@ rustc_library("crypto") {
   visibility = [
     "//src/storage/f2fs_reader/*",
     "//src/storage/fxfs/*",
-    "//src/storage/lib/block_server/*",
     "//vendor/google/*",
   ]
 

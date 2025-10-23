@@ -146,9 +146,6 @@ impl FscryptInoLblk32FileCipher {
         (hasher.finish() as u32 + block_num) as u128
     }
 }
-
-// TODO(https://fxbug.dev/436902004): Remove encrypt/decrypt support once this cipher supports
-// inline encryption.
 impl Cipher for FscryptInoLblk32FileCipher {
     fn encrypt(
         &self,
@@ -217,44 +214,6 @@ impl Cipher for FscryptInoLblk32FileCipher {
 
     fn crypt_ctx(&self, _ino: u64, _file_offset: u64) -> Option<(u32, u8)> {
         None
-    }
-}
-
-// Software-fallback for the lblk32 file cipher.
-#[derive(Debug)]
-pub struct FscryptSoftwareInoLblk32FileCipher {
-    xts_key1: Aes256,
-    xts_key2: Aes256,
-}
-
-impl FscryptSoftwareInoLblk32FileCipher {
-    pub fn new(key: &UnwrappedKey) -> Self {
-        Self {
-            xts_key1: Aes256::new(GenericArray::from_slice(&key[..32])),
-            xts_key2: Aes256::new(GenericArray::from_slice(&key[32..64])),
-        }
-    }
-    pub fn encrypt(&self, buffer: &mut [u8], tweak: u128) -> Result<(), Error> {
-        fxfs_trace::duration!(c"encrypt", "len" => buffer.len());
-        assert_eq!(buffer.len() % BLOCK_SIZE, 0);
-        let mut tweak = tweak;
-
-        for block in buffer.chunks_exact_mut(BLOCK_SIZE) {
-            self.xts_key2.encrypt_block(GenericArray::from_mut_slice(tweak.as_mut_bytes()));
-            self.xts_key1.encrypt_with_backend(XtsProcessor::new(Tweak(tweak), block));
-            tweak += 1;
-        }
-        Ok(())
-    }
-    pub fn decrypt(&self, buffer: &mut [u8], mut tweak: u128) -> Result<(), Error> {
-        fxfs_trace::duration!(c"decrypt", "len" => buffer.len());
-        assert_eq!(buffer.len() % BLOCK_SIZE, 0);
-        for block in buffer.chunks_exact_mut(BLOCK_SIZE) {
-            self.xts_key2.encrypt_block(GenericArray::from_mut_slice(tweak.as_mut_bytes()));
-            self.xts_key1.decrypt_with_backend(XtsProcessor::new(Tweak(tweak), block));
-            tweak += 1;
-        }
-        Ok(())
     }
 }
 
