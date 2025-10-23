@@ -270,8 +270,6 @@ For instance:
   [end-to-end performance tests directory][e2e-perf]. These cover a range of
   targets such as kernel boot time, touch input latency, Flutter rendering performance,
   and various micro-benchmarks for performance-sensitive code.
-- [CPU Performance Monitoring][cpuperf] makes CPU performance counters available
-  for high-frequency low-overhead performance testing.
 - [Perfcompare] is a framework for comparing the results of a given benchmark
   before and after a given change. It’s useful for measuring performance
   improvements or regressions.
