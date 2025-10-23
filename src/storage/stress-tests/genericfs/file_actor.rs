@@ -5,7 +5,7 @@
 use async_trait::async_trait;
 use futures::{SinkExt as _, StreamExt as _};
 use log::info;
-use once_cell::sync::OnceCell;
+use std::sync::OnceLock;
 use storage_stress_test_utils::data::FileFactory;
 use storage_stress_test_utils::io::Directory;
 use stress_test::actor::{Actor, ActorError};
@@ -19,12 +19,12 @@ pub struct FileActor {
     pub factory: FileFactory,
     pub home_dir: Directory,
     progress_channel_and_task:
-        OnceCell<(futures::channel::mpsc::UnboundedSender<()>, fasync::Task<()>)>,
+        OnceLock<(futures::channel::mpsc::UnboundedSender<()>, fasync::Task<()>)>,
 }
 
 impl FileActor {
     pub fn new(factory: FileFactory, home_dir: Directory) -> Self {
-        Self { factory, home_dir, progress_channel_and_task: OnceCell::new() }
+        Self { factory, home_dir, progress_channel_and_task: OnceLock::new() }
     }
 
     /// Arms a timer which will expire after `duration` and fail the test.

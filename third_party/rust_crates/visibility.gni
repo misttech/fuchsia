@@ -68,7 +68,6 @@ once_cell_visibility = [
   "//src/starnix/modules/thermal:*",
   "//src/storage/ext4/read-only:*",
   "//src/storage/fxfs:*",
-  "//src/storage/stress-tests/genericfs:*",
   "//src/testing/sl4f:*",
   "//tools/shush:*",
 
