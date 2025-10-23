@@ -1155,7 +1155,7 @@ TEST_F(SdhciTest, DmaRequest64Bit) {
   driver_test().runtime().RunUntilIdle();
 
   EXPECT_EQ(AdmaSystemAddress::Get(0).ReadFrom(driver_test().driver()->mmio_).reg_value(),
-            zx_system_get_page_size());
+            FAKE_BTI_PHYS_ADDR);
   EXPECT_EQ(AdmaSystemAddress::Get(1).ReadFrom(driver_test().driver()->mmio_).reg_value(), 0u);
 
   const auto* const descriptors =
@@ -1164,28 +1164,28 @@ TEST_F(SdhciTest, DmaRequest64Bit) {
   uint64_t address;
   memcpy(&address, &descriptors[0].address, sizeof(address));
   EXPECT_EQ(descriptors[0].attr, 0b100'001u);
-  EXPECT_EQ(address, zx_system_get_page_size() + 80);
+  EXPECT_EQ(address, FAKE_BTI_PHYS_ADDR + 80);
   EXPECT_EQ(descriptors[0].length, 512u);
 
   memcpy(&address, &descriptors[1].address, sizeof(address));
   EXPECT_EQ(descriptors[1].attr, 0b100'001u);
-  EXPECT_EQ(address, zx_system_get_page_size() + 32);
+  EXPECT_EQ(address, FAKE_BTI_PHYS_ADDR + 32);
   EXPECT_EQ(descriptors[1].length, 512 * 3);
 
   // Buffer is greater than one page and gets split across two descriptors.
   memcpy(&address, &descriptors[2].address, sizeof(address));
   EXPECT_EQ(descriptors[2].attr, 0b100'001u);
-  EXPECT_EQ(address, zx_system_get_page_size() + 240);
+  EXPECT_EQ(address, FAKE_BTI_PHYS_ADDR + 240);
   EXPECT_EQ(descriptors[2].length, zx_system_get_page_size() - 240);
 
   memcpy(&address, &descriptors[3].address, sizeof(address));
   EXPECT_EQ(descriptors[3].attr, 0b100'001u);
-  EXPECT_EQ(address, zx_system_get_page_size());
+  EXPECT_EQ(address, FAKE_BTI_PHYS_ADDR);
   EXPECT_EQ(descriptors[3].length, (512 * 10) - zx_system_get_page_size() + 240);
 
   memcpy(&address, &descriptors[4].address, sizeof(address));
   EXPECT_EQ(descriptors[4].attr, 0b100'011);
-  EXPECT_EQ(address, zx_system_get_page_size() + 208);
+  EXPECT_EQ(address, FAKE_BTI_PHYS_ADDR + 208);
   EXPECT_EQ(descriptors[4].length, 512 * 7);
 
   ASSERT_OK(StopDriver());
@@ -1258,31 +1258,31 @@ TEST_F(SdhciTest, DmaRequest32Bit) {
   driver_test().runtime().RunUntilIdle();
 
   EXPECT_EQ(AdmaSystemAddress::Get(0).ReadFrom(driver_test().driver()->mmio_).reg_value(),
-            zx_system_get_page_size());
+            FAKE_BTI_PHYS_ADDR);
   EXPECT_EQ(AdmaSystemAddress::Get(1).ReadFrom(driver_test().driver()->mmio_).reg_value(), 0u);
 
   const auto* const descriptors =
       reinterpret_cast<Sdhci::AdmaDescriptor64*>(driver_test().driver()->iobuf_virt());
 
   EXPECT_EQ(descriptors[0].attr, 0b100'001u);
-  EXPECT_EQ(descriptors[0].address, zx_system_get_page_size() + 80);
+  EXPECT_EQ(descriptors[0].address, FAKE_BTI_PHYS_ADDR + 80);
   EXPECT_EQ(descriptors[0].length, 512u);
 
   EXPECT_EQ(descriptors[1].attr, 0b100'001u);
-  EXPECT_EQ(descriptors[1].address, zx_system_get_page_size() + 32);
+  EXPECT_EQ(descriptors[1].address, FAKE_BTI_PHYS_ADDR + 32);
   EXPECT_EQ(descriptors[1].length, 512 * 3);
 
   // Buffer is greater than one page and gets split across two descriptors.
   EXPECT_EQ(descriptors[2].attr, 0b100'001u);
-  EXPECT_EQ(descriptors[2].address, zx_system_get_page_size() + 240);
+  EXPECT_EQ(descriptors[2].address, FAKE_BTI_PHYS_ADDR + 240);
   EXPECT_EQ(descriptors[2].length, zx_system_get_page_size() - 240);
 
   EXPECT_EQ(descriptors[3].attr, 0b100'001u);
-  EXPECT_EQ(descriptors[3].address, zx_system_get_page_size());
+  EXPECT_EQ(descriptors[3].address, FAKE_BTI_PHYS_ADDR);
   EXPECT_EQ(descriptors[3].length, (512 * 10) - zx_system_get_page_size() + 240);
 
   EXPECT_EQ(descriptors[4].attr, 0b100'011);
-  EXPECT_EQ(descriptors[4].address, zx_system_get_page_size() + 208);
+  EXPECT_EQ(descriptors[4].address, FAKE_BTI_PHYS_ADDR + 208);
   EXPECT_EQ(descriptors[4].length, 512 * 7);
 
   ASSERT_OK(StopDriver());
@@ -1942,7 +1942,7 @@ TEST_F(SdhciTest, OwnedAndUnownedBuffers) {
   ExpectPmoCount(3);
 
   EXPECT_EQ(AdmaSystemAddress::Get(0).ReadFrom(driver_test().driver()->mmio_).reg_value(),
-            zx_system_get_page_size());
+            FAKE_BTI_PHYS_ADDR);
   EXPECT_EQ(AdmaSystemAddress::Get(1).ReadFrom(driver_test().driver()->mmio_).reg_value(), 0u);
 
   const auto* const descriptors =
@@ -1951,28 +1951,28 @@ TEST_F(SdhciTest, OwnedAndUnownedBuffers) {
   uint64_t address;
   memcpy(&address, &descriptors[0].address, sizeof(address));
   EXPECT_EQ(descriptors[0].attr, 0b100'001u);
-  EXPECT_EQ(address, zx_system_get_page_size() + 16);
+  EXPECT_EQ(address, FAKE_BTI_PHYS_ADDR + 16);
   EXPECT_EQ(descriptors[0].length, 512u);
 
   memcpy(&address, &descriptors[1].address, sizeof(address));
   EXPECT_EQ(descriptors[1].attr, 0b100'001u);
-  EXPECT_EQ(address, zx_system_get_page_size() + 32);
+  EXPECT_EQ(address, FAKE_BTI_PHYS_ADDR + 32);
   EXPECT_EQ(descriptors[1].length, 512 * 3);
 
   // Buffer is greater than one page and gets split across two descriptors.
   memcpy(&address, &descriptors[2].address, sizeof(address));
   EXPECT_EQ(descriptors[2].attr, 0b100'001u);
-  EXPECT_EQ(address, zx_system_get_page_size() + 48);
+  EXPECT_EQ(address, FAKE_BTI_PHYS_ADDR + 48);
   EXPECT_EQ(descriptors[2].length, zx_system_get_page_size() - 48);
 
   memcpy(&address, &descriptors[3].address, sizeof(address));
   EXPECT_EQ(descriptors[3].attr, 0b100'001u);
-  EXPECT_EQ(address, zx_system_get_page_size());
+  EXPECT_EQ(address, FAKE_BTI_PHYS_ADDR);
   EXPECT_EQ(descriptors[3].length, (512 * 10) - zx_system_get_page_size() + 48);
 
   memcpy(&address, &descriptors[4].address, sizeof(address));
   EXPECT_EQ(descriptors[4].attr, 0b100'011);
-  EXPECT_EQ(address, zx_system_get_page_size() + 208);
+  EXPECT_EQ(address, FAKE_BTI_PHYS_ADDR + 208);
   EXPECT_EQ(descriptors[4].length, 512 * 7);
 
   ASSERT_OK(StopDriver());

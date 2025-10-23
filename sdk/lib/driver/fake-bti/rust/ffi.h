@@ -12,6 +12,8 @@
 
 __BEGIN_CDECLS
 
+extern uintptr_t g_fake_bti_phys_addr;
+
 zx_status_t fake_bti_create(zx_handle_t* out);
 
 zx_status_t fake_bti_set_paddrs(zx_handle_t bti, const zx_paddr_t* paddrs, size_t count);

@@ -10,6 +10,7 @@
 #include <lib/zx/result.h>
 #include <limits.h>
 #include <zircon/compiler.h>
+#include <zircon/limits.h>
 #include <zircon/types.h>
 
 // API calibration.
@@ -17,9 +18,9 @@
 namespace fake_bti {
 
 // All physical addresses returned by zx_bti_pin with a fake BTI will be set to this value.
-// PAGE_SIZE is chosen so that so superficial validity checks like "is the address correctly
+// ZX_MAX_PAGE_SIZE is chosen so that so superficial validity checks like "is the address correctly
 // aligned" and "is the address non-zero" in the code under test will pass.
-#define FAKE_BTI_PHYS_ADDR PAGE_SIZE
+#define FAKE_BTI_PHYS_ADDR ZX_MAX_PAGE_SIZE
 
 // Creates a fake BTI object.
 zx::result<zx::bti> CreateFakeBti();

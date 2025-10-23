@@ -293,8 +293,9 @@ class TestPagedVmo : public async_paged_vmo_t {
             {ASYNC_STATE_INIT}, &TestPagedVmo::CallHandler, ZX_HANDLE_INVALID, ZX_HANDLE_INVALID} {}
 
   zx_status_t Create(async_dispatcher_t* dispatcher, const zx::pager& pager, zx::vmo* vmo_out) {
-    zx_status_t status = async_create_paged_vmo(dispatcher, this, 0, pager.get(), PAGE_SIZE,
-                                                vmo_out->reset_and_get_address());
+    zx_status_t status =
+        async_create_paged_vmo(dispatcher, this, 0, pager.get(), zx_system_get_page_size(),
+                               vmo_out->reset_and_get_address());
     this->pager = pager.get();
     this->vmo = vmo_out->get();
     this->dispatcher_ = dispatcher;

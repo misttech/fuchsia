@@ -14,6 +14,8 @@
 
 namespace {
 
+const size_t kPageSize = zx_system_get_page_size();
+
 /// Helper function that returns a RAII object that wraps a pointer obtained by mmap so that it
 /// is automatically unmapped (via `munmap`) when it goes out of scope. Will cause test failure
 /// if the region could not be unmapped, but does not stop a test from continuing.
@@ -30,7 +32,7 @@ TEST(OnMappedTest, OnMmapped) {
   static constexpr zxio_ops_t test_ops = []() {
     zxio_ops_t ops = zxio_default_ops;
     ops.vmo_get = [](zxio_t* io, zxio_vmo_flags_t flags, zx_handle_t* out_vmo) {
-      return zx_vmo_create(PAGE_SIZE, 0, out_vmo);
+      return zx_vmo_create(kPageSize, 0, out_vmo);
     };
     ops.on_mapped = [](zxio_t* io, void* ptr) {
       uintptr_t* data = static_cast<uintptr_t*>(ptr);
@@ -51,9 +53,9 @@ TEST(OnMappedTest, OnMmapped) {
   fbl::unique_fd test_fd(open_test_fd());
   ASSERT_TRUE(test_fd.is_valid());
   uintptr_t* ptr = static_cast<uintptr_t*>(
-      mmap(nullptr, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, test_fd.get(), 0));
+      mmap(nullptr, kPageSize, PROT_READ | PROT_WRITE, MAP_SHARED, test_fd.get(), 0));
   ASSERT_NE(reinterpret_cast<intptr_t>(ptr), -1);
-  auto cleanup = defer_munmap(ptr, PAGE_SIZE);
+  auto cleanup = defer_munmap(ptr, kPageSize);
   EXPECT_EQ(*ptr, reinterpret_cast<uintptr_t>(ptr));
 }
 

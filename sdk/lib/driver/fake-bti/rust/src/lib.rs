@@ -26,6 +26,13 @@ impl Deref for FakeBti {
 }
 
 impl FakeBti {
+    /// All physical addresses returned by zx_bti_pin with a fake BTI will be set to this value.
+    #[inline(always)]
+    pub fn phys_addr() -> usize {
+        // SAFETY: This is just a constant with static storage.
+        unsafe { ffi::g_fake_bti_phys_addr }
+    }
+
     /// Creates a new FakeBti.
     pub fn create() -> Result<Self, zx::Status> {
         let handle = {
@@ -72,7 +79,9 @@ mod tests {
         let _pmt = bti
             .pin(zx::BtiOptions::PERM_READ, &vmo, 0, 16384, &mut paddrs[..])
             .expect("pin failed");
-        assert_eq!(paddrs, [4096, 4096, 4096, 4096]);
+
+        let expected = FakeBti::phys_addr();
+        assert_eq!(paddrs, [expected, expected, expected, expected]);
     }
 
     #[fuchsia::test]
@@ -89,7 +98,8 @@ mod tests {
                 &mut paddr[..],
             )
             .expect("pin failed");
-        assert_eq!(paddr, [4096]);
+
+        assert_eq!(paddr, [FakeBti::phys_addr()]);
     }
 
     #[fuchsia::test]

@@ -12,6 +12,8 @@ namespace {
 
 __BEGIN_C_DECLS
 
+__EXPORT uintptr_t g_fake_bti_phys_addr = FAKE_BTI_PHYS_ADDR;
+
 __EXPORT
 zx_status_t fake_bti_create(zx_handle_t* out) {
   zx::result result = fake_bti::CreateFakeBti();

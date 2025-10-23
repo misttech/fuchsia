@@ -7,6 +7,9 @@ use zx::sys::{zx_handle_t, zx_paddr_t, zx_status_t};
 // LINT.IfChange
 
 unsafe extern "C" {
+    /// All physical addresses returned by zx_bti_pin with a fake BTI will be set to this value.
+    pub static g_fake_bti_phys_addr: usize;
+
     /// Creates a fake BTI object.  `out` is assigned to a handle which can be interacted with using
     /// all of the usual system calls for a BTI object (and can be wrapped in a [`zx::Bti`]).
     ///

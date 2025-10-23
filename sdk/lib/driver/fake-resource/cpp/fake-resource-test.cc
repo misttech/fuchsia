@@ -11,11 +11,12 @@
 #include <zircon/types.h>
 
 #include <array>
-#include <climits>  // PAGE_SIZE
 
 #include <zxtest/zxtest.h>
 
 namespace {
+
+const size_t kPageSize = zx_system_get_page_size();
 
 zx::resource root_resource;
 
@@ -47,8 +48,8 @@ TEST_F(FakeResource, ChildBoundsTest) {
   std::array<char, ZX_MAX_NAME_LEN> parent_name = {"parent"};
   std::array<char, ZX_MAX_NAME_LEN> child_name = {"child"};
   // Create a parent resource from |4096-8192|
-  const uintptr_t parent_base = PAGE_SIZE;
-  const size_t parent_size = PAGE_SIZE;
+  const uintptr_t parent_base = kPageSize;
+  const size_t parent_size = kPageSize;
   zx::resource parent;
   ASSERT_OK(zx::resource::create(root_resource, ZX_RSRC_KIND_MMIO, parent_base, parent_size,
                                  parent_name.data(), parent_name.size(), &parent));
@@ -77,7 +78,7 @@ TEST_F(FakeResource, ExclusiveBoundsTest) {
   std::array<char, ZX_MAX_NAME_LEN> first_name = {"first"};
   std::array<char, ZX_MAX_NAME_LEN> second_name = {"second"};
   // Create a first resource from |4096-20480|
-  const uintptr_t first_base = PAGE_SIZE;
+  const uintptr_t first_base = kPageSize;
   const uint64_t first_size = static_cast<const uint64_t>(zx_system_get_page_size()) * 4;
   uint32_t flags = ZX_RSRC_KIND_MMIO | ZX_RSRC_FLAG_EXCLUSIVE;
   zx::resource first, second;
@@ -91,21 +92,21 @@ TEST_F(FakeResource, ExclusiveBoundsTest) {
                                        second_name.data(), second_name.size(), &second));
   }
   // Subset of first
-  ASSERT_NOT_OK(zx::resource::create(root_resource, flags, first_base + PAGE_SIZE, PAGE_SIZE,
+  ASSERT_NOT_OK(zx::resource::create(root_resource, flags, first_base + kPageSize, kPageSize,
                                      second_name.data(), second_name.size(), &second));
   // Superset of first.
-  ASSERT_NOT_OK(zx::resource::create(root_resource, flags, first_base - PAGE_SIZE,
-                                     first_size + PAGE_SIZE, second_name.data(), second_name.size(),
+  ASSERT_NOT_OK(zx::resource::create(root_resource, flags, first_base - kPageSize,
+                                     first_size + kPageSize, second_name.data(), second_name.size(),
                                      &second));
   // Before first base.
-  ASSERT_NOT_OK(zx::resource::create(root_resource, flags, first_base - PAGE_SIZE, first_size,
+  ASSERT_NOT_OK(zx::resource::create(root_resource, flags, first_base - kPageSize, first_size,
                                      second_name.data(), second_name.size(), &second));
   // Past first length.
-  ASSERT_NOT_OK(zx::resource::create(root_resource, flags, first_base + PAGE_SIZE, first_size,
+  ASSERT_NOT_OK(zx::resource::create(root_resource, flags, first_base + kPageSize, first_size,
                                      second_name.data(), second_name.size(), &second));
   // Separate region entirely
-  ASSERT_OK(zx::resource::create(root_resource, flags, first_base + first_size + PAGE_SIZE,
-                                 PAGE_SIZE, second_name.data(), second_name.size(), &second));
+  ASSERT_OK(zx::resource::create(root_resource, flags, first_base + first_size + kPageSize,
+                                 kPageSize, second_name.data(), second_name.size(), &second));
 }
 
 TEST_F(FakeResource, ExclusiveNewAfterExisting) {
@@ -150,12 +151,12 @@ TEST_F(FakeResource, VmoTest) {
   const uint64_t MAP_LEN = 64u;
   zx::resource child;
   std::array<char, ZX_MAX_NAME_LEN> child_name = {"child"};
-  ASSERT_OK(zx::resource::create(root_resource, ZX_RSRC_KIND_MMIO, 0, PAGE_SIZE, child_name.data(),
+  ASSERT_OK(zx::resource::create(root_resource, ZX_RSRC_KIND_MMIO, 0, kPageSize, child_name.data(),
                                  child_name.size(), &child));
-  ASSERT_TRUE(validate_resource_info(child, 0, PAGE_SIZE, ZX_RSRC_KIND_MMIO, child_name.data()));
+  ASSERT_TRUE(validate_resource_info(child, 0, kPageSize, ZX_RSRC_KIND_MMIO, child_name.data()));
   zx::vmo vmo;
   uintptr_t vaddr;
-  ASSERT_OK(zx::vmo::create_physical(child, 0, PAGE_SIZE, &vmo));
+  ASSERT_OK(zx::vmo::create_physical(child, 0, kPageSize, &vmo));
   ASSERT_OK(vmo.set_cache_policy(ZX_CACHE_POLICY_UNCACHED_DEVICE));
   ASSERT_OK(
       zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0, MAP_LEN, &vaddr));
