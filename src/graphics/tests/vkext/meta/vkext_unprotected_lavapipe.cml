@@ -51,6 +51,12 @@
             rights: [ "r*" ],
         },
         {
+            protocol: "fuchsia.kernel.VmexResource",
+            from: "parent",
+            to: "#vulkan_loader",
+            rights: [ "r*" ],
+        },
+        {
             protocol: "fuchsia.sysmem.Allocator",
             from: "parent",
             to: "#test",

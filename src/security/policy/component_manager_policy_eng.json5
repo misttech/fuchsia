@@ -233,6 +233,7 @@
                     "/core/testing/vfs-compliance-tests:**",
                     "/core/testing/component-framework-tests:**",
                     "/core/testing/storage-tests:**",
+                    "/core/testing/vulkan-tests:**",
 
                     // We allow tests to access ambient executability in the same
                     // way that we're permissive with use of the components v1
