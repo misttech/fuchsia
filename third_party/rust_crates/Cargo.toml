@@ -256,7 +256,7 @@ unic-ucd-block = "0.9"
 unicase = "2.8.1"
 unicode-segmentation = "1.12"
 unicode-width = "0.2.0"
-unicode-xid = "0.2.0"
+unicode-xid = "0.2.6"
 untrusted = "0.9"
 url = { version = "2.3", features = ["serde"] }
 utf8parse = "0.2.2"
@@ -1197,7 +1197,7 @@ license_files = ["LICENSE-APACHE"]
 [gn.package.unicode-width."0.2.0"]
 license_files = ["LICENSE-APACHE"]
 
-[gn.package.unicode-xid."0.2.0"]
+[gn.package.unicode-xid."0.2.6"]
 license_files = ["LICENSE-APACHE"]
 
 [gn.package.url."1.7.2"]

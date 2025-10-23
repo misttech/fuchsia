@@ -1,9 +1,9 @@
 # unicode-xid
 
 Determine if a `char` is a valid identifier for a parser and/or lexer according to
-[Unicode Standard Annex #31](http://www.unicode.org/reports/tr31/) rules.
+[Unicode Standard Annex #31](https://www.unicode.org/reports/tr31/) rules.
 
-[![Build Status](https://travis-ci.org/unicode-rs/unicode-xid.svg)](https://travis-ci.org/unicode-rs/unicode-xid)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/unicode-rs/unicode-xid/ci.yml?branch=master)](https://github.com/unicode-rs/unicode-xid/actions?query=branch%3Amaster)
 
 [Documentation](https://unicode-rs.github.io/unicode-xid/unicode_xid/index.html)
 
@@ -23,17 +23,34 @@ fn main() {
 unicode-xid supports a `no_std` feature. This eliminates dependence
 on std, and instead uses equivalent functions from core.
 
-# crates.io
-
-You can use this package in your project by adding the following
-to your `Cargo.toml`:
-
-```toml
-[dependencies]
-unicode-xid = "0.1.0"
-```
 
 # changelog
+
+## 0.2.6
+
+- Update to Unicode 16.0.0.
+
+## 0.2.5
+
+- Update to Unicode 15.1.0.
+
+## 0.2.4
+
+- Update to Unicode 15.0.0.
+- Replace `const` tables with `static` tables.
+
+## 0.2.3
+
+- Update to Unicode 14.0.0.
+
+## 0.2.2
+
+- Add an ASCII fast-path.
+
+## 0.2.1
+
+- Update to Unicode 13.0.0.
+- Speed up lookup.
 
 ## 0.2.0
 

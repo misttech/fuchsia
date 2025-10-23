@@ -1220,7 +1220,7 @@ group("unicode-width") {
 }
 
 group("unicode-xid") {
-  public_deps = [ ":unicode-xid-v0_2_0" ]
+  public_deps = [ ":unicode-xid-v0_2_6" ]
 }
 
 group("untrusted") {
@@ -20286,16 +20286,16 @@ rustc_library("unicode-width-v0_2_0") {
   applicable_licenses = [ ":unicode-width-v0_2_0.license" ]
 }
 
-license("unicode-xid-v0_2_0.license") {
+license("unicode-xid-v0_2_6.license") {
   public_package_name = "unicode_xid"
   license_files =
-      [ "//third_party/rust_crates/vendor/unicode-xid-0.2.0/LICENSE-APACHE" ]
+      [ "//third_party/rust_crates/vendor/unicode-xid-0.2.6/LICENSE-APACHE" ]
 }
 
-rustc_library("unicode-xid-v0_2_0") {
+rustc_library("unicode-xid-v0_2_6") {
   crate_name = "unicode_xid"
-  source_root = "//third_party/rust_crates/vendor/unicode-xid-0.2.0/src/lib.rs"
-  output_name = "unicode_xid-8b9ce29b16dc5a7f"
+  source_root = "//third_party/rust_crates/vendor/unicode-xid-0.2.6/src/lib.rs"
+  output_name = "unicode_xid-671f8ba4e4b410d1"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -20307,14 +20307,14 @@ rustc_library("unicode-xid-v0_2_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=8b9ce29b16dc5a7f",
-    "-Cextra-filename=-8b9ce29b16dc5a7f",
+    "-Cmetadata=671f8ba4e4b410d1",
+    "-Cextra-filename=-671f8ba4e4b410d1",
     "--cfg=feature=\"default\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":unicode-xid-v0_2_0.license" ]
+  applicable_licenses = [ ":unicode-xid-v0_2_6.license" ]
 }
 
 license("universal-hash-v0_5_1.license") {

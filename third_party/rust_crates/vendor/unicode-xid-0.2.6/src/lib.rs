@@ -1,10 +1,10 @@
-// Copyright 2012-2015 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2024 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
+// https://www.rust-lang.org/policies/licenses.
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
@@ -12,13 +12,11 @@
 //! [Unicode Standard Annex #31](http://www.unicode.org/reports/tr31/) rules.
 //!
 //! ```rust
-//! extern crate unicode_xid;
-//!
 //! use unicode_xid::UnicodeXID;
 //!
 //! fn main() {
-//!     let ch = 'a';
-//!     println!("Is {} a valid start of an identifier? {}", ch, UnicodeXID::is_xid_start(ch));
+//!     assert_eq!(UnicodeXID::is_xid_start('a'), true); // 'a' is a valid start of an identifier
+//!     assert_eq!(UnicodeXID::is_xid_start('△'), false); // '△' is a NOT valid start of an identifier
 //! }
 //! ```
 //!
@@ -27,20 +25,13 @@
 //! unicode-xid supports a `no_std` feature. This eliminates dependence
 //! on std, and instead uses equivalent functions from core.
 //!
-//! # crates.io
-//!
-//! You can use this package in your project by adding the following
-//! to your `Cargo.toml`:
-//!
-//! ```toml
-//! [dependencies]
-//! unicode-xid = "0.0.4"
-//! ```
 
-#![deny(missing_docs, unsafe_code)]
-#![doc(html_logo_url = "https://unicode-rs.github.io/unicode-rs_sm.png",
-       html_favicon_url = "https://unicode-rs.github.io/unicode-rs_sm.png")]
-
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
+#![doc(
+    html_logo_url = "https://unicode-rs.github.io/unicode-rs_sm.png",
+    html_favicon_url = "https://unicode-rs.github.io/unicode-rs_sm.png"
+)]
 #![no_std]
 #![cfg_attr(feature = "bench", feature(test, unicode_internals))]
 
@@ -80,8 +71,20 @@ pub trait UnicodeXID {
 
 impl UnicodeXID for char {
     #[inline]
-    fn is_xid_start(self) -> bool { derived_property::XID_Start(self) }
+    fn is_xid_start(self) -> bool {
+        // Fast-path for ascii idents
+        ('a' <= self && self <= 'z')
+            || ('A' <= self && self <= 'Z')
+            || (self > '\x7f' && derived_property::XID_Start(self))
+    }
 
     #[inline]
-    fn is_xid_continue(self) -> bool { derived_property::XID_Continue(self) }
+    fn is_xid_continue(self) -> bool {
+        // Fast-path for ascii idents
+        ('a' <= self && self <= 'z')
+            || ('A' <= self && self <= 'Z')
+            || ('0' <= self && self <= '9')
+            || self == '_'
+            || (self > '\x7f' && derived_property::XID_Continue(self))
+    }
 }

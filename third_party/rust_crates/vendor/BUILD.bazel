@@ -3199,14 +3199,14 @@ alias(
 )
 
 alias(
-    name = "unicode-xid-0.2.0",
-    actual = "//third_party/rust_crates/vendor/unicode-xid-0.2.0:unicode_xid",
+    name = "unicode-xid-0.2.6",
+    actual = "//third_party/rust_crates/vendor/unicode-xid-0.2.6:unicode_xid",
     tags = ["manual"],
 )
 
 alias(
     name = "unicode-xid",
-    actual = "//third_party/rust_crates/vendor/unicode-xid-0.2.0:unicode_xid",
+    actual = "//third_party/rust_crates/vendor/unicode-xid-0.2.6:unicode_xid",
     tags = ["manual"],
 )
 
