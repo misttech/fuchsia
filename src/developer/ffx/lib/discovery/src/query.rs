@@ -4,9 +4,7 @@
 use crate::desc::Description;
 use crate::{DiscoverySources, TargetHandle};
 use addr::{TargetAddr, TargetIpAddr};
-use fidl_fuchsia_developer_ffx::{
-    TargetAddrInfo, TargetInfo, TargetIpAddrInfo, TargetIpPort, TargetVSockNamespace,
-};
+use fidl_fuchsia_developer_ffx::TargetIpAddrInfo;
 use std::net::SocketAddr;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -83,80 +81,6 @@ impl TargetInfoQuery {
                 .any(|a| address_matcher(addr, &mut a.into(), t.ssh_port.unwrap_or(22))),
             Self::VSock(cid) => t.addresses.iter().filter_map(|x| x.cid_vsock()).any(|x| x == *cid),
             Self::Usb(cid) => t.addresses.iter().filter_map(|x| x.cid_usb()).any(|x| x == *cid),
-            Self::First => true,
-        }
-    }
-
-    pub fn match_target_info(&self, t: &TargetInfo) -> bool {
-        match self {
-            Self::NodenameOrSerial(arg) => {
-                if let Some(ref nodename) = t.nodename {
-                    if nodename == arg {
-                        return true;
-                    }
-                }
-                if let Some(ref serial) = t.serial_number {
-                    if serial == arg {
-                        return true;
-                    }
-                }
-                false
-            }
-            Self::Serial(arg) => {
-                if let Some(ref serial) = t.serial_number {
-                    if serial == arg {
-                        return true;
-                    }
-                }
-                false
-            }
-            Self::Addr(addr) => t
-                .addresses
-                .as_ref()
-                .map(|addresses| {
-                    addresses.iter().any(|a| {
-                        let Ok(a) = TargetIpAddr::try_from(TargetAddr::from(a)) else {
-                            return false;
-                        };
-                        let ssh_port = if let Some(TargetIpAddrInfo::IpPort(TargetIpPort {
-                            port: tp,
-                            ..
-                        })) = t.ssh_address
-                        {
-                            tp
-                        } else {
-                            22
-                        };
-                        address_matcher(addr, &mut a.into(), ssh_port)
-                    })
-                })
-                .unwrap_or(false),
-            Self::VSock(cid) => t
-                .addresses
-                .as_ref()
-                .map(|addresses| {
-                    addresses.iter().any(|a| {
-                        if let TargetAddrInfo::Vsock(a) = a {
-                            a.cid == *cid && a.namespace == TargetVSockNamespace::Vsock
-                        } else {
-                            false
-                        }
-                    })
-                })
-                .unwrap_or(false),
-            Self::Usb(cid) => t
-                .addresses
-                .as_ref()
-                .map(|addresses| {
-                    addresses.iter().any(|a| {
-                        if let TargetAddrInfo::Vsock(a) = a {
-                            a.cid == *cid && a.namespace == TargetVSockNamespace::Usb
-                        } else {
-                            false
-                        }
-                    })
-                })
-                .unwrap_or(false),
             Self::First => true,
         }
     }
@@ -305,7 +229,7 @@ pub fn target_addr_info_to_socketaddr(tai: TargetIpAddrInfo) -> SocketAddr {
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl_fuchsia_developer_ffx::{TargetIp, TargetVSockCtx};
+    use fidl_fuchsia_developer_ffx::{TargetIp, TargetIpPort};
     use fidl_fuchsia_net as net;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use test_case::test_case;
@@ -359,13 +283,6 @@ mod test {
             addresses: vec![TargetAddr::VSockCtx(CID)],
             ..Default::default()
         }));
-        assert!(q.match_target_info(&TargetInfo {
-            addresses: Some(vec![TargetAddrInfo::Vsock(TargetVSockCtx {
-                cid: CID,
-                namespace: TargetVSockNamespace::Vsock
-            })]),
-            ..Default::default()
-        }));
     }
 
     #[test]
@@ -379,13 +296,6 @@ mod test {
 
         assert!(q.match_description(&Description {
             addresses: vec![TargetAddr::UsbCtx(CID)],
-            ..Default::default()
-        }));
-        assert!(q.match_target_info(&TargetInfo {
-            addresses: Some(vec![TargetAddrInfo::Vsock(TargetVSockCtx {
-                cid: CID,
-                namespace: TargetVSockNamespace::Usb
-            })]),
             ..Default::default()
         }));
     }
