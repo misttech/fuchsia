@@ -9,7 +9,7 @@ use anyhow::{Result, ensure};
 use assembly_artifact_cache::{MOSClient, MOSIdentifier};
 use async_trait::async_trait;
 use camino::Utf8PathBuf;
-use ffx_product_bisect_args::BisectCommand;
+use ffx_product_bundle_bisect_args::BisectCommand;
 use ffx_writer::{SimpleWriter, ToolIO};
 use serde::{Deserialize, Serialize};
 

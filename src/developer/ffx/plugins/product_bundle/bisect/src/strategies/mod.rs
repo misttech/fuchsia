@@ -4,7 +4,7 @@
 
 use crate::search_space::{BisectionStatus, SearchSpace};
 use crate::strategies::longest_dimension::LongestDimensionStrategy;
-use ffx_product_bisect_args as args;
+use ffx_product_bundle_bisect_args as args;
 use serde::{Deserialize, Serialize};
 
 pub mod longest_dimension;

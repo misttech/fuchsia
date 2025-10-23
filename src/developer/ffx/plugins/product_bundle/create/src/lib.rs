@@ -12,7 +12,7 @@ use camino::Utf8PathBuf;
 use delivery_blob::DeliveryBlobType;
 use errors::FfxError;
 use ffx_config::EnvironmentContext;
-use ffx_product_create_args::CreateCommand;
+use ffx_product_bundle_create_args::CreateCommand;
 use ffx_writer::{SimpleWriter, ToolIO};
 use fho::{FfxMain, FfxTool};
 use product_bundle::{ProductBundleBuilder, Slot};

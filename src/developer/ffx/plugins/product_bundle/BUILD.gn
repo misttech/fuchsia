@@ -10,8 +10,10 @@ ffx_plugin("ffx_product_bundle") {
   version = "0.1.0"
   edition = "2021"
 
-  plugin_deps =
-      [ "//src/developer/ffx/plugins/product/create:ffx_product_create" ]
+  plugin_deps = [
+    "//src/developer/ffx/plugins/product_bundle/bisect:ffx_product_bundle_bisect",
+    "//src/developer/ffx/plugins/product_bundle/create:ffx_product_bundle_create",
+  ]
 
   args_sources = [ "src/args.rs" ]
   args_deps = [

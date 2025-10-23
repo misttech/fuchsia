@@ -12,6 +12,7 @@ rustc_library("delivery_blob") {
   visibility = [
     "//src/developer/ffx/plugins/package/blob/*",
     "//src/developer/ffx/plugins/product/*",
+    "//src/developer/ffx/plugins/product_bundle/*",
     "//src/lib/assembly/*",
     "//src/security/lib/scrutiny/*",
     "//src/storage/*",

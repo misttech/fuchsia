@@ -11,7 +11,7 @@ use assembly_cli_args::{ProductArgs, ValidationMode};
 use assembly_config_schema::Architecture;
 use camino::Utf8PathBuf;
 use ffx_config::EnvironmentContext;
-use ffx_product_bisect_args::BisectCommand;
+use ffx_product_bundle_bisect_args::BisectCommand;
 use ffx_writer::{SimpleWriter, ToolIO};
 use std::fs::{self, File};
 use std::io::{self, Write};
@@ -262,7 +262,7 @@ mod tests {
     use assembly_artifact_cache::ArtifactType;
     use async_trait::async_trait;
     use ffx_config::EnvironmentContext;
-    use ffx_product_bisect_args as args;
+    use ffx_product_bundle_bisect_args as args;
     use futures_lite::future::block_on;
     use std::cell::RefCell;
     use std::collections::VecDeque;

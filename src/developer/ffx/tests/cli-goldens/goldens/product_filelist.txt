@@ -1,5 +1,4 @@
 ffx/product.golden
-ffx/product/bisect.golden
 ffx/product/create-old.golden
 ffx/product/download.golden
 ffx/product/get-artifacts.golden
