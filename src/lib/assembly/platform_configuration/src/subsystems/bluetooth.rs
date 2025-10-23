@@ -80,6 +80,12 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
             "fuchsia.bluetooth.OverrideVendorCapabilitiesVersion",
             Config::new(ConfigValueType::Uint16, core.override_vendor_capabilities_version.into()),
         )?;
+        // Fast Pair Provider is currently disabled by default.
+        // TODO(https://fxbug.dev/253626392): Add a Fast Pair config to the schema and use it here.
+        builder.set_config_capability(
+            "fuchsia.bluetooth.FastPairProvider",
+            Config::new(ConfigValueType::Bool, serde_json::Value::Bool(false)),
+        )?;
 
         if let A2dpConfig::Enabled(a2dp) = profiles.a2dp {
             builder.platform_bundle("bluetooth_a2dp");

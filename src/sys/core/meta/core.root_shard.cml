@@ -25,6 +25,7 @@
         },
         {
             config: [
+                "fuchsia.bluetooth.FastPairProvider",
                 "fuchsia.bluetooth.LegacyPairing",
                 "fuchsia.bluetooth.OverrideVendorCapabilitiesVersion",
                 "fuchsia.bluetooth.ScoOffloadPathIndex",

@@ -56,6 +56,7 @@ fuchsia_structured_config_values("default_config_values") {
   cm_label = ":manifest"
   values = {
     autostart_snoop = true
+    fastpair_provider_enabled = false
   }
 }
 

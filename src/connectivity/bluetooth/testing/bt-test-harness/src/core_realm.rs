@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::emulator::EMULATOR_ROOT_DRIVER_URL;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl_fuchsia_bluetooth_snoop::SnoopMarker;
 use fidl_fuchsia_device::NameProviderMarker;
 use fidl_fuchsia_logger::LogSinkMarker;
@@ -173,6 +173,23 @@ impl CoreRealm {
                     .capability(Capability::protocol::<fbsys::BootstrapMarker>())
                     .from(&bt_init)
                     .to(Ref::parent()),
+            )
+            .await?;
+
+        // Add the `fuchsia.bluetooth.FastPairProvider` capability to the realm with its value
+        // set to false as all Core Realm tests do not require it.
+        builder
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.bluetooth.FastPairProvider".parse()?,
+                value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(false)),
+            }))
+            .await?;
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::configuration("fuchsia.bluetooth.FastPairProvider"))
+                    .from(Ref::self_())
+                    .to(&bt_init),
             )
             .await?;
 

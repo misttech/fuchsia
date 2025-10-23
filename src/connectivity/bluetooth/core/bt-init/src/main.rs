@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use async_trait::async_trait;
 use bt_init_config::Config;
 use fidl::endpoints::{DiscoverableProtocolMarker, Proxy};
@@ -19,7 +19,7 @@ use fuchsia_bluetooth::constants::{
     BT_HOST, BT_HOST_COLLECTION, BT_HOST_URL, DEV_DIR, HCI_DEVICE_DIR,
 };
 use fuchsia_component::{client, server};
-use futures::{future, StreamExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt, future};
 use log::{error, info, warn};
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
@@ -170,11 +170,17 @@ fn main() -> Result<(), Error> {
         // components.
         let underlying_profile_svc =
             open_childs_service_directory::<_>(BT_RFCOMM_CHILD_NAME, &mut ComponentClient).await?;
-        let underlying_pairing_svc = open_childs_service_directory::<_>(
-            BT_FASTPAIR_PROVIDER_CHILD_NAME,
-            &mut ComponentClient,
-        )
-        .await?;
+
+        let pairing_svc_child_name = if cfg.fastpair_provider_enabled {
+            info!("Fast Pair Provider is enabled");
+            BT_FASTPAIR_PROVIDER_CHILD_NAME
+        } else {
+            BT_GAP_CHILD_NAME
+        };
+        let underlying_pairing_svc = ComponentClient
+            .open_childs_exposed_directory(pairing_svc_child_name.to_owned())
+            .await?;
+
         // Expose the `bredr.Profile` and `sys.Pairing` protocols to the system.
         let mut fs = server::ServiceFs::new();
         let _ = fs
@@ -334,11 +340,13 @@ mod tests {
         let _ = mock_client.children_to_fail_for.insert(BT_RFCOMM_CHILD_NAME.to_owned());
         let _ = mock_client.children_to_fail_for.insert(BT_GAP_CHILD_NAME.to_owned());
         let _ = mock_client.children_to_fail_for.insert(BT_FASTPAIR_PROVIDER_CHILD_NAME.to_owned());
-        assert!(open_childs_service_directory(BT_RFCOMM_CHILD_NAME, &mut mock_client)
-            .await
-            .is_err());
-        assert!(open_childs_service_directory(BT_FASTPAIR_PROVIDER_CHILD_NAME, &mut mock_client)
-            .await
-            .is_err());
+        assert!(
+            open_childs_service_directory(BT_RFCOMM_CHILD_NAME, &mut mock_client).await.is_err()
+        );
+        assert!(
+            open_childs_service_directory(BT_FASTPAIR_PROVIDER_CHILD_NAME, &mut mock_client)
+                .await
+                .is_err()
+        );
     }
 }

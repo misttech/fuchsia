@@ -347,6 +347,26 @@ async fn bt_init_component_topology() {
         )
         .await
         .expect("Failed adding temp storage route to SecureStore component");
+
+    // Add the `fuchsia.bluetooth.FastPairProvider` capability to the realm with its value
+    // set to false as all Core Realm tests do not require it.
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.bluetooth.FastPairProvider".parse().unwrap(),
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(false)),
+        }))
+        .await
+        .unwrap();
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::configuration("fuchsia.bluetooth.FastPairProvider"))
+                .from(Ref::self_())
+                .to(&bt_init),
+        )
+        .await
+        .unwrap();
+
     let test_topology = builder.build().await.unwrap();
 
     // If the routing is correctly configured, we expect one of each of the Event enum to be sent

@@ -68,6 +68,13 @@
             // This service replaces the directory capability above.
             service: "fuchsia.hardware.bluetooth.Service",
         },
+        {
+            config: "fuchsia.bluetooth.FastPairProvider",
+            key: "fastpair_provider_enabled",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
     ],
     offer: [
         {

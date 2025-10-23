@@ -292,6 +292,7 @@ fuchsia_structured_config_values("test-bt-init-config") {
   cm_label = ":test_bt_init_manifest"
   values = {
     autostart_snoop = true
+    fastpair_provider_enabled = false
   }
 }
 
