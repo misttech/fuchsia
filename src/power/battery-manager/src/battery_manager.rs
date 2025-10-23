@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::history_logger::HistoryLogger;
+use crate::polisher::Polisher;
 use anyhow::{Context, Error};
 use fidl::HandleBased;
 use fidl::endpoints::Proxy;
@@ -56,7 +57,7 @@ pub struct BatteryManager {
     watchers: Arc<Mutex<Vec<fpower::BatteryInfoWatcherProxy>>>,
     simulation_state: RwLock<bool>,
     simulated_battery_info: RwLock<fpower::BatteryInfo>,
-
+    data_polisher: Arc<Polisher>,
     /// Publishes battery events to Inspect.
     history_logger: Arc<SMutex<HistoryLogger>>,
 
@@ -96,6 +97,7 @@ impl BatteryManager {
                 timestamp: Some(get_current_time()),
                 ..Default::default()
             }),
+            data_polisher: Arc::new(Polisher::new()),
             history_logger: Arc::new(SMutex::new(logger)),
             charge_wake_lease: Arc::new(Mutex::new(None)),
         }
@@ -190,6 +192,7 @@ impl BatteryManager {
         info: fpower::BatteryInfo,
         sag: Option<fsystem::ActivityGovernorProxy>,
     ) {
+        let info = self.data_polisher.polish_info(info);
         let new_charge_status = info.charge_status;
         let new_charge_source = info.charge_source;
         self.determine_suspend_status(new_charge_source, sag).await;
@@ -564,12 +567,12 @@ mod tests {
 
         // Set some battery info, and add a fake watcher.
         let mut updated_info = battery_manager.get_battery_info_copy();
-        updated_info.level_percent = Some(60.0);
+        updated_info.level_percent = Some(100.0);
         updated_info.status = Some(fpower::BatteryStatus::Ok);
         battery_manager
             .add_watcher(fake_watcher(
                 move |info| {
-                    assert_eq!(info.level_percent, Some(60.0));
+                    assert_eq!(info.level_percent, Some(100.0));
                     assert_eq!(info.status, Some(fpower::BatteryStatus::Ok));
                 },
                 move |lease| {
@@ -600,7 +603,7 @@ mod tests {
         let final_info = battery_manager.get_battery_info_copy();
 
         // Assert that the state was updated
-        assert_eq!(final_info.level_percent, Some(60.0));
+        assert_eq!(final_info.level_percent, Some(100.0));
         assert_eq!(final_info.status, Some(fpower::BatteryStatus::Ok));
 
         rx_signal.await.unwrap();
@@ -646,7 +649,7 @@ mod tests {
         // Set some battery info, and add a fake watcher.
         let (_dir, battery_manager) = create_manager();
         let mut updated_info = battery_manager.get_battery_info_copy();
-        updated_info.level_percent = Some(60.0);
+        updated_info.level_percent = Some(100.0);
         updated_info.status = Some(fpower::BatteryStatus::Ok);
         updated_info.charge_source = Some(fpower::ChargeSource::Usb);
         updated_info.timestamp = Some(20);
@@ -656,7 +659,7 @@ mod tests {
         battery_manager
             .add_watcher(fake_watcher(
                 move |info| {
-                    assert_eq!(info.level_percent, Some(60.0));
+                    assert_eq!(info.level_percent, Some(100.0));
                     assert_eq!(info.status, Some(fpower::BatteryStatus::Ok));
                     let timestamp = info.timestamp.unwrap();
                     assert!(timestamp >= first_timestamp);
@@ -682,7 +685,7 @@ mod tests {
         let final_info = battery_manager.get_battery_info_copy();
 
         // Assert that the state was updated
-        assert_eq!(final_info.level_percent, Some(60.0));
+        assert_eq!(final_info.level_percent, Some(100.0));
         assert_eq!(final_info.status, Some(fpower::BatteryStatus::Ok));
 
         rx_signal.await.unwrap();

@@ -5,6 +5,7 @@
 mod battery_manager;
 mod battery_simulator;
 mod history_logger;
+mod polisher;
 
 use crate::battery_manager::{BatteryManager, BatterySimulationStateObserver};
 use crate::battery_simulator::SimulatedBatteryInfoSource;

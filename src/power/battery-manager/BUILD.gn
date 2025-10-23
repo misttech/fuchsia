@@ -44,6 +44,7 @@ rustc_binary("bin") {
     "src/battery_simulator.rs",
     "src/history_logger.rs",
     "src/main.rs",
+    "src/polisher.rs",
   ]
 
   test_deps = [
