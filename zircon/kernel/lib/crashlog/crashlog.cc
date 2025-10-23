@@ -194,6 +194,8 @@ size_t crashlog_to_string(ktl::span<char> target, zircon_crash_reason_t reason) 
     // Finally, if we have been configured to do so, render as much of the
     // recent debug log as we can fit into the crashlog memory.
 
+    // This banner is load-bearing server-side as it's used to extract Dlog dump.
+    // Please notify //src/developer/forensics/OWNERS upon changing.
     // LINT.IfChange
     constexpr ktl::string_view kHeader{"\n--- BEGIN DLOG DUMP ---\n"};
     constexpr ktl::string_view kFooter{"\n--- END DLOG DUMP ---\n"};

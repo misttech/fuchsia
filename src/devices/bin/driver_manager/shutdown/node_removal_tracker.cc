@@ -26,6 +26,8 @@ const char* GetNodeStateDescription(NodeState state) {
     case NodeState::kWaitingOnChildren:
       return "waiting for children to complete shutdown";
     case NodeState::kWaitingOnDriver:
+      // This message is load-bearing server-side as it's used to identify the hanging driver.
+      // Please notify //src/developer/forensics/OWNERS upon changing.
       return "waiting for driver's Stop() function and destructor finish running";
     case NodeState::kWaitingOnDriverComponent:
       return "waiting for the driver component to stop";
@@ -86,6 +88,8 @@ void NodeRemovalTracker::OnRemovalTimeout() {
     if (node.state == NodeState::kDestroyed || node.state == NodeState::kPrestop) {
       continue;
     }
+    // This log message is load-bearing server-side as it's used to identify the hanging driver.
+    // Please notify //src/developer/forensics/OWNERS upon changing.
     fdf_log::info("  '{}' ('{}'): {}", node.name, node.driver_url,
                   GetNodeStateDescription(node.state));
   }

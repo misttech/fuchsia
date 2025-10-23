@@ -336,6 +336,9 @@ zx_status_t dispatch_user_exception(uint exception_type,
       dump_context(pname);
     }
 
+    // This log message is load-bearing server-side as it's used to identify the
+    // critical component responsible for the reboot.
+    // Please notify //src/developer/forensics/OWNERS upon changing.
     printf("KERN: terminating process '%s' (%lu)\n", pname.data(), process->get_koid());
     process->Kill(ZX_TASK_RETCODE_EXCEPTION_KILL);
   }

@@ -671,6 +671,9 @@ impl ComponentInstance {
                 if matches!(ret.disposition, StopDisposition::KilledAfterTimeout)
                     || matches!(ret.disposition, StopDisposition::Killed(_))
                 {
+                    // This log message is load-bearing server-side as it's used to identify driver
+                    // hangs during shutdown.
+                    // Please notify //src/developer/forensics/OWNERS upon changing.
                     warn!(
                         "component {} did not stop in {:?}. Killed it.",
                         self.moniker,
