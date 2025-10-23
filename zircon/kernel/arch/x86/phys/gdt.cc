@@ -540,10 +540,12 @@ void SetUpIdt() {
 // that needs to go there. But the pointer variable needs to exist.
 ArchPhysInfo* gArchPhysInfo;
 
-void ArchSetUp(ktl::optional<EarlyBootZbi> zbi) {
+void ArchSetUpCpu() {
   gStandardSegments.Load();
   SetUpIdt();
 }
+
+void ArchSetUpZbi(EarlyBootZbi zbi) {}
 
 uint64_t PhysExceptionResume(PhysExceptionState& state, uint64_t pc, uint64_t sp, uint64_t psr) {
   state.regs.rip = pc;

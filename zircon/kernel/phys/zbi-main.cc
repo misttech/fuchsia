@@ -21,6 +21,9 @@ void PhysMain(void* zbi_ptr, arch::EarlyTicks ticks) {
   // Apply any relocations required to ourself.
   ApplyRelocations();
 
+  // Perform any architecture-specific set-up dependent on machine state.
+  ArchSetUpCpu();
+
   // Initially set up stdout to write to nowhere.
   InitStdout();
 
@@ -51,8 +54,8 @@ void PhysMain(void* zbi_ptr, arch::EarlyTicks ticks) {
   // we shouldn't be sending output to the wrong UART in between.
   SetUartConsole(boot_options.serial);
 
-  // Perform any architecture-specific set up.
-  ArchSetUp(early_zbi);
+  // Perform any architecture-specific set-up dependent on ZBI state.
+  ArchSetUpZbi(early_zbi);
 
   // Call the real entry point now that it can use printf!  It does not return.
   ZbiMain(zbi_ptr, early_zbi, ticks);

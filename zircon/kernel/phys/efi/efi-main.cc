@@ -139,7 +139,10 @@ efi_status EfiMain(efi_handle image_handle, efi_system_table* systab) {
     printf("%s: Cannot open EFI_LOADED_IMAGE_PROTOCOL: %#zx\n", ProgramName(), image.error_value());
   }
 
-  ArchSetUp({});
+  // TODO(https://fxbug.dev/454670680): Ideally this should be before
+  // InitStdout(); however this results in a mystery crashes/failures on x86
+  // when moved up.
+  ArchSetUpCpu();
 
   // Allocate heap copies of the argument strings converted to UTF8.
   // These will never be freed.

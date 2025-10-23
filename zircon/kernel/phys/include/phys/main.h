@@ -86,7 +86,17 @@ void ZbiInitMemory(const void* zbi_ptr, EarlyBootZbi zbi, ktl::span<zbi_mem_rang
                    ktl::optional<memalloc::Range> extra_special_range = {},
                    AddressSpace* aspace = nullptr);
 
-void ArchSetUp(ktl::optional<EarlyBootZbi> zbi);
+// Performs initial set-up dependent solely on CPU state. This routine should
+// be called as early as possible and before UART configuration and
+// ArchSetUpZbi() (if called), and is responsible for setting gArchPhysInfo (if
+// used).
+void ArchSetUpCpu();
+
+// Performs the rest of basic architecture-specific set-up based on ZBI
+// information. In contexts where there is a ZBI, this routine should be called
+// after ArchSetUpCpu() and UART configuration and as early as possible after
+// the ZBI is parsed.
+void ArchSetUpZbi(EarlyBootZbi zbi);
 
 // Try to reboot or shut down the machine in a panic situation.
 [[noreturn]] void ArchPanicReset();

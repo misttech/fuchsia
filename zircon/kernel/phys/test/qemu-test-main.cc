@@ -21,6 +21,8 @@ void PhysMain(void* bootloader_data, arch::EarlyTicks ticks) {
   // Apply any relocations required to ourself.
   ApplyRelocations();
 
+  ArchSetUpCpu();
+
   InitStdout();
 
   SetUartConsole(uart::qemu::kConfig);
@@ -28,8 +30,6 @@ void PhysMain(void* bootloader_data, arch::EarlyTicks ticks) {
   static BootOptions boot_opts;
   boot_opts.serial = uart::qemu::kConfig;
   gBootOptions = &boot_opts;
-
-  ArchSetUp({});
 
   // Early boot may have filled the screen with logs. Add a newline to
   // terminate any previous line, and another newline to leave a blank.

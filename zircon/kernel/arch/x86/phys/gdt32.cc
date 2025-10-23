@@ -14,7 +14,8 @@
 
 #include <phys/main.h>
 
-void ArchSetUp(ktl::optional<EarlyBootZbi> zbi) {}
+void ArchSetUpCpu() {}
+void ArchSetUpZbi(EarlyBootZbi zbi) {}
 
 #endif
 

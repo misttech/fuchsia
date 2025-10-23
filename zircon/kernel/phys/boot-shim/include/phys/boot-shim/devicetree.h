@@ -176,13 +176,14 @@ class BootShimHelper {
             // Must happen before initializing the symbolize object.
             ApplyRelocations(), InitStdout(), after_relocs_cb(), shim_name)),
         shim_(shim_name, [this, boot_payload]() {
+          ArchSetUpCpu();
           // Will initialize `gDevicetreeBoot`.
           InitMemory(boot_payload, {}, maybe_aspace_.Get());
           void* zbi =
               reinterpret_cast<void*>(const_cast<std::byte*>(gDevicetreeBoot.ramdisk.data()));
           EarlyBootZbiBytes early_zbi_bytes{zbi};
           EarlyBootZbi early_zbi{&early_zbi_bytes};
-          ArchSetUp(early_zbi);
+          ArchSetUpZbi(early_zbi);
           return devicetree::Devicetree(devicetree::ByteView(
               static_cast<const uint8_t*>(boot_payload), std::numeric_limits<uintptr_t>::max()));
         }()) {}

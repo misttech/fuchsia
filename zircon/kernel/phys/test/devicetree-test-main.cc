@@ -32,6 +32,7 @@
 #include "test-main.h"
 
 void PhysMain(void* flat_devicetree_blob, arch::EarlyTicks ticks) {
+  ArchSetUpCpu();
   InitStdout();
   ApplyRelocations();
 
@@ -52,10 +53,10 @@ void PhysMain(void* flat_devicetree_blob, arch::EarlyTicks ticks) {
   }
 
   EarlyBootZbiBytes early_zbi_bytes{chosen.zbi()};
-  SetBootOptions(boot_options, EarlyBootZbi{&early_zbi_bytes}, chosen.cmdline().value_or(""));
+  EarlyBootZbi early_zbi{&early_zbi_bytes};
+  SetBootOptions(boot_options, early_zbi, chosen.cmdline().value_or(""));
   SetUartConsole(boot_options.serial);
-
-  ArchSetUp({});
+  ArchSetUpZbi(early_zbi);
 
   // Early boot may have filled the screen with logs. Add a newline to
   // terminate any previous line, and another newline to leave a blank.

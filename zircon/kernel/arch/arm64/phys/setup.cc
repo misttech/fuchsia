@@ -102,16 +102,14 @@ ArchPhysInfo gArchPhysInfoStorage;
 
 ArchPhysInfo* gArchPhysInfo;
 
-void ArchSetUp(ktl::optional<EarlyBootZbi> zbi) {
+void ArchSetUpCpu() {
   gArchPhysInfo = &gArchPhysInfoStorage;
 
   // Hereafter any machine exceptions should be handled.
   ArmSetVbar(phys_exception);
-
-  if (zbi) {
-    ArmPsciSetup(FindPsciConfig(*zbi));
-  }
 }
+
+void ArchSetUpZbi(EarlyBootZbi zbi) { ArmPsciSetup(FindPsciConfig(zbi)); }
 
 uint64_t PhysExceptionResume(PhysExceptionState& state, uint64_t pc, uint64_t sp, uint64_t psr) {
   // Update the fields in the trap frame just for consistency.  The PC and SPSR
