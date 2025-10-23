@@ -1326,6 +1326,50 @@ impl<I: Ip, D: DeviceIdentifier, A: SocketMapAddrSpec, S: SocketMapStateSpec>
     }
 }
 
+/// An identifier of a sharing domain used for SO_REUSEPORT.
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
+pub struct SharingDomain(u64);
+
+impl SharingDomain {
+    /// Creates a new instance with the specified ID. Caller must ensure that the `id`
+    /// uniquely identifies the sharing domain and that the client is authorized to use it,
+    /// e.g. on Fuchsia the ID is the KOID of a handle provided by the client.
+    pub const fn new(id: u64) -> Self {
+        SharingDomain(id)
+    }
+}
+
+/// A value of the SO_REUSEPORT option. Also encodes the sharing domain, which allows
+/// to ensure that only sockets in the same domain can share ports.
+#[derive(Default, Debug, Eq, PartialEq, Clone, Copy, Hash)]
+pub enum ReusePortOption {
+    /// The option is disabled.
+    #[default]
+    Disabled,
+
+    /// The option is enabled: the port is shareable with other sockets in the
+    /// same sharing domain.
+    Enabled(SharingDomain),
+}
+
+impl ReusePortOption {
+    /// Returns `true` if the option is enabled.
+    pub fn is_enabled(&self) -> bool {
+        matches!(self, ReusePortOption::Enabled(_))
+    }
+
+    /// Returns `true` if the socket is shareable with a socket with the
+    /// specified value of the SO_REUSEPORT option.
+    pub fn is_shareable_with(&self, other: &Self) -> bool {
+        match (self, other) {
+            (ReusePortOption::Enabled(domain1), ReusePortOption::Enabled(domain2)) => {
+                domain1 == domain2
+            }
+            _ => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use alloc::vec;

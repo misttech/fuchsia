@@ -203,8 +203,8 @@ pub mod socket {
     };
 
     pub use netstack3_base::socket::{
-        AddrIsMappedError, NotDualStackCapableError, SetDualStackEnabledError, ShutdownType,
-        SocketCookie, SocketWritableListener, StrictlyZonedAddr,
+        AddrIsMappedError, NotDualStackCapableError, ReusePortOption, SetDualStackEnabledError,
+        SharingDomain, ShutdownType, SocketCookie, SocketWritableListener, StrictlyZonedAddr,
     };
 
     pub use netstack3_base::{

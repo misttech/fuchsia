@@ -22,9 +22,10 @@ use net_types::{MulticastAddr, SpecifiedAddr, Witness, ZonedAddr};
 use netstack3_base::socket::{
     AddrEntry, AddrIsMappedError, AddrVec, Bound, ConnAddr, ConnInfoAddr, ConnIpAddr, FoundSockets,
     IncompatibleError, InsertError, Inserter, ListenerAddr, ListenerAddrInfo, ListenerIpAddr,
-    MaybeDualStack, NotDualStackCapableError, RemoveResult, SetDualStackEnabledError, ShutdownType,
-    SocketAddrType, SocketCookie, SocketIpAddr, SocketMapAddrSpec, SocketMapAddrStateSpec,
-    SocketMapConflictPolicy, SocketMapStateSpec, SocketWritableListener,
+    MaybeDualStack, NotDualStackCapableError, RemoveResult, ReusePortOption,
+    SetDualStackEnabledError, SharingDomain, ShutdownType, SocketAddrType, SocketCookie,
+    SocketIpAddr, SocketMapAddrSpec, SocketMapAddrStateSpec, SocketMapConflictPolicy,
+    SocketMapStateSpec, SocketWritableListener,
 };
 use netstack3_base::socketmap::{IterShadows as _, SocketMap, Tagged};
 use netstack3_base::sync::{RwLock, StrongRc};
@@ -594,6 +595,7 @@ struct SocketSelectorParams<I: Ip, A: AsRef<I::Addr>> {
 #[derive(Debug, Eq, PartialEq)]
 pub struct LoadBalancedEntry<T> {
     id: T,
+    sharing_domain: SharingDomain,
     reuse_addr: bool,
 }
 
@@ -602,7 +604,7 @@ pub enum AddrState<T> {
     Exclusive(T),
     Shared {
         // Entries with the SO_REUSEADDR flag. If this list is not empty then
-        // new packets are delivered the last socket in this list.
+        // new packets are delivered to the last socket in this list.
         priority: Vec<T>,
 
         // Entries with the SO_REUSEPORT flag. Some of them may have
@@ -615,14 +617,14 @@ pub enum AddrState<T> {
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, Default)]
 pub struct Sharing {
     reuse_addr: bool,
-    reuse_port: bool,
+    reuse_port: ReusePortOption,
 }
 
 impl Sharing {
     pub(crate) fn is_shareable_with_new_state(&self, new_state: Sharing) -> bool {
         let Sharing { reuse_addr, reuse_port } = self;
         let Sharing { reuse_addr: new_reuse_addr, reuse_port: new_reuse_port } = new_state;
-        (*reuse_addr && new_reuse_addr) || (*reuse_port && new_reuse_port)
+        (*reuse_addr && new_reuse_addr) || reuse_port.is_shareable_with(&new_reuse_port)
     }
 }
 
@@ -647,15 +649,35 @@ impl ToSharingOptions for AddrVecTag {
 impl<T> ToSharingOptions for AddrState<T> {
     fn to_sharing_options(&self) -> Sharing {
         match self {
-            AddrState::Exclusive(_) => Sharing { reuse_addr: false, reuse_port: false },
+            AddrState::Exclusive(_) => {
+                Sharing { reuse_addr: false, reuse_port: ReusePortOption::Disabled }
+            }
             AddrState::Shared { priority, load_balanced } => {
                 // All sockets in `priority` have `REUSE_ADDR` flag set. Check
                 // that all sockets in `load_balanced` have it set as well.
                 let reuse_addr = load_balanced.iter().all(|e| e.reuse_addr);
 
                 // All sockets in `load_balanced` have `REUSE_PORT` flag set,
-                // while the sockets in `priority` don't.
-                let reuse_port = priority.is_empty();
+                // while the sockets in `priority` don't. `REUSE_PORT` requires
+                // all sockets to have the same sharing domain.
+                let reuse_port = if priority.is_empty() {
+                    load_balanced
+                        .iter()
+                        .map(|e| Some(e.sharing_domain))
+                        .reduce(|acc, sharing_domain| match (acc, sharing_domain) {
+                            (Some(acc), Some(sharing_domain)) if acc == sharing_domain => {
+                                Some(sharing_domain)
+                            }
+                            _ => None,
+                        })
+                        .flatten()
+                } else {
+                    None
+                };
+                let reuse_port = match reuse_port {
+                    Some(domain) => ReusePortOption::Enabled(domain),
+                    None => ReusePortOption::Disabled,
+                };
 
                 Sharing { reuse_addr, reuse_port }
             }
@@ -678,7 +700,10 @@ pub struct SocketMapAddrInserter<'a, I> {
 impl<'a, I> Inserter<I> for SocketMapAddrInserter<'a, I> {
     fn insert(self, id: I) {
         match self {
-            Self { state: _, sharing_state: Sharing { reuse_addr: false, reuse_port: false } }
+            Self {
+                state: _,
+                sharing_state: Sharing { reuse_addr: false, reuse_port: ReusePortOption::Disabled },
+            }
             | Self { state: AddrState::Exclusive(_), sharing_state: _ } => {
                 panic!("Can't insert entry in a non-shareable entry")
             }
@@ -686,14 +711,15 @@ impl<'a, I> Inserter<I> for SocketMapAddrInserter<'a, I> {
             // If only `SO_REUSEADDR` flag is set then insert the entry in the `priority` list.
             Self {
                 state: AddrState::Shared { priority, load_balanced: _ },
-                sharing_state: Sharing { reuse_addr: true, reuse_port: false },
+                sharing_state: Sharing { reuse_addr: true, reuse_port: ReusePortOption::Disabled },
             } => priority.push(id),
 
             // If `SO_REUSEPORT` flag is set then insert the entry in the `load_balanced` list.
             Self {
                 state: AddrState::Shared { priority: _, load_balanced },
-                sharing_state: Sharing { reuse_addr, reuse_port: true },
-            } => load_balanced.push(LoadBalancedEntry { id, reuse_addr }),
+                sharing_state:
+                    Sharing { reuse_addr, reuse_port: ReusePortOption::Enabled(sharing_domain) },
+            } => load_balanced.push(LoadBalancedEntry { id, reuse_addr, sharing_domain }),
         }
     }
 }
@@ -708,14 +734,22 @@ impl<I: Debug + Eq> SocketMapAddrStateSpec for AddrState<I> {
 
     fn new(new_sharing_state: &Sharing, id: I) -> Self {
         match new_sharing_state {
-            Sharing { reuse_addr: false, reuse_port: false } => Self::Exclusive(id),
-            Sharing { reuse_addr: true, reuse_port: false } => {
+            Sharing { reuse_addr: false, reuse_port: ReusePortOption::Disabled } => {
+                Self::Exclusive(id)
+            }
+            Sharing { reuse_addr: true, reuse_port: ReusePortOption::Disabled } => {
                 Self::Shared { priority: Vec::from([id]), load_balanced: Vec::new() }
             }
-            Sharing { reuse_addr, reuse_port: true } => Self::Shared {
-                priority: Vec::new(),
-                load_balanced: Vec::from([LoadBalancedEntry { id, reuse_addr: *reuse_addr }]),
-            },
+            Sharing { reuse_addr, reuse_port: ReusePortOption::Enabled(sharing_domain) } => {
+                Self::Shared {
+                    priority: Vec::new(),
+                    load_balanced: Vec::from([LoadBalancedEntry {
+                        id,
+                        reuse_addr: *reuse_addr,
+                        sharing_domain: *sharing_domain,
+                    }]),
+                }
+            }
         }
     }
 
@@ -756,6 +790,7 @@ impl<I: Debug + Eq> SocketMapAddrStateSpec for AddrState<I> {
                         .expect("couldn't find ID to remove");
                     let _removed: LoadBalancedEntry<I> = load_balanced.remove(pos);
                 }
+
                 if priority.is_empty() && load_balanced.is_empty() {
                     RemoveResult::IsLast
                 } else {
@@ -1930,7 +1965,7 @@ where
     pub fn set_posix_reuse_port(
         &mut self,
         id: &UdpApiSocketId<I, C>,
-        reuse_port: bool,
+        reuse_port: ReusePortOption,
     ) -> Result<(), ExpectedUnboundError> {
         self.datagram().update_sharing(id, |sharing| {
             sharing.reuse_port = reuse_port;
@@ -1939,7 +1974,7 @@ where
 
     /// Gets the POSIX `SO_REUSEPORT` option for the specified socket.
     pub fn get_posix_reuse_port(&mut self, id: &UdpApiSocketId<I, C>) -> bool {
-        self.datagram().get_sharing(id).reuse_port
+        self.datagram().get_sharing(id).reuse_port.is_enabled()
     }
 
     /// Sets the specified socket's membership status for the given group.
@@ -3910,9 +3945,11 @@ mod tests {
         let remote_ip = remote_ip::<I>();
         let multicast_addr = I::get_multicast_addr(3);
         let socket = api.create();
+        let sharing_domain = SharingDomain::new(1);
 
         // Set some properties on the socket that should be preserved.
-        api.set_posix_reuse_port(&socket, true).expect("is unbound");
+        api.set_posix_reuse_port(&socket, ReusePortOption::Enabled(sharing_domain))
+            .expect("is unbound");
         api.set_multicast_membership(
             &socket,
             multicast_addr,
@@ -3956,7 +3993,9 @@ mod tests {
         let socket = api.create();
 
         // Set some properties on the socket that should be preserved.
-        api.set_posix_reuse_port(&socket, true).expect("is unbound");
+        let sharing_domain = SharingDomain::new(1);
+        api.set_posix_reuse_port(&socket, ReusePortOption::Enabled(sharing_domain))
+            .expect("is unbound");
         api.set_multicast_membership(
             &socket,
             multicast_addr,
@@ -4311,12 +4350,15 @@ mod tests {
             ));
         let mut api = UdpApi::<I, _>::new(ctx.as_mut());
 
+        let sharing_domain = SharingDomain::new(1);
+
         // Create some UDP connections and listeners:
         // conn2 has just a remote addr different than conn1, which requires
         // allowing them to share the local port.
         let [conn1, conn2] = [remote_ip_a, remote_ip_b].map(|remote_ip| {
             let socket = api.create();
-            api.set_posix_reuse_port(&socket, true).expect("is unbound");
+            api.set_posix_reuse_port(&socket, ReusePortOption::Enabled(sharing_domain))
+                .expect("is unbound");
             api.listen(&socket, Some(ZonedAddr::Unzoned(local_ip)), Some(local_port_d))
                 .expect("listen_udp failed");
             api.connect(&socket, Some(ZonedAddr::Unzoned(remote_ip)), REMOTE_PORT.into())
@@ -4586,18 +4628,22 @@ mod tests {
         );
         let mut api = UdpApi::<I, _>::new(ctx.as_mut());
 
+        let sharing_domain = SharingDomain::new(1);
+
         // Create 3 sockets: one listener for all IPs, two listeners on the same
         // local address.
         let any_listener = {
             let socket = api.create();
-            api.set_posix_reuse_port(&socket, true).expect("is unbound");
+            api.set_posix_reuse_port(&socket, ReusePortOption::Enabled(sharing_domain))
+                .expect("is unbound");
             api.listen(&socket, None, Some(LOCAL_PORT)).expect("listen_udp failed");
             socket
         };
 
         let specific_listeners = [(); 2].map(|()| {
             let socket = api.create();
-            api.set_posix_reuse_port(&socket, true).expect("is unbound");
+            api.set_posix_reuse_port(&socket, ReusePortOption::Enabled(sharing_domain))
+                .expect("is unbound");
             api.listen(
                 &socket,
                 Some(ZonedAddr::Unzoned(multicast_addr.into_specified())),
@@ -4925,20 +4971,24 @@ mod tests {
         );
         let mut api = UdpApi::<I, _>::new(ctx.as_mut());
 
+        let sharing_domain = SharingDomain::new(1);
+
         // Create 3 sockets: one listener bound on each device and one not bound
         // to a device.
 
         let bound_on_devices = MultipleDevicesId::all().map(|device| {
             let listener = api.create();
             api.set_device(&listener, Some(&device)).unwrap();
-            api.set_posix_reuse_port(&listener, true).expect("is unbound");
+            api.set_posix_reuse_port(&listener, ReusePortOption::Enabled(sharing_domain))
+                .expect("is unbound");
             api.listen(&listener, None, Some(LOCAL_PORT)).expect("listen should succeed");
 
             (device, listener)
         });
 
         let listener = api.create();
-        api.set_posix_reuse_port(&listener, true).expect("is unbound");
+        api.set_posix_reuse_port(&listener, ReusePortOption::Enabled(sharing_domain))
+            .expect("is unbound");
         api.listen(&listener, None, Some(LOCAL_PORT)).expect("listen should succeed");
 
         fn index_for_device(id: MultipleDevicesId) -> u8 {
@@ -5206,7 +5256,9 @@ mod tests {
         let mut api = UdpApi::<I, _>::new(ctx.as_mut());
         let listeners = [(), ()].map(|()| {
             let socket = api.create();
-            api.set_posix_reuse_port(&socket, true).expect("is unbound");
+            let sharing_domain = SharingDomain::new(1);
+            api.set_posix_reuse_port(&socket, ReusePortOption::Enabled(sharing_domain))
+                .expect("is unbound");
             api.listen(&socket, None, Some(LOCAL_PORT)).expect("listen_udp failed");
             socket
         });
@@ -5227,8 +5279,10 @@ mod tests {
         let mut ctx = UdpFakeDeviceCtx::with_core_ctx(UdpFakeDeviceCoreCtx::new_fake_device::<I>());
         let mut api = UdpApi::<I, _>::new(ctx.as_mut());
         let unbound = api.create();
-        api.set_posix_reuse_port(&unbound, true).expect("is unbound");
-        api.set_posix_reuse_port(&unbound, false).expect("is unbound");
+        let sharing_domain = SharingDomain::new(1);
+        api.set_posix_reuse_port(&unbound, ReusePortOption::Enabled(sharing_domain))
+            .expect("is unbound");
+        api.set_posix_reuse_port(&unbound, ReusePortOption::Disabled).expect("is unbound");
         api.listen(&unbound, None, Some(LOCAL_PORT)).expect("listen_udp failed");
 
         // Because there is already a listener bound without `SO_REUSEPORT` set,
@@ -5264,7 +5318,8 @@ mod tests {
         // Per src/connectivity/network/netstack3/docs/POSIX_COMPATIBILITY.md,
         // Netstack3 only allows setting SO_REUSEPORT on unbound sockets.
         assert_matches!(
-            UdpApi::<I, _>::new(ctx.as_mut()).set_posix_reuse_port(&socket, false),
+            UdpApi::<I, _>::new(ctx.as_mut())
+                .set_posix_reuse_port(&socket, ReusePortOption::Disabled),
             Err(ExpectedUnboundError)
         )
     }
@@ -5737,7 +5792,9 @@ mod tests {
         let first = api.create();
         assert_eq!(api.get_posix_reuse_port(&first), false);
 
-        api.set_posix_reuse_port(&first, true).expect("is unbound");
+        let sharing_domain = SharingDomain::new(1);
+        api.set_posix_reuse_port(&first, ReusePortOption::Enabled(sharing_domain))
+            .expect("is unbound");
 
         assert_eq!(api.get_posix_reuse_port(&first), true);
 
@@ -5746,7 +5803,8 @@ mod tests {
         api.close(first).into_removed();
 
         let second = api.create();
-        api.set_posix_reuse_port(&second, true).expect("is unbound");
+        api.set_posix_reuse_port(&second, ReusePortOption::Enabled(sharing_domain))
+            .expect("is unbound");
         api.connect(&second, Some(ZonedAddr::Unzoned(remote_ip::<I>())), REMOTE_PORT.into())
             .expect("connect failed");
 
@@ -7063,10 +7121,18 @@ mod tests {
         })
     }
 
-    const EXCLUSIVE: Sharing = Sharing { reuse_addr: false, reuse_port: false };
-    const REUSE_ADDR: Sharing = Sharing { reuse_addr: true, reuse_port: false };
-    const REUSE_PORT: Sharing = Sharing { reuse_addr: false, reuse_port: true };
-    const REUSE_ADDR_PORT: Sharing = Sharing { reuse_addr: true, reuse_port: true };
+    const SHARING_DOMAIN1: SharingDomain = SharingDomain::new(1);
+    const SHARING_DOMAIN2: SharingDomain = SharingDomain::new(42);
+    const EXCLUSIVE: Sharing = Sharing { reuse_addr: false, reuse_port: ReusePortOption::Disabled };
+    const REUSE_ADDR: Sharing = Sharing { reuse_addr: true, reuse_port: ReusePortOption::Disabled };
+    const REUSE_PORT: Sharing =
+        Sharing { reuse_addr: false, reuse_port: ReusePortOption::Enabled(SHARING_DOMAIN1) };
+    const REUSE_ADDR_PORT: Sharing =
+        Sharing { reuse_addr: true, reuse_port: ReusePortOption::Enabled(SHARING_DOMAIN1) };
+    const REUSE_PORT2: Sharing =
+        Sharing { reuse_addr: false, reuse_port: ReusePortOption::Enabled(SHARING_DOMAIN2) };
+    const REUSE_ADDR_PORT2: Sharing =
+        Sharing { reuse_addr: true, reuse_port: ReusePortOption::Enabled(SHARING_DOMAIN2) };
 
     #[test_case([
         (listen(ip_v4!("0.0.0.0"), 1), EXCLUSIVE),
@@ -7150,6 +7216,19 @@ mod tests {
         (listen(ip_v4!("1.1.1.1"), 1), REUSE_ADDR),
         (listen(ip_v4!("1.1.1.1"), 1), REUSE_PORT),],
             Err(InsertError::Exists); "listen_same_specific_ip_reuse_addr_port_and_reuse_addr_and_reuse_port")]
+    #[test_case([
+        (listen(ip_v4!("1.1.1.1"), 1), REUSE_PORT),
+        (listen(ip_v4!("1.1.1.1"), 1), REUSE_PORT2)],
+            Err(InsertError::Exists); "listen_same_specific_ip_reuse_port_and_reuse_port2")]
+    #[test_case([
+        (listen(ip_v4!("1.1.1.1"), 1), REUSE_ADDR_PORT),
+        (listen(ip_v4!("1.1.1.1"), 1), REUSE_ADDR_PORT2)],
+            Ok(()); "listen_same_specific_ip_reuse_addr_port_and_reuse_addr_port2")]
+    #[test_case([
+        (listen(ip_v4!("1.1.1.1"), 1), REUSE_ADDR_PORT),
+        (listen(ip_v4!("1.1.1.1"), 1), REUSE_ADDR_PORT2),
+        (listen(ip_v4!("1.1.1.1"), 1), REUSE_PORT)],
+            Err(InsertError::Exists); "listen_same_specific_ip_reuse_addr_port_and_reuse_addr_port2_and_reuse_port")]
     #[test_case([
         (listen(ip_v4!("1.1.1.1"), 1), REUSE_PORT),
         (conn(ip_v4!("1.1.1.1"), 1, ip_v4!("2.2.2.2"), 2), REUSE_PORT)],

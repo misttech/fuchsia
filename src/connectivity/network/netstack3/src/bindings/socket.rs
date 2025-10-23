@@ -10,6 +10,8 @@ use std::num::NonZeroU64;
 use std::panic::Location;
 
 use either::Either;
+use fidl::encoding::ProxyChannelBox as _;
+use fidl::endpoints::RequestStream as _;
 use fidl_fuchsia_posix::Errno;
 use futures::TryStreamExt as _;
 use log::debug;
@@ -22,8 +24,10 @@ use netstack3_core::error::{
 use netstack3_core::ip::{IpSockCreationError, IpSockSendError, ResolveRouteError};
 use netstack3_core::socket::{
     ConnectError, NotDualStackCapableError, SetDualStackEnabledError, SetMulticastMembershipError,
+    SharingDomain,
 };
 use netstack3_core::{tcp, udp};
+use zx::AsHandleRef as _;
 use {fidl_fuchsia_net as fnet, fidl_fuchsia_posix_socket as psocket};
 
 use crate::bindings::devices::{
@@ -76,8 +80,22 @@ pub(crate) struct SocketWorkerProperties {}
 
 pub(crate) async fn serve(
     mut ctx: crate::bindings::Ctx,
-    mut stream: psocket::ProviderRequestStream,
+    stream: psocket::ProviderRequestStream,
 ) -> Result<(), fidl::Error> {
+    // Get KOID from the FIDL channel and use it as `SharingDomain` for the SO_REUSEPORT
+    // implementation until all clients are updated to supply sharing domain explicitly.
+    // TODO(https://fxbug.dev/451615802): Remove this once all clients are updated to
+    // supply sharing domain explicitly.
+    let (stream_inner, terminated) = stream.into_inner();
+    let channel_koid = stream_inner
+        .channel()
+        .as_channel()
+        .get_koid()
+        .expect("failed to get channel koid")
+        .raw_koid();
+    let mut stream = psocket::ProviderRequestStream::from_inner(stream_inner, terminated);
+    let sharing_domain = SharingDomain::new(channel_koid);
+
     while let Some(req) = stream.try_next().await? {
         match req {
             psocket::ProviderRequest::InterfaceIndexToName { index, responder } => {
@@ -138,6 +156,7 @@ pub(crate) async fn serve(
                     request_stream,
                     SocketWorkerProperties {},
                     Default::default(),
+                    sharing_domain,
                 );
                 responder.send(Ok(client)).unwrap_or_log("failed to respond");
             }
@@ -150,6 +169,7 @@ pub(crate) async fn serve(
                     request_stream,
                     SocketWorkerProperties {},
                     Default::default(),
+                    sharing_domain,
                 );
                 responder
                     .send(Ok(psocket::ProviderDatagramSocketResponse::SynchronousDatagramSocket(
@@ -171,6 +191,7 @@ pub(crate) async fn serve(
                     request_stream,
                     SocketWorkerProperties {},
                     opts,
+                    sharing_domain,
                 );
                 use psocket::ProviderDatagramSocketWithOptionsResponse as Response;
                 responder

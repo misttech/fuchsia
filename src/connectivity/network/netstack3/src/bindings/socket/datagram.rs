@@ -32,8 +32,8 @@ use netstack3_core::ip::{IpSockCreateAndSendError, IpSockSendError, Mark, MarkDo
 use netstack3_core::socket::{
     self as core_socket, ConnInfo, ConnectError, ExpectedConnError, ExpectedUnboundError,
     ListenerInfo, MulticastInterfaceSelector, MulticastMembershipInterfaceSelector,
-    NotDualStackCapableError, SetDualStackEnabledError, SetMulticastMembershipError, ShutdownType,
-    SocketCookie, SocketInfo,
+    NotDualStackCapableError, ReusePortOption, SetDualStackEnabledError,
+    SetMulticastMembershipError, SharingDomain, ShutdownType, SocketCookie, SocketInfo,
 };
 use netstack3_core::sync::Mutex as CoreMutex;
 use netstack3_core::trace::trace_duration;
@@ -203,7 +203,7 @@ pub(crate) trait TransportState<I: Ip>: Transport<I> + Send + Sync + 'static {
     fn set_reuse_port(
         ctx: &mut Ctx,
         id: &Self::SocketId,
-        reuse_port: bool,
+        reuse_port: ReusePortOption,
     ) -> Result<(), Self::SetReusePortError>;
 
     fn get_reuse_port(ctx: &mut Ctx, id: &Self::SocketId) -> bool;
@@ -474,7 +474,7 @@ where
     fn set_reuse_port(
         ctx: &mut Ctx,
         id: &Self::SocketId,
-        reuse_port: bool,
+        reuse_port: ReusePortOption,
     ) -> Result<(), Self::SetReusePortError> {
         ctx.api().udp().set_posix_reuse_port(id, reuse_port).inspect_err(|_| {
             warn!("tried to set SO_REUSEPORT on a bound socket; see https://fxbug.dev/42051599")
@@ -864,7 +864,7 @@ where
     fn set_reuse_port(
         _ctx: &mut Ctx,
         _id: &Self::SocketId,
-        _reuse_port: bool,
+        _reuse_port: ReusePortOption,
     ) -> Result<(), Self::SetReusePortError> {
         Err(NotSupportedError)
     }
@@ -1236,6 +1236,10 @@ struct BindingData<I: BindingsDataIpExt, T: Transport<I>> {
     ipv4_multicast_if_addr: Option<SpecifiedAddr<Ipv4Addr>>,
     /// `IP_RECVTOS` options.
     ip_recv_tos: bool,
+    /// Sharing domain for SO_REUSEPORT. Used only for clients that do not specify it explicitly.
+    // TODO(https://fxbug.dev/451615802): Remove this once all clients are updated to
+    // specify sharing domain explicitly.
+    sharing_domain: SharingDomain,
 }
 
 // Helper to add `get_or_default()` method for `Option<T>`.
@@ -1266,6 +1270,7 @@ where
         ctx: &mut Ctx,
         properties: SocketWorkerProperties,
         wake_group: Option<WakeGroupId>,
+        sharing_domain: SharingDomain,
     ) -> Self {
         let (local_event, peer_event) = SocketEventPair::create();
 
@@ -1301,6 +1306,7 @@ where
             timestamp_option: fposix_socket::TimestampOption::Disabled,
             ipv4_multicast_if_addr: None,
             ip_recv_tos: false,
+            sharing_domain,
         }
     }
 }
@@ -1319,6 +1325,7 @@ pub(super) fn spawn_worker(
     request_stream: fposix_socket::SynchronousDatagramSocketRequestStream,
     properties: SocketWorkerProperties,
     creation_opts: fposix_socket::SocketCreationOptions,
+    sharing_domain: SharingDomain,
 ) {
     let fposix_socket::SocketCreationOptions { marks, group, __source_breaking } = creation_opts;
 
@@ -1328,7 +1335,12 @@ pub(super) fn spawn_worker(
                 SocketWorker::serve_stream_with(
                     ctx,
                     move |ctx, properties| {
-                        BindingData::<Ipv4, Udp>::new(ctx, properties, group.map(Into::into))
+                        BindingData::<Ipv4, Udp>::new(
+                            ctx,
+                            properties,
+                            group.map(Into::into),
+                            sharing_domain,
+                        )
                     },
                     properties,
                     rs,
@@ -1341,7 +1353,12 @@ pub(super) fn spawn_worker(
                 SocketWorker::serve_stream_with(
                     ctx,
                     move |ctx, properties| {
-                        BindingData::<Ipv6, Udp>::new(ctx, properties, group.map(Into::into))
+                        BindingData::<Ipv6, Udp>::new(
+                            ctx,
+                            properties,
+                            group.map(Into::into),
+                            sharing_domain,
+                        )
                     },
                     properties,
                     rs,
@@ -1355,7 +1372,10 @@ pub(super) fn spawn_worker(
                     ctx,
                     move |ctx, properties| {
                         BindingData::<Ipv4, IcmpEcho>::new(
-                            ctx, properties, /* notifier */ None,
+                            ctx,
+                            properties,
+                            /* notifier */ None,
+                            sharing_domain,
                         )
                     },
                     properties,
@@ -1370,7 +1390,10 @@ pub(super) fn spawn_worker(
                     ctx,
                     move |ctx, properties| {
                         BindingData::<Ipv6, IcmpEcho>::new(
-                            ctx, properties, /* notifier */ None,
+                            ctx,
+                            properties,
+                            /* notifier */ None,
+                            sharing_domain,
                         )
                     },
                     properties,
@@ -1570,6 +1593,11 @@ where
                 responder.send(Ok(self.get_reuse_addr())).unwrap_or_log("failed to respond");
             }
             Request::SetReusePort { value, responder } => {
+                let value = if value {
+                    ReusePortOption::Enabled(self.data.sharing_domain)
+                } else {
+                    ReusePortOption::Disabled
+                };
                 let result = self.set_reuse_port(value);
                 responder
                     .send(result.log_errno_error("set_reuse_port"))
@@ -2324,7 +2352,7 @@ where
         T::get_reuse_addr(ctx, id)
     }
 
-    fn set_reuse_port(self, reuse_port: bool) -> Result<(), ErrnoError> {
+    fn set_reuse_port(self, reuse_port: ReusePortOption) -> Result<(), ErrnoError> {
         let Self { ctx, data: BindingData { info: SocketControlInfo { id, .. }, .. } } = self;
         T::set_reuse_port(ctx, id, reuse_port).map_err(IntoErrno::into_errno_error)
     }

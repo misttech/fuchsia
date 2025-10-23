@@ -80,6 +80,7 @@ use {
     fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_routes as fnet_routes,
     fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_net_tun as fnet_tun,
     fidl_fuchsia_posix as fposix, fidl_fuchsia_posix_socket as fposix_socket,
+    fidl_fuchsia_posix_socket_ext as fposix_socket_ext,
     fidl_fuchsia_posix_socket_packet as fpacket,
     fidl_fuchsia_posix_socket_raw as fposix_socket_raw,
 };
@@ -5157,11 +5158,22 @@ async fn broadcast_recv<N: Netstack>(name: &str) {
     iface.add_address_and_subnet_route(SUBNET.clone()).await.expect("failed to set ip");
     let fake_ep = net.create_fake_endpoint().expect("failed to create endpoint");
 
+    // Connect to the socket Provider to ensure all sockets are created with the same UID.
+    // TODO(https://fxbug.dev/451615802): Remove this once FDIO is updated to pass
+    // `SharingDomainToken` to `SetReusePort`.
+    let socket_provider = client
+        .connect_to_protocol::<fposix_socket::ProviderMarker>()
+        .expect("failed to connect to socket provider");
+
     let sockets = future::join_all(std::iter::repeat(()).take(2).map(|()| async {
-        let socket = client
-            .datagram_socket(Ipv4::DOMAIN, fposix_socket::DatagramSocketProtocol::Udp)
-            .await
-            .expect("Failed to create UDP socket");
+        let socket = fposix_socket_ext::datagram_socket(
+            &socket_provider,
+            Ipv4::DOMAIN,
+            fposix_socket::DatagramSocketProtocol::Udp,
+        )
+        .await
+        .expect("Failed to send request to create UDP socket")
+        .expect("Failed to create UDP socket");
 
         socket.set_reuse_port(true).expect("failed to set SO_REUSEPORT");
 

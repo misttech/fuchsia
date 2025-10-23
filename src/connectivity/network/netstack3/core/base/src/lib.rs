@@ -135,11 +135,12 @@ pub mod socket {
     pub use base::{
         AddrEntry, AddrVec, Bound, BoundSocketMap, DualStackIpExt, DualStackTuple, EitherStack,
         FoundSockets, IncompatibleError, InsertError, Inserter, Listener, ListenerAddrInfo,
-        MaybeDualStack, NotDualStackCapableError, RemoveResult, SetDualStackEnabledError, Shutdown,
-        ShutdownType, SocketAddrType, SocketDeviceUpdate, SocketDeviceUpdateNotAllowedError,
-        SocketIpAddrExt, SocketIpExt, SocketMapAddrSpec, SocketMapAddrStateSpec,
-        SocketMapAddrStateUpdateSharingSpec, SocketMapConflictPolicy, SocketMapStateSpec,
-        SocketMapUpdateSharingPolicy, SocketStateEntry, SocketZonedAddrExt, UpdateSharingError,
+        MaybeDualStack, NotDualStackCapableError, RemoveResult, ReusePortOption,
+        SetDualStackEnabledError, SharingDomain, Shutdown, ShutdownType, SocketAddrType,
+        SocketDeviceUpdate, SocketDeviceUpdateNotAllowedError, SocketIpAddrExt, SocketIpExt,
+        SocketMapAddrSpec, SocketMapAddrStateSpec, SocketMapAddrStateUpdateSharingSpec,
+        SocketMapConflictPolicy, SocketMapStateSpec, SocketMapUpdateSharingPolicy,
+        SocketStateEntry, SocketZonedAddrExt, UpdateSharingError,
     };
     pub use cookie::SocketCookie;
     pub use sndbuf::{
