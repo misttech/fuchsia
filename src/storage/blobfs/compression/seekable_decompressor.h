@@ -45,15 +45,20 @@ class SeekableDecompressor {
 
   // Looks up the range [offset, offset+len) in the decompressed space, and returns a mapping which
   // describes the range of bytes to decompress which will contain the target range.
-  // `max_decompressed_len` is the maximum length the returned decompressed range will span, and
+  // `max_len` is the maximum length the returned decompressed range will span, and
   // must be greater than zero.
   //
   // The concrete implementation is free to return an arbitrarily large range of bytes as long as it
-  // is less than or equal to `max_decompressed_len`. The returned decompressed range is guaranteed
+  // is less than or equal to `max_len`. The returned decompressed range is guaranteed
   // to contain `offset` but its length might be less than `len` if it was trimmed to a smaller
-  // `max_decompressed_len`.
-  virtual zx::result<CompressionMapping> MappingForDecompressedRange(
-      size_t offset, size_t len, size_t max_decompressed_len) const = 0;
+  // `max_len`.
+  //
+  // The implementation should also ensure that the compressed data does not exceed
+  // `max_len`, and callers may rely on this. One would hope that this is normally the
+  // case (since that is the point of compression), but it's technically possible for compressed
+  // data to take up more space than its uncompressed form.
+  virtual zx::result<CompressionMapping> MappingForDecompressedRange(size_t offset, size_t len,
+                                                                     size_t max_len) const = 0;
 
   // Returns the CompressionAlgorithm that this SeekableDecompressor supports.
   virtual CompressionAlgorithm algorithm() const = 0;

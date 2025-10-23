@@ -46,7 +46,7 @@ class vmo final : public object<vmo> {
   }
 
   zx_status_t transfer_data(uint32_t options, uint64_t offset, uint64_t length, vmo* src_vmo,
-                            uint64_t src_offset) {
+                            uint64_t src_offset) const {
     return zx_vmo_transfer_data(get(), options, offset, length, src_vmo->get(), src_offset);
   }
 

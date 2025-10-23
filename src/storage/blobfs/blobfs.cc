@@ -189,24 +189,17 @@ zx::result<std::unique_ptr<Blobfs>> Blobfs::Create(async_dispatcher_t* dispatche
   FX_CHECK(options.paging_threads > 0);
   std::vector<std::unique_ptr<PageLoader::WorkerResources>> worker_resources;
   for (int i = 0; i < options.paging_threads; ++i) {
-    auto uncompressed_buffer_or = StorageBackedTransferBuffer::Create(
-        kTransferBufferSize, fs_ptr, fs_ptr, fs_ptr->GetMetrics().get());
-    if (!uncompressed_buffer_or.is_ok()) {
-      FX_LOGS(ERROR) << "Could not initialize uncompressed pager transfer buffer";
-      return uncompressed_buffer_or.take_error();
+    auto transfer_buffer = StorageBackedTransferBuffer::Create(kTransferBufferSize, fs_ptr, fs_ptr,
+                                                               fs_ptr->GetMetrics().get());
+    if (!transfer_buffer.is_ok()) {
+      FX_LOGS(ERROR) << "Could not initialize pager transfer buffer";
+      return transfer_buffer.take_error();
     }
-    auto compressed_buffer_or = StorageBackedTransferBuffer::Create(
-        kTransferBufferSize, fs_ptr, fs_ptr, fs_ptr->GetMetrics().get());
-    if (compressed_buffer_or.is_error()) {
-      FX_LOGS(ERROR) << "Could not initialize compressed pager transfer buffer";
-      return compressed_buffer_or.take_error();
-    }
-    worker_resources.push_back(std::make_unique<PageLoader::WorkerResources>(
-        std::move(uncompressed_buffer_or).value(), std::move(compressed_buffer_or).value()));
+    worker_resources.push_back(
+        std::make_unique<PageLoader::WorkerResources>(*std::move(transfer_buffer)));
   }
-  auto page_loader_or =
-      PageLoader::Create(std::move(worker_resources), kDecompressionBufferSize,
-                         fs_ptr->GetMetrics().get(), fs->decompression_connector());
+  auto page_loader_or = PageLoader::Create(std::move(worker_resources), fs_ptr->GetMetrics().get(),
+                                           fs->decompression_connector());
   if (page_loader_or.is_error()) {
     FX_LOGS(ERROR) << "Could not initialize user pager";
     return page_loader_or.take_error();

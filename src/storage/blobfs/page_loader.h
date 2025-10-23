@@ -82,12 +82,10 @@ class PageLoader {
 
   // Resources needed for each worker thread.
   struct WorkerResources {
-    WorkerResources(std::unique_ptr<TransferBuffer> uncompressed,
-                    std::unique_ptr<TransferBuffer> compressed)
-        : uncompressed_buffer(std::move(uncompressed)), compressed_buffer(std::move(compressed)) {}
+    explicit WorkerResources(std::unique_ptr<TransferBuffer> transfer_buffer)
+        : transfer_buffer(std::move(transfer_buffer)) {}
 
-    std::unique_ptr<TransferBuffer> uncompressed_buffer;
-    std::unique_ptr<TransferBuffer> compressed_buffer;
+    std::unique_ptr<TransferBuffer> transfer_buffer;
   };
 
   // Abstracts out how pages are supplied to the system.
@@ -101,8 +99,8 @@ class PageLoader {
   // pager threads are supported as there are sets of resources. |decompression_buffer_size| is the
   // size of the scratch buffer to use for decompression.
   [[nodiscard]] static zx::result<std::unique_ptr<PageLoader>> Create(
-      std::vector<std::unique_ptr<WorkerResources>> resources, size_t decompression_buffer_size,
-      BlobfsMetrics* metrics, DecompressorCreatorConnector* decompression_connector);
+      std::vector<std::unique_ptr<WorkerResources>> resources, BlobfsMetrics* metrics,
+      DecompressorCreatorConnector* decompression_connector);
 
   // Invoked on a read request. Reads in the requested byte range [|offset|, |offset| + |length|)
   // for the inode associated with |info->identifier| into the |transfer_buffer_|, and then moves
@@ -133,8 +131,8 @@ class PageLoader {
     // underlying storage. |decompression_buffer_size| is the size of the scratch buffer to use for
     // decompression.
     [[nodiscard]] static zx::result<std::unique_ptr<Worker>> Create(
-        std::unique_ptr<WorkerResources> resources, size_t decompression_buffer_size,
-        BlobfsMetrics* metrics, DecompressorCreatorConnector* decompression_connector);
+        std::unique_ptr<WorkerResources> resources, BlobfsMetrics* metrics,
+        DecompressorCreatorConnector* decompression_connector);
 
     // See |PageLoader::TransferPages()| which simply selects which Worker to delegate the
     // actual work to.
@@ -143,7 +141,7 @@ class PageLoader {
                                                  const LoaderInfo& info);
 
    private:
-    Worker(size_t decompression_buffer_size, BlobfsMetrics* metrics);
+    explicit Worker(BlobfsMetrics* metrics) : metrics_(metrics) {}
 
     PagerErrorStatus TransferChunkedPages(const PageLoader::PageSupplier& page_supplier,
                                           uint64_t offset, uint64_t length, const LoaderInfo& info);
@@ -151,30 +149,20 @@ class PageLoader {
                                                uint64_t offset, uint64_t length,
                                                const LoaderInfo& info);
 
-    // Scratch buffer for pager transfers of uncompressed data.
-    std::unique_ptr<TransferBuffer> uncompressed_transfer_buffer_;
+    zx::result<> VerifyAndSupply(zx::vmo& vmo, uint64_t offset, uint64_t length,
+                                 uint64_t target_offset, BlobVerifier& verifier,
+                                 const PageLoader::PageSupplier& supplier) const;
 
-    // A persistent mapping for |uncompressed_transfer_buffer_|.
-    fzl::VmoMapper uncompressed_transfer_buffer_mapper_;
-
-    // Scratch buffer for pager transfers of compressed data.
-    std::unique_ptr<TransferBuffer> compressed_transfer_buffer_;
+    // Buffer used to transfer data from the driver.
+    std::unique_ptr<TransferBuffer> transfer_buffer_;
 
     // The |decompressor_client_| decompresses data from |compressed_transfer_buffer_| into this
     // buffer. Its contents can change at any time and shouldn't be considered reliable. To ensure
     // data integrity before verification, pages are moved to the |decompression_buffer_|.
     zx::vmo sandbox_buffer_;
 
-    // Scratch buffer for decompression. The pages from the |compressed_transfer_buffer_| are
-    // transferred here to be verified before being supplied to the blob.
-    zx::vmo decompression_buffer_;
-
-    // Size of |decompression_buffer_|, stashed at vmo creation time to avoid a syscall each time
-    // the size needs to be queried.
-    const size_t decompression_buffer_size_;
-
-    // A persistent mapping for |decompression_buffer_|.
-    fzl::VmoMapper decompression_buffer_mapper_;
+    // The VMO we use for verification.
+    fzl::OwnedVmoMapper verification_vmo_;
 
     // Maintains a connection to the external decompressor.
     std::unique_ptr<ExternalDecompressorClient> decompressor_client_;

@@ -78,7 +78,7 @@ zx::result<std::unique_ptr<BlobLoader>> BlobLoader::Create(
   zx::vmo sandbox_vmo;
   std::unique_ptr<ExternalDecompressorClient> decompressor_client = nullptr;
   if (decompression_connector) {
-    if (zx_status_t status = zx::vmo::create(kDecompressionBufferSize, 0, &sandbox_vmo);
+    if (zx_status_t status = zx::vmo::create(kTransferBufferSize, 0, &sandbox_vmo);
         status != ZX_OK) {
       FX_LOGS(ERROR) << "Failed to create VMO for decompression buffer: "
                      << zx_status_get_string(status);
