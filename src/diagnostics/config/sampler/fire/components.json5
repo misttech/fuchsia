@@ -1,5 +1,4 @@
 // See go/fuchsia-fire-home for details on updating this file.
-
 [
     {
         id: 101,
@@ -140,11 +139,6 @@
         id: 132,
         label: "WLAN Stack",
         moniker: "core/wlanstack",
-    },
-    {
-        id: 137,
-        label: "CPU Perf Provider",
-        moniker: "core/trace_manager/cpuperf_provider",
     },
     {
         id: 139,

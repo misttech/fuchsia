@@ -93,7 +93,6 @@ fuchsia_package_with_single_component("trace_manager") {
     ":tracing.config",
   ]
   subpackages = [
-    "//src/performance/cpuperf_provider",
     "//src/performance/ktrace_provider",
     "//src/performance/perfetto-bridge",
     "//src/performance/trace_session_manager",
@@ -102,7 +101,6 @@ fuchsia_package_with_single_component("trace_manager") {
     ":*",
     "//bundles/assembly/*",
     "//bundles/assembly_input_groups/*",
-    "//src/performance/cpuperf_provider/*",
   ]
 }
 

@@ -17,11 +17,6 @@
             startup: "eager",
         },
         {
-            name: "cpuperf_provider",
-            url: "cpuperf_provider#meta/cpuperf_provider.cm",
-            startup: "eager",
-        },
-        {
             name: "perfetto-bridge",
             url: "perfetto-bridge#meta/perfetto-bridge.cm",
         },
@@ -62,24 +57,15 @@
             protocol: [ "fuchsia.tracing.provider.Registry" ],
             from: "self",
             to: [
-                "#cpuperf_provider",
                 "#ktrace_provider",
                 "#perfetto-bridge",
                 "#workloads",
             ],
         },
         {
-            protocol: "fuchsia.kernel.DebugResource",
-            from: "parent",
-            to: [ "#cpuperf_provider" ],
-        },
-        {
             protocol: "fuchsia.kernel.TracingResource",
             from: "parent",
-            to: [
-                "#cpuperf_provider",
-                "#ktrace_provider",
-            ],
+            to: [ "#ktrace_provider" ],
         },
         {
             storage: "tmp",
