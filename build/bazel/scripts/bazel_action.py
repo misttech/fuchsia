@@ -1620,9 +1620,9 @@ def main() -> int:
         if quiet:
             # Print the captured outputs in quiet mode to help debugging build errors.
             if ret.stdout:
-                sys.stdout.buffer.write(ret.stdout)
+                sys.stdout.buffer.write(ret.stdout.encode("utf-8"))
             if ret.stderr:
-                sys.stderr.buffer.write(ret.stderr)
+                sys.stderr.buffer.write(ret.stderr.encode("utf-8"))
 
         # Detect the error message corresponding to a Bazel target
         # referencing a @gn_targets//<dir>:<name> label
