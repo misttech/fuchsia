@@ -700,7 +700,7 @@ zx::result<> UsbCdcFunction::Start() {
       bulk_out_ep_.AddRequests(BULK_RX_COUNT, BULK_REQ_SIZE, frequest::Buffer::Tag::kVmoId);
   if (actual != BULK_RX_COUNT) {
     fdf::error("[bug] bulk_out_ep_.AddRequests(): want {}, got {}", BULK_RX_COUNT, actual);
-    return zx::error(status);
+    return zx::error(ZX_ERR_INTERNAL);
   }
 
   state = InitState::kWaitingForInit2;
@@ -715,7 +715,7 @@ zx::result<> UsbCdcFunction::Start() {
   actual = bulk_in_ep_.AddRequests(BULK_TX_COUNT, BULK_REQ_SIZE, frequest::Buffer::Tag::kVmoId);
   if (actual != BULK_TX_COUNT) {
     fdf::error("[bug] bulk_in_ep_.AddRequests(): want {}, got {}", BULK_TX_COUNT, actual);
-    return zx::error(status);
+    return zx::error(ZX_ERR_INTERNAL);
   }
 
   state = InitState::kWaitingForInit3;
@@ -730,7 +730,7 @@ zx::result<> UsbCdcFunction::Start() {
   actual = intr_ep_.AddRequests(INTR_COUNT, BULK_REQ_SIZE, frequest::Buffer::Tag::kVmoId);
   if (actual != INTR_COUNT) {
     fdf::error("[bug] intr_ep_.AddRequests(): want {}, got {}", INTR_COUNT, actual);
-    return zx::error(status);
+    return zx::error(ZX_ERR_INTERNAL);
   }
 
   state = InitState::kWaitingForSetInterface;
