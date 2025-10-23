@@ -21,7 +21,7 @@ group("boot-shim") {
     ":zbi-boot-shim",
     "//zircon/kernel/arch/$zircon_cpu/phys/boot-shim",
   ]
-  if (current_cpu != "riscv64") {  # TODO(mcgrathr): EFI not there yet
+  if (have_efi) {
     deps += [ ":efi-boot-shim" ]
   }
 }
