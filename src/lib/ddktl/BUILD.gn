@@ -47,6 +47,8 @@ source_set("ddktl") {
     "//src/lib/ddk",
   ]
 
+  deps = [ "//src/lib/ddk" ]
+
   if (is_fuchsia) {
     public_deps += [
       # <ddktl/device.h> has #include <lib/component/incoming/cpp/protocol.h>.
@@ -68,14 +70,13 @@ source_set("ddktl") {
       # <ddktl/metadata_server.h> has #include <lib/driver/outgoing/cpp/outgoing_directory.h>
       "//sdk/lib/driver/outgoing/cpp",
     ]
-  }
 
-  deps = [
-    "//sdk/lib/driver/runtime:driver_runtime_cpp",
-    "//src/lib/ddk",
-    "//zircon/system/ulib/sync",
-    "//zircon/system/ulib/zx",
-  ]
+    deps += [
+      "//sdk/lib/driver/runtime:driver_runtime_cpp",
+      "//zircon/system/ulib/sync",
+      "//zircon/system/ulib/zx",
+    ]
+  }
 
   #  ________  _________  ________  ________
   # |\   ____\|\___   ___\\   __  \|\   __  \

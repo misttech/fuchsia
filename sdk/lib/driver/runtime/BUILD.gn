@@ -26,10 +26,12 @@ sdk_source_set("driver_runtime") {
     # <lib/fdf/channel_read.h> and <lib/fdf/dispatcher.h> have #include <lib/async/dispatcher.h>.
     "//sdk/lib/async",
   ]
-  deps = [
-    "//zircon/system/ulib/sync",
-    "//zircon/system/ulib/zx",
-  ]
+  if (is_fuchsia) {
+    deps = [
+      "//zircon/system/ulib/sync",
+      "//zircon/system/ulib/zx",
+    ]
+  }
 }
 
 sdk_source_set("driver_runtime_cpp") {
