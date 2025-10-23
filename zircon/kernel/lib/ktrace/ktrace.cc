@@ -46,7 +46,7 @@ const CategoryEntry kCategories[] = {
     {KTRACE_GRP_META_BIT, "kernel:meta"_category},
     {KTRACE_GRP_MEMORY_BIT, "kernel:memory"_category},
     {KTRACE_GRP_SCHEDULER_BIT, "kernel:sched"_category},
-    {KTRACE_GRP_TASKS_BIT, "kernel:tasks"_category},
+    {KTRACE_GRP_CONTENTION_BIT, "kernel:contention"_category},
     {KTRACE_GRP_IPC_BIT, "kernel:ipc"_category},
     {KTRACE_GRP_IRQ_BIT, "kernel:irq"_category},
     {KTRACE_GRP_PROBE_BIT, "kernel:probe"_category},

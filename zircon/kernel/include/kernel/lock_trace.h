@@ -15,21 +15,18 @@
 
 #define LOCK_TRACE_DURATION(label, args...)           \
   ktrace::Scope LOCK_TRACE_VARIABLE_NAME(duration_) = \
-      KTRACE_BEGIN_SCOPE_ENABLE(kLockTracingEnabled, "kernel:sched", label, ##args)
+      KTRACE_BEGIN_SCOPE("kernel:contention", label, ##args)
 
 #define LOCK_TRACE_DURATION_BEGIN(label, args...) \
-  KTRACE_DURATION_BEGIN_ENABLE(kLockTracingEnabled, "kernel:sched", label, ##args)
+  KTRACE_DURATION_BEGIN("kernel:contention", label, ##args)
 
 #define LOCK_TRACE_DURATION_END(label, args...) \
-  KTRACE_DURATION_END_ENABLE(kLockTracingEnabled, "kernel:sched", label, ##args)
+  KTRACE_DURATION_END("kernel:contention", label, ##args)
 
-#define LOCK_TRACE_FLOW_BEGIN(label, args...) \
-  KTRACE_FLOW_BEGIN_ENABLE(kLockTracingEnabled, "kernel:sched", label, ##args)
+#define LOCK_TRACE_FLOW_BEGIN(label, args...) KTRACE_FLOW_BEGIN("kernel:contention", label, ##args)
 
-#define LOCK_TRACE_FLOW_STEP(label, args...) \
-  KTRACE_FLOW_STEP_ENABLE(kLockTracingEnabled, "kernel:sched", label, ##args)
+#define LOCK_TRACE_FLOW_STEP(label, args...) KTRACE_FLOW_STEP("kernel:contention", label, ##args)
 
-#define LOCK_TRACE_FLOW_END(label, args...) \
-  KTRACE_FLOW_END_ENABLE(kLockTracingEnabled, "kernel:sched", label, ##args)
+#define LOCK_TRACE_FLOW_END(label, args...) KTRACE_FLOW_END("kernel:contention", label, ##args)
 
 #endif  // ZIRCON_KERNEL_INCLUDE_KERNEL_LOCK_TRACE_H_

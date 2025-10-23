@@ -651,8 +651,8 @@ void Workload::ParseTracing(const rapidjson::Value& tracing) {
         config.group_mask = KTRACE_GRP_MEMORY;
       } else if (group_mask_str == "KTRACE_GRP_SCHEDULER") {
         config.group_mask = KTRACE_GRP_SCHEDULER;
-      } else if (group_mask_str == "KTRACE_GRP_TASKS") {
-        config.group_mask = KTRACE_GRP_TASKS;
+      } else if (group_mask_str == "KTRACE_GRP_CONTENTION") {
+        config.group_mask = KTRACE_GRP_CONTENTION;
       } else if (group_mask_str == "KTRACE_GRP_IPC") {
         config.group_mask = KTRACE_GRP_IPC;
       } else if (group_mask_str == "KTRACE_GRP_IRQ") {
@@ -665,6 +665,8 @@ void Workload::ParseTracing(const rapidjson::Value& tracing) {
         config.group_mask = KTRACE_GRP_SYSCALL;
       } else if (group_mask_str == "KTRACE_GRP_VM") {
         config.group_mask = KTRACE_GRP_VM;
+      } else if (group_mask_str == "KTRACE_GRP_RESTRICTED") {
+        config.group_mask = KTRACE_GRP_RESTRICTED;
       } else {
         FX_LOGS(WARNING) << "Tracing enabled with unknown group mask, mask set to all groups.";
         config.group_mask = KTRACE_GRP_ALL;

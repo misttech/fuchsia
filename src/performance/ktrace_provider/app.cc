@@ -37,7 +37,7 @@ constexpr KTraceCategory kGroupCategories[] = {
     {"kernel:memory", KTRACE_GRP_MEMORY,
      "Memory allocations performed by the kernel, such as heap growth."},
     {"kernel:sched", KTRACE_GRP_SCHEDULER, "Process and thread scheduling information"},
-    {"kernel:tasks", KTRACE_GRP_TASKS, "<unused>"},
+    {"kernel:contention", KTRACE_GRP_CONTENTION, "Emit lock contention duraitons and flows"},
     {"kernel:ipc", KTRACE_GRP_IPC, "Emit an event for each FIDL call"},
     {"kernel:irq", KTRACE_GRP_IRQ, "Emit a duration event for interrupts"},
     {"kernel:probe", KTRACE_GRP_PROBE, "Used for LOCAL_KTRACE events"},

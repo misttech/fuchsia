@@ -1717,22 +1717,14 @@ struct Thread : public ChainLockable {
 
   // Returns the last flow id allocated by TakeNextLockFlowId() for this thread.
   uint64_t lock_flow_id() const {
-#if LOCK_TRACING_ENABLED
     return lock_flow_id_;
-#else
-    return 0;
-#endif
   }
 
   // Returns a unique flow id for lock contention tracing. The same value is
   // returned by lock_flow_id() until another id is allocated for this thread
   // by calling this method again.
   uint64_t TakeNextLockFlowId() {
-#if LOCK_TRACING_ENABLED
     return lock_flow_id_ = lock_flow_id_generator_ += 1;
-#else
-    return 0;
-#endif
   }
 
   void RecomputeEffectiveProfile() TA_REQ(get_lock()) {
@@ -1899,13 +1891,11 @@ struct Thread : public ChainLockable {
   // Buffering for Debuglog output.
   Linebuffer linebuffer_;
 
-#if LOCK_TRACING_ENABLED
   // The flow id allocated before blocking on the last lock.
   RelaxedAtomic<uint64_t> lock_flow_id_{0};
 
   // Generates unique flow ids for tracing lock contention.
   inline static RelaxedAtomic<uint64_t> lock_flow_id_generator_{0};
-#endif
 
   // Indicates whether user register state (debug, vector, fp regs, etc.) has been saved to the
   // arch_thread_t as part of thread suspension / exception handling.

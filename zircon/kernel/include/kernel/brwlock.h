@@ -96,7 +96,8 @@ static_assert(sizeof(BrwLockState<BrwLockEnablePi::No>) == 8,
 template <BrwLockEnablePi PI>
 class TA_CAP("mutex") BrwLock
     : public spin_tracing::LockNameStorage<spin_tracing::LockType::kRwLock,
-                                           kSchedulerLockSpinTracingEnabled | kLockTracingEnabled> {
+                                           kSchedulerLockSpinTracingEnabled |
+                                               kLockNameTracingEnabled> {
  public:
   BrwLock() = default;
   explicit BrwLock(const fxt::InternedString& name_stringref)

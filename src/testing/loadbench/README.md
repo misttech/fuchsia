@@ -307,15 +307,16 @@ mask defaults to KTRACE_GRP_ALL.
 The following groups are supported:
 * **KTRACE_GRP_ALL:** 0xFFF
 * **KTRACE_GRP_META:** 0x001
-* **KTRACE_GRP_LIFECYCLE:** 0x002
+* **KTRACE_GRP_MEMORY:** 0x002
 * **KTRACE_GRP_SCHEDULER:** 0x004
-* **KTRACE_GRP_TASKS:** 0x008
+* **KTRACE_GRP_CONTENTION:** 0x008
 * **KTRACE_GRP_IPC:** 0x010
 * **KTRACE_GRP_IRQ:** 0x020
 * **KTRACE_GRP_PROBE:** 0x040
 * **KTRACE_GRP_ARCH:** 0x080
 * **KTRACE_GRP_SYSCALL:** 0x100
 * **KTRACE_GRP_VM:** 0x200
+* **KTRACE_GRP_RESTRICTED:** 0x400
 
 ##### filepath - Human Readable Kernel Tracing Translation Filepath (optional)
 

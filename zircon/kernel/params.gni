@@ -27,8 +27,10 @@ declare_args() {
   # Enable kernel lock dependency metadata only (ignored if enable_lock_dep is true).
   enable_lock_dep_metadata_only = false
 
-  # Enable lock contention tracing.
-  lock_tracing_enabled = false
+  # Enable lock names in durations emitted by the kernel:contention category.
+  # This increases the per-lock size by a small amount to reference its tracing
+  # label.
+  lock_name_tracing_enabled = false
 
   # The level of detail for scheduler traces when enabled. Values greater than
   # zero add increasing details at the cost of increased trace buffer use.
