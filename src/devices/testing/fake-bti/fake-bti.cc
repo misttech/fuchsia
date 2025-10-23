@@ -12,13 +12,11 @@
 #include <zircon/status.h>
 #include <zircon/syscalls.h>
 
+#include <bit>
 #include <cstdint>
 #include <memory>
 #include <utility>
 #include <vector>
-
-// Normally just defined in the kernel:
-#define PAGE_SIZE_SHIFT 12
 
 namespace {
 class Bti final : public fake_object::Object {
@@ -419,11 +417,12 @@ zx_status_t zx_vmo_create_contiguous(zx_handle_t bti_handle, size_t size, uint32
     return ZX_ERR_INVALID_ARGS;
   }
 
+  const uint32_t page_size_shift = std::countr_zero(zx_system_get_page_size());
   if (alignment_log2 == 0) {
-    alignment_log2 = PAGE_SIZE_SHIFT;
+    alignment_log2 = page_size_shift;
   }
   // catch obviously wrong values
-  if (alignment_log2 < PAGE_SIZE_SHIFT || alignment_log2 >= (8 * sizeof(uint64_t))) {
+  if (alignment_log2 < page_size_shift || alignment_log2 >= (8 * sizeof(uint64_t))) {
     return ZX_ERR_INVALID_ARGS;
   }
 

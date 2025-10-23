@@ -107,9 +107,9 @@ TEST_F(MapPinTest, Pin) {
                                   regions, kVmoPages, &region_count));
   ASSERT_EQ(region_count, 2u);
   // Physical addresses returned by fake bti are always zx_system_get_page_size().
-  EXPECT_EQ(regions[0].phys_addr, zx_system_get_page_size() + kOffset);
+  EXPECT_EQ(regions[0].phys_addr, FAKE_BTI_PHYS_ADDR + kOffset);
   EXPECT_EQ(regions[0].size, zx_system_get_page_size() - kOffset);
-  EXPECT_EQ(regions[1].phys_addr, zx_system_get_page_size());
+  EXPECT_EQ(regions[1].phys_addr, FAKE_BTI_PHYS_ADDR);
   EXPECT_EQ(regions[1].size, kOffset);
 
   // Verify error cases for out of range. It should happen even if region_count is not large enough.
@@ -154,7 +154,7 @@ TEST_F(MapPinTest, PinSingleRegion) {
       vmo->GetPinnedRegions(kOffset, zx_system_get_page_size() / 2, regions, 1, &region_count));
   ASSERT_EQ(region_count, 1u);
   // Physical addresses returned by fake bti are always zx_system_get_page_size().
-  EXPECT_EQ(regions[0].phys_addr, zx_system_get_page_size() + kOffset);
+  EXPECT_EQ(regions[0].phys_addr, FAKE_BTI_PHYS_ADDR + kOffset);
   EXPECT_EQ(regions[0].size, zx_system_get_page_size() / 2);
 
   // Verify error cases for out of range. It should happen even if region_count is not large enough.
