@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::file::todo_option_file_receive;
+use super::file::file_receive;
 use super::{BinderConnectionState, check_permission, check_self_permission, current_task_state};
-use crate::TODO_DENY;
 use crate::task::{CurrentTask, Task};
 use crate::vfs::FileObject;
 use selinux::{BinderPermission, SecurityServer};
@@ -102,11 +101,5 @@ pub(in crate::security) fn binder_transfer_file(
     file: &FileObject,
 ) -> Result<(), Errno> {
     let receiving_sid = subject_task.security_state.lock().current_sid;
-    todo_option_file_receive(
-        Some(TODO_DENY!("https://fxbug.dev/364569358", "Enforce all the time in all contexts.")),
-        security_server,
-        current_task,
-        receiving_sid,
-        file,
-    )
+    file_receive(security_server, current_task, receiving_sid, file)
 }

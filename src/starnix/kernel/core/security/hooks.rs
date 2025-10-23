@@ -13,6 +13,7 @@ use super::{
 use crate::bpf::BpfMap;
 use crate::bpf::program::Program;
 use crate::mm::{Mapping, MappingOptions, ProtectionFlags};
+use crate::security::selinux_hooks::current_task_state;
 use crate::task::{CurrentTask, FullCredentials, Kernel, Task};
 use crate::vfs::fs_args::MountParams;
 use crate::vfs::socket::{
@@ -778,7 +779,8 @@ pub fn fs_node_permission(
 pub fn file_receive(current_task: &CurrentTask, file: &FileObject) -> Result<(), Errno> {
     profile_duration!("security.hooks.file_receive");
     if_selinux_else_default_ok(current_task, |security_server| {
-        selinux_hooks::file::file_receive(security_server, current_task, file)
+        let receiving_sid = current_task_state(current_task).lock().current_sid;
+        selinux_hooks::file::file_receive(security_server, current_task, receiving_sid, file)
     })
 }
 
@@ -1873,7 +1875,14 @@ pub fn check_bpf_map_access(
 ) -> Result<(), Errno> {
     profile_duration!("security.hooks.check_bpf_map_access");
     if_selinux_else_default_ok(current_task, |security_server| {
-        selinux_hooks::bpf::check_bpf_map_access(security_server, current_task, bpf_map, flags)
+        let subject_sid = current_task_state(current_task).lock().current_sid;
+        selinux_hooks::bpf::check_bpf_map_access(
+            security_server,
+            current_task,
+            subject_sid,
+            bpf_map,
+            flags,
+        )
     })
 }
 
@@ -1887,7 +1896,13 @@ pub fn check_bpf_prog_access(
 ) -> Result<(), Errno> {
     profile_duration!("security.hooks.check_bpf_prog_access");
     if_selinux_else_default_ok(current_task, |security_server| {
-        selinux_hooks::bpf::check_bpf_prog_access(security_server, current_task, bpf_program)
+        let subject_sid = current_task_state(current_task).lock().current_sid;
+        selinux_hooks::bpf::check_bpf_prog_access(
+            security_server,
+            current_task,
+            subject_sid,
+            bpf_program,
+        )
     })
 }
 

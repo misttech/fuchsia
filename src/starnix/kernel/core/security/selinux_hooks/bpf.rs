@@ -7,14 +7,12 @@
 
 use super::{
     BpfMapState, BpfProgState, check_permission, check_self_permission, current_task_state,
-    todo_check_permission,
 };
 use crate::bpf::BpfMap;
 use crate::bpf::program::Program;
 use crate::security::PermissionFlags;
 use crate::task::CurrentTask;
 use selinux::{BpfPermission, SecurityId, SecurityServer};
-use starnix_logging::BugRef;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{bpf_cmd, bpf_cmd_BPF_MAP_CREATE, bpf_cmd_BPF_PROG_LOAD, bpf_cmd_BPF_PROG_RUN};
 use zerocopy::FromBytes;
@@ -62,25 +60,6 @@ pub(in crate::security) fn check_bpf_access<Attr: FromBytes>(
 pub(in crate::security) fn check_bpf_map_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    bpf_map: &BpfMap,
-    flags: PermissionFlags,
-) -> Result<(), Errno> {
-    let subject_sid = current_task_state(current_task).lock().current_sid;
-    todo_option_check_bpf_map_access(
-        None,
-        security_server,
-        current_task,
-        subject_sid,
-        bpf_map,
-        flags,
-    )
-}
-
-// TODO(nathaniel): merge this back into check_bpf_map_access above from which it came.
-pub(in crate::security::selinux_hooks) fn todo_option_check_bpf_map_access(
-    bug: Option<BugRef>,
-    security_server: &SecurityServer,
-    current_task: &CurrentTask,
     subject_sid: SecurityId,
     bpf_map: &BpfMap,
     flags: PermissionFlags,
@@ -95,26 +74,14 @@ pub(in crate::security::selinux_hooks) fn todo_option_check_bpf_map_access(
         permissions.push(BpfPermission::MapWrite);
     }
     for permission in permissions {
-        if let Some(bug) = bug {
-            todo_check_permission(
-                bug,
-                &security_server.as_permission_check(),
-                current_task,
-                subject_sid,
-                bpf_map.security_state.state.sid,
-                permission,
-                audit_context,
-            )?;
-        } else {
-            check_permission(
-                &security_server.as_permission_check(),
-                current_task,
-                subject_sid,
-                bpf_map.security_state.state.sid,
-                permission,
-                audit_context,
-            )?;
-        }
+        check_permission(
+            &security_server.as_permission_check(),
+            current_task,
+            subject_sid,
+            bpf_map.security_state.state.sid,
+            permission,
+            audit_context,
+        )?;
     }
     Ok(())
 }
@@ -124,40 +91,17 @@ pub(in crate::security::selinux_hooks) fn todo_option_check_bpf_map_access(
 pub(in crate::security) fn check_bpf_prog_access(
     security_server: &SecurityServer,
     current_task: &CurrentTask,
-    bpf_program: &Program,
-) -> Result<(), Errno> {
-    let subject_sid = current_task_state(current_task).lock().current_sid;
-    todo_option_check_bpf_prog_access(None, security_server, current_task, subject_sid, bpf_program)
-}
-
-// TODO(nathaniel): merge this back into check_bpf_prog_access above from which it came.
-pub(in crate::security::selinux_hooks) fn todo_option_check_bpf_prog_access(
-    bug: Option<BugRef>,
-    security_server: &SecurityServer,
-    current_task: &CurrentTask,
     subject_sid: SecurityId,
     bpf_program: &Program,
 ) -> Result<(), Errno> {
     let audit_context = current_task.into();
 
-    if let Some(bug) = bug {
-        todo_check_permission(
-            bug,
-            &security_server.as_permission_check(),
-            current_task,
-            subject_sid,
-            bpf_program.security_state.state.sid,
-            BpfPermission::ProgRun,
-            audit_context,
-        )
-    } else {
-        check_permission(
-            &security_server.as_permission_check(),
-            current_task,
-            subject_sid,
-            bpf_program.security_state.state.sid,
-            BpfPermission::ProgRun,
-            audit_context,
-        )
-    }
+    check_permission(
+        &security_server.as_permission_check(),
+        current_task,
+        subject_sid,
+        bpf_program.security_state.state.sid,
+        BpfPermission::ProgRun,
+        audit_context,
+    )
 }
