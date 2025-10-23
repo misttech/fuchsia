@@ -10,7 +10,7 @@ use crate::{
     Environment, EnvironmentExtends, Error, EventScope, Expose, ExposeFromRef, ExposeToRef,
     FromClause, Offer, OfferFromRef, OfferToRef, OneOrMany, Program, RegistrationRef, Rights,
     RootDictionaryRef, SourceAvailability, Spanned, SpannedCapability, SpannedCapabilityClause,
-    SpannedChild, SpannedDocument, SpannedExpose, SpannedUse, Use, UseFromRef,
+    SpannedChild, SpannedDocument, SpannedExpose, SpannedOffer, SpannedUse, Use, UseFromRef,
     offer_to_all_would_duplicate,
 };
 use cm_types::{BorrowedName, IterablePath, Name};
@@ -160,15 +160,22 @@ fn duplicate_capability_check<'a>(
     Ok(())
 }
 
-fn offer_can_have_dependency(offer: &Offer) -> bool {
+fn offer_can_have_dependency_no_span(offer: &Offer) -> bool {
     offer.directory.is_some()
         || offer.protocol.is_some()
         || offer.service.is_some()
         || offer.dictionary.is_some()
 }
 
-fn offer_dependency(offer: &Offer) -> DependencyType {
+fn offer_dependency_no_span(offer: &Offer) -> DependencyType {
     offer.dependency.clone().unwrap_or(DependencyType::Strong)
+}
+
+fn offer_can_have_dependency(offer: &SpannedOffer) -> bool {
+    offer.directory.is_some()
+        || offer.protocol.is_some()
+        || offer.service.is_some()
+        || offer.dictionary.is_some()
 }
 struct ValidationContext<'a> {
     document: &'a Document,
@@ -254,6 +261,12 @@ impl<'a> ValidationContextWithSpan<'a> {
             if let Some(exposes) = &document.expose {
                 for expose in exposes {
                     self.validate_expose(&expose)?;
+                }
+            }
+
+            if let Some(offers) = &document.offer {
+                for offer in offers {
+                    self.validate_offer(&offer)?;
                 }
             }
         }
@@ -866,6 +879,116 @@ which is almost certainly a mistake: {}",
                     ));
                 }
             }
+        }
+
+        Ok(())
+    }
+
+    fn validate_offer(&mut self, offer: &'a Spanned<SpannedOffer>) -> Result<(), Error> {
+        offer.capability_type()?;
+
+        if let Some(stream) = offer.event_stream.as_ref() {
+            if stream.iter().len() > 1 && offer.r#as.is_some() {
+                let location = byte_index_to_location(
+                    self.current_file_source,
+                    offer.r#as.as_ref().unwrap().span().0,
+                );
+                return Err(Error::validate_with_span(
+                    format!("as cannot be used with multiple events"),
+                    location,
+                    self.current_file_path,
+                ));
+            }
+            for from in &offer.from {
+                match from {
+                    OfferFromRef::Self_ => {
+                        let location = byte_index_to_location(
+                            self.current_file_source,
+                            offer.event_stream.as_ref().unwrap().span().0,
+                        );
+                        return Err(Error::validate_with_span(
+                            format!("cannot offer an event_stream from self"),
+                            location,
+                            self.current_file_path,
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Ensure directory rights are valid.
+        if let Some(_) = offer.directory.as_ref() {
+            if offer.from.iter().any(|r| *r == OfferFromRef::Self_) || offer.rights.is_some() {
+                if let Some(rights) = offer.rights.as_ref() {
+                    let location =
+                        byte_index_to_location(self.current_file_source, rights.span().0);
+                    self.validate_directory_rights(&rights, location, self.current_file_path)?;
+                }
+            }
+        }
+
+        if let Some(storages) = offer.storage.as_ref() {
+            for storage in storages.get_ref() {
+                if offer.from.iter().any(|r| r.is_named()) {
+                    let location =
+                        byte_index_to_location(self.current_file_source, storages.span().0);
+                    return Err(Error::validate_with_span(
+                        format!(
+                            "Storage \"{}\" is offered from a child, but storage capabilities cannot be exposed",
+                            storage
+                        ),
+                        location,
+                        self.current_file_path,
+                    ));
+                }
+            }
+        }
+
+        for ref_ in offer.from.iter() {
+            if let OfferFromRef::Dictionary(d) = ref_ {
+                match &d.root {
+                    RootDictionaryRef::Self_
+                    | RootDictionaryRef::Named(_)
+                    | RootDictionaryRef::Parent => {}
+                }
+
+                if offer.storage.is_some() {
+                    let location = byte_index_to_location(
+                        self.current_file_source,
+                        offer.storage.as_ref().unwrap().span().0,
+                    );
+                    return Err(Error::validate_with_span(
+                        "Dictionaries do not support \"storage\" capabilities",
+                        location,
+                        self.current_file_path,
+                    ));
+                }
+                if offer.event_stream.is_some() {
+                    let location = byte_index_to_location(
+                        self.current_file_source,
+                        offer.event_stream.as_ref().unwrap().span().0,
+                    );
+                    return Err(Error::validate_with_span(
+                        "Dictionaries do not support \"event_stream\" capabilities",
+                        location,
+                        self.current_file_path,
+                    ));
+                }
+            }
+        }
+
+        // Ensure that dependency is set for the right capabilities.
+        if !offer_can_have_dependency(offer) && offer.dependency.is_some() {
+            let location = byte_index_to_location(
+                self.current_file_source,
+                offer.dependency.as_ref().unwrap().span().0,
+            );
+            return Err(Error::validate_with_span(
+                "Dependency can only be provided for protocol, directory, and service capabilities",
+                location,
+                self.current_file_path,
+            ));
         }
 
         Ok(())
@@ -1617,7 +1740,7 @@ which is almost certainly a mistake: {}",
         }
 
         // Ensure that dependency is set for the right capabilities.
-        if !offer_can_have_dependency(offer) && offer.dependency.is_some() {
+        if !offer_can_have_dependency_no_span(offer) && offer.dependency.is_some() {
             return Err(Error::validate(
                 "Dependency can only be provided for protocol, directory, and service capabilities",
             ));
@@ -1676,7 +1799,7 @@ which is almost certainly a mistake: {}",
                     } else {
                         for reference in offer.from.iter() {
                             // Weak offers from a child to itself are acceptable.
-                            if offer_dependency(offer) == DependencyType::Weak {
+                            if offer_dependency_no_span(offer) == DependencyType::Weak {
                                 continue;
                             }
                             match reference {
@@ -4183,6 +4306,48 @@ mod tests {
         if &err == "expose declaration has multiple capability types defined: [\"service\", \"protocol\"]" &&
         location == Some(Location {line: 2, column: 13})
         ),
+
+        test_cml_storage_offer_from_child(
+            r##"{
+                    "offer": [
+                        {
+                            "storage": "cache",
+                            "from": "#storage_provider",
+                            "to": [ "#echo_server" ]
+                        }
+                    ],
+                    "children": [
+                        {
+                            "name": "echo_server",
+                            "url": "fuchsia-pkg://fuchsia.com/echo_server#meta/echo_server.cm"
+                        },
+                        {
+                            "name": "storage_provider",
+                            "url": "fuchsia-pkg://fuchsia.com/storage_provider#meta/storage_provider.cm"
+                        }
+                    ]
+                }"##,
+            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "Storage \"cache\" is offered from a child, but storage capabilities cannot be exposed" &&
+                    location == Some(Location {line: 4, column: 40})
+
+        ),
+
+        test_cml_offer_storage_from_collection_invalid(
+            json!({
+                "collections": [ {
+                    "name": "coll",
+                    "durability": "transient",
+                } ],
+                "children": [ {
+                    "name": "echo_server",
+                    "url": "fuchsia-pkg://fuchsia.com/echo/stable#meta/echo_server.cm",
+                } ],
+                "offer": [
+                    { "storage": "cache", "from": "#coll", "to": [ "#echo_server" ] },
+                ]
+            }),
+            Err(Error::ValidateWithSpan { err, .. }) if &err == "Storage \"cache\" is offered from a child, but storage capabilities cannot be exposed"
+        ),
     }
 
     test_validate_cml! {
@@ -5390,7 +5555,7 @@ mod tests {
                 }),
             Err(Error::Validate { err, .. }) if &err == "\"offer\" source \"#missing\" does not appear in \"children\" or \"capabilities\""
         ),
-        test_cml_storage_offer_from_child(
+        test_cml_storage_offer_from_child_no_span(
             json!({
                     "offer": [
                         {
@@ -5494,7 +5659,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "\"offer\" source \"#coll\" does not appear in \"children\""
         ),
-        test_cml_offer_storage_from_collection_invalid(
+        test_cml_offer_storage_from_collection_invalid_no_span(
             json!({
                 "collections": [ {
                     "name": "coll",
