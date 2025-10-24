@@ -588,15 +588,6 @@ macro_rules! for_each_syscall {
     }
 }
 
-/// A system call declaration.
-///
-/// Describes the name of the syscall and its number.
-#[derive(Copy, Clone)]
-pub struct SyscallDecl {
-    pub number: u64,
-    pub name: &'static str,
-}
-
 /// As above, but this calls through for the arch32 for arch support.
 /// It's worth noting that common syscalls above are not common across
 /// arches like x86 or arm.  The common list below reflects only
@@ -854,12 +845,6 @@ macro_rules! for_each_arch32_syscall {
     }
 }
 
-impl std::fmt::Debug for SyscallDecl {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.name, self.number)
-    }
-}
-
 /// A particular invocation of a system call.
 ///
 /// Contains the declaration of the invoked system call, as well as which arguments it was invoked
@@ -898,7 +883,6 @@ macro_rules! syscall_number_to_name_literal_callback {
 }
 
 // As above, but for the arch32 namespace.
-//)
 #[cfg(target_arch = "aarch64")]
 #[macro_export]
 macro_rules! syscall_arch32_number_to_name_literal_callback {
@@ -912,23 +896,96 @@ macro_rules! syscall_arch32_number_to_name_literal_callback {
     }
 }
 
+/// Creates a `&'static CStr` from a syscall. Cribbed from cstringify which does not support adding
+/// a string prefix and is not likely to be a useful feature for other users.
+#[macro_export]
+#[doc(hidden)]
+macro_rules! syscall_name_cstr {
+    ($x:path) => {
+        // Safety: The concat!() adds a nul byte, and a Rust path cannot contain a nul byte.
+        // The latter is true because https://doc.rust-lang.org/reference/identifiers.html excludes
+        // Unicode control characters from identifiers, and U+0000 is a control character.
+        unsafe {
+            ::core::ffi::CStr::from_bytes_with_nul_unchecked(
+                concat!("sys_", stringify!($x), "\0").as_bytes(),
+            )
+        }
+    };
+}
+
+/// Evaluates to a CStr literal for the given syscall number when called back by for_each_syscall.
+#[macro_export]
+macro_rules! syscall_number_to_trace_name_callback {
+    {$number:ident; $($name:ident,)*} => {
+        $crate::__paste::paste! {
+            match $number as u32 {
+                $(starnix_uapi::[<__NR_ $name>] => $crate::syscall_name_cstr!($name),)*
+                _ => c"<unknown syscall>",
+            }
+        }
+    }
+}
+
+// As above, but for the arch32 namespace.
+#[cfg(target_arch = "aarch64")]
+#[macro_export]
+macro_rules! syscall_arch32_number_to_trace_name_callback {
+    {$number:ident; $($name:ident,)*} => {
+        $crate::__paste::paste! {
+            match $number as u32 {
+                $(starnix_uapi::arch32::[<__NR_ $name>] => $crate::syscall_name_cstr!($name),)*
+                _ => c"<unknown syscall>",
+            }
+        }
+    }
+}
+
+/// A system call declaration.
+///
+/// Describes the name of the syscall and its number.
+#[derive(Copy, Clone)]
+pub struct SyscallDecl {
+    pub number: u64,
+
+    #[cfg_attr(target_arch = "x86_64", allow(unused))]
+    pub arch_width: ArchWidth,
+}
+
 impl SyscallDecl {
     /// The SyscallDecl for the given syscall number.
     ///
     /// Returns &DECL_UNKNOWN if the given syscall number is not known.
-    pub fn from_number(
-        number: u64,
-        #[allow(unused_variables)] arch_width: ArchWidth,
-    ) -> SyscallDecl {
+    pub fn from_number(number: u64, arch_width: ArchWidth) -> SyscallDecl {
+        Self { arch_width, number }
+    }
+
+    pub fn name(&self) -> &'static str {
+        // Make a binding because the macro makes it difficult to pass a member variable.
+        let number = self.number;
+
         #[cfg(target_arch = "aarch64")]
-        if arch_width.is_arch32() {
-            // We are looking up the SyscallDecl from the number but we use the
-            // arch32 module for the list.
-            let name =
-                for_each_arch32_syscall! { syscall_arch32_number_to_name_literal_callback, number };
-            return Self { number, name };
+        if self.arch_width.is_arch32() {
+            return for_each_arch32_syscall! { syscall_arch32_number_to_name_literal_callback, number };
         }
-        let name = for_each_syscall! { syscall_number_to_name_literal_callback, number };
-        Self { number, name }
+
+        for_each_syscall! { syscall_number_to_name_literal_callback, number }
+    }
+
+    pub fn trace_name(&self) -> &'static std::ffi::CStr {
+        // Make a binding because the macro makes it difficult to pass a member variable.
+        let number = self.number;
+
+        #[cfg(target_arch = "aarch64")]
+        if self.arch_width.is_arch32() {
+            return for_each_arch32_syscall! { syscall_arch32_number_to_trace_name_callback, number };
+        }
+
+        for_each_syscall! { syscall_number_to_trace_name_callback, number }
+    }
+}
+
+impl std::fmt::Debug for SyscallDecl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.name(), self.number)
     }
 }

@@ -425,7 +425,7 @@ impl SeccompState {
             syscall.decl.number,
             task.thread_state.registers.instruction_pointer_register(),
             arch,
-            syscall.decl.name
+            syscall.decl.name(),
         );
     }
 

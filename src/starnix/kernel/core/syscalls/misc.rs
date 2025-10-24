@@ -11,11 +11,8 @@ use fidl_fuchsia_buildinfo as buildinfo;
 use fuchsia_component::client::connect_to_protocol_sync;
 use starnix_logging::{log_error, track_stub};
 use starnix_sync::{Locked, Unlocked};
-use starnix_syscalls::{
-    SUCCESS, SyscallResult, for_each_syscall, syscall_number_to_name_literal_callback,
-};
-#[cfg(target_arch = "aarch64")]
-use starnix_syscalls::{for_each_arch32_syscall, syscall_arch32_number_to_name_literal_callback};
+use starnix_syscalls::decls::SyscallDecl;
+use starnix_syscalls::{SUCCESS, SyscallResult};
 use starnix_types::user_buffer::MAX_RW_COUNT;
 use starnix_uapi::auth::{CAP_SYS_ADMIN, CAP_SYS_MODULE};
 use starnix_uapi::errors::Errno;
@@ -25,9 +22,6 @@ use starnix_uapi::version::KERNEL_RELEASE;
 use starnix_uapi::{
     EFAULT, GRND_NONBLOCK, GRND_RANDOM, c_char, errno, error, from_status_like_fdio, uapi, utsname,
 };
-
-#[cfg(target_arch = "aarch64")]
-use starnix_uapi::user_address::ArchSpecific;
 
 uapi::check_arch_independent_layout! {
     utsname {
@@ -244,20 +238,10 @@ pub fn sys_unknown(
     #[allow(unused_variables)] current_task: &CurrentTask,
     syscall_number: u64,
 ) -> Result<SyscallResult, Errno> {
-    #[cfg(target_arch = "aarch64")]
-    if current_task.is_arch32() {
-        let name = for_each_arch32_syscall! { syscall_arch32_number_to_name_literal_callback, syscall_number };
-        starnix_logging::track_stub_log!(
-            starnix_logging::Level::Info,
-            TODO("https://fxbug.dev/322874143"),
-            name,
-            syscall_number,
-        );
-        return error!(ENOSYS);
-    }
-    let name = for_each_syscall! { syscall_number_to_name_literal_callback, syscall_number };
-    track_stub!(TODO("https://fxbug.dev/322874143"), name, syscall_number,);
-    // TODO: We should send SIGSYS once we have signals.
+    let decl = SyscallDecl::from_number(syscall_number, current_task.thread_state.arch_width);
+    track_stub!(TODO("https://fxbug.dev/322874143"), decl.name(), syscall_number);
+
+    // TODO(https://fxbug.dev/454657040) We should send SIGSYS once we have signals.
     error!(ENOSYS)
 }
 

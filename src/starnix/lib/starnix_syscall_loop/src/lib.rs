@@ -13,10 +13,9 @@ use starnix_core::task::{
     ptrace_syscall_enter, ptrace_syscall_exit,
 };
 use starnix_logging::{
-    ARG_NAME, CATEGORY_STARNIX, NAME_EXECUTE_SYSCALL, NAME_HANDLE_EXCEPTION,
-    NAME_READ_RESTRICTED_STATE, NAME_RESTRICTED_KICK, NAME_RUN_TASK, NAME_WRITE_RESTRICTED_STATE,
-    firehose_trace_duration, firehose_trace_duration_begin, firehose_trace_duration_end,
-    firehose_trace_instant, log_error, log_trace, log_warn, set_current_task_info,
+    CATEGORY_STARNIX, NAME_HANDLE_EXCEPTION, NAME_READ_RESTRICTED_STATE, NAME_RESTRICTED_KICK,
+    NAME_RUN_TASK, NAME_WRITE_RESTRICTED_STATE, firehose_trace_duration, firehose_trace_instant,
+    log_error, log_trace, log_warn, set_current_task_info,
 };
 use starnix_sync::{Locked, Unlocked};
 use starnix_syscalls::SyscallResult;
@@ -367,7 +366,6 @@ fn process_restricted_exit(
     match reason_code {
         zx::sys::ZX_RESTRICTED_REASON_SYSCALL => {
             profile_duration!("ExecuteSyscall");
-            firehose_trace_duration_begin!(CATEGORY_STARNIX, NAME_EXECUTE_SYSCALL);
 
             // Store the new register state in the current task before dispatching the system call.
             current_task.thread_state.registers =
@@ -381,12 +379,6 @@ fn process_restricted_exit(
             if let Some(new_error_context) = execute_syscall(locked, current_task, syscall_decl) {
                 *error_context = Some(new_error_context);
             }
-
-            firehose_trace_duration_end!(
-                CATEGORY_STARNIX,
-                NAME_EXECUTE_SYSCALL,
-                ARG_NAME => syscall_decl.name
-            );
         }
         zx::sys::ZX_RESTRICTED_REASON_EXCEPTION => {
             firehose_trace_duration!(CATEGORY_STARNIX, NAME_HANDLE_EXCEPTION);
@@ -498,6 +490,7 @@ pub fn execute_syscall(
     current_task: &mut CurrentTask,
     syscall_decl: SyscallDecl,
 ) -> Option<ErrorContext> {
+    firehose_trace_duration!(CATEGORY_STARNIX, syscall_decl.trace_name());
     let syscall = new_syscall(syscall_decl, current_task);
 
     current_task.thread_state.registers.save_registers_for_restart(syscall.decl.number);

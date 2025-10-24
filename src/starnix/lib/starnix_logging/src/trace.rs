@@ -32,9 +32,6 @@ pub const CATEGORY_TRACE_META: &'static CStr = c"trace_meta";
 // The name used to identify blob records from the container's Perfetto daemon.
 pub const NAME_PERFETTO_BLOB: &'static CStr = c"starnix_perfetto";
 
-// The name used to track the duration of a syscall.
-pub const NAME_EXECUTE_SYSCALL: &'static CStr = c"ExecuteSyscall";
-
 // The name used to track the duration of creating a container.
 pub const NAME_CREATE_CONTAINER: &'static CStr = c"CreateContainer";
 

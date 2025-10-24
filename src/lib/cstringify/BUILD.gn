@@ -12,6 +12,7 @@ rustc_library("cstringify") {
   visibility = [
     ":*",
     "//src/lib/trace/rust/bench:*",
+    "//src/starnix/lib/starnix_syscalls:*",
   ]
   with_unit_tests = true
   edition = "2021"
