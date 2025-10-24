@@ -589,8 +589,14 @@ impl FxVolume {
         debug!(store_id = self.store.store_object_id(), file_count = flushed; "FxVolume flushed");
     }
 
+    /// Flushes only files with dirty pages.
+    ///
+    /// `PagedObjectHandle` tracks the number dirty pages locally (except for overwrite files) which
+    /// makes determining whether flushing a file will reduce the number of dirty pages efficient.
+    /// `flush_all_files` checks if any metadata needs to be flushed which involves a syscall making
+    /// it significantly slower when there are lots of open files without dirty pages.
     #[trace]
-    async fn minimize_memory(&self) {
+    pub async fn minimize_memory(&self) {
         for file in self.cache.files() {
             if let Some(node) = file.into_opened_node() {
                 if let Err(e) = node.handle().minimize_memory().await {

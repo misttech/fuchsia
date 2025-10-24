@@ -696,7 +696,7 @@ impl VolumesDirectory {
                         for MountedVolume { volume, .. } in volumes.values() {
                             let vol = volume.volume().clone();
                             flushes.push(async move {
-                                vol.flush_all_files(false).await;
+                                vol.minimize_memory().await;
                             });
                         }
 
@@ -2271,6 +2271,24 @@ mod tests {
             .await
             .expect("resize (FIDL)")
             .expect("resize failed");
+        // The above resize creates zero pages which aren't dirty pages and don't contribute to the
+        // dirty bytes count but still need to be flushed. The first write below will cross the
+        // `max_dirty_bytes_when_critical` threshold but `minimize_memory` won't flush the file
+        // because the zero pages aren't dirty pages. The second write below will also cross the
+        // `max_dirty_bytes_when_critical` threshold and since the first write dirtied a page, a
+        // flush will occur. The flush cleans the 2nd page which is a zero page and the kernel is
+        // actively trying to dirty. The kernel doesn't end up dirtying the 2nd page because it's
+        // concerned that the clean and dirty raced so it issues another dirty request for the same
+        // page. The duplicate dirty request again crosses the `max_dirty_bytes_when_critical`
+        // threshold. The file thinks that it has a dirty page so `minimize_memory` flushes the
+        // file. `zx_pager_query_dirty_ranges` doesn't return any pages because the kernel didn't
+        // actually dirty the page that fxfs thought it did. This causes only the file metadata to
+        // be flushed and the dirty page count to not be reduced. The 2nd page finally gets dirtied
+        // and now fxfs thinks it has 2 dirty pages instead of 1. `PagedObjectHandle` knows that
+        // this can happen and will fix up the counts on the next flush. This test doesn't want to
+        // deal with all of that so it syncs here to clean the zero pages that would cause that
+        // mess.
+        file.sync().await.expect("Failed to make sync call").expect("sync failed");
 
         let vmo = file
             .get_backing_memory(fio::VmoFlags::READ | fio::VmoFlags::WRITE)
