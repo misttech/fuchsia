@@ -46,14 +46,15 @@ impl DynamicFileSource for MeminfoFile {
             + memory_stats.vmo_discardable_unlocked_bytes.unwrap_or_default())
             / 1024;
 
-        let userpager_total = memory_stats.vmo_pager_total_bytes.unwrap_or_default();
-        let userpager_active = memory_stats.vmo_pager_newest_bytes.unwrap_or_default();
+        let userpager_total = memory_stats.vmo_pager_total_bytes.unwrap_or_default() / 1024;
+        let userpager_active = memory_stats.vmo_pager_newest_bytes.unwrap_or_default() / 1024;
         let userpager_inactive = userpager_total.saturating_sub(userpager_active);
 
         let anonymous_total = memory_stats
             .vmo_bytes
             .unwrap_or_default()
-            .saturating_sub(memory_stats.vmo_pager_total_bytes.unwrap_or_default());
+            .saturating_sub(memory_stats.vmo_pager_total_bytes.unwrap_or_default())
+            / 1024;
 
         let swap_used = compression_stats.uncompressed_storage_bytes.unwrap_or_default() / 1024;
         // Fuchsia doesn't have a limit on the size of its swap file, so we just pretend that
