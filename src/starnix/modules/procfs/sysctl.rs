@@ -136,6 +136,11 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
         dir.entry("io_uring_disabled", SystemLimitFile::<IoUringDisabled>::new_node(), mode);
         dir.entry("io_uring_group", SystemLimitFile::<IoUringGroup>::new_node(), mode);
         dir.entry(
+            "min_power_mode_enabled",
+            SystemLimitFile::<ForceLowestPowerMode>::new_node(),
+            mode,
+        );
+        dir.entry(
             "modprobe",
             StubBytesFile::new_node(
                 "/proc/sys/kernel/modprobe",
@@ -815,5 +820,17 @@ impl AtomicLimit for IoUringGroup {
     }
     fn store(current_task: &CurrentTask, value: i32) {
         current_task.kernel().system_limits.io_uring_group.store(value, Ordering::Relaxed);
+    }
+}
+
+struct ForceLowestPowerMode;
+impl AtomicLimit for ForceLowestPowerMode {
+    type ValueType = bool;
+
+    fn load(current_task: &CurrentTask) -> bool {
+        current_task.kernel().system_limits.force_lowest_power_mode.load(Ordering::Relaxed)
+    }
+    fn store(current_task: &CurrentTask, value: bool) {
+        current_task.kernel().system_limits.force_lowest_power_mode.store(value, Ordering::Relaxed);
     }
 }
