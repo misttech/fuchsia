@@ -1,10 +1,9 @@
-
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef LIB_C_THREADS_SHADOW_CALL_STACK_H_
-#define LIB_C_THREADS_SHADOW_CALL_STACK_H_
+#ifndef LIB_C_THREADS_STACK_ABI_H_
+#define LIB_C_THREADS_STACK_ABI_H_
 
 #include <lib/arch/asm.h>
 
@@ -18,7 +17,7 @@ namespace LIBC_NAMESPACE_DECL {
 
 // Classes can use `[[no_unique_address]] IfShadowCallStack<T> member_;` along
 // with `if constexpr (kShadowCallStackAbi)` guarding using `member_` as a T or
-// separate overloads for NoShadowCallStack and T.
+// separate overloads for NoStack and T.
 
 // This indicates whether the Fuchsia Compiler ABI for this machine includes
 // keeping the shadow-call-stack pointer register valid.  This is an unchanging
@@ -39,18 +38,27 @@ inline constexpr bool kShadowCallStackAbi = false;
 inline constexpr bool kShadowCallStackAbi = true;
 #endif
 
-struct NoShadowCallStack {};
+// This indicates whether the Fuchsia Compiler ABI for this machine includes
+// the unsafe stack pointer maintained at $tp + ZX_TLS_UNSAFE_SP_OFFSET.
+// TODO(https://fxbug.dev/454394012): Currently this is always true.  Soon it
+// will be true only on x86.
+inline constexpr bool kSafeStackAbi = true;
+
+struct NoStack {};
 
 template <typename T>
-using IfShadowCallStack = std::conditional_t<kShadowCallStackAbi, T, NoShadowCallStack>;
+using IfShadowCallStack = std::conditional_t<kShadowCallStackAbi, T, NoStack>;
 
-constexpr void OnShadowCallStack(NoShadowCallStack, auto&& f) {}
-constexpr void OnShadowCallStack(auto&& stack, auto&& f) {
+template <typename T>
+using IfSafeStack = std::conditional_t<kSafeStackAbi, T, NoStack>;
+
+constexpr void OnStack(NoStack, auto&& f) {}
+constexpr void OnStack(auto&& stack, auto&& f) {
   std::forward<decltype(f)>(f)(std::forward<decltype(stack)>(stack));
 }
 
-constexpr auto ShadowCallStackOr(NoShadowCallStack, auto value) { return value; }
-constexpr auto ShadowCallStackOr(auto stack, std::convertible_to<decltype(stack)> auto value) {
+constexpr auto StackOr(NoStack, auto value) { return value; }
+constexpr auto StackOr(auto stack, std::convertible_to<decltype(stack)> auto value) {
   return stack;
 }
 
@@ -131,4 +139,4 @@ inline void ShadowCallStackSet(uint64_t* scsp) {
 
 }  // namespace LIBC_NAMESPACE_DECL
 
-#endif  // LIB_C_THREADS_SHADOW_CALL_STACK_H_
+#endif  // LIB_C_THREADS_STACK_ABI_H_

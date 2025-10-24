@@ -23,7 +23,7 @@ void ThreadStorage::FreeStacks() {
   };
   unmap(machine_stack_);
   unmap(unsafe_stack_);
-  OnShadowCallStack(shadow_call_stack_, unmap);
+  OnStack(shadow_call_stack_, unmap);
 }
 
 // Translate from the legacy C struct representation for ownership.

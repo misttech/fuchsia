@@ -307,7 +307,7 @@ libc_source_set("start-compiler-abi") {
   deps = [
     ":startup-random",
     "../ld:log.headers",
-    "../threads:shadow-call-stack",
+    "../threads:stack-abi",
     "../threads:zxr-tls",
     "//zircon/system/ulib/zx",
     "//zircon/third_party/ulib/musl:musl_internal",

@@ -19,8 +19,8 @@ libc_source_set("threads") {
 }
 
 # This doesn't need to be libc_source_set() because it's just a header.
-source_set("shadow-call-stack") {
-  public = [ "shadow-call-stack.h" ]
+source_set("stack-abi") {
+  public = [ "stack-abi.h" ]
   public_deps = [ "//zircon/kernel/lib/arch" ]
   sources = []
 }
@@ -32,7 +32,7 @@ libc_source_set("thread-storage") {
   public = [ "thread-storage.h" ]
   libc_public_deps = [ "../zircon:vmar" ]
   public_deps = [
-    ":shadow-call-stack",
+    ":stack-abi",
     "//src/lib/elfldltl:headers",
     "//zircon/system/ulib/zx",
 

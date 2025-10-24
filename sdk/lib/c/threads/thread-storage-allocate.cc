@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "thread-storage.h"
-
 #include <lib/elfldltl/machine.h>
 #include <zircon/assert.h>
 
@@ -11,7 +9,8 @@
 #include <concepts>
 #include <utility>
 
-#include "shadow-call-stack.h"
+#include "stack-abi.h"
+#include "thread-storage.h"
 #include "threads_impl.h"
 
 namespace LIBC_NAMESPACE_DECL {
@@ -75,7 +74,7 @@ class Block<Member> {
 };
 
 // This handles shadow_call_stack_ when it's a no-op.
-template <NoShadowCallStack ThreadStorage::* Member>
+template <NoStack ThreadStorage::* Member>
 class Block<Member> {
  public:
   PageRoundedSize VmoSize(const ThreadStorage& storage, PageRoundedSize tls_size) const {

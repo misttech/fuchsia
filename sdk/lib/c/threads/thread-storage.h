@@ -15,8 +15,8 @@
 
 #include "../asm-linkage.h"  // TODO(https://fxbug.dev/342469121): see below
 #include "../zircon/vmar.h"
-#include "shadow-call-stack.h"
 #include "src/__support/macros/config.h"
+#include "stack-abi.h"
 
 struct __pthread;  // Forward declared for legacy "threads_impl.h".
 
@@ -148,7 +148,7 @@ class ThreadStorage {
  private:
   // The shadow call stack grows up with guard above, so the initial pointer is
   // just the base of the mapping.
-  static uint64_t* GrowsUp(NoShadowCallStack) { return nullptr; }
+  static uint64_t* GrowsUp(NoStack) { return nullptr; }
   static uint64_t* GrowsUp(uintptr_t base) { return reinterpret_cast<uint64_t*>(base); }
 
   // The other stacks grow down with guard below, so the initial pointer is at

@@ -16,7 +16,7 @@
 #include <utility>
 
 #include "../ld/log.h"
-#include "../threads/shadow-call-stack.h"
+#include "../threads/stack-abi.h"
 #include "../threads/thread-storage.h"
 #include "../threads/zxr-tls.h"
 #include "start-main.h"
@@ -27,19 +27,6 @@
 
 namespace LIBC_NAMESPACE_DECL {
 namespace {
-
-// While Thread is the legacy C-compatible struct __pthread, it doesn't just
-// have an IfShadowCallStack<GuardedPageBlock> shadow_call_stack member.
-
-template <class Thread>
-  requires(!kShadowCallStackAbi)
-void OwnShadowCallStack(Thread* tcb, NoShadowCallStack) {}
-
-template <class Thread>
-  requires(kShadowCallStackAbi)
-void OwnShadowCallStack(Thread* tcb, GuardedPageBlock block) {
-  tcb->shadow_call_stack_region = std::move(block).TakeIovec();
-}
 
 auto GetStartupHandles(zx::handle bootstrap) {
   auto [process_self, thread_self, allocation_vmar, image_vmar, log, hook] =
