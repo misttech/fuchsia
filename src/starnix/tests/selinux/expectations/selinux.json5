@@ -13,70 +13,38 @@
             type: "expect_failure",
             matchers: [
                 // keep-sorted start
-
-                // TODO: https://fxbug.dev/398696691 - get passing.
-                "atsecure",
-                // TODO: https://fxbug.dev/398654361 - get passing.
-                "binder",
-                // TODO: https://fxbug.dev/398652722 - get passing.
-                "bounds",
-                // TODO: https://fxbug.dev/398652723 - get passing.
-                "capable_file",
-                // TODO: https://fxbug.dev/398662840 - get passing.
-                "cgroupfs_label",
-                // TODO: https://fxbug.dev/398662842 - get passing.
-                "checkreqprot",
-                // TODO: https://fxbug.dev/398699131 - get passing.
-                "extended_socket_class",
-                // TODO: https://fxbug.dev/398696731 - get passing.
-                "file",
-                // TODO: https://fxbug.dev/398699133 - get passing.
-                "filesystem",
-                // TODO: https://fxbug.dev/398696732 - get passing.
-                "fs_filesystem",
-                // TODO: https://fxbug.dev/398699134 - get passing.
-                "glblub",
-                // TODO: https://fxbug.dev/398663317 - get passing.
-                "inet_socket/tcp",
-                "inet_socket/udp",
-                // TODO: https://fxbug.dev/398663318 - get passing.
-                "ioctl",
-                // TODO: https://fxbug.dev/398696734 - get passing.
-                "key_socket",
-                // TODO: https://fxbug.dev/398699136 - get passing.
-                "keys",
-                // TODO: https://fxbug.dev/398698176 - get passing.
-                "mac_admin",
-                // TODO: https://fxbug.dev/448793897 - get passing.
-                "memfd",
-                // TODO: https://fxbug.dev/398707795 - get passing.
-                "mmap",
-                // TODO: https://fxbug.dev/398663319 - get passing.
-                "msg",
-                // TODO: https://fxbug.dev/448793080 - get passing.
-                "nlmsg",
-                // TODO: https://fxbug.dev/398696737 - get passing.
-                "nnp_nosuid",
-                // TODO: https://fxbug.dev/398696738 - get passing.
-                "notify",
-                // TODO: https://fxbug.dev/398696739 - get passing.
-                "overlay",
-                // TODO: https://fxbug.dev/398663320 - get passing.
-                "perf_event",
-                // TODO: https://fxbug.dev/398698181 - get passing.
-                "rxdir",
-                // TODO: https://fxbug.dev/398696740 - get passing.
-                "sem",
-                // TODO: https://fxbug.dev/398696741 - get passing.
-                "shm",
-                // TODO: https://fxbug.dev/398696742 - get passing.
-                "sysctl",
-                // TODO: https://fxbug.dev/398663323 - get passing.
-                "tun_tap",
-                // TODO: https://fxbug.dev/398707804 - get passing.
-                "userfaultfd",
-                // TODO: https://fxbug.dev/398711590 - get passing.
-                "watchkey",
+                "atsecure", // TODO: https://fxbug.dev/398696691
+                "binder", // TODO: https://fxbug.dev/398654361
+                "bounds", // TODO: https://fxbug.dev/398652722
+                "capable_file", // TODO: https://fxbug.dev/398652723
+                "cgroupfs_label", // TODO: https://fxbug.dev/398662840
+                "checkreqprot", // TODO: https://fxbug.dev/398662842
+                "extended_socket_class", // TODO: https://fxbug.dev/398699131
+                "file", // TODO: https://fxbug.dev/398696731
+                "filesystem", // TODO: https://fxbug.dev/398699133
+                "fs_filesystem", // TODO: https://fxbug.dev/398696732
+                "glblub", // TODO: https://fxbug.dev/398699134
+                "inet_socket/tcp", // TODO: https://fxbug.dev/398663317
+                "inet_socket/udp", // TODO: https://fxbug.dev/398663317
+                "ioctl", // TODO: https://fxbug.dev/398663318
+                "key_socket", // TODO: https://fxbug.dev/398696734
+                "keys", // TODO: https://fxbug.dev/398699136
+                "mac_admin", // TODO: https://fxbug.dev/398698176
+                "memfd", // TODO: https://fxbug.dev/448793897
+                "mmap", // TODO: https://fxbug.dev/398707795
+                "msg", // TODO: https://fxbug.dev/398663319
+                "nlmsg", // TODO: https://fxbug.dev/448793080
+                "nnp_nosuid", // TODO: https://fxbug.dev/398696737
+                "notify", // TODO: https://fxbug.dev/398696738
+                "overlay", // TODO: https://fxbug.dev/398696739
+                "perf_event", // TODO: https://fxbug.dev/398663320
+                "rxdir", // TODO: https://fxbug.dev/398698181
+                "sem", // TODO: https://fxbug.dev/398696740
+                "shm", // TODO: https://fxbug.dev/398696741
+                "sysctl", // TODO: https://fxbug.dev/398696742
+                "tun_tap", // TODO: https://fxbug.dev/398663323
+                "userfaultfd", // TODO: https://fxbug.dev/398707804
+                "watchkey", // TODO: https://fxbug.dev/398711590
 
                 // keep-sorted end
             ],
