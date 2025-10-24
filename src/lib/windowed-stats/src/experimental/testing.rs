@@ -7,17 +7,17 @@ use fuchsia_sync::Mutex;
 use std::any::{self, Any};
 use std::collections::HashMap;
 use std::marker::PhantomData;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use crate::experimental::clock::{Timed, Timestamp};
-use crate::experimental::series::interpolation::InterpolationKind;
-use crate::experimental::series::statistic::{FoldError, Metadata, SerialStatistic};
-use crate::experimental::series::{SerializedBuffer, TimeMatrix, TimeMatrixFold, TimeMatrixTick};
+use crate::experimental::series::statistic::{FoldError, Metadata, Sample, Statistic};
+use crate::experimental::series::{Gauge, SerializedBuffer, TimeMatrixFold, TimeMatrixTick};
 use crate::experimental::serve::{
     BufferedSampler, InspectSender, InspectedTimeMatrix, ServedTimeMatrix,
 };
 
-type DynamicSample = Box<dyn Any + Send>;
+pub type DynamicSample = Box<dyn Any + Send>;
 
 #[derive(Derivative)]
 #[derivative(Debug, PartialEq)]
@@ -108,17 +108,14 @@ impl MockTimeMatrixClient {
 }
 
 impl InspectSender for MockTimeMatrixClient {
-    fn inspect_time_matrix<F, P>(
+    fn inspect_time_matrix<M>(
         &self,
         name: impl Into<String>,
-        _matrix: TimeMatrix<F, P>,
-    ) -> InspectedTimeMatrix<F::Sample>
+        _matrix: M,
+    ) -> InspectedTimeMatrix<Sample<M::Statistic>>
     where
-        TimeMatrix<F, P>: 'static + TimeMatrixFold<F::Sample> + Send,
-        Metadata<F>: 'static + Send + Sync,
-        F: SerialStatistic<P>,
-        F::Sample: Send,
-        P: InterpolationKind,
+        M: 'static + Send + TimeMatrixFold,
+        Sample<M::Statistic>: Send,
     {
         let name = name.into();
         let (sender, matrix) = BufferedSampler::from_time_matrix(MockTimeMatrix::new(
@@ -129,20 +126,55 @@ impl InspectSender for MockTimeMatrixClient {
         InspectedTimeMatrix::new(name, sender)
     }
 
-    fn inspect_time_matrix_with_metadata<F, P>(
+    fn inspect_time_matrix_with_metadata<M>(
         &self,
         name: impl Into<String>,
-        matrix: TimeMatrix<F, P>,
-        _metadata: impl Into<Metadata<F>>,
-    ) -> InspectedTimeMatrix<F::Sample>
+        matrix: M,
+        _metadata: impl Into<Metadata<M::Statistic>>,
+    ) -> InspectedTimeMatrix<Sample<M::Statistic>>
     where
-        TimeMatrix<F, P>: 'static + TimeMatrixFold<F::Sample> + Send,
-        Metadata<F>: 'static + Send + Sync,
-        F: SerialStatistic<P>,
-        F::Sample: Send,
-        P: InterpolationKind,
+        M: 'static + Send + TimeMatrixFold,
+        Metadata<M::Statistic>: 'static + Send + Sync,
+        Sample<M::Statistic>: Send,
     {
         self.inspect_time_matrix(name, matrix)
+    }
+}
+
+struct MockStatistic<T>(PhantomData<fn() -> T>);
+
+impl<T> Clone for MockStatistic<T> {
+    fn clone(&self) -> Self {
+        MockStatistic::default()
+    }
+}
+
+impl<T> Default for MockStatistic<T> {
+    fn default() -> Self {
+        MockStatistic(PhantomData)
+    }
+}
+
+impl<T> Statistic for MockStatistic<T>
+where
+    T: Clone,
+{
+    type Semantic = Gauge;
+    type Sample = T;
+    type Aggregation = ();
+
+    fn fold(&mut self, _sample: Self::Sample) -> Result<(), FoldError> {
+        Ok(())
+    }
+
+    fn fill(&mut self, _sample: Self::Sample, _n: NonZeroUsize) -> Result<(), FoldError> {
+        Ok(())
+    }
+
+    fn reset(&mut self) {}
+
+    fn aggregation(&self) -> Option<Self::Aggregation> {
+        Some(())
     }
 }
 
@@ -161,10 +193,12 @@ impl<T> MockTimeMatrix<T> {
     }
 }
 
-impl<T> TimeMatrixFold<T> for MockTimeMatrix<T>
+impl<T> TimeMatrixFold for MockTimeMatrix<T>
 where
-    T: 'static + Send,
+    T: 'static + Clone + Send,
 {
+    type Statistic = MockStatistic<T>;
+
     fn fold(&mut self, sample: Timed<T>) -> Result<(), FoldError> {
         let sample = sample.map(|v| Box::new(v) as DynamicSample);
         self.calls.lock().push((self.name.clone(), TimeMatrixCall::Fold(sample)));

@@ -83,7 +83,7 @@ where
         interpolation: P::Output<F::Sample>,
     ) -> impl Reactor<F::Sample, S, Response = (), Error = FoldError>
     where
-        TimeMatrix<F, P>: 'static + TimeMatrixFold<F::Sample> + Send,
+        TimeMatrix<F, P>: 'static + TimeMatrixFold<Statistic = F> + Send,
         Metadata<F>: 'static + Send + Sync,
         F: SerialStatistic<P>,
         F::Sample: Send,
@@ -132,8 +132,7 @@ where
         interpolation: P::Output<F::Sample>,
     ) -> impl Reactor<F::Sample, S, Response = (), Error = FoldError>
     where
-        TimeMatrix<F, P>: 'static + TimeMatrixFold<F::Sample> + Send,
-        Metadata<F>: 'static + Send + Sync,
+        TimeMatrix<F, P>: 'static + TimeMatrixFold<Statistic = F> + Send,
         F: SerialStatistic<P>,
         F::Sample: Send,
         P: InterpolationKind,
