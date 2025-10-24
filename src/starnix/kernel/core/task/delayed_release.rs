@@ -4,6 +4,7 @@
 
 use crate::task::CurrentTask;
 use fuchsia_rcu::rcu_run_callbacks;
+use starnix_logging::log_warn;
 use starnix_sync::{FileOpsCore, Locked};
 use starnix_types::ownership::Releasable;
 use std::cell::RefCell;
@@ -79,6 +80,7 @@ pub struct DelayedReleaser {}
 impl DelayedReleaser {
     /// Run all current delayed releases for the current thread.
     pub fn apply<'a>(&self, locked: &'a mut Locked<FileOpsCore>, current_task: &'a CurrentTask) {
+        let mut counter = 0u32;
         loop {
             rcu_run_callbacks();
             let releasers = RELEASERS.with(|cell| {
@@ -93,6 +95,13 @@ impl DelayedReleaser {
                 return;
             }
             releasers.release((locked, current_task));
+            counter += 1;
+            if counter == 100 {
+                log_warn!("DelayedReleaser: applied >=100 delayed releases");
+            }
+            if counter > 10000 {
+                panic!("DelayedReleaser: applied >10000 delayed releases");
+            }
         }
     }
 
