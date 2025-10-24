@@ -4,8 +4,6 @@
 
 #![recursion_limit = "512"]
 
-mod seq_lock;
-
 use fuchsia_inspect_contrib::profile_duration;
 use starnix_sync::LockEqualOrBefore;
 
@@ -87,9 +85,18 @@ struct SeLinuxStatusValue {
 
 type StatusSeqLock = SeqLock<SeLinuxStatusHeader, SeLinuxStatusValue>;
 
-impl SeLinuxStatusPublisher for StatusSeqLock {
+struct StatusPublisher(StatusSeqLock);
+
+impl StatusPublisher {
+    pub fn new_default() -> Result<Self, zx::Status> {
+        let seq_lock = StatusSeqLock::new_default()?;
+        Ok(StatusPublisher(seq_lock))
+    }
+}
+
+impl SeLinuxStatusPublisher for StatusPublisher {
     fn set_status(&mut self, policy_status: SeLinuxStatus) {
-        self.set_value(SeLinuxStatusValue {
+        self.0.set_value(SeLinuxStatusValue {
             enforcing: policy_status.is_enforcing as u32,
             policyload: policy_status.change_count,
             deny_unknown: policy_status.deny_unknown as u32,
@@ -174,8 +181,9 @@ impl SeLinuxFs {
         // The status file needs to be mmap-able, so use a VMO-backed file. When the selinux state
         // changes in the future, the way to update this data (and communicate updates with
         // userspace) is to use the ["seqlock"](https://en.wikipedia.org/wiki/Seqlock) technique.
-        let status_holder = StatusSeqLock::new_default().expect("selinuxfs status seqlock");
+        let status_holder = StatusPublisher::new_default().expect("selinuxfs status seqlock");
         let status_file = status_holder
+            .0
             .get_readonly_vmo()
             .duplicate_handle(zx::Rights::SAME_RIGHTS)
             .map_err(impossible_error)?;
@@ -1213,6 +1221,7 @@ pub fn selinux_fs(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fuchsia_runtime;
 
     use selinux::SecurityServer;
     use zerocopy::{FromBytes, KnownLayout};
@@ -1224,8 +1233,8 @@ mod tests {
         // u32 values.
         const STATUS_T_SIZE: usize = size_of::<u32>() * 5;
 
-        let status_holder = StatusSeqLock::new_default().unwrap();
-        let status_vmo = status_holder.get_readonly_vmo();
+        let status_holder = StatusPublisher::new_default().unwrap();
+        let status_vmo = status_holder.0.get_readonly_vmo();
 
         // Verify the content and actual size of the structure are as expected.
         let content_size = status_vmo.get_content_size().unwrap() as usize;
@@ -1283,8 +1292,8 @@ mod tests {
     #[fuchsia::test]
     fn status_file_layout() {
         let security_server = SecurityServer::new_default();
-        let status_holder = StatusSeqLock::new_default().unwrap();
-        let status_vmo = status_holder.get_readonly_vmo();
+        let status_holder = StatusPublisher::new_default().unwrap();
+        let status_vmo = status_holder.0.get_readonly_vmo();
         security_server.set_status_publisher(Box::new(status_holder));
         security_server.set_enforcing(false);
         let mut seq_no: u32 = 0;
@@ -1307,8 +1316,8 @@ mod tests {
     #[fuchsia::test]
     fn status_accurate_directly_following_set_status_publisher() {
         let security_server = SecurityServer::new_default();
-        let status_holder = StatusSeqLock::new_default().unwrap();
-        let status_vmo = status_holder.get_readonly_vmo();
+        let status_holder = StatusPublisher::new_default().unwrap();
+        let status_vmo = status_holder.0.get_readonly_vmo();
 
         // Ensure a change in status-visible security server state is made before invoking
         // `set_status_publisher()`.
