@@ -38,12 +38,12 @@ readonly RAW_LINES="${copyright_line}
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 
-use zerocopy::{AsBytes, FromBytes, FromZeros, NoCell};"
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};"
 
 "${BINDGEN}" \
   --raw-line "${RAW_LINES}" \
   --with-derive-default \
-  --with-derive-custom-struct=${ZEROCOPY_SYMS_REGEX}={AsBytes,FromBytes,FromZeros,NoCell} \
+  --with-derive-custom-struct=${ZEROCOPY_SYMS_REGEX}={FromBytes,Immutable,IntoBytes,KnownLayout} \
   --impl-debug \
   --allowlist-type=${ZEROCOPY_SYMS_REGEX} \
   --allowlist-var 'SENTINEL_SLOT_VALUE' \
@@ -51,4 +51,5 @@ use zerocopy::{AsBytes, FromBytes, FromZeros, NoCell};"
   --output "${target_file}" \
   "${source_file}" \
   -- \
+  -x c++ \
   -I${FUCHSIA_DIR}/zircon/system/public

@@ -72,6 +72,9 @@ type BlockInfo = struct {
 
         /// The device provides fua support.
         FUA_SUPPORT = 0x00000010;
+
+        /// The device provides zstd decompression support.
+        ZSTD_DECOMPRESSION_SUPPORT = 0x00000020;
     };
 };
 

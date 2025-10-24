@@ -15,6 +15,7 @@ use std::task::{Context, Poll};
 mod buffer_source {
     use fuchsia_runtime::vmar_root_self;
     use std::ops::Range;
+    use std::sync::Arc;
     use zx::{self as zx, AsHandleRef};
 
     /// A buffer source backed by a VMO.
@@ -22,7 +23,7 @@ mod buffer_source {
     pub struct BufferSource {
         base: *mut u8,
         size: usize,
-        vmo: zx::Vmo,
+        vmo: Arc<zx::Vmo>,
     }
 
     // SAFETY: This is required for the *mut u8 which is just the base address of the VMO mapping
@@ -32,7 +33,7 @@ mod buffer_source {
 
     impl BufferSource {
         pub fn new(size: usize) -> Self {
-            let vmo = zx::Vmo::create(size as u64).unwrap();
+            let vmo = Arc::new(zx::Vmo::create(size as u64).unwrap());
             let name = zx::Name::new("transfer-buf").unwrap();
             vmo.set_name(&name).unwrap();
             let flags = zx::VmarFlags::PERM_READ
@@ -47,7 +48,7 @@ mod buffer_source {
             self.size
         }
 
-        pub fn vmo(&self) -> &zx::Vmo {
+        pub fn vmo(&self) -> &Arc<zx::Vmo> {
             &self.vmo
         }
 

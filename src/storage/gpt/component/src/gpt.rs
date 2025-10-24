@@ -1556,7 +1556,9 @@ mod tests {
                 block_size: 512,
                 info: DeviceInfo::Block(BlockInfo {
                     max_transfer_blocks: NonZero::new(2),
-                    device_flags: fblock::Flag::READONLY | fblock::Flag::REMOVABLE,
+                    device_flags: fblock::Flag::READONLY
+                        | fblock::Flag::REMOVABLE
+                        | fblock::Flag::ZSTD_DECOMPRESSION_SUPPORT,
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -1588,7 +1590,12 @@ mod tests {
         let info = part_block.get_info().await.expect("FIDL error").expect("get_info failed");
         assert_eq!(info.block_count, 1);
         assert_eq!(info.block_size, 512);
-        assert_eq!(info.flags, fblock::Flag::READONLY | fblock::Flag::REMOVABLE);
+        assert_eq!(
+            info.flags,
+            fblock::Flag::READONLY
+                | fblock::Flag::REMOVABLE
+                | fblock::Flag::ZSTD_DECOMPRESSION_SUPPORT
+        );
         assert_eq!(info.max_transfer_size, 1024);
 
         let metadata =

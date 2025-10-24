@@ -3557,7 +3557,7 @@ mod tests {
         let info = proxy.get_info().await.expect("FIDL error").expect("get_info failed");
         assert_eq!(info.block_count, 16448);
         assert_eq!(info.block_size, 512);
-        assert_eq!(info.flags, fblock::Flag::READONLY);
+        assert_eq!(info.flags, fblock::Flag::READONLY | fblock::Flag::ZSTD_DECOMPRESSION_SUPPORT);
 
         let partition_metadata =
             proxy.get_metadata().await.expect("FIDL error").expect("get_metadata failed");

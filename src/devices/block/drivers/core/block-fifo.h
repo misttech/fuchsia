@@ -27,13 +27,38 @@ typedef struct BlockFifoCommand {
   uint32_t flags;
 } block_fifo_command_t;
 
+// * Reads with Decompression *
+//
+// For a non-fragmented read with decompression (`flags` has `DECOMPRESS_WITH_ZSTD` set)
+//  `dev_offset` and `length` should specify the compressed blocks.  `total_compressed_bytes` should
+//  be the total number of compressed bytes.  `uncompresed_bytes` is the total number of
+//  uncompressed bytes.  `compressed_prefix_bytes` specifies the padding at the beginning before the
+//  start of compressed data.
+//
+// For a fragmented read with decompression:
+//
+// For the first request in the group: `dev_offset` and `length` should specify the compressed
+// blocks for the first fragment.  `total_compressed_bytes` should be set to the total number of
+// compressed bytes across all requests, and likewise for `uncompressed_bytes` and
+// `compressed_prefix_bytes`.
+//
+// For subsequent requests, `dev_offset` and `length` should specify the compressed blocks.  All
+// other fields should be zero.
+//
+// The group may only contain read requests applicable to the decompressed read.
+//
+// There is a 128 MiB limit on the total compressed amount.
 typedef struct BlockFifoRequest {
   block_fifo_command_t command;
   reqid_t reqid;
   groupid_t group;
   vmoid_t vmoid;
-  uint32_t length;
-  uint32_t padding_to_satisfy_zerocopy;
+  uint32_t length;  // In blocks.
+
+  // The total number of compressed bytes across all requests in the group (only applicable for the
+  // first request in a group). This does *not* include any padding at either the beginning or end.
+  uint32_t total_compressed_bytes;
+
   uint64_t vmo_offset;
   uint64_t dev_offset;
   uint64_t trace_flow_id;
@@ -42,7 +67,17 @@ typedef struct BlockFifoRequest {
   // The keyslot for the key used to encrypt/decrypt the request's data. If `slot` is set to
   // SENTINEL_SLOT_VALUE, this request does not use inline crypto.
   uint8_t slot;
-  uint8_t padding[3];
+  uint8_t padding;
+
+  // The number of bytes to skip at the beginning (only applicable for the first request in a
+  // group).
+  uint16_t compressed_prefix_bytes;
+
+  // The total number of uncompressed bytes for this request (only applicable for the first request
+  // in a group).
+  uint32_t uncompressed_bytes;
+
+  uint32_t padding2;
 } block_fifo_request_t;
 
 typedef struct BlockFifoResponse {
@@ -51,7 +86,7 @@ typedef struct BlockFifoResponse {
   groupid_t group;
   uint16_t padding_to_satisfy_zerocopy;
   uint32_t count;
-  uint64_t padding_to_match_request_size_and_alignment[5];
+  uint64_t padding_to_match_request_size_and_alignment[6];
 } block_fifo_response_t;
 
 // NOLINTEND(modernize-use-using)

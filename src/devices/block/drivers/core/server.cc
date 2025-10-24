@@ -270,6 +270,13 @@ void Server::GetFifo(GetFifoCompleter::Sync& completer) {
 }
 
 zx_status_t Server::ProcessReadWriteRequest(block_fifo_request_t* request) {
+  if (request->command.flags & BLOCK_IO_FLAG_DECOMPRESS_WITH_ZSTD) {
+    if (request->command.opcode == BLOCK_OPCODE_READ) {
+      return ZX_ERR_NOT_SUPPORTED;
+    }
+    return ZX_ERR_INVALID_ARGS;
+  }
+
   bool do_postflush = false;
 
   // If the underlying device doesn't support FUA, we need to simulate it.

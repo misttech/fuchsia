@@ -63,6 +63,7 @@ impl SessionManager {
 }
 
 impl super::SessionManager for SessionManager {
+    const SUPPORTS_DECOMPRESSION: bool = false;
     type Session = Arc<Session>;
 
     async fn on_attach_vmo(self: Arc<Self>, _vmo: &Arc<zx::Vmo>) -> Result<(), zx::Status> {
@@ -250,49 +251,55 @@ impl Session {
                 Ok(DecodedRequest { operation: Operation::CloseVmo, request_id, .. }) => {
                     self.complete_request(request_id, zx::Status::OK);
                 }
-                Ok(mut request) => loop {
-                    match self.helper.map_request(request) {
-                        Ok((
-                            DecodedRequest { request_id, operation, trace_flow_id, vmo },
-                            remainder,
-                        )) => {
-                            // We are handing out unowned references to the VMO here.  This is safe
-                            // because the VMO bin holds references to any closed VMOs until all
-                            // preceding operations have finished.
-                            c_requests[count].write(Request {
-                                request_id,
-                                operation,
-                                trace_flow_id,
-                                vmo: UnownedVmo(
-                                    vmo.as_ref()
-                                        .map(|vmo| vmo.raw_handle())
-                                        .unwrap_or(zx::sys::ZX_HANDLE_INVALID),
-                                ),
-                            });
-                            count += 1;
-                            if count == MAX_REQUESTS {
-                                unsafe {
-                                    (self.manager.callbacks.on_requests)(
-                                        self.manager.callbacks.context,
-                                        c_requests[0].as_mut_ptr(),
-                                        count,
-                                    );
+                Ok(mut request) => {
+                    let request_id = request.request_id;
+                    loop {
+                        let map_result = self.helper.map_request(
+                            request,
+                            &mut self.helper.session_manager.active_requests.request(request_id),
+                        );
+                        match map_result {
+                            Ok((
+                                DecodedRequest { request_id, operation, trace_flow_id, vmo },
+                                remainder,
+                            )) => {
+                                // We are handing out unowned references to the VMO here.  This
+                                // is safe because the VMO bin holds references to any closed
+                                // VMOs until all preceding operations have finished.
+                                c_requests[count].write(Request {
+                                    request_id,
+                                    operation,
+                                    trace_flow_id,
+                                    vmo: UnownedVmo(
+                                        vmo.as_ref()
+                                            .map(|vmo| vmo.raw_handle())
+                                            .unwrap_or(zx::sys::ZX_HANDLE_INVALID),
+                                    ),
+                                });
+                                count += 1;
+                                if count == MAX_REQUESTS {
+                                    unsafe {
+                                        (self.manager.callbacks.on_requests)(
+                                            self.manager.callbacks.context,
+                                            c_requests[0].as_mut_ptr(),
+                                            count,
+                                        );
+                                    }
+                                    count = 0;
                                 }
-                                count = 0;
+                                if let Some(r) = remainder {
+                                    request = r;
+                                } else {
+                                    break;
+                                }
                             }
-                            if let Some(r) = remainder {
-                                request = r;
-                            } else {
+                            Err(status) => {
+                                self.complete_request(request_id, status);
                                 break;
                             }
                         }
-                        Err(Some(response)) => {
-                            self.send_response(response);
-                            break;
-                        }
-                        Err(None) => break,
                     }
-                },
+                }
                 Err(None) => {}
                 Err(Some(response)) => self.send_response(response),
             }

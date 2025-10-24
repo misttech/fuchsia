@@ -163,6 +163,9 @@ type BlockCommand = struct {
         /// after the barrier). The barrier will be applied before the request it was sent with.
         /// Note that between two barriers, the device is free to execute requests in any order.
         PRE_BARRIER = 0x00000008;
+
+        /// If set, the request is to be decompressed.
+        DECOMPRESS_WITH_ZSTD = 0x00000010;
     };
 };
 

@@ -16,12 +16,16 @@ use std::collections::VecDeque;
 use std::future::{Future, poll_fn};
 use std::mem::MaybeUninit;
 use std::pin::pin;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::task::{Poll, ready};
+use storage_device::buffer::Buffer;
+use storage_device::buffer_allocator::{BufferAllocator, BufferSource};
 use {
     fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_hardware_block_volume as fvolume,
     fuchsia_async as fasync,
 };
+
+pub const DECOMPRESSION_BUFFER_SIZE: usize = 128 * 1024 * 1024;
 
 pub trait Interface: Send + Sync + Unpin + 'static {
     /// Runs `stream` to completion.
@@ -179,11 +183,27 @@ impl PassthroughSession {
 pub struct SessionManager<I: Interface + ?Sized> {
     interface: Arc<I>,
     active_requests: ActiveRequests<usize>,
+
+    // NOTE: This must be dropped *after* `active_requests` because we store `Buffer<'_>` with an
+    // erased ('static) lifetime in `ActiveRequest`.
+    buffer_allocator: OnceLock<BufferAllocator>,
+}
+
+impl<I: Interface + ?Sized> Drop for SessionManager<I> {
+    fn drop(&mut self) {
+        if let Some(allocator) = self.buffer_allocator.get() {
+            self.interface.on_detach_vmo(allocator.buffer_source().vmo());
+        }
+    }
 }
 
 impl<I: Interface + ?Sized> SessionManager<I> {
     pub fn new(interface: Arc<I>) -> Self {
-        Self { interface, active_requests: ActiveRequests::default() }
+        Self {
+            interface,
+            active_requests: ActiveRequests::default(),
+            buffer_allocator: OnceLock::new(),
+        }
     }
 
     pub fn interface(&self) -> &I {
@@ -214,7 +234,7 @@ impl<I: Interface + ?Sized> SessionManager<I> {
 
         // Make sure we detach VMOs when we go out of scope.
         scopeguard::defer! {
-            for (_, vmo) in helper.take_vmos() {
+            for (_, (vmo, _)) in helper.take_vmos() {
                 self.interface.on_detach_vmo(&vmo);
             }
         }
@@ -316,14 +336,14 @@ impl<I: Interface + ?Sized> Session<I> {
                             Ok((request, remainder)) => {
                                 active_request_futures.push(self.process_fifo_request(request));
                                 if let Some(remainder) = remainder {
-                                    map_future.set(self.map_request(remainder).fuse());
+                                    map_future.set(self.map_request_or_get_response(remainder).fuse());
                                 }
                             }
                             Err(response) => responses.extend(response),
                         }
                         if map_future.is_terminated() {
                             if let Some(request) = pending_mappings.pop_front() {
-                                map_future.set(self.map_request(request).fuse());
+                                map_future.set(self.map_request_or_get_response(request).fuse());
                             }
                         }
                         0
@@ -365,7 +385,7 @@ impl<I: Interface + ?Sized> Session<I> {
                                 .map(|(_, r)| r);
                             responses.extend(response);
                         } else if map_future.is_terminated() {
-                            map_future.set(self.map_request(request).fuse());
+                            map_future.set(self.map_request_or_get_response(request).fuse());
                         } else {
                             pending_mappings.push_back(request);
                         }
@@ -395,12 +415,119 @@ impl<I: Interface + ?Sized> Session<I> {
         Ok(())
     }
 
-    // This is currently async when it doesn't need to be to allow for upcoming changes.
-    async fn map_request(
+    async fn map_request_or_get_response(
         &self,
         request: DecodedRequest,
     ) -> Result<(DecodedRequest, Option<DecodedRequest>), Option<BlockFifoResponse>> {
-        self.helper.map_request(request)
+        let request_id = request.request_id;
+        self.map_request(request).await.map_err(|status| {
+            self.helper
+                .session_manager
+                .active_requests
+                .complete_and_take_response(request_id, status)
+                .map(|(_, r)| r)
+        })
+    }
+
+    // NOTE: The implementation of this currently assumes that we are only processing a single map
+    // request at a time.
+    async fn map_request(
+        &self,
+        mut request: DecodedRequest,
+    ) -> Result<(DecodedRequest, Option<DecodedRequest>), zx::Status> {
+        let mut active_requests;
+        let active_request;
+        // Handle decompressed read operations by turning them into regular read operations.
+        match request.operation {
+            Operation::StartDecompressedRead {
+                required_buffer_size,
+                device_block_offset,
+                block_count,
+                options,
+            } => {
+                let allocator = match self.helper.session_manager.buffer_allocator.get() {
+                    Some(a) => a,
+                    None => {
+                        // This isn't racy because there should only be one `map_request` future
+                        // running at any one time.
+                        let source = BufferSource::new(DECOMPRESSION_BUFFER_SIZE);
+                        self.interface.on_attach_vmo(&source.vmo()).await?;
+                        let allocator =
+                            BufferAllocator::new(self.helper.block_size as usize, source);
+                        self.helper.session_manager.buffer_allocator.set(allocator).unwrap();
+                        self.helper.session_manager.buffer_allocator.get().unwrap()
+                    }
+                };
+
+                if required_buffer_size > DECOMPRESSION_BUFFER_SIZE {
+                    return Err(zx::Status::OUT_OF_RANGE);
+                }
+
+                let buffer = allocator.allocate_buffer(required_buffer_size).await;
+                let vmo_offset = buffer.range().start as u64;
+
+                // # Safety
+                //
+                // See below.
+                unsafe fn remove_lifetime(buffer: Buffer<'_>) -> Buffer<'static> {
+                    unsafe { std::mem::transmute(buffer) }
+                }
+
+                active_requests = self.helper.session_manager.active_requests.0.lock();
+                active_request = &mut active_requests.requests[request.request_id.0];
+
+                // SAFETY: We guarantee that `buffer_allocator` is dropped after `active_requests`,
+                // so this should be safe.
+                active_request.decompression_info.as_mut().unwrap().buffer =
+                    Some(unsafe { remove_lifetime(buffer) });
+
+                request.operation = Operation::Read {
+                    device_block_offset,
+                    block_count,
+                    _unused: 0,
+                    vmo_offset,
+                    options,
+                };
+                request.vmo = Some(allocator.buffer_source().vmo().clone());
+            }
+            Operation::ContinueDecompressedRead {
+                offset,
+                device_block_offset,
+                block_count,
+                options,
+            } => {
+                active_requests = self.helper.session_manager.active_requests.0.lock();
+                active_request = &mut active_requests.requests[request.request_id.0];
+
+                let buffer =
+                    active_request.decompression_info.as_ref().unwrap().buffer.as_ref().unwrap();
+
+                // Make sure this read won't overflow our buffer.
+                if offset >= buffer.len() as u64
+                    || buffer.len() as u64 - offset
+                        < block_count as u64 * self.helper.block_size as u64
+                {
+                    return Err(zx::Status::OUT_OF_RANGE);
+                }
+
+                request.operation = Operation::Read {
+                    device_block_offset,
+                    block_count,
+                    _unused: 0,
+                    vmo_offset: buffer.range().start as u64 + offset,
+                    options,
+                };
+
+                let allocator = self.helper.session_manager.buffer_allocator.get().unwrap();
+                request.vmo = Some(allocator.buffer_source().vmo().clone());
+            }
+            _ => {
+                active_requests = self.helper.session_manager.active_requests.0.lock();
+                active_request = &mut active_requests.requests[request.request_id.0];
+            }
+        }
+
+        self.helper.map_request(request, active_request)
     }
 
     /// Processes a fifo request.
@@ -437,7 +564,9 @@ impl<I: Interface + ?Sized> Session<I> {
             Operation::Trim { device_block_offset, block_count } => {
                 self.interface.trim(device_block_offset, block_count, trace_flow_id).await
             }
-            Operation::CloseVmo => {
+            Operation::CloseVmo
+            | Operation::StartDecompressedRead { .. }
+            | Operation::ContinueDecompressedRead { .. } => {
                 // Handled in main request loop
                 unreachable!()
             }
@@ -451,6 +580,8 @@ impl<I: Interface + ?Sized> Session<I> {
 }
 
 impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
+    const SUPPORTS_DECOMPRESSION: bool = true;
+
     // We don't need the session, we just need something unique to identify the session.
     type Session = usize;
 
@@ -501,6 +632,10 @@ impl<I: Interface> IntoSessionManager for Arc<I> {
     type SM = SessionManager<I>;
 
     fn into_session_manager(self) -> Arc<Self::SM> {
-        Arc::new(SessionManager { interface: self, active_requests: ActiveRequests::default() })
+        Arc::new(SessionManager {
+            interface: self,
+            active_requests: ActiveRequests::default(),
+            buffer_allocator: OnceLock::new(),
+        })
     }
 }

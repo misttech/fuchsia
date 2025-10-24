@@ -6,7 +6,7 @@ use block_protocol::{BlockFifoRequest, BlockFifoResponse, InlineCryptoOptions};
 use fidl_fuchsia_hardware_block::MAX_TRANSFER_UNBOUNDED;
 use fidl_fuchsia_hardware_block_driver::{BlockIoFlag, BlockOpcode};
 use fuchsia_async::epoch::{Epoch, EpochGuard};
-use fuchsia_sync::Mutex;
+use fuchsia_sync::{MappedMutexGuard, Mutex, MutexGuard};
 use futures::{Future, FutureExt as _, TryStreamExt as _};
 use slab::Slab;
 use std::borrow::Cow;
@@ -15,6 +15,7 @@ use std::num::NonZero;
 use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
+use storage_device::buffer::Buffer;
 use zx::HandleBased;
 use {
     fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_hardware_block_partition as fpartition,
@@ -23,6 +24,9 @@ use {
 
 pub mod async_interface;
 pub mod c_interface;
+
+#[cfg(test)]
+mod decompression_tests;
 
 pub(crate) const FIFO_MAX_REQUESTS: usize = 64;
 
@@ -96,6 +100,19 @@ struct ActiveRequest<S> {
     status: zx::Status,
     count: u32,
     req_id: Option<u32>,
+    decompression_info: Option<DecompressionInfo>,
+}
+
+struct DecompressionInfo {
+    // This is the range of compressed bytes in receiving buffer.
+    compressed_range: Range<usize>,
+
+    // This is the range in the target VMO where we will write uncompressed bytes.
+    uncompressed_range: Range<u64>,
+
+    bytes_so_far: u64,
+    mapping: Arc<VmoMapping>,
+    buffer: Option<Buffer<'static>>,
 }
 
 pub struct ActiveRequests<S>(Mutex<ActiveRequestsInner<S>>);
@@ -113,6 +130,10 @@ impl<S> ActiveRequests<S> {
         status: zx::Status,
     ) -> Option<(S, BlockFifoResponse)> {
         self.0.lock().complete_and_take_response(request_id, status)
+    }
+
+    fn request(&self, request_id: RequestId) -> MappedMutexGuard<'_, ActiveRequest<S>> {
+        MutexGuard::map(self.0.lock(), |i| &mut i.requests[request_id.0])
     }
 }
 
@@ -143,6 +164,33 @@ impl<S> ActiveRequestsInner<S> {
                 c"block_server::finish_request",
                 trace_flow_id.get().into()
             );
+        }
+
+        if group.count == 0
+            && group.status == zx::Status::OK
+            && let Some(info) = &mut group.decompression_info
+        {
+            thread_local! {
+                static DECOMPRESSOR: std::cell::RefCell<zstd::bulk::Decompressor<'static>> =
+                    std::cell::RefCell::new(zstd::bulk::Decompressor::new().unwrap());
+            }
+            DECOMPRESSOR.with(|decompressor| {
+                // SAFETY: We verified `uncompressed_range` fits within our mapping.
+                let target_slice = unsafe {
+                    std::slice::from_raw_parts_mut(
+                        (info.mapping.base + info.uncompressed_range.start as usize) as *mut u8,
+                        (info.uncompressed_range.end - info.uncompressed_range.start) as usize,
+                    )
+                };
+                let mut decompressor = decompressor.borrow_mut();
+                if let Err(error) = decompressor.decompress_to_buffer(
+                    &info.buffer.take().unwrap().as_slice()[info.compressed_range.clone()],
+                    target_slice,
+                ) {
+                    log::warn!(error:?; "Decompression error");
+                    group.status = zx::Status::IO_DATA_INTEGRITY;
+                };
+            });
         }
     }
 
@@ -246,6 +294,8 @@ impl OffsetMap {
 // Methods take Arc<Self> rather than &self because of
 // https://github.com/rust-lang/rust/issues/42940.
 pub trait SessionManager: 'static {
+    const SUPPORTS_DECOMPRESSION: bool;
+
     type Session;
 
     fn on_attach_vmo(
@@ -351,7 +401,7 @@ impl<SM: SessionManager> BlockServer<SM> {
             fvolume::VolumeRequest::GetInfo { responder } => match self.device_info().await {
                 Ok(info) => {
                     let max_transfer_size = info.max_transfer_size(self.block_size);
-                    let (block_count, flags) = match info.as_ref() {
+                    let (block_count, mut flags) = match info.as_ref() {
                         DeviceInfo::Block(BlockInfo { block_count, device_flags, .. }) => {
                             (*block_count, *device_flags)
                         }
@@ -368,6 +418,9 @@ impl<SM: SessionManager> BlockServer<SM> {
                             (block_count, partition_info.device_flags)
                         }
                     };
+                    if SM::SUPPORTS_DECOMPRESSION {
+                        flags |= fblock::Flag::ZSTD_DECOMPRESSION_SUPPORT;
+                    }
                     responder.send(Ok(&fblock::BlockInfo {
                         block_count,
                         block_size: self.block_size,
@@ -484,6 +537,8 @@ impl<SM: SessionManager> BlockServer<SM> {
                             flags: Some(info.flags),
                             ..Default::default()
                         }))?;
+                    } else {
+                        responder.send(Err(zx::sys::ZX_ERR_NOT_SUPPORTED))?;
                     }
                 }
                 Err(status) => responder.send(Err(status.into_raw()))?,
@@ -546,7 +601,35 @@ struct SessionHelper<SM: SessionManager> {
     offset_map: OffsetMap,
     block_size: u32,
     peer_fifo: zx::Fifo<BlockFifoResponse, BlockFifoRequest>,
-    vmos: Mutex<BTreeMap<u16, Arc<zx::Vmo>>>,
+    vmos: Mutex<BTreeMap<u16, (Arc<zx::Vmo>, Option<Arc<VmoMapping>>)>>,
+}
+
+struct VmoMapping {
+    base: usize,
+    size: usize,
+}
+
+impl VmoMapping {
+    fn new(vmo: &zx::Vmo) -> Result<Arc<Self>, zx::Status> {
+        let size = vmo.get_size().unwrap() as usize;
+        Ok(Arc::new(Self {
+            base: fuchsia_runtime::vmar_root_self()
+                .map(0, vmo, 0, size, zx::VmarFlags::PERM_WRITE | zx::VmarFlags::PERM_READ)
+                .inspect_err(|error| {
+                    log::warn!(error:?, size; "VmoMapping: unable to map VMO");
+                })?,
+            size,
+        }))
+    }
+}
+
+impl Drop for VmoMapping {
+    fn drop(&mut self) {
+        // SAFETY: We mapped this in `VmoMapping::new`.
+        unsafe {
+            let _ = fuchsia_runtime::vmar_root_self().unmap(self.base, self.size);
+        }
+    }
 }
 
 impl<SM: SessionManager> SessionHelper<SM> {
@@ -600,7 +683,7 @@ impl<SM: SessionManager> SessionHelper<SM> {
                                 })
                             }
                         };
-                        vmos.insert(vmo_id, vmo.clone());
+                        vmos.insert(vmo_id, (vmo.clone(), None));
                         vmo_id
                     }
                 };
@@ -622,9 +705,20 @@ impl<SM: SessionManager> SessionHelper<SM> {
         request: &BlockFifoRequest,
     ) -> Result<DecodedRequest, Option<BlockFifoResponse>> {
         let flags = BlockIoFlag::from_bits_truncate(request.command.flags);
+
+        let request_bytes = request.length as u64 * self.block_size as u64;
+
         let mut operation = BlockOpcode::from_primitive(request.command.opcode)
             .ok_or(zx::Status::INVALID_ARGS)
             .and_then(|code| {
+                if flags.contains(BlockIoFlag::DECOMPRESS_WITH_ZSTD) {
+                    if code != BlockOpcode::Read {
+                        return Err(zx::Status::INVALID_ARGS);
+                    }
+                    if !SM::SUPPORTS_DECOMPRESSION {
+                        return Err(zx::Status::NOT_SUPPORTED);
+                    }
+                }
                 if matches!(code, BlockOpcode::Read | BlockOpcode::Write | BlockOpcode::Trim) {
                     if request.length == 0 {
                         return Err(zx::Status::INVALID_ARGS);
@@ -632,9 +726,7 @@ impl<SM: SessionManager> SessionHelper<SM> {
                     // Make sure the end offsets won't wrap.
                     if request.dev_offset.checked_add(request.length as u64).is_none()
                         || (code != BlockOpcode::Trim
-                            && (request.length as u64 * self.block_size as u64)
-                                .checked_add(request.vmo_offset)
-                                .is_none())
+                            && request_bytes.checked_add(request.vmo_offset).is_none())
                     {
                         return Err(zx::Status::OUT_OF_RANGE);
                     }
@@ -705,6 +797,7 @@ impl<SM: SessionManager> SessionHelper<SM> {
         //   flag is set.
         // - when processing a request of a group fails, subsequent requests of that
         //   group will not be processed.
+        // - decompression is a special case, see block-fifo.h for semantics.
         //
         // Refer to sdk/fidl/fuchsia.hardware.block.driver/block.fidl for details.
         if group_or_request.is_group() {
@@ -720,6 +813,61 @@ impl<SM: SessionManager> SessionHelper<SM> {
                         }
                         // Ignore this request.
                         return Err(None);
+                    }
+                    // See if this is a continuation of a decompressed read.
+                    if group.status == zx::Status::OK
+                        && let Some(info) = &mut group.decompression_info
+                    {
+                        if let Ok(Operation::Read {
+                            device_block_offset,
+                            mut block_count,
+                            options,
+                            vmo_offset: 0,
+                            ..
+                        }) = operation
+                        {
+                            let remaining_bytes = info
+                                .compressed_range
+                                .end
+                                .next_multiple_of(self.block_size as usize)
+                                as u64
+                                - info.bytes_so_far;
+                            if !flags.contains(BlockIoFlag::DECOMPRESS_WITH_ZSTD)
+                                || request.total_compressed_bytes != 0
+                                || request.uncompressed_bytes != 0
+                                || request.compressed_prefix_bytes != 0
+                                || (flags.contains(BlockIoFlag::GROUP_LAST)
+                                    && info.bytes_so_far + request_bytes
+                                        < info.compressed_range.end as u64)
+                                || (!flags.contains(BlockIoFlag::GROUP_LAST)
+                                    && request_bytes >= remaining_bytes)
+                            {
+                                group.status = zx::Status::INVALID_ARGS;
+                            } else {
+                                // We are tolerant of `block_count` being more than we actually
+                                // need.  This can happen if the client is working with a larger
+                                // block size than the device block size.  For example, if Blobfs
+                                // has a 8192 byte block size, but the device might has a 512 byte
+                                // block size, it can ask for a multiple of 16 blocks, when fewer
+                                // than that might actually be required to hold the compressed data.
+                                // It is easier for us to tolerate this here than to get Blobfs to
+                                // change to pass only the blocks that are required.
+                                if request_bytes > remaining_bytes {
+                                    block_count = (remaining_bytes / self.block_size as u64) as u32;
+                                }
+
+                                operation = Ok(Operation::ContinueDecompressedRead {
+                                    offset: info.bytes_so_far,
+                                    device_block_offset,
+                                    block_count,
+                                    options,
+                                });
+
+                                info.bytes_so_far += block_count as u64 * self.block_size as u64;
+                            }
+                        } else {
+                            group.status = zx::Status::INVALID_ARGS;
+                        }
                     }
                     if flags.contains(BlockIoFlag::GROUP_LAST) {
                         group.req_id = Some(request.reqid);
@@ -740,16 +888,105 @@ impl<SM: SessionManager> SessionHelper<SM> {
             }
         }
 
-        let mut retain_vmo = false;
-        let vmo = match &operation {
-            Ok(Operation::Read { .. } | Operation::Write { .. }) => {
-                self.vmos.lock().get(&request.vmoid).cloned().map_or(Err(zx::Status::IO), |vmo| {
-                    retain_vmo = true;
-                    Ok(Some(vmo))
-                })
-            }
+        let is_single_request =
+            !flags.contains(BlockIoFlag::GROUP_ITEM) || flags.contains(BlockIoFlag::GROUP_LAST);
+
+        let mut decompression_info = None;
+        let vmo = match operation {
+            Ok(Operation::Read {
+                device_block_offset,
+                mut block_count,
+                options,
+                vmo_offset,
+                ..
+            }) => match self.vmos.lock().get_mut(&request.vmoid) {
+                Some((vmo, mapping)) => {
+                    if flags.contains(BlockIoFlag::DECOMPRESS_WITH_ZSTD) {
+                        let compressed_range = request.compressed_prefix_bytes as usize
+                            ..request.compressed_prefix_bytes as usize
+                                + request.total_compressed_bytes as usize;
+                        let required_buffer_size =
+                            compressed_range.end.next_multiple_of(self.block_size as usize);
+
+                        // Validate the initial decompression request.
+                        if compressed_range.start >= compressed_range.end
+                            || vmo_offset.checked_add(request.uncompressed_bytes as u64).is_none()
+                            || (is_single_request && request_bytes < compressed_range.end as u64)
+                            || (!is_single_request && request_bytes >= required_buffer_size as u64)
+                        {
+                            Err(zx::Status::INVALID_ARGS)
+                        } else {
+                            // We are tolerant of `block_count` being more than we actually need.
+                            // This can happen if the client is working in a larger block size than
+                            // the device block size.  For example, Blobfs has a 8192 byte block
+                            // size, but the device might have a 512 byte block size.  It is easier
+                            // for us to tolerate this here than to get Blobfs to change to pass
+                            // only the blocks that are required.
+                            let bytes_so_far = if request_bytes > required_buffer_size as u64 {
+                                block_count =
+                                    (required_buffer_size / self.block_size as usize) as u32;
+                                required_buffer_size as u64
+                            } else {
+                                request_bytes
+                            };
+
+                            // To decompress, we need to have the target VMO mapped (cached).
+                            match mapping {
+                                Some(mapping) => Ok(mapping.clone()),
+                                None => {
+                                    VmoMapping::new(&vmo).inspect(|m| *mapping = Some(m.clone()))
+                                }
+                            }
+                            .and_then(|mapping| {
+                                // Make sure the `vmo_offset` and `uncompressed_bytes` are within
+                                // range.
+                                if vmo_offset
+                                    .checked_add(request.uncompressed_bytes as u64)
+                                    .is_some_and(|end| end <= mapping.size as u64)
+                                {
+                                    Ok(mapping)
+                                } else {
+                                    Err(zx::Status::OUT_OF_RANGE)
+                                }
+                            })
+                            .map(|mapping| {
+                                // Convert the operation into a `StartDecompressedRead`
+                                // operation. For non-fragmented requests, this will be the only
+                                // operation, but if it's a fragmented read,
+                                // `ContinueDecompressedRead` operations will follow.
+                                operation = Ok(Operation::StartDecompressedRead {
+                                    required_buffer_size,
+                                    device_block_offset,
+                                    block_count,
+                                    options,
+                                });
+                                // Record sufficient information so that we can decompress when all
+                                // the requests complete.
+                                decompression_info = Some(DecompressionInfo {
+                                    compressed_range,
+                                    bytes_so_far,
+                                    mapping,
+                                    uncompressed_range: vmo_offset
+                                        ..vmo_offset + request.uncompressed_bytes as u64,
+                                    buffer: None,
+                                });
+                                None
+                            })
+                        }
+                    } else {
+                        Ok(Some(vmo.clone()))
+                    }
+                }
+                None => Err(zx::Status::IO),
+            },
+            Ok(Operation::Write { .. }) => self
+                .vmos
+                .lock()
+                .get(&request.vmoid)
+                .cloned()
+                .map_or(Err(zx::Status::IO), |(vmo, _)| Ok(Some(vmo))),
             Ok(Operation::CloseVmo) => {
-                self.vmos.lock().remove(&request.vmoid).map_or(Err(zx::Status::IO), |vmo| {
+                self.vmos.lock().remove(&request.vmoid).map_or(Err(zx::Status::IO), |(vmo, _)| {
                     let vmo_clone = vmo.clone();
                     // Make sure the VMO is dropped after all current Epoch guards have been
                     // dropped.
@@ -773,13 +1010,8 @@ impl<SM: SessionManager> SessionHelper<SM> {
                 _epoch_guard: Epoch::global().guard(),
                 status: zx::Status::OK,
                 count: 1,
-                req_id: if !flags.contains(BlockIoFlag::GROUP_ITEM)
-                    || flags.contains(BlockIoFlag::GROUP_LAST)
-                {
-                    Some(request.reqid)
-                } else {
-                    None
-                },
+                req_id: is_single_request.then_some(request.reqid),
+                decompression_info,
             }))
         });
 
@@ -793,7 +1025,7 @@ impl<SM: SessionManager> SessionHelper<SM> {
         })
     }
 
-    fn take_vmos(&self) -> BTreeMap<u16, Arc<zx::Vmo>> {
+    fn take_vmos(&self) -> BTreeMap<u16, (Arc<zx::Vmo>, Option<Arc<VmoMapping>>)> {
         std::mem::take(&mut *self.vmos.lock())
     }
 
@@ -801,20 +1033,15 @@ impl<SM: SessionManager> SessionHelper<SM> {
     fn map_request(
         &self,
         mut request: DecodedRequest,
-    ) -> Result<(DecodedRequest, Option<DecodedRequest>), Option<BlockFifoResponse>> {
-        let mut active_requests = self.session_manager.active_requests().0.lock();
-        let active_request = &mut active_requests.requests[request.request_id.0];
+        active_request: &mut ActiveRequest<SM::Session>,
+    ) -> Result<(DecodedRequest, Option<DecodedRequest>), zx::Status> {
         if active_request.status != zx::Status::OK {
-            return Err(active_requests
-                .complete_and_take_response(request.request_id, zx::Status::BAD_STATE)
-                .map(|(_, r)| r));
+            return Err(zx::Status::BAD_STATE);
         }
         let mapping = self.offset_map.mapping();
         match (mapping, request.operation.blocks()) {
             (Some(mapping), Some(blocks)) if !mapping.are_blocks_within_source_range(blocks) => {
-                return Err(active_requests
-                    .complete_and_take_response(request.request_id, zx::Status::OUT_OF_RANGE)
-                    .map(|(_, r)| r));
+                return Err(zx::Status::OUT_OF_RANGE);
             }
             _ => {}
         }
@@ -903,6 +1130,18 @@ pub enum Operation {
     },
     /// This will never be seen by the C interface.
     CloseVmo,
+    StartDecompressedRead {
+        required_buffer_size: usize,
+        device_block_offset: u64,
+        block_count: u32,
+        options: ReadOptions,
+    },
+    ContinueDecompressedRead {
+        offset: u64,
+        device_block_offset: u64,
+        block_count: u32,
+        options: ReadOptions,
+    },
 }
 
 impl Operation {
@@ -913,6 +1152,8 @@ impl Operation {
             Operation::Flush { .. } => "flush",
             Operation::Trim { .. } => "trim",
             Operation::CloseVmo { .. } => "close_vmo",
+            Operation::StartDecompressedRead { .. } => "start_decompressed_read",
+            Operation::ContinueDecompressedRead { .. } => "continue_decompressed_read",
         }
     }
 
@@ -1409,7 +1650,10 @@ mod tests {
                     partition_info.block_range.as_ref().unwrap().end
                         - partition_info.block_range.as_ref().unwrap().start
                 );
-                assert_eq!(block_info.flags, fblock::Flag::READONLY);
+                assert_eq!(
+                    block_info.flags,
+                    fblock::Flag::READONLY | fblock::Flag::ZSTD_DECOMPRESSION_SUPPORT
+                );
 
                 assert_eq!(block_info.max_transfer_size, MAX_TRANSFER_BLOCKS * BLOCK_SIZE);
 
