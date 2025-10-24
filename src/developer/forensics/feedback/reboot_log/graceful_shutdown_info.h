@@ -9,8 +9,6 @@
 
 #include <string>
 
-#include "src/developer/forensics/utils/cobalt/logger.h"
-
 namespace forensics {
 namespace feedback {
 
@@ -110,10 +108,10 @@ std::string ToJson(GracefulShutdownAction action,
 // "Reason 1,Reason 2,Reason 3".
 std::string ToRawStrings(const std::vector<GracefulShutdownReason>& reasons);
 
-// Writes the graceful shutdown action and reasons to `path` and records metrics about the write.
+// Writes the graceful shutdown action and reasons to `path`.
 void WriteGracefulShutdownInfo(GracefulShutdownAction action,
                                const std::vector<GracefulShutdownReason>& reasons,
-                               cobalt::Logger* cobalt, const std::string& path);
+                               const std::string& path);
 
 }  // namespace feedback
 }  // namespace forensics

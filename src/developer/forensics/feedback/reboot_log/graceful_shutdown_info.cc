@@ -485,7 +485,7 @@ std::vector<GracefulShutdownReason> ToGracefulShutdownReasons(
 
 void WriteGracefulShutdownInfo(const GracefulShutdownAction action,
                                const std::vector<GracefulShutdownReason>& reasons,
-                               cobalt::Logger* cobalt, const std::string& path) {
+                               const std::string& path) {
   fbl::unique_fd fd(open(path.c_str(), O_CREAT | O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR));
   if (!fd.is_valid()) {
     FX_LOGS(INFO) << "Failed to open shutdown info file: " << path;

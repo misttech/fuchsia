@@ -11,12 +11,10 @@
 #include <gtest/gtest.h>
 
 #include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
-#include "src/developer/forensics/testing/stubs/cobalt_logger_factory.h"
 #include "src/developer/forensics/testing/unit_test_fixture.h"
 #include "src/lib/files/file.h"
 #include "src/lib/files/path.h"
 #include "src/lib/files/scoped_temp_dir.h"
-#include "src/lib/timekeeper/test_clock.h"
 
 namespace forensics {
 namespace feedback {
@@ -281,9 +279,6 @@ struct ReasonTestParam {
 };
 
 class WriteGracefulShutdownInfoTest : public UnitTestFixture {
- public:
-  WriteGracefulShutdownInfoTest() : cobalt_(dispatcher(), services(), &clock_) {}
-
  protected:
   std::string Path() { return files::JoinPath(tmp_dir_.path(), kFilename); }
 
@@ -298,9 +293,6 @@ class WriteGracefulShutdownInfoTest : public UnitTestFixture {
 }})",
         action, reason);
   }
-
-  timekeeper::TestClock clock_;
-  cobalt::Logger cobalt_;
 
  private:
   files::ScopedTempDir tmp_dir_;
@@ -379,10 +371,7 @@ INSTANTIATE_TEST_SUITE_P(WithVariousShutdownReasons, WriteGracefulShutdownReason
 TEST_P(WriteGracefulShutdownReasonsTest, WritesReasons) {
   const auto param = GetParam();
 
-  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
-
-  WriteGracefulShutdownInfo(GracefulShutdownAction::kReboot, {param.input_shutdown_reason},
-                            &cobalt_, Path());
+  WriteGracefulShutdownInfo(GracefulShutdownAction::kReboot, {param.input_shutdown_reason}, Path());
 
   std::string contents;
   ASSERT_TRUE(files::ReadFileToString(Path(), &contents));
@@ -435,8 +424,7 @@ INSTANTIATE_TEST_SUITE_P(WithVariousShutdownActions, WriteGracefulShutdownAction
 TEST_P(WriteGracefulShutdownActionTest, WritesAction) {
   const ActionTestParam& param = GetParam();
 
-  SetUpCobaltServer(std::make_unique<stubs::CobaltLoggerFactory>());
-  WriteGracefulShutdownInfo(param.input_shutdown_action, /*reasons=*/{}, &cobalt_, Path());
+  WriteGracefulShutdownInfo(param.input_shutdown_action, /*reasons=*/{}, Path());
 
   std::string contents;
   ASSERT_TRUE(files::ReadFileToString(Path(), &contents));

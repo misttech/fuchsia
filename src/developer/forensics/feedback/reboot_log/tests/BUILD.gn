@@ -18,11 +18,9 @@ cc_test_executable("graceful_shutdown_info_unittest_exe") {
     "//src/developer/forensics/feedback/reboot_log",
     "//src/developer/forensics/testing:gpretty_printers",
     "//src/developer/forensics/testing:unit_test_fixture",
-    "//src/developer/forensics/testing/stubs:cobalt",
     "//src/lib/files",
     "//src/lib/fxl",
     "//src/lib/fxl/test:gtest_main",
-    "//src/lib/timekeeper:testing",
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
   ]

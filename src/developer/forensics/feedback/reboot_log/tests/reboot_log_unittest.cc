@@ -77,8 +77,6 @@ class RebootLogTest : public UnitTestFixture, public testing::WithParamInterface
     FX_CHECK(tmp_dir_.NewTempFileWithData("", &graceful_shutdown_info_path_))
         << "Failed to create temporary graceful shutdown info";
 
-    cobalt::Logger cobalt(dispatcher(), services(), &clock_);
-
     FX_CHECK(files::WriteFile(
         graceful_shutdown_info_path_,
         ToJson(ToGracefulShutdownAction(options), ToGracefulShutdownReasons(options))));
@@ -89,8 +87,6 @@ class RebootLogTest : public UnitTestFixture, public testing::WithParamInterface
     std::string path;
     FX_CHECK(tmp_dir_.NewTempFileWithData("", &path))
         << "Failed to create temporary graceful reboot log";
-
-    cobalt::Logger cobalt(dispatcher(), services(), &clock_);
 
     FX_CHECK(
         files::WriteFile(path, ToLegacyFileContentForTesting(ToGracefulShutdownReasons(options))));
