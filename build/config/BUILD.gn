@@ -1161,7 +1161,6 @@ config("Wno-conversion") {
     "//src/media/sounds/soundplayer:*",
     "//src/performance/lib/gperftools:*",
     "//src/performance/lib/gperftools/tests:*",
-    "//src/performance/lib/perfmon:*",
     "//src/performance/lib/trace_converters:*",
     "//src/security/bin/tee_manager:*",
     "//src/storage/lib/vfs/cpp:*",

@@ -5,8 +5,7 @@
 #ifndef SRC_PERFORMANCE_LIB_TRACE_CONVERTERS_CHROMIUM_EXPORTER_H_
 #define SRC_PERFORMANCE_LIB_TRACE_CONVERTERS_CHROMIUM_EXPORTER_H_
 
-#include <fstream>
-#include <memory>
+#include <filesystem>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -15,7 +14,6 @@
 
 #include "rapidjson/filewritestream.h"
 #include "rapidjson/writer.h"
-#include "src/performance/lib/perfmon/writer.h"
 
 namespace tracing {
 
@@ -38,7 +36,6 @@ class ChromiumExporter {
   void Start();
   void Stop();
   void ExportEvent(const trace::Record::Event& event);
-  void ExportLastBranchBlob(const perfmon::LastBranchRecordBlob& lbr);
   void ExportKernelObject(const trace::Record::KernelObject& kernel_object);
   void ExportLog(const trace::Record::Log& log);
   void ExportMetadata(const trace::Record::Metadata& metadata);
@@ -65,11 +62,6 @@ class ChromiumExporter {
   std::unordered_map<zx_koid_t /* process id */,
                      std::unordered_map<zx_koid_t /* thread id */, std::string /* thread name */>>
       threads_;
-
-  // The chromium/catapult trace file format doesn't support random blobs,
-  // so we can't emit them inline. Save them for later emission.
-  // LastBranch records will go to the lastBranch section.
-  std::vector<const perfmon::LastBranchRecordBlob*> last_branch_records_;
 };
 
 }  // namespace tracing

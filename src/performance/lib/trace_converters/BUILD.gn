@@ -24,7 +24,6 @@ source_set("chromium") {
 
   public_deps = [
     "//sdk/lib/syslog/cpp",
-    "//src/performance/lib/perfmon",
     "//third_party/modp_b64",
     "//third_party/rapidjson",
     "//zircon/system/ulib/trace-reader",

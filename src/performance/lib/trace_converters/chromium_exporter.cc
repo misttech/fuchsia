@@ -9,7 +9,6 @@
 #include <lib/trace-engine/types.h>
 
 #include <filesystem>
-#include <fstream>
 #include <string_view>
 #include <utility>
 #include <variant>
@@ -20,7 +19,6 @@
 #include "rapidjson/writer.h"
 #include "src/lib/fxl/strings/string_printf.h"
 #include "src/lib/fxl/strings/utf_codecs.h"
-#include "src/performance/lib/perfmon/writer.h"
 
 namespace tracing {
 namespace {
@@ -162,18 +160,6 @@ void ChromiumExporter::Stop() {
   }
   writer_.EndArray();
   writer_.EndObject();  // Finishes systemTraceEvents
-  if (last_branch_records_.size() > 0) {
-    writer_.Key("lastBranch");
-    writer_.StartObject();
-    writer_.Key("records");
-    writer_.StartArray();
-    for (const auto record : last_branch_records_) {
-      ExportLastBranchBlob(*record);
-    }
-    writer_.EndArray();
-    writer_.EndObject();
-  }
-
   writer_.EndObject();  // Finishes StartObject() begun in Start()
 }
 
@@ -201,14 +187,9 @@ void ChromiumExporter::ExportRecord(const trace::Record& record) {
       break;
     case trace::RecordType::kBlob: {
       const auto& blob = record.GetBlob();
-      if (blob.type == TRACE_BLOB_TYPE_LAST_BRANCH) {
-        auto lbr = reinterpret_cast<const perfmon::LastBranchRecordBlob*>(blob.blob);
-        last_branch_records_.push_back(lbr);
-      } else {
-        // Drop the record.
-        FX_LOGS(INFO) << "Dropping blob record: "
-                      << "name " << blob.name.c_str() << " of size " << blob.blob_size;
-      }
+      // Drop the record.
+      FX_LOGS(INFO) << "Dropping blob record: "
+                    << "name " << blob.name.c_str() << " of size " << blob.blob_size;
       break;
     }
     case trace::RecordType::kLog:
@@ -384,30 +365,6 @@ void ChromiumExporter::ExportKernelObject(const trace::Record::KernelObject& ker
       break;
     }
   }
-}
-
-void ChromiumExporter::ExportLastBranchBlob(const perfmon::LastBranchRecordBlob& lbr) {
-  writer_.StartObject();
-  writer_.Key("cpu");
-  writer_.Uint(lbr.cpu);
-  writer_.Key("aspace");
-  writer_.Uint(static_cast<unsigned int>(lbr.aspace));
-  writer_.Key("event_time");
-  writer_.Uint(static_cast<unsigned int>(lbr.event_time));
-  writer_.Key("branches");
-  writer_.StartArray();
-  for (unsigned i = 0; i < lbr.num_branches; ++i) {
-    writer_.StartObject();
-    writer_.Key("from");
-    writer_.Uint64(lbr.branches[i].from);
-    writer_.Key("to");
-    writer_.Uint64(lbr.branches[i].to);
-    writer_.Key("info");
-    writer_.Uint64(lbr.branches[i].info);
-    writer_.EndObject();
-  }
-  writer_.EndArray();
-  writer_.EndObject();
 }
 
 void ChromiumExporter::ExportLog(const trace::Record::Log& log) {
