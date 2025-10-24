@@ -8,7 +8,9 @@
 use zx::HandleBased;
 use zx_status::Status;
 
-/// The size of the memory region used by the memory mapped clock.
+/// The size of the memory region used by the memory mapped clock. While in theory this size could
+/// change in future Fuchsia releases, in practice it is likely never going to. So we expose it
+/// as a constant.
 pub const CLOCK_SIZE: usize = 4096;
 
 /// A clock backed by memory mapped into this process' virtual address space.
@@ -74,6 +76,8 @@ impl<Reference: zx::Timeline, Output: zx::Timeline> MappedClock<Reference, Outpu
     /// - `clock`: the clock to convert to a mapped clock.
     /// - `parent_vmar`: a handle to the virtual memory address range to map the clock into.
     ///   The clock will be unmapped when [Self] goes out of scope. Must be cloneable.
+    /// - `vmar_flags`: flags to apply when mapping the clock. Usually this needs to be at least
+    ///   `zx::VmarFlags::PERM_READ`.
     ///
     /// # Errors
     ///
@@ -82,30 +86,52 @@ impl<Reference: zx::Timeline, Output: zx::Timeline> MappedClock<Reference, Outpu
     pub fn try_new(
         clock: zx::Clock<Reference, Output>,
         parent_vmar: &zx::Vmar,
+        vmar_flags: zx::VmarFlags,
     ) -> Result<MappedClock<Reference, Output>, Status> {
-        Self::try_new_internal(clock, parent_vmar, /*unmap_on_drop=*/ true, /*offset=*/ 0)
+        Self::try_new_internal(
+            clock,
+            parent_vmar,
+            vmar_flags,
+            /*unmap_on_drop=*/ true,
+            /*offset=*/ 0,
+        )
     }
 
+    /// Same as [try_new], but allows mapping with a specified offset.
+    ///
+    /// # Args
+    ///
+    /// Same as [try_new], except:
+    /// - `vmar_flags`: must include `SPECIFIC` if `offset` is not zero.
     pub fn try_new_with_offset(
         clock: zx::Clock<Reference, Output>,
         parent_vmar: &zx::Vmar,
+        vmar_flags: zx::VmarFlags,
         offset: u64,
     ) -> Result<MappedClock<Reference, Output>, Status> {
-        Self::try_new_internal(clock, parent_vmar, /*unmap_on_drop=*/ true, offset)
+        Self::try_new_internal(clock, parent_vmar, vmar_flags, /*unmap_on_drop=*/ true, offset)
     }
 
     /// Same as `try_new`, but does not unmap the clock at end of this struct's lifetime.
     pub fn try_new_without_unmap(
         clock: zx::Clock<Reference, Output>,
         parent_vmar: &zx::Vmar,
+        vmar_flags: zx::VmarFlags,
         offset: u64,
     ) -> Result<MappedClock<Reference, Output>, Status> {
-        Self::try_new_internal(clock, parent_vmar, /*unmap_on_drop=*/ false, offset)
+        Self::try_new_internal(
+            clock,
+            parent_vmar,
+            vmar_flags,
+            /*unmap_on_drop=*/ false,
+            offset,
+        )
     }
 
     fn try_new_internal(
         clock: zx::Clock<Reference, Output>,
         parent_vmar: &zx::Vmar,
+        vmar_flags: zx::VmarFlags,
         unmap_on_drop: bool,
         offset: u64,
     ) -> Result<MappedClock<Reference, Output>, Status> {
@@ -124,16 +150,12 @@ impl<Reference: zx::Timeline, Output: zx::Timeline> MappedClock<Reference, Outpu
             .inspect_err(|err| log::error!("MappedClock: try_new: {err:?}"))?;
         // Follows the C++ example from:
         // https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0266_memory_mappable_kernel_clocks
-        // but requires `zx::Rights::INSPECT`, which here we do not have.
-        //
-        // ```
-        // let clock_size = zx::Clock::get_mapped_size(&clock)
-        //   .inspect_err(|err| log::error!("in get_mapped_size: {err:?}"))?;
-        // ```
-        // instead "just" do this:
-        let addr = parent_vmar
-            .map_clock(zx::VmarFlags::PERM_READ, offset, &clock, CLOCK_SIZE)
-            .inspect_err(|err| log::error!("MappedClock: map_clock: {err:?}"))?;
+        let clock_size = zx::Clock::get_mapped_size(&clock)
+            .inspect_err(|err| log::error!("in get_mapped_size: {err:?}"))?;
+        let addr =
+            parent_vmar.map_clock(vmar_flags, offset, &clock, clock_size).inspect_err(|err| {
+                log::error!("MappedClock: map_clock: {err:?}, {parent_vmar:?}, {offset:0x}")
+            })?;
 
         Ok(Self {
             parent_vmar,
@@ -191,7 +213,8 @@ mod tests {
         let vmar_root = frt::vmar_root_self();
         {
             let clock_clone = clock.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
-            let mapped_clock = MappedClock::try_new(clock_clone, &vmar_root).unwrap();
+            let mapped_clock =
+                MappedClock::try_new(clock_clone, &vmar_root, zx::VmarFlags::PERM_READ).unwrap();
 
             // Check that the clock details are appropriate.
             let details = mapped_clock.get_details().unwrap();
