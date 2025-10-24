@@ -50,7 +50,6 @@ These guides are for advanced users who already understand the basics
 of tracing in Fuchsia:
 
 * [Tracing booting Fuchsia](/docs/development/tracing/advanced/recording-a-boot-trace.md)
-* [CPU performance monitor](/docs/development/tracing/advanced/recording-a-cpu-performance-trace.md)
 * [Kernel tracing](/docs/development/tracing/advanced/recording-a-kernel-trace.md)
 * [Asynchronous tracing](/docs/development/tracing/advanced/tracing-asynchronously.md)
 

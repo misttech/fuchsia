@@ -12,8 +12,6 @@ toc:
   path: /docs/development/tracing/advanced/recording-a-boot-trace.md
 - title: "Recording a kernel trace"
   path: /docs/development/tracing/advanced/recording-a-kernel-trace.md
-- title: "Recording a CPU performance trace"
-  path: /docs/development/tracing/advanced/recording-a-cpu-performance-trace.md
 - title: "Recording page faults in a trace"
   path: /docs/development/tracing/advanced/recording-page-faults.md
 - title: "Recording thermal counters in a trace"

@@ -761,7 +761,7 @@ The following blob types are defined:
 - `TRACE_BLOB_TYPE_LAST_BRANCH` = `0x02`: Last Branch Record of Intel Performance Monitor.
   The format is defined by the
 [CPU performance
-monitor](/docs/development/tracing/advanced/recording-a-cpu-performance-trace.md).
+monitor.
 - `TRACE_BLOB_TYPE_PERFETTO = `0x03`: The blob contains data recorded from a
   Perfetto speaking component. The data is encoded in [Perfetto's Proto
   Format](https://perfetto.dev/docs/reference/trace-packet-proto).

@@ -450,6 +450,5 @@ to trigger the event.
 [perfetto-viewer]: https://ui.perfetto.dev/#!/
 [perfetto-docs]: https://perfetto.dev/docs/
 [record-a-boot-trace]: /docs/development/tracing/advanced/recording-a-boot-trace.md
-[record-a-cpu-trace]: /docs/development/tracing/advanced/recording-a-cpu-performance-trace.md
 [trace-providers]: /docs/concepts/kernel/tracing-system.md#trace-providers
 [view-device-information]: /docs/development/tools/ffx/workflows/view-device-information.md

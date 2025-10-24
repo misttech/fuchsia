@@ -126,8 +126,8 @@ don’t make for good public contracts.
   the updatability affordances found in FIDL for instance. Therefore processing
   platform diagnostics offline, such as in a tool that’s not provided by the SDK
   or in a product-specific dashboard, is bound to break.
-- Performance tools such as [tracing], [CPU performance monitoring][cpu-trace],
-  ,and [`mem`][fx-mem] collect and expose performance information in such terms
+- Performance tools such as [tracing]
+  and [`mem`][fx-mem] collect and expose performance information in such terms
   as the names of processes and their interrelationships. This information is
   useful to investigate the performance of some systems, but it reflects private
   implementation details, not public contracts.
@@ -179,7 +179,6 @@ even if CTS coverage never reaches 100% of the platform surface.
 [build-info]: /docs/development/build/build_information.md
 [build-info-old]: https://cs.opensource.google/fuchsia/fuchsia/+/1b21e5d7b36df3f5dde647684dd321f1aee21372:docs/development/build/build_information.md
 [capabilities]: /docs/concepts/components/v2/capabilities/README.md
-[cpu-trace]: /docs/development/tracing/advanced/recording-a-cpu-performance-trace.md
 [cts]: /docs/development/testing/ctf/overview.md
 [decentralized-product-integration]: /docs/contribute/roadmap/2021/decentralized_product_integration.md
 [driver-development]: /docs/development/drivers/developer_guide/driver-development.md

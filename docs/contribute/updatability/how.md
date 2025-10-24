@@ -198,7 +198,6 @@ platform interfaces are observed and respected.
 [cfv2-sys-migration-build-info]: /docs/development/components/v2/migration/features.md#build-info
 [component-data]: /docs/development/components/data.md#hermetic_data_files_with_resource
 [component-manifest]: /docs/concepts/components/v2/component_manifests.md
-[cpu-trace]: /docs/development/tracing/advanced/recording-a-cpu-performance-trace.md
 [cts]: /docs/development/testing/ctf/overview.md
 [decentralized-product-integration]: /docs/contribute/roadmap/2021/decentralized_product_integration.md
 [dotdot]: /docs/concepts/filesystems/dotdot.md
