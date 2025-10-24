@@ -408,7 +408,7 @@ class RemoteAbiHeap {
                          const zx::vmo& data_vmo,
                          size_type data_offset) -> zx::result<StubConstantSegment> {
       zx_status_t status =
-          data_vmo.create_child(ZX_VMO_CHILD_SNAPSHOT_AT_LEAST_ON_WRITE | ZX_VMO_RESIZABLE,
+          data_vmo.create_child(ZX_VMO_CHILD_SNAPSHOT_AT_LEAST_ON_WRITE | ZX_VMO_CHILD_RESIZABLE,
                                 data_offset, filesz, &new_segment.vmo());
       if (status != ZX_OK) {
         return zx::error{status};

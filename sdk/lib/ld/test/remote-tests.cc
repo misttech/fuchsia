@@ -638,9 +638,7 @@ TEST_F(LdRemoteTests, ReplaceSegmentDataWithZeroFillSegment) {
 
   zx::result<RemoteAbiHeap::StubConstantSegment> r =
       RemoteAbiHeap::ReplaceSegment(diag, std::move(last_segment), exec_vmo, kMemsz);
-  // TODO(https://fxbug.dev/452023377): ReplaceSegment does not correctly
-  // handle `DataWithZeroFillSegment`s.
-  EXPECT_EQ(r.status_value(), ZX_ERR_INVALID_ARGS) << r.status_string();
+  EXPECT_TRUE(r.is_ok()) << r.status_string();
 }
 
 TEST_F(LdRemoteTests, RemoteAbiStub) {
