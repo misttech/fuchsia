@@ -43,7 +43,6 @@ sysroot_uninstrumented_libc_entries = [
         "zircon/hw/pci.h",
         "zircon/limits.h",
         "zircon/listnode.h",
-        "zircon/process.h",
         "zircon/processargs.h",
         "zircon/rights.h",
         "zircon/string_view.h",

@@ -27,6 +27,7 @@ libc_headers = {
   root_public_headers = [
     "zircon/dlfcn.h",
     "zircon/lookup.h",
+    "zircon/process.h",
     "zircon/sanitizer.h",
     "zircon/startup.h",
     "zircon/threads.h",
