@@ -21,6 +21,7 @@ ffx/target/fastboot/stage.golden
 ffx/target/flash.golden
 ffx/target/get-time.golden
 ffx/target/list.golden
+ffx/target/log-message.golden
 ffx/target/off.golden
 ffx/target/package.golden
 ffx/target/package/explore.golden
