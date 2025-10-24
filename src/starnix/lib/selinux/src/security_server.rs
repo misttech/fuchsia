@@ -25,6 +25,7 @@ use anyhow::Context as _;
 use std::collections::HashMap;
 use std::ops::DerefMut;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const ROOT_PATH: &'static str = "/";
 
@@ -131,6 +132,9 @@ pub struct SecurityServer {
 
     /// Optional set of exceptions to apply to access checks, via `ExceptionsConfig`.
     exceptions: Vec<String>,
+
+    /// True when the `backend` has a policy loaded.
+    has_policy: AtomicBool,
 }
 
 impl SecurityServer {
@@ -156,7 +160,7 @@ impl SecurityServer {
 
         let access_vector_cache = AccessVectorCache::new(backend.clone());
 
-        Arc::new(Self { access_vector_cache, backend, exceptions })
+        Arc::new(Self { access_vector_cache, backend, exceptions, has_policy: false.into() })
     }
 
     /// Converts a shared pointer to [`SecurityServer`] to a [`PermissionCheck`] without consuming
@@ -227,6 +231,7 @@ impl SecurityServer {
 
             state.active_policy = Some(ActivePolicy { parsed, binary, sid_table, exceptions });
             state.policy_change_count += 1;
+            self.has_policy.store(true, Ordering::Release);
         });
 
         // TODO: https://fxbug.dev/367585803 - move this cache-resetting into the
@@ -243,7 +248,7 @@ impl SecurityServer {
 
     /// Returns true if a policy has been loaded.
     pub fn has_policy(&self) -> bool {
-        self.backend.state.read().active_policy.is_some()
+        self.has_policy.load(Ordering::Acquire)
     }
 
     /// Set to enforcing mode if `enforce` is true, permissive mode otherwise.
