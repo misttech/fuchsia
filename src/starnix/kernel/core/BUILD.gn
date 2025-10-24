@@ -280,6 +280,7 @@ _starnix_core_deps = [
   "//src/lib/process_builder",
   "//src/lib/replace-with",
   "//src/lib/trace/rust:trace",
+  "//src/performance/lib/fxt/rust",
   "//src/performance/memory/attribution/server",
   "//src/starnix/kernel/vdso",
   "//src/starnix/lib/ebpf",

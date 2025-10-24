@@ -13,7 +13,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use futures::io::AsyncReadExt;
+use futures::io::{AsyncReadExt, Cursor};
+use futures::stream::StreamExt;
+use fxt::TraceRecord;
+use fxt::profiler::ProfilerRecord;
+use fxt::session::SessionParser;
 use starnix_logging::{log_info, log_warn, track_stub};
 use starnix_sync::{FileOpsCore, Locked, Mutex, RwLock, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
@@ -67,6 +71,8 @@ fn get_perf_state(kernel: &Arc<Kernel>) -> Arc<PerfState> {
 static DEFAULT_CHUNK_SIZE: usize = 4096;
 static ESTIMATED_MMAP_BUFFER_SIZE: u64 = 16384; // 4096 * 4, page size * 4.
 
+// FXT magic bytes (little endian).
+const FXT_MAGIC_BYTES: [u8; 8] = [0x10, 0x00, 0x04, 0x46, 0x78, 0x54, 0x16, 0x00];
 uapi::check_arch_independent_layout! {
     perf_event_attr {
         type_, // "type" is a reserved keyword so add a trailing underscore.
@@ -705,40 +711,97 @@ async fn collect_sample(
     );
     log_info!("profiler samples_collected: {:?}", samples_collected);
 
-    // Read chunks of sampling data from socket in this buffer temporarily. We will parse
-    // the data and write it into the output VMO (the one mmap points to).
-    let mut buffer = vec![0; DEFAULT_CHUNK_SIZE];
-    loop {
-        // Attempt to read data. This awaits until data is available, EOF, or error.
-        let socket_data = client.read(&mut buffer).await;
-
-        match socket_data {
+    // Peek at the first 8 bytes to determine if it's FXT or text.
+    let mut header = [0; 8];
+    let mut bytes_read = 0;
+    while bytes_read < 8 {
+        match client.read(&mut header[bytes_read..]).await {
             Ok(0) => {
                 // Peer closed the socket. This is the normal end of the stream.
-                log_info!("[perf_event_open] Finished reading from socket.");
+                log_info!("[perf_event_open] Finished reading fxt record from socket.");
                 break;
             }
-            Ok(bytes_read) => {
-                // Receive data in format {{{...}}}.
-                let received_data = match std::str::from_utf8(&buffer[..bytes_read]) {
-                    Ok(data) => data,
-                    Err(e) => return error!(EINVAL, e),
-                };
-                // Parse data to PerfRecordSample struct.
-                if let Some(perf_record_sample) = parse_perf_record_sample_format(received_data) {
-                    write_record_to_vmo(
-                        perf_record_sample,
-                        perf_data_vmo,
-                        sample_type,
-                        sample_id,
-                        sample_period,
-                        offset,
-                    );
-                }
-            }
+            Ok(n) => bytes_read += n,
             Err(e) => {
                 log_warn!("[perf_event_open] Error reading from socket: {:?}", e);
                 break;
+            }
+        }
+    }
+
+    if bytes_read > 0 {
+        if bytes_read == 8 && header == FXT_MAGIC_BYTES {
+            // FXT format.
+            let header_cursor = Cursor::new(header);
+            let reader = header_cursor.chain(client);
+            let (mut stream, _task) = SessionParser::new_async(reader);
+            while let Some(record_result) = stream.next().await {
+                match record_result {
+                    Ok(TraceRecord::Profiler(ProfilerRecord::Backtrace(backtrace))) => {
+                        let ips: Vec<u64> = backtrace.data;
+                        let pid = Some(backtrace.process.0 as u32);
+                        let tid = Some(backtrace.thread.0 as u32);
+                        let perf_record_sample = PerfRecordSample { pid, tid, ips };
+                        write_record_to_vmo(
+                            perf_record_sample,
+                            perf_data_vmo,
+                            sample_type,
+                            sample_id,
+                            sample_period,
+                            offset,
+                        );
+                    }
+                    Ok(_) => {
+                        // Ignore other records.
+                    }
+                    Err(e) => {
+                        log_warn!("[perf_event_open] Error parsing FXT: {:?}", e);
+                        break;
+                    }
+                }
+            }
+        } else {
+            // Text format.
+            // Read chunks of sampling data from socket in this buffer temporarily. We will parse
+            // the data and write it into the output VMO (the one mmap points to).
+            let mut buffer = vec![0; DEFAULT_CHUNK_SIZE];
+
+            loop {
+                // Attempt to read data. This awaits until data is available, EOF, or error.
+                // Ignore the first 8 bytes as it's the {{{reset}}} marker.
+                let socket_data = client.read(&mut buffer).await;
+
+                match socket_data {
+                    Ok(0) => {
+                        // Peer closed the socket. This is the normal end of the stream.
+                        log_info!("[perf_event_open] Finished reading from socket.");
+                        break;
+                    }
+                    Ok(bytes_read) => {
+                        // Receive data in format {{{...}}}.
+                        let received_data = match std::str::from_utf8(&buffer[..bytes_read]) {
+                            Ok(data) => data,
+                            Err(e) => return error!(EINVAL, e),
+                        };
+                        // Parse data to PerfRecordSample struct.
+                        if let Some(perf_record_sample) =
+                            parse_perf_record_sample_format(received_data)
+                        {
+                            write_record_to_vmo(
+                                perf_record_sample,
+                                perf_data_vmo,
+                                sample_type,
+                                sample_id,
+                                sample_period,
+                                offset,
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        log_warn!("[perf_event_open] Error reading from socket: {:?}", e);
+                        break;
+                    }
+                }
             }
         }
     }
