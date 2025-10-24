@@ -641,7 +641,7 @@ pub fn default_eof_offset<L>(
 where
     L: LockEqualOrBefore<FileOpsCore>,
 {
-    Ok(file.node().stat(locked, current_task)?.st_size as off_t)
+    Ok(file.node().get_size(locked, current_task)? as off_t)
 }
 
 /// Implement the seek method for a file. The computation from the end of the file must be provided

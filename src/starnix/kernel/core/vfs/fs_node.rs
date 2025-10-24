@@ -2301,6 +2301,19 @@ impl FsNode {
         })
     }
 
+    // TODO(https://fxbug.dev/454730248): This is probably the wrong way to implement O_APPEND.
+    pub fn get_size<L>(
+        &self,
+        locked: &mut Locked<L>,
+        current_task: &CurrentTask,
+    ) -> Result<usize, Errno>
+    where
+        L: LockEqualOrBefore<FileOpsCore>,
+    {
+        let info = self.fetch_and_refresh_info(locked, current_task)?;
+        Ok(info.size.try_into().map_err(|_| errno!(EINVAL))?)
+    }
+
     fn statx_timestamp_from_time(time: UtcInstant) -> statx_timestamp {
         let nanos = time.into_nanos();
         statx_timestamp {

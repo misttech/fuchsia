@@ -109,6 +109,7 @@ source_set("userspace_test_main") {
 test_names = [
   # keep-sorted start
   "anon_inode",
+  "append",
   "binder",
   "bpf",
   "capabilities",
@@ -154,6 +155,7 @@ test_subprogram_names = [
 resource("policies") {
   sources = [
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/anon_inode_policy.pp",
+    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/append.pp",
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/binder.pp",
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/bpf_policy.pp",
     "//src/starnix/lib/selinux/testdata/composite_policies/compiled/capabilities_policy.pp",
