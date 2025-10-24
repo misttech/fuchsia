@@ -128,6 +128,11 @@ fn main() {
             options: Default::default(),
         },
         TestCase {
+            manifest_path: vec!["multiple_crate_versions", "Cargo.toml"],
+            golden_expected_filename: vec!["multiple_crate_versions", "BUILD.gn"],
+            options: Options { extra_args: vec!["--skip-root"], ..Default::default() },
+        },
+        TestCase {
             manifest_path: vec!["feature_review", "Cargo.toml"],
             golden_expected_filename: vec!["feature_review", "BUILD.gn"],
             options: Default::default(),
@@ -272,20 +277,17 @@ fn main() {
     let tests = vec![
         ExpectFailCase {
             manifest_path: vec!["feature_review", "Cargo_unreviewed_feature.toml"],
-            expected_error_substring:
-                "crate_with_features 0.1.0 is included with unreviewed features [\"feature1\"]",
+            expected_error_substring: "crate_with_features 0.1.0 is included with unreviewed features [\"feature1\"]",
             extra_args: vec![],
         },
         ExpectFailCase {
             manifest_path: vec!["feature_review", "Cargo_missing_review.toml"],
-            expected_error_substring:
-                "crate_with_features 0.1.0 requires feature review but reviewed features not found",
+            expected_error_substring: "crate_with_features 0.1.0 requires feature review but reviewed features not found",
             extra_args: vec![],
         },
         ExpectFailCase {
             manifest_path: vec!["feature_review", "Cargo_extra_review.toml"],
-            expected_error_substring:
-                "crate_with_features 0.1.0 sets reviewed_features but crate_with_features was not found in require_feature_reviews",
+            expected_error_substring: "crate_with_features 0.1.0 sets reviewed_features but crate_with_features was not found in require_feature_reviews",
             extra_args: vec![],
         },
     ];

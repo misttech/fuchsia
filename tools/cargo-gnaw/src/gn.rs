@@ -57,6 +57,7 @@ pub fn write_top_level_rule<W: io::Write>(
     output: &mut W,
     platform: Option<&str>,
     pkg: &Package,
+    group_name: Option<&str>,
     group_visibility: Option<&GroupVisibility>,
     rule_renaming: Option<&RuleRenaming>,
     testonly: bool,
@@ -75,13 +76,14 @@ pub fn write_top_level_rule<W: io::Write>(
         )?;
     }
 
+    let group_name = group_name.unwrap_or_else(|| pkg.name.as_ref());
     let group_rule = rule_renaming.and_then(|t| t.group_name.as_deref()).unwrap_or("group");
     let optional_visibility =
         group_visibility.map(|v| format!("visibility = {}", v.variable)).unwrap_or_default();
     writeln!(
         output,
         include_str!("../templates/top_level_gn_rule.template"),
-        group_name = pkg.name,
+        group_name = group_name,
         dep_name = target_name,
         group_rule_name = group_rule,
         optional_visibility = optional_visibility,
@@ -89,11 +91,11 @@ pub fn write_top_level_rule<W: io::Write>(
     )?;
 
     if has_tests {
-        let name = pkg.name.clone() + "-test";
+        let test_group_name = format!("{}-test", group_name);
         writeln!(
             output,
             include_str!("../templates/top_level_gn_rule.template"),
-            group_name = name,
+            group_name = test_group_name,
             group_rule_name = group_rule,
             dep_name = target_name + "-test",
             optional_visibility = optional_visibility,
@@ -617,7 +619,11 @@ pub fn write_rule<W: io::Write>(
 
         if license_files_found {
             if uses_fuchsia_license {
-                anyhow::bail!("ERROR: Crate {}.{} has license files but is set with uses_fuchsia_license = true", target.name(), target.version())
+                anyhow::bail!(
+                    "ERROR: Crate {}.{} has license files but is set with uses_fuchsia_license = true",
+                    target.name(),
+                    target.version()
+                )
             }
             license_file_labels.sort();
             create_license_target(&license_file_labels)?;
@@ -705,32 +711,36 @@ mod tests {
         let prefix = std::env::temp_dir();
 
         let mut output = vec![];
-        assert!(write_rule(
-            &mut output,
-            &target,
-            not_prefix,
-            None,
-            None,
-            None,
-            false,
-            false,
-            None,
-            false
-        )
-        .is_err());
-        assert!(write_rule(
-            &mut output,
-            &target,
-            prefix.as_path(),
-            None,
-            None,
-            None,
-            false,
-            false,
-            None,
-            false,
-        )
-        .is_ok());
+        assert!(
+            write_rule(
+                &mut output,
+                &target,
+                not_prefix,
+                None,
+                None,
+                None,
+                false,
+                false,
+                None,
+                false
+            )
+            .is_err()
+        );
+        assert!(
+            write_rule(
+                &mut output,
+                &target,
+                prefix.as_path(),
+                None,
+                None,
+                None,
+                false,
+                false,
+                None,
+                false,
+            )
+            .is_ok()
+        );
     }
 
     #[test]

@@ -176,6 +176,9 @@ pub struct PackageCfg {
     ///
     /// Must be set if require_feature_reviews mentions this package.
     reviewed_features: Option<Vec<String>>,
+    /// Overrides the name of the forwarding group, for use when multiple versions are enabled at
+    /// the same time.
+    group_name: Option<String>,
     /// Visibility list to use for the forwarding group, for use with fixits which seek to remove
     /// the use of a specific crate from the tree.
     group_visibility: Option<GroupVisibility>,
@@ -377,6 +380,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                                 .as_ref()
                                 .and_then(|cfg| cfg.find_package(package));
 
+                            let group_name = cfg.and_then(|cfg| cfg.group_name.as_deref());
                             let visibility = cfg.and_then(|cfg| cfg.group_visibility.as_ref());
                             if let Some(visibility) = visibility {
                                 write_import_once(
@@ -399,6 +403,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                                 &mut output,
                                 platform.as_deref(),
                                 package,
+                                group_name,
                                 visibility,
                                 target_renaming,
                                 cfg.and_then(|cfg| cfg.testonly).unwrap_or(false),
@@ -434,6 +439,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                 top_level_metadata.insert(package.name.to_owned());
                 let cfg = metadata_configs.gn.as_ref().and_then(|cfg| cfg.find_package(package));
 
+                let group_name = cfg.and_then(|cfg| cfg.group_name.as_deref());
                 let visibility = cfg.and_then(|cfg| cfg.group_visibility.as_ref());
                 if let Some(visibility) = visibility {
                     write_import_once(&mut output, &mut imported_files, &visibility.import)?;
@@ -448,6 +454,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                     &mut output,
                     None,
                     package,
+                    group_name,
                     visibility,
                     target_renaming,
                     cfg.and_then(|cfg| cfg.testonly).unwrap_or(false),
