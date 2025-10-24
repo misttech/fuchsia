@@ -24,11 +24,6 @@ async fn test_provision_fxfs() {
         .with_extra_gpt_partition("other", 1);
     fixture.add_main_disk(Disk::Builder(disk)).await;
 
-    // TODO(https://fxbug.dev/439942311): Don't emit error messages for non-errors.
-    // We expect one crash report when first attempting to mount and serve fxblob before fxfs has
-    // been provisioned.
-    fixture.wait_for_crash_reports(1, "fxfs", "fuchsia-fxfs-corruption").await;
-
     fixture.check_system_partitions(vec!["other", "super_and_userdata"]).await;
     fixture.check_fs_type("data", VFS_TYPE_FXFS).await;
     fixture.check_test_data_file().await;

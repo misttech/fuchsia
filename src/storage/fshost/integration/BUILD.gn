@@ -428,6 +428,7 @@ template("fshost_integration_test_package") {
   if (defined(invoker.enable_provision_fxfs_tests) &&
       invoker.enable_provision_fxfs_tests) {
     _provision_fxfs_component_target = "${target_name}_provision_fxfs"
+    _test_components += [ ":$_provision_fxfs_component_target" ]
     fshost_integration_test_component(_provision_fxfs_component_target) {
       fshost_target = _fshost_target
       data_filesystem_format = fshost_options.data_filesystem_format
@@ -435,27 +436,6 @@ template("fshost_integration_test_package") {
       extra_features = _extra_features
       source_root = "tests/provision_fxfs.rs"
       deps = []
-    }
-
-    # Provision Fxfs tests get their own package so we can give them separate test specs (
-    # provisioning Fxfs produces messages of ERROR severity when attempting to mount the filesystem
-    # before Fxfs has been provisioned).
-    #
-    # TODO(https://fxbug.dev/439942311): Don't emit error messages for non-errors.
-    _provision_fxfs_test_package = "${target_name}_provision_fxfs_package"
-    _test_packages += [ ":$_provision_fxfs_test_package" ]
-    fuchsia_test_package(_provision_fxfs_test_package) {
-      package_name = "$_provision_fxfs_component_target"
-      test_specs = {
-        log_settings = {
-          # Allow logs of up to ERROR severity.
-          max_severity = "ERROR"
-        }
-        parallel = 1
-      }
-      test_components = [ ":$_provision_fxfs_component_target" ]
-
-      deps = [ ":$_fshost_target" ]
     }
   }
 

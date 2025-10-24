@@ -301,18 +301,25 @@ impl Matcher for FxblobMatcher {
     ) -> Result<Option<DeviceTag>, Error> {
         self.already_matched = true;
 
-        // Mounting Fxblob and Blob volume will fail if partition is not formatted to Fxfs.
-        if let Err(err) = self.mount_fxblob_and_blob_volume(device, env).await {
-            if self.provision_fxfs {
-                // TODO(https://fxbug.dev/446778379): Should reboot if provision Fxfs fails.
-                log::info!("Provisioning Fxfs");
-                env.provision_fxfs(device).await?;
-                // TODO(https://fxbug.dev/393194713): Consider recovery when we fail.
-                self.mount_fxblob_and_blob_volume(device, env).await?;
-            } else {
-                return Err(err);
+        if device.content_format().await.ok() == Some(DiskFormat::Fxfs) {
+            if let Err(err) = self.mount_fxblob_and_blob_volume(device, env).await {
+                if self.provision_fxfs {
+                    log::info!(err:?; "Expected Fxfs but failed to mount. Provisioning Fxfs.");
+                    env.provision_fxfs(device).await?;
+                    // TODO(https://fxbug.dev/393194713): Consider recovery when we fail.
+                    self.mount_fxblob_and_blob_volume(device, env).await?;
+                } else {
+                    return Err(err);
+                }
             }
+        } else {
+            if self.provision_fxfs {
+                log::info!("Provisioning Fxfs.");
+                env.provision_fxfs(device).await?;
+            }
+            self.mount_fxblob_and_blob_volume(device, env).await?;
         }
+
         env.mount_data_volume().await?;
         Ok(None)
     }
