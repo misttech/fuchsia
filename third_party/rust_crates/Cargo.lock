@@ -1313,12 +1313,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
-name = "error-chain"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07e791d3be96241c77c43846b665ef1384606da2cd2a48730abe606a12906e02"
-
-[[package]]
 name = "euclid"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3567,14 +3561,11 @@ dependencies = [
 
 [[package]]
 name = "publicsuffix"
-version = "1.5.4"
+version = "1.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3bbaa49075179162b49acac1c6aa45fb4dafb5f13cf6794276d77bc7fd95757b"
+checksum = "95b4ce31ff0a27d93c8de1849cf58162283752f065a90d508f1105fa6c9a213f"
 dependencies = [
- "error-chain",
  "idna 0.2.3",
- "lazy_static",
- "regex",
  "url 2.3.1",
 ]
 

@@ -4,7 +4,7 @@
 //!
 //! ## Examples
 //!
-//! ```rust,norun
+//! ```rust,no_run
 //! extern crate publicsuffix;
 //!
 //! use publicsuffix::List;
@@ -58,51 +58,28 @@
 //! # fn main() {}
 //! ```
 
-#![recursion_limit = "1024"]
-
-#[macro_use]
-extern crate error_chain;
-#[cfg(feature = "remote_list")]
-extern crate native_tls;
-#[macro_use]
-extern crate lazy_static;
-extern crate regex;
-extern crate idna;
-extern crate url;
-
-pub mod errors;
+mod matcher;
 
 #[cfg(feature = "remote_list")]
 #[cfg(test)]
 mod tests;
 
-use std::fs::File;
-use std::path::Path;
+use std::{collections::HashMap, fmt, fs::File, io::Read, net::IpAddr, path::Path, str::FromStr};
 #[cfg(feature = "remote_list")]
-use std::time::Duration;
-#[cfg(feature = "remote_list")]
-use std::net::TcpStream;
-use std::io::Read;
-#[cfg(feature = "remote_list")]
-use std::io::Write;
-use std::collections::HashMap;
-use std::net::IpAddr;
-use std::str::FromStr;
-use std::fmt;
+use std::{io::Write, net::TcpStream, time::Duration};
 
-pub use errors::{Result, Error};
+pub mod errors;
+pub use crate::errors::{Error, ErrorKind, Result};
 
-use regex::RegexSet;
-use errors::{ErrorKind, ResultExt};
+use idna::domain_to_unicode;
 #[cfg(feature = "remote_list")]
 use native_tls::TlsConnector;
-use idna::{domain_to_unicode};
 use url::Url;
 
 /// The official URL of the list
-pub const LIST_URL: &'static str = "https://publicsuffix.org/list/public_suffix_list.dat";
+pub const LIST_URL: &str = "https://publicsuffix.org/list/public_suffix_list.dat";
 
-const PREVAILING_STAR_RULE: &'static str = "*";
+const PREVAILING_STAR_RULE: &str = "*";
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 struct Suffix {
@@ -118,13 +95,16 @@ struct ListLeaf {
 
 impl ListLeaf {
     fn new(typ: Type, is_exception_rule: bool) -> Self {
-        Self { typ, is_exception_rule }
+        Self {
+            typ,
+            is_exception_rule,
+        }
     }
 }
 
 #[derive(Debug)]
 struct ListNode {
-    children: HashMap<String, Box<ListNode>>,
+    children: HashMap<String, ListNode>,
     leaf: Option<ListLeaf>,
 }
 
@@ -145,7 +125,7 @@ impl ListNode {
 #[derive(Debug)]
 pub struct List {
     root: ListNode,
-    all: Vec<Suffix>,  // to support all(), icann(), private()
+    all: Vec<Suffix>, // to support all(), icann(), private()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -183,48 +163,6 @@ pub struct DnsName {
     domain: Option<Domain>,
 }
 
-lazy_static! {
-    // Regex for matching domain name labels
-    static ref LABEL: RegexSet = {
-        let exprs = vec![
-            // can be any combination of alphanumeric characters
-            r"^[[:alnum:]]+$",
-            // or it can start with an alphanumeric character
-            // then optionally be followed by any combination of
-            // alphanumeric characters and dashes before finally
-            // ending with an alphanumeric character
-            r"^[[:alnum:]]+[[:alnum:]-]*[[:alnum:]]+$",
-        ];
-        RegexSet::new(exprs).unwrap()
-    };
-
-    // Regex for matching the local-part of an
-    // email address
-    static ref LOCAL: RegexSet = {
-        // these characters can be anywhere in the expresion
-        let global = r#"[[:alnum:]!#$%&'*+/=?^_`{|}~-]"#;
-        // non-ascii characters (an also be unquoted)
-        let non_ascii = r#"[^\x00-\x7F]"#;
-        // the pattern to match
-        let quoted = r#"["(),\\:;<>@\[\]. ]"#;
-        // combined regex
-        let combined = format!(r#"({}*{}*)"#, global, non_ascii);
-
-        let exprs = vec![
-            // can be any combination of allowed characters
-            format!(r#"^{}+$"#, combined),
-            // can be any combination of allowed charaters
-            // separated by a . in between
-            format!(r#"^({0}+[.]?{0}+)+$"#, combined),
-            // can be a quoted string with allowed plus
-            // additional characters
-            format!(r#"^"({}*{}*)*"$"#, combined, quoted),
-        ];
-
-        RegexSet::new(exprs).unwrap()
-    };
-}
-
 /// Converts a type into a Url object
 pub trait IntoUrl {
     fn into_url(self) -> Result<Url>;
@@ -259,11 +197,15 @@ fn request<U: IntoUrl>(u: U) -> Result<String> {
     let url = u.into_url()?;
     let host = match url.host_str() {
         Some(host) => host,
-        None => { return Err(ErrorKind::NoHost.into()); }
+        None => {
+            return Err(ErrorKind::NoHost.into());
+        }
     };
     let port = match url.port_or_known_default() {
         Some(port) => port,
-        None => { return Err(ErrorKind::NoPort.into()); }
+        None => {
+            return Err(ErrorKind::NoPort.into());
+        }
     };
     let data = format!("GET {} HTTP/1.0\r\nHost: {}\r\n\r\n", url.path(), host);
     let addr = format!("{}:{}", host, port);
@@ -286,7 +228,9 @@ fn request<U: IntoUrl>(u: U) -> Result<String> {
             stream.write_all(data.as_bytes())?;
             stream.read_to_string(&mut res)?;
         }
-        _ => { return Err(ErrorKind::UnsupportedScheme.into()); }
+        _ => {
+            return Err(ErrorKind::UnsupportedScheme.into());
+        }
     }
 
     Ok(res)
@@ -295,7 +239,7 @@ fn request<U: IntoUrl>(u: U) -> Result<String> {
 impl List {
     fn append(&mut self, mut rule: &str, typ: Type) -> Result<()> {
         let mut is_exception_rule = false;
-        if rule.starts_with("!") {
+        if rule.starts_with('!') {
             is_exception_rule = true;
             rule = &rule[1..];
         }
@@ -307,14 +251,19 @@ impl List {
             }
 
             let cur = current;
-            current = cur.children.entry(label.to_owned())
-                .or_insert(Box::new(ListNode::new()));
+            current = cur
+                .children
+                .entry(label.to_owned())
+                .or_insert_with(ListNode::new);
         }
 
         current.leaf = Some(ListLeaf::new(typ, is_exception_rule));
 
         // to support all(), icann(), private()
-        self.all.push(Suffix {rule: rule.to_owned(), typ: typ});
+        self.all.push(Suffix {
+            rule: rule.to_owned(),
+            typ,
+        });
 
         Ok(())
     }
@@ -324,30 +273,55 @@ impl List {
         let mut list = List::empty();
         for line in res.lines() {
             match line {
-                line if line.contains("BEGIN ICANN DOMAINS") => { typ = Some(Type::Icann); }
-                line if line.contains("BEGIN PRIVATE DOMAINS") => { typ = Some(Type::Private); }
-                line if line.starts_with("//") => { continue; }
-                line => {
-                    match typ {
-                        Some(typ) => {
-                            let rule = match line.split_whitespace().next() {
-                                Some(rule) => rule,
-                                None => continue,
-                            };
-                            list.append(rule, typ)?;
-                        }
-                        None => { continue; }
-                    }
+                line if line.contains("BEGIN ICANN DOMAINS") => {
+                    typ = Some(Type::Icann);
                 }
+                line if line.contains("BEGIN PRIVATE DOMAINS") => {
+                    typ = Some(Type::Private);
+                }
+                line if line.starts_with("//") => {
+                    continue;
+                }
+                line => match typ {
+                    Some(typ) => {
+                        let rule = match line.split_whitespace().next() {
+                            Some(rule) => rule,
+                            None => continue,
+                        };
+                        list.append(rule, typ)?;
+                    }
+                    None => {
+                        continue;
+                    }
+                },
             }
         }
         if list.root.children.is_empty() || list.all().is_empty() {
             return Err(ErrorKind::InvalidList.into());
         }
 
-        list.append(PREVAILING_STAR_RULE, Type::Icann)?;  // add the default rule
+        list.append(PREVAILING_STAR_RULE, Type::Icann)?; // add the default rule
 
         Ok(list)
+    }
+
+    /// Build the list from a string
+    ///
+    /// The list doesn't always have to come from a file. You can maintain your own
+    /// list, say in a DBMS. You can then pull it at runtime and build the list from
+    /// the resulting String.
+    pub fn from_string(string: String) -> Result<List> {
+        Self::from_str(&string)
+    }
+
+    /// Build the list from a str
+    ///
+    /// The list doesn't always have to come from a file. You can maintain your own
+    /// list, say in a DBMS. You can then pull it at runtime and build the list from
+    /// the resulting str.
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(string: &str) -> Result<List> {
+        Self::build(string)
     }
 
     /// Creates an empty List without any rules
@@ -365,7 +339,8 @@ impl List {
     /// Pull the list from a URL
     #[cfg(feature = "remote_list")]
     pub fn from_url<U: IntoUrl>(url: U) -> Result<List> {
-        request(url).and_then(Self::from_string)
+        let s = request(url)?;
+        Self::from_str(&s)
     }
 
     /// Fetch the list from a local file
@@ -375,9 +350,8 @@ impl List {
             .and_then(|mut data| {
                 let mut res = String::new();
                 data.read_to_string(&mut res)?;
-                Ok(res)
+                Self::from_str(&res)
             })
-            .and_then(Self::from_string)
     }
 
     /// Build the list from the result of anything that implements `std::io::Read`
@@ -391,28 +365,11 @@ impl List {
         Self::build(&res)
     }
 
-    /// Build the list from a string
-    ///
-    /// The list doesn't always have to come from a file. You can maintain your own
-    /// list, say in a DBMS. You can then pull it at runtime and build the list from
-    /// the resulting String.
-    pub fn from_string(string: String) -> Result<List> {
-        Self::from_str(&string)
-    }
-
-    /// Build the list from a str
-    ///
-    /// The list doesn't always have to come from a file. You can maintain your own
-    /// list, say in a DBMS. You can then pull it at runtime and build the list from
-    /// the resulting str.
-    pub fn from_str(string: &str) -> Result<List> {
-        Self::build(string)
-    }
-
     /// Pull the list from the official URL
     #[cfg(feature = "remote_list")]
     pub fn fetch() -> Result<List> {
-        let github = "https://raw.githubusercontent.com/publicsuffix/list/master/public_suffix_list.dat";
+        let github =
+            "https://raw.githubusercontent.com/publicsuffix/list/master/public_suffix_list.dat";
 
         Self::from_url(LIST_URL)
             // Fallback to the Github repo if the official link
@@ -423,7 +380,8 @@ impl List {
     fn find_type(&self, typ: Type) -> Vec<&str> {
         self.all_internal()
             .filter(|s| s.typ == typ)
-            .map(|s| s.rule.as_str()).collect()
+            .map(|s| s.rule.as_str())
+            .collect()
     }
 
     /// Gets a list of all ICANN domain suffices
@@ -442,7 +400,8 @@ impl List {
     }
 
     fn all_internal(&self) -> impl Iterator<Item = &Suffix> {
-        self.all.iter()
+        self.all
+            .iter()
             // remove the default rule
             .filter(|s| s.rule != PREVAILING_STAR_RULE)
     }
@@ -464,18 +423,14 @@ impl List {
     pub fn parse_url<U: IntoUrl>(&self, url: U) -> Result<Host> {
         let url = url.into_url()?;
         match url.scheme() {
-            "mailto" => {
-                match url.host_str() {
-                    Some(host) => self.parse_email(&format!("{}@{}", url.username(), host)),
-                    None => Err(ErrorKind::InvalidEmail.into()),
-                }
-            }
-            _ => {
-                match url.host_str() {
-                    Some(host) => self.parse_host(host),
-                    None => Err(ErrorKind::NoHost.into()),
-                }
-            }
+            "mailto" => match url.host_str() {
+                Some(host) => self.parse_email(&format!("{}@{}", url.username(), host)),
+                None => Err(ErrorKind::InvalidEmail.into()),
+            },
+            _ => match url.host_str() {
+                Some(host) => self.parse_host(host),
+                None => Err(ErrorKind::NoHost.into()),
+            },
         }
     }
 
@@ -492,19 +447,23 @@ impl List {
     // https://tools.ietf.org/html/rfc6530#section-10.1
     // http://rumkin.com/software/email/rules.php
     pub fn parse_email(&self, address: &str) -> Result<Host> {
-        let mut parts = address.rsplitn(2, "@");
+        let mut parts = address.rsplitn(2, '@');
         let host = match parts.next() {
             Some(host) => host,
-            None => { return Err(ErrorKind::InvalidEmail.into()); }
+            None => {
+                return Err(ErrorKind::InvalidEmail.into());
+            }
         };
         let local = match parts.next() {
             Some(local) => local,
-            None => { return Err(ErrorKind::InvalidEmail.into()); }
+            None => {
+                return Err(ErrorKind::InvalidEmail.into());
+            }
         };
         if local.chars().count() > 64
             || address.chars().count() > 254
             || (!local.starts_with('"') && local.contains(".."))
-            || !LOCAL.is_match(local)
+            || !matcher::is_email_local(local)
         {
             return Err(ErrorKind::InvalidEmail.into());
         }
@@ -517,7 +476,7 @@ impl List {
     pub fn parse_str(&self, string: &str) -> Result<Host> {
         if string.contains("://") {
             self.parse_url(string)
-        } else if string.contains("@") {
+        } else if string.contains('@') {
             self.parse_email(string)
         } else {
             self.parse_host(string)
@@ -527,15 +486,13 @@ impl List {
     /// Parses any arbitrary string that can be used as a key in a DNS database
     pub fn parse_dns_name(&self, name: &str) -> Result<DnsName> {
         let mut dns_name = DnsName {
-            name: Domain::to_ascii(name).chain_err(|| {
-                ErrorKind::InvalidDomain(name.into())
-            })?,
+            name: Domain::try_to_ascii(name).map_err(|_| ErrorKind::InvalidDomain(name.into()))?,
             domain: None,
         };
         if let Ok(mut domain) = Domain::parse(name, self, false) {
-            if let Some(root) = domain.root().map(|root| root.to_string()) {
+            if let Some(root) = domain.root() {
                 if Domain::has_valid_syntax(&root) {
-                    domain.full = root;
+                    domain.full = root.to_string();
                     dns_name.domain = Some(domain);
                 }
             }
@@ -549,15 +506,13 @@ impl Host {
         if let Ok(domain) = Domain::parse(host, list, true) {
             return Ok(Host::Domain(domain));
         }
-        if host.starts_with("[")
+        if host.starts_with('[')
             && !host.starts_with("[[")
-                && host.ends_with("]")
-                && !host.ends_with("]]")
-                {
-                    host = host
-                        .trim_start_matches("[")
-                        .trim_end_matches("]");
-                };
+            && host.ends_with(']')
+            && !host.ends_with("]]")
+        {
+            host = host.trim_start_matches('[').trim_end_matches(']');
+        };
         if let Ok(ip) = IpAddr::from_str(host) {
             return Ok(Host::Ip(ip));
         }
@@ -566,7 +521,7 @@ impl Host {
 
     /// A convenient method to simply check if a host is an IP address
     pub fn is_ip(&self) -> bool {
-        if let &Host::Ip(_) = self {
+        if let Host::Ip(_) = self {
             return true;
         }
         false
@@ -574,7 +529,7 @@ impl Host {
 
     /// A convenient method to simply check if a host is a domain name
     pub fn is_domain(&self) -> bool {
-        if let &Host::Domain(_) = self {
+        if let Host::Domain(_) = self {
             return true;
         }
         false
@@ -584,8 +539,8 @@ impl Host {
 impl fmt::Display for Host {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            &Host::Ip(ref ip) => write!(f, "{}", ip),
-            &Host::Domain(ref domain) => write!(f, "{}", domain),
+            Host::Ip(ref ip) => write!(f, "{}", ip),
+            Host::Domain(ref domain) => write!(f, "{}", domain),
         }
     }
 }
@@ -599,24 +554,36 @@ impl Domain {
         // we are explicitly checking for this here before calling `domain_to_ascii`
         // because `domain_to_ascii` strips of leading dots so we won't be able to
         // check for this later
-        if domain.starts_with('.') { return false; }
+        if domain.starts_with('.') {
+            return false;
+        }
         // let's convert the domain to ascii early on so we can validate
         // internationalised domain names as well
-        let domain = match Self::to_ascii(domain) {
-            Ok(domain) => { domain }
-            Err(_) => { return false; }
+        let domain = match Self::try_to_ascii(domain) {
+            Ok(domain) => domain,
+            Err(_) => {
+                return false;
+            }
         };
         let mut labels: Vec<&str> = domain.split('.').collect();
         // strip of the first dot from a domain to support fully qualified domain names
-        if domain.ends_with(".") { labels.pop(); }
+        if domain.ends_with('.') {
+            labels.pop();
+        }
         // a domain must not have more than 127 labels
-        if labels.len() > 127 { return false; }
+        if labels.len() > 127 {
+            return false;
+        }
         labels.reverse();
         for (i, label) in labels.iter().enumerate() {
             // the tld must not be a number
-            if i == 0 && label.parse::<f64>().is_ok() { return false; }
+            if i == 0 && label.parse::<f64>().is_ok() {
+                return false;
+            }
             // any label must only contain allowed characters
-            if !LABEL.is_match(label) { return false; }
+            if !matcher::is_label(label) {
+                return false;
+            }
         }
         true
     }
@@ -629,21 +596,22 @@ impl Domain {
     fn assemble(input: &str, s_len: usize) -> String {
         let domain = input.to_lowercase();
 
-        let d_labels: Vec<&str> = domain
-            .trim_end_matches('.')
-            .split('.').rev().collect();
+        let d_labels: Vec<&str> = domain.trim_end_matches('.').split('.').rev().collect();
 
-        (&d_labels[..s_len]).iter().rev()
-            .map(|part| *part)
+        (&d_labels[..s_len])
+            .iter()
+            .rev()
+            .copied()
             .collect::<Vec<_>>()
             .join(".")
     }
 
-    fn find_match(input: &str, domain: &str, list: &List) -> Result<Domain> {
+    fn find_match(input: &str, domain: &str, list: &List) -> Domain {
         let mut longest_valid = None;
 
         let mut current = &list.root;
         let mut s_labels_len = 0;
+        let mut wildcard_match = false;
 
         for label in domain.rsplit('.') {
             if let Some(child) = current.children.get(label) {
@@ -653,6 +621,7 @@ impl Domain {
                 // wildcard rule
                 current = child;
                 s_labels_len += 1;
+                wildcard_match = true;
             } else {
                 // no match rules
                 break;
@@ -665,7 +634,11 @@ impl Domain {
 
         match longest_valid {
             Some((leaf, suffix_len)) => {
-                let typ = Some(leaf.typ);
+                let typ = if !wildcard_match {
+                    Some(leaf.typ)
+                } else {
+                    None
+                };
 
                 let suffix_len = if leaf.is_exception_rule {
                     suffix_len - 1
@@ -674,7 +647,7 @@ impl Domain {
                 };
 
                 let suffix = Some(Self::assemble(input, suffix_len));
-                let d_labels_len = domain.match_indices(".").count() + 1;
+                let d_labels_len = domain.match_indices('.').count() + 1;
 
                 let registrable = if d_labels_len > suffix_len {
                     Some(Self::assemble(input, suffix_len + 1))
@@ -682,25 +655,23 @@ impl Domain {
                     None
                 };
 
-                Ok(Domain {
+                Domain {
                     full: input.to_owned(),
-                    typ: typ,
-                    suffix: suffix,
-                    registrable: registrable,
-                })
-            },
-            None => {
-                Ok(Domain {
-                    full: input.to_owned(),
-                    typ: None,
-                    suffix: None,
-                    registrable: None,
-                })
+                    typ,
+                    suffix,
+                    registrable,
+                }
+            }
+            None => Domain {
+                full: input.to_owned(),
+                typ: None,
+                suffix: None,
+                registrable: None,
             },
         }
     }
 
-    fn to_ascii(domain: &str) -> Result<String> {
+    fn try_to_ascii(domain: &str) -> Result<String> {
         let result = idna::Config::default()
             .transitional_processing(true)
             .verify_dns_length(true)
@@ -717,45 +688,27 @@ impl Domain {
         if let Err(errors) = res {
             return Err(ErrorKind::Uts46(errors).into());
         }
-        Self::find_match(input, &domain, list)
+        Ok(Self::find_match(input, &domain, list))
     }
 
     /// Gets the root domain portion if any
     pub fn root(&self) -> Option<&str> {
-        match self.registrable {
-            Some(ref registrable) => Some(registrable),
-            None => None,
-        }
+        self.registrable.as_ref().map(|x| &x[..])
     }
 
     /// Gets the suffix if any
     pub fn suffix(&self) -> Option<&str> {
-        match self.suffix {
-            Some(ref suffix) => Some(suffix),
-            None => None,
-        }
+        self.suffix.as_ref().map(|x| &x[..])
     }
 
     /// Whether the domain has a private suffix
     pub fn is_private(&self) -> bool {
-        match self.typ {
-            Some(typ) => match typ {
-                Type::Icann => false,
-                Type::Private => true,
-            },
-            None => false,
-        }
+        self.typ.map(|t| t == Type::Private).unwrap_or(false)
     }
 
     /// Whether the domain has an ICANN suffix
     pub fn is_icann(&self) -> bool {
-        match self.typ {
-            Some(typ) => match typ {
-                Type::Icann => true,
-                Type::Private => false,
-            },
-            None => false,
-        }
+        self.typ.map(|t| t == Type::Icann).unwrap_or(false)
     }
 
     /// Whether this domain's suffix is in the list
@@ -774,7 +727,7 @@ impl Domain {
 
 impl fmt::Display for Domain {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.full.trim_end_matches(".").to_lowercase())
+        write!(f, "{}", self.full.trim_end_matches('.').to_lowercase())
     }
 }
 

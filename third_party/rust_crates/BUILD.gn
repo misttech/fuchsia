@@ -6179,38 +6179,6 @@ rustc_library("equivalent-v1_0_2") {
   applicable_licenses = [ ":equivalent-v1_0_2.license" ]
 }
 
-license("error-chain-v0_12_0.license") {
-  public_package_name = "error_chain"
-  license_files = [
-    "//third_party/rust_crates/vendor/error-chain-0.12.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/error-chain-0.12.0/LICENSE-MIT",
-  ]
-}
-
-rustc_library("error-chain-v0_12_0") {
-  crate_name = "error_chain"
-  source_root = "//third_party/rust_crates/vendor/error-chain-0.12.0/src/lib.rs"
-  output_name = "error_chain-ba7b1075069f9cf9"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=ba7b1075069f9cf9",
-    "-Cextra-filename=-ba7b1075069f9cf9",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":error-chain-v0_12_0.license" ]
-}
-
 license("euclid-v0_22_1.license") {
   public_package_name = "euclid"
   license_files =
@@ -13490,41 +13458,38 @@ rustc_library("prost-types-v0_11_1") {
   applicable_licenses = [ ":prost-types-v0_11_1.license" ]
 }
 
-license("publicsuffix-v1_5_4.license") {
+license("publicsuffix-v1_5_6.license") {
   public_package_name = "publicsuffix"
   license_files = [
-    "//third_party/rust_crates/vendor/publicsuffix-1.5.4/LICENSE",
-    "//third_party/rust_crates/vendor/publicsuffix-1.5.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/publicsuffix-1.5.6/LICENSE",
+    "//third_party/rust_crates/vendor/publicsuffix-1.5.6/LICENSE-APACHE",
   ]
 }
 
-rustc_library("publicsuffix-v1_5_4") {
+rustc_library("publicsuffix-v1_5_6") {
   crate_name = "publicsuffix"
-  source_root = "//third_party/rust_crates/vendor/publicsuffix-1.5.4/src/lib.rs"
-  output_name = "publicsuffix-a0801fd98f37af12"
-  edition = "2015"
+  source_root = "//third_party/rust_crates/vendor/publicsuffix-1.5.6/src/lib.rs"
+  output_name = "publicsuffix-1d8251f9f1bf867b"
+  edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":error-chain-v0_12_0" ]
   deps += [ ":idna-v0_2_3" ]
-  deps += [ ":lazy_static-v1_5_0" ]
-  deps += [ ":regex-v1_7_3" ]
   deps += [ ":url-v2_3_1" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=a0801fd98f37af12",
-    "-Cextra-filename=-a0801fd98f37af12",
+    "-Cmetadata=1d8251f9f1bf867b",
+    "-Cextra-filename=-1d8251f9f1bf867b",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":publicsuffix-v1_5_4.license" ]
+  applicable_licenses = [ ":publicsuffix-v1_5_6.license" ]
 }
 
 license("pulldown-cmark-v0_9_3.license") {
@@ -20685,7 +20650,7 @@ rustc_library("valico-v2_4_2") {
   deps += [ ":chrono-v0_4_42" ]
   deps += [ ":jsonway-v2_0_0" ]
   deps += [ ":phf-v0_7_24" ]
-  deps += [ ":publicsuffix-v1_5_4" ]
+  deps += [ ":publicsuffix-v1_5_6" ]
   deps += [ ":regex-v1_7_3" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_145" ]
