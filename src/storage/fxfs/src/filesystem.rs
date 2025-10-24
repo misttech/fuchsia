@@ -28,10 +28,9 @@ use fuchsia_inspect::{Inspector, LazyNode, NumericProperty as _, UintProperty};
 use fuchsia_sync::Mutex;
 use futures::FutureExt;
 use fxfs_crypto::Crypt;
-use once_cell::sync::OnceCell;
 use static_assertions::const_assert;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
 use storage_device::{Device, DeviceHolder};
 
 pub const MIN_BLOCK_SIZE: u64 = 4096;
@@ -999,13 +998,13 @@ pub async fn mkfs_with_volume(
 }
 
 struct FsckAfterEveryTransaction {
-    fs: OnceCell<Weak<FxFilesystem>>,
+    fs: OnceLock<Weak<FxFilesystem>>,
     old_hook: PostCommitHook,
 }
 
 impl FsckAfterEveryTransaction {
     fn new(old_hook: PostCommitHook) -> Arc<Self> {
-        Arc::new(Self { fs: OnceCell::new(), old_hook })
+        Arc::new(Self { fs: OnceLock::new(), old_hook })
     }
 
     async fn run(self: Arc<Self>) {

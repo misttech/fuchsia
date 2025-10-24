@@ -21,7 +21,7 @@ use crate::object_store::{
 use crate::serialized_types::{LATEST_VERSION, Version, VersionedLatest};
 use anyhow::{Context, Error, bail};
 use fxfs_crypto::{EncryptionKey, KeyPurpose};
-use once_cell::sync::OnceCell;
+use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -190,7 +190,7 @@ impl ObjectStore {
 
         struct StoreInfoSnapshot<'a> {
             store: &'a ObjectStore,
-            store_info: OnceCell<StoreInfo>,
+            store_info: OnceLock<StoreInfo>,
         }
         impl AssociatedObject for StoreInfoSnapshot<'_> {
             fn will_apply_mutation(
@@ -215,7 +215,7 @@ impl ObjectStore {
             }
         }
 
-        let store_info_snapshot = StoreInfoSnapshot { store: self, store_info: OnceCell::new() };
+        let store_info_snapshot = StoreInfoSnapshot { store: self, store_info: OnceLock::new() };
 
         let filesystem = self.filesystem();
         let object_manager = filesystem.object_manager();

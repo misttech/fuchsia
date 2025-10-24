@@ -22,11 +22,10 @@ use anyhow::{Context, Error, anyhow, bail, ensure};
 use fuchsia_inspect::{Property as _, UintProperty};
 use fuchsia_sync::RwLock;
 use futures::FutureExt as _;
-use once_cell::sync::OnceCell;
 use rustc_hash::FxHashMap as HashMap;
 use std::collections::hash_map::Entry;
 use std::num::Saturating;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 // Data written to the journal eventually needs to be flushed somewhere (typically into layer
 // files).  Here we conservatively assume that could take up to four times as much space as it does
@@ -44,8 +43,8 @@ pub const fn reserved_space_from_journal_usage(journal_usage: u64) -> u64 {
 /// ObjectManager is a global loading cache for object stores and other special objects.
 pub struct ObjectManager {
     inner: RwLock<Inner>,
-    metadata_reservation: OnceCell<Reservation>,
-    volume_directory: OnceCell<Directory<ObjectStore>>,
+    metadata_reservation: OnceLock<Reservation>,
+    volume_directory: OnceLock<Directory<ObjectStore>>,
     on_new_store: Option<Box<dyn Fn(&ObjectStore) + Send + Sync>>,
 }
 
@@ -148,8 +147,8 @@ impl ObjectManager {
                 max_transaction_size: (0, metrics::detail().create_uint("max_transaction_size", 0)),
                 reserved_space: journal::RESERVED_SPACE,
             }),
-            metadata_reservation: OnceCell::new(),
-            volume_directory: OnceCell::new(),
+            metadata_reservation: OnceLock::new(),
+            volume_directory: OnceLock::new(),
             on_new_store,
         }
     }

@@ -64,12 +64,11 @@ use fxfs_crypto::{
     Cipher, Crypt, FxfsCipher, KeyPurpose, ObjectType, StreamCipher, UnwrappedKey, WrappingKeyId,
 };
 use fxfs_macros::{Migrate, migrate_to_version};
-use once_cell::sync::OnceCell;
 use scopeguard::ScopeGuard;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
 use storage_device::Device;
 use uuid::Uuid;
 
@@ -472,7 +471,7 @@ pub struct ObjectStore {
     // has been replayed, so during that time, store_info_handle will be None and records
     // just get sent to the tree. Once the journal has been replayed, we can open the store
     // and load all the other layer information.
-    store_info_handle: OnceCell<DataObjectHandle<ObjectStore>>,
+    store_info_handle: OnceLock<DataObjectHandle<ObjectStore>>,
 
     // The cipher to use for encrypted mutations, if this store is encrypted.
     mutations_cipher: Mutex<Option<StreamCipher>>,
@@ -532,7 +531,7 @@ impl ObjectStore {
             filesystem: Arc::downgrade(&filesystem),
             store_info: Mutex::new(store_info),
             tree: LSMTree::new(merge::merge, object_cache),
-            store_info_handle: OnceCell::new(),
+            store_info_handle: OnceLock::new(),
             mutations_cipher: Mutex::new(mutations_cipher),
             lock_state: Mutex::new(lock_state),
             key_manager: KeyManager::new(),
@@ -576,7 +575,7 @@ impl ObjectStore {
             filesystem: Weak::<FxFilesystem>::new(),
             store_info: Mutex::new(Some(StoreInfo::default())),
             tree: LSMTree::new(merge::merge, Box::new(NullCache {})),
-            store_info_handle: OnceCell::new(),
+            store_info_handle: OnceLock::new(),
             mutations_cipher: Mutex::new(None),
             lock_state: Mutex::new(LockState::Unencrypted),
             key_manager: KeyManager::new(),

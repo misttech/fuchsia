@@ -62,15 +62,14 @@ use fprint::TypeFingerprint;
 use fuchsia_sync::Mutex;
 use futures::FutureExt as _;
 use futures::future::poll_fn;
-use once_cell::sync::OnceCell;
 use rustc_hash::FxHashMap as HashMap;
 use serde::{Deserialize, Serialize};
 use static_assertions::const_assert;
 use std::clone::Clone;
 use std::collections::HashSet;
 use std::ops::{Bound, Range};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::task::{Poll, Waker};
 
 // The journal file is written to in blocks of this size.
@@ -245,7 +244,7 @@ pub(super) fn journal_handle_options() -> HandleOptions {
 /// ability to have mutations that are to be applied atomically together.
 pub struct Journal {
     objects: Arc<ObjectManager>,
-    handle: OnceCell<DataObjectHandle<ObjectStore>>,
+    handle: OnceLock<DataObjectHandle<ObjectStore>>,
     super_block_manager: SuperBlockManager,
     inner: Mutex<Inner>,
     writer_mutex: Mutex<()>,
@@ -440,7 +439,7 @@ impl Journal {
         let starting_checksum = rand::random_range(1..u64::MAX);
         Journal {
             objects: objects,
-            handle: OnceCell::new(),
+            handle: OnceLock::new(),
             super_block_manager: SuperBlockManager::new(),
             inner: Mutex::new(Inner {
                 super_block_header: SuperBlockHeader::default(),

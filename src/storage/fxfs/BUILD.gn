@@ -41,7 +41,6 @@ fxfs_deps = [
   "//third_party/rust_crates:linked-hash-map",
   "//third_party/rust_crates:log",
   "//third_party/rust_crates:num-traits",
-  "//third_party/rust_crates:once_cell",
   "//third_party/rust_crates:pin-project",
   "//third_party/rust_crates:rand",
   "//third_party/rust_crates:rapidhash",
