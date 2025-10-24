@@ -32,21 +32,18 @@ use crate::types::ExtAttributes;
 pub struct ExtDirectory {
     inode: u64,
     xattrs: XattrMap,
+    attributes: ExtAttributes,
     data: Mutex<ExtDirectoryData>,
 }
 
 struct ExtDirectoryData {
-    attributes: ExtAttributes,
     children: BTreeMap<Name, ExtNode>,
     watchers: Watchers,
 }
 
 impl std::fmt::Debug for ExtDirectoryData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ExtDirectoryData")
-            .field("attributes", &self.attributes)
-            .field("children", &self.children)
-            .finish()
+        f.debug_struct("ExtDirectoryData").field("children", &self.children).finish()
     }
 }
 
@@ -56,8 +53,8 @@ impl ExtDirectory {
         Arc::new(Self {
             inode,
             xattrs,
+            attributes,
             data: Mutex::new(ExtDirectoryData {
-                attributes,
                 children: BTreeMap::new(),
                 watchers: Watchers::new(),
             }),
@@ -145,8 +142,7 @@ impl Node for ExtDirectory {
         &self,
         requested_attributes: fio::NodeAttributesQuery,
     ) -> Result<fio::NodeAttributes2, Status> {
-        let data = self.data.lock();
-        Ok(data.attributes.overlay_node_attributes(
+        Ok(self.attributes.overlay_node_attributes(
             requested_attributes,
             immutable_attributes!(
                 requested_attributes,
