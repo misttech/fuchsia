@@ -4417,6 +4417,147 @@ static bool vmo_zero_marker_transfer_test() {
   END_TEST;
 }
 
+static bool vmo_pager_supply_test() {
+  BEGIN_TEST;
+  AutoVmScannerDisable scanner_disable;
+
+  static const size_t kNumPages = 4;
+  static const size_t alloc_size = kNumPages * PAGE_SIZE;
+  static const size_t half_size = alloc_size / 2;
+
+  // Aux VMO.
+  fbl::RefPtr<VmObjectPaged> aux_vmo;
+  ASSERT_OK(
+      VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, VmObjectPaged::kResizable, alloc_size, &aux_vmo));
+
+  // Pager-backed VMO.
+  fbl::RefPtr<VmObjectPaged> vmo;
+  zx_status_t status =
+      make_uncommitted_pager_vmo(kNumPages, /*trap_dirty=*/false, /*resizable=*/false, &vmo);
+  ASSERT_EQ(ZX_OK, status);
+  vmo->set_user_id(0x42);
+
+  // Supply pager VMO with 2 pages of random data.
+  fbl::AllocChecker ac;
+  fbl::Vector<uint8_t> buf_rand1;
+  buf_rand1.reserve(half_size, &ac);
+  ASSERT_TRUE(ac.check());
+  fill_region(0x77, buf_rand1.data(), half_size);
+  ASSERT_OK(aux_vmo->Write(buf_rand1.data(), 0, half_size));
+
+  VmPageSpliceList sl;
+  EXPECT_OK(aux_vmo->TakePages(0, half_size, &sl));
+  ASSERT_OK(vmo->SupplyPages(0, half_size, &sl, SupplyOptions::PagerSupply));
+  DEBUG_ASSERT(sl.IsProcessed());
+
+  // Change data in aux vmo.
+  fbl::Vector<uint8_t> buf_rand2;
+  buf_rand2.reserve(alloc_size, &ac);
+  ASSERT_TRUE(ac.check());
+  fill_region(0x88, buf_rand2.data(), alloc_size);
+  EXPECT_OK(aux_vmo->Write(buf_rand2.data(), 0, alloc_size));
+
+  // Supply 4 pages of new data to the VMO.
+  VmPageSpliceList sl2;
+  EXPECT_OK(aux_vmo->TakePages(0, alloc_size, &sl2));
+  ASSERT_OK(vmo->SupplyPages(0, alloc_size, &sl2, SupplyOptions::PagerSupply));
+  DEBUG_ASSERT(sl2.IsProcessed());
+
+  fbl::Vector<uint8_t> buf_check;
+  buf_check.reserve(alloc_size, &ac);
+  ASSERT_TRUE(ac.check());
+  EXPECT_OK(vmo->Read(buf_check.data(), 0, alloc_size));
+
+  // First two shouldn't have been overwritten.
+  int cmpres = memcmp(buf_rand1.data(), buf_check.data(), half_size);
+  EXPECT_EQ(0, cmpres);
+
+  // Second 2 pages should have new data.
+  cmpres = memcmp(buf_rand2.data() + half_size, buf_check.data() + half_size, half_size);
+  EXPECT_EQ(0, cmpres);
+
+  // VMO should have 4 attributede pages.
+  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(4ul * PAGE_SIZE, 0));
+
+  // Clone pager-backed VMO.
+  fbl::RefPtr<VmObject> clone;
+  ASSERT_OK(vmo->CreateClone(Resizability::NonResizable, SnapshotType::Modified, 0, alloc_size,
+                             true, &clone));
+  clone->set_user_id(0x43);
+
+  // Vmo is attributed all pages
+  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(4ul * PAGE_SIZE, 0));
+  EXPECT_TRUE(clone->GetAttributedMemory() == make_private_attribution_counts(0, 0));
+
+  // New random data in aux_vmo.
+  fbl::Vector<uint8_t> buf_rand3;
+  buf_rand3.reserve(alloc_size, &ac);
+  ASSERT_TRUE(ac.check());
+  fill_region(0x99, buf_rand3.data(), alloc_size);
+  EXPECT_OK(aux_vmo->Write(buf_rand3.data(), 0, alloc_size));
+
+  // Supply 2 pages into the middle of the clone.
+  VmPageSpliceList sl3;
+  EXPECT_OK(aux_vmo->TakePages(PAGE_SIZE, half_size, &sl3));
+  ASSERT_OK(clone->SupplyPages(PAGE_SIZE, half_size, &sl3, SupplyOptions::TransferData));
+  DEBUG_ASSERT(sl3.IsProcessed());
+
+  // Clone is attributed both pages, VMO is unchanged.
+  EXPECT_TRUE(clone->GetAttributedMemory() == make_private_attribution_counts(2ul * PAGE_SIZE, 0));
+  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(4ul * PAGE_SIZE, 0));
+
+  EXPECT_OK(clone->Read(buf_check.data(), 0, alloc_size));
+
+  // First and last page in clone should be read from parent.
+  cmpres = memcmp(buf_rand1.data(), buf_check.data(), PAGE_SIZE);
+  EXPECT_EQ(0, cmpres);
+  cmpres = memcmp(buf_rand2.data() + (alloc_size - PAGE_SIZE),
+                  buf_check.data() + (alloc_size - PAGE_SIZE), PAGE_SIZE);
+  EXPECT_EQ(0, cmpres);
+
+  // Middle pages should be new.
+  cmpres = memcmp(buf_rand3.data() + PAGE_SIZE, buf_check.data() + PAGE_SIZE, half_size);
+  EXPECT_EQ(0, cmpres);
+
+  // Parent should be unchanged.
+  EXPECT_OK(vmo->Read(buf_check.data(), 0, alloc_size));
+  cmpres = memcmp(buf_rand1.data(), buf_check.data(), half_size);
+  EXPECT_EQ(0, cmpres);
+  cmpres = memcmp(buf_rand2.data() + half_size, buf_check.data() + half_size, half_size);
+  EXPECT_EQ(0, cmpres);
+
+  // New random data in aux_vmo.
+  fbl::Vector<uint8_t> buf_rand4;
+  buf_rand4.reserve(alloc_size, &ac);
+  ASSERT_TRUE(ac.check());
+  fill_region(0x99, buf_rand4.data(), alloc_size);
+  EXPECT_OK(aux_vmo->Write(buf_rand4.data(), 0, alloc_size));
+
+  // Supply new data to all pages of clone.
+  VmPageSpliceList sl4;
+  EXPECT_OK(aux_vmo->TakePages(0, alloc_size, &sl4));
+  ASSERT_OK(clone->SupplyPages(0, alloc_size, &sl4, SupplyOptions::TransferData));
+  DEBUG_ASSERT(sl4.IsProcessed());
+
+  // Clone should have new data.
+  EXPECT_OK(clone->Read(buf_check.data(), 0, alloc_size));
+  cmpres = memcmp(buf_rand4.data(), buf_check.data(), alloc_size);
+  EXPECT_EQ(0, cmpres);
+
+  // Parent should be unchanged.
+  EXPECT_OK(vmo->Read(buf_check.data(), 0, alloc_size));
+  cmpres = memcmp(buf_rand1.data(), buf_check.data(), half_size);
+  EXPECT_EQ(0, cmpres);
+  cmpres = memcmp(buf_rand2.data() + half_size, buf_check.data() + half_size, half_size);
+  EXPECT_EQ(0, cmpres);
+
+  // Each have 4 attributed pages.
+  EXPECT_TRUE(clone->GetAttributedMemory() == make_private_attribution_counts(4ul * PAGE_SIZE, 0));
+  EXPECT_TRUE(vmo->GetAttributedMemory() == make_private_attribution_counts(4ul * PAGE_SIZE, 0));
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(vmo_tests)
 VM_UNITTEST(vmo_create_test)
 VM_UNITTEST(vmo_create_maximum_size)
@@ -4487,6 +4628,7 @@ VM_UNITTEST(vmo_user_stream_size_test)
 VM_UNITTEST(vmo_loaned_high_priority_parent_test)
 VM_UNITTEST(vmo_loaned_page_in_high_priority_test)
 VM_UNITTEST(vmo_zero_marker_transfer_test)
+VM_UNITTEST(vmo_pager_supply_test)
 UNITTEST_END_TESTCASE(vmo_tests, "vmo", "VmObject tests")
 
 }  // namespace vm_unittest
