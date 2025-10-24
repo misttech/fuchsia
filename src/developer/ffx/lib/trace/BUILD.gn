@@ -14,16 +14,23 @@ rustc_library("lib") {
 
   deps = [
     "//sdk/fidl/fuchsia.tracing.controller:fuchsia.tracing.controller_rust",
+    "//sdk/rust/zx-types",
     "//src/developer/ffx/config:lib",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fidl_codec/rust:fidl_codec",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:itertools",
     "//third_party/rust_crates:regex",
-    "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
+    "//third_party/rust_crates:zerocopy",
   ]
 
   test_deps = [ "//src/lib/fuchsia" ]
 
-  sources = [ "src/lib.rs" ]
+  sources = [
+    "src/fidl.rs",
+    "src/lib.rs",
+  ]
 }
 
 group("tests") {

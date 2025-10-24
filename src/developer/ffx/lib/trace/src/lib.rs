@@ -2,14 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow};
 use ffx_config::EnvironmentContext;
 use fidl_fuchsia_tracing_controller::{ProviderSpec, TraceConfig};
 use regex::Regex;
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::Path;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::LazyLock;
+
+mod fidl;
+pub use fidl::*;
 
 pub fn expand_categories(
     context: &EnvironmentContext,
@@ -134,95 +136,6 @@ pub fn map_categories_to_providers(categories: &Vec<String>) -> TraceConfig {
         );
     }
     trace_config
-}
-
-mod fidl_ir {
-    use anyhow::Result;
-    use serde::Deserialize;
-    use std::fs::File;
-    use std::io::BufReader;
-    use std::path::Path;
-
-    #[derive(Deserialize)]
-    pub struct Library {
-        protocol_declarations: Vec<ProtocolDeclaration>,
-    }
-
-    #[derive(Deserialize)]
-    struct ProtocolDeclaration {
-        name: String,
-        methods: Vec<Method>,
-    }
-
-    #[derive(Deserialize)]
-    struct Method {
-        name: String,
-        ordinal: u64,
-        is_composed: bool,
-    }
-
-    impl Library {
-        pub fn method_ordinals(&self) -> Vec<(u64, String, bool)> {
-            let mut ordinals = Vec::new();
-
-            for protocol in &self.protocol_declarations {
-                for method in &protocol.methods {
-                    ordinals.push((
-                        method.ordinal,
-                        format!("{}.{}", protocol.name, method.name),
-                        method.is_composed,
-                    ));
-                }
-            }
-            ordinals
-        }
-    }
-
-    pub fn read_method_ordinals(ir_file_path: &Path) -> Result<Vec<(u64, String, bool)>> {
-        let library: Library = serde_json::from_reader(BufReader::new(File::open(ir_file_path)?))?;
-        Ok(library.method_ordinals())
-    }
-}
-
-#[derive(Default)]
-pub struct SymbolizationMap(BTreeMap<u64, String>);
-
-impl SymbolizationMap {
-    pub fn from_context(env_ctx: &EnvironmentContext) -> Result<Self> {
-        let mut map = Self(BTreeMap::new());
-
-        if let Some(build_dir) = env_ctx.build_dir() {
-            let all_fidl_json_path = build_dir.join("all_fidl_json.txt");
-            if all_fidl_json_path.exists() {
-                for line in std::fs::read_to_string(all_fidl_json_path)?.lines() {
-                    let ir_file_path = build_dir.join(line);
-                    map.add_ir_file(&ir_file_path)?;
-                }
-            } else {
-                bail!("all_fidl_json.txt was not found in {build_dir:?}");
-            }
-            Ok(map)
-        } else {
-            Err(anyhow!("No build directory found."))
-        }
-    }
-
-    pub fn add_ir_file(&mut self, ir_file_path: impl AsRef<Path> + std::fmt::Debug) -> Result<()> {
-        for (ordinal, name, is_composed) in fidl_ir::read_method_ordinals(ir_file_path.as_ref())? {
-            if !is_composed || !self.0.contains_key(&ordinal) {
-                self.0.insert(ordinal, name);
-            }
-        }
-        Ok(())
-    }
-
-    pub fn get(&self, ordinal: u64) -> Option<&str> {
-        self.0.get(&ordinal).map(|s| s.as_str())
-    }
-
-    pub fn contains_key(&self, ordinal: u64) -> bool {
-        self.0.contains_key(&ordinal)
-    }
 }
 
 #[cfg(test)]

@@ -7,7 +7,7 @@ use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
 use ffx_target::get_target_specifier;
 use ffx_trace_args::{Start, Stop, Symbolize, TraceCommand, TraceSubCommand};
-use ffx_tracing::{self as ffx_trace, SymbolizationMap};
+use ffx_tracing::{self as ffx_trace, FidlLibraries};
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{Deferred, FfxMain, FfxTool, bug, deferred};
 use fidl_fuchsia_tracing::{BufferingMode, KnownCategory};
@@ -236,7 +236,7 @@ fn stats_to_output(provider_stats: Vec<ProviderStats>, verbose: bool) -> Vec<Str
     return stats_output;
 }
 
-fn symbolize_ordinal(ordinal: u64, ordinals: &SymbolizationMap, mut writer: Writer) -> Result<()> {
+fn symbolize_ordinal(ordinal: u64, ordinals: &FidlLibraries, mut writer: Writer) -> Result<()> {
     if let Some(name) = ordinals.get(ordinal) {
         // If the ordinal is present in the symbolization map print the name associated with it.
         writer.line(format!("{} -> {}", ordinal, name))?;
@@ -558,11 +558,11 @@ impl TraceTool {
             }
             writer.line(format!("Symbolized traces written to {outfile}"))?;
         } else if let Some(ordinal) = opts.ordinal {
-            let mut ordinals = match SymbolizationMap::from_context(&self.context) {
+            let mut ordinals = match FidlLibraries::from_context(&self.context) {
                 Ok(ordinals) => ordinals,
                 Err(err) => {
                     writer.line(format!("Unable to load FIDL symbolization map: {}", err))?;
-                    SymbolizationMap::default()
+                    FidlLibraries::default()
                 }
             };
             for ir_file in &opts.ir_path {
@@ -1076,8 +1076,27 @@ mod tests {
     async fn test_symbolize_success() {
         let env = ffx_config::test_init().unwrap();
         let fake_ir_json = json!({
-           "unrelated_key": "unrelated_value",
-           "protocol_declarations": [
+            "name": "fake.library",
+            "platform": "",
+            "available": {},
+            "experiments": [],
+            "library_dependencies": [],
+            "bits_declarations": [],
+            "const_declarations": [],
+            "enum_declarations": [],
+            "experimental_resource_declarations": [],
+            "service_declarations": [],
+            "struct_declarations": [],
+            "external_struct_declarations": [],
+            "table_declarations": [],
+            "union_declarations": [],
+            "alias_declarations": [],
+            "new_type_declarations": [],
+            "declaration_order": [],
+            "declarations": {
+                "fake_protocol_name": "protocol",
+            },
+            "protocol_declarations": [
                 {
                     "name": "fake_protocol_name",
                     "methods": [
@@ -1085,8 +1104,13 @@ mod tests {
                             "ordinal": 12345678,
                             "name": "fake_method_name",
                             "is_composed": false,
+                            "strict": false,
+                            "has_request": true,
+                            "has_response": true,
                         },
                     ],
+                    "composed_protocols": [],
+                    "deprecated": [],
                 },
             ],
         });

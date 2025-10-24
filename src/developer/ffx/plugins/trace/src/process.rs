@@ -5,7 +5,7 @@
 use anyhow::{Context, Result, anyhow};
 use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
-use ffx_tracing::SymbolizationMap;
+use ffx_tracing::FidlLibraries;
 use fxt::{ArgValue, RawArg, RawArgValue, RawEventRecord, SessionParser, StringRef, TraceRecord};
 use log::warn;
 use std::collections::{BTreeMap, HashMap};
@@ -13,6 +13,8 @@ use std::path::Path;
 use termion::{color, style};
 
 static ORDINAL_ARG_NAME: &str = "ordinal";
+static BYTES_ARG_NAME: &str = "bytes";
+static HANDLES_ARG_NAME: &str = "handles";
 
 /// An iterator over trace files that yields each record in both parsed and raw form.
 struct TraceIterator<R> {
@@ -81,8 +83,8 @@ pub fn process_trace_file(
     let mut warning_list = Vec::new();
 
     let mut symbolizer = if symbolize {
-        let symbolization_map = match SymbolizationMap::from_context(context) {
-            Ok(symbolization_map) => symbolization_map,
+        let libs = match FidlLibraries::from_context(context) {
+            Ok(libs) => libs,
             Err(err) => {
                 // Fall back to an empty symbolization map, but warn the user.
                 warning_list.push(format!(
@@ -91,11 +93,11 @@ pub fn process_trace_file(
                     err,
                     style::Reset
                 ));
-                SymbolizationMap::default()
+                FidlLibraries::default()
             }
         };
 
-        Some(Symbolizer::new(symbolization_map))
+        Some(Symbolizer::new(libs))
     } else {
         None
     };
@@ -260,13 +262,13 @@ fn event_record_arg_value<'a>(
 
 /// Implements FIDL method symbolization for IPC traces.
 pub struct Symbolizer {
-    ordinals: SymbolizationMap,
+    libs: FidlLibraries,
     flow_has_steps: BTreeMap<u64, bool>,
 }
 
 impl Symbolizer {
-    pub fn new(ordinals: SymbolizationMap) -> Self {
-        Self { ordinals, flow_has_steps: BTreeMap::new() }
+    pub fn new(libs: FidlLibraries) -> Self {
+        Self { libs, flow_has_steps: BTreeMap::new() }
     }
 
     /// Apply FIDL method name symbolization to an event record.
@@ -291,12 +293,34 @@ impl Symbolizer {
             }
 
             // Attach method names to DurationBegin events with ordinals.
-            if let Some(ArgValue::Unsigned64(ord)) =
+            if let Some(ArgValue::Unsigned64(ordinal)) =
                 event_record_arg_value(&event_record, ORDINAL_ARG_NAME)
             {
-                let ord = *ord;
-                if let Some(method_name) = self.ordinals.get(ord) {
-                    return match symbolize_fidl_call(&parsed_bytes, ord, method_name) {
+                let ordinal = *ordinal;
+
+                let payload = if let Some(ArgValue::Blob(bytes)) =
+                    event_record_arg_value(&event_record, BYTES_ARG_NAME)
+                {
+                    let handles = if let Some(ArgValue::Blob(handles)) =
+                        event_record_arg_value(&event_record, HANDLES_ARG_NAME)
+                    {
+                        handles.to_owned()
+                    } else {
+                        vec![]
+                    };
+                    Some(self.libs.decode_message(ordinal, &bytes, &handles))
+                } else {
+                    None
+                };
+
+                if let Some(method_name) = self.libs.get(ordinal) {
+                    return match symbolize_fidl_call(
+                        &parsed_bytes,
+                        ordinal,
+                        &method_name,
+                        payload,
+                        false,
+                    ) {
                         Ok(bytes) => Some(bytes),
                         Err(e) => {
                             warn!("Failed to symbolize fidl call: {:#}", e);
@@ -310,7 +334,13 @@ impl Symbolizer {
     }
 }
 
-fn symbolize_fidl_call<'a>(bytes: &[u8], ordinal: u64, method: &'a str) -> anyhow::Result<Vec<u8>> {
+fn symbolize_fidl_call<'a>(
+    bytes: &[u8],
+    ordinal: u64,
+    method: &'a str,
+    payload: Option<String>,
+    _preserve_raw_message: bool,
+) -> anyhow::Result<Vec<u8>> {
     let (_, mut raw_event_record) =
         RawEventRecord::parse(bytes).context("Unable to parse event record")?;
     raw_event_record.name = StringRef::Inline(method);
@@ -326,6 +356,12 @@ fn symbolize_fidl_call<'a>(bytes: &[u8], ordinal: u64, method: &'a str) -> anyho
             }
         }
         new_args.push(arg.clone());
+    }
+    if let Some(payload) = payload.as_ref() {
+        new_args.push(RawArg {
+            name: StringRef::Inline("payload"),
+            value: RawArgValue::String(StringRef::Inline(payload)),
+        });
     }
 
     raw_event_record.args = new_args;
