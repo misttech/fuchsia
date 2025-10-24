@@ -919,7 +919,7 @@ func (f *FFXInstance) Snapshot(ctx context.Context, outDir string, snapshotFilen
 
 // StartFFXMonitor start an ffx monitor instance.
 func (f *FFXInstance) StartFFXMonitor(ctx context.Context, port string) {
-	if err := f.invoker([]string{"monitor", "start", "--nodename", f.target, "--port", port}).setStrict().run(ctx); err != nil {
+	if err := f.invoker([]string{"monitor", "start", "--nodename", f.target, "--port", port}).setTimeout(0).setStrict().run(ctx); err != nil {
 		logger.Errorf(ctx, "failed to start ffx monitor: %s", err)
 	}
 }

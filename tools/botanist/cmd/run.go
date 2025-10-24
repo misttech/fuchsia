@@ -395,9 +395,15 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 					port = constants.DefaultFFXMonitorPort
 				}
 
-				ffx.StartFFXMonitor(ctx, port)
 				// Stop the ffx monitor when done
-				defer ffx.StopFFXMonitor(ctx)
+				defer func() {
+					ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+					defer cancel()
+					ffx.StopFFXMonitor(ctx)
+				}()
+				go func() {
+					ffx.StartFFXMonitor(ctx, port)
+				}()
 			}
 		}
 
