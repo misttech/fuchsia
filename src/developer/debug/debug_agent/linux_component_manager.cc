@@ -5,11 +5,17 @@
 #include "src/developer/debug/debug_agent/linux_component_manager.h"
 
 #include "lib/syslog/cpp/macros.h"
+#include "src/developer/debug/ipc/records.h"
 
 namespace debug_agent {
 
 std::vector<debug_ipc::ComponentInfo> LinuxComponentManager::FindComponentInfo(
     zx_koid_t job_koid) const {
+  return {};
+}
+
+std::vector<debug_ipc::ComponentInfo> LinuxComponentManager::FindComponentInfoWithComparator(
+    fit::function<bool(const debug_ipc::ComponentInfo&)> is_match) const {
   return {};
 }
 

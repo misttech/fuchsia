@@ -651,4 +651,58 @@ TEST_F(DebugAgentServerTestWithClient, RecursiveJobOnlyProcessInfoIterator) {
   }
 }
 
+TEST_F(DebugAgentServerTestWithClient, RecursiveJobOnlyProcessInfoIteratorWithFilter) {
+  // Attach to all test realms.
+  fuchsia_debugger::Filter filter;
+  filter.pattern("test_root");
+  filter.type(fuchsia_debugger::FilterType::kMonikerSuffix);
+  filter.options().job_only(true);
+  filter.options().recursive(true);
+
+  client().AttachTo(
+      filter, [=, this](fidl::Result<fuchsia_debugger::DebugAgent::AttachTo>& result) mutable {
+        ASSERT_TRUE(result.is_ok());
+        loop().QuitNow();
+      });
+
+  loop().Run();
+
+  // Filters that are given to the iterator are typically going to be package urls e.g. from
+  // TestManager. This is tricky, because we may get a request to recursively match against a
+  // realm's component URL recursively, without installing any additional filters.
+  fuchsia_debugger::Filter iterator_filter;
+  iterator_filter.pattern("fuchsia-pkg://devhost/test_root_package#meta/root_test_component.cm");
+  iterator_filter.type(fuchsia_debugger::FilterType::kUrl);
+  iterator_filter.options().recursive(true);
+
+  // Don't need to wait for the message loop to start sending messages.
+  auto collector = client().MakeProcessInfoCollector(std::move(iterator_filter), std::nullopt);
+
+  std::vector<fuchsia_debugger::ProcessInfo> infos;
+  collector.Collect([&, this](std::vector<fuchsia_debugger::ProcessInfo> new_infos) {
+    infos = std::move(new_infos);
+    loop().QuitNow();
+  });
+
+  loop().Run();
+
+  // From mock_system_interface.
+  constexpr std::array kExpectedMonikers = {
+      "moniker/abcdef/test:test_root/test_driver",
+      "moniker/abcdef/test:test_root/under_test",
+  };
+  constexpr std::array kExpectedProcessIds = {42, 45};
+  constexpr std::array kExpectedThreadIds = {43, 46, 47};
+
+  ASSERT_FALSE(infos.empty());
+
+  for (const auto& info : infos) {
+    EXPECT_NE(std::ranges::find(kExpectedProcessIds, info.process()), kExpectedProcessIds.end());
+    EXPECT_NE(std::ranges::find(kExpectedThreadIds, info.thread()), kExpectedThreadIds.end());
+    EXPECT_NE(std::ranges::find(kExpectedMonikers, info.moniker()), kExpectedMonikers.end());
+    // We didn't ask for any interest, so we don't get back any backtraces.
+    EXPECT_EQ(info.details().backtrace(), std::nullopt);
+  }
+}
+
 }  // namespace debug_agent

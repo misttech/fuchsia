@@ -25,6 +25,25 @@ std::vector<debug_ipc::ComponentInfo> MockComponentManager::FindComponentInfo(
   return components;
 }
 
+std::vector<debug_ipc::ComponentInfo> MockComponentManager::FindComponentInfoWithComparator(
+    fit::function<bool(const debug_ipc::ComponentInfo&)> is_match) const {
+  std::vector<debug_ipc::ComponentInfo> result;
+  for (const auto& [_, info] : component_info_) {
+    if (is_match(info)) {
+      result.push_back(info);
+    }
+  }
+
+  // Also check the non-ELF component info.
+  for (const auto& [_, info] : non_elf_component_info_) {
+    if (is_match(info)) {
+      result.push_back(info);
+    }
+  }
+
+  return result;
+}
+
 void MockComponentManager::AddComponentInfo(zx_koid_t job_koid, debug_ipc::ComponentInfo info) {
   component_info_.emplace(job_koid, info);
   moniker_to_job_.emplace(info.moniker, job_koid);

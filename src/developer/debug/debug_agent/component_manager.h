@@ -39,6 +39,13 @@ class ComponentManager {
   // Find the component information if the process runs in the context of a component.
   std::vector<debug_ipc::ComponentInfo> FindComponentInfo(const ProcessHandle& process) const;
 
+  // Finds the component info that matches the given moniker or url. Note that there may be multiple
+  // components that match the same url, but there will never be multiple matches for a full
+  // component moniker.
+  std::optional<debug_ipc::ComponentInfo> FindComponentInfoByMoniker(
+      const std::string& moniker) const;
+  std::vector<debug_ipc::ComponentInfo> FindComponentInfoByUrl(const std::string& url) const;
+
   // Set the debug_agent. ComponentManager needs a debug_agent to notify component starting and
   // exiting events.
   virtual void SetDebugAgent(DebugAgent* debug_agent) = 0;
@@ -64,6 +71,17 @@ class ComponentManager {
                               std::string* process_name_override) = 0;
 
  private:
+  // This function contains the implementation details of |FindComponentInfoBy{Url,Moniker}|, while
+  // allowing for sharing a common comparison functor.
+  virtual std::vector<debug_ipc::ComponentInfo> FindComponentInfoWithComparator(
+      fit::function<bool(const debug_ipc::ComponentInfo&)>) const = 0;
+
+  // Find the component information matching the given component info. Only populated fields are
+  // considered part of the search. Note that this can return multiple components if searching by
+  // URL only, but if moniker is included then it is expected to have exactly one match.
+  std::vector<debug_ipc::ComponentInfo> FindComponentInfo(
+      const debug_ipc::ComponentInfo& needle) const;
+
   SystemInterface* system_interface_;
 };
 

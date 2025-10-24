@@ -63,6 +63,9 @@ class MockComponentManager : public ComponentManager {
   }
 
  private:
+  std::vector<debug_ipc::ComponentInfo> FindComponentInfoWithComparator(
+      fit::function<bool(const debug_ipc::ComponentInfo&)> is_match) const override;
+
   DebugAgent* debug_agent_;
   MockSystemInterface* mock_system_interface_;
   std::multimap<zx_koid_t, debug_ipc::ComponentInfo> component_info_;

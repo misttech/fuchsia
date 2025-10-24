@@ -118,6 +118,30 @@ debug::Result<debug_ipc::Filter, fuchsia_debugger::FilterError> ToDebugIpcFilter
   return filter;
 }
 
+std::vector<fuchsia_debugger::Filter> ExpandRecursiveFilter(
+    const fuchsia_debugger::Filter& filter, const ComponentManager& component_manager) {
+  std::vector<fuchsia_debugger::Filter> filters;
+  switch (filter.type()) {
+    case fuchsia_debugger::FilterType::kUrl: {
+      const auto& matches = component_manager.FindComponentInfoByUrl(filter.pattern());
+
+      // Create a moniker prefix filter for each matching component.
+      for (const auto& match : matches) {
+        auto& moniker_filter = filters.emplace_back();
+        moniker_filter.pattern(match.moniker);
+        moniker_filter.type(fuchsia_debugger::FilterType::kMonikerPrefix);
+      }
+      break;
+    }
+    // TODO(https://fxbug.dev/454686467): Handle MonikerSuffix filter type here too.
+    default: {
+      // All other filter types are not modified.
+      filters = {filter};
+    }
+  }
+
+  return filters;
+}
 }  // namespace
 
 // Static.
@@ -372,9 +396,25 @@ DebugAgentServer::GetMatchingProcessesResult DebugAgentServer::GetMatchingProces
   std::vector<DebuggedProcess*> processes;
   const auto& attached_processes = debug_agent_->GetAllProcesses();
 
+  std::vector<fuchsia_debugger::Filter> filters;
   if (filter) {
+    if (filter->options().recursive()) {
+      filters =
+          ExpandRecursiveFilter(*filter, debug_agent_->system_interface().GetComponentManager());
+    } else {
+      filters = {*filter};
+    }
+  } else {
+    for (const auto& [_koid, process] : attached_processes) {
+      processes.push_back(process.get());
+    }
+
+    return processes;
+  }
+
+  for (const auto& filter : filters) {
     // We're not installing this filter, so don't need to provide a filter id.
-    auto result = ToDebugIpcFilter(*filter, std::nullopt);
+    auto result = ToDebugIpcFilter(filter, std::nullopt);
     if (result.has_error()) {
       return result.err();
     }
@@ -389,10 +429,6 @@ DebugAgentServer::GetMatchingProcessesResult DebugAgentServer::GetMatchingProces
         processes.push_back(process.get());
       }
     }
-  } else {
-    for (const auto& [_koid, process] : attached_processes) {
-      processes.push_back(process.get());
-    }
   }
 
   return processes;
@@ -404,8 +440,7 @@ void DebugAgentServer::GetProcessInfo(GetProcessInfoRequest& request,
 
   auto result = GetMatchingProcesses(request.options().filter());
   if (result.has_error()) {
-    completer.Reply(fit::error(result.err()));
-    return;
+    return completer.Reply(fit::error(result.err()));
   }
 
   // At this point it is invalid to have either filtered out all of the attached processes (or be

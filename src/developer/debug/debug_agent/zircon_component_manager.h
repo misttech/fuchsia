@@ -50,6 +50,9 @@ class ZirconComponentManager : public ComponentManager {
   // For access to |running_component_info_|.
   FRIEND_TEST(ZirconSystemInterfaceTest, FilterMatchComponents);
 
+  std::vector<debug_ipc::ComponentInfo> FindComponentInfoWithComparator(
+      fit::function<bool(const debug_ipc::ComponentInfo&)> is_match) const override;
+
   class TestLauncher;
 
   void GetNextComponentEvent();

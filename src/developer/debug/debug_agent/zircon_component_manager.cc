@@ -346,6 +346,25 @@ std::vector<debug_ipc::ComponentInfo> ZirconComponentManager::FindComponentInfo(
   return components;
 }
 
+std::vector<debug_ipc::ComponentInfo> ZirconComponentManager::FindComponentInfoWithComparator(
+    fit::function<bool(const debug_ipc::ComponentInfo&)> is_match) const {
+  std::vector<debug_ipc::ComponentInfo> result;
+  for (const auto& [_, info] : running_component_info_) {
+    if (is_match(info)) {
+      result.push_back(info);
+    }
+  }
+
+  // Also check the non-ELF component info.
+  for (const auto& [_, info] : non_elf_component_info_) {
+    if (is_match(info)) {
+      result.push_back(info);
+    }
+  }
+
+  return result;
+}
+
 // We need a class to help to launch a test because the lifecycle of GetEvents callbacks
 // are undetermined.
 class ZirconComponentManager::TestLauncher : public fxl::RefCountedThreadSafe<TestLauncher> {

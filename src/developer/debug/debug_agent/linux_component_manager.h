@@ -6,6 +6,7 @@
 #define SRC_DEVELOPER_DEBUG_DEBUG_AGENT_LINUX_COMPONENT_MANAGER_H_
 
 #include "src/developer/debug/debug_agent/component_manager.h"
+#include "src/developer/debug/ipc/records.h"
 
 namespace debug_agent {
 
@@ -15,6 +16,8 @@ class LinuxComponentManager : public ComponentManager {
 
   // ComponentManager implementation.
   std::vector<debug_ipc::ComponentInfo> FindComponentInfo(zx_koid_t job_koid) const override;
+  std::vector<debug_ipc::ComponentInfo> FindComponentInfoWithComparator(
+      fit::function<bool(const debug_ipc::ComponentInfo&)> is_match) const override;
   const std::map<std::string, debug_ipc::ComponentInfo>& GetNonElfComponentInfo() const override;
   void SetDebugAgent(DebugAgent* debug_agent) override;
   debug::Status LaunchComponent(std::string url) override;
