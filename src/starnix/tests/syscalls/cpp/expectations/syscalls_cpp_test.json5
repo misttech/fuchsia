@@ -147,6 +147,7 @@
                 // Implement PTRACE_POKEDATA and PTRACE_POKETEXT.
                 "PtraceTest.PokeToSetBreakpoint",
                 "PtraceTest.PokeAcrossMappings",
+                "PokeInKernelMappingTest.*",
                 "PtracePokeMemory/PokeInPrivateMappingTest*",
                 "PtracePokeMemory/PokeInPrivateROMappingTest*",
                 "PtracePokeMemory/PokeInPrivateRXMappingTest*",

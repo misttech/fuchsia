@@ -1534,4 +1534,55 @@ INSTANTIATE_TEST_SUITE_P(PtracePokeMemory, PokeInSharedRWXMappingTest,
                          testing::Values(BackingType::ANONYMOUS, BackingType::MEMFD,
                                          BackingType::WRITABLE_FILE),
                          &BackingTypeName);
+
+class PokeInKernelMappingTest : public testing::Test {
+ public:
+  void SetUp() override {
+    fork_helper_.OnlyWaitForForkedChildren();
+    fork_helper_.ExpectSignal(SIGKILL);
+    child_pid_ = fork_helper_.RunInForkedProcess([&] {
+      SAFE_SYSCALL(ptrace(PTRACE_TRACEME, 0, 0, 0));
+      raise(SIGSTOP);
+      _exit(0);
+    });
+    ASSERT_NE(child_pid_, 0);
+
+    int status = 0;
+    SAFE_SYSCALL(waitpid(child_pid_, &status, 0));
+    ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP) << std::hex << status;
+  }
+
+  void TearDown() override {
+    SAFE_SYSCALL(kill(child_pid_, SIGKILL));
+    EXPECT_TRUE(fork_helper_.WaitForChildren());
+  }
+
+  // Read child process'es mappings to find the region with given mapping_name.
+  std::optional<test_helper::MemoryMapping> GetChildMapping(const std::string &mapping_name) const {
+    std::string child_maps;
+    if (!files::ReadFileToString("/proc/" + std::to_string(child_pid_) + "/maps", &child_maps)) {
+      return std::nullopt;
+    }
+
+    return test_helper::find_memory_mapping(
+        [&](const test_helper::MemoryMapping &mapping) { return mapping.pathname == mapping_name; },
+        child_maps);
+  }
+
+ protected:
+  test_helper::ForkHelper fork_helper_;
+  pid_t child_pid_;
+};
+
+TEST_F(PokeInKernelMappingTest, VDSO) {
+  auto mapping = GetChildMapping("[vdso]");
+  EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping->start, 0xBB), SyscallSucceeds());
+}
+
+TEST_F(PokeInKernelMappingTest, VVAR) {
+  auto mapping = GetChildMapping("[vvar]");
+  EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid_, mapping->start, 0xBB),
+              SyscallFailsWithErrno(EIO));
+}
+
 }  // namespace
