@@ -24,7 +24,7 @@
 // Type used to refer to virtual addresses presented to a device by the IOMMU.
 typedef uint64_t dev_vaddr_t;
 
-class Iommu : public fbl::RefCounted<Iommu>, public fbl::DoublyLinkedListable<fbl::RefPtr<Iommu>> {
+class Iommu : public fbl::RefCounted<Iommu> {
  public:
   // Check if |bus_txn_id| is valid for this IOMMU (i.e. could be used
   // to configure a device).
