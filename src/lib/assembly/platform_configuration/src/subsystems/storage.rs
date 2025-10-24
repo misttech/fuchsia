@@ -57,17 +57,22 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         // each subsystem under the top-level assembly gen directory.
         let gendir = context.get_gendir().context("Getting gendir for storage subsystem")?;
 
-        // Set the storage security policy/configuration for zxcrypt
-        let zxcrypt_config_path = gendir.join("zxcrypt");
+        // Set the storage security policy/configuration for data encryption.
+        // The filename "zxcrypt" is used for legacy reasons.
+        let data_encryption_config_path = gendir.join("zxcrypt");
 
-        if context.board_config.provides_feature("fuchsia::keymint") {
-            std::fs::write(&zxcrypt_config_path, "keymint")
+        if storage_config.keymint_enabled {
+            ensure!(
+                context.board_config.provides_feature("fuchsia::keymint"),
+                "fuchsia::keymint is not provided by the board, can't use keymint."
+            );
+            std::fs::write(&data_encryption_config_path, "keymint")
         } else if context.board_config.provides_feature("fuchsia::keysafe_ta") {
-            std::fs::write(&zxcrypt_config_path, "tee")
+            std::fs::write(&data_encryption_config_path, "tee")
         } else {
-            std::fs::write(&zxcrypt_config_path, "null")
+            std::fs::write(&data_encryption_config_path, "null")
         }
-        .context("Could not write zxcrypt configuration")?;
+        .context("Could not write data encryption configuration")?;
 
         let inline_crypto = Config::new_bool(
             context.board_config.provides_feature("fuchsia::storage_inline_crypto"),
@@ -87,7 +92,7 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         builder
             .bootfs()
             .file(FileEntry {
-                source: zxcrypt_config_path,
+                source: data_encryption_config_path,
                 destination: BootfsDestination::Zxcrypt,
             })
             .context("Adding zxcrypt config to bootfs")?;

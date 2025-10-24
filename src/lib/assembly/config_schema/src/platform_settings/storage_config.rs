@@ -41,6 +41,10 @@ pub struct StorageConfig {
 
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub starnix_volume: StarnixVolumeConfig,
+
+    /// If set, use keymint for encrypting data.  Requires the `fuchsia::keymint` board capability.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub keymint_enabled: bool,
 }
 
 fn is_default_storage_host(value: &bool) -> bool {
@@ -62,6 +66,7 @@ impl Default for StorageConfig {
             provision_fxfs: false,
             mutable_storage_garbage_collection: Default::default(),
             starnix_volume: Default::default(),
+            keymint_enabled: false,
         }
     }
 }
