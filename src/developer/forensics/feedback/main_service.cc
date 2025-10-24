@@ -112,17 +112,19 @@ MainService::MainService(
 
   fidl::InterfaceHandle<fuchsia::hardware::power::statecontrol::ShutdownWatcher> handle;
   executor_.schedule_task(
-      WaitForShutdownReason(dispatcher_, handle.NewRequest())
+      WaitForShutdownInfo(dispatcher_, handle.NewRequest())
           .and_then([this, path = options.graceful_shutdown_info_write_path](
                         GracefulShutdownInfoSignal& signal) {
+            const GracefulShutdownAction action = signal.Action();
             const std::vector<GracefulShutdownReason> reasons = signal.Reasons();
-            FX_LOGS(INFO) << "Received shutdown reasons '" << ToRawStrings(reasons) << "'";
+            FX_LOGS(INFO) << std::format("Received shutdown action '{}' with reasons '{}'",
+                                         ToString(action), ToRawStrings(reasons));
 
-            WriteGracefulShutdownInfo(reasons, cobalt_, path);
+            WriteGracefulShutdownInfo(action, reasons, cobalt_, path);
             signal.Respond();
           })
           .or_else([](const Error& error) {
-            FX_LOGS(ERROR) << "Won't receive shutdown reasons: " << ToString(error);
+            FX_LOGS(ERROR) << "Won't receive shutdown options: " << ToString(error);
           }));
 
   // We register ourselves with ShutdownWatcher using a fire-and-forget request that gives

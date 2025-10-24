@@ -23,6 +23,7 @@ namespace forensics {
 namespace feedback {
 namespace {
 
+using fuchsia::hardware::power::statecontrol::ShutdownAction;
 using fuchsia::hardware::power::statecontrol::ShutdownReason;
 
 struct RebootReasonTestParam {
@@ -78,8 +79,9 @@ class RebootLogTest : public UnitTestFixture, public testing::WithParamInterface
 
     cobalt::Logger cobalt(dispatcher(), services(), &clock_);
 
-    FX_CHECK(files::WriteFile(graceful_shutdown_info_path_,
-                              ToJson(ToGracefulShutdownReasons(std::move(options)))));
+    FX_CHECK(files::WriteFile(
+        graceful_shutdown_info_path_,
+        ToJson(ToGracefulShutdownAction(options), ToGracefulShutdownReasons(options))));
   }
 
   std::string WriteLegacyGracefulRebootLogContents(
@@ -90,8 +92,8 @@ class RebootLogTest : public UnitTestFixture, public testing::WithParamInterface
 
     cobalt::Logger cobalt(dispatcher(), services(), &clock_);
 
-    FX_CHECK(files::WriteFile(
-        path, ToLegacyFileContentForTesting(ToGracefulShutdownReasons(std::move(options)))));
+    FX_CHECK(
+        files::WriteFile(path, ToLegacyFileContentForTesting(ToGracefulShutdownReasons(options))));
     return path;
   }
 
@@ -106,8 +108,9 @@ class RebootLogTest : public UnitTestFixture, public testing::WithParamInterface
 using RebootLogReasonTest = RebootLogTest<RebootReasonTestParam>;
 
 fuchsia::hardware::power::statecontrol::ShutdownOptions NewShutdownOptions(
-    std::vector<ShutdownReason> reasons) {
+    ShutdownAction action, std::vector<ShutdownReason> reasons) {
   fuchsia::hardware::power::statecontrol::ShutdownOptions options;
+  options.set_action(action);
   options.set_reasons(std::move(reasons));
   return options;
 }
@@ -223,7 +226,8 @@ TEST_P(RebootLogReasonTest, Succeed) {
   }
 
   if (param.shutdown_reason.has_value()) {
-    WriteGracefulShutdownInfoContents(NewShutdownOptions({param.shutdown_reason.value()}));
+    WriteGracefulShutdownInfoContents(
+        NewShutdownOptions(ShutdownAction::REBOOT, {param.shutdown_reason.value()}));
   }
 
   const RebootLog reboot_log(
@@ -241,8 +245,8 @@ TEST_P(RebootLogReasonTest, LegacyTxtFallback) {
 
   std::string legacy_graceful_reboot_log_path;
   if (param.shutdown_reason.has_value()) {
-    legacy_graceful_reboot_log_path =
-        WriteLegacyGracefulRebootLogContents(NewShutdownOptions({param.shutdown_reason.value()}));
+    legacy_graceful_reboot_log_path = WriteLegacyGracefulRebootLogContents(
+        NewShutdownOptions(ShutdownAction::REBOOT, {param.shutdown_reason.value()}));
   }
 
   const RebootLog reboot_log(
@@ -255,7 +259,8 @@ TEST_P(RebootLogReasonTest, LegacyTxtFallback) {
 TEST_F(RebootLogReasonTest, Succeed_ZirconCleanGracefulFdr) {
   WriteZirconRebootLogContents(
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098");
-  WriteGracefulShutdownInfoContents(NewShutdownOptions({ShutdownReason::SYSTEM_UPDATE}));
+  WriteGracefulShutdownInfoContents(
+      NewShutdownOptions(ShutdownAction::REBOOT, {ShutdownReason::SYSTEM_UPDATE}));
 
   const RebootLog reboot_log(
       RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
@@ -286,6 +291,7 @@ TEST_F(RebootLogReasonTest, Succeed_RebootReasonsUnset) {
   WriteZirconRebootLogContents(
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098");
   fuchsia::hardware::power::statecontrol::ShutdownOptions options;
+  options.set_action(ShutdownAction::REBOOT);
   WriteGracefulShutdownInfoContents(std::move(options));
   const RebootLog reboot_log(
       RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
@@ -297,7 +303,7 @@ TEST_F(RebootLogReasonTest, Succeed_RebootReasonsUnset) {
 TEST_F(RebootLogReasonTest, Succeed_RebootReasonsEmpty) {
   WriteZirconRebootLogContents(
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098");
-  WriteGracefulShutdownInfoContents(NewShutdownOptions({}));
+  WriteGracefulShutdownInfoContents(NewShutdownOptions(ShutdownAction::REBOOT, {}));
   const RebootLog reboot_log(
       RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
                                 /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/true));
@@ -343,7 +349,7 @@ TEST_P(RebootLogMultiReasonTest, Succeed) {
   WriteZirconRebootLogContents(
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098");
 
-  WriteGracefulShutdownInfoContents(NewShutdownOptions(param.reasons));
+  WriteGracefulShutdownInfoContents(NewShutdownOptions(ShutdownAction::REBOOT, param.reasons));
 
   const RebootLog reboot_log(
       RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
@@ -533,7 +539,8 @@ TEST_P(RebootLogStrTest, Succeed) {
   }
 
   if (!param.shutdown_reasons.empty()) {
-    WriteGracefulShutdownInfoContents(NewShutdownOptions(param.shutdown_reasons));
+    WriteGracefulShutdownInfoContents(
+        NewShutdownOptions(ShutdownAction::REBOOT, param.shutdown_reasons));
   }
 
   const RebootLog reboot_log(
@@ -549,7 +556,8 @@ TEST_P(RebootLogStrTest, Succeed) {
 TEST_F(RebootLogStrTest, Succeed_SetGracefulFDR) {
   WriteZirconRebootLogContents(
       "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098");
-  WriteGracefulShutdownInfoContents(NewShutdownOptions({ShutdownReason::FACTORY_DATA_RESET}));
+  WriteGracefulShutdownInfoContents(
+      NewShutdownOptions(ShutdownAction::REBOOT, {ShutdownReason::FACTORY_DATA_RESET}));
 
   const RebootLog reboot_log(
       RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
@@ -594,7 +602,7 @@ FINAL REBOOT REASON (ROOT JOB TERMINATION))";
 
   WriteZirconRebootLogContents(std::string(kContents));
   WriteGracefulShutdownInfoContents(
-      NewShutdownOptions({ShutdownReason::CRITICAL_COMPONENT_FAILURE}));
+      NewShutdownOptions(ShutdownAction::REBOOT, {ShutdownReason::CRITICAL_COMPONENT_FAILURE}));
 
   const RebootLog reboot_log(
       RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
@@ -620,7 +628,7 @@ TEST_F(RebootLogStrTest, Succeed_EmptyDlog) {
 
   WriteZirconRebootLogContents(std::string(kContents));
   WriteGracefulShutdownInfoContents(
-      NewShutdownOptions({ShutdownReason::CRITICAL_COMPONENT_FAILURE}));
+      NewShutdownOptions(ShutdownAction::REBOOT, {ShutdownReason::CRITICAL_COMPONENT_FAILURE}));
 
   const RebootLog reboot_log(
       RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
@@ -643,7 +651,7 @@ TEST_F(RebootLogStrTest, Succeed_NoDlog) {
 
   WriteZirconRebootLogContents(std::string(kContents));
   WriteGracefulShutdownInfoContents(
-      NewShutdownOptions({ShutdownReason::CRITICAL_COMPONENT_FAILURE}));
+      NewShutdownOptions(ShutdownAction::REBOOT, {ShutdownReason::CRITICAL_COMPONENT_FAILURE}));
 
   const RebootLog reboot_log(
       RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,

@@ -34,13 +34,16 @@ class LifecycleStopSignal {
 // provides a way to get info about the shutdown and send a response to the server.
 class GracefulShutdownInfoSignal {
  public:
-  GracefulShutdownInfoSignal(std::vector<GracefulShutdownReason> reasons,
+  GracefulShutdownInfoSignal(GracefulShutdownAction action,
+                             std::vector<GracefulShutdownReason> reasons,
                              fit::callback<void(void)> callback);
 
+  GracefulShutdownAction Action() const { return action_; }
   std::vector<GracefulShutdownReason> Reasons() const { return reasons_; }
   void Respond() { callback_(); }
 
  private:
+  GracefulShutdownAction action_;
   std::vector<GracefulShutdownReason> reasons_;
   fit::callback<void(void)> callback_;
 };
@@ -57,7 +60,7 @@ fpromise::promise<LifecycleStopSignal, Error> WaitForLifecycleStop(
 //
 // Note, the response will be sent when the `GracefulShutdownInfoSignal` object is destroyed, if it
 // hasn't already been sent.
-fpromise::promise<GracefulShutdownInfoSignal, Error> WaitForShutdownReason(
+fpromise::promise<GracefulShutdownInfoSignal, Error> WaitForShutdownInfo(
     async_dispatcher_t* dispatcher,
     fidl::InterfaceRequest<fuchsia::hardware::power::statecontrol::ShutdownWatcher> request);
 

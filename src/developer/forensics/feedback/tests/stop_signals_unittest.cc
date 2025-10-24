@@ -13,6 +13,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
 #include "src/developer/forensics/testing/unit_test_fixture.h"
 
 namespace forensics::feedback {
@@ -103,7 +104,7 @@ TEST_F(WaitForRebootReasonTest, BadChannel) {
   std::optional<Error> error;
   fidl::InterfaceRequest<fuchsia::hardware::power::statecontrol::ShutdownWatcher> request;
   executor.schedule_task(
-      WaitForShutdownReason(dispatcher(), std::move(request)).or_else([&error](const Error& e) {
+      WaitForShutdownInfo(dispatcher(), std::move(request)).or_else([&error](const Error& e) {
         error = e;
         return fpromise::error();
       }));
@@ -117,7 +118,7 @@ TEST_F(WaitForRebootReasonTest, ClientDisconnects) {
 
   std::optional<Error> error;
   fuchsia::hardware::power::statecontrol::ShutdownWatcherPtr ptr;
-  executor.schedule_task(WaitForShutdownReason(dispatcher(), ptr.NewRequest(dispatcher()))
+  executor.schedule_task(WaitForShutdownInfo(dispatcher(), ptr.NewRequest(dispatcher()))
                              .or_else([&error](const Error& e) {
                                error = e;
                                return fpromise::error();
@@ -133,7 +134,7 @@ TEST_F(WaitForRebootReasonTest, ServerDisconnectsOnCallbackExecution) {
 
   std::optional<GracefulShutdownInfoSignal> signal;
   fuchsia::hardware::power::statecontrol::ShutdownWatcherPtr ptr;
-  executor.schedule_task(WaitForShutdownReason(dispatcher(), ptr.NewRequest(dispatcher()))
+  executor.schedule_task(WaitForShutdownInfo(dispatcher(), ptr.NewRequest(dispatcher()))
                              .and_then([&signal](GracefulShutdownInfoSignal& s) {
                                signal = std::move(s);
                                return fpromise::ok();
@@ -165,7 +166,7 @@ TEST_F(WaitForRebootReasonTest, ServerDisconnectsOnCallbackDeletion) {
 
   std::optional<GracefulShutdownInfoSignal> signal;
   fuchsia::hardware::power::statecontrol::ShutdownWatcherPtr ptr;
-  executor.schedule_task(WaitForShutdownReason(dispatcher(), ptr.NewRequest(dispatcher()))
+  executor.schedule_task(WaitForShutdownInfo(dispatcher(), ptr.NewRequest(dispatcher()))
                              .and_then([&signal](GracefulShutdownInfoSignal& s) {
                                signal = std::move(s);
                                return fpromise::ok();
@@ -196,7 +197,7 @@ TEST_F(WaitForRebootReasonTest, NoCompletionOnNoAction) {
 
   std::optional<GracefulShutdownInfoSignal> signal;
   fuchsia::hardware::power::statecontrol::ShutdownWatcherPtr ptr;
-  executor.schedule_task(WaitForShutdownReason(dispatcher(), ptr.NewRequest(dispatcher()))
+  executor.schedule_task(WaitForShutdownInfo(dispatcher(), ptr.NewRequest(dispatcher()))
                              .and_then([&signal](GracefulShutdownInfoSignal& s) {
                                signal = std::move(s);
                                return fpromise::ok();
@@ -249,7 +250,7 @@ TEST_P(WaitForRebootReasonParameterizedTest, NoCompletion) {
 
   std::optional<GracefulShutdownInfoSignal> signal;
   fuchsia::hardware::power::statecontrol::ShutdownWatcherPtr ptr;
-  executor.schedule_task(WaitForShutdownReason(dispatcher(), ptr.NewRequest(dispatcher()))
+  executor.schedule_task(WaitForShutdownInfo(dispatcher(), ptr.NewRequest(dispatcher()))
                              .and_then([&signal](GracefulShutdownInfoSignal& s) {
                                signal = std::move(s);
                                return fpromise::ok();

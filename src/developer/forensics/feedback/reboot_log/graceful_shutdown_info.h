@@ -52,6 +52,7 @@ enum class GracefulShutdownAction : std::uint8_t {
   kReboot,
   kRebootToRecovery,
   kRebootToBootloader,
+  kNotSupported,
   kNotParseable,
 };
 
@@ -62,10 +63,16 @@ struct GracefulShutdownInfo {
   auto operator<=>(const GracefulShutdownInfo&) const = default;
 };
 
+std::string ToString(GracefulShutdownAction action);
 std::string ToString(GracefulShutdownReason reason);
 
+// Extracts the ShutdownAction from |options| and returns the action as a GracefulShutdownAction.
+// Check-fails that |options| has the action set.
+GracefulShutdownAction ToGracefulShutdownAction(
+    const fuchsia::hardware::power::statecontrol::ShutdownOptions& options);
+
 std::vector<GracefulShutdownReason> ToGracefulShutdownReasons(
-    fuchsia::hardware::power::statecontrol::ShutdownOptions options);
+    const fuchsia::hardware::power::statecontrol::ShutdownOptions& options);
 
 // The input is limited to values corresponding to |power::statecontrol::ShutdownReason|.
 std::vector<GracefulShutdownReason> FromLegacyTxtFile(std::string content);
@@ -94,16 +101,18 @@ std::vector<std::string> ToReasonStrings(const std::vector<GracefulShutdownReaso
 // }
 GracefulShutdownInfo FromJson(const std::string& content);
 
-// The input is limited to GracefulShutdownReasons that map to
-// |power::statecontrol::ShutdownReason|.
-std::string ToJson(const std::vector<GracefulShutdownReason>& reasons);
+// The input is limited to GracefulShutdownActions that map to |power::statecontrol::ShutdownAction|
+// and GracefulShutdownReasons that map to |power::statecontrol::ShutdownReason|.
+std::string ToJson(GracefulShutdownAction action,
+                   const std::vector<GracefulShutdownReason>& reasons);
 
 // Converts the list of `GracefulShutdownReasons` into a single comma-separated string, like
 // "Reason 1,Reason 2,Reason 3".
 std::string ToRawStrings(const std::vector<GracefulShutdownReason>& reasons);
 
-// Writes the graceful shutdown reasons to `path` and records metrics about the write.
-void WriteGracefulShutdownInfo(const std::vector<GracefulShutdownReason>& reasons,
+// Writes the graceful shutdown action and reasons to `path` and records metrics about the write.
+void WriteGracefulShutdownInfo(GracefulShutdownAction action,
+                               const std::vector<GracefulShutdownReason>& reasons,
                                cobalt::Logger* cobalt, const std::string& path);
 
 }  // namespace feedback

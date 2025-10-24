@@ -36,6 +36,7 @@ namespace forensics {
 namespace last_reboot {
 namespace {
 
+using ::forensics::feedback::GracefulShutdownAction;
 using ::forensics::feedback::GracefulShutdownReason;
 using ::forensics::feedback::ToJson;
 using testing::IsEmpty;
@@ -451,27 +452,28 @@ TEST_P(UngracefulReporterTest, Succeed) {
 
 using GracefulReporterTest = ReporterTest<GracefulShutdownTestParam>;
 
-INSTANTIATE_TEST_SUITE_P(WithVariousRebootLogs, GracefulReporterTest,
-                         ::testing::ValuesIn(std::vector<GracefulShutdownTestParam>({
-                             {
-                                 "UserRequest",
-                                 ToJson({GracefulShutdownReason::kUserRequest}),
-                                 cobalt::LastRebootReason::kUserRequest,
-                             },
-                             {
-                                 "SystemUpdate",
-                                 ToJson({GracefulShutdownReason::kSystemUpdate}),
-                                 cobalt::LastRebootReason::kSystemUpdate,
-                             },
-                             {
-                                 "ZbiSwap",
-                                 ToJson({GracefulShutdownReason::kZbiSwap}),
-                                 cobalt::LastRebootReason::kZbiSwap,
-                             },
-                         })),
-                         [](const testing::TestParamInfo<GracefulShutdownTestParam>& info) {
-                           return info.param.test_name;
-                         });
+INSTANTIATE_TEST_SUITE_P(
+    WithVariousRebootLogs, GracefulReporterTest,
+    ::testing::ValuesIn(std::vector<GracefulShutdownTestParam>({
+        {
+            "UserRequest",
+            ToJson(GracefulShutdownAction::kReboot, {GracefulShutdownReason::kUserRequest}),
+            cobalt::LastRebootReason::kUserRequest,
+        },
+        {
+            "SystemUpdate",
+            ToJson(GracefulShutdownAction::kReboot, {GracefulShutdownReason::kSystemUpdate}),
+            cobalt::LastRebootReason::kSystemUpdate,
+        },
+        {
+            "ZbiSwap",
+            ToJson(GracefulShutdownAction::kReboot, {GracefulShutdownReason::kZbiSwap}),
+            cobalt::LastRebootReason::kZbiSwap,
+        },
+    })),
+    [](const testing::TestParamInfo<GracefulShutdownTestParam>& info) {
+      return info.param.test_name;
+    });
 
 TEST_P(GracefulReporterTest, Succeed) {
   const auto param = GetParam();
@@ -517,7 +519,7 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::ValuesIn(std::vector<GracefulShutdownWithCrashTestParam>({
         {
             "SessionFailure",
-            ToJson({GracefulShutdownReason::kSessionFailure}),
+            ToJson(GracefulShutdownAction::kReboot, {GracefulShutdownReason::kSessionFailure}),
             {GracefulShutdownReason::kSessionFailure},
             "FINAL REBOOT REASON (SESSION FAILURE)",
             "fuchsia-session-failure",
@@ -528,7 +530,7 @@ INSTANTIATE_TEST_SUITE_P(
         },
         {
             "OOM",
-            ToJson({GracefulShutdownReason::kOutOfMemory}),
+            ToJson(GracefulShutdownAction::kReboot, {GracefulShutdownReason::kOutOfMemory}),
             {GracefulShutdownReason::kOutOfMemory},
             "FINAL REBOOT REASON (OOM)",
             "fuchsia-oom",
@@ -539,7 +541,7 @@ INSTANTIATE_TEST_SUITE_P(
         },
         {
             "SysmgrFailure",
-            ToJson({GracefulShutdownReason::kSysmgrFailure}),
+            ToJson(GracefulShutdownAction::kReboot, {GracefulShutdownReason::kSysmgrFailure}),
             {GracefulShutdownReason::kSysmgrFailure},
             "FINAL REBOOT REASON (SYSMGR FAILURE)",
             "fuchsia-sysmgr-failure",
@@ -550,7 +552,8 @@ INSTANTIATE_TEST_SUITE_P(
         },
         {
             "CriticalComponentFailure",
-            ToJson({GracefulShutdownReason::kCriticalComponentFailure}),
+            ToJson(GracefulShutdownAction::kReboot,
+                   {GracefulShutdownReason::kCriticalComponentFailure}),
             {GracefulShutdownReason::kCriticalComponentFailure},
             "FINAL REBOOT REASON (CRITICAL COMPONENT FAILURE)",
             "fuchsia-critical-component-failure",
@@ -561,7 +564,7 @@ INSTANTIATE_TEST_SUITE_P(
         },
         {
             "RetrySystemUpdate",
-            ToJson({GracefulShutdownReason::kRetrySystemUpdate}),
+            ToJson(GracefulShutdownAction::kReboot, {GracefulShutdownReason::kRetrySystemUpdate}),
             {GracefulShutdownReason::kRetrySystemUpdate},
             "FINAL REBOOT REASON (RETRY SYSTEM UPDATE)",
             "fuchsia-retry-system-update",
@@ -572,7 +575,7 @@ INSTANTIATE_TEST_SUITE_P(
         },
         {
             "HighTemperature",
-            ToJson({GracefulShutdownReason::kHighTemperature}),
+            ToJson(GracefulShutdownAction::kReboot, {GracefulShutdownReason::kHighTemperature}),
             {GracefulShutdownReason::kHighTemperature},
             "FINAL REBOOT REASON (HIGH TEMPERATURE)",
             "fuchsia-reboot-high-temperature",
@@ -583,7 +586,7 @@ INSTANTIATE_TEST_SUITE_P(
         },
         {
             "NotSupported",
-            ToJson({GracefulShutdownReason::kNotSupported}),
+            ToJson(GracefulShutdownAction::kReboot, {GracefulShutdownReason::kNotSupported}),
             {GracefulShutdownReason::kNotSupported},
             "FINAL REBOOT REASON (GENERIC GRACEFUL)",
             "fuchsia-undetermined-userspace-reboot",
@@ -605,7 +608,7 @@ INSTANTIATE_TEST_SUITE_P(
         },
         {
             "None",
-            ToJson({}),
+            ToJson(GracefulShutdownAction::kReboot, {}),
             {},
             "FINAL REBOOT REASON (GENERIC GRACEFUL)",
             "fuchsia-undetermined-userspace-reboot",

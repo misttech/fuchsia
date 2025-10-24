@@ -23,6 +23,9 @@ namespace forensics {
 namespace feedback {
 namespace {
 
+constexpr char kNotParseable[] = "NOT PARSEABLE";
+constexpr char kNotSupported[] = "NOT SUPPORTED";
+
 constexpr char kActionPoweroff[] = "POWEROFF";
 constexpr char kActionReboot[] = "REBOOT";
 constexpr char kActionRebootToRecovery[] = "REBOOT_TO_RECOVERY";
@@ -44,8 +47,6 @@ constexpr char kAndroidUnexpectedReason[] = "ANDROID UNEXPECTED REASON";
 constexpr char kAndroidRescueParty[] = "ANDROID RESCUE PARTY";
 constexpr char kAndroidCriticalProcessFailure[] = "ANDROID CRITICAL PROCESS FAILURE";
 constexpr char kDeveloperRequest[] = "DEVELOPER REQUEST";
-constexpr char kReasonNotSupported[] = "NOT SUPPORTED";
-constexpr char kReasonNotParseable[] = "NOT PARSEABLE";
 
 // Used to separate multiple `GracefulShutdownReasons` when written to file.
 constexpr char kDeliminator[] = ",";
@@ -71,7 +72,8 @@ constexpr char kJsonSchema[] = R"({
           "POWEROFF",
           "REBOOT",
           "REBOOT_TO_RECOVERY",
-          "REBOOT_TO_BOOTLOADER"
+          "REBOOT_TO_BOOTLOADER",
+          "NOT SUPPORTED"
         ]
     },
     "reasons": {
@@ -127,6 +129,27 @@ GracefulShutdownAction GracefulShutdownActionFromString(const std::string_view a
 
 }  // namespace
 
+std::string ToString(const GracefulShutdownAction action) {
+  switch (action) {
+    case GracefulShutdownAction::kPoweroff:
+      return kActionPoweroff;
+    case GracefulShutdownAction::kReboot:
+      return kActionReboot;
+    case GracefulShutdownAction::kRebootToRecovery:
+      return kActionRebootToRecovery;
+    case GracefulShutdownAction::kRebootToBootloader:
+      return kActionRebootToBootloader;
+    case GracefulShutdownAction::kNotSupported:
+      return kNotSupported;
+    case GracefulShutdownAction::kNotParseable:
+      return kNotParseable;
+  }
+
+  // None of the above cases applied, meaning the enum value was outside the valid bounds of
+  // GracefulShutdownAction.
+  return kNotSupported;
+}
+
 std::string ToString(const GracefulShutdownReason reason) {
   switch (reason) {
     case GracefulShutdownReason::kNotSet:
@@ -162,9 +185,9 @@ std::string ToString(const GracefulShutdownReason reason) {
     case GracefulShutdownReason::kDeveloperRequest:
       return kDeveloperRequest;
     case GracefulShutdownReason::kNotSupported:
-      return kReasonNotSupported;
+      return kNotSupported;
     case GracefulShutdownReason::kNotParseable:
-      return kReasonNotParseable;
+      return kNotParseable;
   }
 
   return kReasonNotSet;
@@ -199,7 +222,7 @@ GracefulShutdownReason GracefulShutdownReasonFromString(const std::string_view r
     return GracefulShutdownReason::kAndroidCriticalProcessFailure;
   } else if (reason == kDeveloperRequest) {
     return GracefulShutdownReason::kDeveloperRequest;
-  } else if (reason == kReasonNotSupported) {
+  } else if (reason == kNotSupported) {
     return GracefulShutdownReason::kNotSupported;
   } else if (reason == kOutOfMemory) {
     return GracefulShutdownReason::kOutOfMemory;
@@ -251,13 +274,13 @@ std::vector<std::string> ToReasonStrings(const std::vector<GracefulShutdownReaso
       case GracefulShutdownReason::kNotSet:
       case GracefulShutdownReason::kNotParseable:
         FX_LOGS(ERROR) << "Invalid persisted graceful shutdown reason: " << ToString(reason);
-        reason_string = kReasonNotSupported;
+        reason_string = kNotSupported;
         break;
     }
     if (reason_string.empty()) {
       // The reason was out of the valid bounds of a `GracefulShutdownReasons`
       // (None of the switch cases above applied).
-      reason_string = kReasonNotSupported;
+      reason_string = kNotSupported;
     }
 
     reason_strings.push_back(reason_string);
@@ -266,10 +289,13 @@ std::vector<std::string> ToReasonStrings(const std::vector<GracefulShutdownReaso
   return reason_strings;
 }
 
-std::string ToJson(const std::vector<GracefulShutdownReason>& reasons) {
+std::string ToJson(const GracefulShutdownAction action,
+                   const std::vector<GracefulShutdownReason>& reasons) {
   rapidjson::Document json;
   json.SetObject();
   auto& allocator = json.GetAllocator();
+
+  json.AddMember(kActionKey, ToString(action), allocator);
 
   rapidjson::Value json_reasons(rapidjson::kArrayType);
   const std::vector<std::string> reason_strings = ToReasonStrings(reasons);
@@ -386,6 +412,26 @@ GracefulShutdownInfo FromJson(const std::string& content) {
   return shutdown_info;
 }
 
+GracefulShutdownAction ToGracefulShutdownAction(
+    const fuchsia::hardware::power::statecontrol::ShutdownOptions& options) {
+  FX_CHECK(options.has_action());
+
+  using ::fuchsia::hardware::power::statecontrol::ShutdownAction;
+
+  switch (options.action()) {
+    case ShutdownAction::POWEROFF:
+      return GracefulShutdownAction::kPoweroff;
+    case ShutdownAction::REBOOT:
+      return GracefulShutdownAction::kReboot;
+    case ShutdownAction::REBOOT_TO_RECOVERY:
+      return GracefulShutdownAction::kRebootToRecovery;
+    case ShutdownAction::REBOOT_TO_BOOTLOADER:
+      return GracefulShutdownAction::kRebootToBootloader;
+    default:
+      return GracefulShutdownAction::kNotSupported;
+  }
+}
+
 GracefulShutdownReason FromReason(
     const fuchsia::hardware::power::statecontrol::ShutdownReason& reason) {
   using fuchsia::hardware::power::statecontrol::ShutdownReason;
@@ -424,7 +470,7 @@ GracefulShutdownReason FromReason(
 }
 
 std::vector<GracefulShutdownReason> ToGracefulShutdownReasons(
-    const fuchsia::hardware::power::statecontrol::ShutdownOptions options) {
+    const fuchsia::hardware::power::statecontrol::ShutdownOptions& options) {
   if (!options.has_reasons()) {
     return {};
   }
@@ -437,7 +483,8 @@ std::vector<GracefulShutdownReason> ToGracefulShutdownReasons(
   return reasons;
 }
 
-void WriteGracefulShutdownInfo(const std::vector<GracefulShutdownReason>& reasons,
+void WriteGracefulShutdownInfo(const GracefulShutdownAction action,
+                               const std::vector<GracefulShutdownReason>& reasons,
                                cobalt::Logger* cobalt, const std::string& path) {
   fbl::unique_fd fd(open(path.c_str(), O_CREAT | O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR));
   if (!fd.is_valid()) {
@@ -445,7 +492,7 @@ void WriteGracefulShutdownInfo(const std::vector<GracefulShutdownReason>& reason
     return;
   }
 
-  if (const std::string content = ToJson(reasons);
+  if (const std::string content = ToJson(action, reasons);
       !fxl::WriteFileDescriptor(fd.get(), content.data(), content.size())) {
     FX_LOGS(ERROR) << "Failed to write shutdown info to: " << path;
   }

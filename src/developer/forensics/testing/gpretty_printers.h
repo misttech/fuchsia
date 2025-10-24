@@ -20,6 +20,8 @@
 #include "src/developer/forensics/crash_reports/item_location.h"
 #include "src/developer/forensics/crash_reports/product.h"
 #include "src/developer/forensics/feedback/attachments/types.h"
+#include "src/developer/forensics/feedback/reboot_log/graceful_shutdown_info.h"
+#include "src/developer/forensics/feedback/stop_signals.h"
 #include "src/developer/forensics/utils/errors.h"
 #include "src/lib/fsl/vmo/strings.h"
 
@@ -172,6 +174,15 @@ inline void PrintTo(const AttachmentValue& value, std::ostream* os) {
       break;
   }
   *os << " }";
+  *os << fostr::Outdent;
+}
+
+inline void PrintTo(const GracefulShutdownInfoSignal& signal, std::ostream* os) {
+  *os << fostr::Indent;
+  *os << fostr::Indent;
+  *os << fostr::NewLine << "action: " << ToString(signal.Action());
+  *os << fostr::NewLine << "reasons: " << ToRawStrings(signal.Reasons());
+  *os << fostr::Outdent;
   *os << fostr::Outdent;
 }
 

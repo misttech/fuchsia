@@ -147,19 +147,21 @@ void ShutdownWatcherServer::OnShutdown(
     cb(fpromise::ok());
     b->Unbind();
   });
-  completer_.complete_ok(GracefulShutdownInfoSignal(ToGracefulShutdownReasons(std::move(options)),
+  completer_.complete_ok(GracefulShutdownInfoSignal(ToGracefulShutdownAction(options),
+                                                    ToGracefulShutdownReasons(options),
                                                     [cb = std::move(cb)]() mutable { cb.call(); }));
 }
 
 }  // namespace
 
-GracefulShutdownInfoSignal::GracefulShutdownInfoSignal(std::vector<GracefulShutdownReason> reasons,
+GracefulShutdownInfoSignal::GracefulShutdownInfoSignal(GracefulShutdownAction action,
+                                                       std::vector<GracefulShutdownReason> reasons,
                                                        fit::callback<void(void)> callback)
-    : reasons_(std::move(reasons)), callback_(std::move(callback)) {
+    : action_(action), reasons_(std::move(reasons)), callback_(std::move(callback)) {
   FX_CHECK(callback_ != nullptr);
 }
 
-fpromise::promise<GracefulShutdownInfoSignal, Error> WaitForShutdownReason(
+fpromise::promise<GracefulShutdownInfoSignal, Error> WaitForShutdownInfo(
     async_dispatcher_t* dispatcher,
     fidl::InterfaceRequest<fuchsia::hardware::power::statecontrol::ShutdownWatcher> request) {
   if (!request.is_valid()) {

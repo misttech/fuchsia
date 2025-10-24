@@ -70,6 +70,7 @@ fuchsia_unittest_component("graceful_shutdown_info_unittest") {
   deps = [
     ":graceful_shutdown_info_unittest_exe",
     "//src/sys/test_runners:tmp_storage",
+    "//src/sys/test_runners/gtest:death_test",
   ]
 }
 
@@ -93,7 +94,7 @@ fuchsia_unittest_component("reboot_reason_unittest") {
 fuchsia_test_package("reboot-log-tests") {
   test_specs = {
     log_settings = {
-      max_severity = "ERROR"
+      max_severity = "FATAL"
     }
   }
   test_components = [

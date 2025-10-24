@@ -471,6 +471,7 @@ cc_test_executable("stop_signals_unittest_exe") {
 
   deps = [
     "//src/developer/forensics/feedback:stop_signals",
+    "//src/developer/forensics/testing:gpretty_printers",
     "//src/developer/forensics/testing:unit_test_fixture",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gmock",
