@@ -146,6 +146,7 @@
                 // TODO(https://fxbug.dev/445790710)
                 // Implement PTRACE_POKEDATA and PTRACE_POKETEXT.
                 "PtraceTest.PokeToSetBreakpoint",
+                "PtraceTest.PokeAcrossMappings",
                 "PtracePokeMemory/PokeInPrivateMappingTest*",
                 "PtracePokeMemory/PokeInPrivateROMappingTest*",
                 "PtracePokeMemory/PokeInPrivateRXMappingTest*",

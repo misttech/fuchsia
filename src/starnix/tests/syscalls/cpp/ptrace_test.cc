@@ -1129,7 +1129,7 @@ TEST(PtraceTest, PtraceAttachesToParentThread) {
   EXPECT_TRUE(helper.WaitForChildren());
 }
 
-__attribute__((noinline)) __attribute__((aligned(64))) void FunctionToBreak() {
+__attribute__((noinline)) void FunctionToBreak() {
   // Placeholder instruction to be replaced with a breakpoint by tracer.
   asm volatile("nop");
 }
@@ -1137,12 +1137,6 @@ __attribute__((noinline)) __attribute__((aligned(64))) void FunctionToBreak() {
 // Sets a breakpoint in the child process using PTRACE_POKEDATA and expects that the child process
 // triggers the breakpoint.
 TEST(PtraceTest, PokeToSetBreakpoint) {
-  const void *breakpoint_addr = reinterpret_cast<void *>(&FunctionToBreak);
-  if (reinterpret_cast<uintptr_t>(breakpoint_addr) % sizeof(long) != 0) {
-    GTEST_SKIP() << "Breakpoint address " << std::hex << breakpoint_addr
-                 << " is not aligned to sizeof(long) " << sizeof(long);
-  }
-
   test_helper::ForkHelper helper;
   helper.OnlyWaitForForkedChildren();
   pid_t child_pid = helper.RunInForkedProcess([] {
@@ -1162,6 +1156,7 @@ TEST(PtraceTest, PokeToSetBreakpoint) {
   // Depending on the architecture and bitness, the breakpoint instruction could be smaller than
   // word length. Read original word, and overwrite the breakpoint instruction to it but keep the
   // rest as is.
+  const void *breakpoint_addr = reinterpret_cast<void *>(&FunctionToBreak);
   errno = 0;
   long original_data = ptrace(PTRACE_PEEKDATA, child_pid, breakpoint_addr, 0);
   if (original_data == -1 && errno != 0) {
@@ -1196,6 +1191,56 @@ TEST(PtraceTest, PokeToSetBreakpoint) {
 
   SAFE_SYSCALL(ptrace(PTRACE_DETACH, child_pid, 0, 0));
   ASSERT_TRUE(helper.WaitForChildren());
+}
+
+// Create 2 memory mappings next to each other, and poke to a memory address that spans both
+// mappings. Use file-backed mapping so that they are guaranteed to be distinct VMOs.
+//
+// |--------- reserved memory region ---------|
+// |----- mapping1 -----||----- mapping2 -----|
+//                     [word]
+TEST(PtraceTest, PokeAcrossMappings) {
+  const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+
+  void *memory_region = mmap(nullptr, 2 * page_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  ASSERT_NE(memory_region, MAP_FAILED) << strerror(errno);
+
+  test_helper::ScopedTempFD tempfile1, tempfile2;
+  SAFE_SYSCALL(ftruncate(tempfile1.fd(), page_size));
+  SAFE_SYSCALL(ftruncate(tempfile2.fd(), page_size));
+
+  void *mapping1 =
+      mmap(memory_region, page_size, PROT_READ, MAP_PRIVATE | MAP_FIXED, tempfile1.fd(), 0);
+  ASSERT_NE(mapping1, MAP_FAILED) << strerror(errno);
+
+  uintptr_t mapping2_addr = reinterpret_cast<uintptr_t>(memory_region) + page_size;
+  void *mapping2 = mmap(reinterpret_cast<void *>(mapping2_addr), page_size, PROT_READ,
+                        MAP_PRIVATE | MAP_FIXED, tempfile2.fd(), 0);
+  ASSERT_NE(mapping2, MAP_FAILED) << strerror(errno);
+
+  // Set the poke address 1 byte before the start of the second mapping.
+  void *poke_addr = reinterpret_cast<void *>(mapping2_addr - 1);
+
+  test_helper::ForkHelper fork_helper;
+  pid_t child_pid = fork_helper.RunInForkedProcess([&] {
+    SAFE_SYSCALL(ptrace(PTRACE_TRACEME, 0, 0, 0));
+    raise(SIGSTOP);
+    unsigned long value;
+    memcpy(&value, poke_addr, sizeof(unsigned long));
+    ASSERT_EQ(value, 0xBEEFUL);
+    _exit(0);
+  });
+  ASSERT_NE(child_pid, 0);
+
+  // Wait for child process to hit SIGSTOP.
+  int status = 0;
+  SAFE_SYSCALL(waitpid(child_pid, &status, 0));
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP) << std::hex << status;
+
+  EXPECT_THAT(ptrace(PTRACE_POKEDATA, child_pid, poke_addr, 0xBEEFUL), SyscallSucceeds());
+
+  SAFE_SYSCALL(ptrace(PTRACE_DETACH, child_pid, 0, 0));
+  ASSERT_TRUE(fork_helper.WaitForChildren());
 }
 
 enum class BackingType {
