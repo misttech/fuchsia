@@ -201,7 +201,7 @@ impl<'n> EncodeBuffer<'n> {
             FrameworkError => self.encode_raw(&[0, 0, 0, 0]),
             Endpoint { role, protocol, rights, nullable } => self.encode_handle(
                 fidl::ObjectType::CHANNEL,
-                *rights,
+                Some(rights.unwrap_or(fidl::Rights::CHANNEL_DEFAULT)),
                 match role {
                     library::EndpointRole::Client => HandleType::ClientEnd(protocol),
                     library::EndpointRole::Server => HandleType::ServerEnd(protocol),
@@ -337,7 +337,7 @@ impl<'n> EncodeBuffer<'n> {
     fn encode_handle<'t>(
         &mut self,
         object_type: fidl::ObjectType,
-        rights: fidl::Rights,
+        rights: Option<fidl::Rights>,
         expect: HandleType<'_>,
         nullable: bool,
         value: Value,
@@ -345,34 +345,38 @@ impl<'n> EncodeBuffer<'n> {
     where
         'n: 't,
     {
-        let handle = match (value, nullable, expect) {
-            (Value::Null, true, _) => Ok(None),
-            (Value::Handle(h, _), true, _) if h.is_invalid() => Ok(None),
-            (Value::ServerEnd(h, _), true, _) if h.as_handle_ref().is_invalid() => Ok(None),
-            (Value::ClientEnd(h, _), true, _) if h.as_handle_ref().is_invalid() => Ok(None),
-            (Value::Handle(h, _), false, _) if h.is_invalid() => {
+        let (handle, handle_rights) = match (value, nullable, expect) {
+            (Value::Null, true, _) => Ok((None, None)),
+            (Value::Handle(h, _, _), true, _) if h.is_invalid() => Ok((None, None)),
+            (Value::ServerEnd(h, _, _), true, _) if h.as_handle_ref().is_invalid() => {
+                Ok((None, None))
+            }
+            (Value::ClientEnd(h, _, _), true, _) if h.as_handle_ref().is_invalid() => {
+                Ok((None, None))
+            }
+            (Value::Handle(h, _, _), false, _) if h.is_invalid() => {
                 Err(Error::EncodeError("Got invalid handle for non-nullable handle".to_owned()))
             }
-            (Value::ServerEnd(h, _), false, _) if h.as_handle_ref().is_invalid() => {
+            (Value::ServerEnd(h, _, _), false, _) if h.as_handle_ref().is_invalid() => {
                 Err(Error::EncodeError("Got invalid handle for non-nullable handle".to_owned()))
             }
-            (Value::ClientEnd(h, _), false, _) if h.as_handle_ref().is_invalid() => {
+            (Value::ClientEnd(h, _, _), false, _) if h.as_handle_ref().is_invalid() => {
                 Err(Error::EncodeError("Got invalid handle for non-nullable handle".to_owned()))
             }
             (Value::Null, false, _) => {
                 Err(Error::EncodeError("Got null for non-nullable handle".to_owned()))
             }
-            (Value::Handle(h, s), _, _) => {
+            (Value::Handle(h, s, r), _, _) => {
                 if s != object_type && s != fidl::ObjectType::NONE {
                     Err(Error::EncodeError(format!(
                         "Expected object type {object_type:?} got {s:?}"
                     )))
                 } else {
-                    Ok(Some(h))
+                    Ok((Some(h), r))
                 }
             }
-            (Value::ServerEnd(h, s), _, HandleType::ServerEnd(expect))
-            | (Value::ClientEnd(h, s), _, HandleType::ClientEnd(expect)) => {
+            (Value::ServerEnd(h, s, r), _, HandleType::ServerEnd(expect))
+            | (Value::ClientEnd(h, s, r), _, HandleType::ClientEnd(expect)) => {
                 if expect != s {
                     Err(Error::EncodeError(format!(
                         "Expected endpoint for protocol {expect}, got one for {s}"
@@ -382,11 +386,11 @@ impl<'n> EncodeBuffer<'n> {
                         "Expected object type {object_type:?} got channel for protocol {s}"
                     )))
                 } else {
-                    Ok(Some(h.into()))
+                    Ok((Some(h.into()), r))
                 }
             }
-            (Value::ServerEnd(_, s), _, HandleType::ClientEnd(expect))
-            | (Value::ClientEnd(_, s), _, HandleType::ServerEnd(expect)) => {
+            (Value::ServerEnd(_, s, _), _, HandleType::ClientEnd(expect))
+            | (Value::ClientEnd(_, s, _), _, HandleType::ServerEnd(expect)) => {
                 if expect != s {
                     Err(Error::EncodeError(format!(
                         "Expected endpoint for protocol {expect}, got one for {s}"
@@ -399,22 +403,29 @@ impl<'n> EncodeBuffer<'n> {
                     Err(Error::EncodeError(format!("Got wrong end of channel for {expect}")))
                 }
             }
-            (Value::ServerEnd(h, s), _, HandleType::Bare)
-            | (Value::ClientEnd(h, s), _, HandleType::Bare) => {
+            (Value::ServerEnd(h, s, r), _, HandleType::Bare)
+            | (Value::ClientEnd(h, s, r), _, HandleType::Bare) => {
                 if object_type != fidl::ObjectType::CHANNEL {
                     Err(Error::EncodeError(format!(
                         "Expected object type {object_type:?} got channel for protocol {s}"
                     )))
                 } else {
-                    Ok(Some(h.into()))
+                    Ok((Some(h.into()), r))
                 }
             }
             _ => Err(Error::EncodeError("Expected a handle".to_owned())),
         }?;
 
+        let encoded_rights = match (handle_rights, rights) {
+            (Some(_), Some(rights)) => rights,
+            (Some(handle_rights), None) => handle_rights,
+            (None, Some(rights)) => rights,
+            (None, None) => fidl::Rights::SAME_RIGHTS,
+        };
+
         if let Some(handle) = handle {
             #[cfg(feature = "fdomain")]
-            let handle_op = HandleOp::Move(handle, rights);
+            let handle_op = HandleOp::Move(handle, encoded_rights);
             #[cfg(not(feature = "fdomain"))]
             let handle_op = HandleOp::Move(handle);
             self.bytes.extend(&ALLOC_PRESENT_U32.to_le_bytes());
@@ -428,7 +439,7 @@ impl<'n> EncodeBuffer<'n> {
                 this.handles.push(HandleDisposition::new(
                     handle_op,
                     object_type,
-                    rights,
+                    encoded_rights,
                     fidl::Status::OK,
                 ));
                 Ok(())

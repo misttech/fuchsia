@@ -296,7 +296,7 @@ impl InUseHandle {
                 else {
                     unreachable!();
                 };
-                Ok(FidlValue::Handle(h.into(), fidl::ObjectType::SOCKET))
+                Ok(FidlValue::Handle(h.into(), fidl::ObjectType::SOCKET, None))
             }
             HandleObject::Endpoint(Endpoint::Socket(_)) => {
                 let HandleObject::Endpoint(Endpoint::Socket(h)) =
@@ -304,7 +304,7 @@ impl InUseHandle {
                 else {
                     unreachable!();
                 };
-                Ok(FidlValue::Handle(h.into(), fidl::ObjectType::SOCKET))
+                Ok(FidlValue::Handle(h.into(), fidl::ObjectType::SOCKET, None))
             }
             HandleObject::Undetermined(e) => {
                 let mut e = e.lock().unwrap();
@@ -312,7 +312,7 @@ impl InUseHandle {
                 let (a, b) = c.create_stream_socket();
                 *e = EndpointOrFDomain::Endpoint(Endpoint::Socket(a));
                 drop(e);
-                Ok(FidlValue::Handle(b.into(), fidl::ObjectType::SOCKET))
+                Ok(FidlValue::Handle(b.into(), fidl::ObjectType::SOCKET, None))
             }
             HandleObject::Defunct => Err(ValueError::HandleClosed.into()),
             _ => Err(ValueError::NotSocket.into()),
@@ -462,7 +462,7 @@ mod test {
     async fn coerce_socket() {
         let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         let (a, b) = InUseHandle::new_endpoints(Arc::clone(&client));
-        let FidlValue::Handle(a, a_ty) = a.take_socket().unwrap() else {
+        let FidlValue::Handle(a, a_ty, _) = a.take_socket().unwrap() else {
             panic!();
         };
         assert_eq!(fidl::ObjectType::SOCKET, a_ty);
@@ -473,7 +473,7 @@ mod test {
         })
         .detach();
 
-        let FidlValue::Handle(b, b_ty) = b.take_socket().unwrap() else {
+        let FidlValue::Handle(b, b_ty, _) = b.take_socket().unwrap() else {
             panic!();
         };
         let mut b = fdomain_client::Socket::from(b);

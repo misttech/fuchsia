@@ -218,33 +218,35 @@ func visit(value ir.Value, decl mixer.Declaration) string {
 		}
 	case ir.Handle:
 		expr := buildHandleValue(value)
+		rights := buildHandleRights(value)
 		switch decl := decl.(type) {
 		case *mixer.ClientEndDecl:
-			return fmt.Sprintf("Value::ClientEnd(%s, \"%s\".to_owned())", expr, decl.ProtocolName())
+			return fmt.Sprintf("Value::ClientEnd(%s, \"%s\".to_owned(), %s)", expr, decl.ProtocolName(), rights)
 		case *mixer.ServerEndDecl:
-			return fmt.Sprintf("Value::ServerEnd(%s, \"%s\".to_owned())", expr, decl.ProtocolName())
+			return fmt.Sprintf("Value::ServerEnd(%s, \"%s\".to_owned(), %s)", expr, decl.ProtocolName(), rights)
 		case *mixer.HandleDecl:
 			ty := "NONE"
 
 			if decl.Subtype() != "handle" {
 				ty = strings.ToUpper(string(decl.Subtype()))
 			}
-			return fmt.Sprintf("Value::Handle(%s, fidl::ObjectType::%s)", expr, ty)
+			return fmt.Sprintf("Value::Handle(%s, fidl::ObjectType::%s, %s)", expr, ty, rights)
 		}
 	case ir.RestrictedHandle:
 		expr := buildHandleValue(value.Handle)
+		rights := fmt.Sprintf("Some(Rights::from_bits(%d).unwrap())", value.Rights)
 		switch decl := decl.(type) {
 		case *mixer.ClientEndDecl:
-			return fmt.Sprintf("Value::ClientEnd(%s, \"%s\".to_owned())", expr, decl.ProtocolName())
+			return fmt.Sprintf("Value::ClientEnd(%s, \"%s\".to_owned(), %s)", expr, decl.ProtocolName(), rights)
 		case *mixer.ServerEndDecl:
-			return fmt.Sprintf("Value::ServerEnd(%s, \"%s\".to_owned())", expr, decl.ProtocolName())
+			return fmt.Sprintf("Value::ServerEnd(%s, \"%s\".to_owned(), %s)", expr, decl.ProtocolName(), rights)
 		case *mixer.HandleDecl:
 			ty := "NONE"
 
 			if decl.Subtype() != "handle" {
 				ty = strings.ToUpper(string(decl.Subtype()))
 			}
-			return fmt.Sprintf("Value::Handle(%s, fidl::ObjectType::%s)", expr, ty)
+			return fmt.Sprintf("Value::Handle(%s, fidl::ObjectType::%s, %s)", expr, ty, rights)
 		}
 	case ir.Record:
 		switch decl := decl.(type) {
@@ -303,7 +305,7 @@ func visit(value ir.Value, decl mixer.Declaration) string {
 	case nil:
 		if !decl.IsNullable() {
 			if _, ok := decl.(*mixer.HandleDecl); ok {
-				return "Value::Handle(Handle::invalid(), fidl::ObjectType::NONE)"
+				return "Value::Handle(Handle::invalid(), fidl::ObjectType::NONE, None)"
 			}
 			panic(fmt.Sprintf("got nil for non-nullable type: %T", decl))
 		}
@@ -449,6 +451,10 @@ func buildRawHandles(handleDispositions []ir.HandleDisposition) string {
 
 func buildHandleValue(handle ir.Handle) string {
 	return fmt.Sprintf("copy_handle(&handle_defs[%d])", handle)
+}
+
+func buildHandleRights(handle ir.Handle) string {
+	return fmt.Sprintf("Some(Rights::from_bits(handle_defs[%d].rights).unwrap())", handle)
 }
 
 func handleTypeName(subtype fidlgen.HandleSubtype) string {

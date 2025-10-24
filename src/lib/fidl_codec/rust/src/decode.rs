@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl::Rights;
 use fidl::encoding::{ALLOC_PRESENT_U32, ALLOC_PRESENT_U64, TransactionHeader};
 use nom::bytes::complete::take;
 use nom::combinator::{map, value, verify};
@@ -272,10 +273,20 @@ fn decode_type<'t>(
             }
             Type::Endpoint { protocol, rights, nullable, role } => match role {
                 library::EndpointRole::Client => {
-                    return decode_client_end(protocol.clone(), *nullable, *rights).parse(b);
+                    return decode_client_end(
+                        protocol.clone(),
+                        *nullable,
+                        rights.or(Some(Rights::CHANNEL_DEFAULT)),
+                    )
+                    .parse(b);
                 }
                 library::EndpointRole::Server => {
-                    return decode_server_end(protocol.clone(), *nullable, *rights).parse(b);
+                    return decode_server_end(
+                        protocol.clone(),
+                        *nullable,
+                        rights.or(Some(Rights::CHANNEL_DEFAULT)),
+                    )
+                    .parse(b);
                 }
             },
             Type::UnknownString(s) => {
@@ -423,12 +434,12 @@ fn decode_string(
 fn decode_server_end(
     interface: String,
     nullable: bool,
-    rights: fidl::Rights,
+    rights: Option<fidl::Rights>,
 ) -> impl Fn(&[u8]) -> DResult<'_, Defer<'static>> {
     decode_handle_with(
         interface,
         nullable,
-        &|x, y| Value::ServerEnd(x.into(), y),
+        &|x, y, z| Value::ServerEnd(x.into(), y, z),
         Some(fidl::ObjectType::CHANNEL),
         rights,
     )
@@ -437,12 +448,12 @@ fn decode_server_end(
 fn decode_client_end(
     interface: String,
     nullable: bool,
-    rights: fidl::Rights,
+    rights: Option<fidl::Rights>,
 ) -> impl Fn(&[u8]) -> DResult<'_, Defer<'static>> {
     decode_handle_with(
         interface,
         nullable,
-        &|x, y| Value::ClientEnd(x.into(), y),
+        &|x, y, z| Value::ClientEnd(x.into(), y, z),
         Some(fidl::ObjectType::CHANNEL),
         rights,
     )
@@ -451,7 +462,7 @@ fn decode_client_end(
 fn decode_handle(
     handle_type: fidl::ObjectType,
     nullable: bool,
-    rights: fidl::Rights,
+    rights: Option<fidl::Rights>,
 ) -> impl Fn(&[u8]) -> DResult<'_, Defer<'static>> {
     decode_handle_with(handle_type, nullable, &Value::Handle, None, rights)
 }
@@ -469,9 +480,9 @@ fn object_type_from_info(info: &HandleInfo) -> fidl::ObjectType {
 fn decode_handle_with<T: Clone + 'static>(
     handle_type: T,
     nullable: bool,
-    value_builder: &'static (impl Fn(Handle, T) -> Value + 'static),
+    value_builder: &'static (impl Fn(Handle, T, Option<fidl::Rights>) -> Value + 'static),
     constrain_type: Option<fidl::ObjectType>,
-    rights: fidl::Rights,
+    constrain_rights: Option<fidl::Rights>,
 ) -> impl Fn(&[u8]) -> DResult<'_, Defer<'static>> {
     move |bytes: &[u8]| {
         let handle_type = handle_type.clone();
@@ -496,17 +507,37 @@ fn decode_handle_with<T: Clone + 'static>(
                                 .unwrap_or(true)
                             {
                                 let handle = handles.remove(0);
-                                if !handle.rights.contains(rights)
-                                    && handle.rights != fidl::Rights::SAME_RIGHTS
-                                {
-                                    let missing = rights.clone().remove(handle.rights);
-                                    Err(Error::DecodeError(format!(
-                                        "Insufficient handle rights, need {missing:?}"
-                                    ))
-                                    .into())
-                                } else {
-                                    Ok((bytes, value_builder(handle.handle.into(), handle_type)))
-                                }
+
+                                let decoded_rights = match (handle.rights, constrain_rights) {
+                                    (fidl::Rights::SAME_RIGHTS, Some(_)) => {
+                                        fidl::Rights::SAME_RIGHTS
+                                    }
+                                    (handle_rights, Some(fidl::Rights::SAME_RIGHTS)) => {
+                                        handle_rights
+                                    }
+                                    (handle_rights, None) => handle_rights,
+                                    (handle_rights, Some(constrain_rights)) => {
+                                        if handle_rights.contains(constrain_rights) {
+                                            constrain_rights
+                                        } else {
+                                            let mut missing = constrain_rights;
+                                            missing.remove(handle_rights);
+                                            return Err(Error::DecodeError(format!(
+                                                "Insufficient handle rights, need {missing:?}"
+                                            ))
+                                            .into());
+                                        }
+                                    }
+                                };
+
+                                Ok((
+                                    bytes,
+                                    value_builder(
+                                        handle.handle.into(),
+                                        handle_type,
+                                        Some(decoded_rights),
+                                    ),
+                                ))
                             } else {
                                 Err(Error::DecodeError("Wrong handle type".to_owned()).into())
                             }

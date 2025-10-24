@@ -603,7 +603,7 @@ mod test {
             .await
             .check_async(|value| async move {
                 assert!(value.is_client(&fio::DirectoryMarker::library_name()));
-                let Value::ClientEnd(endpoint, _) = value else {
+                let Value::ClientEnd(endpoint, _, _) = value else {
                     panic!();
                 };
                 let proxy = fdomain_client::fidl::ClientEnd::<fio::DirectoryMarker>::from(endpoint)
@@ -826,6 +826,7 @@ mod test {
                 let server = Value::ServerEnd(
                     server.into_channel(),
                     "test.fidlcodec.examples/Echo".to_owned(),
+                    None,
                 );
                 let mut requests = value.invoke(vec![server], None).await.unwrap();
                 let requests_dup = requests.duplicate();

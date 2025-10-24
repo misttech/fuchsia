@@ -39,16 +39,16 @@ pub enum Value<OutOfLine = Forbid> {
     Enum(String, Box<Self>),
     Union(String, String, Box<Self>),
     List(Vec<Self>),
-    ServerEnd(Channel, String),
-    ClientEnd(Channel, String),
-    Handle(Handle, fidl::ObjectType),
+    ServerEnd(Channel, String, Option<fidl::Rights>),
+    ClientEnd(Channel, String, Option<fidl::Rights>),
+    Handle(Handle, fidl::ObjectType, Option<fidl::Rights>),
     OutOfLine(OutOfLine),
 }
 
 impl Value {
     /// Get this value as a u64 if it is any integer type. Useful for treating values as bit masks,
     /// as we'd like to for the Bits type.
-    pub(crate) fn bits(&self) -> Option<u64> {
+    pub fn bits(&self) -> Option<u64> {
         match self {
             Value::U8(x) => Some(*x as u64),
             Value::U16(x) => Some(*x as u64),
@@ -103,9 +103,9 @@ impl Value {
             Value::Enum(a, b) => Value::Enum(a, Box::new(b.upcast())),
             Value::Union(a, b, c) => Value::Union(a, b, Box::new(c.upcast())),
             Value::List(a) => Value::List(a.into_iter().map(Value::upcast).collect()),
-            Value::ServerEnd(a, b) => Value::ServerEnd(a, b),
-            Value::ClientEnd(a, b) => Value::ClientEnd(a, b),
-            Value::Handle(a, b) => Value::Handle(a, b),
+            Value::ServerEnd(a, b, c) => Value::ServerEnd(a, b, c),
+            Value::ClientEnd(a, b, c) => Value::ClientEnd(a, b, c),
+            Value::Handle(a, b, c) => Value::Handle(a, b, c),
         }
     }
 }
@@ -147,9 +147,15 @@ impl PartialEq for Value {
             (Self::Enum(l0, l1), Self::Enum(r0, r1)) => l0 == r0 && l1 == r1,
             (Self::Union(l0, l1, l2), Self::Union(r0, r1, r2)) => l0 == r0 && l1 == r1 && l2 == r2,
             (Self::List(l0), Self::List(r0)) => l0 == r0,
-            (Self::ServerEnd(l0, l1), Self::ServerEnd(r0, r1)) => l0 == r0 && l1 == r1,
-            (Self::ClientEnd(l0, l1), Self::ClientEnd(r0, r1)) => l0 == r0 && l1 == r1,
-            (Self::Handle(l0, l1), Self::Handle(r0, r1)) => l0 == r0 && l1 == r1,
+            (Self::ServerEnd(l0, l1, l2), Self::ServerEnd(r0, r1, r2)) => {
+                l0 == r0 && l1 == r1 && l2 == r2
+            }
+            (Self::ClientEnd(l0, l1, l2), Self::ClientEnd(r0, r1, r2)) => {
+                l0 == r0 && l1 == r1 && l2 == r2
+            }
+            (Self::Handle(l0, l1, l2), Self::Handle(r0, r1, r2)) => {
+                l0 == r0 && l1 == r1 && l2 == r2
+            }
             _ => core::mem::discriminant(self) == core::mem::discriminant(other),
         }
     }
@@ -470,9 +476,9 @@ impl<T: std::fmt::Display> std::fmt::Display for Value<T> {
             List(values) => {
                 write_list!(f, value, values, write!(f, "{}", value)?, write!(f, "[")?, "]")
             }
-            ServerEnd(_, ty) => write!(f, "ServerEnd<{ty}>"),
-            ClientEnd(_, ty) => write!(f, "ClientEnd<{ty}>"),
-            Handle(_, ty) => write!(f, "<{:?}>", ty),
+            ServerEnd(_, ty, _) => write!(f, "ServerEnd<{ty}>"),
+            ClientEnd(_, ty, _) => write!(f, "ClientEnd<{ty}>"),
+            Handle(_, ty, _) => write!(f, "<{:?}>", ty),
             OutOfLine(t) => write!(f, "{t}"),
         }
     }

@@ -298,8 +298,8 @@ impl ValueExt for Value {
             Value::Union(a, b, c) => Value::Union(a.clone(), b.clone(), Box::new(c.duplicate())),
             Value::List(a) => Value::List(a.iter_mut().map(|x| x.duplicate()).collect()),
 
-            Value::ServerEnd(_, _) => {
-                let Value::ServerEnd(a, b) = std::mem::replace(self, Value::Null) else {
+            Value::ServerEnd(_, _, _) => {
+                let Value::ServerEnd(a, b, _) = std::mem::replace(self, Value::Null) else {
                     unreachable!();
                 };
                 let mut playground_value =
@@ -307,8 +307,8 @@ impl ValueExt for Value {
                 *self = Value::OutOfLine(playground_value.duplicate());
                 Value::OutOfLine(playground_value)
             }
-            Value::ClientEnd(_, _) => {
-                let Value::ClientEnd(a, b) = std::mem::replace(self, Value::Null) else {
+            Value::ClientEnd(_, _, _) => {
+                let Value::ClientEnd(a, b, _) = std::mem::replace(self, Value::Null) else {
                     unreachable!();
                 };
                 let mut playground_value =
@@ -316,8 +316,8 @@ impl ValueExt for Value {
                 *self = Value::OutOfLine(playground_value.duplicate());
                 Value::OutOfLine(playground_value)
             }
-            Value::Handle(_, _) => {
-                let Value::Handle(a, b) = std::mem::replace(self, Value::Null) else {
+            Value::Handle(_, _, _) => {
+                let Value::Handle(a, b, _) = std::mem::replace(self, Value::Null) else {
                     unreachable!();
                 };
                 let mut playground_value = PlaygroundValue::InUseHandle(InUseHandle::handle(a, b));
@@ -397,7 +397,7 @@ impl ValueExt for Value {
         expected_protocol: &str,
     ) -> Result<fdomain_client::Channel, Self> {
         match self {
-            Value::ClientEnd(c, proto) if ns.inherits(&proto, expected_protocol) => Ok(c),
+            Value::ClientEnd(c, proto, _) if ns.inherits(&proto, expected_protocol) => Ok(c),
             Value::OutOfLine(PlaygroundValue::InUseHandle(ref i)) => {
                 if let Ok(c) = i.take_client(Some(expected_protocol)) { Ok(c) } else { Err(self) }
             }
@@ -407,7 +407,7 @@ impl ValueExt for Value {
 
     fn try_server_channel(self) -> Result<fdomain_client::Channel, Self> {
         match self {
-            Value::ServerEnd(c, _) => Ok(c),
+            Value::ServerEnd(c, _, _) => Ok(c),
             Value::OutOfLine(PlaygroundValue::InUseHandle(ref i)) => {
                 if let Ok(c) = i.take_server(None) { Ok(c) } else { Err(self) }
             }
@@ -577,9 +577,9 @@ impl ValueExt for Value {
                 ),
                 _ => return Err(ValueError::TypeFromList(ty.clone()).into()),
             },
-            Value::ServerEnd(a, b) => FidlValue::ServerEnd(a, b),
-            Value::ClientEnd(a, b) => FidlValue::ClientEnd(a, b),
-            Value::Handle(a, b) => FidlValue::Handle(a, b),
+            Value::ServerEnd(a, b, c) => FidlValue::ServerEnd(a, b, c),
+            Value::ClientEnd(a, b, c) => FidlValue::ClientEnd(a, b, c),
+            Value::Handle(a, b, c) => FidlValue::Handle(a, b, c),
             Value::OutOfLine(s) => s.to_fidl_value(ns, ty)?,
         };
 
@@ -588,9 +588,9 @@ impl ValueExt for Value {
 
     fn to_in_use_handle(self) -> Option<InUseHandle> {
         match self {
-            Value::ServerEnd(h, p) => Some(InUseHandle::server_end(h, p)),
-            Value::ClientEnd(h, p) => Some(InUseHandle::client_end(h, p)),
-            Value::Handle(h, t) => Some(InUseHandle::handle(h, t)),
+            Value::ServerEnd(h, p, _) => Some(InUseHandle::server_end(h, p)),
+            Value::ClientEnd(h, p, _) => Some(InUseHandle::client_end(h, p)),
+            Value::Handle(h, t, _) => Some(InUseHandle::handle(h, t)),
             Value::OutOfLine(PlaygroundValue::InUseHandle(s)) => Some(s),
             _ => None,
         }
@@ -598,7 +598,7 @@ impl ValueExt for Value {
 
     fn is_client(&self, service: &str) -> bool {
         match self {
-            Value::ClientEnd(_, s) => s == service,
+            Value::ClientEnd(_, s, _) => s == service,
             Value::OutOfLine(PlaygroundValue::InUseHandle(s)) => {
                 s.get_client_protocol().ok().map(|x| &x == service).unwrap_or(false)
             }
@@ -708,7 +708,7 @@ impl PlaygroundValue {
                 PlaygroundValue::InUseHandle(h),
             ) => h
                 .take_server(Some(&protocol))
-                .map(|x| FidlValue::ServerEnd(x, protocol.to_owned()))
+                .map(|x| FidlValue::ServerEnd(x, protocol.to_owned(), None))
                 .map_err(|_| ValueError::ServerConversionFailed(protocol.clone()).into()),
             (
                 LookupResultOrType::Type(lib::Type::Endpoint {
@@ -719,7 +719,7 @@ impl PlaygroundValue {
                 PlaygroundValue::InUseHandle(h),
             ) => h
                 .take_client(Some(&protocol))
-                .map(|x| FidlValue::ClientEnd(x, protocol.to_owned()))
+                .map(|x| FidlValue::ClientEnd(x, protocol.to_owned(), None))
                 .map_err(|_| ValueError::ClientConversionFailed(protocol.clone()).into()),
             (
                 LookupResultOrType::Type(lib::Type::Handle {
@@ -1321,21 +1321,21 @@ mod test {
         let (a, b) = client.create_channel();
 
         let mut client =
-            Value::ClientEnd(a, "test.fidlcodec.examples/FidlCodecTestProtocol".to_owned());
+            Value::ClientEnd(a, "test.fidlcodec.examples/FidlCodecTestProtocol".to_owned(), None);
         let mut server =
-            Value::ServerEnd(b, "test.fidlcodec.examples/FidlCodecTestProtocol".to_owned());
+            Value::ServerEnd(b, "test.fidlcodec.examples/FidlCodecTestProtocol".to_owned(), None);
         let client_dup = client.duplicate();
         let server_dup = server.duplicate();
 
         assert!(matches!(client_dup, Value::OutOfLine(PlaygroundValue::InUseHandle(_))));
         assert!(matches!(server_dup, Value::OutOfLine(PlaygroundValue::InUseHandle(_))));
 
-        let Ok(FidlValue::ClientEnd(_channel, protocol)) = client_dup.to_fidl_value(
+        let Ok(FidlValue::ClientEnd(_channel, protocol, None)) = client_dup.to_fidl_value(
             &ns,
             &lib::Type::Endpoint {
                 role: lib::EndpointRole::Client,
                 protocol: "test.fidlcodec.examples/FidlCodecTestProtocol".to_owned(),
-                rights: fidl::Rights::SAME_RIGHTS,
+                rights: Some(fidl::Rights::SAME_RIGHTS),
                 nullable: false,
             },
         ) else {
@@ -1343,12 +1343,12 @@ mod test {
         };
         assert_eq!("test.fidlcodec.examples/FidlCodecTestProtocol", &protocol);
 
-        let Ok(FidlValue::ServerEnd(_channel, protocol)) = server_dup.to_fidl_value(
+        let Ok(FidlValue::ServerEnd(_channel, protocol, None)) = server_dup.to_fidl_value(
             &ns,
             &lib::Type::Endpoint {
                 role: lib::EndpointRole::Server,
                 protocol: "test.fidlcodec.examples/FidlCodecTestProtocol".to_owned(),
-                rights: fidl::Rights::SAME_RIGHTS,
+                rights: Some(fidl::Rights::SAME_RIGHTS),
                 nullable: false,
             },
         ) else {
@@ -1377,12 +1377,12 @@ mod test {
                 &ns,
                 &lib::Type::Handle {
                     object_type: fidl::ObjectType::SOCKET,
-                    rights: fidl::Rights::SOCKET_DEFAULT,
+                    rights: Some(fidl::Rights::SOCKET_DEFAULT),
                     nullable: false,
                 },
             )
             .unwrap();
-        let FidlValue::Handle(a, fidl::ObjectType::SOCKET) = a else { panic!() };
+        let FidlValue::Handle(a, fidl::ObjectType::SOCKET, None) = a else { panic!() };
         let mut a = fdomain_client::Socket::from(a);
         let mut b = b.unwrap_socket();
         static CALL: &[u8] = b"What if we shared some extremely basic opinions?";
@@ -1411,7 +1411,7 @@ mod test {
         let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         let (socket, _b) = client.create_stream_socket();
         let socket = socket.into_handle();
-        let mut socket = Value::Handle(socket, fidl::ObjectType::SOCKET);
+        let mut socket = Value::Handle(socket, fidl::ObjectType::SOCKET, None);
         let socket_dup = socket.duplicate();
         let Value::OutOfLine(PlaygroundValue::InUseHandle(socket)) = socket else { panic!() };
         let Value::OutOfLine(PlaygroundValue::InUseHandle(socket_dup)) = socket_dup else {

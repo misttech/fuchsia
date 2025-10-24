@@ -255,7 +255,7 @@ HandleDef{
 	rights: Rights::from_bits(61454).unwrap(),
 },
 ]);
-    let (bytes, handle_dispositions) = fidl_codec::encode(ns(), "test.conformance/GoldenHandleBasicRightsStruct", false, Value::Object(vec![("v".to_owned(), Value::Handle(copy_handle(&handle_defs[0]), fidl::ObjectType::EVENT))])).unwrap();
+    let (bytes, handle_dispositions) = fidl_codec::encode(ns(), "test.conformance/GoldenHandleBasicRightsStruct", false, Value::Object(vec![("v".to_owned(), Value::Handle(copy_handle(&handle_defs[0]), fidl::ObjectType::EVENT, Some(Rights::from_bits(handle_defs[0].rights).unwrap())))])).unwrap();
     assert_eq!(bytes, &[
 0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
 ]);
@@ -281,7 +281,7 @@ HandleDef{
 	rights: Rights::from_bits(2147483648).unwrap(),
 },
 ]);
-    let (bytes, handle_dispositions) = fidl_codec::encode(ns(), "test.conformance/GoldenNullableHandleStruct", false, Value::Object(vec![("v".to_owned(), Value::Handle(copy_handle(&handle_defs[0]), fidl::ObjectType::NONE))])).unwrap();
+    let (bytes, handle_dispositions) = fidl_codec::encode(ns(), "test.conformance/GoldenNullableHandleStruct", false, Value::Object(vec![("v".to_owned(), Value::Handle(copy_handle(&handle_defs[0]), fidl::ObjectType::NONE, Some(Rights::from_bits(handle_defs[0].rights).unwrap())))])).unwrap();
     assert_eq!(bytes, &[
 0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
 ]);
@@ -579,7 +579,7 @@ HandleDef{
     let _handle_koids = handle_defs.iter().map(get_handle_koid).collect::<Vec<_>>();
     let handle_infos = select_handle_infos(&handle_defs, &[
 0,]);
-    let confirm_value = Value::Object(vec![("v".to_owned(), Value::Handle(copy_handle(&handle_defs[0]), fidl::ObjectType::EVENT))]);
+    let confirm_value = Value::Object(vec![("v".to_owned(), Value::Handle(copy_handle(&handle_defs[0]), fidl::ObjectType::EVENT, Some(Rights::from_bits(49155).unwrap())))]);
     let value = fidl_codec::decode(ns(), "test.conformance/GoldenHandleBasicRightsStruct", bytes, handle_infos).unwrap();
     assert_eq!(value, confirm_value);
 }
@@ -599,7 +599,7 @@ HandleDef{
     let _handle_koids = handle_defs.iter().map(get_handle_koid).collect::<Vec<_>>();
     let handle_infos = select_handle_infos(&handle_defs, &[
 0,]);
-    let confirm_value = Value::Object(vec![("v".to_owned(), Value::Handle(copy_handle(&handle_defs[0]), fidl::ObjectType::NONE))]);
+    let confirm_value = Value::Object(vec![("v".to_owned(), Value::Handle(copy_handle(&handle_defs[0]), fidl::ObjectType::NONE, Some(Rights::from_bits(handle_defs[0].rights).unwrap())))]);
     let value = fidl_codec::decode(ns(), "test.conformance/GoldenNullableHandleStruct", bytes, handle_infos).unwrap();
     assert_eq!(value, confirm_value);
 }

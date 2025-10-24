@@ -449,7 +449,7 @@ impl InterpreterInner {
             ("options".to_owned(), FidlValue::Object(options)),
             (
                 "object".to_owned(),
-                FidlValue::Handle(server.into_handle(), fidl::ObjectType::CHANNEL),
+                FidlValue::Handle(server.into_handle(), fidl::ObjectType::CHANNEL, None),
             ),
         ]);
 
@@ -704,7 +704,7 @@ impl InterpreterInner {
             )
         };
 
-        Ok(Value::ClientEnd(node.into_channel().expect("Could not tear down proxy"), proto))
+        Ok(Value::ClientEnd(node.into_channel().expect("Could not tear down proxy"), proto, None))
     }
 }
 
@@ -726,7 +726,7 @@ impl Interpreter {
         let (task_sender, task_receiver) = unbounded_channel();
 
         let fs_root =
-            Value::ClientEnd(fs_root.into_channel(), fio::DirectoryMarker::library_name());
+            Value::ClientEnd(fs_root.into_channel(), fio::DirectoryMarker::library_name(), None);
         let mut global_variables = GlobalVariables::default();
         global_variables.define("fs_root".to_owned(), Ok(fs_root), Mutability::Mutable);
         global_variables.define(

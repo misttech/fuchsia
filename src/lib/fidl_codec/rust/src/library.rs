@@ -356,8 +356,8 @@ pub enum Type {
     Array(Box<Type>, usize),
     Vector { ty: Box<Type>, nullable: bool, element_count: Option<usize> },
     String { nullable: bool, byte_count: Option<usize> },
-    Handle { object_type: fidl::ObjectType, rights: fidl::Rights, nullable: bool },
-    Endpoint { role: EndpointRole, protocol: String, rights: fidl::Rights, nullable: bool },
+    Handle { object_type: fidl::ObjectType, rights: Option<fidl::Rights>, nullable: bool },
+    Endpoint { role: EndpointRole, protocol: String, rights: Option<fidl::Rights>, nullable: bool },
 }
 
 impl Type {
@@ -478,11 +478,7 @@ impl From<TypeInfo> for Type {
             }
             TypeKind::Handle => {
                 if let Some(object_type) = info.object_type {
-                    Type::Handle {
-                        object_type,
-                        rights: info.rights.unwrap_or(fidl::Rights::SAME_RIGHTS),
-                        nullable,
-                    }
+                    Type::Handle { object_type, rights: info.rights, nullable }
                 } else {
                     Type::Unknown(info)
                 }
@@ -498,12 +494,7 @@ impl From<TypeInfo> for Type {
             TypeKind::Endpoint => {
                 let Some(role) = info.role.clone() else { return Type::Unknown(info) };
                 let Some(protocol) = info.protocol.clone() else { return Type::Unknown(info) };
-                Type::Endpoint {
-                    role,
-                    protocol,
-                    rights: info.rights.unwrap_or(fidl::Rights::CHANNEL_DEFAULT),
-                    nullable: info.nullable,
-                }
+                Type::Endpoint { role, protocol, rights: info.rights, nullable: info.nullable }
             }
             TypeKind::Internal => {
                 if info.subtype.as_deref() == Some("framework_error") {
@@ -552,6 +543,7 @@ pub enum LookupResult<'a> {
 }
 
 /// A collection of loaded modules.
+#[derive(Default)]
 pub struct Namespace {
     modules: HashMap<String, Module>,
     methods_by_ordinal: HashMap<u64, (String, Weak<Method>)>,
