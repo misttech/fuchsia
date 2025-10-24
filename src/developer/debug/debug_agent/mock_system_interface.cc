@@ -102,6 +102,22 @@ std::unique_ptr<MockSystemInterface> MockSystemInterface::CreateWithData() {
   job5.set_child_processes({job5_p1});
   job5.set_child_jobs({job51});
 
+  MockJobHandle job6(41, "job6");
+  MockProcessHandle job6_p1(42, "job6-p1");
+  job6_p1.set_threads({MockThreadHandle(43, "initial-thread")});
+  job6.set_child_processes({job6_p1});
+
+  MockJobHandle job7(44, "job7");
+  MockProcessHandle job7_p1(45, "job7-p1");
+  job7_p1.set_threads({MockThreadHandle(46, "initial-thread")});
+  job7_p1.set_threads({MockThreadHandle(47, "thread2")});
+  job7.set_child_processes({job7_p1});
+
+  MockJobHandle job8(48, "job8");
+  MockProcessHandle job8_p1(49, "job8-p1");
+  job8_p1.set_threads({MockThreadHandle(50, "initial-thread")});
+  job8.set_child_processes({job8_p1});
+
   // Root.
   MockProcessHandle root_p1(2, "root-p1");
   root_p1.set_threads({MockThreadHandle(3, "initial-thread")});
@@ -114,7 +130,7 @@ std::unique_ptr<MockSystemInterface> MockSystemInterface::CreateWithData() {
 
   MockJobHandle root(1, "root");
   root.set_child_processes({root_p1, root_p2, root_p3});
-  root.set_child_jobs({job1, job2, job3, job4, job5});
+  root.set_child_jobs({job1, job2, job3, job4, job5, job6, job7, job8});
 
   auto system_interface = std::make_unique<MockSystemInterface>(std::move(root));
 
@@ -155,6 +171,21 @@ std::unique_ptr<MockSystemInterface> MockSystemInterface::CreateWithData() {
       job51.GetKoid(),
       debug_ipc::ComponentInfo{.moniker = "/some/other/moniker",
                                .url = "fuchsia-pkg://devhost/package#meta/component4.cm"});
+  system_interface->mock_component_manager().AddNonElfComponentInfo(
+      {.moniker = "moniker/abcdef/test:test_root",
+       .url = "fuchsia-pkg://devhost/test_root_package#meta/root_test_component.cm"});
+  system_interface->mock_component_manager().AddComponentInfo(
+      job6.GetKoid(),
+      debug_ipc::ComponentInfo{.moniker = "moniker/abcdef/test:test_root/test_driver",
+                               .url = "#meta/test_driver.cm"});
+  system_interface->mock_component_manager().AddComponentInfo(
+      job7.GetKoid(),
+      debug_ipc::ComponentInfo{.moniker = "moniker/abcdef/test:test_root/under_test",
+                               .url = "#meta/under_test.cm"});
+  system_interface->mock_component_manager().AddComponentInfo(
+      job8.GetKoid(),
+      debug_ipc::ComponentInfo{.moniker = "moniker/abc123/test:test_root",
+                               .url = "fuchsia-pkg://devhost/unittest#meta/unittest.cm"});
   return system_interface;
 }
 

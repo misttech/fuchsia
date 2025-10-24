@@ -20,9 +20,9 @@ class DebuggedProcess;
 class DebugAgentServer : public fidl::Server<fuchsia_debugger::DebugAgent>,
                          public DebugAgentObserver {
  public:
-  static void BindServer(async_dispatcher_t* dispatcher,
-                         fidl::ServerEnd<fuchsia_debugger::DebugAgent> server_end,
-                         fxl::WeakPtr<DebugAgent> debug_agent);
+  static DebugAgentServer* BindServer(async_dispatcher_t* dispatcher,
+                                      fidl::ServerEnd<fuchsia_debugger::DebugAgent> server_end,
+                                      fxl::WeakPtr<DebugAgent> debug_agent);
 
   DebugAgentServer(fxl::WeakPtr<DebugAgent> agent, async_dispatcher_t* dispatcher);
 

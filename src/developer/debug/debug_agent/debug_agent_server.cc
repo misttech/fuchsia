@@ -121,15 +121,17 @@ debug::Result<debug_ipc::Filter, fuchsia_debugger::FilterError> ToDebugIpcFilter
 }  // namespace
 
 // Static.
-void DebugAgentServer::BindServer(async_dispatcher_t* dispatcher,
-                                  fidl::ServerEnd<fuchsia_debugger::DebugAgent> server_end,
-                                  fxl::WeakPtr<DebugAgent> debug_agent) {
+DebugAgentServer* DebugAgentServer::BindServer(
+    async_dispatcher_t* dispatcher, fidl::ServerEnd<fuchsia_debugger::DebugAgent> server_end,
+    fxl::WeakPtr<DebugAgent> debug_agent) {
   auto server = std::make_unique<DebugAgentServer>(debug_agent, dispatcher);
   auto impl_ptr = server.get();
 
   impl_ptr->binding_ref_ =
       fidl::BindServer(dispatcher, std::move(server_end), std::move(server),
                        cpp20::bind_front(&debug_agent::DebugAgentServer::OnUnboundFn, impl_ptr));
+
+  return impl_ptr;
 }
 
 DebugAgentServer::DebugAgentServer(fxl::WeakPtr<DebugAgent> agent, async_dispatcher_t* dispatcher)

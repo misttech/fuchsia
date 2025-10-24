@@ -573,17 +573,25 @@ TEST_F(DebugAgentTests, RecursiveFiltersDoNotCollideUpdateFilter) {
   loop().RunUntilNoTasks();
 
   // Should have a filter created message.
-  EXPECT_EQ(harness.stream_backend()->filters().size(), 1u);
+  EXPECT_EQ(harness.stream_backend()->filters().size(), 3u);
+
+  constexpr char kExpectedMonikerPrefixFilterPattern[] = "/moniker/generated/test:test_root";
+  const auto& job4_filter = std::ranges::find_if(
+      harness.stream_backend()->filters(),
+      [kExpectedMonikerPrefixFilterPattern](const debug_ipc::NotifyFilterCreated& notify) {
+        return notify.filter.pattern == kExpectedMonikerPrefixFilterPattern;
+      });
+
+  ASSERT_NE(job4_filter, harness.stream_backend()->filters().end());
+
   // When creating a new filter for matching during UpdateFilter, the client does not have to send
   // another UpdateFilter message to match against the new filter.
-  EXPECT_TRUE(harness.stream_backend()->filters()[0].participated_in_matching);
+  EXPECT_TRUE(job4_filter->participated_in_matching);
   // The first matching filter is the creator of the new filter.
-  EXPECT_EQ(harness.stream_backend()->filters()[0].originating_filter_id, filter.id);
-  EXPECT_EQ(harness.stream_backend()->filters()[0].filter.pattern,
-            "/moniker/generated/test:test_root");
-  EXPECT_EQ(harness.stream_backend()->filters()[0].filter.type,
-            debug_ipc::Filter::Type::kComponentMonikerPrefix);
-  EXPECT_EQ(harness.stream_backend()->filters()[0].filter.config.recursive, false);
+  EXPECT_EQ(job4_filter->originating_filter_id, filter.id);
+  EXPECT_EQ(job4_filter->filter.pattern, "/moniker/generated/test:test_root");
+  EXPECT_EQ(job4_filter->filter.type, debug_ipc::Filter::Type::kComponentMonikerPrefix);
+  EXPECT_EQ(job4_filter->filter.config.recursive, false);
 }
 
 TEST_F(DebugAgentTests, RecursiveFiltersDoNotCollideComponentStarting) {

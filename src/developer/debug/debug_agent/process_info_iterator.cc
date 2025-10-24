@@ -25,6 +25,12 @@ ProcessInfoIterator::ProcessInfoIterator(
     current_process_ = processes_[process_index_];
     if (current_process_) {
       current_process_threads_ = current_process_->GetThreads();
+      auto component_info =
+          debug_agent_->system_interface().GetComponentManager().FindComponentInfo(
+              current_process_->process_handle());
+      if (!component_info.empty()) {
+        current_moniker_ = component_info[0].moniker;
+      }
     }
   }
 }

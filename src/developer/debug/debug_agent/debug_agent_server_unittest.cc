@@ -15,6 +15,7 @@
 #include "src/developer/debug/debug_agent/mock_process.h"
 #include "src/developer/debug/debug_agent/mock_process_handle.h"
 #include "src/developer/debug/debug_agent/mock_thread.h"
+#include "src/developer/debug/debug_agent/process_info_iterator.h"
 #include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/shared/message_loop.h"
 #include "src/developer/debug/shared/result.h"
@@ -46,16 +47,8 @@ class DebugAgentServerTest : public debug::TestWithLoop {
                         [](const auto& p1, const auto& p2) { return p1.first < p2.first; });
 
     if (result.ok()) {
-      // There will only ever be 1 or 2 filter additions, depending on if the new filter is
-      // recursive or not. If it is recursive, AND it matches something immediately, then we will
-      // get two new filters instead of just one.
-      if (diff.empty() || diff.size() > 2) {
-        ADD_FAILURE();
-      } else {
-        // Unambiguous which filter is the new one.
-        last_added_filters_.clear();
-        last_added_filters_.insert(diff.begin(), diff.end());
-      }
+      last_added_filters_.clear();
+      last_added_filters_.insert(diff.begin(), diff.end());
     }
 
     return result;
@@ -174,30 +167,41 @@ TEST_F(DebugAgentServerTest, AddNewFilter) {
   // on the filter settings.
   const auto& new_filters = harness()->stream_backend()->filters();
   ASSERT_FALSE(new_filters.empty());
-  ASSERT_EQ(new_filters.size(), 1u);
+  ASSERT_EQ(new_filters.size(), 3u);
   // We are not required to send another UpdateFilter request to the Agent since it matched eagerly.
   EXPECT_TRUE(new_filters[0].participated_in_matching);
-  EXPECT_EQ(new_filters[0].filter.id.Decode().originator, debug_ipc::Filter::Originator::kAgent);
-  EXPECT_EQ(new_filters[0].filter.pattern, kFullRootMoniker);
-  EXPECT_EQ(new_filters[0].filter.type, debug_ipc::Filter::Type::kComponentMonikerPrefix);
-  EXPECT_EQ(new_filters[0].filter.config.recursive, false);
+
+  const auto& job4_moniker_prefix_filter = std::ranges::find_if(
+      new_filters, [&kFullRootMoniker](const debug_ipc::NotifyFilterCreated& notify) {
+        return notify.filter.pattern == kFullRootMoniker;
+      });
+
+  ASSERT_NE(job4_moniker_prefix_filter, new_filters.end());
+  EXPECT_EQ(job4_moniker_prefix_filter->filter.id.Decode().originator,
+            debug_ipc::Filter::Originator::kAgent);
+  EXPECT_EQ(job4_moniker_prefix_filter->filter.pattern, kFullRootMoniker);
+  EXPECT_EQ(job4_moniker_prefix_filter->filter.type,
+            debug_ipc::Filter::Type::kComponentMonikerPrefix);
+  EXPECT_EQ(job4_moniker_prefix_filter->filter.config.recursive, false);
 
   // We will get back the process that we matched and attached to above with the first filter we
   // installed, and we should also get back the process under another component in
   // |kFullRootMoniker|'s realm.
-  EXPECT_EQ(reply.matched_processes_for_filter.size(), 2u);
-  EXPECT_EQ(reply.matched_processes_for_filter[0].matched_pids.size(), 1u);
-  // It should have already been attached when we previously matched.
-  EXPECT_NE(agent->GetDebuggedProcess(reply.matched_processes_for_filter[0].matched_pids[0]),
-            nullptr);
-  EXPECT_EQ(reply.matched_processes_for_filter[0].matched_pids.size(), 1u);
-  EXPECT_EQ(reply.matched_processes_for_filter[0].matched_pids[0], kProcessKoid);
-  ASSERT_EQ(reply.matched_processes_for_filter[1].matched_pids.size(), 1u);
-  EXPECT_EQ(reply.matched_processes_for_filter[1].matched_pids[0], kJob4Process1Koid);
+  EXPECT_EQ(reply.matched_processes_for_filter.size(), 5u);
+
+  const auto& job4p1_match = std::ranges::find_if(
+      reply.matched_processes_for_filter, [](const debug_ipc::FilterMatch& match) {
+        return std::ranges::any_of(match.matched_pids,
+                                   [](uint64_t pid) { return pid == kJob4Process1Koid; });
+      });
+
+  ASSERT_NE(job4p1_match, reply.matched_processes_for_filter.end());
+  ASSERT_EQ(job4p1_match->matched_pids.size(), 1u);
+  EXPECT_EQ(job4p1_match->matched_pids[0], kJob4Process1Koid);
 
   // We can issue an attach now. Since we're not doing any pre-filtering of koids we're already
   // attached to, this will also return the koid 26 attached above as well as the new one.
-  EXPECT_EQ(AttachToMatchingKoids(reply), 2u);
+  EXPECT_EQ(AttachToMatchingKoids(reply), 5u);
   EXPECT_NE(agent->GetDebuggedProcess(kJob4Process1Koid), nullptr);
 
   // Now we install a job-only filter that will attach DebugAgent directly to a matching job's
@@ -300,6 +304,7 @@ TEST_F(DebugAgentServerTest, GetMatchingProcesses) {
   EXPECT_EQ(result.err(), fuchsia_debugger::FilterError::kUnknownType);
 
   constexpr char kFullRootMoniker[] = "/moniker/generated/test:test_root";
+  constexpr char kUrl[] = "fuchsia-pkg://devhost/root_package#meta/root_component.cm";
 
   // This filter is intended to match |kFullRootMoniker| and all child components.
   fuchsia_debugger::Filter f1;
@@ -311,8 +316,7 @@ TEST_F(DebugAgentServerTest, GetMatchingProcesses) {
 
   // Create the subfilter.
   harness()->system_interface()->mock_component_manager().InjectComponentEvent(
-      FakeEventType::kDebugStarted, kFullRootMoniker,
-      "fuchsia-pkg://devhost/root_package#meta/root_component.cm");
+      FakeEventType::kDebugStarted, kFullRootMoniker, kUrl);
 
   loop().RunUntilNoTasks();
 
@@ -353,11 +357,44 @@ TEST_F(DebugAgentServerTest, AttachToJobOnComponentStarting) {
   EXPECT_NE(GetDebugAgent()->GetDebuggedJob(kJobKoid), nullptr);
 }
 
+// A client of ProcessInfoIterator that collects all processes returned by the iterator. Errors will
+// raise an assertion.
+class ProcessInfoCollector {
+ public:
+  ProcessInfoCollector(fidl::ClientEnd<fuchsia_debugger::ProcessInfoIterator> client_end,
+                       async_dispatcher_t* dispatcher)
+      : client_(std::move(client_end), dispatcher) {}
+
+  void Collect(fit::callback<void(std::vector<fuchsia_debugger::ProcessInfo>)> on_done) {
+    client_->GetNext().Then(
+        [this, on_done = std::move(on_done)](
+            fidl::Result<fuchsia_debugger::ProcessInfoIterator::GetNext>& result) mutable {
+          ASSERT_TRUE(result.is_ok());
+
+          const auto& new_infos = result->info();
+
+          if (new_infos.empty()) {
+            return on_done(std::move(collected_infos_));
+          }
+
+          collected_infos_.insert(collected_infos_.end(), new_infos.begin(), new_infos.end());
+
+          debug::MessageLoop::Current()->PostTask(
+              FROM_HERE,
+              [this, on_done = std::move(on_done)]() mutable { Collect(std::move(on_done)); });
+        });
+  }
+
+ private:
+  fidl::Client<fuchsia_debugger::ProcessInfoIterator> client_;
+  std::vector<fuchsia_debugger::ProcessInfo> collected_infos_;
+};
+
 class FakeFidlClient : public fidl::AsyncEventHandler<fuchsia_debugger::DebugAgent> {
  public:
   explicit FakeFidlClient(fidl::ClientEnd<fuchsia_debugger::DebugAgent> client_end,
                           async_dispatcher_t* dispatcher)
-      : client_(std::move(client_end), dispatcher, this) {}
+      : client_(std::move(client_end), dispatcher, this), dispatcher_(dispatcher) {}
 
   void AttachTo(const fuchsia_debugger::Filter& filter,
                 fit::callback<void(fidl::Result<fuchsia_debugger::DebugAgent::AttachTo>&)> cb) {
@@ -366,6 +403,26 @@ class FakeFidlClient : public fidl::AsyncEventHandler<fuchsia_debugger::DebugAge
           ASSERT_TRUE(cb);
           cb(reply);
         });
+  }
+
+  // This method is allowed to be synchronous, clients may begin feeding messages into the returned
+  // iterator immediately.
+  ProcessInfoCollector MakeProcessInfoCollector(
+      std::optional<const fuchsia_debugger::Filter> filter,
+      std::optional<const fuchsia_debugger::ThreadDetailsInterest> interest) {
+    auto [client_end, server_end] = *fidl::CreateEndpoints<fuchsia_debugger::ProcessInfoIterator>();
+
+    fuchsia_debugger::GetProcessInfoOptions options(
+        {.filter = std::move(filter), .interest = std::move(interest)});
+
+    client_
+        ->GetProcessInfo(fuchsia_debugger::DebugAgentGetProcessInfoRequest(std::move(options),
+                                                                           std::move(server_end)))
+        .Then([](fidl::Result<fuchsia_debugger::DebugAgent::GetProcessInfo>& reply) {
+          ASSERT_TRUE(reply.is_ok());
+        });
+
+    return ProcessInfoCollector(std::move(client_end), dispatcher_);
   }
 
   void OnFatalException(
@@ -384,6 +441,7 @@ class FakeFidlClient : public fidl::AsyncEventHandler<fuchsia_debugger::DebugAge
  private:
   std::vector<fidl::Event<fuchsia_debugger::DebugAgent::OnFatalException>> exceptions_;
   fidl::Client<fuchsia_debugger::DebugAgent> client_;
+  async_dispatcher_t* dispatcher_;
 };
 
 class DebugAgentServerTestWithClient : public debug::TestWithLoop {
@@ -393,9 +451,10 @@ class DebugAgentServerTestWithClient : public debug::TestWithLoop {
     client_ =
         std::make_unique<FakeFidlClient>(std::move(client_end), async_get_default_dispatcher());
 
-    // The server is owned by the message loop.
-    DebugAgentServer::BindServer(async_get_default_dispatcher(), std::move(server_end),
-                                 harness()->debug_agent()->GetWeakPtr());
+    // The server is owned by the message loop, but we hold on to a pointer here so we can actually
+    // poke at the server to debug ourselves.
+    server_ = DebugAgentServer::BindServer(async_get_default_dispatcher(), std::move(server_end),
+                                           harness()->debug_agent()->GetWeakPtr());
   }
 
   void TearDown() override { client_.reset(); }
@@ -406,6 +465,7 @@ class DebugAgentServerTestWithClient : public debug::TestWithLoop {
 
  private:
   std::unique_ptr<FakeFidlClient> client_ = nullptr;
+  DebugAgentServer* server_;
   MockDebugAgentHarness harness_;
 };
 
@@ -505,6 +565,90 @@ TEST_F(DebugAgentServerTestWithClient, AttachToJobOnFilterInstalled) {
       });
 
   loop().Run();
+}
+
+TEST_F(DebugAgentServerTestWithClient, ProcessInfoIterator) {
+  fuchsia_debugger::Filter filter;
+  filter.pattern("/moniker");
+  filter.type(fuchsia_debugger::FilterType::kMoniker);
+
+  client().AttachTo(
+      filter, [=, this](fidl::Result<fuchsia_debugger::DebugAgent::AttachTo>& result) mutable {
+        ASSERT_TRUE(result.is_ok());
+        loop().QuitNow();
+      });
+
+  loop().Run();
+
+  // Don't need to wait for the message loop to start sending messages.
+  auto collector = client().MakeProcessInfoCollector(std::nullopt, std::nullopt);
+
+  std::vector<fuchsia_debugger::ProcessInfo> infos;
+  collector.Collect([&, this](std::vector<fuchsia_debugger::ProcessInfo> new_infos) {
+    infos = std::move(new_infos);
+    loop().QuitNow();
+  });
+
+  loop().Run();
+
+  // From mock_system_interface.
+  constexpr std::array kExpectedMonikers = {"/moniker"};
+  constexpr std::array kExpectedProcessIds = {9, 11, 14, 19, 21};
+  constexpr std::array kExpectedThreadIds = {10, 12, 15, 16, 20, 22, 23, 24};
+
+  ASSERT_FALSE(infos.empty());
+
+  for (const auto& info : infos) {
+    EXPECT_NE(std::ranges::find(kExpectedProcessIds, info.process()), kExpectedProcessIds.end());
+    EXPECT_NE(std::ranges::find(kExpectedThreadIds, info.thread()), kExpectedThreadIds.end());
+    EXPECT_NE(std::ranges::find(kExpectedMonikers, info.moniker()), kExpectedMonikers.end());
+    // We didn't ask for any interest, so we don't get back any backtraces.
+    EXPECT_EQ(info.details().backtrace(), std::nullopt);
+  }
+}
+
+TEST_F(DebugAgentServerTestWithClient, RecursiveJobOnlyProcessInfoIterator) {
+  fuchsia_debugger::Filter filter;
+  filter.pattern("test_root");
+  filter.type(fuchsia_debugger::FilterType::kMonikerSuffix);
+  filter.options().job_only(true);
+  filter.options().recursive(true);
+
+  client().AttachTo(
+      filter, [=, this](fidl::Result<fuchsia_debugger::DebugAgent::AttachTo>& result) mutable {
+        ASSERT_TRUE(result.is_ok());
+        loop().QuitNow();
+      });
+
+  loop().Run();
+
+  // Don't need to wait for the message loop to start sending messages.
+  auto collector = client().MakeProcessInfoCollector(std::nullopt, std::nullopt);
+
+  std::vector<fuchsia_debugger::ProcessInfo> infos;
+  collector.Collect([&, this](std::vector<fuchsia_debugger::ProcessInfo> new_infos) {
+    infos = std::move(new_infos);
+    loop().QuitNow();
+  });
+
+  loop().Run();
+
+  // From mock_system_interface.
+  constexpr std::array kExpectedMonikers = {
+      "/moniker/generated/test:test_root/driver", "moniker/abcdef/test:test_root/test_driver",
+      "moniker/abcdef/test:test_root/under_test", "moniker/abc123/test:test_root"};
+  constexpr std::array kExpectedProcessIds = {33, 42, 45, 49};
+  constexpr std::array kExpectedThreadIds = {34, 43, 46, 47, 50};
+
+  ASSERT_FALSE(infos.empty());
+
+  for (const auto& info : infos) {
+    EXPECT_NE(std::ranges::find(kExpectedProcessIds, info.process()), kExpectedProcessIds.end());
+    EXPECT_NE(std::ranges::find(kExpectedThreadIds, info.thread()), kExpectedThreadIds.end());
+    EXPECT_NE(std::ranges::find(kExpectedMonikers, info.moniker()), kExpectedMonikers.end());
+    // We didn't ask for any interest, so we don't get back any backtraces.
+    EXPECT_EQ(info.details().backtrace(), std::nullopt);
+  }
 }
 
 }  // namespace debug_agent
