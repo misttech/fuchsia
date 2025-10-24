@@ -6,7 +6,7 @@
 
 #include <sstream>
 
-#include <re2/re2.h>
+#include "re2/re2.h"
 
 namespace fidlc {
 
@@ -37,8 +37,7 @@ std::string TemplateString::Substitute(Substitutions substitutions, bool remove_
       if (!preceding_char.empty()) {
         os << preceding_char;
       }
-      std::string replaceable =
-          !braced_var.empty() ? braced_var.as_string() : unbraced_var.as_string();
+      std::string replaceable(!braced_var.empty() ? braced_var : unbraced_var);
       if (substitutions.find(replaceable) != substitutions.end()) {
         os << substitutions[replaceable];
       } else if (!remove_unmatched) {

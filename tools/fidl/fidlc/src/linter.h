@@ -9,8 +9,7 @@
 #include <stack>
 #include <utility>
 
-#include <re2/re2.h>
-
+#include "re2/re2.h"
 #include "tools/fidl/fidlc/src/check_def.h"
 #include "tools/fidl/fidlc/src/findings.h"
 #include "tools/fidl/fidlc/src/linting_tree_callbacks.h"

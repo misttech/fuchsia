@@ -92,7 +92,7 @@ void CompileStep::CompileDecl(Decl* decl) {
   decl->state = Decl::State::kCompiling;
   decl_stack_.push_back(decl);
   bool no_resource = false;
-  if (auto attr = decl->attributes->Get("no_resource")) {
+  if (decl->attributes->Get("no_resource")) {
     no_resource_count_++;
     no_resource = true;
   }

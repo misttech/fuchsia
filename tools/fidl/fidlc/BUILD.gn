@@ -6,6 +6,8 @@ import("//build/sdk/sdk_host_tool.gni")
 import("//build/testing/golden_files.gni")
 import("//tools/fidl/fidlc/testdata/info.gni")
 
+# LINT.IfChange
+
 source_set("lib") {
   sources = [
     "src/attribute_schema.cc",
@@ -122,6 +124,8 @@ if (is_host) {
     deps = [ ":fidl-format" ]
   }
 }
+
+# LINT.ThenChange(BUILD.bazel)
 
 install_host_tools("fidl-lint.host") {
   deps = [ ":fidl-lint" ]

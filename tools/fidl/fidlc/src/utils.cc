@@ -8,8 +8,7 @@
 
 #include <algorithm>
 
-#include <re2/re2.h>
-
+#include "re2/re2.h"
 #include "src/lib/fxl/strings/split_string.h"
 #include "tools/fidl/fidlc/src/reporter.h"
 

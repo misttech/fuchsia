@@ -6,9 +6,8 @@
 
 #include <zircon/assert.h>
 
-#include <re2/re2.h>
-
 #include "lib/stdcompat/span.h"
+#include "re2/re2.h"
 
 namespace fidlc {
 
