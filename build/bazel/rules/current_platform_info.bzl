@@ -30,7 +30,6 @@ def _current_platform_info_impl(ctx):
 _CURRENT_PLATFORM_SELECT_OS = {
     "@platforms//os:fuchsia": "fuchsia",
     "@platforms//os:linux": "linux",
-    "@platforms//os:macos": "mac",
     "@platforms//os:android": "android",
     # Let Bazel error in case of unknown OS.
 }

@@ -142,22 +142,6 @@ platform(
     ],
 )
 
-platform(
-    name = "mac_x64",
-    constraint_values = [
-        "@platforms//os:osx",
-        "@platforms//cpu:x86_64",
-    ],
-)
-
-platform(
-    name = "mac_arm64",
-    constraint_values = [
-        "@platforms//os:osx",
-        "@platforms//cpu:arm64",
-    ],
-)
-
 # Configuration conditions for the platform values above.
 config_setting(
     name = "is_fuchsia_x64",
@@ -195,22 +179,6 @@ config_setting(
     name = "is_linux_arm64",
     constraint_values = [
         "@platforms//os:linux",
-        "@platforms//cpu:arm64",
-    ],
-)
-
-config_setting(
-    name = "is_mac_x64",
-    constraint_values = [
-        "@platforms//os:osx",
-        "@platforms//cpu:x86_64",
-    ],
-)
-
-config_setting(
-    name = "is_mac_arm64",
-    constraint_values = [
-        "@platforms//os:osx",
         "@platforms//cpu:arm64",
     ],
 )
