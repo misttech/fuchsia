@@ -20,9 +20,6 @@
                 // TODO(https://fxbug.dev/398654361)
                 "BinderTest/ManagerProviderClientTest/0.SameOperationsAsSELinuxTestSuiteBinderTestSubTestOne",
 
-                // TODO(https://fxbug.dev/364569705): Implement handling for the `getcap` permission.
-                "CapabilitiesTest.GetCapDenied",
-
                 // TODO(https://fxbug.dev/364570052): Implement handling for the `setcap` permission.
                 "CapabilitiesTest.SetCapDenied",
 

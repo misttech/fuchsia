@@ -1451,20 +1451,25 @@ pub fn sys_capget(
     user_header: UserRef<__user_cap_header_struct>,
     user_data: UserRef<__user_cap_data_struct>,
 ) -> Result<(), Errno> {
+    let mut header = current_task.read_object(user_header)?;
+    let is_version_valid =
+        [_LINUX_CAPABILITY_VERSION_1, _LINUX_CAPABILITY_VERSION_2, _LINUX_CAPABILITY_VERSION_3]
+            .contains(&header.version);
+    if !is_version_valid {
+        header.version = _LINUX_CAPABILITY_VERSION_3;
+        current_task.write_object(user_header, &header)?;
+    }
     if user_data.is_null() {
-        current_task.write_object(
-            user_header,
-            &__user_cap_header_struct { version: _LINUX_CAPABILITY_VERSION_3, pid: 0 },
-        )?;
         return Ok(());
     }
-
-    let mut header = current_task.read_object(user_header)?;
-    if header.pid < 0 {
+    if !is_version_valid || header.pid < 0 {
         return error!(EINVAL);
     }
+
     let weak = get_task_or_current(current_task, header.pid);
     let target_task = Task::from_weak(&weak)?;
+
+    security::check_getcap_access(current_task, &target_task)?;
 
     let (permitted, effective, inheritable) = {
         let creds = &target_task.real_creds();
@@ -1499,9 +1504,7 @@ pub fn sys_capget(
             current_task.write_objects(user_data, &data)?;
         }
         _ => {
-            header.version = _LINUX_CAPABILITY_VERSION_3;
-            current_task.write_object(user_header, &header)?;
-            return error!(EINVAL);
+            unreachable!("already returned if Linux capability version is not valid")
         }
     }
     Ok(())

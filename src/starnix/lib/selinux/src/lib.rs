@@ -1375,6 +1375,8 @@ class_permission_enum! {
         ExecStack("execstack"),
         /// Permission to fork the current running process.
         Fork("fork"),
+        /// Permission to get Linux capabilities of a process.
+        GetCap("getcap"),
         /// Permission to get the process group ID.
         GetPgid("getpgid"),
         /// Permission to get the resource limits on a process.

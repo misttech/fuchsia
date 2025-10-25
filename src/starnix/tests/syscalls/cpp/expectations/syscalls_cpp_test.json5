@@ -134,8 +134,6 @@
                 "BinderWithoutSEStarnix/ManagerProviderClientTest/0.SameOperationsAsSELinuxTestSuiteBinderTestSubTestOne",
 
                 // TODO(https://fxbug.dev/452426191)
-                "CapGetSetTest.CapGetInvalidVersionAndPid",
-                "CapGetSetTest.CapGetNullUserDataAndValidHeaderVersion",
                 "CapGetSetTest.CapSetInvalidCapabilityVersionAndDifferentPid",
 
                 // TODO(https://fxbug.dev/439799293)

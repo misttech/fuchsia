@@ -564,6 +564,25 @@ pub(in crate::security) fn check_syslog_access(
     )
 }
 
+/// Checks if the `current_task` is allowed to query the Linux capabilities of the `target` task.
+pub(in crate::security) fn check_getcap_access(
+    permission_check: &PermissionCheck<'_>,
+    current_task: &CurrentTask,
+    target: &Task,
+) -> Result<(), Errno> {
+    let audit_context = current_task.into();
+    let source_sid = current_task_state(current_task).lock().current_sid;
+    let target_sid = target.security_state.lock().current_sid;
+    check_permission(
+        permission_check,
+        current_task,
+        source_sid,
+        target_sid,
+        ProcessPermission::GetCap,
+        audit_context,
+    )
+}
+
 fn permission_from_capability(capability: starnix_uapi::auth::Capabilities) -> KernelPermission {
     // TODO: https://fxbug.dev/297313673 - CapClass::CapUserns will play a role here if-and-after
     // user namespaces are implemented in Starnix.

@@ -1457,6 +1457,19 @@ pub fn check_task_getsid(source: &CurrentTask, target: &Task) -> Result<(), Errn
     })
 }
 
+/// Called when the current task queries the Linux capabilities of the `target` task.
+/// Corresponds to the `capget()` LSM hook.
+pub fn check_getcap_access(source: &CurrentTask, target: &Task) -> Result<(), Errno> {
+    track_hook_duration!(c"security.hooks.check_getcap_access");
+    if_selinux_else_default_ok(source, |security_server| {
+        selinux_hooks::task::check_getcap_access(
+            &security_server.as_permission_check(),
+            &source,
+            &target,
+        )
+    })
+}
+
 /// Checks if sending a signal is allowed.
 /// Corresponds to the `task_kill()` LSM hook.
 pub fn check_signal_access(
