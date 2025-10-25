@@ -97,6 +97,7 @@
         {
             config: [
                 "fuchsia.driver.UseHardwareIommu",
+                "fuchsia.power.RuntimeProcessorPowerManagementEnabled",
                 "fuchsia.power.StoragePowerManagementEnabled",
                 "fuchsia.power.SuspendEnabled",
                 "fuchsia.ui.EnableButtonBatonPassing",

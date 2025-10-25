@@ -150,6 +150,17 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
         )?;
 
         builder.set_config_capability(
+            "fuchsia.power.RuntimeProcessorPowerManagementEnabled",
+            Config::new(
+                ConfigValueType::Bool,
+                context
+                    .board_config
+                    .provides_feature("fuchsia::runtime_processor_power_management")
+                    .into(),
+            ),
+        )?;
+
+        builder.set_config_capability(
             "fuchsia.power.SuspendEnabled",
             Config::new(ConfigValueType::Bool, config.suspend_enabled.into()),
         )?;
