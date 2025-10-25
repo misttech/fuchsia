@@ -524,9 +524,8 @@ void ThreadImpl::UnwindWithRegisters(unwinder::Registers regs, fit::callback<voi
 
   std::vector<unwinder::Module> modules;
   modules.reserve(loaded_modules.size());
-
-  unwinder_memory_.clear();
-  unwinder_memory_.reserve(loaded_modules.size());
+  std::vector<std::unique_ptr<unwinder::Memory>> unwinder_memory;
+  unwinder_memory.reserve(loaded_modules.size());
 
   for (const auto& loaded_module : loaded_modules) {
     auto build_id_entry = session()->system().GetSymbols()->build_id_index().EntryForBuildID(
@@ -550,8 +549,8 @@ void ThreadImpl::UnwindWithRegisters(unwinder::Registers regs, fit::callback<voi
     modules.emplace_back(loaded_module->load_address(), binary_file_memory.get(),
                          debug_info_file_memory.get(), unwinder::Module::AddressMode::kFile);
 
-    unwinder_memory_.push_back(std::move(binary_file_memory));
-    unwinder_memory_.push_back(std::move(debug_info_file_memory));
+    unwinder_memory.push_back(std::move(binary_file_memory));
+    unwinder_memory.push_back(std::move(debug_info_file_memory));
   }
 
   // This probably doesn't need to be configurable, when someone types "bt" or "frame", they
@@ -564,43 +563,57 @@ void ThreadImpl::UnwindWithRegisters(unwinder::Registers regs, fit::callback<voi
   // potentially better .debug_frame section that is not loaded in the target executable, if
   // present, or deal with cases where the .eh_frame section has been stripped from the target but
   // remains in an unstripped binary that we have access to on the host.
-  unwinder_ = std::make_unique<unwinder::AsyncUnwinder>(modules);
-  unwinder_->Unwind(GetProcess(), regs, kMaxDepth,
-                    // Move the unwinder itself and the memory into the callback so they stay alive
-                    // for the duration of unwinding.
-                    [weak_this = weak_factory_.GetWeakPtr(),
-                     cb = std::move(cb)](std::vector<unwinder::Frame> unwinder_frames) mutable {
-                      // Release the unwinder and it's memory now that we're done with them.
-                      weak_this->unwinder_.reset();
-                      weak_this->unwinder_memory_.clear();
+  auto unwinder = std::make_unique<unwinder::AsyncUnwinder>(modules);
+  unwinder->Unwind(
+      GetProcess(), regs, kMaxDepth,
+      // Move the unwinder itself and the memory into the callback so they stay alive for the
+      // duration of unwinding.
+      // In the typical case the reference counts for the unwinder drops to zero once unwinding
+      // completes and the `fit::callback` is invoked, since `fit::callback`'s destructor is
+      // automatically called after it's invoked once.
+      //
+      // TODO(https://fxbug.dev/454693056): Investigate the following:
+      // In a rare case that the process is killed while in the process of unwinding, this callback
+      // might not be invoked -- which we're not certain of, due to the handling of `!weak_this`
+      // below -- leading to a memory leak since `AsyncUnwinder::on_done_` and `AsyncUnwinder::this`
+      // will now hold cyclic references to each other.
+      // However, even if were was the case, this actually isn't such a huge deal since:
+      //  a. This scenario is extremely unlikely.
+      //  b. Even if this were to happen, developers typically debug one process per zxdb session,
+      //     causing zxdb to exit after the process dies.
+      //  c. Even if this were not the case, this memory leak would not cost a significant amount of
+      //     memory on the developer's host machine.
+      [weak_this = weak_factory_.GetWeakPtr(), cb = std::move(cb), unwinder = std::move(unwinder),
+       unwinder_memory =
+           std::move(unwinder_memory)](std::vector<unwinder::Frame> unwinder_frames) mutable {
+        // The unwinder's asynchronous API calls all callbacks reentrantly, so post a
+        // task to the message loop to make sure we don't blow our own stack.
+        debug::MessageLoop::Current()->PostTask(
+            FROM_HERE, [weak_this, unwinder_frames = std::move(unwinder_frames),
+                        cb = std::move(cb)]() mutable {
+              if (!weak_this) {
+                if (cb) {
+                  cb(Err("Thread died during unwinding."));
+                }
 
-                      // The unwinder's asynchronous API calls all callbacks reentrantly, so post a
-                      // task to the message loop to make sure we don't blow our own stack.
-                      debug::MessageLoop::Current()->PostTask(
-                          FROM_HERE, [weak_this, unwinder_frames = std::move(unwinder_frames),
-                                      cb = std::move(cb)]() mutable {
-                            if (!weak_this) {
-                              if (cb) {
-                                cb(Err("Thread died during unwinding."));
-                              }
+                return;
+              }
 
-                              return;
-                            }
+              // If something went wrong, the last frame will have an error condition.
+              // In the typical unwinding termination case, the error is cleared.
+              if (unwinder_frames.back().error.has_err()) {
+                weak_this->SyncFramesFromTarget(std::move(cb));
+                return;
+              }
 
-                            // If something went wrong, the last frame will have an error condition.
-                            // In the typical unwinding termination case, the error is cleared.
-                            if (unwinder_frames.back().error.has_err()) {
-                              return weak_this->SyncFramesFromTarget(std::move(cb));
-                            }
+              weak_this->stack_.SetFrames(debug_ipc::ThreadRecord::StackAmount::kFull,
+                                          debug_ipc::ConvertFrames(unwinder_frames));
 
-                            weak_this->stack_.SetFrames(debug_ipc::ThreadRecord::StackAmount::kFull,
-                                                        debug_ipc::ConvertFrames(unwinder_frames));
-
-                            if (cb) {
-                              cb(Err());
-                            }
-                          });
-                    });
+              if (cb) {
+                cb(Err());
+              }
+            });
+      });
 }
 
 void ThreadImpl::SyncFramesFromTarget(fit::callback<void(const Err&)> callback) {

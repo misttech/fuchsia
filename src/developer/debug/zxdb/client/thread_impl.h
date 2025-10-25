@@ -129,13 +129,6 @@ class ThreadImpl final : public Thread, public Stack::Delegate {
   // notification has been sent to register it.
   bool allow_notifications_ = false;
 
-  // The unwinder and associated synchronous memory objects. These will typically be pointing to a
-  // pair of ELF files corresponding to a particular module loaded into the process. We need to hold
-  // on to them here to avoid leaking memory if the process dies during the unwinding operation and
-  // prevents the final callbacks from being issued from the unwinder.
-  std::unique_ptr<unwinder::AsyncUnwinder> unwinder_;
-  std::vector<std::unique_ptr<unwinder::Memory>> unwinder_memory_;
-
   fxl::WeakPtrFactory<ThreadImpl> weak_factory_;
 
   FXL_DISALLOW_COPY_AND_ASSIGN(ThreadImpl);
