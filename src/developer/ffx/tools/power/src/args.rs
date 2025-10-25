@@ -3,13 +3,17 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
-use ffx_core::ffx_command;
-use ffx_power_plugin_sub_command::SubCommand;
+use powercli::args::PowerSubCommand;
 
-#[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "power", description = "Control system power features")]
 pub struct PowerCommand {
     #[argh(subcommand)]
-    pub subcommand: SubCommand,
+    pub subcommand: PowerSubCommand,
+}
+
+impl Into<powercli::args::PowerCommand> for PowerCommand {
+    fn into(self) -> powercli::args::PowerCommand {
+        powercli::args::PowerCommand { subcommand: self.subcommand }
+    }
 }

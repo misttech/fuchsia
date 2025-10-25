@@ -230,9 +230,7 @@ group("non_hermetic_deps") {
   visibility += [ "//src/developer/ffx/lib/e2e_emu:*" ]
 
   # e2e test using e2e_emu for ffx power system-activity application-activity.
-  visibility += [
-    "//src/developer/ffx/tools/power/system-activity/application-activity:*",
-  ]
+  visibility += [ "//src/developer/ffx/tools/power:*" ]
 
   # Allow network-conformance unit test to makes its own amber-files to test
   # package resolution.
