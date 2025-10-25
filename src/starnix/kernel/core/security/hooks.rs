@@ -1470,6 +1470,20 @@ pub fn check_getcap_access(source: &CurrentTask, target: &Task) -> Result<(), Er
     })
 }
 
+/// Called when the current task attempts to set the Linux capabilities of the `target`
+/// task.
+/// Corresponds to the `capset()` LSM hook.
+pub fn check_setcap_access(source: &CurrentTask, target: &Task) -> Result<(), Errno> {
+    track_hook_duration!(c"security.hooks.check_setcap_access");
+    if_selinux_else_default_ok(source, |security_server| {
+        selinux_hooks::task::check_setcap_access(
+            &security_server.as_permission_check(),
+            &source,
+            &target,
+        )
+    })
+}
+
 /// Checks if sending a signal is allowed.
 /// Corresponds to the `task_kill()` LSM hook.
 pub fn check_signal_access(

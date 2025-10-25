@@ -1517,6 +1517,14 @@ pub fn sys_capset(
     user_data: UserRef<__user_cap_data_struct>,
 ) -> Result<(), Errno> {
     let mut header = current_task.read_object(user_header)?;
+    let is_version_valid =
+        [_LINUX_CAPABILITY_VERSION_1, _LINUX_CAPABILITY_VERSION_2, _LINUX_CAPABILITY_VERSION_3]
+            .contains(&header.version);
+    if !is_version_valid {
+        header.version = _LINUX_CAPABILITY_VERSION_3;
+        current_task.write_object(user_header, &header)?;
+        return error!(EINVAL);
+    }
     if header.pid != 0 && header.pid != current_task.tid {
         return error!(EPERM);
     }
@@ -1540,9 +1548,7 @@ pub fn sys_capset(
             )
         }
         _ => {
-            header.version = _LINUX_CAPABILITY_VERSION_3;
-            current_task.write_object(user_header, &header)?;
-            return error!(EINVAL);
+            unreachable!("already returned if Linux capability version is not valid")
         }
     };
 
@@ -1573,6 +1579,10 @@ pub fn sys_capset(
             return error!(EPERM);
         }
     }
+    let weak = get_task_or_current(current_task, header.pid);
+    let target_task = Task::from_weak(&weak)?;
+
+    security::check_setcap_access(current_task, &target_task)?;
 
     creds.cap_permitted = new_permitted;
     creds.cap_effective = new_effective;
