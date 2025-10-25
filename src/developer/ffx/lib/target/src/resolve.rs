@@ -925,7 +925,7 @@ impl TryFromEnvContext for Resolution {
     ) -> LocalBoxFuture<'a, ffx_command_error::Result<Self>> {
         Box::pin(async {
             let unspecified_target = UNSPECIFIED_TARGET_NAME.to_owned();
-            let target_spec = get_target_specifier(env).await?;
+            let target_spec = get_target_specifier(env)?;
             let target_spec_unwrapped = if env.is_strict() {
                 target_spec.as_ref().ok_or(user_error!(
                     "You must specify a target via `-t <target_name>` before any command arguments"

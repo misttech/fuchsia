@@ -291,7 +291,7 @@ pub async fn doctor_cmd_impl<W: Write + Send + Sync + 'static>(
     let ascendd_path = context.get_ascendd_path().await?;
     let daemon_manager = DefaultDaemonManager::new(context.clone(), node, ascendd_path);
     let delay = Duration::from_millis(cmd.retry_delay);
-    let target_spec = ffx_target::get_target_specifier(&context).await?;
+    let target_spec = ffx_target::get_target_specifier(&context)?;
     let target_str = target_spec.unwrap_or_else(String::default);
     let version_info: VersionInfo = context.build_info();
     let mut log_root = None;
@@ -381,7 +381,7 @@ pub async fn doctor_cmd_impl<W: Write + Send + Sync + 'static>(
     let recorder = Arc::new(Mutex::new(DoctorRecorder::new()));
     let mut handler = DefaultDoctorStepHandler::new(recorder.clone(), Box::new(writer));
     let target_spec =
-        get_target_specifier(&context).await.map_err(|e| format!("{:?}", e).replace("\n", ""));
+        get_target_specifier(&context).map_err(|e| format!("{:?}", e).replace("\n", ""));
 
     // create ledger
     let ledger_mode = match cmd.verbose {

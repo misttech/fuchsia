@@ -123,7 +123,7 @@ impl Injection {
         let node = overnet_core::Router::new(router_interval)
             .bug_context("Failed to initialize overnet")?;
         log::debug!("Getting target");
-        let target_spec = ffx_target::get_target_specifier(&env_context).await?;
+        let target_spec = ffx_target::get_target_specifier(&env_context)?;
         log::debug!("Building Injection");
         Ok(Injection::new(env_context, version_info, node, target_spec))
     }

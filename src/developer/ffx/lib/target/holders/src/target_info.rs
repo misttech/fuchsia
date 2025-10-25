@@ -89,7 +89,7 @@ async fn resolve_target_query_to_info(
 #[async_trait(?Send)]
 impl TryFromEnv for TargetInfoHolder {
     async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
-        let query = ffx_target::get_target_specifier(&env.environment_context()).await?;
+        let query = ffx_target::get_target_specifier(&env.environment_context())?;
         let info_list = resolve_target_query_to_info(query, env.environment_context()).await?;
 
         match info_list.len() {

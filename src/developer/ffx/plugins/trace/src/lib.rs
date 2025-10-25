@@ -717,7 +717,7 @@ pub(crate) async fn handle_recording_error(
     err: RecordingError,
     output: &str,
 ) -> String {
-    let target_spec = get_target_specifier(context).await.unwrap_or(None);
+    let target_spec = get_target_specifier(context).unwrap_or(None);
     match err {
         RecordingError::TargetProxyOpen => {
             "Error: ffx trace was unable to connect to trace_manager on the device.

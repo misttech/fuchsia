@@ -106,7 +106,6 @@ impl RegisterTool {
         };
 
         let target_spec = ffx_target::get_target_specifier(&self.context)
-            .await
             .user_message("getting target specifier from config")?;
 
         // update the repo name if we matched a product bundle repo.

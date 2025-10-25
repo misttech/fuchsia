@@ -536,7 +536,7 @@ pub async fn knock_target_daemonless(
 /// device name (exact match) is provided.  In other contexts, it is valid for
 /// the specifier to be a substring of the nodename, a network address, serial
 /// number, or vsock identifier.
-pub async fn get_target_specifier(context: &EnvironmentContext) -> Result<Option<String>> {
+pub fn get_target_specifier(context: &EnvironmentContext) -> Result<Option<String>> {
     if let Some(ts) = context.get_overridden_target_specifier() {
         return Ok(ts);
     }
@@ -631,7 +631,7 @@ mod test {
         // That way, $FUCHSIA_NODENAME and $FUCHSIA_DEVICE_ADDR are both unset.
         let env = test_env().build().unwrap();
 
-        let target_spec = get_target_specifier(&env.context).await.unwrap();
+        let target_spec = get_target_specifier(&env.context).unwrap();
         assert_eq!(target_spec, None);
     }
 
@@ -639,7 +639,7 @@ mod test {
     async fn test_get_target_specifier_from_nodename_env() {
         let env = test_env().env_var("FUCHSIA_NODENAME", "nodename-default").build().unwrap();
 
-        let target_spec = get_target_specifier(&env.context).await.unwrap();
+        let target_spec = get_target_specifier(&env.context).unwrap();
         assert_eq!(target_spec, Some("nodename-default".into()));
     }
 
@@ -647,7 +647,7 @@ mod test {
     async fn test_get_target_specifier_from_device_addr_env() {
         let env = test_env().env_var("FUCHSIA_DEVICE_ADDR", "device-addr-default").build().unwrap();
 
-        let target_spec = get_target_specifier(&env.context).await.unwrap();
+        let target_spec = get_target_specifier(&env.context).unwrap();
         assert_eq!(target_spec, Some("device-addr-default".into()));
     }
 
@@ -659,7 +659,7 @@ mod test {
             .build()
             .unwrap();
 
-        let target_spec = get_target_specifier(&env.context).await.unwrap();
+        let target_spec = get_target_specifier(&env.context).unwrap();
         assert_eq!(target_spec, Some("device-addr-default".into()));
     }
 
@@ -688,7 +688,7 @@ mod test {
             .set(&env.context, Value::String("stateful-global-default".to_owned()))
             .unwrap();
 
-        let target_spec = get_target_specifier(&env.context).await.unwrap();
+        let target_spec = get_target_specifier(&env.context).unwrap();
         assert_eq!(target_spec, None);
     }
 
@@ -721,7 +721,7 @@ mod test {
             .set(&env.context, Value::String("stateful-global-default".to_owned()))
             .unwrap();
 
-        let target_spec = get_target_specifier(&env.context).await.unwrap();
+        let target_spec = get_target_specifier(&env.context).unwrap();
         assert_eq!(target_spec, Some("nodename-default".into()));
     }
 
@@ -756,7 +756,7 @@ mod test {
             .set(&env.context, Value::String("stateful-global-default".to_owned()))
             .unwrap();
 
-        let target_spec = get_target_specifier(&env.context).await.unwrap();
+        let target_spec = get_target_specifier(&env.context).unwrap();
         assert_eq!(target_spec, Some("runtime-default".into()));
     }
 
@@ -765,7 +765,7 @@ mod test {
         let env = test_init().unwrap();
         let mut context = env.context.clone();
         context.override_target_specifier(&Some("foo".to_string()));
-        let target = get_target_specifier(&context).await.expect("get_target_specifier");
+        let target = get_target_specifier(&context).expect("get_target_specifier");
         assert_eq!(target, Some("foo".to_string()));
     }
     #[fuchsia::test]

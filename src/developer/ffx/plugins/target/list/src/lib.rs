@@ -10,7 +10,7 @@ use ffx_config::EnvironmentContext;
 use ffx_list_args::{AddressTypes, ListCommand};
 use ffx_target::{TargetInfo, TargetInfoQuery};
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
-use fho::{Deferred, FfxMain, FfxTool, deferred};
+use fho::{deferred, Deferred, FfxMain, FfxTool};
 use fidl_fuchsia_developer_ffx::{self as ffx};
 use futures::TryStreamExt;
 use target_formatter::{JsonTarget, JsonTargetFormatter, TargetFormatter};
@@ -122,13 +122,13 @@ async fn show_targets(
             if writer.is_machine() {
                 let res = target_formatter::filter_targets_by_address_types(infos, address_types);
                 let mut formatter = JsonTargetFormatter::try_from(res)?;
-                let default: Option<String> = ffx_target::get_target_specifier(&context).await?;
+                let default: Option<String> = ffx_target::get_target_specifier(&context)?;
                 JsonTargetFormatter::set_default_target(&mut formatter.targets, default.as_deref());
                 writer.machine(&formatter.targets)?;
             } else {
                 let formatter =
                     Box::<dyn TargetFormatter>::try_from((cmd.format, address_types, infos))?;
-                let default: Option<String> = ffx_target::get_target_specifier(&context).await?;
+                let default: Option<String> = ffx_target::get_target_specifier(&context)?;
                 writer.line(formatter.lines(default.as_deref()).join("\n"))?;
             }
         }
@@ -184,7 +184,7 @@ pub async fn emit_device_stats_event(num_devices: usize, query: &Option<String>)
     )
     .await;
 } ///////////////////////////////////////////////////////////////////////////////
-// tests
+  // tests
 
 #[cfg(test)]
 mod test {

@@ -104,7 +104,7 @@ impl EnvContext {
             )
             .map_err(fxe)?,
         };
-        let target_spec: TargetInfoQuery = ffx_target::get_target_specifier(&context).await?.into();
+        let target_spec: TargetInfoQuery = ffx_target::get_target_specifier(&context)?.into();
         logging::init_logging(&context);
         logging::LOG_SINK.add_log_output(&context)?;
         log::info!("Logging setup for EnvContext instance: {}", logging::log_id(&context));

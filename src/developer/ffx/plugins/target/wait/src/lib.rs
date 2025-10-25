@@ -115,7 +115,7 @@ impl<T: DeviceWaiter + fho::TryFromEnv> FfxMain for WaitOperation<T> {
 impl<T: DeviceWaiter + fho::TryFromEnv> WaitOperation<T> {
     pub async fn wait_impl(&self) -> Result<()> {
         let default_target: Option<String> =
-            ffx_target::get_target_specifier(&self.env).await.bug()?;
+            ffx_target::get_target_specifier(&self.env).bug()?;
         let behavior = if self.cmd.down {
             ffx_target::WaitFor::DeviceOffline
         } else {

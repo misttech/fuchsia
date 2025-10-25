@@ -207,7 +207,6 @@ where
     ) -> CheckFut<'a, Self::Output> {
         Box::pin(async move {
             ffx_target::get_target_specifier(self.0)
-                .await
                 .map(Into::<Self::Output>::into)
                 .or_analytics(PointOfFailure::GetTargetSpecifier)
                 .await
