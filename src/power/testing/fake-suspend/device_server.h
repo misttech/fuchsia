@@ -22,6 +22,8 @@ class DeviceServer : public fidl::Server<fuchsia_hardware_power_suspend::Suspend
   // fidl::Server<fuchsia_hardware_power_suspend::Suspender> overrides.
   void GetSuspendStates(GetSuspendStatesCompleter::Sync& completer) override;
   void Suspend(SuspendRequest& request, SuspendCompleter::Sync& completer) override;
+  void ForceLowestPowerMode(ForceLowestPowerModeRequest& request,
+                            ForceLowestPowerModeCompleter::Sync& completer) override;
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_hardware_power_suspend::Suspender> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {}

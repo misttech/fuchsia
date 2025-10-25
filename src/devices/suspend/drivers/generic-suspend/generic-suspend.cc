@@ -224,6 +224,11 @@ void GenericSuspend::Suspend(SuspendRequestView request, SuspendCompleter::Sync&
   }
 }
 
+void GenericSuspend::ForceLowestPowerMode(ForceLowestPowerModeRequestView request,
+                                          ForceLowestPowerModeCompleter::Sync& completer) {
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
 void GenericSuspend::Serve(fidl::ServerEnd<fuchsia_hardware_power_suspend::Suspender> request) {
   suspend_bindings_.AddBinding(dispatcher(), std::move(request), this, fidl::kIgnoreBindingClosure);
 }

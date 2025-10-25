@@ -81,6 +81,12 @@ open protocol Suspender {
         /// including the duration that the system was suspended.
         3: suspend_overhead zx.Duration;
     }) error zx.Status;
+
+    /// Forcibly puts the system into its lowest power mode.
+    /// TODO(b/454722784): Consider removing this in the future.
+    flexible ForceLowestPowerMode(table {
+        1: enable bool;
+    }) -> () error zx.Status;
 };
 
 service SuspendService {

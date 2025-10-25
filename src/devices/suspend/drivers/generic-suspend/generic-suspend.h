@@ -53,6 +53,8 @@ class GenericSuspend : public fdf::DriverBase,
 
   void GetSuspendStates(GetSuspendStatesCompleter::Sync& completer) override;
   void Suspend(SuspendRequestView request, SuspendCompleter::Sync& completer) override;
+  void ForceLowestPowerMode(ForceLowestPowerModeRequestView request,
+                            ForceLowestPowerModeCompleter::Sync& completer) override;
 
  protected:
   virtual zx::result<zx::resource> GetCpuResource();

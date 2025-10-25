@@ -44,6 +44,11 @@ void DeviceServer::Suspend(SuspendRequest& request, SuspendCompleter::Sync& comp
   }
 }
 
+void DeviceServer::ForceLowestPowerMode(ForceLowestPowerModeRequest& request,
+                                        ForceLowestPowerModeCompleter::Sync& completer) {
+  completer.Reply(zx::ok());
+}
+
 // test.suspendcontrol/Device.*
 
 void DeviceServer::SetSuspendStates(SetSuspendStatesRequest& request,
