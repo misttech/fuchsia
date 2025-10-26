@@ -164,9 +164,13 @@ void broadcast_invept(uint64_t eptp) {
   // EPT itself can outlive the guests due to user space having their own handles to the EPT aspace.
   if (num_guests.load() != 0) {
     no_ongoing_invept_or_vmxoff.Wait();
-    mp_sync_exec(
-        mp_ipi_target::ALL, 0,
-        [](void* eptp) { invept(InvEpt::SINGLE_CONTEXT, *static_cast<uint64_t*>(eptp)); }, &eptp);
+    // Now that the invept token is held and we are not racing with any attempts at vmxoff, check
+    // the num_guests status again.
+    if (num_guests.load() != 0) {
+      mp_sync_exec(
+          mp_ipi_target::ALL, 0,
+          [](void* eptp) { invept(InvEpt::SINGLE_CONTEXT, *static_cast<uint64_t*>(eptp)); }, &eptp);
+    }
     no_ongoing_invept_or_vmxoff.Signal();
   }
 }
