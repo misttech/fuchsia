@@ -116,7 +116,7 @@ class SystemPowerStateControllerUsingStarnix(
         self._device_logger: affordances_capable.FuchsiaDeviceLogger = (
             device_logger
         )
-        self._insect: affordances_capable.InspectCapableDevice = inspect
+        self._inspect: affordances_capable.InspectCapableDevice = inspect
         self._starnix = starnix_affordance
 
     # List all the public methods
@@ -739,7 +739,7 @@ class SystemPowerStateControllerUsingStarnix(
         # ]
         try:
             inspect_data_collection: fuchsia_inspect.InspectDataCollection = (
-                self._insect.get_inspect_data(
+                self._inspect.get_inspect_data(
                     selectors=["/bootstrap/system-activity-governor"],
                 )
             )
@@ -806,7 +806,7 @@ class SystemPowerStateControllerUsingStarnix(
         # ]
         try:
             inspect_data_collection: fuchsia_inspect.InspectDataCollection = (
-                self._insect.get_inspect_data(
+                self._inspect.get_inspect_data(
                     selectors=[
                         "bootstrap/boot-drivers*:[name=generic-suspend]root"
                     ],

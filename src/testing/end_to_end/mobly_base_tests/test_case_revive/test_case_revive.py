@@ -40,6 +40,8 @@ class FuchsiaDeviceOperation(enum.StrEnum):
 
     IDLE_SUSPEND_BUTTON_PRESS_RESUME = "idle-suspend-button-press-resume"
 
+    USB_POWER_SUSPEND_RESUME = "usb-power-suspend-resume"
+
 
 class TestMethodExecutionFrequency(enum.StrEnum):
     """How often the test case method need to be executed in the revived test case."""
@@ -360,8 +362,8 @@ class TestCaseRevive(fuchsia_base_test.FuchsiaBaseTest):
         test_cases: list[str] = [
             attribute
             for attribute in dir(self)
-            if callable(getattr(self, attribute))
-            and attribute.startswith(("test_", "_test_")) is True
+            if attribute.startswith(("test_", "_test_")) is True
+            and callable(getattr(self, attribute))
         ]
         _LOGGER.info(
             "[TestCaseRevive] - List of all the test cases in this test "
