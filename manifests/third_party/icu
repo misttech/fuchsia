@@ -12,6 +12,6 @@
              path="third_party/icu/latest"
              remote="https://chromium.googlesource.com/chromium/deps/icu"
              gerrithost="https://chromium-review.googlesource.com"
-             revision="ff35c4f9df23800935ff9f34203152c6b3c7881e"/>
+             revision="f27805b7d7d8618fa73ce89e9d28e0a8b2216fec"/>
   </projects>
 </manifest>
