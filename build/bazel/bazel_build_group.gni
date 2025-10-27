@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/bazel/bazel_action.gni")
+import("//build/packages/prebuilt_package.gni")
 
 # Build several Bazel targets with a single GN > Bazel boundary
 # transition. This can be considerably faster than building
@@ -28,7 +29,7 @@ import("//build/bazel/bazel_action.gni")
 # location under $target_out_dir.
 #
 # Arguments:
-#    subtargets: (required)
+#    subtargets: (optional)
 #      A list of scopes, each one describing the content of a given
 #      Bazel target to build and where to copy its outputs into the
 #      Ninja build directory. Each item in the list follows the
@@ -55,6 +56,23 @@ import("//build/bazel/bazel_action.gni")
 #          metadata, visibility:
 #              Usual meaning, but these values are _not_ forwarded
 #              to the group target.
+#
+#    driver_packages: (optional)
+#      A list of scopes, each one describing a driver package that is
+#      built by Bazel, and should be exported by this build group.
+#      The package manifest (and contents) will be exported to:
+#        target_out_dir/package_name/package_manifest.json
+#      Each item in the list follows the following schema:
+#
+#          bazel_target (required)
+#              Bazel target label.
+#
+#          package_name (required)
+#              The name of the package.
+#
+#          gn_target_name (optional)
+#              The name of the `prebuilt_package()` GN target created for this
+#              driver package. Defaults to `package_name`.
 #
 #    metadata: (optional)
 #       Metadata that is _only_ applied to the group target itself, not to
@@ -92,7 +110,55 @@ template("bazel_build_group") {
   _directory_outputs = []
   _package_outputs = []
 
-  foreach(subtarget, invoker.subtargets) {
+  # Collect all the subtargets from all different types together.
+  _subtargets = []
+  _package_archives_to_expand = []
+
+  if (defined(invoker.subtargets)) {
+    _subtargets += invoker.subtargets
+  }
+
+  # Construct a subtarget entry for each of the driver subtargets specified
+  if (defined(invoker.driver_packages)) {
+    foreach(p, invoker.driver_packages) {
+      _subtarget = {
+      }
+      _subtarget = {
+        bazel_target = p.bazel_target
+        gn_target_name = "${p.package_name}.bazel_output"
+        package_outputs = [
+          {
+            package_label = bazel_target
+            archive = "${p.package_name}.far"
+            copy_debug_symbols = true
+          },
+        ]
+      }
+      _subtargets += [ _subtarget ]
+      _prebuilt_package = {
+      }
+      _prebuilt_package = {
+        package_name = p.package_name
+        if (defined(p.gn_target_name)) {
+          prebuilt_package_target_name = p.gn_target_name
+        } else {
+          prebuilt_package_target_name = package_name
+        }
+        bazel_output_action = _subtarget.gn_target_name
+        metadata = {
+          fuchsia_driver_labels =
+              [ get_label_info(":$prebuilt_package_target_name",
+                               "label_no_toolchain") ]
+
+          # Used by the assert_driver_components template.
+          driver_component_barrier = []
+        }
+      }
+      _package_archives_to_expand += [ _prebuilt_package ]
+    }
+  }
+
+  foreach(subtarget, _subtargets) {
     _bazel_targets += [ subtarget.bazel_target ]
 
     if (defined(subtarget.deps)) {
@@ -191,7 +257,7 @@ template("bazel_build_group") {
 
   # Create subtarget actions
 
-  foreach(subtarget, invoker.subtargets) {
+  foreach(subtarget, _subtargets) {
     _action_args = []
     _action_outputs = []
     _action_inputs = []
@@ -278,6 +344,15 @@ template("bazel_build_group") {
       check_for_output_dir_leaks = false
 
       forward_variables_from(subtarget, [ "metadata" ])
+    }
+  }
+
+  foreach(_prebuilt, _package_archives_to_expand) {
+    prebuilt_package(_prebuilt.prebuilt_package_target_name) {
+      package_name = _prebuilt.package_name
+      archive = "$target_out_dir/$package_name.far"
+      deps = [ ":${_prebuilt.bazel_output_action}" ]
+      forward_variables_from(_prebuilt, [ "metadata" ])
     }
   }
 }
