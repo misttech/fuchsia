@@ -36,3 +36,13 @@ When writing, each 4 KB block is filled so that every byte inside the block co
 "file_fallocate_hole" is a file that is created, written to 64KB, and then fallocated with punch hole option (from 8KB to 16KB offset).
 
 "filemode_xxx" are files with filemode from 000 to 777.
+
+## inline_test.img
+
+There are two files and one subdirectory in the root directory for inline test.
+
+"inline_file" is an inline file that has data.
+
+"inline_file_empty" is an inline file that doesn't have data.
+
+"inline_dir" is an inline directory that has 3 children ("a", "b" and "c").

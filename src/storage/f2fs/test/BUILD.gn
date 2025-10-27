@@ -134,6 +134,7 @@ resource("test-images") {
   sources = [
     "unit/compatibility/images/directory_test.img.zst",
     "unit/compatibility/images/file_test.img.zst",
+    "unit/compatibility/images/inline_test.img.zst",
   ]
   outputs = [ "data/{{source_file_part}}" ]
 }

@@ -191,5 +191,38 @@ TEST_F(FileTest, File) {
   }
 }
 
+class InlineTest : public F2fsFakeDevTestFixture {
+ public:
+  InlineTest()
+      : F2fsFakeDevTestFixture(
+            TestOptions{.block_count = kSectorCount100MiB, .image_file = "inline_test.img.zst"}) {}
+};
+
+TEST_F(InlineTest, Inline) {
+  fbl::RefPtr<fs::Vnode> vnode;
+
+  // Check both |InlineFile| and |DataExist| flags are set
+  FileTester::Lookup(root_dir_.get(), "inline_file", &vnode);
+  auto test_file = fbl::RefPtr<File>::Downcast(std::move(vnode));
+  FileTester::CheckInlineFile(test_file.get());
+  FileTester::CheckDataExistFlagSet(test_file.get());
+  test_file->Close();
+
+  // For an empty inline file, check |InlineFile| flag is set and |DataExist| flag is unset
+  FileTester::Lookup(root_dir_.get(), "inline_file_empty", &vnode);
+  test_file = fbl::RefPtr<File>::Downcast(std::move(vnode));
+  FileTester::CheckInlineFile(test_file.get());
+  FileTester::CheckDataExistFlagUnset(test_file.get());
+  test_file->Close();
+
+  // Check if children of inline directory are available
+  FileTester::Lookup(root_dir_.get(), "inline_dir", &vnode);
+  auto test_dir = fbl::RefPtr<Dir>::Downcast(std::move(vnode));
+  FileTester::CheckInlineDir(test_dir.get());
+  std::unordered_set<std::string> children_set = {"a", "b", "c"};
+  FileTester::CheckChildrenFromReaddir(test_dir.get(), children_set);
+  test_dir->Close();
+}
+
 }  // namespace
 }  // namespace f2fs

@@ -114,7 +114,27 @@ file_test() {
   clean ${IMAGE}
 }
 
+inline_test() {
+  IMAGE="inline_test.img"
+  setup ${IMAGE} true
+
+  FILE=inline_file
+  echo "hello" > ${FILE}
+
+  FILE=inline_file_empty
+  touch ${FILE}
+
+  DIR=inline_dir
+  mkdir ${DIR}
+  touch ${DIR}/a
+  touch ${DIR}/b
+  touch ${DIR}/c
+
+  clean ${IMAGE}
+}
+
 mkdir -p ${MOUNT_DIR}
 directory_test
 file_test
+inline_test
 rmdir ${MOUNT_DIR}
