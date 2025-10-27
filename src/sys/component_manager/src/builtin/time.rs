@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use crate::bootfs::BootfsSvc;
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use fidl_fuchsia_time as ftime;
-use fuchsia_fs::{file, PERM_READABLE};
+use fuchsia_fs::{PERM_READABLE, file};
 use fuchsia_runtime::{UtcClock, UtcInstant};
 use futures::prelude::*;
 use std::sync::Arc;
-use zx::{ClockOpts, HandleBased, Rights};
+use zx::{AsHandleRef, ClockOpts, HandleBased, Rights};
 
 /// An implementation of the `fuchsia.time.Maintenance` protocol, which
 /// maintains a UTC clock, vending out handles with write access.
@@ -75,5 +75,6 @@ pub async fn create_utc_clock(bootfs: &Option<BootfsSvc>) -> Result<UtcClock, Er
     let clock_opts = ClockOpts::MAPPABLE;
     let clock = UtcClock::create(clock_opts, Some(backstop))
         .map_err(|s| anyhow!("failed to create UTC clock: {}", s))?;
+    clock.set_name(&zx::Name::new_lossy("utc_from_cm")).context("while setting UTC name")?;
     Ok(clock)
 }
