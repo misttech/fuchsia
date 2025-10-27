@@ -403,28 +403,15 @@ zx_status_t UsbPeripheral::FunctionRegistered() {
 }
 
 zx_status_t UsbPeripheral::StartController() {
-  if (dci_new_.is_valid()) {
-    fidl::Arena arena;
-    auto result = dci_new_.buffer(arena)->StartController();
-    if (!result.ok()) {
-      fdf::debug("Failed to send StartController request: {}", result.status_string());
-      return ZX_ERR_INTERNAL;
-    }
-    if (result->is_error()) {
-      fdf::debug("Failed to start controller: {}", zx_status_get_string(result->error_value()));
-      return result->error_value();
-    }
-    return ZX_OK;
+  fidl::Arena arena;
+  auto result = dci_new_.buffer(arena)->StartController();
+  if (!result.ok()) {
+    fdf::debug("Failed to send StartController request: {}", result.status_string());
+    return ZX_ERR_INTERNAL;
   }
-
-  // Not all DCI drivers have the new FIDL protocols plumbed through. For drivers still in
-  // migration, fall back to banjo if FIDL fails.
-  fdf::warn("could not StartController over FIDL, falling back to banjo");
-  // TODO(b/356940744): Move all DCI drivers over to the UsbDci FIDL protocol.
-  zx_status_t status = dci_.SetInterface(this, &usb_dci_interface_protocol_ops_);
-  if (status != ZX_OK) {
-    fdf::error("SetInterface failed: {}", zx_status_get_string(status));
-    return status;
+  if (result->is_error()) {
+    fdf::debug("Failed to start controller: {}", zx_status_get_string(result->error_value()));
+    return result->error_value();
   }
   return ZX_OK;
 }
@@ -882,13 +869,6 @@ zx_status_t UsbPeripheral::CommonControl(const usb_setup_t* setup, const uint8_t
   return ZX_ERR_NOT_SUPPORTED;
 }
 
-zx_status_t UsbPeripheral::UsbDciInterfaceControl(const usb_setup_t* setup,
-                                                  const uint8_t* write_buffer, size_t write_size,
-                                                  uint8_t* read_buffer, size_t read_size,
-                                                  size_t* out_read_actual) {
-  return CommonControl(setup, write_buffer, write_size, read_buffer, read_size, out_read_actual);
-}
-
 void UsbPeripheral::CommonSetConnected(bool connected) {
   bool was_connected = connected;
   {
@@ -910,10 +890,6 @@ void UsbPeripheral::CommonSetConnected(bool connected) {
     }
   }
 }
-
-void UsbPeripheral::UsbDciInterfaceSetConnected(bool connected) { CommonSetConnected(connected); }
-
-void UsbPeripheral::UsbDciInterfaceSetSpeed(usb_speed_t speed) { speed_ = speed; }
 
 void UsbPeripheral::SetConfiguration(SetConfigurationRequestView request,
                                      SetConfigurationCompleter::Sync& completer) {

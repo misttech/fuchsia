@@ -89,8 +89,7 @@ struct UsbConfiguration {
 // It binds against the USB DCI driver device and manages a list of UsbFunction devices,
 // one for each USB function in the peripheral role configuration.
 class UsbPeripheral : public fdf::DriverBase,
-                      public fidl::WireServer<fuchsia_hardware_usb_peripheral::Device>,
-                      public ddk::UsbDciInterfaceProtocol<UsbPeripheral> {
+                      public fidl::WireServer<fuchsia_hardware_usb_peripheral::Device> {
  public:
   static constexpr std::string_view kDriverName = "usb_device";
   static constexpr std::string_view kChildNodeName = "usb-peripheral";
@@ -103,12 +102,6 @@ class UsbPeripheral : public fdf::DriverBase,
   zx::result<> Start() override;
   void PrepareStop(fdf::PrepareStopCompleter completer) override;
 
-  // UsbDciInterface implementation.
-  zx_status_t UsbDciInterfaceControl(const usb_setup_t* setup, const uint8_t* write_buffer,
-                                     size_t write_size, uint8_t* out_read_buffer, size_t read_size,
-                                     size_t* out_read_actual);
-  void UsbDciInterfaceSetConnected(bool connected);
-  void UsbDciInterfaceSetSpeed(usb_speed_t speed);
   zx_status_t UsbDciCancelAll(uint8_t ep_address);
 
   // fuchsia_hardware_usb_peripheral::Device protocol implementation.
