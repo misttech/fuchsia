@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 use anyhow::Context;
-use fidl_fuchsia_memory_heapdump_client::{self as fheapdump_client, CollectorError};
+use fidl_fuchsia_memory_heapdump_client::{
+    self as fheapdump_client, CollectorError, ProcessSelector,
+};
 use fuchsia_inspect::ArrayProperty;
 use fuchsia_sync::Mutex as SyncMutex;
 use futures::StreamExt;
@@ -55,19 +57,34 @@ impl Registry {
         });
     }
 
-    fn find_process_by_name(&self, name: &str) -> Result<Arc<dyn Process>, CollectorError> {
-        let processes = self.processes.lock();
-        let mut iterator = processes.values().filter(|p| p.get_name() == name);
-        match (iterator.next(), iterator.next()) {
-            (Some(process), None) => Ok(process.clone()),
-            (None, _) => Err(CollectorError::ProcessSelectorNoMatch),
-            (Some(_), Some(_)) => Err(CollectorError::ProcessSelectorAmbiguous),
-        }
-    }
+    fn find_process(
+        &self,
+        selector: &Option<ProcessSelector>,
+    ) -> Result<Arc<dyn Process>, CollectorError> {
+        let mut matches: Vec<_> = {
+            let processes = self.processes.lock();
+            match selector {
+                None => processes.values().cloned().collect(),
+                Some(fheapdump_client::ProcessSelector::ByName(name)) => {
+                    processes.values().filter(|p| p.get_name() == name).cloned().collect()
+                }
+                Some(fheapdump_client::ProcessSelector::ByKoid(koid)) => {
+                    processes.get(&Koid::from_raw(*koid)).into_iter().cloned().collect()
+                }
+                Some(selector @ fheapdump_client::ProcessSelectorUnknown!()) => {
+                    warn!(ordinal = selector.ordinal(); "Unknown process selector");
+                    return Err(CollectorError::ProcessSelectorUnsupported);
+                }
+            }
+        };
 
-    fn find_process_by_koid(&self, koid: &Koid) -> Result<Arc<dyn Process>, CollectorError> {
-        let result = self.processes.lock().get(koid).cloned();
-        result.ok_or(CollectorError::ProcessSelectorNoMatch)
+        if matches.len() > 1 {
+            Err(CollectorError::ProcessSelectorAmbiguous)
+        } else if let Some(process) = matches.pop() {
+            Ok(process)
+        } else {
+            Err(CollectorError::ProcessSelectorNoMatch)
+        }
     }
 
     async fn send_stored_snapshots(
@@ -104,22 +121,7 @@ impl Registry {
                         payload.receiver.context("missing required receiver")?.into_proxy();
                     let with_contents = payload.with_contents.unwrap_or(false);
 
-                    let process = match process_selector {
-                        Some(fheapdump_client::ProcessSelector::ByName(name)) => {
-                            self.find_process_by_name(&name)
-                        }
-                        Some(fheapdump_client::ProcessSelector::ByKoid(koid)) => {
-                            self.find_process_by_koid(&Koid::from_raw(koid))
-                        }
-                        Some(process_selector @ fheapdump_client::ProcessSelectorUnknown!()) => {
-                            warn!(ordinal = process_selector.ordinal(); "Unknown process selector");
-                            Err(CollectorError::ProcessSelectorUnsupported)
-                        }
-                        None => {
-                            warn!("Missing process selector");
-                            Err(CollectorError::ProcessSelectorUnsupported)
-                        }
-                    };
+                    let process = self.find_process(&process_selector);
 
                     start_detached_task(async move {
                         let error = match process {
@@ -579,7 +581,7 @@ mod tests {
     #[test_case(Some(fheapdump_client::ProcessSelector::ByKoid(99)), None,
         Some(CollectorError::ProcessSelectorNoMatch) ; "no matching koid")]
     #[test_case(None, None,
-        Some(CollectorError::ProcessSelectorUnsupported) ; "missing process selector")]
+        Some(CollectorError::ProcessSelectorAmbiguous) ; "missing process selector")]
     #[fasync::run_singlethreaded(test)]
     async fn test_take_live_snapshot(
         process_selector: Option<fheapdump_client::ProcessSelector>,

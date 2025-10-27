@@ -12,13 +12,21 @@ mod realm_query;
 pub use realm_query::connect_to_collector;
 
 /// Builds a ProcessSelector value from command-line arguments.
+///
+/// If none of the command-line options are specified, it returns None, which
+/// allows any process to be selected.
 pub fn build_process_selector(
     by_name: Option<String>,
     by_koid: Option<u64>,
-) -> anyhow::Result<fheapdump_client::ProcessSelector> {
+) -> anyhow::Result<Option<fheapdump_client::ProcessSelector>> {
     match (by_name, by_koid) {
-        (Some(selected_name), None) => Ok(fheapdump_client::ProcessSelector::ByName(selected_name)),
-        (None, Some(selected_koid)) => Ok(fheapdump_client::ProcessSelector::ByKoid(selected_koid)),
+        (None, None) => Ok(None),
+        (Some(selected_name), None) => {
+            Ok(Some(fheapdump_client::ProcessSelector::ByName(selected_name)))
+        }
+        (None, Some(selected_koid)) => {
+            Ok(Some(fheapdump_client::ProcessSelector::ByKoid(selected_koid)))
+        }
         _ => ffx_bail!("Please use either --by-name or --by-koid"),
     }
 }

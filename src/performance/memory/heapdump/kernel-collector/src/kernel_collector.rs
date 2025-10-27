@@ -257,7 +257,7 @@ impl<'a> KernelCollector<'a> {
                         payload.receiver.context("missing required receiver")?.into_proxy();
 
                     match payload.process_selector {
-                        Some(fheapdump_client::ProcessSelector::ByKoid(1)) => {
+                        None | Some(fheapdump_client::ProcessSelector::ByKoid(1)) => {
                             // Reads the heap profile from the shared VMO, and build a copy.
                             let mut profile = collect_profile(self.region)?;
                             // Stream the heap profile back to the caller.
@@ -306,7 +306,7 @@ impl<'a> KernelCollector<'a> {
                             streamer.end_of_stream().await?
                         }
                         _ => {
-                            warn!("Missing process selector");
+                            warn!("Unsupported process selector");
                             receiver
                                 .report_error(CollectorError::ProcessSelectorUnsupported)
                                 .await

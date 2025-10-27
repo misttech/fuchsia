@@ -79,10 +79,7 @@ async fn list(
     let (iterator_proxy, iterator_server) = create_proxy();
     let request = fheapdump_client::CollectorListStoredSnapshotsRequest {
         iterator: Some(iterator_server),
-        process_selector: match (cmd.by_name, cmd.by_koid) {
-            (None, None) => None,
-            (by_name, by_koid) => Some(build_process_selector(by_name, by_koid)?),
-        },
+        process_selector: build_process_selector(cmd.by_name, cmd.by_koid)?,
         ..Default::default()
     };
 
