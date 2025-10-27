@@ -14,7 +14,7 @@ rustc_binary(
     with_unit_tests = True,
     deps = [
         "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:clap",
         "//third_party/rust_crates/vendor:json5format",
-        "//third_party/rust_crates/vendor:structopt",
     ],
 )

@@ -30,11 +30,11 @@
 #![warn(missing_docs)]
 
 use anyhow::Result;
+use clap::Parser;
 use json5format::*;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::{fs, io};
-use structopt::StructOpt;
 
 /// Parses each file in the given `files` vector and returns a parsed object for each JSON5
 /// document. If the parser encounters an error in any input file, the command aborts without
@@ -103,43 +103,42 @@ fn main() -> Result<()> {
     format_documents(parsed_documents, options, args.replace)
 }
 
-/// Command line options defined via the structopt! macrorule. These definitions generate the
-/// option parsing, validation, and [usage documentation](index.html).
-#[derive(Debug, StructOpt)]
-#[structopt(
+/// Command line options defined via the clap derive macros. These definitions generate the
+/// option parsing, validation, and usage documentation.
+#[derive(Debug, Parser)]
+#[command(
     name = "json5format",
     about = "Format JSON5 documents to a consistent style, preserving comments."
 )]
 struct Opt {
     /// Files to format (use "-" for stdin)
-    #[structopt(parse(from_os_str))]
     files: Vec<PathBuf>,
 
     /// Replace (overwrite) the input file with the formatted result
-    #[structopt(short, long)]
+    #[arg(short, long)]
     replace: bool,
 
     /// Suppress trailing commas (otherwise added by default)
-    #[structopt(short, long)]
+    #[arg(short, long)]
     no_trailing_commas: bool,
 
     /// Objects or arrays with a single child should collapse to a single line; no trailing comma
-    #[structopt(short, long)]
+    #[arg(short, long)]
     one_element_lines: bool,
 
     /// Sort arrays of primitive values (string, number, boolean, or null) lexicographically
-    #[structopt(short, long)]
+    #[arg(short, long)]
     sort_arrays: bool,
 
     /// Indent by the given number of spaces
-    #[structopt(short, long, default_value = "4")]
+    #[arg(short, long, default_value_t = 4)]
     indent: usize,
 }
 
 #[cfg(not(test))]
 impl Opt {
     fn args() -> Self {
-        Self::from_args()
+        Self::parse()
     }
 
     fn from_stdin(buf: &mut String) -> Result<usize, io::Error> {
@@ -161,13 +160,10 @@ impl Opt {
 impl Opt {
     fn args() -> Self {
         if let Some(test_args) = unsafe { &self::tests::TEST_ARGS } {
-            Self::from_clap(
-                &Self::clap()
-                    .get_matches_from_safe(test_args)
-                    .expect("failed to parse TEST_ARGS command line arguments"),
-            )
+            Self::try_parse_from(test_args)
+                .expect("failed to parse TEST_ARGS command line arguments")
         } else {
-            Self::from_args()
+            Self::parse()
         }
     }
 
@@ -331,7 +327,7 @@ mod tests {
 
     #[test]
     fn test_args() {
-        let args = Opt::from_iter(vec![""].iter());
+        let args = Opt::try_parse_from(vec![""].iter()).unwrap();
         assert_eq!(args.files.len(), 0);
         assert_eq!(args.replace, false);
         assert_eq!(args.no_trailing_commas, false);
@@ -340,9 +336,10 @@ mod tests {
         assert_eq!(args.indent, 4);
 
         let some_filename = "some_file.json5";
-        let args = Opt::from_iter(
+        let args = Opt::try_parse_from(
             vec!["formatjson5", "-r", "-n", "-o", "-s", "-i", "2", some_filename].iter(),
-        );
+        )
+        .unwrap();
         assert_eq!(args.files.len(), 1);
         assert_eq!(args.replace, true);
         assert_eq!(args.no_trailing_commas, true);

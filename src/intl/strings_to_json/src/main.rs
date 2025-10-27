@@ -9,42 +9,39 @@
 //! Please see the `README.md` file in this program's directory for more information.
 
 use anyhow::{Context, Error, Result};
+use clap::Parser;
 use intl_strings::{json, parser, veprintln};
 use std::fs::File;
 use std::path::PathBuf;
 use std::{env, io};
-use structopt::StructOpt;
 
-#[derive(Debug, StructOpt)]
-#[structopt(
+#[derive(Debug, Parser)]
+#[command(
     name = "Packages translated messages from strings.xml files into a JSON localized resource"
 )]
 struct Args {
-    #[structopt(
+    #[arg(
         long = "source-locale",
         help = "The locale ID for the locale that is used as the message source of truth. Example: en-US"
     )]
     source_locale: String,
-    #[structopt(
+    #[arg(
         long = "target-locale",
         help = "The locale ID for the locale that is used as the target for bundling. Example: nl-NL"
     )]
     target_locale: String,
-    #[structopt(long = "source-strings-file", help = "The path to the source strings.xml file")]
+    #[arg(long = "source-strings-file", help = "The path to the source strings.xml file")]
     source_strings_file: PathBuf,
-    #[structopt(
+    #[arg(
         long = "target-strings-file",
         help = "The path to the strings.xml file containing translated messages"
     )]
     target_strings_file: PathBuf,
-    #[structopt(
-        long = "output",
-        help = "The path to the JSON file that should be generated as output"
-    )]
+    #[arg(long = "output", help = "The path to the JSON file that should be generated as output")]
     output: PathBuf,
-    #[structopt(long = "verbose", help = "Verbose output, for debugging")]
+    #[arg(long = "verbose", help = "Verbose output, for debugging")]
     verbose: bool,
-    #[structopt(
+    #[arg(
         long = "replace-missing-with-warning",
         help = "Replaces a missing message 'foo' with 'UNTRANSLATED(foo)' instead of failing"
     )]
@@ -71,9 +68,9 @@ fn open_single_read(what: &str, path: &PathBuf) -> Result<io::BufReader<File>> {
 fn open_files(args: &Args) -> Result<SourcesSinks, Error> {
     let source_input = open_single_read("source_strings_file", &args.source_strings_file)?;
     let target_input = open_single_read("target_strings_file", &args.target_strings_file)?;
-    let output_str = args.output.to_str().with_context(|| {
-        "output filename is not utf-8, what? Use --verbose flag to print the value."
-    })?;
+    let output_str = args.output.to_str().with_context(
+        || "output filename is not utf-8, what? Use --verbose flag to print the value.",
+    )?;
     let output = File::create(&args.output)
         .with_context(|| format!("could not open output file: {}", output_str))?;
     Ok(SourcesSinks {
@@ -115,7 +112,7 @@ fn run(args: Args) -> Result<(), Error> {
 
 fn main() -> Result<(), Error> {
     env::set_var("RUST_BACKTRACE", "full");
-    run(Args::from_args())
+    run(Args::parse())
 }
 
 #[cfg(test)]

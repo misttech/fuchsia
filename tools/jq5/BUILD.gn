@@ -11,11 +11,11 @@ rustc_binary("jq5") {
   deps = [
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:clap",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:json5format",
     "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:serde_json5",
-    "//third_party/rust_crates:structopt",
   ]
 
   sources = [
@@ -31,11 +31,11 @@ rustc_test("jq5_bin_test") {
     ":jq_for_test",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:clap",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:json5format",
     "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:serde_json5",
-    "//third_party/rust_crates:structopt",
   ]
   source_root = "src/main.rs"
   sources = [

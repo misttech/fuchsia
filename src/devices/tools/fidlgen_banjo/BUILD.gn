@@ -31,8 +31,8 @@ rustc_binary("bin") {
     ":lib",
     "//src/devices/lib/fidl-ir:lib",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:clap",
     "//third_party/rust_crates:serde_json",
-    "//third_party/rust_crates:structopt",
   ]
 }
 

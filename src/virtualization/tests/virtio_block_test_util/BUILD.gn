@@ -16,15 +16,15 @@ rustc_binary("virtio_block_test_util") {
       "//src/lib/fuchsia-fs",
       "//src/storage/lib/block_client/rust",
       "//third_party/rust_crates:anyhow",
-      "//third_party/rust_crates:structopt",
+      "//third_party/rust_crates:clap",
     ]
 
     source_root = "src/fuchsia_main.rs"
     sources = [ "src/fuchsia_main.rs" ]
   } else if (is_linux) {
     deps = [
+      "//third_party/rust_crates:clap",
       "//third_party/rust_crates:libc",
-      "//third_party/rust_crates:structopt",
     ]
 
     source_root = "src/linux_main.rs"

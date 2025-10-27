@@ -3,35 +3,35 @@
 // found in the LICENSE file.
 
 use block_client::{BlockClient as _, BufferSlice, MutableBufferSlice, RemoteBlockClient};
+use clap::{Parser, Subcommand};
 use fidl_fuchsia_hardware_block::BlockMarker;
 use fuchsia_component::client;
-use fuchsia_fs::{directory, PERM_READABLE};
-use structopt::StructOpt;
+use fuchsia_fs::{PERM_READABLE, directory};
 
 const BLOCK_CLASS_PATH: &str = "/dev/class/block/";
 
-#[derive(StructOpt, Debug)]
+#[derive(Parser, Debug)]
 struct Config {
     block_size: u32,
     pci_bus: u8,
     pci_device: u8,
-    #[structopt(subcommand)]
+    #[command(subcommand)]
     cmd: Command,
 }
 
-#[derive(StructOpt, Debug)]
+#[derive(Subcommand, Debug)]
 enum Command {
-    #[structopt(name = "check")]
+    #[command(name = "check")]
     Check { block_count: u64 },
-    #[structopt(name = "read")]
+    #[command(name = "read")]
     Read { offset: u64, expected: u8 },
-    #[structopt(name = "write")]
+    #[command(name = "write")]
     Write { offset: u64, value: u8 },
 }
 
 #[fuchsia::main]
 async fn main() -> Result<(), anyhow::Error> {
-    let Config { block_size, pci_bus, pci_device, cmd } = Config::from_args();
+    let Config { block_size, pci_bus, pci_device, cmd } = Config::parse();
 
     // The filename is will contain the BDF in the form <bus>:<device>.<function>. The function is
     // always zero for virtio block devices.

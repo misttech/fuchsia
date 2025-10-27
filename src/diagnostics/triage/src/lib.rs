@@ -10,27 +10,27 @@ pub mod file_io;
 mod test;
 
 use crate::config::OutputFormat;
-use structopt::StructOpt;
+use clap::Parser;
 
-#[derive(StructOpt, Debug, Clone)]
+#[derive(Parser, Debug, Clone)]
 pub struct Options {
     /// Config files
-    #[structopt(long = "config")]
+    #[arg(long = "config")]
     config_files: Vec<String>,
 
     /// Directory to read diagnostic (snapshot) files from.
-    #[structopt(long = "data")]
+    #[arg(long = "data")]
     data_directory: String,
 
     /// How to print the results.
-    #[structopt(long = "output-format", default_value = "text")]
+    #[arg(long = "output-format", default_value = "text")]
     output_format: OutputFormat,
 
     /// Which tags we should include
-    #[structopt(long = "tag")]
+    #[arg(long = "tag")]
     tags: Vec<String>,
 
     /// Which tags we should exclude
-    #[structopt(long = "exclude-tag")]
+    #[arg(long = "exclude-tag")]
     exclude_tags: Vec<String>,
 }

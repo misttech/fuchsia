@@ -21,7 +21,7 @@ rustc_binary("intl_wisdom_client_rust") {
     "//src/lib/fuchsia-component",
     "//src/lib/icu_data/rust/icu_data",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:structopt",
+    "//third_party/rust_crates:clap",
   ]
 
   # [START icu_library]

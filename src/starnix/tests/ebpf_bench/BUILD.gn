@@ -24,8 +24,8 @@ rustc_binary("bin") {
     "//src/starnix/lib/ebpf",
     "//src/starnix/lib/ebpf_api",
     "//src/starnix/lib/ebpf_loader",
+    "//third_party/rust_crates:clap",
     "//third_party/rust_crates:criterion",
-    "//third_party/rust_crates:structopt",
   ]
 
   configs += [ "//src/starnix/config:starnix_clippy_lints" ]

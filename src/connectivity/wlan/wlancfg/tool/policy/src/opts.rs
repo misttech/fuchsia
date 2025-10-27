@@ -2,46 +2,37 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
-use clap::arg_enum;
+use anyhow::{Error, format_err};
+use clap::{Parser, Subcommand};
 use eui48::MacAddress;
-use structopt::StructOpt;
 use {fidl_fuchsia_wlan_common as wlan_common, fidl_fuchsia_wlan_policy as wlan_policy};
 
-arg_enum! {
-    #[derive(PartialEq, Copy, Clone, Debug)]
-    pub enum RoleArg {
-        Client,
-        Ap
-    }
+#[derive(PartialEq, Copy, Clone, Debug, clap::ValueEnum)]
+pub enum RoleArg {
+    Client,
+    Ap,
 }
 
-arg_enum! {
-    #[derive(PartialEq, Copy, Clone, Debug)]
-    pub enum ScanTypeArg {
-        Active,
-        Passive,
-    }
+#[derive(PartialEq, Copy, Clone, Debug, clap::ValueEnum)]
+pub enum ScanTypeArg {
+    Active,
+    Passive,
 }
 
-arg_enum! {
-    #[derive(PartialEq, Copy, Clone, Debug)]
-    pub enum SecurityTypeArg {
-        None,
-        Wep,
-        Wpa,
-        Wpa2,
-        Wpa3,
-    }
+#[derive(PartialEq, Copy, Clone, Debug, clap::ValueEnum)]
+pub enum SecurityTypeArg {
+    None,
+    Wep,
+    Wpa,
+    Wpa2,
+    Wpa3,
 }
 
-arg_enum! {
-    #[derive(PartialEq, Copy, Clone, Debug)]
-    pub enum CredentialTypeArg {
-        None,
-        Psk,
-        Password,
-    }
+#[derive(PartialEq, Copy, Clone, Debug, clap::ValueEnum)]
+pub enum CredentialTypeArg {
+    None,
+    Psk,
+    Password,
 }
 
 impl From<RoleArg> for wlan_common::WlanMacRole {
@@ -158,23 +149,15 @@ fn security_type_from_args(
     }
 }
 
-#[derive(StructOpt, Clone, Debug)]
+#[derive(clap::Args, Clone, Debug)]
 pub struct PolicyNetworkConfig {
-    #[structopt(long, required = true)]
+    #[arg(long)]
     pub ssid: String,
-    #[structopt(
-        long = "security-type",
-        possible_values = &SecurityTypeArg::variants(),
-        case_insensitive = true,
-    )]
+    #[arg(long = "security-type", value_enum, ignore_case = true)]
     pub security_type: Option<SecurityTypeArg>,
-    #[structopt(
-        long = "credential-type",
-        possible_values = &CredentialTypeArg::variants(),
-        case_insensitive = true,
-    )]
+    #[arg(long = "credential-type", value_enum, ignore_case = true)]
     pub credential_type: Option<CredentialTypeArg>,
-    #[structopt(long)]
+    #[arg(long)]
     pub credential: Option<String>,
 }
 
@@ -188,23 +171,15 @@ pub struct PolicyNetworkConfig {
 /// Example of invalid arguments:
 ///     --ssid MyNetwork --security-type none --credential MyPassword
 ///     --ssid MyNetwork --credential-type password
-#[derive(StructOpt, Clone, Debug)]
+#[derive(clap::Args, Clone, Debug)]
 pub struct RemoveArgs {
-    #[structopt(long, required = true)]
+    #[arg(long)]
     pub ssid: String,
-    #[structopt(
-        long = "security-type",
-        possible_values = &SecurityTypeArg::variants(),
-        case_insensitive = true,
-    )]
+    #[arg(long = "security-type", value_enum, ignore_case = true)]
     pub security_type: Option<SecurityTypeArg>,
-    #[structopt(
-        long = "credential-type",
-        possible_values = &CredentialTypeArg::variants(),
-        case_insensitive = true,
-    )]
+    #[arg(long = "credential-type", value_enum, ignore_case = true)]
     pub credential_type: Option<CredentialTypeArg>,
-    #[structopt(long)]
+    #[arg(long)]
     pub credential: Option<String>,
 }
 
@@ -280,95 +255,83 @@ impl RemoveArgs {
     }
 }
 
-#[derive(StructOpt, Clone, Debug)]
+#[derive(clap::Args, Clone, Debug)]
 pub struct SaveNetworkArgs {
-    #[structopt(long, required = true)]
+    #[arg(long)]
     pub ssid: String,
-    #[structopt(
-        long = "security-type",
-        possible_values = &SecurityTypeArg::variants(),
-        case_insensitive = true,
-    )]
+    #[arg(long = "security-type", value_enum, ignore_case = true)]
     pub security_type: SecurityTypeArg,
-    #[structopt(
-        long = "credential-type",
-        possible_values = &CredentialTypeArg::variants(),
-        case_insensitive = true,
-    )]
+    #[arg(long = "credential-type", value_enum, ignore_case = true)]
     pub credential_type: Option<CredentialTypeArg>,
-    #[structopt(long)]
+    #[arg(long)]
     pub credential: String,
 }
 
-#[derive(StructOpt, Clone, Debug)]
+#[derive(clap::Args, Clone, Debug)]
 pub struct ConnectArgs {
-    #[structopt(long, required = true)]
+    #[arg(long)]
     pub ssid: String,
-    #[structopt(
-        long = "security-type",
-        possible_values = &SecurityTypeArg::variants(),
-        case_insensitive = true,
-    )]
+    #[arg(long = "security-type", value_enum, ignore_case = true)]
     pub security_type: Option<SecurityTypeArg>,
 }
 
-#[derive(StructOpt, Clone, Debug)]
+#[derive(Subcommand, Clone, Debug)]
 pub enum PolicyClientCmd {
-    #[structopt(name = "connect")]
+    #[command(name = "connect")]
     Connect(ConnectArgs),
-    #[structopt(name = "list-saved-networks")]
+    #[command(name = "list-saved-networks")]
     GetSavedNetworks,
-    #[structopt(name = "listen")]
+    #[command(name = "listen")]
     Listen,
-    #[structopt(name = "remove-network")]
+    #[command(name = "remove-network")]
     RemoveNetwork(RemoveArgs),
-    #[structopt(name = "save-network")]
+    #[command(name = "save-network")]
     SaveNetwork(PolicyNetworkConfig),
-    #[structopt(name = "scan")]
+    #[command(name = "scan")]
     ScanForNetworks,
-    #[structopt(name = "start-client-connections")]
+    #[command(name = "start-client-connections")]
     StartClientConnections,
-    #[structopt(name = "stop-client-connections")]
+    #[command(name = "stop-client-connections")]
     StopClientConnections,
-    #[structopt(name = "dump-config")]
+    #[command(name = "dump-config")]
     DumpConfig,
-    #[structopt(name = "restore-config")]
+    #[command(name = "restore-config")]
     RestoreConfig { serialized_config: String },
-    #[structopt(name = "status")]
+    #[command(name = "status")]
     Status,
 }
 
-#[derive(StructOpt, Clone, Debug)]
+#[derive(Subcommand, Clone, Debug)]
 pub enum PolicyAccessPointCmd {
     // TODO(sakuma): Allow users to specify connectivity mode and operating band.
-    #[structopt(name = "start")]
+    #[command(name = "start")]
     Start(PolicyNetworkConfig),
-    #[structopt(name = "stop")]
+    #[command(name = "stop")]
     Stop(PolicyNetworkConfig),
-    #[structopt(name = "stop-all")]
+    #[command(name = "stop-all")]
     StopAllAccessPoints,
-    #[structopt(name = "listen")]
+    #[command(name = "listen")]
     Listen,
-    #[structopt(name = "status")]
+    #[command(name = "status")]
     Status,
 }
 
-#[derive(StructOpt, Clone, Debug)]
+#[derive(Subcommand, Clone, Debug)]
 pub enum DeprecatedConfiguratorCmd {
-    #[structopt(name = "suggest-mac")]
+    #[command(name = "suggest-mac")]
     SuggestAccessPointMacAddress {
-        #[structopt(required = true)]
+        #[arg(required = true)]
         mac: MacAddress,
     },
 }
 
-#[derive(StructOpt, Clone, Debug)]
+#[derive(Parser, Clone, Debug)]
 pub enum Opt {
-    #[structopt(name = "client")]
+    #[command(subcommand, name = "client")]
     Client(PolicyClientCmd),
-    #[structopt(name = "ap")]
+    #[command(subcommand, name = "ap")]
     AccessPoint(PolicyAccessPointCmd),
-    #[structopt(name = "deprecated")]
+    #[command(subcommand, name = "deprecated")]
     Deprecated(DeprecatedConfiguratorCmd),
 }
 

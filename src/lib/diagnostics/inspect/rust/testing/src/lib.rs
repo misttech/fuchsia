@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::table::*;
+use clap::Parser;
 use fuchsia_inspect::{
     self as inspect, ArithmeticArrayProperty, ArrayProperty, DoubleArrayProperty,
     DoubleExponentialHistogramProperty, DoubleLinearHistogramProperty, Inspector, IntArrayProperty,
@@ -11,7 +12,6 @@ use fuchsia_inspect::{
 };
 use futures::FutureExt;
 use std::ops::AddAssign;
-use structopt::StructOpt;
 use {
     fidl_fuchsia_inspect as finspect, fidl_fuchsia_inspect_deprecated as fdeprecated,
     fuchsia_async as fasync,
@@ -38,20 +38,20 @@ where
     histogram
 }
 
-#[derive(Debug, StructOpt, Default)]
-#[structopt(
+#[derive(Debug, Parser, Default)]
+#[command(
     name = "example",
     about = "Example component to showcase Inspect API objects, including an NxM nested table"
 )]
 pub struct Options {
-    #[structopt(long)]
+    #[arg(long)]
     pub rows: usize,
 
-    #[structopt(long)]
+    #[arg(long)]
     pub columns: usize,
 
     /// If set, publish a top-level number called "extra_number".
-    #[structopt(long = "extra-number")]
+    #[arg(long = "extra-number")]
     pub extra_number: Option<i64>,
 }
 

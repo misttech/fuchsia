@@ -4,15 +4,15 @@
 
 #![deny(warnings)]
 
+use clap::Parser;
 use std::fs;
 use std::io::{Error, ErrorKind};
 use std::net::UdpSocket;
 use std::path::Path;
-use structopt::StructOpt;
 
 const NET_DIR: &str = "/sys/class/net";
 
-#[derive(StructOpt, Debug)]
+#[derive(Parser, Debug)]
 enum Command {
     /// Find the name of network interface with the given MAC address.
     Find { mac_address: String },
@@ -55,7 +55,7 @@ fn generate_all_possible_packets(length: usize) -> Vec<Vec<u8>> {
 }
 
 fn main() -> std::io::Result<()> {
-    match Command::from_args() {
+    match Command::parse() {
         Command::Find { mac_address } => {
             let interface = get_interface(mac_address)?;
             println!("{:}", interface);

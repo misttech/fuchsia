@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::Error;
+use clap::Parser;
 use fidl_fuchsia_factory::{
     AlphaFactoryStoreProviderRequest, AlphaFactoryStoreProviderRequestStream,
     CastCredentialsFactoryStoreProviderRequest, CastCredentialsFactoryStoreProviderRequestStream,
@@ -18,9 +19,7 @@ use futures::prelude::*;
 use serde_json::from_reader;
 use std::collections::HashMap;
 use std::fs::File;
-use std::str::FromStr;
 use std::sync::Arc;
-use structopt::StructOpt;
 use vfs::file::vmo::read_only;
 use vfs::tree_builder::TreeBuilder;
 
@@ -108,7 +107,7 @@ async fn run_server(req: IncomingServices, dir_mtx: LockedDirectoryProxy) -> Res
     Ok(())
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Clone, clap::ValueEnum)]
 enum Provider {
     Alpha,
     Cast,
@@ -117,37 +116,21 @@ enum Provider {
     Weave,
     Widevine,
 }
-impl FromStr for Provider {
-    type Err = Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let formatted_str = s.trim().to_lowercase();
-        match formatted_str.as_ref() {
-            "alpha" => Ok(Provider::Alpha),
-            "cast" => Ok(Provider::Cast),
-            "misc" => Ok(Provider::Misc),
-            "playready" => Ok(Provider::Playready),
-            "weave" => Ok(Provider::Weave),
-            "widevine" => Ok(Provider::Widevine),
-            _ => Err(format_err!("Could not find '{}' provider", formatted_str)),
-        }
-    }
-}
-
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 struct Flags {
     /// The factory store provider to fake.
-    #[structopt(short, long)]
+    #[arg(short, long, ignore_case = true)]
     provider: Provider,
 
     /// The path to the config file for the provider.
-    #[structopt(short, long)]
+    #[arg(short, long)]
     config: String,
 }
 
 #[fuchsia::main(logging_tags = ["fake_factory_store_providers"])]
 async fn main() -> Result<(), Error> {
-    let flags = Flags::from_args();
+    let flags = Flags::parse();
     let dir = Arc::new(Mutex::new(start_test_dir(&flags.config)));
 
     let mut fs = ServiceFs::new_local();

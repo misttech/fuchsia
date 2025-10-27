@@ -4,8 +4,9 @@
 
 //! test_list_tool generates test-list.json.
 
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use camino::{Utf8Path, Utf8PathBuf};
+use clap::Parser;
 use diagnostics_log_types::Severity;
 use fidl::unpersist;
 use fidl_fuchsia_component_decl::Component;
@@ -19,7 +20,6 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fs;
 use std::io::Read;
-use structopt::StructOpt;
 use test_list::{ExecutionEntry, FuchsiaComponentExecutionEntry, TestList, TestListEntry, TestTag};
 
 const META_FAR_PREFIX: &'static str = "meta/";
@@ -430,7 +430,7 @@ fn validate_and_get_test_cml(
 }
 
 fn run_tool() -> Result<(), Error> {
-    let opt = opts::Opt::from_args();
+    let opt = opts::Opt::parse();
     opt.validate()?;
     if opt.single_threaded {
         rayon::ThreadPoolBuilder::new().num_threads(1).build_global()?;
@@ -702,7 +702,7 @@ mod tests {
         facets.entries = Some(vec![fdata::DictionaryEntry {
             key: TEST_REALM_FACET_NAME.to_string(),
             value: Some(Box::new(fdata::DictionaryValue::StrVec(vec![
-                HERMETIC_TEST_REALM.to_string()
+                HERMETIC_TEST_REALM.to_string(),
             ]))),
         }]);
         let err = update_tags_from_facets(&mut tags, &facets)

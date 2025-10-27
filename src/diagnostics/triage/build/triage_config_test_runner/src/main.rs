@@ -3,18 +3,18 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, bail};
+use clap::Parser;
 use fuchsia_triage::ActionTagDirective;
-use structopt::StructOpt;
 use triage_app_lib::file_io::config_from_files;
 
-#[derive(StructOpt, Debug)]
+#[derive(Parser, Debug)]
 pub struct Options {
-    #[structopt(long = "config")]
+    #[arg(long = "config")]
     config_files: Vec<String>,
 }
 
 fn main() -> Result<(), Error> {
-    let options = Options::from_args();
+    let options = Options::parse();
     run_tests(options.config_files)
 }
 

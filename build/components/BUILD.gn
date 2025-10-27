@@ -14,9 +14,9 @@ rustc_binary("test_component_host_helper") {
     "//sdk/fidl/fuchsia.data:fuchsia.data_rust",
     "//src/lib/fidl/rust/fidl",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:clap",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
-    "//third_party/rust_crates:structopt",
   ]
   source_root = "generate_test_component_script_and_config.rs"
   sources = [ source_root ]

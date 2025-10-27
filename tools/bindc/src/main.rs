@@ -7,135 +7,137 @@
 mod cpp_generator;
 mod generate;
 mod rust_generator;
+use std::fmt::Write;
 
 use anyhow::{Context, Error, anyhow};
 use bind::compiler::{self, CompiledBindRules};
 use bind::debugger::offline_debugger;
 use bind::test;
+use clap::{Args, Parser, Subcommand};
 use fidl_ir::*;
-use std::fmt::Write;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, Write as IoWrite};
 use std::path::PathBuf;
-use structopt::StructOpt;
 
-#[derive(StructOpt, Debug)]
+#[derive(Args, Debug)]
 struct SharedOptions {
     /// The bind library input files. These may be included by the bind rules. They should be in
     /// the format described in //tools/bindc/README.md.
-    #[structopt(short = "i", long = "include", parse(from_os_str))]
+    #[arg(short = 'i', long = "include", value_delimiter = ' ', num_args = 1.., required = false)]
     include: Vec<PathBuf>,
 
     /// Specifiy the bind library input files as a file. The file must contain a list of filenames
     /// that are bind library input files that may be included by the bind rules. Those files
     /// should be in the format described in //tools/bindc/README.md.
-    #[structopt(short = "f", long = "include-file", parse(from_os_str))]
+    #[arg(short = 'f', long = "include-file")]
     include_file: Option<PathBuf>,
 
     /// The bind rules input file. This should be in the format described in
     /// //tools/bindc/README.md. This is required unless disable_autobind is true, in which case
     /// the driver while bind unconditionally (but only on the user's request.)
-    #[structopt(parse(from_os_str))]
     input: Option<PathBuf>,
 
     /// Check inputs for style guide violations.
-    #[structopt(short = "l", long = "lint")]
+    #[arg(short = 'l', long = "lint")]
     lint: bool,
 }
 
-#[derive(StructOpt, Debug)]
+#[derive(Subcommand, Debug)]
 enum Command {
-    #[structopt(name = "compile")]
+    #[command(name = "compile")]
     Compile {
-        #[structopt(flatten)]
+        #[command(flatten)]
         options: SharedOptions,
 
         /// Output file. The compiler emits a C header file.
-        #[structopt(short = "o", long = "output", parse(from_os_str))]
+        #[arg(short = 'o', long = "output")]
         output: Option<PathBuf>,
 
         /// Specify a path for the compiler to generate a depfile. A depfile contain, in Makefile
         /// format, the files that this invocation of the compiler depends on including all bind
         /// libraries and the bind rules input itself. An output file must be provided to generate
         /// a depfile.
-        #[structopt(short = "d", long = "depfile", parse(from_os_str))]
+        #[arg(short = 'd', long = "depfile")]
         depfile: Option<PathBuf>,
 
         // TODO(https://fxbug.dev/42119701): Eventually this option should be removed when we can define this
         // configuration in the driver's component manifest.
         /// Disable automatically binding the driver so that the driver must be bound on a user's
         /// request.
-        #[structopt(short = "a", long = "disable-autobind")]
+        #[arg(short = 'a', long = "disable-autobind")]
         disable_autobind: bool,
     },
-    #[structopt(name = "debug")]
+    #[command(name = "debug")]
     Debug {
-        #[structopt(flatten)]
+        #[command(flatten)]
         options: SharedOptions,
 
         /// A file containing the properties of a specific device, as a list of key-value pairs.
         /// This will be used as the input to the bind rules debugger.
-        #[structopt(short = "d", long = "debug", parse(from_os_str))]
+        #[arg(short = 'd', long = "debug")]
         device_file: PathBuf,
     },
-    #[structopt(name = "test")]
+    #[command(name = "test")]
     Test {
-        #[structopt(flatten)]
+        #[command(flatten)]
         options: SharedOptions,
 
         // TODO(https://fxbug.dev/42134547): Refer to documentation for bind testing.
         /// A file containing the test specification.
-        #[structopt(short = "t", long = "test-spec", parse(from_os_str))]
+        #[arg(short = 't', long = "test-spec")]
         test_spec: PathBuf,
     },
     /// Generate a Bind Library based on the input FIDL IR file.
-    #[structopt(name = "generate-bind")]
+    #[command(name = "generate-bind")]
     GenerateBind {
         /// The FIDL IR input file. This should be generated from a FIDL library
         /// by the FIDL compiler at //tools/fidl/fidlc using the $fidl_toolchain suffix.
-        #[structopt(parse(from_os_str))]
         input: PathBuf,
 
         /// Output Bind Library file.
-        #[structopt(short = "o", long = "output", parse(from_os_str))]
+        #[arg(short = 'o', long = "output")]
         output: Option<PathBuf>,
     },
     /// Generate a C++ header file based on the input Bind Library file.
-    #[structopt(name = "generate-cpp")]
+    #[command(name = "generate-cpp")]
     GenerateCpp {
         /// The Bind Library input file.
-        #[structopt(parse(from_os_str))]
         input: PathBuf,
 
         /// Check the input for style guide violations.
-        #[structopt(short = "l", long = "lint")]
+        #[arg(short = 'l', long = "lint")]
         lint: bool,
 
         /// Output C++ header file.
-        #[structopt(short = "o", long = "output", parse(from_os_str))]
+        #[arg(short = 'o', long = "output")]
         output: Option<PathBuf>,
     },
     /// Generate a Rust file based on the input Bind Library file.
-    #[structopt(name = "generate-rust")]
+    #[command(name = "generate-rust")]
     GenerateRust {
         /// The Bind Library input file.
-        #[structopt(parse(from_os_str))]
         input: PathBuf,
 
         /// Check the input for style guide violations.
-        #[structopt(short = "l", long = "lint")]
+        #[arg(short = 'l', long = "lint")]
         lint: bool,
 
         /// Output Rust file.
-        #[structopt(short = "o", long = "output", parse(from_os_str))]
+        #[arg(short = 'o', long = "output")]
         output: Option<PathBuf>,
     },
 }
 
+#[derive(Parser, Debug)]
+struct Opts {
+    #[command(subcommand)]
+    command: Command,
+}
+
 fn main() {
-    let command = Command::from_iter(std::env::args());
-    if let Err(err) = handle_command(command) {
+    let opts = Opts::parse();
+    if let Err(err) = handle_command(opts.command) {
         eprintln!("{}", err);
         std::process::exit(1);
     }

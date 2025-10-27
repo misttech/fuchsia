@@ -15,23 +15,23 @@
 #![allow(dead_code)]
 
 use anyhow::{Context, Error, Result};
+use clap::Parser;
 use intl_strings::{message_ids, parser, veprintln};
 use std::fs::File;
 use std::path::PathBuf;
 use std::{env, io};
-use structopt::StructOpt;
 
 // TODO(fmil): Add usage link here.
-#[derive(Debug, StructOpt)]
-#[structopt(name = "Extracts information from strings.xml into FIDL")]
+#[derive(Debug, Parser)]
+#[command(name = "Extracts information from strings.xml into FIDL")]
 struct Args {
-    #[structopt(long = "input", help = "The path to the input strings.xml format file")]
+    #[arg(long = "input", help = "The path to the input strings.xml format file")]
     input: PathBuf,
-    #[structopt(long = "output", help = "The path to the output FIDL file")]
+    #[arg(long = "output", help = "The path to the output FIDL file")]
     output: PathBuf,
-    #[structopt(long = "verbose", help = "Verbose output, for debugging")]
+    #[arg(long = "verbose", help = "Verbose output, for debugging")]
     verbose: bool,
-    #[structopt(
+    #[arg(
         long = "library",
         default_value = "fuchsia.intl.l10n",
         help = "The FIDL library name for which to generate the code"
@@ -70,7 +70,7 @@ fn run(args: Args) -> Result<()> {
 
 fn main() -> Result<()> {
     env::set_var("RUST_BACKTRACE", "full");
-    run(Args::from_args())
+    run(Args::parse())
 }
 
 #[cfg(test)]

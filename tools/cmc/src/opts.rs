@@ -2,214 +2,204 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use clap::{Parser, Subcommand};
 use cml::features::Feature;
 use std::path::PathBuf;
-use structopt::StructOpt;
 
-#[derive(StructOpt, Debug)]
+#[derive(Parser, Debug)]
 /// Tool for assembly, compilation, and validation of component manifests.
 pub struct Opt {
-    #[structopt(short = "s", long = "stamp", parse(from_os_str))]
+    #[arg(short = 's', long = "stamp")]
     /// Stamp this file on success
     pub stamp: Option<PathBuf>,
 
-    #[structopt(subcommand)]
+    #[command(subcommand)]
     pub cmd: Commands,
 }
 
-#[derive(StructOpt, Debug)]
+#[derive(Subcommand, Debug)]
 pub enum Commands {
-    #[structopt(name = "validate-references")]
+    #[command(name = "validate-references")]
     /// validate a component manifest against package manifest.
     ValidateReferences {
-        #[structopt(
-            name = "Component Manifest",
-            short = "c",
-            long = "component-manifest",
-            parse(from_os_str)
-        )]
+        #[arg(name = "Component Manifest", short = 'c', long = "component-manifest")]
         component_manifest: PathBuf,
 
-        #[structopt(
-            name = "Package Manifest",
-            short = "p",
-            long = "package-manifest",
-            parse(from_os_str)
-        )]
+        #[arg(name = "Package Manifest", short = 'p', long = "package-manifest")]
         package_manifest: PathBuf,
 
-        #[structopt(
+        #[arg(
             name = "Free text label, for instance as context for errors printed",
-            short = "e",
+            short = 'e',
             long = "context"
         )]
         context: Option<String>,
     },
 
-    #[structopt(name = "merge")]
+    #[command(name = "merge")]
     /// merge the listed manifest files. Does NOT validate the resulting manifest.
     ///
     /// The semantics for merging are the same ones used for `include`:
     /// https://fuchsia.dev/reference/cml#include
     Merge {
-        #[structopt(name = "FILE", parse(from_os_str))]
+        #[arg(name = "FILE")]
         /// files to process
         ///
         /// If any file contains an array at its root, every object in the array
         /// will be merged into the final object.
         files: Vec<PathBuf>,
 
-        #[structopt(short = "o", long = "output", parse(from_os_str))]
+        #[arg(short = 'o', long = "output")]
         /// file to write the merged results to, will print to stdout if not provided
         output: Option<PathBuf>,
 
-        #[structopt(short = "f", long = "fromfile", parse(from_os_str))]
+        #[arg(short = 'f', long = "fromfile")]
         /// response file for files to process
         ///
         /// If specified, additional files to merge will be read from the path provided.
         /// The input format is delimited by newlines.
         fromfile: Option<PathBuf>,
 
-        #[structopt(short = "d", long = "depfile", parse(from_os_str))]
+        #[arg(short = 'd', long = "depfile")]
         /// depfile for includes
         ///
         /// If specified, include paths will be listed here, delimited by newlines.
         depfile: Option<PathBuf>,
     },
 
-    #[structopt(name = "include")]
+    #[command(name = "include")]
     /// recursively process contents from includes, and optionally validate the result
     Include {
-        #[structopt(name = "FILE", parse(from_os_str))]
+        #[arg(name = "FILE")]
         /// file to process
         file: PathBuf,
 
-        #[structopt(short = "o", long = "output", parse(from_os_str))]
+        #[arg(short = 'o', long = "output")]
         /// file to write the merged results to, will print to stdout if not provided
         output: Option<PathBuf>,
 
-        #[structopt(short = "d", long = "depfile", parse(from_os_str))]
+        #[arg(short = 'd', long = "depfile")]
         /// depfile for includes
         ///
         /// If specified, include paths will be listed here, delimited by newlines.
         depfile: Option<PathBuf>,
 
-        #[structopt(short = "p", long = "includepath", parse(from_os_str), default_value = "")]
+        #[arg(short = 'p', long = "includepath", value_delimiter = ' ', num_args=1..)]
         /// base paths for resolving includes
         includepath: Vec<PathBuf>,
 
-        #[structopt(short = "r", long = "includeroot", parse(from_os_str), default_value = "")]
+        #[arg(short = 'r', long = "includeroot", default_value = ".")]
         /// base path for resolving include paths that start with "//"
         includeroot: PathBuf,
 
-        #[structopt(long = "validate", parse(try_from_str), default_value = "true")]
+        #[arg(long = "validate", action = clap::ArgAction::Set, default_value_t = true)]
         /// validate the result
         validate: bool,
 
-        #[structopt(short = "f", long = "features")]
+        #[arg(short = 'f', long = "features", value_delimiter = ' ', num_args=1..)]
         /// The set of non-standard features to compile with.
         /// Only applies to CML files.
         features: Vec<Feature>,
     },
 
-    #[structopt(name = "check-includes")]
+    #[command(name = "check-includes")]
     /// check if given includes are present in a given component manifest
     CheckIncludes {
-        #[structopt(name = "FILE", parse(from_os_str))]
+        #[arg(name = "FILE")]
         /// file to process
         file: PathBuf,
 
-        #[structopt(name = "expect")]
+        #[arg(name = "expect")]
         expected_includes: Vec<String>,
 
-        #[structopt(short = "f", long = "fromfile", parse(from_os_str))]
+        #[arg(short = 'f', long = "fromfile")]
         /// response file for includes to expect
         ///
         /// If specified, additional includes to expect will be read from the path provided.
         /// The input format is delimited by newlines.
         fromfile: Option<PathBuf>,
 
-        #[structopt(short = "d", long = "depfile", parse(from_os_str))]
+        #[arg(short = 'd', long = "depfile")]
         /// depfile for includes
         ///
         /// If specified, include paths will be listed here, delimited by newlines.
         depfile: Option<PathBuf>,
 
-        #[structopt(short = "p", long = "includepath", parse(from_os_str), default_value = "")]
+        #[arg(short = 'p', long = "includepath", value_delimiter = ' ', num_args=1..)]
         /// base paths for resolving includes
         includepath: Vec<PathBuf>,
 
-        #[structopt(short = "r", long = "includeroot", parse(from_os_str), default_value = "")]
+        #[arg(short = 'r', long = "includeroot", default_value = "")]
         /// base path for resolving include paths that start with "//"
         includeroot: PathBuf,
     },
 
-    #[structopt(name = "format")]
+    #[command(name = "format")]
     /// format a json file
     Format {
-        #[structopt(name = "FILE", parse(from_os_str))]
+        #[arg(name = "FILE")]
         /// file to format. If missing, use stdin
         file: Option<PathBuf>,
 
-        #[structopt(short = "p", long = "pretty")]
+        #[arg(short = 'p', long = "pretty")]
         /// deprecated and ignored. Please do not use (https://fxbug.dev/42060365).
         pretty: bool,
 
-        #[structopt(long = "cml")]
+        #[arg(long = "cml")]
         /// deprecated and ignored. Please do not use (https://fxbug.dev/42060365).
         cml: bool,
 
-        #[structopt(short = "i", long = "in-place")]
+        #[arg(short = 'i', long = "in-place")]
         /// replace the input file with the formatted output (implies `--output <inputfile>`)
         inplace: bool,
 
-        #[structopt(short = "o", long = "output", parse(from_os_str))]
+        #[arg(short = 'o', long = "output")]
         /// file to write the formatted results to, will print to stdout if not provided
         output: Option<PathBuf>,
     },
 
-    #[structopt(name = "compile")]
+    #[command(name = "compile")]
     /// compile a CML file
     Compile {
-        #[structopt(name = "FILE", parse(from_os_str))]
+        #[arg(name = "FILE")]
         /// file to format
         file: PathBuf,
 
-        #[structopt(short = "o", long = "output", parse(from_os_str))]
+        #[arg(short = 'o', long = "output")]
         /// file to write the formatted results to
         output: PathBuf,
 
-        #[structopt(short = "d", long = "depfile", parse(from_os_str))]
+        #[arg(short = 'd', long = "depfile")]
         /// depfile for includes
         ///
         /// If specified, include paths will be listed here, delimited by newlines.
         depfile: Option<PathBuf>,
 
-        #[structopt(short = "p", long = "includepath", parse(from_os_str), default_value = "")]
+        #[arg(short = 'p', long = "includepath", value_delimiter = ' ', num_args=1..)]
         /// base paths for resolving includes
         includepath: Vec<PathBuf>,
 
-        #[structopt(short = "r", long = "includeroot", parse(from_os_str), default_value = "")]
+        #[arg(short = 'r', long = "includeroot", default_value = ".")]
         /// base path for resolving include paths that start with "//"
         includeroot: PathBuf,
 
-        #[structopt(long = "config-package-path")]
+        #[arg(long = "config-package-path")]
         /// path within the component's package at which its configuration will be available
         config_package_path: Option<String>,
 
-        #[structopt(short = "f", long = "features")]
+        #[arg(short = 'f', long = "features", value_delimiter = ' ', num_args=1..)]
         /// The set of non-standard features to compile with.
         /// Only applies to CML files.
         features: Vec<Feature>,
 
-        #[structopt(long = "experimental-force-runner")]
+        #[arg(long = "experimental-force-runner")]
         /// override runner to this value in resulting CML
         ///
         /// If specified, the program.runner field will be set to this value. This option is
         /// EXPERIMENTAL and subject to removal without warning.
         experimental_force_runner: Option<String>,
 
-        #[structopt(long = "must-offer-protocol")]
+        #[arg(long = "must-offer-protocol")]
         /// protocols to verify that all children and collections are offered
         ///
         /// If specified, for each offer named, cmc will require that all children or collections
@@ -217,14 +207,14 @@ pub enum Commands {
         /// used to help find missing offers of important capabilities, like fuchsia.logger.LogSink
         must_offer_protocol: Vec<String>,
 
-        #[structopt(long = "must-use-protocol")]
+        #[arg(long = "must-use-protocol")]
         /// protocols to verify that all children and collections are used
         ///
         /// If specified, for each offer named, cmc will require that the offer is in a use block.
         /// This can be used to help find missing usages of important capabilities, like
         /// fuchsia.logger.LogSink
         must_use_protocol: Vec<String>,
-        #[structopt(long = "must-offer-dictionary")]
+        #[arg(long = "must-offer-dictionary")]
         /// dictionaries to verify that all children and collections are used
         ///
         /// If specified, for each offer named, cmc will require that the offer is in a use block.
@@ -233,19 +223,19 @@ pub enum Commands {
         must_offer_dictionary: Vec<String>,
     },
 
-    #[structopt(name = "print-cml-reference")]
+    #[command(name = "print-cml-reference")]
     /// print generated .cml reference documentation
     PrintReferenceDocs {
-        #[structopt(name = "file path", short = "o", long = "output", parse(from_os_str))]
+        #[arg(name = "file path", short = 'o', long = "output")]
         /// If provided, will output generated reference documentation to a text
         /// file at the file path provided.
         output: Option<PathBuf>,
     },
 
-    #[structopt(name = "debug-print-cm")]
+    #[command(name = "debug-print-cm")]
     /// print pretty rust-debug-format-string representation of .cm file
     DebugPrintCm {
-        #[structopt(name = "FILE", parse(from_os_str))]
+        #[arg(name = "FILE")]
         /// file to process
         file: PathBuf,
     },

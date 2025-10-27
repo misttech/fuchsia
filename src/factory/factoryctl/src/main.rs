@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
-use fidl::endpoints::{create_proxy, ServerEnd};
+use clap::{Parser, Subcommand};
+use fidl::endpoints::{ServerEnd, create_proxy};
 use fidl_fuchsia_boot::{FactoryItemsMarker, FactoryItemsProxy};
 use fidl_fuchsia_factory::{
     AlphaFactoryStoreProviderMarker, AlphaFactoryStoreProviderProxy,
@@ -17,43 +18,39 @@ use fuchsia_component::client::connect_to_protocol;
 use fuchsia_fs::directory::DirentKind;
 use futures::stream::TryStreamExt;
 use nom::HexDisplay;
-use structopt::StructOpt;
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
-#[derive(Debug, StructOpt)]
-#[structopt(
-    name = "factoryctl command line tool, version 1.0.0",
-    about = "Commands to view factory contents"
-)]
+#[derive(Debug, Parser)]
+#[command(name = "factoryctl", version = "1.0.0", about = "Commands to view factory contents")]
 pub enum Opt {
-    #[structopt(name = "alpha")]
+    #[command(subcommand)]
     Alpha(FactoryStoreCmd),
-    #[structopt(name = "cast")]
+    #[command(subcommand)]
     Cast(FactoryStoreCmd),
-    #[structopt(name = "factory-items")]
+    #[command(subcommand)]
     FactoryItems(FactoryItemsCmd),
-    #[structopt(name = "misc")]
+    #[command(subcommand)]
     Misc(FactoryStoreCmd),
-    #[structopt(name = "playready")]
+    #[command(subcommand)]
     PlayReady(FactoryStoreCmd),
-    #[structopt(name = "weave")]
+    #[command(subcommand)]
     Weave(FactoryStoreCmd),
-    #[structopt(name = "widevine")]
+    #[command(subcommand)]
     Widevine(FactoryStoreCmd),
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Subcommand)]
 pub enum FactoryStoreCmd {
-    #[structopt(name = "list")]
+    #[command()]
     List,
 
-    #[structopt(name = "dump")]
+    #[command()]
     Dump { name: String },
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Subcommand)]
 pub enum FactoryItemsCmd {
-    #[structopt(name = "dump")]
+    #[command()]
     Dump { extra: u32 },
 }
 
@@ -125,7 +122,7 @@ async fn process_factory_items_cmd(
 
 #[fasync::run_singlethreaded]
 async fn main() -> Result<(), Error> {
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
 
     let out = match opt {
         Opt::Alpha(cmd) => {

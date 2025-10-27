@@ -61,20 +61,28 @@ fn run_keyboard_test(input_devices: &[&Path], enable_debugging: bool) -> Result<
 
 fn main() -> Result<(), String> {
     // Parse command line arguments.
-    let matches = clap::App::new("VirtIO Input Tester")
-        .arg(clap::Arg::with_name("debug").short("d").help("Show debugging information."))
+    let matches = clap::Command::new("VirtIO Input Tester")
+        .arg(
+            clap::Arg::new("debug")
+                .short('d')
+                .help("Show debugging information.")
+                .action(clap::ArgAction::SetTrue),
+        )
         .subcommand(
-            clap::SubCommand::with_name("keyboard")
+            clap::Command::new("keyboard")
                 .about("runs a keyboard test")
-                .arg(clap::Arg::with_name("files").required(true).min_values(1)),
+                .arg(clap::Arg::new("files").required(true).num_args(1..)),
         )
         .get_matches();
-    let enable_debugging = matches.is_present("debug");
+    let enable_debugging = matches.get_flag("debug");
 
     // Run the user-specified command
-    if let ("keyboard", Some(keyboard_matches)) = matches.subcommand() {
-        let files =
-            keyboard_matches.values_of("files").unwrap().map(Path::new).collect::<Vec<&Path>>();
+    if let Some(("keyboard", keyboard_matches)) = matches.subcommand() {
+        let files = keyboard_matches
+            .get_many::<String>("files")
+            .unwrap()
+            .map(|s| Path::new(s))
+            .collect::<Vec<&Path>>();
         run_keyboard_test(&files, enable_debugging)
     } else {
         Err("Must provide a subcommand indicating which test to run.".to_string())

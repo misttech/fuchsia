@@ -19,10 +19,10 @@ rustc_binary("validate_test_type") {
     "//src/sys/pkg/lib/fuchsia-pkg",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:camino",
+    "//third_party/rust_crates:clap",
     "//third_party/rust_crates:rayon",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
-    "//third_party/rust_crates:structopt",
   ]
 
   test_deps = [

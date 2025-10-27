@@ -19,8 +19,8 @@ rustc_library("inspect_testing") {
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:clap",
     "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:structopt",
   ]
 
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]

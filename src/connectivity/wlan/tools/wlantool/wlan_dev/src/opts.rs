@@ -2,61 +2,48 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use clap::arg_enum;
+use clap::{Parser, ValueEnum};
 use fidl_fuchsia_wlan_common::PowerSaveType;
-use structopt::StructOpt;
 use {fidl_fuchsia_wlan_common as wlan_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211};
 
-arg_enum! {
-    #[derive(PartialEq, Copy, Clone, Debug)]
-    pub enum RoleArg {
-        Client,
-        Ap
-    }
+#[derive(ValueEnum, PartialEq, Copy, Clone, Debug)]
+pub enum RoleArg {
+    Client,
+    Ap,
 }
 
-arg_enum! {
-    #[derive(PartialEq, Copy, Clone, Debug)]
-    pub enum PhyArg {
-        Erp,
-        Ht,
-        Vht,
-    }
+#[derive(ValueEnum, PartialEq, Copy, Clone, Debug)]
+pub enum PhyArg {
+    Erp,
+    Ht,
+    Vht,
 }
 
-arg_enum! {
-    #[derive(PartialEq, Copy, Clone, Debug)]
-    pub enum CbwArg {
-        Cbw20,
-        Cbw40,
-        Cbw80,
-    }
+#[derive(ValueEnum, PartialEq, Copy, Clone, Debug)]
+pub enum CbwArg {
+    Cbw20,
+    Cbw40,
+    Cbw80,
 }
 
-arg_enum! {
-    #[derive(PartialEq, Copy, Clone, Debug)]
-    pub enum ScanTypeArg {
-        Active,
-        Passive,
-    }
+#[derive(ValueEnum, PartialEq, Copy, Clone, Debug)]
+pub enum ScanTypeArg {
+    Active,
+    Passive,
 }
 
-arg_enum! {
-    #[derive(PartialEq, Copy, Clone, Debug)]
-    pub enum PsModeArg {
-        PsModeUltraLowPower,
-        PsModeLowPower,
-        PsModeBalanced,
-        PsModePerformance,
-    }
+#[derive(ValueEnum, PartialEq, Copy, Clone, Debug)]
+pub enum PsModeArg {
+    PsModeUltraLowPower,
+    PsModeLowPower,
+    PsModeBalanced,
+    PsModePerformance,
 }
 
-arg_enum! {
-    #[derive(PartialEq, Copy, Clone, Debug)]
-    pub enum OnOffArg {
-        On,
-        Off,
-    }
+#[derive(ValueEnum, PartialEq, Copy, Clone, Debug)]
+pub enum OnOffArg {
+    On,
+    Off,
 }
 
 impl ::std::convert::From<RoleArg> for wlan_common::WlanMacRole {
@@ -117,275 +104,255 @@ impl ::std::convert::From<OnOffArg> for bool {
     }
 }
 
-#[derive(StructOpt, Debug, PartialEq)]
+#[derive(Parser, Debug, PartialEq)]
 pub enum Opt {
-    #[structopt(name = "phy")]
+    #[command(subcommand, name = "phy")]
     /// commands for wlan phy devices
     Phy(PhyCmd),
 
-    #[structopt(name = "iface")]
+    #[command(subcommand, name = "iface")]
     /// commands for wlan iface devices
     Iface(IfaceCmd),
 
     /// commands for client stations
-    #[structopt(name = "client")]
+    #[command(subcommand, name = "client")]
     Client(ClientCmd),
-    #[structopt(name = "connect")]
+    #[command(name = "connect")]
     Connect(ClientConnectCmd),
-    #[structopt(name = "disconnect")]
+    #[command(name = "disconnect")]
     Disconnect(ClientDisconnectCmd),
-    #[structopt(name = "scan")]
+    #[command(name = "scan")]
     Scan(ClientScanCmd),
-    #[structopt(name = "status")]
+    #[command(name = "status")]
     Status(IfaceStatusCmd),
-    #[structopt(name = "wmm_status")]
+    #[command(name = "wmm_status")]
     WmmStatus(ClientWmmStatusCmd),
 
-    #[structopt(name = "ap")]
+    #[command(subcommand, name = "ap")]
     /// commands for AP stations
     Ap(ApCmd),
 
-    #[structopt(name = "rsn")]
+    #[command(subcommand, name = "rsn")]
     #[cfg(target_os = "fuchsia")]
     /// commands for verifying RSN behavior
     Rsn(RsnCmd),
 }
 
-#[derive(StructOpt, Clone, Debug, PartialEq)]
+#[derive(Parser, Clone, Debug, PartialEq)]
 pub enum PhyCmd {
-    #[structopt(name = "list")]
+    #[command(name = "list")]
     /// lists phy devices
     List,
-    #[structopt(name = "query")]
+    #[command(name = "query")]
     /// queries a phy device
     Query {
-        #[structopt(required = true)]
         /// id of the phy to query
         phy_id: u16,
     },
-    #[structopt(name = "get-country")]
+    #[command(name = "get-country")]
     /// gets the phy's country used for WLAN regulatory purposes
     GetCountry {
-        #[structopt(required = true)]
         /// id of the phy to query
         phy_id: u16,
     },
-    #[structopt(name = "set-country")]
+    #[command(name = "set-country")]
     /// sets the phy's country for WLAN regulatory purpose
     SetCountry {
-        #[structopt(required = true)]
         /// id of the phy to query
         phy_id: u16,
-        #[structopt(required = true)]
         country: String,
     },
-    #[structopt(name = "clear-country")]
+    #[command(name = "clear-country")]
     /// sets the phy's country code to world-safe value
     ClearCountry {
-        #[structopt(required = true)]
         /// id of the phy to query
         phy_id: u16,
     },
-    #[structopt(name = "reset")]
+    #[command(name = "reset")]
     Reset {
-        #[structopt(required = true)]
         /// id of the phy to reset
         phy_id: u16,
     },
-    #[structopt(name = "get-power-state")]
+    #[command(name = "get-power-state")]
     /// gets the on/off state of the phy
     GetPowerState {
-        #[structopt(required = true)]
         /// id of the phy to get its power state
         phy_id: u16,
     },
-    #[structopt(name = "set-power-state")]
+    #[command(name = "set-power-state")]
     /// sets the on/off state of the phy
     SetPowerState {
-        #[structopt(required = true)]
         /// id of the phy to get its power state
         phy_id: u16,
-        #[structopt(required = true, possible_values = &OnOffArg::variants(), case_insensitive = true)]
         /// desired state of the phy
         state: OnOffArg,
     },
-    #[structopt(name = "get-powersave-mode")]
+    #[command(name = "get-powersave-mode")]
     /// gets the power save mode of the phy
     GetPowerSaveMode {
-        #[structopt(required = true)]
         /// id of the phy to get its power save mode
         phy_id: u16,
     },
-    #[structopt(name = "set-powersave-mode")]
+    #[command(name = "set-powersave-mode")]
     /// sets the power save mode of the phy
     SetPowerSaveMode {
-        #[structopt(required = true)]
         /// id of the phy to set its power save mode
         phy_id: u16,
-        #[structopt(required = true, possible_values = &PsModeArg::variants(), case_insensitive = true)]
+        #[arg(value_enum, ignore_case = true)]
         /// desired power save mode of the phy
         mode: PsModeArg,
     },
 }
 
-#[derive(StructOpt, Clone, Debug, PartialEq)]
+#[derive(Parser, Clone, Debug, PartialEq)]
 pub enum IfaceCmd {
-    #[structopt(name = "new")]
+    #[command(name = "new")]
     /// creates a new iface device
     New {
-        #[structopt(short = "p", long = "phy", required = true)]
+        #[arg(short = 'p', long = "phy")]
         /// id of the phy that will host the iface
         phy_id: u16,
 
-        #[structopt(
-            short = "r",
+        #[arg(
+            short = 'r',
             long = "role",
-            possible_values = &RoleArg::variants(),
+            value_enum,
             default_value = "Client",
-            case_insensitive = true,
+            ignore_case = true
         )]
         /// role of the new iface
         role: RoleArg,
 
-        #[structopt(
-            short = "m",
-            long = "sta_addr",
-            help = "Optional sta addr when we create an iface"
-        )]
+        #[arg(short = 'm', long = "sta_addr", help = "Optional sta addr when we create an iface")]
         /// initial sta address for this iface
         sta_addr: Option<String>,
     },
 
-    #[structopt(name = "del")]
+    #[command(name = "del")]
     /// destroys an iface device
     Delete {
-        #[structopt(required = true)]
         /// iface id to destroy
         iface_id: u16,
     },
 
-    #[structopt(name = "list")]
+    #[command(name = "list")]
     List,
-    #[structopt(name = "query")]
-    Query {
-        #[structopt(required = true)]
-        iface_id: u16,
-    },
-    #[structopt(name = "minstrel")]
+    #[command(name = "query")]
+    Query { iface_id: u16 },
+    #[command(subcommand, name = "minstrel")]
     Minstrel(MinstrelCmd),
-    #[structopt(name = "status")]
+    #[command(name = "status")]
     Status(IfaceStatusCmd),
 }
 
-#[derive(StructOpt, Clone, Debug, PartialEq)]
+#[derive(Parser, Clone, Debug, PartialEq)]
 pub enum MinstrelCmd {
-    #[structopt(name = "list")]
+    #[command(name = "list")]
     List { iface_id: Option<u16> },
-    #[structopt(name = "show")]
+    #[command(name = "show")]
     Show { iface_id: Option<u16>, peer_addr: Option<String> },
 }
 
-#[derive(StructOpt, Clone, Debug, PartialEq)]
+#[derive(Parser, Clone, Debug, PartialEq)]
 pub struct ClientConnectCmd {
-    #[structopt(short = "i", long = "iface", default_value = "0")]
+    #[arg(short = 'i', long = "iface", default_value = "0")]
     pub iface_id: u16,
-    #[structopt(short = "p", long = "password", help = "Password")]
+    #[arg(short = 'p', long = "password", help = "Password")]
     pub password: Option<String>,
-    #[structopt(short = "hash", long = "hash", help = "WPA2 PSK as hex string")]
+    #[arg(short = 'h', long = "hash", help = "WPA2 PSK as hex string")]
     pub psk: Option<String>,
-    #[structopt(
-        short = "s",
+    #[arg(
+        short = 's',
         long = "scan-type",
         default_value = "passive",
-        possible_values = &ScanTypeArg::variants(),
-        case_insensitive = true,
+        value_enum,
+        ignore_case = true,
         help = "Determines the type of scan performed on non-DFS channels when connecting."
     )]
     pub scan_type: ScanTypeArg,
-    #[structopt(short = "b", long = "bssid", help = "Specific BSSID to connect to")]
+    #[arg(short = 'b', long = "bssid", help = "Specific BSSID to connect to")]
     pub bssid: Option<String>,
-    #[structopt(
-        required = true,
+    #[arg(
         help = "SSID of the target network. Connecting via only an SSID is deprecated and will be \
                 removed; use the `donut` tool instead."
     )]
     pub ssid: String,
 }
 
-#[derive(StructOpt, Clone, Debug, PartialEq)]
+#[derive(Parser, Clone, Debug, PartialEq)]
 pub struct ClientDisconnectCmd {
-    #[structopt(short = "i", long = "iface", default_value = "0")]
+    #[arg(short = 'i', long = "iface", default_value = "0")]
     pub iface_id: u16,
 }
 
-#[derive(StructOpt, Clone, Debug, PartialEq)]
+#[derive(Parser, Clone, Debug, PartialEq)]
 pub struct ClientScanCmd {
-    #[structopt(short = "i", long = "iface", default_value = "0")]
+    #[arg(short = 'i', long = "iface", default_value = "0")]
     pub iface_id: u16,
-    #[structopt(
-        short = "s",
+    #[arg(
+        short = 's',
         long = "scan-type",
         default_value = "passive",
-        possible_values = &ScanTypeArg::variants(),
-        case_insensitive = true,
+        value_enum,
+        ignore_case = true,
         help = "Experimental. Default scan type on each channel. \
                 Behavior may differ on DFS channel"
     )]
     pub scan_type: ScanTypeArg,
 }
 
-#[derive(StructOpt, Clone, Debug, PartialEq)]
+#[derive(Parser, Clone, Debug, PartialEq)]
 pub struct ClientWmmStatusCmd {
-    #[structopt(short = "i", long = "iface", default_value = "0")]
+    #[arg(short = 'i', long = "iface", default_value = "0")]
     pub iface_id: u16,
 }
 
-#[derive(StructOpt, Clone, Debug, PartialEq)]
+#[derive(Parser, Clone, Debug, PartialEq)]
 pub struct IfaceStatusCmd {
-    #[structopt(short = "i", long = "iface")]
+    #[arg(short = 'i', long = "iface")]
     pub iface_id: Option<u16>,
 }
 
-#[derive(StructOpt, Clone, Debug, PartialEq)]
+#[derive(Parser, Clone, Debug, PartialEq)]
 pub enum ClientCmd {
-    #[structopt(name = "scan")]
+    #[command(name = "scan")]
     Scan(ClientScanCmd),
-    #[structopt(name = "connect")]
+    #[command(name = "connect")]
     Connect(ClientConnectCmd),
-    #[structopt(name = "disconnect")]
+    #[command(name = "disconnect")]
     Disconnect(ClientDisconnectCmd),
-    #[structopt(name = "wmm_status")]
+    #[command(name = "wmm_status")]
     WmmStatus(ClientWmmStatusCmd),
 }
 
-#[derive(StructOpt, Clone, Debug, PartialEq)]
+#[derive(Parser, Clone, Debug, PartialEq)]
 pub enum ApCmd {
-    #[structopt(name = "start")]
+    #[command(name = "start")]
     Start {
-        #[structopt(short = "i", long = "iface", default_value = "0")]
+        #[arg(short = 'i', long = "iface", default_value = "0")]
         iface_id: u16,
-        #[structopt(short = "s", long = "ssid")]
+        #[arg(short = 's', long = "ssid")]
         ssid: String,
-        #[structopt(short = "p", long = "password")]
+        #[arg(short = 'p', long = "password")]
         password: Option<String>,
-        #[structopt(short = "c", long = "channel")]
+        #[arg(short = 'c', long = "channel")]
         // TODO(porce): Expand to support PHY and CBW
         channel: u8,
     },
-    #[structopt(name = "stop")]
+    #[command(name = "stop")]
     Stop {
-        #[structopt(short = "i", long = "iface", default_value = "0")]
+        #[arg(short = 'i', long = "iface", default_value = "0")]
         iface_id: u16,
     },
 }
 
-#[derive(StructOpt, Clone, Debug, PartialEq)]
+#[derive(Parser, Clone, Debug, PartialEq)]
 pub enum RsnCmd {
-    #[structopt(name = "generate-psk")]
+    #[command(name = "generate-psk")]
     GeneratePsk {
-        #[structopt(short = "p", long = "passphrase")]
+        #[arg(short = 'p', long = "passphrase")]
         passphrase: String,
-        #[structopt(short = "s", long = "ssid")]
+        #[arg(short = 's', long = "ssid")]
         ssid: String,
     },
 }

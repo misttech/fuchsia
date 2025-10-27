@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
+use clap::Parser;
 use donut_lib::*;
 use fidl::endpoints::{create_endpoints, create_proxy};
 use fuchsia_component::client::connect_to_protocol;
-use structopt::StructOpt;
 use {
     fidl_fuchsia_wlan_policy as wlan_policy,
     fidl_fuchsia_wlan_product_deprecatedconfiguration as wlan_deprecated, fuchsia_async as fasync,
@@ -14,8 +14,8 @@ use {
 
 /// Communicates with the client policy provider to get the components required to get a client
 /// controller.
-pub async fn get_client_controller(
-) -> Result<(wlan_policy::ClientControllerProxy, wlan_policy::ClientStateUpdatesRequestStream), Error>
+pub async fn get_client_controller()
+-> Result<(wlan_policy::ClientControllerProxy, wlan_policy::ClientStateUpdatesRequestStream), Error>
 {
     let policy_provider = connect_to_protocol::<wlan_policy::ClientProviderMarker>()?;
     let (client_controller, server_end) = create_proxy::<wlan_policy::ClientControllerMarker>();
@@ -70,7 +70,7 @@ pub fn get_deprecated_configurator() -> Result<wlan_deprecated::DeprecatedConfig
 }
 
 fn main() -> Result<(), Error> {
-    let opt = opts::Opt::from_args();
+    let opt = opts::Opt::parse();
 
     let mut exec = fasync::LocalExecutorBuilder::new().build();
 

@@ -336,7 +336,7 @@ _NORMAL_DEPENDENCIES = {
             "chrono-english": Label("//third_party/rust_crates/vendor/chrono-english-0.1.7:chrono_english"),
             "ciborium": Label("//third_party/rust_crates/vendor/ciborium-0.2.2:ciborium"),
             "cipher": Label("//third_party/rust_crates/vendor/cipher-0.4.4:cipher"),
-            "clap": Label("//third_party/rust_crates/vendor/clap-2.34.0:clap"),
+            "clap": Label("//third_party/rust_crates/vendor/clap-4.5.50:clap"),
             "cmac": Label("//third_party/rust_crates/vendor/cmac-0.7.2:cmac"),
             "cpio": Label("//third_party/rust_crates/vendor/cpio-0.4.1:cpio"),
             "crc": Label("//third_party/rust_crates/vendor/crc-1.8.1:crc"),
@@ -379,7 +379,8 @@ _NORMAL_DEPENDENCIES = {
             "handlebars": Label("//third_party/rust_crates/vendor/handlebars-4.3.5:handlebars"),
             "hashbrown": Label("//third_party/rust_crates/vendor/hashbrown-0.15.4:hashbrown"),
             "hashlink": Label("//third_party/rust_crates/vendor/hashlink-0.10.0:hashlink"),
-            "heck": Label("//third_party/rust_crates/vendor/heck-0.5.0:heck"),
+            "heck_0_3": Label("//third_party/rust_crates/vendor/heck-0.3.1:heck"),
+            "heck_0_5": Label("//third_party/rust_crates/vendor/heck-0.5.0:heck"),
             "hex": Label("//third_party/rust_crates/vendor/hex-0.4.3:hex"),
             "hkdf": Label("//third_party/rust_crates/vendor/hkdf-0.12.4:hkdf"),
             "hmac": Label("//third_party/rust_crates/vendor/hmac-0.12.1:hmac"),
@@ -467,7 +468,6 @@ _NORMAL_DEPENDENCIES = {
             "splines": Label("//third_party/rust_crates/vendor/splines-2.2.0:splines"),
             "static_assertions": Label("//third_party/rust_crates/vendor/static_assertions-1.1.0:static_assertions"),
             "strsim": Label("//third_party/rust_crates/vendor/strsim-0.11.1:strsim"),
-            "structopt": Label("//third_party/rust_crates/vendor/structopt-0.3.26:structopt"),
             "strum": Label("//third_party/rust_crates/vendor/strum-0.27.2:strum"),
             "tempfile": Label("//third_party/rust_crates/vendor/tempfile-3.2.0:tempfile"),
             "termion": Label("//third_party/rust_crates/vendor/termion-1.5.3:termion"),
@@ -578,6 +578,8 @@ _NORMAL_DEPENDENCIES = {
 _NORMAL_ALIASES = {
     "third_party/rust_crates": {
         _COMMON_CONDITION: {
+            Label("//third_party/rust_crates/vendor/heck-0.3.1:heck"): "heck_0_3",
+            Label("//third_party/rust_crates/vendor/heck-0.5.0:heck"): "heck_0_5",
         },
         "cfg(not(target_os = \"fuchsia\"))": {
         },

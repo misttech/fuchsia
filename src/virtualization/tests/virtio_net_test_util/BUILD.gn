@@ -21,14 +21,14 @@ rustc_binary("virtio_net_test_util") {
       "//src/lib/fuchsia-fs",
       "//src/lib/network/fidl_fuchsia_net_ext",
       "//third_party/rust_crates:anyhow",
+      "//third_party/rust_crates:clap",
       "//third_party/rust_crates:futures",
-      "//third_party/rust_crates:structopt",
     ]
 
     source_root = "src/fuchsia_main.rs"
     sources = [ "src/fuchsia_main.rs" ]
   } else if (is_linux) {
-    deps = [ "//third_party/rust_crates:structopt" ]
+    deps = [ "//third_party/rust_crates:clap" ]
 
     source_root = "src/linux_main.rs"
     sources = [ "src/linux_main.rs" ]

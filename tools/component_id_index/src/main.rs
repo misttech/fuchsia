@@ -4,30 +4,30 @@
 
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
+use clap::Parser;
 use component_id_index::Index;
 use fidl::persist;
 use fidl_fuchsia_component_internal as fcomponent_internal;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use structopt::StructOpt;
 
-#[derive(Debug, StructOpt)]
-#[structopt(about = "Validate and merge component ID index files.")]
+#[derive(Debug, Parser)]
+#[command(about = "Validate and merge component ID index files.")]
 struct CommandLineOpts {
-    #[structopt(
+    #[arg(
         long,
         help = "Path to a manifest text file containing a list of index files, one on each line. All index files are merged into a single index, written to the supplied --output_index_json and --output_index_fidl"
     )]
     input_manifest: PathBuf,
 
-    #[structopt(long, help = "Where to write the merged index file, encoded in JSON.")]
+    #[arg(long, help = "Where to write the merged index file, encoded in JSON.")]
     output_index_json: PathBuf,
 
-    #[structopt(long, help = "Where to write the merged index file, encoded in FIDL wire-format.")]
+    #[arg(long, help = "Where to write the merged index file, encoded in FIDL wire-format.")]
     output_index_fidl: PathBuf,
 
-    #[structopt(
+    #[arg(
         short,
         long,
         help = "Where to write a dep file (.d) file of indices from --input_manifest."
@@ -74,7 +74,7 @@ fn run(opts: CommandLineOpts) -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
-    let opts = CommandLineOpts::from_args();
+    let opts = CommandLineOpts::parse();
     run(opts)
 }
 

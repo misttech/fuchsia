@@ -4,8 +4,9 @@
 
 use std::collections::BTreeSet;
 
-use anyhow::{anyhow, format_err, Context, Error, Result};
+use anyhow::{Context, Error, Result, anyhow, format_err};
 use camino::Utf8PathBuf;
+use clap::Parser;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cmp::{Eq, PartialEq};
@@ -13,7 +14,6 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fs;
 use std::io::Read;
-use structopt::StructOpt;
 
 mod hermeticity;
 mod opts;
@@ -501,7 +501,7 @@ fn write_depfile(
 }
 
 fn run_tool() -> Result<()> {
-    let opt = opts::Opt::from_args();
+    let opt = opts::Opt::parse();
     opt.validate()?;
 
     let mut inputs_for_depfile = BTreeSet::<Utf8PathBuf>::new();
@@ -533,8 +533,8 @@ fn run_tool() -> Result<()> {
             &opt.build_dir,
             &mut inputs_for_depfile,
         ),
-        opts::ValidateType::Host => validate_host_only(categorized_tests),
-        opts::ValidateType::E2e => validate_e2e_only(categorized_tests),
+        opts::ValidateType::HostOnly => validate_host_only(categorized_tests),
+        opts::ValidateType::EndToEnd => validate_e2e_only(categorized_tests),
     };
 
     // Sort results by validation status
@@ -570,8 +570,8 @@ fn run_tool() -> Result<()> {
             "    - {}",
             match &opt.validation_type {
                 opts::ValidateType::Hermetic => "only contains hermetic tests",
-                opts::ValidateType::Host => "only contains host-only tests",
-                opts::ValidateType::E2e => "only contains e2e tests",
+                opts::ValidateType::HostOnly => "only contains host-only tests",
+                opts::ValidateType::EndToEnd => "only contains e2e tests",
             }
         );
 
@@ -635,12 +635,13 @@ fn run_tool() -> Result<()> {
 fn main() -> Result<(), Error> {
     run_tool().map_err(|e| {
         // Format the anyhow error into a series of lines for context:
-        anyhow!(e
-            .chain()
-            .enumerate()
-            .map(|(i, e)| format!("\n  {: >3}.  {}", i + 1, e))
-            .collect::<Vec<String>>()
-            .concat())
+        anyhow!(
+            e.chain()
+                .enumerate()
+                .map(|(i, e)| format!("\n  {: >3}.  {}", i + 1, e))
+                .collect::<Vec<String>>()
+                .concat()
+        )
     })
 }
 

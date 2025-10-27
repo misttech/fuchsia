@@ -9,7 +9,7 @@ shared_deps = [
   "//src/diagnostics/lib/triage",
   "//src/diagnostics/triage:triage_app_lib",
   "//third_party/rust_crates:anyhow",
-  "//third_party/rust_crates:structopt",
+  "//third_party/rust_crates:clap",
 ]
 
 rustc_test("triage_config_test_runner_test") {

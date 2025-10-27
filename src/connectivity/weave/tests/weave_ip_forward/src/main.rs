@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use anyhow::{Context as _, Error, format_err};
+use clap::Parser;
 use fuchsia_component::client;
 use log::info;
 use net_declare::fidl_ip_v6_with_prefix;
@@ -11,7 +12,6 @@ use std::collections::HashMap;
 use std::io::{Read as _, Write as _};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::pin::pin;
-use structopt::StructOpt;
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces as fnet_interfaces,
     fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
@@ -337,21 +337,21 @@ async fn run_client_node(
     Ok(())
 }
 
-#[derive(StructOpt, Debug)]
+#[derive(Parser, Debug)]
 enum Opt {
-    #[structopt(name = "weave-node")]
+    #[command(name = "weave-node")]
     WeaveNode { listen_addr_0: String, listen_addr_1: String },
-    #[structopt(name = "fuchsia-node")]
+    #[command(name = "fuchsia-node")]
     FuchsiaNode,
-    #[structopt(name = "wpan-node")]
+    #[command(name = "wpan-node")]
     WpanNode { connect_addr_0: String, connect_addr_1: String, listen_addr_0: String },
-    #[structopt(name = "wlan-node")]
+    #[command(name = "wlan-node")]
     WlanNode { connect_addr_0: String, connect_addr_1: String, connect_addr_2: String },
 }
 
 #[fasync::run_singlethreaded]
 async fn main() -> Result<(), Error> {
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
 
     let node_name_str = match opt {
         Opt::WeaveNode { .. } => "weave_node",

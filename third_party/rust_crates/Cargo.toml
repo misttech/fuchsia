@@ -84,7 +84,7 @@ chrono = { version = "0.4.41", default-features = false }
 chrono-english = "0.1.7"
 ciborium = { version = "0.2.2", features = ["std"] }
 cipher = "0.4.4"
-clap = "2.34"
+clap = { version = "4.5.50", default-features = false, features = ["std", "help", "usage", "error-context", "suggestions", "derive"] }
 cmac = "0.7.2"
 cpio = "0.4.1"
 crc = "1.8.1"
@@ -132,7 +132,8 @@ half = "2.6.0"
 handlebars = "4.3.5"
 hashbrown = { version = "0.15.4", default-features = false }
 hashlink = "0.10.0"
-heck = "0.5"
+heck-0_3 = { package = "heck", version = "0.3.1" }
+heck-0_5 = { package = "heck", version = "0.5" }
 hex = { version = "0.4.3", features = ["serde"] }
 hkdf = "0.12.4"
 hmac = "0.12.1"
@@ -233,7 +234,6 @@ socket2 = { version = "0.5.9", features = ["all"] }
 splines = "2.2.0"
 static_assertions = "1.1.0"
 strsim = "0.11.1"
-structopt = "0.3.26"
 strum = "0.27.2"
 strum_macros = "0.27.2"
 tempfile = "3.2"
@@ -656,6 +656,7 @@ license_files = ["LICENSE-APACHE"]
 env_vars = [ "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/handlebars-4.3.5" ]
 
 [gn.package.heck."0.3.1"]
+group_name = "heck-0_3"
 # TODO(https://fxbug.dev/402302539) starnix tests rely on the older semantics of to_camel_case()
 visibility = [ "//src/sys/test_runners/starnix:*", "//third_party/rust_crates:*" ]
 

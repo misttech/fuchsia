@@ -2,69 +2,45 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{ensure, Error};
+use anyhow::{Error, ensure};
 use camino::Utf8PathBuf;
-use std::str::FromStr;
-use structopt::StructOpt;
+use clap::Parser;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, clap::ValueEnum)]
+#[clap(rename_all = "snake_case")]
 pub enum ValidateType {
     Hermetic,
-    Host,
-    E2e,
+    HostOnly,
+    EndToEnd,
 }
 
-type ParseError = &'static str;
-
-impl FromStr for ValidateType {
-    type Err = ParseError;
-    fn from_str(validation_type: &str) -> Result<Self, Self::Err> {
-        match validation_type.to_ascii_lowercase().as_str() {
-            "hermetic" => Ok(ValidateType::Hermetic),
-            "host_only" => Ok(ValidateType::Host),
-            "end_to_end" => Ok(ValidateType::E2e),
-            _ => Err("Could not parse --validate"),
-        }
-    }
-}
-
-impl std::fmt::Display for ValidateType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ValidateType::Hermetic => f.write_str("hermetic"),
-            ValidateType::Host => f.write_str("host_only"),
-            ValidateType::E2e => f.write_str("end_to_end"),
-        }
-    }
-}
-
-#[derive(StructOpt, Debug)]
+#[derive(Parser, Debug)]
 pub struct Opt {
-    #[structopt(long = "test-group-name")]
+    #[arg(long = "test-group-name")]
     pub test_group_name: String,
 
-    #[structopt(short = "i", long = "test_list")]
+    #[arg(short = 'i', long = "test_list")]
     /// Path to the test list file.
     pub test_list: Utf8PathBuf,
 
-    #[structopt(short = "t", long = "test-components")]
+    #[arg(short = 't', long = "test-components")]
     /// Path to the test components list file.
     pub test_components_list: Utf8PathBuf,
 
     /// Validation type.
     /// Possible values: [ hermetic ]
-    #[structopt(short = "v", long = "validate", default_value = "hermetic")]
+    #[arg(short = 'v', long = "validate", ignore_case = true, value_enum, default_value_t = ValidateType::Hermetic)]
     pub validation_type: ValidateType,
 
-    #[structopt(short = "b", long = "build-dir")]
+    #[arg(short = 'b', long = "build-dir")]
     /// Path to the build directory.
     pub build_dir: Utf8PathBuf,
 
-    #[structopt(short = "o", long = "output")]
+    #[arg(short = 'o', long = "output")]
     /// Path to an optional output file with the results.
     pub output: Option<Utf8PathBuf>,
 
-    #[structopt(short = "d", long = "depfile")]
+    #[arg(short = 'd', long = "depfile")]
     // Path to output a depfile.
     pub depfile: Option<Utf8PathBuf>,
 }
@@ -85,12 +61,13 @@ impl Opt {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::{tempdir, NamedTempFile};
+    use clap::ValueEnum;
+    use tempfile::{NamedTempFile, tempdir};
 
     #[test]
     fn test_validate_type_from_str() {
-        assert_eq!(ValidateType::from_str("hermetic"), Ok(ValidateType::Hermetic));
-        assert_eq!(ValidateType::from_str("unknown"), Err("Could not parse --validate"));
+        assert_eq!(ValidateType::from_str("hermetic", true), Ok(ValidateType::Hermetic));
+        assert_eq!(ValidateType::from_str("unknown", true), Err("invalid variant: unknown".into()));
     }
 
     #[test]
@@ -119,10 +96,10 @@ mod tests {
         // Test missing paths
         let invalid_opt = Opt {
             test_group_name: "test_group".into(),
-            test_list: Utf8PathBuf::from_str("/tmp/nonexistent").unwrap(),
-            test_components_list: Utf8PathBuf::from_str("/tmp/nonexistent").unwrap(),
+            test_list: Utf8PathBuf::from("/tmp/nonexistent"),
+            test_components_list: Utf8PathBuf::from("/tmp/nonexistent"),
             validation_type: ValidateType::Hermetic,
-            build_dir: Utf8PathBuf::from_str("/tmp/nonexistent").unwrap(),
+            build_dir: Utf8PathBuf::from("/tmp/nonexistent"),
             output: None,
             depfile: None,
         };

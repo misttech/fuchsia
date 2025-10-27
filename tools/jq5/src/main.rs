@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use clap::Parser;
 use futures::future::join_all;
 use io::BufWriter;
 use json5format::{Json5Format, ParsedDocument};
@@ -9,7 +10,6 @@ use std::ffi::OsString;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use structopt::StructOpt;
 
 mod reader;
 mod traverser;
@@ -140,7 +140,7 @@ async fn run(
 #[fuchsia_async::run_singlethreaded]
 async fn main() -> Result<(), anyhow::Error> {
     eprintln!("{}", "This tool is a work in progress: use with caution.\n");
-    let args = Opt::from_args();
+    let args = Opt::parse();
 
     if args.files.len() == 0 {
         let (parsed_json5, json_string) = reader::read_json5_from_input(&mut io::stdin())?;
@@ -156,8 +156,8 @@ async fn main() -> Result<(), anyhow::Error> {
     }
     Ok(())
 }
-#[derive(Debug, StructOpt)]
-#[structopt(
+#[derive(Debug, Parser)]
+#[command(
     name = "jq5",
     about = "An extension of jq to work on json5 objects. \nThis tool is a work in progress: use with caution."
 )]
@@ -165,10 +165,9 @@ struct Opt {
     // TODO(72435) Add relevant options from jq
     filter: String,
 
-    #[structopt(parse(from_os_str))]
     files: Vec<PathBuf>,
 
-    #[structopt(long = "--path-to-jq", parse(from_os_str))]
+    #[arg(long = "path-to-jq")]
     jq_path: Option<PathBuf>,
 }
 

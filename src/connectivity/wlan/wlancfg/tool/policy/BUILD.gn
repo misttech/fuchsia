@@ -22,7 +22,6 @@ rustc_library("donut-lib") {
     "//third_party/rust_crates:percent-encoding",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
-    "//third_party/rust_crates:structopt",
   ]
 
   # Most of the functionality in this library can be shared between the host tools and the Fuchsia

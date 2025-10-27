@@ -206,7 +206,7 @@ group("cipher") {
 }
 
 group("clap") {
-  public_deps = [ ":clap-v2_34_0" ]
+  public_deps = [ ":clap-v4_5_50" ]
 }
 
 group("cmac") {
@@ -431,6 +431,10 @@ group("hashbrown") {
 
 group("hashlink") {
   public_deps = [ ":hashlink-v0_10_0" ]
+}
+
+group("heck-0_3") {
+  public_deps = [ ":heck-v0_3_1" ]
 }
 
 group("heck") {
@@ -1037,10 +1041,6 @@ group("strsim") {
   public_deps = [ ":strsim-v0_11_1" ]
 }
 
-group("structopt") {
-  public_deps = [ ":structopt-v0_3_26" ]
-}
-
 group("strum") {
   public_deps = [ ":strum-v0_27_2" ]
 }
@@ -1633,6 +1633,40 @@ rustc_library("ansi_term-v0_12_1") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":ansi_term-v0_12_1.license" ]
+}
+
+license("anstyle-v1_0_13.license") {
+  public_package_name = "anstyle"
+  license_files = [
+    "//third_party/rust_crates/vendor/anstyle-1.0.13/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/anstyle-1.0.13/LICENSE-MIT",
+  ]
+}
+
+rustc_library("anstyle-v1_0_13") {
+  crate_name = "anstyle"
+  source_root = "//third_party/rust_crates/vendor/anstyle-1.0.13/src/lib.rs"
+  output_name = "anstyle-d5dc912a151c496c"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=d5dc912a151c496c",
+    "-Cextra-filename=-d5dc912a151c496c",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":anstyle-v1_0_13.license" ]
 }
 
 license("anyhow-v1_0_98.license") {
@@ -4025,15 +4059,9 @@ rustc_library("clap-v2_34_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":atty-v0_2_11" ]
   deps += [ ":bitflags-v1_3_2" ]
-  deps += [ ":strsim-v0_8_0" ]
   deps += [ ":textwrap-v0_11_0" ]
   deps += [ ":unicode-width-v0_1_14" ]
-  deps += [ ":vec_map-v0_8_1" ]
-  if (!false) {
-    deps += [ ":ansi_term-v0_12_1" ]
-  }
 
   rustenv = []
 
@@ -4041,18 +4069,161 @@ rustc_library("clap-v2_34_0") {
     "--cap-lints=allow",
     "-Cmetadata=b3916594ed5ba51",
     "-Cextra-filename=-b3916594ed5ba51",
-    "--cfg=feature=\"ansi_term\"",
-    "--cfg=feature=\"atty\"",
-    "--cfg=feature=\"color\"",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"strsim\"",
-    "--cfg=feature=\"suggestions\"",
-    "--cfg=feature=\"vec_map\"",
   ]
 
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":clap-v2_34_0.license" ]
+}
+
+license("clap-v4_5_50.license") {
+  public_package_name = "clap"
+  license_files = [
+    "//third_party/rust_crates/vendor/clap-4.5.50/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/clap-4.5.50/LICENSE-MIT",
+  ]
+}
+
+rustc_library("clap-v4_5_50") {
+  crate_name = "clap"
+  source_root = "//third_party/rust_crates/vendor/clap-4.5.50/src/lib.rs"
+  output_name = "clap-3e3784b3975e85d2"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":clap_builder-v4_5_50" ]
+  deps += [ ":clap_derive-v4_5_49($host_toolchain)" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=3e3784b3975e85d2",
+    "-Cextra-filename=-3e3784b3975e85d2",
+    "--cfg=feature=\"derive\"",
+    "--cfg=feature=\"error-context\"",
+    "--cfg=feature=\"help\"",
+    "--cfg=feature=\"std\"",
+    "--cfg=feature=\"suggestions\"",
+    "--cfg=feature=\"usage\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":clap-v4_5_50.license" ]
+}
+
+license("clap_builder-v4_5_50.license") {
+  public_package_name = "clap_builder"
+  license_files = [
+    "//third_party/rust_crates/vendor/clap_builder-4.5.50/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/clap_builder-4.5.50/LICENSE-MIT",
+  ]
+}
+
+rustc_library("clap_builder-v4_5_50") {
+  crate_name = "clap_builder"
+  source_root =
+      "//third_party/rust_crates/vendor/clap_builder-4.5.50/src/lib.rs"
+  output_name = "clap_builder-cd587a0ec40cf986"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":anstyle-v1_0_13" ]
+  deps += [ ":clap_lex-v0_7_5" ]
+  deps += [ ":strsim-v0_11_1" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=cd587a0ec40cf986",
+    "-Cextra-filename=-cd587a0ec40cf986",
+    "--cfg=feature=\"error-context\"",
+    "--cfg=feature=\"help\"",
+    "--cfg=feature=\"std\"",
+    "--cfg=feature=\"suggestions\"",
+    "--cfg=feature=\"usage\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":clap_builder-v4_5_50.license" ]
+}
+
+license("clap_derive-v4_5_49.license") {
+  public_package_name = "clap_derive"
+  license_files = [
+    "//third_party/rust_crates/vendor/clap_derive-4.5.49/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/clap_derive-4.5.49/LICENSE-MIT",
+  ]
+}
+
+rustc_macro("clap_derive-v4_5_49") {
+  crate_name = "clap_derive"
+  source_root = "//third_party/rust_crates/vendor/clap_derive-4.5.49/src/lib.rs"
+  output_name = "clap_derive-30fdf55d4754ffa8"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":heck-v0_5_0" ]
+  deps += [ ":proc-macro2-v1_0_97" ]
+  deps += [ ":quote-v1_0_40" ]
+  deps += [ ":syn-v2_0_103" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=30fdf55d4754ffa8",
+    "-Cextra-filename=-30fdf55d4754ffa8",
+    "--cfg=feature=\"default\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":clap_derive-v4_5_49.license" ]
+}
+
+license("clap_lex-v0_7_5.license") {
+  public_package_name = "clap_lex"
+  license_files = [
+    "//third_party/rust_crates/vendor/clap_lex-0.7.5/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/clap_lex-0.7.5/LICENSE-MIT",
+  ]
+}
+
+rustc_library("clap_lex-v0_7_5") {
+  crate_name = "clap_lex"
+  source_root = "//third_party/rust_crates/vendor/clap_lex-0.7.5/src/lib.rs"
+  output_name = "clap_lex-e559326359fe9f62"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=e559326359fe9f62",
+    "-Cextra-filename=-e559326359fe9f62",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":clap_lex-v0_7_5.license" ]
 }
 
 license("cloudabi-v0_0_3.license") {
@@ -17541,109 +17712,6 @@ rustc_library("strsim-v0_11_1") {
   applicable_licenses = [ ":strsim-v0_11_1.license" ]
 }
 
-license("strsim-v0_8_0.license") {
-  public_package_name = "strsim"
-  license_files = [ "//third_party/rust_crates/vendor/strsim-0.8.0/LICENSE" ]
-}
-
-rustc_library("strsim-v0_8_0") {
-  crate_name = "strsim"
-  source_root = "//third_party/rust_crates/vendor/strsim-0.8.0/src/lib.rs"
-  output_name = "strsim-a6895684b05e64cd"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=a6895684b05e64cd",
-    "-Cextra-filename=-a6895684b05e64cd",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":strsim-v0_8_0.license" ]
-}
-
-license("structopt-v0_3_26.license") {
-  public_package_name = "structopt"
-  license_files = [
-    "//third_party/rust_crates/vendor/structopt-0.3.26/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/structopt-0.3.26/LICENSE-MIT",
-  ]
-}
-
-rustc_library("structopt-v0_3_26") {
-  crate_name = "structopt"
-  source_root = "//third_party/rust_crates/vendor/structopt-0.3.26/src/lib.rs"
-  output_name = "structopt-c8f5333808475d91"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":clap-v2_34_0" ]
-  deps += [ ":lazy_static-v1_5_0" ]
-  deps += [ ":structopt-derive-v0_4_18($host_toolchain)" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=c8f5333808475d91",
-    "-Cextra-filename=-c8f5333808475d91",
-    "--cfg=feature=\"default\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":structopt-v0_3_26.license" ]
-}
-
-license("structopt-derive-v0_4_18.license") {
-  public_package_name = "structopt_derive"
-  license_files = [
-    "//third_party/rust_crates/vendor/structopt-derive-0.4.18/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/structopt-derive-0.4.18/LICENSE-MIT",
-  ]
-}
-
-rustc_macro("structopt-derive-v0_4_18") {
-  crate_name = "structopt_derive"
-  source_root =
-      "//third_party/rust_crates/vendor/structopt-derive-0.4.18/src/lib.rs"
-  output_name = "structopt_derive-303af66fbcb8c4c1"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":heck-v0_3_1" ]
-  deps += [ ":proc-macro-error-v1_0_4" ]
-  deps += [ ":proc-macro2-v1_0_97" ]
-  deps += [ ":quote-v1_0_40" ]
-  deps += [ ":syn-v1_0_98" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=303af66fbcb8c4c1",
-    "-Cextra-filename=-303af66fbcb8c4c1",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":structopt-derive-v0_4_18.license" ]
-}
-
 license("strum-v0_27_2.license") {
   public_package_name = "strum"
   license_files = [ "//third_party/rust_crates/vendor/strum-0.27.2/LICENSE" ]
@@ -20699,38 +20767,6 @@ rustc_library("valuable-v0_1_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":valuable-v0_1_0.license" ]
-}
-
-license("vec_map-v0_8_1.license") {
-  public_package_name = "vec_map"
-  license_files = [
-    "//third_party/rust_crates/vendor/vec_map-0.8.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/vec_map-0.8.1/LICENSE-MIT",
-  ]
-}
-
-rustc_library("vec_map-v0_8_1") {
-  crate_name = "vec_map"
-  source_root = "//third_party/rust_crates/vendor/vec_map-0.8.1/src/lib.rs"
-  output_name = "vec_map-d78a1471c87b7920"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=d78a1471c87b7920",
-    "-Cextra-filename=-d78a1471c87b7920",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":vec_map-v0_8_1.license" ]
 }
 
 license("vk-sys-v0_7_0.license") {

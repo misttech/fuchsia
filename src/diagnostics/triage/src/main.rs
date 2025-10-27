@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
+use clap::Parser;
 use log::*;
-use structopt::StructOpt;
 use triage_app_lib::Options;
 use triage_app_lib::app::App;
 
@@ -15,7 +15,7 @@ fn report_failure(e: Error) {
 }
 
 fn run_app() -> Result<i32, Error> {
-    let app = App::new(Options::from_args());
+    let app = App::new(Options::parse());
     let results = app.run(&mut std::io::stdout())?;
     Ok(match results {
         true => 1,

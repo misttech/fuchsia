@@ -39,10 +39,10 @@ rustc_library("cmc_lib") {
     "//src/sys/lib/cm_rust",
     "//src/sys/lib/cm_types",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:clap",
     "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:serde_json5",
     "//third_party/rust_crates:strsim",
-    "//third_party/rust_crates:structopt",
     "//third_party/rust_crates:tempfile",
     "//tools/lib/cml",
     "//tools/lib/reference_doc",
@@ -62,7 +62,7 @@ rustc_binary("cmc") {
 
   deps = [
     ":cmc_lib",
-    "//third_party/rust_crates:structopt",
+    "//third_party/rust_crates:clap",
   ]
 
   sources = [ "src/main.rs" ]

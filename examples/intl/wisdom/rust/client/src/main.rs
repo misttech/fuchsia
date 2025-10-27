@@ -9,8 +9,8 @@
 //! program that makes use of the Unicode support within ICU.
 
 use anyhow::{Context as _, Error};
+use clap::Parser;
 use fuchsia_component::client::connect_to_protocol;
-use structopt::StructOpt;
 use {
     fidl_fuchsia_examples_intl_wisdom as fwisdom, fuchsia_async as fasync, rust_icu_sys as usys,
     rust_icu_udat as udat, rust_icu_uloc as uloc, rust_icu_ustring as ustring,
@@ -18,17 +18,17 @@ use {
 
 pub(crate) mod wisdom_client_impl;
 
-#[derive(StructOpt, Debug)]
-#[structopt(name = "intl_wisdom_client_rust")]
+#[derive(Parser, Debug)]
+#[command(name = "intl_wisdom_client_rust")]
 struct Opt {
-    #[structopt(
+    #[arg(
         long = "timestamp",
         help = "the date-time to request the timestamp for",
         default_value = "2018-10-30T15:30:00-07:00"
     )]
     timestamp: String,
 
-    #[structopt(
+    #[arg(
         long = "timezone",
         help = "the time zone to request the printout for",
         default_value = "Etc/Unknown"
@@ -54,7 +54,7 @@ async fn main() -> Result<(), Error> {
     let icu_data_loader = icu_data::Loader::new()?;
 
     // Launch the server and connect to the wisdom service.
-    let opts: Opt = Opt::from_args();
+    let opts: Opt = Opt::parse();
 
     let wisdom = connect_to_protocol::<fwisdom::IntlWisdomServer_Marker>()
         .context("failed to connect to intl wisdom service")?;

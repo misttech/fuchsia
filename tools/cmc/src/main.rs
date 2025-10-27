@@ -4,11 +4,11 @@
 
 //! `cmc` is the Component Manifest Compiler.
 
+use clap::Parser;
 use cmc::{opts, run_cmc};
-use structopt::StructOpt;
 
 fn main() {
-    let opt = opts::Opt::from_args();
+    let opt = opts::Opt::parse();
     if let Err(e) = run_cmc(opt) {
         println!("{e}");
         std::process::exit(1);

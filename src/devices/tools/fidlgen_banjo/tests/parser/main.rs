@@ -9,20 +9,20 @@ use {
         fs::{write, File},
         path::PathBuf,
     },
-    structopt::StructOpt,
+    clap::Parser,
 };
 
-#[derive(StructOpt, Debug)]
+#[derive(Parser, Debug)]
 struct Flags {
-    #[structopt(long)]
+    #[arg(long)]
     input: PathBuf,
 
-    #[structopt(long)]
+    #[arg(long)]
     stamp: PathBuf,
 }
 
 fn main() -> Result<(), Error> {
-    let flags = Flags::from_args();
+    let flags = Flags::parse();
     let _result: FidlIr = serde_json::from_reader(File::open(flags.input)?)?;
     write(flags.stamp, "Done!")?;
     Ok(())

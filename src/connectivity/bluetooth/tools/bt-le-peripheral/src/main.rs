@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use base64::engine::general_purpose::{GeneralPurpose, GeneralPurposeConfig};
 use base64::engine::{DecodePaddingMode, Engine as _};
+use clap::Parser;
 use fidl::client::QueryResponseFut;
 use fidl::endpoints::create_request_stream;
 use fidl_fuchsia_bluetooth::Appearance;
@@ -16,65 +17,64 @@ use fidl_fuchsia_bluetooth_le::{
 };
 use fuchsia_async::{self as fasync};
 use fuchsia_bluetooth::assigned_numbers::find_service_uuid;
-use fuchsia_bluetooth::types::le::Peer;
 use fuchsia_bluetooth::types::Uuid;
+use fuchsia_bluetooth::types::le::Peer;
 use fuchsia_component::client::connect_to_protocol;
-use futures::{select, StreamExt};
-use structopt::StructOpt;
+use futures::{StreamExt, select};
 
 // TODO(armansito): Add ability to construct a valid fuchsia.bluetooth.Appearance from a string.
 // Defines all the command line arguments accepted by the tool.
-#[derive(StructOpt, Debug)]
-#[structopt()]
+#[derive(Parser, Debug)]
+#[command()]
 struct Opt {
-    #[structopt(short = "n", long = "name", help = "Advertised Device Name")]
+    #[arg(short = 'n', long = "name", help = "Advertised Device Name")]
     name: Option<String>,
-    #[structopt(
-        short = "s",
+    #[arg(
+        short = 's',
         long = "service",
         help = "Advertised Service UUIDs. Multiple instances of the flag allowed."
     )]
     service_uuids: Vec<String>,
-    #[structopt(short = "c", long = "connectable", help = "Advertise as connectable")]
+    #[arg(short = 'c', long = "connectable", help = "Advertise as connectable")]
     connectable: bool,
-    #[structopt(
-        short = "m",
+    #[arg(
+        short = 'm',
         long = "mode-hint",
-        parse(try_from_str = parse_mode_hint),
+        value_parser = parse_mode_hint,
         help = "Advertising mode hint (\"fast\", \"slow\", \"very-fast\")"
     )]
     mode_hint: Option<AdvertisingModeHint>,
-    #[structopt(long = "appearance", help = "Advertised appearance as integer value")]
+    #[arg(long = "appearance", help = "Advertised appearance as integer value")]
     appearance: Option<u16>,
-    #[structopt(
-        short = "u",
+    #[arg(
+        short = 'u',
         help = "URIs included in the advertising packet. Multiple instances of the flag allowed."
     )]
     uris: Vec<String>,
-    #[structopt(
+    #[arg(
         long = "service-data",
-        parse(try_from_str = parse_service_data),
+        value_parser = parse_service_data,
         help = "Service data in the format '<service_uuid>:<string_data>'. \
                 Multiple instances of the flag allowed."
     )]
     service_data: Vec<ServiceData>,
-    #[structopt(
+    #[arg(
         long = "binary-service-data",
-        parse(try_from_str = parse_binary_service_data),
+        value_parser = parse_binary_service_data,
         help = "Service data in the format '<service_uuid>:<base64_data>'. \
                 Multiple instances of the flag allowed."
     )]
     binary_service_data: Vec<ServiceData>,
-    #[structopt(
+    #[arg(
         long = "manufacturer-data",
-        parse(try_from_str = parse_manufacturer_data),
+        value_parser = parse_manufacturer_data,
         help = "Manufacturer specific data in the format '<company_id>:<string_data>'. \
                 Multiple instances of the flag allowed."
     )]
     manufacturer_data: Vec<ManufacturerData>,
-    #[structopt(
+    #[arg(
         long = "binary-manufacturer-data",
-        parse(try_from_str = parse_binary_manufacturer_data),
+        value_parser = parse_binary_manufacturer_data,
         help = "Manufacturer specific data in the format '<company_id>:<base64_data>'. \
                 Multiple instances of the flag allowed."
     )]
@@ -159,11 +159,7 @@ fn parse_binary_manufacturer_data(raw: &str) -> Result<ManufacturerData, Error> 
 /// Wrap a `Vec<T>` in an `Option`, returning `None` if the vector is empty and `Some(vec)` if the
 /// vector is not empty.
 fn optionalize<T>(vec: Vec<T>) -> Option<Vec<T>> {
-    if vec.is_empty() {
-        None
-    } else {
-        Some(vec)
-    }
+    if vec.is_empty() { None } else { Some(vec) }
 }
 
 /// Start advertising and print status on success or construct error on failure
@@ -247,7 +243,7 @@ async fn main() -> Result<(), Error> {
         binary_service_data,
         mut manufacturer_data,
         binary_manufacturer_data,
-    } = Opt::from_args();
+    } = Opt::parse();
 
     let appearance = match appearance {
         Some(a) => Appearance::from_primitive(a),
@@ -294,13 +290,13 @@ async fn main() -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl::endpoints::{create_endpoints, create_proxy, create_proxy_and_stream, ServerEnd};
+    use fidl::endpoints::{ServerEnd, create_endpoints, create_proxy, create_proxy_and_stream};
     use fidl_fuchsia_bluetooth_le::{
         AdvertisedPeripheralProxy, ConnectionMarker, Peer, PeripheralRequest,
         PeripheralRequestStream,
     };
     use fuchsia_bluetooth::types::le::{ManufacturerData, ServiceData};
-    use futures::{join, TryStreamExt};
+    use futures::{TryStreamExt, join};
 
     #[test]
     fn test_parse_service_uuid() {

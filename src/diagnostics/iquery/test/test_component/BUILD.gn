@@ -17,7 +17,7 @@ rustc_binary("bin") {
     "//src/lib/diagnostics/inspect/rust/testing:inspect_testing",
     "//src/lib/fuchsia",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:structopt",
+    "//third_party/rust_crates:clap",
   ]
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 }

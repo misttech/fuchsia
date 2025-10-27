@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 #![deny(warnings)]
 
+use clap::{Parser, Subcommand};
 use std::fs::{File, OpenOptions};
 use std::io::{Error, Read, Seek, SeekFrom, Write};
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
-use structopt::StructOpt;
 
 const PCI_DIR: &str = "/dev/disk/by-path";
 
@@ -42,22 +42,22 @@ macro_rules! define_ioctl {
 define_ioctl!(block_dev_size, 0x12, 96, u64);
 define_ioctl!(block_dev_sector_size, 0x12, 104, u32);
 
-#[derive(StructOpt, Debug)]
+#[derive(Parser, Debug)]
 struct Config {
     block_size: u32,
     pci_bus: u8,
     pci_device: u8,
-    #[structopt(subcommand)]
+    #[command(subcommand)]
     cmd: Command,
 }
 
-#[derive(StructOpt, Debug)]
+#[derive(Subcommand, Debug)]
 enum Command {
-    #[structopt(name = "check")]
+    #[command(name = "check")]
     Check { block_count: u64 },
-    #[structopt(name = "read")]
+    #[command(name = "read")]
     Read { offset: u64, expected: u8 },
-    #[structopt(name = "write")]
+    #[command(name = "write")]
     Write { offset: u64, value: u8 },
 }
 
@@ -115,7 +115,7 @@ fn write_block(
 }
 
 fn main() -> std::io::Result<()> {
-    let config = Config::from_args();
+    let config = Config::parse();
     let write = if let Command::Write { .. } = config.cmd { true } else { false };
     let mut block_dev = open_block_device(config.pci_bus, config.pci_device, write)?;
     let result = match config.cmd {

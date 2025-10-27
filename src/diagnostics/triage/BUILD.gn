@@ -91,7 +91,7 @@ group("test_data") {
 
 lib_deps = [
   "//third_party/rust_crates:anyhow",
-  "//third_party/rust_crates:structopt",
+  "//third_party/rust_crates:clap",
 ]
 
 rustc_library("triage_app_lib") {

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl::endpoints;
 use fidl_fuchsia_wlan_common::{self as fidl_common, WlanMacRole};
 use fidl_fuchsia_wlan_device_service::{
@@ -10,15 +10,15 @@ use fidl_fuchsia_wlan_device_service::{
 };
 use fidl_fuchsia_wlan_sme::ConnectTransactionEvent;
 use futures::prelude::*;
-use ieee80211::{Bssid, MacAddr, MacAddrBytes, Ssid, NULL_ADDR};
+use ieee80211::{Bssid, MacAddr, MacAddrBytes, NULL_ADDR, Ssid};
 use itertools::Itertools;
 use std::fmt;
 use std::str::FromStr;
 use wlan_common::bss::{BssDescription, Protection};
 use wlan_common::scan::ScanResult;
+use wlan_common::security::SecurityError;
 use wlan_common::security::wep::WepKey;
 use wlan_common::security::wpa::credential::{Passphrase, Psk};
-use wlan_common::security::SecurityError;
 use {
     fidl_fuchsia_wlan_common_security as fidl_security,
     fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
@@ -597,13 +597,15 @@ fn print_wmm_ac_params(
     ac_params: &fidl_internal::WmmAcParams,
     stdout: &mut dyn std::io::Write,
 ) -> Result<(), Error> {
-    writeln!(stdout, "{ac_name}: aifsn={aifsn} acm={acm} ecw_min={ecw_min} ecw_max={ecw_max} txop_limit={txop_limit}",
-             ac_name=ac_name,
-             aifsn=ac_params.aifsn,
-             acm=ac_params.acm,
-             ecw_min=ac_params.ecw_min,
-             ecw_max=ac_params.ecw_max,
-             txop_limit=ac_params.txop_limit,
+    writeln!(
+        stdout,
+        "{ac_name}: aifsn={aifsn} acm={acm} ecw_min={ecw_min} ecw_max={ecw_max} txop_limit={txop_limit}",
+        ac_name = ac_name,
+        aifsn = ac_params.aifsn,
+        acm = ac_params.acm,
+        ecw_min = ac_params.ecw_min,
+        ecw_max = ac_params.ecw_max,
+        txop_limit = ac_params.txop_limit,
     )?;
     Ok(())
 }

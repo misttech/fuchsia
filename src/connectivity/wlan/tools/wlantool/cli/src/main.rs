@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Error};
+use clap::Parser;
 use fidl_fuchsia_wlan_device_service::DeviceMonitorMarker;
 use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
-use structopt::StructOpt;
 
 fn main() -> Result<(), Error> {
     println!(
@@ -14,7 +14,7 @@ fn main() -> Result<(), Error> {
         subsystem. It is intended for use by WLAN developers only. Please reach out \n\
         to the WLAN team if your use case relies on it."
     );
-    let opt = wlan_dev::opts::Opt::from_args();
+    let opt = wlan_dev::opts::Opt::parse();
     println!("{:?}", opt);
 
     let mut exec = fasync::LocalExecutorBuilder::new().build();

@@ -11,7 +11,7 @@ rustc_binary("input") {
   deps = [
     "//src/lib/fuchsia-async",
     "//src/lib/ui/input-synthesis",
-    "//third_party/rust_crates:structopt",
+    "//third_party/rust_crates:clap",
   ]
 
   sources = [ "src/main.rs" ]

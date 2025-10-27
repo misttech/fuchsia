@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Error};
+use clap::Parser;
 use fidl_fuchsia_component_decl::Component;
 use fidl_fuchsia_data as fdata;
 use serde::{Deserialize, Serialize};
@@ -12,27 +13,26 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
-use structopt::StructOpt;
 
-#[derive(Debug, StructOpt)]
-#[structopt(about = "Generate a bash wrapper script amd test config for test components.")]
+#[derive(Debug, Parser)]
+#[command(about = "Generate a bash wrapper script amd test config for test components.")]
 struct Args {
-    #[structopt(long, help = "The path to the test pilot.")]
+    #[arg(long, help = "The path to the test pilot.")]
     test_pilot: String,
 
-    #[structopt(long, help = "Generated script path.")]
+    #[arg(long, help = "Generated script path.")]
     script_output_filename: String,
 
-    #[structopt(long, help = "Path to component manifest.")]
+    #[arg(long, help = "Path to component manifest.")]
     component_manifest_path: String,
 
-    #[structopt(long, help = "Path to partial test config.")]
+    #[arg(long, help = "Path to partial test config.")]
     partial_test_config: String,
 
-    #[structopt(long, help = "Path to test component specific config.")]
+    #[arg(long, help = "Path to test component specific config.")]
     test_component_config: String,
 
-    #[structopt(long, help = "Generated test config path.")]
+    #[arg(long, help = "Generated test config path.")]
     test_config_output_filename: String,
 }
 
@@ -178,7 +178,7 @@ fn create_config(args: &Args) -> Result<(), Error> {
 }
 
 fn main() -> Result<(), Error> {
-    let args = Args::from_args();
+    let args = Args::parse();
     create_config(&args)?;
     generate_bash_script(&args)?;
 

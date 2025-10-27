@@ -9,6 +9,7 @@ use fidl_fuchsia_intl::{
     PropertyProviderRequestStream, TimeZoneId,
 };
 
+use clap::Parser;
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
 use futures::lock::Mutex;
 use futures::prelude::*;
@@ -17,7 +18,6 @@ use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
-use structopt::StructOpt;
 
 #[cfg(fuchsia_api_level_at_least = "HEAD")]
 use fidl_fuchsia_test_intl_manager::{PropertyManagerRequest, PropertyManagerRequestStream};
@@ -222,21 +222,21 @@ impl Debug for Service {
     }
 }
 
-#[derive(Debug, StructOpt)]
-#[structopt(
+#[derive(Debug, Parser)]
+#[command(
     name = "intl property manager example",
     about = "provides a test implementation of fuchsia.intl.ProfileProvider"
 )]
 struct Opts {
-    #[structopt(long)]
+    #[arg(long)]
     /// If set to `true`, the starting profile will be created based on the
     /// flag settings like `--locale-ids=...`.
     set_initial_profile: bool,
-    #[structopt(long, use_delimiter = true)]
+    #[arg(long, value_delimiter = ',')]
     /// A list of comma-separated BCP-47 locale ID strings to serve initially, in the order of
     /// priority.
     locale_ids: Vec<String>,
-    #[structopt(long, use_delimiter = true)]
+    #[arg(long, value_delimiter = ',')]
     /// A list of comma-separated BCP-47 timezone IDs (e.g. und-tz-usnyc) to serve initially, in
     /// order of preference.
     timezone_ids: Vec<String>,
@@ -278,7 +278,7 @@ fn initial_profile(opts: &Opts) -> Option<Profile> {
 
 #[fuchsia::main(logging_tags = ["intl_property_manager"], logging_minimum_severity = "info")]
 async fn main() -> Result<(), Error> {
-    let opts = Opts::from_args();
+    let opts = Opts::parse();
 
     info!("Launched component");
 

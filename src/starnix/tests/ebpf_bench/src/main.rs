@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use clap::Parser;
 use criterion::{Benchmark, Criterion};
 use ebpf::{EbpfProgramContext, FieldMapping, ProgramArgument, StructMapping};
 use ebpf_api::{
@@ -11,16 +12,15 @@ use ebpf_api::{
 use fuchsia_criterion::FuchsiaCriterion;
 use std::sync::LazyLock;
 use std::time::Duration;
-use structopt::StructOpt;
 
 /// Benchmark configuration passed from the manifest file through the args.
-#[derive(StructOpt, Debug)]
+#[derive(Parser, Debug)]
 struct BenchmarkConfig {
-    #[structopt(long, required = true)]
+    #[arg(long, required = true)]
     file: String,
-    #[structopt(long)]
+    #[arg(long)]
     section: Vec<String>,
-    #[structopt(long)]
+    #[arg(long)]
     name: Vec<String>,
 }
 
@@ -150,7 +150,7 @@ fn main() {
         .sample_size(100);
 
     // Parse benchmark config passed in the manifest file.
-    let config = BenchmarkConfig::from_iter_safe(args[..separator_pos].iter())
+    let config = BenchmarkConfig::try_parse_from(args[..separator_pos].iter())
         .unwrap_or_else(|e| exit_on_error(format!("Failed to parse args: {}", e)));
 
     if config.section.len() != config.name.len() {

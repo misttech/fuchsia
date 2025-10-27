@@ -35,7 +35,7 @@ if (is_host) {
     deps = [
       "//src/lib/intl/strings:lib",
       "//third_party/rust_crates:anyhow",
-      "//third_party/rust_crates:structopt",
+      "//third_party/rust_crates:clap",
     ]
 
     test_deps = [ "//third_party/rust_crates:tempfile" ]

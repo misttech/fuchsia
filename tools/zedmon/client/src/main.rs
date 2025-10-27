@@ -5,8 +5,8 @@
 mod protocol;
 mod zedmon;
 
-use anyhow::{format_err, Error};
-use clap::{App, Arg, ArgMatches, SubCommand};
+use anyhow::{Error, format_err};
+use clap::{Arg, ArgMatches, Command};
 use serde_json as json;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -23,7 +23,7 @@ const ZEDMON_NOMINAL_DATA_RATE_HZ: u32 = 1500;
 const ZEDMON_NOMINAL_DATA_INTERVAL_USEC: f32 = 1e6 / ZEDMON_NOMINAL_DATA_RATE_HZ as f32;
 
 /// Validates the --duration arg of `record`.
-fn validate_duration(value: String) -> Result<(), String> {
+fn validate_duration(value: &str) -> Result<(), String> {
     let re = regex::Regex::new(DURATION_REGEX).unwrap();
     if re.is_match(&value) {
         Ok(())
@@ -33,7 +33,7 @@ fn validate_duration(value: String) -> Result<(), String> {
 }
 
 /// Validates the --serial arg.
-fn validate_serial(value: String) -> Result<(), String> {
+fn validate_serial(value: &str) -> Result<(), String> {
     let re = regex::Regex::new(SERIAL_REGEX).unwrap();
     if re.is_match(&value) {
         Ok(())
@@ -58,8 +58,8 @@ fn parse_duration(value: &str) -> Duration {
     }
 }
 
-fn validate_downsampling_interval(value: String) -> Result<(), String> {
-    validate_duration(value.clone())?;
+fn validate_downsampling_interval(value: &str) -> Result<(), String> {
+    validate_duration(value)?;
     let interval = parse_duration(&value);
     if interval.as_secs_f32() * 1e6 > ZEDMON_NOMINAL_DATA_INTERVAL_USEC {
         Ok(())
@@ -70,42 +70,42 @@ fn validate_downsampling_interval(value: String) -> Result<(), String> {
 
 #[fuchsia_async::run(1)]
 async fn main() -> Result<(), Error> {
-    let matches = App::new("zedmon")
+    let matches = Command::new("zedmon")
         .about("Utility for interacting with Zedmon power measurement device")
         .subcommand(
-            SubCommand::with_name("describe")
+            Command::new("describe")
                 .about("Describes properties of the device and/or client.")
                 .arg(
-                    Arg::with_name("name")
+                    Arg::new("name")
                     .help(
                         "Optional name of a parameter to look up. If provided, only the value will \
                         be printed. Otherwise, all parameter names and values will be printed in \
                         JSON format.")
                     .required(false)
                     .index(1)
-                    .possible_values(&zedmon::DESCRIBABLE_PROPERTIES),
+                    .value_parser(zedmon::DESCRIBABLE_PROPERTIES),
                 ).arg(
-                    Arg::with_name("serial")
+                    Arg::new("serial")
                         .help(
                             "Attempts to connect to the attached Zedmon with the specified serial.\
                             Required only if multiple Zedmons are attached.")
-                        .short("s")
-                        .takes_value(true)
-                        .validator(&validate_serial)
+                        .short('s')
+                        .action(clap::ArgAction::Set)
+                        .value_parser(validate_serial)
                 )
         )
         .subcommand(
-            SubCommand::with_name("list").about("Lists serial number of connected Zedmon devices"),
+            Command::new("list").about("Lists serial number of connected Zedmon devices"),
         )
         .subcommand(
-            SubCommand::with_name("record").about("Record power data").arg(
-                Arg::with_name("out")
+            Command::new("record").about("Record power data").arg(
+                Arg::new("out")
                     .help("Name of output file. Use '-' for stdout.")
-                    .short("o")
+                    .short('o')
                     .long("out")
-                    .takes_value(true)
+                    .action(clap::ArgAction::Set)
             ).arg(
-                Arg::with_name("average")
+                Arg::new("average")
                     .help(
                         &format!(
                             "Specifies that the client will output exactly one record, which \
@@ -114,14 +114,14 @@ async fn main() -> Result<(), Error> {
                             must match the regular expression '{}'.",
                             DURATION_REGEX)
                         )
-                    .short("a")
+                    .short('a')
                     .long("average")
-                    .takes_value(true)
+                    .action(clap::ArgAction::Set)
                     .value_name("duration")
-                    .validator(&validate_duration)
+                    .value_parser(validate_duration)
                     .conflicts_with_all(&["duration", "interval"]),
             ).arg(
-                Arg::with_name("duration")
+                Arg::new("duration")
                     .help(
                         &format!(
                             "Duration of time on the Zedmon device to be spanned by data \
@@ -129,13 +129,13 @@ async fn main() -> Result<(), Error> {
                             If specified, must match the regular expression '{}'.",
                             DURATION_REGEX)
                         )
-                    .short("d")
+                    .short('d')
                     .long("duration")
-                    .takes_value(true)
-                    .validator(&validate_duration)
+                    .action(clap::ArgAction::Set)
+                    .value_parser(validate_duration)
                     .conflicts_with("average"),
             ).arg(
-                Arg::with_name("interval")
+                Arg::new("interval")
                     .help(
                         &format!(
                             "Interval at which to report data. Raw measurements from Zedmon will \
@@ -152,68 +152,68 @@ async fn main() -> Result<(), Error> {
                             ZEDMON_NOMINAL_DATA_INTERVAL_USEC,
                             ZEDMON_NOMINAL_DATA_RATE_HZ)
                         )
-                    .short("i")
+                    .short('i')
                     .long("interval")
-                    .takes_value(true)
+                    .action(clap::ArgAction::Set)
                     .value_name("duration")
-                    .validator(&validate_downsampling_interval)
+                    .value_parser(validate_downsampling_interval)
                     .conflicts_with("average"),
             ).arg(
-                Arg::with_name("host_timestamps")
+                Arg::new("host_timestamps")
                     .help(
                         "If specified, timestamps will be offset to the host clock using a \
                         one-time estimate of the difference between the host and Zedmon \
                         clocks. By default, raw timestamps from Zedmon's clock are emitted.")
-                    .short("t")
+                    .short('t')
                     .long("host_timestamps")
-                    .takes_value(false)
+                    .action(clap::ArgAction::Set)
             ).arg(
-                Arg::with_name("power")
+                Arg::new("power")
                     .help("If specified, only output the power result for each sample")
-                    .short("p")
+                    .short('p')
                     .long("power")
-                    .takes_value(false)
+                    .action(clap::ArgAction::Set)
             ).arg(
-                Arg::with_name("serial")
+                Arg::new("serial")
                     .help(
                         "Attempts to connect to the attached Zedmon with the specified serial.\
                         Required only if multiple Zedmons are attached.")
-                    .short("s")
-                    .takes_value(true)
-                    .validator(&validate_serial)
+                    .short('s')
+                    .action(clap::ArgAction::Set)
+                    .value_parser(validate_serial)
             )
         )
         .subcommand(
-            SubCommand::with_name("relay").about("Enables/disables relay").arg(
-                Arg::with_name("state")
+            Command::new("relay").about("Enables/disables relay").arg(
+                Arg::new("state")
                     .help("State of the relay: 'on' or 'off'")
                     .required(true)
                     .index(1)
-                    .possible_values(&["on", "off"]))
+                    .value_parser(["on", "off"]))
                     .arg(
-                        Arg::with_name("serial")
+                        Arg::new("serial")
                             .help(
                                 "Attempts to connect to the attached Zedmon with the specified \
                                 serial. Required only if multiple Zedmons are attached.")
-                            .short("s")
-                            .takes_value(true)
-                            .validator(&validate_serial)
+                            .short('s')
+                            .action(clap::ArgAction::Set)
+                            .value_parser(validate_serial)
                     )
         )
         .get_matches();
 
     match matches.subcommand() {
-        ("describe", Some(arg_matches)) => run_describe(arg_matches),
-        ("list", _) => run_list(),
-        ("record", Some(arg_matches)) => run_record(arg_matches),
-        ("relay", Some(arg_matches)) => run_relay(arg_matches),
+        Some(("describe", arg_matches)) => run_describe(arg_matches),
+        Some(("list", _)) => run_list(),
+        Some(("record", arg_matches)) => run_record(arg_matches),
+        Some(("relay", arg_matches)) => run_relay(arg_matches),
         _ => panic!("Invalid subcommand"),
     }
 }
 
-fn run_describe(arg_matches: &ArgMatches<'_>) -> Result<(), Error> {
-    let zedmon = zedmon::zedmon(arg_matches.value_of("serial"))?;
-    match arg_matches.value_of("name") {
+fn run_describe(arg_matches: &ArgMatches) -> Result<(), Error> {
+    let zedmon = zedmon::zedmon(arg_matches.get_one::<String>("serial").map(|s| s.as_str()))?;
+    match arg_matches.get_one::<String>("name") {
         Some(name) => println!("{}", zedmon.describe(name).unwrap()),
         None => {
             let mut params = json::Map::<String, json::Value>::new();
@@ -281,34 +281,36 @@ impl zedmon::StopSignal for StdinStopper {
 }
 
 /// Runs the "record" subcommand".
-fn run_record(arg_matches: &ArgMatches<'_>) -> Result<(), Error> {
+fn run_record(arg_matches: &ArgMatches) -> Result<(), Error> {
     // Parse --out.
-    let (output, dest_name): (Box<dyn Write + Send>, &str) = match arg_matches.value_of("out") {
-        None => (Box::new(File::create("zedmon.csv")?), "zedmon.csv"),
-        Some("-") => (Box::new(std::io::stdout()), "stdout"),
-        Some(filename) => (Box::new(File::create(filename)?), filename),
-    };
+    let (output, dest_name): (Box<dyn Write + Send>, &str) =
+        match arg_matches.get_one::<String>("out").map(|s| s.as_str()) {
+            None => (Box::new(File::create("zedmon.csv")?), "zedmon.csv"),
+            Some("-") => (Box::new(std::io::stdout()), "stdout"),
+            Some(filename) => (Box::new(File::create(filename)?), filename),
+        };
     let dest_name = dest_name.to_string();
 
     // Parse either --average or --duration and --interval.
-    let (duration, reporting_interval) = match arg_matches.value_of("average") {
-        Some(value) => {
-            let duration = parse_duration(value);
-            (Some(duration), Some(duration))
-        }
-        None => (
-            arg_matches.value_of("duration").map(parse_duration),
-            arg_matches.value_of("interval").map(parse_duration),
-        ),
-    };
+    let (duration, reporting_interval) =
+        match arg_matches.get_one::<String>("average").map(|s| s.as_str()) {
+            Some(value) => {
+                let duration = parse_duration(value);
+                (Some(duration), Some(duration))
+            }
+            None => (
+                arg_matches.get_one::<String>("duration").map(|s| parse_duration(s.as_str())),
+                arg_matches.get_one::<String>("interval").map(|s| parse_duration(s.as_str())),
+            ),
+        };
 
-    let zedmon = zedmon::zedmon(arg_matches.value_of("serial"))?;
+    let zedmon = zedmon::zedmon(arg_matches.get_one::<&str>("serial").map(|s| *s))?;
 
     println!("Recording to {}.", dest_name);
     let options = zedmon::ReportingOptions {
         interval: reporting_interval,
-        use_host_timestamps: arg_matches.is_present("host_timestamps"),
-        output_power_only: arg_matches.is_present("power"),
+        use_host_timestamps: arg_matches.contains_id("host_timestamps"),
+        output_power_only: arg_matches.contains_id("power"),
     };
     match duration {
         Some(duration) => {
@@ -322,8 +324,8 @@ fn run_record(arg_matches: &ArgMatches<'_>) -> Result<(), Error> {
 }
 
 /// Runs the "relay" subcommand.
-fn run_relay(arg_matches: &ArgMatches<'_>) -> Result<(), Error> {
-    let zedmon = zedmon::zedmon(arg_matches.value_of("serial"))?;
-    zedmon.set_relay(arg_matches.value_of("state").unwrap() == "on")?;
+fn run_relay(arg_matches: &ArgMatches) -> Result<(), Error> {
+    let zedmon = zedmon::zedmon(arg_matches.get_one::<String>("serial").map(|s| s.as_str()))?;
+    zedmon.set_relay(arg_matches.get_one::<String>("state").unwrap().as_str() == "on")?;
     Ok(())
 }

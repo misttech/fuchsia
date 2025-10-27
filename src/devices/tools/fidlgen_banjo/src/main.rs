@@ -3,15 +3,15 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
+use clap::{Parser, ValueEnum};
 use fidl_ir_lib::fidl::*;
 use fidlgen_banjo_lib::backends::*;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
-use std::str::FromStr;
-use structopt::StructOpt;
 
-#[derive(Debug)]
+#[derive(Debug, ValueEnum, Clone)]
+#[clap(rename_all = "snake_case")]
 enum BackendName {
     C,
     Cpp,
@@ -20,39 +20,21 @@ enum BackendName {
     Rust,
 }
 
-impl FromStr for BackendName {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<BackendName, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "c" => Ok(BackendName::C),
-            "cpp" => Ok(BackendName::Cpp),
-            "cpp_internal" => Ok(BackendName::CppInternal),
-            "cpp_mock" => Ok(BackendName::CppMock),
-            "rust" => Ok(BackendName::Rust),
-            _ => Err(format!(
-                "Unrecognized backend for fidlgen_banjo. \
-                 Current valid ones are: c, cpp, cpp_internal, cpp_mock, rust"
-            )),
-        }
-    }
-}
-
-#[derive(StructOpt, Debug)]
-#[structopt(name = "fidlgen_banjo")]
+#[derive(Parser, Debug)]
+#[command(name = "fidlgen_banjo")]
 struct Flags {
-    #[structopt(short = "i", long = "ir")]
+    #[arg(short = 'i', long = "ir")]
     ir: PathBuf,
 
-    #[structopt(short = "b", long = "backend")]
+    #[arg(short = 'b', long = "backend", value_enum, ignore_case = true)]
     backend: BackendName,
 
-    #[structopt(short = "o", long = "output")]
+    #[arg(short = 'o', long = "output")]
     output: PathBuf,
 }
 
 fn main() -> Result<(), Error> {
-    let flags = Flags::from_args();
+    let flags = Flags::parse();
     let mut output = File::create(flags.output)?;
     let mut backend: Box<dyn Backend<'_, _>> = match flags.backend {
         BackendName::C => Box::new(CBackend::new(&mut output)),

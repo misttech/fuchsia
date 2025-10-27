@@ -3,16 +3,16 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, Result};
+use clap::{CommandFactory, Parser};
 use fuchsia_inspect::component;
 use inspect_runtime::PublishOptions;
 use inspect_testing::ExampleInspectData;
-use structopt::StructOpt;
 
 #[fuchsia::main]
 async fn main() -> Result<(), Error> {
-    let opts = inspect_testing::Options::from_args();
+    let opts = inspect_testing::Options::parse();
     if opts.rows == 0 || opts.columns == 0 {
-        inspect_testing::Options::clap().print_help()?;
+        inspect_testing::Options::command().print_help()?;
         std::process::exit(1);
     }
 

@@ -2,47 +2,47 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{ensure, Error};
+use anyhow::{Error, ensure};
 use camino::Utf8PathBuf;
-use structopt::StructOpt;
+use clap::Parser;
 
-#[derive(StructOpt, Debug)]
+#[derive(Parser, Debug)]
 pub struct Opt {
-    #[structopt(short = "i", long = "input")]
+    #[arg(short = 'i', long = "input")]
     // Path to the tests.json file.
     pub input: Utf8PathBuf,
 
-    #[structopt(long = "disabled-ctf-tests")]
+    #[arg(long = "disabled-ctf-tests")]
     // Path to the disabled_tests.json file.
     pub disabled_ctf_tests: Option<Utf8PathBuf>,
 
-    #[structopt(short = "t", long = "test-components")]
+    #[arg(short = 't', long = "test-components")]
     // Path to the test_components.json file.
     pub test_components_list: Utf8PathBuf,
 
-    #[structopt(short = "o", long = "output")]
+    #[arg(short = 'o', long = "output")]
     // Path to output test-list.
     pub output: Utf8PathBuf,
 
-    #[structopt(short = "b", long = "build-dir")]
+    #[arg(short = 'b', long = "build-dir")]
     // Path to the build directory.
     pub build_dir: Utf8PathBuf,
 
-    #[structopt(short = "d", long = "depfile")]
+    #[arg(short = 'd', long = "depfile")]
     // Path to output a depfile.
     pub depfile: Option<Utf8PathBuf>,
 
-    #[structopt(long = "experimental-test-config")]
+    #[arg(long = "experimental-test-config")]
     /// This is experimental as we are just prototyping
     /// TODO(b/294567466): Eventually this will replace test-list.json.
     pub test_config_output: Option<Utf8PathBuf>,
 
-    #[structopt(long = "ignore-device-test-errors")]
+    #[arg(long = "ignore-device-test-errors")]
     /// If set, do not fail if there are errors with device tests.
     /// This may be desired for use from scripts that prefer to simply skip those tests.
     pub ignore_device_test_errors: bool,
 
-    #[structopt(long = "single-threaded")]
+    #[arg(long = "single-threaded")]
     /// If set, do not parallelize reads.
     /// This is useful for debugging.
     pub single_threaded: bool,

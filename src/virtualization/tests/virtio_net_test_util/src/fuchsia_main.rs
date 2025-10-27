@@ -5,14 +5,14 @@
 use fidl_fuchsia_net_ext::MacAddress;
 use fuchsia_async::TimeoutExt as _;
 
+use clap::Parser;
 use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
 use std::convert::TryInto as _;
 use std::str::FromStr;
-use structopt::StructOpt;
 
 const NETDEV_DIRECTORY: &str = "/dev/class/network";
 
-#[derive(StructOpt, Debug)]
+#[derive(Debug, Parser)]
 struct Config {
     send_byte: u8,
     receive_byte: u8,
@@ -138,7 +138,7 @@ async fn network_device_send(
 
 #[fuchsia::main(logging_minimum_severity = "debug")]
 async fn main() -> Result<(), anyhow::Error> {
-    let config = Config::from_args();
+    let config = Config::parse();
     let (client, port) = find_network_device(MacAddress::from_str(&config.mac)?).await;
     network_device_send(client, port, config).await;
     // Test output requires this print, do not remove.
