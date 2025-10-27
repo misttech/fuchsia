@@ -568,3 +568,5 @@ toc:
     path: /docs/contribute/governance/rfcs/0274_kernel_assisted_cpu_profiling.md
   - title: "RFC-0275: Panel drivers"
     path: /docs/contribute/governance/rfcs/0275_panel_drivers.md
+  - title: "RFC-0276: Support for system updates with changes to the blob format"
+    path: /docs/contribute/governance/rfcs/0276_support_for_system_updates_with_changes_to_the_blob_format.md

@@ -3607,3 +3607,23 @@
   ]
   submitted: '2025-07-08'
   reviewed: '2025-10-16'
+
+- name: 'RFC-0276'
+  title: 'Support for system updates with changes to the blob format'
+  short_description: 'This RFC proposes a way to support evolving on-disk changes to the blobs during an OTA.'
+  authors: ['mlindsay@google.com', 'thomasalpinus@google.com']
+  file: '0276_support_for_system_updates_with_changes_to_the_blob_format.md'
+  area: ['Software Delivery', 'Storage']
+  issue: ['447593607']
+  gerrit_change_id: ['1378401']
+  status: 'Accepted'
+  reviewers: [
+    'jfsulliv@google.com',
+    'etryzelaar@google.com',
+    'amituttam@google.com',
+    'awolter@google.com',
+    'markdittmer@google.com',
+    'gtsai@google.com',
+  ]
+  submitted: '2025-09-26'
+  reviewed: '2025-10-24'
