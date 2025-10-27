@@ -5,6 +5,7 @@
 library fuchsia.hardware.qcom.hvdcpopti;
 
 using zx;
+using fuchsia.power.system;
 
 /// Essential Parameters.
 const ESSENTIAL_PARAMS_LENGTH uint64 = 48;
@@ -51,8 +52,8 @@ closed protocol Device {
         config Config;
     });
 
-    strict -> OnFifoData(struct {
-        data vector<uint8>:FIFO_DATA_MAX_LENGTH;
+    strict GetDataProvider() -> (resource struct {
+        provider client_end:DataProvider;
     });
 
     strict SetProcessedFifoData(struct {
@@ -61,6 +62,15 @@ closed protocol Device {
 
     strict GetStepAndJeitaParams() -> (struct {
         params StepAndJeitaParams;
+    });
+};
+
+closed protocol DataProvider {
+    strict -> OnFifoData(resource struct {
+        data vector<uint8>:FIFO_DATA_MAX_LENGTH;
+
+        /// Optional wake lease for power baton passing.
+        wake_lease fuchsia.power.system.LeaseToken:optional;
     });
 };
 

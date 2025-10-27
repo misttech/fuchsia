@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use super::utils::connect_to_device_channel;
-use fidl_fuchsia_hardware_qcom_hvdcpopti as fhvdcpopti;
 use futures_util::StreamExt;
 use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::power::{OwnedMessageCounterHandle, create_proxy_for_wake_events_counter};
@@ -23,6 +22,7 @@ use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{errno, error};
 use std::collections::VecDeque;
 use std::sync::Arc;
+use {fidl_fuchsia_hardware_qcom_hvdcpopti as fhvdcpopti, fidl_fuchsia_power_system as fpower};
 
 pub const QBGIOCXCFG: u32 = 0x80684201;
 pub const QBGIOCXEPR: u32 = 0x80304202;
@@ -41,7 +41,7 @@ pub fn create_qbg_device(
 
 struct QbgDeviceState {
     waiters: WaitQueue,
-    read_queue: Mutex<VecDeque<VecInputBuffer>>,
+    read_queue: Mutex<VecDeque<(VecInputBuffer, Option<fpower::LeaseToken>)>>,
     message_counter: Mutex<Option<OwnedMessageCounterHandle>>,
 }
 
@@ -54,18 +54,19 @@ impl QbgDeviceState {
         }
     }
 
-    fn handle_event(&self, event: fhvdcpopti::DeviceEvent) {
-        let fhvdcpopti::DeviceEvent::OnFifoData { data } = event;
-        self.read_queue.lock().push_back(data.into());
+    fn handle_event(&self, event: fhvdcpopti::DataProviderEvent) {
+        let fhvdcpopti::DataProviderEvent::OnFifoData { data, wake_lease } = event;
+        self.read_queue.lock().push_back((data.into(), wake_lease));
         self.waiters.notify_fd_events(FdEvents::POLLIN);
     }
 }
 
 async fn run_qbg_device_event_loop(
     device_state: Arc<QbgDeviceState>,
-    mut event_stream: fhvdcpopti::DeviceEventStream,
+    mut event_stream: fhvdcpopti::DataProviderEventStream,
 ) {
     loop {
+        device_state.message_counter.lock().as_ref().map(|c| c.mark_handled());
         match event_stream.next().await {
             Some(Ok(event)) => {
                 device_state.handle_event(event);
@@ -84,15 +85,13 @@ async fn run_qbg_device_event_loop(
     device_state.waiters.notify_fd_events(FdEvents::POLLHUP);
 }
 
-fn spawn_qbg_device_tasks(device_state: Arc<QbgDeviceState>, current_task: &CurrentTask) {
+fn spawn_qbg_device_tasks(
+    device_state: Arc<QbgDeviceState>,
+    channel: zx::Channel,
+    current_task: &CurrentTask,
+) {
     current_task.kernel().kthreads.spawn_async(async move |locked_and_task| {
-        // Connect to the device on the main thread. The thread from which the task is being
-        // spawned does not yet have an executor, so it cannot make an async FIDL connection.
-        let channel =
-            connect_to_device_channel("device").expect("Could not connect to hvdcpopti service");
         let counter_name = "hvdcp_opti";
-        // Wake message_counter starts on 1 because set_processed_fifo_data gets called in response
-        // to initial data, which is not passed through this event stream.
         let (proxy_channel, counter) =
             create_proxy_for_wake_events_counter(channel, counter_name.to_string());
         *device_state.message_counter.lock() = Some(
@@ -104,7 +103,7 @@ fn spawn_qbg_device_tasks(device_state: Arc<QbgDeviceState>, current_task: &Curr
         );
         run_qbg_device_event_loop(
             device_state,
-            fhvdcpopti::DeviceProxy::new(fidl::AsyncChannel::from_channel(proxy_channel))
+            fhvdcpopti::DataProviderProxy::new(fidl::AsyncChannel::from_channel(proxy_channel))
                 .take_event_stream(),
         )
         .await;
@@ -119,14 +118,14 @@ struct QbgDeviceFile {
 impl QbgDeviceFile {
     pub fn new(current_task: &CurrentTask) -> Self {
         let state = Arc::new(QbgDeviceState::new());
-        spawn_qbg_device_tasks(state.clone(), current_task);
-        Self {
-            hvdcpopti: fhvdcpopti::DeviceSynchronousProxy::new(
-                connect_to_device_channel("device")
-                    .expect("Could not connect to hvdcpopti service"),
-            ),
-            state,
-        }
+        let hvdcpopti = fhvdcpopti::DeviceSynchronousProxy::new(
+            connect_to_device_channel("device").expect("Could not connect to hvdcpopti service"),
+        );
+        let data_provider = hvdcpopti
+            .get_data_provider(zx::MonotonicInstant::INFINITE)
+            .expect("GetDataProvider failed");
+        spawn_qbg_device_tasks(state.clone(), data_provider.into(), current_task);
+        Self { hvdcpopti, state }
     }
 }
 
@@ -232,7 +231,7 @@ impl FileOps for QbgDeviceFile {
 
             // Try and pull as much data from the queue as possible to fill the buffer.
             while buffer.available() > 0 {
-                let Some(data) = queue.front_mut() else {
+                let Some((data, _)) = queue.front_mut() else {
                     break;
                 };
 
@@ -263,7 +262,6 @@ impl FileOps for QbgDeviceFile {
                 log_error!("SetProcessedFifoData failed: {:?}", e);
                 errno!(EINVAL)
             })?;
-        self.state.message_counter.lock().as_ref().map(|c| c.mark_handled());
         Ok(data_len)
     }
 
