@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::MonikerWithUrl;
 use crate::error::MessageError;
 use bumpalo::Bump;
 use bumpalo::collections::{String as BumpaloString, Vec as BumpaloVec};
@@ -14,61 +13,10 @@ use zx::BootInstant;
 
 pub use crate::constants::*;
 
-struct ArchivistArguments<'a> {
-    builder: CPPLogMessageBuilder<'a>,
-    archivist_argument_count: usize,
-    record: Record<'a>,
-}
-
-#[cfg(fuchsia_api_level_less_than = "HEAD")]
-fn parse_archivist_args<'a>(
-    builder: CPPLogMessageBuilder<'a>,
-    input: Record<'a>,
-) -> Result<ArchivistArguments<'a>, MessageError> {
-    Ok(ArchivistArguments { builder, archivist_argument_count: 0, record: input })
-}
-
-#[cfg(fuchsia_api_level_at_least = "HEAD")]
-fn parse_archivist_args<'a>(
-    mut builder: CPPLogMessageBuilder<'a>,
-    input: Record<'a>,
-) -> Result<ArchivistArguments<'a>, MessageError> {
-    let mut has_moniker = false;
-    let mut archivist_argument_count = 0;
-    for argument in input.arguments.iter().rev() {
-        // If Archivist records are expected, they should always be at the end.
-        // If no Archivist records are expected, treat them as regular key-value-pairs.
-        match argument {
-            Argument::Other { value, name } => {
-                if name == fidl_fuchsia_diagnostics::MONIKER_ARG_NAME {
-                    if let Value::Text(moniker) = value {
-                        builder = builder.set_moniker(ExtendedMoniker::parse_str(moniker)?);
-                        archivist_argument_count += 1;
-                        has_moniker = true;
-                        continue;
-                    }
-                }
-                if name == fidl_fuchsia_diagnostics::COMPONENT_URL_ARG_NAME {
-                    if let Value::Text(_) = value {
-                        archivist_argument_count += 1;
-                        continue;
-                    }
-                }
-                if name == fidl_fuchsia_diagnostics::ROLLED_OUT_ARG_NAME {
-                    if let Value::UnsignedInt(_) = value {
-                        archivist_argument_count += 1;
-                        continue;
-                    }
-                }
-                break;
-            }
-            _ => break,
-        }
-    }
-    if !has_moniker {
-        return Err(MessageError::MissingMoniker);
-    }
-    Ok(ArchivistArguments { builder, archivist_argument_count, record: input })
+struct ExtendedMetadata<'a> {
+    moniker: &'a str,
+    url: &'a str,
+    rolled_out_logs: u64,
 }
 
 /// Array for FFI purposes between C++ and Rust.
@@ -173,7 +121,7 @@ pub struct CPPLogMessageBuilder<'a> {
 // Escape quotes in a string per the Feedback format
 fn escape_quotes(input: &str, output: &mut BumpaloString<'_>) {
     for ch in input.chars() {
-        if ch == '\"' {
+        if ch == '"' {
             output.push('\\');
         }
         output.push(ch);
@@ -235,11 +183,12 @@ impl<'a> CPPLogMessageBuilder<'a> {
         self.kvps.push(kvp);
         self
     }
-    #[cfg(fuchsia_api_level_at_least = "HEAD")]
-    fn set_moniker(mut self, value: ExtendedMoniker) -> Self {
-        self.moniker = Some(bumpalo::format!(in self.allocator,"{}", value));
+
+    fn set_moniker(mut self, value: &str) -> Self {
+        self.moniker = Some(BumpaloString::from_str_in(value, self.allocator));
         self
     }
+
     fn build(self) -> &'a mut LogMessage<'a> {
         let allocator = self.allocator;
         let builder = allocator.alloc(self);
@@ -346,28 +295,23 @@ impl<'a> CPPLogMessageBuilderBuilder<'a> {
 
 fn build_logs_data<'a>(
     input: Record<'a>,
-    source: Option<MonikerWithUrl>,
+    source: Option<ExtendedMetadata<'_>>,
     allocator: &'a Bump,
-    expect_extended_attribution: bool,
 ) -> Result<CPPLogMessageBuilder<'a>, MessageError> {
     let builder = CPPLogMessageBuilderBuilder(allocator);
     let (raw_severity, severity) = Severity::parse_exact(input.severity);
-    let (maybe_moniker, maybe_url) =
-        source.map(|value| (Some(value.moniker), Some(value.url))).unwrap_or((None, None));
-    let mut builder = builder.configure(maybe_url, maybe_moniker, severity, input.timestamp)?;
+    let (maybe_moniker, maybe_url, _) = source
+        .map(|value| (Some(value.moniker), Some(value.url), Some(value.rolled_out_logs)))
+        .unwrap_or((None, None, None));
+    let mut builder =
+        builder.configure(maybe_url.map(FlyStr::new), None, severity, input.timestamp)?;
+    if let Some(moniker) = maybe_moniker {
+        builder = builder.set_moniker(moniker);
+    }
     if let Some(raw_severity) = raw_severity {
         builder = builder.set_raw_severity(raw_severity);
     }
-    let (archivist_argument_count, input) = if !expect_extended_attribution {
-        (0, input)
-    } else {
-        let arguments = parse_archivist_args(builder, input)?;
-        builder = arguments.builder;
-        (arguments.archivist_argument_count, arguments.record)
-    };
-    let input_argument_len = input.arguments.len();
-    for argument in input.arguments.into_iter().take(input_argument_len - archivist_argument_count)
-    {
+    for argument in input.arguments.into_iter() {
         match argument {
             Argument::Tag(tag) => {
                 builder = builder.add_tag(tag.as_ref());
@@ -405,10 +349,23 @@ fn build_logs_data<'a>(
 pub fn ffi_from_extended_record<'a>(
     bytes: &'a [u8],
     allocator: &'a Bump,
-    source: Option<MonikerWithUrl>,
-    expect_extended_attribution: bool,
 ) -> Result<(&'a mut LogMessage<'a>, &'a [u8]), MessageError> {
     let (input, remaining) = diagnostics_log_encoding::parse::parse_record(bytes)?;
-    let record = build_logs_data(input, source, allocator, expect_extended_attribution)?.build();
-    Ok((record, remaining))
+    let (source, new_remaining) = if remaining.len() >= 16 {
+        let moniker_len = u32::from_le_bytes(remaining[0..4].try_into().unwrap()) as usize;
+        let component_url_len = u32::from_le_bytes(remaining[4..8].try_into().unwrap()) as usize;
+        let rolled_out_logs = u64::from_le_bytes(remaining[8..16].try_into().unwrap());
+        let mut offset = 16;
+        let moniker = str::from_utf8(&remaining[offset..offset + moniker_len])?;
+        let moniker_padded_len = (moniker_len + 7) & !7;
+        offset += moniker_padded_len;
+        let url = str::from_utf8(&remaining[offset..offset + component_url_len])?;
+        let component_url_padded_len = (component_url_len + 7) & !7;
+        offset += component_url_padded_len;
+        (Some(ExtendedMetadata { moniker, url, rolled_out_logs }), &remaining[offset..])
+    } else {
+        (None, remaining)
+    };
+    let record = build_logs_data(input, source, allocator)?.build();
+    Ok((record, new_remaining))
 }

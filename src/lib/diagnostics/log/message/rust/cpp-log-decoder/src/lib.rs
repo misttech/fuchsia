@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
 use bumpalo::Bump;
+use diagnostics_log_encoding;
 use diagnostics_message::ffi::{CPPArray, LogMessage};
 use diagnostics_message::{self as message, MonikerWithUrl};
 use std::ffi::CString;
@@ -96,17 +97,32 @@ pub unsafe extern "C" fn fuchsia_decode_log_messages_to_struct(
     let buf = std::slice::from_raw_parts(msg, size);
     let mut current_slice = buf.as_ref();
     loop {
-        let (data, remaining) = message::ffi::ffi_from_extended_record(
-            current_slice,
-            // SAFETY: The returned LogMessage must NOT outlive the bump allocator.
-            // This is ensured by the allocator living in the heap-allocated ManagedState
-            // struct which frees the LogMessages first when dropped, before allowing the bump
-            // allocator itself to be freed.
-            &*(&state.allocator as *const Bump),
-            None,
-            expect_extended_attribution,
-        )
-        .unwrap();
+        let (data, remaining) = if expect_extended_attribution {
+            message::ffi::ffi_from_extended_record(
+                current_slice,
+                // SAFETY: The returned LogMessage must NOT outlive the bump allocator.
+                // This is ensured by the allocator living in the heap-allocated ManagedState
+                // struct which frees the LogMessages first when dropped, before allowing the bump
+                // allocator itself to be freed.
+                &*(&state.allocator as *const Bump),
+            )
+            .unwrap()
+        } else {
+            let (_, remaining_after_parse) =
+                diagnostics_log_encoding::parse::parse_record(current_slice).unwrap();
+            let record_len = current_slice.len() - remaining_after_parse.len();
+            let record_slice = &current_slice[..record_len];
+            let (data, _) = message::ffi::ffi_from_extended_record(
+                record_slice,
+                // SAFETY: The returned LogMessage must NOT outlive the bump allocator.
+                // This is ensured by the allocator living in the heap-allocated ManagedState
+                // struct which frees the LogMessages first when dropped, before allowing the bump
+                // allocator itself to be freed.
+                &*(&state.allocator as *const Bump),
+            )
+            .unwrap();
+            (data, remaining_after_parse)
+        };
         state.message_array.push(data as *mut LogMessage<'static>);
         if remaining.is_empty() {
             break;
