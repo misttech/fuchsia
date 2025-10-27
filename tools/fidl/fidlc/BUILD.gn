@@ -107,6 +107,7 @@ if (is_host) {
   executable("fidl-lint") {
     sources = [
       "cmd/fidl-lint/command_line_options.cc",
+      "cmd/fidl-lint/command_line_options.h",
       "cmd/fidl-lint/main.cc",
     ]
     deps = [ ":lib" ]

@@ -163,7 +163,8 @@ cc_binary(
 cc_binary(
     name = "fidl-lint",
     srcs = [
-        "cmd/fidl-lint/command_line_option.cc",
+        "cmd/fidl-lint/command_line_options.cc",
+        "cmd/fidl-lint/command_line_options.h",
         "cmd/fidl-lint/main.cc",
     ],
     target_compatible_with = HOST_CONSTRAINTS,
