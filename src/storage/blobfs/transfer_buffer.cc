@@ -70,8 +70,9 @@ zx::result<std::unique_ptr<StorageBackedTransferBuffer>> StorageBackedTransferBu
       std::move(vmo), size, std::move(vmoid), txn_manager, block_iter_provider, metrics)));
 }
 
-zx::result<> StorageBackedTransferBuffer::Populate(uint64_t offset, uint64_t length,
-                                                   const LoaderInfo& info) {
+zx::result<> StorageBackedTransferBuffer::PopulateImpl(
+    uint64_t offset, uint64_t length, const LoaderInfo& info,
+    const fs::DeviceTransactionHandler::DecompressionInfo* decompression_info) {
   // Currently our block size is saved as a variable in some places and uses a constant in others.
   // These should always match.
   ZX_ASSERT(info.layout->blobfs_block_size() == kBlobfsBlockSize);
@@ -99,7 +100,7 @@ zx::result<> StorageBackedTransferBuffer::Populate(uint64_t offset, uint64_t len
           vmo_.op_range(ZX_VMO_OP_COMMIT, 0, block_count * kBlobfsBlockSize, nullptr, 0);
       status != ZX_OK) {
     FX_PLOGS(WARNING, status) << "Failed to commit vmo";
-    // This is only an optimization, it's fine it it fails.
+    // This is only an optimization, it's fine if it fails.
   }
 
   // Navigate to the start block.
@@ -129,7 +130,7 @@ zx::result<> StorageBackedTransferBuffer::Populate(uint64_t offset, uint64_t len
   }
 
   // Issue the read.
-  status = txn_manager_->RunRequests(operations);
+  status = txn_manager_->RunRequests(operations, decompression_info);
   if (status != ZX_OK) {
     FX_PLOGS(ERROR, status) << "Failed to transact read operations";
     return zx::error(status);
@@ -144,6 +145,20 @@ zx::result<> StorageBackedTransferBuffer::Populate(uint64_t offset, uint64_t len
                                                      block_count * kBlobfsBlockSize, ticker.End());
   }
   return zx::ok();
+}
+
+zx::result<> StorageBackedTransferBuffer::PopulateAndDecompress(const CompressionMapping& mapping,
+                                                                const LoaderInfo& info) {
+  const fs::DeviceTransactionHandler::DecompressionInfo decompression_info{
+      .uncompressed_bytes = static_cast<uint32_t>(mapping.decompressed_length),
+      .compressed_bytes = static_cast<uint32_t>(mapping.compressed_length),
+      .compressed_prefix_bytes =
+          static_cast<uint16_t>(mapping.compressed_offset % kBlobfsBlockSize),
+  };
+
+  return PopulateImpl(mapping.compressed_offset - decompression_info.compressed_prefix_bytes,
+                      mapping.compressed_length + decompression_info.compressed_prefix_bytes, info,
+                      &decompression_info);
 }
 
 }  // namespace blobfs

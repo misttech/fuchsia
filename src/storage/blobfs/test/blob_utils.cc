@@ -143,7 +143,7 @@ void VerifyContents(int fd, const uint8_t* data, size_t data_size) {
 
   for (ssize_t total_read = 0; total_read < data_size_signed; total_read += kBuffersize) {
     ssize_t read_size = std::min(kBuffersize, data_size_signed - total_read);
-    ASSERT_EQ(read_size, read(fd, buffer.get(), read_size));
+    ASSERT_EQ(read_size, read(fd, buffer.get(), read_size)) << strerror(errno);
     ASSERT_EQ(memcmp(&data[total_read], buffer.get(), read_size), 0);
   }
 }

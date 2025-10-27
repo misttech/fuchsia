@@ -4,6 +4,7 @@
 
 #include "src/storage/blobfs/page_loader.h"
 
+#include <fidl/fuchsia.hardware.block/cpp/wire.h>
 #include <lib/fit/defer.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/scheduler/role.h>
@@ -171,20 +172,21 @@ zx::result<std::unique_ptr<PageLoader::Worker>> PageLoader::Worker::Create(
     return zx::error(status);
   }
 
-  ZX_ASSERT(decompression_connector);
-  if (zx_status_t status =
-          zx::vmo::create(worker->transfer_buffer_->GetSize(), 0, &worker->sandbox_buffer_);
-      status != ZX_OK) {
-    FX_PLOGS(ERROR, status) << "Failed to create sandbox buffer";
-    return zx::error(status);
-  }
+  if (decompression_connector) {
+    if (zx_status_t status =
+            zx::vmo::create(worker->transfer_buffer_->GetSize(), 0, &worker->sandbox_buffer_);
+        status != ZX_OK) {
+      FX_PLOGS(ERROR, status) << "Failed to create sandbox buffer";
+      return zx::error(status);
+    }
 
-  auto client_or = ExternalDecompressorClient::Create(
-      decompression_connector, worker->sandbox_buffer_, worker->transfer_buffer_->GetVmo());
-  if (!client_or.is_ok()) {
-    return zx::error(client_or.status_value());
+    auto client_or = ExternalDecompressorClient::Create(
+        decompression_connector, worker->sandbox_buffer_, worker->transfer_buffer_->GetVmo());
+    if (!client_or.is_ok()) {
+      return zx::error(client_or.status_value());
+    }
+    worker->decompressor_client_ = std::move(client_or.value());
   }
-  worker->decompressor_client_ = std::move(client_or.value());
 
   return zx::ok(std::move(worker));
 }
@@ -199,8 +201,13 @@ PagerErrorStatus PageLoader::Worker::TransferPages(const PageLoader::PageSupplie
     return PagerErrorStatus::kErrBadState;
   }
 
-  if (info.decompressor)
-    return TransferChunkedPages(page_supplier, offset, length, info);
+  if (info.decompressor) {
+    if (decompressor_client_) {
+      return TransferChunkedPages(page_supplier, offset, length, info);
+    }
+    return TransferDriverDecompressedPages(page_supplier, offset, length, info);
+  }
+
   return TransferUncompressedPages(page_supplier, offset, length, info);
 }
 
@@ -311,7 +318,7 @@ PagerErrorStatus PageLoader::Worker::TransferChunkedPages(
         current_decompressed_offset, current_decompressed_length, transfer_buffer_->GetSize());
 
     if (!mapping_status.is_ok()) {
-      FX_LOGS(ERROR) << "TransferChunked: Failed to find range for [" << offset << ", "
+      FX_LOGS(ERROR) << "TransferChunkedPages: Failed to find range for [" << offset << ", "
                      << current_decompressed_offset + current_decompressed_length << ") for blob "
                      << info.verifier->digest() << ": " << mapping_status.status_string();
       return ToPagerErrorStatus(mapping_status.status_value());
@@ -380,6 +387,86 @@ PagerErrorStatus PageLoader::Worker::TransferChunkedPages(
   return PagerErrorStatus::kOK;
 }
 
+// The requested range is aligned in multiple steps as follows:
+// 1. The desired uncompressed range is aligned for Merkle tree verification.
+// 2. This range is extended to span complete compression frames / chunks, since that is the
+// granularity we can decompress data in. The result of this alignment produces a
+// CompressionMapping, which contains the mapping of the requested uncompressed range to the
+// compressed range that needs to be read in from disk.
+// 3. The uncompressed range is processed in chunks.
+// For each chunk, we compute the CompressionMapping to determine the
+// compressed range that needs to be read in. Each chunk is uncompressed by the driver, then
+// verified here, and spliced into the destination VMO with supply_pages().
+PagerErrorStatus PageLoader::Worker::TransferDriverDecompressedPages(
+    const PageLoader::PageSupplier& page_supplier, uint64_t requested_offset,
+    uint64_t requested_length, const LoaderInfo& info) {
+  ZX_DEBUG_ASSERT(info.decompressor);
+
+  const auto [start_offset, total_length] =
+      GetBlockAlignedReadRange(info, requested_offset, requested_length);
+
+  TRACE_DURATION("blobfs", "PageLoader::TransferDriverDecompressedPages", "offset", start_offset,
+                 "length", total_length);
+
+  uint64_t offset = start_offset;
+  const uint64_t end = offset + total_length;
+
+  const size_t max_chunk_size =
+      std::min(transfer_buffer_->GetSize(), fuchsia_hardware_block::wire::kMaxDecompressedBytes);
+
+  // Read in multiples of `max_chunk_size`. In practice we should only require one iteration for the
+  // majority of cases.
+  while (offset < end) {
+    zx::result<CompressionMapping> mapping_status =
+        info.decompressor->MappingForDecompressedRange(offset, end - offset, max_chunk_size);
+
+    if (!mapping_status.is_ok()) {
+      FX_LOGS(ERROR) << "TransferDriverDecompressedPages: Failed to find range for [" << offset
+                     << ", " << end << ") for blob " << info.verifier->digest() << ": "
+                     << mapping_status.status_string();
+      return ToPagerErrorStatus(mapping_status.status_value());
+    }
+    CompressionMapping mapping = mapping_status.value();
+
+    const uint64_t length = mapping.decompressed_length;
+    const uint64_t block_aligned_length = fbl::round_up(length, kBlobfsBlockSize);
+    const uint64_t page_aligned_length = fbl::round_up(length, zx_system_get_page_size());
+
+    // On error, decommit pages in the transfer buffer that might have been populated.
+    auto decommit = fit::defer(VmoDecommitter(transfer_buffer_->GetVmo(), 0, block_aligned_length));
+
+    zx::result<> populate_status = transfer_buffer_->PopulateAndDecompress(mapping, info);
+    if (!populate_status.is_ok()) {
+      FX_LOGS(ERROR) << "TransferDriverDecompressedPages: Failed to populate transfer vmo for blob "
+                     << info.verifier->digest() << ": " << populate_status.status_string()
+                     << ". Returning as plain IO error.";
+      return PagerErrorStatus::kErrIO;
+    }
+
+    if (zx::result<> result =
+            VerifyAndSupply(transfer_buffer_->GetVmo(), 0, length, mapping.decompressed_offset,
+                            *info.verifier, page_supplier);
+        result.is_error()) {
+      return ToPagerErrorStatus(result.status_value());
+    }
+
+    // Most of the pages were transferred out of the transfer buffer. Only the pages that weren't
+    // transferred need to be decommitted.
+    decommit.cancel();
+    if (page_aligned_length != block_aligned_length) {
+      VmoDecommitter(transfer_buffer_->GetVmo(), page_aligned_length,
+                     block_aligned_length - page_aligned_length)();
+    }
+
+    offset = mapping.decompressed_offset + mapping.decompressed_length;
+  }
+
+  fbl::String merkle_root_hash = info.verifier->digest().ToString();
+  metrics_->IncrementPageIn(merkle_root_hash, start_offset, total_length);
+
+  return PagerErrorStatus::kOK;
+}
+
 zx::result<> PageLoader::Worker::VerifyAndSupply(zx::vmo& vmo, uint64_t offset, uint64_t length,
                                                  uint64_t target_offset, BlobVerifier& verifier,
                                                  const PageLoader::PageSupplier& supplier) const {
@@ -436,6 +523,10 @@ PageLoader::PageLoader(std::vector<std::unique_ptr<Worker>> workers)
 zx::result<std::unique_ptr<PageLoader>> PageLoader::Create(
     std::vector<std::unique_ptr<WorkerResources>> resources, BlobfsMetrics* metrics,
     DecompressorCreatorConnector* decompression_connector) {
+  if (!decompression_connector) {
+    FX_LOGS(INFO) << "Using driver decompression";
+  }
+
   std::vector<std::unique_ptr<PageLoader::Worker>> workers;
   ZX_ASSERT(!resources.empty());
   for (auto& res : resources) {

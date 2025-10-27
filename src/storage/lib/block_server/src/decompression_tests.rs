@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::async_interface::{DECOMPRESSION_BUFFER_SIZE, Interface};
+use crate::async_interface::Interface;
 use crate::{BlockServer, ReadOptions, TraceFlowId, WriteOptions};
 use block_protocol::{BlockFifoCommand, BlockFifoRequest, BlockFifoResponse};
 use fidl_fuchsia_hardware_block_driver::{BlockIoFlag, BlockOpcode};
@@ -607,7 +607,7 @@ async fn test_too_much_decompression() {
     let mut fixture =
         TestFixture::new(MockInterface::default(), None, zx::system_get_page_size() as u64).await;
 
-    let total_compressed_bytes = DECOMPRESSION_BUFFER_SIZE as u32 + 1;
+    let total_compressed_bytes = fblock::MAX_DECOMPRESSED_BYTES as u32 + 1;
 
     fixture
         .send_requests(&[BlockFifoRequest {
@@ -638,7 +638,7 @@ async fn test_decompression_buffer_exhaustion() {
 
     // The buffer allocator uses a Buddy allocator, and we're allocating chunks of 9 MiB, so that
     // gets rounded to 16 MiB.
-    const UNBLOCKED_REQUESTS: usize = DECOMPRESSION_BUFFER_SIZE / (16 * 1024 * 1024);
+    const UNBLOCKED_REQUESTS: usize = fblock::MAX_DECOMPRESSED_BYTES as usize / (16 * 1024 * 1024);
 
     // Create two sets of test_data and alternate them.
     let mut test_data = Vec::new();

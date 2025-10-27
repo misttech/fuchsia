@@ -58,6 +58,10 @@ class TransferBuffer {
   [[nodiscard]] virtual zx::result<> Populate(uint64_t offset, uint64_t length,
                                               const LoaderInfo& info) = 0;
 
+  // Same as above, but with driver decompression.
+  [[nodiscard]] virtual zx::result<> PopulateAndDecompress(const CompressionMapping& mapping,
+                                                           const LoaderInfo& info) = 0;
+
   // Accesses the underlying VMO.
   // Must be preceded with a call to |TransferBuffer::Populate()|. The contents of the returned
   // VMO are only defined up to |length| bytes (the value passed to the last call to
@@ -81,7 +85,12 @@ class StorageBackedTransferBuffer : public TransferBuffer {
       BlobfsMetrics* metrics);
 
   [[nodiscard]] zx::result<> Populate(uint64_t offset, uint64_t length,
-                                      const LoaderInfo& info) final;
+                                      const LoaderInfo& info) final {
+    return PopulateImpl(offset, length, info, nullptr);
+  }
+
+  [[nodiscard]] zx::result<> PopulateAndDecompress(const CompressionMapping& mapping,
+                                                   const LoaderInfo& info) override;
 
   zx::vmo& GetVmo() final { return vmo_; }
   size_t GetSize() const final { return size_; }
@@ -90,6 +99,10 @@ class StorageBackedTransferBuffer : public TransferBuffer {
   StorageBackedTransferBuffer(zx::vmo vmo, size_t size, storage::OwnedVmoid vmoid,
                               TransactionManager* txn_manager,
                               BlockIteratorProvider* block_iter_provider, BlobfsMetrics* metrics);
+
+  zx::result<> PopulateImpl(
+      uint64_t offset, uint64_t length, const LoaderInfo& info,
+      const fs::DeviceTransactionHandler::DecompressionInfo* decompression_info);
 
   TransactionManager* txn_manager_ = nullptr;
   BlockIteratorProvider* block_iter_provider_ = nullptr;

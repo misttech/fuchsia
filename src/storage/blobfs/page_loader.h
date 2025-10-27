@@ -97,7 +97,8 @@ class PageLoader {
   // |uncompressed_buffer| is used to retrieve and buffer uncompressed data from the underlying
   // storage. |resources| is a set of resources needed for each individual |Worker| so only as many
   // pager threads are supported as there are sets of resources. |decompression_buffer_size| is the
-  // size of the scratch buffer to use for decompression.
+  // size of the scratch buffer to use for decompression. If |decompression_connector| is nullptr,
+  // the driver will be used for decompression.
   [[nodiscard]] static zx::result<std::unique_ptr<PageLoader>> Create(
       std::vector<std::unique_ptr<WorkerResources>> resources, BlobfsMetrics* metrics,
       DecompressorCreatorConnector* decompression_connector);
@@ -145,6 +146,9 @@ class PageLoader {
 
     PagerErrorStatus TransferChunkedPages(const PageLoader::PageSupplier& page_supplier,
                                           uint64_t offset, uint64_t length, const LoaderInfo& info);
+    PagerErrorStatus TransferDriverDecompressedPages(const PageLoader::PageSupplier& page_supplier,
+                                                     uint64_t offset, uint64_t length,
+                                                     const LoaderInfo& info);
     PagerErrorStatus TransferUncompressedPages(const PageLoader::PageSupplier& page_supplier,
                                                uint64_t offset, uint64_t length,
                                                const LoaderInfo& info);

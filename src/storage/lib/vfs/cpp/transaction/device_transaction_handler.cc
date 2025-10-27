@@ -22,7 +22,8 @@
 namespace fs {
 
 zx_status_t DeviceTransactionHandler::RunRequests(
-    const std::vector<storage::BufferedOperation>& operations) {
+    const std::vector<storage::BufferedOperation>& operations,
+    const DecompressionInfo* decompression_info) {
   if (operations.empty()) {
     return ZX_OK;
   }
@@ -65,13 +66,24 @@ zx_status_t DeviceTransactionHandler::RunRequests(
       // done by the request builder.
       ZX_DEBUG_ASSERT(request.command.opcode == block_requests[0].command.opcode);
 
-      request.vmo_offset = BlockNumberToDevice(operation.vmo_offset);
+      if (decompression_info) {
+        if (i == 0) {
+          request.vmo_offset = BlockNumberToDevice(operation.vmo_offset);
+          request.uncompressed_bytes = decompression_info->uncompressed_bytes;
+          request.total_compressed_bytes = decompression_info->compressed_bytes;
+          request.compressed_prefix_bytes = decompression_info->compressed_prefix_bytes;
+        }
+        request.command.flags |= BLOCK_IO_FLAG_DECOMPRESS_WITH_ZSTD;
+      } else {
+        request.vmo_offset = BlockNumberToDevice(operation.vmo_offset);
+      }
       request.dev_offset = BlockNumberToDevice(operation.dev_offset);
       uint64_t length = BlockNumberToDevice(operation.length);
       if (length > std::numeric_limits<decltype(request.length)>::max()) {
         return ZX_ERR_OUT_OF_RANGE;
       }
       request.length = static_cast<decltype(request.length)>(length);
+      ZX_ASSERT(request.length != 0);
       if (operation.trace_flow_id) {
         // Client provided an explicit flow ID, no need to begin a new flow.
         request.trace_flow_id = operation.trace_flow_id;

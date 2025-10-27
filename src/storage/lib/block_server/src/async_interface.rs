@@ -25,8 +25,6 @@ use {
     fuchsia_async as fasync,
 };
 
-pub const DECOMPRESSION_BUFFER_SIZE: usize = 128 * 1024 * 1024;
-
 pub trait Interface: Send + Sync + Unpin + 'static {
     /// Runs `stream` to completion.
     ///
@@ -450,7 +448,7 @@ impl<I: Interface + ?Sized> Session<I> {
                     None => {
                         // This isn't racy because there should only be one `map_request` future
                         // running at any one time.
-                        let source = BufferSource::new(DECOMPRESSION_BUFFER_SIZE);
+                        let source = BufferSource::new(fblock::MAX_DECOMPRESSED_BYTES as usize);
                         self.interface.on_attach_vmo(&source.vmo()).await?;
                         let allocator =
                             BufferAllocator::new(self.helper.block_size as usize, source);
@@ -459,7 +457,7 @@ impl<I: Interface + ?Sized> Session<I> {
                     }
                 };
 
-                if required_buffer_size > DECOMPRESSION_BUFFER_SIZE {
+                if required_buffer_size > fblock::MAX_DECOMPRESSED_BYTES as usize {
                     return Err(zx::Status::OUT_OF_RANGE);
                 }
 

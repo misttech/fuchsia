@@ -198,8 +198,11 @@ zx::result<std::unique_ptr<Blobfs>> Blobfs::Create(async_dispatcher_t* dispatche
     worker_resources.push_back(
         std::make_unique<PageLoader::WorkerResources>(*std::move(transfer_buffer)));
   }
-  auto page_loader_or = PageLoader::Create(std::move(worker_resources), fs_ptr->GetMetrics().get(),
-                                           fs->decompression_connector());
+  auto page_loader_or = PageLoader::Create(
+      std::move(worker_resources), fs_ptr->GetMetrics().get(),
+      block_info.flags & fuchsia_hardware_block::wire::Flag::kZstdDecompressionSupport
+          ? nullptr
+          : fs->decompression_connector());
   if (page_loader_or.is_error()) {
     FX_LOGS(ERROR) << "Could not initialize user pager";
     return page_loader_or.take_error();
