@@ -8,7 +8,7 @@ use std::iter::FusedIterator;
 use std::ops::DerefMut;
 use std::pin::Pin;
 use std::sync::{Mutex, MutexGuard};
-use std::task::{Context, Poll};
+use std::task::{Context, Poll, Waker};
 
 use futures::task::AtomicWaker;
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned, little_endian};
@@ -367,16 +367,16 @@ where
 
 pub(crate) struct UsbPacketFiller<B> {
     current_out_packet: Mutex<Option<UsbPacketBuilder<B>>>,
-    out_packet_waker: AtomicWaker,
+    out_packet_wakers: Mutex<Vec<Waker>>,
     filled_packet_waker: AtomicWaker,
 }
 
 impl<B> Default for UsbPacketFiller<B> {
     fn default() -> Self {
         let current_out_packet = Mutex::default();
-        let out_packet_waker = AtomicWaker::default();
+        let out_packet_wakers = Mutex::default();
         let filled_packet_waker = AtomicWaker::default();
-        Self { current_out_packet, out_packet_waker, filled_packet_waker }
+        Self { current_out_packet, out_packet_wakers, filled_packet_waker }
     }
 }
 
@@ -439,8 +439,18 @@ impl<'a, B: Unpin> Future for FillUsbPacket<'a, B> {
             let mut current_out_packet = self.0.current_out_packet.lock().unwrap();
             assert!(current_out_packet.is_none(), "Can't fill more than one packet at a time");
             current_out_packet.replace(builder);
-            self.0.out_packet_waker.wake();
+
+            // before we drop the lock, register our interest in packets being filled in.
             self.0.filled_packet_waker.register(cx.waker());
+            // drop the lock so that we aren't immediately stalling any tasks we wake below.
+            drop(current_out_packet);
+
+            // wake all pending vsock packet writes so that we can fill the buffer as quickly as
+            // possible.
+            let mut wakers = self.0.out_packet_wakers.lock().unwrap();
+            for waker in wakers.drain(..) {
+                waker.wake();
+            }
             Poll::Pending
         } else {
             let mut current_out_packet = self.0.current_out_packet.lock().unwrap();
@@ -472,13 +482,13 @@ impl<'a, B: DerefMut<Target = [u8]> + Unpin> Future for WaitForFillable<'a, B> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let current_out_packet = self.filler.current_out_packet.lock().unwrap();
         let Some(builder) = &*current_out_packet else {
-            self.filler.out_packet_waker.register(cx.waker());
+            self.filler.out_packet_wakers.lock().unwrap().push(cx.waker().clone());
             return Poll::Pending;
         };
         if builder.available() >= self.min_packet_size {
             Poll::Ready(current_out_packet)
         } else {
-            self.filler.out_packet_waker.register(cx.waker());
+            self.filler.out_packet_wakers.lock().unwrap().push(cx.waker().clone());
             Poll::Pending
         }
     }
