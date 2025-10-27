@@ -39,66 +39,270 @@ fn instantiate_symbolizer(
     Ok(symbolizer)
 }
 
-fn build_profile(
-    context: &EnvironmentContext,
-    snapshot: &Snapshot,
+pub struct PProfProfileBuilder<'c> {
+    ctx: &'c EnvironmentContext,
     with_tags: bool,
     symbolize: bool,
-) -> Result<pprof::Profile> {
-    let mut st = pprof::StringTableBuilder::default();
 
-    let mut pprof = pprof::Profile {
-        sample_type: vec![
-            pprof::ValueType { r#type: st.intern("objects"), unit: st.intern("count") },
-            pprof::ValueType { r#type: st.intern("allocated"), unit: st.intern("bytes") },
-        ],
-        ..Default::default()
-    };
+    st: pprof::StringTableBuilder,
+    interned_functions: HashMap<(i64, i64), u64>, // (function_name, file_name) -> id
+    resolved_mapping_ids: HashSet<u64>,
+    unresolved_mapping_ids: HashSet<u64>,
+    pprof: pprof::Profile,
+}
 
-    // Build the Mappings with all the executable regions listed in the snapshot and obtain an
-    // object that resolves arbitrary program addresses into the corresponding module IDs.
-    let module_map = {
-        let mut builder = pprof::ModuleMapBuilder::default();
-        for (address, info) in &snapshot.executable_regions {
-            let limit = *address + info.size;
-            let filename_string_index = st.intern(&info.name);
-            let build_id_string_index = st.intern_build_id(&info.build_id);
-            builder.add_mapping(
-                *address..limit,
-                info.file_offset,
-                filename_string_index,
-                build_id_string_index,
-            )?;
+impl<'c> PProfProfileBuilder<'c> {
+    pub fn new(
+        ctx: &'c EnvironmentContext,
+        with_tags: bool,
+        symbolize: bool,
+    ) -> PProfProfileBuilder<'c> {
+        let mut st = pprof::StringTableBuilder::default();
+        let pprof = pprof::Profile {
+            sample_type: vec![
+                pprof::ValueType { r#type: st.intern("objects"), unit: st.intern("count") },
+                pprof::ValueType { r#type: st.intern("allocated"), unit: st.intern("bytes") },
+            ],
+            ..Default::default()
+        };
+
+        PProfProfileBuilder {
+            ctx,
+            with_tags,
+            symbolize,
+            st,
+            interned_functions: HashMap::new(),
+            resolved_mapping_ids: HashSet::new(),
+            unresolved_mapping_ids: HashSet::new(),
+            pprof,
         }
-        let (mappings, resolver) = builder.build();
-        pprof.mapping = mappings;
-        resolver
-    };
+    }
 
-    // If symbolization was requested, populate its own view of the mappings too.
-    let symbolizer = if symbolize {
-        if let Ok(symbolizer) = instantiate_symbolizer(context, &snapshot.executable_regions) {
-            Some(symbolizer)
+    pub fn add(&mut self, snapshot: &Snapshot) -> Result<()> {
+        // Build the Mappings with all the executable regions listed in the snapshot and obtain an
+        // object that resolves arbitrary program addresses into the corresponding module IDs.
+        let module_map = {
+            let next_id = (self.pprof.mapping.len() + 1) as u64;
+            let mut builder = pprof::ModuleMapBuilder::new(next_id);
+
+            for (address, info) in &snapshot.executable_regions {
+                let limit = *address + info.size;
+                let filename_string_index = self.st.intern(&info.name);
+                let build_id_string_index = self.st.intern_build_id(&info.build_id);
+                builder.add_mapping(
+                    *address..limit,
+                    info.file_offset,
+                    filename_string_index,
+                    build_id_string_index,
+                )?;
+            }
+
+            let (mappings, resolver) = builder.build();
+            self.pprof.mapping.extend(mappings.into_iter());
+            resolver
+        };
+
+        // If symbolization was requested, populate its own view of the mappings too.
+        let symbolizer = if self.symbolize {
+            if let Ok(symbolizer) = instantiate_symbolizer(self.ctx, &snapshot.executable_regions) {
+                Some(symbolizer)
+            } else {
+                eprintln!(
+                    "WARNING: Automatic symbolization could not be performed, likely due to an \
+                    incompatible version of the Heapdump collector running on the device. Please \
+                    run \"fx pprof ...\" manually on the generated file."
+                );
+                None
+            }
         } else {
-            eprintln!(
-                "WARNING: Automatic symbolization could not be performed, likely due to an \
-                 incompatible version of the Heapdump collector running on the device. Please run \
-                 \"fx pprof ...\" manually on the generated file."
-            );
             None
-        }
-    } else {
-        None
-    };
+        };
 
-    // Helper function that interns data on a function.
-    let mut interned_functions = HashMap::new();
-    let mut intern_function = |function_name: &str, file_name: &str| -> u64 {
-        let function_name = st.intern(function_name);
-        let file_name = st.intern(file_name);
-        let next_id = (interned_functions.len() + 1) as u64;
-        *interned_functions.entry((function_name, file_name)).or_insert_with(|| {
-            pprof.function.push(pprof::Function {
+        // Fill the Locations with all the program addresses referenced in the snapshot and store
+        // their assigned IDs.
+        let mut address_to_location_id = HashMap::new();
+        for info in &snapshot.allocations {
+            for address in &info.stack_trace.program_addresses {
+                if let Entry::Vacant(e) = address_to_location_id.entry(*address) {
+                    let mapping_id = module_map.resolve(*address);
+
+                    // Translate the address into symbolized stack frames. While doing it, also
+                    // keep track of resolved and unresolved mappings.
+                    let symbolized_lines = if mapping_id != 0
+                        && let Some(symbolizer) = &symbolizer
+                    {
+                        match symbolizer.resolve_addr(*address) {
+                            Ok(resolved_locations) => {
+                                let mut result = Vec::new();
+                                for resolved_location in resolved_locations {
+                                    let function_name = &resolved_location.function;
+                                    let (file_name, line) =
+                                        match resolved_location.file_and_line.as_ref() {
+                                            Some((file_name, line)) => {
+                                                (file_name.as_str(), i64::try_from(*line).unwrap())
+                                            }
+                                            None => ("", 0),
+                                        };
+
+                                    let function_id =
+                                        self.intern_function(function_name, &file_name);
+                                    result.push(pprof::Line { function_id, line });
+                                }
+
+                                // We managed to symbolize an address from this mapping, which proves that
+                                // it was resolved.
+                                self.resolved_mapping_ids.insert(mapping_id);
+
+                                Some(result)
+                            }
+                            Err(ffx_symbolize::ResolveError::SymbolNotFound) => {
+                                // Even if this specific address could not be symbolized, the mapping as a
+                                // whole was resolved.
+                                self.resolved_mapping_ids.insert(mapping_id);
+
+                                None
+                            }
+                            Err(ffx_symbolize::ResolveError::NoOverlappingModule) => {
+                                unreachable!("the address belongs to mapping {}", mapping_id)
+                            }
+                            Err(ffx_symbolize::ResolveError::SymbolFileUnavailable) => {
+                                // Do not mark this mapping as resolved.
+                                self.unresolved_mapping_ids.insert(mapping_id);
+
+                                None
+                            }
+                        }
+                    } else {
+                        None
+                    };
+
+                    e.insert(self.insert_location(
+                        mapping_id,
+                        *address,
+                        symbolized_lines.unwrap_or_else(|| vec![]),
+                    ));
+                }
+            }
+        }
+
+        // Helper function that translates program addresses to location IDs.
+        let addresses_to_location_ids = |program_addresses: &[u64]| -> Vec<u64> {
+            program_addresses.iter().map(|addr| address_to_location_id[addr]).collect()
+        };
+
+        // Fill the Samples.
+        if self.with_tags {
+            for info in &snapshot.allocations {
+                // Cast into a pprof-friendly type.
+                let size = info.size as i64;
+
+                let location_ids = addresses_to_location_ids(&info.stack_trace.program_addresses);
+                let mut label = vec![];
+                if let Some(address) = info.address {
+                    label.push(pprof::Label {
+                        key: self.st.intern("address"),
+                        str: self.st.intern(&format!("0x{:x}", address)),
+                        ..Default::default()
+                    })
+                }
+                label.push(pprof::Label {
+                    key: self.st.intern("bytes"),
+                    num: size,
+                    num_unit: self.st.intern("bytes"),
+                    ..Default::default()
+                });
+                if let Some(timestamp) = &info.timestamp {
+                    label.push(pprof::Label {
+                        key: self.st.intern("timestamp"),
+                        num: timestamp.into_nanos(),
+                        num_unit: self.st.intern("nanoseconds"),
+                        ..Default::default()
+                    });
+                }
+                if let Some(thread_info) = &info.thread_info {
+                    label.push(pprof::Label {
+                        key: self.st.intern("thread"),
+                        str: self.st.intern(&format!("{}[{}]", thread_info.name, thread_info.koid)),
+                        ..Default::default()
+                    });
+                }
+
+                self.pprof.sample.push(pprof::Sample {
+                    location_id: location_ids,
+                    value: vec![info.count as i64, size],
+                    label,
+                    ..Default::default()
+                });
+            }
+        } else {
+            // Group allocations with the same stack trace (to make the resulting profile smaller).
+            let grouped_allocations =
+                snapshot.allocations.iter().into_group_map_by(|allocation_info| {
+                    addresses_to_location_ids(&allocation_info.stack_trace.program_addresses)
+                });
+
+            for (location_ids, allocations_info) in grouped_allocations {
+                // Compute totals and cast into pprof-friendly types.
+                let size = allocations_info.iter().map(|alloc| alloc.size).sum::<u64>() as i64;
+                let count = allocations_info.iter().map(|alloc| alloc.count).sum::<u64>() as i64;
+
+                self.pprof.sample.push(pprof::Sample {
+                    location_id: location_ids,
+                    value: vec![count, size],
+                    ..Default::default()
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn write_to_message(mut self) -> pprof::Profile {
+        self.pprof.string_table = self.st.build();
+
+        // Mark resolved mappings.
+        for mapping in &mut self.pprof.mapping {
+            if self.resolved_mapping_ids.contains(&mapping.id) {
+                mapping.has_functions = true;
+                mapping.has_filenames = true;
+                mapping.has_line_numbers = true;
+                mapping.has_inline_frames = true;
+            }
+        }
+
+        // Print warnings about unresolved mappings, deduplicating unresolved
+        // build IDs that appeared in more then one mapping.
+        let unresolved_build_ids = self
+            .pprof
+            .mapping
+            .iter()
+            .filter_map(|mapping| {
+                if self.unresolved_mapping_ids.contains(&mapping.id) {
+                    Some(self.pprof.string_table[mapping.build_id as usize].clone())
+                } else {
+                    None
+                }
+            })
+            .unique();
+        for build_id in unresolved_build_ids {
+            eprintln!("WARNING: Unresolved build ID \"{build_id}\".");
+        }
+
+        self.pprof
+    }
+
+    pub fn write_to_file(self, dest: &mut std::fs::File) -> Result<()> {
+        let buf = self.write_to_message().encode_to_vec();
+        dest.write_all(&buf)?;
+        Ok(())
+    }
+
+    fn intern_function(&mut self, function_name: &str, file_name: &str) -> u64 {
+        let function_name = self.st.intern(function_name);
+        let file_name = self.st.intern(file_name);
+        let next_id = (self.interned_functions.len() + 1) as u64;
+        *self.interned_functions.entry((function_name, file_name)).or_insert_with(|| {
+            self.pprof.function.push(pprof::Function {
                 id: next_id,
                 name: function_name,
                 filename: file_name,
@@ -106,182 +310,24 @@ fn build_profile(
             });
             next_id
         })
-    };
-
-    // Helper function that translates an address into symbolized stack frames. While doing it, also
-    // keep track of resolved and unresolved mappings.
-    let mut resolved_mapping_ids = HashSet::new();
-    let mut unresolved_mapping_ids = HashSet::new();
-    let mut address_to_symbolized_lines =
-        |mapping_id: u64, program_address: u64| -> Option<Vec<pprof::Line>> {
-            if let Some(symbolizer) = &symbolizer {
-                match symbolizer.resolve_addr(program_address) {
-                    Ok(resolved_locations) => {
-                        let mut result = Vec::new();
-                        for resolved_location in resolved_locations {
-                            let function_name = &resolved_location.function;
-                            let (file_name, line) = match resolved_location.file_and_line.as_ref() {
-                                Some((file_name, line)) => {
-                                    (file_name.as_str(), i64::try_from(*line).unwrap())
-                                }
-                                None => ("", 0),
-                            };
-                            let function_id = intern_function(function_name, &file_name);
-                            result.push(pprof::Line { function_id, line });
-                        }
-
-                        // We managed to symbolize an address from this mapping, which proves that
-                        // it was resolved.
-                        resolved_mapping_ids.insert(mapping_id);
-
-                        return Some(result);
-                    }
-                    Err(ffx_symbolize::ResolveError::SymbolNotFound) => {
-                        // Even if this specific address could not be symbolized, the mapping as a
-                        // whole was resolved.
-                        resolved_mapping_ids.insert(mapping_id);
-                    }
-                    Err(ffx_symbolize::ResolveError::NoOverlappingModule) => {
-                        unreachable!("the address belongs to mapping {}", mapping_id)
-                    }
-                    Err(ffx_symbolize::ResolveError::SymbolFileUnavailable) => {
-                        unresolved_mapping_ids.insert(mapping_id);
-                    }
-                }
-            }
-
-            None
-        };
-
-    // Fill the Locations with all the program addresses referenced in the snapshot and store their
-    // assigned IDs.
-    let mut address_to_location_id = HashMap::new();
-    for info in &snapshot.allocations {
-        for address in &info.stack_trace.program_addresses {
-            let next_id = address_to_location_id.len() as u64 + 1;
-            if let Entry::Vacant(e) = address_to_location_id.entry(*address) {
-                e.insert(next_id);
-
-                let mapping_id = module_map.resolve(*address);
-                let symbolized_lines = if mapping_id != 0 {
-                    address_to_symbolized_lines(mapping_id, *address)
-                } else {
-                    None
-                };
-
-                pprof.location.push(pprof::Location {
-                    id: next_id,
-                    mapping_id,
-                    address: *address,
-                    line: symbolized_lines.unwrap_or(vec![]),
-                    ..Default::default()
-                });
-            }
-        }
     }
 
-    // Mark resolved mappings.
-    for mapping in &mut pprof.mapping {
-        if resolved_mapping_ids.contains(&mapping.id) {
-            mapping.has_functions = true;
-            mapping.has_filenames = true;
-            mapping.has_line_numbers = true;
-            mapping.has_inline_frames = true;
-        }
+    fn insert_location(
+        &mut self,
+        mapping_id: u64,
+        address: u64,
+        symbolized_lines: Vec<pprof::Line>,
+    ) -> u64 {
+        let next_id = (self.pprof.location.len() + 1) as u64;
+        self.pprof.location.push(pprof::Location {
+            id: next_id,
+            mapping_id,
+            address,
+            line: symbolized_lines,
+            ..Default::default()
+        });
+        next_id
     }
-
-    // Helper function that translates program addresses to location IDs.
-    let addresses_to_location_ids = |program_addresses: &[u64]| -> Vec<u64> {
-        program_addresses.iter().map(|addr| address_to_location_id[addr]).collect()
-    };
-
-    // Fill the Samples.
-    if with_tags {
-        for info in &snapshot.allocations {
-            // Cast into a pprof-friendly type.
-            let size = info.size as i64;
-
-            let location_ids = addresses_to_location_ids(&info.stack_trace.program_addresses);
-            let mut label = vec![];
-            if let Some(address) = info.address {
-                label.push(pprof::Label {
-                    key: st.intern("address"),
-                    str: st.intern(&format!("0x{:x}", address)),
-                    ..Default::default()
-                })
-            }
-            label.push(pprof::Label {
-                key: st.intern("bytes"),
-                num: size,
-                num_unit: st.intern("bytes"),
-                ..Default::default()
-            });
-            if let Some(timestamp) = &info.timestamp {
-                label.push(pprof::Label {
-                    key: st.intern("timestamp"),
-                    num: timestamp.into_nanos(),
-                    num_unit: st.intern("nanoseconds"),
-                    ..Default::default()
-                });
-            }
-            if let Some(thread_info) = &info.thread_info {
-                label.push(pprof::Label {
-                    key: st.intern("thread"),
-                    str: st.intern(&format!("{}[{}]", thread_info.name, thread_info.koid)),
-                    ..Default::default()
-                });
-            }
-
-            pprof.sample.push(pprof::Sample {
-                location_id: location_ids,
-                value: vec![info.count as i64, size],
-                label,
-                ..Default::default()
-            });
-        }
-    } else {
-        // Group allocations with the same stack trace (to make the resulting profile smaller).
-        let grouped_allocations =
-            snapshot.allocations.iter().into_group_map_by(|allocation_info| {
-                addresses_to_location_ids(&allocation_info.stack_trace.program_addresses)
-            });
-
-        for (location_ids, allocations_info) in grouped_allocations {
-            // Compute totals and cast into pprof-friendly types.
-            let size = allocations_info.iter().map(|alloc| alloc.size).sum::<u64>() as i64;
-            let count = allocations_info.iter().map(|alloc| alloc.count).sum::<u64>() as i64;
-
-            pprof.sample.push(pprof::Sample {
-                location_id: location_ids,
-                value: vec![count, size],
-                ..Default::default()
-            });
-        }
-    }
-
-    pprof.string_table = st.build();
-
-    // Print warnings about unresolved mappings.
-    for mapping in &pprof.mapping {
-        if unresolved_mapping_ids.contains(&mapping.id) {
-            let build_id = &pprof.string_table[mapping.build_id as usize];
-            eprintln!("WARNING: Unresolved build ID \"{build_id}\".");
-        }
-    }
-
-    Ok(pprof)
-}
-
-pub fn export_to_pprof(
-    context: &EnvironmentContext,
-    snapshot: &Snapshot,
-    dest: &mut std::fs::File,
-    with_tags: bool,
-    symbolize: bool,
-) -> Result<()> {
-    let buf = build_profile(context, snapshot, with_tags, symbolize)?.encode_to_vec();
-    dest.write_all(&buf)?;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -318,6 +364,7 @@ mod tests {
     // Placeholder stack traces for the fake profile:
     const STACK_TRACE_A: &[u64] = &[LOC_1_ADDRESS, LOC_2_ADDRESS, LOC_3_ADDRESS];
     const STACK_TRACE_B: &[u64] = &[LOC_1_ADDRESS, LOC_4_ADDRESS, LOC_5_ADDRESS];
+    const STACK_TRACE_C: &[u64] = &[LOC_2_ADDRESS, LOC_3_ADDRESS];
 
     // Placeholder allocations for the fake profile:
     const ALLOC_1_ADDRESS: u64 = 0x611000;
@@ -577,17 +624,19 @@ mod tests {
         assert_eq!(loc5.mapping_id, 0, "LOC_5_ADDRESS does not belong to any mapping");
     }
 
-    /// Verifies that the protobuf message generated by `build_profile` contains correct data.
+    /// Verifies that the protobuf message generated by `PProfProfileBuilder` contains correct data.
     #[test_case(true ; "with tags")]
     #[test_case(false ; "aggregated")]
     fn test_build_profile(with_tags: bool) {
         let env = ffx_config::test_env().build().expect("Test Env Init");
         let snapshot = generate_fake_snapshot();
-        let profile = build_profile(&env.context, &snapshot, with_tags, false).unwrap();
+        let mut builder = PProfProfileBuilder::new(&env.context, with_tags, false);
+        builder.add(&snapshot).unwrap();
+        let profile = builder.write_to_message();
         assert_profile_matches_fake_snapshot(&profile, with_tags);
     }
 
-    /// Verifies that the file written by `export_to_pprof` can be read back.
+    /// Verifies that the file written by `PProfProfileBuilder` can be read back.
     #[test_case(true ; "with tags")]
     #[test_case(false ; "aggregated")]
     fn test_export_to_pprof(with_tags: bool) {
@@ -597,7 +646,9 @@ mod tests {
 
         // Write a snapshot to it.
         let snapshot = generate_fake_snapshot();
-        export_to_pprof(&env.context, &snapshot, &mut tempfile, with_tags, false).unwrap();
+        let mut builder = PProfProfileBuilder::new(&env.context, with_tags, false);
+        builder.add(&snapshot).unwrap();
+        builder.write_to_file(&mut tempfile).unwrap();
 
         // Read it back.
         let mut buf = Vec::new();
@@ -772,7 +823,119 @@ mod tests {
     fn test_build_profile_from_aggregated_snapshot(with_tags: bool) {
         let env = ffx_config::test_env().build().expect("Test Env Init");
         let snapshot = generate_fake_aggregated_snapshot();
-        let profile = build_profile(&env.context, &snapshot, with_tags, false).unwrap();
+        let mut builder = PProfProfileBuilder::new(&env.context, with_tags, false);
+        builder.add(&snapshot).unwrap();
+        let profile = builder.write_to_message();
         assert_profile_matches_fake_aggregated_snapshot(&profile, with_tags);
+    }
+
+    fn generate_two_fake_snapshots() -> (Snapshot, Snapshot) {
+        let stack_trace_b = Rc::new(StackTrace { program_addresses: STACK_TRACE_B.to_vec() });
+        let stack_trace_c = Rc::new(StackTrace { program_addresses: STACK_TRACE_C.to_vec() });
+
+        let snapshot1 = Snapshot {
+            allocations: vec![Allocation {
+                address: None,
+                size: ALLOC_1_SIZE.try_into().unwrap(),
+                count: ALLOC_1_COUNT,
+                thread_info: None,
+                stack_trace: stack_trace_b.clone(),
+                timestamp: None,
+                contents: None,
+            }],
+            executable_regions: hashmap![
+                MAP_1_ADDRESS => ExecutableRegion {
+                    name: MAP_1_NAME.to_string(),
+                    size: MAP_1_SIZE,
+                    file_offset: MAP_1_FILE_OFFSET,
+                    vaddr: Some(MAP_1_VADDR),
+                    build_id: hex::decode(MAP_1_BUILD_ID).unwrap(),
+                },
+            ],
+        };
+
+        let snapshot2 = Snapshot {
+            allocations: vec![Allocation {
+                address: None,
+                size: ALLOC_2_SIZE.try_into().unwrap(),
+                count: ALLOC_2_COUNT,
+                thread_info: None,
+                stack_trace: stack_trace_c.clone(),
+                timestamp: None,
+                contents: None,
+            }],
+            executable_regions: hashmap![
+                MAP_2_ADDRESS => ExecutableRegion {
+                    name: MAP_2_NAME.to_string(),
+                    size: MAP_2_SIZE,
+                    file_offset: MAP_2_FILE_OFFSET,
+                    vaddr: Some(MAP_2_VADDR),
+                    build_id: hex::decode(MAP_2_BUILD_ID).unwrap(),
+                },
+            ],
+        };
+
+        (snapshot1, snapshot2)
+    }
+
+    fn assert_profile_matches_two_fake_snapshots(profile: &pprof::Profile) {
+        // Helper function to access the string table.
+        let st = |index: i64| profile.string_table[usize::try_from(index).unwrap()].as_str();
+
+        // Helper function to resolve location IDs.
+        let loc = |location_id: u64| profile.location.iter().find(|e| e.id == location_id).unwrap();
+
+        // Verify the string table.
+        assert_eq!(st(0), "", "The first entry in the string table should always be empty");
+
+        // Verify that samples' data format.
+        assert_eq!(profile.sample_type.len(), 2);
+        assert_eq!(st(profile.sample_type[0].r#type), "objects");
+        assert_eq!(st(profile.sample_type[0].unit), "count");
+        assert_eq!(st(profile.sample_type[1].r#type), "allocated");
+        assert_eq!(st(profile.sample_type[1].unit), "bytes");
+
+        // Identify the two allocations from their sizes (which are unique in our sample snapshot)
+        // and verify them.
+        assert_eq!(profile.sample.len(), 2);
+        let allocation1 = profile.sample.iter().find(|s| s.label[0].num == ALLOC_1_SIZE).unwrap();
+        assert_eq!(allocation1.value[0], ALLOC_1_COUNT as i64);
+        assert_eq!(allocation1.value[1], ALLOC_1_SIZE);
+        assert_eq!(allocation1.location_id.len(), STACK_TRACE_B.len());
+        assert_eq!(loc(allocation1.location_id[0]).address, STACK_TRACE_B[0]);
+        assert_eq!(loc(allocation1.location_id[1]).address, STACK_TRACE_B[1]);
+        assert_eq!(loc(allocation1.location_id[2]).address, STACK_TRACE_B[2]);
+
+        let allocation2 = profile.sample.iter().find(|s| s.label[0].num == ALLOC_2_SIZE).unwrap();
+        assert_eq!(allocation2.value[0], ALLOC_2_COUNT as i64);
+        assert_eq!(allocation2.value[1], ALLOC_2_SIZE);
+        assert_eq!(allocation2.location_id.len(), STACK_TRACE_C.len());
+        assert_eq!(loc(allocation2.location_id[0]).address, STACK_TRACE_C[0]);
+        assert_eq!(loc(allocation2.location_id[1]).address, STACK_TRACE_C[1]);
+
+        // Identify the mappings from their addresses and verify them.
+        assert_eq!(profile.mapping.len(), 2);
+        assert_eq!(profile.mapping.iter().filter(|m| m.id == 0).next(), None, "ID 0 is reserved");
+        let mapping1 = profile.mapping.iter().find(|m| m.memory_start == MAP_1_ADDRESS).unwrap();
+        assert_eq!(mapping1.memory_limit, MAP_1_ADDRESS + MAP_1_SIZE);
+        assert_eq!(mapping1.file_offset, MAP_1_FILE_OFFSET);
+        assert_eq!(st(mapping1.filename), MAP_1_NAME);
+        assert_eq!(st(mapping1.build_id), MAP_1_BUILD_ID);
+        let mapping2 = profile.mapping.iter().find(|m| m.memory_start == MAP_2_ADDRESS).unwrap();
+        assert_eq!(mapping2.memory_limit, MAP_2_ADDRESS + MAP_2_SIZE);
+        assert_eq!(mapping2.file_offset, MAP_2_FILE_OFFSET);
+        assert_eq!(st(mapping2.filename), MAP_2_NAME);
+        assert_eq!(st(mapping2.build_id), MAP_2_BUILD_ID);
+    }
+
+    #[test]
+    fn test_build_profile_from_two_snapshots() {
+        let env = ffx_config::test_env().build().expect("Test Env Init");
+        let (snapshot1, snapshot2) = generate_two_fake_snapshots();
+        let mut builder = PProfProfileBuilder::new(&env.context, true, false);
+        builder.add(&snapshot1).unwrap();
+        builder.add(&snapshot2).unwrap();
+        let profile = builder.write_to_message();
+        assert_profile_matches_two_fake_snapshots(&profile);
     }
 }

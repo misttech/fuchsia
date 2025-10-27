@@ -6,7 +6,7 @@ use errors::{ffx_bail, ffx_error};
 use fidl_fuchsia_memory_heapdump_client as fheapdump_client;
 
 mod pprof;
-pub use crate::pprof::export_to_pprof;
+pub use crate::pprof::PProfProfileBuilder;
 
 mod realm_query;
 pub use realm_query::connect_to_collector;

@@ -6,7 +6,9 @@ use anyhow::Result;
 use async_trait::async_trait;
 use errors::ffx_error;
 use ffx_config::EnvironmentContext;
-use ffx_profile_heapdump_common::{check_snapshot_error, connect_to_collector, export_to_pprof};
+use ffx_profile_heapdump_common::{
+    PProfProfileBuilder, check_snapshot_error, connect_to_collector,
+};
 use ffx_profile_heapdump_download_args::DownloadCommand;
 use ffx_writer::SimpleWriter;
 use fho::{AvailabilityFlag, FfxMain, FfxTool};
@@ -52,15 +54,11 @@ async fn download(
     let snapshot =
         check_snapshot_error(heapdump_snapshot::Snapshot::receive_from(receiver_stream).await)?;
 
-    export_to_pprof(
-        context,
-        &snapshot,
-        &mut std::fs::File::create(&cmd.output_file).map_err(|err| {
-            ffx_error!("Failed to create output file: {}: {}", cmd.output_file, err)
-        })?,
-        cmd.with_tags,
-        cmd.symbolize,
-    )?;
+    let mut builder = PProfProfileBuilder::new(context, cmd.with_tags, cmd.symbolize);
+    builder.add(&snapshot)?;
+    builder.write_to_file(&mut std::fs::File::create(&cmd.output_file).map_err(|err| {
+        ffx_error!("Failed to create output file: {}: {}", cmd.output_file, err)
+    })?)?;
 
     Ok(())
 }

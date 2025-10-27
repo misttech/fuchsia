@@ -9,20 +9,34 @@ use crate::{Error, Mapping};
 
 /// Helper data structure to build and manage a list of Mappings.
 pub struct ModuleMapBuilder {
+    /// ID that will be assigned to the next added mapping (0 is reserved).
+    next_available_id: u64,
+
+    /// Mappings that have been added so far.
     mappings: Vec<Mapping>,
+
+    /// "Reverse lookup table" of the `mappings`, to quickly find the ID of the
+    /// mapping at a given address.
     resolver: ModuleMapResolver,
 }
 
 impl Default for ModuleMapBuilder {
     fn default() -> ModuleMapBuilder {
-        ModuleMapBuilder {
-            mappings: Vec::new(),
-            resolver: ModuleMapResolver { ranges: BTreeMap::new() },
-        }
+        ModuleMapBuilder::new(1)
     }
 }
 
 impl ModuleMapBuilder {
+    pub fn new(next_available_id: u64) -> ModuleMapBuilder {
+        assert_ne!(next_available_id, 0, "Mapping ID 0 is reserved");
+
+        ModuleMapBuilder {
+            next_available_id,
+            mappings: Vec::new(),
+            resolver: ModuleMapResolver { ranges: BTreeMap::new() },
+        }
+    }
+
     /// Inserts a new mapping and returns the ID it's been assigned.
     pub fn add_mapping(
         &mut self,
@@ -31,16 +45,18 @@ impl ModuleMapBuilder {
         filename_string_index: i64,
         build_id_string_index: i64,
     ) -> Result<u64, Error> {
-        // Generate a unique non-zero ID for the new mapping.
-        let id = self.mappings.len() as u64 + 1;
+        let mapping_id = self.next_available_id;
 
         // Fail if the new range would intersect one of the existing ones.
-        if !self.resolver.try_register(memory_range.start, memory_range.end, id) {
+        if !self.resolver.try_register(memory_range.start, memory_range.end, mapping_id) {
             return Err(Error::MappingWouldOverlap);
         }
 
+        // Ensure the ID we have just assigned is not reused.
+        self.next_available_id += 1;
+
         self.mappings.push(Mapping {
-            id,
+            id: mapping_id,
             memory_start: memory_range.start,
             memory_limit: memory_range.end,
             file_offset,
@@ -49,7 +65,7 @@ impl ModuleMapBuilder {
             ..Default::default()
         });
 
-        Ok(id)
+        Ok(mapping_id)
     }
 
     /// Consumes this ModuleMapBuilder and returns all the mappings that were created and an object
@@ -216,5 +232,22 @@ mod tests {
         assert_eq!(table[0].file_offset, 0);
         assert_eq!(table[0].filename, FAKE_FILENAME_1);
         assert_eq!(table[0].build_id, FAKE_BUILD_ID_1);
+    }
+
+    #[test]
+    fn test_mapping_id_base() {
+        const BASE_ID: u64 = 1234;
+
+        let mut mm = ModuleMapBuilder::new(BASE_ID);
+        let mapping1_id = mm.add_mapping(100..200, 0, FAKE_FILENAME_1, FAKE_BUILD_ID_1).unwrap();
+        assert_eq!(mapping1_id, BASE_ID + 0);
+
+        let mapping2_id = mm.add_mapping(200..300, 0, FAKE_FILENAME_2, FAKE_BUILD_ID_2).unwrap();
+        assert_eq!(mapping2_id, BASE_ID + 1);
+
+        let (table, _) = mm.build();
+        assert_eq!(table.len(), 2);
+        assert_eq!(table[0].id, mapping1_id);
+        assert_eq!(table[1].id, mapping2_id);
     }
 }

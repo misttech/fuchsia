@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use errors::{ffx_bail, ffx_error};
 use ffx_config::EnvironmentContext;
 use ffx_profile_heapdump_common::{
-    build_process_selector, check_snapshot_error, connect_to_collector, export_to_pprof,
+    PProfProfileBuilder, build_process_selector, check_snapshot_error, connect_to_collector,
 };
 use ffx_profile_heapdump_snapshot_args::SnapshotCommand;
 use ffx_writer::SimpleWriter;
@@ -94,15 +94,12 @@ async fn snapshot(
     // Always emit full metadata if the user requested the blocks' contents, as it serves as an
     // index for the generated files.
     let with_tags = cmd.with_tags || contents_dir.is_some();
-    export_to_pprof(
-        context,
-        &snapshot,
-        &mut std::fs::File::create(&cmd.output_file).map_err(|err| {
-            ffx_error!("Failed to create output file: {}: {}", cmd.output_file, err)
-        })?,
-        with_tags,
-        cmd.symbolize,
-    )?;
+
+    let mut profile_builder = PProfProfileBuilder::new(context, with_tags, cmd.symbolize);
+    profile_builder.add(&snapshot)?;
+    profile_builder.write_to_file(&mut std::fs::File::create(&cmd.output_file).map_err(
+        |err| ffx_error!("Failed to create output file: {}: {}", cmd.output_file, err),
+    )?)?;
 
     Ok(())
 }
