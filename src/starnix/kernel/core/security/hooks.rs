@@ -76,6 +76,24 @@ bitflags::bitflags! {
     }
 }
 
+impl PermissionFlags {
+    pub fn as_access(&self) -> Access {
+        let mut access = Access::empty();
+        if self.contains(PermissionFlags::READ) {
+            access |= Access::READ;
+        }
+        if self.contains(PermissionFlags::WRITE) {
+            // `APPEND` only modifies the behaviour of `WRITE` if set, so it is sufficient to only
+            // consider whether `WRITE` is set, to calculate the `Access` flags.
+            access |= Access::WRITE;
+        }
+        if self.contains(PermissionFlags::EXEC) {
+            access |= Access::EXEC;
+        }
+        access
+    }
+}
+
 impl From<Access> for PermissionFlags {
     fn from(access: Access) -> Self {
         // Note that `Access` doesn't have an `append` bit.
@@ -117,9 +135,9 @@ impl From<OpenFlags> for PermissionFlags {
         }
         if flags.can_write() {
             permissions |= PermissionFlags::WRITE;
-        }
-        if flags.contains(OpenFlags::APPEND) {
-            permissions |= PermissionFlags::APPEND;
+            if flags.contains(OpenFlags::APPEND) {
+                permissions |= PermissionFlags::APPEND;
+            }
         }
         permissions
     }

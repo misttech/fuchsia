@@ -78,6 +78,7 @@ pub enum Auditable<'a> {
     IoctlCommand(u16),
     Name(&'a FsStr),
     NamespaceNode(&'a NamespaceNode),
+    None,
     SockOptArguments(u32, u32),
     Task(&'a Task),
     TodoCheck,
@@ -285,6 +286,7 @@ impl Display for Auditable<'_> {
             Auditable::SockOptArguments(level, optname) => {
                 write!(f, " level={}, optname={}", level, optname)
             }
+            Auditable::None => Ok(()),
             Auditable::Task(task) => {
                 write!(f, " pid={}, comm={}", task.get_pid(), BStr::new(task.command().as_bytes()))
             }

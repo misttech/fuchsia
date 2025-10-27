@@ -17,6 +17,7 @@ use std::sync::Arc;
 
 /// SELinux implementations called by the LSM hooks.
 mod selinux_hooks;
+pub use selinux_hooks::audit::Auditable;
 
 /// Linux Security Modules hooks for use within the Starnix kernel.
 mod hooks;

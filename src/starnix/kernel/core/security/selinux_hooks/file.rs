@@ -44,7 +44,9 @@ pub(in crate::security) fn file_permission(
     let FsNodeSidAndClass { class: file_class, .. } =
         fs_node_effective_sid_and_class(&file.name.entry.node);
 
-    if file.flags().contains(OpenFlags::APPEND) {
+    // `WRITE` permission checks must distinguish between append-only and full write permissions.
+    if permission_flags.contains(PermissionFlags::WRITE) && file.flags().contains(OpenFlags::APPEND)
+    {
         permission_flags |= PermissionFlags::APPEND;
     }
 
@@ -194,7 +196,6 @@ pub(in crate::security) fn check_file_fcntl_access(
 ) -> Result<(), Errno> {
     let permission_check = security_server.as_permission_check();
     let subject_sid = current_task_state(current_task).lock().current_sid;
-    let fs_node_class = file.node().security_state.lock().class;
 
     match fcntl_cmd {
         F_GETLK | F_SETLK | F_SETLKW => {
@@ -221,43 +222,27 @@ pub(in crate::security) fn check_file_fcntl_access(
         }
     }
 
-    if fcntl_cmd != F_SETFL {
-        return Ok(());
-    }
+    if fcntl_cmd == F_SETFL {
+        let new_flags = OpenFlags::from_bits_truncate(fcntl_arg as u32);
+        let old_flags = file.flags();
 
-    // Based on documentation additional checks are necessary for F_SETFL, since it updates the file
-    // permissions.
-    let new_flags = OpenFlags::from_bits_truncate(fcntl_arg as u32);
-    let old_flags = file.flags();
-    let changed_flags = old_flags.symmetric_difference(new_flags);
-    if !changed_flags.contains(OpenFlags::APPEND) {
-        // The append value wasn't updated: no further checks are necessary.
-        return Ok(());
-    }
-    if new_flags.contains(OpenFlags::APPEND) {
-        if !old_flags.can_write() {
-            // The file was previously opened with read-only access. Since append is now requested,
-            // we need to check for permission.
+        // If the file is writable and `O_APPEND` is being cleared then the caller requires the
+        // "write" permission instead of the weaker "append" right, so check for it now.
+        // Since `O_APPEND` only modifies the behaviour of writable access-modes, changing it for
+        // read-only files does not require any check.
+        if old_flags.can_write()
+            && old_flags.contains(OpenFlags::APPEND)
+            && !new_flags.contains(OpenFlags::APPEND)
+        {
             has_fs_node_permissions(
                 &security_server.as_permission_check(),
                 current_task,
                 subject_sid,
                 file.node(),
-                &permissions_from_flags(PermissionFlags::APPEND, fs_node_class),
+                &[CommonFsNodePermission::Write],
                 current_task.into(),
             )?;
         }
-    } else if old_flags.can_write() {
-        // If a file is opened with the WRITE and APPEND permissions, only the APPEND permission is
-        // checked. Now that the append flag was cleared we need to check the WRITE permission.
-        has_fs_node_permissions(
-            &security_server.as_permission_check(),
-            current_task,
-            subject_sid,
-            file.node(),
-            &permissions_from_flags(PermissionFlags::WRITE, fs_node_class),
-            current_task.into(),
-        )?;
     }
     Ok(())
 }
