@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use fidl_fuchsia_cobalt::{AggregateAndUploadMarker, AggregateAndUploadSynchronousProxy};
 use fidl_fuchsia_metrics::{
     MetricEventLoggerFactoryMarker, MetricEventLoggerFactoryProxy, MetricEventLoggerProxy,

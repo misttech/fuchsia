@@ -62,10 +62,10 @@ mod tests {
     use super::OtaReinstallAction;
     use crate::ota::controller::{MockSendEvent, SendEvent};
     use crate::ota::state_machine::{Event, OtaStatus};
-    use anyhow::{format_err, Error};
+    use anyhow::{Error, format_err};
     use async_trait::async_trait;
-    use futures::channel::mpsc;
     use futures::StreamExt;
+    use futures::channel::mpsc;
     use mockall::predicate::eq;
     use ota_lib::OtaManager;
     use recovery_metrics_registry::cobalt_registry as metrics;
@@ -87,11 +87,7 @@ mod tests {
     #[async_trait]
     impl OtaManager for FakeOtaManager {
         async fn start_and_wait_for_result(&self) -> Result<(), Error> {
-            if self.ota_fails {
-                Err(format_err!("ota failed"))
-            } else {
-                Ok(())
-            }
+            if self.ota_fails { Err(format_err!("ota failed")) } else { Ok(()) }
         }
         async fn stop(&self) -> Result<(), Error> {
             Ok(())

@@ -140,8 +140,8 @@ mod test {
     };
     use assert_matches::assert_matches;
     use fuchsia_async as fasync;
-    use futures::channel::mpsc;
     use futures::StreamExt;
+    use futures::channel::mpsc;
     use mockall::predicate::*;
 
     #[test]

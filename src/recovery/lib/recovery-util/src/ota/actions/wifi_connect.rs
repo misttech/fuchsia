@@ -7,7 +7,7 @@ use crate::crash::RecoveryError::{WifiConnectionError, WifiConnectionSuccess};
 use crate::ota::controller::SendEvent;
 use crate::ota::state_machine::{Event, Network, Password};
 use crate::send_report;
-use crate::wlan::{create_network_info, WifiConnect, WifiConnectImpl};
+use crate::wlan::{WifiConnect, WifiConnectImpl, create_network_info};
 use anyhow::Error;
 use fuchsia_async::{DurationExt, Task};
 use recovery_metrics_registry::cobalt_registry as metrics;
@@ -89,7 +89,7 @@ mod tests {
     use crate::ota::controller::{MockSendEvent, SendEvent};
     use crate::ota::state_machine::Event;
     use crate::wlan::{NetworkInfo, WifiConnect};
-    use anyhow::{anyhow, Error};
+    use anyhow::{Error, anyhow};
     use async_trait::async_trait;
     use fidl_fuchsia_wlan_policy::NetworkConfig;
     use fuchsia_async::{self as fasync};
@@ -116,11 +116,7 @@ mod tests {
         }
 
         async fn connect(&self, _network: NetworkConfig) -> Result<(), Error> {
-            if self.connected {
-                Ok(())
-            } else {
-                Err(anyhow!("Error"))
-            }
+            if self.connected { Ok(()) } else { Err(anyhow!("Error")) }
         }
     }
 
