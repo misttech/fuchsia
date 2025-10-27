@@ -8,10 +8,10 @@
 
 #include <gtest/gtest.h>
 
-#include "fbl/ref_ptr.h"
 #include "fidl/fuchsia.component/cpp/fidl.h"
 #include "src/developer/debug/debug_agent/component_manager.h"
 #include "src/developer/debug/debug_agent/system_interface.h"
+#include "src/developer/debug/debug_agent/testing/runtime_dir_helper.h"
 #include "src/developer/debug/debug_agent/zircon_process_handle.h"
 #include "src/developer/debug/debug_agent/zircon_utils.h"
 #include "src/developer/debug/ipc/filter_utils.h"
@@ -20,9 +20,6 @@
 #include "src/developer/debug/shared/message_loop.h"
 #include "src/developer/debug/shared/message_loop_fuchsia.h"
 #include "src/developer/debug/shared/test_with_loop.h"
-#include "src/storage/lib/vfs/cpp/managed_vfs.h"
-#include "src/storage/lib/vfs/cpp/pseudo_dir.h"
-#include "src/storage/lib/vfs/cpp/pseudo_file.h"
 
 namespace debug_agent {
 
@@ -135,24 +132,9 @@ TEST_F(ZirconSystemInterfaceTest, ComponentEvents) {
   constexpr char kNonElfUrl[] = "fuchsia-pkg://fuchsia.com/package2#meta/non_elf.cm";
   constexpr zx_koid_t kExpectedKoid = 23;
 
-  async::Loop vfs_loop(&kAsyncLoopConfigNoAttachToCurrentThread);
-
-  auto job_id_file =
-      fbl::MakeRefCounted<fs::UnbufferedPseudoFile>([](fbl::String* output) -> zx_status_t {
-        *output = std::to_string(kExpectedKoid);
-        return ZX_OK;
-      });
-  auto elf_dir = fbl::MakeRefCounted<fs::PseudoDir>();
-  ASSERT_EQ(elf_dir->AddEntry("job_id", std::move(job_id_file)), ZX_OK);
-
-  auto root_dir = fbl::MakeRefCounted<fs::PseudoDir>();
-  ASSERT_EQ(root_dir->AddEntry("elf", std::move(elf_dir)), ZX_OK);
-
-  auto [client_end, server_end] = *fidl::CreateEndpoints<fuchsia_io::Directory>();
-
-  fs::ManagedVfs vfs(vfs_loop.dispatcher());
-  ASSERT_EQ(vfs.ServeDirectory(std::move(root_dir), std::move(server_end)), ZX_OK);
-  ASSERT_EQ(vfs_loop.StartThread(), ZX_OK);
+  testing::RuntimeDirHelper helper;
+  helper.AddJobIdFile(kExpectedKoid);
+  helper.Start(loop().dispatcher());
 
   // Inject an ELF component.
   fuchsia_component::EventHeader header;
@@ -168,7 +150,7 @@ TEST_F(ZirconSystemInterfaceTest, ComponentEvents) {
             ZX_OK);
 
   fuchsia_component::DebugStartedPayload payload;
-  payload.runtime_dir() = std::move(client_end);
+  payload.runtime_dir() = helper.GetScopedDirectoryHandle(kExpectedKoid);
   payload.break_on_start() = std::move(right);
   event.payload() = fuchsia_component::EventPayload::WithDebugStarted(std::move(payload));
 
@@ -253,13 +235,6 @@ TEST_F(ZirconSystemInterfaceTest, ComponentEvents) {
   loop().RunUntilNoTasks();
 
   EXPECT_TRUE(zircon_component_manager->GetNonElfComponentInfo().empty());
-
-  vfs.Shutdown([&vfs_loop](zx_status_t status) {
-    ASSERT_EQ(status, ZX_OK);
-    vfs_loop.Quit();
-  });
-
-  vfs_loop.JoinThreads();
 }
 
 TEST_F(ZirconSystemInterfaceTest, FilterMatchComponents) {

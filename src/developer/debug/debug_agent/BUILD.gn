@@ -395,6 +395,7 @@ test("unit_tests") {
     }
 
     deps += [
+      "testing:runtime_dir_helper",
       "//sdk/lib/component/incoming/cpp",
       "//sdk/lib/component/outgoing/cpp",
       "//src/storage/lib/vfs/cpp",
