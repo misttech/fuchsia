@@ -398,7 +398,7 @@ impl KernelResourcesExplorer {
         visitor: &mut impl ResourcesVisitor,
         job_koid: &zx::Koid,
         job: &dyn Job,
-        process_mapped: &HashMap<zx::Koid, CollectionRequest>,
+        process_collection_requests: &HashMap<zx::Koid, CollectionRequest>,
     ) -> Result<(), zx::Status> {
         let job_name = job.get_name()?;
         let child_job_koids = job.children()?;
@@ -412,7 +412,12 @@ impl KernelResourcesExplorer {
                 Err(status) => return Err(status),
                 Ok(child) => child,
             };
-            match self.explore_job(visitor, child_job_koid, child_job.as_ref(), process_mapped) {
+            match self.explore_job(
+                visitor,
+                child_job_koid,
+                child_job.as_ref(),
+                process_collection_requests,
+            ) {
                 // If the job disappeared while being explored, we get a BAD_STATE error. In that
                 // case, we want to go to the next job but not fail the entire collection.
                 Err(zx::Status::BAD_STATE) => {}
@@ -432,7 +437,7 @@ impl KernelResourcesExplorer {
                 visitor,
                 child_process_koid,
                 child_process.as_ref(),
-                process_mapped.get(child_process_koid),
+                process_collection_requests.get(child_process_koid),
             ) {
                 // If the process disappeared while being explored, we get a BAD_STATE error. In
                 // that case, we want to go to the next job but not fail the entire collection.

@@ -492,7 +492,7 @@ impl ResourceEnumerator for AttributionData {
 }
 
 pub trait AttributionDataProvider: ResourceEnumerator + Send + Sync {
-    /// Collects and returns a structure with all memory resources and attribution specifications.
+    /// Returns all the memory resources and attribution specifications.
     fn get_attribution_data(&self) -> Result<AttributionData, anyhow::Error>;
 }
 

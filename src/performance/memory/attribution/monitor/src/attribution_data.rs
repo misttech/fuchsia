@@ -7,8 +7,8 @@ use crate::common::PrincipalIdMap;
 use crate::resources::{Job, KernelResources};
 use anyhow::Context;
 use attribution_processing::{
-    Attribution, AttributionData, AttributionDataProvider, Principal, PrincipalDescription,
-    PrincipalType, ResourceEnumerator, ResourceReference, ResourcesVisitor,
+    Attribution, AttributionData, AttributionDataProvider, Principal, ResourceEnumerator,
+    ResourceReference, ResourcesVisitor,
 };
 use fuchsia_sync::Mutex;
 use fuchsia_trace::duration;
@@ -51,23 +51,15 @@ impl AttributionDataProvider for AttributionDataProviderImpl {
         let mut attributions = Vec::with_capacity(num_attributions);
 
         for (provider_identifier, attribution_provider) in attribution_state.0 {
+            // fuchsia.memory.attribution.Providers protocol identifiers locally unique for
+            // a given `Provider`. `local_to_global` maps those to global identifiers.
             let mut local_to_global = PrincipalIdMap::default();
             for (local_id, definition) in attribution_provider.definitions {
                 local_to_global.insert(local_id, definition.id);
                 principals.push(Principal {
                     identifier: definition.id.into(),
-                    description: definition.description.map(|description| match description {
-                        PrincipalDescription::Component(moniker) => {
-                            attribution_processing::PrincipalDescription::Component(moniker)
-                        }
-                        PrincipalDescription::Part(part_name) => {
-                            attribution_processing::PrincipalDescription::Part(part_name)
-                        }
-                    }),
-                    principal_type: match definition.principal_type {
-                        PrincipalType::Runnable => attribution_processing::PrincipalType::Runnable,
-                        PrincipalType::Part => attribution_processing::PrincipalType::Part,
-                    },
+                    description: definition.description,
+                    principal_type: definition.principal_type,
                     parent: definition
                         .attributor
                         .as_ref()
@@ -121,7 +113,9 @@ impl ResourceEnumerator for AttributionDataProviderImpl {
 
 #[cfg(test)]
 mod tests {
-    use attribution_processing::{PrincipalIdentifier, ZXName};
+    use attribution_processing::{
+        PrincipalDescription, PrincipalIdentifier, PrincipalType, ZXName,
+    };
     use core::assert_eq;
     use fidl_fuchsia_memory_attribution as fattribution;
     use std::collections::HashSet;
