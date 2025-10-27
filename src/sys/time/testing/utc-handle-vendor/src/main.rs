@@ -67,6 +67,9 @@ async fn main() -> Result<()> {
         UtcClock::create(zx::ClockOpts::BOOT | zx::ClockOpts::MAPPABLE, Some(utc_backstop))
             .context("while creating UTC clock")?,
     );
+    utc_clock
+        .set_name(&zx::Name::new_lossy("utc_from_vendor_for_test"))
+        .context("while setting the UTC clock name")?;
 
     // Starts the UTC clock from current time, and 1/1 rate.
     let clock_builder = zx::ClockUpdate::builder().absolute_value(boot_now, utc_now);
