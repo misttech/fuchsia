@@ -53,6 +53,9 @@ struct TestConfig {
     #[serde(default)]
     output_directory: Value,
 
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    test_filters: Vec<String>,
+
     #[serde(flatten)]
     extra: HashMap<String, serde_json::Value>,
 }
@@ -86,7 +89,11 @@ fn generate_bash_script(args: &Args) -> Result<(), Error> {
 fn read_partial_config(file: &Path) -> Result<TestConfig, Error> {
     let mut buffer = String::new();
     File::open(&file)?.read_to_string(&mut buffer)?;
-    let t: TestConfig = serde_json::from_str(&buffer)?;
+    let mut t: TestConfig = serde_json::from_str(&buffer)?;
+    // Oops, some of our test fixtures use `test_filters`, some others use
+    // `test_case_filters`.
+    // See: //build/sdk/test_config_schema.json5
+    t.extra.insert("test_case_filters".into(), t.test_filters.clone().into());
     Ok(t)
 }
 

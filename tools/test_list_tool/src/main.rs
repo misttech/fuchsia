@@ -53,6 +53,7 @@ struct TestEntry {
     build_rule: Option<String>,
     has_generated_manifest: Option<bool>,
     create_no_exception_channel: Option<bool>,
+    test_filters: Option<Vec<String>>,
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -256,7 +257,7 @@ fn to_test_list_entry(args: ToTestListEntryArgs<'_, '_>) -> TestListEntry {
     let ToTestListEntryArgs { test_entry, realm, disable_suites } = args;
     let execution = match &test_entry.package_url {
         Some(url) => {
-            let mut filters = Vec::new();
+            let mut filters = test_entry.test_filters.clone().unwrap_or_default();
             if let Some(cases) = disable_suites.get(url) {
                 for case in cases {
                     if case.disabled {

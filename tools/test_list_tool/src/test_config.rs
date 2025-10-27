@@ -144,6 +144,7 @@ mod tests {
                 build_rule: None,
                 has_generated_manifest: None,
                 create_no_exception_channel: None,
+                test_filters: None,
             },
         };
         let execution_entry = FuchsiaComponentExecutionEntry {

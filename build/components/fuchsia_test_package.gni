@@ -236,6 +236,10 @@ template("fuchsia_test_package") {
           min_severity_logs = _min_severity_logs
         }
 
+        if (defined(test_specs.test_filters)) {
+          test_filters = test_specs.test_filters
+        }
+
         ffx_config = "{}"
       }
       test_component_output_label =
