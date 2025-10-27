@@ -222,17 +222,20 @@ ZirconComponentManager::ZirconComponentManager(SystemInterface* system_interface
       fidl::Client<fuchsia_io::Directory> runtime_dir;
       auto open_res = realm_query->OpenDirectory(
           {moniker, fuchsia_sys2::OpenDirType::kRuntimeDir, CreateEndpointsAndBind(runtime_dir)});
-      if (!open_res.is_ok()) {
-        continue;
+      if (open_res.is_ok()) {
+        ReadElfJobId(std::move(runtime_dir), moniker,
+                     [weak_this = weak_factory_.GetWeakPtr(), moniker, url = *instance.url(),
+                      deferred_ready](zx_koid_t job_id) {
+                       if (weak_this && job_id != ZX_KOID_INVALID) {
+                         weak_this->running_component_info_.insert(std::make_pair(
+                             job_id, debug_ipc::ComponentInfo{.moniker = moniker, .url = url}));
+                       }
+                     });
+      } else {
+        non_elf_component_info_.emplace(
+            *instance.moniker(),
+            debug_ipc::ComponentInfo{.moniker = *instance.moniker(), .url = *instance.url()});
       }
-      ReadElfJobId(std::move(runtime_dir), moniker,
-                   [weak_this = weak_factory_.GetWeakPtr(), moniker, url = *instance.url(),
-                    deferred_ready](zx_koid_t job_id) {
-                     if (weak_this && job_id != ZX_KOID_INVALID) {
-                       weak_this->running_component_info_.insert(std::make_pair(
-                           job_id, debug_ipc::ComponentInfo{.moniker = moniker, .url = url}));
-                     }
-                   });
     }
   }
 }
