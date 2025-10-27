@@ -33,6 +33,7 @@
         { service: "fuchsia.hardware.clock.Service" },
         { service: "fuchsia.hardware.interconnect.PathService" },
         { service: "fuchsia.hardware.platform.device.Service" },
+        { service: "fuchsia.hardware.reset.Service" },
         { service: "fuchsia.hardware.usb.phy.ConnectionWatcherService" },
         { service: "fuchsia.hardware.usb.phy.Service" },
         { service: "fuchsia.hardware.vreg.Service" },

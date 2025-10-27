@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.hardware.clock/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.interconnect/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.reset/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.dci/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/wire.h>
@@ -39,6 +40,7 @@ namespace fendpoint = fuchsia_hardware_usb_endpoint;
 namespace fhi = fuchsia_hardware_interconnect;
 namespace fpdev = fuchsia_hardware_platform_device;
 namespace fphy = fuchsia_hardware_usb_phy;
+namespace freset = fuchsia_hardware_reset;
 namespace fvreg = fuchsia_hardware_vreg;
 
 namespace {
@@ -51,44 +53,60 @@ class QualcommExtension final : public PlatformExtension {
   static std::unique_ptr<QualcommExtension> Create(Dwc3* parent);
 
   QualcommExtension(std::unordered_map<BusPath, fidl::ClientEnd<fhi::Path>> interconnect_clients,
-                    std::unordered_map<std::string, fidl::ClientEnd<fclock::Clock>> clock_clients)
+                    std::unordered_map<std::string, fidl::ClientEnd<fclock::Clock>> clock_clients,
+                    fidl::ClientEnd<freset::Reset> reset_client)
       : interconnect_clients_{std::move(interconnect_clients)},
-        clock_clients_{std::move(clock_clients)} {}
+        clock_clients_{std::move(clock_clients)},
+        reset_client_(std::move(reset_client)) {}
 
   // PlatformExtension interface implementation.
-  zx::result<> Start() override { return VoteCommon(State::kSvs, true); }
-  zx::result<> Suspend() override { return VoteCommon(State::kNone, false); }
-  zx::result<> Resume() override { return VoteCommon(State::kSvs, true); }
+  zx::result<> Start() override { return PowerOn(true); }
+  zx::result<> Suspend() override { return PowerOff(); }
+  zx::result<> Resume() override { return PowerOn(false); }
 
  private:
-  zx::result<> VoteCommon(State state, bool on) {
-    if (on) {
-      if (zx::result<> result = VoteBandwidth(state); result.is_error()) {
-        return result.take_error();
-      }
+  zx::result<> PowerOn(bool driver_start) {
+    if (zx::result<> result = VoteBandwidth(State::kSvs); result.is_error()) {
+      return result.take_error();
+    }
 
-      if (zx::result<> result = VoteVoltage(on); result.is_error()) {
-        return result.take_error();
-      }
+    if (zx::result<> result = VoteVoltage(true); result.is_error()) {
+      return result.take_error();
+    }
 
-      if (zx::result<> result = VoteClocks(on); result.is_error()) {
-        return result;
-      }
-    } else {
-      if (zx::result<> result = VoteClocks(on); result.is_error()) {
-        return result.take_error();
-      }
-
-      if (zx::result<> result = VoteVoltage(on); result.is_error()) {
-        return result.take_error();
-      }
-
-      if (zx::result<> result = VoteBandwidth(state); result.is_error()) {
-        return result.take_error();
+    // Only reset after being powered down, not during driver start.
+    if (!driver_start) {
+      if (fidl::Result result = fidl::Call(reset_client_)->ToggleWithTimeout(zx::usec(1500).get());
+          result.is_error()) {
+        FDF_LOG(ERROR, "Failed to toggle reset %s",
+                result.error_value().FormatDescription().c_str());
+        return zx::error(result.error_value().is_domain_error()
+                             ? result.error_value().domain_error()
+                             : result.error_value().framework_error().status());
       }
     }
 
-    return VoteBandwidth(state);
+    if (zx::result<> result = VoteClocks(true); result.is_error()) {
+      return result;
+    }
+
+    return zx::ok();
+  }
+
+  zx::result<> PowerOff() {
+    if (zx::result<> result = VoteClocks(false); result.is_error()) {
+      return result.take_error();
+    }
+
+    if (zx::result<> result = VoteVoltage(false); result.is_error()) {
+      return result.take_error();
+    }
+
+    if (zx::result<> result = VoteBandwidth(State::kNone); result.is_error()) {
+      return result.take_error();
+    }
+
+    return zx::ok();
   }
 
   zx::result<> VoteBandwidth(State state);
@@ -99,6 +117,7 @@ class QualcommExtension final : public PlatformExtension {
   std::unordered_map<BusPath, fidl::ClientEnd<fhi::Path>> interconnect_clients_;
   std::unordered_map<std::string, fidl::ClientEnd<fvreg::Vreg>> regulator_clients_;
   std::unordered_map<std::string, fidl::ClientEnd<fclock::Clock>> clock_clients_;
+  fidl::ClientEnd<freset::Reset> reset_client_;
 };
 
 std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent) {
@@ -131,8 +150,14 @@ std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent) {
     clock_clients[name] = std::move(*client);
   }
 
+  zx::result reset_client = parent->incoming()->Connect<freset::Service::Reset>("reset");
+  if (reset_client.is_error()) {
+    fdf::info("Failed to get reset, assuming not qualcomm chipset");
+    return nullptr;
+  }
+
   return std::make_unique<QualcommExtension>(std::move(interconnect_clients),
-                                             std::move(clock_clients));
+                                             std::move(clock_clients), *std::move(reset_client));
 }
 
 zx::result<> QualcommExtension::VoteBandwidth(State state) {
