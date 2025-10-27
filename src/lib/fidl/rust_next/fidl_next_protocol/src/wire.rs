@@ -5,8 +5,8 @@
 use core::mem::MaybeUninit;
 
 use fidl_next_codec::{
-    Constrained, Decode, DecodeError, Encodable, Encode, EncodeError, EncodeRef, Slot,
-    Unconstrained, Wire, WireI32, WireU32, WireU64, bitflags,
+    Decode, DecodeError, Encode, EncodeError, Slot, Unconstrained, Wire, WireI32, WireU32, WireU64,
+    bitflags,
 };
 
 use zerocopy::IntoBytes;
@@ -71,32 +71,28 @@ unsafe impl Wire for WireMessageHeader {
 /// The magic number indicating FIDL protocol compatibility.
 pub const MAGIC_NUMBER: u8 = 0x01;
 
-impl Encodable for WireMessageHeader {
-    type Encoded = WireMessageHeader;
+unsafe impl<E: ?Sized> Encode<WireMessageHeader, E> for WireMessageHeader {
+    #[inline]
+    fn encode(
+        self,
+        _: &mut E,
+        out: &mut MaybeUninit<WireMessageHeader>,
+        _: (),
+    ) -> Result<(), EncodeError> {
+        out.write(self);
+        Ok(())
+    }
 }
 
-unsafe impl<E: ?Sized> Encode<E> for WireMessageHeader {
+unsafe impl<E: ?Sized> Encode<WireMessageHeader, E> for &WireMessageHeader {
     #[inline]
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        constraint: <Self::Encoded as Constrained>::Constraint,
+        out: &mut MaybeUninit<WireMessageHeader>,
+        constraint: (),
     ) -> Result<(), EncodeError> {
-        self.encode_ref(encoder, out, constraint)
-    }
-}
-
-unsafe impl<E: ?Sized> EncodeRef<E> for WireMessageHeader {
-    #[inline]
-    fn encode_ref(
-        &self,
-        _: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        _constraint: <Self::Encoded as Constrained>::Constraint,
-    ) -> Result<(), EncodeError> {
-        out.write(*self);
-        Ok(())
+        Encode::encode(*self, encoder, out, constraint)
     }
 }
 
@@ -126,32 +122,28 @@ unsafe impl Wire for WireEpitaph {
     }
 }
 
-impl Encodable for WireEpitaph {
-    type Encoded = Self;
+unsafe impl<E: ?Sized> Encode<WireEpitaph, E> for WireEpitaph {
+    #[inline]
+    fn encode(
+        self,
+        _: &mut E,
+        out: &mut MaybeUninit<WireEpitaph>,
+        _: (),
+    ) -> Result<(), EncodeError> {
+        out.write(self);
+        Ok(())
+    }
 }
 
-unsafe impl<E: ?Sized> Encode<E> for WireEpitaph {
+unsafe impl<E: ?Sized> Encode<WireEpitaph, E> for &WireEpitaph {
     #[inline]
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        constraint: <Self::Encoded as Constrained>::Constraint,
+        out: &mut MaybeUninit<WireEpitaph>,
+        constraint: (),
     ) -> Result<(), EncodeError> {
-        self.encode_ref(encoder, out, constraint)
-    }
-}
-
-unsafe impl<E: ?Sized> EncodeRef<E> for WireEpitaph {
-    #[inline]
-    fn encode_ref(
-        &self,
-        _: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        _constraint: <Self::Encoded as Constrained>::Constraint,
-    ) -> Result<(), EncodeError> {
-        out.write(*self);
-        Ok(())
+        Encode::encode(*self, encoder, out, constraint)
     }
 }
 

@@ -8,7 +8,7 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll, ready};
 
-use fidl_next_codec::{Constrained, Encode, EncodeError, EncoderExt};
+use fidl_next_codec::{Constrained, Encode, EncodeError, EncoderExt, Wire};
 use pin_project::{pin_project, pinned_drop};
 
 use crate::concurrency::sync::{Arc, Mutex};
@@ -51,29 +51,27 @@ impl<T: Transport> Client<T> {
     }
 
     /// Send a request.
-    pub fn send_one_way<M>(
+    pub fn send_one_way<W>(
         &self,
         ordinal: u64,
         flexibility: Flexibility,
-        request: M,
+        request: impl Encode<W, T::SendBuffer>,
     ) -> Result<SendFuture<'_, T>, EncodeError>
     where
-        M: Encode<T::SendBuffer>,
-        M::Encoded: Constrained<Constraint = ()>,
+        W: Constrained<Constraint = ()> + Wire,
     {
         self.send_message(0, ordinal, flexibility, request)
     }
 
     /// Send a request and await for a response.
-    pub fn send_two_way<M>(
+    pub fn send_two_way<W>(
         &self,
         ordinal: u64,
         flexibility: Flexibility,
-        request: M,
+        request: impl Encode<W, T::SendBuffer>,
     ) -> Result<TwoWayRequestFuture<'_, T>, EncodeError>
     where
-        M: Encode<T::SendBuffer>,
-        M::Encoded: Constrained<Constraint = ()>,
+        W: Constrained<Constraint = ()> + Wire,
     {
         let index = self.inner.responses.lock().unwrap().alloc(ordinal);
 
@@ -89,16 +87,15 @@ impl<T: Transport> Client<T> {
         }
     }
 
-    fn send_message<M>(
+    fn send_message<W>(
         &self,
         txid: u32,
         ordinal: u64,
         flexibility: Flexibility,
-        message: M,
+        message: impl Encode<W, T::SendBuffer>,
     ) -> Result<SendFuture<'_, T>, EncodeError>
     where
-        M: Encode<T::SendBuffer>,
-        M::Encoded: Constrained<Constraint = ()>,
+        W: Constrained<Constraint = ()> + Wire,
     {
         self.inner.connection.send_message(|buffer| {
             encode_header::<T>(buffer, txid, ordinal, flexibility)?;

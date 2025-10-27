@@ -9,10 +9,9 @@ use munge::munge;
 
 use super::raw::RawWireVector;
 use crate::{
-    Constrained, Decode, DecodeError, Decoder, DecoderExt as _, Encodable, EncodableOption, Encode,
-    EncodeError, EncodeOption, EncodeOptionRef, EncodeRef, Encoder, EncoderExt as _, FromWire,
-    FromWireOption, FromWireOptionRef, FromWireRef, IntoNatural, Slot, ValidationError, Wire,
-    WirePointer, WireVector,
+    Constrained, Decode, DecodeError, Decoder, DecoderExt as _, Encode, EncodeError, EncodeOption,
+    Encoder, EncoderExt as _, FromWire, FromWireOption, FromWireOptionRef, FromWireRef,
+    IntoNatural, Slot, ValidationError, Wire, WirePointer, WireVector,
 };
 
 /// An optional FIDL vector
@@ -128,8 +127,10 @@ impl<'de, T> WireOptionalVector<'de, T> {
     }
 }
 
+type VectorConstraint<T> = (u64, <T as Constrained>::Constraint);
+
 impl<T: Constrained> Constrained for WireOptionalVector<'_, T> {
-    type Constraint = (u64, T::Constraint);
+    type Constraint = VectorConstraint<T>;
 
     fn validate(slot: Slot<'_, Self>, constraint: Self::Constraint) -> Result<(), ValidationError> {
         let (limit, _member_constraint) = constraint;
@@ -176,23 +177,32 @@ unsafe impl<D: Decoder + ?Sized, T: Decode<D>> Decode<D> for WireOptionalVector<
 }
 
 #[inline]
-fn encode_to_optional_vector<V, E, T>(
+fn encode_to_optional_vector<V, W, E, T>(
     value: Option<V>,
     encoder: &mut E,
-    out: &mut MaybeUninit<WireOptionalVector<'_, T::Encoded>>,
-    constraint: <WireOptionalVector<'_, T::Encoded> as Constrained>::Constraint,
+    out: &mut MaybeUninit<WireOptionalVector<'static, W>>,
+    constraint: VectorConstraint<W>,
 ) -> Result<(), EncodeError>
 where
     V: AsRef<[T]> + IntoIterator,
     V::IntoIter: ExactSizeIterator,
-    V::Item: Encode<E, Encoded = T::Encoded>,
+    V::Item: Encode<W, E>,
+    W: Constrained + Wire,
     E: Encoder + ?Sized,
-    T: Encodable,
+    T: Encode<W, E>,
 {
-    let (_length_constraint, member_constraint) = constraint;
+    let (length_constraint, member_constraint) = constraint;
 
     if let Some(value) = value {
         let len = value.as_ref().len();
+
+        if len as u64 > length_constraint {
+            return Err(EncodeError::Validation(ValidationError::VectorTooLong {
+                count: len as u64,
+                limit: length_constraint,
+            }));
+        }
+
         if T::COPY_OPTIMIZATION.is_enabled() {
             let slice = value.as_ref();
             // SAFETY: `T` has copy optimization enabled, which guarantees that it has no uninit
@@ -210,54 +220,51 @@ where
     Ok(())
 }
 
-impl<T: Encodable> EncodableOption for Vec<T> {
-    type EncodedOption = WireOptionalVector<'static, T::Encoded>;
-}
-
-unsafe impl<E, T> EncodeOption<E> for Vec<T>
+unsafe impl<W, E, T> EncodeOption<WireOptionalVector<'static, W>, E> for Vec<T>
 where
+    W: Constrained + Wire,
     E: Encoder + ?Sized,
-    T: Encode<E>,
+    T: Encode<W, E>,
 {
     fn encode_option(
         this: Option<Self>,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::EncodedOption>,
-        constraint: <Self::EncodedOption as Constrained>::Constraint,
+        out: &mut MaybeUninit<WireOptionalVector<'static, W>>,
+        constraint: <WireOptionalVector<'static, W> as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
         encode_to_optional_vector(this, encoder, out, constraint)
     }
 }
 
-unsafe impl<E, T> EncodeOptionRef<E> for Vec<T>
+unsafe impl<'a, W, E, T> EncodeOption<WireOptionalVector<'static, W>, E> for &'a Vec<T>
 where
+    W: Constrained + Wire,
     E: Encoder + ?Sized,
-    T: EncodeRef<E>,
+    T: Encode<W, E>,
+    &'a T: Encode<W, E>,
 {
-    fn encode_option_ref(
-        this: Option<&Self>,
+    fn encode_option(
+        this: Option<Self>,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::EncodedOption>,
-        constraint: <Self::EncodedOption as Constrained>::Constraint,
+        out: &mut MaybeUninit<WireOptionalVector<'static, W>>,
+        constraint: VectorConstraint<W>,
     ) -> Result<(), EncodeError> {
         encode_to_optional_vector(this, encoder, out, constraint)
     }
 }
 
-impl<T: Encodable> EncodableOption for [T] {
-    type EncodedOption = WireOptionalVector<'static, T::Encoded>;
-}
-
-unsafe impl<E, T> EncodeOptionRef<E> for [T]
+unsafe impl<'a, W, E, T> EncodeOption<WireOptionalVector<'static, W>, E> for &'a [T]
 where
+    W: Constrained + Wire,
     E: Encoder + ?Sized,
-    T: EncodeRef<E>,
+    T: Encode<W, E>,
+    &'a T: Encode<W, E>,
 {
-    fn encode_option_ref(
-        this: Option<&Self>,
+    fn encode_option(
+        this: Option<Self>,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::EncodedOption>,
-        constraint: <Self::EncodedOption as Constrained>::Constraint,
+        out: &mut MaybeUninit<WireOptionalVector<'static, W>>,
+        constraint: VectorConstraint<W>,
     ) -> Result<(), EncodeError> {
         encode_to_optional_vector(this, encoder, out, constraint)
     }

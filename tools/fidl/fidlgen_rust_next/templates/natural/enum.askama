@@ -18,10 +18,6 @@ pub enum {{ name }} {
     {%- endif %}
 }
 
-impl ::fidl_next::Encodable for {{ name }} {
-    type Encoded = crate::wire::{{ name }};
-}
-
 {%- if enm.is_strict %}
 impl ::core::convert::TryFrom<{{ natural_int }}> for {{ name }} {
     type Error = ::fidl_next::UnknownStrictEnumMemberError;
@@ -47,7 +43,7 @@ impl ::std::convert::From<{{ natural_int }}> for {{ name }} {
 }
 {%- endif %}
 
-unsafe impl<___E> ::fidl_next::Encode<___E> for {{ name }}
+unsafe impl<___E> ::fidl_next::Encode<crate::wire::{{ name }}, ___E> for {{ name }}
 where
     ___E: ?Sized,
 {
@@ -55,31 +51,31 @@ where
     fn encode(
         self,
         encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        out: &mut ::core::mem::MaybeUninit<crate::wire::{{ name }}>,
         _: (),
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-        ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
+        ::fidl_next::Encode::encode(&self, encoder, out, ())
     }
 }
 
-unsafe impl<___E> ::fidl_next::EncodeRef<___E> for {{ name }}
+unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::{{ name }}, ___E> for &'a {{ name }}
 where
     ___E: ?Sized,
 {
     #[inline]
-    fn encode_ref(
-        &self,
+    fn encode(
+        self,
         encoder: &mut ___E,
-        out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+        out: &mut ::core::mem::MaybeUninit<crate::wire::{{ name }}>,
         _: (),
     ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
         ::fidl_next::munge!(let crate::wire::{{ name }} { value } = out);
         let _ = value.write({{ wire_int }}::from(match *self {
             {% for member in enm.members %}
-                Self::{{ member.name|camel }} => {{ member.value.value }},
+                {{ name }}::{{ member.name|camel }} => {{ member.value.value }},
             {% endfor %}
             {% if !enm.is_strict %}
-                Self::UnknownOrdinal_(value) => value,
+                {{ name }}::UnknownOrdinal_(value) => value,
             {% endif %}
         }));
 

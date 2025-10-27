@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 use core::mem::MaybeUninit;
 use fidl_next_codec::{
-    Chunk, Constrained, Decode, Decoded, Decoder, DecoderExt as _, Encodable, Encode, EncodeError,
-    Encoder, EncoderExt as _, Unconstrained, Wire, WireString, munge,
+    Chunk, Constrained, Decode, Decoded, Decoder, DecoderExt as _, Encode, EncodeError, Encoder,
+    EncoderExt as _, Unconstrained, Wire, WireString, munge,
 };
 use fuchsia_async::Task;
 
@@ -13,9 +13,9 @@ use crate::{
     Responder, ServerDispatcher, ServerHandler, Transport,
 };
 
-pub fn assert_encoded<T: Encode<Vec<Chunk>>>(value: T, chunks: &[Chunk])
+pub fn assert_encoded<W>(value: impl Encode<W, Vec<Chunk>>, chunks: &[Chunk])
 where
-    T::Encoded: Constrained<Constraint = ()>,
+    W: Constrained<Constraint = ()> + Wire,
 {
     let mut encoded_chunks = Vec::new();
     encoded_chunks.encode_next(value, ()).unwrap();
@@ -68,15 +68,11 @@ impl TestMessage {
     }
 }
 
-impl Encodable for TestMessage {
-    type Encoded = WireTestMessage<'static>;
-}
-
-unsafe impl<E: Encoder + ?Sized> Encode<E> for TestMessage {
+unsafe impl<E: Encoder + ?Sized> Encode<WireTestMessage<'static>, E> for TestMessage {
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
+        out: &mut MaybeUninit<WireTestMessage<'static>>,
         _: (),
     ) -> Result<(), EncodeError> {
         munge!(let WireTestMessage (s) = out);

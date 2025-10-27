@@ -110,18 +110,19 @@ pub trait EncoderExt {
     /// Encodes an iterator of elements.
     ///
     /// Returns `Err` if encoding failed.
-    fn encode_next_iter<T: Encode<Self>>(
+    fn encode_next_iter<W: Constrained + Wire, T: Encode<W, Self>>(
         &mut self,
         values: impl ExactSizeIterator<Item = T>,
-        constraint: <T::Encoded as Constrained>::Constraint,
+        constraint: W::Constraint,
     ) -> Result<(), EncodeError>;
+
     /// Encodes a value.
     ///
     /// Returns `Err` if encoding failed.
-    fn encode_next<T: Encode<Self>>(
+    fn encode_next<W: Constrained + Wire, T: Encode<W, Self>>(
         &mut self,
         value: T,
-        constraint: <T::Encoded as Constrained>::Constraint,
+        constraint: W::Constraint,
     ) -> Result<(), EncodeError>;
 }
 
@@ -141,18 +142,18 @@ impl<E: Encoder + ?Sized> EncoderExt for E {
         }
     }
 
-    fn encode_next_iter<T: Encode<Self>>(
+    fn encode_next_iter<W: Constrained + Wire, T: Encode<W, Self>>(
         &mut self,
         values: impl ExactSizeIterator<Item = T>,
-        constraint: <T::Encoded as Constrained>::Constraint,
+        constraint: W::Constraint,
     ) -> Result<(), EncodeError> {
-        let mut outputs = self.preallocate::<T::Encoded>(values.len());
+        let mut outputs = self.preallocate::<W>(values.len());
 
-        let mut out = MaybeUninit::<T::Encoded>::uninit();
-        <T::Encoded as Wire>::zero_padding(&mut out);
+        let mut out = MaybeUninit::<W>::uninit();
+        <W as Wire>::zero_padding(&mut out);
         for value in values {
             value.encode(outputs.encoder, &mut out, constraint)?;
-            <T::Encoded as Constrained>::validate(
+            <W as Constrained>::validate(
                 unsafe { Slot::new_unchecked_from_maybe_uninit(&mut out) },
                 constraint,
             )
@@ -165,10 +166,10 @@ impl<E: Encoder + ?Sized> EncoderExt for E {
         Ok(())
     }
 
-    fn encode_next<T: Encode<Self>>(
+    fn encode_next<W: Constrained + Wire, T: Encode<W, Self>>(
         &mut self,
         value: T,
-        constraint: <T::Encoded as Constrained>::Constraint,
+        constraint: W::Constraint,
     ) -> Result<(), EncodeError> {
         self.encode_next_iter(core::iter::once(value), constraint)
     }

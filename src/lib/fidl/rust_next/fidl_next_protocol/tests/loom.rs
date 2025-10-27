@@ -7,7 +7,7 @@
 use core::mem::MaybeUninit;
 
 use fidl_next_codec::{
-    Decode, Decoder, DecoderExt as _, Encodable, Encode, EncodeError, Encoder, Unconstrained, Wire,
+    Decode, Decoder, DecoderExt as _, Encode, EncodeError, Encoder, Unconstrained, Wire,
     WireString, munge,
 };
 use fidl_next_protocol_loom::mpsc::Mpsc;
@@ -75,15 +75,11 @@ impl TestMessage {
     }
 }
 
-impl Encodable for TestMessage {
-    type Encoded = WireTestMessage<'static>;
-}
-
-unsafe impl<E: Encoder + ?Sized> Encode<E> for TestMessage {
+unsafe impl<E: Encoder + ?Sized> Encode<WireTestMessage<'static>, E> for TestMessage {
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
+        out: &mut MaybeUninit<WireTestMessage<'static>>,
         _: (),
     ) -> Result<(), EncodeError> {
         munge!(let WireTestMessage (s) = out);

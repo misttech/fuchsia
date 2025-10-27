@@ -11,7 +11,7 @@ use core::pin::Pin;
 use core::ptr;
 use core::task::{Context, Poll};
 
-use fidl_next_codec::{Constrained, Encode, EncodeError, EncoderExt as _};
+use fidl_next_codec::{Constrained, Encode, EncodeError, EncoderExt as _, Wire};
 use pin_project::pin_project;
 
 use crate::concurrency::sync::Arc;
@@ -61,15 +61,14 @@ impl<T: Transport> Server<T> {
     }
 
     /// Send an event.
-    pub fn send_event<M>(
+    pub fn send_event<W>(
         &self,
         ordinal: u64,
         flexibility: Flexibility,
-        event: M,
+        event: impl Encode<W, T::SendBuffer>,
     ) -> Result<SendFuture<'_, T>, EncodeError>
     where
-        M: Encode<T::SendBuffer>,
-        M::Encoded: Constrained<Constraint = ()>,
+        W: Constrained<Constraint = ()> + Wire,
     {
         self.inner.connection.send_message(|buffer| {
             encode_header::<T>(buffer, 0, ordinal, flexibility)?;
@@ -236,15 +235,14 @@ impl<T: Transport> Drop for Responder<T> {
 
 impl<T: Transport> Responder<T> {
     /// Send a response to a two-way message.
-    pub fn respond<M>(
+    pub fn respond<W>(
         self,
         ordinal: u64,
         flexibility: Flexibility,
-        response: M,
+        response: impl Encode<W, T::SendBuffer>,
     ) -> Result<RespondFuture<T>, EncodeError>
     where
-        M: Encode<T::SendBuffer>,
-        M::Encoded: Constrained<Constraint = ()>,
+        W: Constrained<Constraint = ()> + Wire,
     {
         let state = self.server.inner.connection.send_message_raw(|buffer| {
             encode_header::<T>(buffer, self.txid.get(), ordinal, flexibility)?;

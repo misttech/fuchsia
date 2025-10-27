@@ -6,7 +6,7 @@ use core::future::Future;
 use core::marker::PhantomData;
 use core::ops::Deref;
 
-use fidl_next_codec::{Constrained, Encode};
+use fidl_next_codec::{Constrained, Encode, Wire};
 use fidl_next_protocol::{self as protocol, Flexibility, ProtocolError, ServerHandler, Transport};
 
 use crate::{
@@ -185,8 +185,8 @@ impl<M, T: Transport> Responder<M, T> {
     pub fn respond<R>(self, response: R) -> RespondFuture<T>
     where
         M: Method + Respond<R>,
-        M::Response: Constrained<Constraint = ()>,
-        <M as Respond<R>>::Output: Encode<T::SendBuffer, Encoded = M::Response>,
+        M::Response: Constrained<Constraint = ()> + Wire,
+        <M as Respond<R>>::Output: Encode<M::Response, T::SendBuffer>,
     {
         self.respond_with(M::respond(response))
     }
@@ -195,8 +195,8 @@ impl<M, T: Transport> Responder<M, T> {
     pub fn respond_err<R>(self, response: R) -> RespondFuture<T>
     where
         M: Method + RespondErr<R>,
-        M::Response: Constrained<Constraint = ()>,
-        <M as RespondErr<R>>::Output: Encode<T::SendBuffer, Encoded = M::Response>,
+        M::Response: Constrained<Constraint = ()> + Wire,
+        <M as RespondErr<R>>::Output: Encode<M::Response, T::SendBuffer>,
     {
         self.respond_with(M::respond_err(response))
     }
@@ -205,8 +205,8 @@ impl<M, T: Transport> Responder<M, T> {
     pub fn respond_with<R>(self, response: R) -> RespondFuture<T>
     where
         M: Method,
-        M::Response: Constrained<Constraint = ()>,
-        R: Encode<T::SendBuffer, Encoded = M::Response>,
+        M::Response: Constrained<Constraint = ()> + Wire,
+        R: Encode<M::Response, T::SendBuffer>,
     {
         RespondFuture::from_untyped(self.responder.respond(M::ORDINAL, M::FLEXIBILITY, response))
     }

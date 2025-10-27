@@ -9,8 +9,7 @@ use core::ptr::NonNull;
 use munge::munge;
 
 use crate::{
-    Constrained, Decode, DecodeError, Decoder, DecoderExt as _, Encodable, EncodableOption, Encode,
-    EncodeError, EncodeOption, EncodeOptionRef, EncodeRef, FromWire, FromWireOption,
+    Constrained, Decode, DecodeError, Decoder, DecoderExt as _, FromWire, FromWireOption,
     FromWireOptionRef, FromWireRef, IntoNatural, Slot, ValidationError, Wire, WirePointer,
 };
 
@@ -103,32 +102,6 @@ unsafe impl<D: Decoder + ?Sized, T: Decode<D>> Decode<D> for WireBox<'static, T>
         }
 
         Ok(())
-    }
-}
-
-impl<T: EncodableOption> Encodable for Option<T> {
-    type Encoded = T::EncodedOption;
-}
-
-unsafe impl<E: ?Sized, T: EncodeOption<E>> Encode<E> for Option<T> {
-    fn encode(
-        self,
-        encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        constraint: <Self::Encoded as Constrained>::Constraint,
-    ) -> Result<(), EncodeError> {
-        T::encode_option(self, encoder, out, constraint)
-    }
-}
-
-unsafe impl<E: ?Sized, T: EncodeOptionRef<E>> EncodeRef<E> for Option<T> {
-    fn encode_ref(
-        &self,
-        encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        constraint: <Self::Encoded as Constrained>::Constraint,
-    ) -> Result<(), EncodeError> {
-        T::encode_option_ref(self.as_ref(), encoder, out, constraint)
     }
 }
 

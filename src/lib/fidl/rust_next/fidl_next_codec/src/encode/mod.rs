@@ -12,56 +12,29 @@ use core::ptr::copy_nonoverlapping;
 pub use self::error::EncodeError;
 
 use crate::{
-    Constrained, CopyOptimization, Encoder, EncoderExt as _, Wire, WireBox, WireF32, WireF64,
-    WireI16, WireI32, WireI64, WireU16, WireU32, WireU64,
+    Constrained, CopyOptimization, Encoder, EncoderExt as _, WireBox, WireF32, WireF64, WireI16,
+    WireI32, WireI64, WireU16, WireU32, WireU64,
 };
-
-/// A type which can be encoded as FIDL.
-pub trait Encodable {
-    /// Whether the conversion from `Self` to `Self::Encoded` is equivalent to copying the raw bytes
-    /// of `Self`.
-    ///
-    /// Copy optimization is disabled by default.
-    const COPY_OPTIMIZATION: CopyOptimization<Self, Self::Encoded> = CopyOptimization::disable();
-
-    /// The wire type for the value.
-    type Encoded: Wire + Constrained;
-}
 
 /// Encodes a value.
 ///
 /// # Safety
 ///
 /// `encode` must initialize all non-padding bytes of `out`.
-pub unsafe trait Encode<E: ?Sized>: Encodable + Sized {
+pub unsafe trait Encode<W: Constrained, E: ?Sized>: Sized {
+    /// Whether the conversion from `Self` to `W` is equivalent to copying the
+    /// raw bytes of `Self`.
+    ///
+    /// Copy optimization is disabled by default.
+    const COPY_OPTIMIZATION: CopyOptimization<Self, W> = CopyOptimization::disable();
+
     /// Encodes this value into an encoder and output.
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        constraint: <<Self as Encodable>::Encoded as Constrained>::Constraint,
+        out: &mut MaybeUninit<W>,
+        constraint: W::Constraint,
     ) -> Result<(), EncodeError>;
-}
-
-/// Encodes a reference.
-///
-/// # Safety
-///
-/// `encode` must initialize all non-padding bytes of `out`.
-pub unsafe trait EncodeRef<E: ?Sized>: Encodable {
-    /// Encodes this reference into an encoder and output.
-    fn encode_ref(
-        &self,
-        encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        constraint: <<Self as Encodable>::Encoded as Constrained>::Constraint,
-    ) -> Result<(), EncodeError>;
-}
-
-/// A type which can be encoded as FIDL when optional.
-pub trait EncodableOption {
-    /// The wire type for the optional value.
-    type EncodedOption: Wire + Constrained;
 }
 
 /// Encodes an optional value.
@@ -69,132 +42,77 @@ pub trait EncodableOption {
 /// # Safety
 ///
 /// `encode_option` must initialize all non-padding bytes of `out`.
-pub unsafe trait EncodeOption<E: ?Sized>: EncodableOption + Sized {
+pub unsafe trait EncodeOption<W: Constrained, E: ?Sized>: Sized {
     /// Encodes this optional value into an encoder and output.
     fn encode_option(
         this: Option<Self>,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::EncodedOption>,
-        constraint: <<Self as EncodableOption>::EncodedOption as Constrained>::Constraint,
+        out: &mut MaybeUninit<W>,
+        constraint: W::Constraint,
     ) -> Result<(), EncodeError>;
 }
 
-/// Encodes an optional reference.
-///
-/// # Safety
-///
-/// `encode_option_ref` must initialize all non-padding bytes of `out`.
-pub unsafe trait EncodeOptionRef<E: ?Sized>: EncodableOption {
-    /// Encodes this optional reference into an encoder and output.
-    fn encode_option_ref(
-        this: Option<&Self>,
-        encoder: &mut E,
-        out: &mut MaybeUninit<Self::EncodedOption>,
-        constraint: <<Self as EncodableOption>::EncodedOption as Constrained>::Constraint,
-    ) -> Result<(), EncodeError>;
-}
-
-impl<T: Encodable + ?Sized> Encodable for &T {
-    type Encoded = T::Encoded;
-}
-
-unsafe impl<E: ?Sized, T: EncodeRef<E> + ?Sized> Encode<E> for &T {
+unsafe impl<W, E, T> Encode<W, E> for Box<T>
+where
+    W: Constrained,
+    E: ?Sized,
+    T: Encode<W, E>,
+{
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        constraint: <<Self as Encodable>::Encoded as Constrained>::Constraint,
-    ) -> Result<(), EncodeError> {
-        T::encode_ref(self, encoder, out, constraint)
-    }
-}
-
-unsafe impl<E: ?Sized, T: EncodeRef<E> + ?Sized> EncodeRef<E> for &T {
-    fn encode_ref(
-        &self,
-        encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        constraint: <<Self as Encodable>::Encoded as Constrained>::Constraint,
-    ) -> Result<(), EncodeError> {
-        T::encode_ref(*self, encoder, out, constraint)
-    }
-}
-
-impl<T: EncodableOption + ?Sized> EncodableOption for &T {
-    type EncodedOption = T::EncodedOption;
-}
-
-unsafe impl<E: ?Sized, T: EncodeOptionRef<E> + ?Sized> EncodeOption<E> for &T {
-    fn encode_option(
-        this: Option<Self>,
-        encoder: &mut E,
-        out: &mut MaybeUninit<Self::EncodedOption>,
-        constraint: <<Self as EncodableOption>::EncodedOption as Constrained>::Constraint,
-    ) -> Result<(), EncodeError> {
-        T::encode_option_ref(this, encoder, out, constraint)
-    }
-}
-
-unsafe impl<E: ?Sized, T: EncodeOptionRef<E> + ?Sized> EncodeOptionRef<E> for &T {
-    fn encode_option_ref(
-        this: Option<&Self>,
-        encoder: &mut E,
-        out: &mut MaybeUninit<Self::EncodedOption>,
-        constraint: <<Self as EncodableOption>::EncodedOption as Constrained>::Constraint,
-    ) -> Result<(), EncodeError> {
-        T::encode_option_ref(this.copied(), encoder, out, constraint)
-    }
-}
-
-impl<T: Encodable> Encodable for Box<T> {
-    type Encoded = T::Encoded;
-}
-
-unsafe impl<E: ?Sized, T: Encode<E>> Encode<E> for Box<T> {
-    fn encode(
-        self,
-        encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        constraint: <<Self as Encodable>::Encoded as Constrained>::Constraint,
+        out: &mut MaybeUninit<W>,
+        constraint: <W as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
         T::encode(*self, encoder, out, constraint)
     }
 }
 
-unsafe impl<E: ?Sized, T: EncodeRef<E>> EncodeRef<E> for Box<T> {
-    fn encode_ref(
-        &self,
+unsafe impl<'a, W, E, T> Encode<W, E> for &'a Box<T>
+where
+    W: Constrained,
+    E: ?Sized,
+    &'a T: Encode<W, E>,
+{
+    fn encode(
+        self,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        constraint: <<Self as Encodable>::Encoded as Constrained>::Constraint,
+        out: &mut MaybeUninit<W>,
+        constraint: <W as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        T::encode_ref(self, encoder, out, constraint)
+        <&'a T>::encode(self, encoder, out, constraint)
     }
 }
 
-impl<T: EncodableOption> EncodableOption for Box<T> {
-    type EncodedOption = T::EncodedOption;
-}
-
-unsafe impl<E: ?Sized, T: EncodeOption<E>> EncodeOption<E> for Box<T> {
+unsafe impl<W, E, T> EncodeOption<W, E> for Box<T>
+where
+    W: Constrained,
+    E: ?Sized,
+    T: EncodeOption<W, E>,
+{
     fn encode_option(
         this: Option<Self>,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::EncodedOption>,
-        constraint: <<Self as EncodableOption>::EncodedOption as Constrained>::Constraint,
+        out: &mut MaybeUninit<W>,
+        constraint: <W as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
         T::encode_option(this.map(|value| *value), encoder, out, constraint)
     }
 }
 
-unsafe impl<E: ?Sized, T: EncodeOptionRef<E>> EncodeOptionRef<E> for Box<T> {
-    fn encode_option_ref(
-        this: Option<&Self>,
+unsafe impl<'a, W, E, T> EncodeOption<W, E> for &'a Box<T>
+where
+    W: Constrained,
+    E: ?Sized,
+    &'a T: EncodeOption<W, E>,
+{
+    fn encode_option(
+        this: Option<Self>,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::EncodedOption>,
-        constraint: <<Self as EncodableOption>::EncodedOption as Constrained>::Constraint,
+        out: &mut MaybeUninit<W>,
+        constraint: <W as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
-        T::encode_option_ref(this.map(|value| &**value), encoder, out, constraint)
+        <&'a T>::encode_option(this.map(|value| &**value), encoder, out, constraint)
     }
 }
 
@@ -203,61 +121,41 @@ macro_rules! impl_primitive {
         impl_primitive!($ty, $ty);
     };
     ($ty:ty, $enc:ty) => {
-        impl Encodable for $ty {
+        unsafe impl<E: ?Sized> Encode<$enc, E> for $ty {
             const COPY_OPTIMIZATION: CopyOptimization<$ty, $enc> =
                 CopyOptimization::<$ty, $enc>::PRIMITIVE;
 
-            type Encoded = $enc;
-        }
-
-        unsafe impl<E: ?Sized> Encode<E> for $ty {
             #[inline]
             fn encode(
                 self,
                 encoder: &mut E,
-                out: &mut MaybeUninit<Self::Encoded>,
-                constraint: <<Self as Encodable>::Encoded as Constrained>::Constraint,
+                out: &mut MaybeUninit<$enc>,
+                constraint: <$enc as Constrained>::Constraint,
             ) -> Result<(), EncodeError> {
-                self.encode_ref(encoder, out, constraint)
+                Encode::encode(&self, encoder, out, constraint)
             }
         }
 
-        unsafe impl<E: ?Sized> EncodeRef<E> for $ty {
+        unsafe impl<'a, E: ?Sized> Encode<$enc, E> for &'a $ty {
             #[inline]
-            fn encode_ref(
-                &self,
+            fn encode(
+                self,
                 _: &mut E,
-                out: &mut MaybeUninit<Self::Encoded>,
-                _constraint: <<Self as Encodable>::Encoded as Constrained>::Constraint,
+                out: &mut MaybeUninit<$enc>,
+                _constraint: <$enc as Constrained>::Constraint,
             ) -> Result<(), EncodeError> {
                 out.write(<$enc>::from(*self));
                 Ok(())
             }
         }
 
-        impl EncodableOption for $ty {
-            type EncodedOption = WireBox<'static, $enc>;
-        }
-
-        unsafe impl<E: Encoder + ?Sized> EncodeOption<E> for $ty {
+        unsafe impl<E: Encoder + ?Sized> EncodeOption<WireBox<'static, $enc>, E> for $ty {
             #[inline]
             fn encode_option(
                 this: Option<Self>,
                 encoder: &mut E,
-                out: &mut MaybeUninit<Self::EncodedOption>,
-                constraint: <<Self as EncodableOption>::EncodedOption as Constrained>::Constraint,
-            ) -> Result<(), EncodeError> {
-                Self::encode_option_ref(this.as_ref(), encoder, out, constraint)
-            }
-        }
-
-        unsafe impl<E: Encoder + ?Sized> EncodeOptionRef<E> for $ty {
-            #[inline]
-            fn encode_option_ref(
-                this: Option<&Self>,
-                encoder: &mut E,
-                out: &mut MaybeUninit<Self::EncodedOption>,
-                constraint: <<Self as EncodableOption>::EncodedOption as Constrained>::Constraint,
+                out: &mut MaybeUninit<WireBox<'static, $enc>>,
+                constraint: (),
             ) -> Result<(), EncodeError> {
                 if let Some(value) = this {
                     encoder.encode_next(value, constraint)?;
@@ -267,6 +165,18 @@ macro_rules! impl_primitive {
                 }
 
                 Ok(())
+            }
+        }
+
+        unsafe impl<E: Encoder + ?Sized> EncodeOption<WireBox<'static, $enc>, E> for &$ty {
+            #[inline]
+            fn encode_option(
+                this: Option<Self>,
+                encoder: &mut E,
+                out: &mut MaybeUninit<WireBox<'static, $enc>>,
+                constraint: (),
+            ) -> Result<(), EncodeError> {
+                <$ty>::encode_option(this.cloned(), encoder, out, constraint)
             }
         }
     };
@@ -297,24 +207,18 @@ impl_primitives! {
     WireF32; WireF64;
 }
 
-impl<T: Encodable, const N: usize> Encodable for [T; N] {
-    const COPY_OPTIMIZATION: CopyOptimization<Self, Self::Encoded> =
-        T::COPY_OPTIMIZATION.infer_array();
-
-    type Encoded = [T::Encoded; N];
-}
-
-fn encode_to_array<A, E, T, const N: usize>(
+fn encode_to_array<A, W, E, T, const N: usize>(
     value: A,
     encoder: &mut E,
-    out: &mut MaybeUninit<[T::Encoded; N]>,
-    constraint: <T::Encoded as Constrained>::Constraint,
+    out: &mut MaybeUninit<[W; N]>,
+    constraint: <W as Constrained>::Constraint,
 ) -> Result<(), EncodeError>
 where
     A: AsRef<[T]> + IntoIterator,
-    A::Item: Encode<E, Encoded = T::Encoded>,
+    A::Item: Encode<W, E>,
+    W: Constrained,
     E: ?Sized,
-    T: Encodable,
+    T: Encode<W, E>,
 {
     if T::COPY_OPTIMIZATION.is_enabled() {
         // SAFETY: `T` has copy optimization enabled and so is safe to copy to the output.
@@ -332,40 +236,77 @@ where
             //    has the same layout as `T`.
             // 3. Adding `i` to reach the `i`th element.
             // 4. Dereferencing as `&mut`.
-            let out_i = unsafe { &mut *out.as_mut_ptr().cast::<MaybeUninit<T::Encoded>>().add(i) };
+            let out_i = unsafe { &mut *out.as_mut_ptr().cast::<MaybeUninit<W>>().add(i) };
             item.encode(encoder, out_i, constraint)?;
         }
     }
     Ok(())
 }
 
-unsafe impl<E, T, const N: usize> Encode<E> for [T; N]
+unsafe impl<W, E, T, const N: usize> Encode<[W; N], E> for [T; N]
 where
+    W: Constrained,
     E: ?Sized,
-    T: Encode<E>,
+    T: Encode<W, E>,
 {
+    const COPY_OPTIMIZATION: CopyOptimization<Self, [W; N]> = T::COPY_OPTIMIZATION.infer_array();
+
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        constraint: <T::Encoded as Constrained>::Constraint,
+        out: &mut MaybeUninit<[W; N]>,
+        constraint: <W as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
         encode_to_array(self, encoder, out, constraint)
     }
 }
 
-unsafe impl<E, T, const N: usize> EncodeRef<E> for [T; N]
+unsafe impl<'a, W, E, T, const N: usize> Encode<[W; N], E> for &'a [T; N]
 where
+    W: Constrained,
     E: ?Sized,
-    T: EncodeRef<E>,
+    T: Encode<W, E>,
+    &'a T: Encode<W, E>,
 {
-    fn encode_ref(
-        &self,
+    fn encode(
+        self,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        constraint: <T::Encoded as Constrained>::Constraint,
+        out: &mut MaybeUninit<[W; N]>,
+        constraint: <W as Constrained>::Constraint,
     ) -> Result<(), EncodeError> {
         encode_to_array(self, encoder, out, constraint)
+    }
+}
+
+unsafe impl<W, E, T> Encode<W, E> for Option<T>
+where
+    W: Constrained,
+    E: ?Sized,
+    T: EncodeOption<W, E>,
+{
+    fn encode(
+        self,
+        encoder: &mut E,
+        out: &mut MaybeUninit<W>,
+        constraint: <W as Constrained>::Constraint,
+    ) -> Result<(), EncodeError> {
+        T::encode_option(self, encoder, out, constraint)
+    }
+}
+
+unsafe impl<'a, W, E, T> Encode<W, E> for &'a Option<T>
+where
+    W: Constrained,
+    E: ?Sized,
+    Option<&'a T>: Encode<W, E>,
+{
+    fn encode(
+        self,
+        encoder: &mut E,
+        out: &mut MaybeUninit<W>,
+        constraint: <W as Constrained>::Constraint,
+    ) -> Result<(), EncodeError> {
+        self.as_ref().encode(encoder, out, constraint)
     }
 }
 
@@ -432,7 +373,7 @@ mod tests {
 
     #[test]
     fn encode_vec() {
-        assert_encoded_with_constraint(
+        assert_encoded_with_constraint::<crate::WireOptionalVector<'_, crate::WireU32>, _>(
             None::<Vec<u32>>,
             &chunks![
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -440,7 +381,7 @@ mod tests {
             ],
             (1000, ()),
         );
-        assert_encoded_with_constraint(
+        assert_encoded_with_constraint::<crate::WireOptionalVector<'_, crate::WireU32>, _>(
             Some(vec![0x12345678u32, 0x9abcdef0u32]),
             &chunks![
                 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -448,7 +389,7 @@ mod tests {
             ],
             (1000, ()),
         );
-        assert_encoded_with_constraint(
+        assert_encoded_with_constraint::<crate::WireOptionalVector<'_, crate::WireU32>, _>(
             Some(Vec::<u32>::new()),
             &chunks![
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -460,7 +401,7 @@ mod tests {
 
     #[test]
     fn encode_string() {
-        assert_encoded_with_constraint(
+        assert_encoded_with_constraint::<crate::WireOptionalString<'_>, _>(
             None::<String>,
             &chunks![
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -468,7 +409,7 @@ mod tests {
             ],
             1000,
         );
-        assert_encoded_with_constraint(
+        assert_encoded_with_constraint::<crate::WireOptionalString<'_>, _>(
             Some("0123".to_string()),
             &chunks![
                 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -476,7 +417,7 @@ mod tests {
             ],
             1000,
         );
-        assert_encoded_with_constraint(
+        assert_encoded_with_constraint::<crate::WireOptionalString<'_>, _>(
             Some(String::new()),
             &chunks![
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,

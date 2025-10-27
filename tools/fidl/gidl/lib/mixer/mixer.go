@@ -506,6 +506,10 @@ func (decl *StructDecl) IsResourceType() bool {
 	return decl.structDecl.IsResourceType()
 }
 
+func (decl *StructDecl) NeverHasOutOfLineData() bool {
+	return decl.structDecl.TypeShapeV2.MaxOutOfLine == 0 && !decl.structDecl.TypeShapeV2.HasFlexibleEnvelope
+}
+
 func (decl *StructDecl) Name() string {
 	return string(decl.structDecl.Name)
 }

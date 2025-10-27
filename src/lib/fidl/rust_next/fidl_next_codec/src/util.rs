@@ -5,35 +5,23 @@
 //! Helper types for encoding and decoding.
 
 use core::hint::unreachable_unchecked;
-use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 
-use crate::{Constrained, Encodable, Encode, EncodeError, Unconstrained, Wire};
+use crate::{Constrained, Encode, EncodeError, Unconstrained};
 
 /// A type which cannot be constructed.
 pub enum Never {}
 
 impl Unconstrained for Never {}
 
-/// A type which cannot be constructed and encodes as a `W`.
-pub struct EncodableNever<W> {
-    _never: Never,
-    _phantom: PhantomData<W>,
-}
-
-impl<W: Wire + Constrained> Encodable for EncodableNever<W> {
-    type Encoded = W;
-}
-
-unsafe impl<E: ?Sized, W: Wire + Constrained> Encode<E> for EncodableNever<W> {
+unsafe impl<W: Constrained, E: ?Sized> Encode<W, E> for Never {
     fn encode(
         self,
         _: &mut E,
-        _: &mut MaybeUninit<Self::Encoded>,
+        _: &mut MaybeUninit<W>,
         _: W::Constraint,
     ) -> Result<(), EncodeError> {
-        // SAFETY: `EncodableNever` cannot exist because it has a `Never` field.
-        // Therefore, this code can never be reached.
+        // SAFETY: `Never` cannot exist, so this code can never be reached.
         unsafe { unreachable_unchecked() }
     }
 }

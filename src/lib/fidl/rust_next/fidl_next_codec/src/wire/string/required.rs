@@ -10,8 +10,8 @@ use core::str::{from_utf8, from_utf8_unchecked};
 use munge::munge;
 
 use crate::{
-    Constrained, Decode, DecodeError, Decoder, Encodable, Encode, EncodeError, EncodeRef, Encoder,
-    FromWire, FromWireRef, IntoNatural, Slot, ValidationError, Wire, WireVector,
+    Constrained, Decode, DecodeError, Decoder, Encode, EncodeError, Encoder, FromWire, FromWireRef,
+    IntoNatural, Slot, ValidationError, Wire, WireVector,
 };
 
 /// A FIDL string
@@ -123,44 +123,36 @@ unsafe impl<D: Decoder + ?Sized> Decode<D> for WireString<'static> {
     }
 }
 
-impl Encodable for String {
-    type Encoded = WireString<'static>;
-}
-
-unsafe impl<E: Encoder + ?Sized> Encode<E> for String {
+unsafe impl<E: Encoder + ?Sized> Encode<WireString<'static>, E> for String {
     #[inline]
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
+        out: &mut MaybeUninit<WireString<'static>>,
         constraint: u64,
     ) -> Result<(), EncodeError> {
         self.as_str().encode(encoder, out, constraint)
     }
 }
 
-unsafe impl<E: Encoder + ?Sized> EncodeRef<E> for String {
+unsafe impl<E: Encoder + ?Sized> Encode<WireString<'static>, E> for &String {
     #[inline]
-    fn encode_ref(
-        &self,
+    fn encode(
+        self,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
+        out: &mut MaybeUninit<WireString<'static>>,
         constraint: u64,
     ) -> Result<(), EncodeError> {
         self.as_str().encode(encoder, out, constraint)
     }
 }
 
-impl Encodable for &str {
-    type Encoded = WireString<'static>;
-}
-
-unsafe impl<E: Encoder + ?Sized> Encode<E> for &str {
+unsafe impl<E: Encoder + ?Sized> Encode<WireString<'static>, E> for &str {
     #[inline]
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
+        out: &mut MaybeUninit<WireString<'static>>,
         _constraint: u64,
     ) -> Result<(), EncodeError> {
         encoder.write(self.as_bytes());

@@ -176,8 +176,17 @@ func visit(value ir.Value, decl mixer.Declaration) string {
 func declName(decl mixer.NamedDeclaration) string {
 	return identifierName(decl.Name(), false)
 }
+
 func wireDeclName(decl mixer.NamedDeclaration) string {
 	return identifierName(decl.Name(), true)
+}
+
+func wireStructDeclName(decl *mixer.StructDecl) string {
+	wireValueType := wireDeclName(decl)
+	if !decl.NeverHasOutOfLineData() {
+		wireValueType += "<'static>"
+	}
+	return wireValueType
 }
 
 // TODO(https://fxbug.dev/42115264): Move into a common library outside GIDL.
@@ -187,7 +196,7 @@ func identifierName(qualifiedName string, wire bool) string {
 	library_name := strings.Join(library_parts, "_")
 	natural_name := fidlgen.ToUpperCamelCase(parts[1])
 	if wire {
-		return fmt.Sprintf("%s::Wire%s", library_name, natural_name)
+		return fmt.Sprintf("%s::wire::%s", library_name, natural_name)
 	}
 	return fmt.Sprintf("%s::%s", library_name, natural_name)
 }

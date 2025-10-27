@@ -13,11 +13,7 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::Encodable for EmptyTable {
-        type Encoded = crate::wire::EmptyTable<'static>;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for EmptyTable
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::EmptyTable<'static>, ___E> for EmptyTable
     where
         ___E: ::fidl_next::Encoder + ?Sized,
     {
@@ -25,7 +21,7 @@ pub mod natural {
         fn encode(
             mut self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::EmptyTable<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::EmptyTable { table } = out);
@@ -53,15 +49,15 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for EmptyTable
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::EmptyTable<'static>, ___E> for &'a EmptyTable
     where
         ___E: ::fidl_next::Encoder + ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::EmptyTable<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::EmptyTable { table } = out);
@@ -114,11 +110,7 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::Encodable for ExtensionTable {
-        type Encoded = crate::wire::ExtensionTable<'static>;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for ExtensionTable
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::ExtensionTable<'static>, ___E> for ExtensionTable
     where
         ___E: ::fidl_next::Encoder + ?Sized,
     {
@@ -126,7 +118,7 @@ pub mod natural {
         fn encode(
             mut self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::ExtensionTable<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::ExtensionTable { table } = out);
@@ -154,15 +146,16 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ExtensionTable
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::ExtensionTable<'static>, ___E>
+        for &'a ExtensionTable
     where
         ___E: ::fidl_next::Encoder + ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::ExtensionTable<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::ExtensionTable { table } = out);
@@ -233,11 +226,8 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::Encodable for NewerSimpleTable {
-        type Encoded = crate::wire::NewerSimpleTable<'static>;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for NewerSimpleTable
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::NewerSimpleTable<'static>, ___E>
+        for NewerSimpleTable
     where
         ___E: ::fidl_next::Encoder + ?Sized,
     {
@@ -245,7 +235,7 @@ pub mod natural {
         fn encode(
             mut self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::NewerSimpleTable<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::NewerSimpleTable { table } = out);
@@ -312,15 +302,16 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for NewerSimpleTable
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::NewerSimpleTable<'static>, ___E>
+        for &'a NewerSimpleTable
     where
         ___E: ::fidl_next::Encoder + ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::NewerSimpleTable<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::NewerSimpleTable { table } = out);
@@ -460,11 +451,8 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::Encodable for OlderSimpleTable {
-        type Encoded = crate::wire::OlderSimpleTable<'static>;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for OlderSimpleTable
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::OlderSimpleTable<'static>, ___E>
+        for OlderSimpleTable
     where
         ___E: ::fidl_next::Encoder + ?Sized,
     {
@@ -472,7 +460,7 @@ pub mod natural {
         fn encode(
             mut self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::OlderSimpleTable<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::OlderSimpleTable { table } = out);
@@ -513,15 +501,16 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for OlderSimpleTable
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::OlderSimpleTable<'static>, ___E>
+        for &'a OlderSimpleTable
     where
         ___E: ::fidl_next::Encoder + ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::OlderSimpleTable<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::OlderSimpleTable { table } = out);
@@ -619,11 +608,8 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::Encodable for ReverseOrdinalTable {
-        type Encoded = crate::wire::ReverseOrdinalTable<'static>;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for ReverseOrdinalTable
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::ReverseOrdinalTable<'static>, ___E>
+        for ReverseOrdinalTable
     where
         ___E: ::fidl_next::Encoder + ?Sized,
     {
@@ -631,7 +617,7 @@ pub mod natural {
         fn encode(
             mut self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::ReverseOrdinalTable<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::ReverseOrdinalTable { table } = out);
@@ -698,15 +684,16 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ReverseOrdinalTable
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::ReverseOrdinalTable<'static>, ___E>
+        for &'a ReverseOrdinalTable
     where
         ___E: ::fidl_next::Encoder + ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::ReverseOrdinalTable<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::ReverseOrdinalTable { table } = out);
@@ -852,11 +839,7 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::Encodable for SimpleTable {
-        type Encoded = crate::wire::SimpleTable<'static>;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for SimpleTable
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::SimpleTable<'static>, ___E> for SimpleTable
     where
         ___E: ::fidl_next::Encoder + ?Sized,
     {
@@ -864,7 +847,7 @@ pub mod natural {
         fn encode(
             mut self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::SimpleTable<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::SimpleTable { table } = out);
@@ -918,15 +901,16 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for SimpleTable
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::SimpleTable<'static>, ___E>
+        for &'a SimpleTable
     where
         ___E: ::fidl_next::Encoder + ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::SimpleTable<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::SimpleTable { table } = out);
@@ -1417,11 +1401,8 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::Encodable for SixtyFourOrdinalTable {
-        type Encoded = crate::wire::SixtyFourOrdinalTable<'static>;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for SixtyFourOrdinalTable
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::SixtyFourOrdinalTable<'static>, ___E>
+        for SixtyFourOrdinalTable
     where
         ___E: ::fidl_next::Encoder + ?Sized,
     {
@@ -1429,7 +1410,7 @@ pub mod natural {
         fn encode(
             mut self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::SixtyFourOrdinalTable<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::SixtyFourOrdinalTable { table } = out);
@@ -2289,15 +2270,16 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for SixtyFourOrdinalTable
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::SixtyFourOrdinalTable<'static>, ___E>
+        for &'a SixtyFourOrdinalTable
     where
         ___E: ::fidl_next::Encoder + ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::SixtyFourOrdinalTable<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::SixtyFourOrdinalTable { table } = out);
@@ -4086,11 +4068,8 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::Encodable for TableWithAttributes {
-        type Encoded = crate::wire::TableWithAttributes<'static>;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for TableWithAttributes
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::TableWithAttributes<'static>, ___E>
+        for TableWithAttributes
     where
         ___E: ::fidl_next::Encoder + ?Sized,
     {
@@ -4098,7 +4077,7 @@ pub mod natural {
         fn encode(
             mut self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::TableWithAttributes<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::TableWithAttributes { table } = out);
@@ -4139,15 +4118,16 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for TableWithAttributes
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::TableWithAttributes<'static>, ___E>
+        for &'a TableWithAttributes
     where
         ___E: ::fidl_next::Encoder + ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::TableWithAttributes<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::TableWithAttributes { table } = out);

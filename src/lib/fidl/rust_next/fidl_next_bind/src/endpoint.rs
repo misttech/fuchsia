@@ -7,9 +7,8 @@ use core::mem::MaybeUninit;
 use core::{concat, stringify};
 
 use fidl_next_codec::{
-    Constrained, Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError,
-    EncodeOption, EncodeOptionRef, EncodeRef, FromWire, FromWireOption, FromWireOptionRef,
-    FromWireRef, IntoNatural, Slot, Unconstrained, Wire, munge,
+    Constrained, Decode, DecodeError, Encode, EncodeError, EncodeOption, FromWire, FromWireOption,
+    FromWireOptionRef, FromWireRef, IntoNatural, Slot, Unconstrained, Wire, munge,
 };
 use fidl_next_protocol::{ProtocolError, Transport};
 
@@ -102,40 +101,22 @@ macro_rules! endpoint {
             }
         }
 
-        impl<P, T> Encodable for $name<P, T>
-        where
-            T: Encodable,
-            T::Encoded : Constrained<Constraint=()>,
-            P: 'static,
-        {
-            type Encoded = $name<P, T::Encoded>;
-        }
-
-        impl<P, T> EncodableOption for $name<P, T>
-        where
-            T: EncodableOption,
-            T::EncodedOption: Constrained<Constraint=()>,
-            P: 'static,
-        {
-            type EncodedOption = $name<P, T::EncodedOption>;
-        }
-
         // SAFETY: `$name` is `#[repr(transparent)]` over the transport `T`, and `encode` calls
         // `T::encode` on `transport`. `_protocol` is a ZST which does not have any data to encode.
-        unsafe impl<E, P, T> Encode<E> for $name<P, T>
+        unsafe impl<W, E, P, T> Encode<$name<P, W>, E> for $name<P, T>
         where
             E: ?Sized,
             P: 'static,
-            T: Encode<E>,
-            T::Encoded: Constrained<Constraint=()>
+            T: Encode<W, E>,
+            W: Constrained<Constraint = ()> + Wire,
         {
             fn encode(
                 self,
                 encoder: &mut E,
-                out: &mut MaybeUninit<Self::Encoded>,
+                out: &mut MaybeUninit<$name<P, W>>,
                 constraint:  (),
             ) -> Result<(), EncodeError> {
-                munge!(let Self::Encoded { transport, _protocol: _ } = out);
+                munge!(let $name { transport, _protocol: _ } = out);
                 self.transport.encode(encoder, transport, constraint)
             }
         }
@@ -143,17 +124,17 @@ macro_rules! endpoint {
         // SAFETY: `$name` is `#[repr(transparent)]` over the transport `T`, and `encode_ref` calls
         // `T::encode_ref` on `transport`. `_protocol` is a ZST which does not have any data to
         // encode.
-        unsafe impl<E, P, T> EncodeRef<E> for $name<P, T>
+        unsafe impl<'a, W, E, P, T> Encode<$name<P, W>, E> for &'a $name<P, T>
         where
             E: ?Sized,
             P: 'static,
-            T: EncodeRef<E>,
-            T::Encoded: Constrained<Constraint=()>
+            &'a T: Encode<W, E>,
+            W: Constrained<Constraint = ()> + Wire,
         {
-            fn encode_ref(
-                &self,
+            fn encode(
+                self,
                 encoder: &mut E,
-                out: &mut MaybeUninit<Self::Encoded>,
+                out: &mut MaybeUninit<$name<P, W>>,
                 constraint:  (),
             ) -> Result<(), EncodeError> {
                 self.as_ref().encode(encoder, out, constraint)
@@ -163,20 +144,20 @@ macro_rules! endpoint {
         // SAFETY: `$name` is `#[repr(transparent)]` over the transport `T`, and `encode_option`
         // calls `T::encode_option` on `transport`. `_protocol` is a ZST which does not have any
         // data to encode.
-        unsafe impl<E, P, T> EncodeOption<E> for $name<P, T>
+        unsafe impl<W, E, P, T> EncodeOption<$name<P, W>, E> for $name<P, T>
         where
             E: ?Sized,
             P: 'static,
-            T: EncodeOption<E>,
-            T::EncodedOption: Constrained<Constraint=()>
+            T: EncodeOption<W, E>,
+            W: Constrained<Constraint = ()>
         {
             fn encode_option(
                 this: Option<Self>,
                 encoder: &mut E,
-                out: &mut MaybeUninit<Self::EncodedOption>,
+                out: &mut MaybeUninit<$name<P, W>>,
                 constraint: (),
             ) -> Result<(), EncodeError> {
-                munge!(let Self::EncodedOption { transport, _protocol: _ } = out);
+                munge!(let $name { transport, _protocol: _ } = out);
                 T::encode_option(this.map(|this| this.transport), encoder, transport, constraint)
             }
         }
@@ -184,25 +165,25 @@ macro_rules! endpoint {
         // SAFETY: `$name` is `#[repr(transparent)]` over the transport `T`, and `encode_option_ref`
         // calls `T::encode_option_ref` on `transport`. `_protocol` is a ZST which does not have any
         // data to encode.
-        unsafe impl<E, P, T> EncodeOptionRef<E> for $name<P, T>
+        unsafe impl<'a, W, E, P, T> EncodeOption<$name<P, W>, E> for &'a $name<P, T>
         where
             E: ?Sized,
             P: 'static,
-            T: EncodeOptionRef<E>,
-            T::EncodedOption: Constrained<Constraint=()>
+            &'a T: EncodeOption<W, E>,
+            W: Constrained<Constraint = ()>
         {
-            fn encode_option_ref(
-                this: Option<&Self>,
+            fn encode_option(
+                this: Option<Self>,
                 encoder: &mut E,
-                out: &mut MaybeUninit<Self::EncodedOption>,
+                out: &mut MaybeUninit<$name<P, W>>,
                 constraint:  (),
             ) -> Result<(), EncodeError> {
-                munge!(let Self::EncodedOption { transport, _protocol: _ } = out);
-                T::encode_option_ref(this.map(|this| &this.transport), encoder, transport, constraint)
+                munge!(let $name { transport, _protocol: _ } = out);
+                <&T>::encode_option(this.map(|this| &this.transport), encoder, transport, constraint)
             }
         }
 
-        impl<P, T : Constrained<Constraint=()>> Unconstrained for $name<P, T> {}
+        impl<P, T: Constrained<Constraint = ()>> Unconstrained for $name<P, T> {}
 
         impl<P, T, U> FromWire<$name<P, U>> for $name<P, T>
         where

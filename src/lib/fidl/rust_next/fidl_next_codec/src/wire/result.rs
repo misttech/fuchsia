@@ -7,8 +7,8 @@ use core::marker::PhantomData;
 use core::mem::{ManuallyDrop, MaybeUninit};
 
 use crate::{
-    Chunk, Constrained, Decode, DecodeError, Decoder, Encodable, Encode, EncodeError, EncodeRef,
-    Encoder, FromWire, FromWireRef, IntoNatural, RawWireUnion, Slot, Unconstrained, Wire, munge,
+    Chunk, Constrained, Decode, DecodeError, Decoder, Encode, EncodeError, Encoder, FromWire,
+    FromWireRef, IntoNatural, RawWireUnion, Slot, Unconstrained, Wire, munge,
 };
 
 /// A FIDL result union.
@@ -147,53 +147,43 @@ where
     }
 }
 
-impl<T, E> Encodable for Result<T, E>
-where
-    T: Encodable,
-    E: Encodable,
-    <T as Encodable>::Encoded: Constrained<Constraint = ()>,
-    <E as Encodable>::Encoded: Constrained<Constraint = ()>,
-{
-    type Encoded = WireResult<'static, T::Encoded, E::Encoded>;
-}
-
-unsafe impl<Enc, T, E> Encode<Enc> for Result<T, E>
+unsafe impl<Enc, WT, T, WE, E> Encode<WireResult<'static, WT, WE>, Enc> for Result<T, E>
 where
     Enc: Encoder + ?Sized,
-    T: Encode<Enc>,
-    E: Encode<Enc>,
-    <T as Encodable>::Encoded: Constrained<Constraint = ()>,
-    <E as Encodable>::Encoded: Constrained<Constraint = ()>,
+    WT: Constrained<Constraint = ()> + Wire,
+    T: Encode<WT, Enc>,
+    WE: Constrained<Constraint = ()> + Wire,
+    E: Encode<WE, Enc>,
 {
     fn encode(
         self,
         encoder: &mut Enc,
-        out: &mut MaybeUninit<Self::Encoded>,
+        out: &mut MaybeUninit<WireResult<'static, WT, WE>>,
         _: (),
     ) -> Result<(), EncodeError> {
         munge!(let WireResult { raw, _phantom: _ } = out);
 
         match self {
-            Ok(value) => RawWireUnion::encode_as::<Enc, T>(value, ORD_OK, encoder, raw, ())?,
-            Err(error) => RawWireUnion::encode_as::<Enc, E>(error, ORD_ERR, encoder, raw, ())?,
+            Ok(value) => RawWireUnion::encode_as::<Enc, WT>(value, ORD_OK, encoder, raw, ())?,
+            Err(error) => RawWireUnion::encode_as::<Enc, WE>(error, ORD_ERR, encoder, raw, ())?,
         }
 
         Ok(())
     }
 }
 
-unsafe impl<Enc, T, E> EncodeRef<Enc> for Result<T, E>
+unsafe impl<'a, Enc, WT, T, WE, E> Encode<WireResult<'static, WT, WE>, Enc> for &'a Result<T, E>
 where
     Enc: Encoder + ?Sized,
-    T: EncodeRef<Enc>,
-    E: EncodeRef<Enc>,
-    <T as Encodable>::Encoded: Constrained<Constraint = ()>,
-    <E as Encodable>::Encoded: Constrained<Constraint = ()>,
+    WT: Constrained<Constraint = ()> + Wire,
+    &'a T: Encode<WT, Enc>,
+    WE: Constrained<Constraint = ()> + Wire,
+    &'a E: Encode<WE, Enc>,
 {
-    fn encode_ref(
-        &self,
+    fn encode(
+        self,
         encoder: &mut Enc,
-        out: &mut MaybeUninit<Self::Encoded>,
+        out: &mut MaybeUninit<WireResult<'static, WT, WE>>,
         _: (),
     ) -> Result<(), EncodeError> {
         self.as_ref().encode(encoder, out, ())

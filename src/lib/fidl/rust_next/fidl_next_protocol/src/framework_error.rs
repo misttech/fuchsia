@@ -6,8 +6,8 @@ use core::fmt;
 use core::mem::MaybeUninit;
 
 use fidl_next_codec::{
-    Constrained, Decode, DecodeError, Encodable, Encode, EncodeError, EncodeRef, FromWire,
-    FromWireRef, IntoNatural, Slot, Unconstrained, Wire, WireI32, munge,
+    Decode, DecodeError, Encode, EncodeError, FromWire, FromWireRef, IntoNatural, Slot,
+    Unconstrained, Wire, WireI32, munge,
 };
 
 use crate::concurrency::hint::unreachable_unchecked;
@@ -61,34 +61,30 @@ unsafe impl<D: ?Sized> Decode<D> for WireFrameworkError {
     }
 }
 
-impl Encodable for FrameworkError {
-    type Encoded = WireFrameworkError;
-}
-
-unsafe impl<E: ?Sized> Encode<E> for FrameworkError {
+unsafe impl<E: ?Sized> Encode<WireFrameworkError, E> for FrameworkError {
     fn encode(
         self,
-        encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        constraint: <Self::Encoded as Constrained>::Constraint,
-    ) -> Result<(), EncodeError> {
-        self.encode_ref(encoder, out, constraint)
-    }
-}
-
-unsafe impl<E: ?Sized> EncodeRef<E> for FrameworkError {
-    fn encode_ref(
-        &self,
         _: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        _constraint: <Self::Encoded as Constrained>::Constraint,
+        out: &mut MaybeUninit<WireFrameworkError>,
+        _: (),
     ) -> Result<(), EncodeError> {
         munge!(let WireFrameworkError { inner } = out);
         inner.write(WireI32(match self {
-            Self::UnknownMethod => -2,
+            FrameworkError::UnknownMethod => -2,
         }));
 
         Ok(())
+    }
+}
+
+unsafe impl<E: ?Sized> Encode<WireFrameworkError, E> for &FrameworkError {
+    fn encode(
+        self,
+        encoder: &mut E,
+        out: &mut MaybeUninit<WireFrameworkError>,
+        constraint: (),
+    ) -> Result<(), EncodeError> {
+        Encode::encode(*self, encoder, out, constraint)
     }
 }
 

@@ -12,9 +12,9 @@ use munge::munge;
 
 use super::raw::RawWireVector;
 use crate::{
-    Chunk, Constrained, Decode, DecodeError, Decoder, DecoderExt as _, Encodable, Encode,
-    EncodeError, EncodeRef, Encoder, EncoderExt as _, FromWire, FromWireRef, IntoNatural, Slot,
-    ValidationError, Wire, WirePointer,
+    Chunk, Constrained, Decode, DecodeError, Decoder, DecoderExt as _, Encode, EncodeError,
+    Encoder, EncoderExt as _, FromWire, FromWireRef, IntoNatural, Slot, ValidationError, Wire,
+    WirePointer,
 };
 
 /// A FIDL vector
@@ -224,21 +224,30 @@ unsafe impl<D: Decoder + ?Sized, T: Decode<D>> Decode<D> for WireVector<'static,
 }
 
 #[inline]
-fn encode_to_vector<V, E, T>(
+fn encode_to_vector<V, W, E, T>(
     value: V,
     encoder: &mut E,
-    out: &mut MaybeUninit<WireVector<'_, T::Encoded>>,
-    constraint: VectorConstraint<T::Encoded>,
+    out: &mut MaybeUninit<WireVector<'_, W>>,
+    constraint: VectorConstraint<W>,
 ) -> Result<(), EncodeError>
 where
     V: AsRef<[T]> + IntoIterator,
     V::IntoIter: ExactSizeIterator,
-    V::Item: Encode<E, Encoded = T::Encoded>,
+    V::Item: Encode<W, E>,
+    W: Constrained + Wire,
     E: Encoder + ?Sized,
-    T: Encodable,
+    T: Encode<W, E>,
 {
     let len = value.as_ref().len();
-    let (_length_constraint, member_constraint) = constraint;
+    let (length_constraint, member_constraint) = constraint;
+
+    if len as u64 > length_constraint {
+        return Err(EncodeError::Validation(ValidationError::VectorTooLong {
+            count: len as u64,
+            limit: length_constraint,
+        }));
+    }
+
     if T::COPY_OPTIMIZATION.is_enabled() {
         let slice = value.as_ref();
         // SAFETY: `T` has copy optimization enabled, which guarantees that it has no uninit bytes
@@ -246,6 +255,7 @@ where
         // may cast `&[T]` to `&[u8]` and write those bytes.
         let bytes = unsafe { slice::from_raw_parts(slice.as_ptr().cast(), size_of_val(slice)) };
         encoder.write(bytes);
+        // TODO: copy-optimized encodings don't currently check constraints
     } else {
         encoder.encode_next_iter(value.into_iter(), member_constraint)?;
     }
@@ -253,64 +263,51 @@ where
     Ok(())
 }
 
-impl<T: Encodable> Encodable for Vec<T> {
-    type Encoded = WireVector<'static, T::Encoded>;
-}
-
-unsafe impl<E, T> Encode<E> for Vec<T>
+unsafe impl<W, E, T> Encode<WireVector<'static, W>, E> for Vec<T>
 where
+    W: Constrained + Wire,
     E: Encoder + ?Sized,
-    T: Encode<E>,
+    T: Encode<W, E>,
 {
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        constraint: <Self::Encoded as Constrained>::Constraint,
-    ) -> Result<(), EncodeError> {
-        encode_to_vector(self, encoder, out, constraint)?;
-
-        munge! (let Self::Encoded { raw } = out);
-
-        let raw_ptr = unsafe { &*raw.as_ptr() };
-
-        for _member in unsafe { raw_ptr.as_slice_ptr().as_ref() }.unwrap() {
-            // member.validate_in_line()
-        }
-
-        Ok(())
-    }
-}
-
-unsafe impl<E, T> EncodeRef<E> for Vec<T>
-where
-    E: Encoder + ?Sized,
-    T: EncodeRef<E>,
-{
-    fn encode_ref(
-        &self,
-        encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        constraint: <Self::Encoded as Constrained>::Constraint,
+        out: &mut MaybeUninit<WireVector<'static, W>>,
+        constraint: VectorConstraint<W>,
     ) -> Result<(), EncodeError> {
         encode_to_vector(self, encoder, out, constraint)
     }
 }
 
-impl<T: Encodable> Encodable for [T] {
-    type Encoded = WireVector<'static, T::Encoded>;
+unsafe impl<'a, W, E, T> Encode<WireVector<'static, W>, E> for &'a Vec<T>
+where
+    W: Constrained + Wire,
+    E: Encoder + ?Sized,
+    T: Encode<W, E>,
+    &'a T: Encode<W, E>,
+{
+    fn encode(
+        self,
+        encoder: &mut E,
+        out: &mut MaybeUninit<WireVector<'static, W>>,
+        constraint: VectorConstraint<W>,
+    ) -> Result<(), EncodeError> {
+        encode_to_vector(self, encoder, out, constraint)
+    }
 }
 
-unsafe impl<E, T> EncodeRef<E> for [T]
+unsafe impl<'a, W, E, T> Encode<WireVector<'static, W>, E> for &'a [T]
 where
+    W: Constrained + Wire,
     E: Encoder + ?Sized,
-    T: EncodeRef<E>,
+    T: Encode<W, E>,
+    &'a T: Encode<W, E>,
 {
-    fn encode_ref(
-        &self,
+    fn encode(
+        self,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        constraint: <Self::Encoded as Constrained>::Constraint,
+        out: &mut MaybeUninit<WireVector<'static, W>>,
+        constraint: VectorConstraint<W>,
     ) -> Result<(), EncodeError> {
         encode_to_vector(self, encoder, out, constraint)
     }

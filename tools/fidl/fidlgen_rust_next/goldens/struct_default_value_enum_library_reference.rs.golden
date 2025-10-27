@@ -10,34 +10,29 @@ pub mod natural {
         pub field: ::fidl_next_test_dependent::natural::MyEnum,
     }
 
-    impl ::fidl_next::Encodable for Foo {
-        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<Self, crate::wire::Foo> = unsafe {
-            ::fidl_next::CopyOptimization::enable_if(
-            true
-
-                && <
-                    ::fidl_next_test_dependent::natural::MyEnum as ::fidl_next::Encodable
-                >::COPY_OPTIMIZATION.is_enabled()
-
-        )
-        };
-
-        type Encoded = crate::wire::Foo;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for Foo
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::Foo, ___E> for Foo
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
     {
+        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<Self, crate::wire::Foo> = unsafe {
+            ::fidl_next::CopyOptimization::enable_if(
+                true && <::fidl_next_test_dependent::natural::MyEnum as ::fidl_next::Encode<
+                    ::fidl_next_test_dependent::wire::MyEnum,
+                    ___E,
+                >>::COPY_OPTIMIZATION
+                    .is_enabled(),
+            )
+        };
+
         #[inline]
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Foo>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::Foo {
                     field,
 
                 } = out_;
@@ -51,26 +46,26 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for Foo
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::Foo, ___E> for &'a Foo
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Foo>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::Foo {
 
                     field,
 
                 } = out_;
             }
 
-            ::fidl_next::EncodeRef::encode_ref(&self.field, encoder_, field, ())?;
+            ::fidl_next::Encode::encode(&self.field, encoder_, field, ())?;
 
             let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(field.as_mut_ptr()) };
 
@@ -78,20 +73,17 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::EncodableOption for Foo {
-        type EncodedOption = ::fidl_next::WireBox<'static, crate::wire::Foo>;
-    }
-
-    unsafe impl<___E> ::fidl_next::EncodeOption<___E> for Foo
+    unsafe impl<___E>
+        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Foo>, ___E> for Foo
     where
         ___E: ::fidl_next::Encoder + ?Sized,
-        Foo: ::fidl_next::Encode<___E>,
+        Foo: ::fidl_next::Encode<crate::wire::Foo, ___E>,
     {
         #[inline]
         fn encode_option(
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            out: &mut ::core::mem::MaybeUninit<::fidl_next::WireBox<'static, crate::wire::Foo>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
@@ -105,16 +97,17 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeOptionRef<___E> for Foo
+    unsafe impl<'a, ___E>
+        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Foo>, ___E> for &'a Foo
     where
         ___E: ::fidl_next::Encoder + ?Sized,
-        Foo: ::fidl_next::EncodeRef<___E>,
+        &'a Foo: ::fidl_next::Encode<crate::wire::Foo, ___E>,
     {
         #[inline]
-        fn encode_option_ref(
-            this: ::core::option::Option<&Self>,
+        fn encode_option(
+            this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            out: &mut ::core::mem::MaybeUninit<::fidl_next::WireBox<'static, crate::wire::Foo>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
@@ -223,27 +216,20 @@ pub mod generic {
         pub field: T0,
     }
 
-    impl<T0> ::fidl_next::Encodable for Foo<T0>
-    where
-        T0: ::fidl_next::Encodable<Encoded = ::fidl_next_test_dependent::wire::MyEnum>,
-    {
-        type Encoded = crate::wire::Foo;
-    }
-
-    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for Foo<T0>
+    unsafe impl<___E, T0> ::fidl_next::Encode<crate::wire::Foo, ___E> for Foo<T0>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next_test_dependent::wire::MyEnum>,
+        T0: ::fidl_next::Encode<::fidl_next_test_dependent::wire::MyEnum, ___E>,
     {
         #[inline]
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Foo>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::Foo {
 
                     field,
 

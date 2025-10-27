@@ -10,7 +10,11 @@ pub mod natural {
         pub value: ::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::DriverChannel>,
     }
 
-    impl ::fidl_next::Encodable for ClientEndWrapper {
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::ClientEndWrapper, ___E> for ClientEndWrapper
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+    {
         const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<
             Self,
             crate::wire::ClientEndWrapper,
@@ -19,29 +23,21 @@ pub mod natural {
             true
 
                 && <
-                    ::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::DriverChannel> as ::fidl_next::Encodable
+                    ::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::DriverChannel> as ::fidl_next::Encode<::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::WireDriverChannel>, ___E>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
         };
 
-        type Encoded = crate::wire::ClientEndWrapper;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for ClientEndWrapper
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        ___E: ::fidl_next::fuchsia::HandleEncoder,
-    {
         #[inline]
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ClientEndWrapper>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::ClientEndWrapper {
                     value,
 
                 } = out_;
@@ -55,20 +51,22 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::EncodableOption for ClientEndWrapper {
-        type EncodedOption = ::fidl_next::WireBox<'static, crate::wire::ClientEndWrapper>;
-    }
-
-    unsafe impl<___E> ::fidl_next::EncodeOption<___E> for ClientEndWrapper
+    unsafe impl<___E>
+        ::fidl_next::EncodeOption<
+            ::fidl_next::WireBox<'static, crate::wire::ClientEndWrapper>,
+            ___E,
+        > for ClientEndWrapper
     where
         ___E: ::fidl_next::Encoder + ?Sized,
-        ClientEndWrapper: ::fidl_next::Encode<___E>,
+        ClientEndWrapper: ::fidl_next::Encode<crate::wire::ClientEndWrapper, ___E>,
     {
         #[inline]
         fn encode_option(
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            out: &mut ::core::mem::MaybeUninit<
+                ::fidl_next::WireBox<'static, crate::wire::ClientEndWrapper>,
+            >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
@@ -126,11 +124,7 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::Encodable for T {
-        type Encoded = crate::wire::T<'static>;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for T
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::T<'static>, ___E> for T
     where
         ___E: ::fidl_next::Encoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
@@ -139,7 +133,7 @@ pub mod natural {
         fn encode(
             mut self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::T<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::T { table } = out);
@@ -226,11 +220,9 @@ pub mod natural {
         pub t: crate::natural::T,
     }
 
-    impl ::fidl_next::Encodable for HandlesInProtocolSendHandlesRequest {
-        type Encoded = crate::wire::HandlesInProtocolSendHandlesRequest<'static>;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for HandlesInProtocolSendHandlesRequest
+    unsafe impl<___E>
+        ::fidl_next::Encode<crate::wire::HandlesInProtocolSendHandlesRequest<'static>, ___E>
+        for HandlesInProtocolSendHandlesRequest
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
@@ -240,11 +232,13 @@ pub mod natural {
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::HandlesInProtocolSendHandlesRequest<'static>,
+            >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::HandlesInProtocolSendHandlesRequest {
                     t,
 
                 } = out_;
@@ -258,23 +252,29 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::EncodableOption for HandlesInProtocolSendHandlesRequest {
-        type EncodedOption = ::fidl_next::WireBox<
-            'static,
-            crate::wire::HandlesInProtocolSendHandlesRequest<'static>,
-        >;
-    }
-
-    unsafe impl<___E> ::fidl_next::EncodeOption<___E> for HandlesInProtocolSendHandlesRequest
+    unsafe impl<___E>
+        ::fidl_next::EncodeOption<
+            ::fidl_next::WireBox<
+                'static,
+                crate::wire::HandlesInProtocolSendHandlesRequest<'static>,
+            >,
+            ___E,
+        > for HandlesInProtocolSendHandlesRequest
     where
         ___E: ::fidl_next::Encoder + ?Sized,
-        HandlesInProtocolSendHandlesRequest: ::fidl_next::Encode<___E>,
+        HandlesInProtocolSendHandlesRequest:
+            ::fidl_next::Encode<crate::wire::HandlesInProtocolSendHandlesRequest<'static>, ___E>,
     {
         #[inline]
         fn encode_option(
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            out: &mut ::core::mem::MaybeUninit<
+                ::fidl_next::WireBox<
+                    'static,
+                    crate::wire::HandlesInProtocolSendHandlesRequest<'static>,
+                >,
+            >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
@@ -303,7 +303,11 @@ pub mod natural {
         pub value: ::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::DriverChannel>,
     }
 
-    impl ::fidl_next::Encodable for ServerEndWrapper {
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::ServerEndWrapper, ___E> for ServerEndWrapper
+    where
+        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
+        ___E: ::fidl_next::fuchsia::HandleEncoder,
+    {
         const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<
             Self,
             crate::wire::ServerEndWrapper,
@@ -312,29 +316,21 @@ pub mod natural {
             true
 
                 && <
-                    ::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::DriverChannel> as ::fidl_next::Encodable
+                    ::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::DriverChannel> as ::fidl_next::Encode<::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::WireDriverChannel>, ___E>
                 >::COPY_OPTIMIZATION.is_enabled()
 
         )
         };
 
-        type Encoded = crate::wire::ServerEndWrapper;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for ServerEndWrapper
-    where
-        ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        ___E: ::fidl_next::fuchsia::HandleEncoder,
-    {
         #[inline]
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ServerEndWrapper>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::ServerEndWrapper {
                     value,
 
                 } = out_;
@@ -348,20 +344,22 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::EncodableOption for ServerEndWrapper {
-        type EncodedOption = ::fidl_next::WireBox<'static, crate::wire::ServerEndWrapper>;
-    }
-
-    unsafe impl<___E> ::fidl_next::EncodeOption<___E> for ServerEndWrapper
+    unsafe impl<___E>
+        ::fidl_next::EncodeOption<
+            ::fidl_next::WireBox<'static, crate::wire::ServerEndWrapper>,
+            ___E,
+        > for ServerEndWrapper
     where
         ___E: ::fidl_next::Encoder + ?Sized,
-        ServerEndWrapper: ::fidl_next::Encode<___E>,
+        ServerEndWrapper: ::fidl_next::Encode<crate::wire::ServerEndWrapper, ___E>,
     {
         #[inline]
         fn encode_option(
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            out: &mut ::core::mem::MaybeUninit<
+                ::fidl_next::WireBox<'static, crate::wire::ServerEndWrapper>,
+            >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
@@ -705,39 +703,25 @@ pub mod generic {
         pub value: T0,
     }
 
-    impl<T0> ::fidl_next::Encodable for ClientEndWrapper<T0>
-    where
-        T0: ::fidl_next::Encodable<
-                Encoded = ::fidl_next::ClientEnd<
-                    crate::DriverProtocol,
-                    ::fdf_fidl::WireDriverChannel,
-                >,
-            >,
-    {
-        type Encoded = crate::wire::ClientEndWrapper;
-    }
-
-    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for ClientEndWrapper<T0>
+    unsafe impl<___E, T0> ::fidl_next::Encode<crate::wire::ClientEndWrapper, ___E>
+        for ClientEndWrapper<T0>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
         T0: ::fidl_next::Encode<
+                ::fidl_next::ClientEnd<crate::DriverProtocol, ::fdf_fidl::WireDriverChannel>,
                 ___E,
-                Encoded = ::fidl_next::ClientEnd<
-                    crate::DriverProtocol,
-                    ::fdf_fidl::WireDriverChannel,
-                >,
             >,
     {
         #[inline]
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ClientEndWrapper>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::ClientEndWrapper {
 
                     value,
 
@@ -754,29 +738,26 @@ pub mod generic {
         pub t: T0,
     }
 
-    impl<T0> ::fidl_next::Encodable for HandlesInProtocolSendHandlesRequest<T0>
-    where
-        T0: ::fidl_next::Encodable<Encoded = crate::wire::T<'static>>,
-    {
-        type Encoded = crate::wire::HandlesInProtocolSendHandlesRequest<'static>;
-    }
-
-    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for HandlesInProtocolSendHandlesRequest<T0>
+    unsafe impl<___E, T0>
+        ::fidl_next::Encode<crate::wire::HandlesInProtocolSendHandlesRequest<'static>, ___E>
+        for HandlesInProtocolSendHandlesRequest<T0>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<___E, Encoded = crate::wire::T<'static>>,
+        T0: ::fidl_next::Encode<crate::wire::T<'static>, ___E>,
     {
         #[inline]
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<
+                crate::wire::HandlesInProtocolSendHandlesRequest<'static>,
+            >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::HandlesInProtocolSendHandlesRequest {
 
                     t,
 
@@ -793,39 +774,25 @@ pub mod generic {
         pub value: T0,
     }
 
-    impl<T0> ::fidl_next::Encodable for ServerEndWrapper<T0>
-    where
-        T0: ::fidl_next::Encodable<
-                Encoded = ::fidl_next::ServerEnd<
-                    crate::DriverProtocol,
-                    ::fdf_fidl::WireDriverChannel,
-                >,
-            >,
-    {
-        type Encoded = crate::wire::ServerEndWrapper;
-    }
-
-    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for ServerEndWrapper<T0>
+    unsafe impl<___E, T0> ::fidl_next::Encode<crate::wire::ServerEndWrapper, ___E>
+        for ServerEndWrapper<T0>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
         T0: ::fidl_next::Encode<
+                ::fidl_next::ServerEnd<crate::DriverProtocol, ::fdf_fidl::WireDriverChannel>,
                 ___E,
-                Encoded = ::fidl_next::ServerEnd<
-                    crate::DriverProtocol,
-                    ::fdf_fidl::WireDriverChannel,
-                >,
             >,
     {
         #[inline]
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ServerEndWrapper>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::ServerEndWrapper {
 
                     value,
 
@@ -1020,8 +987,8 @@ pub mod handles_in_protocol {
                 &self,
 
                 t: impl ::fidl_next::Encode<
+                    crate::wire::T<'static>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
-                    Encoded = crate::wire::T<'static>,
                 >,
             ) -> ::fidl_next::SendFuture<'_, ___T>
             where
@@ -1039,8 +1006,8 @@ pub mod handles_in_protocol {
             ) -> ::fidl_next::SendFuture<'_, ___T>
             where
                 ___R: ::fidl_next::Encode<
+                        crate::wire::HandlesInProtocolSendHandlesRequest<'static>,
                         <___T as ::fidl_next::Transport>::SendBuffer,
-                        Encoded = crate::wire::HandlesInProtocolSendHandlesRequest<'static>,
                     >,
             {
                 ::fidl_next::SendFuture::from_untyped(self.client.send_one_way(

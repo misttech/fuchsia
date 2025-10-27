@@ -20,11 +20,7 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::Encodable for BitsType {
-        type Encoded = crate::wire::BitsType;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for BitsType
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::BitsType, ___E> for BitsType
     where
         ___E: ?Sized,
     {
@@ -32,22 +28,22 @@ pub mod natural {
         fn encode(
             self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::BitsType>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
+            ::fidl_next::Encode::encode(&self, encoder, out, ())
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for BitsType
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::BitsType, ___E> for &'a BitsType
     where
         ___E: ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             _: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::BitsType>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::BitsType { value } = out);
@@ -87,10 +83,6 @@ pub mod natural {
         Value = 1,
         True = 2,
     }
-
-    impl ::fidl_next::Encodable for EnumType {
-        type Encoded = crate::wire::EnumType;
-    }
     impl ::core::convert::TryFrom<i32> for EnumType {
         type Error = ::fidl_next::UnknownStrictEnumMemberError;
         fn try_from(
@@ -105,7 +97,7 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::Encode<___E> for EnumType
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::EnumType, ___E> for EnumType
     where
         ___E: ?Sized,
     {
@@ -113,29 +105,29 @@ pub mod natural {
         fn encode(
             self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::EnumType>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
+            ::fidl_next::Encode::encode(&self, encoder, out, ())
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for EnumType
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::EnumType, ___E> for &'a EnumType
     where
         ___E: ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::EnumType>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::EnumType { value } = out);
             let _ = value.write(::fidl_next::WireI32::from(match *self {
-                Self::Value => 1,
+                EnumType::Value => 1,
 
-                Self::True => 2,
+                EnumType::True => 2,
             }));
 
             Ok(())

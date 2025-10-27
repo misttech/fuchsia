@@ -11,11 +11,8 @@ pub mod natural {
         pub vector_of_vector_of_bool: ::std::vec::Vec<::std::vec::Vec<bool>>,
     }
 
-    impl ::fidl_next::Encodable for ExampleUseOfVectors {
-        type Encoded = crate::wire::ExampleUseOfVectors<'static>;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for ExampleUseOfVectors
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::ExampleUseOfVectors<'static>, ___E>
+        for ExampleUseOfVectors
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
@@ -24,11 +21,11 @@ pub mod natural {
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ExampleUseOfVectors<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::ExampleUseOfVectors {
                     vector_of_uint8,
                     vector_of_vector_of_bool,
 
@@ -61,20 +58,21 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ExampleUseOfVectors
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::ExampleUseOfVectors<'static>, ___E>
+        for &'a ExampleUseOfVectors
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ExampleUseOfVectors<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::ExampleUseOfVectors {
 
                     vector_of_uint8,
                     vector_of_vector_of_bool,
@@ -82,7 +80,7 @@ pub mod natural {
                 } = out_;
             }
 
-            ::fidl_next::EncodeRef::encode_ref(
+            ::fidl_next::Encode::encode(
                 &self.vector_of_uint8,
                 encoder_,
                 vector_of_uint8,
@@ -93,7 +91,7 @@ pub mod natural {
                 unsafe { ::fidl_next::Slot::new_unchecked(vector_of_uint8.as_mut_ptr()) };
             ::fidl_next::Constrained::validate(_field, (4294967295, ()))?;
 
-            ::fidl_next::EncodeRef::encode_ref(
+            ::fidl_next::Encode::encode(
                 &self.vector_of_vector_of_bool,
                 encoder_,
                 vector_of_vector_of_bool,
@@ -108,21 +106,22 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::EncodableOption for ExampleUseOfVectors {
-        type EncodedOption =
-            ::fidl_next::WireBox<'static, crate::wire::ExampleUseOfVectors<'static>>;
-    }
-
-    unsafe impl<___E> ::fidl_next::EncodeOption<___E> for ExampleUseOfVectors
+    unsafe impl<___E>
+        ::fidl_next::EncodeOption<
+            ::fidl_next::WireBox<'static, crate::wire::ExampleUseOfVectors<'static>>,
+            ___E,
+        > for ExampleUseOfVectors
     where
         ___E: ::fidl_next::Encoder + ?Sized,
-        ExampleUseOfVectors: ::fidl_next::Encode<___E>,
+        ExampleUseOfVectors: ::fidl_next::Encode<crate::wire::ExampleUseOfVectors<'static>, ___E>,
     {
         #[inline]
         fn encode_option(
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            out: &mut ::core::mem::MaybeUninit<
+                ::fidl_next::WireBox<'static, crate::wire::ExampleUseOfVectors<'static>>,
+            >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
@@ -136,16 +135,23 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeOptionRef<___E> for ExampleUseOfVectors
+    unsafe impl<'a, ___E>
+        ::fidl_next::EncodeOption<
+            ::fidl_next::WireBox<'static, crate::wire::ExampleUseOfVectors<'static>>,
+            ___E,
+        > for &'a ExampleUseOfVectors
     where
         ___E: ::fidl_next::Encoder + ?Sized,
-        ExampleUseOfVectors: ::fidl_next::EncodeRef<___E>,
+        &'a ExampleUseOfVectors:
+            ::fidl_next::Encode<crate::wire::ExampleUseOfVectors<'static>, ___E>,
     {
         #[inline]
-        fn encode_option_ref(
-            this: ::core::option::Option<&Self>,
+        fn encode_option(
+            this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            out: &mut ::core::mem::MaybeUninit<
+                ::fidl_next::WireBox<'static, crate::wire::ExampleUseOfVectors<'static>>,
+            >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
@@ -283,35 +289,26 @@ pub mod generic {
         pub vector_of_vector_of_bool: T1,
     }
 
-    impl<T0, T1> ::fidl_next::Encodable for ExampleUseOfVectors<T0, T1>
-    where
-        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireVector<'static, u8>>,
-        T1: ::fidl_next::Encodable<
-                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireVector<'static, bool>>,
-            >,
-    {
-        type Encoded = crate::wire::ExampleUseOfVectors<'static>;
-    }
-
-    unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for ExampleUseOfVectors<T0, T1>
+    unsafe impl<___E, T0, T1> ::fidl_next::Encode<crate::wire::ExampleUseOfVectors<'static>, ___E>
+        for ExampleUseOfVectors<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
-        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireVector<'static, u8>>,
+        T0: ::fidl_next::Encode<::fidl_next::WireVector<'static, u8>, ___E>,
         T1: ::fidl_next::Encode<
+                ::fidl_next::WireVector<'static, ::fidl_next::WireVector<'static, bool>>,
                 ___E,
-                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireVector<'static, bool>>,
             >,
     {
         #[inline]
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ExampleUseOfVectors<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::ExampleUseOfVectors {
 
                     vector_of_uint8,
                     vector_of_vector_of_bool,

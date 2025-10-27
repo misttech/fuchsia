@@ -2,22 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{Chunk, Constrained, Decode, Decoded, DecoderExt as _, Encode, EncoderExt as _};
+use crate::{Chunk, Constrained, Decode, Decoded, DecoderExt as _, Encode, EncoderExt as _, Wire};
 
-pub fn assert_encoded<T: Encode<Vec<Chunk>>>(value: T, chunks: &[Chunk])
+pub fn assert_encoded<W, T>(value: T, chunks: &[Chunk])
 where
-    T::Encoded: Constrained<Constraint = ()>,
+    W: Constrained<Constraint = ()> + Wire,
+    T: Encode<W, Vec<Chunk>>,
 {
     let mut encoded_chunks = Vec::new();
     encoded_chunks.encode_next(value, ()).unwrap();
     assert_eq!(encoded_chunks, chunks, "encoded chunks did not match");
 }
 
-pub fn assert_encoded_with_constraint<T: Encode<Vec<Chunk>>>(
-    value: T,
-    chunks: &[Chunk],
-    constraint: <T::Encoded as Constrained>::Constraint,
-) {
+pub fn assert_encoded_with_constraint<W, T>(value: T, chunks: &[Chunk], constraint: W::Constraint)
+where
+    W: Constrained + Wire,
+    T: Encode<W, Vec<Chunk>>,
+{
     let mut encoded_chunks = Vec::new();
     encoded_chunks.encode_next(value, constraint).unwrap();
     assert_eq!(encoded_chunks, chunks, "encoded chunks did not match");

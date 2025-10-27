@@ -8,8 +8,8 @@ use core::mem::MaybeUninit;
 use munge::munge;
 
 use crate::{
-    Constrained, Decode, DecodeError, Encodable, Encode, EncodeError, EncodeRef, FromWire,
-    FromWireRef, IntoNatural, Slot, Unconstrained, Wire, WireU32,
+    Constrained, Decode, DecodeError, Encode, EncodeError, FromWire, FromWireRef, IntoNatural,
+    Slot, Unconstrained, Wire, WireU32,
 };
 
 /// The wire type for [`zx::Rights`].
@@ -55,30 +55,26 @@ unsafe impl<D: ?Sized> Decode<D> for WireRights {
     }
 }
 
-impl Encodable for zx::Rights {
-    type Encoded = WireRights;
-}
-
-unsafe impl<E: ?Sized> Encode<E> for zx::Rights {
+unsafe impl<E: ?Sized> Encode<WireRights, E> for zx::Rights {
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        constraint: <Self::Encoded as Constrained>::Constraint,
-    ) -> Result<(), EncodeError> {
-        self.encode_ref(encoder, out, constraint)
-    }
-}
-
-unsafe impl<E: ?Sized> EncodeRef<E> for zx::Rights {
-    fn encode_ref(
-        &self,
-        encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        constraint: <Self::Encoded as Constrained>::Constraint,
+        out: &mut MaybeUninit<WireRights>,
+        constraint: (),
     ) -> Result<(), EncodeError> {
         munge!(let WireRights { inner } = out);
         self.bits().encode(encoder, inner, constraint)
+    }
+}
+
+unsafe impl<E: ?Sized> Encode<WireRights, E> for &zx::Rights {
+    fn encode(
+        self,
+        encoder: &mut E,
+        out: &mut MaybeUninit<WireRights>,
+        constraint: (),
+    ) -> Result<(), EncodeError> {
+        Encode::encode(*self, encoder, out, constraint)
     }
 }
 

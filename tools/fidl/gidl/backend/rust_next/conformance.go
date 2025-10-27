@@ -38,7 +38,7 @@ type encodeSuccessCase struct {
 
 type decodeSuccessCase struct {
 	Name, HandleDefs, ValueType, ValueVar, Bytes, Handles, HandleValues, UnusedHandles, EqualityCheck, WireValueType string
-	IsResource                                                                                                       bool
+	IsResource, IsStatic                                                                                             bool
 }
 
 type encodeFailureCase struct {
@@ -47,7 +47,8 @@ type encodeFailureCase struct {
 }
 
 type decodeFailureCase struct {
-	Name, HandleDefs, ValueType, Bytes, Handles, HandleValues, ErrorPattern string
+	Name, HandleDefs, ValueType, Bytes, Handles, HandleValues, ErrorPattern, WireValueType string
+	IsStatic                                                                               bool
 }
 
 // GenerateConformanceTests generates Rust tests.
@@ -122,7 +123,7 @@ func decodeSuccessCases(gidlDecodeSuccesses []ir.DecodeSuccess, schema mixer.Sch
 			return nil, fmt.Errorf("decode success %s: %s", decodeSuccess.Name, err)
 		}
 		valueType := declName(decl)
-		wireValueType := wireDeclName(decl)
+		wireValueType := wireStructDeclName(decl)
 		valueVar := "_value"
 		equalityCheck := buildEqualityCheck(valueVar, decodeSuccess.Value, decl)
 		for _, encoding := range decodeSuccess.Encodings {
@@ -191,18 +192,20 @@ func decodeFailureCases(gidlDecodeFailures []ir.DecodeFailure, schema mixer.Sche
 			return nil, fmt.Errorf("decode failure %s: %s", decodeFailure.Name, err)
 		}
 		valueType := declName(decl)
+		wireValueType := wireStructDeclName(decl)
 		for _, encoding := range decodeFailure.Encodings {
 			if !wireFormatSupported(encoding.WireFormat) {
 				continue
 			}
 			decodeFailureCases = append(decodeFailureCases, decodeFailureCase{
-				Name:         testCaseName(decodeFailure.Name, encoding.WireFormat),
-				HandleDefs:   buildHandleDefs(decodeFailure.HandleDefs),
-				ValueType:    valueType,
-				Bytes:        rust.BuildBytes(encoding.Bytes),
-				Handles:      buildHandles(encoding.Handles),
-				HandleValues: buildHandleValues(encoding.Handles),
-				ErrorPattern: errorPattern,
+				Name:          testCaseName(decodeFailure.Name, encoding.WireFormat),
+				HandleDefs:    buildHandleDefs(decodeFailure.HandleDefs),
+				ValueType:     valueType,
+				WireValueType: wireValueType,
+				Bytes:         rust.BuildBytes(encoding.Bytes),
+				Handles:       buildHandles(encoding.Handles),
+				HandleValues:  buildHandleValues(encoding.Handles),
+				ErrorPattern:  errorPattern,
 			})
 		}
 	}

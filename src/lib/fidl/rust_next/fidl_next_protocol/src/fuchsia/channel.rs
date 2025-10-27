@@ -342,8 +342,8 @@ mod tests {
 
     use fidl_next_codec::fuchsia::{HandleDecoder, HandleEncoder, WireHandle};
     use fidl_next_codec::{
-        Decode, DecodeError, DecoderExt as _, Encodable, Encode, EncodeError, EncoderExt as _,
-        FromWire, Slot, Unconstrained, Wire, munge,
+        Decode, DecodeError, DecoderExt as _, Encode, EncodeError, EncoderExt as _, FromWire, Slot,
+        Unconstrained, Wire, munge,
     };
     use fuchsia_async as fasync;
     use zx::{AsHandleRef, Channel, Handle, HandleBased as _, Instant, Signals, WaitResult};
@@ -405,18 +405,14 @@ mod tests {
         }
     }
 
-    impl Encodable for HandleAndBoolean {
-        type Encoded = WireHandleAndBoolean;
-    }
-
-    unsafe impl<E: HandleEncoder + ?Sized> Encode<E> for HandleAndBoolean {
+    unsafe impl<E: HandleEncoder + ?Sized> Encode<WireHandleAndBoolean, E> for HandleAndBoolean {
         fn encode(
             self,
             encoder: &mut E,
-            out: &mut MaybeUninit<Self::Encoded>,
+            out: &mut MaybeUninit<WireHandleAndBoolean>,
             _: (),
         ) -> Result<(), EncodeError> {
-            munge!(let Self::Encoded { handle, boolean } = out);
+            munge!(let WireHandleAndBoolean { handle, boolean } = out);
             self.handle.encode(encoder, handle, ())?;
             self.boolean.encode(encoder, boolean, ())?;
             Ok(())

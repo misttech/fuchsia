@@ -9,10 +9,6 @@ pub mod natural {
     pub enum MyEmptyFlexibleEnum {
         UnknownOrdinal_(u32) = 0,
     }
-
-    impl ::fidl_next::Encodable for MyEmptyFlexibleEnum {
-        type Encoded = crate::wire::MyEmptyFlexibleEnum;
-    }
     impl ::std::convert::From<u32> for MyEmptyFlexibleEnum {
         fn from(value: u32) -> Self {
             match value {
@@ -21,7 +17,8 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::Encode<___E> for MyEmptyFlexibleEnum
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::MyEmptyFlexibleEnum, ___E>
+        for MyEmptyFlexibleEnum
     where
         ___E: ?Sized,
     {
@@ -29,27 +26,28 @@ pub mod natural {
         fn encode(
             self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::MyEmptyFlexibleEnum>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
+            ::fidl_next::Encode::encode(&self, encoder, out, ())
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for MyEmptyFlexibleEnum
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::MyEmptyFlexibleEnum, ___E>
+        for &'a MyEmptyFlexibleEnum
     where
         ___E: ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::MyEmptyFlexibleEnum>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MyEmptyFlexibleEnum { value } = out);
             let _ = value.write(::fidl_next::WireU32::from(match *self {
-                Self::UnknownOrdinal_(value) => value,
+                MyEmptyFlexibleEnum::UnknownOrdinal_(value) => value,
             }));
 
             Ok(())
@@ -85,10 +83,6 @@ pub mod natural {
         Bar = 2,
         UnknownOrdinal_(u32) = 3,
     }
-
-    impl ::fidl_next::Encodable for MyFlexibleEnum {
-        type Encoded = crate::wire::MyFlexibleEnum;
-    }
     impl ::std::convert::From<u32> for MyFlexibleEnum {
         fn from(value: u32) -> Self {
             match value {
@@ -100,7 +94,7 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::Encode<___E> for MyFlexibleEnum
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::MyFlexibleEnum, ___E> for MyFlexibleEnum
     where
         ___E: ?Sized,
     {
@@ -108,31 +102,31 @@ pub mod natural {
         fn encode(
             self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::MyFlexibleEnum>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
+            ::fidl_next::Encode::encode(&self, encoder, out, ())
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for MyFlexibleEnum
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::MyFlexibleEnum, ___E> for &'a MyFlexibleEnum
     where
         ___E: ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::MyFlexibleEnum>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MyFlexibleEnum { value } = out);
             let _ = value.write(::fidl_next::WireU32::from(match *self {
-                Self::Foo => 1,
+                MyFlexibleEnum::Foo => 1,
 
-                Self::Bar => 2,
+                MyFlexibleEnum::Bar => 2,
 
-                Self::UnknownOrdinal_(value) => value,
+                MyFlexibleEnum::UnknownOrdinal_(value) => value,
             }));
 
             Ok(())
@@ -173,10 +167,6 @@ pub mod natural {
         CustomUnknown = 3,
         UnknownOrdinal_(u32) = 4,
     }
-
-    impl ::fidl_next::Encodable for MyFlexibleEnumWithCustomUnknown {
-        type Encoded = crate::wire::MyFlexibleEnumWithCustomUnknown;
-    }
     impl ::std::convert::From<u32> for MyFlexibleEnumWithCustomUnknown {
         fn from(value: u32) -> Self {
             match value {
@@ -189,7 +179,8 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::Encode<___E> for MyFlexibleEnumWithCustomUnknown
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::MyFlexibleEnumWithCustomUnknown, ___E>
+        for MyFlexibleEnumWithCustomUnknown
     where
         ___E: ?Sized,
     {
@@ -197,33 +188,34 @@ pub mod natural {
         fn encode(
             self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::MyFlexibleEnumWithCustomUnknown>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
+            ::fidl_next::Encode::encode(&self, encoder, out, ())
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for MyFlexibleEnumWithCustomUnknown
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::MyFlexibleEnumWithCustomUnknown, ___E>
+        for &'a MyFlexibleEnumWithCustomUnknown
     where
         ___E: ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::MyFlexibleEnumWithCustomUnknown>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MyFlexibleEnumWithCustomUnknown { value } = out);
             let _ = value.write(::fidl_next::WireU32::from(match *self {
-                Self::Foo => 1,
+                MyFlexibleEnumWithCustomUnknown::Foo => 1,
 
-                Self::Bar => 2,
+                MyFlexibleEnumWithCustomUnknown::Bar => 2,
 
-                Self::CustomUnknown => 3,
+                MyFlexibleEnumWithCustomUnknown::CustomUnknown => 3,
 
-                Self::UnknownOrdinal_(value) => value,
+                MyFlexibleEnumWithCustomUnknown::UnknownOrdinal_(value) => value,
             }));
 
             Ok(())
@@ -270,10 +262,6 @@ pub mod natural {
         Foo = 1,
         Bar = 2,
     }
-
-    impl ::fidl_next::Encodable for MyStrictEnum {
-        type Encoded = crate::wire::MyStrictEnum;
-    }
     impl ::core::convert::TryFrom<u32> for MyStrictEnum {
         type Error = ::fidl_next::UnknownStrictEnumMemberError;
         fn try_from(
@@ -288,7 +276,7 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::Encode<___E> for MyStrictEnum
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::MyStrictEnum, ___E> for MyStrictEnum
     where
         ___E: ?Sized,
     {
@@ -296,29 +284,29 @@ pub mod natural {
         fn encode(
             self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::MyStrictEnum>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
+            ::fidl_next::Encode::encode(&self, encoder, out, ())
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for MyStrictEnum
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::MyStrictEnum, ___E> for &'a MyStrictEnum
     where
         ___E: ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::MyStrictEnum>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::MyStrictEnum { value } = out);
             let _ = value.write(::fidl_next::WireU32::from(match *self {
-                Self::Foo => 1,
+                MyStrictEnum::Foo => 1,
 
-                Self::Bar => 2,
+                MyStrictEnum::Bar => 2,
             }));
 
             Ok(())

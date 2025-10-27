@@ -12,8 +12,8 @@ use fdf_channel::channel::Channel;
 use fdf_core::handle::{DriverHandle, fdf_handle_t};
 use fidl_next::fuchsia::{HandleDecoder, HandleEncoder};
 use fidl_next::{
-    Constrained, Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError,
-    EncodeOption, FromWire, FromWireOption, IntoNatural, Slot, Unconstrained, Wire, WireU32, munge,
+    Constrained, Decode, DecodeError, Encode, EncodeError, EncodeOption, FromWire, FromWireOption,
+    IntoNatural, Slot, Unconstrained, Wire, WireU32, munge,
 };
 
 use crate::DriverChannel;
@@ -192,18 +192,14 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireOptionalDriverChannel {
 
 impl Unconstrained for WireOptionalDriverChannel {}
 
-impl Encodable for DriverChannel {
-    type Encoded = WireDriverChannel;
-}
-
 // SAFETY: `encode` calls `set_encoded_present`, which initializes all of the
 // bytes of `out`.
-unsafe impl<E: HandleEncoder + ?Sized> Encode<E> for DriverChannel {
+unsafe impl<E: HandleEncoder + ?Sized> Encode<WireDriverChannel, E> for DriverChannel {
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        _: <WireDriverChannel as Constrained>::Constraint,
+        out: &mut MaybeUninit<WireDriverChannel>,
+        _: (),
     ) -> Result<(), EncodeError> {
         let handle = self.channel.into_driver_handle();
         // SAFETY: `self.into_raw()` returns a valid driver handle.
@@ -232,18 +228,16 @@ impl IntoNatural for WireDriverChannel {
     type Natural = DriverChannel;
 }
 
-impl EncodableOption for DriverChannel {
-    type EncodedOption = WireOptionalDriverChannel;
-}
-
 // SAFETY: `encode_option` calls either `set_encoded_present` or
 // `set_encoded_absent`, both of which initializes all of the bytes of `out`.
-unsafe impl<E: HandleEncoder + ?Sized> EncodeOption<E> for DriverChannel {
+unsafe impl<E: HandleEncoder + ?Sized> EncodeOption<WireOptionalDriverChannel, E>
+    for DriverChannel
+{
     fn encode_option(
         this: Option<Self>,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::EncodedOption>,
-        _: <Self::EncodedOption as Constrained>::Constraint,
+        out: &mut MaybeUninit<WireOptionalDriverChannel>,
+        _: (),
     ) -> Result<(), EncodeError> {
         if let Some(driver_channel) = this {
             let handle = driver_channel.channel.into_driver_handle();

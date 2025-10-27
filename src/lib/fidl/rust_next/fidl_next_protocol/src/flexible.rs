@@ -7,8 +7,8 @@ use core::marker::PhantomData;
 use core::mem::{ManuallyDrop, MaybeUninit};
 
 use fidl_next_codec::{
-    Chunk, Constrained, Decode, DecodeError, Decoder, Encodable, Encode, EncodeError, EncodeRef,
-    Encoder, FromWire, FromWireRef, IntoNatural, RawWireUnion, Slot, Unconstrained, Wire, munge,
+    Chunk, Constrained, Decode, DecodeError, Decoder, Encode, EncodeError, Encoder, FromWire,
+    FromWireRef, IntoNatural, RawWireUnion, Slot, Unconstrained, Wire, munge,
 };
 
 use crate::{FrameworkError, WireFrameworkError};
@@ -189,33 +189,25 @@ where
     }
 }
 
-impl<T> Encodable for Flexible<T>
-where
-    T: Encodable,
-    T::Encoded: Constrained<Constraint = ()>,
-{
-    type Encoded = WireFlexible<'static, T::Encoded>;
-}
-
-unsafe impl<E, T> Encode<E> for Flexible<T>
+unsafe impl<E, WT, T> Encode<WireFlexible<'static, WT>, E> for Flexible<T>
 where
     E: Encoder + ?Sized,
-    T: Encode<E>,
-    T::Encoded: Constrained<Constraint = ()>,
+    WT: Constrained<Constraint = ()> + Wire,
+    T: Encode<WT, E>,
 {
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        constraint: <Self::Encoded as Constrained>::Constraint,
+        out: &mut MaybeUninit<WireFlexible<'static, WT>>,
+        constraint: WT::Constraint,
     ) -> Result<(), EncodeError> {
         munge!(let WireFlexible { raw, _phantom: _ } = out);
 
         match self {
             Self::Ok(value) => {
-                RawWireUnion::encode_as::<E, T>(value, ORD_OK, encoder, raw, constraint)?
+                RawWireUnion::encode_as::<E, WT>(value, ORD_OK, encoder, raw, constraint)?
             }
-            Self::FrameworkErr(error) => RawWireUnion::encode_as::<E, FrameworkError>(
+            Self::FrameworkErr(error) => RawWireUnion::encode_as::<E, WireFrameworkError>(
                 error,
                 ORD_FRAMEWORK_ERR,
                 encoder,
@@ -228,17 +220,17 @@ where
     }
 }
 
-unsafe impl<E, T> EncodeRef<E> for Flexible<T>
+unsafe impl<'a, E, WT, T> Encode<WireFlexible<'static, WT>, E> for &'a Flexible<T>
 where
     E: Encoder + ?Sized,
-    T: EncodeRef<E>,
-    T::Encoded: Constrained<Constraint = ()>,
+    WT: Constrained<Constraint = ()> + Wire,
+    &'a T: Encode<WT, E>,
 {
-    fn encode_ref(
-        &self,
+    fn encode(
+        self,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        constraint: <Self::Encoded as Constrained>::Constraint,
+        out: &mut MaybeUninit<WireFlexible<'static, WT>>,
+        constraint: WT::Constraint,
     ) -> Result<(), EncodeError> {
         self.as_ref().encode(encoder, out, constraint)
     }

@@ -55,11 +55,15 @@ impl WireEnvelope {
 
     /// Encodes a `'static` value into an envelope with an encoder.
     #[inline]
-    pub fn encode_value_static<E: InternalHandleEncoder + ?Sized, T: Encode<E>>(
+    pub fn encode_value_static<
+        E: InternalHandleEncoder + ?Sized,
+        W: Constrained + Wire,
+        T: Encode<W, E>,
+    >(
         value: T,
         encoder: &mut E,
         out: &mut MaybeUninit<Self>,
-        constraint: <T::Encoded as Constrained>::Constraint,
+        constraint: W::Constraint,
     ) -> Result<(), EncodeError> {
         munge! {
             let Self {
@@ -73,7 +77,7 @@ impl WireEnvelope {
 
         let handles_before = encoder.__internal_handle_count();
 
-        let encoded_size = size_of::<T::Encoded>();
+        let encoded_size = size_of::<W>();
         if encoded_size <= INLINE_SIZE {
             // If the encoded inline value is less than 4 bytes long, we need to zero out the part
             // that won't get written over
@@ -89,7 +93,7 @@ impl WireEnvelope {
         }
 
         let value_out = unsafe { &mut *maybe_num_bytes.as_mut_ptr().cast() };
-        T::Encoded::zero_padding(value_out);
+        W::zero_padding(value_out);
         value.encode(encoder, value_out, constraint)?;
 
         flags.write(WireU16(Self::IS_INLINE_BIT));
@@ -102,11 +106,11 @@ impl WireEnvelope {
 
     /// Encodes a value into an envelope with an encoder.
     #[inline]
-    pub fn encode_value<E: Encoder + ?Sized, T: Encode<E>>(
+    pub fn encode_value<E: Encoder + ?Sized, W: Constrained + Wire, T: Encode<W, E>>(
         value: T,
         encoder: &mut E,
         out: &mut MaybeUninit<Self>,
-        constraint: <T::Encoded as Constrained>::Constraint,
+        constraint: W::Constraint,
     ) -> Result<(), EncodeError> {
         munge! {
             let Self {
@@ -120,7 +124,7 @@ impl WireEnvelope {
 
         let handles_before = encoder.__internal_handle_count();
 
-        let encoded_size = size_of::<T::Encoded>();
+        let encoded_size = size_of::<W>();
         if encoded_size <= INLINE_SIZE {
             // If the encoded inline value is less than 4 bytes long, we need to zero out the part
             // that won't get written over
@@ -132,7 +136,7 @@ impl WireEnvelope {
                     .write_bytes(0, INLINE_SIZE - encoded_size);
             }
             let value_out = unsafe { &mut *maybe_num_bytes.as_mut_ptr().cast() };
-            T::Encoded::zero_padding(value_out);
+            W::zero_padding(value_out);
             value.encode(encoder, value_out, constraint)?;
             flags.write(WireU16(Self::IS_INLINE_BIT));
         } else {

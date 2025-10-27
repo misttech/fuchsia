@@ -9,9 +9,9 @@ use core::str::from_utf8;
 use munge::munge;
 
 use crate::{
-    Constrained, Decode, DecodeError, Decoder, EncodableOption, EncodeError, EncodeOption,
-    EncodeOptionRef, Encoder, FromWireOption, FromWireOptionRef, IntoNatural, Slot,
-    ValidationError, Wire, WireOptionalVector, WireString, WireVector,
+    Constrained, Decode, DecodeError, Decoder, EncodeError, EncodeOption, Encoder, FromWireOption,
+    FromWireOptionRef, IntoNatural, Slot, ValidationError, Wire, WireOptionalVector, WireString,
+    WireVector,
 };
 
 /// An optional FIDL string
@@ -121,44 +121,36 @@ unsafe impl<D: Decoder + ?Sized> Decode<D> for WireOptionalString<'static> {
     }
 }
 
-impl EncodableOption for String {
-    type EncodedOption = WireOptionalString<'static>;
-}
-
-unsafe impl<E: Encoder + ?Sized> EncodeOption<E> for String {
+unsafe impl<E: Encoder + ?Sized> EncodeOption<WireOptionalString<'static>, E> for String {
     #[inline]
     fn encode_option(
         this: Option<Self>,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::EncodedOption>,
+        out: &mut MaybeUninit<WireOptionalString<'static>>,
         constraint: u64,
     ) -> Result<(), EncodeError> {
         <&str>::encode_option(this.as_deref(), encoder, out, constraint)
     }
 }
 
-unsafe impl<E: Encoder + ?Sized> EncodeOptionRef<E> for String {
+unsafe impl<E: Encoder + ?Sized> EncodeOption<WireOptionalString<'static>, E> for &String {
     #[inline]
-    fn encode_option_ref(
-        this: Option<&Self>,
+    fn encode_option(
+        this: Option<Self>,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::EncodedOption>,
+        out: &mut MaybeUninit<WireOptionalString<'static>>,
         constraint: u64,
     ) -> Result<(), EncodeError> {
         <&str>::encode_option(this.map(String::as_str), encoder, out, constraint)
     }
 }
 
-impl EncodableOption for &str {
-    type EncodedOption = WireOptionalString<'static>;
-}
-
-unsafe impl<E: Encoder + ?Sized> EncodeOption<E> for &str {
+unsafe impl<E: Encoder + ?Sized> EncodeOption<WireOptionalString<'static>, E> for &str {
     #[inline]
     fn encode_option(
         this: Option<Self>,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::EncodedOption>,
+        out: &mut MaybeUninit<WireOptionalString<'static>>,
         _constraint: u64,
     ) -> Result<(), EncodeError> {
         if let Some(string) = this {

@@ -16,32 +16,32 @@ pub mod natural {
         pub boot_ticks: i64,
     }
 
-    impl ::fidl_next::Encodable for AllInstants {
-        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<Self, crate::wire::AllInstants> = unsafe {
-            ::fidl_next::CopyOptimization::enable_if(
-                true && <i64 as ::fidl_next::Encodable>::COPY_OPTIMIZATION.is_enabled()
-                    && <i64 as ::fidl_next::Encodable>::COPY_OPTIMIZATION.is_enabled()
-                    && <i64 as ::fidl_next::Encodable>::COPY_OPTIMIZATION.is_enabled()
-                    && <i64 as ::fidl_next::Encodable>::COPY_OPTIMIZATION.is_enabled(),
-            )
-        };
-
-        type Encoded = crate::wire::AllInstants;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for AllInstants
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::AllInstants, ___E> for AllInstants
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
     {
+        const COPY_OPTIMIZATION: ::fidl_next::CopyOptimization<Self, crate::wire::AllInstants> = unsafe {
+            ::fidl_next::CopyOptimization::enable_if(
+                true && <i64 as ::fidl_next::Encode<::fidl_next::WireI64, ___E>>::COPY_OPTIMIZATION
+                    .is_enabled()
+                    && <i64 as ::fidl_next::Encode<::fidl_next::WireI64, ___E>>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <i64 as ::fidl_next::Encode<::fidl_next::WireI64, ___E>>::COPY_OPTIMIZATION
+                        .is_enabled()
+                    && <i64 as ::fidl_next::Encode<::fidl_next::WireI64, ___E>>::COPY_OPTIMIZATION
+                        .is_enabled(),
+            )
+        };
+
         #[inline]
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::AllInstants>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::AllInstants {
                     monotonic,
                     boot,
                     monotonic_ticks,
@@ -71,19 +71,19 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for AllInstants
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::AllInstants, ___E> for &'a AllInstants
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::AllInstants>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::AllInstants {
 
                     monotonic,
                     boot,
@@ -93,25 +93,20 @@ pub mod natural {
                 } = out_;
             }
 
-            ::fidl_next::EncodeRef::encode_ref(&self.monotonic, encoder_, monotonic, ())?;
+            ::fidl_next::Encode::encode(&self.monotonic, encoder_, monotonic, ())?;
 
             let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(monotonic.as_mut_ptr()) };
 
-            ::fidl_next::EncodeRef::encode_ref(&self.boot, encoder_, boot, ())?;
+            ::fidl_next::Encode::encode(&self.boot, encoder_, boot, ())?;
 
             let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(boot.as_mut_ptr()) };
 
-            ::fidl_next::EncodeRef::encode_ref(
-                &self.monotonic_ticks,
-                encoder_,
-                monotonic_ticks,
-                (),
-            )?;
+            ::fidl_next::Encode::encode(&self.monotonic_ticks, encoder_, monotonic_ticks, ())?;
 
             let mut _field =
                 unsafe { ::fidl_next::Slot::new_unchecked(monotonic_ticks.as_mut_ptr()) };
 
-            ::fidl_next::EncodeRef::encode_ref(&self.boot_ticks, encoder_, boot_ticks, ())?;
+            ::fidl_next::Encode::encode(&self.boot_ticks, encoder_, boot_ticks, ())?;
 
             let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(boot_ticks.as_mut_ptr()) };
 
@@ -119,20 +114,20 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::EncodableOption for AllInstants {
-        type EncodedOption = ::fidl_next::WireBox<'static, crate::wire::AllInstants>;
-    }
-
-    unsafe impl<___E> ::fidl_next::EncodeOption<___E> for AllInstants
+    unsafe impl<___E>
+        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::AllInstants>, ___E>
+        for AllInstants
     where
         ___E: ::fidl_next::Encoder + ?Sized,
-        AllInstants: ::fidl_next::Encode<___E>,
+        AllInstants: ::fidl_next::Encode<crate::wire::AllInstants, ___E>,
     {
         #[inline]
         fn encode_option(
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            out: &mut ::core::mem::MaybeUninit<
+                ::fidl_next::WireBox<'static, crate::wire::AllInstants>,
+            >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
@@ -146,16 +141,20 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeOptionRef<___E> for AllInstants
+    unsafe impl<'a, ___E>
+        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::AllInstants>, ___E>
+        for &'a AllInstants
     where
         ___E: ::fidl_next::Encoder + ?Sized,
-        AllInstants: ::fidl_next::EncodeRef<___E>,
+        &'a AllInstants: ::fidl_next::Encode<crate::wire::AllInstants, ___E>,
     {
         #[inline]
-        fn encode_option_ref(
-            this: ::core::option::Option<&Self>,
+        fn encode_option(
+            this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            out: &mut ::core::mem::MaybeUninit<
+                ::fidl_next::WireBox<'static, crate::wire::AllInstants>,
+            >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
@@ -245,11 +244,8 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::Encodable for ComplexInstants {
-        type Encoded = crate::wire::ComplexInstants<'static>;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for ComplexInstants
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::ComplexInstants<'static>, ___E>
+        for ComplexInstants
     where
         ___E: ::fidl_next::Encoder + ?Sized,
     {
@@ -257,7 +253,7 @@ pub mod natural {
         fn encode(
             mut self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::ComplexInstants<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::ComplexInstants { table } = out);
@@ -337,15 +333,16 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ComplexInstants
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::ComplexInstants<'static>, ___E>
+        for &'a ComplexInstants
     where
         ___E: ::fidl_next::Encoder + ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::ComplexInstants<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::ComplexInstants { table } = out);
@@ -752,33 +749,24 @@ pub mod generic {
         pub boot_ticks: T3,
     }
 
-    impl<T0, T1, T2, T3> ::fidl_next::Encodable for AllInstants<T0, T1, T2, T3>
-    where
-        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI64>,
-        T1: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI64>,
-        T2: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI64>,
-        T3: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI64>,
-    {
-        type Encoded = crate::wire::AllInstants;
-    }
-
-    unsafe impl<___E, T0, T1, T2, T3> ::fidl_next::Encode<___E> for AllInstants<T0, T1, T2, T3>
+    unsafe impl<___E, T0, T1, T2, T3> ::fidl_next::Encode<crate::wire::AllInstants, ___E>
+        for AllInstants<T0, T1, T2, T3>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI64>,
-        T1: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI64>,
-        T2: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI64>,
-        T3: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI64>,
+        T0: ::fidl_next::Encode<::fidl_next::WireI64, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::WireI64, ___E>,
+        T2: ::fidl_next::Encode<::fidl_next::WireI64, ___E>,
+        T3: ::fidl_next::Encode<::fidl_next::WireI64, ___E>,
     {
         #[inline]
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::AllInstants>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::AllInstants {
 
                     monotonic,
                     boot,

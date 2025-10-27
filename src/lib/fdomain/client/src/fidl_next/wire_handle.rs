@@ -10,8 +10,8 @@ use std::sync::atomic::{AtomicPtr, Ordering};
 
 use super::codec::{HandleDecoder, HandleEncoder};
 use fidl_next_codec::{
-    Constrained, Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError,
-    EncodeOption, FromWire, FromWireOption, Slot, Unconstrained, Wire, WireU32, munge,
+    Constrained, Decode, DecodeError, Encode, EncodeError, EncodeOption, FromWire, FromWireOption,
+    Slot, Unconstrained, Wire, WireU32, munge,
 };
 
 use crate::{Client, Handle};
@@ -241,16 +241,12 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireOptionalHandle {
 
 impl Unconstrained for WireOptionalHandle {}
 
-impl Encodable for Handle {
-    type Encoded = WireHandle;
-}
-
-unsafe impl<E: HandleEncoder + ?Sized> Encode<E> for Handle {
+unsafe impl<E: HandleEncoder + ?Sized> Encode<WireHandle, E> for Handle {
     fn encode(
         self,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::Encoded>,
-        _: <Self::Encoded as Constrained>::Constraint,
+        out: &mut MaybeUninit<WireHandle>,
+        _: (),
     ) -> Result<(), EncodeError> {
         if self.client.upgrade().is_none() {
             Err(EncodeError::InvalidRequiredHandle)
@@ -268,16 +264,12 @@ impl FromWire<WireHandle> for Handle {
     }
 }
 
-impl EncodableOption for Handle {
-    type EncodedOption = WireOptionalHandle;
-}
-
-unsafe impl<E: HandleEncoder + ?Sized> EncodeOption<E> for Handle {
+unsafe impl<E: HandleEncoder + ?Sized> EncodeOption<WireOptionalHandle, E> for Handle {
     fn encode_option(
         this: Option<Self>,
         encoder: &mut E,
-        out: &mut MaybeUninit<Self::EncodedOption>,
-        _: <Self::EncodedOption as Constrained>::Constraint,
+        out: &mut MaybeUninit<WireOptionalHandle>,
+        _: (),
     ) -> Result<(), EncodeError> {
         if let Some(handle) = this {
             encoder.push_handle(handle)?;

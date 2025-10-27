@@ -66,7 +66,7 @@ use {
 
         let buffer = Buffer::from_raw_bytes(vec!{{ .HandleValues }}, &{{ .Bytes }});
         let recv_buffer = RecvBuffer::new(buffer);
-        let {{ .ValueVar }}: {{ .ValueType }} = recv_buffer.decode::< <{{ .ValueType }} as fidl_next::Encodable>::Encoded>().unwrap().take();
+        let {{ .ValueVar }}: {{ .ValueType }} = recv_buffer.decode::<{{ .WireValueType }}>().unwrap().take();
         {{ .EqualityCheck }}
         {{- if .UnusedHandles }}
         let unused_handles = select_raw_handle_infos(&handle_defs, &{{ .UnusedHandles }});
@@ -109,7 +109,7 @@ use {
         let buffer = Buffer::from_raw_bytes(vec!{{ .HandleValues }}, &{{ .Bytes }});
         let recv_buffer = RecvBuffer::new(buffer);
 
-        match recv_buffer.decode::< <{{ .ValueType }} as fidl_next::Encodable>::Encoded>() {
+        match recv_buffer.decode::<{{ .WireValueType }}>() {
             Err(err) => assert_matches!(err, {{ .ErrorPattern }}),
             Ok(value) => panic!("unexpected successful decoding to: {:?}", value.take()),
         }

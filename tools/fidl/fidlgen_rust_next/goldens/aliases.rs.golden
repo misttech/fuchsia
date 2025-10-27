@@ -18,10 +18,6 @@ pub mod natural {
         None = 0,
         Channel = 4,
     }
-
-    impl ::fidl_next::Encodable for ObjType {
-        type Encoded = crate::wire::ObjType;
-    }
     impl ::core::convert::TryFrom<u32> for ObjType {
         type Error = ::fidl_next::UnknownStrictEnumMemberError;
         fn try_from(
@@ -36,7 +32,7 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::Encode<___E> for ObjType
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::ObjType, ___E> for ObjType
     where
         ___E: ?Sized,
     {
@@ -44,29 +40,29 @@ pub mod natural {
         fn encode(
             self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::ObjType>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
-            ::fidl_next::EncodeRef::encode_ref(&self, encoder, out, ())
+            ::fidl_next::Encode::encode(&self, encoder, out, ())
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ObjType
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::ObjType, ___E> for &'a ObjType
     where
         ___E: ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out: &mut ::core::mem::MaybeUninit<crate::wire::ObjType>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge!(let crate::wire::ObjType { value } = out);
             let _ = value.write(::fidl_next::WireU32::from(match *self {
-                Self::None => 0,
+                ObjType::None => 0,
 
-                Self::Channel => 4,
+                ObjType::Channel => 4,
             }));
 
             Ok(())
@@ -123,11 +119,8 @@ pub mod natural {
         pub field_of_nullable_client_end: ::core::option::Option<::fidl_next::fuchsia::zx::Channel>,
     }
 
-    impl ::fidl_next::Encodable for ExampleOfUseOfAliases {
-        type Encoded = crate::wire::ExampleOfUseOfAliases<'static>;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for ExampleOfUseOfAliases
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::ExampleOfUseOfAliases<'static>, ___E>
+        for ExampleOfUseOfAliases
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
@@ -137,11 +130,11 @@ pub mod natural {
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ExampleOfUseOfAliases<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::ExampleOfUseOfAliases {
                     field_of_u32,
                     field_of_vec_of_strings,
                     field_of_vec_of_strings_at_most_nine,
@@ -235,21 +228,23 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::EncodableOption for ExampleOfUseOfAliases {
-        type EncodedOption =
-            ::fidl_next::WireBox<'static, crate::wire::ExampleOfUseOfAliases<'static>>;
-    }
-
-    unsafe impl<___E> ::fidl_next::EncodeOption<___E> for ExampleOfUseOfAliases
+    unsafe impl<___E>
+        ::fidl_next::EncodeOption<
+            ::fidl_next::WireBox<'static, crate::wire::ExampleOfUseOfAliases<'static>>,
+            ___E,
+        > for ExampleOfUseOfAliases
     where
         ___E: ::fidl_next::Encoder + ?Sized,
-        ExampleOfUseOfAliases: ::fidl_next::Encode<___E>,
+        ExampleOfUseOfAliases:
+            ::fidl_next::Encode<crate::wire::ExampleOfUseOfAliases<'static>, ___E>,
     {
         #[inline]
         fn encode_option(
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            out: &mut ::core::mem::MaybeUninit<
+                ::fidl_next::WireBox<'static, crate::wire::ExampleOfUseOfAliases<'static>>,
+            >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
@@ -635,71 +630,46 @@ pub mod generic {
         pub field_of_nullable_client_end: T7,
     }
 
-    impl<T0, T1, T2, T3, T4, T5, T6, T7> ::fidl_next::Encodable
-        for ExampleOfUseOfAliases<T0, T1, T2, T3, T4, T5, T6, T7>
-    where
-        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireU32>,
-        T1: ::fidl_next::Encodable<
-                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
-            >,
-        T2: ::fidl_next::Encodable<
-                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
-            >,
-        T3: ::fidl_next::Encodable<
-                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
-            >,
-        T4: ::fidl_next::Encodable<
-                Encoded = ::fidl_next::WireVector<
-                    'static,
-                    ::fidl_next_test_someotherlibrary::wire::ReferenceMe,
-                >,
-            >,
-        T5: ::fidl_next::Encodable<Encoded = ::fidl_next::fuchsia::WireChannel>,
-        T6: ::fidl_next::Encodable<Encoded = ::fidl_next::fuchsia::WireChannel>,
-        T7: ::fidl_next::Encodable<Encoded = ::fidl_next::fuchsia::WireOptionalChannel>,
-    {
-        type Encoded = crate::wire::ExampleOfUseOfAliases<'static>;
-    }
-
-    unsafe impl<___E, T0, T1, T2, T3, T4, T5, T6, T7> ::fidl_next::Encode<___E>
+    unsafe impl<___E, T0, T1, T2, T3, T4, T5, T6, T7>
+        ::fidl_next::Encode<crate::wire::ExampleOfUseOfAliases<'static>, ___E>
         for ExampleOfUseOfAliases<T0, T1, T2, T3, T4, T5, T6, T7>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireU32>,
+        T0: ::fidl_next::Encode<::fidl_next::WireU32, ___E>,
         T1: ::fidl_next::Encode<
+                ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
                 ___E,
-                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
             >,
         T2: ::fidl_next::Encode<
+                ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
                 ___E,
-                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
             >,
         T3: ::fidl_next::Encode<
+                ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
                 ___E,
-                Encoded = ::fidl_next::WireVector<'static, ::fidl_next::WireString<'static>>,
             >,
         T4: ::fidl_next::Encode<
-                ___E,
-                Encoded = ::fidl_next::WireVector<
+                ::fidl_next::WireVector<
                     'static,
                     ::fidl_next_test_someotherlibrary::wire::ReferenceMe,
                 >,
+                ___E,
             >,
-        T5: ::fidl_next::Encode<___E, Encoded = ::fidl_next::fuchsia::WireChannel>,
-        T6: ::fidl_next::Encode<___E, Encoded = ::fidl_next::fuchsia::WireChannel>,
-        T7: ::fidl_next::Encode<___E, Encoded = ::fidl_next::fuchsia::WireOptionalChannel>,
+        T5: ::fidl_next::Encode<::fidl_next::fuchsia::WireChannel, ___E>,
+        T6: ::fidl_next::Encode<::fidl_next::fuchsia::WireChannel, ___E>,
+        T7: ::fidl_next::Encode<::fidl_next::fuchsia::WireOptionalChannel, ___E>,
     {
         #[inline]
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ExampleOfUseOfAliases<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::ExampleOfUseOfAliases {
 
                     field_of_u32,
                     field_of_vec_of_strings,

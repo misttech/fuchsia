@@ -159,13 +159,7 @@ pub mod {{ module_name }} {
                             {% endif %}
                             <
                                 {{ self.generic_id(response_struct.name) }}<___R>,
-                                ::fidl_next::util::EncodableNever<
-                                    {% if let Some(error) = method.maybe_response_err_type.as_ref() %}
-                                        {{ self.static_wire_type(error) }},
-                                    {% else %}
-                                        (),
-                                    {% endif %}
-                                >,
+                                ::fidl_next::util::Never,
                             >;
 
                         fn respond(response: ___R) -> Self::Output {
@@ -189,13 +183,7 @@ pub mod {{ module_name }} {
                             {% endif %}
                             <
                                 ___R,
-                                ::fidl_next::util::EncodableNever<
-                                    {% if let Some(error) = method.maybe_response_err_type.as_ref() %}
-                                        {{ self.static_wire_type(error) }},
-                                    {% else %}
-                                        (),
-                                    {% endif %}
-                                >,
+                                ::fidl_next::util::Never,
                             >;
 
                         fn respond(response: ___R) -> Self::Output {
@@ -220,13 +208,7 @@ pub mod {{ module_name }} {
                                 ::core::result::Result
                             {% endif %}
                             <
-                                ::fidl_next::util::EncodableNever<
-                                    {% if let Some(success) = method.maybe_response_success_type.as_ref() %}
-                                        {{ self.static_wire_type(success) }},
-                                    {% else %}
-                                        (),
-                                    {% endif %}
-                                >,
+                                ::fidl_next::util::Never,
                                 {{ self.generic_id(response_struct.name) }}<___R>,
                             >;
 
@@ -250,13 +232,7 @@ pub mod {{ module_name }} {
                                 ::core::result::Result
                             {% endif %}
                             <
-                                ::fidl_next::util::EncodableNever<
-                                    {% if let Some(success) = method.maybe_response_success_type.as_ref() %}
-                                        {{ self.static_wire_type(success) }},
-                                    {% else %}
-                                        (),
-                                    {% endif %}
-                                >,
+                                ::fidl_next::util::Never,
                                 ___R,
                             >;
 
@@ -308,8 +284,8 @@ pub mod {{ module_name }} {
                                 &self,
                                 {% for member in args.members %}
                                     {{ member.name|snake }}: impl ::fidl_next::Encode<
+                                        {{ self.static_wire_type(member.ty) }},
                                         <___T as ::fidl_next::Transport>::SendBuffer,
-                                        Encoded = {{ self.static_wire_type(member.ty) }},
                                     >,
                                 {% endfor %}
                             ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -338,8 +314,8 @@ pub mod {{ module_name }} {
                             ) -> ::fidl_next::SendFuture<'_, ___T>
                             where
                                 ___R: ::fidl_next::Encode<
+                                    {{ self.static_wire_type(request) }},
                                     <___T as ::fidl_next::Transport>::SendBuffer,
-                                    Encoded = {{ self.static_wire_type(request) }},
                                 >,
                             {
                                 ::fidl_next::SendFuture::from_untyped(
@@ -372,8 +348,8 @@ pub mod {{ module_name }} {
                                 &self,
                                 {% for member in args.members %}
                                     {{ member.name|snake }}: impl ::fidl_next::Encode<
+                                        {{ self.static_wire_type(member.ty) }},
                                         <___T as ::fidl_next::Transport>::SendBuffer,
-                                        Encoded = {{ self.static_wire_type(member.ty) }},
                                     >,
                                 {% endfor %}
                             ) -> ::fidl_next::TwoWayFuture<'_, super::{{ method_type_name }}, ___T>
@@ -402,8 +378,8 @@ pub mod {{ module_name }} {
                             ) -> ::fidl_next::TwoWayFuture<'_, super::{{ method_type_name }}, ___T>
                             where
                                 ___R: ::fidl_next::Encode<
+                                    {{ self.static_wire_type(request) }},
                                     <___T as ::fidl_next::Transport>::SendBuffer,
-                                    Encoded = {{ self.static_wire_type(request) }},
                                 >,
                             {
                                 ::fidl_next::TwoWayFuture::from_untyped(
@@ -455,8 +431,8 @@ pub mod {{ module_name }} {
                             &self,
                             {% for member in args.members %}
                                 {{ member.name|snake }}: impl ::fidl_next::Encode<
+                                    {{ self.static_wire_type(member.ty) }},
                                     <___T as ::fidl_next::Transport>::SendBuffer,
-                                    Encoded = {{ self.static_wire_type(member.ty) }},
                                 >,
                             {% endfor %}
                         ) -> ::fidl_next::SendFuture<'_, ___T>
@@ -486,8 +462,8 @@ pub mod {{ module_name }} {
                         ) -> ::fidl_next::SendFuture<'_, ___T>
                         where
                             ___R: ::fidl_next::Encode<
+                                <super::{{ method_type_name }} as ::fidl_next::Method>::Response,
                                 <___T as ::fidl_next::Transport>::SendBuffer,
-                                Encoded = <super::{{ method_type_name }} as ::fidl_next::Method>::Response,
                             >,
                         {
                             ::fidl_next::SendFuture::from_untyped(

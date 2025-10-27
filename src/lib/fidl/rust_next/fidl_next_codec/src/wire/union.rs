@@ -43,12 +43,12 @@ impl RawWireUnion {
 
     /// Encodes a `'static` value and ordinal in a slot.
     #[inline]
-    pub fn encode_as_static<E: InternalHandleEncoder + ?Sized, T: Encode<E>>(
-        value: T,
+    pub fn encode_as_static<E: InternalHandleEncoder + ?Sized, W: Constrained + Wire>(
+        value: impl Encode<W, E>,
         ord: u64,
         encoder: &mut E,
         out: &mut MaybeUninit<Self>,
-        constraint: <T::Encoded as Constrained>::Constraint,
+        constraint: W::Constraint,
     ) -> Result<(), EncodeError> {
         munge!(let Self { ordinal, envelope } = out);
 
@@ -58,12 +58,12 @@ impl RawWireUnion {
 
     /// Encodes a value and ordinal in a slot.
     #[inline]
-    pub fn encode_as<E: Encoder + ?Sized, T: Encode<E>>(
-        value: T,
+    pub fn encode_as<E: Encoder + ?Sized, W: Constrained + Wire>(
+        value: impl Encode<W, E>,
         ord: u64,
         encoder: &mut E,
         out: &mut MaybeUninit<Self>,
-        constraint: <T::Encoded as Constrained>::Constraint,
+        constraint: W::Constraint,
     ) -> Result<(), EncodeError> {
         munge!(let Self { ordinal, envelope } = out);
 

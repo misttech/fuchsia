@@ -11,11 +11,7 @@ pub mod natural {
         pub b: i8,
     }
 
-    impl ::fidl_next::Encodable for Int16Int8 {
-        type Encoded = crate::wire::Int16Int8;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for Int16Int8
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::Int16Int8, ___E> for Int16Int8
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
     {
@@ -23,11 +19,11 @@ pub mod natural {
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Int16Int8>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::Int16Int8 {
                     a,
                     b,
 
@@ -46,19 +42,19 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for Int16Int8
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::Int16Int8, ___E> for &'a Int16Int8
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Int16Int8>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::Int16Int8 {
 
                     a,
                     b,
@@ -66,11 +62,11 @@ pub mod natural {
                 } = out_;
             }
 
-            ::fidl_next::EncodeRef::encode_ref(&self.a, encoder_, a, ())?;
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
 
             let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(a.as_mut_ptr()) };
 
-            ::fidl_next::EncodeRef::encode_ref(&self.b, encoder_, b, ())?;
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
 
             let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(b.as_mut_ptr()) };
 
@@ -78,20 +74,20 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::EncodableOption for Int16Int8 {
-        type EncodedOption = ::fidl_next::WireBox<'static, crate::wire::Int16Int8>;
-    }
-
-    unsafe impl<___E> ::fidl_next::EncodeOption<___E> for Int16Int8
+    unsafe impl<___E>
+        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Int16Int8>, ___E>
+        for Int16Int8
     where
         ___E: ::fidl_next::Encoder + ?Sized,
-        Int16Int8: ::fidl_next::Encode<___E>,
+        Int16Int8: ::fidl_next::Encode<crate::wire::Int16Int8, ___E>,
     {
         #[inline]
         fn encode_option(
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            out: &mut ::core::mem::MaybeUninit<
+                ::fidl_next::WireBox<'static, crate::wire::Int16Int8>,
+            >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
@@ -105,16 +101,20 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeOptionRef<___E> for Int16Int8
+    unsafe impl<'a, ___E>
+        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Int16Int8>, ___E>
+        for &'a Int16Int8
     where
         ___E: ::fidl_next::Encoder + ?Sized,
-        Int16Int8: ::fidl_next::EncodeRef<___E>,
+        &'a Int16Int8: ::fidl_next::Encode<crate::wire::Int16Int8, ___E>,
     {
         #[inline]
-        fn encode_option_ref(
-            this: ::core::option::Option<&Self>,
+        fn encode_option(
+            this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            out: &mut ::core::mem::MaybeUninit<
+                ::fidl_next::WireBox<'static, crate::wire::Int16Int8>,
+            >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
@@ -155,11 +155,7 @@ pub mod natural {
         pub arr: [crate::natural::Int16Int8; 3],
     }
 
-    impl ::fidl_next::Encodable for ArrayInt16Int8 {
-        type Encoded = crate::wire::ArrayInt16Int8;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for ArrayInt16Int8
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::ArrayInt16Int8, ___E> for ArrayInt16Int8
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
     {
@@ -167,11 +163,11 @@ pub mod natural {
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ArrayInt16Int8>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::ArrayInt16Int8 {
                     arr,
 
                 } = out_;
@@ -185,26 +181,26 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for ArrayInt16Int8
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::ArrayInt16Int8, ___E> for &'a ArrayInt16Int8
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ArrayInt16Int8>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::ArrayInt16Int8 {
 
                     arr,
 
                 } = out_;
             }
 
-            ::fidl_next::EncodeRef::encode_ref(&self.arr, encoder_, arr, ())?;
+            ::fidl_next::Encode::encode(&self.arr, encoder_, arr, ())?;
 
             let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(arr.as_mut_ptr()) };
 
@@ -212,20 +208,20 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::EncodableOption for ArrayInt16Int8 {
-        type EncodedOption = ::fidl_next::WireBox<'static, crate::wire::ArrayInt16Int8>;
-    }
-
-    unsafe impl<___E> ::fidl_next::EncodeOption<___E> for ArrayInt16Int8
+    unsafe impl<___E>
+        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::ArrayInt16Int8>, ___E>
+        for ArrayInt16Int8
     where
         ___E: ::fidl_next::Encoder + ?Sized,
-        ArrayInt16Int8: ::fidl_next::Encode<___E>,
+        ArrayInt16Int8: ::fidl_next::Encode<crate::wire::ArrayInt16Int8, ___E>,
     {
         #[inline]
         fn encode_option(
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            out: &mut ::core::mem::MaybeUninit<
+                ::fidl_next::WireBox<'static, crate::wire::ArrayInt16Int8>,
+            >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
@@ -239,16 +235,20 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeOptionRef<___E> for ArrayInt16Int8
+    unsafe impl<'a, ___E>
+        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::ArrayInt16Int8>, ___E>
+        for &'a ArrayInt16Int8
     where
         ___E: ::fidl_next::Encoder + ?Sized,
-        ArrayInt16Int8: ::fidl_next::EncodeRef<___E>,
+        &'a ArrayInt16Int8: ::fidl_next::Encode<crate::wire::ArrayInt16Int8, ___E>,
     {
         #[inline]
-        fn encode_option_ref(
-            this: ::core::option::Option<&Self>,
+        fn encode_option(
+            this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            out: &mut ::core::mem::MaybeUninit<
+                ::fidl_next::WireBox<'static, crate::wire::ArrayInt16Int8>,
+            >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
@@ -283,11 +283,7 @@ pub mod natural {
         pub b: i32,
     }
 
-    impl ::fidl_next::Encodable for Int8Int32 {
-        type Encoded = crate::wire::Int8Int32;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for Int8Int32
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::Int8Int32, ___E> for Int8Int32
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
     {
@@ -295,11 +291,11 @@ pub mod natural {
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Int8Int32>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::Int8Int32 {
                     a,
                     b,
 
@@ -318,19 +314,19 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for Int8Int32
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::Int8Int32, ___E> for &'a Int8Int32
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Int8Int32>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::Int8Int32 {
 
                     a,
                     b,
@@ -338,11 +334,11 @@ pub mod natural {
                 } = out_;
             }
 
-            ::fidl_next::EncodeRef::encode_ref(&self.a, encoder_, a, ())?;
+            ::fidl_next::Encode::encode(&self.a, encoder_, a, ())?;
 
             let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(a.as_mut_ptr()) };
 
-            ::fidl_next::EncodeRef::encode_ref(&self.b, encoder_, b, ())?;
+            ::fidl_next::Encode::encode(&self.b, encoder_, b, ())?;
 
             let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(b.as_mut_ptr()) };
 
@@ -350,20 +346,20 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::EncodableOption for Int8Int32 {
-        type EncodedOption = ::fidl_next::WireBox<'static, crate::wire::Int8Int32>;
-    }
-
-    unsafe impl<___E> ::fidl_next::EncodeOption<___E> for Int8Int32
+    unsafe impl<___E>
+        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Int8Int32>, ___E>
+        for Int8Int32
     where
         ___E: ::fidl_next::Encoder + ?Sized,
-        Int8Int32: ::fidl_next::Encode<___E>,
+        Int8Int32: ::fidl_next::Encode<crate::wire::Int8Int32, ___E>,
     {
         #[inline]
         fn encode_option(
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            out: &mut ::core::mem::MaybeUninit<
+                ::fidl_next::WireBox<'static, crate::wire::Int8Int32>,
+            >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
@@ -377,16 +373,20 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeOptionRef<___E> for Int8Int32
+    unsafe impl<'a, ___E>
+        ::fidl_next::EncodeOption<::fidl_next::WireBox<'static, crate::wire::Int8Int32>, ___E>
+        for &'a Int8Int32
     where
         ___E: ::fidl_next::Encoder + ?Sized,
-        Int8Int32: ::fidl_next::EncodeRef<___E>,
+        &'a Int8Int32: ::fidl_next::Encode<crate::wire::Int8Int32, ___E>,
     {
         #[inline]
-        fn encode_option_ref(
-            this: ::core::option::Option<&Self>,
+        fn encode_option(
+            this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            out: &mut ::core::mem::MaybeUninit<
+                ::fidl_next::WireBox<'static, crate::wire::Int8Int32>,
+            >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
@@ -429,11 +429,8 @@ pub mod natural {
         pub h: ::fidl_next::fuchsia::zx::Handle,
     }
 
-    impl ::fidl_next::Encodable for NonInlineStructTestStruct {
-        type Encoded = crate::wire::NonInlineStructTestStruct<'static>;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for NonInlineStructTestStruct
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::NonInlineStructTestStruct<'static>, ___E>
+        for NonInlineStructTestStruct
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
@@ -443,11 +440,11 @@ pub mod natural {
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::NonInlineStructTestStruct<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::NonInlineStructTestStruct {
                     element,
                     h,
 
@@ -466,21 +463,23 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::EncodableOption for NonInlineStructTestStruct {
-        type EncodedOption =
-            ::fidl_next::WireBox<'static, crate::wire::NonInlineStructTestStruct<'static>>;
-    }
-
-    unsafe impl<___E> ::fidl_next::EncodeOption<___E> for NonInlineStructTestStruct
+    unsafe impl<___E>
+        ::fidl_next::EncodeOption<
+            ::fidl_next::WireBox<'static, crate::wire::NonInlineStructTestStruct<'static>>,
+            ___E,
+        > for NonInlineStructTestStruct
     where
         ___E: ::fidl_next::Encoder + ?Sized,
-        NonInlineStructTestStruct: ::fidl_next::Encode<___E>,
+        NonInlineStructTestStruct:
+            ::fidl_next::Encode<crate::wire::NonInlineStructTestStruct<'static>, ___E>,
     {
         #[inline]
         fn encode_option(
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            out: &mut ::core::mem::MaybeUninit<
+                ::fidl_next::WireBox<'static, crate::wire::NonInlineStructTestStruct<'static>>,
+            >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
@@ -516,11 +515,8 @@ pub mod natural {
         pub array: crate::natural::ArrayInt16Int8,
     }
 
-    impl ::fidl_next::Encodable for StructPaddingTestStruct {
-        type Encoded = crate::wire::StructPaddingTestStruct;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for StructPaddingTestStruct
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::StructPaddingTestStruct, ___E>
+        for StructPaddingTestStruct
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
     {
@@ -528,11 +524,11 @@ pub mod natural {
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::StructPaddingTestStruct>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::StructPaddingTestStruct {
                     trailing,
                     inner,
                     array,
@@ -556,19 +552,20 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeRef<___E> for StructPaddingTestStruct
+    unsafe impl<'a, ___E> ::fidl_next::Encode<crate::wire::StructPaddingTestStruct, ___E>
+        for &'a StructPaddingTestStruct
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
     {
         #[inline]
-        fn encode_ref(
-            &self,
+        fn encode(
+            self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::StructPaddingTestStruct>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::StructPaddingTestStruct {
 
                     trailing,
                     inner,
@@ -577,15 +574,15 @@ pub mod natural {
                 } = out_;
             }
 
-            ::fidl_next::EncodeRef::encode_ref(&self.trailing, encoder_, trailing, ())?;
+            ::fidl_next::Encode::encode(&self.trailing, encoder_, trailing, ())?;
 
             let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(trailing.as_mut_ptr()) };
 
-            ::fidl_next::EncodeRef::encode_ref(&self.inner, encoder_, inner, ())?;
+            ::fidl_next::Encode::encode(&self.inner, encoder_, inner, ())?;
 
             let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(inner.as_mut_ptr()) };
 
-            ::fidl_next::EncodeRef::encode_ref(&self.array, encoder_, array, ())?;
+            ::fidl_next::Encode::encode(&self.array, encoder_, array, ())?;
 
             let mut _field = unsafe { ::fidl_next::Slot::new_unchecked(array.as_mut_ptr()) };
 
@@ -593,20 +590,22 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::EncodableOption for StructPaddingTestStruct {
-        type EncodedOption = ::fidl_next::WireBox<'static, crate::wire::StructPaddingTestStruct>;
-    }
-
-    unsafe impl<___E> ::fidl_next::EncodeOption<___E> for StructPaddingTestStruct
+    unsafe impl<___E>
+        ::fidl_next::EncodeOption<
+            ::fidl_next::WireBox<'static, crate::wire::StructPaddingTestStruct>,
+            ___E,
+        > for StructPaddingTestStruct
     where
         ___E: ::fidl_next::Encoder + ?Sized,
-        StructPaddingTestStruct: ::fidl_next::Encode<___E>,
+        StructPaddingTestStruct: ::fidl_next::Encode<crate::wire::StructPaddingTestStruct, ___E>,
     {
         #[inline]
         fn encode_option(
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            out: &mut ::core::mem::MaybeUninit<
+                ::fidl_next::WireBox<'static, crate::wire::StructPaddingTestStruct>,
+            >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
@@ -620,16 +619,23 @@ pub mod natural {
         }
     }
 
-    unsafe impl<___E> ::fidl_next::EncodeOptionRef<___E> for StructPaddingTestStruct
+    unsafe impl<'a, ___E>
+        ::fidl_next::EncodeOption<
+            ::fidl_next::WireBox<'static, crate::wire::StructPaddingTestStruct>,
+            ___E,
+        > for &'a StructPaddingTestStruct
     where
         ___E: ::fidl_next::Encoder + ?Sized,
-        StructPaddingTestStruct: ::fidl_next::EncodeRef<___E>,
+        &'a StructPaddingTestStruct:
+            ::fidl_next::Encode<crate::wire::StructPaddingTestStruct, ___E>,
     {
         #[inline]
-        fn encode_option_ref(
-            this: ::core::option::Option<&Self>,
+        fn encode_option(
+            this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            out: &mut ::core::mem::MaybeUninit<
+                ::fidl_next::WireBox<'static, crate::wire::StructPaddingTestStruct>,
+            >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
@@ -676,11 +682,7 @@ pub mod natural {
         pub b: crate::natural::NonInlineStructTestStruct,
     }
 
-    impl ::fidl_next::Encodable for TopLevelStruct {
-        type Encoded = crate::wire::TopLevelStruct<'static>;
-    }
-
-    unsafe impl<___E> ::fidl_next::Encode<___E> for TopLevelStruct
+    unsafe impl<___E> ::fidl_next::Encode<crate::wire::TopLevelStruct<'static>, ___E> for TopLevelStruct
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
@@ -690,11 +692,11 @@ pub mod natural {
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::TopLevelStruct<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::TopLevelStruct {
                     a,
                     b,
 
@@ -713,20 +715,22 @@ pub mod natural {
         }
     }
 
-    impl ::fidl_next::EncodableOption for TopLevelStruct {
-        type EncodedOption = ::fidl_next::WireBox<'static, crate::wire::TopLevelStruct<'static>>;
-    }
-
-    unsafe impl<___E> ::fidl_next::EncodeOption<___E> for TopLevelStruct
+    unsafe impl<___E>
+        ::fidl_next::EncodeOption<
+            ::fidl_next::WireBox<'static, crate::wire::TopLevelStruct<'static>>,
+            ___E,
+        > for TopLevelStruct
     where
         ___E: ::fidl_next::Encoder + ?Sized,
-        TopLevelStruct: ::fidl_next::Encode<___E>,
+        TopLevelStruct: ::fidl_next::Encode<crate::wire::TopLevelStruct<'static>, ___E>,
     {
         #[inline]
         fn encode_option(
             this: ::core::option::Option<Self>,
             encoder: &mut ___E,
-            out: &mut ::core::mem::MaybeUninit<Self::EncodedOption>,
+            out: &mut ::core::mem::MaybeUninit<
+                ::fidl_next::WireBox<'static, crate::wire::TopLevelStruct<'static>>,
+            >,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             if let Some(inner) = this {
@@ -1228,29 +1232,21 @@ pub mod generic {
         pub b: T1,
     }
 
-    impl<T0, T1> ::fidl_next::Encodable for Int16Int8<T0, T1>
-    where
-        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI16>,
-        T1: ::fidl_next::Encodable<Encoded = i8>,
-    {
-        type Encoded = crate::wire::Int16Int8;
-    }
-
-    unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for Int16Int8<T0, T1>
+    unsafe impl<___E, T0, T1> ::fidl_next::Encode<crate::wire::Int16Int8, ___E> for Int16Int8<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI16>,
-        T1: ::fidl_next::Encode<___E, Encoded = i8>,
+        T0: ::fidl_next::Encode<::fidl_next::WireI16, ___E>,
+        T1: ::fidl_next::Encode<i8, ___E>,
     {
         #[inline]
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Int16Int8>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::Int16Int8 {
 
                     a,
                     b,
@@ -1270,27 +1266,20 @@ pub mod generic {
         pub arr: T0,
     }
 
-    impl<T0> ::fidl_next::Encodable for ArrayInt16Int8<T0>
-    where
-        T0: ::fidl_next::Encodable<Encoded = [crate::wire::Int16Int8; 3]>,
-    {
-        type Encoded = crate::wire::ArrayInt16Int8;
-    }
-
-    unsafe impl<___E, T0> ::fidl_next::Encode<___E> for ArrayInt16Int8<T0>
+    unsafe impl<___E, T0> ::fidl_next::Encode<crate::wire::ArrayInt16Int8, ___E> for ArrayInt16Int8<T0>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<___E, Encoded = [crate::wire::Int16Int8; 3]>,
+        T0: ::fidl_next::Encode<[crate::wire::Int16Int8; 3], ___E>,
     {
         #[inline]
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::ArrayInt16Int8>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::ArrayInt16Int8 {
 
                     arr,
 
@@ -1309,29 +1298,21 @@ pub mod generic {
         pub b: T1,
     }
 
-    impl<T0, T1> ::fidl_next::Encodable for Int8Int32<T0, T1>
-    where
-        T0: ::fidl_next::Encodable<Encoded = i8>,
-        T1: ::fidl_next::Encodable<Encoded = ::fidl_next::WireI32>,
-    {
-        type Encoded = crate::wire::Int8Int32;
-    }
-
-    unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for Int8Int32<T0, T1>
+    unsafe impl<___E, T0, T1> ::fidl_next::Encode<crate::wire::Int8Int32, ___E> for Int8Int32<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<___E, Encoded = i8>,
-        T1: ::fidl_next::Encode<___E, Encoded = ::fidl_next::WireI32>,
+        T0: ::fidl_next::Encode<i8, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::WireI32, ___E>,
     {
         #[inline]
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::Int8Int32>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::Int8Int32 {
 
                     a,
                     b,
@@ -1353,34 +1334,25 @@ pub mod generic {
         pub h: T1,
     }
 
-    impl<T0, T1> ::fidl_next::Encodable for NonInlineStructTestStruct<T0, T1>
-    where
-        T0: ::fidl_next::Encodable<Encoded = ::fidl_next::WireBox<'static, crate::wire::Int16Int8>>,
-        T1: ::fidl_next::Encodable<Encoded = ::fidl_next::fuchsia::WireHandle>,
-    {
-        type Encoded = crate::wire::NonInlineStructTestStruct<'static>;
-    }
-
-    unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for NonInlineStructTestStruct<T0, T1>
+    unsafe impl<___E, T0, T1>
+        ::fidl_next::Encode<crate::wire::NonInlineStructTestStruct<'static>, ___E>
+        for NonInlineStructTestStruct<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<
-                ___E,
-                Encoded = ::fidl_next::WireBox<'static, crate::wire::Int16Int8>,
-            >,
-        T1: ::fidl_next::Encode<___E, Encoded = ::fidl_next::fuchsia::WireHandle>,
+        T0: ::fidl_next::Encode<::fidl_next::WireBox<'static, crate::wire::Int16Int8>, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::fuchsia::WireHandle, ___E>,
     {
         #[inline]
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::NonInlineStructTestStruct<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::NonInlineStructTestStruct {
 
                     element,
                     h,
@@ -1404,31 +1376,23 @@ pub mod generic {
         pub array: T2,
     }
 
-    impl<T0, T1, T2> ::fidl_next::Encodable for StructPaddingTestStruct<T0, T1, T2>
-    where
-        T0: ::fidl_next::Encodable<Encoded = crate::wire::Int16Int8>,
-        T1: ::fidl_next::Encodable<Encoded = crate::wire::Int8Int32>,
-        T2: ::fidl_next::Encodable<Encoded = crate::wire::ArrayInt16Int8>,
-    {
-        type Encoded = crate::wire::StructPaddingTestStruct;
-    }
-
-    unsafe impl<___E, T0, T1, T2> ::fidl_next::Encode<___E> for StructPaddingTestStruct<T0, T1, T2>
+    unsafe impl<___E, T0, T1, T2> ::fidl_next::Encode<crate::wire::StructPaddingTestStruct, ___E>
+        for StructPaddingTestStruct<T0, T1, T2>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
-        T0: ::fidl_next::Encode<___E, Encoded = crate::wire::Int16Int8>,
-        T1: ::fidl_next::Encode<___E, Encoded = crate::wire::Int8Int32>,
-        T2: ::fidl_next::Encode<___E, Encoded = crate::wire::ArrayInt16Int8>,
+        T0: ::fidl_next::Encode<crate::wire::Int16Int8, ___E>,
+        T1: ::fidl_next::Encode<crate::wire::Int8Int32, ___E>,
+        T2: ::fidl_next::Encode<crate::wire::ArrayInt16Int8, ___E>,
     {
         #[inline]
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::StructPaddingTestStruct>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::StructPaddingTestStruct {
 
                     trailing,
                     inner,
@@ -1453,31 +1417,24 @@ pub mod generic {
         pub b: T1,
     }
 
-    impl<T0, T1> ::fidl_next::Encodable for TopLevelStruct<T0, T1>
-    where
-        T0: ::fidl_next::Encodable<Encoded = crate::wire::StructPaddingTestStruct>,
-        T1: ::fidl_next::Encodable<Encoded = crate::wire::NonInlineStructTestStruct<'static>>,
-    {
-        type Encoded = crate::wire::TopLevelStruct<'static>;
-    }
-
-    unsafe impl<___E, T0, T1> ::fidl_next::Encode<___E> for TopLevelStruct<T0, T1>
+    unsafe impl<___E, T0, T1> ::fidl_next::Encode<crate::wire::TopLevelStruct<'static>, ___E>
+        for TopLevelStruct<T0, T1>
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<___E, Encoded = crate::wire::StructPaddingTestStruct>,
-        T1: ::fidl_next::Encode<___E, Encoded = crate::wire::NonInlineStructTestStruct<'static>>,
+        T0: ::fidl_next::Encode<crate::wire::StructPaddingTestStruct, ___E>,
+        T1: ::fidl_next::Encode<crate::wire::NonInlineStructTestStruct<'static>, ___E>,
     {
         #[inline]
         fn encode(
             self,
             encoder_: &mut ___E,
-            out_: &mut ::core::mem::MaybeUninit<Self::Encoded>,
+            out_: &mut ::core::mem::MaybeUninit<crate::wire::TopLevelStruct<'static>>,
             _: (),
         ) -> ::core::result::Result<(), ::fidl_next::EncodeError> {
             ::fidl_next::munge! {
-                let Self::Encoded {
+                let crate::wire::TopLevelStruct {
 
                     a,
                     b,

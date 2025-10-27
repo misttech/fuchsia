@@ -6,8 +6,8 @@ use core::mem::MaybeUninit;
 
 use crate::fuchsia::{HandleDecoder, HandleEncoder, WireHandle, WireOptionalHandle};
 use crate::{
-    Constrained, Decode, DecodeError, Encodable, EncodableOption, Encode, EncodeError,
-    EncodeOption, FromWire, FromWireOption, IntoNatural, Slot, Unconstrained, Wire, munge,
+    Constrained, Decode, DecodeError, Encode, EncodeError, EncodeOption, FromWire, FromWireOption,
+    IntoNatural, Slot, Unconstrained, Wire, munge,
 };
 
 use zx::Handle;
@@ -112,16 +112,12 @@ macro_rules! define_wire_handle_types {
             }
         }
 
-        impl Encodable for zx::$natural {
-            type Encoded = $wire;
-        }
-
-        unsafe impl<E: HandleEncoder + ?Sized> Encode<E> for zx::$natural {
+        unsafe impl<E: HandleEncoder + ?Sized> Encode<$wire, E> for zx::$natural {
             fn encode(
                 self,
                 encoder: &mut E,
-                out: &mut MaybeUninit<Self::Encoded>,
-                constraint:  <Self::Encoded as Constrained>::Constraint,
+                out: &mut MaybeUninit<$wire>,
+                constraint:  <$wire as Constrained>::Constraint,
             ) -> Result<(), EncodeError> {
                 munge!(let $wire { handle } = out);
                 Handle::from(self).encode(encoder, handle, constraint)
@@ -138,19 +134,15 @@ macro_rules! define_wire_handle_types {
             type Natural = zx::$natural;
         }
 
-        impl EncodableOption for zx::$natural {
-            type EncodedOption = $wire_optional;
-        }
-
-        unsafe impl<E: HandleEncoder + ?Sized> EncodeOption<E> for zx::$natural {
+        unsafe impl<E: HandleEncoder + ?Sized> EncodeOption<$wire_optional, E> for zx::$natural {
             fn encode_option(
                 this: Option<Self>,
                 encoder: &mut E,
-                out: &mut MaybeUninit<Self::EncodedOption>,
-                constraint:  <Self::EncodedOption as Constrained>::Constraint,
+                out: &mut MaybeUninit<$wire_optional>,
+                constraint: (),
             ) -> Result<(), EncodeError> {
                 munge!(let $wire_optional { handle } = out);
-                Handle::encode_option(this.map(Handle::from), encoder, handle, constraint)
+                Encode::encode(this.map(Handle::from), encoder, handle, constraint)
             }
         }
 
