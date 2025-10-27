@@ -92,10 +92,13 @@ fn parse_symbolizer_log(
     symbolizer_log_content: &str,
 ) -> Result<Vec<fheapdump_client::ExecutableRegion>, anyhow::Error> {
     {
-        let mut lines = symbolizer_log_content
-            .split("\n")
-            .filter_map(extract_markup_content)
-            .collect::<VecDeque<Vec<&str>>>();
+        let mut lines = match symbolizer_log_content.rfind("{{{reset}}}") {
+            Some(start_index) => &symbolizer_log_content[start_index..],
+            None => symbolizer_log_content,
+        }
+        .split("\n")
+        .filter_map(extract_markup_content)
+        .collect::<VecDeque<Vec<&str>>>();
 
         // Expect the first symbolizer markup element to be "{{{reset}}}¨
         match lines.pop_front().ok_or_else(|| anyhow!("no symbolizer markup found"))?[..] {
@@ -384,6 +387,11 @@ mod tests {
     #[test]
     fn test_parse_symbolizer_log() {
         assert_eq!(parse_symbolizer_log("
+            {{{reset}}}
+            {{{module:0:kernel:elf:001c122d7c44434165b2e75e9876db2650817d5e}}}
+            {{{mmap:0xfffffffe00100000:0x326d60:load:0:rx:0xfffffffe80100000}}}
+
+            # Everything befroe the following reset is ignored
             {{{reset}}}
             {{{module:0:kernel:elf:001c122d7c44434165b2e75e9876db2650817d5a}}}
             {{{mmap:0xffffffff00100000:0x326d60:load:0:rx:0xffffffff80100000}}}
