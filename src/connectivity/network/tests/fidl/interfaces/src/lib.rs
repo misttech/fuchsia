@@ -565,11 +565,10 @@ async fn test_add_remove_default_route<N: Netstack, I: net_types::ip::Ip>(name: 
     .expect("observe default route removal");
 }
 
-/// Tests that adding/removing a default route in a route table other than the
-/// main table does not cause an interface changed event.
+/// Tests that interface default route state depends on all route tables.
 #[netstack_test]
 #[variant(I, Ip)]
-async fn ignores_default_route_in_non_main_table<I: Ip + FidlRouteAdminIpExt + FidlRouteIpExt>(
+async fn check_default_routes_in_all_tables<I: Ip + FidlRouteAdminIpExt + FidlRouteIpExt>(
     name: &str,
 ) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
@@ -670,19 +669,14 @@ async fn ignores_default_route_in_non_main_table<I: Ip + FidlRouteAdminIpExt + F
         .expect("add route should succeed")
     );
 
-    // We should not observe default route presence in the interface watcher.
+    // We should observe default route presence in the interface watcher.
     fidl_fuchsia_net_interfaces_ext::wait_interface(event_stream.by_ref(), &mut if_map, |if_map| {
         has_default_route(if_map.get(&id).expect("should have interface")).then_some(())
     })
-    .map(|result| {
-        result.expect("should not get error");
-        panic!("should not observe default route")
-    })
-    .on_timeout(ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, || ())
-    .await;
+    .await
+    .expect("observe default route addition");
 
-    // Add the default route to the main table and observe the interface watcher
-    // notification.
+    // Add the default route to the main table and observe the default route is still there.
     assert!(
         fnet_routes_ext::admin::add_route::<I>(
             &main_route_set,
@@ -721,7 +715,7 @@ async fn ignores_default_route_in_non_main_table<I: Ip + FidlRouteAdminIpExt + F
     .await;
 
     // Now remove the default route from the main table. We should observe this
-    // via the interfaces watcher.
+    // via the interfaces watcher because this is the last default route.
     assert!(
         fnet_routes_ext::admin::remove_route::<I>(
             &main_route_set,

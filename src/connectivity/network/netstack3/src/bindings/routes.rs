@@ -17,7 +17,9 @@
 //! fuchsia.net.routes.admin.
 
 use std::borrow::{Borrow as _, Cow};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use assert_matches::assert_matches;
@@ -475,6 +477,47 @@ impl<I: Ip> EntryData<I> {
 type RouteWorkReceivers<I> =
     async_utils::stream::OneOrMany<stream::StreamFuture<mpsc::UnboundedReceiver<RouteWorkItem<I>>>>;
 
+#[derive(Default)]
+struct DefaultRoutesByDevice {
+    // Maps a device ID to the number of default routes currently installed for that device,
+    // across all tables. We key this map on a strong DeviceId because the entry here cannot
+    // go away until all default routes associated with the device are removed.
+    inner: HashMap<DeviceId, NonZeroUsize>,
+}
+
+impl DefaultRoutesByDevice {
+    /// Returns the new count of default routes for the device.
+    fn add(&mut self, device: DeviceId) -> usize {
+        self.inner
+            .entry(device)
+            .and_modify(|count| *count = count.checked_add(1).unwrap())
+            .or_insert_with(|| NonZeroUsize::new(1).unwrap())
+            .get()
+    }
+
+    /// Returns the new count of default routes for the device.
+    ///
+    /// Panics if the device is not found in the map.
+    fn remove(&mut self, device: DeviceId) -> usize {
+        match self.inner.entry(device) {
+            Entry::Occupied(mut entry) => {
+                let count = entry.get_mut();
+                match NonZeroUsize::new(count.get() - 1) {
+                    Some(new_count) => {
+                        *count = new_count;
+                        new_count.get()
+                    }
+                    None => {
+                        let _: NonZeroUsize = entry.remove();
+                        0
+                    }
+                }
+            }
+            Entry::Vacant(_) => panic!("device not found"),
+        }
+    }
+}
+
 pub(crate) struct State<I: Ip> {
     last_table_id: TableId<I>,
     table_work_receiver: mpsc::UnboundedReceiver<TableWorkItem<I>>,
@@ -483,6 +526,7 @@ pub(crate) struct State<I: Ip> {
     tables: HashMap<TableId<I>, Table<I>>,
     rules: RuleTable<I>,
     dispatchers: Dispatchers<I>,
+    default_routes_by_device: DefaultRoutesByDevice,
 }
 
 #[derive(Derivative)]
@@ -522,6 +566,7 @@ where
             rules,
             dispatchers: Dispatchers { route_update_dispatcher, rule_update_dispatcher },
             last_table_id,
+            default_routes_by_device,
         } = self;
         let mut rule_set_work_receivers = stream::FuturesUnordered::new();
         loop {
@@ -557,7 +602,9 @@ where
                         &mut ctx,
                         tables,
                         route_update_dispatcher,
-                        route_work_item);
+                        route_work_item,
+                        default_routes_by_device,
+                    );
                     if let Some(table_id) = removing {
                         let Table { core_id, inner, .. } = tables.remove(&table_id)
                             .expect("invalid table ID");
@@ -665,8 +712,15 @@ where
         tables: &mut HashMap<TableId<I>, Table<I>>,
         update_dispatcher: &mut state::RouteUpdateDispatcher<I>,
         RouteWorkItem { change, responder }: RouteWorkItem<I>,
+        default_routes_by_device: &mut DefaultRoutesByDevice,
     ) {
-        let result = handle_route_change::<I>(tables, ctx, change, update_dispatcher);
+        let result = handle_route_change::<I>(
+            tables,
+            ctx,
+            change,
+            update_dispatcher,
+            default_routes_by_device,
+        );
         if let Some(responder) = responder {
             match responder.send(result) {
                 Ok(()) => (),
@@ -863,6 +917,7 @@ fn handle_single_table_route_change<I>(
     ctx: &mut Ctx,
     change: Change<I>,
     route_update_dispatcher: &state::RouteUpdateDispatcher<I>,
+    default_routes_by_device: &mut DefaultRoutesByDevice,
 ) -> Result<ChangeOutcome, ChangeError>
 where
     I: IpExt + FidlRouteAdminIpExt,
@@ -964,18 +1019,7 @@ where
     match table_change {
         TableChange::Add(entry) => {
             if entry.subnet.prefix() == 0 {
-                // Only notify that we newly have a default route if this is the
-                // only default route on this device, and if this is the main table.
-                if table_id.is_main_route_table_id()
-                    && table
-                        .inner
-                        .iter()
-                        .filter(|(table_entry, _)| {
-                            table_entry.subnet.prefix() == 0 && &table_entry.device == &entry.device
-                        })
-                        .count()
-                        == 1
-                {
+                if default_routes_by_device.add(entry.device.clone()) == 1 {
                     ctx.bindings_ctx().notify_interface_update(
                         &entry.device,
                         crate::bindings::InterfaceUpdate::DefaultRouteChanged {
@@ -1000,7 +1044,12 @@ where
                 entry: to_entry::<I>(&mut ctx_clone, entry),
                 table_id,
             });
-            notify_removed_routes::<I>(ctx.bindings_ctx(), route_update_dispatcher, removed, table);
+            notify_removed_routes::<I>(
+                ctx.bindings_ctx(),
+                route_update_dispatcher,
+                removed,
+                default_routes_by_device,
+            );
         }
     };
 
@@ -1013,6 +1062,7 @@ fn handle_route_change<I>(
     ctx: &mut Ctx,
     change: Change<I>,
     route_update_dispatcher: &state::RouteUpdateDispatcher<I>,
+    default_routes_by_device: &mut DefaultRoutesByDevice,
 ) -> Result<ChangeOutcome, ChangeError>
 where
     I: IpExt + FidlRouteAdminIpExt,
@@ -1068,6 +1118,7 @@ where
             ctx,
             change.clone(),
             route_update_dispatcher,
+            default_routes_by_device,
         )?;
         Ok(match (change_so_far, change_outcome) {
             (ChangeOutcome::NoChange, ChangeOutcome::NoChange) => ChangeOutcome::NoChange,
@@ -1080,30 +1131,13 @@ fn notify_removed_routes<I: Ip>(
     bindings_ctx: &crate::bindings::BindingsCtx,
     dispatcher: &state::RouteUpdateDispatcher<I>,
     removed_routes: impl IntoIterator<Item = EntryAndTableId<I>>,
-    table: &Table<I>,
+    default_routes_by_device: &mut DefaultRoutesByDevice,
 ) {
-    let mut devices_with_default_routes: Option<HashSet<_>> = None;
-    let mut already_notified_devices = HashSet::new();
-
     for EntryAndTableId { entry, table_id } in removed_routes {
         // Only flip the `has_default_route` bit in the interface watcher if
         // this is the main route table.
-        if entry.subnet.prefix() == 0 && table_id.is_main_route_table_id() {
-            // Check if there are now no default routes on this device.
-            let devices_with_default_routes = (&mut devices_with_default_routes)
-                .get_or_insert_with(|| {
-                    table
-                        .inner
-                        .iter()
-                        .filter_map(|(table_entry, _)| {
-                            (table_entry.subnet.prefix() == 0).then(|| table_entry.device.clone())
-                        })
-                        .collect()
-                });
-
-            if !devices_with_default_routes.contains(&entry.device)
-                && already_notified_devices.insert(entry.device.clone())
-            {
+        if entry.subnet.prefix() == 0 {
+            if default_routes_by_device.remove(entry.device.clone()) == 0 {
                 bindings_ctx.notify_interface_update(
                     &entry.device,
                     crate::bindings::InterfaceUpdate::DefaultRouteChanged {
@@ -1187,6 +1221,7 @@ pub(crate) fn create_sink_and_runner() -> (ChangeSink, ChangeRunner) {
             new_rule_set_receiver,
             last_table_id: main_table_id,
             dispatchers: Default::default(),
+            default_routes_by_device: Default::default(),
         };
         (
             Changes {
