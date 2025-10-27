@@ -79,9 +79,7 @@ use {
 
 instantiate_common_routing_tests! { RoutingTestBuilder }
 
-// TODO(https://fxbug.dev/453638611): reenable this test
-#[ignore]
-#[test]
+#[fuchsia::test]
 fn component_teardown_processes_final_request() {
     use std::sync::mpsc;
 
@@ -148,6 +146,7 @@ fn component_teardown_processes_final_request() {
         .await
         .unwrap();
         component_started.store(true, Ordering::Relaxed);
+        _ = started_ack_rx.recv().unwrap();
 
         let resolved_url = RoutingTest::resolved_url("leaf");
         test.mock_runner.wait_for_url(&resolved_url).await;
@@ -165,7 +164,6 @@ fn component_teardown_processes_final_request() {
         (test, echo_proxy, destroy_fut)
     });
 
-    _ = started_ack_rx.recv().unwrap();
     // The future that destroys the component should stall at the point it has told the component's
     // execution scope to shutdown and is waiting for its tasks to drain. Because we've gotten the
     // started ACK from the other thread, we know we aren't running the ExecutionScope's executor
