@@ -384,23 +384,26 @@ macro_rules! TODO_DENY {
 
 /// Returns the `SecurityId` that should be used for SELinux access control checks against `fs_node`.
 fn fs_node_effective_sid_and_class(fs_node: &FsNode) -> FsNodeSidAndClass {
-    let maybe_sid_and_class = get_cached_sid_and_class(&fs_node);
-    if let Some(sid_and_class) = maybe_sid_and_class {
-        return sid_and_class;
-    }
+    let state = fs_node.security_state.lock().clone();
+    let sid = match state.label {
+        FsNodeLabel::SecurityId { sid } => sid,
+        FsNodeLabel::FromTask { task_state } => task_state.lock().current_sid,
+        FsNodeLabel::Uninitialized => {
+            // We should never reach here, but for now enforce it in debug builds.
+            #[cfg(is_debug)]
+            panic!(
+                "Unlabeled FsNode@{} of class {:?} in {}",
+                fs_node.info().ino,
+                file_class_from_file_mode(fs_node.info().mode),
+                fs_node.fs().name()
+            );
+            #[cfg(not(is_debug))]
+            track_stub!(TODO("https://fxbug.dev/381210513"), "SID requested for unlabeled FsNode");
 
-    // We should never reach here, but for now enforce it (see above) in debug builds.
-    #[cfg(is_debug)]
-    panic!(
-        "Unlabeled FsNode@{} of class {:?} in {}",
-        fs_node.info().ino,
-        file_class_from_file_mode(fs_node.info().mode),
-        fs_node.fs().name()
-    );
-    #[cfg(not(is_debug))]
-    track_stub!(TODO("https://fxbug.dev/381210513"), "SID requested for unlabeled FsNode");
-
-    FsNodeSidAndClass { sid: InitialSid::Unlabeled.into(), class: FileClass::File.into() }
+            InitialSid::Unlabeled.into()
+        }
+    };
+    FsNodeSidAndClass { sid, class: state.class }
 }
 
 /// Perform the specified check as would `check_permission()`, but report denials as "todo_deny" in
@@ -843,22 +846,13 @@ fn fs_node_ensure_class(fs_node: &FsNode) -> Result<FsNodeClass, Errno> {
     Ok(class)
 }
 
-/// Returns the security id currently stored in `fs_node`, if any. This API should only be used
-/// by code that is responsible for controlling the cached security id; e.g., to check its
-/// current value before engaging logic that may compute a new value. Access control enforcement
-/// code should use `fs_node_effective_sid_and_class()`, *not* this function.
-fn get_cached_sid_and_class(fs_node: &FsNode) -> Option<FsNodeSidAndClass> {
-    let state = fs_node.security_state.lock().clone();
-    match state.label {
-        FsNodeLabel::SecurityId { sid } => Some(sid),
-        FsNodeLabel::FromTask { task_state } => Some(task_state.lock().current_sid),
-        FsNodeLabel::Uninitialized => None,
-    }
-    .map(|sid| FsNodeSidAndClass { sid, class: state.class })
-}
-
 #[cfg(test)]
 /// Returns the SID with which the node is labeled, if any, for use by `FsNode` labeling tests.
 pub(super) fn get_cached_sid(fs_node: &FsNode) -> Option<SecurityId> {
-    get_cached_sid_and_class(fs_node).map(|sid_and_class| sid_and_class.sid)
+    let state = fs_node.security_state.lock().clone();
+    if matches!(state.label, FsNodeLabel::Uninitialized) {
+        None
+    } else {
+        Some(fs_node_effective_sid_and_class(fs_node).sid)
+    }
 }
