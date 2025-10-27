@@ -260,6 +260,7 @@ _starnix_core_deps = [
   "//src/connectivity/lib/net-types",
   "//src/connectivity/network/netlink",
   "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_rust",
+  "//src/lib/debug/rust",
   "//src/lib/diagnostics/data/rust",
   "//src/lib/diagnostics/inspect/contrib/rust",
   "//src/lib/diagnostics/inspect/derive",

@@ -50,6 +50,7 @@ fn duplicate_handle<H: HandleBased>(h: &H) -> Result<H, Errno> {
 ///
 /// For us there is no useful scenario where this wait times out and we can continue operating.
 fn wait_signaled_sync<H: HandleBased>(handle: &H) -> zx::WaitResult {
+    let mut loop_count = 0;
     loop {
         const TIMEOUT_SECONDS: i64 = 40; // We may need to vary this.
         let timeout =
@@ -70,6 +71,12 @@ fn wait_signaled_sync<H: HandleBased>(handle: &H) -> zx::WaitResult {
             "wait_signaled_sync: not signaled yet. See HrTimer bug: b/428223204: result={result:?}",
             // LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go:hrtimer_wait_signaled_sync_tefmo)
         );
+        if loop_count == 0 {
+            #[cfg(all(target_os = "fuchsia", not(doc)))]
+            ::debug::backtrace_request_all_threads();
+        }
+
+        loop_count += 1;
     }
 }
 
