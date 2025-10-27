@@ -53,6 +53,10 @@ once_cell_visibility = [
   # of Rust 1.80, LazyLock and LazyCell are now stable which should cover most of the use
   # cases for `once_cell.
   #
+  # Most of the listed in-tree dependencies on once_cell use the `get_or_try_init` method which
+  # is not stable yet, see https://github.com/rust-lang/rust/issues/109737. It is expected that
+  # they can be migrated over once it has stabilized in std.
+  #
   # Only add to this list if you have a use case that isn't supported by the
   # standard library APIs.
   #
@@ -65,7 +69,6 @@ once_cell_visibility = [
   "//src/starnix/modules/ashmem:*",
   "//src/starnix/modules/ext4:*",
   "//src/starnix/modules/overlayfs:*",
-  "//src/starnix/modules/thermal:*",
   "//src/storage/ext4/read-only:*",
   "//src/testing/sl4f:*",
   "//tools/shush:*",
