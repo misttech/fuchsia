@@ -297,7 +297,7 @@ if (!is_host) {
     visibility = []
     visibility = [
       ":exported_idk_for_ffx_tests",
-      ":in_tree_collection.fuchsia_idk_atoms_produced_by_main_platform_build.manifest",
+      ":in_tree_collection.fuchsia_idk_atoms_produced_by_main_platform_build",
     ]
 
     category = "partner"

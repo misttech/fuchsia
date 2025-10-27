@@ -34,7 +34,7 @@ import("sdk_molecule.gni")
 #     The name used for this collection's output directory and manifest.
 #     Defaults to `target_name`.
 #
-#   testonly
+#   testonly (optional)
 #     Usual GN meaning.
 #
 template("sdk_collection") {
@@ -113,7 +113,7 @@ template("sdk_collection") {
               target = [ target_triple ]
             }
             schema_version = sdk_metadata_schema_version
-            root = ".."  # Hard-coded in build/sdk/create_molecule_manifest.py.
+            root = ".."  # Has always been hard-coded.
           }
           category = invoker.category
         },

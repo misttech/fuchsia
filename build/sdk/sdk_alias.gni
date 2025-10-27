@@ -20,31 +20,10 @@ template("sdk_alias") {
   assert(defined(invoker.type), "Must define a target type")
   assert(invoker.type == "atom", "Unexpected type")
 
-  # This template simply copies the output files of the sdk_* templates to the
-  # correct location.
-
-  sdk_target_gen_dir = get_label_info(invoker.target, "target_gen_dir")
-  sdk_target_name = get_label_info(invoker.target, "name")
-  manifest_name = "$target_name.sdk"
-
-  group_deps = []
-
-  copy_manifest_target_name = "${target_name}_copy_manifest"
-  group_deps += [ ":$copy_manifest_target_name" ]
-  copy(copy_manifest_target_name) {
-    forward_variables_from(invoker, [ "testonly" ])
-
-    sources = [ "$sdk_target_gen_dir/$sdk_target_name.sdk" ]
-
-    outputs = [ "$target_gen_dir/$manifest_name" ]
-
-    deps = [ invoker.target ]
-  }
-
   group(target_name) {
     forward_variables_from(invoker, [ "testonly" ])
 
-    public_deps = group_deps
+    public_deps = [ invoker.target ]
 
     if (defined(invoker.non_sdk_deps)) {
       public_deps += invoker.non_sdk_deps

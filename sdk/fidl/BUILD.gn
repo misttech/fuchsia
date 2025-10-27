@@ -8,13 +8,14 @@ import("//build/sdk/sdk_molecule.gni")
 
 # How Category Compatibility Checking Works.
 #
-# Currently, category compatibility checking is performed in
-# //build/sdk/create_atom_manifest.py, which is invoked by `sdk_atom()`. As a
-# result, category compatibility checks are only performed if the `sdk_atom()`
-# target, which often ends in "_sdk", is in the build dependency graph. Directly
-# using, for example, a FIDL library does not require a dependency on the "_sdk"
-# target and thus would not trigger category compatibility checks for the
-# library.
+# LINT.IfChange(category_compatibility_checks)
+# Category compatibility checking is performed in `IdkGenerator` using prebuild
+# info, which is added by each `sdk_atom() target, for a given IDK collection.
+# As a result, category compatibility checks are only performed if the
+# `sdk_atom()` target, which often ends in "_sdk", is in the build dependency
+# graph of the IDK collection. Directly using, for example, a FIDL library does
+# not require a dependency on the "_sdk" target and thus would not trigger
+# category compatibility checks for the library.
 #
 # Atoms in the IDK are all referenced by the "_sdk" target and thus covered by
 # category compatibility checks. All non-FIDL atoms can only be in the "partner"
@@ -32,27 +33,18 @@ import("//build/sdk/sdk_molecule.gni")
 #
 # The outlier is "compat_test" and
 # ":compat_test_fidl_libraries_non_sdk_molecule". Because the latter contains
-# test-only FIDL libraries, it cannot be a dependency of ":fidl" or even the IDK
-# (see https://fxbug.dev/42070088).
-# LINT.IfChange(ensure_compatibility_checks)
-# Instead, it (and ":fidl") is an indirect dependency of ":compatibility_tests",
-# which is a dependency of "//:default". This ensures category compatibility
-# checks are performed for all FIDL libraries in an SDK category during default
-# builds. (It also ensures that FIDL compatibility tests are performed for all
-# such FIDL libraries.)
-# LINT.ThenChange(//BUILD.gn:fidl_compatibility_checks)
-#
-# LINT.IfChange(prebuild_info_category_compatibility_checks)
-# There is a newer mechanism based on prebuild info in `IdkGenerator`. Because
-# it uses prebuild info collected from the dependencies of an IDK collection,
-# it is limited to categories other than "compat_test" when processing the real
-# IDK. To address this gap, there is a collection specifically to provide
-# coverage for all FIDL libraries in an SDK category,
-# ":fidl_category_check_collection"
-# "//:default" depends on ":compatibility_tests", which depends on this
-# collection, ensuring the category compatibility is checked for all FIDL
-# libraries in a category.
+# test-only FIDL libraries, it cannot be a dependency of ":fidl" or even the
+# real IDK collection (see https://fxbug.dev/42070088). To address this gap,
+# there is a collection specifically to provide coverage for all FIDL libraries
+# in an SDK category, ":fidl_category_check_collection".
 # LINT.ThenChange(//build/sdk/generate_prebuild_idk/idk_generator.py:fidl_category_checks)
+# LINT.IfChange(ensure_compatibility_checks)
+# "//:default" depends on ":compatibility_tests", which depends on this
+# collection, ensuring the category compatibility checks are performed for all
+# FIDL libraries in an SDK category during default builds. (This collection's
+# dependency on ":all_fidl_libraries_with_categories" also ensures that FIDL
+# compatibility tests are performed for all  such FIDL libraries.)
+# LINT.ThenChange(//BUILD.gn:fidl_compatibility_checks)
 
 sdk_collection("fidl_category_check_collection") {
   visibility = [ ":compatibility_tests" ]
@@ -375,9 +367,8 @@ _prebuilt_fidl_libraries_targets_list = [
 # is not performed on `non_sdk_deps`.
 sdk_molecule("prebuilt_fidl_libraries_non_sdk_molecule") {
   visibility = [
-    ":fidl.manifest",
+    ":fidl",
     ":prebuilt_fidl_libraries_non_sdk_molecule",
-    ":prebuilt_fidl_libraries_non_sdk_molecule.validate",
   ]
   category = "prebuilt"
 
@@ -426,9 +417,8 @@ _host_tool_fidl_libraries_targets_list = [
 # is not performed on `non_sdk_deps`.
 sdk_molecule("host_tool_fidl_libraries_non_sdk_molecule") {
   visibility = [
-    ":fidl.manifest",
+    ":fidl",
     ":host_tool_fidl_libraries_non_sdk_molecule",
-    ":host_tool_fidl_libraries_non_sdk_molecule.validate",
   ]
   category = "host_tool"
 
@@ -478,9 +468,8 @@ sdk_molecule("compat_test_fidl_libraries_non_sdk_molecule") {
   testonly = true
   visibility = [
     ":compat_test_fidl_libraries_non_sdk_molecule",
-    ":compat_test_fidl_libraries_non_sdk_molecule.validate",
-    ":compatibility_checks_for_categories_supporting_testonly.manifest",
-    ":fidl.manifest",
+    ":compatibility_checks_for_categories_supporting_testonly",
+    ":fidl",
   ]
   category = "compat_test"
 
