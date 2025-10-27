@@ -51,7 +51,7 @@ where
                 {% for member in table.members.iter().rev() %}
                     {% let member_name = filters::escape_snake(member.name) %}
                     {{ member.ordinal }} => if let Some(value) = self.{{ member_name }}.take() {
-                        ::fidl_next::WireEnvelope::encode_value(
+                        ::fidl_next::WireEnvelope::encode_value::<{{ self.static_wire_type(member.ty) }}, ___E>(
                             value,
                             preallocated.encoder,
                             &mut out,
@@ -100,7 +100,7 @@ where
                 {% for member in table.members.iter().rev() %}
                     {% let member_name = filters::escape_snake(member.name) %}
                     {{ member.ordinal }} => if let Some(value) = &self.{{ member_name }} {
-                        ::fidl_next::WireEnvelope::encode_value(
+                        ::fidl_next::WireEnvelope::encode_value::<{{ self.static_wire_type(member.ty) }}, ___E>(
                             value,
                             preallocated.encoder,
                             &mut out,

@@ -454,7 +454,7 @@ pub mod natural {
                 match i {
                     4 => {
                         if let Some(value) = self.flags.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<crate::wire::Flags, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -467,11 +467,14 @@ pub mod natural {
 
                     3 => {
                         if let Some(value) = self.args.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
-                                value,
-                                preallocated.encoder,
-                                &mut out,
-                                (5, ()),
+                            ::fidl_next::WireEnvelope::encode_value::<
+                                ::fidl_next::WireVector<
+                                    'static,
+                                    crate::wire_optional::Expression<'static>,
+                                >,
+                                ___E,
+                            >(
+                                value, preallocated.encoder, &mut out, (5, ())
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -480,11 +483,11 @@ pub mod natural {
 
                     1 => {
                         if let Some(value) = self.func.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
-                                value,
-                                preallocated.encoder,
-                                &mut out,
-                                100,
+                            ::fidl_next::WireEnvelope::encode_value::<
+                                ::fidl_next::WireString<'static>,
+                                ___E,
+                            >(
+                                value, preallocated.encoder, &mut out, 100
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -530,7 +533,7 @@ pub mod natural {
                 match i {
                     4 => {
                         if let Some(value) = &self.flags {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<crate::wire::Flags, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -543,11 +546,14 @@ pub mod natural {
 
                     3 => {
                         if let Some(value) = &self.args {
-                            ::fidl_next::WireEnvelope::encode_value(
-                                value,
-                                preallocated.encoder,
-                                &mut out,
-                                (5, ()),
+                            ::fidl_next::WireEnvelope::encode_value::<
+                                ::fidl_next::WireVector<
+                                    'static,
+                                    crate::wire_optional::Expression<'static>,
+                                >,
+                                ___E,
+                            >(
+                                value, preallocated.encoder, &mut out, (5, ())
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -556,11 +562,11 @@ pub mod natural {
 
                     1 => {
                         if let Some(value) = &self.func {
-                            ::fidl_next::WireEnvelope::encode_value(
-                                value,
-                                preallocated.encoder,
-                                &mut out,
-                                100,
+                            ::fidl_next::WireEnvelope::encode_value::<
+                                ::fidl_next::WireString<'static>,
+                                ___E,
+                            >(
+                                value, preallocated.encoder, &mut out, 100
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -1246,11 +1252,11 @@ pub mod natural {
                 match i {
                     2 => {
                         if let Some(value) = self.table_data.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
-                                value,
-                                preallocated.encoder,
-                                &mut out,
-                                (10, ()),
+                            ::fidl_next::WireEnvelope::encode_value::<
+                                ::fidl_next::WireVector<'static, crate::wire::TableData>,
+                                ___E,
+                            >(
+                                value, preallocated.encoder, &mut out, (10, ())
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -1296,11 +1302,11 @@ pub mod natural {
                 match i {
                     2 => {
                         if let Some(value) = &self.table_data {
-                            ::fidl_next::WireEnvelope::encode_value(
-                                value,
-                                preallocated.encoder,
-                                &mut out,
-                                (10, ()),
+                            ::fidl_next::WireEnvelope::encode_value::<
+                                ::fidl_next::WireVector<'static, crate::wire::TableData>,
+                                ___E,
+                            >(
+                                value, preallocated.encoder, &mut out, (10, ())
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)

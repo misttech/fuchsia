@@ -252,7 +252,7 @@ pub mod natural {
                 match i {
                     6 => {
                         if let Some(value) = self.z.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -265,7 +265,7 @@ pub mod natural {
 
                     5 => {
                         if let Some(value) = self.y.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -278,7 +278,7 @@ pub mod natural {
 
                     1 => {
                         if let Some(value) = self.x.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -328,7 +328,7 @@ pub mod natural {
                 match i {
                     6 => {
                         if let Some(value) = &self.z {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -341,7 +341,7 @@ pub mod natural {
 
                     5 => {
                         if let Some(value) = &self.y {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -354,7 +354,7 @@ pub mod natural {
 
                     1 => {
                         if let Some(value) = &self.x {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -477,7 +477,7 @@ pub mod natural {
                 match i {
                     1 => {
                         if let Some(value) = self.x.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -527,7 +527,7 @@ pub mod natural {
                 match i {
                     1 => {
                         if let Some(value) = &self.x {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -634,7 +634,7 @@ pub mod natural {
                 match i {
                     3 => {
                         if let Some(value) = self.x.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -647,7 +647,7 @@ pub mod natural {
 
                     2 => {
                         if let Some(value) = self.y.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -660,7 +660,7 @@ pub mod natural {
 
                     1 => {
                         if let Some(value) = self.z.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -710,7 +710,7 @@ pub mod natural {
                 match i {
                     3 => {
                         if let Some(value) = &self.x {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -723,7 +723,7 @@ pub mod natural {
 
                     2 => {
                         if let Some(value) = &self.y {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -736,7 +736,7 @@ pub mod natural {
 
                     1 => {
                         if let Some(value) = &self.z {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -864,7 +864,7 @@ pub mod natural {
                 match i {
                     5 => {
                         if let Some(value) = self.y.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -877,7 +877,7 @@ pub mod natural {
 
                     1 => {
                         if let Some(value) = self.x.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -927,7 +927,7 @@ pub mod natural {
                 match i {
                     5 => {
                         if let Some(value) = &self.y {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -940,7 +940,7 @@ pub mod natural {
 
                     1 => {
                         if let Some(value) = &self.x {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1427,11 +1427,11 @@ pub mod natural {
                 match i {
                     64 => {
                         if let Some(value) = self.v64.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
-                                value,
-                                preallocated.encoder,
-                                &mut out,
-                                (),
+                            ::fidl_next::WireEnvelope::encode_value::<
+                                crate::wire::ExtensionTable<'static>,
+                                ___E,
+                            >(
+                                value, preallocated.encoder, &mut out, ()
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -1440,7 +1440,7 @@ pub mod natural {
 
                     63 => {
                         if let Some(value) = self.v63.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1453,7 +1453,7 @@ pub mod natural {
 
                     62 => {
                         if let Some(value) = self.v62.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1466,7 +1466,7 @@ pub mod natural {
 
                     61 => {
                         if let Some(value) = self.v61.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1479,7 +1479,7 @@ pub mod natural {
 
                     60 => {
                         if let Some(value) = self.v60.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1492,7 +1492,7 @@ pub mod natural {
 
                     59 => {
                         if let Some(value) = self.v59.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1505,7 +1505,7 @@ pub mod natural {
 
                     58 => {
                         if let Some(value) = self.v58.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1518,7 +1518,7 @@ pub mod natural {
 
                     57 => {
                         if let Some(value) = self.v57.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1531,7 +1531,7 @@ pub mod natural {
 
                     56 => {
                         if let Some(value) = self.v56.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1544,7 +1544,7 @@ pub mod natural {
 
                     55 => {
                         if let Some(value) = self.v55.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1557,7 +1557,7 @@ pub mod natural {
 
                     54 => {
                         if let Some(value) = self.v54.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1570,7 +1570,7 @@ pub mod natural {
 
                     53 => {
                         if let Some(value) = self.v53.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1583,7 +1583,7 @@ pub mod natural {
 
                     52 => {
                         if let Some(value) = self.v52.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1596,7 +1596,7 @@ pub mod natural {
 
                     51 => {
                         if let Some(value) = self.v51.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1609,7 +1609,7 @@ pub mod natural {
 
                     50 => {
                         if let Some(value) = self.v50.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1622,7 +1622,7 @@ pub mod natural {
 
                     49 => {
                         if let Some(value) = self.v49.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1635,7 +1635,7 @@ pub mod natural {
 
                     48 => {
                         if let Some(value) = self.v48.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1648,7 +1648,7 @@ pub mod natural {
 
                     47 => {
                         if let Some(value) = self.v47.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1661,7 +1661,7 @@ pub mod natural {
 
                     46 => {
                         if let Some(value) = self.v46.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1674,7 +1674,7 @@ pub mod natural {
 
                     45 => {
                         if let Some(value) = self.v45.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1687,7 +1687,7 @@ pub mod natural {
 
                     44 => {
                         if let Some(value) = self.v44.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1700,7 +1700,7 @@ pub mod natural {
 
                     43 => {
                         if let Some(value) = self.v43.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1713,7 +1713,7 @@ pub mod natural {
 
                     42 => {
                         if let Some(value) = self.v42.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1726,7 +1726,7 @@ pub mod natural {
 
                     41 => {
                         if let Some(value) = self.v41.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1739,7 +1739,7 @@ pub mod natural {
 
                     40 => {
                         if let Some(value) = self.v40.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1752,7 +1752,7 @@ pub mod natural {
 
                     39 => {
                         if let Some(value) = self.v39.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1765,7 +1765,7 @@ pub mod natural {
 
                     38 => {
                         if let Some(value) = self.v38.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1778,7 +1778,7 @@ pub mod natural {
 
                     37 => {
                         if let Some(value) = self.v37.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1791,7 +1791,7 @@ pub mod natural {
 
                     36 => {
                         if let Some(value) = self.v36.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1804,7 +1804,7 @@ pub mod natural {
 
                     35 => {
                         if let Some(value) = self.v35.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1817,7 +1817,7 @@ pub mod natural {
 
                     34 => {
                         if let Some(value) = self.v34.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1830,7 +1830,7 @@ pub mod natural {
 
                     33 => {
                         if let Some(value) = self.v33.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1843,7 +1843,7 @@ pub mod natural {
 
                     32 => {
                         if let Some(value) = self.v32.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1856,7 +1856,7 @@ pub mod natural {
 
                     31 => {
                         if let Some(value) = self.v31.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1869,7 +1869,7 @@ pub mod natural {
 
                     30 => {
                         if let Some(value) = self.v30.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1882,7 +1882,7 @@ pub mod natural {
 
                     29 => {
                         if let Some(value) = self.v29.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1895,7 +1895,7 @@ pub mod natural {
 
                     28 => {
                         if let Some(value) = self.v28.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1908,7 +1908,7 @@ pub mod natural {
 
                     27 => {
                         if let Some(value) = self.v27.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1921,7 +1921,7 @@ pub mod natural {
 
                     26 => {
                         if let Some(value) = self.v26.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1934,7 +1934,7 @@ pub mod natural {
 
                     25 => {
                         if let Some(value) = self.v25.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1947,7 +1947,7 @@ pub mod natural {
 
                     24 => {
                         if let Some(value) = self.v24.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1960,7 +1960,7 @@ pub mod natural {
 
                     23 => {
                         if let Some(value) = self.v23.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1973,7 +1973,7 @@ pub mod natural {
 
                     22 => {
                         if let Some(value) = self.v22.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1986,7 +1986,7 @@ pub mod natural {
 
                     21 => {
                         if let Some(value) = self.v21.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1999,7 +1999,7 @@ pub mod natural {
 
                     20 => {
                         if let Some(value) = self.v20.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2012,7 +2012,7 @@ pub mod natural {
 
                     19 => {
                         if let Some(value) = self.v19.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2025,7 +2025,7 @@ pub mod natural {
 
                     18 => {
                         if let Some(value) = self.v18.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2038,7 +2038,7 @@ pub mod natural {
 
                     17 => {
                         if let Some(value) = self.v17.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2051,7 +2051,7 @@ pub mod natural {
 
                     16 => {
                         if let Some(value) = self.v16.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2064,7 +2064,7 @@ pub mod natural {
 
                     15 => {
                         if let Some(value) = self.v15.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2077,7 +2077,7 @@ pub mod natural {
 
                     14 => {
                         if let Some(value) = self.v14.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2090,7 +2090,7 @@ pub mod natural {
 
                     13 => {
                         if let Some(value) = self.v13.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2103,7 +2103,7 @@ pub mod natural {
 
                     12 => {
                         if let Some(value) = self.v12.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2116,7 +2116,7 @@ pub mod natural {
 
                     11 => {
                         if let Some(value) = self.v11.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2129,7 +2129,7 @@ pub mod natural {
 
                     10 => {
                         if let Some(value) = self.v10.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2142,7 +2142,7 @@ pub mod natural {
 
                     9 => {
                         if let Some(value) = self.v9.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2155,7 +2155,7 @@ pub mod natural {
 
                     8 => {
                         if let Some(value) = self.v8.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2168,7 +2168,7 @@ pub mod natural {
 
                     7 => {
                         if let Some(value) = self.v7.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2181,7 +2181,7 @@ pub mod natural {
 
                     6 => {
                         if let Some(value) = self.v6.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2194,7 +2194,7 @@ pub mod natural {
 
                     5 => {
                         if let Some(value) = self.v5.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2207,7 +2207,7 @@ pub mod natural {
 
                     4 => {
                         if let Some(value) = self.v4.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2220,7 +2220,7 @@ pub mod natural {
 
                     3 => {
                         if let Some(value) = self.v3.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2233,7 +2233,7 @@ pub mod natural {
 
                     2 => {
                         if let Some(value) = self.v2.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2246,7 +2246,7 @@ pub mod natural {
 
                     1 => {
                         if let Some(value) = self.v1.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2296,11 +2296,11 @@ pub mod natural {
                 match i {
                     64 => {
                         if let Some(value) = &self.v64 {
-                            ::fidl_next::WireEnvelope::encode_value(
-                                value,
-                                preallocated.encoder,
-                                &mut out,
-                                (),
+                            ::fidl_next::WireEnvelope::encode_value::<
+                                crate::wire::ExtensionTable<'static>,
+                                ___E,
+                            >(
+                                value, preallocated.encoder, &mut out, ()
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -2309,7 +2309,7 @@ pub mod natural {
 
                     63 => {
                         if let Some(value) = &self.v63 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2322,7 +2322,7 @@ pub mod natural {
 
                     62 => {
                         if let Some(value) = &self.v62 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2335,7 +2335,7 @@ pub mod natural {
 
                     61 => {
                         if let Some(value) = &self.v61 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2348,7 +2348,7 @@ pub mod natural {
 
                     60 => {
                         if let Some(value) = &self.v60 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2361,7 +2361,7 @@ pub mod natural {
 
                     59 => {
                         if let Some(value) = &self.v59 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2374,7 +2374,7 @@ pub mod natural {
 
                     58 => {
                         if let Some(value) = &self.v58 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2387,7 +2387,7 @@ pub mod natural {
 
                     57 => {
                         if let Some(value) = &self.v57 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2400,7 +2400,7 @@ pub mod natural {
 
                     56 => {
                         if let Some(value) = &self.v56 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2413,7 +2413,7 @@ pub mod natural {
 
                     55 => {
                         if let Some(value) = &self.v55 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2426,7 +2426,7 @@ pub mod natural {
 
                     54 => {
                         if let Some(value) = &self.v54 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2439,7 +2439,7 @@ pub mod natural {
 
                     53 => {
                         if let Some(value) = &self.v53 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2452,7 +2452,7 @@ pub mod natural {
 
                     52 => {
                         if let Some(value) = &self.v52 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2465,7 +2465,7 @@ pub mod natural {
 
                     51 => {
                         if let Some(value) = &self.v51 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2478,7 +2478,7 @@ pub mod natural {
 
                     50 => {
                         if let Some(value) = &self.v50 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2491,7 +2491,7 @@ pub mod natural {
 
                     49 => {
                         if let Some(value) = &self.v49 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2504,7 +2504,7 @@ pub mod natural {
 
                     48 => {
                         if let Some(value) = &self.v48 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2517,7 +2517,7 @@ pub mod natural {
 
                     47 => {
                         if let Some(value) = &self.v47 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2530,7 +2530,7 @@ pub mod natural {
 
                     46 => {
                         if let Some(value) = &self.v46 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2543,7 +2543,7 @@ pub mod natural {
 
                     45 => {
                         if let Some(value) = &self.v45 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2556,7 +2556,7 @@ pub mod natural {
 
                     44 => {
                         if let Some(value) = &self.v44 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2569,7 +2569,7 @@ pub mod natural {
 
                     43 => {
                         if let Some(value) = &self.v43 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2582,7 +2582,7 @@ pub mod natural {
 
                     42 => {
                         if let Some(value) = &self.v42 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2595,7 +2595,7 @@ pub mod natural {
 
                     41 => {
                         if let Some(value) = &self.v41 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2608,7 +2608,7 @@ pub mod natural {
 
                     40 => {
                         if let Some(value) = &self.v40 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2621,7 +2621,7 @@ pub mod natural {
 
                     39 => {
                         if let Some(value) = &self.v39 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2634,7 +2634,7 @@ pub mod natural {
 
                     38 => {
                         if let Some(value) = &self.v38 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2647,7 +2647,7 @@ pub mod natural {
 
                     37 => {
                         if let Some(value) = &self.v37 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2660,7 +2660,7 @@ pub mod natural {
 
                     36 => {
                         if let Some(value) = &self.v36 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2673,7 +2673,7 @@ pub mod natural {
 
                     35 => {
                         if let Some(value) = &self.v35 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2686,7 +2686,7 @@ pub mod natural {
 
                     34 => {
                         if let Some(value) = &self.v34 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2699,7 +2699,7 @@ pub mod natural {
 
                     33 => {
                         if let Some(value) = &self.v33 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2712,7 +2712,7 @@ pub mod natural {
 
                     32 => {
                         if let Some(value) = &self.v32 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2725,7 +2725,7 @@ pub mod natural {
 
                     31 => {
                         if let Some(value) = &self.v31 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2738,7 +2738,7 @@ pub mod natural {
 
                     30 => {
                         if let Some(value) = &self.v30 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2751,7 +2751,7 @@ pub mod natural {
 
                     29 => {
                         if let Some(value) = &self.v29 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2764,7 +2764,7 @@ pub mod natural {
 
                     28 => {
                         if let Some(value) = &self.v28 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2777,7 +2777,7 @@ pub mod natural {
 
                     27 => {
                         if let Some(value) = &self.v27 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2790,7 +2790,7 @@ pub mod natural {
 
                     26 => {
                         if let Some(value) = &self.v26 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2803,7 +2803,7 @@ pub mod natural {
 
                     25 => {
                         if let Some(value) = &self.v25 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2816,7 +2816,7 @@ pub mod natural {
 
                     24 => {
                         if let Some(value) = &self.v24 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2829,7 +2829,7 @@ pub mod natural {
 
                     23 => {
                         if let Some(value) = &self.v23 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2842,7 +2842,7 @@ pub mod natural {
 
                     22 => {
                         if let Some(value) = &self.v22 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2855,7 +2855,7 @@ pub mod natural {
 
                     21 => {
                         if let Some(value) = &self.v21 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2868,7 +2868,7 @@ pub mod natural {
 
                     20 => {
                         if let Some(value) = &self.v20 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2881,7 +2881,7 @@ pub mod natural {
 
                     19 => {
                         if let Some(value) = &self.v19 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2894,7 +2894,7 @@ pub mod natural {
 
                     18 => {
                         if let Some(value) = &self.v18 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2907,7 +2907,7 @@ pub mod natural {
 
                     17 => {
                         if let Some(value) = &self.v17 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2920,7 +2920,7 @@ pub mod natural {
 
                     16 => {
                         if let Some(value) = &self.v16 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2933,7 +2933,7 @@ pub mod natural {
 
                     15 => {
                         if let Some(value) = &self.v15 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2946,7 +2946,7 @@ pub mod natural {
 
                     14 => {
                         if let Some(value) = &self.v14 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2959,7 +2959,7 @@ pub mod natural {
 
                     13 => {
                         if let Some(value) = &self.v13 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2972,7 +2972,7 @@ pub mod natural {
 
                     12 => {
                         if let Some(value) = &self.v12 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2985,7 +2985,7 @@ pub mod natural {
 
                     11 => {
                         if let Some(value) = &self.v11 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2998,7 +2998,7 @@ pub mod natural {
 
                     10 => {
                         if let Some(value) = &self.v10 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -3011,7 +3011,7 @@ pub mod natural {
 
                     9 => {
                         if let Some(value) = &self.v9 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -3024,7 +3024,7 @@ pub mod natural {
 
                     8 => {
                         if let Some(value) = &self.v8 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -3037,7 +3037,7 @@ pub mod natural {
 
                     7 => {
                         if let Some(value) = &self.v7 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -3050,7 +3050,7 @@ pub mod natural {
 
                     6 => {
                         if let Some(value) = &self.v6 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -3063,7 +3063,7 @@ pub mod natural {
 
                     5 => {
                         if let Some(value) = &self.v5 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -3076,7 +3076,7 @@ pub mod natural {
 
                     4 => {
                         if let Some(value) = &self.v4 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -3089,7 +3089,7 @@ pub mod natural {
 
                     3 => {
                         if let Some(value) = &self.v3 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -3102,7 +3102,7 @@ pub mod natural {
 
                     2 => {
                         if let Some(value) = &self.v2 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -3115,7 +3115,7 @@ pub mod natural {
 
                     1 => {
                         if let Some(value) = &self.v1 {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -4094,7 +4094,7 @@ pub mod natural {
                 match i {
                     1 => {
                         if let Some(value) = self.x.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -4144,7 +4144,7 @@ pub mod natural {
                 match i {
                     1 => {
                         if let Some(value) = &self.x {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI64, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,

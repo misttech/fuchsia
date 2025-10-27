@@ -55,12 +55,8 @@ impl WireEnvelope {
 
     /// Encodes a `'static` value into an envelope with an encoder.
     #[inline]
-    pub fn encode_value_static<
-        E: InternalHandleEncoder + ?Sized,
-        W: Constrained + Wire,
-        T: Encode<W, E>,
-    >(
-        value: T,
+    pub fn encode_value_static<W: Constrained + Wire, E: InternalHandleEncoder + ?Sized>(
+        value: impl Encode<W, E>,
         encoder: &mut E,
         out: &mut MaybeUninit<Self>,
         constraint: W::Constraint,
@@ -106,8 +102,8 @@ impl WireEnvelope {
 
     /// Encodes a value into an envelope with an encoder.
     #[inline]
-    pub fn encode_value<E: Encoder + ?Sized, W: Constrained + Wire, T: Encode<W, E>>(
-        value: T,
+    pub fn encode_value<W: Constrained + Wire, E: Encoder + ?Sized>(
+        value: impl Encode<W, E>,
         encoder: &mut E,
         out: &mut MaybeUninit<Self>,
         constraint: W::Constraint,

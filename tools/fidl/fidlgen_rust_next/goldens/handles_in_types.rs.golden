@@ -356,11 +356,11 @@ pub mod natural {
                 match i {
                     1 => {
                         if let Some(value) = self.h.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
-                                value,
-                                preallocated.encoder,
-                                &mut out,
-                                (),
+                            ::fidl_next::WireEnvelope::encode_value::<
+                                ::fidl_next::fuchsia::WireVmo,
+                                ___E,
+                            >(
+                                value, preallocated.encoder, &mut out, ()
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)

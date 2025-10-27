@@ -861,7 +861,7 @@ pub mod natural {
                 match i {
                     1 => {
                         if let Some(value) = self.field.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI32, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -910,7 +910,7 @@ pub mod natural {
                 match i {
                     1 => {
                         if let Some(value) = &self.field {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireI32, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,

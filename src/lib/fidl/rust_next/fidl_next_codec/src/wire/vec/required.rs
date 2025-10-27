@@ -296,6 +296,39 @@ where
     }
 }
 
+unsafe impl<W, E, T, const N: usize> Encode<WireVector<'static, W>, E> for [T; N]
+where
+    W: Constrained + Wire,
+    E: Encoder + ?Sized,
+    T: Encode<W, E>,
+{
+    fn encode(
+        self,
+        encoder: &mut E,
+        out: &mut MaybeUninit<WireVector<'static, W>>,
+        constraint: VectorConstraint<W>,
+    ) -> Result<(), EncodeError> {
+        encode_to_vector(self, encoder, out, constraint)
+    }
+}
+
+unsafe impl<'a, W, E, T, const N: usize> Encode<WireVector<'static, W>, E> for &'a [T; N]
+where
+    W: Constrained + Wire,
+    E: Encoder + ?Sized,
+    T: Encode<W, E>,
+    &'a T: Encode<W, E>,
+{
+    fn encode(
+        self,
+        encoder: &mut E,
+        out: &mut MaybeUninit<WireVector<'static, W>>,
+        constraint: VectorConstraint<W>,
+    ) -> Result<(), EncodeError> {
+        encode_to_vector(self, encoder, out, constraint)
+    }
+}
+
 unsafe impl<'a, W, E, T> Encode<WireVector<'static, W>, E> for &'a [T]
 where
     W: Constrained + Wire,

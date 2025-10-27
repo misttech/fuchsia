@@ -270,11 +270,11 @@ pub mod natural {
                 match i {
                     4 => {
                         if let Some(value) = self.boot_ticks.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
-                                value,
-                                preallocated.encoder,
-                                &mut out,
-                                (),
+                            ::fidl_next::WireEnvelope::encode_value::<
+                                [::fidl_next::WireI64; 10],
+                                ___E,
+                            >(
+                                value, preallocated.encoder, &mut out, ()
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -283,11 +283,11 @@ pub mod natural {
 
                     3 => {
                         if let Some(value) = self.monotonic_ticks.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
-                                value,
-                                preallocated.encoder,
-                                &mut out,
-                                (),
+                            ::fidl_next::WireEnvelope::encode_value::<
+                                [::fidl_next::WireI64; 10],
+                                ___E,
+                            >(
+                                value, preallocated.encoder, &mut out, ()
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -296,11 +296,11 @@ pub mod natural {
 
                     2 => {
                         if let Some(value) = self.boot.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
-                                value,
-                                preallocated.encoder,
-                                &mut out,
-                                (4294967295, ()),
+                            ::fidl_next::WireEnvelope::encode_value::<
+                                ::fidl_next::WireVector<'static, ::fidl_next::WireI64>,
+                                ___E,
+                            >(
+                                value, preallocated.encoder, &mut out, (4294967295, ())
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -309,11 +309,11 @@ pub mod natural {
 
                     1 => {
                         if let Some(value) = self.monotonic.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
-                                value,
-                                preallocated.encoder,
-                                &mut out,
-                                (),
+                            ::fidl_next::WireEnvelope::encode_value::<
+                                [::fidl_next::WireI64; 10],
+                                ___E,
+                            >(
+                                value, preallocated.encoder, &mut out, ()
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -359,11 +359,11 @@ pub mod natural {
                 match i {
                     4 => {
                         if let Some(value) = &self.boot_ticks {
-                            ::fidl_next::WireEnvelope::encode_value(
-                                value,
-                                preallocated.encoder,
-                                &mut out,
-                                (),
+                            ::fidl_next::WireEnvelope::encode_value::<
+                                [::fidl_next::WireI64; 10],
+                                ___E,
+                            >(
+                                value, preallocated.encoder, &mut out, ()
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -372,11 +372,11 @@ pub mod natural {
 
                     3 => {
                         if let Some(value) = &self.monotonic_ticks {
-                            ::fidl_next::WireEnvelope::encode_value(
-                                value,
-                                preallocated.encoder,
-                                &mut out,
-                                (),
+                            ::fidl_next::WireEnvelope::encode_value::<
+                                [::fidl_next::WireI64; 10],
+                                ___E,
+                            >(
+                                value, preallocated.encoder, &mut out, ()
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -385,11 +385,11 @@ pub mod natural {
 
                     2 => {
                         if let Some(value) = &self.boot {
-                            ::fidl_next::WireEnvelope::encode_value(
-                                value,
-                                preallocated.encoder,
-                                &mut out,
-                                (4294967295, ()),
+                            ::fidl_next::WireEnvelope::encode_value::<
+                                ::fidl_next::WireVector<'static, ::fidl_next::WireI64>,
+                                ___E,
+                            >(
+                                value, preallocated.encoder, &mut out, (4294967295, ())
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)
@@ -398,11 +398,11 @@ pub mod natural {
 
                     1 => {
                         if let Some(value) = &self.monotonic {
-                            ::fidl_next::WireEnvelope::encode_value(
-                                value,
-                                preallocated.encoder,
-                                &mut out,
-                                (),
+                            ::fidl_next::WireEnvelope::encode_value::<
+                                [::fidl_next::WireI64; 10],
+                                ___E,
+                            >(
+                                value, preallocated.encoder, &mut out, ()
                             )?;
                         } else {
                             ::fidl_next::WireEnvelope::encode_zero(&mut out)

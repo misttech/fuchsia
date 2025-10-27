@@ -48,7 +48,7 @@ pub mod natural {
                 match i {
                     1 => {
                         if let Some(value) = self.a.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireU16, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -101,7 +101,7 @@ pub mod natural {
                 match i {
                     1 => {
                         if let Some(value) = &self.a {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireU16, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -417,7 +417,7 @@ pub mod natural {
                 match i {
                     1 => {
                         if let Some(value) = self.a.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireU16, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -470,7 +470,7 @@ pub mod natural {
                 match i {
                     1 => {
                         if let Some(value) = &self.a {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireU16, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -576,7 +576,7 @@ pub mod natural {
                 match i {
                     1 => {
                         if let Some(value) = self.a.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireU16, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -631,7 +631,7 @@ pub mod natural {
                 match i {
                     1 => {
                         if let Some(value) = &self.a {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireU16, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1157,7 +1157,7 @@ pub mod natural {
                 match i {
                     1 => {
                         if let Some(value) = self.a.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireU16, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1207,7 +1207,7 @@ pub mod natural {
                 match i {
                     1 => {
                         if let Some(value) = &self.a {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireU16, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1479,7 +1479,7 @@ pub mod natural {
                 match i {
                     1 => {
                         if let Some(value) = self.a.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireU16, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1530,7 +1530,7 @@ pub mod natural {
                 match i {
                     1 => {
                         if let Some(value) = &self.a {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireU16, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1848,7 +1848,7 @@ pub mod natural {
                 match i {
                     1 => {
                         if let Some(value) = self.a.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireU16, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -1901,7 +1901,7 @@ pub mod natural {
                 match i {
                     1 => {
                         if let Some(value) = &self.a {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireU16, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2003,7 +2003,7 @@ pub mod natural {
                 match i {
                     1 => {
                         if let Some(value) = self.a.take() {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireU16, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
@@ -2056,7 +2056,7 @@ pub mod natural {
                 match i {
                     1 => {
                         if let Some(value) = &self.a {
-                            ::fidl_next::WireEnvelope::encode_value(
+                            ::fidl_next::WireEnvelope::encode_value::<::fidl_next::WireU16, ___E>(
                                 value,
                                 preallocated.encoder,
                                 &mut out,
