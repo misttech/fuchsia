@@ -74,7 +74,7 @@ if ! command -v gemini >/dev/null 2>&1; then
 fi
 
 # Call gemini with the prompt from stdin
-json_response="$( (cat "${PROMPT}"; echo; git show HEAD) | gemini -p )" || {
+json_response="$( (cat "${PROMPT}"; echo; git show HEAD) | gemini )" || {
     fx-error "Gemini command failed."
     exit 1
 }
