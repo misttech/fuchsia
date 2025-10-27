@@ -156,6 +156,19 @@ impl Node for ExtDirectory {
             ),
         ))
     }
+
+    fn list_extended_attributes(
+        &self,
+    ) -> impl Future<Output = Result<Vec<Vec<u8>>, Status>> + Send {
+        ready(Ok(self.xattrs.keys().map(Clone::clone).collect()))
+    }
+
+    fn get_extended_attribute(
+        &self,
+        name: Vec<u8>,
+    ) -> impl Future<Output = Result<Vec<u8>, Status>> + Send {
+        ready(self.xattrs.get(&name).map(Clone::clone).ok_or(Status::NOT_FOUND))
+    }
 }
 
 impl Directory for ExtDirectory {
@@ -255,19 +268,6 @@ impl Directory for ExtDirectory {
     fn unregister_watcher(self: Arc<Self>, key: usize) {
         let mut data = self.data.lock();
         data.watchers.remove(key);
-    }
-
-    fn list_extended_attributes(
-        &self,
-    ) -> impl Future<Output = Result<Vec<Vec<u8>>, Status>> + Send {
-        ready(Ok(self.xattrs.keys().map(Clone::clone).collect()))
-    }
-
-    fn get_extended_attribute(
-        &self,
-        name: Vec<u8>,
-    ) -> impl Future<Output = Result<Vec<u8>, Status>> + Send {
-        ready(self.xattrs.get(&name).map(Clone::clone).ok_or(Status::NOT_FOUND))
     }
 }
 

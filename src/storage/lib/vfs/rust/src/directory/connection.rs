@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use crate::common::{
-    encode_extended_attribute_value, extended_attributes_sender, send_on_open_with_error,
+    decode_extended_attribute_value, encode_extended_attribute_value, extended_attributes_sender,
+    send_on_open_with_error,
 };
 use crate::directory::common::check_child_connection_flags;
 use crate::directory::entry_container::{Directory, DirectoryWatcher};
@@ -165,13 +166,25 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                 .trace(trace::trace_future_args!(c"storage", c"Directory::GetExtendedAttribute"))
                 .await?;
             }
-            fio::DirectoryRequest::SetExtendedAttribute { responder, .. } => {
-                trace::duration!(c"storage", c"Directory::SetExtendedAttribute");
-                responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
+            fio::DirectoryRequest::SetExtendedAttribute { name, value, mode, responder } => {
+                async move {
+                    let res = self
+                        .handle_set_extended_attribute(name, value, mode)
+                        .await
+                        .map_err(Status::into_raw);
+                    responder.send(res)
+                }
+                .trace(trace::trace_future_args!(c"storage", c"Directory::SetExtendedAttribute"))
+                .await?;
             }
-            fio::DirectoryRequest::RemoveExtendedAttribute { responder, .. } => {
-                trace::duration!(c"storage", c"Directory::RemoveExtendedAttribute");
-                responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
+            fio::DirectoryRequest::RemoveExtendedAttribute { name, responder } => {
+                async move {
+                    let res =
+                        self.handle_remove_extended_attribute(name).await.map_err(Status::into_raw);
+                    responder.send(res)
+                }
+                .trace(trace::trace_future_args!(c"storage", c"Directory::RemoveExtendedAttribute"))
+                .await?;
             }
             #[cfg(fuchsia_api_level_at_least = "27")]
             fio::DirectoryRequest::GetFlags { responder } => {
@@ -557,6 +570,23 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
     ) -> Result<fio::ExtendedAttributeValue, Status> {
         let value = self.directory.get_extended_attribute(name).await?;
         encode_extended_attribute_value(value)
+    }
+
+    async fn handle_set_extended_attribute(
+        &self,
+        name: Vec<u8>,
+        value: fio::ExtendedAttributeValue,
+        mode: fio::SetExtendedAttributeMode,
+    ) -> Result<(), Status> {
+        if name.contains(&0) {
+            return Err(Status::INVALID_ARGS);
+        }
+        let val = decode_extended_attribute_value(value)?;
+        self.directory.set_extended_attribute(name, val, mode).await
+    }
+
+    async fn handle_remove_extended_attribute(&self, name: Vec<u8>) -> Result<(), Status> {
+        self.directory.remove_extended_attribute(name).await
     }
 }
 

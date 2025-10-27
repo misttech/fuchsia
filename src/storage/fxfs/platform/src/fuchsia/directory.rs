@@ -821,19 +821,6 @@ impl MutableDirectory for FxDirectory {
         }
         .map_err(map_to_status)
     }
-
-    async fn set_extended_attribute(
-        &self,
-        name: Vec<u8>,
-        value: Vec<u8>,
-        mode: fio::SetExtendedAttributeMode,
-    ) -> Result<(), zx::Status> {
-        self.directory.set_extended_attribute(name, value, mode.into()).await.map_err(map_to_status)
-    }
-
-    async fn remove_extended_attribute(&self, name: Vec<u8>) -> Result<(), zx::Status> {
-        self.directory.remove_extended_attribute(name).await.map_err(map_to_status)
-    }
 }
 
 impl DirectoryEntry for FxDirectory {
@@ -910,6 +897,27 @@ impl vfs::node::Node for FxDirectory {
             store.object_count(),
             self.volume().id(),
         ))
+    }
+
+    async fn list_extended_attributes(&self) -> Result<Vec<Vec<u8>>, zx::Status> {
+        self.directory.list_extended_attributes().await.map_err(map_to_status)
+    }
+
+    async fn get_extended_attribute(&self, name: Vec<u8>) -> Result<Vec<u8>, zx::Status> {
+        self.directory.get_extended_attribute(name).await.map_err(map_to_status)
+    }
+
+    async fn set_extended_attribute(
+        &self,
+        name: Vec<u8>,
+        value: Vec<u8>,
+        mode: fio::SetExtendedAttributeMode,
+    ) -> Result<(), zx::Status> {
+        self.directory.set_extended_attribute(name, value, mode.into()).await.map_err(map_to_status)
+    }
+
+    async fn remove_extended_attribute(&self, name: Vec<u8>) -> Result<(), zx::Status> {
+        self.directory.remove_extended_attribute(name).await.map_err(map_to_status)
     }
 }
 
@@ -1121,14 +1129,6 @@ impl VfsDirectory for FxDirectory {
 
     fn unregister_watcher(self: Arc<Self>, key: usize) {
         self.watchers.lock().remove(key);
-    }
-
-    async fn list_extended_attributes(&self) -> Result<Vec<Vec<u8>>, zx::Status> {
-        self.directory.list_extended_attributes().await.map_err(map_to_status)
-    }
-
-    async fn get_extended_attribute(&self, name: Vec<u8>) -> Result<Vec<u8>, zx::Status> {
-        self.directory.get_extended_attribute(name).await.map_err(map_to_status)
     }
 }
 

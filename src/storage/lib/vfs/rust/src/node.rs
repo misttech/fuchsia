@@ -97,6 +97,49 @@ pub trait Node: GetEntryInfo + IntoAny + Send + Sync + 'static {
         Connection::create_sync(scope, self, options, object_request.take());
         Ok(())
     }
+
+    /// List extended attributes.
+    fn list_extended_attributes(&self) -> impl Future<Output = Result<Vec<Vec<u8>>, Status>> + Send
+    where
+        Self: Sized,
+    {
+        ready(Err(Status::NOT_SUPPORTED))
+    }
+
+    /// Get the value for an extended attribute.
+    fn get_extended_attribute(
+        &self,
+        _name: Vec<u8>,
+    ) -> impl Future<Output = Result<Vec<u8>, Status>> + Send
+    where
+        Self: Sized,
+    {
+        ready(Err(Status::NOT_SUPPORTED))
+    }
+
+    /// Set the value for an extended attribute.
+    fn set_extended_attribute(
+        &self,
+        _name: Vec<u8>,
+        _value: Vec<u8>,
+        _mode: fio::SetExtendedAttributeMode,
+    ) -> impl Future<Output = Result<(), Status>> + Send
+    where
+        Self: Sized,
+    {
+        ready(Err(Status::NOT_SUPPORTED))
+    }
+
+    /// Remove the value for an extended attribute.
+    fn remove_extended_attribute(
+        &self,
+        _name: Vec<u8>,
+    ) -> impl Future<Output = Result<(), Status>> + Send
+    where
+        Self: Sized,
+    {
+        ready(Err(Status::NOT_SUPPORTED))
+    }
 }
 
 /// Represents a FIDL (limited) node connection.

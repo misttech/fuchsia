@@ -591,6 +591,31 @@ impl vfs::node::Node for FxFile {
             self.handle.owner().id(),
         ))
     }
+
+    async fn list_extended_attributes(&self) -> Result<Vec<Vec<u8>>, Status> {
+        self.handle.store_handle().list_extended_attributes().await.map_err(map_to_status)
+    }
+
+    async fn get_extended_attribute(&self, name: Vec<u8>) -> Result<Vec<u8>, Status> {
+        self.handle.store_handle().get_extended_attribute(name).await.map_err(map_to_status)
+    }
+
+    async fn set_extended_attribute(
+        &self,
+        name: Vec<u8>,
+        value: Vec<u8>,
+        mode: fio::SetExtendedAttributeMode,
+    ) -> Result<(), Status> {
+        self.handle
+            .store_handle()
+            .set_extended_attribute(name, value, mode.into())
+            .await
+            .map_err(map_to_status)
+    }
+
+    async fn remove_extended_attribute(&self, name: Vec<u8>) -> Result<(), Status> {
+        self.handle.store_handle().remove_extended_attribute(name).await.map_err(map_to_status)
+    }
 }
 
 impl File for FxFile {
@@ -665,31 +690,6 @@ impl File for FxFile {
 
         self.handle.update_attributes(&attributes).await.map_err(map_to_status)?;
         Ok(())
-    }
-
-    async fn list_extended_attributes(&self) -> Result<Vec<Vec<u8>>, Status> {
-        self.handle.store_handle().list_extended_attributes().await.map_err(map_to_status)
-    }
-
-    async fn get_extended_attribute(&self, name: Vec<u8>) -> Result<Vec<u8>, Status> {
-        self.handle.store_handle().get_extended_attribute(name).await.map_err(map_to_status)
-    }
-
-    async fn set_extended_attribute(
-        &self,
-        name: Vec<u8>,
-        value: Vec<u8>,
-        mode: fio::SetExtendedAttributeMode,
-    ) -> Result<(), Status> {
-        self.handle
-            .store_handle()
-            .set_extended_attribute(name, value, mode.into())
-            .await
-            .map_err(map_to_status)
-    }
-
-    async fn remove_extended_attribute(&self, name: Vec<u8>) -> Result<(), Status> {
-        self.handle.store_handle().remove_extended_attribute(name).await.map_err(map_to_status)
     }
 
     async fn allocate(

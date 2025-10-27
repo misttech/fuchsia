@@ -149,27 +149,6 @@ impl File for HostFile {
         Err(Status::NOT_SUPPORTED)
     }
 
-    async fn list_extended_attributes(&self) -> Result<Vec<Vec<u8>>, Status> {
-        Err(Status::NOT_SUPPORTED)
-    }
-
-    async fn get_extended_attribute(&self, _name: Vec<u8>) -> Result<Vec<u8>, Status> {
-        Err(Status::NOT_SUPPORTED)
-    }
-
-    async fn set_extended_attribute(
-        &self,
-        _name: Vec<u8>,
-        _value: Vec<u8>,
-        _mode: fio::SetExtendedAttributeMode,
-    ) -> Result<(), Status> {
-        Err(Status::NOT_SUPPORTED)
-    }
-
-    async fn remove_extended_attribute(&self, _name: Vec<u8>) -> Result<(), Status> {
-        Err(Status::NOT_SUPPORTED)
-    }
-
     async fn allocate(
         &self,
         _offset: u64,
@@ -236,6 +215,27 @@ impl Node for HostFile {
 
     /// Returns information about the filesystem.
     fn query_filesystem(&self) -> Result<fio::FilesystemInfo, Status> {
+        Err(Status::NOT_SUPPORTED)
+    }
+
+    async fn list_extended_attributes(&self) -> Result<Vec<Vec<u8>>, Status> {
+        Err(Status::NOT_SUPPORTED)
+    }
+
+    async fn get_extended_attribute(&self, _name: Vec<u8>) -> Result<Vec<u8>, Status> {
+        Err(Status::NOT_SUPPORTED)
+    }
+
+    async fn set_extended_attribute(
+        &self,
+        _name: Vec<u8>,
+        _value: Vec<u8>,
+        _mode: fio::SetExtendedAttributeMode,
+    ) -> Result<(), Status> {
+        Err(Status::NOT_SUPPORTED)
+    }
+
+    async fn remove_extended_attribute(&self, _name: Vec<u8>) -> Result<(), Status> {
         Err(Status::NOT_SUPPORTED)
     }
 }

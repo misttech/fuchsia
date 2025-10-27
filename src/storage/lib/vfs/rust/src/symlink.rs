@@ -15,7 +15,7 @@ use crate::request_handler::{RequestHandler, RequestListener};
 use crate::{ObjectRequest, ObjectRequestRef, ProtocolsExt, ToObjectRequest};
 use fidl::endpoints::{ControlHandle as _, DiscoverableProtocolMarker as _, Responder, ServerEnd};
 use fidl_fuchsia_io as fio;
-use std::future::{Future, ready};
+use std::future::Future;
 use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -23,33 +23,6 @@ use zx_status::Status;
 
 pub trait Symlink: Node {
     fn read_target(&self) -> impl Future<Output = Result<Vec<u8>, Status>> + Send;
-
-    // Extended attributes for symlinks.
-    fn list_extended_attributes(
-        &self,
-    ) -> impl Future<Output = Result<Vec<Vec<u8>>, Status>> + Send {
-        ready(Err(Status::NOT_SUPPORTED))
-    }
-    fn get_extended_attribute(
-        &self,
-        _name: Vec<u8>,
-    ) -> impl Future<Output = Result<Vec<u8>, Status>> + Send {
-        ready(Err(Status::NOT_SUPPORTED))
-    }
-    fn set_extended_attribute(
-        &self,
-        _name: Vec<u8>,
-        _value: Vec<u8>,
-        _mode: fio::SetExtendedAttributeMode,
-    ) -> impl Future<Output = Result<(), Status>> + Send {
-        ready(Err(Status::NOT_SUPPORTED))
-    }
-    fn remove_extended_attribute(
-        &self,
-        _name: Vec<u8>,
-    ) -> impl Future<Output = Result<(), Status>> + Send {
-        ready(Err(Status::NOT_SUPPORTED))
-    }
 }
 
 pub struct Connection<T> {
@@ -408,6 +381,23 @@ mod tests {
         async fn read_target(&self) -> Result<Vec<u8>, Status> {
             Ok(TARGET.to_vec())
         }
+    }
+
+    impl Node for TestSymlink {
+        async fn get_attributes(
+            &self,
+            requested_attributes: fio::NodeAttributesQuery,
+        ) -> Result<fio::NodeAttributes2, Status> {
+            Ok(immutable_attributes!(
+                requested_attributes,
+                Immutable {
+                    content_size: TARGET.len() as u64,
+                    storage_size: TARGET.len() as u64,
+                    protocols: fio::NodeProtocolKinds::SYMLINK,
+                    abilities: fio::Abilities::GET_ATTRIBUTES,
+                }
+            ))
+        }
         async fn list_extended_attributes(&self) -> Result<Vec<Vec<u8>>, Status> {
             let map = self.xattrs.lock();
             Ok(map.values().map(|x| x.clone()).collect())
@@ -432,23 +422,6 @@ mod tests {
             let mut map = self.xattrs.lock();
             map.remove(&name);
             Ok(())
-        }
-    }
-
-    impl Node for TestSymlink {
-        async fn get_attributes(
-            &self,
-            requested_attributes: fio::NodeAttributesQuery,
-        ) -> Result<fio::NodeAttributes2, Status> {
-            Ok(immutable_attributes!(
-                requested_attributes,
-                Immutable {
-                    content_size: TARGET.len() as u64,
-                    storage_size: TARGET.len() as u64,
-                    protocols: fio::NodeProtocolKinds::SYMLINK,
-                    abilities: fio::Abilities::GET_ATTRIBUTES,
-                }
-            ))
         }
     }
 

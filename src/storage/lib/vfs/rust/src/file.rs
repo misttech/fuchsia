@@ -172,39 +172,6 @@ pub trait File: Node {
         attributes: fio::MutableNodeAttributes,
     ) -> impl Future<Output = Result<(), Status>> + Send;
 
-    /// List this files extended attributes.
-    fn list_extended_attributes(
-        &self,
-    ) -> impl Future<Output = Result<Vec<Vec<u8>>, Status>> + Send {
-        ready(Err(Status::NOT_SUPPORTED))
-    }
-
-    /// Get the value for an extended attribute.
-    fn get_extended_attribute(
-        &self,
-        _name: Vec<u8>,
-    ) -> impl Future<Output = Result<Vec<u8>, Status>> + Send {
-        ready(Err(Status::NOT_SUPPORTED))
-    }
-
-    /// Set the value for an extended attribute.
-    fn set_extended_attribute(
-        &self,
-        _name: Vec<u8>,
-        _value: Vec<u8>,
-        _mode: fio::SetExtendedAttributeMode,
-    ) -> impl Future<Output = Result<(), Status>> + Send {
-        ready(Err(Status::NOT_SUPPORTED))
-    }
-
-    /// Remove the value for an extended attribute.
-    fn remove_extended_attribute(
-        &self,
-        _name: Vec<u8>,
-    ) -> impl Future<Output = Result<(), Status>> + Send {
-        ready(Err(Status::NOT_SUPPORTED))
-    }
-
     /// Preallocate disk space for this range.
     #[cfg(fuchsia_api_level_at_least = "HEAD")]
     fn allocate(

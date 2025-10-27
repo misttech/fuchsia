@@ -4,7 +4,6 @@
 
 use ext4_read_only::parser::XattrMap;
 use fidl_fuchsia_io as fio;
-use std::future::ready;
 use std::sync::Arc;
 use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};
 use vfs::execution_scope::ExecutionScope;
@@ -85,6 +84,14 @@ impl Node for ExtFile {
             ),
         ))
     }
+
+    async fn list_extended_attributes(&self) -> Result<Vec<Vec<u8>>, Status> {
+        Ok(self.xattrs.keys().map(Clone::clone).collect())
+    }
+
+    async fn get_extended_attribute(&self, name: Vec<u8>) -> Result<Vec<u8>, Status> {
+        self.xattrs.get(&name).map(Clone::clone).ok_or(Status::NOT_FOUND)
+    }
 }
 
 impl FileLike for ExtFile {
@@ -145,19 +152,6 @@ impl File for ExtFile {
         _attributes: fio::MutableNodeAttributes,
     ) -> Result<(), Status> {
         Err(Status::NOT_SUPPORTED)
-    }
-
-    fn list_extended_attributes(
-        &self,
-    ) -> impl Future<Output = Result<Vec<Vec<u8>>, Status>> + Send {
-        ready(Ok(self.xattrs.keys().map(Clone::clone).collect()))
-    }
-
-    fn get_extended_attribute(
-        &self,
-        name: Vec<u8>,
-    ) -> impl Future<Output = Result<Vec<u8>, Status>> + Send {
-        ready(self.xattrs.get(&name).map(Clone::clone).ok_or(Status::NOT_FOUND))
     }
 
     async fn sync(&self, _mode: SyncMode) -> Result<(), Status> {

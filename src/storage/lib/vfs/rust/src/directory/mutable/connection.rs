@@ -4,7 +4,7 @@
 
 //! Connection to a directory that can be modified by the client though a FIDL connection.
 
-use crate::common::{decode_extended_attribute_value, io1_to_io2_attrs};
+use crate::common::io1_to_io2_attrs;
 use crate::directory::connection::{BaseConnection, ConnectionState};
 use crate::directory::entry_container::MutableDirectory;
 use crate::execution_scope::ExecutionScope;
@@ -116,26 +116,6 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
                     )?;
                 }
             }
-            fio::DirectoryRequest::SetExtendedAttribute { name, value, mode, responder } => {
-                async move {
-                    let res = this
-                        .handle_set_extended_attribute(name, value, mode)
-                        .await
-                        .map_err(Status::into_raw);
-                    responder.send(res)
-                }
-                .trace(trace::trace_future_args!(c"storage", c"Directory::SetExtendedAttribute"))
-                .await?;
-            }
-            fio::DirectoryRequest::RemoveExtendedAttribute { name, responder } => {
-                async move {
-                    let res =
-                        this.handle_remove_extended_attribute(name).await.map_err(Status::into_raw);
-                    responder.send(res)
-                }
-                .trace(trace::trace_future_args!(c"storage", c"Directory::RemoveExtendedAttribute"))
-                .await?;
-            }
             fio::DirectoryRequest::UpdateAttributes { payload, responder } => {
                 async move {
                     responder.send(
@@ -218,23 +198,6 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
         };
 
         dst_parent.clone().rename(self.base.directory.clone(), src, dst).await
-    }
-
-    async fn handle_set_extended_attribute(
-        &self,
-        name: Vec<u8>,
-        value: fio::ExtendedAttributeValue,
-        mode: fio::SetExtendedAttributeMode,
-    ) -> Result<(), Status> {
-        if name.contains(&0) {
-            return Err(Status::INVALID_ARGS);
-        }
-        let val = decode_extended_attribute_value(value)?;
-        self.base.directory.set_extended_attribute(name, val, mode).await
-    }
-
-    async fn handle_remove_extended_attribute(&self, name: Vec<u8>) -> Result<(), Status> {
-        self.base.directory.remove_extended_attribute(name).await
     }
 }
 
