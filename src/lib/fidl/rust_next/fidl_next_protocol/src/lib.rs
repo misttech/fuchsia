@@ -51,6 +51,23 @@
 //!
 //! [`Client`]s and [`Server`]s implement `Clone`, and should be cloned to
 //! interact with the connection from multiple locations.
+//!
+//! ## Message ordering
+//!
+//! Dispatchers are guaranteed to handle requests and events serially and in the
+//! order they are received. However, because the responses to two-way messages
+//! are awaited at the call site and not handled by the dispatcher, there is no
+//! guarantee about the relative orderings of responses and subsequent events.
+//! This means that if a malformed two-way response is received, the resulting
+//! connection closure may not occur before subsequent events are processed.
+//!
+//! Two-way responses are guaranteed to preserve completion order relative to
+//! each other: if response A is received before response B, and the future
+//! awaiting response B completes, then the future awaiting response A will
+//! complete on the next poll. However, the executor may schedule tasks ready to
+//! make progress in any order it chooses. This means that the orders in which
+//! tasks awaiting two-way responses were scheduled may not match the orders in
+//! which those responses were received.
 
 #![deny(
     future_incompatible,
