@@ -80,10 +80,6 @@ _fidl_library = rule(
             mandatory = False,
             providers = [FuchsiaFidlLibraryInfo],
         ),
-        "cc_bindings": attr.string_list(
-            doc = "list of FIDL CC binding types that this library will generate",
-            mandatory = False,
-        ),
     } | COMPATIBILITY.HOST_ATTRS | FUCHSIA_API_LEVEL_ATTRS,
     outputs = {
         # The intermediate representation of the library, to be consumed by bindings
@@ -115,7 +111,6 @@ def fuchsia_fidl_library(name, srcs, library = None, sdk_for_default_deps = None
         name = name,
         srcs = srcs,
         deps = deps,
-        cc_bindings = cc_bindings,
         **kwargs
     )
 

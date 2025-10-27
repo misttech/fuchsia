@@ -57,7 +57,6 @@ def fuchsia_fidl_cc_library(name, library, binding_type = "cpp_wire", sdk_for_de
         name = gen_name,
         library = library,
         binding_type = binding_type,
-        sdk_for_default_deps = sdk_for_default_deps,
         **kwargs
     )
 
@@ -174,10 +173,6 @@ _codegen = rule(
         "binding_type": attr.string(
             doc = "Type of bindings to expose",
             mandatory = True,
-        ),
-        "sdk_for_default_deps": attr.string(
-            doc = "Name of the Bazel workspace where default FIDL library dependencies are defined. If empty or not defined, defaults to @fuchsia_sdk.",
-            mandatory = False,
         ),
     } | COMPATIBILITY.FUCHSIA_ATTRS,
 )
