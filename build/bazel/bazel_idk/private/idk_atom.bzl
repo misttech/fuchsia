@@ -265,6 +265,7 @@ Possible values, from most restrictive to least restrictive:
     - prebuilt    : May be part of the ABI that prebuilt binaries included in the IDK use to
                     interact with the platform.
     - partner     : Included in the IDK for direct use of the API by out-of-tree developers.""",
+            values = ["compat_test", "host_tool", "prebuilt", "partner"],
             mandatory = True,
         ),
         "stable": attr.bool(
@@ -417,6 +418,9 @@ Atoms will be checked for category and API area violations when generating the I
     implementation = _idk_atom_impl,
     inherit_attrs = _create_idk_atom,
     attrs = {
+        # Attributes that are also defined for `_create_idk_atom()` must be
+        # repeated here to set `configurable = False`, which is not allowed in
+        # rule definitions and thus cannot be inherited.
         "type": attr.string(
             doc = "See _create_idk_atom().",
             mandatory = True,
@@ -424,6 +428,7 @@ Atoms will be checked for category and API area violations when generating the I
         ),
         "category": attr.string(
             doc = "See _create_idk_atom().",
+            values = ["partner", "prebuilt", "host_tool", "compat_test"],
             mandatory = True,
             configurable = False,
         ),

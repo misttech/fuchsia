@@ -244,6 +244,7 @@ GN equivalent: `sdk_name`""",
         ),
         "category": attr.string(
             doc = "Publication level of the library in the IDK. See _create_idk_atom().",
+            values = ["partner"],
             mandatory = True,
             configurable = False,
         ),

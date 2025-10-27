@@ -339,6 +339,7 @@ GN equivalent: `sdk_name`""",
         ),
         "category": attr.string(
             doc = "Publication level of the library in the IDK. See _create_idk_atom().",
+            values = ["partner"],
             mandatory = True,
             configurable = False,
         ),
@@ -393,8 +394,7 @@ GN equivalent: `public_deps`""",
             configurable = False,
         ),
         "implementation_deps": attr.label_list(
-            doc = """List of labels for other IDK elements this element depends on at build time.
-These labels must point to targets with corresponding `_create_idk_atom()` targets.
+            doc = """List of labels this element depends on at build time.
 GN equivalent: `deps`.""",
             default = [],
         ),
