@@ -14,13 +14,12 @@ type CpuSet = struct {
     mask array<uint64, 8>;
 };
 
+// TODO(https://fxbug.dev/42116876): This protocol will be removed in the
+// future. Use fuchsia.sheduler.RoleManager instead.
 @deprecated
 @discoverable
 closed protocol ProfileProvider {
     /// Obtain a profile handle.
-    ///
-    /// TODO(https://fxbug.dev/42116876): This API will be deprecated and removed in the future, use
-    /// SetProfileByRole instead.
     strict GetProfile(struct {
         priority uint32;
         name string:64;
@@ -30,9 +29,6 @@ closed protocol ProfileProvider {
     });
 
     /// Obtain a deadline profile handle.
-    ///
-    /// TODO(https://fxbug.dev/42116876): This API will be deprecated and removed in the future, use
-    /// SetProfileByRole instead.
     strict GetDeadlineProfile(struct {
         capacity uint64;
         deadline uint64;
@@ -44,9 +40,6 @@ closed protocol ProfileProvider {
     });
 
     /// Obtain a handle for a profile that sets CPU affinity.
-    ///
-    /// TODO(https://fxbug.dev/42116876): This API will be deprecated and removed in the future, use
-    /// SetProfileByRole instead.
     strict GetCpuAffinityProfile(struct {
         cpu_mask CpuSet;
     }) -> (resource struct {
