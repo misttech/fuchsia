@@ -35,7 +35,7 @@ foreach(board_name, _boards) {
       "//sdk/lib/async-loop:async-loop-default",
       "//sdk/lib/component/outgoing/cpp",
       "//sdk/lib/fdio",
-      "//src/storage/lib/paver:${board_name}",
+      "//src/firmware/paver:${board_name}",
       "//src/sys/lib/stdout-to-debuglog/cpp",
     ]
   }
@@ -63,7 +63,7 @@ executable("paver") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fdio",
-    "//src/storage/lib/paver",
+    "//src/firmware/paver",
     "//src/sys/lib/stdout-to-debuglog/cpp",
   ]
 }

@@ -32,11 +32,11 @@ fuchsia_driver_component("core") {
     "//src/devices/block/drivers/ftl/tests:ftl-integration",
     "//src/devices/block/drivers/usb-mass-storage:ums-integration",
     "//src/devices/block/drivers/zxcrypt:*",
+    "//src/firmware/paver/test:*",
     "//src/recovery/factory_reset:*",
     "//src/security/lib/zxcrypt/tests:*",
     "//src/storage/fvm:fvm-integration",
     "//src/storage/fvm/driver/test:*",
-    "//src/storage/lib/paver/test:*",
     "//src/storage/testing:storage_drivers",
   ]
   component_name = "block.core"

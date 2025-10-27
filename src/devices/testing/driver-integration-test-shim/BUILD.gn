@@ -74,12 +74,12 @@ source_set("driver-integration-test-shim") {
     "//src/devices/tests/ddk-lifecycle:*",
     "//src/devices/tests/driver-inspect-test:*",
     "//src/devices/tests/isolateddevmgr:*",
+    "//src/firmware/paver/test:*",
     "//src/lib/ddk:*",
     "//src/recovery/factory_reset:*",
     "//src/security/lib/zxcrypt/tests:*",
     "//src/storage/fvm:*",
     "//src/storage/fvm/driver/test:*",
-    "//src/storage/lib/paver/test:*",
     "//src/storage/lib/ramdevice_client/cpp:*",
     "//zircon/system/ulib/sysconfig-client/test:*",
   ]

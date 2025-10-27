@@ -685,7 +685,7 @@ func infraToolLogChecks() []FailureModeCheck {
 			String: botanistconstants.FailedToCopyImageMsg,
 			Type:   swarmingOutputType,
 		},
-		// Error is being logged at https://fuchsia.googlesource.com/fuchsia/+/559948a1a4cbd995d765e26c32923ed862589a61/src/storage/lib/paver/paver.cc#175
+		// Error is being logged at https://fuchsia.googlesource.com/fuchsia/+/559948a1a4cbd995d765e26c32923ed862589a61/src/firmware/paver/paver.cc#175
 		&stringInLogCheck{
 			String: "Failed to stream partitions to FVM",
 			Type:   swarmingOutputType,

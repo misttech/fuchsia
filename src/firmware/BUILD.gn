@@ -16,6 +16,7 @@ group("tests") {
     "lib/zbi-rs:tests",
     "lib/zbi/test",
     "lib/zircon_boot/test",
+    "paver:tests",
     "tools:tests",
   ]
 }

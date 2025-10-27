@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/storage/lib/paver/paver.h"
+#include "src/firmware/paver/paver.h"
 
 #include <fidl/fuchsia.process.lifecycle/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
@@ -14,35 +14,35 @@
 #include <zircon/status.h>
 
 #include "src/bringup/bin/paver/config.h"
-#include "src/storage/lib/paver/device-partitioner.h"
-#include "src/storage/lib/paver/pave-logging.h"
+#include "src/firmware/paver/device-partitioner.h"
+#include "src/firmware/paver/pave-logging.h"
 #include "src/sys/lib/stdout-to-debuglog/cpp/stdout-to-debuglog.h"
 
 #if defined(LEGACY_PAVER)
-#include "src/storage/lib/paver/android.h"
-#include "src/storage/lib/paver/astro.h"
-#include "src/storage/lib/paver/luis.h"
-#include "src/storage/lib/paver/moonflower.h"
-#include "src/storage/lib/paver/nelson.h"
-#include "src/storage/lib/paver/sherlock.h"
-#include "src/storage/lib/paver/uefi.h"
-#include "src/storage/lib/paver/vim3.h"
+#include "src/firmware/paver/android.h"
+#include "src/firmware/paver/astro.h"
+#include "src/firmware/paver/luis.h"
+#include "src/firmware/paver/moonflower.h"
+#include "src/firmware/paver/nelson.h"
+#include "src/firmware/paver/sherlock.h"
+#include "src/firmware/paver/uefi.h"
+#include "src/firmware/paver/vim3.h"
 #elif defined(astro)
-#include "src/storage/lib/paver/astro.h"
+#include "src/firmware/paver/astro.h"
 #elif defined(moonflower)
-#include "src/storage/lib/paver/moonflower.h"
+#include "src/firmware/paver/moonflower.h"
 #elif defined(luis)
-#include "src/storage/lib/paver/luis.h"
+#include "src/firmware/paver/luis.h"
 #elif defined(nelson)
-#include "src/storage/lib/paver/nelson.h"
+#include "src/firmware/paver/nelson.h"
 #elif defined(sherlock)
-#include "src/storage/lib/paver/sherlock.h"
+#include "src/firmware/paver/sherlock.h"
 #elif defined(vim3)
-#include "src/storage/lib/paver/vim3.h"
+#include "src/firmware/paver/vim3.h"
 #elif defined(uefi)
-#include "src/storage/lib/paver/uefi.h"
+#include "src/firmware/paver/uefi.h"
 #elif defined(android)
-#include "src/storage/lib/paver/android.h"
+#include "src/firmware/paver/android.h"
 #endif
 
 class LifecycleServer final : public fidl::WireServer<fuchsia_process_lifecycle::Lifecycle> {

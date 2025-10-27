@@ -58,7 +58,7 @@ fuchsia_driver_component("gpt") {
     "//src/bringup/bin/device-name-provider/tests:*",
     "//src/bringup/bin/netsvc:*",
     "//src/devices/block:drivers",
-    "//src/storage/lib/paver/test:*",
+    "//src/firmware/paver/test:*",
     "//src/storage/testing:storage_drivers",
   ]
   component_name = "gpt"

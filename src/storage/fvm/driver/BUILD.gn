@@ -32,11 +32,11 @@ fuchsia_driver_component("driver") {
   visibility = [
     ":*",
     "//bundles/drivers:drivers-not-templates",
+    "//src/firmware/paver/test:*",
     "//src/recovery/factory_reset:*",
     "//src/security/lib/zxcrypt/tests:*",
     "//src/storage/fvm:fvm-integration",
     "//src/storage/fvm/driver/test:*",
-    "//src/storage/lib/paver/test:*",
     "//src/storage/testing:storage_drivers",
   ]
   info = "meta/driver-info.json"

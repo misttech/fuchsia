@@ -23,7 +23,6 @@ group("tests") {
     "fsverity-merkle:tests",
     "ftl:tests",
     "key-bag:tests",
-    "paver:tests",
     "pseudo_fs:tests",
     "ramdevice_client:tests",
     "sparse/c:tests",

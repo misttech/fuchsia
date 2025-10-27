@@ -46,7 +46,7 @@ executable("install-disk-image") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
-    "//src/storage/lib/paver",
+    "//src/firmware/paver",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/zx",

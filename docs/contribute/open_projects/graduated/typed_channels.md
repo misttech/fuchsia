@@ -322,7 +322,7 @@ Reach out for questions or for status updates:
 [fix-protocol-1]: https://fuchsia-review.googlesource.com/c/fuchsia/+/463034
 [fix-protocol-2]: https://fuchsia-review.googlesource.com/c/fuchsia/+/466169
 [fix-protocol-3]:
-https://fuchsia-review.googlesource.com/c/fuchsia/+/478491/28/src/storage/lib/paver/partition-client.h#b46
+https://fuchsia-review.googlesource.com/c/fuchsia/+/478491/28/src/firmware/paver/partition-client.h#b46
 [bind-server]:
 https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/lib/fidl/cpp/wire/include/lib/fidl/cpp/wire/server.h?q=fidl::BindServer&ss=fuchsia%2Ffuchsia
 [typed-channel]: /docs/reference/fidl/bindings/cpp-bindings.md#typed-channels
