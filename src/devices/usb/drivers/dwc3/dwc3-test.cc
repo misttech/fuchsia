@@ -4,6 +4,7 @@
 
 #include "src/devices/usb/drivers/dwc3/dwc3.h"
 
+#include <fidl/fuchsia.hardware.clock/cpp/test_base.h>
 #include <fidl/fuchsia.hardware.interconnect/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
@@ -19,9 +20,42 @@
 #include "src/devices/usb/drivers/dwc3/dwc3_config.h"
 namespace dwc3 {
 
+namespace fclock = fuchsia_hardware_clock;
 namespace fhi = fuchsia_hardware_interconnect;
 namespace fpdev = fuchsia_hardware_platform_device;
 namespace fphy = fuchsia_hardware_usb_phy;
+
+class FakeClock : public fidl::testing::TestBase<fuchsia_hardware_clock::Clock> {
+ public:
+  fclock::Service::InstanceHandler GetInstanceHandler(async_dispatcher_t* dispatcher) {
+    return fclock::Service::InstanceHandler({
+        .clock = bindings_.CreateHandler(this, dispatcher, fidl::kIgnoreBindingClosure),
+    });
+  }
+
+  bool enabled() const { return enabled_; }
+
+ private:
+  void Enable(EnableCompleter::Sync& completer) override {
+    enabled_ = true;
+    completer.Reply(zx::ok());
+  }
+
+  void Disable(DisableCompleter::Sync& completer) override {
+    enabled_ = false;
+    completer.Reply(zx::ok());
+  }
+
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_clock::Clock> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {
+    FAIL();
+  }
+
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override { FAIL(); }
+
+  bool enabled_ = false;
+  fidl::ServerBindingGroup<fuchsia_hardware_clock::Clock> bindings_;
+};
 
 class FakeUsbPhy : public fidl::Server<fphy::UsbPhy>, public fidl::Server<fphy::ConnectionWatcher> {
  public:
@@ -138,10 +172,35 @@ class Environment : public fdf_testing::Environment {
         usb_phy_.GetConnectionWatcherInstanceHandler(dispatcher), "dwc3-phy");
     EXPECT_TRUE(result.is_ok());
 
+    result = directory.AddService<fclock::Service>(clock_.GetInstanceHandler(dispatcher), "xo");
+    EXPECT_TRUE(result.is_ok());
+
+    result =
+        directory.AddService<fclock::Service>(clock_.GetInstanceHandler(dispatcher), "sleep-clk");
+    EXPECT_TRUE(result.is_ok());
+
+    result =
+        directory.AddService<fclock::Service>(clock_.GetInstanceHandler(dispatcher), "iface-clk");
+    EXPECT_TRUE(result.is_ok());
+
+    result =
+        directory.AddService<fclock::Service>(clock_.GetInstanceHandler(dispatcher), "core-clk");
+    EXPECT_TRUE(result.is_ok());
+
+    result =
+        directory.AddService<fclock::Service>(clock_.GetInstanceHandler(dispatcher), "utmi-clk");
+    EXPECT_TRUE(result.is_ok());
+
+    result = directory.AddService<fclock::Service>(clock_.GetInstanceHandler(dispatcher),
+                                                   "bus-aggr-clk");
+    EXPECT_TRUE(result.is_ok());
+
     return zx::ok();
   }
 
   ddk_fake::FakeMmioRegRegion& reg_region() { return reg_region_; }
+
+  const FakeClock& clock() const { return clock_; }
 
  private:
   static constexpr size_t kRegSize = sizeof(uint32_t);
@@ -152,6 +211,7 @@ class Environment : public fdf_testing::Environment {
   ddk_fake::FakeMmioRegRegion reg_region_{kRegSize, kRegCount};
   FakePath path_;
   FakeUsbPhy usb_phy_;
+  FakeClock clock_;
 };
 
 class Config final {
@@ -235,6 +295,10 @@ using UnmanagedTestFixture = TestFixture<false>;
 TEST_F(ManagedTestFixture, Dfv2Lifecycle) {
   dut_.RunInNodeContext(
       [&](fdf_testing::TestNode& node) { EXPECT_EQ(1UL, node.children().size()); });
+}
+
+TEST_F(ManagedTestFixture, ResourcesManagedInStart) {
+  dut_.RunInEnvironmentTypeContext([](Environment& env) { EXPECT_TRUE(env.clock().enabled()); });
 }
 
 TEST_F(UnmanagedTestFixture, Dfv2HwResetTimeout) {

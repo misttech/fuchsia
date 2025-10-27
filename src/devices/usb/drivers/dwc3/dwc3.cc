@@ -62,14 +62,30 @@ class QualcommExtension final : public PlatformExtension {
 
  private:
   zx::result<> VoteCommon(State state, bool on) {
-    zx::result clocks = VoteClocks(on);
-    if (clocks.is_error()) {
-      return clocks.take_error();
-    }
+    if (on) {
+      if (zx::result<> result = VoteBandwidth(state); result.is_error()) {
+        return result.take_error();
+      }
 
-    zx::result voltage = VoteVoltage(on);
-    if (voltage.is_error()) {
-      return voltage.take_error();
+      if (zx::result<> result = VoteVoltage(on); result.is_error()) {
+        return result.take_error();
+      }
+
+      if (zx::result<> result = VoteClocks(on); result.is_error()) {
+        return result;
+      }
+    } else {
+      if (zx::result<> result = VoteClocks(on); result.is_error()) {
+        return result.take_error();
+      }
+
+      if (zx::result<> result = VoteVoltage(on); result.is_error()) {
+        return result.take_error();
+      }
+
+      if (zx::result<> result = VoteBandwidth(state); result.is_error()) {
+        return result.take_error();
+      }
     }
 
     return VoteBandwidth(state);
@@ -133,25 +149,25 @@ zx::result<> QualcommExtension::VoteBandwidth(State state) {
           {
               State::kNominal,
               {
-                  {BusPath::kUsbDdr, {1000000, 1250000}},
-                  {BusPath::kUsbIpa, {0, 2400}},
-                  {BusPath::kDdrUsb, {0, 40000}},
+                  {BusPath::kUsbDdr, {1'000'000, 1'250'000}},
+                  {BusPath::kUsbIpa, {0, 2'400'000}},
+                  {BusPath::kDdrUsb, {0, 40'000'000}},
               },
           },
           {
               State::kSvs,
               {
-                  {BusPath::kUsbDdr, {240000, 700000}},
-                  {BusPath::kUsbIpa, {0, 2400}},
-                  {BusPath::kDdrUsb, {0, 40000}},
+                  {BusPath::kUsbDdr, {240'000'000, 700'000'000}},
+                  {BusPath::kUsbIpa, {0, 2'400'000}},
+                  {BusPath::kDdrUsb, {0, 40'000'000}},
               },
           },
           {
               State::kMin,
               {
-                  {BusPath::kUsbDdr, {1, 1}},
-                  {BusPath::kUsbIpa, {1, 1}},
-                  {BusPath::kDdrUsb, {1, 1}},
+                  {BusPath::kUsbDdr, {1'000, 1'000}},
+                  {BusPath::kUsbIpa, {1'000, 1'000}},
+                  {BusPath::kDdrUsb, {1'000, 1'000}},
               },
           },
       };
@@ -184,40 +200,33 @@ zx::result<> QualcommExtension::VoteVoltage(bool on) {
 }
 
 zx::result<> QualcommExtension::VoteClocks(bool on) {
-  enum class ClockAction : uint8_t { kEnable, kNoVote, kOff };
-  // clang-format off
-  const static std::unordered_map<std::string, ClockAction> kVoteMap{
-      {"core-clk",     ClockAction::kEnable},
-      {"iface-clk",    ClockAction::kEnable},
-      {"bus-aggr-clk", ClockAction::kNoVote},
-      {"xo",           ClockAction::kNoVote},
-      {"sleep-clk",    ClockAction::kOff},
-      {"utmi-clk",     ClockAction::kEnable},
+  constexpr std::array<std::string, 6> kClockNames{
+      "xo", "sleep-clk", "iface-clk", "core-clk", "utmi-clk", "bus-aggr-clk",
   };
-  // clang-format on
 
   if (on) {
-    for (const auto& [name, action] : kVoteMap) {
-      switch (action) {
-        case ClockAction::kNoVote:
-          break;
-        case ClockAction::kOff: {
-          fidl::Result disable = fidl::Call(clock_clients_.at(name))->Disable();
-          if (disable.is_error()) {
-            fdf::error("could not disable clk {}: {}", name, disable.error_value());
-          }
-          break;
-        }
-        case ClockAction::kEnable: {
-          fidl::Result enable = fidl::Call(clock_clients_.at(name))->Enable();
-          if (enable.is_error()) {
-            fdf::error("could not enable clk {}: {}", name, enable.error_value());
-          }
-          break;
-        }
+    for (const std::string& name : kClockNames) {
+      fidl::Result enable = fidl::Call(clock_clients_.at(name))->Enable();
+      if (enable.is_error()) {
+        fdf::error("could not enable clk {}: {}", name, enable.error_value());
+        return zx::error(enable.error_value().is_domain_error()
+                             ? enable.error_value().domain_error()
+                             : enable.error_value().framework_error().status());
+      }
+    }
+  } else {
+    // Disable clocks in the opposite order.
+    for (auto it = kClockNames.crbegin(); it != kClockNames.crend(); it++) {
+      fidl::Result disable = fidl::Call(clock_clients_.at(*it))->Disable();
+      if (disable.is_error()) {
+        fdf::error("could not disable clk {}: {}", *it, disable.error_value());
+        return zx::error(disable.error_value().is_domain_error()
+                             ? disable.error_value().domain_error()
+                             : disable.error_value().framework_error().status());
       }
     }
   }
+
   return zx::ok();
 }
 
