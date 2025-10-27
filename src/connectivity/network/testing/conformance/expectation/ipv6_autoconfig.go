@@ -59,7 +59,7 @@ var ipv6AutoconfigExpectationsNS3 map[AnvlCaseNumber]outcome.Outcome = map[AnvlC
 	{3, 2}:  AnvlSkip, // TODO(https://fxbug.dev/416093959): Need router version of this suite.
 	{3, 3}:  Pass,
 	{3, 4}:  Pass,
-	{3, 5}:  Fail,
+	{3, 5}:  Pass,
 	{4, 1}:  Pass,
 	{4, 2}:  Pass,
 	{5, 1}:  Pass,

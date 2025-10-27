@@ -1297,6 +1297,7 @@ fn receive_ndp_packet<
     bindings_ctx: &mut BC,
     device_id: &CC::DeviceId,
     src_ip: Ipv6SourceAddr,
+    dst_ip: SpecifiedAddr<Ipv6Addr>,
     packet: NdpPacket<B>,
     header_info: &H,
 ) {
@@ -1325,6 +1326,12 @@ fn receive_ndp_packet<
     match packet {
         NdpPacket::RouterSolicitation(_) | NdpPacket::Redirect(_) => {}
         NdpPacket::NeighborSolicitation(ref p) => {
+            // Per RFC 4861, section 7.1.1:
+            //   A node MUST silently discard any received Neighbor Solicitation
+            //   messages that do not satisfy all of the following validity
+            //   checks:
+            //   [...]
+            //     - Target Address is not a multicast address.
             let target_address = p.message().target_address();
             let target_address = match UnicastAddr::new(*target_address) {
                 Some(a) => a,
@@ -1336,6 +1343,30 @@ fn receive_ndp_packet<
                     return;
                 }
             };
+
+            if src_ip == Ipv6SourceAddr::Unspecified {
+                // Per RFC 4861, section 7.1.1:
+                //   A node MUST silently discard any received Neighbor
+                //   Solicitation messages that do not satisfy all of the
+                //   following validity checks:
+                //   [...]
+                //     - If the IP source address is the unspecified
+                //       address, the IP destination address is a
+                //       solicited-node multicast address.
+                if target_address.get().to_solicited_node_address().get() != dst_ip.get() {
+                    debug!(
+                        "dropping NS from {} for {} with invalid IPv6 dst ({}).",
+                        src_ip, target_address, dst_ip
+                    );
+                    return;
+                }
+
+                // TODO(https://fxbug.dev/454387514): Once the Source
+                // Link-Layer Address NDP option is supported, we'll need to
+                // check for its presence here. RFC 4861, section 7.1.1
+                // states we should discard the Neighbor Solicitation if it
+                // includes the option alongside an unspecified source.
+            }
 
             core_ctx.counters().rx.neighbor_solicitation.increment();
 
@@ -1838,9 +1869,15 @@ impl<
                         info
                 );
             }
-            Icmpv6Packet::Ndp(packet) => {
-                receive_ndp_packet(core_ctx, bindings_ctx, device, src_ip, packet, header_info)
-            }
+            Icmpv6Packet::Ndp(packet) => receive_ndp_packet(
+                core_ctx,
+                bindings_ctx,
+                device,
+                src_ip,
+                dst_ip,
+                packet,
+                header_info,
+            ),
             Icmpv6Packet::PacketTooBig(packet_too_big) => {
                 CounterContext::<IcmpRxCounters<Ipv6>>::counters(core_ctx)
                     .packet_too_big
