@@ -4,6 +4,9 @@
 
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.ax88179/cpp/wire.h>
+#include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.request/cpp/fidl.h>
 #include <fuchsia/hardware/ethernet/cpp/banjo.h>
 #include <fuchsia/hardware/usb/function/cpp/banjo.h>
 #include <lib/driver/compat/cpp/banjo_client.h>
@@ -11,6 +14,7 @@
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/logging/cpp/logger.h>
+#include <lib/fdf/cpp/dispatcher.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <lib/zx/result.h>
 
@@ -23,8 +27,9 @@
 #include <fbl/condition_variable.h>
 #include <fbl/mutex.h>
 #include <sdk/lib/driver/component/cpp/driver_base.h>
+#include <usb-endpoint/usb-endpoint-client.h>
 #include <usb/cdc.h>
-#include <usb/request-cpp.h>
+#include <usb/request-fidl.h>
 #include <usb/usb-request.h>
 #include <usb/usb.h>
 
@@ -33,7 +38,7 @@
 namespace fake_usb_ax88179_function {
 
 constexpr int BULK_MAX_PACKET = 512;
-constexpr size_t INTR_MAX_PACKET = 64;
+constexpr size_t INTR_MAX_PACKET = 8;
 
 // Acts as a fake USB device for asix-88179 tests. Currently only partially
 // implemented for initialization order regression test.
@@ -81,10 +86,14 @@ class FakeUsbAx88179Function : public fdf::DriverBase,
   } __PACKED descriptor_;
 
   size_t descriptor_size_ = 0;
-  size_t parent_req_size_ = 0;
   uint8_t intr_addr_ = 0;
 
-  std::optional<usb::Request<>> intr_req_ TA_GUARDED(mtx_);
+  void IntrComplete(fuchsia_hardware_usb_endpoint::Completion completion);
+
+  fdf::SynchronizedDispatcher dispatcher_;
+
+  usb::EndpointClient<FakeUsbAx88179Function> intr_ep_{
+      usb::EndpointType::INTERRUPT, this, std::mem_fn(&FakeUsbAx88179Function::IntrComplete)};
 
   fbl::Mutex mtx_;
 
@@ -104,16 +113,17 @@ void FakeUsbAx88179Function::SetOnline(SetOnlineRequestView request,
   memset(&status, 0, sizeof(status));
   status[2] = request->online;
 
-  usb_request_complete_callback_t complete = {
-      .callback = [](void* ctx, usb_request_t* req) {},
-      .ctx = nullptr,
-  };
+  std::optional<usb::FidlRequest> req = intr_ep_.GetRequest();
+  ZX_ASSERT(req.has_value());
 
-  intr_req_->request()->header.length = sizeof(status);
-  intr_req_->request()->header.ep_address = intr_addr_;
-  size_t copy_result = intr_req_->CopyTo(status, sizeof(status), 0);
-  ZX_ASSERT(copy_result == sizeof(status));
-  RequestQueue(intr_req_->request(), &complete);
+  std::vector<size_t> actual = req->CopyTo(0, status, sizeof(status), intr_ep_.GetMapped());
+  ZX_ASSERT(actual.size() == 1);
+  ZX_ASSERT(actual[0] == sizeof(status));
+  ZX_ASSERT(req->CacheFlush(intr_ep_.GetMapped()) == ZX_OK);
+
+  std::vector<fuchsia_hardware_usb_request::Request> reqs;
+  reqs.emplace_back(req->take_request());
+  ZX_ASSERT(intr_ep_->QueueRequests({std::move(reqs)}).is_ok());
 
   completer.Reply(ZX_OK);
 }
@@ -165,8 +175,6 @@ zx::result<> FakeUsbAx88179Function::Start() {
   }
   function_ = *function;
 
-  parent_req_size_ = function_.GetRequestSize();
-
   zx_status_t status = function_.AllocInterface(&descriptor_.interface.b_interface_number);
   if (status != ZX_OK) {
     fdf::error("FakeUsbAx88179Function: usb_function_alloc_interface failed");
@@ -190,13 +198,37 @@ zx::result<> FakeUsbAx88179Function::Start() {
 
   intr_addr_ = descriptor_.intr_ep.b_endpoint_address;
 
-  status = usb::Request<>::Alloc(&intr_req_, INTR_MAX_PACKET, intr_addr_, parent_req_size_);
+  zx::result dispatcher =
+      fdf::SynchronizedDispatcher::Create(fdf::SynchronizedDispatcher::Options::kAllowSyncCalls,
+                                          "ep-dispatcher", [](fdf_dispatcher_t*) {});
+  if (dispatcher.is_error()) {
+    fdf::error("fdf::SynchronizedDispatcher::Create(): {}", dispatcher);
+    return dispatcher.take_error();
+  }
+  dispatcher_ = std::move(*dispatcher);
+
+  zx::result func =
+      incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
+  if (func.is_error()) {
+    fdf::error("Failed to connect to usb endpoint service: {}", func);
+    return func.take_error();
+  }
+
+  status = intr_ep_.Init(intr_addr_, func.value(), dispatcher_.async_dispatcher());
   if (status != ZX_OK) {
+    fdf::error("Could not init usb endpoint client: {}", zx_status_get_string(status));
     return zx::error(status);
   }
 
+  size_t actual =
+      intr_ep_.AddRequests(1, INTR_MAX_PACKET, fuchsia_hardware_usb_request::Buffer::Tag::kVmoId);
+  if (actual != 1) {
+    fdf::error("Could not allocate endpoint request");
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+
   fuchsia_hardware_ax88179::Service::InstanceHandler handler({
-      .hooks = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure),
+      .hooks = bindings_.CreateHandler(this, this->dispatcher(), fidl::kIgnoreBindingClosure),
   });
   zx::result serve = outgoing()->AddService<fuchsia_hardware_ax88179::Service>(std::move(handler));
   if (serve.is_error()) {
@@ -204,7 +236,7 @@ zx::result<> FakeUsbAx88179Function::Start() {
     return serve.take_error();
   }
 
-  zx::result connector = connector_.Bind(dispatcher());
+  zx::result connector = connector_.Bind(this->dispatcher());
   if (connector.is_error()) {
     fdf::error("connector_.Bind(): {}", connector);
     return connector.take_error();
@@ -282,6 +314,11 @@ zx_status_t FakeUsbAx88179Function::UsbFunctionInterfaceSetConfigured(bool confi
 zx_status_t FakeUsbAx88179Function::UsbFunctionInterfaceSetInterface(uint8_t interface,
                                                                      uint8_t alt_setting) {
   return ZX_OK;
+}
+
+void FakeUsbAx88179Function::IntrComplete(fuchsia_hardware_usb_endpoint::Completion completion) {
+  usb::FidlRequest req{std::move(completion.request().value())};
+  intr_ep_.PutRequest(std::move(req));
 }
 
 }  // namespace fake_usb_ax88179_function
