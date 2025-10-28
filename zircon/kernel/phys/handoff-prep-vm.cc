@@ -63,9 +63,11 @@ namespace {
 constexpr size_t k1MiB = 0x0010'0000;
 constexpr size_t k1GiB = 0x4000'0000;
 
-constexpr bool IsPageAligned(uintptr_t p) { return p % ZX_PAGE_SIZE == 0; }
-constexpr uintptr_t PageAlignDown(uintptr_t p) { return fbl::round_down(p, ZX_PAGE_SIZE); }
-constexpr uintptr_t PageAlignUp(uintptr_t p) { return fbl::round_up(p, ZX_PAGE_SIZE); }
+constexpr bool IsPageAligned(uintptr_t p) { return p % AddressSpace::kPageSize == 0; }
+constexpr uintptr_t PageAlignDown(uintptr_t p) {
+  return fbl::round_down(p, AddressSpace::kPageSize);
+}
+constexpr uintptr_t PageAlignUp(uintptr_t p) { return fbl::round_up(p, AddressSpace::kPageSize); }
 
 constexpr arch::AccessPermissions ToAccessPermissions(PhysMapping::Permissions perms) {
   return {
@@ -99,7 +101,7 @@ HandoffPrep::VirtualAddressAllocator::TemporaryHandoffDataAllocator(const ElfIma
 HandoffPrep::VirtualAddressAllocator
 HandoffPrep::VirtualAddressAllocator::PermanentHandoffDataAllocator(const ElfImage& kernel) {
   return {
-      /*start=*/kernel.load_address() - ZX_PAGE_SIZE,
+      /*start=*/kernel.load_address() - AddressSpace::kPageSize,
       /*strategy=*/HandoffPrep::VirtualAddressAllocator::Strategy::kDown,
       /*boundary=*/kernel.load_address() - k1GiB,
   };
@@ -108,7 +110,8 @@ HandoffPrep::VirtualAddressAllocator::PermanentHandoffDataAllocator(const ElfIma
 HandoffPrep::VirtualAddressAllocator
 HandoffPrep::VirtualAddressAllocator::FirstClassMappingAllocator(const ElfImage& kernel) {
   return {
-      /*start=*/kernel.load_address() + kernel.aligned_memory_image().size_bytes() + ZX_PAGE_SIZE,
+      /*start=*/kernel.load_address() + kernel.aligned_memory_image().size_bytes() +
+          AddressSpace::kPageSize,
       /*strategy=*/HandoffPrep::VirtualAddressAllocator::Strategy::kUp,
       /*boundary=*/ktl::nullopt,
   };
@@ -200,7 +203,8 @@ ktl::span<ktl::byte> HandoffPrep::PublishStackVmar(ZirconAbiSpec::Stack stack,
   size_t vmar_size = stack.lower_guard_size_bytes + stack.size_bytes + stack.upper_guard_size_bytes;
   uintptr_t base = first_class_mapping_allocator_.AllocatePages(vmar_size);
   auto prep = PrepareVmarAt(name, base, vmar_size);
-  uint64_t paddr = Allocation::GetPool().Allocate(type, stack.size_bytes, ZX_PAGE_SIZE).value();
+  uint64_t paddr =
+      Allocation::GetPool().Allocate(type, stack.size_bytes, AddressSpace::kPageSize).value();
   PhysMapping mapping{
       name,                                 //
       PhysMapping::Type::kNormal,           //

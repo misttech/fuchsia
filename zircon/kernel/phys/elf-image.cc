@@ -15,12 +15,12 @@
 #include <lib/zbitl/error-stdio.h>
 #include <string.h>
 #include <zircon/assert.h>
-#include <zircon/limits.h>
 
 #include <ktl/atomic.h>
 #include <ktl/span.h>
 #include <ktl/utility.h>
 #include <ktl/variant.h>
+#include <phys/address-space.h>
 #include <phys/allocation.h>
 #include <phys/symbolize.h>
 
@@ -112,7 +112,7 @@ fit::result<ElfImage::Error> ElfImage::InitFromFile(ElfImage::BootfsDir::iterato
 
   ktl::optional<Elf::Phdr> relro, dynamic, interp;
   elfldltl::DecodePhdrs(  //
-      diagnostics, phdrs, load_info_.GetPhdrObserver(ZX_PAGE_SIZE),
+      diagnostics, phdrs, load_info_.GetPhdrObserver(AddressSpace::kPageSize),
       elfldltl::PhdrFileNoteObserver(  //
           Elf(), image_, elfldltl::NoArrayFromFile<ktl::byte>(),
           elfldltl::ObserveBuildIdNote(build_id_)),
@@ -125,7 +125,7 @@ fit::result<ElfImage::Error> ElfImage::InitFromFile(ElfImage::BootfsDir::iterato
     // In the phys context, all the relocations are done in place before the
     // image is considered "loaded".  Update the load segments to indicate
     // RELRO protections have already been applied.
-    load_info_.ApplyRelro(diagnostics, relro, ZX_PAGE_SIZE, true);
+    load_info_.ApplyRelro(diagnostics, relro, AddressSpace::kPageSize, true);
   }
 
   if (dynamic) {
@@ -183,7 +183,7 @@ Allocation ElfImage::Load(memalloc::Type type, ktl::optional<uint64_t> relocatio
   }
 
   fbl::AllocChecker ac;
-  Allocation image = Allocation::New(ac, type, load_info_.vaddr_size(), ZX_PAGE_SIZE);
+  Allocation image = Allocation::New(ac, type, load_info_.vaddr_size(), AddressSpace::kPageSize);
   if (!ac.check()) {
     ZX_PANIC("cannot allocate phys ELF load image of %#zx bytes",
              static_cast<size_t>(load_info_.vaddr_size()));
@@ -291,7 +291,7 @@ void ElfImage::InitSelf(ktl::string_view name, elfldltl::DirectMemory& memory, u
   load_bias_ = load_bias;
 
   auto diag = PanicDiagnostics();
-  ZX_ASSERT(load_info_.AddSegment(diag, ZX_PAGE_SIZE, load_segment));
+  ZX_ASSERT(load_info_.AddSegment(diag, AddressSpace::kPageSize, load_segment));
 
   elfldltl::ElfNoteSegment<> notes(build_id_note);
   ZX_DEBUG_ASSERT(notes.begin() != notes.end());
@@ -321,11 +321,11 @@ fit::result<ElfImage::Error> ElfImage::SeparateZeroFill() {
       continue;
     }
 
-    size_t partial_page = segment->filesz() % ZX_PAGE_SIZE;
+    size_t partial_page = segment->filesz() % AddressSpace::kPageSize;
     if (partial_page > 0) {
       // Zero the partial page that is part of the zero-fill area but will
       // remain in the original segment transformed into plain DataSegment.
-      partial_page = ZX_PAGE_SIZE - partial_page;
+      partial_page = AddressSpace::kPageSize - partial_page;
       size_t fill_start = segment->offset() + segment->filesz();
       ktl::span fill_bytes = image_.image().subspan(fill_start, partial_page);
       memset(fill_bytes.data(), 0, fill_bytes.size_bytes());

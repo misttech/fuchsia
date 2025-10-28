@@ -11,7 +11,6 @@
 #include <lib/zbi-format/zbi.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
-#include <zircon/limits.h>
 
 #include <array>
 #include <limits>

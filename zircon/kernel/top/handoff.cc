@@ -143,11 +143,11 @@ fbl::RefPtr<VmObject> CreatePhysVmo(const PhysVmo& phys_vmo) {
   DEBUG_ASSERT(!name.empty());
 
   DEBUG_ASSERT(IS_PAGE_ROUNDED(phys_vmo.addr));
-  DEBUG_ASSERT(IS_PAGE_ROUNDED(phys_vmo.size_bytes()));
+  DEBUG_ASSERT(IS_PAGE_ROUNDED(phys_vmo.SizeBytes<ZX_PAGE_SIZE>()));
 
   fbl::RefPtr<VmObjectPaged> vmo;
-  zx_status_t status = VmObjectPaged::CreateFromWiredPages(paddr_to_physmap(phys_vmo.addr),
-                                                           phys_vmo.size_bytes(), true, &vmo);
+  zx_status_t status = VmObjectPaged::CreateFromWiredPages(
+      paddr_to_physmap(phys_vmo.addr), phys_vmo.SizeBytes<ZX_PAGE_SIZE>(), true, &vmo);
   ASSERT(status == ZX_OK);
 
   status = vmo->set_name(name.data(), name.size());

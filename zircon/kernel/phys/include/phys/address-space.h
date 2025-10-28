@@ -7,6 +7,8 @@
 #ifndef ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_ADDRESS_SPACE_H_
 #define ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_ADDRESS_SPACE_H_
 
+#include <lib/fit/function.h>
+#include <lib/memalloc/range.h>
 #include <zircon/assert.h>
 
 #include <hwreg/array.h>
@@ -17,8 +19,6 @@
 #include <ktl/type_traits.h>
 #include <ktl/utility.h>
 #include <phys/arch/address-space.h>
-
-#include "allocation.h"
 
 // Forward-declared; fully declared in <lib/memalloc/pool.h>.
 namespace memalloc {
@@ -113,6 +113,10 @@ class AddressSpace {
 
   static_assert(LowerPaging::kExecuteOnlyAllowed == UpperPaging::kExecuteOnlyAllowed);
   static constexpr bool kExecuteOnlyAllowed = LowerPaging::kExecuteOnlyAllowed;
+
+  static_assert(LowerPaging::kPageSize<LowerPaging::kLastLevel> ==
+                UpperPaging::kPageSize<UpperPaging::kLastLevel>);
+  static constexpr size_t kPageSize = LowerPaging::kPageSize<LowerPaging::kLastLevel>;
 
   static MapSettings MmioMapSettings() {
     return {
@@ -245,32 +249,22 @@ class AddressSpace {
 
   fit::inline_function<PageTableDirectIo(uint64_t)> paddr_to_io_ = GetPageTableDirectIo;
 
-  template <memalloc::Type AllocationType>
-  ktl::optional<uint64_t> AllocatePageTable(uint64_t size, uint64_t alignment) {
-    auto result = Allocation::GetPool().Allocate(
-        AllocationType, size, alignment, pt_allocation_lower_bound_, pt_allocation_upper_bound_);
-    if (result.is_error()) {
-      return ktl::nullopt;
-    }
-    auto addr = static_cast<uintptr_t>(result.value());
-    memset(reinterpret_cast<void*>(addr), 0, static_cast<size_t>(size));
-    return addr;
-  }
+  ktl::optional<uint64_t> AllocatePageTable(memalloc::Type type, uint64_t size, uint64_t alignment);
 
   // An allocator of temporary, identity-mapping page tables, used in the following cases:
   // * When kDualSpaces is true, the lower root page table.
   // * Non-root tables for pages in the lower address space.
   auto temporary_allocator() {
-    return ktl::bind_front(
-        &AddressSpace::AllocatePageTable<memalloc::Type::kTemporaryIdentityPageTables>, this);
+    return ktl::bind_front(&AddressSpace::AllocatePageTable, this,
+                           memalloc::Type::kTemporaryIdentityPageTables);
   }
 
   // An allocator of permanent, kernel page tables, used in the following cases:
   // * When kDualSpaces is false, the root page table.
   // * Tables for pages in the upper address space.
   auto permanent_allocator() {
-    return ktl::bind_front(&AddressSpace::AllocatePageTable<memalloc::Type::kKernelPageTables>,
-                           this);
+    return ktl::bind_front(&AddressSpace::AllocatePageTable, this,
+                           memalloc::Type::kKernelPageTables);
   }
 
   uint64_t lower_root_paddr_ = 0;

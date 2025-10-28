@@ -19,7 +19,6 @@
 #include <lib/zbitl/items/bootfs.h>
 #include <lib/zbitl/view.h>
 #include <zircon/assert.h>
-#include <zircon/limits.h>
 
 #include <ktl/array.h>
 #include <ktl/byte.h>
@@ -29,11 +28,9 @@
 #include <ktl/string_view.h>
 #include <ktl/type_traits.h>
 #include <ktl/utility.h>
+#include <phys/address-space.h>
 
 #include "allocation.h"
-
-// Forward declaration; declared in <phys/address-space.h>.
-class AddressSpace;
 
 class ElfImage {
  public:
@@ -196,7 +193,7 @@ class ElfImage {
   // Set the virtual address where the image will be loaded.
   // This is the address Relocate() adjusts things for.
   void set_load_address(uint64_t address) {
-    ZX_ASSERT(address % ZX_PAGE_SIZE == 0);
+    ZX_ASSERT(address % AddressSpace::kPageSize == 0);
     load_bias_ = address - load_info_.vaddr_start();
   }
 

@@ -9,11 +9,11 @@
 #include <lib/fit/result.h>
 #include <lib/memalloc/pool.h>
 #include <zircon/assert.h>
-#include <zircon/limits.h>
 
 #include <ktl/byte.h>
 #include <ktl/string_view.h>
 #include <ktl/utility.h>
+#include <phys/address-space.h>
 #include <phys/main.h>
 
 #include <ktl/enforce.h>
@@ -86,4 +86,4 @@ void Allocation::Resize(fbl::AllocChecker& ac, size_t new_size) {
   }
 }
 
-size_t AllocationMemory::page_size() const { return ZX_PAGE_SIZE; }
+size_t AllocationMemory::page_size() const { return AddressSpace::kPageSize; }

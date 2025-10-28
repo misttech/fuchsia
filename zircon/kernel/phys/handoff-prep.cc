@@ -65,7 +65,8 @@ void FindTestRamReservation(RamReservation& ram) {
     }
     --it;
     if (it->type == memalloc::Type::kFreeRam && it->size >= ram.size) {
-      uint64_t aligned_start = (it->addr + it->size - ram.size) & -uint64_t{ZX_PAGE_SIZE};
+      uint64_t aligned_start =
+          (it->addr + it->size - ram.size) & -uint64_t{AddressSpace::kPageSize};
       uint64_t aligned_end = aligned_start + ram.size;
       if (aligned_start >= it->addr && aligned_end <= aligned_start + ram.size) {
         if (pool.UpdateRamSubranges(memalloc::Type::kTestRamReserve, aligned_start, ram.size)
@@ -124,7 +125,7 @@ HandoffPrep::HandoffPrep(ElfImage kernel)
   }
 
   // Check that this isn't clearly garbled data somehow.
-  abi_spec_->AssertValid<ZX_PAGE_SIZE>();
+  abi_spec_->AssertValid<AddressSpace::kPageSize>();
 
   // Translate the relocated virtual address from the spec back into the image
   // to initialize the kernel's kBootContents.
@@ -143,9 +144,10 @@ HandoffPrep::HandoffPrep(ElfImage kernel)
 PhysVmo HandoffPrep::MakePhysVmo(ktl::span<const ktl::byte> data, ktl::string_view name,
                                  size_t content_size) {
   uintptr_t addr = reinterpret_cast<uintptr_t>(data.data());
-  ZX_ASSERT((addr % ZX_PAGE_SIZE) == 0);
-  ZX_ASSERT((data.size_bytes() % ZX_PAGE_SIZE) == 0);
-  ZX_ASSERT(((content_size + ZX_PAGE_SIZE - 1) & -ZX_PAGE_SIZE) == data.size_bytes());
+  ZX_ASSERT((addr % AddressSpace::kPageSize) == 0);
+  ZX_ASSERT((data.size_bytes() % AddressSpace::kPageSize) == 0);
+  ZX_ASSERT(((content_size + AddressSpace::kPageSize - 1) & -AddressSpace::kPageSize) ==
+            data.size_bytes());
 
   PhysVmo vmo{.addr = addr, .content_size = content_size};
   vmo.set_name(name);
@@ -158,10 +160,11 @@ void HandoffPrep::SetInstrumentation() {
     PhysVmo::Name phys_vmo_name =
         instrumentation::DebugdataVmoName(sink_name, vmo_name, vmo_name_suffix, /*is_static=*/true);
 
-    size_t aligned_size = (content_size + ZX_PAGE_SIZE - 1) & -ZX_PAGE_SIZE;
+    size_t aligned_size = (content_size + AddressSpace::kPageSize - 1) & -AddressSpace::kPageSize;
     fbl::AllocChecker ac;
     ktl::span contents =
-        Allocation::New(ac, memalloc::Type::kPhysDebugdata, aligned_size, ZX_PAGE_SIZE).release();
+        Allocation::New(ac, memalloc::Type::kPhysDebugdata, aligned_size, AddressSpace::kPageSize)
+            .release();
     ZX_ASSERT_MSG(ac.check(), "cannot allocate %zu bytes for instrumentation phys VMO",
                   aligned_size);
     PublishExtraVmo(MakePhysVmo(contents, VmoNameString(phys_vmo_name), content_size));
@@ -340,7 +343,8 @@ void HandoffPrep::UsePackageFiles(KernelStorage::Bootfs kernel_package) {
     uintptr_t start = reinterpret_cast<uintptr_t>(data.data());
     // These are decompressed BOOTFS payloads, so there is only padding up to
     // the next page boundary.
-    ktl::span aligned_data{data.data(), (data.size_bytes() + ZX_PAGE_SIZE - 1) & -ZX_PAGE_SIZE};
+    ktl::span aligned_data{
+        data.data(), (data.size_bytes() + AddressSpace::kPageSize - 1) & -AddressSpace::kPageSize};
     if (it->name == userboot) {
       ZX_ASSERT(
           pool.UpdateRamSubranges(memalloc::Type::kUserboot, start, aligned_data.size()).is_ok());

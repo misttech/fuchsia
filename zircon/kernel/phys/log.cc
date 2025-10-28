@@ -7,7 +7,8 @@
 #include "log.h"
 
 #include <lib/boot-options/boot-options.h>
-#include <zircon/limits.h>
+
+#include <phys/address-space.h>
 
 Log* gLog;
 
@@ -45,13 +46,12 @@ void Log::AppendToLog(ktl::string_view str) {
 
     // Expand (or initially allocate) the buffer if it's too small.
     // The buffer is always allocated in whole pages.
-    constexpr size_t kPageSize = ZX_PAGE_SIZE;
-    const size_t expand_size = (needed + kPageSize - 1) & -kPageSize;
+    const size_t expand_size = (needed + AddressSpace::kPageSize - 1) & -AddressSpace::kPageSize;
     fbl::AllocChecker ac;
     if (buffer_) {
       buffer_.Resize(ac, buffer_.size_bytes() + expand_size);
     } else {
-      buffer_ = Allocation::New(ac, memalloc::Type::kPhysLog, expand_size, kPageSize);
+      buffer_ = Allocation::New(ac, memalloc::Type::kPhysLog, expand_size, AddressSpace::kPageSize);
     }
     if (!ac.check()) {
       RestoreStdout();

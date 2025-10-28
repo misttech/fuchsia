@@ -168,6 +168,16 @@ source_set("page-size") {
   public_configs = [ ":includes" ]
 }
 
+# //zircon/kernel/phys:address-space.header redirects to this in the EFI
+# toolchain, enabling the use of a minimal subset of the `AddressSpace`
+# interface in common phys code (e.g., Log).
+source_set("address-space.header") {
+  visibility = [ "..:*" ]
+  public = [ "include/phys/address-space.h" ]
+  public_configs = [ ":includes" ]
+  public_deps = [ ":page-size" ]
+}
+
 if (is_efi) {
   source_set("file") {
     public = [ "include/phys/efi/file.h" ]

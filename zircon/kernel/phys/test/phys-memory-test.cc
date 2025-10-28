@@ -8,17 +8,13 @@
 #include <stdio.h>
 #include <string.h>
 #include <zircon/assert.h>
-#include <zircon/limits.h>
 
 #include <fbl/algorithm.h>
 #include <ktl/byte.h>
 #include <ktl/span.h>
+#include <phys/address-space.h>
 #include <phys/allocation.h>
 #include <phys/new.h>
-
-#if !EFI
-#include <phys/address-space.h>
-#endif
 
 #include "test-main.h"
 
@@ -82,12 +78,8 @@ int TestMain(void* bootloader_data, ktl::optional<EarlyBootZbi> zbi, arch::Early
   printf("Initializing memory...\n");
 
   // Initialize memory for allocation/free.
-#if EFI
-  InitMemory(bootloader_data, ktl::move(zbi));
-#else
   AddressSpace aspace;
   InitMemory(bootloader_data, ktl::move(zbi), &aspace);
-#endif
 
   LogMemory();
 

@@ -11,7 +11,6 @@
 #include <lib/memalloc/pool.h>
 #include <lib/memalloc/range.h>
 #include <lib/uart/uart.h>
-#include <zircon/limits.h>
 #include <zircon/types.h>
 
 #include <fbl/algorithm.h>
@@ -21,6 +20,7 @@
 #include <ktl/ref.h>
 #include <ktl/type_traits.h>
 #include <ktl/utility.h>
+#include <phys/allocation.h>
 #include <phys/stdio.h>
 #include <phys/uart-console.h>
 
@@ -53,8 +53,6 @@ void AddressSpace::IdentityMapRam() {
   // appear within the same page.
   ktl::optional<uint64_t> last_aligned_end;
   memalloc::NormalizeRam(pool, [&](const memalloc::Range& range) {
-    constexpr uint64_t kPageSize = ZX_PAGE_SIZE;
-
     // If the end of the last page-aligned range overlaps with the current,
     // take that to be the start of the current range.
     uint64_t addr, size;
@@ -65,7 +63,7 @@ void AddressSpace::IdentityMapRam() {
       addr = *last_aligned_end;
       size = range.end() - *last_aligned_end;
     } else {
-      addr = range.addr & -kPageSize;
+      addr = range.addr & -uint64_t{kPageSize};
       size = (range.addr - addr) + range.size;
     }
 
@@ -91,7 +89,7 @@ void AddressSpace::IdentityMapRam() {
 
 void AddressSpace::IdentityMapUart() {
   if (const ktl::optional uart_range = GetUartDriver().maybe_mmio_range()) {
-    const auto [start, size] = uart_range->AlignedTo(ZX_PAGE_SIZE);
+    const auto [start, size] = uart_range->AlignedTo(kPageSize);
     auto result = IdentityMap(start, size, MmioMapSettings());
     ZX_ASSERT_MSG(result.is_ok(), "Failed to map in UART range: [%#" PRIx64 ", %#" PRIx64 ")",
                   start, size);

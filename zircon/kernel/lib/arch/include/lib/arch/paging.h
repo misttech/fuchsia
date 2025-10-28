@@ -379,6 +379,7 @@ class Paging : public PagingTraits {
   using PagingTraits::kVirtualAddressExtension;
 
   static constexpr LevelType kFirstLevel = kLevels.front();
+  static constexpr LevelType kLastLevel = kLevels.back();
 
   /// A table's physical alignment at any level.
   static constexpr uint64_t kTableAlignment = uint64_t{1u} << kTableAlignmentLog2;

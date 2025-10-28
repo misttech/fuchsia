@@ -23,6 +23,7 @@
 #include <ktl/span.h>
 #include <ktl/tuple.h>
 #include <ktl/utility.h>
+#include <phys/address-space.h>
 #include <phys/elf-image.h>
 #include <phys/handoff-ptr.h>
 #include <phys/handoff.h>
@@ -235,11 +236,11 @@ class HandoffPrep {
 
     HandoffMappingList&& TakeMappings() { return ktl::move(mappings_); }
 
-    size_t page_size() const { return ZX_PAGE_SIZE; }
+    size_t page_size() const { return AddressSpace::kPageSize; }
 
     [[nodiscard]] ktl::pair<void*, Capability> Allocate(size_t size) {
       fbl::AllocChecker ac;
-      Allocation pages = Allocation::New(ac, Type, size, ZX_PAGE_SIZE);
+      Allocation pages = Allocation::New(ac, Type, size, AddressSpace::kPageSize);
       if (!ac.check()) {
         return {};
       }

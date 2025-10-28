@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <phys/address-space.h>
+#include <phys/allocation.h>
 
 // This method is in a separate file and separate GN phys:address-space-map
 // static_library() so that its users don't need to link in the bootstrapping
@@ -37,4 +38,16 @@ fit::result<AddressSpace::MapError> AddressSpace::Map(uint64_t vaddr, uint64_t s
   auto lower_allocator = upper ? permanent_allocator() : temporary_allocator();
   return LowerPaging::Map(lower_root_paddr_, paddr_to_io_, lower_allocator, state_, vaddr, size,
                           paddr, settings);
+}
+
+ktl::optional<uint64_t> AddressSpace::AllocatePageTable(memalloc::Type type, uint64_t size,
+                                                        uint64_t alignment) {
+  auto result = Allocation::GetPool().Allocate(type, size, alignment, pt_allocation_lower_bound_,
+                                               pt_allocation_upper_bound_);
+  if (result.is_error()) {
+    return ktl::nullopt;
+  }
+  auto addr = static_cast<uintptr_t>(result.value());
+  memset(reinterpret_cast<void*>(addr), 0, static_cast<size_t>(size));
+  return addr;
 }

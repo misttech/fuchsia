@@ -105,7 +105,10 @@ struct PhysVmo : public PhysVmObject {
   constexpr auto operator<=>(const PhysVmo& other) const { return addr <=> other.addr; }
 
   // The full page-aligned size of the memory.
-  constexpr size_t size_bytes() const { return (content_size + ZX_PAGE_SIZE - 1) & -ZX_PAGE_SIZE; }
+  template <uint64_t PageSize>
+  constexpr size_t SizeBytes() const {
+    return (content_size + PageSize - 1) & -PageSize;
+  }
 
   void Log(const char* prefix) const {
     printf("%s: | [0x%016" PRIx64 ", 0x%016" PRIx64 ") | VMO  | %-*s|\n",  //

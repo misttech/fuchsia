@@ -19,7 +19,6 @@
 #include <lib/zbitl/view.h>
 #include <stdio.h>
 #include <zircon/assert.h>
-#include <zircon/limits.h>
 
 #include <efi/types.h>
 #include <fbl/algorithm.h>
@@ -30,6 +29,7 @@
 #include <ktl/span.h>
 #include <ktl/type_traits.h>
 #include <ktl/variant.h>
+#include <phys/address-space.h>
 #include <phys/allocation.h>
 #include <phys/arch/arch-handoff.h>
 #include <phys/boot-constants.h>
@@ -46,12 +46,13 @@
 void HandoffPrep::SummarizeMiscZbiItems(ktl::span<ktl::byte> zbi) {
   size_t zbi_size = zbi.size_bytes();
   handoff_->zbi =
-      MakePhysVmo({zbi.data(), (zbi_size + ZX_PAGE_SIZE - 1) & -ZX_PAGE_SIZE}, "zbi"sv, zbi_size);
+      MakePhysVmo({zbi.data(), (zbi_size + AddressSpace::kPageSize - 1) & -AddressSpace::kPageSize},
+                  "zbi"sv, zbi_size);
 
   // Allocate some pages to fill up with the ZBI items to save for mexec.
   fbl::AllocChecker ac;
-  Allocation mexec_buffer =
-      Allocation::New(ac, memalloc::Type::kPhysScratch, ZX_PAGE_SIZE, ZX_PAGE_SIZE);
+  Allocation mexec_buffer = Allocation::New(ac, memalloc::Type::kPhysScratch,
+                                            AddressSpace::kPageSize, AddressSpace::kPageSize);
   ZX_ASSERT_MSG(ac.check(), "cannot allocate mexec data page!");
   mexec_image_ = zbitl::Image(ktl::move(mexec_buffer));
   auto result = mexec_image_.clear();

@@ -313,50 +313,66 @@ if (toolchain_environment == "kernel.phys" ||
       "$arch_phys:address-space",
     ]
 
-    public = [
-      "$arch_phys/include/phys/arch/address-space.h",
-      "include/phys/address-space.h",
-    ]
+    if (is_efi_toolchain) {
+      public_deps = [ "efi:address-space.header" ]
+    } else {
+      public = [
+        "$arch_phys/include/phys/arch/address-space.h",
+        "include/phys/address-space.h",
+      ]
 
-    public_configs = [ ":includes" ]
+      public_configs = [ ":includes" ]
 
-    public_deps = [
-      ":allocation",
-      ":arch-phys-info",
-      ":main",
-      "//zircon/kernel/lib/ktl",
-      "//zircon/kernel/lib/libc",
+      public_deps = [
+        ":arch-phys-info",
+        ":main",
+        "//zircon/kernel/lib/ktl",
+        "//zircon/kernel/lib/libc",
 
-      # <phys/address-space.h> has #include <lib/arch/paging.h>
-      # <phys/arch/address-space.h> has #include <lib/arch/${zircon_cpu}/page-table.h>
-      "//zircon/kernel/lib/arch:headers",
+        # <phys/address-space.h> has #include <lib/fit/function.h>
+        "//sdk/lib/fit",
 
-      # <phys/address-space.h> has #include <hwreg/array.h>
-      "//zircon/system/ulib/hwreg:headers",
-    ]
+        # <phys/address-space.h> has #include <lib/memalloc/range.h>
+        "//zircon/kernel/phys/lib/memalloc",
+
+        # <phys/address-space.h> has #include <lib/arch/paging.h>
+        # <phys/arch/address-space.h> has #include <lib/arch/${zircon_cpu}/page-table.h>
+        "//zircon/kernel/lib/arch:headers",
+
+        # <phys/address-space.h> has #include <hwreg/array.h>
+        "//zircon/system/ulib/hwreg:headers",
+      ]
+    }
   }
 
-  static_library("address-space") {
-    complete_static_lib = true
+  if (is_efi_toolchain) {
+    source_set("address-space") {
+      public_deps = [ ":address-space.header" ]
+    }
+  } else {
+    static_library("address-space") {
+      complete_static_lib = true
 
-    public_deps = [ ":address-space.header" ]
+      public_deps = [ ":address-space.header" ]
 
-    sources = [ "address-space.cc" ]
-    deps = [
-      ":address-space-map",
-      ":allocation",
-      ":stdio",
-      ":uart-console",
-      "$arch_phys:address-space",
-      "//zircon/kernel/phys/lib/memalloc",
-      "//zircon/system/ulib/uart",
-    ]
-  }
+      sources = [ "address-space.cc" ]
+      deps = [
+        ":address-space-map",
+        ":allocation",
+        ":stdio",
+        ":uart-console",
+        "$arch_phys:address-space",
+        "//zircon/kernel/phys/lib/memalloc",
+        "//zircon/system/ulib/uart",
+      ]
+    }
 
-  static_library("address-space-map") {
-    public_deps = [ ":address-space.header" ]
+    static_library("address-space-map") {
+      public_deps = [ ":address-space.header" ]
 
-    sources = [ "address-space-map.cc" ]
+      sources = [ "address-space-map.cc" ]
+      deps = [ ":allocation" ]
+    }
   }
 
   source_set("stdio") {
@@ -456,6 +472,7 @@ if (toolchain_environment == "kernel.phys" ||
     if (toolchain_environment != "kernel.efi") {
       sources = [ "allocation.cc" ]
       deps = [
+        ":address-space.header",
         ":main",
         "//zircon/kernel/phys/lib/memalloc",
       ]
@@ -600,6 +617,7 @@ if (toolchain_environment == "kernel.phys" ||
     public = [ "handoff-prep.h" ]
 
     public_deps = [
+      ":address-space.header",
       ":elf-image",
       ":handoff",
       ":kernel-package",
@@ -660,6 +678,7 @@ if (toolchain_environment == "kernel.phys" ||
     ]
     public_configs = [ ":includes" ]
     public_deps = [
+      ":address-space.header",
       "//sdk/lib/fit",
       "//src/lib/elfldltl",
       "//src/lib/zbitl",
@@ -682,7 +701,6 @@ if (toolchain_environment == "kernel.phys" ||
     # AddressSpace-related logic in that environment.
     if (!is_efi_toolchain) {
       sources += [ "elf-image-mapinto.cc" ]
-      deps += [ ":address-space.header" ]
     }
   }
 
@@ -690,6 +708,7 @@ if (toolchain_environment == "kernel.phys" ||
     public = [ "log.h" ]
     public_configs = [ ":includes" ]
     public_deps = [
+      ":address-space.header",
       ":allocation",
       "//zircon/kernel/lib/ktl",
       "//zircon/kernel/lib/libc",
