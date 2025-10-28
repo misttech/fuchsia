@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::mm::barrier::{BarrierType, system_barrier};
 use crate::mm::debugger::notify_debugger_of_module_list;
 use crate::mm::{
     DesiredAddress, FutexKey, IOVecPtr, MappingName, MappingOptions, MembarrierType,
@@ -50,13 +51,6 @@ fn get_valid_platform_mmap_flags() -> u32 {
 fn get_valid_platform_mmap_flags() -> u32 {
     0
 }
-
-// Options for zx_system_barrier
-// source: zircon/system/public/zircon/syscalls-next.h
-// TODO(https://fxbug.dev/297526152): When this API is stabilized, move the definitions for these
-// constants into the zx crate.
-const ZX_SYSTEM_BARRIER_DATA_MEMORY: u32 = 0;
-const ZX_SYSTEM_BARRIER_INSTRUCTION_STREAM: u32 = 1;
 
 /// sys_mmap takes a mutable reference to current_task because it may modify the IP register.
 pub fn sys_mmap(
@@ -432,8 +426,7 @@ pub fn sys_membarrier(
         // registration for global expedited barriers currently.
         uapi::membarrier_cmd_MEMBARRIER_CMD_GLOBAL
         | uapi::membarrier_cmd_MEMBARRIER_CMD_GLOBAL_EXPEDITED => {
-            // SAFETY: This wraps the zx_system_barrier call which is safe.
-            let _ = unsafe { zx::sys::zx_system_barrier(ZX_SYSTEM_BARRIER_DATA_MEMORY) };
+            system_barrier(BarrierType::DataMemory);
             Ok(0)
         }
         // Global registration commands are ignored.
@@ -443,8 +436,7 @@ pub fn sys_membarrier(
             // for these barriers.
             if current_task.mm()?.membarrier_private_expedited_registered(MembarrierType::Memory) {
                 // If a barrier is requested, issue a global barrier.
-                // SAFETY: This wraps the zx_system_barrier call which is safe.
-                let _ = unsafe { zx::sys::zx_system_barrier(ZX_SYSTEM_BARRIER_DATA_MEMORY) };
+                system_barrier(BarrierType::DataMemory);
                 Ok(0)
             } else {
                 error!(EPERM)
@@ -454,8 +446,7 @@ pub fn sys_membarrier(
         uapi::membarrier_cmd_MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE => {
             if current_task.mm()?.membarrier_private_expedited_registered(MembarrierType::SyncCore)
             {
-                // SAFETY: This wraps the zx_system_barrier call which is safe.
-                let _ = unsafe { zx::sys::zx_system_barrier(ZX_SYSTEM_BARRIER_INSTRUCTION_STREAM) };
+                system_barrier(BarrierType::InstructionStream);
                 Ok(0)
             } else {
                 error!(EPERM)

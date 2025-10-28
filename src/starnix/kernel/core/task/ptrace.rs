@@ -876,9 +876,18 @@ where
                 return error!(ESRCH);
             };
 
-            let src = LongPtr::new(captured.as_ref(), addr);
-            let val = data.ptr() as u64;
-            tracee.write_multi_arch_object(src, val)?;
+            let bytes = if captured.is_arch32() {
+                u32::try_from(data.ptr()).map_err(|_| errno!(EINVAL))?.to_ne_bytes().to_vec()
+            } else {
+                data.ptr().to_ne_bytes().to_vec()
+            };
+
+            // SAFETY: `force_write_memory` is intended to be used by ptrace, which bypasses mapping
+            // permissions of the tracee, and necessary for userspace debuggers to work.
+            unsafe {
+                tracee.mm()?.force_write_memory(addr, &bytes)?;
+            }
+
             Ok(starnix_syscalls::SUCCESS)
         }
         PTRACE_PEEKUSR => {

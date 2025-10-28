@@ -1131,14 +1131,25 @@ TEST(PtraceTest, PtraceAttachesToParentThread) {
 
 __attribute__((noinline)) void FunctionToBreak() {
   // Placeholder instruction to be replaced with a breakpoint by tracer.
-  asm volatile("nop");
+  // Depending on the architecture, `nop` can be as small as 1 byte, so pad the function with
+  // multiple `nop` instructions to ensure that the breakpoint does not overwrite the next
+  // instruction.
+  asm volatile(
+      "nop\n"
+      "nop\n"
+      "nop\n"
+      "nop\n"
+      "nop\n"
+      "nop\n"
+      "nop\n"
+      "nop\n");
 }
 
 // Sets a breakpoint in the child process using PTRACE_POKEDATA and expects that the child process
 // triggers the breakpoint.
 TEST(PtraceTest, PokeToSetBreakpoint) {
   test_helper::ForkHelper helper;
-  helper.OnlyWaitForForkedChildren();
+  helper.ExpectSignal(SIGTRAP);
   pid_t child_pid = helper.RunInForkedProcess([] {
     SAFE_SYSCALL(ptrace(PTRACE_TRACEME, 0, 0, 0));
     raise(SIGSTOP);
@@ -1167,6 +1178,9 @@ TEST(PtraceTest, PokeToSetBreakpoint) {
 #if defined(__x86_64__)
   const long break_insn = 0xCC;
   long breakpoint_data = (original_data & ~0xFFL) | break_insn;
+  // On x86_64, PC is advanced after a breakpoint instruction, so the child should continue
+  // execution and terminate successfully.
+  helper.ExpectSignal(0);
 #elif defined(__aarch64__)
   const long break_insn = 0xD4200000;
   long breakpoint_data = (original_data & ~0xFFFFFFFFL) | break_insn;

@@ -138,20 +138,13 @@
                 // test timeout catch any future failures.
                 "PtraceTest.PtraceAttachSendSigstop",
 
-                // TODO(https://fxbug.dev/445790710)
-                // Implement PTRACE_POKEDATA and PTRACE_POKETEXT.
-                "PtraceTest.PokeToSetBreakpoint",
+                // TODO(https://fxbug.dev/445790710): Implement ptrace poke across 2 mappings.
                 "PtraceTest.PokeAcrossMappings",
-                "PokeInKernelMappingTest.*",
-                "PtracePokeMemory/PokeInPrivateMappingTest*",
-                "PtracePokeMemory/PokeInPrivateROMappingTest*",
-                "PtracePokeMemory/PokeInPrivateRXMappingTest*",
+
+                // These tests fail to mmap RWX memory region.
                 "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/Memfd",
                 "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/ReadOnlyFile",
                 "PtracePokeMemory/PokeInPrivateRWXMappingTest.*/WritableFile",
-                "PtracePokeMemory/PokeInSharedMappingTest*",
-                "PtracePokeMemory/PokeInSharedROMappingTest*",
-                "PtracePokeMemory/PokeInSharedRXMappingTest*",
             ],
         },
     ],

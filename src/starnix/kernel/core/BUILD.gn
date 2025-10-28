@@ -68,6 +68,7 @@ _starnix_core_sources = [
   "fs/sysfs/power_directory.rs",
   "fs/tmpfs.rs",
   "lib.rs",
+  "mm/barrier.rs",
   "mm/debugger.rs",
   "mm/futex_table.rs",
   "mm/map_info_cache.rs",
