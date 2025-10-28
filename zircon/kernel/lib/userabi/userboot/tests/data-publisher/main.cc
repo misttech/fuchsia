@@ -17,7 +17,7 @@
 int main(int argc, const char**) {
   zx::vmo data;
 
-  ZX_ASSERT(zx::vmo::create(ZX_PAGE_SIZE, 0, &data) == ZX_OK);
+  ZX_ASSERT(zx::vmo::create(zx_system_get_page_size(), 0, &data) == ZX_OK);
   ZX_ASSERT(data.write(kVmoContents.data(), 0, kVmoContents.size()) == ZX_OK);
 
   __sanitizer_publish_data(kPublisherSinkName.data(), data.release());

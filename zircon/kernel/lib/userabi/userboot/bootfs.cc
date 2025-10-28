@@ -7,13 +7,14 @@
 #include "bootfs.h"
 
 #include <lib/zbitl/error-stdio.h>
-#include <lib/zircon-internal/align.h>
 #include <lib/zx/vmo.h>
 #include <stdarg.h>
 #include <zircon/rights.h>
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/log.h>
 #include <zircon/types.h>
+
+#include <fbl/algorithm.h>
 
 #include "util.h"
 
@@ -53,7 +54,7 @@ zx::vmo Bootfs::Open(std::string_view root, std::string_view filename, std::stri
     }
   }
 
-  size_t page_aligned_size = ZX_PAGE_ALIGN(it->size);
+  size_t page_aligned_size = fbl::round_up(it->size, zx_system_get_page_size());
   status = zx::vmo::create(page_aligned_size, 0, &file_vmo);
   check(log_, status, "zx_vmo_create failed");
   status = zx_vmo_transfer_data(file_vmo.get(), 0, 0, page_aligned_size,

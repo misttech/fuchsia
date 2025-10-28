@@ -14,6 +14,8 @@
 #include <stdarg.h>
 #include <zircon/status.h>
 
+#include <fbl/algorithm.h>
+
 #include "option.h"
 #include "util.h"
 
@@ -179,6 +181,7 @@ Options GetOptionsFromZbi(const zx::debuglog& log, const zx::vmar& vmar_self, co
       zx::unowned_vmar{vmar_self},
   });
   Options opts;
+  const size_t page_size = zx_system_get_page_size();
   for (auto it = view.begin(); it != view.end(); ++it) {
     auto [header, payload] = *it;
     if (header->type != ZBI_TYPE_CMDLINE) {
@@ -188,8 +191,8 @@ Options GetOptionsFromZbi(const zx::debuglog& log, const zx::vmar& vmar_self, co
     // Map in and parse the CMDLINE payload. The strings referenced by `opts`
     // will be owned by the mapped pages and will be valid within `vmar_self`'s
     // lifetime (i.e., for the entirety of userboot's runtime).
-    const uint64_t previous_page_boundary = payload & -ZX_PAGE_SIZE;
-    const uint64_t next_page_boundary = ZX_PAGE_ALIGN(payload + header->length);
+    const uint64_t previous_page_boundary = payload & -page_size;
+    const uint64_t next_page_boundary = fbl::round_up(payload + header->length, page_size);
     const size_t size = next_page_boundary - previous_page_boundary;
     uintptr_t mapping;
     if (zx_status_t status =
@@ -198,7 +201,7 @@ Options GetOptionsFromZbi(const zx::debuglog& log, const zx::vmar& vmar_self, co
       fail(log, "failed to map CMDLINE item: %s", zx_status_get_string(status));
     }
 
-    const uintptr_t mapped_payload = mapping + (payload % ZX_PAGE_SIZE);
+    const uintptr_t mapped_payload = mapping + (payload % page_size);
     std::string_view cmdline{reinterpret_cast<const char*>(mapped_payload), header->length};
     printl(log, "CMDLINE %.*s\n", static_cast<int>(cmdline.size()), cmdline.data());
     ParseCmdline(log, cmdline, opts);
