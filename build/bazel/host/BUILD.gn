@@ -3,8 +3,11 @@
 # found in the LICENSE file.
 
 import("//build/bazel/bazel_root_targets.gni")
+import("//sdk/config.gni")
 
-if (current_toolchain == default_toolchain) {
+_is_default_toolchain = current_toolchain == default_toolchain
+
+if (_is_default_toolchain) {
   # This target actually builds Bazel root targets with Bazel.
   bazel_root_targets_build_group("bazel_root_targets") {
   }
@@ -14,5 +17,49 @@ if (current_toolchain == host_toolchain) {
   # This target exposes host tools from Bazel root targets in the host
   # toolchain.
   install_bazel_host_tools("bazel_root_host_tools") {
+  }
+}
+
+# Create a Bazel build group to cross-compile SDK host tools when requested.
+if (sdk_cross_compile_host_tools && _is_default_toolchain) {
+  bazel_build_group("sdk_host_tools_arm64") {
+    host = true
+    no_sdk = true
+    bazel_platform = "linux_arm64"
+
+    subtargets = []
+    foreach(_target, sdk_host_tool_bazel_targets) {
+      subtargets += [
+        {
+          bazel_target = _target.bazel_label
+          _name = get_label_info(_target.bazel_label, "name")
+          gn_target_name = "sdk_host_tools_arm64.${_name}"
+          copy_outputs = [
+            {
+              bazel = "{{BAZEL_TARGET_OUT_DIR}}/${_name}"
+              ninja = "arm64/${_name}"
+            },
+          ]
+        },
+      ]
+    }
+  }
+}
+
+# Copy cross-compiled SDK host tools from Bazel to host output directory expected by sdk_host_tool.
+# The targets here intentionally share the same target name with the ones defined by
+# `install_bazel_host_tools`, so they can be seamlessly consumed by SDK targets when cross-compiling
+# in different toolchains.
+if (sdk_cross_compile_host_tools && current_toolchain == host_arm64_toolchain) {
+  foreach(_target, sdk_host_tool_bazel_targets) {
+    _name = get_label_info(_target.bazel_label, "name")
+    copy("bazel_root_host_tools.${_name}") {
+      _bazel_action_target =
+          "sdk_host_tools_arm64.${_name}(${default_toolchain})"
+      sources = [ get_label_info(":${_bazel_action_target}", "target_out_dir") +
+                  "/arm64/${_name}" ]
+      outputs = [ "${root_out_dir}/${_name}" ]
+      deps = [ ":${_bazel_action_target}" ]
+    }
   }
 }

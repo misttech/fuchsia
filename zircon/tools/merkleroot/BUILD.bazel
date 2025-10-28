@@ -1,0 +1,16 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+cc_binary(
+    name = "merkleroot",
+    srcs = ["merkleroot.cc"],
+    # Intentionally not setting CPU because we use this target to test cross-compiled on other CPUs.
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
+    deps = [
+        "//src/lib/digest",
+        "//zircon/system/ulib/fbl",
+    ],
+)

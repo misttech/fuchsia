@@ -3,6 +3,17 @@
 # found in the LICENSE file.
 
 declare_args() {
+  # A list of scopes describing Bazel host targets that are included in the SDK.
+  #
+  # This is a separate because they can be cross-compiled on SDK builders.
+  sdk_host_tool_bazel_targets = [
+    {
+      bazel_label = "//zircon/tools/merkleroot"
+    },
+  ]
+}
+
+declare_args() {
   # A list of scopes describing Bazel host targets that can be built directly
   # with Bazel, without invoking Ninja. These *cannot* depend on any Ninja
   # artifact. Schema is:
@@ -19,32 +30,34 @@ declare_args() {
   #    install_host_tool [boolean]: Optional, set to true to make it available
   #       to the `fx host-tool <ninja_name>` command.
   #
-  default_bazel_root_host_targets = [
-    # First, a target that verifies that the host toolchains
-    # work properly, i.e. can compile and link C++ and Rust binaries properly.
-    {
-      bazel_label = "//build/bazel/toolchains/tests:build"
-      bazel_name = "build.stamp"
-      ninja_name = "bazel_toolchains_tests_build.stamp"
-    },
-    {
-      bazel_label = "//build/tools/json_validator:json_validator_valico"
-      install_host_tool = true
-    },
-    {
-      bazel_label = "//build/tools/formatjson5"
-      install_host_tool = true
-    },
-    {
-      bazel_label = "//build/tools/bazel2gn"
-      copy_outputs = [
-        {
-          bazel = "{{BAZEL_TARGET_OUT_DIR}}/bazel2gn_/bazel2gn"
-          ninja = "bazel2gn"
-        },
-      ]
-    },
-  ]
+  default_bazel_root_host_targets = sdk_host_tool_bazel_targets + [
+                                      # First, a target that verifies that the host toolchains
+                                      # work properly, i.e. can compile and link C++ and Rust binaries properly.
+                                      {
+                                        bazel_label = "//build/bazel/toolchains/tests:build"
+                                        bazel_name = "build.stamp"
+                                        ninja_name =
+                                            "bazel_toolchains_tests_build.stamp"
+                                      },
+                                      {
+                                        bazel_label = "//build/tools/json_validator:json_validator_valico"
+                                        install_host_tool = true
+                                      },
+                                      {
+                                        bazel_label =
+                                            "//build/tools/formatjson5"
+                                        install_host_tool = true
+                                      },
+                                      {
+                                        bazel_label = "//build/tools/bazel2gn"
+                                        copy_outputs = [
+                                          {
+                                            bazel = "{{BAZEL_TARGET_OUT_DIR}}/bazel2gn_/bazel2gn"
+                                            ninja = "bazel2gn"
+                                          },
+                                        ]
+                                      },
+                                    ]
 
   # A similar list to extend the list above for custom build configuration
   # in args.gn.

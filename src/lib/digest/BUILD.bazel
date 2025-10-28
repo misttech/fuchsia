@@ -18,10 +18,10 @@ cc_library(
         "merkle-tree.h",
         "node-digest.h",
     ],
-    target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
+        "//sdk/lib/stdcompat",
         "//zircon/system/ulib/fbl",
-        "@boringssl",
-        "@fuchsia_sdk//pkg/stdcompat",
+        "@boringssl//src:crypto",
+        "@boringssl//src:ssl",
     ],
 )

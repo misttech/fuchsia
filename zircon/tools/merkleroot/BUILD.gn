@@ -11,16 +11,8 @@
 
 import("//build/sdk/sdk_host_tool.gni")
 
-executable("merkleroot") {
-  sources = [ "merkleroot.cc" ]
-  deps = [
-    "//src/lib/digest",
-    "//zircon/system/ulib/fbl",
-  ]
-}
-
 sdk_host_tool("merkleroot_sdk") {
   category = "partner"
   output_name = "merkleroot"
-  deps = [ ":merkleroot" ]
+  deps = [ "//build/bazel/host:bazel_root_host_tools.merkleroot" ]
 }
