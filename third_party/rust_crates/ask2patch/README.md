@@ -18,6 +18,9 @@ To update a crate in this directory:
 4. Move the contents of `//third_party/rust_crates/vendor/<crate_name>/*` to
    `//third_party/rust_crates/ask2patch/<crate_name>/*` and delete the directory in `vendor/`.
 5. Undo (1), uncommenting the crate's line in `//third_party/rust_crates/Cargo.toml`.
-6. Repeat (2).
+6. Revert the temporary changes to `//third_party/rust_crates/Cargo.lock` and
+   `//third_party/rust_crates/BUILD.gn` by running `git restore
+   third_party/rust_crates/Cargo.lock third_party/rust_crates/BUILD.gn`.
+7. Repeat (2).
 
 [patching policy]: https://opensource.google/docs/patching/
