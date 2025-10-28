@@ -15971,17 +15971,17 @@ rustc_library("ryu-v1_0_3") {
   applicable_licenses = [ ":ryu-v1_0_3.license" ]
 }
 
-license("same-file-v1_0_4.license") {
+license("same-file-v1_0_6.license") {
   public_package_name = "same_file"
   license_files =
       [ "//third_party/rust_crates/ask2patch/same-file/LICENSE-MIT" ]
 }
 
-rustc_library("same-file-v1_0_4") {
+rustc_library("same-file-v1_0_6") {
   crate_name = "same_file"
   source_root = "//third_party/rust_crates/ask2patch/same-file/src/lib.rs"
-  output_name = "same_file-460d9eb4eb179eea"
-  edition = "2015"
+  output_name = "same_file-261ee38f55363bab"
+  edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -15995,13 +15995,13 @@ rustc_library("same-file-v1_0_4") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=460d9eb4eb179eea",
-    "-Cextra-filename=-460d9eb4eb179eea",
+    "-Cmetadata=261ee38f55363bab",
+    "-Cextra-filename=-261ee38f55363bab",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":same-file-v1_0_4.license" ]
+  applicable_licenses = [ ":same-file-v1_0_6.license" ]
 }
 
 license("scanlex-v0_1_4.license") {
@@ -20946,7 +20946,7 @@ rustc_library("walkdir-v2_5_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":same-file-v1_0_4" ]
+  deps += [ ":same-file-v1_0_6" ]
   if (false) {
     deps += [ ":winapi-util-v0_1_5" ]
   }

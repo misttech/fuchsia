@@ -1,9 +1,7 @@
 use std::fs::File;
 use std::hash::{Hash, Hasher};
 use std::io;
-use std::os::windows::io::{
-    AsRawHandle, IntoRawHandle, RawHandle,
-};
+use std::os::windows::io::{AsRawHandle, IntoRawHandle, RawHandle};
 use std::path::Path;
 
 use winapi_util as winutil;
@@ -84,7 +82,7 @@ impl PartialEq for Handle {
     }
 }
 
-impl AsRawHandle for ::Handle {
+impl AsRawHandle for crate::Handle {
     fn as_raw_handle(&self) -> RawHandle {
         match self.0.kind {
             HandleKind::Owned(ref h) => h.as_raw_handle(),
@@ -93,7 +91,7 @@ impl AsRawHandle for ::Handle {
     }
 }
 
-impl IntoRawHandle for ::Handle {
+impl IntoRawHandle for crate::Handle {
     fn into_raw_handle(self) -> RawHandle {
         match self.0.kind {
             HandleKind::Owned(h) => h.into_raw_handle(),
