@@ -15,6 +15,7 @@ use async_ringbuf::traits::{
     AsyncConsumer as _, AsyncProducer, Consumer as _, Observer as _, Producer as _, Split as _,
 };
 use fuchsia_async::{self as fasync, ReadableHandle as _, WritableHandle as _};
+use log::debug;
 
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt as _, StreamExt as _};
@@ -23,6 +24,7 @@ use netstack3_core::socket::ShutdownType;
 use netstack3_core::tcp::{
     Buffer, BufferLimits, FragmentedPayload, NoConnection, Payload, ReceiveBuffer, SendBuffer,
 };
+use zx::AsHandleRef;
 
 use super::TcpSocketId;
 use crate::bindings::util::DataNotifier;
@@ -31,51 +33,46 @@ use crate::bindings::{BindingsCtx, Ctx};
 /// Error emitted when new buffers are instantiated but there's no send/recv
 /// task listening on the other side.
 #[derive(Debug)]
-pub(super) struct TaskStoppedError;
+struct TaskStoppedError;
 
 #[derive(Debug)]
 pub(crate) struct CoreReceiveBuffer {
     inner: CoreReceiveBufferInner,
     notifier: Option<DataNotifier>,
+    new_buffer_sender: mpsc::UnboundedSender<ReceiveBufferReader>,
 }
 
 pub(crate) enum CoreReceiveBufferInner {
-    // TODO(https://fxbug.dev/364698967): We might be able to replace the zero
-    // buffer with lazy allocations so we don't have this weird variant standing
-    // out because of startup races.
-    Zero,
-    Ready {
-        buffer: async_ringbuf::AsyncHeapProd<u8>,
-        new_buffer_sender: mpsc::UnboundedSender<ReceiveBufferReader>,
-        empty: bool,
-        pending_capacity: Option<usize>,
-    },
+    Unallocated { capacity: usize },
+    Ready { buffer: async_ringbuf::AsyncHeapProd<u8>, empty: bool, pending_capacity: Option<usize> },
+    Defunct,
 }
 
 pub(super) type ReceiveBufferReader = async_ringbuf::AsyncHeapCons<u8>;
 
 impl CoreReceiveBuffer {
-    pub(super) fn zero() -> Self {
-        Self { inner: CoreReceiveBufferInner::Zero, notifier: None }
-    }
-
-    pub(super) fn new_ready(
-        rx_task_sender: mpsc::UnboundedSender<ReceiveBufferReader>,
+    pub(super) fn new(
+        new_buffer_sender: mpsc::UnboundedSender<ReceiveBufferReader>,
         capacity: usize,
         notifier: Option<DataNotifier>,
-    ) -> Result<Self, TaskStoppedError> {
+    ) -> Self {
+        Self {
+            inner: CoreReceiveBufferInner::Unallocated { capacity },
+            notifier,
+            new_buffer_sender,
+        }
+    }
+
+    fn alloc_new_buffer(
+        capacity: usize,
+        new_buffer_sender: &mpsc::UnboundedSender<ReceiveBufferReader>,
+    ) -> Result<async_ringbuf::AsyncHeapProd<u8>, TaskStoppedError> {
         let ring_buffer = async_ringbuf::AsyncHeapRb::new(capacity);
         let (prod, cons) = ring_buffer.split();
-        rx_task_sender.unbounded_send(cons).map_err(|_: mpsc::TrySendError<_>| TaskStoppedError)?;
-        Ok(Self {
-            inner: CoreReceiveBufferInner::Ready {
-                buffer: prod,
-                new_buffer_sender: rx_task_sender,
-                empty: true,
-                pending_capacity: None,
-            },
-            notifier,
-        })
+        new_buffer_sender
+            .unbounded_send(cons)
+            .map_err(|_: mpsc::TrySendError<_>| TaskStoppedError)?;
+        Ok(prod)
     }
 
     pub(super) fn set_notifier(&mut self, notifier: DataNotifier) {
@@ -83,25 +80,28 @@ impl CoreReceiveBuffer {
     }
 
     fn maybe_update_capacity(&mut self) {
-        let Self { inner, notifier } = self;
+        let Self { inner, notifier: _, new_buffer_sender } = self;
         match inner {
-            CoreReceiveBufferInner::Zero => (),
-            CoreReceiveBufferInner::Ready {
-                buffer: _,
-                new_buffer_sender,
-                empty,
-                pending_capacity,
-            } => {
+            CoreReceiveBufferInner::Unallocated { capacity: _ }
+            | CoreReceiveBufferInner::Defunct => {}
+            CoreReceiveBufferInner::Ready { buffer: _, empty, pending_capacity } => {
                 // When we turn to empty and we have a pending capacity request,
                 // update our buffers.
-                if let (true, Some(cap)) = (*empty, pending_capacity.as_ref()) {
-                    match Self::new_ready(new_buffer_sender.clone(), *cap, notifier.clone()) {
-                        Ok(r) => *self = r,
-                        // If the task is stopped give up attempting to update
-                        // the capacity.
-                        Err(TaskStoppedError) => {
-                            *pending_capacity = None;
-                        }
+                let (true, Some(cap)) = (*empty, pending_capacity.as_ref()) else {
+                    return;
+                };
+                match Self::alloc_new_buffer(*cap, new_buffer_sender) {
+                    Ok(new_buffer) => {
+                        *inner = CoreReceiveBufferInner::Ready {
+                            buffer: new_buffer,
+                            empty: true,
+                            pending_capacity: None,
+                        };
+                    }
+                    // If the task is stopped give up attempting to update
+                    // the capacity.
+                    Err(TaskStoppedError) => {
+                        *pending_capacity = None;
                     }
                 }
             }
@@ -112,18 +112,19 @@ impl CoreReceiveBuffer {
 impl Debug for CoreReceiveBufferInner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CoreReceiveBufferInner::Zero => write!(f, "CoreReceiveBuffer::Zero"),
-            CoreReceiveBufferInner::Ready {
-                buffer,
-                new_buffer_sender: _,
-                empty,
-                pending_capacity,
-            } => f
-                .debug_struct("CoreReceiveBuffer::Ready")
+            CoreReceiveBufferInner::Unallocated { capacity } => f
+                .debug_struct("CoreReceiveBufferInner::Unallocated")
+                .field("capacity", capacity)
+                .finish_non_exhaustive(),
+            CoreReceiveBufferInner::Ready { buffer, empty, pending_capacity } => f
+                .debug_struct("CoreReceiveBufferInner::Ready")
                 .field("buffer_capacity", &buffer.capacity())
                 .field("empty", &empty)
                 .field("pending_capacity", &pending_capacity)
                 .finish_non_exhaustive(),
+            CoreReceiveBufferInner::Defunct => {
+                f.debug_struct("CoreReceiveBufferInner::Defunct").finish()
+            }
         }
     }
 }
@@ -131,40 +132,39 @@ impl Debug for CoreReceiveBufferInner {
 impl Buffer for CoreReceiveBuffer {
     fn limits(&self) -> BufferLimits {
         match &self.inner {
-            CoreReceiveBufferInner::Zero => BufferLimits { capacity: 0, len: 0 },
-            CoreReceiveBufferInner::Ready {
-                buffer,
-                new_buffer_sender: _,
-                empty: _,
-                pending_capacity: _,
-            } => {
+            CoreReceiveBufferInner::Unallocated { capacity } => {
+                BufferLimits { capacity: *capacity, len: 0 }
+            }
+            CoreReceiveBufferInner::Ready { buffer, empty: _, pending_capacity: _ } => {
                 let len = buffer.occupied_len();
                 let capacity = buffer.capacity().into();
                 BufferLimits { capacity, len }
             }
+            CoreReceiveBufferInner::Defunct => BufferLimits { capacity: 0, len: 0 },
         }
     }
 
     fn target_capacity(&self) -> usize {
         match &self.inner {
-            CoreReceiveBufferInner::Zero => 0,
-            CoreReceiveBufferInner::Ready {
-                buffer,
-                new_buffer_sender: _,
-                empty: _,
-                pending_capacity,
-            } => pending_capacity.as_ref().copied().unwrap_or_else(|| buffer.capacity().into()),
+            CoreReceiveBufferInner::Unallocated { capacity } => *capacity,
+            CoreReceiveBufferInner::Ready { buffer, empty: _, pending_capacity } => {
+                pending_capacity.as_ref().copied().unwrap_or_else(|| buffer.capacity().into())
+            }
+            CoreReceiveBufferInner::Defunct => 0,
         }
     }
 
     fn request_capacity(&mut self, size: usize) {
         match &mut self.inner {
-            CoreReceiveBufferInner::Zero => {}
+            CoreReceiveBufferInner::Unallocated { capacity } => {
+                *capacity = size;
+            }
             CoreReceiveBufferInner::Ready { pending_capacity, .. } => {
                 *pending_capacity = Some(size);
-                self.maybe_update_capacity();
             }
+            CoreReceiveBufferInner::Defunct => {}
         }
+        self.maybe_update_capacity();
     }
 }
 
@@ -193,14 +193,30 @@ fn write_payload<P: Payload>(
 
 impl ReceiveBuffer for CoreReceiveBuffer {
     fn write_at<P: Payload>(&mut self, offset: usize, data: &P) -> usize {
-        match &mut self.inner {
-            CoreReceiveBufferInner::Zero => 0,
-            CoreReceiveBufferInner::Ready {
-                buffer,
-                new_buffer_sender: _,
-                empty,
-                pending_capacity: _,
-            } => {
+        let Self { inner, notifier: _, new_buffer_sender } = self;
+        match inner {
+            CoreReceiveBufferInner::Defunct => 0,
+            CoreReceiveBufferInner::Unallocated { capacity } => {
+                // We don't have any buffer space yet. Allocate the capacity
+                // that we've promised via the API and write into the newly
+                // created buffer.
+                let new_buffer = match Self::alloc_new_buffer(*capacity, new_buffer_sender) {
+                    Ok(buffer) => buffer,
+                    Err(TaskStoppedError) => {
+                        debug!("failed to allocate buffer, rx task is stopped");
+                        *inner = CoreReceiveBufferInner::Defunct;
+                        return 0;
+                    }
+                };
+                *inner = CoreReceiveBufferInner::Ready {
+                    buffer: new_buffer,
+                    empty: false,
+                    pending_capacity: None,
+                };
+                // Recurse, in our new state we can accept the data.
+                self.write_at(offset, data)
+            }
+            CoreReceiveBufferInner::Ready { buffer, empty, pending_capacity: _ } => {
                 let (a, b) = buffer.vacant_slices_mut();
                 let mut written = write_payload(offset, 0, a, data);
                 if let Some(offset) = (offset + written).checked_sub(a.len()) {
@@ -217,15 +233,13 @@ impl ReceiveBuffer for CoreReceiveBuffer {
     }
 
     fn make_readable(&mut self, count: usize, has_outstanding: bool) {
-        let Self { inner, notifier } = self;
+        let Self { inner, notifier, new_buffer_sender: _ } = self;
         match inner {
-            CoreReceiveBufferInner::Zero => (),
-            CoreReceiveBufferInner::Ready {
-                buffer,
-                new_buffer_sender: _,
-                empty,
-                pending_capacity: _,
-            } => {
+            CoreReceiveBufferInner::Defunct => {}
+            CoreReceiveBufferInner::Unallocated { capacity: _ } => {
+                unreachable!("unallocated buffer can't be marked readable")
+            }
+            CoreReceiveBufferInner::Ready { buffer, empty, pending_capacity: _ } => {
                 // TODO(https://fxbug.dev/440396857): fix the race condition where incoming data
                 // may not have been written into the zircon socket before the client is
                 // notified of the data being available.
@@ -375,21 +389,13 @@ pub(super) async fn receive_task<O: ReceiveTaskOps>(
         .expect("failed to set socket disposition");
 }
 
-#[derive(Debug)]
-pub(crate) enum SendBufferPendingCapacity {
-    Idle(oneshot::Sender<()>),
-    Requested(usize),
-}
-
-pub(crate) enum CoreSendBuffer {
-    // TODO(https://fxbug.dev/364698967): We might be able to replace the zero
-    // buffer with lazy allocations so we don't have this weird variant standing
-    // out because of startup races (see IntoBuffers impl for
-    // UnconnectedSocketData).
-    Zero,
+enum CoreSendBufferInner {
+    Unallocated {
+        capacity: usize,
+    },
     Ready {
         buffer: async_ringbuf::AsyncHeapCons<u8>,
-        pending_capacity: SendBufferPendingCapacity,
+        pending_capacity: Option<usize>,
     },
     /// Socket is shutting down send.
     ///
@@ -407,22 +413,32 @@ pub(crate) enum CoreSendBuffer {
     },
 }
 
-pub(crate) struct SendBufferWriter {
-    pub(super) producer: async_ringbuf::AsyncHeapProd<u8>,
-    pub(super) capacity_change_signal: oneshot::Receiver<()>,
+impl CoreSendBufferInner {
+    fn new_ready(capacity: usize) -> (Self, SendBufferWriter) {
+        let ring_buffer = async_ringbuf::AsyncHeapRb::new(capacity);
+        let (producer, cons) = ring_buffer.split();
+        (Self::Ready { buffer: cons, pending_capacity: None }, SendBufferWriter { producer })
+    }
 }
 
-impl Debug for CoreSendBuffer {
+struct SendBufferWriter {
+    producer: async_ringbuf::AsyncHeapProd<u8>,
+}
+
+impl Debug for CoreSendBufferInner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Zero => write!(f, "CoreSendBuffer::Zero"),
+            Self::Unallocated { capacity } => f
+                .debug_struct("CoreSendBufferInner::Unallocated")
+                .field("capacity", capacity)
+                .finish(),
             Self::Ready { buffer, pending_capacity } => f
-                .debug_struct("CoreSendBuffer::Ready")
+                .debug_struct("CoreSendBufferInner::Ready")
                 .field("buffer_capacity", &buffer.capacity())
                 .field("pending_capacity", pending_capacity)
                 .finish_non_exhaustive(),
             Self::ShuttingDown { buffer, extra, extra_offset, target_capacity } => f
-                .debug_struct("CoreSendBuffer::ShuttingDown")
+                .debug_struct("CoreSendBufferInner::ShuttingDown")
                 .field("buffer_capacity", &buffer.capacity())
                 .field("target_capacity", target_capacity)
                 .field("extra", &extra.len())
@@ -432,57 +448,122 @@ impl Debug for CoreSendBuffer {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct CoreSendBuffer {
+    inner: CoreSendBufferInner,
+    signal_sender: TxTaskSender,
+}
+
+#[derive(Debug)]
+pub(super) struct TxTaskSender(mpsc::Sender<()>);
+
+#[derive(Debug)]
+pub(super) struct TxTaskReceiver(mpsc::Receiver<()>);
+
+impl TxTaskSender {
+    pub(super) fn new() -> (Self, TxTaskReceiver) {
+        // NOTE: The signal is only used for pending capacity request, so we can
+        // live with a channel with a single buffer slot.
+        let (sender, receiver) = mpsc::channel(1);
+        (Self(sender), TxTaskReceiver(receiver))
+    }
+
+    fn signal(&mut self) {
+        let Self(sender) = self;
+        match sender.try_send(()) {
+            Ok(()) => {}
+            Err(e) if e.is_disconnected() => {
+                // Send task can have stopped while we're signaling, just allow
+                // this to happen.
+            }
+            Err(e) if e.is_full() => {
+                // The task is already notified to do work but hasn't gotten
+                // around to doing it.
+                //
+                // We're permissive here because requests for capacity updates
+                // may race with the decision to deallocate or reallocate buffer
+                // space.
+            }
+            // The API doesn't allow us to match exhaustively on all types of
+            // errors, so this is a catch for errors that are not handled by the
+            // boolean checks above.
+            Err(e) => unreachable!("unexpected error {e:?}"),
+        }
+    }
+}
+
+struct NoPendingCapacityRequestError;
+
 impl CoreSendBuffer {
-    pub(super) fn new_ready(capacity: usize) -> (Self, SendBufferWriter) {
-        let ring_buffer = async_ringbuf::AsyncHeapRb::new(capacity);
-        let (producer, cons) = ring_buffer.split();
-        let (capacity_change_sender, capacity_change_signal) = oneshot::channel();
-        (
-            Self::Ready {
-                buffer: cons,
-                pending_capacity: SendBufferPendingCapacity::Idle(capacity_change_sender),
-            },
-            SendBufferWriter { producer, capacity_change_signal },
-        )
+    pub(super) fn new(capacity: usize, signal_sender: TxTaskSender) -> Self {
+        Self { inner: CoreSendBufferInner::Unallocated { capacity }, signal_sender }
     }
 
     /// Applies a pending capacity request to the buffer.
     ///
+    /// Returns a new buffer if there was a pending capacity update request.
+    ///
     /// # Panics
     ///
-    /// Panics if the buffer doesn't have a pending capacity request or if the
-    /// buffer has not been fully flushed out to the network, if the buffer is
-    /// shutting down or is the zero buffer.
-    pub(super) fn apply_new_capacity(&mut self) -> SendBufferWriter {
-        match self {
-            Self::Zero => panic!("attempted to apply new capacity to zero buffer"),
-            Self::Ready { buffer, pending_capacity } => {
-                let new_capacity =
-                    assert_matches!(pending_capacity, SendBufferPendingCapacity::Requested(n) => n);
+    /// Panics if the buffer is shutting down or if there is an allocated buffer
+    /// that is not fully drained.
+    fn apply_new_capacity(&mut self) -> Result<SendBufferWriter, NoPendingCapacityRequestError> {
+        let Self { inner, signal_sender: _ } = self;
+        match inner {
+            CoreSendBufferInner::ShuttingDown { .. } => {
+                panic!("apply_new_capacity: bad buffer state {inner:?}")
+            }
+            CoreSendBufferInner::Unallocated { .. } => Err(NoPendingCapacityRequestError),
+            CoreSendBufferInner::Ready { buffer, pending_capacity } => {
                 // Must not be called by the send task before waiting for the
                 // buffer to be fully drained.
                 assert!(buffer.is_empty());
-                let (new_buffer, writer) = Self::new_ready(*new_capacity);
-                *self = new_buffer;
-                writer
-            }
-            Self::ShuttingDown { .. } => {
-                panic!("attempted to apply new capacity to shutting down buffer")
+
+                let new_capacity = pending_capacity.ok_or(NoPendingCapacityRequestError)?;
+                let (new_buffer, writer) = CoreSendBufferInner::new_ready(new_capacity);
+                *inner = new_buffer;
+                Ok(writer)
             }
         }
+    }
+
+    /// Allocates a new buffer.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the buffer is already allocated.
+    fn allocate(&mut self) -> SendBufferWriter {
+        let Self { inner, signal_sender: _ } = self;
+        let capacity = match inner {
+            CoreSendBufferInner::Unallocated { capacity } => *capacity,
+            CoreSendBufferInner::ShuttingDown { .. } | CoreSendBufferInner::Ready { .. } => {
+                panic!("allocate: bad buffer state {self:?}")
+            }
+        };
+        let (new_buffer, writer) = CoreSendBufferInner::new_ready(capacity);
+        *inner = new_buffer;
+        writer
     }
 }
 
 impl Buffer for CoreSendBuffer {
     fn limits(&self) -> BufferLimits {
-        match self {
-            Self::Zero => BufferLimits { capacity: 0, len: 0 },
-            Self::Ready { buffer, pending_capacity: _ } => {
+        let Self { inner, signal_sender: _ } = self;
+        match inner {
+            CoreSendBufferInner::Unallocated { capacity } => {
+                BufferLimits { capacity: *capacity, len: 0 }
+            }
+            CoreSendBufferInner::Ready { buffer, pending_capacity: _ } => {
                 let len = buffer.occupied_len();
                 let capacity = buffer.capacity().get();
                 BufferLimits { capacity, len }
             }
-            Self::ShuttingDown { buffer, extra, extra_offset, target_capacity: _ } => {
+            CoreSendBufferInner::ShuttingDown {
+                buffer,
+                extra,
+                extra_offset,
+                target_capacity: _,
+            } => {
                 let len = buffer.occupied_len() + extra.len() - *extra_offset;
                 let capacity = buffer.capacity().get() + extra.len();
                 BufferLimits { capacity, len }
@@ -491,44 +572,48 @@ impl Buffer for CoreSendBuffer {
     }
 
     fn target_capacity(&self) -> usize {
-        match self {
-            Self::Zero => 0,
-            Self::Ready { buffer, pending_capacity } => match pending_capacity {
-                SendBufferPendingCapacity::Idle(_) => buffer.capacity().into(),
-                SendBufferPendingCapacity::Requested(r) => *r,
+        let Self { inner, signal_sender: _ } = self;
+        match inner {
+            CoreSendBufferInner::Unallocated { capacity } => *capacity,
+            CoreSendBufferInner::Ready { buffer, pending_capacity } => match pending_capacity {
+                None => buffer.capacity().into(),
+                Some(r) => *r,
             },
-            Self::ShuttingDown { buffer: _, extra: _, extra_offset: _, target_capacity } => {
-                *target_capacity
-            }
+            CoreSendBufferInner::ShuttingDown {
+                buffer: _,
+                extra: _,
+                extra_offset: _,
+                target_capacity,
+            } => *target_capacity,
         }
     }
 
     fn request_capacity(&mut self, size: usize) {
-        match self {
-            Self::Zero => (),
-            Self::Ready { buffer: _, pending_capacity } => {
-                match core::mem::replace(
-                    pending_capacity,
-                    SendBufferPendingCapacity::Requested(size),
-                ) {
-                    SendBufferPendingCapacity::Idle(s) => {
+        let Self { inner, signal_sender } = self;
+        match inner {
+            CoreSendBufferInner::Unallocated { capacity } => {
+                *capacity = size;
+            }
+            CoreSendBufferInner::Ready { buffer: _, pending_capacity } => {
+                match pending_capacity.replace(size) {
+                    None => {
                         // Notify that we'd like to close the current ring
                         // buffer and replace it with a different capacity. The
                         // send task is responsible to listen for this signal
                         // and update the capacity when ready.
-                        //
-                        // If the send task has dropped the notifier assume
-                        // we're racing with some shutdown. Keeping the new
-                        // buffer sender around is not enough to guarantee the
-                        // task is alive since it can be aborted.
-                        let _: Result<(), ()> = s.send(());
+                        signal_sender.signal();
                     }
-                    SendBufferPendingCapacity::Requested(_) => {}
+                    Some(_) => {}
                 }
             }
-            Self::ShuttingDown { buffer: _, extra: _, extra_offset: _, target_capacity } => {
+            CoreSendBufferInner::ShuttingDown {
+                buffer: _,
+                extra: _,
+                extra_offset: _,
+                target_capacity,
+            } => {
                 // When shutting down just store the user request to prevent
-                // weirdeness over the API but there's no way to fulfill it.
+                // weirdness over the API but there's no way to fulfill it.
                 *target_capacity = size;
             }
         }
@@ -538,12 +623,18 @@ impl Buffer for CoreSendBuffer {
 impl SendBuffer for CoreSendBuffer {
     type Payload<'a> = FragmentedPayload<'a, 3>;
     fn mark_read(&mut self, count: usize) {
-        match self {
-            Self::Zero => (),
-            Self::Ready { buffer, pending_capacity: _ } => {
+        let Self { inner, signal_sender: _ } = self;
+        match inner {
+            CoreSendBufferInner::Unallocated { capacity: _ } => {}
+            CoreSendBufferInner::Ready { buffer, pending_capacity: _ } => {
                 assert_eq!(async_ringbuf::traits::Consumer::skip(buffer, count), count);
             }
-            Self::ShuttingDown { buffer, extra, extra_offset, target_capacity: _ } => {
+            CoreSendBufferInner::ShuttingDown {
+                buffer,
+                extra,
+                extra_offset,
+                target_capacity: _,
+            } => {
                 // The producer must've been closed by the send task before
                 // anything happens on this buffer. This ensures when we're
                 // reading the buffer length we're not racing with anything
@@ -564,11 +655,12 @@ impl SendBuffer for CoreSendBuffer {
     where
         F: FnOnce(Self::Payload<'a>) -> R,
     {
-        match self {
-            Self::Zero => {
+        let Self { inner, signal_sender: _ } = self;
+        match inner {
+            CoreSendBufferInner::Unallocated { capacity: _ } => {
                 return f(FragmentedPayload::new_empty());
             }
-            Self::Ready { buffer, pending_capacity: _ } => {
+            CoreSendBufferInner::Ready { buffer, pending_capacity: _ } => {
                 let (a, b) = buffer.as_slices();
                 if let Some(offset) = offset.checked_sub(a.len()) {
                     f(FragmentedPayload::new_contiguous(&b[offset..]))
@@ -576,7 +668,12 @@ impl SendBuffer for CoreSendBuffer {
                     f(FragmentedPayload::from_iter([&a[offset..], b]))
                 }
             }
-            Self::ShuttingDown { buffer, extra, extra_offset, target_capacity: _ } => {
+            CoreSendBufferInner::ShuttingDown {
+                buffer,
+                extra,
+                extra_offset,
+                target_capacity: _,
+            } => {
                 let (a, b) = buffer.as_slices();
                 let extra = &extra[*extra_offset..];
                 match offset.checked_sub(a.len()) {
@@ -630,122 +727,56 @@ pub(super) async fn send_task<O: SendTaskOps>(
     socket: Arc<zx::Socket>,
     mut ops: O,
     shutdown_receiver: oneshot::Receiver<oneshot::Sender<()>>,
-    first_buffer_receiver: oneshot::Receiver<SendBufferWriter>,
+    TxTaskReceiver(mut tx_task_receiver): TxTaskReceiver,
 ) {
     let handle = fasync::RWHandle::new(&*socket);
     let mut cur_buffer = None;
-
     let send_loop = async {
-        match first_buffer_receiver.await {
-            Ok(b) => {
-                cur_buffer = Some(b);
-            }
-            Err(oneshot::Canceled) => {}
-        };
         loop {
-            let Some(SendBufferWriter { producer: buffer, capacity_change_signal }) =
-                cur_buffer.as_mut()
-            else {
-                // We looped without a buffer, break.
-                break;
-            };
-
-            // We fuse the capacity change signal here because observing the
-            // canceled oneshot is load bearing here and, unfortunately,
-            // oneshot::Receiver's FusedFuture implementation will avoid polling
-            // when the sender side is closed which will eat the Canceled signal
-            // we use to process core-side shutdown.
-            //
-            // Using `fuse` we sidestep the direct FusedFuture implementation
-            // and guarantee we'll always see the future complete.
-            //
-            // TODO(https://github.com/rust-lang/futures-rs/issues/2455): Remove
-            // this if it gets fixed upstream.
-            let mut capacity_change_signal = capacity_change_signal.fuse();
-
-            loop {
-                // If the buffer we're looking at has been closed by core we
-                // should no longer be attempting to put more bytes into it,
-                // even if there's space available.
-                if buffer.is_closed() {
-                    return;
-                }
-                let (a, b) = buffer.vacant_slices_mut();
-                let avail = a.len() + b.len();
-                // If we don't have any space to use, wait for free space as we
-                // send segments out.
-                if avail == 0 {
-                    buffer.wait_vacant(1).await;
-                    continue;
-                }
-                let a_read = if a.len() != 0 {
-                    let mut poll_socket = futures::future::poll_fn(|ctx| {
-                        loop {
-                            let res =
-                                handle.get_ref().read_uninit(a).map_err(SocketErrorAction::from);
-                            match res {
-                                Err(SocketErrorAction::Wait) => {
-                                    futures::ready!(
-                                        handle
-                                            .need_readable(ctx)
-                                            // `need_readable` should not fail for valid
-                                            // sockets with the correct rights.
-                                            .map(|r| r.expect("waiting for readable"))
-                                    )
-                                }
-                                Err(SocketErrorAction::Shutdown) => return Poll::Ready(None),
-                                Ok(read) => return Poll::Ready(Some(read.len())),
+            let buffer = match cur_buffer.as_mut() {
+                Some(b) => b,
+                None => {
+                    let next_buffer = futures::select! {
+                        b = wait_and_alloc_send_buffer(&handle, &mut ops).fuse() => b,
+                        s = tx_task_receiver.next() => {
+                            match s {
+                                Some(()) => {
+                                    // If we decided to deallocate a buffer
+                                    // while a signal was pending on the
+                                    // receiver we may have this pending signal
+                                    // here. Ignore it and loop again to
+                                    // allocate a new buffer.
+                                    continue;
+                                },
+                                None => None,
                             }
                         }
-                    })
-                    .fuse();
-                    futures::select! {
-                        r = poll_socket => match r {
-                            Some(read) => read,
-                            None => {
-                                // No more bytes expected, shutdown.
-                                return;
-                            }
-                        },
-                        r = capacity_change_signal => match r {
-                            Ok(()) => {
-                                // Break out of the loop to flush the current
-                                // buffer.
-                                break;
-                            },
-                            // If the signal is dropped it means core closed the
-                            // send buffer and we're being closed from the peer
-                            // side (like network RST) so we should bail.
-                            Err(oneshot::Canceled) => {
-                                return;
-                            },
-                        },
-                    }
-                } else {
-                    0
-                };
-                let b_read = if a_read == a.len() && b.len() != 0 {
-                    // If we wrote everything into the first slice then attempt
-                    // a non-waiting read into b.
-                    match handle.get_ref().read_uninit(b).map_err(SocketErrorAction::from) {
-                        Ok(read) => read.len(),
-                        Err(SocketErrorAction::Wait) => 0,
-                        Err(SocketErrorAction::Shutdown) => {
+                    };
+                    match next_buffer {
+                        Some(b) => cur_buffer.insert(b),
+                        None => {
                             return;
                         }
                     }
-                } else {
-                    0
-                };
+                }
+            };
 
-                let total_read = a_read + b_read;
-                // SAFETY: slices a and b have been initialized by zircon socket
-                // reading up to the returned slice length. Buffer is
-                // exclusively owned by this function.
-                unsafe { buffer.advance_write_index(total_read) }
-
-                assert!(total_read != 0);
-                ops.do_send();
+            futures::select! {
+                () = drive_send_buffer(&handle, &mut ops, buffer).fuse() => {
+                    // Driving the buffer only returns when we're done with it
+                    // from the core side, nothing else to do.
+                    return;
+                }
+                s = tx_task_receiver.next() => {
+                    match s {
+                        // Attempt a capacity update,
+                        Some(()) => (),
+                        None => {
+                            // Core has dropped the buffer, nothing else to do.
+                            return;
+                        },
+                    }
+                }
             }
 
             // When there's a pending buffer capacity update, wait for the
@@ -754,8 +785,23 @@ pub(super) async fn send_task<O: SendTaskOps>(
 
             // If all the capacity is vacant, that means everything has been
             // flushed to the network.
-            buffer.wait_vacant(buffer.capacity().into()).await;
-            cur_buffer = ops.with_send_buffer(|b| b.apply_new_capacity());
+            let SendBufferWriter { producer } = buffer;
+            producer.wait_vacant(producer.capacity().into()).await;
+            match ops.with_send_buffer(|b| b.apply_new_capacity()) {
+                Some(Ok(b)) => {
+                    // We got a new buffer, loop through to start polling on it.
+                    cur_buffer = Some(b);
+                }
+                Some(Err(NoPendingCapacityRequestError)) => {
+                    // Don't need to change the buffer, continue driving the
+                    // current one.
+                }
+                None => {
+                    // Core got rid of its buffer, there's nothing else for us
+                    // to do here.
+                    return;
+                }
+            }
         }
     }
     .fuse();
@@ -790,6 +836,141 @@ pub(super) async fn send_task<O: SendTaskOps>(
     signal_sender.send(()).expect("shutdown receiver closed unexpectedly");
 }
 
+/// Drives an instance of [`SendBufferWriter`], shuttling bytes into it from
+/// `handle`.
+///
+/// Note that this future may be interrupted and dropped at _any point_ when new
+/// capacity updates come in, so it must not yield between reading data from the
+/// socket and advancing the buffer's write pointer.
+async fn drive_send_buffer<O: SendTaskOps>(
+    handle: &fasync::RWHandle<&zx::Socket>,
+    ops: &mut O,
+    buffer: &mut SendBufferWriter,
+) {
+    let SendBufferWriter { producer: buffer } = buffer;
+
+    loop {
+        // If the buffer we're looking at has been closed by core we
+        // should no longer be attempting to put more bytes into it,
+        // even if there's space available.
+        if buffer.is_closed() {
+            return;
+        }
+        let (a, b) = buffer.vacant_slices_mut();
+        let avail = a.len() + b.len();
+        // If we don't have any space to use, wait for free space as we
+        // send segments out.
+        if avail == 0 {
+            buffer.wait_vacant(1).await;
+            continue;
+        }
+        let a_read = if a.len() != 0 {
+            let poll_socket = futures::future::poll_fn(|ctx| {
+                loop {
+                    let res = handle.get_ref().read_uninit(a).map_err(SocketErrorAction::from);
+                    match res {
+                        Err(SocketErrorAction::Wait) => {
+                            futures::ready!(
+                                handle
+                                    .need_readable(ctx)
+                                    // `need_readable` should not fail for valid
+                                    // sockets with the correct rights.
+                                    .map(|r| r.expect("waiting for readable"))
+                            )
+                        }
+                        Err(SocketErrorAction::Shutdown) => return Poll::Ready(None),
+                        Ok(read) => return Poll::Ready(Some(read.len())),
+                    }
+                }
+            });
+            match poll_socket.await {
+                Some(read) => read,
+                None => {
+                    // No more bytes expected, shutdown.
+                    return;
+                }
+            }
+        } else {
+            0
+        };
+        let b_read = if a_read == a.len() && b.len() != 0 {
+            // If we wrote everything into the first slice then attempt
+            // a non-waiting read into b.
+            match handle.get_ref().read_uninit(b).map_err(SocketErrorAction::from) {
+                Ok(read) => read.len(),
+                Err(SocketErrorAction::Wait) => 0,
+                Err(SocketErrorAction::Shutdown) => {
+                    return;
+                }
+            }
+        } else {
+            0
+        };
+
+        let total_read = a_read + b_read;
+        // SAFETY: slices a and b have been initialized by zircon socket
+        // reading up to the returned slice length. Buffer is
+        // exclusively owned by this function.
+        unsafe { buffer.advance_write_index(total_read) }
+
+        assert!(total_read != 0);
+        ops.do_send();
+    }
+}
+
+async fn wait_and_alloc_send_buffer<O: SendTaskOps>(
+    handle: &fasync::RWHandle<&zx::Socket>,
+    ops: &mut O,
+) -> Option<SendBufferWriter> {
+    enum ReadableOrClosed {
+        Readable,
+        Closed,
+    }
+
+    let readable_or_closed = futures::future::poll_fn(|ctx| {
+        loop {
+            // Ignore what fuchsia-async tells us in poll_readable. It may cache
+            // state inside it and we want to make sure our object actually has
+            // this state either way.
+            let _: fasync::ReadableState = futures::ready!(
+                handle.poll_readable(ctx).map(|r| r.expect("waiting for readable"))
+            );
+            // Check if we're actually readable. Pay a syscall here
+            // to avoid the buffer allocation.
+            match handle.get_ref().wait_handle(
+                zx::Signals::SOCKET_READABLE | zx::Signals::SOCKET_PEER_CLOSED,
+                zx::MonotonicInstant::INFINITE_PAST,
+            ) {
+                zx::WaitResult::Ok(signals) => {
+                    if signals.contains(zx::Signals::SOCKET_READABLE) {
+                        return Poll::Ready(ReadableOrClosed::Readable);
+                    }
+                    if signals.contains(zx::Signals::SOCKET_PEER_CLOSED) {
+                        return Poll::Ready(ReadableOrClosed::Closed);
+                    }
+                    // No signals are set, re-set up our wait.
+                }
+                zx::WaitResult::TimedOut(_signals) => {}
+                e @ zx::WaitResult::Canceled(_) | e @ zx::WaitResult::Err(_) => {
+                    panic!("unexpected error reading socket signals {e:?}")
+                }
+            }
+            futures::ready!(handle.need_readable(ctx).map(|r| r.expect("waiting for readable")))
+        }
+    });
+
+    match readable_or_closed.await {
+        ReadableOrClosed::Readable => {
+            // Reach into the socket and allocate a new buffer here.
+            //
+            // If core has dropped its send buffer allocation is skipped and we can
+            // shutdown.
+            ops.with_send_buffer(|b| b.allocate())
+        }
+        ReadableOrClosed::Closed => None,
+    }
+}
+
 fn send_task_shutdown<O: SendTaskOps>(
     socket: Arc<zx::Socket>,
     mut ops: O,
@@ -803,7 +984,7 @@ fn send_task_shutdown<O: SendTaskOps>(
         return;
     }
     let (mut prod, new_cons) = match cur_buffer.take() {
-        Some(SendBufferWriter { producer, capacity_change_signal: _ }) => (producer, None),
+        Some(SendBufferWriter { producer }) => (producer, None),
         None => {
             let ring_buffer = async_ringbuf::AsyncHeapRb::new(rx_buf_available);
             let (producer, cons) = ring_buffer.split();
@@ -834,7 +1015,8 @@ fn send_task_shutdown<O: SendTaskOps>(
     rx_buf_available -= b_read;
     // SAFETY: slices a and b have been initialized by zircon socket
     // reading up to the returned slice length.
-    unsafe { prod.advance_write_index(a_read + b_read) };
+    let shutdown_bytes = a_read + b_read;
+    unsafe { prod.advance_write_index(shutdown_bytes) };
     // Ensure we can't produce anymore bytes from here on.
     std::mem::drop(prod);
 
@@ -859,6 +1041,7 @@ fn send_task_shutdown<O: SendTaskOps>(
     } else {
         Vec::new()
     };
+    let shutdown_bytes = shutdown_bytes + extra.len();
 
     // We've accumulated all the data that the application has made available
     // now all that remains is pushing it into the core socket and let it drive
@@ -867,23 +1050,29 @@ fn send_task_shutdown<O: SendTaskOps>(
     // We can ignore whether or not a send buffer was configured, given we could
     // be racing now with core state machine progression.
     let _: Option<()> = ops.with_send_buffer(move |b| {
-        replace_with::replace_with(b, |b| {
+        replace_with::replace_with(&mut b.inner, |b| {
             match b {
-                CoreSendBuffer::Zero => {
-                    // All this work for something else to have zeroed the
-                    // buffer. We can only ignore it.
-                    CoreSendBuffer::Zero
+                CoreSendBufferInner::Unallocated { capacity } => {
+                    let buffer = new_cons.unwrap_or_else(|| {
+                        panic!("shutdown missing new consumer for {shutdown_bytes} bytes")
+                    });
+                    CoreSendBufferInner::ShuttingDown {
+                        buffer,
+                        extra,
+                        extra_offset: 0,
+                        target_capacity: capacity,
+                    }
                 }
-                CoreSendBuffer::ShuttingDown { .. } => {
+                CoreSendBufferInner::ShuttingDown { .. } => {
                     // This should be the only place we're putting the buffer in
                     // shutdown so we shouldn't find the socket with an already
                     // shutdown send buffer.
                     unreachable!("send buffer already shutting down")
                 }
-                CoreSendBuffer::Ready { buffer, pending_capacity } => {
+                CoreSendBufferInner::Ready { buffer, pending_capacity } => {
                     let target_capacity = match pending_capacity {
-                        SendBufferPendingCapacity::Idle(_) => buffer.capacity().get(),
-                        SendBufferPendingCapacity::Requested(r) => r,
+                        None => buffer.capacity().get(),
+                        Some(r) => r,
                     };
                     let buffer = match new_cons {
                         Some(new_cons) => {
@@ -895,7 +1084,12 @@ fn send_task_shutdown<O: SendTaskOps>(
                         }
                         None => buffer,
                     };
-                    CoreSendBuffer::ShuttingDown { buffer, extra, extra_offset: 0, target_capacity }
+                    CoreSendBufferInner::ShuttingDown {
+                        buffer,
+                        extra,
+                        extra_offset: 0,
+                        target_capacity,
+                    }
                 }
             }
         })
@@ -1068,7 +1262,7 @@ mod test {
         // partial writes by the read task. The happy byte-shuttling case is
         // covered by integration tests.
         let mut executor = fasync::TestExecutor::new();
-        let (mut buffer, chan) = new_ready_receive_buffer_and_channel(TEST_CAPACITY);
+        let (mut buffer, chan) = new_receive_buffer_and_channel(TEST_CAPACITY);
         let (socket, task_socket) = zx::Socket::create_stream();
 
         let zx::SocketInfo { rx_buf_max, .. } = socket.info().unwrap();
@@ -1137,11 +1331,11 @@ mod test {
 
         prop_assert_eq!(producer.push_slice(&TEST_PAYLOAD), TEST_PAYLOAD.len());
 
-        let (mut buffer, producer) = match extra {
+        let (inner, producer) = match extra {
             Some(extra) => {
                 drop(producer);
                 (
-                    CoreSendBuffer::ShuttingDown {
+                    CoreSendBufferInner::ShuttingDown {
                         buffer: cons,
                         extra: (&TEST_PAYLOAD[..extra]).to_vec(),
                         extra_offset: 0,
@@ -1151,15 +1345,17 @@ mod test {
                 )
             }
             None => (
-                CoreSendBuffer::Ready {
+                CoreSendBufferInner::Ready {
                     buffer: cons,
                     // NB: arbitrary, just easier to construct than the idle
                     // variant.
-                    pending_capacity: SendBufferPendingCapacity::Requested(TEST_CAPACITY),
+                    pending_capacity: Some(TEST_CAPACITY),
                 },
                 Some(producer),
             ),
         };
+        let (signal_sender, _receiver) = TxTaskSender::new();
+        let mut buffer = CoreSendBuffer { inner, signal_sender };
 
         let expect = TEST_PAYLOAD
             .into_iter()
@@ -1201,20 +1397,33 @@ mod test {
     fn prop_send_task_byte_shuttling(warm: usize, seg: usize) -> Result<(), TestCaseError> {
         let mut executor = fasync::TestExecutor::new();
 
-        let (mut buffer, mut writer) = CoreSendBuffer::new_ready(TEST_CAPACITY);
-
-        prop_assert_eq!(writer.producer.push_iter(std::iter::repeat(0xAA).take(warm)), warm);
-        buffer.mark_read(warm);
-
+        let (tx_task_sender, tx_task_receiver) = TxTaskSender::new();
+        let buffer = CoreSendBuffer::new(TEST_CAPACITY, tx_task_sender);
         let buffer = Rc::new(RefCell::new(buffer));
         let (socket, task_socket) = zx::Socket::create_stream();
-        let (sender, start) = oneshot::channel();
         let (_shutdown_sender, shutdown_receiver) = oneshot::channel();
-        sender.send(writer).map_err(|_: SendBufferWriter| ()).unwrap();
-
-        let send_task =
-            send_task(Arc::new(task_socket), Rc::clone(&buffer), shutdown_receiver, start);
+        let send_task = send_task(
+            Arc::new(task_socket),
+            Rc::clone(&buffer),
+            shutdown_receiver,
+            tx_task_receiver,
+        );
         let mut send_task = pin!(send_task);
+
+        if warm != 0 {
+            let warm_buff = std::iter::repeat(0xAA).take(warm).collect::<Vec<u8>>();
+            prop_assert_eq!(socket.write(&warm_buff), Ok(warm));
+            prop_assert_eq!(executor.run_until_stalled(&mut send_task), Poll::Pending);
+            {
+                let mut buffer = buffer.borrow_mut();
+                let inner = match &buffer.inner {
+                    CoreSendBufferInner::Ready { buffer, pending_capacity: _ } => buffer,
+                    s => return Err(TestCaseError::fail(format!("bad buffer state {s:?}"))),
+                };
+                prop_assert_eq!(inner.write_index(), warm);
+                buffer.mark_read(warm);
+            }
+        }
 
         prop_assert_eq!(executor.run_until_stalled(&mut send_task), Poll::Pending);
         let expect = [&TEST_PAYLOAD[..], &TEST_PAYLOAD[..]].concat();
@@ -1243,8 +1452,8 @@ mod test {
         prop_assert_eq!(buffer.borrow().limits().len, 0);
         prop_assert_eq!(received, expect);
 
-        // Drop the consumer, the send task should finish.
-        *buffer.borrow_mut() = CoreSendBuffer::Zero;
+        // Close the signal, tx task should finish.
+        buffer.borrow_mut().signal_sender.0.disconnect();
         prop_assert_eq!(executor.run_until_stalled(&mut send_task), Poll::Ready(()));
         Ok(())
     }
@@ -1255,9 +1464,11 @@ mod test {
     ) -> Result<(), TestCaseError> {
         let mut expect = vec![];
 
-        let (mut buffer, mut writer) = CoreSendBuffer::new_ready(TEST_CAPACITY);
+        let (signal_sender, _tx_task_receiver) = TxTaskSender::new();
+        let mut buffer = CoreSendBuffer::new(TEST_CAPACITY, signal_sender);
         let (buffer, writer) = match before {
             Some((warm, in_buffer)) => {
+                let mut writer = buffer.allocate();
                 prop_assert_eq!(
                     writer.producer.push_iter(std::iter::repeat(0xAA).take(warm)),
                     warm
@@ -1284,17 +1495,16 @@ mod test {
 
         super::send_task_shutdown(Arc::new(task_socket), Rc::clone(&buffer), writer);
         let mut buffer = Rc::try_unwrap(buffer).unwrap().into_inner();
-
         if !pending.is_empty() {
-            let (buffer, extra) = assert_matches!(
-                &buffer,
-                CoreSendBuffer::ShuttingDown {
+            let (buffer, extra) = match &buffer.inner {
+                CoreSendBufferInner::ShuttingDown {
                     buffer,
                     extra,
                     extra_offset: _,
-                    target_capacity: _
-                } => (buffer, extra)
-            );
+                    target_capacity: _,
+                } => (buffer, extra),
+                b => return Err(TestCaseError::fail(format!("bad buffer state {b:?}"))),
+            };
             let expect_buffer_len = expect.len().min(buffer.capacity().get());
             prop_assert_eq!(buffer.occupied_len(), expect_buffer_len);
             prop_assert_eq!(extra.len(), expect.len() - expect_buffer_len);
@@ -1308,7 +1518,15 @@ mod test {
 
     #[test]
     fn rcv_buffer_update_capacity() {
-        let (mut buffer, mut chan) = new_ready_receive_buffer_and_channel(TEST_CAPACITY);
+        let (mut buffer, mut chan) = new_receive_buffer_and_channel(TEST_CAPACITY / 2);
+        assert_eq!(buffer.target_capacity(), TEST_CAPACITY / 2);
+        // Requesting capacity in unallocated state takes effect immediately.
+        assert_matches!(&buffer.inner, CoreReceiveBufferInner::Unallocated { .. });
+        buffer.request_capacity(TEST_CAPACITY);
+        assert_eq!(buffer.target_capacity(), TEST_CAPACITY);
+        assert_eq!(buffer.limits(), BufferLimits { len: 0, capacity: TEST_CAPACITY });
+
+        force_receive_buffer_ready(&mut buffer);
         let reader = chan.next().now_or_never().flatten().unwrap();
         assert_eq!(buffer.target_capacity(), TEST_CAPACITY);
 
@@ -1359,61 +1577,82 @@ mod test {
         const CAP1: usize = TEST_CAPACITY;
         const CAP2: usize = CAP1 + 1;
         const CAP3: usize = CAP2 + 1;
+        const CAP4: usize = CAP3 + 1;
 
-        let (buffer, writer) = CoreSendBuffer::new_ready(CAP1);
+        let (sender, tx_task_receiver) = TxTaskSender::new();
+        let buffer = CoreSendBuffer::new(CAP1, sender);
         let buffer = Rc::new(RefCell::new(buffer));
         let (socket, task_socket) = zx::Socket::create_stream();
-        let (sender, start) = oneshot::channel();
         let (_shutdown_sender, shutdown_receiver) = oneshot::channel();
-        sender.send(writer).map_err(|_: SendBufferWriter| ()).unwrap();
-
-        let send_task =
-            send_task(Arc::new(task_socket), Rc::clone(&buffer), shutdown_receiver, start);
+        let send_task = send_task(
+            Arc::new(task_socket),
+            Rc::clone(&buffer),
+            shutdown_receiver,
+            tx_task_receiver,
+        );
         let mut send_task = pin!(send_task);
 
         assert_eq!(executor.run_until_stalled(&mut send_task), Poll::Pending);
 
+        // Buffer is still not allocated.
+        assert_matches!(&buffer.borrow().inner, CoreSendBufferInner::Unallocated { .. });
         assert_eq!(buffer.borrow().limits(), BufferLimits { len: 0, capacity: CAP1 });
         assert_eq!(buffer.borrow().target_capacity(), CAP1);
         buffer.borrow_mut().request_capacity(CAP2);
-        assert_eq!(buffer.borrow().limits(), BufferLimits { len: 0, capacity: CAP1 });
+        assert_eq!(buffer.borrow().limits(), BufferLimits { len: 0, capacity: CAP2 });
         assert_eq!(buffer.borrow().target_capacity(), CAP2);
 
         assert_eq!(executor.run_until_stalled(&mut send_task), Poll::Pending);
+        assert_matches!(&buffer.borrow().inner, CoreSendBufferInner::Unallocated { .. });
         assert_eq!(buffer.borrow().limits(), BufferLimits { len: 0, capacity: CAP2 });
         assert_eq!(buffer.borrow().target_capacity(), CAP2);
+
+        // Send something to allocate the buffer.
+        assert_eq!(socket.write(&TEST_PAYLOAD), Ok(TEST_PAYLOAD.len()));
+        assert_eq!(executor.run_until_stalled(&mut send_task), Poll::Pending);
+        buffer.borrow_mut().mark_read(TEST_PAYLOAD.len());
+        assert_matches!(&buffer.borrow().inner, CoreSendBufferInner::Ready { .. });
+        assert_eq!(buffer.borrow().limits(), BufferLimits { len: 0, capacity: CAP2 });
+        assert_eq!(buffer.borrow().target_capacity(), CAP2);
+
+        buffer.borrow_mut().request_capacity(CAP3);
+        assert_eq!(buffer.borrow().limits(), BufferLimits { len: 0, capacity: CAP2 });
+        assert_eq!(buffer.borrow().target_capacity(), CAP3);
+        assert_eq!(executor.run_until_stalled(&mut send_task), Poll::Pending);
+        assert_eq!(buffer.borrow().limits(), BufferLimits { len: 0, capacity: CAP3 });
+        assert_eq!(buffer.borrow().target_capacity(), CAP3);
 
         assert_eq!(socket.write(&TEST_PAYLOAD), Ok(TEST_PAYLOAD.len()));
         assert_eq!(executor.run_until_stalled(&mut send_task), Poll::Pending);
         assert_eq!(
             buffer.borrow().limits(),
-            BufferLimits { len: TEST_PAYLOAD.len(), capacity: CAP2 }
+            BufferLimits { len: TEST_PAYLOAD.len(), capacity: CAP3 }
         );
 
-        buffer.borrow_mut().request_capacity(CAP3);
+        buffer.borrow_mut().request_capacity(CAP4);
         assert_eq!(
             buffer.borrow().limits(),
-            BufferLimits { len: TEST_PAYLOAD.len(), capacity: CAP2 }
+            BufferLimits { len: TEST_PAYLOAD.len(), capacity: CAP3 }
         );
-        assert_eq!(buffer.borrow().target_capacity(), CAP3);
+        assert_eq!(buffer.borrow().target_capacity(), CAP4);
 
         // There's still pending data in the buffer, capacity must not have
         // changed yet.
         assert_eq!(executor.run_until_stalled(&mut send_task), Poll::Pending);
         assert_eq!(
             buffer.borrow().limits(),
-            BufferLimits { len: TEST_PAYLOAD.len(), capacity: CAP2 }
+            BufferLimits { len: TEST_PAYLOAD.len(), capacity: CAP3 }
         );
 
         buffer.borrow_mut().mark_read(TEST_PAYLOAD.len());
-        assert_eq!(buffer.borrow().limits(), BufferLimits { len: 0, capacity: CAP2 });
+        assert_eq!(buffer.borrow().limits(), BufferLimits { len: 0, capacity: CAP3 });
 
         assert_eq!(executor.run_until_stalled(&mut send_task), Poll::Pending);
-        assert_eq!(buffer.borrow().limits(), BufferLimits { len: 0, capacity: CAP3 });
-        assert_eq!(buffer.borrow().target_capacity(), CAP3);
+        assert_eq!(buffer.borrow().limits(), BufferLimits { len: 0, capacity: CAP4 });
+        assert_eq!(buffer.borrow().target_capacity(), CAP4);
 
-        // Drop the consumer, the send task should finish.
-        *buffer.borrow_mut() = CoreSendBuffer::Zero;
+        // Close the signal, tx task should finish.
+        buffer.borrow_mut().signal_sender.0.disconnect();
         assert_eq!(executor.run_until_stalled(&mut send_task), Poll::Ready(()));
     }
 
@@ -1437,16 +1676,25 @@ mod test {
         [a, b].concat()
     }
 
-    fn new_ready_receive_buffer_and_channel(
+    fn new_receive_buffer_and_channel(
         capacity: usize,
     ) -> (CoreReceiveBuffer, mpsc::UnboundedReceiver<ReceiveBufferReader>) {
         let (snd, rcv) = mpsc::unbounded();
-        let b = CoreReceiveBuffer::new_ready(snd, capacity, /* notifier */ None).unwrap();
+        let b = CoreReceiveBuffer::new(snd, capacity, /* notifier */ None);
         (b, rcv)
     }
 
+    fn force_receive_buffer_ready(buffer: &mut CoreReceiveBuffer) {
+        // Force entering the allocated state by writing some data to it.
+        assert_eq!(buffer.write_at(0, &()), 0);
+        let has_outstanding = false;
+        buffer.make_readable(0, has_outstanding);
+        assert_matches!(&mut buffer.inner, CoreReceiveBufferInner::Ready { .. });
+    }
+
     fn new_ready_receive_buffer(capacity: usize) -> (CoreReceiveBuffer, ReceiveBufferReader) {
-        let (b, mut rcv) = new_ready_receive_buffer_and_channel(capacity);
+        let (mut b, mut rcv) = new_receive_buffer_and_channel(capacity);
+        force_receive_buffer_ready(&mut b);
         let rd = rcv.next().now_or_never().flatten().unwrap();
         (b, rd)
     }

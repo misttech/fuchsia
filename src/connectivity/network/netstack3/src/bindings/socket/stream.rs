@@ -48,7 +48,7 @@ use crate::bindings::{BindingsCtx, Ctx};
 
 mod buffer;
 use buffer::{
-    CoreReceiveBuffer, CoreSendBuffer, ReceiveBufferReader, SendBufferWriter, TaskStoppedError,
+    CoreReceiveBuffer, CoreSendBuffer, ReceiveBufferReader, TxTaskReceiver, TxTaskSender,
 };
 
 /// Maximum values allowed on linux: https://github.com/torvalds/linux/blob/0326074ff4652329f2a1a9c8685104576bd8d131/include/net/tcp.h#L159-L161
@@ -62,7 +62,7 @@ type TcpSocketId<I> = tcp::TcpSocketId<I, WeakDeviceId<BindingsCtx>, BindingsCtx
 pub(crate) struct UnconnectedSocketData {
     zx_socket: Arc<zx::Socket>,
     rx_task_sender: mpsc::UnboundedSender<ReceiveBufferReader>,
-    tx_task_sender: oneshot::Sender<SendBufferWriter>,
+    tx_task_sender: TxTaskSender,
     data_notifier: Option<DataNotifier>,
 }
 
@@ -74,18 +74,8 @@ impl IntoBuffers<CoreReceiveBuffer, CoreSendBuffer> for UnconnectedSocketData {
             .signal_peer(zx::Signals::NONE, ZXSIO_SIGNAL_CONNECTED)
             .expect("failed to signal connection established");
 
-        // If the tasks are stopped and we can't create buffers, create zero
-        // buffers as they'll report a 0 capacity back to TCP.
-        //
-        // We can't assert here since buffer creation on active opens might race
-        // with socket closure which stops the tasks.
-        let receive_buffer = CoreReceiveBuffer::new_ready(rx_task_sender, receive, data_notifier)
-            .unwrap_or_else(|TaskStoppedError| CoreReceiveBuffer::zero());
-        let (send_buffer, send_writer) = CoreSendBuffer::new_ready(send);
-        let send_buffer = match tx_task_sender.send(send_writer) {
-            Ok(()) => send_buffer,
-            Err(SendBufferWriter { .. }) => CoreSendBuffer::Zero,
-        };
+        let receive_buffer = CoreReceiveBuffer::new(rx_task_sender, receive, data_notifier);
+        let send_buffer = CoreSendBuffer::new(send, tx_task_sender);
         (receive_buffer, send_buffer)
     }
 }
@@ -101,7 +91,7 @@ pub(crate) struct PeerZirconSocketAndTaskData {
 #[derive(Debug)]
 struct TaskSpawnData {
     rx_task_receiver: mpsc::UnboundedReceiver<ReceiveBufferReader>,
-    tx_task_receiver: oneshot::Receiver<SendBufferWriter>,
+    tx_task_receiver: TxTaskReceiver,
     socket: Arc<zx::Socket>,
 }
 
@@ -131,7 +121,7 @@ impl TcpBindingsTypes for BindingsCtx {
         let socket = Arc::new(local);
 
         let (rx_task_sender, rx_task_receiver) = mpsc::unbounded();
-        let (tx_task_sender, tx_task_receiver) = oneshot::channel();
+        let (tx_task_sender, tx_task_receiver) = TxTaskSender::new();
         let (receive_buffer, send_buffer) = UnconnectedSocketData {
             zx_socket: Arc::clone(&socket),
             rx_task_sender,
@@ -219,7 +209,7 @@ where
         let SocketWorkerProperties {} = properties;
 
         let (rx_task_sender, rx_task_receiver) = mpsc::unbounded();
-        let (tx_task_sender, tx_task_receiver) = oneshot::channel();
+        let (tx_task_sender, tx_task_receiver) = TxTaskSender::new();
 
         let data_notifier = wake_group.as_ref().and_then(|group| {
             if let Some(notifier) = ctx.bindings_ctx().wake_groups.get_data_notifier(&group) {
