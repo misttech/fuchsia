@@ -49,7 +49,16 @@ def _fidl_library_impl(
     if not library_name:
         library_name = name
 
-    compilation_target_name = "%s_compile" % name
+    fidl_ir_json = "%s.fidl.json" % name
+
+    # This should be named `"%s_compile" % name` for consistency with the GN
+    # target name. However, Bazel symbolic macro naming limitations for output
+    # files used as inputs require that output file names begin with the macro's
+    # `name`. Thus, this target's name must be a prefix of `fidl_ir_json`.
+    # TODO(https://fxbug.dev/428285014): Consider making `fidl_ir()` a legacy
+    # macro, especially if other generated file names become problematic, or
+    # renaming the GN target for consistency.
+    compilation_target_name = "%s.fidl" % name
 
     # TODO(https://fxbug.dev/428285014): Validate versioning-related attributes,
     # determine the need for running compatibility tests, and determine the
@@ -63,12 +72,20 @@ def _fidl_library_impl(
         srcs = srcs,
         deps = deps,
         json_dir = "",
-        json_representation = "%s.fidl.json" % name,
+        json_representation = fidl_ir_json,
         available = available,
         versioned = fidlc_versioned_arg,
         experimental_flags = experimental_flags,
         testonly = testonly,
         visibility = ["//visibility:private"],
+
+        # Temporary for testing.
+        # Note that the naming restriction does not apply to this file because
+        # it is not used as an input to another target within the macro.
+        # TODO(https://fxbug.dev/428285014): Remove this once this is being
+        # excercised as part of compatibility tests. We may then be able to
+        # change compilation_target_name to the desired value.
+        out_json_summary = "%s.api_summary.json" % library_name,
     )
     # TODO(https://fxbug.dev/428285014): Validate resulting JSON.
 
@@ -76,7 +93,9 @@ def _fidl_library_impl(
 
     # TODO(https://fxbug.dev/417306131): Implement PlaSA support.
 
-    # TODO(https://fxbug.dev/428285014): Implement compatibility tests.
+    # TODO(https://fxbug.dev/428285014): Implement compatibility tests. This
+    # may require making `fidl_ir()` a legacy macro due to the naming
+    # restrictions described for `compilation_target_name`.
 
     if enable_cpp:
         # TODO(https://fxbug.dev/454977301): Implement C++ bindings.

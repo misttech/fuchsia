@@ -4,6 +4,8 @@
 
 import("//build/compiled_action.gni")
 
+# LINT.IfChange
+
 # Generates a machine-readable, JSON-formatted, FIDL API summary.
 #
 # For details on the FIDL API summary format, see RFC-0076 at:
@@ -26,7 +28,6 @@ template("fidl_summary_json") {
     forward_variables_from(invoker,
                            [
                              "applicable_licenses",
-                             "appl",
                              "testonly",
                              "deps",
                              "metadata",
@@ -55,3 +56,4 @@ template("fidl_summary_json") {
     ]
   }
 }
+# LINT.ThenChange(//build/bazel/rules/fidl/fidl_summary.bzl)

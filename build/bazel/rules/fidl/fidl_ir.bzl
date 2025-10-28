@@ -6,6 +6,7 @@
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@fuchsia_build_info//:args.bzl", "runtime_supported_api_levels")
+load(":fidl_summary.bzl", "fidl_summary")
 load(":providers.bzl", "FidlLibraryInfo")
 
 visibility("private")
@@ -141,9 +142,15 @@ def _fidl_ir_impl(name, json_representation, out_json_summary, testonly, visibil
     )
 
     if out_json_summary:
-        # TODO(https://fxbug.dev/428285014): Generate the JSON summary in
-        # `out_json_summary` using `json_representation` as input.
-        pass
+        fidl_summary_json_target_name = "%s_summary_json" % name
+        fidl_summary(
+            name = fidl_summary_json_target_name,
+            input = json_representation,
+            output = out_json_summary,
+            testonly = testonly,
+            visibility = ["//visibility:public"],
+        )
+        main_target_deps.append(fidl_summary_json_target_name)
 
     native.filegroup(
         name = name,
