@@ -29,7 +29,7 @@ use starnix_uapi::arc_key::{ArcKey, PtrKey, WeakKey};
 use starnix_uapi::auth::UserAndOrGroupId;
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
+use starnix_uapi::file_mode::{AccessCheck, FileMode};
 use starnix_uapi::inotify_mask::InotifyMask;
 use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::open_flags::OpenFlags;
@@ -1612,13 +1612,13 @@ impl NamespaceNode {
         &self,
         locked: &mut Locked<L>,
         current_task: &CurrentTask,
-        access: Access,
+        permission_flags: impl Into<security::PermissionFlags>,
         reason: CheckAccessReason,
     ) -> Result<(), Errno>
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        self.entry.node.check_access(locked, current_task, &self.mount, access, reason)
+        self.entry.node.check_access(locked, current_task, &self.mount, permission_flags, reason)
     }
 
     /// Checks if O_NOATIME is allowed,

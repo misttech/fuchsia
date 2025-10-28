@@ -7,6 +7,7 @@
 use linux_uapi::FUSE_DEV_IOC_PASSTHROUGH_OPEN_V2;
 use starnix_core::mm::{MemoryAccessorExt, PAGE_SIZE};
 use starnix_core::mutable_state::Guard;
+use starnix_core::security;
 use starnix_core::task::{CurrentTask, EventHandler, Kernel, WaitCanceler, WaitQueue, Waiter};
 use starnix_core::vfs::buffers::{
     Buffer, InputBuffer, InputBufferExt as _, OutputBuffer, OutputBufferCallback,
@@ -607,12 +608,12 @@ impl FuseNode {
         locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
-        access: Access,
+        permission_flags: security::PermissionFlags,
         reason: CheckAccessReason,
         info: &RwLock<FsNodeInfo>,
     ) -> Result<(), Errno> {
         let info = self.refresh_expired_node_attributes(locked, current_task, info)?;
-        node.default_check_access_impl(current_task, access, reason, info)
+        node.default_check_access_impl(current_task, permission_flags, reason, info)
     }
 
     fn refresh_expired_node_attributes<'a>(
@@ -1180,7 +1181,7 @@ impl FsNodeOps for FuseNode {
         locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
-        access: Access,
+        permission_flags: security::PermissionFlags,
         info: &RwLock<FsNodeInfo>,
         reason: CheckAccessReason,
     ) -> Result<(), Errno> {
@@ -1192,7 +1193,7 @@ impl FsNodeOps for FuseNode {
                 locked,
                 node,
                 current_task,
-                access,
+                permission_flags,
                 reason,
                 info,
             );
@@ -1208,7 +1209,9 @@ impl FsNodeOps for FuseNode {
                     locked,
                     current_task,
                     self,
-                    FuseOperation::Access { mask: (access & Access::ACCESS_MASK).bits() as u32 },
+                    FuseOperation::Access {
+                        mask: (permission_flags.as_access() & Access::ACCESS_MASK).bits() as u32,
+                    },
                 )?;
 
                 if let FuseResponse::Access(result) = response { result } else { error!(EINVAL) }
@@ -1217,7 +1220,7 @@ impl FsNodeOps for FuseNode {
                 locked,
                 node,
                 current_task,
-                access,
+                permission_flags,
                 reason,
                 info,
             ),

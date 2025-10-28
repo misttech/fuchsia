@@ -986,14 +986,13 @@ pub(in crate::security) fn fs_node_permission(
                 &permissions_from_flags(permission_flags, fs_node_class),
             );
         }
-        return has_fs_node_permissions(
-            &security_server.as_permission_check(),
-            current_task,
-            current_sid,
-            fs_node,
-            &permissions_from_flags(permission_flags, fs_node_class),
-            (&audit_context).into(),
-        );
+    }
+
+    // TODO: https://fxbug.dev/455782510 - Enforce all fs_node_permission() checks.
+    if !(permission_flags.contains(PermissionFlags::FOR_OPEN)
+        || permission_flags.contains(PermissionFlags::ACCESS))
+    {
+        return Ok(());
     }
 
     has_fs_node_permissions(

@@ -4,8 +4,7 @@
 
 use crate::device::DeviceMode;
 use crate::mm::PAGE_SIZE;
-use crate::security;
-use crate::security::PermissionFlags;
+use crate::security::{self, Auditable, PermissionFlags};
 use crate::signals::{SignalInfo, send_standard_signal};
 use crate::task::{CurrentTask, CurrentTaskAndLocked, WaitQueue, Waiter, register_delayed_release};
 use crate::time::utc;
@@ -311,8 +310,7 @@ impl FsNodeInfo {
             check_access(
                 fs_node,
                 current_task,
-                Access::EXEC,
-                CheckAccessReason::InternalPermissionChecks,
+                security::PermissionFlags::EXEC,
                 self.uid,
                 self.gid,
                 self.mode,
@@ -600,7 +598,7 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
-        access: Access,
+        access: security::PermissionFlags,
         info: &RwLock<FsNodeInfo>,
         reason: CheckAccessReason,
     ) -> Result<(), Errno> {
@@ -936,17 +934,18 @@ macro_rules! fs_node_impl_dir_readonly {
             _locked: &mut starnix_sync::Locked<starnix_sync::FileOpsCore>,
             node: &$crate::vfs::FsNode,
             current_task: &$crate::task::CurrentTask,
-            access: starnix_uapi::file_mode::Access,
+            permission_flags: $crate::security::PermissionFlags,
             info: &starnix_sync::RwLock<$crate::vfs::FsNodeInfo>,
             reason: $crate::vfs::CheckAccessReason,
         ) -> Result<(), starnix_uapi::errors::Errno> {
+            let access = permission_flags.as_access();
             if access.contains(starnix_uapi::file_mode::Access::WRITE) {
                 return starnix_uapi::error!(
                     EROFS,
                     format!("check_access failed: read-only directory")
                 );
             }
-            node.default_check_access_impl(current_task, access, reason, info.read())
+            node.default_check_access_impl(current_task, permission_flags, reason, info.read())
         }
 
         fn mkdir(
@@ -1354,11 +1353,26 @@ impl FsNode {
                 self.check_o_noatime_allowed(current_task)?;
             }
 
+            // `flags` doesn't contain any information about the EXEC permission. Instead the syscalls
+            // used to execute a file (`sys_execve` and `sys_execveat`) call `open()` with the EXEC
+            // permission request in `access`.
+            let mut permission_flags = PermissionFlags::from(access);
+
+            // The `APPEND` flag exists only in `flags`, to modify the behaviour of
+            // `PermissionFlags::WRITE`
+            if flags.contains(OpenFlags::APPEND) {
+                permission_flags |= security::PermissionFlags::APPEND;
+            }
+
+            // TODO: https://fxbug.dev/455782510 - Remove this once non-open() checks are fully
+            // enforced.
+            permission_flags |= security::PermissionFlags::FOR_OPEN;
+
             self.check_access(
                 locked,
                 current_task,
                 &namespace_node.mount,
-                access,
+                permission_flags,
                 CheckAccessReason::InternalPermissionChecks,
             )?;
         }
@@ -1369,22 +1383,6 @@ impl FsNode {
             let info = self.info();
             (info.mode, info.rdev)
         };
-
-        // `flags` doesn't contain any information about the EXEC permission. Instead the syscalls
-        // used to execute a file (`sys_execve` and `sys_execveat`) call `open()` with the EXEC
-        // permission request in `access`.
-        let permission_flags = if flags.contains(OpenFlags::APPEND) {
-            PermissionFlags::APPEND
-        } else {
-            PermissionFlags::empty()
-        };
-        // TODO: https://fxbug.dev/364568874 - Fold this into `self.check_access()` (see above).
-        security::fs_node_permission(
-            current_task,
-            self,
-            permission_flags | access.into(),
-            namespace_node.into(),
-        )?;
 
         match mode & FileMode::IFMT {
             FileMode::IFCHR => {
@@ -1956,7 +1954,7 @@ impl FsNode {
     pub fn default_check_access_impl(
         &self,
         current_task: &CurrentTask,
-        access: Access,
+        permission_flags: security::PermissionFlags,
         reason: CheckAccessReason,
         info: RwLockReadGuard<'_, FsNodeInfo>,
     ) -> Result<(), Errno> {
@@ -1980,19 +1978,11 @@ impl FsNode {
                 return Ok(());
             }
         }
-        check_access(self, current_task, access, reason, node_uid, node_gid, mode)?;
+        check_access(self, current_task, permission_flags, node_uid, node_gid, mode)?;
 
-        // TODO: https://fxbug.dev/364568874 - Integrate the `fs_node_permission()` check into the
-        // check_access() implementation, for all `CheckAccessReason`s.
-        if reason == CheckAccessReason::Access {
-            security::fs_node_permission(
-                current_task,
-                self,
-                PermissionFlags::ACCESS | access.into(),
-                (&[]).into(),
-            )?;
-        }
-        Ok(())
+        // TODO: https://fxbug.dev/455783684 - Allow callers to provide audit context, such as the
+        // NamespaceNode through which this FsNode was reached, if available.
+        security::fs_node_permission(current_task, self, permission_flags, Auditable::None)
     }
 
     /// Check whether the node can be accessed in the current context with the specified access
@@ -2003,23 +1993,24 @@ impl FsNode {
         locked: &mut Locked<L>,
         current_task: &CurrentTask,
         mount: &MountInfo,
-        access: Access,
+        access: impl Into<security::PermissionFlags>,
         reason: CheckAccessReason,
     ) -> Result<(), Errno>
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        if access.contains(Access::WRITE) {
+        let permission_flags = access.into();
+        if permission_flags.contains(security::PermissionFlags::WRITE) {
             mount.check_readonly_filesystem()?;
         }
-        if access.contains(Access::EXEC) && !self.is_dir() {
+        if permission_flags.contains(security::PermissionFlags::EXEC) && !self.is_dir() {
             mount.check_noexec_filesystem()?;
         }
         self.ops().check_access(
             locked.cast_locked::<FileOpsCore>(),
             self,
             current_task,
-            access,
+            permission_flags,
             &self.info,
             reason,
         )
@@ -2734,8 +2725,7 @@ impl Releasable for FsNode {
 fn check_access(
     fs_node: &FsNode,
     current_task: &CurrentTask,
-    access: Access,
-    reason: CheckAccessReason,
+    permission_flags: security::PermissionFlags,
     node_uid: uid_t,
     node_gid: gid_t,
     mode: FileMode,
@@ -2751,6 +2741,7 @@ fn check_access(
         mode.other_access()
     };
 
+    let access = permission_flags.as_access();
     if granted.contains(access) {
         return Ok(());
     }
@@ -2764,7 +2755,7 @@ fn check_access(
     let have_dont_audit = OnceBool::new();
     let has_capability = move |current_task, capability| {
         let dont_audit = have_dont_audit.get_or_init(|| {
-            (reason == CheckAccessReason::Access)
+            permission_flags.contains(PermissionFlags::ACCESS)
                 && security::has_dontaudit_access(current_task, fs_node)
         });
         if dont_audit {

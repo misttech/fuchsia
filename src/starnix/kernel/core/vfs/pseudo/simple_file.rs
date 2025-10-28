@@ -15,7 +15,6 @@ use starnix_sync::{FileOpsCore, Locked, RwLock};
 use starnix_uapi::as_any::AsAny;
 use starnix_uapi::auth::Capabilities;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::Access;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{errno, error};
 use std::borrow::Cow;
@@ -62,7 +61,7 @@ where
         _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
-        access: Access,
+        permission_flags: security::PermissionFlags,
         info: &RwLock<FsNodeInfo>,
         reason: CheckAccessReason,
     ) -> Result<(), Errno> {
@@ -71,7 +70,7 @@ where
         {
             Ok(())
         } else {
-            node.default_check_access_impl(current_task, access, reason, info.read())
+            node.default_check_access_impl(current_task, permission_flags, reason, info.read())
         }
     }
 

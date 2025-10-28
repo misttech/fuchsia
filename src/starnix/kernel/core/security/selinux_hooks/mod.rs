@@ -50,15 +50,18 @@ const NO_PERMISSIONS: &[KernelPermission] = &[];
 /// Returns the set of `Permissions` on `class`, corresponding to the specified `flags`.
 fn permissions_from_flags(flags: PermissionFlags, class: FsNodeClass) -> Vec<KernelPermission> {
     let mut result = Vec::new();
+
     if flags.contains(PermissionFlags::READ) {
         result.push(CommonFsNodePermission::Read.for_class(class));
     }
-    // SELinux uses the `APPEND` bit to distinguish which of the "append" or the more general
-    // "write" permission to check for.
-    if flags.contains(PermissionFlags::APPEND) {
-        result.push(CommonFsNodePermission::Append.for_class(class));
-    } else if flags.contains(PermissionFlags::WRITE) {
-        result.push(CommonFsNodePermission::Write.for_class(class));
+    if flags.contains(PermissionFlags::WRITE) {
+        // SELinux uses the `APPEND` bit to distinguish which of the "append" or the more general
+        // "write" permission to check for.
+        if flags.contains(PermissionFlags::APPEND) {
+            result.push(CommonFsNodePermission::Append.for_class(class));
+        } else {
+            result.push(CommonFsNodePermission::Write.for_class(class));
+        }
     }
 
     if let FsNodeClass::File(class) = class {

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use starnix_core::security;
 use starnix_core::task::{CurrentTask, EventHandler, Syslog, SyslogAccess, WaitCanceler, Waiter};
 use starnix_core::vfs::{
     AppendLockGuard, CheckAccessReason, FileObject, FileOps, FileSystemHandle, FsNode,
@@ -11,7 +12,6 @@ use starnix_core::vfs::{
 use starnix_sync::{FileOpsCore, Locked, RwLock};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::Access;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::syslog::SyslogAction;
 use starnix_uapi::vfs::FdEvents;
@@ -34,11 +34,11 @@ impl FsNodeOps for KmsgNode {
         _locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
         current_task: &CurrentTask,
-        access: Access,
+        permission_flags: security::PermissionFlags,
         info: &RwLock<FsNodeInfo>,
         reason: CheckAccessReason,
     ) -> Result<(), Errno> {
-        node.default_check_access_impl(current_task, access, reason, info.read())?;
+        node.default_check_access_impl(current_task, permission_flags, reason, info.read())?;
         Syslog::validate_access(current_task, SyslogAccess::ProcKmsg(SyslogAction::Open))
     }
 
