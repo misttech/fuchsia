@@ -40,7 +40,6 @@ template("fidlc") {
   main_target_name = target_name
   fidl_target_name = invoker.fidl_target_name
 
-  # These paths are expected by the templates in //build/c/fidlc.gni.
   generated_binding_dir = "${invoker.gen_dir}/${fidl_target_name}/c"
   fidlc_depfile_path = "$generated_binding_dir/${invoker.fidl_library_name}.d"
 
