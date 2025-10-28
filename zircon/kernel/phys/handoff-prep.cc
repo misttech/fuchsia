@@ -142,32 +142,32 @@ HandoffPrep::HandoffPrep(ElfImage kernel)
 }
 
 PhysVmo HandoffPrep::MakePhysVmo(ktl::span<const ktl::byte> data, ktl::string_view name,
-                                 size_t content_size) {
+                                 size_t stream_size) {
   uintptr_t addr = reinterpret_cast<uintptr_t>(data.data());
   ZX_ASSERT((addr % AddressSpace::kPageSize) == 0);
   ZX_ASSERT((data.size_bytes() % AddressSpace::kPageSize) == 0);
-  ZX_ASSERT(((content_size + AddressSpace::kPageSize - 1) & -AddressSpace::kPageSize) ==
+  ZX_ASSERT(((stream_size + AddressSpace::kPageSize - 1) & -AddressSpace::kPageSize) ==
             data.size_bytes());
 
-  PhysVmo vmo{.addr = addr, .content_size = content_size};
+  PhysVmo vmo{.addr = addr, .stream_size = stream_size};
   vmo.set_name(name);
   return vmo;
 }
 
 void HandoffPrep::SetInstrumentation() {
   auto publish_debugdata = [this](ktl::string_view sink_name, ktl::string_view vmo_name,
-                                  ktl::string_view vmo_name_suffix, size_t content_size) {
+                                  ktl::string_view vmo_name_suffix, size_t stream_size) {
     PhysVmo::Name phys_vmo_name =
         instrumentation::DebugdataVmoName(sink_name, vmo_name, vmo_name_suffix, /*is_static=*/true);
 
-    size_t aligned_size = (content_size + AddressSpace::kPageSize - 1) & -AddressSpace::kPageSize;
+    size_t aligned_size = (stream_size + AddressSpace::kPageSize - 1) & -AddressSpace::kPageSize;
     fbl::AllocChecker ac;
     ktl::span contents =
         Allocation::New(ac, memalloc::Type::kPhysDebugdata, aligned_size, AddressSpace::kPageSize)
             .release();
     ZX_ASSERT_MSG(ac.check(), "cannot allocate %zu bytes for instrumentation phys VMO",
                   aligned_size);
-    PublishExtraVmo(MakePhysVmo(contents, VmoNameString(phys_vmo_name), content_size));
+    PublishExtraVmo(MakePhysVmo(contents, VmoNameString(phys_vmo_name), stream_size));
     return contents;
   };
   for (const ElfImage* module : gSymbolize->modules()) {
@@ -325,11 +325,11 @@ void HandoffPrep::PublishLog(ktl::string_view name, Log&& log) {
     return;
   }
 
-  const size_t content_size = log.size_bytes();
+  const size_t stream_size = log.size_bytes();
   Allocation buffer = ktl::move(log).TakeBuffer();
-  ZX_ASSERT(content_size <= buffer.size_bytes());
+  ZX_ASSERT(stream_size <= buffer.size_bytes());
 
-  PublishExtraVmo(MakePhysVmo(buffer.data(), name, content_size));
+  PublishExtraVmo(MakePhysVmo(buffer.data(), name, stream_size));
 
   // Intentionally leak as the PhysVmo now tracks this memory.
   ktl::ignore = buffer.release();
@@ -365,13 +365,13 @@ void HandoffPrep::UsePackageFiles(KernelStorage::Bootfs kernel_package) {
                 "\n*** No vdso ELF file found "
                 " in kernel package %.*s (VMO size %#zx) ***",
                 static_cast<int>(kernel_package.directory().size()),
-                kernel_package.directory().data(), handoff_->userboot.vmo.content_size);
+                kernel_package.directory().data(), handoff_->userboot.vmo.stream_size);
   ZX_ASSERT_MSG(handoff_->userboot.vmar != PhysVmar{},
                 "\n*** kernel.select.userboot=%.*s but no such ELF file"
                 " in kernel package %.*s (VMO size %#zx) ***",
                 static_cast<int>(userboot.size()), userboot.data(),
                 static_cast<int>(kernel_package.directory().size()),
-                kernel_package.directory().data(), handoff_->userboot.vmo.content_size);
+                kernel_package.directory().data(), handoff_->userboot.vmo.stream_size);
   ZX_ASSERT_MSG(!boot_constants_->system_version_string.empty(),
                 "no version.txt file in kernel package");
 }

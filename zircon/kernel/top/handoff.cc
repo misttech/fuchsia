@@ -158,11 +158,11 @@ fbl::RefPtr<VmObject> CreatePhysVmo(const PhysVmo& phys_vmo) {
   return vmo;
 }
 
-HandleOwner CreateHandle(fbl::RefPtr<VmObject> vmo, size_t content_size, bool writable = false) {
+HandleOwner CreateHandle(fbl::RefPtr<VmObject> vmo, size_t stream_size, bool writable = false) {
   zx_rights_t rights;
   KernelHandle<VmObjectDispatcher> handle;
   zx_status_t status =
-      VmObjectDispatcher::Create(ktl::move(vmo), content_size,
+      VmObjectDispatcher::Create(ktl::move(vmo), stream_size,
                                  VmObjectDispatcher::InitialMutability::kMutable, &handle, &rights);
   ASSERT(status == ZX_OK);
 
@@ -175,7 +175,7 @@ HandleOwner CreateHandle(fbl::RefPtr<VmObject> vmo, size_t content_size, bool wr
 }
 
 HandleOwner CreatePhysVmoHandle(const PhysVmo& phys_vmo, bool writable = false) {
-  return CreateHandle(CreatePhysVmo(phys_vmo), phys_vmo.content_size, writable);
+  return CreateHandle(CreatePhysVmo(phys_vmo), phys_vmo.stream_size, writable);
 }
 
 HandleOwner CreateStubVmoHandle() {
@@ -189,7 +189,7 @@ HandoffEnd::Elf CreatePhysElf(const PhysElfImage& image) {
   ZX_DEBUG_ASSERT(image.vmar.base == 0);
   HandoffEnd::Elf elf = {
       .vmo = CreatePhysVmo(image.vmo),
-      .content_size = image.vmo.content_size,
+      .content_size = image.vmo.stream_size,
       .vmar_size = image.vmar.size,
       .info = image.info,
   };

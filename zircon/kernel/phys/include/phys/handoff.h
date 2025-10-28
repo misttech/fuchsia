@@ -107,17 +107,17 @@ struct PhysVmo : public PhysVmObject {
   // The full page-aligned size of the memory.
   template <uint64_t PageSize>
   constexpr size_t SizeBytes() const {
-    return (content_size + PageSize - 1) & -PageSize;
+    return (stream_size + PageSize - 1) & -PageSize;
   }
 
   void Log(const char* prefix) const {
     printf("%s: | [0x%016" PRIx64 ", 0x%016" PRIx64 ") | VMO  | %-*s|\n",  //
-           prefix, addr, addr + content_size, static_cast<int>(name.size() - 3), name.data());
+           prefix, addr, addr + stream_size, static_cast<int>(name.size() - 3), name.data());
   }
 
   // The physical address of the memory.
   uintptr_t addr = 0;
-  size_t content_size = 0;
+  size_t stream_size = 0;
 };
 static_assert(std::is_default_constructible_v<PhysVmo>);
 
