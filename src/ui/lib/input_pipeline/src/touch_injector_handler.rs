@@ -92,9 +92,7 @@ impl UnhandledInputHandler for TouchInjectorHandler {
                 event_time,
                 trace_id,
             } => {
-                self.inspect_status.count_received_event(input_device::InputEvent::from(
-                    unhandled_input_event.clone(),
-                ));
+                self.inspect_status.count_received_event(&event_time);
                 fuchsia_trace::duration!(c"input", c"touch_injector_handler");
                 if let Some(trace_id) = trace_id {
                     fuchsia_trace::flow_end!(c"input", c"event_in_input_pipeline", trace_id.into());

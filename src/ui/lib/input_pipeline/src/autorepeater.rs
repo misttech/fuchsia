@@ -22,13 +22,13 @@ use crate::input_device::{self, Handled, InputDeviceDescriptor, InputDeviceEvent
 use crate::input_handler::InputHandlerStatus;
 use crate::keyboard_binding::KeyboardEvent;
 use crate::metrics;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use fidl_fuchsia_settings as fsettings;
 use fidl_fuchsia_ui_input3::{self as finput3, KeyEventType, KeyMeaning};
 use fuchsia_async::{MonotonicInstant, Task, Timer};
 use fuchsia_inspect::health::Reporter;
-use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::StreamExt;
+use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use metrics_registry::*;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -311,8 +311,9 @@ impl Autorepeater {
                 // Anything not a keyboard or any handled event gets forwarded as is.
                 AnyEvent::NonKeyboard(input_event) => unbounded_send_logged(&output, input_event)?,
                 AnyEvent::Keyboard(_, _, _, _) => {
-                    if let Ok(e) = event.clone().try_into() {
-                        self.inspect_status.count_received_event(e);
+                    let result: Result<input_device::InputEvent, _> = event.clone().try_into();
+                    if let Ok(e) = result {
+                        self.inspect_status.count_received_event(&e.event_time);
                     }
                     self.process_event(event, &output).await?
                 }

@@ -5,7 +5,7 @@
 use crate::consumer_controls_binding::ConsumerControlsEvent;
 use crate::input_handler::{InputHandlerStatus, UnhandledInputHandler};
 use crate::{input_device, metrics};
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{Context as _, Error, anyhow};
 use async_trait::async_trait;
 use async_utils::hanging_get::server::HangingGet;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
@@ -414,12 +414,10 @@ impl UnhandledInputHandler for FactoryResetHandler {
             input_device::UnhandledInputEvent {
                 device_event: input_device::InputDeviceEvent::ConsumerControls(ref event),
                 device_descriptor: input_device::InputDeviceDescriptor::ConsumerControls(_),
-                event_time: _,
+                event_time,
                 trace_id: _,
             } => {
-                self.inspect_status.count_received_event(input_device::InputEvent::from(
-                    unhandled_input_event.clone(),
-                ));
+                self.inspect_status.count_received_event(&event_time);
                 match self.factory_reset_state() {
                     FactoryResetState::Idle => {
                         let event_clone = event.clone();

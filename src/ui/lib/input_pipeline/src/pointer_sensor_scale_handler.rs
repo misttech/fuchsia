@@ -78,8 +78,7 @@ impl UnhandledInputHandler for PointerSensorScaleHandler {
                 fuchsia_trace::duration!(c"input", c"pointer_sensor_scale_handler");
                 fuchsia_trace::flow_step!(c"input", c"event_in_input_pipeline", tracing_id);
 
-                self.inspect_status
-                    .count_received_event(input_device::InputEvent::from(unhandled_input_event));
+                self.inspect_status.count_received_event(&event_time);
                 let scaled_motion = self.scale_motion(raw_motion, event_time);
                 let input_event = input_device::InputEvent {
                     device_event: input_device::InputDeviceEvent::Mouse(
@@ -145,8 +144,7 @@ impl UnhandledInputHandler for PointerSensorScaleHandler {
                     );
                 }
 
-                self.inspect_status
-                    .count_received_event(input_device::InputEvent::from(unhandled_input_event));
+                self.inspect_status.count_received_event(&event_time);
                 let scaled_wheel_delta_v = self.scale_scroll(wheel_delta_v, event_time);
                 let scaled_wheel_delta_h = self.scale_scroll(wheel_delta_h, event_time);
                 let input_event = input_device::InputEvent {
@@ -913,7 +911,7 @@ mod tests {
                     (None, Some(delta_h)) => return (None, delta_h.physical_pixel),
                     (Some(delta_v), None) => return (delta_v.physical_pixel, None),
                     (Some(delta_v), Some(delta_h)) => {
-                        return (delta_v.physical_pixel, delta_h.physical_pixel)
+                        return (delta_v.physical_pixel, delta_h.physical_pixel);
                     }
                 }
             } else {

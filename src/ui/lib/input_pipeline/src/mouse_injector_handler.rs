@@ -104,8 +104,7 @@ impl InputHandler for MouseInjectorHandler {
                     None => fuchsia_trace::Id::random(),
                 };
 
-                self.inspect_status
-                    .count_received_event(input_device::InputEvent::from(input_event.clone()));
+                self.inspect_status.count_received_event(&event_time);
                 // TODO(https://fxbug.dev/42171756): Investigate latency introduced by waiting for update_cursor_renderer
                 if let Err(e) =
                     self.update_cursor_renderer(mouse_event, &mouse_device_descriptor).await

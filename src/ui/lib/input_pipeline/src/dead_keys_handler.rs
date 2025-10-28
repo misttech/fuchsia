@@ -362,7 +362,7 @@ impl DeadKeysHandler {
                     );
                 }
 
-                self.inspect_status.count_received_event(InputEvent::from(unhandled_input_event));
+                self.inspect_status.count_received_event(&event_time);
                 let event = StoredEvent { event, device_descriptor, event_time, trace_id };
                 // Separated into two statements to ensure the logs are not truncated.
                 log::debug!("state: {:?}", self.state.borrow());

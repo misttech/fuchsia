@@ -185,9 +185,9 @@ impl InputHandlerStatus {
         }
     }
 
-    pub fn count_received_event(&self, event: input_device::InputEvent) {
+    pub fn count_received_event(&self, event_time: &zx::MonotonicInstant) {
         self.events_received_count.add(1);
-        self.last_received_timestamp_ns.set(event.event_time.into_nanos().try_into().unwrap());
+        self.last_received_timestamp_ns.set(event_time.into_nanos().try_into().unwrap());
     }
 
     pub fn count_handled_event(&self) {
@@ -197,14 +197,14 @@ impl InputHandlerStatus {
 
 #[cfg(test)]
 mod tests {
-    use super::{async_trait, InputHandler, UnhandledInputHandler};
+    use super::{InputHandler, UnhandledInputHandler, async_trait};
     use crate::input_device::{
         Handled, InputDeviceDescriptor, InputDeviceEvent, InputEvent, UnhandledInputEvent,
     };
     use crate::input_handler::InputHandlerStatus;
 
-    use futures::channel::mpsc;
     use futures::StreamExt as _;
+    use futures::channel::mpsc;
     use pretty_assertions::assert_eq;
     use test_case::test_case;
 

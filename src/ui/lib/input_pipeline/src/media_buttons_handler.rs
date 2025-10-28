@@ -55,7 +55,7 @@ impl UnhandledInputHandler for MediaButtonsHandler {
                     input_device::InputDeviceEvent::ConsumerControls(ref media_buttons_event),
                 device_descriptor:
                     input_device::InputDeviceDescriptor::ConsumerControls(ref device_descriptor),
-                event_time: _,
+                event_time,
                 trace_id,
             } => {
                 fuchsia_trace::duration!(c"input", c"media_buttons_handler");
@@ -63,9 +63,7 @@ impl UnhandledInputHandler for MediaButtonsHandler {
                     fuchsia_trace::flow_end!(c"input", c"event_in_input_pipeline", trace_id.into());
                 }
 
-                self.inspect_status.count_received_event(input_device::InputEvent::from(
-                    unhandled_input_event.clone(),
-                ));
+                self.inspect_status.count_received_event(&event_time);
                 let mut media_buttons_event = Self::create_media_buttons_event(
                     media_buttons_event,
                     device_descriptor.device_id,

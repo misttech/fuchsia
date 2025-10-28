@@ -37,7 +37,9 @@ impl LeaseHolder {
 
     async fn create_lease(&mut self) -> Result<(), Error> {
         if self.wake_lease.is_some() {
-            log::warn!("InteractionStateHandler already held a wake lease when trying to create one, please investigate.");
+            log::warn!(
+                "InteractionStateHandler already held a wake lease when trying to create one, please investigate."
+            );
             return Ok(());
         }
 
@@ -56,10 +58,14 @@ impl LeaseHolder {
 
     fn drop_lease(&mut self) {
         if let Some(lease) = self.wake_lease.take() {
-            log::info!("InteractionStateHandler is dropping the wake lease due to not receiving any recent user input.");
+            log::info!(
+                "InteractionStateHandler is dropping the wake lease due to not receiving any recent user input."
+            );
             std::mem::drop(lease);
         } else {
-            log::warn!("InteractionStateHandler was not holding a wake lease when trying to drop one, please investigate.");
+            log::warn!(
+                "InteractionStateHandler was not holding a wake lease when trying to drop one, please investigate."
+            );
         }
     }
 
@@ -122,7 +128,10 @@ impl InteractionStateHandler {
                 match LeaseHolder::new(activity_governor).await {
                     Ok(holder) => Some(Rc::new(RefCell::new(holder))),
                     Err(e) => {
-                        log::error!("Unable to integrate with power, system may incorrectly enter suspend: {:?}", e);
+                        log::error!(
+                            "Unable to integrate with power, system may incorrectly enter suspend: {:?}",
+                            e
+                        );
                         None
                     }
                 }
@@ -286,10 +295,6 @@ impl UnhandledInputHandler for InteractionStateHandler {
             input_device::InputDeviceEvent::ConsumerControls(_)
             | input_device::InputDeviceEvent::Mouse(_)
             | input_device::InputDeviceEvent::TouchScreen(_) => {
-                self.inspect_status.count_received_event(input_device::InputEvent::from(
-                    unhandled_input_event.clone(),
-                ));
-
                 // Clamp the time to now so that clients cannot send events far off
                 // in the future to keep the system always active.
                 // Note: We use the global executor to get the current time instead
@@ -300,6 +305,7 @@ impl UnhandledInputHandler for InteractionStateHandler {
                     fuchsia_async::MonotonicInstant::now().into_zx(),
                 );
 
+                self.inspect_status.count_received_event(&event_time);
                 self.transition_to_idle_after_new_time(event_time).await;
             }
             _ => {}

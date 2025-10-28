@@ -83,9 +83,7 @@ impl UnhandledInputHandler for ImeHandler {
                     fuchsia_trace::flow_end!(c"input", c"event_in_input_pipeline", trace_id.into());
                 }
 
-                self.inspect_status.count_received_event(input_device::InputEvent::from(
-                    unhandled_input_event.clone(),
-                ));
+                self.inspect_status.count_received_event(&event_time);
                 let key_event = create_key_event(
                     &keyboard_device_event,
                     event_time,
@@ -265,9 +263,8 @@ mod tests {
         assert!(false);
     }
 
-    fn connect_to_key_event_injector(
-    ) -> (fidl_ui_input3::KeyEventInjectorProxy, fidl_ui_input3::KeyEventInjectorRequestStream)
-    {
+    fn connect_to_key_event_injector()
+    -> (fidl_ui_input3::KeyEventInjectorProxy, fidl_ui_input3::KeyEventInjectorRequestStream) {
         fidl::endpoints::create_proxy_and_stream::<fidl_ui_input3::KeyEventInjectorMarker>()
     }
 

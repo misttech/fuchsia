@@ -8,7 +8,7 @@ use super::{
 use crate::input_handler::{InputHandler, InputHandlerStatus};
 use crate::utils::Size;
 use crate::{input_device, mouse_binding, touch_binding};
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use async_trait::async_trait;
 use core::cell::RefCell;
 use fidl_fuchsia_input_report as fidl_input_report;
@@ -1034,8 +1034,7 @@ impl InputHandler for GestureArena {
                 handled: input_device::Handled::No,
                 ..
             } => {
-                self.inspect_status
-                    .count_received_event(input_device::InputEvent::from(input_event.clone()));
+                self.inspect_status.count_received_event(&event_time);
                 match self.handle_touchpad_event(event_time, touchpad_event, touchpad_descriptor) {
                     Ok(r) => r,
                     Err(e) => {
@@ -1135,11 +1134,11 @@ fn get_position_divisor_to_mm(
         });
 
     if !errors.is_empty() {
-        return Err(format_err!(errors
-            .into_iter()
-            .fold(String::new(), |prev_err_msgs, this_err_msg| prev_err_msgs
+        return Err(format_err!(
+            errors.into_iter().fold(String::new(), |prev_err_msgs, this_err_msg| prev_err_msgs
                 + &this_err_msg
-                + ", ")));
+                + ", ")
+        ));
     }
 
     let first_divisor = match divisors.first() {
@@ -1148,17 +1147,19 @@ fn get_position_divisor_to_mm(
     };
 
     if divisors.iter().any(|&divisor| divisor != first_divisor) {
-        return Err(format_err!(divisors
-            .iter()
-            .enumerate()
-            .filter(|(_i, &divisor)| divisor != first_divisor)
-            .map(|(i, divisor)| format!(
-                "contact {} has a different divisor than the first contact ({:?} != {:?})",
-                i, divisor, first_divisor,
-            ))
-            .fold(String::new(), |prev_err_msgs, this_err_msg| prev_err_msgs
-                + &this_err_msg
-                + ", ")));
+        return Err(format_err!(
+            divisors
+                .iter()
+                .enumerate()
+                .filter(|(_i, &divisor)| divisor != first_divisor)
+                .map(|(i, divisor)| format!(
+                    "contact {} has a different divisor than the first contact ({:?} != {:?})",
+                    i, divisor, first_divisor,
+                ))
+                .fold(String::new(), |prev_err_msgs, this_err_msg| prev_err_msgs
+                    + &this_err_msg
+                    + ", ")
+        ));
     }
 
     Ok(first_divisor)
@@ -1273,12 +1274,12 @@ fn log_gesture_end(
 mod tests {
     mod utils {
         use super::super::{
-            args, Contender, ContenderFactory, ExamineEventResult, MatchedContender,
-            ProcessBufferedEventsResult, ProcessNewEventResult, TouchpadEvent, VerifyEventResult,
-            Winner, COUNTS_PER_MM, PRIMARY_BUTTON,
+            COUNTS_PER_MM, Contender, ContenderFactory, ExamineEventResult, MatchedContender,
+            PRIMARY_BUTTON, ProcessBufferedEventsResult, ProcessNewEventResult, TouchpadEvent,
+            VerifyEventResult, Winner, args,
         };
         use crate::utils::Size;
-        use crate::{input_device, keyboard_binding, mouse_binding, touch_binding, Position};
+        use crate::{Position, input_device, keyboard_binding, mouse_binding, touch_binding};
         use assert_matches::assert_matches;
         use fidl_fuchsia_input_report as fidl_input_report;
         use maplit::hashset;
@@ -1722,17 +1723,18 @@ mod tests {
 
     mod idle_chain_states {
         use super::super::{
-            args, ExamineEventResult, GestureArena, InputHandler, MutableState,
-            ProcessBufferedEventsResult, Reason, RecognizedGesture, TouchpadEvent,
+            ExamineEventResult, GestureArena, InputHandler, MutableState,
+            ProcessBufferedEventsResult, Reason, RecognizedGesture, TouchpadEvent, args,
         };
         use super::utils::{
-            make_touchpad_descriptor, make_unhandled_keyboard_event, make_unhandled_mouse_event,
-            make_unhandled_touchpad_event, ContenderFactoryCalled, ContenderFactoryOnceOrPanic,
-            StubContender, StubMatchedContender, StubWinner, TOUCH_CONTACT_INDEX_FINGER,
+            ContenderFactoryCalled, ContenderFactoryOnceOrPanic, StubContender,
+            StubMatchedContender, StubWinner, TOUCH_CONTACT_INDEX_FINGER, make_touchpad_descriptor,
+            make_unhandled_keyboard_event, make_unhandled_mouse_event,
+            make_unhandled_touchpad_event,
         };
         use crate::input_handler::InputHandlerStatus;
         use crate::utils::Size;
-        use crate::{input_device, touch_binding, Position};
+        use crate::{Position, input_device, touch_binding};
         use assert_matches::assert_matches;
 
         use maplit::hashset;
@@ -2140,16 +2142,16 @@ mod tests {
     mod matching_state {
         use super::super::{
             Contender, ContenderFactory, ExamineEventResult, GestureArena, InputHandler,
-            MouseEvent, MutableState, ProcessBufferedEventsResult, Reason, RecognizedGesture,
-            TouchpadEvent, VerifyEventResult, PRIMARY_BUTTON,
+            MouseEvent, MutableState, PRIMARY_BUTTON, ProcessBufferedEventsResult, Reason,
+            RecognizedGesture, TouchpadEvent, VerifyEventResult,
         };
         use super::utils::{
-            make_touchpad_descriptor, make_unhandled_keyboard_event, make_unhandled_mouse_event,
-            make_unhandled_touchpad_event, ContenderForever, StubContender, StubMatchedContender,
-            StubWinner, TOUCH_CONTACT_INDEX_FINGER,
+            ContenderForever, StubContender, StubMatchedContender, StubWinner,
+            TOUCH_CONTACT_INDEX_FINGER, make_touchpad_descriptor, make_unhandled_keyboard_event,
+            make_unhandled_mouse_event, make_unhandled_touchpad_event,
         };
         use crate::input_handler::InputHandlerStatus;
-        use crate::{input_device, mouse_binding, touch_binding, Position};
+        use crate::{Position, input_device, mouse_binding, touch_binding};
         use assert_matches::assert_matches;
 
         use maplit::hashset;
@@ -2355,8 +2357,8 @@ mod tests {
         }
 
         #[fuchsia::test(allow_stalls = false)]
-        async fn invokes_verify_event_for_new_event_with_matched_contender_replaced_by_matched_contender(
-        ) {
+        async fn invokes_verify_event_for_new_event_with_matched_contender_replaced_by_matched_contender()
+         {
             let matched_contender = StubMatchedContender::new();
             let arena = make_matching_arena(
                 vec![],
@@ -2714,12 +2716,12 @@ mod tests {
             MutableState, ProcessNewEventResult, Reason, RecognizedGesture, TouchpadEvent,
         };
         use super::utils::{
-            make_touchpad_descriptor, make_unhandled_keyboard_event, make_unhandled_mouse_event,
-            make_unhandled_touchpad_event, ContenderFactoryOnceOrPanic, ContenderForever,
-            StubContender, StubWinner, TOUCH_CONTACT_INDEX_FINGER,
+            ContenderFactoryOnceOrPanic, ContenderForever, StubContender, StubWinner,
+            TOUCH_CONTACT_INDEX_FINGER, make_touchpad_descriptor, make_unhandled_keyboard_event,
+            make_unhandled_mouse_event, make_unhandled_touchpad_event,
         };
         use crate::input_handler::InputHandlerStatus;
-        use crate::{input_device, mouse_binding, touch_binding, Position};
+        use crate::{Position, input_device, mouse_binding, touch_binding};
         use assert_matches::assert_matches;
 
         use maplit::hashset;
@@ -3155,12 +3157,12 @@ mod tests {
     }
 
     mod touchpad_event_payload {
-        use super::super::{args, ExamineEventResult, GestureArena, InputHandler, Reason};
+        use super::super::{ExamineEventResult, GestureArena, InputHandler, Reason, args};
         use super::utils::{
             ContenderFactoryOnceOrPanic, StubContender, TOUCH_CONTACT_INDEX_FINGER,
         };
         use crate::utils::Size;
-        use crate::{input_device, touch_binding, Position};
+        use crate::{Position, input_device, touch_binding};
         use assert_matches::assert_matches;
         use fidl_fuchsia_input_report::{self as fidl_input_report, UnitType};
 
@@ -3514,17 +3516,17 @@ mod tests {
 
     mod inspect {
         use super::super::{
-            args, Contender, ContenderFactory, DetailedReasonFloat, DetailedReasonInt,
+            Contender, ContenderFactory, DetailedReasonFloat, DetailedReasonInt,
             DetailedReasonUint, EndGestureEvent, ExamineEventResult, GestureArena, InputHandler,
             MouseEvent, ProcessBufferedEventsResult, ProcessNewEventResult, Reason,
-            RecognizedGesture, TouchpadEvent,
+            RecognizedGesture, TouchpadEvent, args,
         };
         use super::utils::{
+            ContenderFactoryOnceOrPanic, StubContender, StubMatchedContender, StubWinner,
             make_touchpad_descriptor, make_unhandled_keyboard_event, make_unhandled_mouse_event,
-            make_unhandled_touchpad_event, ContenderFactoryOnceOrPanic, StubContender,
-            StubMatchedContender, StubWinner,
+            make_unhandled_touchpad_event,
         };
-        use crate::{input_device, keyboard_binding, mouse_binding, touch_binding, Position, Size};
+        use crate::{Position, Size, input_device, keyboard_binding, mouse_binding, touch_binding};
         use assert_matches::assert_matches;
         use maplit::hashset;
         use std::rc::Rc;
@@ -3900,10 +3902,9 @@ mod tests {
         async fn negative_matching_latency_is_logged_correctly() {
             let inspector = fuchsia_inspect::Inspector::default();
             let gesture_matching_contender = Box::new(StubContender::new());
-            let contender_factory =
-                Box::new(ContenderFactoryOnceOrPanic::new(
-                    vec![gesture_matching_contender.clone()],
-                ));
+            let contender_factory = Box::new(ContenderFactoryOnceOrPanic::new(vec![
+                gesture_matching_contender.clone(),
+            ]));
             let arena = Rc::new(GestureArena::new_for_test(contender_factory, &inspector, 100));
 
             gesture_matching_contender

@@ -122,7 +122,7 @@ impl UnhandledInputHandler for ChromebookKeyboardHandler {
                 event_time,
                 trace_id,
             } if is_chromebook_keyboard(&keyboard_descriptor.device_information) => {
-                self.inspect_status.count_received_event(InputEvent::from(input_event));
+                self.inspect_status.count_received_event(&event_time);
                 self.process_keyboard_event(
                     event,
                     keyboard_descriptor.clone(),

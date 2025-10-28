@@ -5,7 +5,7 @@
 use crate::input_handler::{InputHandlerStatus, UnhandledInputHandler};
 use crate::utils::Position;
 use crate::{input_device, metrics, mouse_binding};
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use derivative::Derivative;
 use fuchsia_inspect::health::Reporter;
@@ -58,8 +58,7 @@ impl UnhandledInputHandler for PointerDisplayScaleHandler {
                 fuchsia_trace::duration!(c"input", c"pointer_display_scale_handler");
                 fuchsia_trace::flow_step!(c"input", c"event_in_input_pipeline", tracing_id);
 
-                self.inspect_status
-                    .count_received_event(input_device::InputEvent::from(unhandled_input_event));
+                self.inspect_status.count_received_event(&event_time);
                 let scaled_mm = self.scale_motion(raw_mm);
                 let input_event = input_device::InputEvent {
                     device_event: input_device::InputDeviceEvent::Mouse(
@@ -106,8 +105,7 @@ impl UnhandledInputHandler for PointerDisplayScaleHandler {
                     );
                 }
 
-                self.inspect_status
-                    .count_received_event(input_device::InputEvent::from(unhandled_input_event));
+                self.inspect_status.count_received_event(&event_time);
                 let scaled_wheel_delta_v = self.scale_wheel_delta(wheel_delta_v);
                 let scaled_wheel_delta_h = self.scale_wheel_delta(wheel_delta_h);
                 let input_event = input_device::InputEvent {
@@ -624,7 +622,7 @@ mod tests {
                 (None, Some(delta_h)) => return (None, delta_h.physical_pixel),
                 (Some(delta_v), None) => return (delta_v.physical_pixel, None),
                 (Some(delta_v), Some(delta_h)) => {
-                    return (delta_v.physical_pixel, delta_h.physical_pixel)
+                    return (delta_v.physical_pixel, delta_h.physical_pixel);
                 }
             }
         } else {

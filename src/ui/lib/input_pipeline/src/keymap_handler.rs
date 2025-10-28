@@ -47,8 +47,7 @@ impl UnhandledInputHandler for KeymapHandler {
                 event_time,
                 trace_id,
             } => {
-                self.inspect_status
-                    .count_received_event(input_device::InputEvent::from(input_event));
+                self.inspect_status.count_received_event(&event_time);
                 vec![input_device::InputEvent::from(self.process_keyboard_event(
                     event,
                     device_descriptor,

@@ -54,7 +54,7 @@ impl UnhandledInputHandler for ModifierHandler {
                     );
                 }
 
-                self.inspect_status.count_received_event(InputEvent::from(unhandled_input_event));
+                self.inspect_status.count_received_event(&event_time);
                 self.modifier_state.borrow_mut().update(event.get_event_type(), event.get_key());
                 self.lock_state.borrow_mut().update(event.get_event_type(), event.get_key());
                 event = event
@@ -137,7 +137,7 @@ impl UnhandledInputHandler for ModifierMeaningHandler {
             } if event.get_key_meaning()
                 == Some(KeyMeaning::NonPrintableKey(NonPrintableKey::AltGraph)) =>
             {
-                self.inspect_status.count_received_event(InputEvent::from(unhandled_input_event));
+                self.inspect_status.count_received_event(&event_time);
                 // The "obvious" rewrite of this if and the match guard above is
                 // unstable, so doing it this way.
                 if let Some(key_meaning) = event.get_key_meaning() {

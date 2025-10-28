@@ -55,8 +55,7 @@ impl UnhandledInputHandler for TextSettingsHandler {
                     );
                 }
 
-                self.inspect_status
-                    .count_received_event(input_device::InputEvent::from(unhandled_input_event));
+                self.inspect_status.count_received_event(&event_time);
                 let keymap_id = self.get_keymap_name();
                 log::debug!(
                     "text_settings_handler::Instance::handle_unhandled_input_event: keymap_id = {:?}",

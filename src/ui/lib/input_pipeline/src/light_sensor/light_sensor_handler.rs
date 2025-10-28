@@ -8,7 +8,7 @@ use crate::inspect_handler::{BufferNode, CircularBuffer};
 use crate::light_sensor::calibrator::{Calibrate, Calibrator};
 use crate::light_sensor::led_watcher::{CancelableTask, LedWatcher, LedWatcherHandle};
 use crate::light_sensor::types::{AdjustmentSetting, Calibration, Rgbc, SensorConfiguration};
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use async_trait::async_trait;
 use async_utils::hanging_get::server::HangingGet;
 use fidl_fuchsia_input_report::{FeatureReport, InputDeviceProxy, SensorFeatureReport};
@@ -18,8 +18,8 @@ use fidl_fuchsia_lightsensor::{
 };
 use fidl_fuchsia_settings::LightProxy;
 use fidl_fuchsia_ui_brightness::ControlProxy as BrightnessControlProxy;
-use fuchsia_inspect::health::Reporter;
 use fuchsia_inspect::NumericProperty;
+use fuchsia_inspect::health::Reporter;
 
 use futures::channel::oneshot;
 use futures::lock::Mutex;
@@ -549,12 +549,12 @@ where
         if let InputEvent {
             device_event: InputDeviceEvent::LightSensor(ref light_sensor_event),
             device_descriptor: InputDeviceDescriptor::LightSensor(ref light_sensor_descriptor),
-            event_time: _,
+            event_time,
             handled: Handled::No,
             trace_id: _,
         } = input_event
         {
-            self.inspect_status.count_received_event(input_event.clone());
+            self.inspect_status.count_received_event(&event_time);
             // Validate descriptor matches.
             if !(light_sensor_descriptor.vendor_id == self.vendor_id
                 && light_sensor_descriptor.product_id == self.product_id)

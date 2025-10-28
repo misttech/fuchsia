@@ -230,7 +230,7 @@ impl DisplayOwnership {
                         output.unbounded_send(event).context("unable to send handled event")?;
                         continue;
                     }
-                    self.inspect_status.count_received_event(input_device::InputEvent::from(event.clone()));
+                    self.inspect_status.count_received_event(&event.event_time);
                     match event.device_event {
                         input_device::InputDeviceEvent::Keyboard(ref e) => {
                             self.key_state.borrow_mut().update(e.get_event_type(), e.get_key());
