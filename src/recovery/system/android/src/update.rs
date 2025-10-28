@@ -6,6 +6,7 @@ use super::RecoveryMessages;
 use anyhow::{Context as _, Error};
 use fidl::endpoints::{DiscoverableProtocolMarker as _, create_proxy};
 use fuchsia_component::client::connect_to_protocol;
+use futures::TryStreamExt as _;
 use isolated_swd::updater::Updater;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -81,11 +82,7 @@ pub async fn apply_update(
     }
 
     view_sender.queue_message(RecoveryMessages::Log(format!("Installing update...")));
-    let mut updater = Updater::new().context("Failed to create updater")?;
-    let res = updater
-        .install_update(Some(&url.parse()?), Some(signature))
-        .await
-        .context("Failed to apply update");
+    let res = install_update(url, signature, view_sender).await;
     // Don't format blobs if we try to update again to allow resuming to maintain forward progress.
     FORMAT_BLOB_VOLUME.store(false, std::sync::atomic::Ordering::Relaxed);
     // Explicitly closing the `blob_exposed_dir` to let fshost shutdown the filesystem and destroy
@@ -102,6 +99,35 @@ pub async fn apply_update(
         log::error!("Failed to stop pkg-recovery: {e:#}");
     }
     res
+}
+
+async fn install_update(
+    url: &str,
+    signature: &[u8],
+    view_sender: &crate::view_sender::ViewSender,
+) -> Result<(), Error> {
+    let mut updater = Updater::new().context("Failed to create updater")?;
+    let mut attempt = updater
+        .start_update(Some(&url.parse()?), Some(signature))
+        .await
+        .context("Failed to start update")?;
+    view_sender.queue_message(RecoveryMessages::Log(format!("update started...")));
+    while let Some(state) = attempt.try_next().await.context("fetching next update state")? {
+        log::info!("Install: {:?}", state);
+        let progress_str = if let Some(progress) = state.progress() {
+            format!("{}: {:.2}%", state.name(), progress.fraction_completed() * 100.0)
+        } else {
+            state.name().into()
+        };
+        view_sender.queue_message(RecoveryMessages::ReplaceLastLog(progress_str));
+        if state.is_success() {
+            return Ok(());
+        }
+        if state.is_failure() {
+            anyhow::bail!("update attempt failed in state {:?}", state);
+        }
+    }
+    Err(anyhow::anyhow!("unexpected end of update attempt"))
 }
 
 async fn stop_pkg_recovery() -> Result<(), Error> {

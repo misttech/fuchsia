@@ -28,15 +28,11 @@ impl Updater {
         ))
     }
 
-    /// Perform an update, skipping the final reboot.
-    /// If `update_package` is Some, use the given package URL as the URL for the update package.
-    /// Otherwise, `system-updater` uses the default URL.
-    /// This will not install any images to the recovery partitions.
-    pub async fn install_update(
+    pub async fn start_update(
         &mut self,
         update_package: Option<&url::Url>,
         signature: Option<&[u8]>,
-    ) -> Result<(), Error> {
+    ) -> Result<UpdateAttempt, Error> {
         let update_package = match update_package {
             Some(url) => url.to_owned(),
             None => DEFAULT_UPDATE_PACKAGE_URL.parse().unwrap(),
@@ -46,7 +42,7 @@ impl Updater {
             fidl::endpoints::create_proxy::<RebootControllerMarker>();
         let () = reboot_controller.detach().context("disabling automatic reboot")?;
 
-        let attempt = start_update(
+        start_update(
             &update_package,
             Options {
                 initiator: Initiator::User,
@@ -58,7 +54,19 @@ impl Updater {
             signature,
         )
         .await
-        .context("starting system update")?;
+        .context("starting system update")
+    }
+
+    /// Perform an update, skipping the final reboot.
+    /// If `update_package` is Some, use the given package URL as the URL for the update package.
+    /// Otherwise, `system-updater` uses the default URL.
+    /// This will not install any images to the recovery partitions.
+    pub async fn install_update(
+        &mut self,
+        update_package: Option<&url::Url>,
+        signature: Option<&[u8]>,
+    ) -> Result<(), Error> {
+        let attempt = self.start_update(update_package, signature).await?;
 
         let () = Self::monitor_update_attempt(attempt).await.context("monitoring installation")?;
 

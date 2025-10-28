@@ -514,12 +514,21 @@ impl ViewAssistant for RecoveryViewAssistant {
     }
 
     fn handle_message(&mut self, message: carnelian::Message) {
-        let Some(message) = message.downcast_ref::<RecoveryMessages>() else {
+        let Ok(message) = message.downcast::<RecoveryMessages>() else {
             return;
         };
-        match message {
+        match *message {
             RecoveryMessages::Log(log) => {
                 self.log(log);
+            }
+            RecoveryMessages::ReplaceLastLog(log) => {
+                let logs = self.logs.get_or_insert_default();
+                if let Some(last) = logs.last_mut() {
+                    *last = log;
+                } else {
+                    logs.push(log);
+                }
+                self.request_render();
             }
             RecoveryMessages::TaskDone => {
                 self.waiting_for_confirmation = true;
@@ -612,6 +621,7 @@ impl ViewAssistant for RecoveryViewAssistant {
 
 enum RecoveryMessages {
     Log(String),
+    ReplaceLastLog(String),
     TaskDone,
     Reboot,
     RebootBootloader,
