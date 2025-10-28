@@ -900,18 +900,18 @@
     },
     {
         "package": "fuchsia/third_party/rust_cargo_outdated/linux-amd64",
-        "version": "git_revision:c00784b731171f7338a425505e594b88c500604c",
-        "instance_id": "vBi2NiMiAj1vlt13hS-VZlmnNAWNMrM1j65aCV8ttZMC"
+        "version": "git_revision:9e3e11530c7d90c67a069a451eb6537d90fbb7bd",
+        "instance_id": "REjCNAU2XOWP5ckCuKsGhCEQj4ONMQ1BdZ6yW2JcOkcC"
     },
     {
         "package": "fuchsia/third_party/rust_cargo_outdated/mac-amd64",
-        "version": "git_revision:c00784b731171f7338a425505e594b88c500604c",
-        "instance_id": "Sa1sP-Fyv8LRX8GpYcLmy80veDL_I7-zhvPQ7Olp6qkC"
+        "version": "git_revision:9e3e11530c7d90c67a069a451eb6537d90fbb7bd",
+        "instance_id": "HaP9pmCtLFE3eHNruVayEoGNcVLyE9CMNd-diiaw12AC"
     },
     {
         "package": "fuchsia/third_party/rust_cargo_outdated/mac-arm64",
-        "version": "git_revision:c00784b731171f7338a425505e594b88c500604c",
-        "instance_id": "UHls0PPhGJP7t8LYtbn5SuSjpvlVZ0cYi03rAQgJ640C"
+        "version": "git_revision:9e3e11530c7d90c67a069a451eb6537d90fbb7bd",
+        "instance_id": "z03t2yLvxXB32qWWy2EE6nUjwL7hcowEcEBklG0JxscC"
     },
     {
         "package": "fuchsia/third_party/starnix/fuse-overlayfs-amd64",
