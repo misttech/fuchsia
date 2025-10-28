@@ -1,0 +1,31 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "install_host_tools")
+
+go_binary(
+    name = "fidl_api_summarize",
+    srcs = ["main.go"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = [
+        "//build/bazel/rules/fidl:__subpackages__",
+
+        # For bazel2gn. In GN, visibility applies to the location of the
+        # template instance, which could be anywhere for `fidl()` libraries.
+        "//visibility:public",
+    ],
+    deps = [
+        "//tools/fidl/lib/fidlgen",
+        "//tools/fidl/lib/summarize:gopkg",
+    ],
+)
+
+install_host_tools(
+    name = "host",
+    implementation_deps = [":fidl_api_summarize"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    tool_output_names = ["fidl_api_summarize"],
+)
