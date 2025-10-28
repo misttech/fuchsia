@@ -117,7 +117,7 @@ class VmoBuffer {
 
   const fbl::RefPtr<VmObjectPaged>& vmo() const { return vmo_; }
 
-  size_t content_size() const { return offset_; }
+  size_t stream_size() const { return offset_; }
 
  private:
   size_t offset_{0};
@@ -237,14 +237,14 @@ class Userboot {
 fbl::RefPtr<VmObject> kcounters_vmo_ref;
 
 // Get a handle to a VM object, with full rights except perhaps for writing.
-zx_status_t get_vmo_handle(fbl::RefPtr<VmObject> vmo, bool readonly, uint64_t content_size,
+zx_status_t get_vmo_handle(fbl::RefPtr<VmObject> vmo, bool readonly, uint64_t stream_size,
                            fbl::RefPtr<VmObjectDispatcher>* disp_ptr, Handle** ptr) {
   if (!vmo)
     return ZX_ERR_NO_MEMORY;
 
   zx_rights_t rights;
   KernelHandle<VmObjectDispatcher> vmo_kernel_handle;
-  zx_status_t result = VmObjectDispatcher::Create(ktl::move(vmo), content_size,
+  zx_status_t result = VmObjectDispatcher::Create(ktl::move(vmo), stream_size,
                                                   VmObjectDispatcher::InitialMutability::kMutable,
                                                   &vmo_kernel_handle, &rights);
   if (result == ZX_OK) {
@@ -344,7 +344,7 @@ void bootstrap_vmos(HandoffEnd handoff_end, ktl::span<Handle*, userboot::kHandle
     FILE boot_options_file{&boot_options};
     gBootOptions->Show(/*defaults=*/false, &boot_options_file);
     boot_options.vmo()->set_name(kBootOptionsVmoname, sizeof(kBootOptionsVmoname) - 1);
-    RETURN_IF_NOT_OK(get_vmo_handle(boot_options.vmo(), false, boot_options.content_size(), nullptr,
+    RETURN_IF_NOT_OK(get_vmo_handle(boot_options.vmo(), false, boot_options.stream_size(), nullptr,
                                     &handles[userboot::kBootOptions]));
   }
 
@@ -383,10 +383,10 @@ void bootstrap_vmos(HandoffEnd handoff_end, ktl::span<Handle*, userboot::kHandle
 #if defined(__aarch64__) && ZX_DEBUG_ASSERT_IMPLEMENTED
     arm64_print_midr_cpu_name(&midr_txt_file);
 #endif
-    if (midr_txt.content_size() > 0) {
+    if (midr_txt.stream_size() > 0) {
       midr_txt.vmo()->set_name(kMidrTxt.data(), kMidrTxt.size());
     }
-    RETURN_IF_NOT_OK(get_vmo_handle(midr_txt.vmo(), false, midr_txt.content_size(), nullptr,
+    RETURN_IF_NOT_OK(get_vmo_handle(midr_txt.vmo(), false, midr_txt.stream_size(), nullptr,
                                     &handles[userboot::kMidrTxt]));
   }
 }
