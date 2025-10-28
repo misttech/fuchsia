@@ -13,6 +13,8 @@ import("//build/testing/config.gni")
 import("//build/testing/fidl_api_compatibility_test.gni")
 import("//build/testing/golden_files.gni")
 
+# LINT.IfChange(fidl_library)
+
 if (current_build_target_api_level == "PLATFORM") {
   # FIDL directly supports targeting multiple API levels. "PLATFORM" is a
   # meta-level that refers to the set of all supported API levels.
@@ -693,3 +695,4 @@ template("fidl_library") {
     not_needed([ "sdk_atom_deps" ])
   }
 }
+# LINT.ThenChange(//build/bazel/rules/fidl/fidl_library.bzl)

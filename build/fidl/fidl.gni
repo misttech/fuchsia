@@ -8,6 +8,8 @@ import("//build/fidl/toolchain.gni")
 import("//build/go/toolchain.gni")
 import("//build/testing/host_test_data.gni")
 
+# LINT.IfChange(fidl)
+
 # NOTE: The imports of this gni file are dependent on the language used, as
 # there is no need to import the templates for the other languages when
 # processing this file in a given language's toolchain.  They are done only
@@ -15,8 +17,8 @@ import("//build/testing/host_test_data.gni")
 
 # Declares a FIDL library.
 #
-# Supported backends: rust, hlcpp, llcpp, banjo_{c,cpp,rust}, bindlib,
-# go, and zither.
+# Supported backends: Rust, C++, HLCPP, banjo_{c,cpp,rust}, bindlib,
+# Go, and Zither.
 #
 # Subtargets:
 #  * `${target_name}`: available only in the FIDL toolchain
@@ -651,3 +653,4 @@ template("fidl") {
     }
   }
 }
+# LINT.ThenChange(//build/bazel/rules/fidl/fidl_library.bzl)

@@ -32,6 +32,8 @@ def _get_api_levels(context):
     else:
         return current_build_target_api_level
 
+# TODO(https://fxbug.dev/428285014): Build and use a response file rather than
+# command line arguments.
 def _fidlc_impl(context):
     ir = context.outputs.ir
     library_name = context.attr.library_name
