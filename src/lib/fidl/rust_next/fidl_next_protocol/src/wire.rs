@@ -68,9 +68,6 @@ unsafe impl Wire for WireMessageHeader {
     }
 }
 
-/// The magic number indicating FIDL protocol compatibility.
-pub const MAGIC_NUMBER: u8 = 0x01;
-
 unsafe impl<E: ?Sized> Encode<WireMessageHeader, E> for WireMessageHeader {
     #[inline]
     fn encode(

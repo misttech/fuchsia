@@ -45,6 +45,7 @@ rustc_library("fidl_next_codec") {
     "src/wire/vec/required.rs",
   ]
   deps = [
+    "//src/lib/fidl/rust_constants",
     "//third_party/rust_crates:bitflags",
     "//third_party/rust_crates:munge",
     "//third_party/rust_crates:thiserror",

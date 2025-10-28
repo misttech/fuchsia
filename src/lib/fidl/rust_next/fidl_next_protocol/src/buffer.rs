@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_constants::MAGIC_NUMBER_INITIAL;
 use fidl_next_codec::{
     DecodeError, DecoderExt as _, EncodeError, EncoderExt as _, WireI32, WireU32, WireU64,
 };
 
 use crate::{
-    MAGIC_NUMBER, MessageHeaderFlags0, MessageHeaderFlags1, MessageHeaderFlags2, Transport,
-    WireEpitaph, WireMessageHeader,
+    MessageHeaderFlags0, MessageHeaderFlags1, MessageHeaderFlags2, Transport, WireEpitaph,
+    WireMessageHeader,
 };
 
 /// The flexibility of a method.
@@ -36,7 +37,7 @@ pub fn encode_header<T: Transport>(
                 Flexibility::Strict => MessageHeaderFlags2::empty(),
                 Flexibility::Flexible => MessageHeaderFlags2::FLEXIBLE_METHOD,
             },
-            magic_number: MAGIC_NUMBER,
+            magic_number: MAGIC_NUMBER_INITIAL,
             ordinal: WireU64(ordinal),
         },
         (),

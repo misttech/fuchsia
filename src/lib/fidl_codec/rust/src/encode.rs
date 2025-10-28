@@ -6,9 +6,7 @@
 use fdomain_client::{AsHandleRef as _, HandleOp};
 #[cfg(feature = "fdomain")]
 use fidl::encoding::HandleFor as _;
-use fidl::encoding::{
-    ALLOC_PRESENT_U32, ALLOC_PRESENT_U64, AtRestFlags, DynamicFlags, MAGIC_NUMBER_INITIAL,
-};
+use fidl::encoding::{AtRestFlags, DynamicFlags, MAGIC_NUMBER_INITIAL};
 #[cfg(not(feature = "fdomain"))]
 use fidl::{AsHandleRef as _, HandleOp};
 
@@ -16,6 +14,8 @@ use fidl::{AsHandleRef as _, HandleOp};
 use HandleOp as HandleDisposition;
 #[cfg(not(feature = "fdomain"))]
 use fidl::HandleDisposition;
+
+use fidl_constants::{ALLOC_ABSENT_U32, ALLOC_ABSENT_U64, ALLOC_PRESENT_U32, ALLOC_PRESENT_U64};
 
 use std::collections::HashMap;
 
@@ -445,7 +445,7 @@ impl<'n> EncodeBuffer<'n> {
                 Ok(())
             }))
         } else {
-            self.bytes.extend(&0u32.to_le_bytes());
+            self.bytes.extend(&ALLOC_ABSENT_U32.to_le_bytes());
             Ok(Box::new(|_, _| Ok(())))
         }
     }
@@ -563,7 +563,7 @@ impl<'n> EncodeBuffer<'n> {
                 self.encode_struct_nonnull(st, value, 0)
             }
         } else {
-            self.bytes.extend(&0u64.to_le_bytes());
+            self.bytes.extend(&ALLOC_ABSENT_U64.to_le_bytes());
             Ok(Box::new(|_, _| Ok(())))
         }
     }
@@ -693,7 +693,7 @@ impl<'n> EncodeBuffer<'n> {
                 if let Some((ty, item)) = slot {
                     calls.push(this.encode_envelope(ty, item)?);
                 } else {
-                    this.bytes.extend(&0u64.to_le_bytes());
+                    this.bytes.extend(&ALLOC_ABSENT_U64.to_le_bytes());
                 }
             }
 

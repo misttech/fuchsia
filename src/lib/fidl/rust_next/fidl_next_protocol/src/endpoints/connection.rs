@@ -6,6 +6,7 @@ use core::future::Future;
 use core::mem::{ManuallyDrop, MaybeUninit, replace, take};
 use core::pin::Pin;
 use core::task::{Context, Poll, Waker};
+use fidl_constants::EPITAPH_ORDINAL;
 
 use fidl_next_codec::EncodeError;
 use pin_project::pin_project;
@@ -18,8 +19,6 @@ use crate::concurrency::sync::atomic::{AtomicUsize, Ordering};
 use crate::{
     Flexibility, NonBlockingTransport, ProtocolError, Transport, encode_epitaph, encode_header,
 };
-
-pub const ORDINAL_EPITAPH: u64 = 0xffff_ffff_ffff_ffff;
 
 // Indicates that the connection has been requested to stop. Connections are
 // always stopped as they are terminated.
@@ -267,7 +266,7 @@ impl<T: Transport> Connection<T> {
         let shared = unsafe { self.get_shared_unchecked() };
 
         let mut buffer = T::acquire(shared);
-        encode_header::<T>(&mut buffer, 0, ORDINAL_EPITAPH, Flexibility::Strict).unwrap();
+        encode_header::<T>(&mut buffer, 0, EPITAPH_ORDINAL, Flexibility::Strict).unwrap();
         encode_epitaph::<T>(&mut buffer, error).unwrap();
         let future_state = T::begin_send(shared, buffer);
 

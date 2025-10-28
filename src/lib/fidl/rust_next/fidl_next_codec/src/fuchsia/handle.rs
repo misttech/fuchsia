@@ -5,6 +5,7 @@
 use core::fmt;
 use core::mem::{MaybeUninit, forget};
 
+use fidl_constants::{ALLOC_ABSENT_U32, ALLOC_PRESENT_U32};
 use zx::Handle;
 use zx::sys::{ZX_HANDLE_INVALID, zx_handle_t};
 
@@ -42,7 +43,7 @@ impl WireHandle {
     /// Encodes a handle as present in an output.
     pub fn set_encoded_present(out: &mut MaybeUninit<Self>) {
         munge!(let Self { encoded } = out);
-        encoded.write(WireU32(u32::MAX));
+        encoded.write(WireU32(ALLOC_PRESENT_U32));
     }
 
     /// Returns whether the underlying `zx_handle_t` is invalid.
@@ -72,8 +73,8 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireHandle {
         munge!(let Self { encoded } = slot.as_mut());
 
         match **encoded {
-            0 => return Err(DecodeError::RequiredHandleAbsent),
-            u32::MAX => {
+            ALLOC_ABSENT_U32 => return Err(DecodeError::RequiredHandleAbsent),
+            ALLOC_PRESENT_U32 => {
                 let handle = decoder.take_raw_handle()?;
                 munge!(let Self { mut decoded } = slot);
                 decoded.write(handle);
@@ -149,8 +150,8 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireOptionalHandle {
         munge!(let WireHandle { encoded } = wire_handle.as_mut());
 
         match **encoded {
-            0 => (),
-            u32::MAX => {
+            ALLOC_ABSENT_U32 => (),
+            ALLOC_PRESENT_U32 => {
                 let handle = decoder.take_raw_handle()?;
                 munge!(let WireHandle { mut decoded } = wire_handle);
                 decoded.write(handle);

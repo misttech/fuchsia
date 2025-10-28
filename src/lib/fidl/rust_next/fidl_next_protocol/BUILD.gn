@@ -29,6 +29,7 @@ _common = {
     "src/wire.rs",
   ]
   deps = [
+    "//src/lib/fidl/rust_constants",
     "//src/lib/fidl/rust_next/fidl_next_codec",
 
     # Used for atomic wakers, but not for any APIs

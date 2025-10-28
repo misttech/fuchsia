@@ -8,11 +8,12 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll, ready};
 
+use fidl_constants::EPITAPH_ORDINAL;
 use fidl_next_codec::{Constrained, Encode, EncodeError, EncoderExt, Wire};
 use pin_project::{pin_project, pinned_drop};
 
 use crate::concurrency::sync::{Arc, Mutex};
-use crate::endpoints::connection::{Connection, ORDINAL_EPITAPH};
+use crate::endpoints::connection::Connection;
 use crate::endpoints::lockers::{LockerError, Lockers};
 use crate::{
     Flexibility, ProtocolError, SendFuture, Transport, decode_epitaph, decode_header, encode_header,
@@ -309,7 +310,7 @@ impl<T: Transport> ClientDispatcher<T> {
         let (txid, ordinal, flexibility) =
             decode_header::<T>(&mut buffer).map_err(ProtocolError::InvalidMessageHeader)?;
 
-        if ordinal == ORDINAL_EPITAPH {
+        if ordinal == EPITAPH_ORDINAL {
             let epitaph =
                 decode_epitaph::<T>(&mut buffer).map_err(ProtocolError::InvalidEpitaphBody)?;
             return Err(ProtocolError::PeerClosedWithEpitaph(epitaph));

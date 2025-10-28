@@ -7,8 +7,9 @@
 //!
 //! [FIDL wire format]: https://fuchsia.dev/fuchsia-src/reference/fidl/language/wire-format
 
-/// A FIDL struct for encoding. Fields are defined in order.
+use fidl_constants::{ALLOC_ABSENT_U64, ALLOC_PRESENT_U64};
 
+/// A FIDL struct for encoding. Fields are defined in order.
 #[derive(Default)]
 pub struct Structure {
     fields: Vec<Field>,
@@ -117,8 +118,8 @@ impl Box {
         //   * `0`: struct is absent
         //   * `UINTPTR_MAX`: struct is present, data is the next out-of-line object */
         match &self.inner {
-            None => buf.extend(0u64.to_le_bytes()),
-            Some(_) => buf.extend(u64::MAX.to_le_bytes()),
+            None => buf.extend(ALLOC_ABSENT_U64.to_le_bytes()),
+            Some(_) => buf.extend(ALLOC_PRESENT_U64.to_le_bytes()),
         }
     }
 
@@ -257,8 +258,8 @@ impl VectorField {
         //   * `0`: vector is absent
         //   * `UINTPTR_MAX`: vector is present, data is the next out-of-line object */
         match self {
-            Self::Null => buf.extend(0u64.to_le_bytes()),
-            _ => buf.extend(u64::MAX.to_le_bytes()),
+            Self::Null => buf.extend(ALLOC_ABSENT_U64.to_le_bytes()),
+            _ => buf.extend(ALLOC_PRESENT_U64.to_le_bytes()),
         }
     }
 

@@ -15,6 +15,7 @@ use crate::handle::{
 use crate::time::{Instant, Ticks, Timeline};
 use crate::{Error, MethodType, Result};
 use bitflags::bitflags;
+pub use fidl_constants::*;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::{mem, ptr, str};
@@ -625,36 +626,6 @@ impl HandleInfoFor<NoHandleResourceDialect> for NoHandles {
 /// A resource dialect which doesn't support handles at all.
 #[cfg(target_os = "fuchsia")]
 pub type NoHandleResourceDialect = DefaultFuchsiaResourceDialect;
-
-////////////////////////////////////////////////////////////////////////////////
-// Constants
-////////////////////////////////////////////////////////////////////////////////
-
-/// The maximum recursion depth of encoding and decoding. Each pointer to an
-/// out-of-line object counts as one step in the recursion depth.
-pub const MAX_RECURSION: usize = 32;
-
-/// The maximum number of handles allowed in a FIDL message.
-///
-/// Note that this number is one less for large messages for the time being. See
-/// (https://fxbug.dev/42068341) for progress, or to report problems caused by
-/// this specific limitation.
-pub const MAX_HANDLES: usize = 64;
-
-/// Indicates that an optional value is present.
-pub const ALLOC_PRESENT_U64: u64 = u64::MAX;
-/// Indicates that an optional value is present.
-pub const ALLOC_PRESENT_U32: u32 = u32::MAX;
-/// Indicates that an optional value is absent.
-pub const ALLOC_ABSENT_U64: u64 = 0;
-/// Indicates that an optional value is absent.
-pub const ALLOC_ABSENT_U32: u32 = 0;
-
-/// Special ordinal signifying an epitaph message.
-pub const EPITAPH_ORDINAL: u64 = 0xffffffffffffffffu64;
-
-/// The current wire format magic number
-pub const MAGIC_NUMBER_INITIAL: u8 = 1;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Helper functions
@@ -2008,7 +1979,7 @@ where
     for<'a> T::Borrowed<'a>: Encode<T, D>,
 {
     encoder.write_num(slice.len() as u64, offset);
-    encoder.write_num(ALLOC_PRESENT_U64, offset + 8);
+    encoder.write_num(fidl_constants::ALLOC_PRESENT_U64, offset + 8);
     // Calling encoder.out_of_line_offset(0) is not allowed.
     if slice.is_empty() {
         return Ok(());

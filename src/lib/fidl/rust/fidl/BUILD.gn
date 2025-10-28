@@ -10,6 +10,7 @@ import("//build/rust/rustc_test.gni")
 fidl_rust_deps = [
   "//sdk/rust/zx-status",
   "//sdk/rust/zx-types",
+  "//src/lib/fidl/rust_constants",
   "//src/lib/fuchsia-async",
   "//src/lib/fuchsia-sync",
   "//third_party/rust_crates:bitflags",

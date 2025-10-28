@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use fidl::Rights;
-use fidl::encoding::{ALLOC_PRESENT_U32, ALLOC_PRESENT_U64, TransactionHeader};
+use fidl::encoding::TransactionHeader;
+use fidl_constants::{ALLOC_PRESENT_U32, ALLOC_PRESENT_U64};
 use nom::bytes::complete::take;
 use nom::combinator::{map, value, verify};
 use nom::multi::count;
