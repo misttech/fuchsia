@@ -28,6 +28,7 @@
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/designware/platform/cpp/bind.h>
+#include <hwreg/bitfields.h>
 
 #include "src/devices/usb/drivers/dwc3/dwc3-regs.h"
 
@@ -50,19 +51,46 @@ class QualcommExtension final : public PlatformExtension {
   enum class State : uint8_t { kNone, kNominal, kSvs, kMin };
 
  public:
-  static std::unique_ptr<QualcommExtension> Create(Dwc3* parent);
+  class HsPhyCtrl : public hwreg::RegisterBase<HsPhyCtrl, uint32_t> {
+   public:
+    DEF_BIT(20, utmi_otg_vbus_valid);
 
-  QualcommExtension(std::unordered_map<BusPath, fidl::ClientEnd<fhi::Path>> interconnect_clients,
+    static auto Get() { return hwreg::RegisterAddr<HsPhyCtrl>(0xf'8810); }
+  };
+
+  static std::unique_ptr<QualcommExtension> Create(Dwc3* parent, const fdf::MmioView& mmio);
+
+  QualcommExtension(const fdf::MmioView& mmio,
+                    std::unordered_map<BusPath, fidl::ClientEnd<fhi::Path>> interconnect_clients,
                     std::unordered_map<std::string, fidl::ClientEnd<fclock::Clock>> clock_clients,
                     fidl::ClientEnd<freset::Reset> reset_client)
-      : interconnect_clients_{std::move(interconnect_clients)},
+      : mmio_(mmio),
+        interconnect_clients_{std::move(interconnect_clients)},
         clock_clients_{std::move(clock_clients)},
         reset_client_(std::move(reset_client)) {}
 
   // PlatformExtension interface implementation.
   zx::result<> Start() override { return PowerOn(true); }
-  zx::result<> Suspend() override { return PowerOff(); }
-  zx::result<> Resume() override { return PowerOn(false); }
+  zx::result<> Suspend() override {
+    // TODO(450597235): Remove this check after the soft transition has been completed.
+    if (mmio_.get_size() >= HsPhyCtrl::Get().addr() + sizeof(HsPhyCtrl::ValueType)) {
+      HsPhyCtrl::Get().ReadFrom(&mmio_).set_utmi_otg_vbus_valid(false).WriteTo(&mmio_);
+    }
+    // TODO(450597235): Enable power management.
+    // return PowerOff();
+    return zx::ok();
+  }
+  zx::result<> Resume() override {
+    // TODO(450597235): Enable power management.
+    // if (zx::result<> result = PowerOn(false); result.is_error()) {
+    //   return result;
+    // }
+    // TODO(450597235): Remove this check after the soft transition has been completed.
+    if (mmio_.get_size() >= HsPhyCtrl::Get().addr() + sizeof(HsPhyCtrl::ValueType)) {
+      HsPhyCtrl::Get().ReadFrom(&mmio_).set_utmi_otg_vbus_valid(true).WriteTo(&mmio_);
+    }
+    return zx::ok();
+  }
 
  private:
   zx::result<> PowerOn(bool driver_start) {
@@ -114,13 +142,15 @@ class QualcommExtension final : public PlatformExtension {
   zx::result<> VoteClocks(bool on);
 
   State state_ = State::kNone;
+  fdf::MmioView mmio_;
   std::unordered_map<BusPath, fidl::ClientEnd<fhi::Path>> interconnect_clients_;
   std::unordered_map<std::string, fidl::ClientEnd<fvreg::Vreg>> regulator_clients_;
   std::unordered_map<std::string, fidl::ClientEnd<fclock::Clock>> clock_clients_;
   fidl::ClientEnd<freset::Reset> reset_client_;
 };
 
-std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent) {
+std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent,
+                                                             const fdf::MmioView& mmio) {
   // Get all resources.
   static const std::unordered_map<BusPath, const std::string> kBusPathNames{
       {BusPath::kUsbDdr, "interconnect-usb-ddr"},
@@ -156,7 +186,7 @@ std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent) {
     return nullptr;
   }
 
-  return std::make_unique<QualcommExtension>(std::move(interconnect_clients),
+  return std::make_unique<QualcommExtension>(mmio, std::move(interconnect_clients),
                                              std::move(clock_clients), *std::move(reset_client));
 }
 
@@ -302,7 +332,7 @@ zx::result<> Dwc3::Start() {
     return zx::error(status);
   }
 
-  if (std::unique_ptr extension = QualcommExtension::Create(this); extension) {
+  if (std::unique_ptr extension = QualcommExtension::Create(this, get_mmio()->View(0)); extension) {
     if (zx::result result = extension->Start(); result.is_error()) {
       fdf::error("Failed platform extension start: {}", result);
       return result.take_error();
@@ -1052,6 +1082,16 @@ void Dwc3::OnConnectStatusChanged(
     fdf::error("WatchConnectStatusChanged returned {}",
                zx_status_get_string(result.error_value().domain_error()));
     return;
+  }
+
+  if (result->connected()) {
+    if (zx::result result = platform_extension_->Resume(); result.is_error()) {
+      return;
+    }
+  } else {
+    if (zx::result result = platform_extension_->Suspend(); result.is_error()) {
+      return;
+    }
   }
 }
 
