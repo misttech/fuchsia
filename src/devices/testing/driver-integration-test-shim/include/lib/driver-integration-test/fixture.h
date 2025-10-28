@@ -48,6 +48,11 @@ class IsolatedDevmgr {
     std::unique_ptr<fidl::WireServer<fuchsia_boot::Arguments>> fake_boot_args;
   };
 
+  IsolatedDevmgr() = default;
+  IsolatedDevmgr(IsolatedDevmgr&&);
+  IsolatedDevmgr& operator=(IsolatedDevmgr&&);
+  ~IsolatedDevmgr();
+
   static Args DefaultArgs() { return Args{}; }
 
   // Launch a new isolated devmgr.  The instance will be destroyed when

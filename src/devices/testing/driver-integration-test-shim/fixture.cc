@@ -369,4 +369,27 @@ zx_status_t IsolatedDevmgr::Create(Args* args, IsolatedDevmgr* out) {
   return ZX_OK;
 }
 
+IsolatedDevmgr::IsolatedDevmgr(IsolatedDevmgr&& other) { *this = std::move(other); }
+
+IsolatedDevmgr& IsolatedDevmgr::operator=(IsolatedDevmgr&& other) {
+  if (this == &other) {
+    return *this;
+  }
+  loop_ = std::move(other.loop_);
+  realm_ = std::move(other.realm_);
+  devfs_root_ = std::move(other.devfs_root_);
+  other.loop_ = nullptr;
+  other.realm_ = nullptr;
+  other.devfs_root_ = {};
+  return *this;
+}
+
+IsolatedDevmgr::~IsolatedDevmgr() {
+  // Synchronously shut down the loop.  The loop runs on another thread, and that thread might
+  // racily handle local component instance FIDL messages after we've destroyed this instance.
+  if (loop_) {
+    loop_->Shutdown();
+  }
+}
+
 }  // namespace driver_integration_test
