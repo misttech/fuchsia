@@ -35,7 +35,7 @@ use fidl::HandleBased;
 use fidl::encoding::ProxyChannelBox;
 use fidl::endpoints::RequestStream;
 use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
-use fuchsia_inspect::{NumericProperty, Property};
+use fuchsia_inspect::{IntProperty, NumericProperty, Property};
 use futures::channel::mpsc;
 use futures::sink::SinkExt;
 use futures::{StreamExt, TryStreamExt};
@@ -91,6 +91,24 @@ macro_rules! log_long_op {
             }
         }
     }};
+}
+
+/// Increments the value of an underlying inspect property during its lifetime.
+struct ScopedInc<'a> {
+    property: &'a IntProperty,
+}
+
+impl<'a> ScopedInc<'a> {
+    fn new(property: &'a IntProperty) -> Self {
+        property.add(1);
+        Self { property }
+    }
+}
+
+impl<'a> Drop for ScopedInc<'a> {
+    fn drop(&mut self) {
+        self.property.add(-1);
+    }
 }
 
 /// Compares two optional deadlines and returns true if the `before is different from `after.
@@ -1043,6 +1061,23 @@ async fn wake_timer_loop(
     let current_hw_deadline_prop = hw_node.create_string("current_deadline", "");
     let remaining_until_alarm_prop = hw_node.create_string("remaining_until_alarm", "");
 
+    // Debug nodes for b/454085350.
+    let debug_node = inspect.create_child("debug_node");
+    let start_notify_setup_count = debug_node.create_int("start_notify_setup", 0);
+    let start_count = debug_node.create_int("start_count", 0);
+    let i1_count = debug_node.create_int("i1", 0);
+    let stop_count = debug_node.create_int("stop", 0);
+    let stop_responder_count = debug_node.create_int("stop_responder", 0);
+    let stop_hrtimer_count = debug_node.create_int("stop_hrtimer", 0);
+    let schedule_hrtimer_count = debug_node.create_int("schedule_hrtimer", 0);
+    let alarm_count = debug_node.create_int("alarm", 0);
+    let alarm_fidl_count = debug_node.create_int("alarm_fidl", 0);
+    let alarm_driver_count = debug_node.create_int("alarm_driver", 0);
+    let utc_update_count = debug_node.create_int("utc_update", 0);
+    let status_count = debug_node.create_int("status", 0);
+
+    let hrtimer_node = debug_node.create_child("hrtimer");
+
     while let Some(cmd) = cmds.next().await {
         trace::duration!(c"alarms", c"Cmd");
         // Use a consistent notion of "now" across commands.
@@ -1051,6 +1086,7 @@ async fn wake_timer_loop(
         trace::instant!(c"alarms", c"wake_timer_loop", trace::Scope::Process, "now" => now.into_nanos());
         match cmd {
             Cmd::Start { conn_id, deadline, mode, alarm_id, responder } => {
+                let _i = ScopedInc::new(&start_count);
                 trace::duration!(c"alarms", c"Cmd::Start");
                 fuchsia_trace::flow_step!(
                     c"alarms",
@@ -1067,6 +1103,7 @@ async fn wake_timer_loop(
                 );
 
                 defer! {
+                    let _i = ScopedInc::new(&start_notify_setup_count);
                     // This is the only option that requires further action.
                     if let Some(mode) = mode {
                         if let fta::SetMode::NotifySetupDone(setup_done) = mode {
@@ -1101,20 +1138,23 @@ async fn wake_timer_loop(
                         &keep_alive.get_koid().unwrap()
                     );
 
-                    if let Err(e) = responder
-                        .send(&alarm_id, Ok(keep_alive))
-                        .expect("responder is always present")
                     {
-                        error!(
-                            "wake_timer_loop: conn_id: {conn_id:?}, alarm: {alarm_id}: could not notify, dropping: {e}",
-                        );
-                    } else {
-                        debug!(
-                            "wake_timer_loop: conn_id: {conn_id:?}, alarm: {alarm_id}: EXPIRED IMMEDIATELY\n\tdeadline({}) <= now({})\n\tfull deadline: {}",
-                            format_timer(deadline_boot.into()),
-                            format_timer(now.into()),
-                            deadline,
-                        )
+                        let _i1 = ScopedInc::new(&i1_count);
+                        if let Err(e) = responder
+                            .send(&alarm_id, Ok(keep_alive))
+                            .expect("responder is always present")
+                        {
+                            error!(
+                                "wake_timer_loop: conn_id: {conn_id:?}, alarm: {alarm_id}: could not notify, dropping: {e}",
+                            );
+                        } else {
+                            debug!(
+                                "wake_timer_loop: conn_id: {conn_id:?}, alarm: {alarm_id}: EXPIRED IMMEDIATELY\n\tdeadline({}) <= now({})\n\tfull deadline: {}",
+                                format_timer(deadline_boot.into()),
+                                format_timer(now.into()),
+                                deadline,
+                            )
+                        }
                     }
                 } else {
                     trace::duration!(c"alarms", c"Cmd::Start:regular");
@@ -1156,11 +1196,16 @@ async fn wake_timer_loop(
                             snd.clone(),
                             &timer_config,
                             &schedule_delay_prop,
+                            &hrtimer_node,
                         )));
                     }
                 }
             }
             Cmd::StopById { timer_id, done } => {
+                let _i = ScopedInc::new(&stop_count);
+                defer! {
+                    signal(&done);
+                }
                 trace::duration!(c"alarms", c"Cmd::StopById", "alarm_id" => timer_id.alarm());
                 fuchsia_trace::flow_step!(
                     c"alarms",
@@ -1173,17 +1218,22 @@ async fn wake_timer_loop(
                 if let Some(timer_node) = timers.remove_by_id(&timer_id) {
                     let deadline_after = timers.peek_deadline_as_boot();
 
-                    if let Some(res) = timer_node
-                        .get_responder()
-                        .send(timer_node.id().alarm(), Err(fta::WakeAlarmsError::Dropped))
                     {
-                        // We must reply to the responder to keep the connection open.
-                        res.expect("infallible");
+                        let _i = ScopedInc::new(&stop_responder_count);
+                        if let Some(res) = timer_node
+                            .get_responder()
+                            .send(timer_node.id().alarm(), Err(fta::WakeAlarmsError::Dropped))
+                        {
+                            // We must reply to the responder to keep the connection open.
+                            res.expect("infallible");
+                        }
                     }
                     if is_deadline_changed(deadline_before, deadline_after) {
+                        let _i = ScopedInc::new(&stop_hrtimer_count);
                         log_long_op!(stop_hrtimer(&timer_proxy, &timer_config));
                     }
                     if let Some(deadline) = deadline_after {
+                        let _i = ScopedInc::new(&schedule_hrtimer_count);
                         // Reschedule the hardware timer if the removed timer is the earliest one,
                         // and another one exists.
                         let new_timer_state = log_long_op!(schedule_hrtimer(
@@ -1194,6 +1244,7 @@ async fn wake_timer_loop(
                             snd.clone(),
                             &timer_config,
                             &schedule_delay_prop,
+                            &hrtimer_node,
                         ));
                         let old_hrtimer_status = hrtimer_status.replace(new_timer_state);
                         if let Some(task) = old_hrtimer_status.map(|ev| ev.task) {
@@ -1209,9 +1260,10 @@ async fn wake_timer_loop(
                 } else {
                     debug!("wake_timer_loop: STOP: no active timer to stop: {}", timer_id);
                 }
-                signal(&done);
             }
             Cmd::Alarm { expired_deadline, keep_alive } => {
+                let _i = ScopedInc::new(&alarm_count);
+
                 trace::duration!(c"alarms", c"Cmd::Alarm");
                 // Expire all eligible timers, based on "now".  This is because
                 // we may have woken up earlier than the actual deadline. This
@@ -1242,10 +1294,13 @@ async fn wake_timer_loop(
                         snd.clone(),
                         &timer_config,
                         &schedule_delay_prop,
+                        &hrtimer_node,
                     ))),
                 }
             }
             Cmd::AlarmFidlError { expired_deadline, error } => {
+                let _i = ScopedInc::new(&alarm_fidl_count);
+
                 trace::duration!(c"alarms", c"Cmd::AlarmFidlError");
                 // We do not have a wake lease, so the system may sleep before
                 // we get to schedule a new timer. We have no way to avoid it
@@ -1277,6 +1332,7 @@ async fn wake_timer_loop(
                         snd.clone(),
                         &timer_config,
                         &schedule_delay_prop,
+                        &hrtimer_node,
                     ))),
                 }
             }
@@ -1287,6 +1343,8 @@ async fn wake_timer_loop(
                 resolution_nanos,
                 ticks,
             } => {
+                let _i = ScopedInc::new(&alarm_driver_count);
+
                 trace::duration!(c"alarms", c"Cmd::AlarmDriverError");
                 let (_dummy_lease, peer) = zx::EventPair::create();
                 debug!(
@@ -1328,12 +1386,15 @@ async fn wake_timer_loop(
                                 snd.clone(),
                                 &timer_config,
                                 &schedule_delay_prop,
+                                &hrtimer_node,
                             ))),
                         }
                     }
                 }
             }
             Cmd::UtcUpdated { transform } => {
+                let _i = ScopedInc::new(&utc_update_count);
+
                 trace::duration!(c"alarms", c"Cmd::UtcUpdated");
                 debug!("wake_timer_loop: applying new clock transform: {transform:?}");
 
@@ -1356,6 +1417,7 @@ async fn wake_timer_loop(
                             snd.clone(),
                             &timer_config,
                             &schedule_delay_prop,
+                            &hrtimer_node,
                         ))),
                     }
                 }
@@ -1363,6 +1425,8 @@ async fn wake_timer_loop(
         }
 
         {
+            let _i = ScopedInc::new(&status_count);
+
             // Print and record diagnostics after each iteration, record the
             // duration for performance awareness.  Note that iterations happen
             // only occasionally, so these stats can remain unchanged for a long
@@ -1416,6 +1480,7 @@ async fn wake_timer_loop(
 /// - `timer_config`: a configuration of the hardware timer showing supported resolutions and
 ///   max tick value.
 /// - `schedule_delay_histogram`: inspect instrumentation.
+/// - `debug_node`: used for keeping debug counters.
 async fn schedule_hrtimer(
     scope: fasync::ScopeHandle,
     now: fasync::BootInstant,
@@ -1424,11 +1489,18 @@ async fn schedule_hrtimer(
     mut command_send: mpsc::Sender<Cmd>,
     timer_config: &TimerConfig,
     _schedule_delay_histogram: &finspect::IntExponentialHistogramProperty,
+    debug_node: &finspect::Node,
 ) -> TimerState {
     let timeout = std::cmp::max(zx::BootDuration::ZERO, deadline - now);
     trace::duration!(c"alarms", c"schedule_hrtimer", "timeout" => timeout.into_nanos());
     // When signaled, the hrtimer has been scheduled.
     let hrtimer_scheduled = zx::Event::create();
+
+    let schedule_count = debug_node.create_int("schedule", 0);
+    let hrtimer_wait_count = debug_node.create_int("hrtimer_wait", 0);
+    let wait_signaled_count = debug_node.create_int("wait_signaled", 0);
+
+    let _sc = ScopedInc::new(&schedule_count);
 
     debug!(
         "schedule_hrtimer:\n\tnow: {}\n\tdeadline: {}\n\ttimeout: {}",
@@ -1449,12 +1521,16 @@ async fn schedule_hrtimer(
         "ticks" => useful_ticks
     );
     let timer_config_id = timer_config.id;
-    let start_and_wait_fut = hrtimer.start_and_wait(
-        timer_config.id,
-        &ffhh::Resolution::Duration(resolution_nanos),
-        useful_ticks,
-        clone_handle(&hrtimer_scheduled),
-    );
+    let start_and_wait_fut = {
+        let _sc = ScopedInc::new(&hrtimer_wait_count);
+        hrtimer.start_and_wait(
+            timer_config.id,
+            &ffhh::Resolution::Duration(resolution_nanos),
+            useful_ticks,
+            clone_handle(&hrtimer_scheduled),
+        )
+    };
+
     let hrtimer_scheduled_if_error = clone_handle(&hrtimer_scheduled);
     let hrtimer_task = scope.spawn_local(async move {
         debug!("hrtimer_task: waiting for hrtimer driver response");
@@ -1510,8 +1586,11 @@ async fn schedule_hrtimer(
     }).into();
     debug!("schedule_hrtimer: waiting for event to be signaled");
 
-    // We must wait here to ensure that the wake alarm has been scheduled.
-    log_long_op!(wait_signaled(&hrtimer_scheduled));
+    {
+        let _i = ScopedInc::new(&wait_signaled_count);
+        // We must wait here to ensure that the wake alarm has been scheduled.
+        log_long_op!(wait_signaled(&hrtimer_scheduled));
+    }
 
     let now_after_signaled = fasync::BootInstant::now();
     let duration_until_scheduled: zx::BootDuration = (now_after_signaled - now).into();
@@ -2408,7 +2487,7 @@ mod tests {
         // The values in the inspector tree are fixed because the test
         // runs fully deterministically in fake time.
         assert_data_tree!(finspect::component::inspector(), root: {
-            test: {
+            test: contains {
                 hardware: {
                     // All alarms fired, so this should be "none".
                     current_deadline: "(none)",
