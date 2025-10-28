@@ -160,6 +160,26 @@ impl<'a> Into<TcpOption<'a>> for TimestampOption {
     }
 }
 
+#[cfg(any(test, feature = "testutils"))]
+mod testutils {
+    use super::*;
+
+    impl TimestampOption {
+        /// Construct a new `TimestampOption` for use in tests.
+        pub const fn new(ts_val: Timestamp<Unitless>, ts_echo_reply: Timestamp<Unitless>) -> Self {
+            TimestampOption { ts_val, ts_echo_reply }
+        }
+    }
+
+    impl<U> Timestamp<U> {
+        /// Convert the timestamp into one without units.
+        pub const fn discard_unit(self) -> Timestamp<Unitless> {
+            let Timestamp { timestamp, unit: _ } = self;
+            Timestamp { timestamp, unit: PhantomData }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

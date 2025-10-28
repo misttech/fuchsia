@@ -54,10 +54,10 @@ use netstack3_base::{
     AnyDevice, BidirectionalConverter as _, ContextPair, Control, CoreTimerContext,
     CoreTxMetadataContext, CtxPair, DeferredResourceRemovalContext, DeviceIdContext,
     EitherDeviceId, ExistsError, HandleableTimer, IcmpErrorCode, Inspector, InspectorDeviceExt,
-    InspectorExt, InstantBindingsTypes, IpDeviceAddr, IpExt, LocalAddressError, Mark, MarkDomain,
-    Mss, OwnedOrRefsBidirectionalConverter, PortAllocImpl, ReferenceNotifiersExt as _,
-    RemoveResourceResult, ResourceCounterContext as _, RngContext, Segment, SeqNum,
-    SettingsContext, StrongDeviceIdentifier, TimerBindingsTypes, TimerContext,
+    InspectorExt, InstantBindingsTypes, InstantContext as _, IpDeviceAddr, IpExt,
+    LocalAddressError, Mark, MarkDomain, Mss, OwnedOrRefsBidirectionalConverter, PortAllocImpl,
+    ReferenceNotifiersExt as _, RemoveResourceResult, ResourceCounterContext as _, RngContext,
+    Segment, SeqNum, SettingsContext, StrongDeviceIdentifier, TimerBindingsTypes, TimerContext,
     TxMetadataBindingsTypes, WeakDeviceIdentifier, ZonedAddressError,
 };
 use netstack3_filter::{FilterIpExt, SocketOpsFilterBindingContext, Tuple};
@@ -3389,10 +3389,11 @@ where
                     },
                 };
 
+                let now = bindings_ctx.now();
                 match core_ctx {
                     MaybeDualStack::NotDualStack((core_ctx, converter)) => {
                         let (conn, addr) = converter.convert(conn);
-                        if let Some(ack) = conn.state.poll_receive_data_dequeued() {
+                        if let Some(ack) = conn.state.poll_receive_data_dequeued(now) {
                             send_tcp_segment(
                                 core_ctx,
                                 bindings_ctx,
@@ -3407,7 +3408,7 @@ where
                     MaybeDualStack::DualStack((core_ctx, converter)) => {
                         match converter.convert(conn) {
                             EitherStack::ThisStack((conn, addr)) => {
-                                if let Some(ack) = conn.state.poll_receive_data_dequeued() {
+                                if let Some(ack) = conn.state.poll_receive_data_dequeued(now) {
                                     send_tcp_segment(
                                         core_ctx,
                                         bindings_ctx,
@@ -3420,7 +3421,7 @@ where
                                 }
                             }
                             EitherStack::OtherStack((conn, addr)) => {
-                                if let Some(ack) = conn.state.poll_receive_data_dequeued() {
+                                if let Some(ack) = conn.state.poll_receive_data_dequeued(now) {
                                     send_tcp_segment(
                                         core_ctx,
                                         bindings_ctx,
@@ -4749,7 +4750,7 @@ fn close_pending_socket<WireI, SockI, DC, BC>(
 {
     debug!("aborting pending socket {sock_id:?}");
     let (maybe_reset, newly_closed) =
-        conn.state.abort(&TcpCountersRefs::from_ctx(core_ctx, sock_id));
+        conn.state.abort(&TcpCountersRefs::from_ctx(core_ctx, sock_id), bindings_ctx.now());
     handle_newly_closed(core_ctx, bindings_ctx, newly_closed, demux_id, conn_addr, timer);
     if let Some(reset) = maybe_reset {
         let ConnAddr { ip, device: _ } = conn_addr;
@@ -5382,9 +5383,7 @@ where
         conn_addr.ip.local,
         conn_addr.ip.remote,
     );
-    // TODO(https://fxbug.dev/360401604): Use this when initializing state for
-    // the timestamp option.
-    let _timestamp_offset = timestamp_offset.generate::<SocketIpAddr<WireI::Addr>, NonZeroU16>(
+    let timestamp_offset = timestamp_offset.generate::<SocketIpAddr<WireI::Addr>, NonZeroU16>(
         bindings_ctx.now(),
         conn_addr.ip.local,
         conn_addr.ip.remote,
@@ -5399,6 +5398,7 @@ where
     Ok((move || {
         let (syn_sent, syn) = Closed::<Initial>::connect(
             isn,
+            timestamp_offset,
             now,
             active_open,
             buffer_sizes,
