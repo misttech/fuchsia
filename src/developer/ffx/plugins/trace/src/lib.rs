@@ -4,17 +4,17 @@
 
 use anyhow::{Result, anyhow};
 use errors::ffx_bail;
+use fdomain_fuchsia_tracing::{BufferingMode, KnownCategory};
+use fdomain_fuchsia_tracing_controller::{
+    ProviderInfo, ProviderStats, ProvisionerProxy, RecordingError, SessionManagerProxy, StopResult,
+    TraceConfig, TraceOptions, Trigger,
+};
 use ffx_config::EnvironmentContext;
 use ffx_target::get_target_specifier;
 use ffx_trace_args::{Start, Stop, Symbolize, TraceCommand, TraceSubCommand};
 use ffx_tracing::{self as ffx_trace, FidlLibraries};
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{Deferred, FfxMain, FfxTool, bug, deferred};
-use fidl_fuchsia_tracing::{BufferingMode, KnownCategory};
-use fidl_fuchsia_tracing_controller::{
-    ProviderInfo, ProviderStats, ProvisionerProxy, RecordingError, SessionManagerProxy, StopResult,
-    TraceConfig, TraceOptions, Trigger,
-};
 use futures::future::{BoxFuture, Future, FutureExt as _};
 use prettytable::format::FormatBuilder;
 use prettytable::{Table, cell, row};
@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::io::{Stdin, stdin};
 use std::path::{Component, PathBuf};
 use std::time::Duration;
-use target_holders::moniker;
+use target_holders::fdomain::moniker;
 use term_grid::Grid;
 #[cfg_attr(test, allow(unused))]
 use termion::terminal_size;
@@ -819,20 +819,21 @@ fn canonical_path<T: ToString>(output_path: T) -> Result<String> {
 mod tests {
     use super::*;
     use errors::ResultExt as _;
+    use fdomain_client::Client as FDomainClient;
+    use fdomain_client::fidl::{ControlHandle, Responder};
+    use fdomain_fuchsia_tracing as tracing;
+    use fdomain_fuchsia_tracing_controller::{
+        self as tracing_controller, Action, TraceStatus, Trigger,
+    };
     use ffx_trace_args::{ListCategories, ListProviders, Start, Status, Stop, Symbolize};
     use ffx_writer::{Format, TestBuffers};
-    use fidl::endpoints::{ControlHandle, Responder};
-    use fidl_fuchsia_tracing as tracing;
-    use fidl_fuchsia_tracing_controller::{
-        self as tracing_controller, Action, SessionRequest, StopResult, TraceStatus, Trigger,
-    };
-    use futures::TryStreamExt;
     use pretty_assertions::assert_eq;
     use regex::Regex;
     use serde_json::json;
     use std::io::Write;
     use std::matches;
-    use target_holders::fake_proxy;
+    use std::sync::Arc;
+    use target_holders::fdomain::fake_proxy;
     use tempfile::{Builder, NamedTempFile, TempDir};
 
     #[test]
@@ -902,8 +903,8 @@ mod tests {
         return result;
     }
 
-    fn setup_fake_session_manager() -> Deferred<SessionManagerProxy> {
-        Deferred::from_output(Ok(fake_proxy(|req| match req {
+    fn setup_fake_session_manager(client: Arc<FDomainClient>) -> Deferred<SessionManagerProxy> {
+        Deferred::from_output(Ok(fake_proxy(client, |req| match req {
             tracing_controller::SessionManagerRequest::GetKnownCategories { responder, .. } => {
                 responder.send(&fake_known_categories()).expect("should respond");
             }
@@ -956,45 +957,6 @@ mod tests {
         })))
     }
 
-    fn _setup_fake_session_manager() -> Deferred<ProvisionerProxy> {
-        Deferred::from_output(Ok(fake_proxy(|req| match req {
-            tracing_controller::ProvisionerRequest::GetKnownCategories { responder, .. } => {
-                responder.send(&fake_known_categories()).expect("should respond");
-            }
-            tracing_controller::ProvisionerRequest::GetProviders { responder, .. } => {
-                responder.send(&fake_provider_infos()).expect("should respond");
-            }
-            tracing_controller::ProvisionerRequest::InitializeTracing {
-                controller,
-                config: _,
-                output: _,
-                control_handle: _,
-            } => {
-                let mut stream = controller.into_stream();
-                fuchsia_async::Task::local(async move {
-                    while let Ok(Some(req)) = stream.try_next().await {
-                        match req {
-                            SessionRequest::StartTracing { responder, .. } => {
-                                let response = Ok(());
-                                responder.send(response).expect("Failed to start")
-                            }
-                            SessionRequest::StopTracing { responder, .. } => {
-                                let result = StopResult::default();
-                                responder.send(Ok(&result)).expect("Respond to Stop")
-                            }
-                            SessionRequest::WatchAlert { responder, .. } => {
-                                responder.send("").expect("Respond to WatchAlert")
-                            }
-                            r => panic!("unexpected request: {:#?}", r),
-                        }
-                    }
-                })
-                .detach();
-            }
-            r => panic!("unsupported req: {:?}", r),
-        })))
-    }
-
     fn fake_known_categories() -> Vec<tracing::KnownCategory> {
         vec![
             tracing::KnownCategory {
@@ -1040,8 +1002,10 @@ mod tests {
         infos
     }
 
-    fn setup_closed_fake_controller_proxy() -> Deferred<ProvisionerProxy> {
-        Deferred::from_output(Ok(fake_proxy(|req| match req {
+    fn setup_closed_fake_controller_proxy(
+        client: &Arc<FDomainClient>,
+    ) -> Deferred<ProvisionerProxy> {
+        Deferred::from_output(Ok(fake_proxy(Arc::clone(client), |req| match req {
             tracing_controller::ProvisionerRequest::GetKnownCategories { responder, .. } => {
                 responder.control_handle().shutdown();
             }
@@ -1054,13 +1018,14 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_list_categories() {
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
 
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
-            session_manager: setup_fake_session_manager(),
+            session_manager: setup_fake_session_manager(client),
             cmd: TraceCommand { sub_cmd: TraceSubCommand::ListCategories(ListCategories {}) },
             context: env.context.clone(),
         };
@@ -1203,13 +1168,14 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_list_categories_machine() {
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(Some(Format::Json), &test_buffers);
 
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
-            session_manager: setup_fake_session_manager(),
+            session_manager: setup_fake_session_manager(client),
             context: env.context.clone(),
             cmd: TraceCommand { sub_cmd: TraceSubCommand::ListCategories(ListCategories {}) },
         };
@@ -1228,12 +1194,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_list_categories_peer_closed() {
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
 
         let tool = TraceTool {
-            provisioner: setup_closed_fake_controller_proxy(),
+            provisioner: setup_closed_fake_controller_proxy(&client),
             session_manager: Deferred::from_output(Err(fho::user_error!("not found"))),
             context: env.context.clone(),
             cmd: TraceCommand { sub_cmd: TraceSubCommand::ListCategories(ListCategories {}) },
@@ -1247,13 +1214,14 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_list_providers() {
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
 
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
-            session_manager: setup_fake_session_manager(),
+            session_manager: setup_fake_session_manager(client),
             context: env.context.clone(),
             cmd: TraceCommand { sub_cmd: TraceSubCommand::ListProviders(ListProviders {}) },
         };
@@ -1268,13 +1236,14 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_list_providers_peer_closed() {
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
         let cmd = TraceCommand { sub_cmd: TraceSubCommand::ListProviders(ListProviders {}) };
 
         let tool = TraceTool {
-            provisioner: setup_closed_fake_controller_proxy(),
+            provisioner: setup_closed_fake_controller_proxy(&client),
             session_manager: Deferred::from_output(Err(fho::user_error!("not found"))),
             context: env.context.clone(),
             cmd,
@@ -1288,12 +1257,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_list_providers_machine() {
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(Some(Format::Json), &test_buffers);
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
-            session_manager: setup_fake_session_manager(),
+            session_manager: setup_fake_session_manager(client),
             context: env.context.clone(),
             cmd: TraceCommand { sub_cmd: TraceSubCommand::ListProviders(ListProviders {}) },
         };
@@ -1306,6 +1276,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_start() {
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1325,7 +1296,7 @@ mod tests {
 
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
-            session_manager: setup_fake_session_manager(),
+            session_manager: setup_fake_session_manager(client),
             context: env.context.clone(),
             cmd: TraceCommand { sub_cmd: TraceSubCommand::Start(start_opts.clone()) },
         };
@@ -1350,13 +1321,14 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_status() {
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
 
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
-            session_manager: setup_fake_session_manager(),
+            session_manager: setup_fake_session_manager(client),
             context: env.context.clone(),
             cmd: TraceCommand { sub_cmd: TraceSubCommand::Status(Status {}) },
         };
@@ -1375,6 +1347,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_stop() {
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1388,7 +1361,7 @@ Triggers:
 
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
-            session_manager: setup_fake_session_manager(),
+            session_manager: setup_fake_session_manager(client),
             context: env.context.clone(),
             cmd: TraceCommand { sub_cmd: TraceSubCommand::Stop(stop_opts.clone()) },
         };
@@ -1403,6 +1376,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_stop_with_long_path() {
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1420,7 +1394,7 @@ Triggers:
         };
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
-            session_manager: setup_fake_session_manager(),
+            session_manager: setup_fake_session_manager(client),
             context: env.context.clone(),
             cmd: TraceCommand { sub_cmd: TraceSubCommand::Stop(stop_opts.clone()) },
         };
@@ -1434,6 +1408,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_start_verbose() {
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1453,7 +1428,7 @@ Triggers:
         };
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
-            session_manager: setup_fake_session_manager(),
+            session_manager: setup_fake_session_manager(client),
             context: env.context.clone(),
             cmd: TraceCommand { sub_cmd: TraceSubCommand::Start(start_opts.clone()) },
         };
@@ -1478,6 +1453,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_stop_verbose() {
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1490,7 +1466,7 @@ Triggers:
         };
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
-            session_manager: setup_fake_session_manager(),
+            session_manager: setup_fake_session_manager(client),
             context: env.context.clone(),
             cmd: TraceCommand { sub_cmd: TraceSubCommand::Stop(stop_opts.clone()) },
         };
@@ -1515,6 +1491,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_start_with_duration() {
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1535,7 +1512,7 @@ Triggers:
 
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
-            session_manager: setup_fake_session_manager(),
+            session_manager: setup_fake_session_manager(client),
             context: env.context.clone(),
             cmd: TraceCommand { sub_cmd: TraceSubCommand::Start(start_opts.clone()) },
         };
@@ -1549,6 +1526,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_start_with_duration_foreground() {
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1569,7 +1547,7 @@ Triggers:
 
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
-            session_manager: setup_fake_session_manager(),
+            session_manager: setup_fake_session_manager(client),
             context: env.context.clone(),
             cmd: TraceCommand { sub_cmd: TraceSubCommand::Start(start_opts.clone()) },
         };
@@ -1586,6 +1564,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_start_foreground() {
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1605,7 +1584,7 @@ Triggers:
 
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
-            session_manager: setup_fake_session_manager(),
+            session_manager: setup_fake_session_manager(client),
             context: env.context.clone(),
             cmd: TraceCommand { sub_cmd: TraceSubCommand::Start(start_opts.clone()) },
         };
@@ -1623,6 +1602,7 @@ Triggers:
 
     #[fuchsia::test]
     async fn test_large_buffer() {
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
@@ -1642,7 +1622,7 @@ Triggers:
 
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
-            session_manager: setup_fake_session_manager(),
+            session_manager: setup_fake_session_manager(client),
             context: env.context.clone(),
             cmd: TraceCommand { sub_cmd: TraceSubCommand::Start(start_opts.clone()) },
         };
@@ -1735,7 +1715,7 @@ Triggers:
 
         // Avoid being overly prescriptive about the actual contents of the errors. Just make sure
         // the basics are included and the thing we care about is inside.
-        use fidl_fuchsia_tracing_controller::RecordingError::*;
+        use fdomain_fuchsia_tracing_controller::RecordingError::*;
         let tests = vec![
             Test { error: TargetProxyOpen, matches: vec!["unable to connect", "ffx doctor"] },
             Test { error: RecordingAlreadyStarted, matches: vec!["already", target] },

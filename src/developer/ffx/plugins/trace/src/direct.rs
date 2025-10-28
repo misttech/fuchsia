@@ -7,11 +7,12 @@ use crate::{SessionManagerProxyType, TraceData};
 use anyhow::Result;
 use async_fs::File;
 use errors::ffx_bail;
+use fdomain_client::fidl::Proxy;
+use fdomain_fuchsia_tracing_controller::{RecordingError, TraceConfig, TraceOptions};
 use ffx_config::EnvironmentContext;
 use fho::{bug, return_bug, return_user_error};
-use fidl_fuchsia_tracing_controller::{RecordingError, TraceConfig, TraceOptions};
 use std::time::Duration;
-use trace_task::TraceTask;
+use trace_task_fdomain::TraceTask;
 
 pub(crate) async fn trace(
     proxy: SessionManagerProxyType,
@@ -31,11 +32,11 @@ pub(crate) async fn trace(
                     .triggers
                     .map(|tv| {
                         tv.iter()
-                            .map(|t| trace_task::Trigger {
+                            .map(|t| trace_task_fdomain::Trigger {
                                 action: t
                                     .action
                                     .as_ref()
-                                    .map(|_| trace_task::TriggerAction::Terminate),
+                                    .map(|_| trace_task_fdomain::TriggerAction::Terminate),
                                 alert: t.alert.clone(),
                             })
                             .collect()
@@ -97,10 +98,8 @@ pub(crate) async fn stop_tracing(
             stop_result: task.stop_and_receive_data(output).await.map_err(|e| bug!(e))?,
         })
     } else {
-        let (client, server) = fidl::Socket::create_stream();
-        let client = fidl::AsyncSocket::from_socket(client);
-
         if let SessionManagerProxyType::SessionManager(session_mgr_proxy) = trace_proxy {
+            let (client, server) = session_mgr_proxy.domain().create_stream_socket();
             let join_result = futures::try_join!(download_trace(client, output_file), async {
                 log::info!("Calling end_session.");
                 // Always pass 0 for the session id, multiple sessions are not supported (yet).
@@ -136,7 +135,7 @@ pub(crate) async fn stop_tracing(
 }
 
 async fn download_trace(
-    read_socket: fidl::AsyncSocket,
+    read_socket: fdomain_client::Socket,
     output_file: &str,
 ) -> Result<u64, anyhow::Error> {
     let mut output =

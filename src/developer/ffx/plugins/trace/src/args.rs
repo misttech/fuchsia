@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
-use fidl_fuchsia_tracing::BufferingMode;
-use fidl_fuchsia_tracing_controller::{Action, Trigger};
+use fdomain_fuchsia_tracing::BufferingMode;
+use fdomain_fuchsia_tracing_controller::{Action, Trigger};
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(
