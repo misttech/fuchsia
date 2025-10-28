@@ -435,7 +435,7 @@ build_api_module("bazel_build_events_logs") {
   data_keys = [ "bazel_build_events_log" ]
   deps = [
     ":default",
-    "//build/bazel/bazel_sdk:bazel_sdk_tests",
+    "//:root_targets",
   ]
 }
 
@@ -2215,9 +2215,9 @@ generated_file("bazel_build_action_targets") {
   deps = [
            ":default",
 
-           # TODO(https://fxbug.dev/450890840): Remove this hard-coded paths
-           # when our builder fint parameters files are fixed.
-           "//sdk:final_fuchsia_idk.exported",
+           # //:root_targets has bazel_action() dependencies that are always defined
+           # in the GN graph, so depend on it.
+           "//:root_targets",
          ] + extra_bazel_build_action_labels
 
   data_keys = [ "bazel_build_actions" ]
@@ -2464,12 +2464,12 @@ group("developer_host_tools") {
   }
 }
 
-# IMPORTANT: Nothing should depend on this target. It is here
-# to ensure that its dependencies are always in the GN build graph,
-# which is critical for a few generated_file() dependencies that
-# need to write their output at `gn gen` time.
+# IMPORTANT: Nothing should depend on this target, except other generated_file()
+# targets in this file. It is here to ensure that its dependencies are always in
+# the GN build graph even if they are not reachable from //:default.
 group("root_targets") {
   testonly = true
+  visibility = [ ":*" ]
   deps = [
     # These are only required by the core.x64-sdk_source_sets_and_shlibs-apiXX-build_only
     # builders. TODO(https://fxbug.dev/42082833): Remove these lines once these builders are
@@ -2482,6 +2482,9 @@ group("root_targets") {
 
     # The IDK generated for the in-tree @fuchsia_sdk Bazel workspace, and associated tests.
     "//sdk:bazel_in_tree_idk_tests",
+
+    # The Bazel SDK test suite running against the in-tree @fuchsia_sdk repository.
+    "//build/bazel/bazel_sdk:bazel_sdk_tests",
 
     # This target is listed explicitly by multiple CI bot build configurations.
     # See https://fxbug.dev/42162374 for context.
