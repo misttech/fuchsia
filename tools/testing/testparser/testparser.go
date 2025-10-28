@@ -7,6 +7,7 @@ package testparser
 
 import (
 	"bytes"
+	"fmt"
 	"regexp"
 
 	"go.fuchsia.dev/fuchsia/src/connectivity/network/testing/conformance/parseoutput"
@@ -57,7 +58,7 @@ func Parse(stdout []byte) ([]runtests.TestCaseResult, error) {
 	case zirconUtestPreamblePattern:
 		cases = parseZirconUtest(remainingLines)
 	case parseoutput.TestPreamblePattern:
-		cases = parseNetworkConformanceTest(remainingLines)
+		return nil, fmt.Errorf("this test did not parse its own test cases")
 	}
 
 	// Ensure that an empty set of cases is serialized to JSON as an empty
