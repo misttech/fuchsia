@@ -16,9 +16,7 @@ use starnix_uapi::{errno, error};
 use std::os::unix::thread::JoinHandleExt;
 use std::sync::Arc;
 use std::sync::mpsc::sync_channel;
-use zx::{
-    AsHandleRef, {self as zx},
-};
+use zx::AsHandleRef;
 
 pub fn execute_task_with_prerun_result<L, F, R, G>(
     locked: &mut Locked<L>,
@@ -71,11 +69,16 @@ where
     // Set the process handle to the new task's process, so the new thread is spawned in that
     // process.
     let process_handle = task_builder.task.thread_group().process.raw_handle();
-    #[allow(
-        clippy::undocumented_unsafe_blocks,
-        reason = "Force documented unsafe blocks in Starnix"
-    )]
+    // SAFETY: thrd_set_zx_process is a safe function that only sets the process handle for the
+    // current thread. Which handle is used here is only for diagnostics.
     let old_process_handle = unsafe { thrd_set_zx_process(process_handle) };
+    scopeguard::defer! {
+        // SAFETY: thrd_set_zx_process is a safe function that only sets the process handle for the
+        // current thread. Which handle is used here is only for diagnostics.
+        unsafe {
+            thrd_set_zx_process(old_process_handle);
+        };
+    };
 
     let weak_task = WeakRef::from(&task_builder.task);
     let ref_task = weak_task.upgrade().unwrap();
@@ -180,18 +183,6 @@ where
     sender
         .send(task_builder)
         .expect("receiver should not be disconnected because thread spawned successfully");
-
-    // We're done with the sender now. We drop the sender explicitly to free the memory earlier.
-    std::mem::drop(sender);
-
-    // Reset the process handle used to create threads.
-    #[allow(
-        clippy::undocumented_unsafe_blocks,
-        reason = "Force documented unsafe blocks in Starnix"
-    )]
-    unsafe {
-        thrd_set_zx_process(old_process_handle);
-    };
 
     Ok(())
 }
