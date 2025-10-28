@@ -72,10 +72,7 @@ class QualcommExtension final : public PlatformExtension {
   // PlatformExtension interface implementation.
   zx::result<> Start() override { return PowerOn(true); }
   zx::result<> Suspend() override {
-    // TODO(450597235): Remove this check after the soft transition has been completed.
-    if (mmio_.get_size() >= HsPhyCtrl::Get().addr() + sizeof(HsPhyCtrl::ValueType)) {
-      HsPhyCtrl::Get().ReadFrom(&mmio_).set_utmi_otg_vbus_valid(false).WriteTo(&mmio_);
-    }
+    HsPhyCtrl::Get().ReadFrom(&mmio_).set_utmi_otg_vbus_valid(false).WriteTo(&mmio_);
     // TODO(450597235): Enable power management.
     // return PowerOff();
     return zx::ok();
@@ -85,10 +82,7 @@ class QualcommExtension final : public PlatformExtension {
     // if (zx::result<> result = PowerOn(false); result.is_error()) {
     //   return result;
     // }
-    // TODO(450597235): Remove this check after the soft transition has been completed.
-    if (mmio_.get_size() >= HsPhyCtrl::Get().addr() + sizeof(HsPhyCtrl::ValueType)) {
-      HsPhyCtrl::Get().ReadFrom(&mmio_).set_utmi_otg_vbus_valid(true).WriteTo(&mmio_);
-    }
+    HsPhyCtrl::Get().ReadFrom(&mmio_).set_utmi_otg_vbus_valid(true).WriteTo(&mmio_);
     return zx::ok();
   }
 
@@ -159,6 +153,11 @@ std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent,
 
   static const std::vector<std::string> kClockNames{"core-clk", "iface-clk", "bus-aggr-clk",
                                                     "xo",       "sleep-clk", "utmi-clk"};
+
+  if (mmio.get_size() < HsPhyCtrl::Get().addr() + sizeof(HsPhyCtrl::ValueType)) {
+    fdf::info("MMIO is too small to be qualcomm chipset");
+    return nullptr;
+  }
 
   std::unordered_map<BusPath, fidl::ClientEnd<fhi::Path>> interconnect_clients;
   for (const auto& [path, node_name] : kBusPathNames) {

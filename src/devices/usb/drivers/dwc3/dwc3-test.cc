@@ -242,7 +242,7 @@ class Environment : public fdf_testing::Environment {
 
  private:
   static constexpr size_t kRegSize = sizeof(uint32_t);
-  static constexpr size_t kMmioRegionSize = 64 << 10;
+  static constexpr size_t kMmioRegionSize = 0x10'0000;
   static constexpr size_t kRegCount = kMmioRegionSize / kRegSize;
 
   fdf_fake::FakePDev pdev_;
