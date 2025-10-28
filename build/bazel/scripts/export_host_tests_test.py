@@ -17,7 +17,7 @@ import export_host_tests
 
 
 class HostInfoTest(unittest.TestCase):
-    def test_HostInfo(self):
+    def test_HostInfo(self) -> None:
         host_info = export_host_tests.HostInfo()
 
         expected_os = sys.platform
@@ -49,17 +49,17 @@ class HostInfoTest(unittest.TestCase):
 
 
 class HardlinkOrCopyFileTest(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self._td = tempfile.TemporaryDirectory()
         self.dir = Path(self._td.name)
         self.src_dir = self.dir / "source" / "dir"
         self.src_dir.mkdir(parents=True)
         self.dst_dir = self.dir / "dest" / "dir"
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self._td.cleanup()
 
-    def test_file(self):
+    def test_file(self) -> None:
         src_file = self.src_dir / "source_file"
         src_file.write_text("Hey!")
         dst_file = self.dst_dir / "target_file"
@@ -73,7 +73,7 @@ class HardlinkOrCopyFileTest(unittest.TestCase):
         self.assertEqual(src_info.st_dev, dst_info.st_dev)
         self.assertEqual(src_info.st_ino, dst_info.st_ino)
 
-    def test_absolute_symlink(self):
+    def test_absolute_symlink(self) -> None:
         src_link = self.src_dir / "source_link"
         src_link.symlink_to(self.dir / "nonexistent" / "path")
         dst_link = self.dst_dir / "target_link"
@@ -86,7 +86,7 @@ class HardlinkOrCopyFileTest(unittest.TestCase):
         self.assertFalse(dst_target.is_absolute())
         self.assertEqual(src_target, (dst_link.parent / dst_target).resolve())
 
-    def test_relative_symlink(self):
+    def test_relative_symlink(self) -> None:
         src_link = self.src_dir / "source_link"
         src_link.symlink_to(
             os.path.relpath(self.dir / "nonexistent" / "path", src_link.parent)
@@ -104,7 +104,7 @@ class HardlinkOrCopyFileTest(unittest.TestCase):
             (dst_link.parent / dst_target).resolve(),
         )
 
-    def test_directory(self):
+    def test_directory(self) -> None:
         with self.assertRaises(ValueError) as cm:
             export_host_tests.hardlink_or_copy_file(self.src_dir, self.dst_dir)
 
@@ -115,7 +115,7 @@ class HardlinkOrCopyFileTest(unittest.TestCase):
 
 
 class FilterBazelBinPathTest(unittest.TestCase):
-    def test_good_paths(self):
+    def test_good_paths(self) -> None:
         TEST_CASES = {
             "bazel-out/something/bin/foo": "foo",
             "bazel-out/something-else/bin/foo/bar": "foo/bar",
@@ -127,7 +127,7 @@ class FilterBazelBinPathTest(unittest.TestCase):
                 export_host_tests.filter_bazel_bin_path(input), expected, input
             )
 
-    def test_bad_paths(self):
+    def test_bad_paths(self) -> None:
         TEST_CASES = [
             "src/foo",
             "bazel-out/src/foo",
@@ -152,7 +152,7 @@ class HostTestInfoTest(unittest.TestCase):
         "runfiles_manifest": "bazel-out/k8-fastbuild/bin/src/foo/test_program.runfiles/MANIFEST",
     }
 
-    def test_construction_with_bad_label(self):
+    def test_construction_with_bad_label(self) -> None:
         host_info = export_host_tests.HostInfo()
         test_input = self.TEST_INPUT.copy()
         test_input["label"] = "//src/foo:test_program"
@@ -164,7 +164,7 @@ class HostTestInfoTest(unittest.TestCase):
             "Invalid Bazel target label does not begin with @: //src/foo:test_program",
         )
 
-    def test_generate_tests_json_entry_without_export_dir(self):
+    def test_generate_tests_json_entry_without_export_dir(self) -> None:
         host_info = export_host_tests.HostInfo()
         test_info = export_host_tests.HostTestInfo(self.TEST_INPUT, host_info)
         self.assertDictEqual(
@@ -181,7 +181,7 @@ class HostTestInfoTest(unittest.TestCase):
             },
         )
 
-    def test_generate_tests_json_entry_with_export_subdir(self):
+    def test_generate_tests_json_entry_with_export_subdir(self) -> None:
         host_info = export_host_tests.HostInfo()
         test_info = export_host_tests.HostTestInfo(
             self.TEST_INPUT, host_info, "bazel_host_tests"
@@ -200,7 +200,7 @@ class HostTestInfoTest(unittest.TestCase):
             },
         )
 
-    def test_export_to(self):
+    def test_export_to(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             execroot = Path(temp_dir) / "execroot"
             build_dir = Path(temp_dir) / "build_dir"
@@ -259,7 +259,7 @@ class HostTestInfoTest(unittest.TestCase):
                     target = (path.parent / target).resolve()
                 return target
 
-            def assertIsSymlinkTo(src_path: Path, dst_path: Path):
+            def assertIsSymlinkTo(src_path: Path, dst_path: Path) -> None:
                 self.assertTrue(
                     src_path.is_symlink(), f"Not a symlink: {src_path}"
                 )
