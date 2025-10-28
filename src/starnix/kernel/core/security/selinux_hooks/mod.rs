@@ -87,27 +87,6 @@ fn has_file_permissions(
     permissions: &[impl ForClass<FsNodeClass>],
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
-    todo_option_has_file_permissions(
-        None,
-        permission_check,
-        current_task,
-        subject_sid,
-        file,
-        permissions,
-        audit_context,
-    )
-}
-
-// TODO(nathaniel): merge this back into file_receive above from which it came.
-fn todo_option_has_file_permissions(
-    bug: Option<BugRef>,
-    permission_check: &PermissionCheck<'_>,
-    current_task: &CurrentTask,
-    subject_sid: SecurityId,
-    file: &FileObject,
-    permissions: &[impl ForClass<FsNodeClass>],
-    audit_context: Auditable<'_>,
-) -> Result<(), Errno> {
     if is_internal_operation(current_task) {
         return Ok(());
     };
@@ -117,51 +96,27 @@ fn todo_option_has_file_permissions(
     if subject_sid != file_sid {
         let node = file.node().as_ref().as_ref();
         let audit_context = [audit_context, file.into(), node.into()];
-        if let Some(bug) = bug {
-            todo_check_permission(
-                bug,
-                permission_check,
-                current_task,
-                subject_sid,
-                file_sid,
-                FdPermission::Use,
-                (&audit_context).into(),
-            )?;
-        } else {
-            check_permission(
-                permission_check,
-                current_task,
-                subject_sid,
-                file_sid,
-                FdPermission::Use,
-                (&audit_context).into(),
-            )?;
-        }
+        check_permission(
+            permission_check,
+            current_task,
+            subject_sid,
+            file_sid,
+            FdPermission::Use,
+            (&audit_context).into(),
+        )?;
     }
 
     // Validate that the `subject` has the desired `permissions`, if any, to the underlying node.
     if !permissions.is_empty() {
         let audit_context = [audit_context, file.into()];
-        if let Some(bug) = bug {
-            todo_has_fs_node_permissions(
-                bug,
-                permission_check,
-                current_task,
-                subject_sid,
-                file.node(),
-                permissions,
-                (&audit_context).into(),
-            )?;
-        } else {
-            has_fs_node_permissions(
-                permission_check,
-                current_task,
-                subject_sid,
-                file.node(),
-                permissions,
-                (&audit_context).into(),
-            )?;
-        }
+        has_fs_node_permissions(
+            permission_check,
+            current_task,
+            subject_sid,
+            file.node(),
+            permissions,
+            (&audit_context).into(),
+        )?;
     }
 
     Ok(())
@@ -321,6 +276,7 @@ fn has_fs_node_permissions(
 }
 
 /// Checks that `current_task` has `permissions` to `node`, with "todo_deny" on denial.
+#[allow(dead_code)]
 fn todo_has_fs_node_permissions(
     bug: BugRef,
     permission_check: &PermissionCheck<'_>,
