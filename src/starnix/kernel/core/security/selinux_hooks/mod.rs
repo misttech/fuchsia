@@ -39,7 +39,6 @@ use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
 use std::cell::Ref;
-use std::collections::HashSet;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -390,17 +389,21 @@ fn fs_node_effective_sid_and_class(fs_node: &FsNode) -> FsNodeSidAndClass {
         FsNodeLabel::FromTask { task_state } => task_state.lock().current_sid,
         FsNodeLabel::Uninitialized => {
             // We should never reach here, but for now enforce it in debug builds.
-            #[cfg(is_debug)]
-            panic!(
-                "Unlabeled FsNode@{} of class {:?} in {}",
-                fs_node.info().ino,
-                file_class_from_file_mode(fs_node.info().mode),
-                fs_node.fs().name()
-            );
-            #[cfg(not(is_debug))]
-            track_stub!(TODO("https://fxbug.dev/381210513"), "SID requested for unlabeled FsNode");
-
-            InitialSid::Unlabeled.into()
+            if cfg!(any(test, debug_assertions)) {
+                panic!(
+                    "Unlabeled FsNode@{} of class {:?} in {} (label {:?})",
+                    fs_node.ino,
+                    file_class_from_file_mode(fs_node.info().mode),
+                    fs_node.fs().name(),
+                    fs_node.fs().security_state.state.label(),
+                );
+            } else {
+                track_stub!(
+                    TODO("https://fxbug.dev/381210513"),
+                    "SID requested for unlabeled FsNode"
+                );
+                InitialSid::Unlabeled.into()
+            }
         }
     };
     FsNodeSidAndClass { sid, class: state.class }
@@ -528,8 +531,10 @@ pub(super) struct KernelState {
     pub(super) server: Arc<SecurityServer>,
 
     /// Set of [`create::vfs::FileSystem`]s that have been constructed, and must be labeled as soon
-    /// as a policy is loaded into the `server`.
-    pub(super) pending_file_systems: Mutex<HashSet<WeakKey<FileSystem>>>,
+    /// as a policy is loaded into the `server`. Insertion order is retained, via use of `IndexSet`,
+    /// to ensure that filesystems have labels initialized in creation order, which is important
+    /// e.g. when initializing "overlayfs" node labels, based on the labels of the underlying nodes.
+    pub(super) pending_file_systems: Mutex<IndexSet<WeakKey<FileSystem>>>,
 
     /// Stashed reference to "/sys/fs/selinux/null" used for replacing inaccessible file descriptors
     /// with a null file.

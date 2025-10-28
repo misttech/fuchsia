@@ -517,6 +517,16 @@ pub fn fs_node_init_with_dentry_no_xattr(
     }
 }
 
+// Temporary work-around for lack of a `CurrentTask` during creation of `DirEntry`s for some initial
+// file-systems.
+// TODO: https://fxbug.dev/455771186 - Clean up with-DirEntry initialization and remove this.
+pub fn fs_node_init_with_dentry_deferred(kernel: &Kernel, dir_entry: &DirEntryHandle) {
+    track_hook_duration!(c"security.hooks.fs_node_init_with_dentry_no_xattr");
+    if kernel.security_state.state.is_some() {
+        selinux_hooks::fs_node::fs_node_init_with_dentry_deferred(dir_entry);
+    }
+}
+
 /// Applies the given label to the given node without checking any permissions.
 /// Used by file-system implementations to set the label for a node, for example when it has
 /// prefetched the label in the xattr rather than letting it get fetched by

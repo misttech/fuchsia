@@ -1214,12 +1214,18 @@ impl OverlayStack {
         // Create upper and work directories in an invisible tmpfs.
         let invisible_tmp = TmpFs::new_fs(locked, kernel);
 
-        fn create_directory(fs: &FileSystemHandle) -> DirEntryHandle {
+        let create_directory = |fs: &FileSystemHandle| {
             let ino = fs.allocate_ino();
             let info = FsNodeInfo::new(mode!(IFDIR, 0o777), FsCred::root());
             let node = fs.create_detached_node(ino, TmpFsDirectory::new(), info);
-            DirEntry::new(node, None, FsString::default())
-        }
+            let dir_entry = DirEntry::new(node, None, FsString::default());
+
+            // TODO: https://fxbug.dev/455771186 - Revise FsNode initialization to better ensure
+            // that all the things are appropriately labeled.
+            security::fs_node_init_with_dentry_deferred(kernel, &dir_entry);
+
+            dir_entry
+        };
 
         let upper =
             ActiveEntry { entry: create_directory(&invisible_tmp), mount: MountInfo::detached() };

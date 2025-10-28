@@ -260,6 +260,16 @@ pub(in crate::security) fn fs_node_init_with_dentry(
     Ok(())
 }
 
+// TODO: https://fxbug.dev/455771186 - Clean up with-DirEntry initialization and remove this.
+pub(in crate::security) fn fs_node_init_with_dentry_deferred(dir_entry: &DirEntryHandle) {
+    // This API is only for use when creating artificial file-system nodes prior to policy-load /
+    // filesystem label initialization.
+    let fs = dir_entry.node.fs();
+    assert!(fs.security_state.state.label().is_none());
+    log_debug!("Queuing FsNode for {:?} for labeling", dir_entry);
+    fs.security_state.state.pending_entries.lock().insert(WeakKey::from(dir_entry));
+}
+
 /// Returns an [`FsNodeSecurityXattr`] for the security context of `sid`.
 fn make_fs_node_security_xattr(
     security_server: &SecurityServer,

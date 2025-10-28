@@ -76,7 +76,7 @@ impl DevTmpFs {
                 ),
             ])),
         };
-        TmpFs::set_initial_content(&fs, initial_content);
+        TmpFs::set_initial_content(kernel, &fs, initial_content);
 
         fs
     }

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::mm::PAGE_SIZE;
+use crate::security;
 use crate::task::{CurrentTask, Kernel};
 use crate::vfs::memory_directory::MemoryDirectoryFile;
 use crate::vfs::{
@@ -212,14 +213,15 @@ impl TmpFs {
         Ok(fs)
     }
 
-    pub fn set_initial_content(fs: &FileSystemHandle, data: TmpFsData) {
+    pub fn set_initial_content(kernel: &Kernel, fs: &FileSystemHandle, data: TmpFsData) {
         fn create_dir_entry_from_data(
+            kernel: &Kernel,
             fs: &FileSystemHandle,
             data: TmpFsData,
             this: Option<DirEntryHandle>,
             name: FsString,
         ) -> DirEntryHandle {
-            match data.node_type {
+            let dir_entry = match data.node_type {
                 TmpFsNodeType::Link(target) => {
                     assert!(this.is_none());
                     let node = TmpFsDirectory::new_symlink(fs, target.as_ref(), data.owner);
@@ -239,17 +241,24 @@ impl TmpFs {
                     let children = children
                         .into_iter()
                         .map(|(name, data)| {
-                            let child = create_dir_entry_from_data(fs, data, None, name.clone());
+                            let child =
+                                create_dir_entry_from_data(kernel, fs, data, None, name.clone());
                             (name, child)
                         })
                         .collect::<BTreeMap<_, _>>();
                     this.set_children(children);
                     this
                 }
-            }
+            };
+
+            // TODO: https://fxbug.dev/455771186 - Revise FsNode initialization to better ensure
+            // that all the things are appropriately labeled.
+            security::fs_node_init_with_dentry_deferred(kernel, &dir_entry);
+
+            dir_entry
         }
 
-        create_dir_entry_from_data(fs, data, Some(Arc::clone(fs.root())), "".into());
+        create_dir_entry_from_data(kernel, fs, data, Some(Arc::clone(fs.root())), "".into());
     }
 }
 
