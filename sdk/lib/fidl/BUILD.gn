@@ -13,11 +13,9 @@ import("//build/cpp/sdk_source_set.gni")
 sdk_source_set("fidl") {
   category = "partner"
   sdk_name = "fidl"
-
-  # TODO(https://fxbug.dev/42172264): We should represent the library as a
-  # `sdk_static_library` when supported.
-  build_as_static = true
   stable = true
+
+  build_as_static = true
 
   public = [ "include/lib/fidl/epitaph.h" ]
 
