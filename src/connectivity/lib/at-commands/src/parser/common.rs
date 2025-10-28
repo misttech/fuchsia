@@ -14,9 +14,9 @@
 /// command names.
 use {
     pest::{
+        RuleType,
         error::Error as PestError,
         iterators::{Pair, Pairs},
-        RuleType,
     },
     std::num::ParseIntError,
     thiserror::Error,
@@ -25,7 +25,7 @@ use {
 #[derive(Debug, Error)]
 pub enum ParseError<Rule: RuleType> {
     #[error("Unable to use pest to parse {string:?}: {pest_error:?}")]
-    PestParseFailure { string: String, pest_error: PestError<Rule> },
+    PestParseFailure { string: String, pest_error: Box<PestError<Rule>> },
     #[error("Expected one of {expected_rules:?}, got nothing.")]
     NextRuleMissing { expected_rules: Vec<Rule> },
     #[error("Expected one of {expected_rules:?}, got {actual_rule:?}.")]

@@ -13,10 +13,10 @@ use {
         parser::{
             arguments_parser::ArgumentsParser,
             command_grammar::{Grammar, Rule},
-            common::{next_match, next_match_one_of, parse_name, ParseError, ParseResult},
+            common::{ParseError, ParseResult, next_match, next_match_one_of, parse_name},
         },
     },
-    pest::{iterators::Pair, Parser},
+    pest::{Parser, iterators::Pair},
 };
 
 static ARGUMENTS_PARSER: ArgumentsParser<Rule> = ArgumentsParser {
@@ -31,8 +31,9 @@ static ARGUMENTS_PARSER: ArgumentsParser<Rule> = ArgumentsParser {
 };
 
 pub fn parse(string: &str) -> ParseResult<Command, Rule> {
-    let mut parsed = Grammar::parse(Rule::input, string)
-        .map_err(|pest_error| ParseError::PestParseFailure { string: string.into(), pest_error })?;
+    let mut parsed = Grammar::parse(Rule::input, string).map_err(|pest_error| {
+        ParseError::PestParseFailure { string: string.into(), pest_error: Box::new(pest_error) }
+    })?;
 
     let input = next_match(&mut parsed, Rule::input)?;
     let mut input_elements = input.into_inner();
