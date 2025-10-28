@@ -41,7 +41,7 @@ class ChromiumExporter {
   void ExportLog(const trace::Record::Log& log);
   void ExportMetadata(const trace::Record::Metadata& metadata);
   void ExportSchedulerEvent(const trace::Record::SchedulerEvent& scheduler_event);
-  void ExportBlob(const trace::LargeRecordData::Blob& blob);
+  void ExportBlob(const trace::LargeRecordData::Blob& data);
   void ExportFidlBlob(const trace::LargeRecordData::BlobEvent& blob);
 
   // Writes argument data. Assumes it is already within an
