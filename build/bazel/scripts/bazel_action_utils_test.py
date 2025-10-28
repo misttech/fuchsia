@@ -9,12 +9,12 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
 import build_utils
-from build_utils import MockCommandRunner
-from gn_targets_utils import (
+from bazel_action_utils import (
     BazelBuildActionQuery,
     BazelBuildActionsMap,
     find_gn_bazel_action_infos_for,
 )
+from build_utils import MockCommandRunner
 
 
 class BazelBuildActionsMapTest(unittest.TestCase):

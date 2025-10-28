@@ -118,10 +118,10 @@ def cmd_actions(args: argparse.Namespace) -> int:
 def cmd_set_gn_targets(args: argparse.Namespace) -> int:
     """Implement the set_gn_targets command."""
 
-    # Lazy import of workspace_utils.py and gn_targets_utils.py
+    # Lazy import of modules.
     sys.path.insert(0, str(Path(__file__).parent))
+    import bazel_action_utils
     import build_utils
-    import gn_targets_utils
     import workspace_utils
 
     verbosity = args.verbose - args.quiet
@@ -157,7 +157,9 @@ def cmd_set_gn_targets(args: argparse.Namespace) -> int:
         return "\n".join(f"  {target}" for target in targets)
 
     # Load actions map then use it.
-    actions_map = gn_targets_utils.BazelBuildActionsMap.FromBuildDir(build_dir)
+    actions_map = bazel_action_utils.BazelBuildActionsMap.FromBuildDir(
+        build_dir
+    )
 
     if args.bazel:
         bazel_args = [args.bazel]
@@ -170,7 +172,7 @@ def cmd_set_gn_targets(args: argparse.Namespace) -> int:
 
     errors: list[str] = []
 
-    gn_actions = gn_targets_utils.find_gn_bazel_action_infos_for(
+    gn_actions = bazel_action_utils.find_gn_bazel_action_infos_for(
         args.bazel_target,
         actions_map,
         bazel_args,
