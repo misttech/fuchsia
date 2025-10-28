@@ -14,6 +14,7 @@ import os
 import shlex
 import shutil
 import stat
+import subprocess
 import sys
 import typing as T
 from pathlib import Path
@@ -1004,9 +1005,7 @@ def generate_debug_symbols_manifest(
         + bazel_targets
     )
     # Always capture both output streams.
-    ret = bazel_launcher.run_bazel_command(
-        cmd_args, print_stdout=False, print_stderr=False
-    )
+    ret = bazel_launcher.run_bazel_command(cmd_args)
     time_profile.stop()
     if ret.returncode != 0:
         print(
@@ -1611,7 +1610,9 @@ def main() -> int:
     # When quiet is not set, print both stdout and stderr to the terminal to make
     # sure consoule output from Bazel are correctly printed out by Ninja.
     ret = bazel_launcher.run_bazel_command(
-        cmd_args, print_stdout=not quiet, print_stderr=not quiet
+        cmd_args,
+        stdout=subprocess.PIPE if quiet else None,
+        stderr=subprocess.PIPE if quiet else None,
     )
 
     time_profile.stop()

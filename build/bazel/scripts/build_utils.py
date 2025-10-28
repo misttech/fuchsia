@@ -680,11 +680,11 @@ class BazelPaths(object):
 
 @dataclasses.dataclass
 class CommandResult:
-    """The result of invoking CommandLauncher.run_command().
+    """The result of invoking CommandRunner.run_command().
 
     This is similar to subprocess.CompletedProcess[str], but it doesn't
     hold file descriptors open, and can be trivially instantiated for tests
-    or mock CommandLauncher instances.
+    or mock CommandRunner instances.
     """
 
     returncode: int = 0
@@ -693,123 +693,239 @@ class CommandResult:
     args: list[str] = dataclasses.field(default=list)  # type: ignore
 
 
-class CommandLauncher(object):
-    """Convenience class to launch commands.
+class CommandRunner(object):
+    """Convenience class to run commands.
 
     A small wrapper around subprocess.run(), which allows logging invocations
-    and errors. It also allows mock implementations for tests to override the
-    run_command() method in derived classes.
+    commands and resultsm as well as allow mock implementations for tests to
+    override the run_command_internal() method in derived classes.
     """
+
+    # The following constants are convenience argument keyword dictionaries
+    # that can be expanded in run_command() calls to specify how to capture outputs.
+    # This also prevents the caller from depending on the subprocess module.
+    # Capture both stdout and stderr separately.
+    CAPTURE_KWARGS = {
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+    }
+
+    # Capture both stdout and stderr into ret.stdout, while ret.stderr will be empty.
+    CAPTURE_COMBINED_KWARGS = {
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.STDOUT,
+    }
+
+    # Capture neither stdout nor stderr. Both ret.stdout and ret.stderr will be empty.
+    CAPTURE_NONE_KWARGS = {
+        "stdout": None,
+        "stderr": None,
+    }
 
     def __init__(
         self,
-        log: None | LogFunc = None,
-        log_err: None | LogFunc = log_stderr,
+        log_cmd: None | LogFunc = None,
+        log_result: None | T.Callable[[CommandResult], None] = None,
     ) -> None:
         """Create instance.
 
         Args:
-            log: Optional LogFunc to send runtime logs to.
-            log_err: Optional LogFunc to send runtime error logs to.
+            log_cmd: Optional LogFunc to record each invocation.
+            log_result: Optional callable used to log invocation results.
         """
-        self.log = log
-        self.log_err = log_err
+        self._log_cmd = log_cmd
+        self._log_result = log_result
 
     def run_command_internal(
-        self, cmd_args: list[FilePath], print_stdout: bool, print_stderr: bool
+        self, cmd_args: list[FilePath], **subprocess_run_kwargs: T.Any
     ) -> CommandResult:
         """Internal implementation for run_command().
 
         Mock implementations can override this to avoid calling
         external commands during unit-tests.
         """
+        # Enfoce text mode by default.
+        subprocess_run_kwargs.setdefault("text", True)
+        subprocess_run_kwargs.setdefault("encoding", "utf-8")
         ret = subprocess.run(
-            [str(c) for c in cmd_args],
-            stdout=None if print_stdout else subprocess.PIPE,
-            stderr=None if print_stderr else subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
+            [str(c) for c in cmd_args], **subprocess_run_kwargs
         )
         return CommandResult(ret.returncode, ret.stdout, ret.stderr, ret.args)
 
     def run_command(
         self,
         cmd_args: list[FilePath],
-        print_stdout: bool = False,
-        print_stderr: bool = False,
+        **subprocess_run_kwargs: T.Any,
     ) -> CommandResult:
         """Run a command.
 
-        By default, this captures both stdout and stderr, unless
-        any of print_stdout or print_stderr is used.
+        Note that this sets text=True and encoding="UTF-8" by default for
+        convenience, though it can be overriden when calling the method.
 
         Args:
-            cmd_args: List of command-line arguments, each can be either a string
-               or a Path instance for convenience.
-            print_stdout: Optional flag, set to True to not capture the command's stdout
-               and send it to the caller's standard output stream instead.
-            print_stderr: Optional flag, set to True to not capture the command's stderr
-               and send it to the caller's error output stream instead.
+            cmd_args: Command as a list of string or Path items.
+            **kwargs: Other arguments for subprocess.run().
         Returns:
-            A BazelCommandResult value.
+            A CommandResult value.
         """
-        if self.log:
-            self.log("CMD: " + cmd_args_to_string(cmd_args))
+        if self._log_cmd:
+            self._log_cmd(cmd_args_to_string(cmd_args))
 
-        ret = self.run_command_internal(
-            cmd_args, print_stdout=print_stdout, print_stderr=print_stderr
-        )
-
-        if ret.returncode != 0 and self.log_err:
-            self.log_err(
-                "Error when invoking command: %s\n%s\n%s\n"
-                % (cmd_args_to_string(cmd_args), ret.stderr, ret.stdout)
-            )
+        ret = self.run_command_internal(cmd_args, **subprocess_run_kwargs)
+        if self._log_result:
+            self._log_result(ret)
 
         return ret
 
 
-class BazelLauncher(CommandLauncher):
+class MockCommandRunner(CommandRunner):
+    """A mock CommandRunner that can be used in unit-tests.
+
+    Usage is:
+        1) Create instance.
+
+        2) Before running the test that uses the MockCommandRunner instance,
+           push one or more CommandResult with push_result(). At least one per
+           expected call to CommandRunner.run_command().
+
+        3) After the test completes, look at self.commands and self.results to
+           see what commands and results were actually recorded.
+    """
+
+    def __init__(self) -> None:
+        """Create instance."""
+
+        self.commands: list[str] = []
+
+        def _log_command(cmd: str) -> None:
+            self.commands.append(cmd)
+
+        self.results: list[CommandResult] = []
+
+        def _log_result(result: CommandResult) -> None:
+            self.results.append(result)
+
+        super().__init__(log_cmd=_log_command, log_result=_log_result)
+        self._result_queue: list[CommandResult] = []
+
+    def push_result(
+        self,
+        returncode: int = 0,
+        stdout: str = "",
+        stderr: str = "",
+        args: list[FilePath] = [],
+    ) -> None:
+        """Add one result value to the CommandResult FIFO.
+
+        Args:
+            returncode: Optional process return code. default to 0.
+            stdout: Optional process stdout, as a string, default to empty.
+            stderr: Optional process stderr, as a string, default to empty.
+            args: Optional list of command arguments.
+        """
+        self._result_queue.append(
+            CommandResult(
+                returncode=returncode,
+                stdout=stdout,
+                stderr=stderr,
+                args=[str(a) for a in args],
+            )
+        )
+
+    def run_command_internal(
+        self, cmd_args: list[FilePath], **subprocess_run_kwargs: T.Any
+    ) -> CommandResult:
+        """Simulate command invocation by popping one value from the FIFO.
+
+        Args:
+            cmd_args: Command arguments, these are simply saved into
+                self.commands for later inspection.
+            **subprocess_run_kwargs: Extra subprocess.run() arguments (ignored).
+        Returns:
+            The CommandResult at the start of the FIFO.
+        Raises:
+            AssertionError if there are no results in the FIFO.
+        """
+        assert (
+            self._result_queue
+        ), f"Result queue is empty, did you forget to call MockCommandRunner.push_result()"
+        result = self._result_queue[0]
+        self._result_queue = self._result_queue[1:]
+        return result
+
+
+class BazelLauncher(object):
     """Convenience class to launch Bazel invocations.
 
     A small wrapper around subprocess.run(), which allows tests to override
     the run_command() method in derived classes.
     """
 
+    # Forward these for caller's convenience.
+    CAPTURE_KWARGS = CommandRunner.CAPTURE_KWARGS
+    CAPTURE_COMBINED_KWARGS = CommandRunner.CAPTURE_COMBINED_KWARGS
+    CAPTURE_NONE_KWARGS = CommandRunner.CAPTURE_NONE_KWARGS
+
     def __init__(
         self,
-        bazel_launcher: FilePath,
-        log: None | LogFunc = None,
-        log_err: None | LogFunc = log_stderr,
+        launcher_script: FilePath,
+        bazel_prefix_args: list[FilePath] = [],
+        runner: None | CommandRunner = None,
+        log_err: None | LogFunc = None,
     ) -> None:
-        """Create instance.
+        """Create BazelLauncher instance.
 
         Args:
-            log: Optional LogFunc to send runtime logs to.
-            log_err: Optional LogFunc to send runtime error logs to.
+            launcher_script: Path to the bazel launcher script.
+            bazel_prefix_args: Optional list of command arguments that may appear before the
+                launcher script during invocation.
+            runner: An optional CommandRunner instance. If None, one will be created automatically.
+            log_err: Optional LogFunc function used to record error messages in run_xxx() method calls.
         """
-        super().__init__(log, log_err)
-        self._bazel_launcher = bazel_launcher
+        self._launcher_script = launcher_script
+        self._prefix_args = bazel_prefix_args
+        self._runner = runner if runner else CommandRunner()
+        self._log_err = log_err
+
+    @property
+    def script(self) -> Path:
+        """Return path to Bazel launcher script."""
+        return Path(self._launcher_script)
 
     def run_bazel_command(
         self,
         bazel_args: list[FilePath],
-        print_stdout: bool = False,
-        print_stderr: bool = False,
+        **subprocess_kwargs: T.Any,
     ) -> CommandResult:
         """Run a Bazel command.
 
+        Note that this captures both standard and error outputs by default.
+        Set stdout and stderr explicitly to change this behavior.
+
         Args:
             bazel_args: Bazel command-line arguments.
-            print_stderr: Optional flag, set to True to not capture stderr.
+
+            **subprocess_kwargs: Extra arguments passed to subprocess.run(), see
+                CommandRunner.run_command() documentation.
         Returns:
             A CommandResult value.
         """
-        return self.run_command(
-            [self._bazel_launcher] + bazel_args,
-            print_stdout=print_stdout,
-            print_stderr=print_stderr,
+        # Capture outputs by default.
+        subprocess_kwargs.setdefault("stdout", subprocess.PIPE)
+        subprocess_kwargs.setdefault("stderr", subprocess.PIPE)
+
+        cmd_args: list[FilePath] = (
+            self._prefix_args + [self.script] + bazel_args
         )
+
+        ret = self._runner.run_command(cmd_args, **subprocess_kwargs)
+        if ret.returncode != 0 and self._log_err:
+            self._log_err(
+                "Error when invoking command: %s\n%s\n%s\n"
+                % (cmd_args_to_string(cmd_args), ret.stderr, ret.stdout)
+            )
+
+        return ret
 
     def run_query(
         self, query_type: str, query_args: list[str], ignore_errors: bool
@@ -822,7 +938,7 @@ class BazelLauncher(CommandLauncher):
             ignore_errors: Set to True to allow queries that ignore errors.
                This adds "--keep_going" to the launched command.
         Returns:
-            A BazelCommandResult value.
+            A CommandResult value.
         """
         query_cmd: list[FilePath] = []
         query_cmd.append(query_type)
@@ -836,7 +952,7 @@ class BazelLauncher(CommandLauncher):
 class BazelQueryCache(object):
     def __init__(
         self,
-        cache_dir: os.PathLike[str],
+        cache_dir: FilePath,
     ) -> None:
         self._cache_dir = cache_dir
 
@@ -866,10 +982,6 @@ class BazelQueryCache(object):
         # The data is simply stored under $WORKSPACE/fuchsia_build_generated/bazel_query_cache/
         # which will be removed by each regenerator call, since it may change the Bazel
         # graph dependencies, and thus the query results.
-
-        # Reuse launcher.log value if none is specified explicitly.
-        if not log:
-            log = launcher.log
 
         cache_key, cache_key_args = self.compute_cache_key_and_args(
             query_type, query_args

@@ -13,7 +13,7 @@ from pathlib import Path
 _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
 import build_utils
-from build_utils import BazelLauncher, BazelQueryCache, CommandResult
+from build_utils import BazelLauncher, BazelQueryCache, MockCommandRunner
 
 
 class FindFuchsiaDirTest(unittest.TestCase):
@@ -726,66 +726,6 @@ class LastBazelBuildInvocationsTest(unittest.TestCase):
             )
 
 
-class MockBazelLauncher(BazelLauncher):
-    """A BazelLauncher sub-class used to mock subprocess invocation.
-
-    The class manages a FIFO of CommandResult values that is
-    filled by calling push_result(), and which is consumed when
-    run_command() is called.
-    """
-
-    def __init__(self) -> None:
-        """Create instance."""
-
-        def log(msg: str) -> None:
-            self.logs.append(msg)
-
-        def log_error(msg: str) -> None:
-            self.errors.append(msg)
-
-        super().__init__("/path/to/bazel", log=log, log_err=log_error)
-        self.commands: list[list[str]] = []
-        self.result_queue: list[CommandResult] = []
-        self.logs: list[str] = []
-        self.errors: list[str] = []
-
-    def push_result(
-        self, returncode: int = 0, stdout: str = "", stderr: str = ""
-    ) -> None:
-        """Add one result value to the FIFO.
-
-        Args:
-            returncode: Optional process return code. default to 0.
-            stdout: Optional process stdout, as a string, default to empty.
-            stderr: Optional process stderr, as a string, default to empty.
-        """
-        self.result_queue.append(CommandResult(returncode, stdout, stderr))
-
-    def run_command_internal(
-        self,
-        cmd_args: list[str],
-        print_stdout: bool = False,
-        print_stderr: bool = False,
-    ) -> CommandResult:
-        """Simulate command invocation by popping one value from the FIFO.
-
-        Args:
-            cmd_args: Command arguments, these are simply saved into
-                self.commands for later inspection.
-            print_stderr: Optional flag, set to True to not capture stdout.
-            print_stderr: Optional flag, set to True to not capture stderr.
-        Returns:
-            The CommandResult at the start of the FIFO.
-        Raises:
-            AssertionError if there are no results in the FIFO.
-        """
-        self.commands.append(cmd_args[:])
-        assert self.result_queue
-        result = self.result_queue[0]
-        self.result_queue = self.result_queue[1:]
-        return result
-
-
 class BazelQueryCacheTest(unittest.TestCase):
     def setUp(self) -> None:
         self._td = tempfile.TemporaryDirectory()
@@ -795,11 +735,12 @@ class BazelQueryCacheTest(unittest.TestCase):
         self._td.cleanup()
 
     def test_cache(self) -> None:
-        launcher = MockBazelLauncher()
+        mock_runner = MockCommandRunner()
+        launcher = BazelLauncher("/path/to/bazel", runner=mock_runner)
         cache_dir = self._root / "cache"
         cache = BazelQueryCache(cache_dir)
 
-        launcher.push_result(stdout="some\nresult\nlines")
+        mock_runner.push_result(stdout="some\nresult\nlines")
         result = cache.get_query_output("query", ["deps(//src:foo)"], launcher)
 
         self.assertListEqual(result, ["some", "result", "lines"])
@@ -823,7 +764,7 @@ class BazelQueryCacheTest(unittest.TestCase):
         # the result from the cache, and not run any command. To detect this
         # push a new launcher result, which will not be popped as no
         # command will be run by the cache.
-        launcher.push_result(stdout="some\nother\nresult\nlines")
+        mock_runner.push_result(stdout="some\nother\nresult\nlines")
         result2 = cache.get_query_output("query", ["deps(//src:foo)"], launcher)
         self.assertListEqual(result2, result)
 
@@ -851,7 +792,8 @@ class BazelQueryCacheTest(unittest.TestCase):
         )
 
     def test_cache_with_starlark_file(self) -> None:
-        launcher = MockBazelLauncher()
+        mock_runner = MockCommandRunner()
+        launcher = BazelLauncher("/path/to/bazel", runner=mock_runner)
         cache_dir = self._root / "cache"
         cache = BazelQueryCache(cache_dir)
 
@@ -869,7 +811,7 @@ class BazelQueryCacheTest(unittest.TestCase):
         ]
 
         # First invocation creates cache entry.
-        launcher.push_result(stdout="some\nresult\nlines")
+        mock_runner.push_result(stdout="some\nresult\nlines")
         result = cache.get_query_output(query_cmd, query_args, launcher)
         self.assertListEqual(result, ["some", "result", "lines"])
         self.assertTrue(cache_dir.is_dir())
@@ -889,7 +831,7 @@ class BazelQueryCacheTest(unittest.TestCase):
 
         # Second invocation returns the cache value directly without
         # invoking anything.
-        launcher.push_result(stdout="other\nresult\nlines")
+        mock_runner.push_result(stdout="other\nresult\nlines")
         result2 = cache.get_query_output(query_cmd, query_args, launcher)
         self.assertEqual(result2, result)
 
