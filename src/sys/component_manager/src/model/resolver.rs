@@ -4,8 +4,6 @@
 
 use ::routing::resolving::{ComponentAddress, ResolvedComponent, ResolverError};
 use async_trait::async_trait;
-use std::collections::HashMap;
-use std::sync::Arc;
 
 /// Resolves a component URL to its content.
 #[async_trait]
@@ -19,51 +17,6 @@ pub trait Resolver: std::fmt::Debug {
     ) -> Result<ResolvedComponent, ResolverError>;
 }
 
-/// Resolves a component URL using a resolver selected based on the URL's scheme.
-#[derive(Debug, Default)]
-pub struct ResolverRegistry {
-    resolvers: HashMap<String, Arc<dyn Resolver + Send + Sync + 'static>>,
-}
-
-impl ResolverRegistry {
-    pub fn new() -> ResolverRegistry {
-        Default::default()
-    }
-
-    pub fn register(
-        &mut self,
-        scheme: String,
-        resolver: Arc<dyn Resolver + Send + Sync + 'static>,
-    ) {
-        // ComponentDecl validation checks that there aren't any duplicate schemes.
-        assert!(
-            self.resolvers.insert(scheme, resolver).is_none(),
-            "Found duplicate scheme in ComponentDecl"
-        );
-    }
-
-    /// Removes all resolvers from this registry, returning an iterator for these resolvers.
-    pub fn drain<'a>(
-        &'a mut self,
-    ) -> impl Iterator<Item = (String, Arc<dyn Resolver + Send + Sync + 'static>)> + 'a {
-        self.resolvers.drain()
-    }
-}
-
-#[async_trait]
-impl Resolver for ResolverRegistry {
-    async fn resolve(
-        &self,
-        component_address: &ComponentAddress,
-    ) -> Result<ResolvedComponent, ResolverError> {
-        if let Some(resolver) = self.resolvers.get(component_address.scheme()) {
-            resolver.resolve(component_address).await
-        } else {
-            Err(ResolverError::SchemeNotRegistered)
-        }
-    }
-}
-
 #[cfg(all(test, not(feature = "src_model_tests")))]
 mod tests {
     use super::*;
@@ -72,23 +25,16 @@ mod tests {
     use crate::model::component::manager::ComponentManagerInstance;
     use crate::model::component::{ComponentInstance, WeakComponentInstance, WeakExtendedInstance};
     use crate::model::context::ModelContext;
-    use crate::model::environment::Environment;
-    use anyhow::{Error, format_err};
+    use anyhow::Error;
     use assert_matches::assert_matches;
     use async_trait::async_trait;
-    use cm_rust::NativeIntoFidl;
-    use cm_rust_testing::new_decl_from_json;
     use directed_graph::DirectedGraph;
+    use fidl_fuchsia_component_decl as fdecl;
     use hooks::Hooks;
     use moniker::Moniker;
     use routing::bedrock::structured_dict::ComponentInput;
-    use routing::environment::{DebugRegistry, RunnerRegistry};
-    use routing::resolving::{
-        ComponentResolutionContext, read_and_validate_config_values, read_and_validate_manifest,
-    };
-    use serde_json::json;
-    use std::sync::{LazyLock, Mutex, Weak};
-    use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_mem as fmem};
+    use routing::resolving::ComponentResolutionContext;
+    use std::sync::{Arc, Mutex, Weak};
 
     #[derive(Debug)]
     struct MockOkResolver {
@@ -116,28 +62,6 @@ mod tests {
                 ),
                 dependencies: DirectedGraph::new(),
             })
-        }
-    }
-
-    struct MockErrorResolver {
-        pub expected_url: String,
-        pub error: Box<dyn Fn(&str) -> ResolverError + Send + Sync + 'static>,
-    }
-
-    impl core::fmt::Debug for MockErrorResolver {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("MockErrorResolver").finish()
-        }
-    }
-
-    #[async_trait]
-    impl Resolver for MockErrorResolver {
-        async fn resolve(
-            &self,
-            component_address: &ComponentAddress,
-        ) -> Result<ResolvedComponent, ResolverError> {
-            assert_eq!(self.expected_url, component_address.url());
-            Err((self.error)(component_address.url()))
         }
     }
 
@@ -199,7 +123,7 @@ mod tests {
     }
 
     async fn new_root_component(
-        mut environment: Environment,
+        resolvers: Vec<(&'static str, Arc<dyn Resolver + Send + Sync + 'static>)>,
         top_instance: &Arc<ComponentManagerInstance>,
         context: Arc<ModelContext>,
         component_manager_instance: Weak<ComponentManagerInstance>,
@@ -207,12 +131,11 @@ mod tests {
     ) -> Arc<ComponentInstance> {
         let mut root_input_builder =
             RootComponentInputBuilder::new(top_instance, context.runtime_config());
-        for (resolver_name, resolver) in environment.drain_resolvers() {
-            root_input_builder.add_resolver(resolver_name, resolver);
+        for (resolver_name, resolver) in resolvers.into_iter() {
+            root_input_builder.add_resolver(resolver_name.to_string(), resolver);
         }
         ComponentInstance::new_root(
             root_input_builder.build(),
-            environment,
             context,
             component_manager_instance,
             component_url.parse().unwrap(),
@@ -222,7 +145,6 @@ mod tests {
 
     async fn new_component(
         input: ComponentInput,
-        environment: Arc<Environment>,
         moniker: Moniker,
         component_url: &str,
         startup: fdecl::StartupMode,
@@ -235,7 +157,6 @@ mod tests {
     ) -> Arc<ComponentInstance> {
         ComponentInstance::new(
             input,
-            environment,
             moniker,
             0,
             component_url.parse().unwrap(),
@@ -270,433 +191,6 @@ mod tests {
         component.perform_resolve(None, &component_address).await
     }
 
-    fn address_from_absolute_url(url: &str) -> ComponentAddress {
-        ComponentAddress::from_absolute_url(&url.parse().unwrap()).unwrap()
-    }
-
-    async fn address_from(
-        url: &str,
-        instance: &Arc<ComponentInstance>,
-    ) -> Result<ComponentAddress, ResolverError> {
-        ComponentAddress::from_url(&url.parse().unwrap(), instance).await
-    }
-
-    #[fuchsia_async::run_until_stalled(test)]
-    async fn register_and_resolve() {
-        let mut registry = ResolverRegistry::new();
-        registry.register(
-            "foo".to_string(),
-            Arc::new(MockOkResolver { expected_url: "foo://url".to_string() }),
-        );
-        registry.register(
-            "bar".to_string(),
-            Arc::new(MockErrorResolver {
-                expected_url: "bar://url".to_string(),
-                error: Box::new(|_| {
-                    ResolverError::manifest_not_found(format_err!("not available"))
-                }),
-            }),
-        );
-
-        let top_instance = Arc::new(ComponentManagerInstance::new(vec![], vec![]));
-        let root = new_root_component(
-            Environment::empty(),
-            &top_instance,
-            Arc::new(ModelContext::new_for_test()),
-            Weak::new(),
-            "fuchsia-boot:///#meta/root.cm",
-        )
-        .await;
-
-        // Resolve a different scheme that produces an error.
-        let expected_res: Result<ResolvedComponent, ResolverError> =
-            Err(ResolverError::manifest_not_found(format_err!("not available")));
-        assert_eq!(
-            format!("{:?}", expected_res),
-            format!("{:?}", registry.resolve(&address_from_absolute_url("bar://url")).await)
-        );
-
-        // Resolve an unknown scheme
-        let expected_res: Result<ResolvedComponent, ResolverError> =
-            Err(ResolverError::SchemeNotRegistered);
-        assert_eq!(
-            format!("{:?}", expected_res),
-            format!("{:?}", registry.resolve(&address_from_absolute_url("unknown://url")).await),
-        );
-
-        // Resolve known scheme that returns success.
-        let _ = registry.resolve(&address_from_absolute_url("foo://url")).await.unwrap();
-
-        // Resolve a possible relative path (e.g., subpackage) URL lacking a
-        // resolvable parent causes a SchemeNotRegistered.
-        assert_matches!(
-            address_from("xxx#meta/comp.cm", &root).await,
-            Err(ResolverError::NoParentContext(_))
-        );
-    }
-
-    #[fuchsia::test]
-    #[should_panic(expected = "Found duplicate scheme in ComponentDecl")]
-    fn test_duplicate_registration() {
-        let mut registry = ResolverRegistry::new();
-        let resolver_a = MockOkResolver { expected_url: "".to_string() };
-        let resolver_b = MockOkResolver { expected_url: "".to_string() };
-        registry.register("fuchsia-pkg".to_string(), Arc::new(resolver_a));
-        registry.register("fuchsia-pkg".to_string(), Arc::new(resolver_b));
-    }
-
-    #[fuchsia::test]
-    fn test_multiple_scheme_registration() {
-        let mut registry = ResolverRegistry::new();
-        let resolver_a = MockOkResolver { expected_url: "".to_string() };
-        let resolver_b = MockOkResolver { expected_url: "".to_string() };
-        registry.register("fuchsia-pkg".to_string(), Arc::new(resolver_a));
-        registry.register("fuchsia-boot".to_string(), Arc::new(resolver_b));
-    }
-
-    static COMPONENT_DECL: LazyLock<cm_rust::ComponentDecl> = LazyLock::new(|| {
-        new_decl_from_json(json!(
-        {
-            "include": [ "syslog/client.shard.cml" ],
-            "program": {
-                "runner": "elf",
-                "binary": "bin/example",
-            },
-            "children": [
-                {
-                    "name": "logger",
-                    "url": "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm",
-                    "environment": "#env_one",
-                },
-            ],
-            "collections": [
-                {
-                    "name": "modular",
-                    "durability": "transient",
-                },
-            ],
-            "capabilities": [
-                {
-                    "protocol": "fuchsia.logger.Log2",
-                    "path": "/svc/fuchsia.logger.Log2",
-                },
-            ],
-            "use": [
-                {
-                    "protocol": "fuchsia.fonts.LegacyProvider",
-                },
-            ],
-            "environments": [
-                {
-                    "name": "env_one",
-                    "extends": "none",
-                    "__stop_timeout_ms": 1337,
-                },
-            ],
-            "facets": {
-                "author": "Fuchsia",
-            }}))
-        .expect("failed to construct manifest")
-    });
-
-    #[fuchsia::test]
-    fn test_read_and_validate_manifest() {
-        let manifest = fmem::Data::Bytes(
-            fidl::persist(&COMPONENT_DECL.clone().native_into_fidl())
-                .expect("failed to encode manifest"),
-        );
-        let actual = read_and_validate_manifest(&manifest, &mut DirectedGraph::new())
-            .expect("failed to decode manifest");
-        assert_eq!(actual, COMPONENT_DECL.clone());
-    }
-
-    #[fuchsia::test]
-    async fn test_read_and_validate_config_values() {
-        let fidl_config_values = fdecl::ConfigValuesData {
-            values: Some(vec![
-                fdecl::ConfigValueSpec {
-                    value: Some(fdecl::ConfigValue::Single(fdecl::ConfigSingleValue::Bool(false))),
-                    ..Default::default()
-                },
-                fdecl::ConfigValueSpec {
-                    value: Some(fdecl::ConfigValue::Single(fdecl::ConfigSingleValue::Uint8(5))),
-                    ..Default::default()
-                },
-                fdecl::ConfigValueSpec {
-                    value: Some(fdecl::ConfigValue::Single(fdecl::ConfigSingleValue::String(
-                        "hello!".to_string(),
-                    ))),
-                    ..Default::default()
-                },
-                fdecl::ConfigValueSpec {
-                    value: Some(fdecl::ConfigValue::Vector(fdecl::ConfigVectorValue::BoolVector(
-                        vec![true, false],
-                    ))),
-                    ..Default::default()
-                },
-                fdecl::ConfigValueSpec {
-                    value: Some(fdecl::ConfigValue::Vector(
-                        fdecl::ConfigVectorValue::StringVector(vec![
-                            "hello!".to_string(),
-                            "world!".to_string(),
-                        ]),
-                    )),
-                    ..Default::default()
-                },
-            ]),
-            checksum: Some(fdecl::ConfigChecksum::Sha256([0; 32])),
-            ..Default::default()
-        };
-        let config_values = cm_rust::ConfigValuesData {
-            values: Box::from([
-                cm_rust::ConfigValueSpec {
-                    value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(false)),
-                },
-                cm_rust::ConfigValueSpec {
-                    value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Uint8(5)),
-                },
-                cm_rust::ConfigValueSpec {
-                    value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::String(
-                        "hello!".to_string(),
-                    )),
-                },
-                cm_rust::ConfigValueSpec {
-                    value: cm_rust::ConfigValue::Vector(cm_rust::ConfigVectorValue::BoolVector(
-                        Box::from([true, false]),
-                    )),
-                },
-                cm_rust::ConfigValueSpec {
-                    value: cm_rust::ConfigValue::Vector(cm_rust::ConfigVectorValue::StringVector(
-                        Box::from(["hello!".to_string(), "world!".to_string()]),
-                    )),
-                },
-            ]),
-            checksum: cm_rust::ConfigChecksum::Sha256([0; 32]),
-        };
-        let data = fmem::Data::Bytes(
-            fidl::persist(&fidl_config_values).expect("failed to encode config values"),
-        );
-        let actual =
-            read_and_validate_config_values(&data).expect("failed to decode config values");
-        assert_eq!(actual, config_values);
-    }
-
-    #[fuchsia::test]
-    async fn test_from_absolute_component_url_with_component_instance() -> Result<(), Error> {
-        let top_instance = Arc::new(ComponentManagerInstance::new(vec![], vec![]));
-        let environment = Environment::new_root(
-            &top_instance,
-            RunnerRegistry::default(),
-            ResolverRegistry::new(),
-            DebugRegistry::default(),
-        );
-        let root = new_root_component(
-            environment,
-            &top_instance,
-            Arc::new(ModelContext::new_for_test()),
-            Weak::new(),
-            "fuchsia-pkg://fuchsia.com/package#meta/comp.cm",
-        )
-        .await;
-
-        let abs = address_from("fuchsia-pkg://fuchsia.com/package#meta/comp.cm", &root).await?;
-        assert_matches!(abs, ComponentAddress::Absolute { .. });
-        assert_eq!(abs.scheme(), "fuchsia-pkg");
-        assert_eq!(abs.path(), "/package");
-        assert_eq!(abs.resource(), Some("meta/comp.cm"));
-        Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn test_from_relative_path_component_url_with_component_instance() -> Result<(), Error> {
-        let expected_urls_and_contexts = vec![
-            ResolveState::new(
-                "fuchsia-pkg://fuchsia.com/package#meta/comp.cm",
-                None,
-                Some(ComponentResolutionContext::new("package_context".as_bytes().to_vec())),
-            ),
-            ResolveState::new(
-                "subpackage#meta/subcomp.cm",
-                Some(ComponentResolutionContext::new("package_context".as_bytes().to_vec())),
-                Some(ComponentResolutionContext::new("subpackage_context".as_bytes().to_vec())),
-            ),
-        ];
-        let mut resolver = ResolverRegistry::new();
-
-        resolver.register(
-            "fuchsia-pkg".to_string(),
-            Arc::new(MockMultipleOkResolver::new(expected_urls_and_contexts.clone())),
-        );
-
-        let top_instance = Arc::new(ComponentManagerInstance::new(vec![], vec![]));
-        let environment = Environment::new_root(
-            &top_instance,
-            RunnerRegistry::default(),
-            resolver,
-            DebugRegistry::default(),
-        );
-        let root = new_root_component(
-            environment,
-            &top_instance,
-            Arc::new(ModelContext::new_for_test()),
-            Weak::new(),
-            "fuchsia-pkg://fuchsia.com/package#meta/comp.cm",
-        )
-        .await;
-        let child = new_component(
-            get_input(&root).await,
-            root.environment.clone(),
-            Moniker::parse_str("root/child")?,
-            "subpackage#meta/subcomp.cm",
-            fdecl::StartupMode::Lazy,
-            fdecl::OnTerminate::None,
-            None,
-            Arc::new(ModelContext::new_for_test()),
-            WeakExtendedInstance::Component(WeakComponentInstance::from(&root)),
-            Arc::new(Hooks::new()),
-            false,
-        )
-        .await;
-
-        let relpath = address_from("subpackage#meta/subcomp.cm", &child).await?;
-        assert_matches!(relpath, ComponentAddress::RelativePath { .. });
-        assert_eq!(relpath.path(), "subpackage");
-        assert_eq!(relpath.resource(), Some("meta/subcomp.cm"));
-        assert_eq!(
-            relpath.context(),
-            &ComponentResolutionContext::new("package_context".as_bytes().to_vec())
-        );
-
-        Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn test_from_relative_path_component_url_with_fuchsia_boot_component_instance()
-    -> Result<(), Error> {
-        let expected_urls_and_contexts = vec![
-            ResolveState::new(
-                "fuchsia-boot:///package#meta/comp.cm",
-                None,
-                Some(ComponentResolutionContext::new("package_context".as_bytes().to_vec())),
-            ),
-            ResolveState::new(
-                "subpackage#meta/subcomp.cm",
-                Some(ComponentResolutionContext::new("package_context".as_bytes().to_vec())),
-                Some(ComponentResolutionContext::new("subpackage_context".as_bytes().to_vec())),
-            ),
-        ];
-        let mut resolver = ResolverRegistry::new();
-
-        resolver.register(
-            "fuchsia-boot".to_string(),
-            Arc::new(MockMultipleOkResolver::new(expected_urls_and_contexts.clone())),
-        );
-
-        let top_instance = Arc::new(ComponentManagerInstance::new(vec![], vec![]));
-        let environment = Environment::new_root(
-            &top_instance,
-            RunnerRegistry::default(),
-            resolver,
-            DebugRegistry::default(),
-        );
-
-        let root = new_root_component(
-            environment,
-            &top_instance,
-            Arc::new(ModelContext::new_for_test()),
-            Weak::new(),
-            "fuchsia-boot:///package#meta/comp.cm",
-        )
-        .await;
-        let child = new_component(
-            get_input(&root).await,
-            root.environment.clone(),
-            Moniker::parse_str("root/child")?,
-            "subpackage#meta/subcomp.cm",
-            fdecl::StartupMode::Lazy,
-            fdecl::OnTerminate::None,
-            None,
-            Arc::new(ModelContext::new_for_test()),
-            WeakExtendedInstance::Component(WeakComponentInstance::from(&root)),
-            Arc::new(Hooks::new()),
-            false,
-        )
-        .await;
-
-        let relpath = address_from("subpackage#meta/subcomp.cm", &child).await?;
-        assert_matches!(relpath, ComponentAddress::RelativePath { .. });
-        assert_eq!(relpath.path(), "subpackage");
-        assert_eq!(relpath.resource(), Some("meta/subcomp.cm"));
-        assert_eq!(
-            relpath.context(),
-            &ComponentResolutionContext::new("package_context".as_bytes().to_vec())
-        );
-        Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn test_from_relative_path_component_url_with_cast_component_instance()
-    -> Result<(), Error> {
-        let expected_urls_and_contexts = vec![
-            ResolveState::new(
-                "cast:00000000/package#meta/comp.cm",
-                None,
-                Some(ComponentResolutionContext::new("package_context".as_bytes().to_vec())),
-            ),
-            ResolveState::new(
-                "subpackage#meta/subcomp.cm",
-                Some(ComponentResolutionContext::new("package_context".as_bytes().to_vec())),
-                Some(ComponentResolutionContext::new("subpackage_context".as_bytes().to_vec())),
-            ),
-        ];
-        let mut resolver = ResolverRegistry::new();
-
-        resolver.register(
-            "cast".to_string(),
-            Arc::new(MockMultipleOkResolver::new(expected_urls_and_contexts.clone())),
-        );
-
-        let top_instance = Arc::new(ComponentManagerInstance::new(vec![], vec![]));
-        let environment = Environment::new_root(
-            &top_instance,
-            RunnerRegistry::default(),
-            resolver,
-            DebugRegistry::default(),
-        );
-        let root = new_root_component(
-            environment,
-            &top_instance,
-            Arc::new(ModelContext::new_for_test()),
-            Weak::new(),
-            "cast:00000000/package#meta/comp.cm",
-        )
-        .await;
-        let child = new_component(
-            get_input(&root).await,
-            root.environment.clone(),
-            Moniker::parse_str("root/child")?,
-            "subpackage#meta/subcomp.cm",
-            fdecl::StartupMode::Lazy,
-            fdecl::OnTerminate::None,
-            None,
-            Arc::new(ModelContext::new_for_test()),
-            WeakExtendedInstance::Component(WeakComponentInstance::from(&root)),
-            Arc::new(Hooks::new()),
-            false,
-        )
-        .await;
-
-        let relpath = address_from("subpackage#meta/subcomp.cm", &child).await?;
-        assert_matches!(relpath, ComponentAddress::RelativePath { .. });
-        assert_eq!(relpath.path(), "subpackage");
-        assert_eq!(relpath.resource(), Some("meta/subcomp.cm"));
-        assert_eq!(
-            relpath.context(),
-            &ComponentResolutionContext::new("package_context".as_bytes().to_vec())
-        );
-        Ok(())
-    }
-
     #[fuchsia::test]
     async fn relative_to_fuchsia_pkg() -> Result<(), Error> {
         let expected_urls_and_contexts = vec![
@@ -711,22 +205,14 @@ mod tests {
                 Some(ComponentResolutionContext::new("package_context".as_bytes().to_vec())),
             ),
         ];
-        let mut resolver = ResolverRegistry::new();
 
-        resolver.register(
-            "fuchsia-pkg".to_string(),
+        let resolvers: Vec<(&'static str, Arc<dyn Resolver + Send + Sync + 'static>)> = vec![(
+            "fuchsia-pkg",
             Arc::new(MockMultipleOkResolver::new(expected_urls_and_contexts.clone())),
-        );
-
+        )];
         let top_instance = Arc::new(ComponentManagerInstance::new(vec![], vec![]));
-        let environment = Environment::new_root(
-            &top_instance,
-            RunnerRegistry::default(),
-            resolver,
-            DebugRegistry::default(),
-        );
         let root = new_root_component(
-            environment,
+            resolvers,
             &top_instance,
             Arc::new(ModelContext::new_for_test()),
             Weak::new(),
@@ -736,7 +222,6 @@ mod tests {
 
         let child = new_component(
             get_input(&root).await,
-            root.environment.clone(),
             Moniker::parse_str("root/child")?,
             "#meta/my-child.cm",
             fdecl::StartupMode::Lazy,
@@ -775,22 +260,15 @@ mod tests {
                 Some(ComponentResolutionContext::new("package_context".as_bytes().to_vec())),
             ),
         ];
-        let mut resolver = ResolverRegistry::new();
 
-        resolver.register(
-            "fuchsia-pkg".to_string(),
+        let resolvers: Vec<(&'static str, Arc<dyn Resolver + Send + Sync + 'static>)> = vec![(
+            "fuchsia-pkg",
             Arc::new(MockMultipleOkResolver::new(expected_urls_and_contexts.clone())),
-        );
+        )];
 
         let top_instance = Arc::new(ComponentManagerInstance::new(vec![], vec![]));
-        let environment = Environment::new_root(
-            &top_instance,
-            RunnerRegistry::default(),
-            resolver,
-            DebugRegistry::default(),
-        );
         let root = new_root_component(
-            environment,
+            resolvers,
             &top_instance,
             Arc::new(ModelContext::new_for_test()),
             Weak::new(),
@@ -800,7 +278,6 @@ mod tests {
 
         let child_one = new_component(
             get_input(&root).await,
-            root.environment.clone(),
             Moniker::parse_str("root/child")?,
             "#meta/my-child.cm",
             fdecl::StartupMode::Lazy,
@@ -815,7 +292,6 @@ mod tests {
 
         let child_two = new_component(
             get_input(&root).await,
-            root.environment.clone(),
             Moniker::parse_str("root/child")?,
             "#meta/my-child2.cm",
             fdecl::StartupMode::Lazy,
@@ -848,22 +324,15 @@ mod tests {
                 Some(ComponentResolutionContext::new("package_context".as_bytes().to_vec())),
             ),
         ];
-        let mut resolver = ResolverRegistry::new();
 
-        resolver.register(
-            "fuchsia-boot".to_string(),
+        let resolvers: Vec<(&'static str, Arc<dyn Resolver + Send + Sync + 'static>)> = vec![(
+            "fuchsia-boot",
             Arc::new(MockMultipleOkResolver::new(expected_urls_and_contexts.clone())),
-        );
+        )];
 
         let top_instance = Arc::new(ComponentManagerInstance::new(vec![], vec![]));
-        let environment = Environment::new_root(
-            &top_instance,
-            RunnerRegistry::default(),
-            resolver,
-            DebugRegistry::default(),
-        );
         let root = new_root_component(
-            environment,
+            resolvers,
             &top_instance,
             Arc::new(ModelContext::new_for_test()),
             Weak::new(),
@@ -873,7 +342,6 @@ mod tests {
 
         let child = new_component(
             get_input(&root).await,
-            root.environment.clone(),
             Moniker::parse_str("root/child")?,
             "#meta/my-child.cm",
             fdecl::StartupMode::Lazy,
@@ -906,22 +374,14 @@ mod tests {
                 Some(ComponentResolutionContext::new("package_context".as_bytes().to_vec())),
             ),
         ];
-        let mut resolver = ResolverRegistry::new();
-
-        resolver.register(
-            "cast".to_string(),
+        let resolvers: Vec<(&'static str, Arc<dyn Resolver + Send + Sync + 'static>)> = vec![(
+            "cast",
             Arc::new(MockMultipleOkResolver::new(expected_urls_and_contexts.clone())),
-        );
+        )];
 
         let top_instance = Arc::new(ComponentManagerInstance::new(vec![], vec![]));
-        let environment = Environment::new_root(
-            &top_instance,
-            RunnerRegistry::default(),
-            resolver,
-            DebugRegistry::default(),
-        );
         let root = new_root_component(
-            environment,
+            resolvers,
             &top_instance,
             Arc::new(ModelContext::new_for_test()),
             Weak::new(),
@@ -931,7 +391,6 @@ mod tests {
 
         let child = new_component(
             get_input(&root).await,
-            root.environment.clone(),
             Moniker::parse_str("root/child")?,
             "#meta/my-child.cm",
             fdecl::StartupMode::Lazy,
@@ -952,17 +411,9 @@ mod tests {
 
     #[fuchsia::test]
     async fn resolve_above_root_error() -> Result<(), Error> {
-        let resolver = ResolverRegistry::new();
-
         let top_instance = Arc::new(ComponentManagerInstance::new(vec![], vec![]));
-        let environment = Environment::new_root(
-            &top_instance,
-            RunnerRegistry::default(),
-            resolver,
-            DebugRegistry::default(),
-        );
         let root = new_root_component(
-            environment,
+            vec![],
             &top_instance,
             Arc::new(ModelContext::new_for_test()),
             Weak::new(),
@@ -972,7 +423,6 @@ mod tests {
 
         let child = new_component(
             get_input(&root).await,
-            root.environment.clone(),
             Moniker::parse_str("root/child")?,
             "#meta/my-child.cm",
             fdecl::StartupMode::Lazy,
@@ -1009,22 +459,15 @@ mod tests {
                 Some(ComponentResolutionContext::new("my-subpackage...".as_bytes().to_vec())),
             ),
         ];
-        let mut resolver = ResolverRegistry::new();
 
-        resolver.register(
-            "fuchsia-pkg".to_string(),
+        let resolvers: Vec<(&'static str, Arc<dyn Resolver + Send + Sync + 'static>)> = vec![(
+            "fuchsia-pkg",
             Arc::new(MockMultipleOkResolver::new(expected_urls_and_contexts.clone())),
-        );
+        )];
 
         let top_instance = Arc::new(ComponentManagerInstance::new(vec![], vec![]));
-        let environment = Environment::new_root(
-            &top_instance,
-            RunnerRegistry::default(),
-            resolver,
-            DebugRegistry::default(),
-        );
         let root = new_root_component(
-            environment,
+            resolvers,
             &top_instance,
             Arc::new(ModelContext::new_for_test()),
             Weak::new(),
@@ -1034,7 +477,6 @@ mod tests {
 
         let child_one = new_component(
             get_input(&root).await,
-            root.environment.clone(),
             Moniker::parse_str("root/child")?,
             "my-subpackage#meta/my-child.cm",
             fdecl::StartupMode::Lazy,
@@ -1049,7 +491,6 @@ mod tests {
 
         let child_two = new_component(
             get_input(&root).await,
-            root.environment.clone(),
             Moniker::parse_str("root/child/child2")?,
             "#meta/my-child2.cm",
             fdecl::StartupMode::Lazy,
@@ -1092,22 +533,15 @@ mod tests {
                 Some(ComponentResolutionContext::new("my-subpackage...".as_bytes().to_vec())),
             ),
         ];
-        let mut resolver = ResolverRegistry::new();
 
-        resolver.register(
-            "fuchsia-pkg".to_string(),
+        let resolvers: Vec<(&'static str, Arc<dyn Resolver + Send + Sync + 'static>)> = vec![(
+            "fuchsia-pkg",
             Arc::new(MockMultipleOkResolver::new(expected_urls_and_contexts.clone())),
-        );
+        )];
 
         let top_instance = Arc::new(ComponentManagerInstance::new(vec![], vec![]));
-        let environment = Environment::new_root(
-            &top_instance,
-            RunnerRegistry::default(),
-            resolver,
-            DebugRegistry::default(),
-        );
         let root = new_root_component(
-            environment,
+            resolvers,
             &top_instance,
             Arc::new(ModelContext::new_for_test()),
             Weak::new(),
@@ -1117,7 +551,6 @@ mod tests {
 
         let child_one = new_component(
             get_input(&root).await,
-            root.environment.clone(),
             Moniker::parse_str("root/child")?,
             "my-subpackage#meta/my-child.cm",
             fdecl::StartupMode::Lazy,
@@ -1132,7 +565,6 @@ mod tests {
 
         let child_two = new_component(
             get_input(&root).await,
-            root.environment.clone(),
             Moniker::parse_str("root/child/child2")?,
             "#meta/my-child2.cm",
             fdecl::StartupMode::Lazy,
@@ -1147,7 +579,6 @@ mod tests {
 
         let child_three = new_component(
             get_input(&root).await,
-            root.environment.clone(),
             Moniker::parse_str("root/child/child2/child3")?,
             "#meta/my-child3.cm",
             fdecl::StartupMode::Lazy,
@@ -1195,26 +626,21 @@ mod tests {
                 Some(ComponentResolutionContext::new("my-subpackage2...".as_bytes().to_vec())),
             ),
         ];
-        let mut resolver = ResolverRegistry::new();
 
-        resolver.register(
-            "fuchsia-pkg".to_string(),
-            Arc::new(MockMultipleOkResolver::new(expected_urls_and_contexts.clone())),
-        );
-        resolver.register(
-            "realm-builder".to_string(),
-            Arc::new(MockOkResolver { expected_url: "realm-builder://0/my-realm".to_string() }),
-        );
+        let resolvers: Vec<(&'static str, Arc<dyn Resolver + Send + Sync + 'static>)> = vec![
+            (
+                "fuchsia-pkg",
+                Arc::new(MockMultipleOkResolver::new(expected_urls_and_contexts.clone())),
+            ),
+            (
+                "realm-builder",
+                Arc::new(MockOkResolver { expected_url: "realm-builder://0/my-realm".to_string() }),
+            ),
+        ];
 
         let top_instance = Arc::new(ComponentManagerInstance::new(vec![], vec![]));
-        let environment = Environment::new_root(
-            &top_instance,
-            RunnerRegistry::default(),
-            resolver,
-            DebugRegistry::default(),
-        );
         let root = new_root_component(
-            environment,
+            resolvers,
             &top_instance,
             Arc::new(ModelContext::new_for_test()),
             Weak::new(),
@@ -1224,7 +650,6 @@ mod tests {
 
         let realm = new_component(
             get_input(&root).await,
-            root.environment.clone(),
             Moniker::parse_str("root/realm/child")?,
             "realm-builder://0/my-realm",
             fdecl::StartupMode::Lazy,
@@ -1239,7 +664,6 @@ mod tests {
 
         let child_one = new_component(
             get_input(&root).await,
-            root.environment.clone(),
             Moniker::parse_str("root/realm/child")?,
             "my-subpackage1#meta/sub1.cm",
             fdecl::StartupMode::Lazy,
@@ -1254,7 +678,6 @@ mod tests {
 
         let child_two = new_component(
             get_input(&root).await,
-            root.environment.clone(),
             Moniker::parse_str("root/realm/child/child2")?,
             "#meta/sub1-child.cm",
             fdecl::StartupMode::Lazy,
@@ -1269,7 +692,6 @@ mod tests {
 
         let child_three = new_component(
             get_input(&root).await,
-            root.environment.clone(),
             Moniker::parse_str("root/realm/child/child2/child3")?,
             "my-subpackage2#meta/sub2.cm",
             fdecl::StartupMode::Lazy,
@@ -1284,7 +706,6 @@ mod tests {
 
         let child_four = new_component(
             get_input(&root).await,
-            root.environment.clone(),
             Moniker::parse_str("root/realm/child/child2/child3/child4")?,
             "#meta/sub2-child.cm",
             fdecl::StartupMode::Lazy,

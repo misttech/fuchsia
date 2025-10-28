@@ -81,7 +81,6 @@ rustc_library("routing") {
     "src/capability_source.rs",
     "src/component_instance.rs",
     "src/config.rs",
-    "src/environment.rs",
     "src/error.rs",
     "src/legacy_router.rs",
     "src/lib.rs",
@@ -98,6 +97,7 @@ rustc_library("routing") {
     "//src/lib/fuchsia",
     "//src/sys/lib/cm_rust/testing",
     "//third_party/rust_crates:assert_matches",
+    "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:test-case",
   ]
 

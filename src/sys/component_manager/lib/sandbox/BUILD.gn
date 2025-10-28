@@ -87,6 +87,7 @@ rustc_library("sandbox") {
   }
 
   visibility = [
+    "//src/security/lib/scrutiny/frontend/*",
     "//src/sys/component_manager/*",
     "//src/sys/lib/elf_runner/*",
     "//src/sys/lib/routing/*",

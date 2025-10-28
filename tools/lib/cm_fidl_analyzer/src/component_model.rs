@@ -8,9 +8,9 @@ use crate::{PkgUrlMatch, match_absolute_component_urls};
 use anyhow::{Context, Result, anyhow};
 use cm_config::RuntimeConfig;
 use cm_rust::{
-    CapabilityDecl, CapabilityTypeName, ComponentDecl, ExposeDecl, ExposeDeclCommon, OfferDecl,
-    OfferDeclCommon, OfferStorageDecl, OfferTarget, ProgramDecl, ResolverRegistration, SourceName,
-    UseDecl, UseDeclCommon, UseEventStreamDecl, UseRunnerDecl, UseSource, UseStorageDecl,
+    CapabilityTypeName, ComponentDecl, ExposeDecl, ExposeDeclCommon, OfferDecl, OfferDeclCommon,
+    OfferStorageDecl, OfferTarget, ProgramDecl, SourceName, UseDecl, UseDeclCommon,
+    UseEventStreamDecl, UseRunnerDecl, UseSource, UseStorageDecl,
 };
 use cm_types::{IterablePath, Name, Url};
 use config_encoder::ConfigFields;
@@ -19,20 +19,17 @@ use fuchsia_url::AbsoluteComponentUrl;
 use futures::FutureExt;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
 use router_error::{Explain, RouterError};
+use routing::bedrock::request_metadata::resolver_metadata;
 use routing::capability_source::{
-    BuiltinSource, CapabilitySource, CapabilityToCapabilitySource, ComponentCapability,
-    ComponentSource, InternalCapability,
+    CapabilitySource, CapabilityToCapabilitySource, ComponentCapability, ComponentSource,
 };
-use routing::component_instance::{
-    ComponentInstanceInterface, ExtendedInstanceInterface, TopInstanceInterface,
-};
-use routing::environment::{RunnerRegistry, find_first_absolute_ancestor_url};
+use routing::component_instance::{ComponentInstanceInterface, ExtendedInstanceInterface};
 use routing::error::{ComponentInstanceError, RoutingError};
 use routing::legacy_router::RouteBundle;
 use routing::mapper::{RouteMapper, RouteSegment};
 use routing::policy::GlobalPolicyChecker;
 use routing::{RouteRequest, RouteSource, route_capability, route_event_stream};
-use sandbox::{Capability, RouterResponse};
+use sandbox::{Capability, Request, RouterResponse};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -189,14 +186,12 @@ impl ModelBuilderForAnalyzer {
         decls_by_url: HashMap<Url, (ComponentDecl, Option<ConfigFields>)>,
         runtime_config: Arc<RuntimeConfig>,
         component_id_index: Arc<component_id_index::Index>,
-        runner_registry: RunnerRegistry,
     ) -> BuildModelResult {
         self.build_with_dynamic_config(
             DynamicConfig::default(),
             decls_by_url,
             runtime_config,
             component_id_index,
-            runner_registry,
         )
     }
 
@@ -206,7 +201,6 @@ impl ModelBuilderForAnalyzer {
         decls_by_url: HashMap<Url, (ComponentDecl, Option<ConfigFields>)>,
         runtime_config: Arc<RuntimeConfig>,
         component_id_index: Arc<component_id_index::Index>,
-        runner_registry: RunnerRegistry,
     ) -> BuildModelResult {
         let mut result = BuildModelResult::new();
 
@@ -247,7 +241,6 @@ impl ModelBuilderForAnalyzer {
                     Arc::clone(&runtime_config),
                     model.policy_checker.clone(),
                     Arc::clone(&model.component_id_index),
-                    runner_registry,
                     Arc::clone(&dynamic_dictionaries),
                 );
 
@@ -462,6 +455,28 @@ impl ModelBuilderForAnalyzer {
                     );
                 }
                 return Ok(decls_by_url.get(strong_decl_url_matches[0]));
+            }
+        }
+    }
+}
+
+fn find_first_absolute_ancestor_url(
+    component: &Arc<ComponentInstanceForAnalyzer>,
+) -> Result<Url, ComponentInstanceError> {
+    let mut parent = component.try_get_parent()?;
+    loop {
+        match parent {
+            ExtendedInstanceInterface::Component(parent_component) => {
+                if !parent_component.url().is_relative() {
+                    return Ok(parent_component.url().clone());
+                }
+                parent = parent_component.try_get_parent()?;
+            }
+            ExtendedInstanceInterface::AboveRoot(_) => {
+                return Err(ComponentInstanceError::NoAbsoluteUrl {
+                    url: component.url().to_string(),
+                    moniker: component.moniker().clone(),
+                });
             }
         }
     }
@@ -794,7 +809,7 @@ impl ComponentModelForAnalyzer {
             let type_results = results
                 .get_mut(&CapabilityTypeName::Resolver)
                 .expect("expected results for capability type");
-            type_results.push(self.check_resolver(&target));
+            type_results.push(self.check_resolver(&target).await);
         }
 
         results
@@ -1100,103 +1115,69 @@ impl ComponentModelForAnalyzer {
     /// Given a component instance, extracts the URL scheme for that instance and looks for a
     /// resolver for that scheme in the instance's environment, recording an error if none
     /// is found. If a resolver is found, checks that it has a valid capability route.
-    pub fn check_resolver(
+    pub async fn check_resolver(
         self: &Arc<Self>,
         target: &Arc<ComponentInstanceForAnalyzer>,
     ) -> VerifyRouteResult {
         let scheme = target.url().scheme().expect("all urls are absolute");
-
-        match target.environment.get_registered_resolver(&scheme) {
-            Ok(Some((ExtendedInstanceInterface::Component(instance), resolver))) => {
-                let (route_result, route) = Self::route_capability_sync(
-                    RouteRequest::Resolver(resolver.clone()),
-                    &instance,
-                );
-                match route_result {
-                    Ok(source) => VerifyRouteResult {
-                        using_node: target.moniker().clone(),
-                        target_decl: TargetDecl::ResolverFromEnvironment(scheme.clone()),
-                        capability: Some(resolver.resolver),
-                        error: None,
-                        route,
-                        source: Some(source.source),
-                    },
-                    Err(err) => VerifyRouteResult {
-                        using_node: target.moniker().clone(),
-                        target_decl: TargetDecl::ResolverFromEnvironment(scheme.clone()),
-                        capability: Some(resolver.resolver),
-                        error: Some(err.into()),
-                        route,
-                        source: None,
-                    },
-                }
+        let scheme_name = Name::new(&scheme).expect("invalid scheme");
+        let sandbox = match target.component_sandbox().await {
+            Ok(sandbox) => sandbox,
+            Err(err) => {
+                return VerifyRouteResult {
+                    using_node: target.moniker().clone(),
+                    target_decl: TargetDecl::ResolverFromEnvironment(scheme.clone()),
+                    capability: None,
+                    error: Some(AnalyzerModelError::from(err)),
+                    route: vec![],
+                    source: None,
+                };
             }
-            Ok(Some((ExtendedInstanceInterface::AboveRoot(_), resolver))) => {
-                match self.get_builtin_resolver_decl(&resolver) {
-                    Ok(decl) => {
-                        let route = vec![RouteSegment::ProvideAsBuiltin { capability: decl }];
-                        VerifyRouteResult {
-                            using_node: target.moniker().clone(),
-                            target_decl: TargetDecl::ResolverFromEnvironment(scheme.clone()),
-                            capability: Some(resolver.resolver),
-                            error: None,
-                            route,
-                            source: Some(CapabilitySource::Builtin(BuiltinSource {
-                                capability: InternalCapability::Resolver(
-                                    Name::new(scheme.clone()).unwrap(),
-                                ),
-                            })),
-                        }
-                    }
-                    Err(err) => VerifyRouteResult {
+        };
+        let resolver_router =
+            match sandbox.component_input.environment().resolvers().get(&scheme_name) {
+                Ok(Some(Capability::ConnectorRouter(resolver_router))) => resolver_router,
+                _ => {
+                    return VerifyRouteResult {
                         using_node: target.moniker().clone(),
                         target_decl: TargetDecl::ResolverFromEnvironment(scheme.clone()),
-                        capability: Some(resolver.resolver),
-                        error: Some(err),
+                        capability: None,
+                        error: Some(AnalyzerModelError::MissingResolverForScheme(
+                            target.moniker().clone(),
+                            scheme.to_string(),
+                        )),
                         route: vec![],
                         source: None,
-                    },
+                    };
                 }
+            };
+        let request = Request {
+            target: target.as_weak().into(),
+            metadata: resolver_metadata(cm_rust::Availability::Required),
+        };
+        let source: CapabilitySource = match resolver_router.route(Some(request), true).await {
+            Ok(RouterResponse::Debug(data)) => data.try_into().unwrap(),
+            Ok(RouterResponse::Unavailable) => panic!("resolvers cannot be optional"),
+            Ok(RouterResponse::Capability(_)) => panic!("we did not request a capability"),
+            Err(err) => {
+                let err: RoutingError = err.try_into().unwrap();
+                return VerifyRouteResult {
+                    using_node: target.moniker().clone(),
+                    target_decl: TargetDecl::ResolverFromEnvironment(scheme.clone()),
+                    capability: None,
+                    error: Some(AnalyzerModelError::from(err)),
+                    route: vec![],
+                    source: None,
+                };
             }
-            Ok(None) => VerifyRouteResult {
-                using_node: target.moniker().clone(),
-                target_decl: TargetDecl::ResolverFromEnvironment(scheme.clone()),
-                capability: None,
-                error: Some(AnalyzerModelError::MissingResolverForScheme(
-                    target.moniker().clone(),
-                    scheme.to_string(),
-                )),
-                route: vec![],
-                source: None,
-            },
-            Err(err) => VerifyRouteResult {
-                using_node: target.moniker().clone(),
-                target_decl: TargetDecl::ResolverFromEnvironment(scheme.clone()),
-                capability: None,
-                error: Some(AnalyzerModelError::from(err)),
-                route: vec![],
-                source: None,
-            },
-        }
-    }
-
-    // Retrieves the `CapabilityDecl` for a built-in resolver from its registration, or an
-    // error if the resolver is not provided as a built-in capability.
-    fn get_builtin_resolver_decl(
-        &self,
-        resolver: &ResolverRegistration,
-    ) -> Result<CapabilityDecl, AnalyzerModelError> {
-        match self.top_instance.builtin_capabilities().iter().find(|&decl| {
-            if let CapabilityDecl::Resolver(resolver_decl) = decl {
-                resolver_decl.name == resolver.resolver
-            } else {
-                false
-            }
-        }) {
-            Some(decl) => Ok(decl.clone()),
-            None => Err(AnalyzerModelError::RoutingError(
-                RoutingError::use_from_component_manager_not_found(resolver.resolver.to_string()),
-            )),
+        };
+        VerifyRouteResult {
+            using_node: target.moniker().clone(),
+            target_decl: TargetDecl::ResolverFromEnvironment(scheme.clone()),
+            capability: source.source_name().cloned(),
+            error: None,
+            route: vec![],
+            source: Some(source),
         }
     }
 
@@ -1460,7 +1441,6 @@ pub struct Child {
 mod tests {
     use super::ModelBuilderForAnalyzer;
     use crate::ComponentModelForAnalyzer;
-    use crate::environment::BOOT_SCHEME;
     use anyhow::Result;
     use assert_matches::assert_matches;
     use cm_config::RuntimeConfig;
@@ -1473,19 +1453,22 @@ mod tests {
     };
     use cm_types::{Name, Url};
     use config_encoder::ConfigFields;
-    use fidl_fuchsia_component_internal as component_internal;
     use maplit::hashmap;
-    use moniker::{ChildName, Moniker};
+    use moniker::{ChildName, ExtendedMoniker, Moniker};
     use routing::RouteRequest;
-    use routing::component_instance::{
-        ComponentInstanceInterface, ExtendedInstanceInterface, WeakExtendedInstanceInterface,
-    };
-    use routing::environment::RunnerRegistry;
+    use routing::bedrock::request_metadata::{resolver_metadata, runner_metadata};
+    use routing::capability_source::CapabilitySource;
+    use routing::component_instance::{ComponentInstanceInterface, ExtendedInstanceInterface};
     use routing::error::ComponentInstanceError;
+    use sandbox::{Capability, Request, RouterResponse};
     use std::collections::HashMap;
     use std::sync::Arc;
+    use {
+        fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_internal as component_internal,
+    };
 
     const TEST_URL_PREFIX: &str = "test:///";
+    const BOOT_SCHEME: &str = "fuchsia-boot";
 
     fn make_test_url(component_name: &str) -> Url {
         Url::new(&format!("{}{}", TEST_URL_PREFIX, component_name)).unwrap()
@@ -1514,7 +1497,6 @@ mod tests {
             make_decl_map(components),
             config,
             Arc::new(component_id_index::Index::default()),
-            RunnerRegistry::default(),
         );
         assert_eq!(build_model_result.errors.len(), 0);
         assert!(build_model_result.model.is_some());
@@ -1555,23 +1537,6 @@ mod tests {
         assert!(get_child.is_some());
         assert_eq!(get_child.as_ref().unwrap().moniker(), child_instance.moniker());
 
-        let root_environment = root_instance.environment();
-        let child_environment = child_instance.environment();
-
-        assert_eq!(root_environment.env().name(), None);
-        match root_environment.env().parent() {
-            WeakExtendedInstanceInterface::AboveRoot(_) => {}
-            _ => panic!("root environment's parent should be `AboveRoot`"),
-        }
-
-        assert_eq!(child_environment.env().name(), None);
-        match child_environment.env().parent() {
-            WeakExtendedInstanceInterface::Component(component) => {
-                assert_eq!(component.upgrade()?.moniker(), root_instance.moniker());
-            }
-            _ => panic!("child environment's parent should be root component"),
-        }
-
         assert!(root_instance.resolve().is_ok());
         assert!(child_instance.resolve().is_ok());
 
@@ -1598,7 +1563,6 @@ mod tests {
             decls_by_url,
             config,
             Arc::new(component_id_index::Index::default()),
-            RunnerRegistry::default(),
         );
         assert_eq!(build_model_result.errors.len(), 0);
         assert!(build_model_result.model.is_some());
@@ -1625,7 +1589,6 @@ mod tests {
             make_decl_map(components),
             config,
             Arc::new(component_id_index::Index::default()),
-            RunnerRegistry::default(),
         );
         assert_eq!(build_model_result.errors.len(), 0);
         assert!(build_model_result.model.is_some());
@@ -1664,7 +1627,6 @@ mod tests {
             make_decl_map(components),
             config,
             Arc::new(component_id_index::Index::default()),
-            RunnerRegistry::default(),
         );
         assert_eq!(build_model_result.errors.len(), 0);
         assert!(build_model_result.model.is_some());
@@ -1727,7 +1689,6 @@ mod tests {
             decl_map,
             config,
             Arc::new(component_id_index::Index::default()),
-            RunnerRegistry::default(),
         );
         assert_eq!(build_model_result.errors.len(), 0);
         assert!(build_model_result.model.is_some());
@@ -1775,7 +1736,6 @@ mod tests {
             decl_map,
             config,
             Arc::new(component_id_index::Index::default()),
-            RunnerRegistry::default(),
         );
         assert_eq!(build_model_result.errors.len(), 0);
         assert!(build_model_result.model.is_some());
@@ -1851,7 +1811,6 @@ mod tests {
             decl_map,
             config,
             Arc::new(component_id_index::Index::default()),
-            RunnerRegistry::default(),
         );
         assert_eq!(build_model_result.errors.len(), 0);
         assert!(build_model_result.model.is_some());
@@ -1892,7 +1851,6 @@ mod tests {
             decl_map,
             config,
             Arc::new(component_id_index::Index::default()),
-            RunnerRegistry::default(),
         );
         assert_eq!(build_model_result.errors.len(), 0);
         assert!(build_model_result.model.is_some());
@@ -1906,7 +1864,7 @@ mod tests {
     // Checks that the child has access to the inherited runner and resolver registrations through its
     // environment.
     #[fuchsia::test]
-    fn environment_inherits() -> Result<()> {
+    async fn environment_inherits() -> Result<()> {
         let child_env_name = "child_env";
         let child_runner_registration = RunnerRegistration {
             source_name: "child_env_runner".parse().unwrap(),
@@ -1924,9 +1882,20 @@ mod tests {
                 "root",
                 ComponentDeclBuilder::new()
                     .child(ChildBuilder::new().name("child").environment(child_env_name))
+                    .capability(
+                        CapabilityBuilder::resolver()
+                            .name("child_env_resolver")
+                            .path("/svc/child_env_resolver"),
+                    )
+                    .capability(
+                        CapabilityBuilder::runner()
+                            .name("child_env_runner")
+                            .path("/svc/child_env_runner"),
+                    )
                     .environment(
                         EnvironmentBuilder::new()
                             .name(child_env_name)
+                            .extends(fdecl::EnvironmentExtends::Realm)
                             .resolver(child_resolver_registration.clone())
                             .runner(child_runner_registration.clone()),
                     )
@@ -1941,18 +1910,22 @@ mod tests {
         config.builtin_boot_resolver = component_internal::BuiltinBootResolver::Boot;
 
         let builtin_runner_name: Name = "builtin_elf_runner".parse().unwrap();
-        let builtin_runner_registration = RunnerRegistration {
-            source_name: builtin_runner_name.clone(),
-            source: RegistrationSource::Self_,
-            target_name: builtin_runner_name.clone(),
-        };
+        let builtin_runner_decl = cm_rust::CapabilityDecl::Runner(cm_rust::RunnerDecl {
+            name: builtin_runner_name.clone(),
+            source_path: None,
+        });
+        let builtin_resolver_name: Name = BOOT_SCHEME.parse().unwrap();
+        let builtin_resolver_decl = cm_rust::CapabilityDecl::Resolver(cm_rust::ResolverDecl {
+            name: builtin_resolver_name.clone(),
+            source_path: None,
+        });
+        config.builtin_capabilities = vec![builtin_runner_decl, builtin_resolver_decl];
 
         let cm_url = make_test_url("root");
         let build_model_result = ModelBuilderForAnalyzer::new(cm_url).build(
             make_decl_map(components),
             Arc::new(config),
             Arc::new(component_id_index::Index::default()),
-            RunnerRegistry::from_decl(&vec![builtin_runner_registration]),
         );
         assert_eq!(build_model_result.errors.len(), 0);
         assert!(build_model_result.model.is_some());
@@ -1962,58 +1935,95 @@ mod tests {
         let child_instance =
             model.get_instance(&Moniker::parse_str("child").unwrap()).expect("child instance");
 
-        let get_child_runner_result = child_instance
-            .environment()
-            .env()
-            .get_registered_runner(&child_runner_registration.target_name)?;
-        assert!(get_child_runner_result.is_some());
-        let (child_runner_registrar, child_runner) = get_child_runner_result.unwrap();
-        match child_runner_registrar {
-            ExtendedInstanceInterface::Component(instance) => {
-                assert_eq!(instance.moniker(), &Moniker::root());
-            }
-            ExtendedInstanceInterface::AboveRoot(_) => {
-                panic!("expected child_env_runner to be registered by the root instance")
-            }
-        }
-        assert_eq!(child_runner_registration, child_runner);
+        let environment = child_instance
+            .component_sandbox()
+            .await
+            .expect("failed to get sandbox")
+            .component_input
+            .environment();
+        let runner_router_capability =
+            environment.runners().get(&child_runner_registration.target_name).unwrap().unwrap();
+        let Capability::ConnectorRouter(runner_router) = runner_router_capability else {
+            panic!("unexpected capability for runner");
+        };
+        let request = Request {
+            target: child_instance.as_weak().into(),
+            metadata: runner_metadata(cm_rust::Availability::Required),
+        };
+        let res = runner_router.route(Some(request), true).await;
+        let source: CapabilitySource = match res {
+            Ok(RouterResponse::Debug(data)) => data.try_into().unwrap(),
+            other_response => panic!("unexpected response: {other_response:?}"),
+        };
+        assert_eq!(source.source_moniker(), Moniker::root().into());
 
-        let get_child_resolver_result = child_instance
-            .environment
-            .get_registered_resolver(&child_resolver_registration.scheme)?;
-        assert!(get_child_resolver_result.is_some());
-        let (child_resolver_registrar, child_resolver) = get_child_resolver_result.unwrap();
-        match child_resolver_registrar {
-            ExtendedInstanceInterface::Component(instance) => {
-                assert_eq!(instance.moniker(), &Moniker::root());
-            }
-            ExtendedInstanceInterface::AboveRoot(_) => {
-                panic!("expected child_env_resolver to be registered by the root instance")
-            }
-        }
-        assert_eq!(child_resolver_registration, child_resolver);
+        let resolver_router_capability = environment
+            .resolvers()
+            .get(&Name::new(&child_resolver_registration.scheme).unwrap())
+            .unwrap()
+            .unwrap();
+        let Capability::ConnectorRouter(resolver_router) = resolver_router_capability else {
+            panic!("unexpected capability for resolver");
+        };
+        let request = Request {
+            target: child_instance.as_weak().into(),
+            metadata: resolver_metadata(cm_rust::Availability::Required),
+        };
+        let res = resolver_router.route(Some(request), true).await;
+        let source: CapabilitySource = match res {
+            Ok(RouterResponse::Debug(data)) => data.try_into().unwrap(),
+            other_response => panic!("unexpected response: {other_response:?}"),
+        };
+        assert_eq!(source.source_moniker(), Moniker::root().into());
 
-        let get_builtin_runner_result =
-            child_instance.environment().env().get_registered_runner(&builtin_runner_name)?;
-        assert!(get_builtin_runner_result.is_some());
-        let (builtin_runner_registrar, _builtin_runner) = get_builtin_runner_result.unwrap();
-        match builtin_runner_registrar {
-            ExtendedInstanceInterface::Component(_) => {
-                panic!("expected builtin runner to be registered above the root")
-            }
-            ExtendedInstanceInterface::AboveRoot(_) => {}
-        }
+        let runner_router_capability =
+            environment.runners().get(&child_runner_registration.target_name).unwrap().unwrap();
+        let Capability::ConnectorRouter(runner_router) = runner_router_capability else {
+            panic!("unexpected capability for runner");
+        };
+        let request = Request {
+            target: child_instance.as_weak().into(),
+            metadata: runner_metadata(cm_rust::Availability::Required),
+        };
+        let res = runner_router.route(Some(request), true).await;
+        let source: CapabilitySource = match res {
+            Ok(RouterResponse::Debug(data)) => data.try_into().unwrap(),
+            other_response => panic!("unexpected response: {other_response:?}"),
+        };
+        assert_eq!(source.source_moniker(), Moniker::root().into());
 
-        let get_builtin_resolver_result =
-            child_instance.environment.get_registered_resolver(&BOOT_SCHEME.to_string())?;
-        assert!(get_builtin_resolver_result.is_some());
-        let (builtin_resolver_registrar, _builtin_resolver) = get_builtin_resolver_result.unwrap();
-        match builtin_resolver_registrar {
-            ExtendedInstanceInterface::Component(_) => {
-                panic!("expected boot resolver to be registered above the root")
-            }
-            ExtendedInstanceInterface::AboveRoot(_) => {}
-        }
+        let runner_router_capability =
+            environment.runners().get(&builtin_runner_name).unwrap().unwrap();
+        let Capability::ConnectorRouter(runner_router) = runner_router_capability else {
+            panic!("unexpected capability for runner");
+        };
+        let request = Request {
+            target: child_instance.as_weak().into(),
+            metadata: runner_metadata(cm_rust::Availability::Required),
+        };
+        let res = runner_router.route(Some(request), true).await;
+        let source: CapabilitySource = match res {
+            Ok(RouterResponse::Debug(data)) => data.try_into().unwrap(),
+            other_response => panic!("unexpected response: {other_response:?}"),
+        };
+        assert_eq!(source.source_moniker(), ExtendedMoniker::ComponentManager);
+
+        let scheme_name = Name::new(&*BOOT_SCHEME).unwrap();
+        let resolver_router_capability =
+            environment.resolvers().get(&scheme_name).unwrap().unwrap();
+        let Capability::ConnectorRouter(resolver_router) = resolver_router_capability else {
+            panic!("unexpected capability for resolver");
+        };
+        let request = Request {
+            target: child_instance.as_weak().into(),
+            metadata: resolver_metadata(cm_rust::Availability::Required),
+        };
+        let res = resolver_router.route(Some(request), true).await;
+        let source: CapabilitySource = match res {
+            Ok(RouterResponse::Debug(data)) => data.try_into().unwrap(),
+            other_response => panic!("unexpected response: {other_response:?}"),
+        };
+        assert_eq!(source.source_moniker(), ExtendedMoniker::ComponentManager);
 
         Ok(())
     }

@@ -279,6 +279,9 @@ impl ComponentSandbox {
         ] {
             copy_to.append(copy_from).expect("sandbox capability is not cloneable");
         }
+        if let Some(timeout) = component_input.environment().stop_timeout() {
+            self.component_input.environment().set_stop_timeout(timeout as i64);
+        }
         *self.framework_router.lock() = framework_router.lock().clone();
         if let Some(runner_router) = program_input.runner() {
             self.program_input.set_runner(runner_router.into());
@@ -950,6 +953,10 @@ fn build_environment<C: ComponentInstanceInterface + 'static>(
         } else {
             warn!("failed to copy component_input.environment");
         }
+    }
+    environment.set_name(&environment_decl.name);
+    if let Some(stop_timeout_ms) = environment_decl.stop_timeout_ms {
+        environment.set_stop_timeout(stop_timeout_ms as i64);
     }
     let debug = environment_decl.debug_capabilities.iter().map(|debug_registration| {
         let cm_rust::DebugRegistration::Protocol(debug) = debug_registration;

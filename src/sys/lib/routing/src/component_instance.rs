@@ -4,7 +4,6 @@
 
 use crate::bedrock::sandbox_construction::ComponentSandbox;
 use crate::capability_source::{BuiltinCapabilities, NamespaceCapabilities};
-use crate::environment;
 use crate::error::ComponentInstanceError;
 use crate::policy::GlobalPolicyChecker;
 use crate::resolving::{ComponentAddress, ComponentResolutionContext, ResolverError};
@@ -29,16 +28,15 @@ pub trait ComponentInstanceInterface: Sized + Send + Sync {
 
     /// Returns this `ComponentInstanceInterface`'s child moniker, if it is
     /// not the root instance.
-    fn child_moniker(&self) -> Option<&BorrowedChildName>;
+    fn child_moniker(&self) -> Option<&BorrowedChildName> {
+        self.moniker().leaf()
+    }
 
     /// Returns this `ComponentInstanceInterface`'s moniker.
     fn moniker(&self) -> &Moniker;
 
     /// Returns this `ComponentInstanceInterface`'s component URL.
     fn url(&self) -> &Url;
-
-    /// Returns a representation of this `ComponentInstanceInterface`'s environment.
-    fn environment(&self) -> &environment::Environment<Self>;
 
     /// Returns configuration overrides applied to this component by its parent.
     fn config_parent_overrides(&self) -> Option<&[cm_rust::ConfigOverride]>;
@@ -434,10 +432,6 @@ pub mod tests {
         }
 
         fn url(&self) -> &Url {
-            todo!()
-        }
-
-        fn environment(&self) -> &crate::environment::Environment<Self> {
             todo!()
         }
 

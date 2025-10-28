@@ -5,7 +5,7 @@
 use crate::DictExt;
 use cm_types::{BorrowedName, IterablePath, Name};
 use fidl_fuchsia_component_sandbox as fsandbox;
-use sandbox::{Capability, Dict};
+use sandbox::{Capability, Data, Dict};
 use std::fmt;
 use std::marker::PhantomData;
 use std::sync::LazyLock;
@@ -110,6 +110,12 @@ static RESOLVERS: LazyLock<Name> = LazyLock::new(|| "resolvers".parse().unwrap()
 /// Dictionary of capabilities the component exposes to the framework.
 static FRAMEWORK: LazyLock<Name> = LazyLock::new(|| "framework".parse().unwrap());
 
+/// The stop timeout for a component environment.
+static STOP_TIMEOUT: LazyLock<Name> = LazyLock::new(|| "stop_timeout".parse().unwrap());
+
+/// The name of a component environment.
+static NAME: LazyLock<Name> = LazyLock::new(|| "name".parse().unwrap());
+
 /// Contains the capabilities component receives from its parent and environment. Stored as a
 /// [Dict] containing two nested [Dict]s for the parent and environment.
 #[derive(Clone, Debug)]
@@ -210,6 +216,32 @@ impl ComponentEnvironment {
     /// Capabilities listed in the `resolvers` portion of its environment.
     pub fn resolvers(&self) -> Dict {
         get_or_insert(&self.0, &*RESOLVERS)
+    }
+
+    /// Sets the stop timeout (in milliseconds) for this environment.
+    pub fn set_stop_timeout(&self, timeout: i64) {
+        let _ = self.0.insert(STOP_TIMEOUT.clone(), Data::Int64(timeout).into());
+    }
+
+    /// Returns the stop timeout (in milliseconds) for this environment.
+    pub fn stop_timeout(&self) -> Option<i64> {
+        let Ok(Some(Capability::Data(Data::Int64(timeout)))) = self.0.get(&*STOP_TIMEOUT) else {
+            return None;
+        };
+        Some(timeout)
+    }
+
+    /// Sets the name for this environment.
+    pub fn set_name(&self, name: &Name) {
+        let _ = self.0.insert(NAME.clone(), Data::String(name.as_str().into()).into());
+    }
+
+    /// Returns the name for this environment.
+    pub fn name(&self) -> Option<Name> {
+        let Ok(Some(Capability::Data(Data::String(name)))) = self.0.get(&*NAME) else {
+            return None;
+        };
+        Some(Name::new(name).unwrap())
     }
 
     pub fn shallow_copy(&self) -> Result<Self, ()> {

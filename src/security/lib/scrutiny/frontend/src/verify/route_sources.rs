@@ -603,7 +603,6 @@ mod tests {
     use fuchsia_merkle::{HASH_SIZE, Hash};
     use maplit::{hashmap, hashset};
     use moniker::Moniker;
-    use routing::environment::RunnerRegistry;
     use scrutiny_collection::core::{Component, ComponentSource, Components};
     use scrutiny_collection::model::DataModel;
     use scrutiny_collection::v2_component_model::V2ComponentModel;
@@ -847,7 +846,6 @@ mod tests {
             components,
             Arc::new(RuntimeConfig::default()),
             Arc::new(component_id_index::Index::default()),
-            RunnerRegistry::default(),
         );
         let deps = hashset! {};
         data_model.set(V2ComponentModel::new(

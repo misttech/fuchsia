@@ -6,7 +6,6 @@ use crate::model::actions::ActionKey;
 use crate::model::component::manager::ComponentManagerInstance;
 use crate::model::component::{ComponentInstance, StartReason};
 use crate::model::context::ModelContext;
-use crate::model::environment::Environment;
 use crate::model::start::Start;
 use crate::model::token::InstanceRegistry;
 use cm_config::RuntimeConfig;
@@ -23,8 +22,6 @@ pub struct ModelParams {
     // TODO(viktard): Merge into RuntimeConfig
     /// The URL of the root component.
     pub root_component_url: Url,
-    /// The environment provided to the root.
-    pub root_environment: Environment,
     /// Global runtime configuration for the component_manager.
     pub runtime_config: Arc<RuntimeConfig>,
     /// The instance at the top of the tree, representing component manager.
@@ -71,7 +68,6 @@ impl Model {
         )?);
         let root = ComponentInstance::new_root(
             root_component_input,
-            params.root_environment,
             context.clone(),
             Arc::downgrade(&params.top_instance),
             params.root_component_url,

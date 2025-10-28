@@ -40,11 +40,10 @@ use crate::framework::realm_query::RealmQuery;
 use crate::framework::route_validator::RouteValidatorFrameworkCapability;
 use crate::model::component::manager::ComponentManagerInstance;
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
-use crate::model::environment::Environment;
 use crate::model::event_logger::EventLogger;
 use crate::model::events::use_router::EventStreamUseRouter;
 use crate::model::model::{Model, ModelParams};
-use crate::model::resolver::{Resolver, ResolverRegistry};
+use crate::model::resolver::Resolver;
 use crate::model::routing::RoutingFailureErrorReporter;
 use crate::model::token::InstanceRegistry;
 use crate::root_stop_notifier::RootStopNotifier;
@@ -61,7 +60,6 @@ use ::routing::capability_source::{
     BuiltinSource, CapabilitySource, ComponentCapability, InternalCapability, NamespaceSource,
 };
 use ::routing::component_instance::{ComponentInstanceInterface, TopInstanceInterface};
-use ::routing::environment::{DebugRegistry, RunnerRegistry};
 use ::routing::error::{ErrorReporter, RouteRequestErrorInfo};
 use ::routing::policy::{GlobalPolicyChecker, ScopedPolicyChecker};
 use anyhow::{Context as _, Error, format_err};
@@ -89,7 +87,7 @@ use builtins::stall_resource::StallResource;
 use builtins::tracing_resource::TracingResource;
 use builtins::vmex_resource::VmexResource;
 use cm_config::{RuntimeConfig, SecurityPolicy, VmexSource};
-use cm_rust::{Availability, CapabilityTypeName, RunnerRegistration};
+use cm_rust::{Availability, CapabilityTypeName};
 use cm_types::{Name, RelativePath, Url};
 use elf_runner::crash_info::CrashRecords;
 use elf_runner::process_launcher::ProcessLauncher;
@@ -145,7 +143,7 @@ pub struct BuiltinEnvironmentBuilder {
     top_instance: Option<Arc<ComponentManagerInstance>>,
     bootfs_svc: Option<BootfsSvc>,
     builtin_runners: Vec<BuiltinRunnerData>,
-    resolvers: ResolverRegistry,
+    resolvers: Vec<(String, Arc<dyn Resolver + Send + Sync + 'static>)>,
     utc_clock: Option<Arc<UtcClock>>,
     add_environment_resolvers: bool,
     inspector: Option<Inspector>,
@@ -170,7 +168,7 @@ impl Default for BuiltinEnvironmentBuilder {
             top_instance: None,
             bootfs_svc: None,
             builtin_runners: vec![],
-            resolvers: ResolverRegistry::default(),
+            resolvers: vec![],
             utc_clock: None,
             add_environment_resolvers: false,
             inspector: None,
@@ -290,7 +288,7 @@ impl BuiltinEnvironmentBuilder {
         scheme: String,
         resolver: Arc<dyn Resolver + Send + Sync + 'static>,
     ) -> Self {
-        self.resolvers.register(scheme, resolver);
+        self.resolvers.push((scheme, resolver));
         self
     }
 
@@ -411,36 +409,11 @@ impl BuiltinEnvironmentBuilder {
             fidl_fuchsia_component_internal::RealmBuilderResolverAndRunner::None => false,
         };
 
-        let runner_map = self
-            .builtin_runners
-            .iter()
-            .filter_map(|data| {
-                let BuiltinRunnerData { name, runner: _, add_to_env } = data;
-                if !add_to_env {
-                    return None;
-                }
-                Some((
-                    name.clone(),
-                    RunnerRegistration {
-                        source_name: name.clone(),
-                        target_name: name.clone(),
-                        source: cm_rust::RegistrationSource::Self_,
-                    },
-                ))
-            })
-            .collect();
-
         let runtime_config = Arc::new(runtime_config);
 
-        let top_instance = self.top_instance.unwrap().clone();
+        let top_instance = self.top_instance.unwrap();
         let params = ModelParams {
             root_component_url,
-            root_environment: Environment::new_root(
-                &top_instance,
-                RunnerRegistry::new(runner_map),
-                self.resolvers,
-                DebugRegistry::default(),
-            ),
             runtime_config: Arc::clone(&runtime_config),
             top_instance,
             instance_registry: self.instance_registry,
@@ -463,6 +436,7 @@ impl BuiltinEnvironmentBuilder {
 
         Ok(BuiltinEnvironment::new(
             params,
+            self.resolvers,
             runtime_config,
             system_resource_handle,
             builtin_runners,
@@ -969,7 +943,8 @@ pub struct BuiltinEnvironment {
 
 impl BuiltinEnvironment {
     async fn new(
-        mut params: ModelParams,
+        params: ModelParams,
+        resolvers: Vec<(String, Arc<dyn Resolver + Send + Sync + 'static>)>,
         runtime_config: Arc<RuntimeConfig>,
         system_resource_handle: Option<Resource>,
         builtin_runners: Vec<BuiltinRunner>,
@@ -991,7 +966,7 @@ impl BuiltinEnvironment {
         let mut root_input_builder =
             RootComponentInputBuilder::new(&params.top_instance, &runtime_config);
 
-        for (resolver_schema, resolver) in params.root_environment.drain_resolvers() {
+        for (resolver_schema, resolver) in resolvers.into_iter() {
             root_input_builder.add_resolver(resolver_schema, resolver);
         }
 
@@ -1952,15 +1927,17 @@ impl BuiltinEnvironment {
     }
 }
 
-fn register_builtin_resolver(resolvers: &mut ResolverRegistry) {
-    resolvers.register(BUILTIN_SCHEME.to_string(), Arc::new(BuiltinResolver {}));
+fn register_builtin_resolver(
+    resolvers: &mut Vec<(String, Arc<dyn Resolver + Send + Sync + 'static>)>,
+) {
+    resolvers.push((BUILTIN_SCHEME.to_string(), Arc::new(BuiltinResolver {})));
 }
 
 // Creates a FuchsiaBootResolver if the /boot directory is installed in component_manager's
 // namespace, and registers it with the ResolverRegistry. The resolver is returned to so that
 // it can be installed as a Builtin capability.
 async fn register_boot_resolver(
-    resolvers: &mut ResolverRegistry,
+    resolvers: &mut Vec<(String, Arc<dyn Resolver + Send + Sync + 'static>)>,
     runtime_config: &RuntimeConfig,
 ) -> Result<Option<(FuchsiaBootResolver, Option<Arc<FuchsiaBootPackageResolver>>)>, Error> {
     let path = match &runtime_config.builtin_boot_resolver {
@@ -1975,17 +1952,17 @@ async fn register_boot_resolver(
             Ok(None)
         }
         Some((component, package)) => {
-            resolvers.register(BOOT_SCHEME.into(), Arc::new(component.clone()));
+            resolvers.push((BOOT_SCHEME.into(), Arc::new(component.clone())));
             Ok(Some((component, package)))
         }
     }
 }
 
 fn register_realm_builder_resolver(
-    resolvers: &mut ResolverRegistry,
+    resolvers: &mut Vec<(String, Arc<dyn Resolver + Send + Sync + 'static>)>,
 ) -> Result<RealmBuilderResolver, Error> {
     let resolver =
         RealmBuilderResolver::new().context("Failed to create realm builder resolver")?;
-    resolvers.register(REALM_BUILDER_SCHEME.to_string(), Arc::new(resolver.clone()));
+    resolvers.push((REALM_BUILDER_SCHEME.to_string(), Arc::new(resolver.clone())));
     Ok(resolver)
 }

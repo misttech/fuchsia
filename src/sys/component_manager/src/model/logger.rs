@@ -145,7 +145,6 @@ mod tests {
     use crate::model::component::instance::{ComponentDomain, ResolvedInstanceState};
     use crate::model::component::{Component, ComponentInstance, WeakExtendedInstance};
     use crate::model::context::ModelContext;
-    use crate::model::environment::Environment;
     use cm_rust::{UseDecl, UseProtocolDecl, UseSource};
     use cm_rust_testing::ComponentDeclBuilder;
     use cm_types::{BoundedName, Path, Url};
@@ -169,7 +168,6 @@ mod tests {
         let url: Url = "test:///foo".parse().unwrap();
         let instance = ComponentInstance::new(
             ComponentInput::default(),
-            Arc::new(Environment::empty()),
             name.try_into().unwrap(),
             1,
             url.clone(),

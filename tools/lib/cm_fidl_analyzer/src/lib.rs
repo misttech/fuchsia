@@ -5,7 +5,6 @@
 pub mod component_instance;
 pub mod component_model;
 mod component_sandbox;
-pub mod environment;
 pub mod route;
 
 use crate::component_instance::ComponentInstanceForAnalyzer;
@@ -229,8 +228,8 @@ impl ComponentInstanceVisitor for ModelMappingVisitor {
 #[cfg(test)]
 mod tests {
     use super::{
-        match_absolute_component_urls, BreadthFirstModelWalker, ComponentModelWalker,
-        ModelMappingVisitor, PkgUrlMatch,
+        BreadthFirstModelWalker, ComponentModelWalker, ModelMappingVisitor, PkgUrlMatch,
+        match_absolute_component_urls,
     };
     use crate::component_model::ModelBuilderForAnalyzer;
     use cm_config::RuntimeConfig;
@@ -238,7 +237,6 @@ mod tests {
     use cm_rust_testing::ComponentDeclBuilder;
     use cm_types::Url;
     use fuchsia_url::AbsoluteComponentUrl;
-    use routing::environment::RunnerRegistry;
     use std::collections::HashMap;
     use std::sync::Arc;
 
@@ -384,7 +382,6 @@ mod tests {
             make_decl_map(components),
             config,
             Arc::new(component_id_index::Index::default()),
-            RunnerRegistry::default(),
         );
         assert_eq!(build_model_result.errors.len(), 0);
         assert!(build_model_result.model.is_some());

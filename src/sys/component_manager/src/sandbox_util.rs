@@ -475,7 +475,6 @@ impl<T: Routable<Connector> + 'static> RoutableExt for T {
 #[cfg(all(test, not(feature = "src_model_tests")))]
 pub mod tests {
     use crate::model::context::ModelContext;
-    use crate::model::environment::Environment;
 
     use super::*;
     use assert_matches::assert_matches;
@@ -722,7 +721,6 @@ pub mod tests {
 
         let component = ComponentInstance::new_root(
             ComponentInput::default(),
-            Environment::empty(),
             Arc::new(ModelContext::new_for_test()),
             Weak::new(),
             "test:///root".parse().unwrap(),
@@ -775,7 +773,6 @@ pub mod tests {
 
         let component = ComponentInstance::new_root(
             ComponentInput::default(),
-            Environment::empty(),
             Arc::new(ModelContext::new_for_test()),
             Weak::new(),
             "test:///root".parse().unwrap(),
@@ -835,7 +832,6 @@ pub mod tests {
 
         let target = ComponentInstance::new_root(
             ComponentInput::default(),
-            Environment::empty(),
             Arc::new(ModelContext::new_for_test()),
             Weak::new(),
             "test:///target".parse().unwrap(),

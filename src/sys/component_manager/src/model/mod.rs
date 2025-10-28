@@ -11,7 +11,6 @@ pub mod model;
 pub mod start;
 
 pub(crate) mod context;
-pub(crate) mod environment;
 pub(crate) mod events;
 pub(crate) mod namespace;
 pub(crate) mod resolver;

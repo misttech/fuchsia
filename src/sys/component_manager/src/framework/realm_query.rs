@@ -173,7 +173,7 @@ async fn get_instance(
         model.root().find(&moniker).await.ok_or(fsys::GetInstanceError::InstanceNotFound)?;
     let instance_id = model.component_id_index().id_for_moniker(&instance.moniker).cloned();
 
-    let resolved_info = {
+    let (resolved_info, environment_name) = {
         let state = instance.lock_state().await;
 
         if let Some(resolved_state) = state.get_resolved_state() {
@@ -190,16 +190,19 @@ async fn get_instance(
                     start_reason: Some(started_state.start_reason.to_string()),
                     ..Default::default()
                 });
-            Some(fsys::ResolvedInfo { resolved_url, execution_info, ..Default::default() })
+            (
+                Some(fsys::ResolvedInfo { resolved_url, execution_info, ..Default::default() }),
+                resolved_state.sandbox.component_input.environment().name(),
+            )
         } else {
-            None
+            (None, None)
         }
     };
 
     Ok(fsys::Instance {
         moniker: Some(moniker.to_string()),
         url: Some(instance.component_url.to_string()),
-        environment: instance.environment().name().map(|n| n.to_string()),
+        environment: environment_name.map(|n| n.to_string()),
         instance_id: instance_id.map(|id| id.to_string()),
         resolved_info,
         ..Default::default()
@@ -561,7 +564,7 @@ async fn get_fidl_instance_and_children(
         .expect("instance must have been a child of scope root");
     let instance_id = model.component_id_index().id_for_moniker(&instance.moniker).cloned();
 
-    let (resolved_info, children) = {
+    let (resolved_info, children, environment_name) = {
         let state = instance.lock_state().await;
 
         if let Some(resolved_state) = state.get_resolved_state() {
@@ -581,15 +584,16 @@ async fn get_fidl_instance_and_children(
                             ..Default::default()
                         }),
                         children,
+                        resolved_state.sandbox.component_input.environment().name(),
                     )
                 }
                 Err(err) => {
                     warn!(err:%, moniker:%; "GetAllInstances: could not fetch component address?");
-                    (None, vec![])
+                    (None, vec![], None)
                 }
             }
         } else {
-            (None, vec![])
+            (None, vec![], None)
         }
     };
 
@@ -597,7 +601,7 @@ async fn get_fidl_instance_and_children(
         fsys::Instance {
             moniker: Some(moniker.to_string()),
             url: Some(instance.component_url.to_string()),
-            environment: instance.environment().name().map(|n| n.to_string()),
+            environment: environment_name.map(|n| n.to_string()),
             instance_id: instance_id.map(|id| id.to_string()),
             resolved_info,
             ..Default::default()

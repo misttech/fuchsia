@@ -1937,6 +1937,7 @@ impl SourceName for DebugRegistration {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[derive(FidlDecl, Debug, Clone, PartialEq, Eq)]
 #[fidl_decl(fidl_table = "fdecl::DebugProtocolRegistration")]
 pub struct DebugProtocolRegistration {

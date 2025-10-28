@@ -2,14 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use cm_fidl_analyzer::component_instance::ComponentInstanceForAnalyzer;
-use cm_fidl_analyzer::component_model::ComponentModelForAnalyzer;
 use cm_fidl_analyzer::{BreadthFirstModelWalker, ComponentInstanceVisitor, ComponentModelWalker};
 use cm_rust::UseDecl;
 use futures::FutureExt;
 use moniker::ExtendedMoniker;
-use routing::component_instance::{ComponentInstanceInterface, ExtendedInstanceInterface};
+use routing::bedrock::request_metadata::resolver_metadata;
+use routing::capability_source::CapabilitySource;
+use routing::component_instance::ComponentInstanceInterface;
+use sandbox::{Capability, Request, RouterResponse};
 use scrutiny_collection::model::DataModel;
 use scrutiny_collection::v2_component_model::V2ComponentModel;
 use serde::{Deserialize, Serialize};
@@ -65,41 +67,59 @@ impl ComponentResolversVisitor {
     }
 
     fn check_instance(&mut self, instance: &Arc<ComponentInstanceForAnalyzer>) -> Result<()> {
-        if let Ok(Some((
-            ExtendedInstanceInterface::Component(resolver_register_instance),
-            resolver,
-        ))) = instance.environment().get_registered_resolver(&self.request.scheme)
+        let scheme_name = cm_types::Name::new(&self.request.scheme).expect("invalid scheme");
+        if let Ok(Some(Capability::ConnectorRouter(resolver_router))) = instance
+            .component_sandbox()
+            .now_or_never()
+            .expect("now or never did not return a result")
+            .map_err(|e| anyhow!("failed to get sandbox of component: {e:?}"))?
+            .component_input
+            .environment()
+            .resolvers()
+            .get(&scheme_name)
         {
-            // The resolver is a capability and we need to get the component that provides it.
-            let resolver_source = match ComponentModelForAnalyzer::route_capability_sync(
-                routing::RouteRequest::Resolver(resolver),
-                &resolver_register_instance,
-            ) {
-                (Ok(s), _route) => match s.source.source_moniker() {
-                    ExtendedMoniker::ComponentInstance(moniker) => instance
-                        .find_absolute(&moniker)
-                        .now_or_never()
-                        .expect("now_or_never failed to produce a result")
-                        .expect("failed to walk to other component instance"),
-                    ExtendedMoniker::ComponentManager => {
-                        return Err(anyhow!(
-                            "The plugin is unable to verify resolvers declared above the root."
-                        ));
-                    }
-                },
-                (Err(err), _route) => {
+            let request = Request {
+                target: instance.as_weak().into(),
+                metadata: resolver_metadata(cm_types::Availability::Required),
+            };
+
+            let source: CapabilitySource = match resolver_router
+                .route(Some(request), true)
+                .now_or_never()
+                .expect("now or never did not return a result")
+            {
+                Ok(RouterResponse::Debug(data)) => {
+                    data.try_into().expect("failed to deserialize debug data")
+                }
+                Ok(RouterResponse::Capability(_)) => panic!("received unexpected router response"),
+                Ok(RouterResponse::Unavailable) => {
+                    panic!("resolvers cannot be optional, yet received unavailable response")
+                }
+                Err(e) => {
                     eprintln!(
                         "Ignoring invalid resolver configuration for {}: {:#}",
                         instance.moniker(),
-                        anyhow!(err).context("failed to route to a resolver")
+                        anyhow!(e).context("failed to route to a resolver")
                     );
                     return Ok(());
                 }
             };
-
+            let resolver_source_moniker = match source.source_moniker() {
+                ExtendedMoniker::ComponentInstance(moniker) => moniker,
+                ExtendedMoniker::ComponentManager => {
+                    return Err(anyhow!(
+                        "The plugin is unable to verify resolvers declared above the root."
+                    ));
+                }
+            };
+            let resolver_source = instance
+                .find_absolute(&resolver_source_moniker)
+                .now_or_never()
+                .expect("now or never did not return a result")
+                .expect("failed to walk to other component instance");
             let moniker = moniker::Moniker::parse_str(&self.request.moniker)?;
 
-            if *resolver_source.moniker() == moniker {
+            if resolver_source.moniker() == &moniker {
                 for use_decl in &resolver_source.decl_for_testing().uses {
                     if let UseDecl::Protocol(name) = use_decl {
                         if name.source_name == self.request.protocol {

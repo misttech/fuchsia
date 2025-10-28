@@ -121,7 +121,6 @@ mod tests {
     use fidl::persist;
     use maplit::hashset;
     use routing::component_instance::ComponentInstanceInterface;
-    use routing::environment::RunnerRegistry;
     use scrutiny_collection::core::{
         Component, Components, CoreDataDeps, Manifest, ManifestData, Manifests,
     };
@@ -381,7 +380,6 @@ mod tests {
             decls,
             Arc::new(RuntimeConfig::default()),
             Arc::new(component_id_index::Index::default()),
-            RunnerRegistry::default(),
         );
         assert!(build_model_result.errors.is_empty());
         assert!(build_model_result.model.is_some());

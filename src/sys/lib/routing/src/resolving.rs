@@ -819,8 +819,19 @@ struct RemoteError(fresolution::ResolverError);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bedrock::sandbox_construction::ComponentSandbox;
+    use crate::capability_source::{BuiltinCapabilities, NamespaceCapabilities};
+    use crate::component_instance::{ResolvedInstanceInterface, TopInstanceInterface};
+    use crate::policy::GlobalPolicyChecker;
     use assert_matches::assert_matches;
+    use async_trait::async_trait;
+    use cm_rust::{CapabilityDecl, CollectionDecl, ExposeDecl, OfferDecl, UseDecl};
+    use cm_rust_testing::new_decl_from_json;
+    use cm_types::Name;
     use fidl::endpoints::create_endpoints;
+    use moniker::{BorrowedChildName, ChildName, Moniker};
+    use serde_json::json;
+    use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_mem as fmem};
 
     fn from_absolute_url(url: &str) -> ComponentAddress {
         ComponentAddress::from_absolute_url(&url.parse().unwrap()).unwrap()
@@ -1095,5 +1106,327 @@ mod tests {
         assert_eq!(address.query(), None);
         assert_eq!(address.resource(), Some("meta/peercomp.cm"));
         assert_eq!(address.url(), "cast:00000000#meta/peercomp.cm");
+    }
+
+    static COMPONENT_DECL: LazyLock<cm_rust::ComponentDecl> = LazyLock::new(|| {
+        new_decl_from_json(json!(
+        {
+            "include": [ "syslog/client.shard.cml" ],
+            "program": {
+                "runner": "elf",
+                "binary": "bin/example",
+            },
+            "children": [
+                {
+                    "name": "logger",
+                    "url": "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm",
+                    "environment": "#env_one",
+                },
+            ],
+            "collections": [
+                {
+                    "name": "modular",
+                    "durability": "transient",
+                },
+            ],
+            "capabilities": [
+                {
+                    "protocol": "fuchsia.logger.Log2",
+                    "path": "/svc/fuchsia.logger.Log2",
+                },
+            ],
+            "use": [
+                {
+                    "protocol": "fuchsia.fonts.LegacyProvider",
+                },
+            ],
+            "environments": [
+                {
+                    "name": "env_one",
+                    "extends": "none",
+                    "__stop_timeout_ms": 1337,
+                },
+            ],
+            "facets": {
+                "author": "Fuchsia",
+            }}))
+        .expect("failed to construct manifest")
+    });
+
+    #[fuchsia::test]
+    fn test_read_and_validate_manifest() {
+        let manifest = fmem::Data::Bytes(
+            fidl::persist(&COMPONENT_DECL.clone().native_into_fidl())
+                .expect("failed to encode manifest"),
+        );
+        let actual = read_and_validate_manifest(&manifest, &mut DirectedGraph::new())
+            .expect("failed to decode manifest");
+        assert_eq!(actual, COMPONENT_DECL.clone());
+    }
+
+    #[fuchsia::test]
+    async fn test_read_and_validate_config_values() {
+        let fidl_config_values = fdecl::ConfigValuesData {
+            values: Some(vec![
+                fdecl::ConfigValueSpec {
+                    value: Some(fdecl::ConfigValue::Single(fdecl::ConfigSingleValue::Bool(false))),
+                    ..Default::default()
+                },
+                fdecl::ConfigValueSpec {
+                    value: Some(fdecl::ConfigValue::Single(fdecl::ConfigSingleValue::Uint8(5))),
+                    ..Default::default()
+                },
+                fdecl::ConfigValueSpec {
+                    value: Some(fdecl::ConfigValue::Single(fdecl::ConfigSingleValue::String(
+                        "hello!".to_string(),
+                    ))),
+                    ..Default::default()
+                },
+                fdecl::ConfigValueSpec {
+                    value: Some(fdecl::ConfigValue::Vector(fdecl::ConfigVectorValue::BoolVector(
+                        vec![true, false],
+                    ))),
+                    ..Default::default()
+                },
+                fdecl::ConfigValueSpec {
+                    value: Some(fdecl::ConfigValue::Vector(
+                        fdecl::ConfigVectorValue::StringVector(vec![
+                            "hello!".to_string(),
+                            "world!".to_string(),
+                        ]),
+                    )),
+                    ..Default::default()
+                },
+            ]),
+            checksum: Some(fdecl::ConfigChecksum::Sha256([0; 32])),
+            ..Default::default()
+        };
+        let config_values = cm_rust::ConfigValuesData {
+            values: Box::from([
+                cm_rust::ConfigValueSpec {
+                    value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(false)),
+                },
+                cm_rust::ConfigValueSpec {
+                    value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Uint8(5)),
+                },
+                cm_rust::ConfigValueSpec {
+                    value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::String(
+                        "hello!".to_string(),
+                    )),
+                },
+                cm_rust::ConfigValueSpec {
+                    value: cm_rust::ConfigValue::Vector(cm_rust::ConfigVectorValue::BoolVector(
+                        Box::from([true, false]),
+                    )),
+                },
+                cm_rust::ConfigValueSpec {
+                    value: cm_rust::ConfigValue::Vector(cm_rust::ConfigVectorValue::StringVector(
+                        Box::from(["hello!".to_string(), "world!".to_string()]),
+                    )),
+                },
+            ]),
+            checksum: cm_rust::ConfigChecksum::Sha256([0; 32]),
+        };
+        let data = fmem::Data::Bytes(
+            fidl::persist(&fidl_config_values).expect("failed to encode config values"),
+        );
+        let actual =
+            read_and_validate_config_values(&data).expect("failed to decode config values");
+        assert_eq!(actual, config_values);
+    }
+
+    #[derive(Debug, Default, Clone)]
+    struct MockTopInstance {
+        namespace_capabilities: NamespaceCapabilities,
+        builtin_capabilities: BuiltinCapabilities,
+    }
+
+    impl TopInstanceInterface for MockTopInstance {
+        fn namespace_capabilities(&self) -> &NamespaceCapabilities {
+            &self.namespace_capabilities
+        }
+        fn builtin_capabilities(&self) -> &BuiltinCapabilities {
+            &self.builtin_capabilities
+        }
+    }
+
+    #[derive(Clone)]
+    struct MockComponentInstance {
+        parent: Option<Box<MockComponentInstance>>,
+        resolved_state: Option<MockResolvedState>,
+        moniker: Moniker,
+        address: cm_types::Url,
+    }
+    #[async_trait]
+    impl ComponentInstanceInterface for MockComponentInstance {
+        type TopInstance = MockTopInstance;
+        fn moniker(&self) -> &Moniker {
+            &self.moniker
+        }
+        fn url(&self) -> &cm_types::Url {
+            &self.address
+        }
+        fn config_parent_overrides(&self) -> Option<&[cm_rust::ConfigOverride]> {
+            unimplemented!()
+        }
+        fn policy_checker(&self) -> &GlobalPolicyChecker {
+            unimplemented!()
+        }
+        fn component_id_index(&self) -> &component_id_index::Index {
+            unimplemented!()
+        }
+        fn try_get_parent(
+            &self,
+        ) -> Result<ExtendedInstanceInterface<Self>, ComponentInstanceError> {
+            if let Some(parent) = self.parent.as_ref() {
+                Ok(ExtendedInstanceInterface::Component(Arc::new((**parent).clone())))
+            } else {
+                Ok(ExtendedInstanceInterface::AboveRoot(Arc::new(MockTopInstance::default())))
+            }
+        }
+        async fn lock_resolved_state<'a>(
+            self: &'a Arc<Self>,
+        ) -> Result<Box<dyn ResolvedInstanceInterface<Component = Self> + 'a>, ComponentInstanceError>
+        {
+            Ok(Box::new(self.resolved_state.as_ref().unwrap()))
+        }
+        async fn component_sandbox(
+            self: &Arc<Self>,
+        ) -> Result<ComponentSandbox, ComponentInstanceError> {
+            unimplemented!()
+        }
+    }
+    impl MockComponentInstance {
+        async fn component_address(self: &Arc<Self>) -> Result<ComponentAddress, ResolverError> {
+            ComponentAddress::from_url(&self.address, self).await
+        }
+    }
+
+    #[derive(Clone)]
+    struct MockResolvedState {
+        address: Result<ComponentAddress, ResolverError>,
+        context_to_resolve_children: Option<ComponentResolutionContext>,
+    }
+    #[async_trait]
+    impl ResolvedInstanceInterface for MockResolvedState {
+        type Component = MockComponentInstance;
+        fn uses(&self) -> Box<[UseDecl]> {
+            unimplemented!()
+        }
+        fn exposes(&self) -> Box<[ExposeDecl]> {
+            unimplemented!()
+        }
+        fn offers(&self) -> Box<[OfferDecl]> {
+            unimplemented!()
+        }
+        fn capabilities(&self) -> Box<[CapabilityDecl]> {
+            unimplemented!()
+        }
+        fn collections(&self) -> Box<[CollectionDecl]> {
+            unimplemented!()
+        }
+        fn get_child(&self, _moniker: &BorrowedChildName) -> Option<Arc<Self::Component>> {
+            unimplemented!()
+        }
+        fn children_in_collection(
+            &self,
+            _collection: &Name,
+        ) -> Vec<(ChildName, Arc<Self::Component>)> {
+            unimplemented!()
+        }
+        async fn address(&self) -> Result<ComponentAddress, ResolverError> {
+            self.address.clone()
+        }
+        fn context_to_resolve_children(&self) -> Option<ComponentResolutionContext> {
+            self.context_to_resolve_children.clone()
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_from_absolute_component_url_with_component_instance() -> Result<(), Error> {
+        let url_str = "fuchsia-pkg://fuchsia.com/package#meta/comp.cm";
+        let root = Arc::new(MockComponentInstance {
+            parent: None,
+            resolved_state: Some(MockResolvedState {
+                address: Ok(ComponentAddress::new_absolute(Url::parse(url_str).unwrap())),
+                context_to_resolve_children: None,
+            }),
+            moniker: Moniker::root(),
+            address: cm_types::Url::new(url_str).unwrap(),
+        });
+
+        let abs = root.component_address().await.unwrap();
+        assert_matches!(abs, ComponentAddress::Absolute { .. });
+        assert_eq!(abs.scheme(), "fuchsia-pkg");
+        assert_eq!(abs.path(), "/package");
+        assert_eq!(abs.resource(), Some("meta/comp.cm"));
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_from_relative_path_component_url_with_component_instance() -> Result<(), Error> {
+        let root_url_str = "fuchsia-pkg://fuchsia.com/package#meta/comp.cm";
+        let root = MockComponentInstance {
+            parent: None,
+            resolved_state: Some(MockResolvedState {
+                address: Ok(ComponentAddress::new_absolute(Url::parse(root_url_str).unwrap())),
+                context_to_resolve_children: Some(ComponentResolutionContext::new(
+                    "package_context".as_bytes().to_vec(),
+                )),
+            }),
+            moniker: Moniker::root(),
+            address: cm_types::Url::new(root_url_str).unwrap(),
+        };
+        let child = Arc::new(MockComponentInstance {
+            parent: Some(Box::new(root)),
+            resolved_state: None,
+            moniker: "/child".try_into().unwrap(),
+            address: cm_types::Url::new("subpackage#meta/subcomp.cm").unwrap(),
+        });
+
+        let relpath = child.component_address().await.unwrap();
+        assert_matches!(relpath, ComponentAddress::RelativePath { .. });
+        assert_eq!(relpath.path(), "subpackage");
+        assert_eq!(relpath.resource(), Some("meta/subcomp.cm"));
+        assert_eq!(
+            relpath.context(),
+            &ComponentResolutionContext::new("package_context".as_bytes().to_vec())
+        );
+
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_from_relative_path_component_url_with_cast_component_instance()
+    -> Result<(), Error> {
+        let root_url_str = "cast:00000000/package#meta/comp.cm";
+        let root = MockComponentInstance {
+            parent: None,
+            resolved_state: Some(MockResolvedState {
+                address: Ok(ComponentAddress::new_absolute(Url::parse(root_url_str).unwrap())),
+                context_to_resolve_children: Some(ComponentResolutionContext::new(
+                    "package_context".as_bytes().to_vec(),
+                )),
+            }),
+            moniker: Moniker::root(),
+            address: cm_types::Url::new(root_url_str).unwrap(),
+        };
+        let child = Arc::new(MockComponentInstance {
+            parent: Some(Box::new(root)),
+            resolved_state: None,
+            moniker: "/child".try_into().unwrap(),
+            address: cm_types::Url::new("subpackage#meta/subcomp.cm").unwrap(),
+        });
+
+        let relpath = child.component_address().await.unwrap();
+        assert_matches!(relpath, ComponentAddress::RelativePath { .. });
+        assert_eq!(relpath.path(), "subpackage");
+        assert_eq!(relpath.resource(), Some("meta/subcomp.cm"));
+        assert_eq!(
+            relpath.context(),
+            &ComponentResolutionContext::new("package_context".as_bytes().to_vec())
+        );
+
+        Ok(())
     }
 }

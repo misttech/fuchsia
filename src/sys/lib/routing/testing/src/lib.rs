@@ -3997,11 +3997,7 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
             ComponentDeclBuilder::new_empty_component().use_(use_runner_decl.clone()).build(),
         )];
 
-        let mut builder = T::new("a", components);
-        builder.set_builtin_capabilities(vec![CapabilityDecl::Runner(RunnerDecl {
-            name: "hobbit".parse().unwrap(),
-            source_path: None,
-        })]);
+        let builder = T::new("a", components);
         let model = builder.build().await;
 
         let a_component = model.look_up_instance(&Moniker::root()).await.expect("a instance");

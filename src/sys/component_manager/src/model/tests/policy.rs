@@ -2,18 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::model::component::manager::ComponentManagerInstance;
 use crate::model::component::{ComponentInstance, WeakComponentInstance, WeakExtendedInstance};
 use crate::model::context::ModelContext;
-use crate::model::environment::Environment;
-use crate::model::resolver::ResolverRegistry;
 use anyhow::Error;
 use async_trait::async_trait;
 use fidl_fuchsia_component_decl as fdecl;
 use hooks::Hooks;
 use moniker::Moniker;
 use routing::bedrock::structured_dict::ComponentInput;
-use routing::environment::{DebugRegistry, RunnerRegistry};
 use routing_test_helpers::instantiate_global_policy_checker_tests;
 use routing_test_helpers::policy::GlobalPolicyCheckerTest;
 use std::sync::Arc;
@@ -26,15 +22,8 @@ struct GlobalPolicyCheckerTestForCm {}
 #[async_trait]
 impl GlobalPolicyCheckerTest<ComponentInstance> for GlobalPolicyCheckerTestForCm {
     async fn make_component(&self, moniker: Moniker) -> Arc<ComponentInstance> {
-        let top_instance = Arc::new(ComponentManagerInstance::new(vec![], vec![]));
         ComponentInstance::new(
             ComponentInput::default(),
-            Arc::new(Environment::new_root(
-                &top_instance,
-                RunnerRegistry::default(),
-                ResolverRegistry::new(),
-                DebugRegistry::default(),
-            )),
             moniker,
             0,
             "test:///bar".parse().unwrap(),

@@ -15,6 +15,7 @@ if (is_host) {
       "//src/security/lib/scrutiny/collection",
       "//src/security/lib/scrutiny/collector",
       "//src/security/lib/scrutiny/utils",
+      "//src/sys/component_manager/lib/sandbox",
       "//src/sys/lib/cm_rust",
       "//src/sys/lib/cm_types",
       "//src/sys/lib/config_encoder",

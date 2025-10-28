@@ -10,7 +10,6 @@ rustc_library("cm_fidl_analyzer") {
   edition = "2021"
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
-    "//sdk/fidl/fuchsia.component.internal:fuchsia.component.internal_rust",
     "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
@@ -38,6 +37,8 @@ rustc_library("cm_fidl_analyzer") {
     "//sdk/rust/zx-status",
   ]
   test_deps = [
+    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+    "//sdk/fidl/fuchsia.component.internal:fuchsia.component.internal_rust",
     "//src/lib/fuchsia",
     "//src/sys/lib/cm_rust/testing",
     "//src/sys/lib/cm_types",
@@ -48,7 +49,6 @@ rustc_library("cm_fidl_analyzer") {
     "src/component_instance.rs",
     "src/component_model.rs",
     "src/component_sandbox.rs",
-    "src/environment.rs",
     "src/lib.rs",
     "src/route.rs",
   ]

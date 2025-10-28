@@ -434,16 +434,16 @@ pub fn metadata_for_porcelain_type(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ResolvedInstanceInterface;
     use crate::bedrock::sandbox_construction::ComponentSandbox;
     use crate::capability_source::{BuiltinCapabilities, NamespaceCapabilities};
     use crate::component_instance::{ExtendedInstanceInterface, TopInstanceInterface};
     use crate::error::ComponentInstanceError;
     use crate::policy::GlobalPolicyChecker;
-    use crate::{ResolvedInstanceInterface, environment};
     use assert_matches::assert_matches;
     use cm_rust_testing::UseBuilder;
     use cm_types::Url;
-    use moniker::{BorrowedChildName, Moniker};
+    use moniker::Moniker;
     use router_error::{DowncastErrorForTest, RouterError};
     use sandbox::{Data, Dict};
     use std::sync::{Arc, Mutex};
@@ -472,19 +472,11 @@ mod tests {
     impl ComponentInstanceInterface for FakeComponent {
         type TopInstance = FakeTopInstance;
 
-        fn child_moniker(&self) -> Option<&BorrowedChildName> {
-            panic!()
-        }
-
         fn moniker(&self) -> &Moniker {
             &self.moniker
         }
 
         fn url(&self) -> &Url {
-            panic!()
-        }
-
-        fn environment(&self) -> &environment::Environment<Self> {
             panic!()
         }
 

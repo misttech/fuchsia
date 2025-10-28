@@ -507,7 +507,6 @@ mod tests {
     use super::*;
     use crate::model::component::ComponentInstance;
     use crate::model::context::ModelContext;
-    use crate::model::environment::Environment;
     use ::routing::resolving::ResolvedPackage;
     use assert_matches::assert_matches;
     use cm_rust::{FidlIntoNative, NativeIntoFidl};
@@ -732,7 +731,6 @@ mod tests {
 
         let root = ComponentInstance::new_root(
             ComponentInput::default(),
-            Environment::empty(),
             Arc::new(ModelContext::new_for_test()),
             Weak::new(),
             "fuchsia-boot:///#meta/root.cm".parse().unwrap(),
@@ -768,7 +766,6 @@ mod tests {
         let resolver = FuchsiaBootResolver::new_from_directory(bootfs).await.unwrap();
         let root = ComponentInstance::new_root(
             ComponentInput::default(),
-            Environment::empty(),
             Arc::new(ModelContext::new_for_test()),
             Weak::new(),
             "fuchsia-boot:///#meta/root.cm".parse().unwrap(),

@@ -175,7 +175,6 @@ mod tests {
     use crate::capability;
     use crate::model::component::ComponentInstance;
     use crate::model::context::ModelContext;
-    use crate::model::environment::Environment;
     use ::routing::bedrock::structured_dict::ComponentInput;
     use assert_matches::assert_matches;
     use fidl::endpoints::{ProtocolMarker, Proxy};
@@ -201,7 +200,6 @@ mod tests {
     async fn new_root() -> Arc<ComponentInstance> {
         ComponentInstance::new_root(
             ComponentInput::default(),
-            Environment::empty(),
             Arc::new(ModelContext::new_for_test()),
             Weak::new(),
             "test:///root".parse().unwrap(),

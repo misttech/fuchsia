@@ -3,22 +3,19 @@
 // found in the LICENSE file.
 
 use crate::package::ROOT_RESOURCE;
-use anyhow::{anyhow, Context, Result};
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use anyhow::{Context, Result, anyhow};
 use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use cm_config::RuntimeConfig;
 use cm_fidl_analyzer::component_model::{DynamicConfig, ModelBuilderForAnalyzer};
-use cm_rust::{
-    CapabilityTypeName, ComponentDecl, FidlIntoNative, RegistrationSource, RunnerRegistration,
-};
+use cm_rust::{CapabilityTypeName, ComponentDecl, FidlIntoNative};
 use cm_types::{Name, Url};
 use config_encoder::ConfigFields;
 use fidl::unpersist;
-use fuchsia_url::boot_url::BootUrl;
 use fuchsia_url::AbsoluteComponentUrl;
+use fuchsia_url::boot_url::BootUrl;
 use log::{error, info, warn};
 use moniker::Moniker;
-use routing::environment::RunnerRegistry;
 use scrutiny_collection::core::{Components, CoreDataDeps, ManifestData, Manifests};
 use scrutiny_collection::model::DataModel;
 use scrutiny_collection::v2_component_model::V2ComponentModel;
@@ -191,27 +188,6 @@ impl V2ComponentModelDataCollector {
         }
     }
 
-    fn make_builtin_runner_registry(&self, runtime_config: &RuntimeConfig) -> RunnerRegistry {
-        let mut runners = Vec::new();
-        // Always register the ELF runner.
-        runners.push(RunnerRegistration {
-            source_name: ELF_RUNNER_NAME.parse().unwrap(),
-            target_name: ELF_RUNNER_NAME.parse().unwrap(),
-            source: RegistrationSource::Self_,
-        });
-        // Register the RealmBuilder runner if needed.
-        if runtime_config.realm_builder_resolver_and_runner
-            == component_internal::RealmBuilderResolverAndRunner::Namespace
-        {
-            runners.push(RunnerRegistration {
-                source_name: REALM_BUILDER_RUNNER_NAME.parse().unwrap(),
-                target_name: REALM_BUILDER_RUNNER_NAME.parse().unwrap(),
-                source: RegistrationSource::Self_,
-            });
-        }
-        RunnerRegistry::from_decl(&runners)
-    }
-
     fn load_dynamic_config(component_tree_config_path: &Option<PathBuf>) -> Result<DynamicConfig> {
         let Some(component_tree_config_path) = component_tree_config_path else {
             return Ok(DynamicConfig::default());
@@ -264,13 +240,11 @@ impl V2ComponentModelDataCollector {
         );
 
         let dynamic_config = Self::load_dynamic_config(&model.config().component_tree_config_path)?;
-        let runner_registry = self.make_builtin_runner_registry(&runtime_config);
         let build_result = builder.build_with_dynamic_config(
             dynamic_config,
             decls_by_url,
             Arc::new(runtime_config),
             Arc::new(component_id_index),
-            runner_registry,
         );
 
         for err in build_result.errors.iter() {

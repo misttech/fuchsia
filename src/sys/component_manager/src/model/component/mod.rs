@@ -12,7 +12,6 @@ use crate::model::actions::{
     UnresolveAction, start,
 };
 use crate::model::context::ModelContext;
-use crate::model::environment::Environment;
 use crate::model::logger::LoggerCache;
 use crate::model::routing::{self, RoutingError};
 use crate::model::start::Start;
@@ -239,6 +238,12 @@ impl TryFrom<ResolvedPackage> for Package {
     }
 }
 
+/// The default amount of time that a component runner is given to stop a component. If exceeded, a
+/// kill command will be issued. 5 seconds was chosen as a sensible default, but can be overridden
+/// by a component's parent.
+pub const DEFAULT_STOP_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The amount of time that a component runner is given to kill a component.
 pub const DEFAULT_KILL_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Capabilities that a component receives dynamically.
@@ -285,8 +290,6 @@ impl TryFrom<fcomponent::StartChildArgs> for IncomingCapabilities {
 
 /// Models a component instance, possibly with links to children.
 pub struct ComponentInstance {
-    /// The registry for resolving component URLs within the component instance.
-    pub environment: Arc<Environment>,
     /// The component's URL.
     pub component_url: Url,
     /// The mode of startup (lazy or eager).
@@ -334,14 +337,12 @@ impl ComponentInstance {
     /// Instantiates a new root component instance.
     pub async fn new_root(
         input: ComponentInput,
-        environment: Environment,
         context: Arc<ModelContext>,
         component_manager_instance: Weak<ComponentManagerInstance>,
         component_url: Url,
     ) -> Arc<Self> {
         Self::new(
             input,
-            Arc::new(environment),
             Moniker::root(),
             0,
             component_url,
@@ -360,7 +361,6 @@ impl ComponentInstance {
     // TODO(https://fxbug.dev/42077692) convert this to a builder API
     pub async fn new(
         input: ComponentInput,
-        environment: Arc<Environment>,
         moniker: Moniker,
         incarnation_id: IncarnationId,
         component_url: Url,
@@ -374,7 +374,6 @@ impl ComponentInstance {
     ) -> Arc<Self> {
         let execution_scope = (context.scope_factory)();
         let self_ = Arc::new(Self {
-            environment,
             moniker,
             incarnation_id,
             component_url,
@@ -640,13 +639,17 @@ impl ComponentInstance {
         // If the component is started, we first move it back to the resolved state. We will move
         // it to the shutdown state after the stopping is complete.
         let mut started = None;
+        let mut stop_timeout = None;
         self.lock_state().await.replace(|instance_state| match instance_state {
             InstanceState::Started(resolved_state, started_state) => {
                 started = Some(started_state);
+                stop_timeout = resolved_state.sandbox.component_input.environment().stop_timeout();
                 InstanceState::Resolved(resolved_state)
             }
             other_state => other_state,
         });
+        let stop_timeout =
+            stop_timeout.map(|n| Duration::from_millis(n as u64)).unwrap_or(DEFAULT_STOP_TIMEOUT);
 
         let stop_result = {
             if let Some(started) = started {
@@ -654,7 +657,7 @@ impl ComponentInstance {
                 let started_timestamp_monotonic = started.timestamp_monotonic;
                 let stop_timer = Box::pin(async move {
                     let timer = fasync::Timer::new(fasync::MonotonicInstant::after(
-                        zx::MonotonicDuration::from(self.environment.stop_timeout()),
+                        zx::MonotonicDuration::from(stop_timeout),
                     ));
                     timer.await;
                 });
@@ -676,8 +679,7 @@ impl ComponentInstance {
                     // Please notify //src/developer/forensics/OWNERS upon changing.
                     warn!(
                         "component {} did not stop in {:?}. Killed it.",
-                        self.moniker,
-                        self.environment.stop_timeout()
+                        self.moniker, stop_timeout,
                     );
                 }
                 let cleanly_stopped = matches!(
@@ -1455,16 +1457,8 @@ impl ComponentInstanceInterface for ComponentInstance {
         &self.moniker
     }
 
-    fn child_moniker(&self) -> Option<&BorrowedChildName> {
-        self.moniker.leaf()
-    }
-
     fn url(&self) -> &Url {
         &self.component_url
-    }
-
-    fn environment(&self) -> &::routing::environment::Environment<Self> {
-        self.environment.environment()
     }
 
     fn policy_checker(&self) -> &GlobalPolicyChecker {
@@ -2237,7 +2231,6 @@ pub mod tests {
     async fn new_component() -> Arc<ComponentInstance> {
         ComponentInstance::new(
             ComponentInput::default(),
-            Arc::new(Environment::empty()),
             Moniker::root(),
             0,
             "fuchsia-pkg://fuchsia.com/foo#at_root.cm".parse().unwrap(),

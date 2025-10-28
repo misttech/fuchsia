@@ -10,7 +10,6 @@ use crate::model::component::{
     WeakComponentInstance, WeakExtendedInstance,
 };
 use crate::model::context::ModelContext;
-use crate::model::environment::Environment;
 use crate::model::escrow::{self, EscrowedState};
 use crate::model::events::hook_observer::HookObserver;
 use crate::model::events::names_from_filter;
@@ -282,9 +281,6 @@ pub struct ResolvedInstanceState {
     /// (Static instances receive identifier 0.)
     next_dynamic_instance_id: IncarnationId,
 
-    /// The set of named Environments defined by this instance.
-    environments: HashMap<Name, Arc<Environment>>,
-
     /// Directory that represents the program's namespace.
     ///
     /// This is only used for introspection, e.g. in RealmQuery. The program receives a
@@ -387,26 +383,18 @@ impl ResolvedInstanceState {
     ) -> Result<Self, ResolveActionError> {
         let weak_component = WeakComponentInstance::new(component);
 
-        let environments = Self::instantiate_environments(component, &resolved_component.decl);
         let decl = resolved_component.decl.clone();
 
         // Perform the policy check for debug capabilities now, instead of during routing. All the info we
         // need to perform this check is already available to us. This way, we don't have to propagate this
         // info to sandbox capabilities just so they can enforce the policy.
-        for (env_name, env) in &environments {
-            for capability_name in env.environment().debug_registry().debug_capabilities.keys() {
-                let parent = match env.environment().parent() {
-                    WeakExtendedInstance::Component(p) => p,
-                    WeakExtendedInstance::AboveRoot(_) => unreachable!(
-                        "this environment was defined by the component, can't be \
-                        from component_manager"
-                    ),
-                };
+        for env in &decl.environments {
+            for cm_rust::DebugRegistration::Protocol(registration) in &env.debug_capabilities {
                 component.policy_checker().can_register_debug_capability(
                     CapabilityTypeName::Protocol,
-                    capability_name,
-                    &parent.moniker,
-                    &env_name,
+                    &registration.source_name,
+                    &component.moniker,
+                    &env.name,
                 )?;
             }
         }
@@ -432,7 +420,6 @@ impl ResolvedInstanceState {
             resolved_component,
             children: HashMap::new(),
             next_dynamic_instance_id: 1,
-            environments,
             namespace_dir: Once::default(),
             exposed_dict: Once::default(),
             exposed_dir: Once::default(),
@@ -917,55 +904,6 @@ impl ResolvedInstanceState {
             .retain(|a, b| !matches(a, moniker) && !matches(b, moniker))
     }
 
-    /// Creates a set of Environments instantiated from their EnvironmentDecls.
-    fn instantiate_environments(
-        component: &Arc<ComponentInstance>,
-        decl: &ComponentDecl,
-    ) -> HashMap<Name, Arc<Environment>> {
-        let mut environments = HashMap::new();
-        for env_decl in &decl.environments {
-            environments.insert(
-                env_decl.name.clone(),
-                Arc::new(Environment::from_decl(component, env_decl)),
-            );
-        }
-        environments
-    }
-
-    /// Retrieve an environment for `child`, inheriting from `component`'s environment if
-    /// necessary.
-    fn environment_for_child(
-        &mut self,
-        component: &Arc<ComponentInstance>,
-        child: &ChildDecl,
-        collection: Option<&CollectionDecl>,
-    ) -> Arc<Environment> {
-        // For instances in a collection, the environment (if any) is designated in the collection.
-        // Otherwise, it's specified in the ChildDecl.
-        let environment_name = match collection {
-            Some(c) => c.environment.as_ref(),
-            None => child.environment.as_ref(),
-        };
-        self.get_environment(component, environment_name)
-    }
-
-    fn get_environment(
-        &self,
-        component: &Arc<ComponentInstance>,
-        environment_name: Option<&Name>,
-    ) -> Arc<Environment> {
-        if let Some(environment_name) = environment_name {
-            Arc::clone(
-                self.environments
-                    .get(environment_name)
-                    .unwrap_or_else(|| panic!("Environment not found: {}", environment_name)),
-            )
-        } else {
-            // Auto-inherit the environment from this component instance.
-            Arc::new(Environment::new_inheriting(component))
-        }
-    }
-
     /// Adds a new child component instance.
     pub async fn add_child(
         &mut self,
@@ -1040,7 +978,6 @@ impl ResolvedInstanceState {
         };
         let child = ComponentInstance::new(
             child_input,
-            self.environment_for_child(component, child, collection.clone()),
             component.moniker.child(child_name.clone()),
             incarnation_id,
             child.url.clone(),

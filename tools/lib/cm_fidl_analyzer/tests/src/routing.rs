@@ -14,7 +14,6 @@ use cm_fidl_analyzer::component_instance::ComponentInstanceForAnalyzer;
 use cm_fidl_analyzer::component_model::{
     AnalyzerModelError, ComponentModelForAnalyzer, DynamicConfig, ModelBuilderForAnalyzer,
 };
-use cm_fidl_analyzer::environment::{BOOT_RESOLVER_NAME, BOOT_SCHEME};
 use cm_fidl_analyzer::route::{TargetDecl, VerifyRouteResult};
 use cm_rust::*;
 use cm_rust_testing::*;
@@ -28,7 +27,6 @@ use routing::capability_source::{
     InternalCapability, NamespaceSource,
 };
 use routing::component_instance::ComponentInstanceInterface;
-use routing::environment::RunnerRegistry;
 use routing::error::RoutingError;
 use routing::mapper::RouteSegment;
 use routing_test_helpers::{
@@ -49,6 +47,7 @@ use {
 const TEST_URL_PREFIX: &str = "test:///";
 // Placeholder for when a component resolves to itself, and its name is unknown as a result.
 const USE_TARGET_PLACEHOLDER_NAME: &str = "target";
+const BOOT_SCHEME: &str = "fuchsia-boot";
 
 fn make_test_url(component_name: &str) -> String {
     format!("{}{}", TEST_URL_PREFIX, component_name)
@@ -196,7 +195,6 @@ impl RoutingTestModelBuilder for RoutingTestBuilderForAnalyzer {
                 self.decls_by_url,
                 Arc::new(config),
                 Arc::new(component_id_index),
-                RunnerRegistry::from_decl(&self.builtin_runner_registrations),
             );
         let model = build_model_result.model.expect("failed to build ComponentModelForAnalyzer");
         RoutingTestForAnalyzer { model }
@@ -1168,7 +1166,7 @@ mod tests {
         let b_component =
             test.look_up_instance(&["b"].try_into().unwrap()).await.expect("b instance");
 
-        let result = test.model.check_resolver(&b_component);
+        let result = test.model.check_resolver(&b_component).await;
         assert!(result.error.is_none());
         assert_eq!(result.using_node, Moniker::parse_str("b").unwrap());
         assert_eq!(result.capability, Some("base".parse().unwrap()));
@@ -1223,7 +1221,7 @@ mod tests {
         let c_component =
             test.look_up_instance(&["b", "c"].try_into().unwrap()).await.expect("c instance");
 
-        let result = test.model.check_resolver(&c_component);
+        let result = test.model.check_resolver(&c_component).await;
 
         assert_matches!(
             &result.error,
@@ -1263,15 +1261,12 @@ mod tests {
         let b_component =
             test.look_up_instance(&["b"].try_into().unwrap()).await.expect("b instance");
 
-        let result = test.model.check_resolver(&b_component);
+        let result = test.model.check_resolver(&b_component).await;
 
         assert_matches!(
         &result.error,
-            Some(AnalyzerModelError::RoutingError(
-                    RoutingError::UseFromComponentManagerNotFound{
-                        capability_id: resolver
-            }))
-                if resolver == BOOT_RESOLVER_NAME
+            Some(AnalyzerModelError::MissingResolverForScheme(_moniker, scheme))
+                if scheme == BOOT_SCHEME
         );
     }
 
@@ -1788,7 +1783,7 @@ mod tests {
         let b_component =
             test.look_up_instance(&["b"].try_into().unwrap()).await.expect("b instance");
 
-        let route_result = test.model.check_resolver(&b_component);
+        let route_result = test.model.check_resolver(&b_component).await;
 
         assert_eq!(route_result.using_node, Moniker::parse_str("b").unwrap());
         assert_eq!(route_result.capability, Some("base".parse().unwrap()));
@@ -1848,7 +1843,7 @@ mod tests {
         let c_component =
             test.look_up_instance(&["b", "c"].try_into().unwrap()).await.expect("c instance");
 
-        let route_result = test.model.check_resolver(&c_component);
+        let route_result = test.model.check_resolver(&c_component).await;
 
         assert_eq!(route_result.using_node, Moniker::parse_str("b/c").unwrap());
         assert_eq!(route_result.capability, Some("base".parse().unwrap()));
@@ -1874,7 +1869,7 @@ mod tests {
         let b_url = format!("{}://b/", BOOT_SCHEME);
 
         let boot_resolver_decl = CapabilityDecl::Resolver(ResolverDecl {
-            name: BOOT_RESOLVER_NAME.parse().unwrap(),
+            name: BOOT_SCHEME.parse().unwrap(),
             source_path: Some("/builtin/source/path".parse().unwrap()),
         });
 
@@ -1895,15 +1890,11 @@ mod tests {
         let b_component =
             test.look_up_instance(&["b"].try_into().unwrap()).await.expect("b instance");
 
-        let route_map = test.model.check_resolver(&b_component);
+        let route_map = test.model.check_resolver(&b_component).await;
 
         assert_eq!(route_map.using_node, Moniker::parse_str("b").unwrap());
-        assert_eq!(route_map.capability, Some(BOOT_RESOLVER_NAME.parse().unwrap()));
+        assert_eq!(route_map.capability, Some(BOOT_SCHEME.parse().unwrap()));
         assert!(route_map.error.is_none());
-        assert_eq!(
-            route_map.route,
-            vec![RouteSegment::ProvideAsBuiltin { capability: boot_resolver_decl }]
-        );
     }
 
     ///   a
@@ -1945,7 +1936,7 @@ mod tests {
         let b_component =
             test.look_up_instance(&["b"].try_into().unwrap()).await.expect("b instance");
 
-        let route_result = test.model.check_resolver(&b_component);
+        let route_result = test.model.check_resolver(&b_component).await;
 
         assert_eq!(route_result.using_node, Moniker::parse_str("b").unwrap());
         assert_eq!(route_result.capability, Some("test".parse().unwrap()));

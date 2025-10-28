@@ -8,7 +8,6 @@ use crate::component_sandbox::{
     build_framework_router, build_root_component_input, new_aggregate_router,
     new_event_stream_multiplexing_router, static_children_component_output_dictionary_routers,
 };
-use crate::environment::EnvironmentForAnalyzer;
 use async_trait::async_trait;
 use cm_config::RuntimeConfig;
 use cm_rust::{CapabilityDecl, CollectionDecl, ComponentDecl, ExposeDecl, OfferDecl, UseDecl};
@@ -24,7 +23,6 @@ use routing::component_instance::{
     ComponentInstanceInterface, ExtendedInstanceInterface, ResolvedInstanceInterface,
     TopInstanceInterface, WeakExtendedInstanceInterface,
 };
-use routing::environment::RunnerRegistry;
 use routing::error::{ComponentInstanceError, ErrorReporter, RouteRequestErrorInfo};
 use routing::policy::GlobalPolicyChecker;
 use routing::resolving::{ComponentAddress, ComponentResolutionContext, ResolverError};
@@ -40,7 +38,6 @@ pub struct ComponentInstanceForAnalyzer {
     url: Url,
     parent: WeakExtendedInstanceInterface<Self>,
     pub(crate) children: RwLock<HashMap<ChildName, Arc<Self>>>,
-    pub(crate) environment: Arc<EnvironmentForAnalyzer>,
     policy_checker: GlobalPolicyChecker,
     component_id_index: Arc<component_id_index::Index>,
     pub(crate) sandbox: ComponentSandbox,
@@ -61,17 +58,11 @@ impl ComponentInstanceForAnalyzer {
         runtime_config: Arc<RuntimeConfig>,
         policy: GlobalPolicyChecker,
         id_index: Arc<component_id_index::Index>,
-        runner_registry: RunnerRegistry,
         dynamic_dictionaries: Arc<DynamicDictionaryConfig>,
     ) -> Arc<Self> {
-        let environment = EnvironmentForAnalyzer::new_root(
-            runner_registry.clone(),
-            &runtime_config,
-            &top_instance,
-        );
         let moniker = Moniker::root();
         let root_component_input =
-            build_root_component_input(&runtime_config, &top_instance, &policy, runner_registry);
+            build_root_component_input(&runtime_config, &top_instance, &policy);
         let parent = WeakExtendedInstanceInterface::from(&ExtendedInstanceInterface::AboveRoot(
             top_instance,
         ));
@@ -83,7 +74,6 @@ impl ComponentInstanceForAnalyzer {
             parent,
             policy,
             id_index,
-            environment,
             root_component_input,
             dynamic_dictionaries,
         )
@@ -99,7 +89,6 @@ impl ComponentInstanceForAnalyzer {
         id_index: Arc<component_id_index::Index>,
         dynamic_dictionaries: Arc<DynamicDictionaryConfig>,
     ) -> Result<Arc<Self>, BuildAnalyzerModelError> {
-        let environment = EnvironmentForAnalyzer::new_for_child(&parent, child)?;
         let child_name = ChildName::try_new(
             child.child_moniker.name().as_str(),
             child.child_moniker.collection().map(|c| c.as_str()),
@@ -134,7 +123,6 @@ impl ComponentInstanceForAnalyzer {
             parent,
             policy,
             id_index,
-            environment,
             input,
             dynamic_dictionaries,
         ))
@@ -148,7 +136,6 @@ impl ComponentInstanceForAnalyzer {
         parent: WeakExtendedInstanceInterface<ComponentInstanceForAnalyzer>,
         policy_checker: GlobalPolicyChecker,
         component_id_index: Arc<component_id_index::Index>,
-        environment: Arc<EnvironmentForAnalyzer>,
         input: ComponentInput,
         dynamic_dictionaries: Arc<DynamicDictionaryConfig>,
     ) -> Arc<Self> {
@@ -159,7 +146,6 @@ impl ComponentInstanceForAnalyzer {
             url,
             parent,
             children: RwLock::new(HashMap::new()),
-            environment,
             policy_checker,
             component_id_index,
             sandbox: Default::default(),
@@ -231,10 +217,6 @@ impl ComponentInstanceForAnalyzer {
         Ok(Box::new(&**self))
     }
 
-    pub fn environment(&self) -> &Arc<EnvironmentForAnalyzer> {
-        &self.environment
-    }
-
     pub fn config_fields(&self) -> Option<&ConfigFields> {
         self.config.as_ref()
     }
@@ -254,16 +236,8 @@ impl ComponentInstanceInterface for ComponentInstanceForAnalyzer {
         &self.moniker
     }
 
-    fn child_moniker(&self) -> Option<&BorrowedChildName> {
-        self.moniker.leaf()
-    }
-
     fn url(&self) -> &Url {
         &self.url
-    }
-
-    fn environment(&self) -> &routing::environment::Environment<Self> {
-        &self.environment.env()
     }
 
     fn try_get_parent(&self) -> Result<ExtendedInstanceInterface<Self>, ComponentInstanceError> {
@@ -398,7 +372,6 @@ mod tests {
             Arc::new(RuntimeConfig::default()),
             GlobalPolicyChecker::default(),
             Arc::new(component_id_index::Index::default()),
-            RunnerRegistry::default(),
             Arc::new(DynamicDictionaryConfig::default()),
         );
 

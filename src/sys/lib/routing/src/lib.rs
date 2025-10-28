@@ -7,7 +7,6 @@ pub mod bedrock;
 pub mod capability_source;
 pub mod component_instance;
 pub mod config;
-pub mod environment;
 pub mod error;
 pub mod legacy_router;
 pub mod mapper;
@@ -28,7 +27,6 @@ use crate::capability_source::{
 use crate::component_instance::{
     ComponentInstanceInterface, ResolvedInstanceInterface, WeakComponentInstanceInterface,
 };
-use crate::environment::DebugRegistration;
 use crate::error::RoutingError;
 use crate::legacy_router::{
     CapabilityVisitor, ErrorNotFoundFromParent, ErrorNotFoundInChild, ExposeVisitor, NoopVisitor,
@@ -38,12 +36,12 @@ use crate::mapper::DebugRouteMapper;
 use crate::rights::RightsWalker;
 use crate::walk_state::WalkState;
 use cm_rust::{
-    Availability, CapabilityTypeName, ExposeConfigurationDecl, ExposeDecl, ExposeDeclCommon,
-    ExposeDictionaryDecl, ExposeDirectoryDecl, ExposeProtocolDecl, ExposeResolverDecl,
-    ExposeRunnerDecl, ExposeServiceDecl, ExposeSource, ExposeTarget, OfferConfigurationDecl,
-    OfferDeclCommon, OfferDictionaryDecl, OfferDirectoryDecl, OfferEventStreamDecl,
-    OfferProtocolDecl, OfferResolverDecl, OfferRunnerDecl, OfferServiceDecl, OfferSource,
-    OfferStorageDecl, OfferTarget, RegistrationDeclCommon, RegistrationSource,
+    Availability, CapabilityTypeName, DebugProtocolRegistration, ExposeConfigurationDecl,
+    ExposeDecl, ExposeDeclCommon, ExposeDictionaryDecl, ExposeDirectoryDecl, ExposeProtocolDecl,
+    ExposeResolverDecl, ExposeRunnerDecl, ExposeServiceDecl, ExposeSource, ExposeTarget,
+    OfferConfigurationDecl, OfferDeclCommon, OfferDictionaryDecl, OfferDirectoryDecl,
+    OfferEventStreamDecl, OfferProtocolDecl, OfferResolverDecl, OfferRunnerDecl, OfferServiceDecl,
+    OfferSource, OfferStorageDecl, OfferTarget, RegistrationDeclCommon, RegistrationSource,
     ResolverRegistration, RunnerRegistration, SourceName, StorageDecl, StorageDirectorySource,
     UseConfigurationDecl, UseDecl, UseDeclCommon, UseDictionaryDecl, UseDirectoryDecl,
     UseEventStreamDecl, UseProtocolDecl, UseRunnerDecl, UseServiceDecl, UseSource, UseStorageDecl,
@@ -1192,7 +1190,7 @@ impl RegistrationDeclCommon for StorageDeclAsRegistration {
 pub enum RegistrationDecl {
     Resolver(ResolverRegistration),
     Runner(RunnerRegistration),
-    Debug(DebugRegistration),
+    Debug(DebugProtocolRegistration),
     Directory(StorageDeclAsRegistration),
 }
 
@@ -1215,17 +1213,17 @@ impl ErrorNotFoundFromParent for cm_rust::UseDecl {
     }
 }
 
-impl ErrorNotFoundFromParent for DebugRegistration {
+impl ErrorNotFoundFromParent for cm_rust::DebugProtocolRegistration {
     fn error_not_found_from_parent(moniker: Moniker, capability_name: Name) -> RoutingError {
         RoutingError::EnvironmentFromParentNotFound {
             moniker,
             capability_name,
-            capability_type: DebugRegistration::TYPE.to_string(),
+            capability_type: cm_rust::CapabilityTypeName::Protocol.to_string(),
         }
     }
 }
 
-impl ErrorNotFoundInChild for DebugRegistration {
+impl ErrorNotFoundInChild for cm_rust::DebugProtocolRegistration {
     fn error_not_found_in_child(
         moniker: Moniker,
         child_moniker: ChildName,
@@ -1235,7 +1233,7 @@ impl ErrorNotFoundInChild for DebugRegistration {
             moniker,
             child_moniker,
             capability_name,
-            capability_type: DebugRegistration::TYPE.to_string(),
+            capability_type: cm_rust::CapabilityTypeName::Protocol.to_string(),
         }
     }
 }

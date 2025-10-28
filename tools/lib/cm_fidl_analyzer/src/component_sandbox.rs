@@ -18,7 +18,6 @@ use ::routing::capability_source::{
 use ::routing::component_instance::{
     WeakComponentInstanceInterface, WeakExtendedInstanceInterface,
 };
-use ::routing::environment::RunnerRegistry;
 use ::routing::error::{
     ComponentInstanceError, ErrorReporter, RouteRequestErrorInfo, RoutingError,
 };
@@ -65,7 +64,6 @@ pub fn build_root_component_input(
     runtime_config: &Arc<RuntimeConfig>,
     top_instance: &Arc<TopInstanceForAnalyzer>,
     policy: &GlobalPolicyChecker,
-    runner_registry: RunnerRegistry,
 ) -> ComponentInput {
     let root_component_input = ComponentInput::default();
     let names_and_capability_sources = runtime_config
@@ -89,6 +87,7 @@ pub fn build_root_component_input(
                 cm_rust::CapabilityDecl::Protocol(_)
                 | cm_rust::CapabilityDecl::Directory(_)
                 | cm_rust::CapabilityDecl::EventStream(_)
+                | cm_rust::CapabilityDecl::Resolver(_)
                 | cm_rust::CapabilityDecl::Runner(_) => Some((
                     capability_decl.name().clone(),
                     CapabilitySource::Builtin(BuiltinSource {
@@ -103,19 +102,14 @@ pub fn build_root_component_input(
     for (name, capability_source, capability_type, route_request_info) in
         names_and_capability_sources
     {
-        if capability_type == CapabilityTypeName::Runner
-            && runner_registry.get_runner(&name).is_none()
-        {
-            // If a runner has been declared as a builtin capability but its not in the runner
-            // registry, skip it.
-            continue;
-        }
         let data: sandbox::Data = capability_source
             .clone()
             .try_into()
             .expect("failed to convert capability source to Data");
         let router_capability: Capability = match capability_type {
-            CapabilityTypeName::Protocol | CapabilityTypeName::Runner => {
+            CapabilityTypeName::Protocol
+            | CapabilityTypeName::Runner
+            | CapabilityTypeName::Resolver => {
                 let router = Router::<Connector>::new_debug(data)
                     .with_policy_check::<ComponentInstanceForAnalyzer>(
                         capability_source,
@@ -184,6 +178,12 @@ pub fn build_root_component_input(
             root_component_input
                 .environment()
                 .runners()
+                .insert_capability(&name, router_capability)
+                .expect("failed to insert builtin runner into dictionary");
+        } else if capability_type == CapabilityTypeName::Resolver {
+            root_component_input
+                .environment()
+                .resolvers()
                 .insert_capability(&name, router_capability)
                 .expect("failed to insert builtin runner into dictionary");
         }
