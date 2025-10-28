@@ -25,9 +25,10 @@ use {
     fidl_fuchsia_net_policy_testing as fnp_testing, fidl_fuchsia_net_power as fnet_power,
     fidl_fuchsia_net_reachability as fnet_reachability, fidl_fuchsia_net_root as fnet_root,
     fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-    fidl_fuchsia_net_settings as fnet_settings, fidl_fuchsia_net_stack as fnet_stack,
-    fidl_fuchsia_net_test_realm as fntr, fidl_fuchsia_net_virtualization as fnet_virtualization,
-    fidl_fuchsia_netemul as fnetemul, fidl_fuchsia_posix_socket as fposix_socket,
+    fidl_fuchsia_net_settings as fnet_settings, fidl_fuchsia_net_sockets as fnet_sockets,
+    fidl_fuchsia_net_stack as fnet_stack, fidl_fuchsia_net_test_realm as fntr,
+    fidl_fuchsia_net_virtualization as fnet_virtualization, fidl_fuchsia_netemul as fnetemul,
+    fidl_fuchsia_posix_socket as fposix_socket,
     fidl_fuchsia_posix_socket_packet as fposix_socket_packet,
     fidl_fuchsia_posix_socket_raw as fposix_socket_raw, fidl_fuchsia_stash as fstash,
     fidl_fuchsia_update_verify as fupdate_verify,
@@ -114,6 +115,8 @@ impl NetstackVersion {
                 fnet_root::FilterMarker::PROTOCOL_NAME,
                 fnet_settings::StateMarker::PROTOCOL_NAME,
                 fnet_settings::ControlMarker::PROTOCOL_NAME,
+                fnet_sockets::DiagnosticsMarker::PROTOCOL_NAME,
+                fnet_sockets::ControlMarker::PROTOCOL_NAME,
             ),
         }
     }

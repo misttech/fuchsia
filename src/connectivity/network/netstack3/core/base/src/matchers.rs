@@ -679,14 +679,6 @@ pub enum IpSocketMatcher<DeviceClass> {
     Mark2(MarkMatcher),
 }
 
-impl<DeviceClass, S: IpSocketProperties<DeviceClass>> Matcher<S>
-    for &[IpSocketMatcher<DeviceClass>]
-{
-    fn matches(&self, actual: &S) -> bool {
-        self.iter().all(|matcher| matcher.matches(actual))
-    }
-}
-
 impl<DeviceClass, S: IpSocketProperties<DeviceClass>> Matcher<S> for IpSocketMatcher<DeviceClass> {
     fn matches(&self, actual: &S) -> bool {
         match self {
@@ -699,6 +691,25 @@ impl<DeviceClass, S: IpSocketProperties<DeviceClass>> Matcher<S> for IpSocketMat
             IpSocketMatcher::Mark1(mark) => actual.mark1_matches(mark),
             IpSocketMatcher::Mark2(mark) => actual.mark2_matches(mark),
         }
+    }
+}
+
+/// Allows code to take an opaque matcher that works on IP sockets without
+/// needing to know the type(s) of the underlying matcher(s).
+pub trait IpSocketPropertiesMatcher<DeviceClass> {
+    /// Whether the matcher matches `actual`.
+    fn matches_ip_socket<S: IpSocketProperties<DeviceClass>>(&self, actual: &S) -> bool;
+}
+
+impl<DeviceClass> IpSocketPropertiesMatcher<DeviceClass> for IpSocketMatcher<DeviceClass> {
+    fn matches_ip_socket<S: IpSocketProperties<DeviceClass>>(&self, actual: &S) -> bool {
+        self.matches(actual)
+    }
+}
+
+impl<DeviceClass> IpSocketPropertiesMatcher<DeviceClass> for [IpSocketMatcher<DeviceClass>] {
+    fn matches_ip_socket<S: IpSocketProperties<DeviceClass>>(&self, actual: &S) -> bool {
+        self.iter().all(|matcher| matcher.matches(actual))
     }
 }
 

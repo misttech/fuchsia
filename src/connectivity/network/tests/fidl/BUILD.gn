@@ -36,6 +36,9 @@ non_sharded_tests = [
   {
     label = "settings"
   },
+  {
+    label = "sockets"
+  },
 ]
 
 if (target_cpu != "riscv64") {

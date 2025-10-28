@@ -51,8 +51,8 @@ pub use internal::socket::{
     DualStackDemuxIdConverter, DualStackIpExt, Ipv6Options, Ipv6SocketIdToIpv4DemuxIdConverter,
     ListenError, NoConnection, OriginalDestinationError, SetDeviceError, SetReuseAddrError,
     SocketAddr, SocketInfo, Sockets, TcpApi, TcpBindingsContext, TcpBindingsTypes, TcpContext,
-    TcpDemuxContext, TcpDualStackContext, TcpIpTransportContext, TcpSocketId, TcpSocketSet,
-    TcpSocketState, TcpTimerId, UnboundInfo, WeakTcpSocketId,
+    TcpDemuxContext, TcpDualStackContext, TcpIpTransportContext, TcpSocketDiagnostics, TcpSocketId,
+    TcpSocketSet, TcpSocketState, TcpTimerId, UnboundInfo, WeakTcpSocketId,
 };
 
 /// TCP test utilities.

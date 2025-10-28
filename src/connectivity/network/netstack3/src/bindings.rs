@@ -43,6 +43,7 @@ mod root_fidl_worker;
 mod routes;
 mod settings;
 mod socket;
+mod sockets_fidl;
 mod stack_fidl_worker;
 mod time;
 mod timers;
@@ -68,11 +69,7 @@ use {
     fidl_fuchsia_hardware_network as fhardware_network,
     fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
     fidl_fuchsia_net_multicast_admin as fnet_multicast_admin,
-    fidl_fuchsia_net_routes as fnet_routes,
-    fidl_fuchsia_net_routes_admin as fnet_routes_admin,
-    // TODO(https://fxbug.dev/433947569): This is only here to keep the dep in
-    // the build graph. Remove once it's actually used.
-    fidl_fuchsia_net_sockets as _,
+    fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_admin as fnet_routes_admin,
     fuchsia_async as fasync,
 };
 
@@ -1234,6 +1231,7 @@ pub(crate) enum Service {
     RuleTableV6(fnet_routes_admin::RuleTableV6RequestStream),
     Socket(fidl_fuchsia_posix_socket::ProviderRequestStream),
     SocketControl(fidl_fuchsia_net_filter::SocketControlRequestStream),
+    SocketDiagnostics(fidl_fuchsia_net_sockets::DiagnosticsRequestStream),
     Stack(fidl_fuchsia_net_stack::StackRequestStream),
     SettingsControl(fidl_fuchsia_net_settings::ControlRequestStream),
     SettingsState(fidl_fuchsia_net_settings::StateRequestStream),
@@ -1426,6 +1424,10 @@ impl NetstackSeed {
                 Service::RawSocket(socket) => sockets_scope
                     .spawn_request_stream_handler(socket, |rs| {
                         socket::raw::serve(netstack.ctx.clone(), rs)
+                    }),
+                Service::SocketDiagnostics(stream) => services_handle
+                    .spawn_request_stream_handler(stream, |stream| {
+                        sockets_fidl::serve_diagnostics(stream, netstack.ctx.clone())
                     }),
                 Service::RootInterfaces(root_interfaces) => services_handle
                     .spawn_request_stream_handler(root_interfaces, |rs| {

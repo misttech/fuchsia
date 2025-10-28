@@ -7,7 +7,13 @@ use std::convert::Infallible as Never;
 use crate::bindings::util::{IntoCore, TryFromFidl};
 use crate::bindings::{BindingsCtx, MatcherBindingsTypes};
 use fidl_fuchsia_net_ext::IntoExt as _;
-use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
+use netstack3_core::socket::{
+    SocketCookieMatcher, SocketTransportProtocolMatcher, TcpSocketMatcher, TcpStateMatcher,
+    UdpSocketMatcher, UdpStateMatcher,
+};
+use {
+    fidl_fuchsia_net_matchers as fnet_matchers, fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
+};
 
 impl TryFromFidl<fnet_matchers_ext::Interface>
     for netstack3_core::device::InterfaceMatcher<<BindingsCtx as MatcherBindingsTypes>::DeviceClass>
@@ -118,5 +124,55 @@ impl TryFromFidl<fnet_matchers_ext::Address> for netstack3_core::ip::AddressMatc
         };
 
         Ok(core_matcher)
+    }
+}
+
+impl TryFromFidl<fnet_matchers_ext::SocketTransportProtocol> for SocketTransportProtocolMatcher {
+    type Error = Never;
+
+    fn try_from_fidl(
+        fidl: fnet_matchers_ext::SocketTransportProtocol,
+    ) -> Result<Self, Self::Error> {
+        match fidl {
+            fnet_matchers_ext::SocketTransportProtocol::Tcp(tcp) => {
+                let matcher = match tcp {
+                    fnet_matchers_ext::TcpSocket::Empty => TcpSocketMatcher::Empty,
+                    fnet_matchers_ext::TcpSocket::SrcPort(port) => {
+                        TcpSocketMatcher::SrcPort(port.into_core())
+                    }
+                    fnet_matchers_ext::TcpSocket::DstPort(port) => {
+                        TcpSocketMatcher::DstPort(port.into_core())
+                    }
+                    fnet_matchers_ext::TcpSocket::States(states) => {
+                        TcpSocketMatcher::State(TcpStateMatcher::from_bits_truncate(states.bits()))
+                    }
+                };
+                Ok(SocketTransportProtocolMatcher::Tcp(matcher))
+            }
+            fnet_matchers_ext::SocketTransportProtocol::Udp(udp) => {
+                let matcher = match udp {
+                    fnet_matchers_ext::UdpSocket::Empty => UdpSocketMatcher::Empty,
+                    fnet_matchers_ext::UdpSocket::SrcPort(port) => {
+                        UdpSocketMatcher::SrcPort(port.into_core())
+                    }
+                    fnet_matchers_ext::UdpSocket::DstPort(port) => {
+                        UdpSocketMatcher::DstPort(port.into_core())
+                    }
+                    fnet_matchers_ext::UdpSocket::States(states) => {
+                        UdpSocketMatcher::State(UdpStateMatcher::from_bits_truncate(states.bits()))
+                    }
+                };
+                Ok(SocketTransportProtocolMatcher::Udp(matcher))
+            }
+        }
+    }
+}
+
+impl TryFromFidl<fnet_matchers::SocketCookie> for SocketCookieMatcher {
+    type Error = Never;
+
+    fn try_from_fidl(fidl: fnet_matchers::SocketCookie) -> Result<Self, Self::Error> {
+        let fnet_matchers::SocketCookie { cookie, invert } = fidl;
+        Ok(SocketCookieMatcher { cookie, invert })
     }
 }

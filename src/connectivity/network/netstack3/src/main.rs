@@ -91,6 +91,7 @@ pub fn main() {
         .add_fidl_service(Service::SettingsState)
         .add_fidl_service(Service::Socket)
         .add_fidl_service(Service::SocketControl)
+        .add_fidl_service(Service::SocketDiagnostics)
         .add_fidl_service(Service::Stack)
         .add_fidl_service(Service::WakeGroupProvider);
 

@@ -31,10 +31,10 @@ use netstack3_base::socketmap::{IterShadows as _, SocketMap, Tagged};
 use netstack3_base::sync::{RwLock, StrongRc};
 use netstack3_base::{
     AnyDevice, BidirectionalConverter, ContextPair, CoreTxMetadataContext, CounterContext,
-    DeviceIdContext, Inspector, InspectorDeviceExt, InstantContext, LocalAddressError, Mark,
-    MarkDomain, PortAllocImpl, ReferenceNotifiers, RemoveResourceResultWithContext,
-    ResourceCounterContext as _, RngContext, SettingsContext, SocketError, StrongDeviceIdentifier,
-    WeakDeviceIdentifier, ZonedAddressError,
+    DeviceIdContext, Inspector, InspectorDeviceExt, InstantContext, IpSocketPropertiesMatcher,
+    LocalAddressError, Mark, MarkDomain, MatcherBindingsTypes, PortAllocImpl, ReferenceNotifiers,
+    RemoveResourceResultWithContext, ResourceCounterContext as _, RngContext, SettingsContext,
+    SocketError, StrongDeviceIdentifier, WeakDeviceIdentifier, ZonedAddressError,
 };
 use netstack3_datagram::{
     self as datagram, BoundSocketState as DatagramBoundSocketState,
@@ -1133,7 +1133,7 @@ pub trait UdpReceiveBindingsContext<I: IpExt, D: StrongDeviceIdentifier>: UdpBin
 /// edge in fake tests bindings contexts that are already parameterized on I
 /// themselves. This is still better than relying on `Box<dyn Any>` to keep the
 /// external data in our references so we take the rough edge.
-pub trait UdpBindingsTypes: DatagramBindingsTypes + Sized + 'static {
+pub trait UdpBindingsTypes: DatagramBindingsTypes + MatcherBindingsTypes + Sized + 'static {
     /// Opaque bindings data held by core for a given IP version.
     type ExternalData<I: Ip>: Debug + Send + Sync + 'static;
     /// The listener notified when sockets' writable state changes.
@@ -1149,6 +1149,7 @@ pub trait UdpBindingsContext<I: IpExt, D: StrongDeviceIdentifier>:
     + UdpBindingsTypes
     + SocketOpsFilterBindingContext<D>
     + SettingsContext<UdpSettings>
+    + MatcherBindingsTypes
 {
 }
 impl<
@@ -1773,6 +1774,16 @@ type UdpApiSocketId<I, C> = UdpSocketId<
     <C as ContextPair>::BindingsContext,
 >;
 
+/// Publicly-accessible diagnostic information about UDP sockets.
+//
+// The reason this isn't on the datagram API is that we don't have plans to
+// support other datagram socket types at this time.
+// TODO(https://fxbug.dev/449158183): Remove the dead_code allowance.
+#[allow(missing_docs, dead_code)]
+pub struct UdpSocketDiagnostics<I: Ip> {
+    ip_version: IpVersionMarker<I>,
+}
+
 impl<I, C> UdpApi<I, C>
 where
     I: IpExt,
@@ -1788,6 +1799,9 @@ where
         + DatagramStateContext<I, C::BindingsContext, Udp<C::BindingsContext>>,
     C::BindingsContext:
         UdpBindingsContext<I, <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId>,
+    <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId: netstack3_base::InterfaceProperties<
+            <C::BindingsContext as MatcherBindingsTypes>::DeviceClass,
+        >,
 {
     fn core_ctx(&mut self) -> &mut C::CoreContext {
         let Self(pair, IpVersionMarker { .. }) = self;
@@ -1798,6 +1812,17 @@ where
     fn contexts(&mut self) -> (&mut C::CoreContext, &mut C::BindingsContext) {
         let Self(pair, IpVersionMarker { .. }) = self;
         pair.contexts()
+    }
+
+    /// Get diagnostic information for sockets matching the provided matcher.
+    pub fn bound_sockets_diagnostics<M, E>(&mut self, _matcher: &M, _results: &mut E)
+    where
+        M: IpSocketPropertiesMatcher<<C::BindingsContext as MatcherBindingsTypes>::DeviceClass>
+            + ?Sized,
+        E: Extend<UdpSocketDiagnostics<I>>,
+    {
+        // TODO(https://fxbug.dev/449158183): Implement socket diagnostics for
+        // UDP.
     }
 
     fn datagram(&mut self) -> &mut DatagramApi<I, C, Udp<C::BindingsContext>> {
@@ -7408,6 +7433,10 @@ mod tests {
                 UdpBindingsContext<I, <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId>,
             <C::BindingsContext as UdpBindingsTypes>::ExternalData<I>: Default,
             <C::BindingsContext as UdpBindingsTypes>::SocketWritableListener: Default,
+            <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId:
+                netstack3_base::InterfaceProperties<
+                        <C::BindingsContext as MatcherBindingsTypes>::DeviceClass,
+                    >,
         {
             let socket = api.create();
             match self {

@@ -55,9 +55,10 @@ use netstack3_base::{
     CoreTxMetadataContext, CtxPair, DeferredResourceRemovalContext, DeviceIdContext,
     EitherDeviceId, ExistsError, HandleableTimer, IcmpErrorCode, Inspector, InspectorDeviceExt,
     InspectorExt, InstantBindingsTypes, InstantContext as _, IpDeviceAddr, IpExt,
-    LocalAddressError, Mark, MarkDomain, Mss, OwnedOrRefsBidirectionalConverter, PortAllocImpl,
-    ReferenceNotifiersExt as _, RemoveResourceResult, ResourceCounterContext as _, RngContext,
-    Segment, SeqNum, SettingsContext, StrongDeviceIdentifier, TimerBindingsTypes, TimerContext,
+    IpSocketPropertiesMatcher, LocalAddressError, Mark, MarkDomain, MatcherBindingsTypes, Mss,
+    OwnedOrRefsBidirectionalConverter, PortAllocImpl, ReferenceNotifiersExt as _,
+    RemoveResourceResult, ResourceCounterContext as _, RngContext, Segment, SeqNum,
+    SettingsContext, StrongDeviceIdentifier, TimerBindingsTypes, TimerContext,
     TxMetadataBindingsTypes, WeakDeviceIdentifier, ZonedAddressError,
 };
 use netstack3_filter::{FilterIpExt, SocketOpsFilterBindingContext, Tuple};
@@ -460,7 +461,7 @@ impl<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: TcpBindingsTypes>
 /// +-------------------------------+
 
 pub trait TcpBindingsTypes:
-    InstantBindingsTypes + TimerBindingsTypes + TxMetadataBindingsTypes + 'static
+    InstantBindingsTypes + TimerBindingsTypes + TxMetadataBindingsTypes + MatcherBindingsTypes + 'static
 {
     /// Receive buffer used by TCP.
     type ReceiveBuffer: ReceiveBuffer + Send + Sync;
@@ -2237,6 +2238,13 @@ where
         },
     }?;
     Ok(new_sharing)
+}
+
+/// Publicly-accessible diagnostic information about TCP sockets.
+// TODO(https://fxbug.dev/449157844): Remove the dead_code allowance.
+#[allow(missing_docs, dead_code)]
+pub struct TcpSocketDiagnostics<I: Ip> {
+    ip_version: IpVersionMarker<I>,
 }
 
 /// The TCP socket API.
@@ -4466,6 +4474,17 @@ where
         })
     }
 
+    /// Get diagnostic information for sockets matching the provided matcher.
+    pub fn bound_sockets_diagnostics<M, E>(&mut self, _matcher: &M, _results: &mut E)
+    where
+        M: IpSocketPropertiesMatcher<<C::BindingsContext as MatcherBindingsTypes>::DeviceClass>
+            + ?Sized,
+        E: Extend<TcpSocketDiagnostics<I>>,
+    {
+        // TODO(https://fxbug.dev/449157844): Implement socket diagnostics for
+        // TCP.
+    }
+
     /// Provides access to shared and per-socket TCP stats via a visitor.
     pub fn inspect<N>(&mut self, inspector: &mut N)
     where
@@ -5978,6 +5997,10 @@ mod tests {
 
     impl<D: FakeStrongDeviceId> TxMetadataBindingsTypes for TcpBindingsCtx<D> {
         type TxMetadata = FakeTxMetadata;
+    }
+
+    impl<D: FakeStrongDeviceId> MatcherBindingsTypes for TcpBindingsCtx<D> {
+        type DeviceClass = ();
     }
 
     impl<D: FakeStrongDeviceId> TcpBindingsTypes for TcpBindingsCtx<D> {

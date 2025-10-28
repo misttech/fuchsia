@@ -11,6 +11,8 @@ using fuchsia.net.tcp;
 using fuchsia.net.udp;
 using fuchsia.net.matchers;
 
+type Empty = struct {};
+
 /// The top-level socket matcher for use in diagnostics protocols.
 type IpSocketMatcher = flexible union {
     /// Matches only a specific IP version.
@@ -87,7 +89,19 @@ closed protocol Diagnostics {
         ///   },
         /// ]
         matchers vector<IpSocketMatcher>:MAX_IP_SOCKET_MATCHERS;
-    }) -> () error flexible enum {};
+    }) -> (@generated_name("IterateIpResult") flexible union {
+        /// The request was valid.
+        1: ok Empty;
+        /// A matcher in the request was invalid.
+        ///
+        /// NOTE: Only the first matcher error encountered will be returned.
+        2: matcher_error @generated_name("IterateIpMatcherError") table {
+            /// The index of matcher in the request that caused the error.
+            ///
+            /// Always populated.
+            1: index uint32;
+        };
+    });
 };
 
 /// The largest number of results that can be returned in one call to

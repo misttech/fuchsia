@@ -4,6 +4,7 @@
 
 use std::convert::Infallible as Never;
 use std::fmt::Debug;
+use std::marker::PhantomData;
 use std::num::{NonZeroU16, NonZeroU64};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
@@ -204,6 +205,38 @@ impl<C: TryIntoFidl<F, Error = Never>, F> IntoFidl<F> for C {
         match self.try_into_fidl() {
             Ok(f) => f,
         }
+    }
+}
+
+/// Adapts a type that implements [`Extend<T>`] to accept items implementing
+/// [`IntoFidl<T>`].
+///
+/// Items are converted using [`IntoFidl::into_fidl`] before being passed to the
+/// underlying extender.
+pub(crate) struct IntoFidlExtender<E, T> {
+    extender: E,
+    _target: PhantomData<T>,
+}
+
+impl<E, T> IntoFidlExtender<E, T> {
+    pub fn new(extender: E) -> Self {
+        Self { extender, _target: PhantomData }
+    }
+
+    pub fn into_inner(self) -> E {
+        let Self { extender, .. } = self;
+        extender
+    }
+}
+
+impl<E, T, IF> Extend<IF> for IntoFidlExtender<E, T>
+where
+    E: Extend<T>,
+    IF: IntoFidl<T>,
+{
+    fn extend<I: IntoIterator<Item = IF>>(&mut self, iter: I) {
+        let Self { extender, .. } = self;
+        extender.extend(iter.into_iter().map(IntoFidl::into_fidl))
     }
 }
 

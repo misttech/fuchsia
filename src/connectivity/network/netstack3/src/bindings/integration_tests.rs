@@ -140,6 +140,7 @@ impl_service_marker!(fidl_fuchsia_net_routes::StateMarker, RoutesState);
 impl_service_marker!(fidl_fuchsia_net_routes::StateV4Marker, RoutesStateV4);
 impl_service_marker!(fidl_fuchsia_net_routes::StateV6Marker, RoutesStateV6);
 impl_service_marker!(fidl_fuchsia_posix_socket::ProviderMarker, Socket);
+impl_service_marker!(fidl_fuchsia_net_sockets::DiagnosticsMarker, SocketDiagnostics);
 impl_service_marker!(fidl_fuchsia_net_routes_admin::RouteTableV4Marker, RoutesAdminV4);
 impl_service_marker!(fidl_fuchsia_net_routes_admin::RouteTableV6Marker, RoutesAdminV6);
 impl_service_marker!(fidl_fuchsia_net_routes_admin::RuleTableV4Marker, RuleTableV4);

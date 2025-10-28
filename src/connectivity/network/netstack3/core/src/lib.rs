@@ -237,7 +237,7 @@ pub mod tcp {
         ConnectionError, ConnectionInfo, DEFAULT_FIN_WAIT2_TIMEOUT, IntoBuffers, ListenError,
         ListenerNotifier, NoConnection, OriginalDestinationError, ReceiveBuffer, SendBuffer,
         SetDeviceError, SetReuseAddrError, SocketAddr, SocketInfo, SocketOptions, TcpBindingsTypes,
-        TcpSettings, TcpSocketId, UnboundInfo,
+        TcpSettings, TcpSocketDiagnostics, TcpSocketId, UnboundInfo,
     };
 }
 
@@ -256,7 +256,7 @@ pub mod types {
 pub mod udp {
     pub use netstack3_udp::{
         ReceiveUdpError, SendError, SendToError, UdpBindingsTypes, UdpPacketMeta,
-        UdpReceiveBindingsContext, UdpRemotePort, UdpSettings, UdpSocketId,
+        UdpReceiveBindingsContext, UdpRemotePort, UdpSettings, UdpSocketDiagnostics, UdpSocketId,
     };
 }
 
