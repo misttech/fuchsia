@@ -305,13 +305,14 @@ fn get_channels_to_scan(
         .iter()
         .filter(|channel| operating_channels.contains(channel))
         .filter(|channel| {
+            // Avoid 5GHz active scans on non-DFS devices.
             if let &fidl_sme::ScanRequest::Passive(_) = scan_request {
                 return true;
             };
-            if spectrum_management_support.dfs.supported {
-                return true;
+            if Channel::new(**channel, Cbw::Cbw20).is_5ghz() {
+                return spectrum_management_support.dfs.supported;
             };
-            !Channel::new(**channel, Cbw::Cbw20).is_dfs()
+            true
         })
         .filter(|chan| {
             // If this is an active scan and there are any channels specified by the caller,
@@ -601,11 +602,16 @@ mod tests {
         assert_eq!(req.max_channel_time, 200);
     }
 
-    #[test]
-    fn test_active_discovery_scan_args_empty() {
+    #[test_case(true, vec![36, 165, 1]; "dfs_enabled")]
+    #[test_case(false, vec![1]; "dfs_disabled")]
+    fn test_active_discovery_scan_args_empty(dfs_supported: bool, expected_channels: Vec<u8>) {
         let device_info = device_info_with_channel(vec![1, 36, 165]);
+        let mut spectrum_management = fake_spectrum_management_support_empty();
+        if dfs_supported {
+            spectrum_management.dfs.supported = true;
+        }
         let mut sched: ScanScheduler<i32> =
-            ScanScheduler::new(Arc::new(device_info), fake_spectrum_management_support_empty());
+            ScanScheduler::new(Arc::new(device_info), spectrum_management);
         let scan_cmd = DiscoveryScan::new(
             10,
             fidl_sme::ScanRequest::Active(fidl_sme::ActiveScanRequest {
@@ -617,7 +623,7 @@ mod tests {
 
         assert_eq!(req.txn_id, 1);
         assert_eq!(req.scan_type, fidl_mlme::ScanTypes::Active);
-        assert_eq!(req.channel_list, vec![36, 165, 1]);
+        assert_eq!(req.channel_list, expected_channels);
         assert_eq!(req.ssid_list, Vec::<Vec<u8>>::new());
         assert_eq!(req.probe_delay, 5);
         assert_eq!(req.min_channel_time, 75);
