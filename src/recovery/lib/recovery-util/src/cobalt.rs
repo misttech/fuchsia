@@ -3,46 +3,41 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Error, format_err};
-use fidl_fuchsia_cobalt::{AggregateAndUploadMarker, AggregateAndUploadSynchronousProxy};
+use fidl_fuchsia_cobalt::{AggregateAndUploadMarker, AggregateAndUploadProxy};
 use fidl_fuchsia_metrics::{
     MetricEventLoggerFactoryMarker, MetricEventLoggerFactoryProxy, MetricEventLoggerProxy,
     ProjectSpec,
 };
 use fuchsia_async as fasync;
-use fuchsia_component::client::{connect_channel_to_protocol, connect_to_protocol};
+use fuchsia_component::client::connect_to_protocol;
 use log::error;
 #[cfg(test)]
 use mockall::automock;
 
 #[cfg_attr(test, automock)]
+#[async_trait::async_trait]
 pub trait Cobalt {
-    fn aggregate_and_upload(&self, timeout_seconds: i64) -> Result<(), Error>;
+    async fn aggregate_and_upload(&self) -> Result<(), Error>;
 }
 
 #[derive(Default)]
 pub struct CobaltImpl;
 
 impl CobaltImpl {
-    fn aggregate_and_upload_with_sync_proxy(
-        timeout_seconds: i64,
-        proxy: AggregateAndUploadSynchronousProxy,
-    ) -> Result<(), Error> {
-        let deadline =
-            zx::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(timeout_seconds));
+    async fn aggregate_and_upload_impl(proxy: AggregateAndUploadProxy) -> Result<(), Error> {
         proxy
-            .aggregate_and_upload_metric_events(deadline)
+            .aggregate_and_upload_metric_events()
+            .await
             .map_err(|e| format_err!("AggregateAndUploadMetric returned an error: {:?}", e))
     }
 }
 
+#[async_trait::async_trait]
 impl Cobalt for CobaltImpl {
-    fn aggregate_and_upload(&self, timeout_seconds: i64) -> Result<(), Error> {
-        let (server_end, client_end) = zx::Channel::create();
-        connect_channel_to_protocol::<AggregateAndUploadMarker>(server_end)
-            .context("Failed to connect to the Cobalt AggregateAndUploadMarker")?;
-        let cobalt_proxy = AggregateAndUploadSynchronousProxy::new(client_end);
-
-        Self::aggregate_and_upload_with_sync_proxy(timeout_seconds, cobalt_proxy)
+    async fn aggregate_and_upload(&self) -> Result<(), Error> {
+        let cobalt_proxy = connect_to_protocol::<AggregateAndUploadMarker>()
+            .context("connecting to AggregateAndUpload")?;
+        Self::aggregate_and_upload_impl(cobalt_proxy).await
     }
 }
 

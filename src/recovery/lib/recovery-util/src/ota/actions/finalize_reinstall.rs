@@ -7,9 +7,10 @@ use crate::ota::controller::SendEvent;
 use crate::ota::state_machine::Event;
 use crate::reboot::{RebootHandler, RebootImpl};
 use fuchsia_async as fasync;
+use fuchsia_async::TimeoutExt;
 use ota_lib::OtaStatus;
 
-const UPLOAD_TIMEOUT: i64 = 60;
+const UPLOAD_TIMEOUT: zx::MonotonicDuration = zx::Duration::from_seconds(60);
 
 pub struct FinalizeReinstallAction {}
 
@@ -30,7 +31,11 @@ impl FinalizeReinstallAction {
         reboot_handler: Box<dyn RebootHandler>,
     ) {
         // Always attempt to upload metrics following a failure or success
-        match cobalt.aggregate_and_upload(UPLOAD_TIMEOUT) {
+        match cobalt
+            .aggregate_and_upload()
+            .on_timeout(UPLOAD_TIMEOUT, || Err(anyhow::anyhow!("timed out")))
+            .await
+        {
             Ok(_) => println!("aggregate_upload finished"),
             Err(err) => eprintln!("aggregate_upload encountered an error {:?}", err),
         };
@@ -71,7 +76,7 @@ mod test {
         let (mut event_sender, mut cobalt, mut reboot_handler) = create_mocks();
 
         event_sender.expect_send().never().return_const(());
-        cobalt.expect_aggregate_and_upload().once().return_once(move |_| Ok(()));
+        cobalt.expect_aggregate_and_upload().once().return_once(move || Ok(()));
         reboot_handler.expect_reboot().once().return_once(move |_| Ok(()));
 
         FinalizeReinstallAction::run_with_proxies(
@@ -91,7 +96,7 @@ mod test {
         cobalt
             .expect_aggregate_and_upload()
             .once()
-            .return_once(move |_| bail!("ignored error string"));
+            .return_once(move || bail!("ignored error string"));
         reboot_handler.expect_reboot().once().return_once(move |_| Ok(()));
 
         FinalizeReinstallAction::run_with_proxies(
@@ -109,7 +114,7 @@ mod test {
 
         let error_predicate = predicate::function(|e: &Event| matches!(e, Event::Error(_)));
         event_sender.expect_send().with(error_predicate).once().return_const(());
-        cobalt.expect_aggregate_and_upload().once().return_once(move |_| Ok(()));
+        cobalt.expect_aggregate_and_upload().once().return_once(move || Ok(()));
         reboot_handler.expect_reboot().once().return_once(move |_| bail!("ignored error string"));
 
         FinalizeReinstallAction::run_with_proxies(
@@ -127,7 +132,7 @@ mod test {
 
         let error_predicate = predicate::function(|e: &Event| matches!(e, Event::Error(_)));
         event_sender.expect_send().with(error_predicate).once().return_const(());
-        cobalt.expect_aggregate_and_upload().once().return_once(move |_| Ok(()));
+        cobalt.expect_aggregate_and_upload().once().return_once(move || Ok(()));
         reboot_handler.expect_reboot().never();
 
         FinalizeReinstallAction::run_with_proxies(
@@ -145,7 +150,7 @@ mod test {
 
         let error_predicate = predicate::function(|e: &Event| matches!(e, Event::Error(_)));
         event_sender.expect_send().with(error_predicate).once().return_const(());
-        cobalt.expect_aggregate_and_upload().once().return_once(move |_| Ok(()));
+        cobalt.expect_aggregate_and_upload().once().return_once(move || Ok(()));
         reboot_handler.expect_reboot().never();
 
         FinalizeReinstallAction::run_with_proxies(
