@@ -147,15 +147,22 @@ pub fn write_ota_manifest(
     }
 
     for bootloader in &partitions.bootloader_partitions {
-        images.push(
-            manifest::Image::from_path(
-                &bootloader.image,
-                manifest::Slot::AB,
-                manifest::ImageType::Firmware(bootloader.partition_type.clone()),
-                delivery_blob_type,
-            )
-            .with_context(|| format!("reading image: {:?}", bootloader.image))?,
-        );
+        let image = manifest::Image::from_path(
+            &bootloader.image,
+            manifest::Slot::AB,
+            manifest::ImageType::Firmware(bootloader.partition_type.clone()),
+            delivery_blob_type,
+        )
+        .with_context(|| format!("reading image: {:?}", bootloader.image))?;
+
+        // De-duplicate bootloader images if they contain the exact same information.
+        // A/B firmware images currently need to be added separately for each slot for flashing but
+        // want to be de-duped when building the OTA package (b/434935097).
+        //
+        // The number of images is small so this O(N) check should be fine.
+        if !images.contains(&image) {
+            images.push(image);
+        }
     }
 
     let blobs = get_all_blobs(packages_a)
@@ -667,5 +674,59 @@ mod tests {
         );
         assert_eq!(manifest.images[4].slot, update_package::manifest::Slot::AB);
         assert_eq!(manifest.images[4].image_type, manifest::ImageType::Firmware("bl_type".into()));
+    }
+
+    #[test]
+    fn build_ota_manifest_with_duplicate_bootloaders() {
+        let mut version_file = NamedTempFile::new().unwrap();
+        write!(version_file, "1.2.3.4").unwrap();
+
+        let system_a = None;
+        let system_r = None;
+
+        let fake_bootloader = NamedTempFile::new().unwrap();
+        let partitions = PartitionsConfig {
+            bootstrap_partitions: vec![],
+            unlock_credentials: vec![],
+            bootloader_partitions: vec![
+                // Same "type" and image contents, different partition name should de-duplicate.
+                // Name only matters for flashing, not OTA, so these are identical for our purposes.
+                BootloaderPartition {
+                    partition_type: "bl_type".into(),
+                    name: Some("bootloader_a".into()),
+                    image: Utf8Path::from_path(fake_bootloader.path()).unwrap().to_path_buf(),
+                },
+                BootloaderPartition {
+                    partition_type: "bl_type".into(),
+                    name: Some("bootloader_b".into()),
+                    image: Utf8Path::from_path(fake_bootloader.path()).unwrap().to_path_buf(),
+                },
+            ],
+            partitions: vec![],
+            hardware_revision: "board".into(),
+        };
+
+        let manifest_file = NamedTempFile::new().unwrap();
+        write_ota_manifest(
+            version_file.path(),
+            &EpochFile::Version1 { epoch: 1 },
+            None,
+            None,
+            DeliveryBlobType::Type1,
+            &system_a,
+            &system_r,
+            &partitions,
+            &[],
+            manifest_file.path(),
+        )
+        .unwrap();
+
+        let value: serde_json::Value = serde_json::from_reader(manifest_file).unwrap();
+        let manifest: OtaManifestV1 = serde_json::from_value(value["version1"].clone()).unwrap();
+
+        // Bootloader image should have de-duped so there's only one.
+        assert_eq!(manifest.images.len(), 1);
+        assert_eq!(manifest.images[0].slot, update_package::manifest::Slot::AB);
+        assert_eq!(manifest.images[0].image_type, manifest::ImageType::Firmware("bl_type".into()));
     }
 }
