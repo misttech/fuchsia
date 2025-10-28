@@ -31,13 +31,16 @@ pub async fn list_hosts(
     }
 
     for (koid, drivers) in driver_hosts {
-        // Some driver hosts have a proxy loaded but nothing else. Ignore those.
-        if !drivers.is_empty() {
+        if termion::is_tty(&std::io::stdout()) {
             println!("Driver Host: {}", koid);
             for driver in drivers {
                 println!("{:>4}{}", "", driver);
             }
             println!("");
+        } else {
+            for driver in drivers {
+                println!("Driver Host: {:<6}{}", koid, driver);
+            }
         }
     }
     Ok(())
