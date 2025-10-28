@@ -13,10 +13,7 @@ pub fn uid_procstat_directory(fs: &FileSystemHandle) -> FsNodeHandle {
     dir.edit(fs, |dir| {
         dir.entry(
             "set",
-            StubEmptyFile::new_node(
-                "/proc/uid_procstat/set",
-                bug_ref!("https://fxbug.dev/322894041"),
-            ),
+            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/322894041")),
             mode!(IFREG, 0o222),
         );
     });

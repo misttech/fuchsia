@@ -8209,11 +8209,13 @@ pub mod tests {
         let node = create_namespace_node_for_testing(&fs, Anon::new_for_binder_device());
 
         let locked = locked.cast_locked::<FileOpsCore>();
+        let binder = binder_driver
+            .open(locked, &current_task, DeviceType::NONE, &node, OpenFlags::RDWR)
+            .expect("binder dev open failed");
         FileObject::new_anonymous(
+            locked,
             current_task,
-            binder_driver
-                .open(locked, &current_task, DeviceType::NONE, &node, OpenFlags::RDWR)
-                .expect("binder dev open failed"),
+            binder,
             node.entry.node.clone(),
             OpenFlags::RDWR,
         )

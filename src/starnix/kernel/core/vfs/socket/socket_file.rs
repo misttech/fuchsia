@@ -56,7 +56,13 @@ impl SocketFile {
         );
         socket.set_fs_node(&node);
         security::socket_post_create(&socket);
-        Ok(FileObject::new_anonymous(current_task, SocketFile::new(socket), node, open_flags))
+        Ok(FileObject::new_anonymous(
+            locked,
+            current_task,
+            SocketFile::new(socket),
+            node,
+            open_flags,
+        ))
     }
 
     /// Shortcut for Socket::new plus SocketFile::from_socket.

@@ -159,6 +159,16 @@ pub fn derive_wrapping_key(
 
 /// Corresponds to struct file_operations in Linux, plus any filesystem-specific data.
 pub trait FileOps: Send + Sync + AsAny + 'static {
+    /// Called when the FileObject is opened/created
+    fn open(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+    ) -> Result<(), Errno> {
+        Ok(())
+    }
+
     /// Called when the FileObject is destroyed.
     fn close(
         self: Box<Self>,
@@ -1516,14 +1526,19 @@ impl FileObject {
     /// from the file system.
     ///
     /// The returned FileObject does not have a name.
-    pub fn new_anonymous(
+    pub fn new_anonymous<L>(
+        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         ops: Box<dyn FileOps>,
         node: FsNodeHandle,
         flags: OpenFlags,
-    ) -> FileHandle {
+    ) -> FileHandle
+    where
+        L: LockEqualOrBefore<FileOpsCore>,
+    {
         assert!(!node.fs().has_permanent_entries());
         Self::new(
+            locked,
             current_task,
             ops,
             NamespaceNode::new_anonymous_unrooted(current_task, node),
@@ -1536,12 +1551,16 @@ impl FileObject {
     ///
     /// This function is not typically called directly. Instead, consider
     /// calling NamespaceNode::open.
-    pub fn new(
+    pub fn new<L>(
+        locked: &mut Locked<L>,
         current_task: &CurrentTask,
         ops: Box<dyn FileOps>,
         name: NamespaceNode,
         flags: OpenFlags,
-    ) -> Result<FileHandle, Errno> {
+    ) -> Result<FileHandle, Errno>
+    where
+        L: LockEqualOrBefore<FileOpsCore>,
+    {
         let _mysterious_node = if flags.can_write() {
             name.entry.node.write_guard_state.lock().acquire(FileWriteGuardMode::WriteFile)?;
             Some(name.entry.node.clone())
@@ -1571,6 +1590,8 @@ impl FileObject {
             .into()
         });
         file.notify(InotifyMask::OPEN);
+
+        file.ops().open(locked.cast_locked::<FileOpsCore>(), &file, current_task)?;
         Ok(file)
     }
 

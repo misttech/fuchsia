@@ -68,7 +68,7 @@ impl Anon {
         let node =
             fs.create_node_and_allocate_node_id(Anon { name: Some(name), is_private: false }, info);
         security::fs_node_init_anon(current_task, &node, name);
-        FileObject::new_anonymous(current_task, ops, node, flags)
+        FileObject::new_anonymous(locked, current_task, ops, node, flags)
     }
 
     /// Returns a new anonymous file with the specified properties, and a unique `FsNode`.
@@ -130,7 +130,7 @@ impl Anon {
         let node =
             fs.create_node_and_allocate_node_id(Anon { name: Some(name), is_private: true }, info);
         security::fs_node_init_anon(current_task, &node, name);
-        FileObject::new_anonymous(current_task, ops, node, flags)
+        FileObject::new_anonymous(locked, current_task, ops, node, flags)
     }
 
     /// Returns true if the `fs_node` is `Anon` and private to the `Kernel`/`FileSystem`, in which

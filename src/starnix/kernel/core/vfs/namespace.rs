@@ -1065,12 +1065,8 @@ impl NamespaceNode {
         flags: OpenFlags,
         access_check: AccessCheck,
     ) -> Result<FileHandle, Errno> {
-        FileObject::new(
-            current_task,
-            self.entry.node.open(locked, current_task, self, flags, access_check)?,
-            self.clone(),
-            flags,
-        )
+        let ops = self.entry.node.open(locked, current_task, self, flags, access_check)?;
+        FileObject::new(locked, current_task, ops, self.clone(), flags)
     }
 
     /// Create or open a node in the file system.

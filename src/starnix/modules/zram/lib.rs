@@ -79,7 +79,7 @@ fn build_zram_device_directory(
     build_block_device_directory(device, block_info, dir);
     dir.entry(
         "idle",
-        StubEmptyFile::new_node("zram idle file", bug_ref!("https://fxbug.dev/322892951")),
+        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/322892951")),
         mode!(IFREG, 0o664),
     );
     dir.entry("mm_stat", MmStatFile::new_node(zram_device), mode!(IFREG, 0o444));

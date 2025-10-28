@@ -11,6 +11,7 @@ use fuchsia_inspect::Inspector;
 use fuchsia_sync::Mutex;
 use futures::future::BoxFuture;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::num::NonZeroU64;
 use std::panic::Location;
 use std::sync::LazyLock;
@@ -79,11 +80,85 @@ macro_rules! track_stub_log {
     }};
 }
 
-#[derive(Debug, Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+// This is the struct we'll actually store in the HashMap of
+// invocations. It needs to contain an owned String for lifetime
+// purposes.
+#[derive(Debug, Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Invocation {
     location: &'static Location<'static>,
-    message: &'static str,
+    message: String,
     bug: BugRef,
+}
+
+// This trait allows us to look up in the invocation HashMap with
+// either a borrowed message or an owned message.
+trait InvocationLookup {
+    fn location(&self) -> &'static Location<'static>;
+    fn message(&self) -> &str;
+    fn bug(&self) -> BugRef;
+}
+
+impl Hash for dyn InvocationLookup + '_ {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.location().hash(state);
+        self.message().hash(state);
+        self.bug().hash(state);
+    }
+}
+
+impl PartialEq for dyn InvocationLookup + '_ {
+    fn eq(&self, other: &Self) -> bool {
+        self.location() == other.location()
+            && self.message() == other.message()
+            && self.bug() == other.bug()
+    }
+}
+
+impl Eq for dyn InvocationLookup + '_ {}
+
+impl InvocationLookup for Invocation {
+    fn location(&self) -> &'static Location<'static> {
+        self.location
+    }
+
+    fn message(&self) -> &str {
+        &self.message
+    }
+
+    fn bug(&self) -> BugRef {
+        self.bug
+    }
+}
+
+impl<'a> std::borrow::Borrow<dyn InvocationLookup + 'a> for Invocation {
+    fn borrow(&self) -> &(dyn InvocationLookup + 'a) {
+        self
+    }
+}
+
+// This struct is never to be stored, but is constructed for lookup
+// purposes on the invocations map. Looking up using a borrowed string
+// for 'message' saves an allocation if the key is already in the map,
+// which could be significant if a client is opening a stub file very
+// frequently.
+struct InvocationKey<'a> {
+    location: &'static Location<'static>,
+    message: &'a str,
+    bug: BugRef,
+}
+
+impl<'a> InvocationLookup for InvocationKey<'a> {
+    fn location(&self) -> &'static Location<'static> {
+        self.location
+    }
+
+    fn message(&self) -> &str {
+        self.message
+    }
+
+    fn bug(&self) -> BugRef {
+        self.bug
+    }
 }
 
 #[derive(Default)]
@@ -95,7 +170,7 @@ struct Counts {
 #[inline]
 pub fn __track_stub_inner(
     bug: BugRef,
-    message: &'static str,
+    message: &str,
     flags: Option<u64>,
     location: &'static Location<'static>,
 ) -> u64 {
@@ -107,28 +182,42 @@ pub fn __track_stub_inner(
 pub fn __track_stub_inner_with_level(
     level: log::Level,
     bug: BugRef,
-    message: &'static str,
+    message: &str,
     flags: Option<u64>,
     location: &'static Location<'static>,
 ) -> u64 {
     let mut counts = STUB_COUNTS.lock();
-    let message_counts = counts.entry(Invocation { location, message, bug }).or_default();
-    let context_count = message_counts.by_flags.entry(flags).or_default();
+    let key = InvocationKey { location, message, bug };
 
-    // Log the first time we see a particular file/message/context tuple but don't risk spamming.
-    if *context_count == 0 {
-        match flags {
-            Some(flags) => {
-                log::log!(level, tag = "track_stub", location:%; "{bug} {message}: 0x{flags:x}");
+    if let Some(message_counts) = counts.get_mut(&key as &dyn InvocationLookup) {
+        let context_count = message_counts.by_flags.entry(flags).or_default();
+        if *context_count == 0 {
+            match flags {
+                Some(flags) => {
+                    log::log!(level, tag = "track_stub", location:%; "{bug} {message}: 0x{flags:x}");
+                }
+                None => {
+                    log::log!(level, tag = "track_stub", location:%; "{bug} {message}");
+                }
             }
-            None => {
-                log::log!(level, tag = "track_stub", location:%; "{bug} {message}");
-            }
+        }
+        *context_count += 1;
+        return *context_count;
+    }
+
+    match flags {
+        Some(flags) => {
+            log::log!(level, tag = "track_stub", location:%; "{bug} {message}: 0x{flags:x}");
+        }
+        None => {
+            log::log!(level, tag = "track_stub", location:%; "{bug} {message}");
         }
     }
 
-    *context_count += 1;
-    *context_count
+    let mut message_counts = Counts::default();
+    message_counts.by_flags.insert(flags, 1);
+    counts.insert(Invocation { location, message: String::from(message), bug }, message_counts);
+    1
 }
 
 /// Returns a future that resolves to an `Inspector` containing stub information.
@@ -140,7 +229,7 @@ pub fn track_stub_lazy_node_callback() -> BoxFuture<'static, Result<Inspector, a
         let inspector = Inspector::default();
         for (Invocation { location, message, bug }, context_counts) in STUB_COUNTS.lock().iter() {
             inspector.root().atomic_update(|root| {
-                root.record_child(*message, |message_node| {
+                root.record_child(message, |message_node| {
                     message_node.record_string("file", location.file());
                     message_node.record_uint("line", location.line().into());
                     message_node.record_string("bug", bug.to_string());

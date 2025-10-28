@@ -35,19 +35,13 @@ pub fn build_block_device_directory(
     dir.subdir("queue", 0o755, |dir| {
         dir.entry(
             "nr_requests",
-            StubEmptyFile::new_node(
-                "/sys/block/DEVICE/queue/nr_requests",
-                bug_ref!("https://fxbug.dev/322906857"),
-            ),
+            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/322906857")),
             mode!(IFREG, 0o644),
         );
         dir.entry("read_ahead_kb", BytesFile::new_node(ReadAheadKbFile), mode!(IFREG, 0o644));
         dir.entry(
             "scheduler",
-            StubEmptyFile::new_node(
-                "/sys/block/DEVICE/queue/scheduler",
-                bug_ref!("https://fxbug.dev/322907749"),
-            ),
+            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/322907749")),
             mode!(IFREG, 0o644),
         );
     });

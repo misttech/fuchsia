@@ -1213,12 +1213,15 @@ mod test {
         ));
         open_files.lock().push(Arc::downgrade(&device_file));
 
+        let root_namespace_node = current_task
+            .lookup_path_from_root(locked, ".".into())
+            .expect("failed to get namespace node for root");
+
         FileObject::new(
+            locked,
             &current_task,
             Box::new(device_file),
-            current_task
-                .lookup_path_from_root(locked, ".".into())
-                .expect("failed to get namespace node for root"),
+            root_namespace_node,
             OpenFlags::empty(),
         )
         .expect("FileObject::new failed")
@@ -1425,12 +1428,14 @@ mod test {
             None,
         ));
         open_files.lock().push(Arc::downgrade(&device_id_10_file));
+        let root_namespace_node = current_task
+            .lookup_path_from_root(locked, ".".into())
+            .expect("failed to get namespace node for root");
         let device_id_10_file_object = FileObject::new(
+            locked,
             &current_task,
             Box::new(device_id_10_file),
-            current_task
-                .lookup_path_from_root(locked, ".".into())
-                .expect("failed to get namespace node for root"),
+            root_namespace_node,
             OpenFlags::empty(),
         )
         .expect("FileObject::new failed");
@@ -1495,12 +1500,14 @@ mod test {
             None,
         ));
         open_files.lock().push(Arc::downgrade(&device_id_10_file));
+        let root_namespace_node = current_task
+            .lookup_path_from_root(locked, ".".into())
+            .expect("failed to get namespace node for root");
         let device_id_10_file_object = FileObject::new(
+            locked,
             &current_task,
             Box::new(device_id_10_file),
-            current_task
-                .lookup_path_from_root(locked, ".".into())
-                .expect("failed to get namespace node for root"),
+            root_namespace_node,
             OpenFlags::empty(),
         )
         .expect("FileObject::new failed");

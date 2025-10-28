@@ -634,14 +634,17 @@ mod test {
             start_input_relays_for_test(locked, &current_task).await;
         let dev = Arc::new(UinputDeviceFile::new(input_relay_handle));
 
+        let root_namespace_node = current_task
+            .lookup_path_from_root(locked, ".".into())
+            .expect("failed to get namespace node for root");
+
         let file_object = FileObject::new(
+            locked,
             &current_task,
             Box::new(dev.clone()),
             // The input node doesn't really live at the root of the filesystem.
             // But the test doesn't need to be 100% representative of production.
-            current_task
-                .lookup_path_from_root(locked, ".".into())
-                .expect("failed to get namespace node for root"),
+            root_namespace_node,
             OpenFlags::empty(),
         )
         .expect("FileObject::new failed");

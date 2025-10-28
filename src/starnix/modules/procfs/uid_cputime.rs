@@ -13,18 +13,12 @@ pub fn uid_cputime_directory(fs: &FileSystemHandle) -> FsNodeHandle {
     dir.edit(fs, |dir| {
         dir.entry(
             "remove_uid_range",
-            StubEmptyFile::new_node(
-                "/proc/uid_cputime/remove_uid_range",
-                bug_ref!("https://fxbug.dev/322894025"),
-            ),
+            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/322894025")),
             mode!(IFREG, 0o222),
         );
         dir.entry(
             "show_uid_stat",
-            StubEmptyFile::new_node(
-                "/proc/uid_cputime/show_uid_stat",
-                bug_ref!("https://fxbug.dev/322893886"),
-            ),
+            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/322893886")),
             mode!(IFREG, 0o444),
         );
     });

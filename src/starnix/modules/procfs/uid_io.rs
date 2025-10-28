@@ -13,7 +13,7 @@ pub fn uid_io_directory(fs: &FileSystemHandle) -> FsNodeHandle {
     dir.edit(fs, |dir| {
         dir.entry(
             "stats",
-            StubEmptyFile::new_node("/proc/uid_io/stats", bug_ref!("https://fxbug.dev/322893966")),
+            StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/322893966")),
             mode!(IFREG, 0o444),
         );
     });

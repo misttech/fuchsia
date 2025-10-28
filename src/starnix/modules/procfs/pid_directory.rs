@@ -195,14 +195,10 @@ impl FsNodeOps for TaskDirectoryNode {
             b"root" => Box::new(CallbackSymlinkNode::new({
                 move || Ok(SymlinkTarget::Node(Task::from_weak(&task_weak)?.fs().root()))
             })),
-            b"sched" => Box::new(StubEmptyFile::new_node(
-                "/proc/pid/sched",
-                bug_ref!("https://fxbug.dev/322893980"),
-            )),
-            b"schedstat" => Box::new(StubEmptyFile::new_node(
-                "/proc/pid/schedstat",
-                bug_ref!("https://fxbug.dev/322894256"),
-            )),
+            b"sched" => Box::new(StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/322893980"))),
+            b"schedstat" => {
+                Box::new(StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/322894256")))
+            }
             b"smaps" => Box::new(ProcSmapsFile::new_node(task_weak)),
             b"stat" => Box::new(StatFile::new_node(task_weak, self.scope)),
             b"statm" => Box::new(StatmFile::new_node(task_weak)),

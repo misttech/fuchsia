@@ -301,12 +301,15 @@ impl InputDevice {
         current_task: &CurrentTask,
     ) -> Result<starnix_core::vfs::FileHandle, Errno> {
         let input_file = self.open_internal();
+        let root_namespace_node = current_task
+            .lookup_path_from_root(locked, ".".into())
+            .expect("failed to get namespace node for root");
+
         let file_object = starnix_core::vfs::FileObject::new(
+            locked,
             current_task,
             input_file,
-            current_task
-                .lookup_path_from_root(locked, ".".into())
-                .expect("failed to get namespace node for root"),
+            root_namespace_node,
             OpenFlags::empty(),
         )
         .expect("FileObject::new failed");

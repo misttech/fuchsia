@@ -76,7 +76,7 @@ impl ProcDirectory {
     pub fn new(kernel: &Kernel, fs: &FileSystemHandle) -> ProcDirectoryNode {
         // First add all the nodes that are always present in the top-level proc directory.
         let mut nodes = btreemap! {
-            "asound".into() => stub_file(fs, "/proc/asound", bug_ref!("https://fxbug.dev/322893329")),
+            "asound".into() => stub_file(fs, bug_ref!("https://fxbug.dev/322893329")),
             "cgroups".into() => cgroups_file(fs),
             "cmdline".into() => {
                 let mut cmdline = Vec::from(kernel.cmdline.clone());
@@ -87,7 +87,7 @@ impl ProcDirectory {
             "cpuinfo".into() => read_only_file(fs, CpuinfoFile::new_node()),
             "devices".into() => read_only_file(fs, DevicesFile::new_node()),
             "device-tree".into() => device_tree_directory(kernel, fs),
-            "diskstats".into() => stub_file(fs, "/proc/diskstats", bug_ref!("https://fxbug.dev/322893370")),
+            "diskstats".into() => stub_file(fs, bug_ref!("https://fxbug.dev/322893370")),
             "filesystems".into() => read_only_file(fs, FilesystemsFile::new_node(&kernel.expando.get::<FsRegistry>())),
             "kallsyms".into() => read_only_file(fs, SimpleFileNode::new(|| {
                 track_stub!(TODO("https://fxbug.dev/369067922"), "Provide a real /proc/kallsyms");
@@ -104,9 +104,9 @@ impl ProcDirectory {
             "modules".into() => bytes_file(fs, b"ferris 8192 0 - Live 0x0000000000000000\n".to_vec()),
             "mounts".into() => symlink_file(fs, MountsSymlink::new_node()),
             "net".into() => net_directory(fs),
-            "pagetypeinfo".into() => stub_file(fs, "/proc/pagetypeinfo", bug_ref!("https://fxbug.dev/322894315")),
+            "pagetypeinfo".into() => stub_file(fs, bug_ref!("https://fxbug.dev/322894315")),
             "self".into() => symlink_file(fs, SelfSymlink::new_node()),
-            "slabinfo".into() => stub_file(fs, "/proc/slabinfo", bug_ref!("https://fxbug.dev/322894195")),
+            "slabinfo".into() => stub_file(fs, bug_ref!("https://fxbug.dev/322894195")),
             "stat".into() => read_only_file(fs, StatFile::new_node(&kernel.stats)),
             "swaps".into() => read_only_file(fs, SwapsFile::new_node()),
             "sys".into() => sysctl_directory(fs),
@@ -124,7 +124,7 @@ impl ProcDirectory {
                 let version_string = format!("Linux version {} ({}) ({}) {}\n", release, user, toolchain, version);
                 bytes_file(fs, version_string.into())
             },
-            "vmallocinfo".into() => stub_file(fs, "/proc/vmallocinfo", bug_ref!("https://fxbug.dev/322894183")),
+            "vmallocinfo".into() => stub_file(fs, bug_ref!("https://fxbug.dev/322894183")),
             "vmstat".into() => read_only_file(fs, VmStatFile::new_node(&kernel.stats)),
             "zoneinfo".into() => read_only_file(fs, ZoneInfoFile::new_node(&kernel.stats)),
         };
@@ -139,8 +139,8 @@ impl ProcDirectory {
 }
 
 /// Creates a stub file that logs a message with the associated bug when it is accessed.
-fn stub_file(fs: &FileSystemHandle, name: &'static str, bug: BugRef) -> FsNodeHandle {
-    read_only_file(fs, StubEmptyFile::new_node(name, bug))
+fn stub_file(fs: &FileSystemHandle, bug: BugRef) -> FsNodeHandle {
+    read_only_file(fs, StubEmptyFile::new_node(bug))
 }
 
 /// Returns a new `BytesFile` containing the provided `bytes`.

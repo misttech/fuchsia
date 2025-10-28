@@ -231,8 +231,9 @@ impl SeLinuxFs {
         let null_flags = OpenFlags::empty();
         let null_name =
             NamespaceNode::new_anonymous(DirEntry::new(null_fs_node, None, "null".into()));
-        let null_file_object = FileObject::new(current_task, null_ops, null_name, null_flags)
-            .expect("create file object for just-created selinuxfs/null");
+        let null_file_object =
+            FileObject::new(locked, current_task, null_ops, null_name, null_flags)
+                .expect("create file object for just-created selinuxfs/null");
         security::selinuxfs_init_null(current_task, &null_file_object);
 
         Ok(fs)

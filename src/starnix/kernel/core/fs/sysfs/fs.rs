@@ -107,10 +107,7 @@ impl SysFs {
                 dir.subdir("parameters", dir_mode, |dir| {
                     dir.entry(
                         "prefetch_cluster",
-                        StubEmptyFile::new_node(
-                            "/sys/module/dm_verity/paramters/prefetch_cluster",
-                            bug_ref!("https://fxbug.dev/322893670"),
-                        ),
+                        StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/322893670")),
                         mode!(IFREG, 0o644),
                     );
                 });

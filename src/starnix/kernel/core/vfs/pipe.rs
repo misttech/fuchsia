@@ -406,9 +406,9 @@ pub fn new_pipe(
         state.add_writer();
     }
 
-    let open = |flags: OpenFlags| {
+    let mut open = |flags: OpenFlags| {
         let ops = PipeFileObject { pipe: Arc::clone(pipe) };
-        Ok(FileObject::new_anonymous(current_task, Box::new(ops), Arc::clone(&node), flags))
+        Ok(FileObject::new_anonymous(locked, current_task, Box::new(ops), Arc::clone(&node), flags))
     };
 
     Ok((open(OpenFlags::RDONLY)?, open(OpenFlags::WRONLY)?))

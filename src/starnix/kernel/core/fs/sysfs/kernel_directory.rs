@@ -17,10 +17,7 @@ pub fn build_kernel_directory(kernel: &Kernel, dir: &SimpleDirectoryMutator) {
         dir.subdir("transparent_hugepage", 0o755, |dir| {
             dir.entry(
                 "enabled",
-                StubEmptyFile::new_node(
-                    "/sys/kernel/mm/transparent_hugepage/enabled",
-                    bug_ref!("https://fxbug.dev/322894184"),
-                ),
+                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/322894184")),
                 mode!(IFREG, 0o644),
             );
         });

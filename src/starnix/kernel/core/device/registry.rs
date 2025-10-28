@@ -65,11 +65,11 @@ pub trait DeviceOps: DynClone + Send + Sync + AsAny + 'static {
     /// assigned to this device.
     fn open(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _current_task: &CurrentTask,
-        _device_type: DeviceType,
-        _node: &NamespaceNode,
-        _flags: OpenFlags,
+        locked: &mut Locked<FileOpsCore>,
+        current_task: &CurrentTask,
+        device_type: DeviceType,
+        node: &NamespaceNode,
+        flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno>;
 
     fn unregister(self: Box<Self>, _locked: &mut Locked<FileOpsCore>, _current_task: &CurrentTask) {
