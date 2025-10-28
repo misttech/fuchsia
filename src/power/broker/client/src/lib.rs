@@ -223,6 +223,7 @@ pub struct LeaseDependency {
 /// A single LeaseHelper may be reused to create leases an arbitrary number of times.
 pub struct LeaseHelper {
     lessor: fbroker::LessorProxy,
+    _run_task: fasync::Task<()>,
 }
 
 pub struct Lease {
@@ -280,12 +281,11 @@ impl LeaseHelper {
 
         let lessor = element_context.lessor.clone();
 
-        fasync::Task::local(async move {
+        let _run_task = fasync::Task::local(async move {
             element_context.run(element_runner, None /* inspect_node */, None).await;
-        })
-        .detach();
+        });
 
-        Ok(Arc::new(Self { lessor }))
+        Ok(Arc::new(Self { lessor, _run_task }))
     }
 
     /// Acquires a lease, completing only once the lease is satisfied. Returns an error if the
@@ -480,6 +480,85 @@ mod tests {
         assert_data_tree!(inspector, root: {
             power_level: 4u64
         });
+        Ok(())
+    }
+
+    // Verifies that LeaseHelper uses PowerBroker as expected and cleans up afterward.
+    #[fuchsia::test]
+    async fn test_lease_helper() -> Result<()> {
+        let (topology, topology_server) = create_proxy::<fbroker::TopologyMarker>();
+        let mut topology_stream = topology_server.into_stream();
+        let topology_task: fasync::Task<Result<()>> = fasync::Task::local(async move {
+            log::debug!("Waiting for add_element_request...");
+            let add_element_request = topology_stream.next().await.unwrap()?;
+            let mut element_control;
+            let lessor;
+            let element_runner;
+            match add_element_request {
+                fbroker::TopologyRequest::AddElement { payload, responder } => {
+                    element_control =
+                        payload.element_control.expect("element_control not set").into_stream();
+                    lessor = payload.lessor_channel.expect("lessor_channel not set");
+                    element_runner = payload.element_runner;
+                    responder.send(Ok(()))?
+                }
+                request => {
+                    return Err(anyhow!("Unexpected method called: {request:?}"));
+                }
+            }
+            for _ in 0..2 {
+                let element_control_request = element_control.next().await.unwrap()?;
+                match element_control_request {
+                    fbroker::ElementControlRequest::RegisterDependencyToken {
+                        responder, ..
+                    } => responder.send(Ok(()))?,
+                    request => {
+                        return Err(anyhow!("Unexpected method called: {request:?}"));
+                    }
+                }
+            }
+            let (lease_control, lease_control_server) =
+                create_endpoints::<fbroker::LeaseControlMarker>();
+            log::debug!("Waiting for lease_request...");
+            let lease_request = lessor.into_stream().next().await.unwrap()?;
+            match lease_request {
+                fbroker::LessorRequest::Lease { responder, .. } => {
+                    responder.send(Ok(lease_control))?
+                }
+                request => {
+                    return Err(anyhow!("Unexpected method called: {request:?}"));
+                }
+            }
+            let mut lease_control_stream = lease_control_server.into_stream();
+            log::debug!("Waiting for lease_control_request...");
+            let lease_control_request = lease_control_stream.next().await.unwrap()?;
+            match lease_control_request {
+                fbroker::LeaseControlRequest::WatchStatus { responder, .. } => {
+                    responder.send(fbroker::LeaseStatus::Satisfied)?
+                }
+                request => {
+                    return Err(anyhow!("Unexpected method called: {request:?}"));
+                }
+            }
+            log::debug!("Waiting for lease_control to be closed...");
+            assert!(lease_control_stream.next().await.is_none());
+            log::debug!("Waiting for element_control to be closed...");
+            assert!(element_control.into_stream().next().await.is_none());
+            Ok(())
+        });
+
+        log::debug!("Creating LeaseHelper...");
+        let helper = LeaseHelper::new(&topology, "Lease", vec![]).await?;
+        log::debug!("create_lease_and_wait_until_satisfied...");
+        let lease = helper.create_lease_and_wait_until_satisfied().await?;
+
+        log::debug!("Dropping lease...");
+        drop(lease);
+        log::debug!("Dropping LeaseHelper...");
+        drop(helper);
+
+        log::debug!("Waiting for topology_task to complete...");
+        assert!(topology_task.await.is_ok());
         Ok(())
     }
 }
