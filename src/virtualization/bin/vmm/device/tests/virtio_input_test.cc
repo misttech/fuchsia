@@ -234,7 +234,8 @@ fuchsia::ui::pointer::MouseEvent MakeMouseEvent() {
   return mouse_event;
 }
 
-TEST_P(VirtioInputMouseTest, PointerMove) {
+// TODO(https://fxbug.dev/434067533): Fix flaky test.
+TEST_P(VirtioInputMouseTest, DISABLED_PointerMove) {
   std::array<float, 2> position = {0.25, 0.50};
   fuchsia::ui::pointer::MouseEvent mouse_event = MakeMouseEvent();
   *mouse_event.mutable_pointer_sample()->mutable_position_in_viewport() = position;
