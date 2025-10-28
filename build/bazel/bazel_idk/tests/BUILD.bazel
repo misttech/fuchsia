@@ -284,5 +284,10 @@ build_idk_combinations(
         # TODO(https://fxbug.dev/443766378): Fix the use of incorrect headers
         # with missing symbols and uncomment.
         # "//sdk/lib/utf-utils",
+
+        # Exercise FIDL.
+        # TODO(https://fxbug.dev/428285014): Replace with the _idk target for a
+        # FIDL library in the IDK.
+        "//examples/fidl/fuchsia.examples.docs:versioning",
     ],
 )

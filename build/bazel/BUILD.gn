@@ -333,26 +333,48 @@ generated_file("gn_build_variables_for_bazel") {
 
   # LINT.ThenChange(//build/sdk/config.gni)
 
-  # LINT.IfChange
+  # BEGIN platform_version.gni
+  # LINT.IfChange(platform_version)
   declaration = "//build/config/fuchsia/platform_version.gni"
   import(declaration)
 
   # GN supports a list of both integers and strings. Ensure all levels are
   # strings as required by Bazel.
-  string_api_levels = []
+  string_buildable_api_levels = []
   foreach(api_level, idk_buildable_api_levels) {
-    string_api_levels += [ "${api_level}" ]
+    string_buildable_api_levels += [ "${api_level}" ]
   }
   contents += [
     {
       name = "idk_buildable_api_levels"
-      value = string_api_levels
+      value = string_buildable_api_levels
       type = "array_of_strings"
       location = declaration
     },
   ]
 
   # LINT.ThenChange(//build/config/fuchsia/platform_version.gni)
+
+  # LINT.IfChange(get_platform_version)
+  # This GN arg is defined in a Python file exposed through the .gni file above.
+
+  # GN supports a list of both integers and strings. Ensure all levels are
+  # strings as required by Bazel.
+  string_runtime_api_levels = []
+  foreach(api_level, platform_version.runtime_supported_api_levels) {
+    string_runtime_api_levels += [ "${api_level}" ]
+  }
+  contents += [
+    {
+      name = "runtime_supported_api_levels"
+      value = string_runtime_api_levels
+      type = "array_of_strings"
+      location = declaration
+    },
+  ]
+
+  # LINT.ThenChange(//build/config/fuchsia/get_platform_version.py)
+  # END platform_version.gni
 
   # LINT.IfChange
   declaration = "//build/testing/config.gni"

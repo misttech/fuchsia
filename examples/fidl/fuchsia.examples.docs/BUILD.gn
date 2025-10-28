@@ -5,6 +5,8 @@
 # Import the fidl GN template.
 import("//build/fidl/fidl.gni")
 
+# LINT.IfChange
+
 # Define a target for our FIDL library by passing it the FIDL source files
 # that make up the library.
 fidl("fuchsia.examples.docs") {
@@ -52,3 +54,4 @@ group("all") {
     ":versioning($fidl_toolchain)",
   ]
 }
+# LINT.ThenChange(BUILD.bazel)

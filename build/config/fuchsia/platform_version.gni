@@ -42,5 +42,5 @@ declare_args() {
   # Do not use the `platform_version` member directly.
   # LINT.IfChange
   idk_buildable_api_levels = platform_version.default_idk_buildable_api_levels
-  # LINT.ThenChange(//build/bazel/BUILD.gn)
+  # LINT.ThenChange(//build/bazel/BUILD.gn:platform_version)
 }

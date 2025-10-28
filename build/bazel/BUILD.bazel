@@ -28,5 +28,8 @@ define_current_platform_info(name = "current_platform")
 string_flag(
     name = "fuchsia_api_level",
     build_setting_default = "PLATFORM",
-    visibility = ["//build/bazel/bazel_idk:__subpackages__"],
+    visibility = [
+        "//build/bazel/bazel_idk:__subpackages__",
+        "//build/bazel/rules/fidl:__subpackages__",
+    ],
 )
