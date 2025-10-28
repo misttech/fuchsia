@@ -238,11 +238,4 @@ libc_headers = {
       }
     },
   ]
-
-  # This lists the extra files that are read directly by
-  # //build/bazel/fuchsia_idk/generate_repository.py
-  idk_generate_inputs = [
-    llvm_libc_json_file,
-    "$root_dir/generated.json",
-  ]
 }

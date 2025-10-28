@@ -3,14 +3,13 @@
 # found in the LICENSE file.
 
 import("//build/testing/python_build_time_tests.gni")
-import("//sdk/lib/c/include/libc_headers.gni")
 
 # All tests here should be run at build time, as they are critical
 # to ensure the build works correctly.
 action("integration_test") {
   testonly = true
   script = "//build/bazel/fuchsia_idk/generate_repository_validation.py"
-  inputs = [ "generate_repository.py" ] + libc_headers.idk_generate_inputs
+  inputs = [ "generate_repository.py" ]
   outputs = [ "$target_out_dir/$target_name.check" ]
   args = [
     "--quiet",
@@ -23,7 +22,7 @@ action("integration_test") {
 
 python_build_time_tests("unit_tests") {
   tests = [ "generate_repository_test.py" ]
-  inputs = [ "generate_repository.py" ] + libc_headers.idk_generate_inputs
+  inputs = [ "generate_repository.py" ]
 }
 
 group("tests") {
