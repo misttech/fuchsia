@@ -6,10 +6,13 @@
 
 import dataclasses
 import json
-import subprocess
+import os
 import sys
 import typing as T
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(__file__))
+import build_utils
 
 
 @dataclasses.dataclass
@@ -76,6 +79,9 @@ class BazelBuildActionsMap(object):
     def gn_targets(self) -> list[str]:
         return sorted(set(self._bazel_to_gn.values()))
 
+    def label_items(self) -> T.Iterable[tuple[str, BazelBuildActionInfo]]:
+        return self._targets.items()
+
     def get_info(self, gn_label: str) -> T.Optional[BazelBuildActionInfo]:
         """Retrieve BazelBuildActionInfo matching a given GN label."""
         return self._targets.get(gn_label)
@@ -94,15 +100,21 @@ class BazelBuildActionsMap(object):
 
 
 class BazelBuildActionQuery(object):
-    """Convenience class to wrap Bazel query operations when trying to find
-    the wrapping GN bazel_action() target for a given Bazel target.
-          GN target, or in case of failure, a message explaining its reason.
+    """Convenience class to wrap Bazel query operations.
+
+    Useful when trying to find the wrapping GN bazel_action() target for a
+    given Bazel target, GN target, or in case of failure, a message explaining its reason.
     """
 
     def __init__(
         self, bazel_target: str, actions_map: BazelBuildActionsMap
     ) -> None:
-        """Create instance."""
+        """Create instance.
+
+        Args:
+            bazel_target: Bazel target label.
+            actions_map: A BazelBuildActionsMap instance.
+        """
         self._bazel_target = bazel_target
         self._actions_map = actions_map
 
@@ -191,34 +203,12 @@ class BazelBuildActionQuery(object):
         return sorted(gn_targets)
 
 
-# A LogSinkType models a callable that takes an log message and returns None.
-LogSinkType: T.TypeAlias = T.Callable[[str], None]
-
-
-def _stderr_log_sink(msg: str) -> None:
-    print(msg, file=sys.stderr)
-
-
-# A CommandRunnerType is a callable that takes a list of command strings,
-# and returns a (returncode, stdout, stderr) tuple from its execution.
-CommandRunnerType: T.TypeAlias = T.Callable[[list[str]], tuple[int, str, str]]
-
-
-def _subprocess_command_runner(args: list[str]) -> tuple[int, str, str]:
-    """A CommandRunnerType implementation that uses subprocess.run()."""
-    ret = subprocess.run(
-        args, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    )
-    return ret.returncode, ret.stdout, ret.stderr
-
-
 def find_gn_bazel_action_infos_for(
     bazel_target: str,
     actions_map: BazelBuildActionsMap,
-    bazel_cmd_args: list[str],
-    log_step: T.Optional[LogSinkType] = None,
-    log_err: LogSinkType = _stderr_log_sink,
-    command_runner: CommandRunnerType = _subprocess_command_runner,
+    bazel_launcher: build_utils.BazelLauncher,
+    log: T.Optional[build_utils.LogFunc] = None,
+    log_err: T.Optional[build_utils.LogFunc] = None,
 ) -> list[BazelBuildActionInfo]:
     """Find the BazelBuildActionInfo instances matching a given Bazel target.
 
@@ -234,19 +224,10 @@ def find_gn_bazel_action_infos_for(
 
         actions_map: A BazelBuildActionsMap instance used as input.
 
-        bazel_cmd_args: A list of strings making up a command-line
-           invocation for Bazel, before the "query" command.
-           E.g.: ["bazel"]
+        bazel_launcher: A build_utils.BazelLauncher instance.
 
-        log_step: An optional LogSink callable used to print log messages.
-
-        log_err: An optional LogSink callable used to send error messages.
-           Defaults to _stderr_log_sink which simply sends errors to
-           sys.stderr.
-
-        command_runner: An optional CommandRunner to run the final
-           Bazel query command. Defaults to _subprocess_command_runner
-           that uses subprocess.run.
+        log: Optional LogFunc instance to log individual steps.
+        log_err: Optional LogFunc instance to log error messages.
 
     Returns:
         A list of BazelBuildActionInfo items. In case of failure,
@@ -261,19 +242,21 @@ def find_gn_bazel_action_infos_for(
     """
     # Check inputs.
     if not bazel_target.startswith(("@", "//")):
-        log_err(f"Target label must start with // or @: {bazel_target}")
+        if log_err:
+            log_err(f"Target label must start with // or @: {bazel_target}")
         return []
 
     if "(" in bazel_target:
-        log_err(
-            f"Target label cannot include GN toolchain suffix: {bazel_target}"
-        )
+        if log_err:
+            log_err(
+                f"Target label cannot include GN toolchain suffix: {bazel_target}"
+            )
         return []
 
     gn_target = actions_map.find_gn_target_for(bazel_target)
     if gn_target:
-        if log_step:
-            log_step(
+        if log:
+            log(
                 f"Bazel target {bazel_target} maps directly to GN target {gn_target}"
             )
         info = actions_map.get_info(gn_target)
@@ -281,24 +264,27 @@ def find_gn_bazel_action_infos_for(
         return [info]
 
     action_query = BazelBuildActionQuery(bazel_target, actions_map)
-    query_command = action_query.make_query_command(bazel_cmd_args)
-    returncode, stdout, stderr = command_runner(query_command)
-    if returncode != 0:
-        stderr = action_query.filter_query_errors(stderr)
-        if stderr:
+    query_command = action_query.make_query_command([])
+    ret = bazel_launcher.run_bazel_command(
+        query_command, **bazel_launcher.CAPTURE_KWARGS
+    )
+    if ret.returncode != 0:
+        ret.stderr = action_query.filter_query_errors(ret.stderr)
+        if ret.stderr:
             # Report unexpected errors directly.
-            log_err(f"Bazel query returned unexpected errors:\n%s\n" % stderr)
+            if log_err:
+                log_err(
+                    f"Bazel query returned unexpected errors:\n%s\n"
+                    % ret.stderr
+                )
             return []
 
-    gn_targets = action_query.process_query_output(stdout)
+    gn_targets = action_query.process_query_output(ret.stdout)
+    if log:
+        log(f"Bazel query result: {gn_targets}")
 
-    if log_step:
-        log_step(f"Bazel query result: {gn_targets}")
-
-    result = []
-    for gn_target in gn_targets:
-        info = actions_map.get_info(gn_target)
-        assert info  # Appease mypy
-        result.append(info)
-
-    return result
+    return [
+        info
+        for gn_target, info in actions_map.label_items()
+        if gn_target in gn_targets
+    ]

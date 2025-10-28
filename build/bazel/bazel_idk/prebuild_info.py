@@ -24,20 +24,15 @@ _CQUERY_STARLARK_FILE_PATH = _CURRENT_DIR / "idk_prebuild_info.cquery"
 
 
 class PrebuildInfoGenerator:
-    def __init__(
-        self,
-        fuchsia_dir: Path | None,
-        build_dir: Path | None,
-    ):
+    def __init__(self, bazel_paths: build_utils.BazelPaths) -> None:
         """Initializes the generator.
 
         Args:
-            fuchsia_dir: Path to the Fuchsia source directory.
-            build_dir: Path to the Fuchsia build directory.
+            bazel_paths: A build_utils.BazelPath instance.
         """
-        self.bazel_cmd = build_utils.BazelCommand.from_dirs(
-            fuchsia_dir=fuchsia_dir,
-            build_dir=build_dir,
+        # Create Bazel launcher, ensuring that command errors are printed to stderr.
+        self.bazel_launcher = build_utils.BazelLauncher(
+            bazel_paths.launcher, log_err=build_utils.log_stderr
         )
 
     def generate_prebuild_info_for_target(self, target: str) -> T.Any:
@@ -47,16 +42,21 @@ class PrebuildInfoGenerator:
             target: The Bazel target for which to generate prebuild info.
         Returns:
             A list of prebuild info dictionaries.
+        Raises:
+            AssertionError if the Bazel query failed.
+            ValueError if the output is malformed.
         """
-        output = self.bazel_cmd.run(
-            "cquery",
+        ret = self.bazel_launcher.run_bazel_command(
             [
+                "cquery",
                 "--output=starlark",
                 f"--starlark:file={_CQUERY_STARLARK_FILE_PATH.resolve()}",
                 target,
             ],
+            check=True,
         )
-        assert output, "Bazel command failed."
+        output = ret.stdout.strip()
+        assert output, f"Bazel command failed"
         return json.loads(output)
 
     def merge_bazel_prebuild_info(
@@ -124,7 +124,9 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    generator = PrebuildInfoGenerator(args.fuchsia_dir, args.build_dir)
+    bazel_paths = build_utils.BazelPaths(args.fuchsia_dir, args.build_dir)
+
+    generator = PrebuildInfoGenerator(bazel_paths)
     generator.merge_bazel_prebuild_info(
         args.idk_molecule_target,
         args.gn_prebuild_info_path,

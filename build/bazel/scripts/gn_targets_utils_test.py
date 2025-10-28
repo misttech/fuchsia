@@ -5,11 +5,11 @@
 
 import os
 import sys
-import typing as T
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
-
+import build_utils
+from build_utils import MockCommandRunner
 from gn_targets_utils import (
     BazelBuildActionQuery,
     BazelBuildActionsMap,
@@ -198,23 +198,25 @@ class FindGnBazelActioInfosForTest(unittest.TestCase):
         self.actions_map = BazelBuildActionsMap(self._JSON_INPUT)
         self.errors: list[str] = []
 
-    def tearDown(self) -> None:
-        pass
-
-    @property
-    def log_err(self) -> T.Callable[[str], None]:
         def _log_err(msg: str) -> None:
             self.errors.append(msg)
 
-        return _log_err
+        self.mock_runner = MockCommandRunner()
+        self.bazel_launcher = build_utils.BazelLauncher(
+            "bazel", runner=self.mock_runner
+        )
+        self._log_err_func = _log_err
+
+    def tearDown(self) -> None:
+        pass
 
     def test_malformed_bazel_targets(self) -> None:
         self.errors = []
         result = find_gn_bazel_action_infos_for(
             "no_leading_slashes:target",
             self.actions_map,
-            ["bazel"],
-            log_err=self.log_err,
+            self.bazel_launcher,
+            log_err=self._log_err_func,
         )
 
         self.assertListEqual(result, [])
@@ -227,8 +229,8 @@ class FindGnBazelActioInfosForTest(unittest.TestCase):
         result = find_gn_bazel_action_infos_for(
             "//gn/label(//with:toolchain)",
             self.actions_map,
-            ["bazel"],
-            log_err=self.log_err,
+            self.bazel_launcher,
+            log_err=self._log_err_func,
         )
         self.assertListEqual(result, [])
         self.assertListEqual(
@@ -239,15 +241,15 @@ class FindGnBazelActioInfosForTest(unittest.TestCase):
         )
 
     def test_direct_mapping(self) -> None:
-        def command_runner(args: list[str]) -> tuple[int, str, str]:
-            return 1, "", "An unexpected error\nAnd another one\n"
+        self.mock_runner.push_result(
+            1, "", "An unexpected error\nAnd another one\n"
+        )
 
         result = find_gn_bazel_action_infos_for(
             "//bazel/target:1",
             self.actions_map,
-            ["bazel"],
-            log_err=self.log_err,
-            command_runner=command_runner,
+            self.bazel_launcher,
+            log_err=self._log_err_func,
         )
 
         self.assertListEqual(
@@ -256,26 +258,24 @@ class FindGnBazelActioInfosForTest(unittest.TestCase):
         self.assertListEqual(self.errors, [])
 
     def test_single_dependency(self) -> None:
-        def command_runner(args: list[str]) -> tuple[int, str, str]:
-            return (
-                1,
-                r"""//bazel/target/dependency:5
+        self.mock_runner.push_result(
+            1,
+            r"""//bazel/target/dependency:5
 //bazel/some/other:dependency
 //bazel/target:1
 """,
-                r"""Starting local Bazel server and connecting to it...
+            r"""Starting local Bazel server and connecting to it...
 WARNING: --keep_going specified, ignoring errors.
 ERROR: /tmp/work: no such package '@@gn_targets//src/foo:bar' ...
 ERROR: Evaluation of query "allpaths(set(...), //bazel/target/dependency:5) failed.
 """,
-            )
+        )
 
         result = find_gn_bazel_action_infos_for(
             "//bazel/target/dependency:5",
             self.actions_map,
-            ["bazel"],
-            log_err=self.log_err,
-            command_runner=command_runner,
+            self.bazel_launcher,
+            log_err=self._log_err_func,
         )
 
         self.assertListEqual(self.errors, [])
@@ -285,27 +285,25 @@ ERROR: Evaluation of query "allpaths(set(...), //bazel/target/dependency:5) fail
         )
 
     def test_multiple_dependencies_same_gn_action(self) -> None:
-        def command_runner(args: list[str]) -> tuple[int, str, str]:
-            return (
-                1,
-                r"""//bazel/target/dependency:5
+        self.mock_runner.push_result(
+            1,
+            r"""//bazel/target/dependency:5
 //bazel/some/other:dependency
 //bazel/target:1
 //bazel/target:2
 """,
-                r"""Starting local Bazel server and connecting to it...
+            r"""Starting local Bazel server and connecting to it...
 WARNING: --keep_going specified, ignoring errors.
 ERROR: /tmp/work: no such package '@@gn_targets//src/foo:bar' ...
 ERROR: Evaluation of query "allpaths(set(...), //bazel/target/dependency:5) failed.
 """,
-            )
+        )
 
         result = find_gn_bazel_action_infos_for(
             "//bazel/target/dependency:5",
             self.actions_map,
-            ["bazel"],
-            log_err=self.log_err,
-            command_runner=command_runner,
+            self.bazel_launcher,
+            log_err=self._log_err_func,
         )
 
         self.assertListEqual(self.errors, [])
@@ -315,28 +313,26 @@ ERROR: Evaluation of query "allpaths(set(...), //bazel/target/dependency:5) fail
         )
 
     def test_multiple_dependencies(self) -> None:
-        def command_runner(args: list[str]) -> tuple[int, str, str]:
-            return (
-                1,
-                r"""//bazel/target/dependency:5
+        self.mock_runner.push_result(
+            1,
+            r"""//bazel/target/dependency:5
 //bazel/some/other:dependency
 //bazel/target:1
 //bazel/extra:dependency
 //another/target:4
 """,
-                r"""Starting local Bazel server and connecting to it...
+            r"""Starting local Bazel server and connecting to it...
 WARNING: --keep_going specified, ignoring errors.
 ERROR: /tmp/work: no such package '@@gn_targets//src/foo:bar' ...
 ERROR: Evaluation of query "allpaths(set(...), //bazel/target/dependency:5) failed.
 """,
-            )
+        )
 
         result = find_gn_bazel_action_infos_for(
             "//bazel/target/dependency:5",
             self.actions_map,
-            ["bazel"],
-            log_err=self.log_err,
-            command_runner=command_runner,
+            self.bazel_launcher,
+            log_err=self._log_err_func,
         )
 
         self.assertListEqual(self.errors, [])
@@ -350,30 +346,28 @@ ERROR: Evaluation of query "allpaths(set(...), //bazel/target/dependency:5) fail
         )
 
     def test_unknown_dependency(self) -> None:
-        def command_runner(args: list[str]) -> tuple[int, str, str]:
-            return 0, "", ""
+        self.mock_runner.push_result(0, "", "")
 
         result = find_gn_bazel_action_infos_for(
             "//bazel/dependency:unknown",
             self.actions_map,
-            ["bazel"],
-            log_err=self.log_err,
-            command_runner=command_runner,
+            self.bazel_launcher,
+            log_err=self._log_err_func,
         )
 
         self.assertListEqual(result, [])
         self.assertListEqual(self.errors, [])
 
     def test_unexpected_query_errors(self) -> None:
-        def command_runner(args: list[str]) -> tuple[int, str, str]:
-            return 1, "", "An unexpected error\nAnd another one\n"
+        self.mock_runner.push_result(
+            1, "", "An unexpected error\nAnd another one\n"
+        )
 
         result = find_gn_bazel_action_infos_for(
             "//bazel/target/dependency:5",
             self.actions_map,
-            ["bazel"],
-            log_err=self.log_err,
-            command_runner=command_runner,
+            self.bazel_launcher,
+            log_err=self._log_err_func,
         )
 
         self.assertListEqual(result, [])
