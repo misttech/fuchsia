@@ -228,6 +228,8 @@ impl<'a> ValidationContextWithSpan<'a> {
     }
 
     fn validate(&mut self) -> Result<(), Error> {
+        let mut deprecated_allowed_packages = false;
+
         for (path, (document, source)) in self.documents.clone() {
             self.current_file_path = Some(path);
             self.current_file_source = Some(source);
@@ -267,6 +269,26 @@ impl<'a> ValidationContextWithSpan<'a> {
             if let Some(offers) = &document.offer {
                 for offer in offers {
                     self.validate_offer(&offer)?;
+                }
+            }
+
+            if let Some(facet) = &document.facets {
+                let location = byte_index_to_location(self.current_file_source, facet.span().0);
+                let test_facet_option = facet.get(TEST_FACET_KEY);
+                if let Some(test_facet) = test_facet_option {
+                    self.validate_facets(test_facet, location, &mut deprecated_allowed_packages)?;
+                }
+            }
+        }
+
+        if !deprecated_allowed_packages {
+            if self.features.has(&Feature::EnableAllowNonHermeticPackagesFeature) {
+                if self.features.has(&Feature::AllowNonHermeticPackages) {
+                    return Err(Error::validate(format!(
+                        "Remove restricted_feature '{}' as manifest does not contain facet '{}'",
+                        Feature::AllowNonHermeticPackages,
+                        TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY
+                    )));
                 }
             }
         }
@@ -1023,6 +1045,68 @@ which is almost certainly a mistake: {}",
         }
         Ok(())
     }
+
+    fn validate_facets(
+        &self,
+        test_facet: &serde_json::Value,
+        location: Option<Location>,
+        dap: &mut bool,
+    ) -> Result<(), Error> {
+        let test_facet_map = {
+            match &test_facet {
+                serde_json::Value::Object(m) => Some(m),
+                facet => {
+                    return Err(Error::validate_with_span(
+                        format!("'{TEST_FACET_KEY}' is not an object: {facet:?}"),
+                        location,
+                        self.current_file_path,
+                    ));
+                }
+            }
+        };
+
+        let restrict_test_type = self.features.has(&Feature::RestrictTestTypeInFacet);
+        let enable_allow_non_hermetic_packages =
+            self.features.has(&Feature::EnableAllowNonHermeticPackagesFeature);
+
+        if restrict_test_type {
+            let test_type = test_facet_map.map(|m| m.get(TEST_TYPE_FACET_KEY)).flatten();
+            if test_type.is_some() {
+                return Err(Error::validate_with_span(
+                    format!(
+                        "'{}' is not allowed in facets. Refer \
+https://fuchsia.dev/fuchsia-src/development/testing/components/test_runner_framework?hl=en#non-hermetic_tests \
+to run your test in the correct test realm.",
+                        TEST_TYPE_FACET_KEY
+                    ),
+                    location,
+                    self.current_file_path,
+                ));
+            }
+        }
+
+        if enable_allow_non_hermetic_packages {
+            let allow_non_hermetic_packages = self.features.has(&Feature::AllowNonHermeticPackages);
+            let deprecated_allowed_packages = test_facet_map
+                .map_or(false, |m| m.contains_key(TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY));
+            if deprecated_allowed_packages {
+                *dap = true;
+            }
+
+            if deprecated_allowed_packages && !allow_non_hermetic_packages {
+                return Err(Error::validate_with_span(
+                    format!(
+                        "restricted_feature '{}' should be present with facet '{}'",
+                        Feature::AllowNonHermeticPackages,
+                        TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY
+                    ),
+                    location,
+                    self.current_file_path,
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 // Facet key for fuchsia.test
@@ -1238,7 +1322,7 @@ impl<'a> ValidationContext<'a> {
             let test_type = test_facet_map.map(|m| m.get(TEST_TYPE_FACET_KEY)).flatten();
             if test_type.is_some() {
                 return Err(Error::validate(format!(
-                    "'{}' is not a allowed in facets. Refer \
+                    "'{}' is not allowed in facets. Refer \
 https://fuchsia.dev/fuchsia-src/development/testing/components/test_runner_framework?hl=en#non-hermetic_tests \
 to run your test in the correct test realm.",
                     TEST_TYPE_FACET_KEY
