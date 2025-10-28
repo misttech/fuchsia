@@ -4,7 +4,7 @@
 
 """Rule for declaring a FIDL library"""
 
-load(":fidl_ir.bzl", "fidlc")
+load(":fidl_ir.bzl", "fidl_ir")
 
 def _fidl_library_impl(
         name,
@@ -49,19 +49,26 @@ def _fidl_library_impl(
     if not library_name:
         library_name = name
 
+    compilation_target_name = "%s_compile" % name
+
     # TODO(https://fxbug.dev/428285014): Validate versioning-related attributes,
     # determine the need for running compatibility tests, and determine the
     # value for the fidlc `versioned` argument.
+    fidlc_versioned_arg = versioned
 
-    # TODO(https://fxbug.dev/428285014): Consider wrapping in a fidl_ir() macro
-    # that also generates the JSON summary.
-    fidlc(
-        name = name,
+    fidl_ir(
+        name = compilation_target_name,
         library_name = library_name,
+        fidl_library_target_name = name,
         srcs = srcs,
         deps = deps,
+        json_dir = "",
+        json_representation = "%s.fidl.json" % name,
+        available = available,
+        versioned = fidlc_versioned_arg,
+        experimental_flags = experimental_flags,
         testonly = testonly,
-        visibility = visibility,
+        visibility = ["//visibility:private"],
     )
     # TODO(https://fxbug.dev/428285014): Validate resulting JSON.
 
@@ -104,6 +111,13 @@ def _fidl_library_impl(
     if category:
         # TODO(https://fxbug.dev/442637596): Create an idk_atom().
         fail("IDK atom creation is not yet supported.")
+
+    native.filegroup(
+        name = name,
+        srcs = [compilation_target_name],
+        testonly = testonly,
+        visibility = visibility,
+    )
 
 fidl_library = macro(
     doc = """Declares a FIDL library.

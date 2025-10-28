@@ -5,6 +5,8 @@
 import("//build/fidl/fidl_summary.gni")
 import("//build/fidl/fidlc.gni")
 
+# LINT.IfChange(fidl_ir)
+
 # Compiles a FIDL library to IR and optionally generates API summaries.
 #
 # Compilation parameters
@@ -92,3 +94,4 @@ template("fidl_ir") {
     public_deps = main_target_deps
   }
 }
+# LINT.ThenChange(//build/bazel/rules/fidl/fidl_ir.bzl)

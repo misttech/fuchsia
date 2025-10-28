@@ -5,6 +5,8 @@
 import("//build/compiled_action.gni")
 import("//build/fidl/toolchain.gni")
 
+# LINT.IfChange(fidlc)
+
 # Runs the FIDL compiler.
 #
 # Parameters (see //build/fidl/fidl_ir.gni for descriptions):
@@ -134,3 +136,4 @@ template("fidlc") {
     }
   }
 }
+# LINT.ThenChange(//build/bazel/rules/fidl/fidl_ir.bzl)
