@@ -39,6 +39,11 @@
             to: "#system_recovery",
         },
         {
+            protocol: "fuchsia.metrics.MetricEventLoggerFactory",
+            from: "#cobalt",
+            to: "#system_recovery",
+        },
+        {
             config: [
                 "fuchsia.recovery.DisplayRotation",
                 "fuchsia.system-updater.ManifestPublicKeys",

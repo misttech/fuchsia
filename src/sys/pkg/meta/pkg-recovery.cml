@@ -117,12 +117,16 @@
             rights: [ "r*" ],
         },
         {
-            protocol: [ "fuchsia.boot.Arguments" ],
+            protocol: [
+                "fuchsia.boot.Arguments",
+                "fuchsia.metrics.MetricEventLoggerFactory",
+            ],
             from: "parent",
             to: "#pkg-cache",
         },
         {
             protocol: [
+                "fuchsia.metrics.MetricEventLoggerFactory",
                 "fuchsia.net.name.Lookup",
                 "fuchsia.posix.socket.Provider",
             ],
@@ -132,6 +136,7 @@
         {
             protocol: [
                 "fuchsia.fxfs.BlobReader",
+                "fuchsia.metrics.MetricEventLoggerFactory",
                 "fuchsia.net.http.Loader",
                 "fuchsia.paver.Paver",
             ],

@@ -80,6 +80,7 @@
         {
             protocol: [
                 "fuchsia.boot.Arguments",
+                "fuchsia.metrics.MetricEventLoggerFactory",
                 "fuchsia.net.http.Loader",
                 "fuchsia.net.name.Lookup",
                 "fuchsia.paver.Paver",
