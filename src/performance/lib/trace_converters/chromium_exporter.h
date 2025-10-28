@@ -22,17 +22,18 @@ class ChromiumExporter {
   explicit ChromiumExporter(const std::filesystem::path& out_path);
   ~ChromiumExporter();
 
-  enum class Pass {
+  void ExportRecord(const trace::Record& record);
+  void StartSchedulerPass();
+  bool OnSchedulerPass() { return pass_ == Pass::kScheduler; }
+
+ private:
+  enum class Pass : uint8_t {
     // First pass: read all records except scheduler events.
     kMain,
     // Second pass: read only scheduler events.
     kScheduler,
   };
-  Pass pass_ = Pass::kMain;
-  void ExportRecord(const trace::Record& record);
-  void StartSchedulerPass();
 
- private:
   void Start();
   void Stop();
   void ExportEvent(const trace::Record::Event& event);
@@ -46,6 +47,8 @@ class ChromiumExporter {
   // Writes argument data. Assumes it is already within an
   // "args" key object.
   void WriteArgs(const std::vector<trace::Argument>& arguments);
+
+  Pass pass_ = Pass::kMain;
   static constexpr size_t WRITE_BUFFER_SIZE_IN_BYTES = 65536;
   char write_buffer_[WRITE_BUFFER_SIZE_IN_BYTES];
   FILE* fp_;

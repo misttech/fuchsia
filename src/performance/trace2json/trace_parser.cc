@@ -63,7 +63,7 @@ FuchsiaTraceParser::~FuchsiaTraceParser() = default;
 
 bool FuchsiaTraceParser::ParseComplete(std::istream* in) {
   // First pass: Read all records except scheduler events.
-  ZX_ASSERT(exporter_.pass_ == ChromiumExporter::Pass::kMain);
+  ZX_ASSERT(!exporter_.OnSchedulerPass());
   while (true) {
     size_t bytes_read =
         in->read(buffer_.data() + buffer_end_, buffer_.size() - buffer_end_).gcount();
