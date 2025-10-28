@@ -24,12 +24,12 @@ class KernelMappedVmo {
   zx_status_t Init(fbl::RefPtr<VmObject> vmo, size_t offset, size_t size, const char* name);
 
   // Publish this VMO to userland as a read-only handle using the given name
-  // and content size.
-  Handle* Publish(ktl::string_view vmo_name, size_t content_size);
+  // and stream size.
+  Handle* Publish(ktl::string_view vmo_name, size_t stream_size);
 
   template <size_t N>
-  Handle* Publish(const ktl::array<char, N>& name, size_t content_size) {
-    return Publish(ktl::string_view(name.data(), name.size()), content_size);
+  Handle* Publish(const ktl::array<char, N>& name, size_t stream_size) {
+    return Publish(ktl::string_view(name.data(), name.size()), stream_size);
   }
 
   // Return the bounds of the mapping in the kernel address space.

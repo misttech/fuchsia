@@ -40,11 +40,11 @@ KernelMappedVmo::~KernelMappedVmo() {
   }
 }
 
-Handle* KernelMappedVmo::Publish(ktl::string_view vmo_name, size_t content_size) {
+Handle* KernelMappedVmo::Publish(ktl::string_view vmo_name, size_t stream_size) {
   zx_rights_t rights;
   KernelHandle<VmObjectDispatcher> handle;
   zx_status_t status =
-      VmObjectDispatcher::Create(pinned_vmo_.vmo(), content_size,
+      VmObjectDispatcher::Create(pinned_vmo_.vmo(), stream_size,
                                  VmObjectDispatcher::InitialMutability::kMutable, &handle, &rights);
   ZX_ASSERT(status == ZX_OK);
   status = handle.dispatcher()->set_name(vmo_name.data(), vmo_name.size());
