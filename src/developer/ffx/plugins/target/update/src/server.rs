@@ -155,7 +155,7 @@ pub(crate) async fn wait_for_device_task(
         }
     }))
     .await
-    .map_err(|e| bug!("{e:?}"))?;
+    .map_err(|e| bug!("waiting for server registration on device: {e:?}"))?;
 
     if let Err(e) = registered {
         return_user_error!("Product bundle server was not registered on the device: {e}")
