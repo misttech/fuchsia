@@ -178,7 +178,6 @@ async fn main() -> Result<()> {
     })
     .fuse();
     let collect_stalls_health = task_health_node.create_string("collect_stalls_health", "ok");
-    let page_refault_tracker = stalls::refaults::RefaultProviderImpl::default();
 
     let mut services = service_fs.for_each_concurrent(None, |stream| async {
         let _ = match stream {
