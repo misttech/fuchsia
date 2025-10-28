@@ -44,6 +44,10 @@ mod buffer_source {
             Self { base, size, vmo }
         }
 
+        pub fn slice(&self) -> *mut [u8] {
+            std::ptr::slice_from_raw_parts_mut(self.base, self.size)
+        }
+
         pub fn size(&self) -> usize {
             self.size
         }

@@ -115,6 +115,16 @@ struct DecompressionInfo {
     buffer: Option<Buffer<'static>>,
 }
 
+impl DecompressionInfo {
+    /// Returns the uncompressed slice.
+    fn uncompressed_slice(&self) -> *mut [u8] {
+        std::ptr::slice_from_raw_parts_mut(
+            (self.mapping.base + self.uncompressed_range.start as usize) as *mut u8,
+            (self.uncompressed_range.end - self.uncompressed_range.start) as usize,
+        )
+    }
+}
+
 pub struct ActiveRequests<S>(Mutex<ActiveRequestsInner<S>>);
 
 impl<S> Default for ActiveRequests<S> {
@@ -176,12 +186,7 @@ impl<S> ActiveRequestsInner<S> {
             }
             DECOMPRESSOR.with(|decompressor| {
                 // SAFETY: We verified `uncompressed_range` fits within our mapping.
-                let target_slice = unsafe {
-                    std::slice::from_raw_parts_mut(
-                        (info.mapping.base + info.uncompressed_range.start as usize) as *mut u8,
-                        (info.uncompressed_range.end - info.uncompressed_range.start) as usize,
-                    )
-                };
+                let target_slice = unsafe { info.uncompressed_slice().as_mut().unwrap() };
                 let mut decompressor = decompressor.borrow_mut();
                 if let Err(error) = decompressor.decompress_to_buffer(
                     &info.buffer.take().unwrap().as_slice()[info.compressed_range.clone()],

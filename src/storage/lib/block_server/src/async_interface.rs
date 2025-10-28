@@ -8,7 +8,7 @@ use super::{
 };
 use anyhow::Error;
 use block_protocol::{BlockFifoRequest, BlockFifoResponse, ReadOptions, WriteFlags, WriteOptions};
-use futures::future::{Fuse, FusedFuture};
+use futures::future::{Fuse, FusedFuture, join};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt, select_biased};
 use std::borrow::Cow;
@@ -331,10 +331,15 @@ impl<I: Interface + ?Sized> Session<I> {
                     }
                     result = map_future => {
                         match result {
-                            Ok((request, remainder)) => {
-                                active_request_futures.push(self.process_fifo_request(request));
+                            Ok((request, remainder, commit_decompression_buffers)) => {
+                                active_request_futures.push(self.process_fifo_request(
+                                    request,
+                                    commit_decompression_buffers
+                                ));
                                 if let Some(remainder) = remainder {
-                                    map_future.set(self.map_request_or_get_response(remainder).fuse());
+                                    map_future.set(
+                                        self.map_request_or_get_response(remainder).fuse()
+                                    );
                                 }
                             }
                             Err(response) => responses.extend(response),
@@ -416,7 +421,7 @@ impl<I: Interface + ?Sized> Session<I> {
     async fn map_request_or_get_response(
         &self,
         request: DecodedRequest,
-    ) -> Result<(DecodedRequest, Option<DecodedRequest>), Option<BlockFifoResponse>> {
+    ) -> Result<(DecodedRequest, Option<DecodedRequest>, bool), Option<BlockFifoResponse>> {
         let request_id = request.request_id;
         self.map_request(request).await.map_err(|status| {
             self.helper
@@ -432,9 +437,10 @@ impl<I: Interface + ?Sized> Session<I> {
     async fn map_request(
         &self,
         mut request: DecodedRequest,
-    ) -> Result<(DecodedRequest, Option<DecodedRequest>), zx::Status> {
+    ) -> Result<(DecodedRequest, Option<DecodedRequest>, bool), zx::Status> {
         let mut active_requests;
         let active_request;
+        let mut commit_decompression_buffers = false;
         // Handle decompressed read operations by turning them into regular read operations.
         match request.operation {
             Operation::StartDecompressedRead {
@@ -487,6 +493,8 @@ impl<I: Interface + ?Sized> Session<I> {
                     options,
                 };
                 request.vmo = Some(allocator.buffer_source().vmo().clone());
+
+                commit_decompression_buffers = true;
             }
             Operation::ContinueDecompressedRead {
                 offset,
@@ -525,26 +533,64 @@ impl<I: Interface + ?Sized> Session<I> {
             }
         }
 
-        self.helper.map_request(request, active_request)
+        self.helper
+            .map_request(request, active_request)
+            .map(|(request, remainder)| (request, remainder, commit_decompression_buffers))
     }
 
     /// Processes a fifo request.
     async fn process_fifo_request(
         &self,
         DecodedRequest { request_id, operation, vmo, trace_flow_id }: DecodedRequest,
+        commit_decompression_buffers: bool,
     ) -> Option<BlockFifoResponse> {
         let result = match operation {
             Operation::Read { device_block_offset, block_count, _unused, vmo_offset, options } => {
-                self.interface
-                    .read(
+                join(
+                    self.interface.read(
                         device_block_offset,
                         block_count,
                         vmo.as_ref().unwrap(),
                         vmo_offset,
                         options,
                         trace_flow_id,
-                    )
-                    .await
+                    ),
+                    async {
+                        if commit_decompression_buffers {
+                            let (target_slice, buffer_slice, buffer_range) = {
+                                let active_request =
+                                    self.helper.session_manager.active_requests.request(request_id);
+                                let info = active_request.decompression_info.as_ref().unwrap();
+                                (
+                                    info.uncompressed_slice(),
+                                    self.helper
+                                        .session_manager
+                                        .buffer_allocator
+                                        .get()
+                                        .unwrap()
+                                        .buffer_source()
+                                        .slice(),
+                                    info.buffer.as_ref().unwrap().range(),
+                                )
+                            };
+                            let vmar = fuchsia_runtime::vmar_root_self();
+                            let result = vmar.op_range(
+                                zx::VmarOp::COMMIT,
+                                target_slice.addr(),
+                                target_slice.len(),
+                            );
+                            debug_assert!(result.is_ok());
+                            let result = vmar.op_range(
+                                zx::VmarOp::PREFETCH,
+                                buffer_slice.addr() + buffer_range.start,
+                                buffer_range.len(),
+                            );
+                            debug_assert!(result.is_ok());
+                        }
+                    },
+                )
+                .await
+                .0
             }
             Operation::Write { device_block_offset, block_count, _unused, vmo_offset, options } => {
                 self.interface
