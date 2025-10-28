@@ -11,9 +11,6 @@ use crate::{
     ClassPermission, FsNodeClass, KernelPermission, NullessByteStr, ObjectClass, SecurityId,
 };
 
-#[cfg(target_os = "fuchsia")]
-use fuchsia_inspect_contrib::profile_duration;
-
 use std::num::NonZeroU64;
 
 /// Describes the result of a permission lookup between two Security Contexts.
@@ -154,8 +151,6 @@ fn has_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'static>
     target_sid: SecurityId,
     permission: P,
 ) -> PermissionCheckResult {
-    #[cfg(target_os = "fuchsia")]
-    profile_duration!("libselinux.check_permission");
     let target_class = permission.class();
 
     let decision = query.compute_access_decision(source_sid, target_sid, target_class.into());

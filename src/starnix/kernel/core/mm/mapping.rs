@@ -13,7 +13,6 @@ use crate::vfs::aio::AioContext;
 use bitflags::bitflags;
 use flyweights::FlyByteStr;
 use fuchsia_inspect::HistogramProperty;
-use fuchsia_inspect_contrib::profile_duration;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::Access;
 use starnix_uapi::user_address::UserAddress;
@@ -318,7 +317,6 @@ impl MappingBackingMemory {
         addr: UserAddress,
         bytes: &'a mut [MaybeUninit<u8>],
     ) -> Result<&'a mut [u8], Errno> {
-        profile_duration!("MappingReadMemory");
         self.memory.read_uninit(bytes, self.address_to_offset(addr)).map_err(|_| errno!(EFAULT))
     }
 

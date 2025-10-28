@@ -7,7 +7,6 @@ group("tests") {
   deps = [
     "coredumps",
     "correct_pid",
-    "self_profile",
     "suspend_inspect",
   ]
 }

@@ -19,7 +19,6 @@ use crate::vfs::{
     NamespaceNode, ResolveBase, SymlinkMode, SymlinkTarget, new_pidfd,
 };
 use extended_pstate::ExtendedPstateState;
-use fuchsia_inspect_contrib::profile_duration;
 use linux_uapi::CLONE_PIDFD;
 use starnix_logging::{log_error, log_warn, set_zx_name, track_file_not_found, track_stub};
 use starnix_sync::{
@@ -1312,7 +1311,6 @@ impl CurrentTask {
         locked: &mut Locked<Unlocked>,
         syscall: &Syscall,
     ) -> Option<Result<SyscallResult, Errno>> {
-        profile_duration!("RunSeccompFilters");
         // Implementation of SECCOMP_FILTER_STRICT, which has slightly different semantics
         // from user-defined seccomp filters.
         if self.seccomp_filter_state.get() == SeccompStateValue::Strict {

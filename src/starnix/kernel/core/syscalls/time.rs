@@ -10,7 +10,6 @@ use crate::task::{
     Timeline, TimerId, TimerWakeup, Waiter,
 };
 use crate::time::utc::utc_now;
-use fuchsia_inspect_contrib::profile_duration;
 use fuchsia_runtime::UtcInstant;
 use starnix_logging::{log_debug, log_error, log_trace, track_stub};
 use starnix_sync::{Locked, Unlocked};
@@ -76,30 +75,16 @@ pub fn sys_clock_getres(
 
 fn get_clock_gettime(current_task: &CurrentTask, which_clock: i32) -> Result<timespec, Errno> {
     let nanos = if which_clock < 0 {
-        profile_duration!("GetDynamicClock");
         get_dynamic_clock(current_task, which_clock)?
     } else {
         match which_clock as u32 {
-            CLOCK_REALTIME | CLOCK_REALTIME_COARSE => {
-                profile_duration!("GetUtcInstant");
-                utc_now().into_nanos()
-            }
+            CLOCK_REALTIME | CLOCK_REALTIME_COARSE => utc_now().into_nanos(),
             CLOCK_MONOTONIC | CLOCK_MONOTONIC_COARSE | CLOCK_MONOTONIC_RAW => {
-                profile_duration!("GetMonotonic");
                 zx::MonotonicInstant::get().into_nanos()
             }
-            CLOCK_BOOTTIME => {
-                profile_duration!("GetBootTime");
-                zx::BootInstant::get().into_nanos()
-            }
-            CLOCK_THREAD_CPUTIME_ID => {
-                profile_duration!("GetThreadCpuTime");
-                get_thread_cpu_time(current_task, current_task.tid)?
-            }
-            CLOCK_PROCESS_CPUTIME_ID => {
-                profile_duration!("GetProcessCpuTime");
-                get_process_cpu_time(current_task, current_task.get_pid())?
-            }
+            CLOCK_BOOTTIME => zx::BootInstant::get().into_nanos(),
+            CLOCK_THREAD_CPUTIME_ID => get_thread_cpu_time(current_task, current_task.tid)?,
+            CLOCK_PROCESS_CPUTIME_ID => get_process_cpu_time(current_task, current_task.get_pid())?,
             _ => return error!(EINVAL),
         }
     };

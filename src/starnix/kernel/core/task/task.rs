@@ -17,7 +17,6 @@ use crate::task::{
 };
 use crate::vfs::{FdFlags, FdNumber, FdTable, FileHandle, FsContext, FsNodeHandle, FsString};
 use bitflags::bitflags;
-use fuchsia_inspect_contrib::profile_duration;
 use fuchsia_rcu::rcu_option_arc::RcuOptionArc;
 use macro_rules_attribute::apply;
 use starnix_logging::{log_warn, set_current_task_info, set_zx_name};
@@ -1339,7 +1338,6 @@ impl Task {
         &self,
         updater: impl FnOnce(&mut SchedulerState),
     ) -> Result<(), Errno> {
-        profile_duration!("UpdateTaskThreadRole");
         let new_scheduler_state = {
             // Hold the task state lock as briefly as possible, it's not needed to update the role.
             let mut state = self.write();

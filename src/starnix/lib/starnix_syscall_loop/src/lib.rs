@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, format_err};
-use fuchsia_inspect_contrib::{ProfileDuration, profile_duration};
 use starnix_core::arch::execution::new_syscall;
 use starnix_core::signals::{
     SignalInfo, deliver_signal, dequeue_signal, prepare_to_restart_syscall,
@@ -199,7 +198,6 @@ struct RestrictedEnterContext<'a> {
     current_task: &'a mut CurrentTask,
     restricted_state: RestrictedState,
     state: zx::sys::zx_restricted_state_t,
-    profiling_guard: ProfileDuration,
     error_context: Option<ErrorContext>,
     exit_status: Result<ExitStatus, Error>,
 }
@@ -222,8 +220,6 @@ fn run_task(
     current_task: &mut CurrentTask,
     mut restricted_state: RestrictedState,
 ) -> Result<ExitStatus, Error> {
-    let mut profiling_guard = ProfileDuration::enter("TaskLoopSetup");
-
     set_current_task_info(
         &current_task.task.command(),
         current_task.task.thread_group().leader,
@@ -250,14 +246,10 @@ fn run_task(
     let restricted_state_addr = restricted_state.bound_state.as_ptr() as usize;
     let extended_pstate_addr = &current_task.thread_state.extended_pstate as *const _ as usize;
 
-    // We're about to hand control to userspace, start measuring time in user code.
-    profiling_guard.pivot("RestrictedMode");
-
     let restricted_enter_context = RestrictedEnterContext {
         current_task,
         restricted_state,
         state,
-        profiling_guard,
         error_context,
         exit_status: Err(errno!(ENOEXEC).into()),
     };
@@ -292,7 +284,6 @@ extern "C" fn restricted_exit_callback_c(
         restricted_context.current_task,
         &mut restricted_context.restricted_state,
         &mut restricted_context.state,
-        &mut restricted_context.profiling_guard,
         &mut restricted_context.error_context,
         &mut restricted_context.exit_status,
     )
@@ -303,7 +294,6 @@ fn restricted_exit_callback(
     current_task: &mut CurrentTask,
     restricted_state: &mut RestrictedState,
     state: &mut zx::sys::zx_restricted_state_t,
-    profiling_guard: &mut ProfileDuration,
     error_context: &mut Option<ErrorContext>,
     exit_status: &mut Result<ExitStatus, Error>,
 ) -> bool {
@@ -317,7 +307,6 @@ fn restricted_exit_callback(
         current_task,
         restricted_state,
         state,
-        profiling_guard,
         error_context,
     ) {
         Ok(None) => {
@@ -347,12 +336,8 @@ fn process_restricted_exit(
     current_task: &mut CurrentTask,
     restricted_state: &mut RestrictedState,
     state: &mut zx::sys::zx_restricted_state_t,
-    profiling_guard: &mut ProfileDuration,
     error_context: &mut Option<ErrorContext>,
 ) -> Result<Option<ExitStatus>, Error> {
-    // We just received control back from r-space, start measuring time in normal mode.
-    profiling_guard.pivot("NormalMode");
-
     // We can't hold any locks entering restricted mode so we can't be holding any locks on exit.
     #[allow(
         clippy::undocumented_unsafe_blocks,
@@ -365,8 +350,6 @@ fn process_restricted_exit(
 
     match reason_code {
         zx::sys::ZX_RESTRICTED_REASON_SYSCALL => {
-            profile_duration!("ExecuteSyscall");
-
             // Store the new register state in the current task before dispatching the system call.
             current_task.thread_state.registers =
                 zx::sys::zx_thread_state_general_regs_t::from(&*state).into();
@@ -382,7 +365,6 @@ fn process_restricted_exit(
         }
         zx::sys::ZX_RESTRICTED_REASON_EXCEPTION => {
             firehose_trace_duration!(CATEGORY_STARNIX, NAME_HANDLE_EXCEPTION);
-            profile_duration!("HandleException");
             let restricted_exception = restricted_state.read_exception();
 
             current_task.thread_state.registers =
@@ -402,7 +384,6 @@ fn process_restricted_exit(
                 NAME_RESTRICTED_KICK,
                 fuchsia_trace::Scope::Thread
             );
-            profile_duration!("RestrictedKick");
 
             // Update the task's register state.
             current_task.thread_state.registers =

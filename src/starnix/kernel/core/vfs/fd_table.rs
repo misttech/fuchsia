@@ -5,7 +5,6 @@
 use crate::task::{CurrentTaskAndLocked, Task, register_delayed_release};
 use crate::vfs::{FdNumber, FileHandle, FileReleaser};
 use bitflags::bitflags;
-use fuchsia_inspect_contrib::profile_duration;
 use fuchsia_rcu::RcuReadScope;
 use fuchsia_rcu::rcu_arc::RcuArc;
 use fuchsia_rcu_collections::rcu_array::RcuArray;
@@ -645,7 +644,6 @@ impl FdTable {
     where
         L: LockBefore<ThreadGroupLimits>,
     {
-        profile_duration!("AddFd");
         let rlimit = task.thread_group().get_rlimit(locked, Resource::NOFILE);
         let inner = self.inner.read();
         let guard = inner.write();
@@ -669,7 +667,6 @@ impl FdTable {
     where
         L: LockBefore<ThreadGroupLimits>,
     {
-        profile_duration!("DuplicateFd");
         let rlimit = task.thread_group().get_rlimit(locked, Resource::NOFILE);
         let inner = self.inner.read();
         let guard = inner.write();
@@ -719,7 +716,6 @@ impl FdTable {
         &self,
         fd: FdNumber,
     ) -> Result<(FileHandle, FdFlags), Errno> {
-        profile_duration!("GetFdWithFlags");
         let inner = self.inner.read();
         let view = inner.read(&inner.scope);
         view.get_entry(fd).map(|entry| (entry.file, entry.flags)).ok_or_else(|| errno!(EBADF))
@@ -740,7 +736,6 @@ impl FdTable {
     ///
     /// This operation fails if the file descriptor is not valid.
     pub fn close(&self, fd: FdNumber) -> Result<(), Errno> {
-        profile_duration!("CloseFile");
         let inner = self.inner.read();
         let guard = inner.write();
         if guard.remove_entry(&inner.scope, &fd) { Ok(()) } else { error!(EBADF) }
@@ -757,7 +752,6 @@ impl FdTable {
     ///
     /// This operation fails if the file descriptor was opened with `O_PATH` or is not valid.
     pub fn set_fd_flags(&self, fd: FdNumber, flags: FdFlags) -> Result<(), Errno> {
-        profile_duration!("SetFdFlags");
         let inner = self.inner.read();
         let guard = inner.write();
         let file = guard.get_file(&inner.scope, fd).ok_or_else(|| errno!(EBADF))?;
@@ -771,7 +765,6 @@ impl FdTable {
     ///
     /// This operation fails if the file descriptor is not valid.
     pub fn set_fd_flags_allowing_opath(&self, fd: FdNumber, flags: FdFlags) -> Result<(), Errno> {
-        profile_duration!("SetFdFlagsAllowingOpath");
         let inner = self.inner.read();
         let guard = inner.write();
         guard.set_fd_flags(&inner.scope, fd, flags)
@@ -786,7 +779,6 @@ impl FdTable {
     where
         F: Fn(FdNumber, &mut FdFlags) -> bool,
     {
-        profile_duration!("RetainFds");
         let inner = self.inner.read();
         let guard = inner.write();
         guard.retain(&inner.scope, predicate);
@@ -810,7 +802,6 @@ impl FdTable {
     /// Replaces `file` with `replacement_file` in the table when
     /// `maybe_replacement == Some(replacement_file)`.
     pub fn remap<F: Fn(&FileHandle) -> Option<FileHandle>>(&self, predicate: F) {
-        profile_duration!("RemapFds");
         let inner = self.inner.read();
         let guard = inner.write();
         guard.remap(&inner.scope, predicate);

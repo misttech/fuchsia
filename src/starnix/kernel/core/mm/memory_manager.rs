@@ -23,7 +23,6 @@ use crate::vfs::{FsNodeOps, FsString, NamespaceNode};
 use anyhow::{Error, anyhow};
 use bitflags::bitflags;
 use flyweights::FlyByteStr;
-use fuchsia_inspect_contrib::{ProfileDuration, profile_duration};
 use linux_uapi::BUS_ADRERR;
 use memory_pinning::PinnedMapping;
 use range_map::RangeMap;
@@ -338,9 +337,6 @@ fn map_in_vmar(
     flags: MappingFlags,
     populate: bool,
 ) -> Result<UserAddress, Errno> {
-    profile_duration!("MapInVmar");
-    let mut profile = ProfileDuration::enter("MapInVmarArgs");
-
     let vmar_offset = addr.addr().checked_sub(vmar_info.base).ok_or_else(|| errno!(ENOMEM))?;
     let vmar_extra_flags = match addr {
         SelectedAddress::Fixed(_) => zx::VmarFlags::SPECIFIC,
@@ -348,7 +344,6 @@ fn map_in_vmar(
     };
 
     if populate {
-        profile_duration!("MmapPopulate");
         let op = if flags.contains(MappingFlags::WRITE) {
             // Requires ZX_RIGHT_WRITEABLE which we should expect when the mapping is writeable.
             zx::VmoOp::COMMIT
@@ -372,7 +367,6 @@ fn map_in_vmar(
         | vmar_extra_flags
         | vmar_maybe_map_range;
 
-    profile.pivot("VmarMapSyscall");
     let map_result = memory.map_in_vmar(vmar, vmar_offset.ptr(), memory_offset, length, vmar_flags);
     let mapped_addr = map_result.map_err(MemoryManager::get_errno_for_map_err)?;
 
@@ -523,7 +517,6 @@ impl MemoryManagerState {
         let adjusted_length = round_up_to_system_page_size(length).or_else(|_| error!(ENOMEM))?;
 
         let find_address = || -> Result<SelectedAddress, Errno> {
-            profile_duration!("FindAddressForMmap");
             let new_addr = if flags.contains(MappingFlags::LOWER_32BIT) {
                 // MAP_32BIT specifies that the memory allocated will
                 // be within the first 2 GB of the process address space.
@@ -621,7 +614,6 @@ impl MemoryManagerState {
             }
         }
 
-        profile_duration!("FinishMapping");
         let end = (mapped_addr + length)?.round_up(*PAGE_SIZE)?;
 
         if let DesiredAddress::FixedOverwrite(addr) = addr {
@@ -1102,7 +1094,6 @@ impl MemoryManagerState {
         length: usize,
         released_mappings: &mut ReleasedMappings,
     ) -> Result<(), Errno> {
-        profile_duration!("UpdateAfterUnmap");
         let end_addr = addr.checked_add(length).ok_or_else(|| errno!(EINVAL))?;
         let unmap_range = addr..end_addr;
 
@@ -1131,7 +1122,6 @@ impl MemoryManagerState {
         length: usize,
         prot_flags: ProtectionFlags,
     ) -> Result<(), Errno> {
-        profile_duration!("Protect internal");
         let vmar_flags = prot_flags.to_vmar_flags();
         // SAFETY: Modifying user vmar
         unsafe { self.user_vmar.protect(addr.ptr(), length, vmar_flags) }.map_err(|s| match s {
@@ -1149,7 +1139,6 @@ impl MemoryManagerState {
         length: usize,
         prot_flags: ProtectionFlags,
     ) -> Result<(), Errno> {
-        profile_duration!("Protect");
         let vmar_flags = prot_flags.to_vmar_flags();
         let page_size = *PAGE_SIZE;
         let end = addr.checked_add(length).ok_or_else(|| errno!(EINVAL))?.round_up(page_size)?;
@@ -1249,7 +1238,6 @@ impl MemoryManagerState {
         length: usize,
         advice: u32,
     ) -> Result<(), Errno> {
-        profile_duration!("Madvise");
         if !addr.is_aligned(*PAGE_SIZE) {
             return error!(EINVAL);
         }
@@ -1674,7 +1662,6 @@ impl MemoryManagerState {
         addr: UserAddress,
         length: usize,
     ) -> Result<impl Iterator<Item = (&Mapping, usize)>, Errno> {
-        profile_duration!("GetContiguousMappings");
         let end_addr = addr.checked_add(length).ok_or_else(|| errno!(EFAULT))?;
         if end_addr > self.max_address() {
             return error!(EFAULT);
@@ -1685,7 +1672,6 @@ impl MemoryManagerState {
         let mut prev_range_end = None;
         let mut offset = 0;
         let result = std::iter::from_fn(move || {
-            profile_duration!("NextContiguousMapping");
             if offset != length {
                 if let Some((range, mapping)) = mappings.next() {
                     return match prev_range_end {
@@ -1746,7 +1732,6 @@ impl MemoryManagerState {
         addr: UserAddress,
         is_write: bool,
     ) -> Result<bool, Error> {
-        profile_duration!("ExtendGrowsDown");
         let Some((mapping_low_addr, mapping_to_grow)) = self.find_growsdown_mapping(addr) else {
             return Ok(false);
         };
@@ -1828,7 +1813,6 @@ impl MemoryManagerState {
         mapping: &Mapping,
         bytes: &'a mut [MaybeUninit<u8>],
     ) -> Result<&'a mut [u8], Errno> {
-        profile_duration!("MappingReadMemory");
         if !mapping.can_read() {
             return error!(EFAULT);
         }
@@ -1904,7 +1888,6 @@ impl MemoryManagerState {
     /// - `addr`: The address to write to.
     /// - `bytes`: The bytes to write.
     fn write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
-        profile_duration!("WriteMemory");
         let mut bytes_written = 0;
         for (mapping, len) in self.get_contiguous_mappings_at(addr, bytes.len())? {
             let next_offset = bytes_written + len;
@@ -1930,7 +1913,6 @@ impl MemoryManagerState {
         mapping: &Mapping,
         bytes: &[u8],
     ) -> Result<(), Errno> {
-        profile_duration!("MappingWriteMemory");
         if !mapping.can_write() {
             return error!(EFAULT);
         }
@@ -1947,7 +1929,6 @@ impl MemoryManagerState {
     /// - `addr`: The address to read data from.
     /// - `bytes`: The byte array to write from.
     fn write_memory_partial(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
-        profile_duration!("WriteMemoryPartial");
         let mut bytes_written = 0;
         for (mapping, len) in self.get_contiguous_mappings_at(addr, bytes.len())? {
             let next_offset = bytes_written + len;
@@ -1968,7 +1949,6 @@ impl MemoryManagerState {
     }
 
     fn zero(&self, addr: UserAddress, length: usize) -> Result<usize, Errno> {
-        profile_duration!("Zero");
         let mut bytes_written = 0;
         for (mapping, len) in self.get_contiguous_mappings_at(addr, length)? {
             let next_offset = bytes_written + len;
@@ -1987,7 +1967,6 @@ impl MemoryManagerState {
         mapping: &Mapping,
         length: usize,
     ) -> Result<usize, Errno> {
-        profile_duration!("MappingZeroMemory");
         if !mapping.can_write() {
             return error!(EFAULT);
         }
@@ -2219,7 +2198,6 @@ impl MemoryManager {
         debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
         if let Some(usercopy) = usercopy() {
-            profile_duration!("UsercopyRead");
             let (read_bytes, unread_bytes) = usercopy.copyin(addr.ptr(), bytes);
             if unread_bytes.is_empty() { Ok(read_bytes) } else { error!(EFAULT) }
         } else {
@@ -2244,7 +2222,6 @@ impl MemoryManager {
         debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
         if let Some(usercopy) = usercopy() {
-            profile_duration!("UsercopyReadPartialUntilNull");
             let (read_bytes, unread_bytes) = usercopy.copyin_until_null_byte(addr.ptr(), bytes);
             if read_bytes.is_empty() && !unread_bytes.is_empty() {
                 error!(EFAULT)
@@ -2273,7 +2250,6 @@ impl MemoryManager {
         debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
         if let Some(usercopy) = usercopy() {
-            profile_duration!("UsercopyReadPartial");
             let (read_bytes, unread_bytes) = usercopy.copyin(addr.ptr(), bytes);
             if read_bytes.is_empty() && !unread_bytes.is_empty() {
                 error!(EFAULT)
@@ -2302,7 +2278,6 @@ impl MemoryManager {
         debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
         if let Some(usercopy) = usercopy() {
-            profile_duration!("UsercopyWrite");
             let num_copied = usercopy.copyout(bytes, addr.ptr());
             if num_copied != bytes.len() {
                 error!(
@@ -2434,7 +2409,6 @@ impl MemoryManager {
         debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
         if let Some(usercopy) = usercopy() {
-            profile_duration!("UsercopyWritePartial");
             let num_copied = usercopy.copyout(bytes, addr.ptr());
             if num_copied == 0 && !bytes.is_empty() { error!(EFAULT) } else { Ok(num_copied) }
         } else {
@@ -2478,7 +2452,6 @@ impl MemoryManager {
         }
 
         if let Some(usercopy) = usercopy() {
-            profile_duration!("UsercopyZero");
             if usercopy.zero(addr.ptr(), length) == length { Ok(length) } else { error!(EFAULT) }
         } else {
             self.syscall_zero(addr, length)
@@ -3217,7 +3190,6 @@ impl MemoryManager {
 
         // Drop the state before the unmapped mappings, since dropping a mapping may acquire a lock
         // in `DirEntry`'s `drop`.
-        profile_duration!("DropReleasedMappings");
         released_mappings.finalize(state);
 
         result
@@ -4096,7 +4068,6 @@ impl DynamicFileSource for ProcSmapsFile {
 
 /// Creates a memory object that can be used in an anonymous mapping for the `mmap` syscall.
 pub fn create_anonymous_mapping_memory(size: u64) -> Result<Arc<MemoryObject>, Errno> {
-    let mut profile = ProfileDuration::enter("CreatAnonVmo");
     // mremap can grow memory regions, so make sure the memory object is resizable.
     let mut memory = MemoryObject::from(
         zx::Vmo::create_with_opts(zx::VmoOptions::RESIZABLE, size).map_err(|s| match s {
@@ -4107,10 +4078,8 @@ pub fn create_anonymous_mapping_memory(size: u64) -> Result<Arc<MemoryObject>, E
     )
     .with_zx_name(b"starnix:memory_manager");
 
-    profile.pivot("SetAnonVmoName");
     memory.set_zx_name(b"starnix-anon");
 
-    profile.pivot("ReplaceAnonVmoAsExecutable");
     // TODO(https://fxbug.dev/42056890): Audit replace_as_executable usage
     memory = memory.replace_as_executable(&VMEX_RESOURCE).map_err(impossible_error)?;
     Ok(Arc::new(memory))

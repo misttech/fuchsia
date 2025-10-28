@@ -5,7 +5,6 @@
 use crate::signals::RunState;
 use crate::task::CurrentTask;
 use crate::vfs::FdNumber;
-use fuchsia_inspect_contrib::profile_duration;
 use slab::Slab;
 use starnix_lifecycle::{AtomicU64Counter, AtomicUsizeCounter};
 use starnix_stack::clean_stack;
@@ -379,7 +378,6 @@ struct PortWaiter {
 impl PortWaiter {
     /// Internal constructor.
     fn new(ignore_signals: bool) -> Arc<Self> {
-        profile_duration!("NewPortWaiter");
         Arc::new(PortWaiter {
             port: PortEvent::new(),
             callbacks: Default::default(),
@@ -399,8 +397,6 @@ impl PortWaiter {
         // current thread should not own any local ref that might delay the release of a resource
         // while doing so.
         debug_assert_no_local_temp_ref();
-
-        profile_duration!("PortWaiterWaitInternal");
 
         match self.port.wait(deadline) {
             PortWaitResult::Notification { kind: NotifyKind::Regular } => Ok(()),
@@ -435,7 +431,6 @@ impl PortWaiter {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        profile_duration!("WaiterWaitUntil");
         let is_waiting = deadline.into_nanos() > 0;
 
         let callback = || {
@@ -503,8 +498,6 @@ impl PortWaiter {
         zx_signals: zx::Signals,
         handler: SignalHandler,
     ) -> Result<PortWaitCanceler, zx::Status> {
-        profile_duration!("PortWaiterWakeOnZirconSignals");
-
         let callback = WaitCallback::SignalHandler(handler);
         let key = self.register_callback(callback);
         self.port.object_wait_async(
@@ -517,8 +510,6 @@ impl PortWaiter {
     }
 
     fn queue_events(&self, key: &WaitKey, events: WaitEvents) {
-        profile_duration!("PortWaiterHandleEvent");
-
         scopeguard::defer! {
             self.port.notify(NotifyKind::Regular)
         }
@@ -990,8 +981,6 @@ impl WaitQueue {
     ///
     /// Returns a `WaitCanceler` that can be used to cancel the wait.
     fn wait_async_entry(&self, waiter: &Waiter, entry: WaitEntry) -> WaitCanceler {
-        profile_duration!("WaitAsyncEntry");
-
         let wait_key = entry.key;
         let waiter_id = self.add_waiter(entry);
         let wait_queue = Arc::downgrade(&self.0);
@@ -1075,7 +1064,6 @@ impl WaitQueue {
     }
 
     fn notify_events_count(&self, events: WaitEvents, mut limit: usize) -> usize {
-        profile_duration!("NotifyEventsCount");
         let mut woken = 0;
         self.0.lock().waiters.retain(|_, WaitEntryWithId { entry, id: _ }| {
             if limit > 0 && entry.filter.intercept(&events) {

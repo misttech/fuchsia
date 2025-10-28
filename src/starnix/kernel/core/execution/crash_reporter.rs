@@ -8,7 +8,6 @@ use fidl_fuchsia_feedback::{
     MAX_CRASH_SIGNATURE_LENGTH, NativeCrashReport, SpecificCrashReport,
 };
 use fuchsia_inspect::{Inspector, Node};
-use fuchsia_inspect_contrib::profile_duration;
 use futures::FutureExt;
 use starnix_logging::{
     CATEGORY_STARNIX, CoreDumpInfo, CoreDumpList, TraceScope, log_error, log_info, log_warn,
@@ -105,7 +104,6 @@ impl CrashReporter {
         exit_status: &ExitStatus,
         pending_crash_report: PendingCrashReport,
     ) {
-        profile_duration!("RecordCoreDump");
         trace_instant!(CATEGORY_STARNIX, c"RecordCoreDump", TraceScope::Process);
 
         let argv = pending_crash_report.argv;

@@ -27,7 +27,6 @@ use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::user_address::ArchSpecific;
 
 use fidl::HandleBased;
-use fuchsia_inspect_contrib::profile_duration;
 use hkdf::Hkdf;
 use linux_uapi::{FSCRYPT_MODE_AES_256_CTS, FSCRYPT_MODE_AES_256_XTS};
 use starnix_logging::{
@@ -283,17 +282,14 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
         options: MappingOptions,
         filename: NamespaceNode,
     ) -> Result<UserAddress, Errno> {
-        profile_duration!("FileOpsDefaultMmap");
         trace_duration!(CATEGORY_STARNIX_MM, c"FileOpsDefaultMmap");
         let min_memory_size = (memory_offset as usize)
             .checked_add(round_up_to_system_page_size(length)?)
             .ok_or_else(|| errno!(EINVAL))?;
         let mut memory = if options.contains(MappingOptions::SHARED) {
-            profile_duration!("GetSharedVmo");
             trace_duration!(CATEGORY_STARNIX_MM, c"GetSharedVmo");
             self.get_memory(locked, file, current_task, Some(min_memory_size), prot_flags)?
         } else {
-            profile_duration!("GetPrivateVmo");
             trace_duration!(CATEGORY_STARNIX_MM, c"GetPrivateVmo");
             // TODO(tbodt): Use PRIVATE_CLONE to have the filesystem server do the clone for us.
             let base_prot_flags = (prot_flags | ProtectionFlags::READ) - ProtectionFlags::WRITE;
@@ -317,7 +313,6 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
         // Write guard is necessary only for shared mappings. Note that this doesn't depend on
         // `prot_flags` since these can be changed later with `mprotect()`.
         let file_write_guard = if options.contains(MappingOptions::SHARED) && file.can_write() {
-            profile_duration!("AcquireFileWriteGuard");
             let node = &file.name.entry.node;
             let state = node.write_guard_state.lock();
 

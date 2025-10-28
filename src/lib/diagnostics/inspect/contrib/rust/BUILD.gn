@@ -15,9 +15,7 @@ rustc_library("fuchsia-inspect-contrib") {
     "//sdk/rust/zx",
     "//src/lib/diagnostics/inspect/derive",
     "//src/lib/diagnostics/inspect/rust",
-    "//src/lib/fuchsia-runtime",
     "//src/lib/fuchsia-sync",
-    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:derivative",
     "//third_party/rust_crates:lru-cache",
     "//third_party/rust_crates:strum",
@@ -47,7 +45,6 @@ rustc_library("fuchsia-inspect-contrib") {
     "src/nodes/list.rs",
     "src/nodes/lru_cache.rs",
     "src/nodes/mod.rs",
-    "src/self_profile.rs",
   ]
 
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]

@@ -7,7 +7,6 @@
 use crate::remote_binder::RemoteBinderDevice;
 use bitflags::bitflags;
 use fidl::endpoints::ClientEnd;
-use fuchsia_inspect_contrib::profile_duration;
 use starnix_core::device::DeviceOps;
 use starnix_core::device::mem::new_null_file;
 use starnix_core::fs::fuchsia::new_remote_file;
@@ -1449,7 +1448,6 @@ unsafe impl Send for SharedMemory {}
 
 impl SharedMemory {
     fn map(memory: &MemoryObject, user_address: UserAddress, length: usize) -> Result<Self, Errno> {
-        profile_duration!("SharedMemoryMap");
         // Map the VMO into the kernel's address space.
         let kernel_root_vmar = fuchsia_runtime::vmar_root_self();
         let kernel_address = memory
@@ -3302,7 +3300,6 @@ impl<'b> MemoryAccessor for RemoteMemoryAccessor<'b> {
         addr: UserAddress,
         mut unread_bytes: &'a mut [MaybeUninit<u8>],
     ) -> Result<&'a mut [u8], Errno> {
-        profile_duration!("RemoteReadMemory");
         let mut addr = addr.ptr();
         let unread_bytes_ptr = unread_bytes.as_mut_ptr();
         let unread_bytes_len = unread_bytes.len();
@@ -3358,7 +3355,6 @@ impl<'b> MemoryAccessor for RemoteMemoryAccessor<'b> {
     }
 
     fn write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
-        profile_duration!("RemoteWriteMemory");
         // No bytes to write.
         if bytes.is_empty() {
             return Ok(0);
@@ -3418,7 +3414,6 @@ impl<'b> MemoryAccessor for RemoteMemoryAccessor<'b> {
 
 impl ResourceAccessor for RemoteResourceAccessor {
     fn close_files(&self, fds: Vec<FdNumber>) -> Result<(), Errno> {
-        profile_duration!("RemoteCloseFile");
         for chunk in fds.chunks(fbinder::MAX_REQUEST_COUNT as usize) {
             self.run_file_request(fbinder::FileRequest {
                 close_requests: Some(chunk.into_iter().map(|fd| fd.raw()).collect()),
@@ -3434,7 +3429,6 @@ impl ResourceAccessor for RemoteResourceAccessor {
         current_task: &CurrentTask,
         fds: Vec<FdNumber>,
     ) -> Result<Vec<(FileHandle, FdFlags)>, Errno> {
-        profile_duration!("RemoteGetFile");
         let num_fds = fds.len();
         let mut files = Vec::with_capacity(num_fds);
 
@@ -3471,7 +3465,6 @@ impl ResourceAccessor for RemoteResourceAccessor {
         files: Vec<(FileHandle, FdFlags)>,
         add_action: &mut dyn FnMut(FdNumber),
     ) -> Result<Vec<FdNumber>, Errno> {
-        profile_duration!("RemoteAddFile");
         let num_files = files.len();
         let mut fds = Vec::with_capacity(num_files);
 
@@ -4063,12 +4056,10 @@ impl BinderDriver {
     where
         L: LockEqualOrBefore<ResourceAccessorLevel>,
     {
-        profile_duration!("ThreadWrite");
         let command = cursor.read_object::<binder_driver_command_protocol>()?;
         trace_duration!(CATEGORY_STARNIX, c"handle_thread_write", "command" => command);
         let result = match command {
             binder_driver_command_protocol_BC_ENTER_LOOPER => {
-                profile_duration!("EnterLooper");
                 let mut proc_state = context.binder_proc.lock();
                 context
                     .binder_thread
@@ -4076,7 +4067,6 @@ impl BinderDriver {
                     .handle_looper_registration(&mut proc_state, RegistrationState::Main)
             }
             binder_driver_command_protocol_BC_REGISTER_LOOPER => {
-                profile_duration!("RegisterLooper");
                 let mut proc_state = context.binder_proc.lock();
                 context
                     .binder_thread
@@ -4087,13 +4077,11 @@ impl BinderDriver {
             | binder_driver_command_protocol_BC_ACQUIRE
             | binder_driver_command_protocol_BC_DECREFS
             | binder_driver_command_protocol_BC_RELEASE => {
-                profile_duration!("Refcount");
                 let handle = cursor.read_object::<u32>()?.into();
                 context.binder_proc.handle_refcount_operation(command, handle)
             }
             binder_driver_command_protocol_BC_INCREFS_DONE
             | binder_driver_command_protocol_BC_ACQUIRE_DONE => {
-                profile_duration!("RefcountDone");
                 let object = LocalBinderObject {
                     weak_ref_addr: UserAddress::from(cursor.read_object::<binder_uintptr_t>()?),
                     strong_ref_addr: UserAddress::from(cursor.read_object::<binder_uintptr_t>()?),
@@ -4101,29 +4089,24 @@ impl BinderDriver {
                 context.binder_proc.handle_refcount_operation_done(command, object)
             }
             binder_driver_command_protocol_BC_FREE_BUFFER => {
-                profile_duration!("FreeBuffer");
                 let buffer_ptr = UserAddress::from(cursor.read_object::<binder_uintptr_t>()?);
                 context.binder_proc.handle_free_buffer(buffer_ptr)
             }
             binder_driver_command_protocol_BC_REQUEST_DEATH_NOTIFICATION => {
-                profile_duration!("RequestDeathNotif");
                 let handle = cursor.read_object::<u32>()?.into();
                 let cookie = cursor.read_object::<binder_uintptr_t>()?;
                 context.binder_proc.handle_request_death_notification(handle, cookie)
             }
             binder_driver_command_protocol_BC_CLEAR_DEATH_NOTIFICATION => {
-                profile_duration!("ClearDeathNotif");
                 let handle = cursor.read_object::<u32>()?.into();
                 let cookie = cursor.read_object::<binder_uintptr_t>()?;
                 context.binder_proc.handle_clear_death_notification(handle, cookie)
             }
             binder_driver_command_protocol_BC_DEAD_BINDER_DONE => {
-                profile_duration!("DeadBinderDone");
                 let _cookie = cursor.read_object::<binder_uintptr_t>()?;
                 Ok(())
             }
             binder_driver_command_protocol_BC_TRANSACTION => {
-                profile_duration!("Transaction");
                 let data = cursor.read_object::<binder_transaction_data>()?;
                 self.handle_transaction(
                     locked,
@@ -4134,7 +4117,6 @@ impl BinderDriver {
                 .or_else(|err| err.dispatch(context.binder_thread))
             }
             binder_driver_command_protocol_BC_REPLY => {
-                profile_duration!("Reply");
                 let data = cursor.read_object::<binder_transaction_data>()?;
                 self.handle_reply(
                     locked,
@@ -4145,30 +4127,25 @@ impl BinderDriver {
                 .or_else(|err| err.dispatch(context.binder_thread))
             }
             binder_driver_command_protocol_BC_TRANSACTION_SG => {
-                profile_duration!("Transaction");
                 let data = cursor.read_object::<binder_transaction_data_sg>()?;
                 self.handle_transaction(locked, context, files, data)
                     .or_else(|err| err.dispatch(context.binder_thread))
             }
             binder_driver_command_protocol_BC_REPLY_SG => {
-                profile_duration!("Reply");
                 let data = cursor.read_object::<binder_transaction_data_sg>()?;
                 self.handle_reply(locked, context, files, data)
                     .or_else(|err| err.dispatch(context.binder_thread))
             }
             binder_driver_command_protocol_BC_REQUEST_FREEZE_NOTIFICATION => {
-                profile_duration!("RequestFreezeNotif");
                 let handle = cursor.read_object::<u32>()?.into();
                 let cookie = cursor.read_object::<binder_uintptr_t>()?;
                 context.binder_proc.handle_request_freeze_notification(handle, cookie)
             }
             binder_driver_command_protocol_BC_FREEZE_NOTIFICATION_DONE => {
-                profile_duration!("FreezeBinderDone");
                 let _cookie = cursor.read_object::<binder_uintptr_t>()?;
                 Ok(())
             }
             binder_driver_command_protocol_BC_CLEAR_FREEZE_NOTIFICATION => {
-                profile_duration!("ClearFreezeNotifi");
                 let handle = cursor.read_object::<u32>()?.into();
                 let cookie = cursor.read_object::<binder_uintptr_t>()?;
                 context.binder_proc.handle_clear_freeze_notification(handle, cookie)
@@ -4293,7 +4270,6 @@ impl BinderDriver {
                 }
 
                 let (target_thread, command) = if oneway {
-                    profile_duration!("TransactionOneWay");
                     // The caller is not expecting a reply.
                     context.binder_thread.lock().enqueue_command(if is_target_frozen {
                         Command::PendingFrozen
@@ -4329,7 +4305,6 @@ impl BinderDriver {
 
                     (None, Command::OnewayTransaction(transaction))
                 } else {
-                    profile_duration!("TransactionTwoWay");
                     let target_thread = match match context.binder_thread.lock().transactions.last()
                     {
                         Some(TransactionRole::Receiver(rx, _)) => rx.upgrade(),
@@ -4498,10 +4473,8 @@ impl BinderDriver {
         context: &OperationContext<'_>,
         read_buffer: &UserBuffer,
     ) -> Result<usize, Errno> {
-        profile_duration!("ThreadRead");
         loop {
             {
-                profile_duration!("RequestThread");
                 let mut binder_proc_state = context.binder_proc.lock();
 
                 if binder_proc_state.should_request_thread(context.binder_thread) {
@@ -4541,7 +4514,6 @@ impl BinderDriver {
             });
 
             if let Some(command) = command {
-                profile_duration!("ThreadReadCommand");
                 // Attempt to write the command to the thread's buffer.
                 let bytes_written =
                     command.write_to_memory(context.memory_accessor, read_buffer)?;
@@ -4614,7 +4586,6 @@ impl BinderDriver {
             // No commands readily available to read. Wait for work. The thread will wait on both
             // the thread queue and the process queue, and loop back to check whether some work is
             // available.
-            profile_duration!("ThreadReadWaitForCommand");
             let event = InterruptibleEvent::new();
             let (mut waiter, guard) = SimpleWaiter::new(&event);
             proc_command_queue.wait_async_simple(&mut waiter);
@@ -4661,8 +4632,6 @@ impl BinderDriver {
     where
         L: LockEqualOrBefore<ResourceAccessorLevel>,
     {
-        profile_duration!("CopyTransactionBuffers");
-
         // Get the shared memory of the target process.
         let mut shared_memory_lock = target_proc.shared_memory.lock();
         let shared_memory = shared_memory_lock.as_mut().ok_or_else(|| errno!(ENOMEM))?;
@@ -4816,8 +4785,6 @@ impl BinderDriver {
     where
         L: LockEqualOrBefore<ResourceAccessorLevel>,
     {
-        profile_duration!("TranslateObjects");
-
         let mut transaction_state =
             TransientTransactionState::new(target_resource_accessor, target_proc);
         release_on_error!(transaction_state, (), {
@@ -5064,8 +5031,6 @@ impl BinderDriver {
         mapping_options: MappingOptions,
         filename: NamespaceNode,
     ) -> Result<UserAddress, Errno> {
-        profile_duration!("BinderMmap");
-
         // Do not support mapping shared memory more than once.
         let mut shared_memory = binder_proc.shared_memory.lock();
         if shared_memory.is_some() {

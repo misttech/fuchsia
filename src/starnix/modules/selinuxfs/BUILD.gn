@@ -24,7 +24,6 @@ rustc_library("selinuxfs") {
 
   deps = [
     "//sdk/rust/zx",
-    "//src/lib/diagnostics/inspect/contrib/rust",
     "//src/starnix/kernel/core",
     "//src/starnix/lib/selinux",
     "//src/starnix/lib/seq_lock",

@@ -6,7 +6,6 @@ group("contrib") {
   deps = [
     "auto_persist",
     "rust",
-    "self_profiles_report",
   ]
 }
 
@@ -15,7 +14,6 @@ group("tests") {
   deps = [
     "auto_persist:tests",
     "rust:tests",
-    "self_profiles_report:tests",
     "stubs:tests",
   ]
 }

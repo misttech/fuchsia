@@ -91,9 +91,6 @@ pub struct Features {
     /// Whether to provide android with a serial number.
     pub android_serialno: bool,
 
-    /// Whether to enable Starnix's self-profiling. Results are visible in inspect.
-    pub self_profile: bool,
-
     /// Optional perfetto configuration.
     pub perfetto: Option<FsString>,
 
@@ -169,7 +166,6 @@ impl Features {
                 test_data,
                 custom_artifacts,
                 android_serialno,
-                self_profile,
                 perfetto,
                 android_fdr,
                 rootfs_rw,
@@ -203,7 +199,6 @@ impl Features {
                 inspect_node.record_bool("test_data", *test_data);
                 inspect_node.record_bool("custom_artifacts", *custom_artifacts);
                 inspect_node.record_bool("android_serialno", *android_serialno);
-                inspect_node.record_bool("self_profile", *self_profile);
                 inspect_node.record_string(
                     "aspect_ratio",
                     aspect_ratio
@@ -375,7 +370,6 @@ pub fn parse_features(
                 return Err(anyhow!("Feature format must be: ping_group_range:0,100"));
             }
             (Feature::RootfsRw, _) => features.rootfs_rw = true,
-            (Feature::SelfProfile, _) => features.self_profile = true,
             (Feature::Selinux, arg) => {
                 features.selinux = SELinuxFeature {
                     enabled: true,
@@ -431,7 +425,6 @@ pub fn run_container_features(
 ) -> Result<(), Error> {
     let kernel = system_task.kernel();
 
-    let mut enabled_profiling = false;
     if features.framebuffer {
         let framebuffer = Framebuffer::device_init(
             locked,
@@ -550,22 +543,11 @@ pub fn run_container_features(
         start_perfetto_consumer_thread(kernel, socket_path)
             .context("Failed to start perfetto consumer thread")?;
     }
-    if features.self_profile {
-        enabled_profiling = true;
-        fuchsia_inspect::component::inspector().root().record_lazy_child(
-            "self_profile",
-            fuchsia_inspect_contrib::ProfileDuration::lazy_node_callback,
-        );
-        fuchsia_inspect_contrib::start_self_profiling();
-    }
     if features.ashmem {
         ashmem_device_init(locked, system_task);
     }
     if features.boot_notifier {
         booted_device_init(locked, system_task);
-    }
-    if !enabled_profiling {
-        fuchsia_inspect_contrib::stop_self_profiling();
     }
     if features.android_fdr {
         android_bootloader_message_store_init(locked, system_task);

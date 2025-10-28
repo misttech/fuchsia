@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_inspect_contrib::profile_duration;
 use paste::paste;
 use starnix_core::arch::syscalls::sys_clone;
 use starnix_core::task::CurrentTask;
@@ -25,7 +24,6 @@ macro_rules! syscall_match_generic {
                 $(
                     $(#[$match])?
                     $path :: [<__NR_ $call>] => {
-                        profile_duration!(stringify!($call));
                         match syscall_match_generic!(@call $into_fn; $locked; $current_task; $args; [<$fn_prefix $call>][$num_args]) {
                             Ok(x) => Ok(SyscallResult::from(x)),
                             Err(err) => Err(err),

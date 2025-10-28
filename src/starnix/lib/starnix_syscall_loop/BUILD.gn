@@ -18,7 +18,6 @@ rustc_library("starnix_syscall_loop") {
     ":restricted_trampoline",
     "//sdk/rust/zx",
     "//src/lib/debug/rust",
-    "//src/lib/diagnostics/inspect/contrib/rust",
     "//src/lib/fuchsia-runtime",
     "//src/lib/trace/rust:trace",
     "//src/starnix/kernel/core",
