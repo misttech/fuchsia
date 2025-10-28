@@ -189,7 +189,7 @@ HandoffEnd::Elf CreatePhysElf(const PhysElfImage& image) {
   ZX_DEBUG_ASSERT(image.vmar.base == 0);
   HandoffEnd::Elf elf = {
       .vmo = CreatePhysVmo(image.vmo),
-      .content_size = image.vmo.stream_size,
+      .stream_size = image.vmo.stream_size,
       .vmar_size = image.vmar.size,
       .info = image.info,
   };

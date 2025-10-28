@@ -55,7 +55,7 @@ struct HandoffEnd {
   // Culled from PhysElfImage.
   struct Elf {
     fbl::RefPtr<VmObject> vmo;
-    size_t content_size;
+    size_t stream_size;
     size_t vmar_size;
     fbl::Vector<PhysMapping> mappings;
     PhysElfImage::Info info;

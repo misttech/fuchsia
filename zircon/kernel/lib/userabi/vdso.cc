@@ -386,7 +386,7 @@ const VDso* VDso::Create(
 
   // build and point a dispatcher at it
   zx_status_t status = VmObjectDispatcher::Create(
-      vdso->vmo(), elf_image.content_size, VmObjectDispatcher::InitialMutability::kMutable,
+      vdso->vmo(), elf_image.stream_size, VmObjectDispatcher::InitialMutability::kMutable,
       &vmo_kernel_handles[variant_index(Variant::NEXT)], &vdso->vmo_rights_);
   ASSERT(status == ZX_OK);
   vdso->vmo_rights_ &= ~ZX_RIGHT_WRITE;
