@@ -63,7 +63,7 @@ int TurduckenTest::Main(Zbi::iterator kernel_item) {
     boot_shim::DebugdataItem item;
     item.Init(debugdata_item.sink, debugdata_item.vmo_name);
     item.set_log(debugdata_item.log);
-    item.set_content_size(debugdata_item.payload.size());
+    item.set_stream_size(debugdata_item.payload.size());
     ZX_ASSERT(item.AppendItems(zbi).is_ok());
     auto contents = item.contents();
     memcpy(contents.data(), debugdata_item.payload.data(), contents.size());

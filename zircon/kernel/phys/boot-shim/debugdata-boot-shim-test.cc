@@ -45,7 +45,7 @@ int TurduckenTest::Main(Zbi::iterator kernel_item) {
 
     auto& debugdata = shim.Get<boot_shim::DebugdataItem>();
     debugdata.Init(kSinkName, kVmoName);
-    debugdata.set_content_size(kContents.size());
+    debugdata.set_stream_size(kContents.size());
     debugdata.set_log(kLog);
     printf("%s: Initialized item of %zu bytes\n", gSymbolize->name(), debugdata.size_bytes());
 

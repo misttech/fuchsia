@@ -140,7 +140,7 @@ TEST(BootShimTests, DebugdataItemContents) {
   auto& item = shim.Get<boot_shim::DebugdataItem>();
   item.Init(kSinkName, kVmoName, kVmoNameSuffix);
   item.set_log(kLog);
-  item.set_content_size(sizeof(kContents));
+  item.set_stream_size(sizeof(kContents));
 
   EXPECT_EQ(sizeof(zbi_header_t) + kFullSize, item.size_bytes());
 

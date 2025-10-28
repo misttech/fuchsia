@@ -28,13 +28,13 @@ class DebugdataItem : public ItemBase {
 
   WritableBytes contents() const {
     if (contents_) {
-      return {contents_, content_size_};
+      return {contents_, stream_size_};
     }
     return {};
   }
 
-  DebugdataItem& set_content_size(size_t size) {
-    content_size_ = size;
+  DebugdataItem& set_stream_size(size_t size) {
+    stream_size_ = size;
     return *this;
   }
 
@@ -48,7 +48,7 @@ class DebugdataItem : public ItemBase {
 
   std::string_view sink_name_, vmo_name_, vmo_name_suffix_, log_;
   std::byte* contents_ = nullptr;
-  size_t content_size_ = 0;
+  size_t stream_size_ = 0;
 };
 
 }  // namespace boot_shim

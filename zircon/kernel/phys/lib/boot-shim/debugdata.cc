@@ -15,7 +15,7 @@
 namespace boot_shim {
 
 size_t DebugdataItem::payload_size_bytes() const {
-  size_t size = content_size_;
+  size_t size = stream_size_;
   if (size > 0 || !log_.empty()) {
     for (std::string_view str : {sink_name_, vmo_name_, vmo_name_suffix_, log_}) {
       size += str.size();
@@ -40,8 +40,8 @@ auto DebugdataItem::AppendItems(DataZbi& zbi) -> fit::result<DataZbi::Error> {
   ZX_ASSERT(payload.size_bytes() >= size);
 
   contents_ = payload.data();
-  size_t used_size = content_size_;
-  payload = payload.subspan(content_size_);
+  size_t used_size = stream_size_;
+  payload = payload.subspan(stream_size_);
 
   for (std::string_view str : {sink_name_, vmo_name_, vmo_name_suffix_, log_}) {
     used_size += str.size();
@@ -56,7 +56,7 @@ auto DebugdataItem::AppendItems(DataZbi& zbi) -> fit::result<DataZbi::Error> {
                 "%zu bytes left for %zu-byte trailer", payload.size_bytes(),
                 sizeof(zbi_debugdata_t));
   *reinterpret_cast<zbi_debugdata_t*>(payload.data()) = {
-      .content_size = static_cast<uint32_t>(content_size_),
+      .content_size = static_cast<uint32_t>(stream_size_),
       .sink_name_size = static_cast<uint32_t>(sink_name_.size()),
       .vmo_name_size = static_cast<uint32_t>(vmo_name_.size() + vmo_name_suffix_.size()),
       .log_size = static_cast<uint32_t>(log_.size()),
