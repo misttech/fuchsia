@@ -46,6 +46,9 @@ fit::result<int, std::string> GetLabel(int fd);
 /// The trailing NUL, if any, will be stripped before the label is returned.
 fit::result<int, std::string> GetLabel(const std::string& path);
 
+/// Sets the security `label` of the specified `path`.
+fit::result<int> SetLabel(const std::string& path, const std::string_view label);
+
 /// Checks whether two file descriptors map to the same inode.
 /// Returns an `errno` on failure.
 fit::result<int, bool> IsSameInode(int fd_1, int fd_2);

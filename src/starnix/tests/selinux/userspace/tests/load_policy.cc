@@ -2,13 +2,49 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fcntl.h>
+
+#include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
 #include "src/starnix/tests/selinux/userspace/util.h"
 
-extern std::string DoPrePolicyLoadWork() { return "minimal_policy.pp"; }
+namespace {
+constexpr char kDefaultTmpFsNodeLabel[] = "system_u:object_r:tmpfs_t:s0";
+constexpr char kTestSecurityXattr[] = "system_u:object_r:unconfined_t:s0";
+constexpr char kTestInvalidSecurityXattr[] = "not a valid context";
+
+constexpr char kTestFileWithoutXattr[] = "/tmp/test-file-without-xattr";
+constexpr char kTestFileWithXattr[] = "/tmp/test-file-with-xattr";
+constexpr char kTestFileWithInvalidXattr[] = "/tmp/test-file-with-invalid-xattr";
+}  // namespace
+
+extern std::string DoPrePolicyLoadWork() {
+  // Create a file in "tmpfs" without explicitly setting the "security.selinux" attribute.
+  auto fd = fbl::unique_fd(open(kTestFileWithoutXattr, O_CREAT | O_RDWR, 0644));
+  EXPECT_TRUE(fd.is_valid()) << "Failed to create test file:" << strerror(errno);
+
+  // Create a file in "tmpfs" with an explicitly-specified label, different from the calculated one.
+  fd = fbl::unique_fd(open(kTestFileWithXattr, O_CREAT | O_RDWR, 0644));
+  EXPECT_TRUE(fd.is_valid()) << "Failed to create test file:" << strerror(errno);
+  EXPECT_EQ(SetLabel(kTestFileWithXattr, kTestSecurityXattr), fit::ok());
+
+  // Create a file in "tmpfs" with an invalid security xattr value.
+  fd = fbl::unique_fd(open(kTestFileWithInvalidXattr, O_CREAT | O_RDWR, 0644));
+  EXPECT_TRUE(fd.is_valid()) << "Failed to create test file:" << strerror(errno);
+  EXPECT_EQ(SetLabel(kTestFileWithInvalidXattr, kTestInvalidSecurityXattr), fit::ok());
+
+  return "minimal_policy.pp";
+}
 
 TEST(PolicyLoadTest, TasksUseKernelSid) {
   // All processes created prior to policy loading are labeled with the kernel SID.
   EXPECT_THAT(ReadTaskAttr("current"), IsOk("system_u:unconfined_r:unconfined_t:s0"));
+}
+
+TEST(PolicyLoadTest, TmpFsFsUseTransIgnoresSecurityXattr) {
+  // "tmpfs" is defined to use the `fs_use_trans` labeling scheme, which ignores the xattr value.
+  EXPECT_THAT(GetLabel(kTestFileWithoutXattr), IsOk(kDefaultTmpFsNodeLabel));
+  EXPECT_THAT(GetLabel(kTestFileWithXattr), IsOk(kDefaultTmpFsNodeLabel));
+  EXPECT_THAT(GetLabel(kTestFileWithInvalidXattr), IsOk(kDefaultTmpFsNodeLabel));
 }

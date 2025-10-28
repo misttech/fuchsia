@@ -140,6 +140,14 @@ fit::result<int, std::string> GetLabel(const std::string& path) {
   return fit::ok(RemoveTrailingNul(std::string(buf, result)));
 }
 
+fit::result<int> SetLabel(const std::string& path, const std::string_view label) {
+  ssize_t result = setxattr(path.c_str(), "security.selinux", label.data(), label.size(), 0);
+  if (result < 0) {
+    return fit::error(errno);
+  }
+  return fit::ok();
+}
+
 fit::result<int, bool> IsSameInode(int fd_1, int fd_2) {
   struct stat fd_1_info;
   if (fstat(fd_1, &fd_1_info) < 0) {
