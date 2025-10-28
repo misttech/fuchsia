@@ -115,8 +115,8 @@ pub fn parse_with<F, E: std::fmt::Debug>(
     data: &FsStr,
     parser: impl FnOnce(&str) -> Result<F, E>,
 ) -> Result<F, Errno> {
-    parser(std::str::from_utf8(data.as_ref()).map_err(|e| errno!(EINVAL, e))?)
-        .map_err(|e| errno!(EINVAL, format!("{:?}", e)))
+    parser(std::str::from_utf8(data.as_ref()).map_err(|e| errno!(EINVAL, e))?.trim())
+        .map_err(|e| errno!(EINVAL, format!("{:?}: {:?}", data, e)))
 }
 
 mod parse_mount_options {
