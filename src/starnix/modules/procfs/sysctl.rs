@@ -28,18 +28,11 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
     let dir = SimpleDirectoryMutator::new(fs.clone(), root_dir.clone());
     dir.subdir("abi", 0o555, |_dir| {
         #[cfg(target_arch = "aarch64")]
-        _dir.entry(
-            "swp",
-            StubBytesFile::new_node("/proc/sys/abi/swp", bug_ref!("https://fxbug.dev/322873460")),
-            mode,
-        );
+        _dir.entry("swp", StubBytesFile::new_node(bug_ref!("https://fxbug.dev/452096300")), mode);
         #[cfg(target_arch = "aarch64")]
         _dir.entry(
             "tagged_addr_disabled",
-            StubBytesFile::new_node(
-                "/proc/sys/abi/tagged_addr_disabled",
-                bug_ref!("https://fxbug.dev/408554469"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/408554469")),
             mode,
         );
     });
@@ -70,67 +63,42 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
         );
         dir.entry(
             "core_pipe_limit",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/core_pipe_limit",
-                bug_ref!("https://fxbug.dev/322873721"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322873721")),
             mode,
         );
         dir.entry(
             "dmsg_restrict",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/dmsg_restrict",
-                bug_ref!("https://fxbug.dev/322874424"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874424")),
             mode,
         );
         dir.entry(
             "domainname",
-            StubBytesFile::new_node_with_data(
-                "/proc/sys/kernel/domainname",
-                bug_ref!("https://fxbug.dev/322873722"),
-                "(none)",
-            ),
+            StubBytesFile::new_node_with_data(bug_ref!("https://fxbug.dev/322873722"), "(none)"),
             mode,
         );
         dir.entry(
             "hostname",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/hostname",
-                bug_ref!("https://fxbug.dev/322873462"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322873462")),
             mode,
         );
         dir.entry(
             "hung_task_check_count",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/hung_task_check_count",
-                bug_ref!("https://fxbug.dev/322873962"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322873962")),
             mode,
         );
         dir.entry(
             "hung_task_panic",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/hung_task_panic",
-                bug_ref!("https://fxbug.dev/322873962"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322873962")),
             mode,
         );
         dir.entry(
             "hung_task_timeout_secs",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/hung_task_timeout_secs",
-                bug_ref!("https://fxbug.dev/322873962"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322873962")),
             mode,
         );
         dir.entry(
             "hung_task_warnings",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/hung_task_warnings",
-                bug_ref!("https://fxbug.dev/322873962"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322873962")),
             mode,
         );
         dir.entry("io_uring_disabled", SystemLimitFile::<IoUringDisabled>::new_node(), mode);
@@ -142,141 +110,86 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
         );
         dir.entry(
             "modprobe",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/modprobe",
-                bug_ref!("https://fxbug.dev/322874334"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874334")),
             mode,
         );
         dir.entry(
             "modules_disabled",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/modules_disabled",
-                bug_ref!("https://fxbug.dev/322874489"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874489")),
             mode,
         );
         dir.entry("ngroups_max", BytesFile::new_node(b"65536\n".to_vec()), mode!(IFREG, 0o444));
         dir.entry(
             "panic_on_oops",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/panic_on_oops",
-                bug_ref!("https://fxbug.dev/322874296"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874296")),
             mode,
         );
         dir.entry(
             "perf_cpu_time_max_percent",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/perf_cpu_time_max_percent",
-                bug_ref!("https://fxbug.dev/322873262"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322873262")),
             mode,
         );
         dir.entry(
             "perf_event_max_sample_rate",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/perf_event_max_sample_rate",
-                bug_ref!("https://fxbug.dev/322874604"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874604")),
             mode,
         );
         dir.entry(
             "perf_event_mlock_kb",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/perf_event_mlock_kb",
-                bug_ref!("https://fxbug.dev/322873800"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322873800")),
             mode,
         );
         dir.entry(
             "perf_event_paranoid",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/perf_event_paranoid",
-                bug_ref!("https://fxbug.dev/322873896"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322873896")),
             mode,
         );
         dir.entry(
             "randomize_va_space",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/randomize_va_space",
-                bug_ref!("https://fxbug.dev/322873202"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322873202")),
             mode,
         );
         dir.entry(
             "sched_child_runs_first",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/sched_child_runs_first",
-                bug_ref!("https://fxbug.dev/322874709"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874709")),
             mode,
         );
         dir.entry(
             "sched_latency_ns",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/sched_latency_ns",
-                bug_ref!("https://fxbug.dev/322874319"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874319")),
             mode,
         );
         dir.entry(
             "sched_rt_period_us",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/sched_rt_period_us",
-                bug_ref!("https://fxbug.dev/322874785"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874785")),
             mode,
         );
         dir.entry(
             "sched_rt_runtime_us",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/sched_rt_runtime_us",
-                bug_ref!("https://fxbug.dev/322874726"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874726")),
             mode,
         );
         dir.entry(
             "sched_schedstats",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/sched_schedstats",
-                bug_ref!("https://fxbug.dev/322874584"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874584")),
             mode,
         );
         dir.entry(
             "sched_tunable_scaling",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/sched_tunable_scaling",
-                bug_ref!("https://fxbug.dev/322874666"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874666")),
             mode,
         );
         dir.entry(
             "sched_wakeup_granularity_ns",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/sched_wakeup_granularity_ns",
-                bug_ref!("https://fxbug.dev/322874525"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874525")),
             mode,
         );
-        dir.entry(
-            "sysrq",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/sysrq",
-                bug_ref!("https://fxbug.dev/322874375"),
-            ),
-            mode,
-        );
+        dir.entry("sysrq", StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874375")), mode);
         dir.entry("unprivileged_bpf_disabled", UnprivilegedBpfDisabled::new_node(), mode);
         dir.entry("dmesg_restrict", DmesgRestrict::new_node(), mode);
         dir.entry(
             "kptr_restrict",
-            StubBytesFile::new_node(
-                "/proc/sys/kernel/kptr_restrict",
-                bug_ref!("https://fxbug.dev/322873878"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322873878")),
             mode,
         );
         dir.entry(
@@ -317,90 +230,57 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
     dir.subdir("vm", 0o555, |dir| {
         dir.entry(
             "dirty_background_ratio",
-            StubBytesFile::new_node(
-                "/proc/sys/vm/dirty_background_ratio",
-                bug_ref!("https://fxbug.dev/322874492"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874492")),
             mode,
         );
         dir.entry(
             "dirty_expire_centisecs",
-            StubBytesFile::new_node(
-                "/proc/sys/vm/dirty_expire_centisecs",
-                bug_ref!("https://fxbug.dev/322874237"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874237")),
             mode,
         );
         dir.entry(
             "drop_caches",
-            StubBytesFile::new_node(
-                "/proc/sys/vm/drop_caches",
-                bug_ref!("https://fxbug.dev/322874299"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874299")),
             mode,
         );
         dir.entry(
             "extra_free_kbytes",
-            StubBytesFile::new_node(
-                "/proc/sys/vm/extra_free_kbytes",
-                bug_ref!("https://fxbug.dev/322873761"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322873761")),
             mode,
         );
         dir.entry(
             "max_map_count",
-            StubBytesFile::new_node(
-                "/proc/sys/vm/max_map_count",
-                bug_ref!("https://fxbug.dev/322874684"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874684")),
             mode,
         );
         dir.entry(
             "mmap_min_addr",
-            StubBytesFile::new_node(
-                "/proc/sys/vm/mmap_min_addr",
-                bug_ref!("https://fxbug.dev/322874526"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874526")),
             mode,
         );
         dir.entry(
             "mmap_rnd_bits",
-            StubBytesFile::new_node(
-                "/proc/sys/vm/mmap_rnd_bits",
-                bug_ref!("https://fxbug.dev/322874505"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874505")),
             mode,
         );
         dir.entry(
             "mmap_rnd_compat_bits",
-            StubBytesFile::new_node(
-                "/proc/sys/vm/mmap_rnd_compat_bits",
-                bug_ref!("https://fxbug.dev/322874685"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874685")),
             mode,
         );
         dir.entry(
             "overcommit_memory",
-            StubBytesFile::new_node(
-                "/proc/sys/vm/overcommit_memory",
-                bug_ref!("https://fxbug.dev/322874159"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874159")),
             mode,
         );
         dir.entry(
             "page-cluster",
-            StubBytesFile::new_node(
-                "/proc/sys/vm/page-cluster",
-                bug_ref!("https://fxbug.dev/322874302"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874302")),
             mode,
         );
         dir.entry(
             "watermark_scale_factor",
-            StubBytesFile::new_node(
-                "/proc/sys/vm/watermark_scale_factor",
-                bug_ref!("https://fxbug.dev/322874321"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874321")),
             mode,
         );
     });
@@ -413,26 +293,17 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
         dir.entry("pipe-max-size", SystemLimitFile::<PipeMaxSize>::new_node(), mode);
         dir.entry(
             "protected_hardlinks",
-            StubBytesFile::new_node(
-                "/proc/sys/fs/protected_hardlinks",
-                bug_ref!("https://fxbug.dev/322874347"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874347")),
             mode,
         );
         dir.entry(
             "protected_symlinks",
-            StubBytesFile::new_node(
-                "/proc/sys/fs/protected_symlinks",
-                bug_ref!("https://fxbug.dev/322874764"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874764")),
             mode,
         );
         dir.entry(
             "suid_dumpable",
-            StubBytesFile::new_node(
-                "/proc/sys/fs/suid_dumpable",
-                bug_ref!("https://fxbug.dev/322874210"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874210")),
             mode,
         );
         dir.subdir("verity", 0o555, |dir| {
@@ -470,12 +341,12 @@ pub fn net_directory(fs: &FileSystemHandle) -> FsNodeHandle {
     dir.edit(fs, |dir| {
         dir.entry(
             "fib_trie",
-            StubBytesFile::new_node("/proc/net/fib_trie", bug_ref!("https://fxbug.dev/322873635")),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322873635")),
             mode!(IFREG, 0o400),
         );
         dir.entry(
             "if_inet6",
-            StubBytesFile::new_node("/proc/net/if_inet6", bug_ref!("https://fxbug.dev/322874669")),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874669")),
             mode!(IFREG, 0o444),
         );
         dir.entry(
@@ -490,24 +361,18 @@ pub fn net_directory(fs: &FileSystemHandle) -> FsNodeHandle {
         );
         dir.entry(
             "psched",
-            StubBytesFile::new_node("/proc/net/psched", bug_ref!("https://fxbug.dev/322874710")),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874710")),
             mode!(IFREG, 0o444),
         );
         dir.entry(
             "xt_qtaguid",
-            StubBytesFile::new_node(
-                "/proc/net/xt_qtaguid",
-                bug_ref!("https://fxbug.dev/322874322"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874322")),
             mode!(IFREG, 0o644),
         );
         dir.subdir("xt_quota", 0o555, |dir| {
             dir.entry(
                 "globalAlert",
-                StubBytesFile::new_node(
-                    "/proc/net/xt_quota/globalAlert",
-                    bug_ref!("https://fxbug.dev/322873636"),
-                ),
+                StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322873636")),
                 mode!(IFREG, 0o444),
             );
         });
@@ -541,7 +406,6 @@ fn sysctl_net_diretory(dir: &SimpleDirectoryMutator) {
         dir.entry(
             "bpf_jit_enable",
             StubBytesFile::new_node_with_capabilities(
-                "/proc/sys/net/core/bpf_jit_enable",
                 bug_ref!("https://fxbug.dev/322874627"),
                 CAP_NET_ADMIN,
             ),
@@ -550,7 +414,6 @@ fn sysctl_net_diretory(dir: &SimpleDirectoryMutator) {
         dir.entry(
             "bpf_jit_kallsyms",
             StubBytesFile::new_node_with_capabilities(
-                "/proc/sys/net/core/bpf_jit_kallsyms",
                 bug_ref!("https://fxbug.dev/322874163"),
                 CAP_NET_ADMIN,
             ),
@@ -558,27 +421,18 @@ fn sysctl_net_diretory(dir: &SimpleDirectoryMutator) {
         );
         dir.entry(
             "rmem_max",
-            StubBytesFile::new_node(
-                "/proc/sys/net/core/rmem_max",
-                bug_ref!("https://fxbug.dev/322906968"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322906968")),
             file_mode,
         );
         dir.entry("somaxconn", SystemLimitFile::<SoMaxConn>::new_node(), file_mode);
         dir.entry(
             "wmem_max",
-            StubBytesFile::new_node(
-                "/proc/sys/net/core/wmem_max",
-                bug_ref!("https://fxbug.dev/322907334"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322907334")),
             file_mode,
         );
         dir.entry(
             "xfrm_acq_expires",
-            StubBytesFile::new_node(
-                "/proc/sys/net/core/xfrm_acq_expires",
-                bug_ref!("https://fxbug.dev/322907718"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322907718")),
             file_mode,
         );
     });
@@ -586,44 +440,29 @@ fn sysctl_net_diretory(dir: &SimpleDirectoryMutator) {
         dir.entry("conf", ProcSysNetIpv4Conf, dir_mode);
         dir.entry(
             "fwmark_reflect",
-            StubBytesFile::new_node(
-                "/proc/sys/net/ipv4/fwmark_reflect",
-                bug_ref!("https://fxbug.dev/322874495"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874495")),
             file_mode,
         );
         dir.entry(
             "ip_forward",
-            StubBytesFile::new_node(
-                "/proc/sys/net/ipv4/ip_forward",
-                bug_ref!("https://fxbug.dev/322874452"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874452")),
             file_mode,
         );
         dir.entry("neigh", ProcSysNetIpv4Neigh, dir_mode);
         dir.entry("ping_group_range", PingGroupRangeFile::new_node(), file_mode);
         dir.entry(
             "tcp_default_init_rwnd",
-            StubBytesFile::new_node(
-                "/proc/sys/net/ipv4/tcp_default_init_rwnd",
-                bug_ref!("https://fxbug.dev/322874199"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874199")),
             file_mode,
         );
         dir.entry(
             "tcp_fwmark_accept",
-            StubBytesFile::new_node(
-                "/proc/sys/net/ipv4/tcp_fwmark_accept",
-                bug_ref!("https://fxbug.dev/322874120"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874120")),
             file_mode,
         );
         dir.entry(
             "tcp_rmem",
-            StubBytesFile::new_node(
-                "/proc/sys/net/ipv4/tcp_rmem",
-                bug_ref!("https://fxbug.dev/322874549"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874549")),
             file_mode,
         );
     });
@@ -631,10 +470,7 @@ fn sysctl_net_diretory(dir: &SimpleDirectoryMutator) {
         dir.entry("conf", ProcSysNetIpv6Conf, dir_mode);
         dir.entry(
             "fwmark_reflect",
-            StubBytesFile::new_node(
-                "/proc/sys/net/ipv6/fwmark_reflect",
-                bug_ref!("https://fxbug.dev/322874711"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874711")),
             file_mode,
         );
         dir.entry("neigh", ProcSysNetIpv6Neigh, dir_mode);
@@ -642,10 +478,7 @@ fn sysctl_net_diretory(dir: &SimpleDirectoryMutator) {
     dir.subdir("unix", 0o555, |dir| {
         dir.entry(
             "max_dgram_qlen",
-            StubBytesFile::new_node(
-                "/proc/sys/net/unix/max_dgram_qlen",
-                bug_ref!("https://fxbug.dev/322874454"),
-            ),
+            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874454")),
             file_mode,
         );
     });

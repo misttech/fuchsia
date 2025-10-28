@@ -143,6 +143,15 @@ impl<Ops: BytesFileOps> FileOps for BytesFile<Ops> {
     fileops_impl_seekable!();
     fileops_impl_noop_sync!();
 
+    fn open(
+        &self,
+        locked: &mut Locked<FileOpsCore>,
+        file: &FileObject,
+        current_task: &CurrentTask,
+    ) -> Result<(), Errno> {
+        self.0.open(locked, file, current_task)
+    }
+
     fn read(
         &self,
         locked: &mut Locked<FileOpsCore>,
@@ -194,6 +203,14 @@ pub trait BytesFileOps: Send + Sync + AsAny + 'static {
         current_task: &CurrentTask,
     ) -> Result<Cow<'_, [u8]>, Errno> {
         self.read(current_task)
+    }
+    fn open(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _file: &FileObject,
+        _current_task: &CurrentTask,
+    ) -> Result<(), Errno> {
+        Ok(())
     }
 }
 

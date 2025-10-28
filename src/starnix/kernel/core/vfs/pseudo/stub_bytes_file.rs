@@ -3,53 +3,47 @@
 // found in the LICENSE file.
 
 use crate::task::CurrentTask;
-use crate::vfs::FsNodeOps;
 use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps, SimpleFileNode};
-use starnix_sync::Mutex;
+use crate::vfs::{FileObject, FsNodeOps};
+use bstr::ByteSlice;
+use starnix_logging::BugRef;
+use starnix_sync::{FileOpsCore, Locked, Mutex};
 use starnix_uapi::auth::Capabilities;
 use starnix_uapi::errors::Errno;
 use std::borrow::Cow;
+use std::panic::Location;
+use std::sync::Arc;
 
-#[derive(Default)]
+#[derive(Clone)]
 pub struct StubBytesFile {
-    data: Mutex<Vec<u8>>,
+    data: Arc<Mutex<Vec<u8>>>,
+    bug: BugRef,
+    location: &'static Location<'static>,
 }
 
 impl StubBytesFile {
     #[track_caller]
-    pub fn new_node(message: &'static str, bug: starnix_logging::BugRef) -> impl FsNodeOps {
-        Self::new_node_with_data(message, bug, vec![])
+    pub fn new_node(bug: BugRef) -> impl FsNodeOps {
+        Self::new_node_with_data(bug, vec![])
     }
 
     #[track_caller]
-    pub fn new_node_with_data(
-        message: &'static str,
-        bug: starnix_logging::BugRef,
-        initial_data: impl Into<Vec<u8>>,
-    ) -> impl FsNodeOps {
-        let location = std::panic::Location::caller();
-        let file = BytesFile::new(StubBytesFile { data: Mutex::new(initial_data.into()) });
-        SimpleFileNode::new(move || {
-            starnix_logging::__track_stub_inner(bug, message, None, location);
-            Ok(file.clone())
-        })
+    pub fn new_node_with_data(bug: BugRef, initial_data: impl Into<Vec<u8>>) -> impl FsNodeOps {
+        let location = Location::caller();
+        let file = BytesFile::new(StubBytesFile {
+            data: Arc::new(Mutex::new(initial_data.into())),
+            bug,
+            location,
+        });
+        SimpleFileNode::new(move || Ok(file.clone()))
     }
 
     #[track_caller]
-    pub fn new_node_with_capabilities(
-        message: &'static str,
-        bug: starnix_logging::BugRef,
-        capabilities: Capabilities,
-    ) -> impl FsNodeOps {
-        let location = std::panic::Location::caller();
-        let file = BytesFile::new(Self::default());
-        SimpleFileNode::new_with_capabilities(
-            move || {
-                starnix_logging::__track_stub_inner(bug, message, None, location);
-                Ok(file.clone())
-            },
-            capabilities,
-        )
+    pub fn new_node_with_capabilities(bug: BugRef, capabilities: Capabilities) -> impl FsNodeOps {
+        let location = Location::caller();
+        let file =
+            BytesFile::new(StubBytesFile { data: Arc::new(Mutex::new(vec![])), bug, location });
+        SimpleFileNode::new_with_capabilities(move || Ok(file.clone()), capabilities)
     }
 }
 
@@ -60,5 +54,21 @@ impl BytesFileOps for StubBytesFile {
     }
     fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
         Ok(self.data.lock().clone().into())
+    }
+
+    fn open(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        file: &FileObject,
+        current_task: &CurrentTask,
+    ) -> Result<(), Errno> {
+        let path = file.name.path(current_task);
+        starnix_logging::__track_stub_inner(
+            self.bug,
+            path.to_str_lossy().as_ref(),
+            None,
+            self.location,
+        );
+        Ok(())
     }
 }
