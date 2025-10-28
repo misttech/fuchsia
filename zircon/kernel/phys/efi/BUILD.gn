@@ -125,6 +125,7 @@ source_set("main") {
       "stdout.cc",
     ]
     deps += [
+      ":page-size",
       "..:allocation",
       "..:main",
       "..:stdio",
@@ -162,6 +163,11 @@ source_set("protocol") {
   }
 }
 
+source_set("page-size") {
+  public = [ "include/phys/efi/page-size.h" ]
+  public_configs = [ ":includes" ]
+}
+
 if (is_efi) {
   source_set("file") {
     public = [ "include/phys/efi/file.h" ]
@@ -195,6 +201,7 @@ if (is_efi_toolchain) {
     public_deps = [
       ":file",
       ":main",
+      ":page-size",
       "..:boot-zbi",
       "..:symbolize",
       "//src/lib/zbitl",

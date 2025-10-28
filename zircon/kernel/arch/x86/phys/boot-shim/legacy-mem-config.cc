@@ -9,10 +9,9 @@
 #include <zircon/assert.h>
 
 #include <efi/boot-services.h>
+#include <phys/efi/page-size.h>
 
 namespace {
-
-constexpr size_t kEfiPageSize = 0x1000;
 
 // Ensure the given payload is a valid EFI memory table.
 //

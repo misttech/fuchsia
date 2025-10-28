@@ -12,6 +12,7 @@
 #include <span>
 
 #include <efi/boot-services.h>
+#include <phys/efi/page-size.h>
 
 namespace boot_shim {
 namespace {

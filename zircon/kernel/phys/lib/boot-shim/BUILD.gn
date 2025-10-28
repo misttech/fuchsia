@@ -94,6 +94,7 @@ static_library("boot-shim") {
     "//sdk/lib/fit",
     "//zircon/kernel/lib/acpi_lite",
     "//zircon/kernel/lib/boot-options",
+    "//zircon/kernel/phys/efi:page-size",
     "//zircon/kernel/phys/lib/memalloc",
     "//zircon/system/ulib/explicit-memory",
     "//zircon/system/ulib/fbl",

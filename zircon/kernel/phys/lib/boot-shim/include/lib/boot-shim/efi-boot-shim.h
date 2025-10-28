@@ -31,8 +31,6 @@
 
 namespace boot_shim {
 
-constexpr size_t kEfiPageSize = 4096;
-
 // boot_shim::EfiBootShim<...> provides a template class (or base class)
 // based on boot_shim::BootShim<...> for building UEFI-based boot shims.
 // The shim always includes a standard suite of UEFI-based items, listed in

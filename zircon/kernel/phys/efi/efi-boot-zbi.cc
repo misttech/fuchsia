@@ -14,7 +14,7 @@
 
 #include <ktl/utility.h>
 #include <phys/allocation.h>
-#include <phys/efi/main.h>
+#include <phys/efi/page-size.h>
 #include <phys/symbolize.h>
 #include <phys/zbi.h>
 

@@ -14,6 +14,7 @@
 #include <efi/boot-services.h>
 #include <fbl/algorithm.h>
 #include <phys/efi/main.h>
+#include <phys/efi/page-size.h>
 
 // The phys Allocation type is supported in EFI via AllocatePages/FreePages.
 

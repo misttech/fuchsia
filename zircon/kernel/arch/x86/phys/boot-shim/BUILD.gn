@@ -83,8 +83,9 @@ source_set("legacy-mem-config") {
     "//zircon/system/ulib/zircon-internal",
   ]
 
+  deps = [ "//zircon/kernel/phys/efi:page-size" ]
   if (is_kernel) {
-    deps = [
+    deps += [
       "//zircon/kernel/lib/ktl",
       "//zircon/kernel/lib/libc",
     ]
