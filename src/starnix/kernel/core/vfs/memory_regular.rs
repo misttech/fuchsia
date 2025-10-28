@@ -448,14 +448,19 @@ pub fn new_memfd(
         MemFdTmpfs { tmpfs, mount }
     });
 
-    let fs_node = fs.tmpfs.root().node.create_tmpfile(
-        locked,
-        current_task,
-        &MountInfo::detached(),
-        mode!(IFREG, 0o600),
-        current_task.current_fscred(),
-        FsNodeLinkBehavior::Disallowed,
-    )?;
+    // Create the node as a kernel-internal operation, to skip the filesystem access-checks.
+    // TODO: https://fxbug.dev/455785957 - Validate whether any access-checks should be performed
+    // during "memfd" creation.
+    let fs_node = current_task.override_creds(security::creds_start_internal_operation, || {
+        fs.tmpfs.root().node.create_tmpfile(
+            locked,
+            current_task,
+            &MountInfo::detached(),
+            mode!(IFREG, 0o600),
+            current_task.current_fscred(),
+            FsNodeLinkBehavior::Disallowed,
+        )
+    })?;
     fs_node.write_guard_state.lock().enable_sealing(seals);
     if use_ashmem_workaround {
         security::fs_node_memfd_ashmem_workaround(current_task, &fs_node);
