@@ -43,7 +43,6 @@
     use: [
         {
             protocol: [
-                "fuchsia.fshost.Admin",
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.paver.Paver",
             ],
