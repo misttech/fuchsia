@@ -42,6 +42,7 @@ pub enum Feature {
     Thermal,
     HvdcpOpti,
     Wifi,
+    AdditionalMounts,
 }
 
 /// Error returned when a feature is not recognized.
@@ -131,6 +132,7 @@ mod test {
             (Feature::Thermal, "thermal"),
             (Feature::HvdcpOpti, "hvdcp_opti"),
             (Feature::Wifi, "wifi"),
+            (Feature::AdditionalMounts, "additional_mounts"),
         ] {
             let string = feature.to_string();
             assert_eq!(string.as_str(), expected_str);

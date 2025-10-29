@@ -117,6 +117,8 @@ pub struct Features {
     pub android_bootreason: bool,
 
     pub hvdcp_opti: bool,
+
+    pub additional_mounts: Option<Vec<String>>,
 }
 
 #[derive(Default, Debug, PartialEq)]
@@ -176,6 +178,7 @@ impl Features {
                 thermal,
                 android_bootreason,
                 hvdcp_opti,
+                additional_mounts,
             } => {
                 inspect_node.record_bool("selinux", selinux.enabled);
                 inspect_node.record_bool("ashmem", *ashmem);
@@ -250,6 +253,8 @@ impl Features {
                     inspect_node
                         .record_string("mlock_pin_flavor", format!("{:?}", mlock_pin_flavor));
                     inspect_node.record_bool("wifi", *wifi);
+                    inspect_node
+                        .record_string("additional_mounts", format!("{:?}", additional_mounts));
                 });
             }
         });
@@ -272,6 +277,7 @@ pub fn parse_features(
         mlock_pin_flavor,
         selinux_exceptions,
         ui_visual_debugging_level,
+        additional_mounts,
     } = &start_info.config;
 
     let mut features = Features::default();
@@ -382,6 +388,9 @@ pub fn parse_features(
             (Feature::Thermal, _) => features.thermal = true,
             (Feature::HvdcpOpti, _) => features.hvdcp_opti = true,
             (Feature::Wifi, _) => features.kernel.wifi = true,
+            (Feature::AdditionalMounts, _) => {
+                features.additional_mounts = Some(additional_mounts.clone())
+            }
         };
     }
 

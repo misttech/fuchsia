@@ -90,5 +90,19 @@
             // See https://fxbug.dev/379782290 for context.
             availability: "transitional",
         },
+        {
+            config: "fuchsia.starnix.config.container.AdditionalMounts",
+            key: "additional_mounts",
+            type: "vector",
+            element: {
+                type: "string",
+                max_size: 1024,
+            },
+            max_count: 128,
+            default: [],
+
+            // See https://fxbug.dev/379782290 for context.
+            availability: "transitional",
+        },
     ],
 }
