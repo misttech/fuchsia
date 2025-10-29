@@ -9,6 +9,7 @@
 #include <lib/trace-engine/types.h>
 
 #include <filesystem>
+#include <memory>
 #include <string_view>
 #include <utility>
 #include <variant>
@@ -84,8 +85,8 @@ std::string CleanString(std::string_view str) {
   return result;
 }
 
-void WriteProcessInfo(rapidjson::Writer<rapidjson::FileWriteStream>& writer, zx_koid_t process_koid,
-                      const std::string& name) {
+template <typename WriteObject>
+void WriteProcessInfo(WriteObject& writer, zx_koid_t process_koid, const std::string& name) {
   writer.StartObject();
   writer.Key("ph");
   writer.String("p");
@@ -101,8 +102,9 @@ void WriteProcessInfo(rapidjson::Writer<rapidjson::FileWriteStream>& writer, zx_
   writer.EndObject();
 }
 
-void WriteThreadInfo(rapidjson::Writer<rapidjson::FileWriteStream>& writer, zx_koid_t process_koid,
-                     zx_koid_t thread_koid, const std::string& name) {
+template <typename WriteObject>
+void WriteThreadInfo(WriteObject& writer, zx_koid_t process_koid, zx_koid_t thread_koid,
+                     const std::string& name) {
   writer.StartObject();
   writer.Key("ph");
   writer.String("t");
@@ -117,10 +119,107 @@ void WriteThreadInfo(rapidjson::Writer<rapidjson::FileWriteStream>& writer, zx_k
 
 }  // namespace
 
+class ChromiumExporter::SystemEventsWriter {
+ public:
+  virtual ~SystemEventsWriter() = default;
+  virtual void Start() = 0;
+  virtual void Stop() = 0;
+  virtual void ExportProcessInfo(zx_koid_t process_koid, const std::string& name) = 0;
+  virtual void ExportThreadInfo(zx_koid_t process_koid, zx_koid_t thread_koid,
+                                const std::string& name) = 0;
+  virtual void ExportSchedulerEvent(const trace::Record::SchedulerEvent& scheduler_event,
+                                    double tick_scale) = 0;
+
+ protected:
+  SystemEventsWriter() = default;
+};
+
+// Supports conversion to the standard Chromium JSON trace format, in which scheduler, process and
+// thread information is under a top-level field named `systemTraceEvents`.
+class InlineSystemEventsWriter : public ChromiumExporter::SystemEventsWriter {
+ public:
+  explicit InlineSystemEventsWriter(rapidjson::Writer<rapidjson::FileWriteStream>& writer)
+      : writer_(writer) {}
+  ~InlineSystemEventsWriter() override = default;
+
+  void Start() override {
+    writer_.Key("systemTraceEvents");
+    writer_.StartObject();
+    writer_.Key("type");
+    writer_.String("fuchsia");
+    writer_.Key("events");
+    writer_.StartArray();
+  }
+
+  void Stop() override {
+    writer_.EndArray();
+    writer_.EndObject();  // Finishes systemTraceEvents
+  }
+
+  void ExportProcessInfo(zx_koid_t process_koid, const std::string& name) override {
+    WriteProcessInfo(writer_, process_koid, name);
+  }
+
+  void ExportThreadInfo(zx_koid_t process_koid, zx_koid_t thread_koid,
+                        const std::string& name) override {
+    WriteThreadInfo(writer_, process_koid, thread_koid, name);
+  }
+  void ExportSchedulerEvent(const trace::Record::SchedulerEvent& scheduler_event,
+                            double tick_scale) override;
+
+ private:
+  rapidjson::Writer<rapidjson::FileWriteStream>& writer_;
+};
+
+// Emits scheduler, process and thread information into a separate, jsonlines-formatted file.
+class SplitSystemEventsWriter : public ChromiumExporter::SystemEventsWriter {
+ public:
+  explicit SplitSystemEventsWriter(const std::filesystem::path& out_path)
+      : system_trace_events_fp_(std::fopen(out_path.c_str(), "wb")) {}
+  ~SplitSystemEventsWriter() override { std::fclose(system_trace_events_fp_); }
+  void Start() override {}
+  void Stop() override {}
+
+  void ExportProcessInfo(zx_koid_t process_koid, const std::string& name) override {
+    rapidjson::StringBuffer buffer;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+    WriteProcessInfo(writer, process_koid, name);
+    fprintf(system_trace_events_fp_, "%s\n", buffer.GetString());
+  }
+
+  void ExportThreadInfo(zx_koid_t process_koid, zx_koid_t thread_koid,
+                        const std::string& name) override {
+    rapidjson::StringBuffer buffer;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+    WriteThreadInfo(writer, process_koid, thread_koid, name);
+    fprintf(system_trace_events_fp_, "%s\n", buffer.GetString());
+  }
+
+  // Defined below so it can reference WriteSchedulerEvent().
+  void ExportSchedulerEvent(const trace::Record::SchedulerEvent& scheduler_event,
+                            double tick_scale) override;
+
+ private:
+  FILE* system_trace_events_fp_;
+};
+
 ChromiumExporter::ChromiumExporter(const std::filesystem::path& out_path)
     : fp_(std::fopen(out_path.c_str(), "wb")),
       wrapper_(fp_, write_buffer_, sizeof(write_buffer_)),
-      writer_(wrapper_) {
+      writer_(wrapper_),
+      system_events_writer_(std::make_unique<InlineSystemEventsWriter>(writer_)) {
+  Start();
+}
+
+// This constructor doesn't delegate to the single-argument version, because doing so would mean
+// that, during Start(), `system_events_writer_` would point to the wrong file. That's fine _today_,
+// as no system trace event data is emitted during Start(), but nothing enforces that.
+ChromiumExporter::ChromiumExporter(const std::filesystem::path& out_path,
+                                   const std::filesystem::path& system_trace_out_path)
+    : fp_(std::fopen(out_path.c_str(), "wb")),
+      wrapper_(fp_, write_buffer_, sizeof(write_buffer_)),
+      writer_(wrapper_),
+      system_events_writer_(std::make_unique<SplitSystemEventsWriter>(system_trace_out_path)) {
   Start();
 }
 
@@ -139,21 +238,16 @@ void ChromiumExporter::Start() {
 
 void ChromiumExporter::StartSchedulerPass() {
   writer_.EndArray();
-  writer_.Key("systemTraceEvents");
-  writer_.StartObject();
-  writer_.Key("type");
-  writer_.String("fuchsia");
-  writer_.Key("events");
-  writer_.StartArray();
+  system_events_writer_->Start();
 
   for (const auto& pair : processes_) {
-    WriteProcessInfo(writer_, pair.first, pair.second);
+    system_events_writer_->ExportProcessInfo(pair.first, pair.second);
   }
 
   for (const auto& process_threads : threads_) {
     const zx_koid_t process_koid = process_threads.first;
     for (const auto& thread : process_threads.second) {
-      WriteThreadInfo(writer_, process_koid, thread.first, thread.second);
+      system_events_writer_->ExportThreadInfo(process_koid, thread.first, thread.second);
     }
   }
   pass_ = Pass::kScheduler;
@@ -163,9 +257,8 @@ void ChromiumExporter::Stop() {
   if (!OnSchedulerPass()) {
     ChromiumExporter::StartSchedulerPass();
   }
-  writer_.EndArray();
-  writer_.EndObject();  // Finishes systemTraceEvents
-  writer_.EndObject();  // Finishes StartObject() begun in Start()
+  system_events_writer_->Stop();  // Finishes systemTraceEvents
+  writer_.EndObject();            // Finishes StartObject() begun in Start()
 }
 
 void ChromiumExporter::ExportRecord(const trace::Record& record) {
@@ -415,8 +508,9 @@ void ChromiumExporter::ExportMetadata(const trace::Record::Metadata& metadata) {
 }
 
 namespace {
-void WriteSchedulerEvent(rapidjson::Writer<rapidjson::FileWriteStream>& writer,
-                         const trace::Record::SchedulerEvent& scheduler_event, double tick_scale) {
+template <typename WriteObject>
+void WriteSchedulerEvent(WriteObject& writer, const trace::Record::SchedulerEvent& scheduler_event,
+                         double tick_scale) {
   switch (scheduler_event.type()) {
     case trace::SchedulerEventType::kLegacyContextSwitch: {
       auto& context_switch = scheduler_event.legacy_context_switch();
@@ -572,8 +666,21 @@ void WriteSchedulerEvent(rapidjson::Writer<rapidjson::FileWriteStream>& writer,
 }
 }  // namespace
 
+void InlineSystemEventsWriter::ExportSchedulerEvent(
+    const trace::Record::SchedulerEvent& scheduler_event, double tick_scale) {
+  WriteSchedulerEvent(writer_, scheduler_event, tick_scale);
+}
+
+void SplitSystemEventsWriter::ExportSchedulerEvent(
+    const trace::Record::SchedulerEvent& scheduler_event, double tick_scale) {
+  rapidjson::StringBuffer buffer;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+  WriteSchedulerEvent(writer, scheduler_event, tick_scale);
+  fprintf(system_trace_events_fp_, "%s\n", buffer.GetString());
+}
+
 void ChromiumExporter::ExportSchedulerEvent(const trace::Record::SchedulerEvent& scheduler_event) {
-  WriteSchedulerEvent(writer_, scheduler_event, tick_scale_);
+  system_events_writer_->ExportSchedulerEvent(scheduler_event, tick_scale_);
 }
 
 void ChromiumExporter::ExportBlob(const trace::LargeRecordData::Blob& data) {

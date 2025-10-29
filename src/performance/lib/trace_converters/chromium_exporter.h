@@ -6,6 +6,7 @@
 #define SRC_PERFORMANCE_LIB_TRACE_CONVERTERS_CHROMIUM_EXPORTER_H_
 
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -19,7 +20,11 @@ namespace tracing {
 
 class ChromiumExporter {
  public:
+  class SystemEventsWriter;
+
   explicit ChromiumExporter(const std::filesystem::path& out_path);
+  ChromiumExporter(const std::filesystem::path& out_path,
+                   const std::filesystem::path& system_trace_out_path);
   ~ChromiumExporter();
 
   void ExportRecord(const trace::Record& record);
@@ -54,6 +59,8 @@ class ChromiumExporter {
   FILE* fp_;
   rapidjson::FileWriteStream wrapper_;
   rapidjson::Writer<rapidjson::FileWriteStream> writer_;
+
+  std::unique_ptr<SystemEventsWriter> system_events_writer_;
 
   // Scale factor to get to microseconds.
   // By default ticks are in nanoseconds.
