@@ -78,6 +78,7 @@ from argparse import (
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 from os import environ
+from os.path import relpath
 from pathlib import Path
 from subprocess import CalledProcessError, run
 from sys import argv, stderr
@@ -219,13 +220,13 @@ def generate_target_action(
     # directory instead of the directory itself.
     copy_action = CopyAction(
         srcs=sorted(
-            ActionPath(f"{m.rustdoc_out_dir.relative_to(build_dir)}/.")
+            ActionPath(f"{relpath(m.rustdoc_out_dir, build_dir)}/.")
             for m in meta
         ),
-        dst=ActionPath(dst.relative_to(build_dir)),
+        dst=ActionPath(relpath(dst, build_dir)),
     )
     rustdoc_action = RustdocAction(
-        argfile=ActionPath(argfile.relative_to(build_dir))
+        argfile=ActionPath(relpath(argfile, build_dir))
     )
     if build and len(meta) > 0:
         build_action = BuildAction(labels=sorted(m.rustdoc_label for m in meta))
@@ -501,8 +502,8 @@ def generate_action(meta: list[Metadata], args: Namespace) -> Action:
     )
     zip_action = (
         ZipAction(
-            zip_from=ActionPath(doc_out_dir.relative_to(args.build_dir)),
-            zip_to=ActionPath(args.zip_to.relative_to(args.build_dir)),
+            zip_from=ActionPath(relpath(doc_out_dir, args.build_dir)),
+            zip_to=ActionPath(relpath(args.zip_to, args.build_dir)),
         )
         if args.zip_to
         else None
@@ -522,8 +523,8 @@ def generate_action(meta: list[Metadata], args: Namespace) -> Action:
             os.path.relpath(sys.executable, start=args.build_dir)
         ),
         args=[
-            ActionPath(executable.relative_to(args.build_dir)),
-            ActionPath(doc_out_dir.relative_to(args.build_dir)),
+            ActionPath(relpath(executable, args.build_dir)),
+            ActionPath(relpath(doc_out_dir, args.build_dir)),
         ],
     )
     return Action(
