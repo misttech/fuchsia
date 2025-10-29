@@ -1019,7 +1019,9 @@ where
         (ip_sock.local_ip().clone().into(), local_port),
         (ip_sock.remote_ip().clone(), remote_port),
     );
-    let timestamp_offset = timestamp_offset.generate::<SocketIpAddr<WireI::Addr>, NonZeroU16>(
+    // TODO(https://fxbug.dev/360401604): Use this when initializing state for
+    // the timestamp option.
+    let _timestamp_offset = timestamp_offset.generate::<SocketIpAddr<WireI::Addr>, NonZeroU16>(
         bindings_ctx.now(),
         (ip_sock.local_ip().clone().into(), local_port),
         (ip_sock.remote_ip().clone(), remote_port),
@@ -1045,7 +1047,6 @@ where
 
     let mut state = State::Listen(Closed::<Initial>::listen(
         isn,
-        timestamp_offset,
         buffer_sizes.clone(),
         device_mss,
         Mss::default::<WireI>(),
