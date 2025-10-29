@@ -10,6 +10,7 @@ use ffx_target::Resolution;
 use fho::TryFromEnv;
 use std::fmt;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::OnceCell;
 
 mod injection;
@@ -42,14 +43,22 @@ impl fmt::Debug for ConnectionBehavior {
 }
 
 #[derive(Clone, Default)]
-pub struct FhoTargetEnvironment {
-    // Wrap real FhoTargetEnvironment in Arc because fho_env::get_interface() requires
-    // our interface to be cloneable.
-    inner: Arc<FhoTargetEnvironmentInner>,
-    want_direct: bool,
+pub struct FhoTargetEnvironment(Arc<FhoTargetEnvironmentOuter>);
+
+#[derive(Default)]
+pub struct FhoTargetEnvironmentOuter {
+    inner: FhoTargetEnvironmentInner,
+    want_direct: AtomicBool,
 }
 
-impl FhoTargetEnvironment {
+impl std::ops::Deref for FhoTargetEnvironment {
+    type Target = FhoTargetEnvironmentOuter;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl FhoTargetEnvironmentOuter {
     /// This attempts to wrap errors around a potential failure in the underlying connection being
     /// used to facilitate FIDL protocols. This should NOT be used by developers, this is intended
     /// to be used outside of the scope of an ffx subtool (outside of the `main` function).
@@ -59,8 +68,13 @@ impl FhoTargetEnvironment {
 
     /// Specify that we want a direct connection if we ever make that connection. Used when
     /// an FfxTool specifies '#[direct]', but may not actually need a connection at all
-    pub fn set_direct(&mut self) {
-        self.want_direct = true;
+    pub fn set_direct(&self) {
+        self.want_direct.store(true, Ordering::Relaxed);
+    }
+
+    #[cfg(test)]
+    pub fn get_direct(&self) -> bool {
+        self.want_direct.load(Ordering::Acquire)
     }
 
     /// Initialize either a daemon connection or a direct connection,
@@ -73,7 +87,10 @@ impl FhoTargetEnvironment {
         &self,
         context: &EnvironmentContext,
     ) -> Result<Arc<ConnectionBehavior>> {
-        if self.want_direct || context.is_strict() || context.get_direct_connection_mode() {
+        if self.want_direct.load(Ordering::Acquire)
+            || context.is_strict()
+            || context.get_direct_connection_mode()
+        {
             self.init_direct_connection_behavior(context).await
         } else {
             self.init_daemon_connection_behavior(context).await
@@ -350,7 +367,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_connection_behavior_correct_with_set_direct() {
         let env = test_env().runtime_config("target.default", "127.0.0.1").build().unwrap();
-        let mut target_env = FhoTargetEnvironment::default();
+        let target_env = FhoTargetEnvironment::default();
         target_env.set_direct();
         let behavior = target_env.init_connection_behavior(&env.context).await.unwrap();
         assert!(matches!(*behavior, ConnectionBehavior::DirectConnector(_)));
@@ -378,5 +395,16 @@ mod tests {
         let returned_behavior =
             target_env.init_direct_connection_behavior(&env.context).await.unwrap();
         assert!(matches!(*returned_behavior, ConnectionBehavior::DaemonConnector(_)));
+    }
+
+    #[fuchsia::test]
+    async fn set_behavior_persists() {
+        let env = test_env().build().unwrap();
+        let fho_env = fho::FhoEnvironment::new_with_args(&env.context, &["some", "test"]);
+        let target_env = target_interface(&fho_env);
+        assert_eq!(target_env.get_direct(), false);
+        target_env.set_direct();
+        let target_env = target_interface(&fho_env);
+        assert_eq!(target_env.get_direct(), true);
     }
 }
