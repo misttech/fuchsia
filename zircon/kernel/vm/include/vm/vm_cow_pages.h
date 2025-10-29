@@ -1169,16 +1169,6 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   [[nodiscard]] zx::result<AddPageTransaction> BeginAddPageWithSlotLocked(
       uint64_t offset, VmPageOrMarkerRef slot, CanOverwriteSlot overwrite) TA_REQ(lock());
 
-  // Flag for CompleteAddPageLocked to allow the caller to state whether they known, for certain,
-  // any properties of the visible parent content.
-  enum class ParentContent : bool {
-    // The caller either does not know, or does not wish to make any claims, about the visible
-    // parent content. This is always a safe choice for this flag.
-    Unknown = false,
-    // The caller knows for certain that the visible parent content was the common zero page. This
-    // cannot be checked and it is completely up to the caller to not make a mistake.
-    Zero = true,
-  };
   // Completes an add page transaction that had been started by inserting the provided page |p| into
   // the slot looked up in |transaction|. Once complete the transaction must not be used in any
   // other complete or cancel calls.
@@ -1187,15 +1177,11 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   //
   // This operation unmaps the corresponding offset from any existing mappings, unless |deferred| is
   // a |nullptr|, in which case it will skip updating mappings.
-  // If the caller *knows* that the there was no visible parent content that was no the shared zero
-  // page then ParentContent::Zero can be passed in to achieve more optimal unmaps. This method has
-  // no way to check for the correctness of that claim, so unless certain ParentContent::Unknown
-  // should be passed.
   //
   // Any previous content in the slot is returned and must be dealt with by the caller.
   [[nodiscard]] VmPageOrMarker CompleteAddPageLocked(AddPageTransaction& transaction,
-                                                     VmPageOrMarker&& p, ParentContent parent,
-                                                     DeferredOps* deferred) TA_REQ(lock());
+                                                     VmPageOrMarker&& p, DeferredOps* deferred)
+      TA_REQ(lock());
 
   // Similar to |CompleteAddPageLocked| except a |vm_page_t| is provided that is assumed to not yet
   // be in the |OBJECT| state, this page may also be optionally zeroed.
