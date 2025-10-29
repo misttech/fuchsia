@@ -2,21 +2,20 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/bazel/bazel_test_package_group.gni")
+import("//build/bazel/bazel_build_group.gni")
 
 group("drivers") {
   testonly = true
   deps = [
+    ":bazel_driver_packages",
     "bind/bindlib_codegen",
     "bind/fidl_bindlib_codegen",
     "driver_test_realm/sample_driver",
     "metadata:drivers",
     "power:drivers",
     "simple/dfv1:pkg",
-    "simple/dfv2:bazel_package",
     "simple/rust:pkg",
     "skeleton:pkg",
-    "template:bazel_package",
     "transport",
   ]
 }
@@ -29,5 +28,39 @@ group("hermetic_tests") {
     "power:hermetic_tests",
     "simple/rust:hermetic_tests",
     "transport:hermetic_tests",
+  ]
+}
+
+# Drivers built by ':bazel_drivers'
+group("bazel_driver_packages") {
+  visibility = [ ":drivers" ]
+  deps = [
+    ":driver_transport_child_pkg",
+    ":driver_transport_parent_pkg",
+    ":simple_driver",
+    ":template",
+  ]
+}
+
+bazel_build_group("bazel_drivers") {
+  driver_packages = [
+    {
+      bazel_target =
+          "//examples/drivers/transport/driver/v2:driver_transport_parent_pkg"
+      package_name = "driver_transport_parent_pkg"
+    },
+    {
+      bazel_target =
+          "//examples/drivers/transport/driver/v2:driver_transport_child_pkg"
+      package_name = "driver_transport_child_pkg"
+    },
+    {
+      bazel_target = "//examples/drivers/simple/dfv2:pkg"
+      package_name = "simple_driver"
+    },
+    {
+      bazel_target = "//examples/drivers/template:pkg"
+      package_name = "template"
+    },
   ]
 }

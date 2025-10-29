@@ -2,16 +2,4 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/bazel/drivers/bazel_driver_package.gni")
-
-bazel_driver_package("parent_bazel_package") {
-  bazel_target =
-      "//examples/drivers/transport/driver/v2:driver_transport_parent_pkg"
-  package_name = "driver_transport_parent_pkg"
-}
-
-bazel_driver_package("child_bazel_package") {
-  bazel_target =
-      "//examples/drivers/transport/driver/v2:driver_transport_child_pkg"
-  package_name = "driver_transport_child_pkg"
-}
+# These targets are included in GN via //examples/drivers:bazel_drivers

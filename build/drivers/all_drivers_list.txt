@@ -5,10 +5,10 @@
 //examples/drivers/power/cpp:driver
 //examples/drivers/power/rust:driver
 //examples/drivers/simple/dfv1:driver
-//examples/drivers/simple/dfv2:bazel_package.bazel_build
+BAZEL:@//examples/drivers/simple/dfv2:pkg
 //examples/drivers/simple/rust:driver
 //examples/drivers/skeleton:driver
-//examples/drivers/template:bazel_package.bazel_build
+BAZEL:@//examples/drivers/template:pkg
 //examples/drivers/transport/banjo/v1:child_driver
 //examples/drivers/transport/banjo/v1:parent_driver
 //examples/drivers/transport/banjo/v2:child_driver
@@ -17,8 +17,8 @@
 //examples/drivers/transport/driver/rust_next/parent:driver
 //examples/drivers/transport/driver/v1:child_driver
 //examples/drivers/transport/driver/v1:parent_driver
-//examples/drivers/transport/driver/v2:child_bazel_package.bazel_build
-//examples/drivers/transport/driver/v2:parent_bazel_package.bazel_build
+BAZEL:@//examples/drivers/transport/driver/v2:driver_transport_child_pkg
+BAZEL:@//examples/drivers/transport/driver/v2:driver_transport_parent_pkg
 //examples/drivers/transport/zircon/rust/child:driver
 //examples/drivers/transport/zircon/rust/parent:driver
 //examples/drivers/transport/zircon/rust_next/child:driver
