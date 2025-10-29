@@ -12,8 +12,9 @@ use std::sync::Arc;
 use {async_channel as mpmc, fuchsia_async as fasync};
 
 use crate::experimental::clock::{Timed, Timestamp};
-use crate::experimental::series::statistic::{FoldError, Metadata, Sample};
-use crate::experimental::series::{SerializedBuffer, TimeMatrixFold, TimeMatrixTick};
+use crate::experimental::series::interpolation::InterpolationKind;
+use crate::experimental::series::statistic::{FoldError, Metadata, SerialStatistic};
+use crate::experimental::series::{SerializedBuffer, TimeMatrix, TimeMatrixFold, TimeMatrixTick};
 use crate::experimental::vec1::Vec1;
 
 // TODO(https://fxbug.dev/375489301): It is not possible to inject a mock time matrix into this
@@ -25,6 +26,7 @@ use crate::experimental::vec1::Vec1;
 /// The client end can be used to instrument and send a [`TimeMatrix`] to the server. The server
 /// end must be polled to incorporate and interpolate time matrices.
 ///
+/// [`Node`]: fuchsia_inspect::Node
 /// [`TimeMatrix`]: crate::experimental::series::TimeMatrix
 pub fn serve_time_matrix_inspection(
     node: InspectNode,
@@ -88,19 +90,19 @@ pub trait ServedTimeMatrix: TimeMatrixTick + Send {
     fn fold_buffered_samples(&mut self) -> Result<(), FoldError>;
 }
 
-pub struct BufferedSampler<M>
+pub struct BufferedSampler<T, M>
 where
-    M: TimeMatrixFold,
+    M: TimeMatrixFold<T>,
 {
-    receiver: mpmc::Receiver<Timed<Sample<M::Statistic>>>,
+    receiver: mpmc::Receiver<Timed<T>>,
     matrix: M,
 }
 
-impl<M> BufferedSampler<M>
+impl<T, M> BufferedSampler<T, M>
 where
-    M: TimeMatrixFold,
+    M: TimeMatrixFold<T>,
 {
-    pub fn from_time_matrix(matrix: M) -> (mpmc::Sender<Timed<Sample<M::Statistic>>>, Self) {
+    pub fn from_time_matrix(matrix: M) -> (mpmc::Sender<Timed<T>>, Self) {
         /// The buffer capacity of the MPMC channel through which timed samples are sent to
         /// `BufferedSampler`s.
         const TIMED_SAMPLE_SENDER_BUFFER_SIZE: usize = 1024;
@@ -110,9 +112,9 @@ where
     }
 }
 
-impl<M> TimeMatrixTick for BufferedSampler<M>
+impl<T, M> TimeMatrixTick for BufferedSampler<T, M>
 where
-    M: TimeMatrixFold,
+    M: TimeMatrixFold<T>,
 {
     fn tick(&mut self, timestamp: Timestamp) -> Result<(), FoldError> {
         self.matrix.tick(timestamp)
@@ -126,10 +128,10 @@ where
     }
 }
 
-impl<M> ServedTimeMatrix for BufferedSampler<M>
+impl<T, M> ServedTimeMatrix for BufferedSampler<T, M>
 where
-    M: Send + TimeMatrixFold,
-    Sample<M::Statistic>: Send,
+    T: Send,
+    M: TimeMatrixFold<T> + Send,
 {
     fn fold_buffered_samples(&mut self) -> Result<(), FoldError> {
         let mut errors = vec![];
@@ -161,14 +163,17 @@ pub trait InspectSender {
     ///
     /// [`inspect_time_matrix_with_metadata`]: crate::experimental::serve::TimeMatrixClient::inspect_time_matrix_with_metadata
     /// [`TimeMatrix`]: crate::experimental::series::TimeMatrix
-    fn inspect_time_matrix<M>(
+    fn inspect_time_matrix<F, P>(
         &self,
         name: impl Into<String>,
-        matrix: M,
-    ) -> InspectedTimeMatrix<Sample<M::Statistic>>
+        matrix: TimeMatrix<F, P>,
+    ) -> InspectedTimeMatrix<F::Sample>
     where
-        M: 'static + Send + TimeMatrixFold,
-        Sample<M::Statistic>: Send;
+        TimeMatrix<F, P>: 'static + TimeMatrixFold<F::Sample> + Send,
+        Metadata<F>: 'static + Send + Sync,
+        F: SerialStatistic<P>,
+        F::Sample: Send,
+        P: InterpolationKind;
 
     /// Sends a [`TimeMatrix`] to the client's inspection server.
     ///
@@ -176,17 +181,20 @@ pub trait InspectSender {
     /// periodically interpolates the matrix and records data as needed. The returned
     /// [handle][`InspectedTimeMatrix`] can be used to fold samples into the matrix.
     ///
+    /// [`InspectedTimeMatrix`]: crate::experimental::serve::InspectedTimeMatrix
     /// [`TimeMatrix`]: crate::experimental::series::TimeMatrix
-    fn inspect_time_matrix_with_metadata<M>(
+    fn inspect_time_matrix_with_metadata<F, P>(
         &self,
         name: impl Into<String>,
-        matrix: M,
-        metadata: impl Into<Metadata<M::Statistic>>,
-    ) -> InspectedTimeMatrix<Sample<M::Statistic>>
+        matrix: TimeMatrix<F, P>,
+        metadata: impl Into<Metadata<F>>,
+    ) -> InspectedTimeMatrix<F::Sample>
     where
-        M: 'static + Send + TimeMatrixFold,
-        Metadata<M::Statistic>: 'static + Send + Sync,
-        Sample<M::Statistic>: Send;
+        TimeMatrix<F, P>: 'static + TimeMatrixFold<F::Sample> + Send,
+        Metadata<F>: 'static + Send + Sync,
+        F: SerialStatistic<P>,
+        F::Sample: Send,
+        P: InterpolationKind;
 }
 
 type SharedTimeMatrix = Arc<AsyncMutex<dyn ServedTimeMatrix>>;
@@ -204,15 +212,18 @@ impl TimeMatrixClient {
         Self { sender: Arc::new(SyncMutex::new(sender)), node }
     }
 
-    fn inspect_and_record_with<M, R>(
+    fn inspect_and_record_with<F, P, R>(
         &self,
         name: impl Into<String>,
-        matrix: M,
+        matrix: TimeMatrix<F, P>,
         record: R,
-    ) -> InspectedTimeMatrix<Sample<M::Statistic>>
+    ) -> InspectedTimeMatrix<F::Sample>
     where
-        M: 'static + Send + TimeMatrixFold,
-        Sample<M::Statistic>: Send,
+        TimeMatrix<F, P>: 'static + TimeMatrixFold<F::Sample> + Send,
+        Metadata<F>: 'static + Send + Sync,
+        F: SerialStatistic<P>,
+        F::Sample: Send,
+        P: InterpolationKind,
         R: 'static + Clone + Fn(&InspectNode) + Send + Sync,
     {
         let name = name.into();
@@ -233,28 +244,33 @@ impl Clone for TimeMatrixClient {
 }
 
 impl InspectSender for TimeMatrixClient {
-    fn inspect_time_matrix<M>(
+    fn inspect_time_matrix<F, P>(
         &self,
         name: impl Into<String>,
-        matrix: M,
-    ) -> InspectedTimeMatrix<Sample<M::Statistic>>
+        matrix: TimeMatrix<F, P>,
+    ) -> InspectedTimeMatrix<F::Sample>
     where
-        M: 'static + Send + TimeMatrixFold,
-        Sample<M::Statistic>: Send,
+        TimeMatrix<F, P>: 'static + TimeMatrixFold<F::Sample> + Send,
+        Metadata<F>: 'static + Send + Sync,
+        F: SerialStatistic<P>,
+        F::Sample: Send,
+        P: InterpolationKind,
     {
         self.inspect_and_record_with(name, matrix, |_node| {})
     }
 
-    fn inspect_time_matrix_with_metadata<M>(
+    fn inspect_time_matrix_with_metadata<F, P>(
         &self,
         name: impl Into<String>,
-        matrix: M,
-        metadata: impl Into<Metadata<M::Statistic>>,
-    ) -> InspectedTimeMatrix<Sample<M::Statistic>>
+        matrix: TimeMatrix<F, P>,
+        metadata: impl Into<Metadata<F>>,
+    ) -> InspectedTimeMatrix<F::Sample>
     where
-        M: 'static + Send + TimeMatrixFold,
-        Metadata<M::Statistic>: 'static + Send + Sync,
-        Sample<M::Statistic>: Send,
+        TimeMatrix<F, P>: 'static + TimeMatrixFold<F::Sample> + Send,
+        Metadata<F>: 'static + Send + Sync,
+        F: SerialStatistic<P>,
+        F::Sample: Send,
+        P: InterpolationKind,
     {
         let metadata = Arc::new(metadata.into());
         self.inspect_and_record_with(name, matrix, move |node| {
@@ -335,14 +351,12 @@ fn record_lazy_time_matrix_with<F>(
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use diagnostics_assertions::{AnyBytesProperty, assert_data_tree};
     use fuchsia_async as fasync;
     use futures::task::Poll;
     use std::mem;
     use std::pin::pin;
 
-    use crate::experimental::series::TimeMatrix;
     use crate::experimental::series::interpolation::LastSample;
     use crate::experimental::series::metadata::BitSetMap;
     use crate::experimental::series::statistic::Union;

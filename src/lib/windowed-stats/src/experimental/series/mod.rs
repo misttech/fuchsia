@@ -29,7 +29,7 @@ use crate::experimental::series::interpolation::{
 };
 use crate::experimental::series::metadata::{BitSetIndex, Metadata};
 use crate::experimental::series::statistic::{
-    FoldError, PostAggregation, Sample, SerialStatistic, Statistic,
+    FoldError, PostAggregation, SerialStatistic, Statistic,
 };
 
 pub use crate::experimental::series::buffer::Capacity;
@@ -40,9 +40,8 @@ pub use crate::experimental::series::interval::{SamplingInterval, SamplingProfil
 /// This trait provides tick operations for `[TimeMatrix`] types. Ticking a [`TimeMatrix`] causes
 /// sample interpolation within and aggregation propagation across [`SamplingInterval`]s.
 ///
-/// Importantly, this trait is trivially `dyn` compatible and requires no additional type
-/// information; it can be used to tick a [`TimeMatrix`] regardless of its input type parameters
-/// (sample, interpolation, etc.).
+/// Importantly, this trait is `dyn` compatible and type erased; it can be used to tick a
+/// [`TimeMatrix`] regardless of its input type parameters (sample type, interpolation type, etc.).
 ///
 /// See also the [`TimeMatrixFold`] subtrait.
 pub trait TimeMatrixTick {
@@ -58,11 +57,9 @@ pub trait TimeMatrixTick {
 /// aggregations and advances a [`TimeMatrix`] forward in time.
 ///
 /// See also the [`TimeMatrixTick`] supertrait. This trait supports both ticking and sampling, but
-/// is not completely type erased: the [`Statistic`] type must be specified in some contexts.
-pub trait TimeMatrixFold: TimeMatrixTick {
-    type Statistic: Statistic;
-
-    fn fold(&mut self, sample: Timed<Sample<Self::Statistic>>) -> Result<(), FoldError>;
+/// is not completely type erased: the sample input type parameter `T` is needed.
+pub trait TimeMatrixFold<T>: TimeMatrixTick {
+    fn fold(&mut self, sample: Timed<T>) -> Result<(), FoldError>;
 }
 
 /// A type that describes the semantics of data folded by `Sampler`s.
@@ -512,13 +509,11 @@ where
     }
 }
 
-impl<F, P> TimeMatrixFold for TimeMatrix<F, P>
+impl<F, P> TimeMatrixFold<F::Sample> for TimeMatrix<F, P>
 where
     F: SerialStatistic<P>,
     P: InterpolationKind,
 {
-    type Statistic = F;
-
     fn fold(&mut self, sample: Timed<F::Sample>) -> Result<(), FoldError> {
         let (timestamp, sample) = sample.into();
         let tick = self.last.tick(timestamp, true)?;
@@ -560,17 +555,13 @@ mod tests {
     use crate::experimental::clock::{Timed, Timestamp};
     use crate::experimental::series::interpolation::{ConstantSample, LastSample};
     use crate::experimental::series::statistic::{
-        ArithmeticMean, LatchMax, Max, PostAggregation, Statistic, Sum, Transform, Union,
+        ArithmeticMean, LatchMax, Max, PostAggregation, Sum, Transform, Union,
     };
     use crate::experimental::series::{
         SamplingProfile, TimeMatrix, TimeMatrixFold, TimeMatrixTick,
     };
 
-    fn fold_and_interpolate_f32<M>(matrix: &mut M)
-    where
-        M: TimeMatrixFold,
-        M::Statistic: Statistic<Sample = f32>,
-    {
+    fn fold_and_interpolate_f32(matrix: &mut impl TimeMatrixFold<f32>) {
         matrix.fold(Timed::now(0.0)).unwrap();
         matrix.fold(Timed::now(1.0)).unwrap();
         matrix.fold(Timed::now(2.0)).unwrap();
