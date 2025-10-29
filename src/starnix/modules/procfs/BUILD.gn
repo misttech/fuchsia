@@ -47,11 +47,14 @@ rustc_library("procfs") {
 
   deps = [
     "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
+    "//sdk/fidl/fuchsia.hardware.power.suspend:fuchsia.hardware.power.suspend_rust",
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
     "//sdk/fidl/fuchsia.starnix.psi:fuchsia.starnix.psi_rust",
     "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_rust",
     "//sdk/rust/zx",
     "//src/connectivity/network/netlink",
+    "//src/lib/fdio/rust:fdio",
+    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/starnix/kernel/core",

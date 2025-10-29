@@ -282,6 +282,11 @@
             from: "#timekeeper",
             to: [ "#starnix_runner" ],
         },
+        {
+            service: "fuchsia.hardware.power.suspend.SuspendService",
+            from: "parent",
+            to: "#starnix_runner",
+        },
     ],
     expose: [
         {

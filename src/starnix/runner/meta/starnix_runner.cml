@@ -174,13 +174,10 @@
             service: [
                 "fuchsia.hardware.adb.Service",
                 "fuchsia.hardware.google.nanohub.StarnixDataChannelService",
+                "fuchsia.hardware.power.suspend.SuspendService",
+                "fuchsia.hardware.qcom.hvdcpopti.Service",
                 "fuchsia.hardware.qualcomm.fastrpc.SecureService",
             ],
-            from: "parent",
-            to: [ "#kernels" ],
-        },
-        {
-            service: "fuchsia.hardware.qcom.hvdcpopti.Service",
             from: "parent",
             to: [ "#kernels" ],
         },

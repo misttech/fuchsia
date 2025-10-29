@@ -92,6 +92,11 @@
             availability: "optional",
         },
         {
+            service: "fuchsia.hardware.power.suspend.SuspendService",
+            from: "parent",
+            availability: "optional",
+        },
+        {
             directory: "container_config",
             from: "parent",
             rights: [ "r*" ],
