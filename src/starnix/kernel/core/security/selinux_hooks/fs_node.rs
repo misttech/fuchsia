@@ -10,10 +10,7 @@ use super::{
     check_permission, current_task_state, fs_node_effective_sid_and_class, fs_node_ensure_class,
     fs_node_set_label_with_task, has_fs_node_permissions, permissions_from_flags, set_cached_sid,
 };
-use crate::TODO_DENY;
-use crate::security::selinux_hooks::{
-    has_fs_node_permissions_dontaudit, todo_has_fs_node_permissions,
-};
+use crate::security::selinux_hooks::has_fs_node_permissions_dontaudit;
 use crate::task::CurrentTask;
 use crate::vfs::{
     Anon, DirEntryHandle, FsNode, FsStr, FsString, PathBuilder, UnlinkKind, ValueOrSize, XattrOp,
@@ -995,15 +992,7 @@ pub(in crate::security) fn fs_node_permission(
     if !(permission_flags.contains(PermissionFlags::FOR_OPEN)
         || permission_flags.contains(PermissionFlags::ACCESS))
     {
-        return todo_has_fs_node_permissions(
-            TODO_DENY!("https://fxbug.dev/455782510", "Enforce check"),
-            &security_server.as_permission_check(),
-            current_task,
-            current_sid,
-            fs_node,
-            &permissions_from_flags(permission_flags, fs_node_class),
-            (&audit_context).into(),
-        );
+        return Ok(());
     }
 
     has_fs_node_permissions(
