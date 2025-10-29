@@ -498,7 +498,7 @@ pub(in crate::security) fn fs_node_init_anon(
     let sid = if is_private_node {
         // TODO: https://fxbug.dev/404773987 - Introduce a new `FsNode` labeling state for this?
         InitialSid::Unlabeled.into()
-    } else if security_server.has_policy() {
+    } else if current_task.kernel().security_state.state.as_ref().unwrap().has_policy() {
         let task_sid = current_task_state(current_task).lock().current_sid;
         security_server
             .as_permission_check()

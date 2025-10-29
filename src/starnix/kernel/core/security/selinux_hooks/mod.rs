@@ -40,7 +40,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::FileMode;
 use std::cell::Ref;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
 /// Rust cannot infer the permission type from an empty slice, so define an explicitly-typed empty
@@ -481,6 +481,7 @@ pub(super) fn kernel_init_security(options: String, exceptions: Vec<String>) -> 
         pending_file_systems: Mutex::default(),
         selinuxfs_null: OnceLock::default(),
         access_denial_count: AtomicU64::new(0u64),
+        has_policy: false.into(),
     }
 }
 
@@ -495,6 +496,9 @@ pub(super) struct KernelState {
     /// e.g. when initializing "overlayfs" node labels, based on the labels of the underlying nodes.
     pub(super) pending_file_systems: Mutex<IndexSet<WeakKey<FileSystem>>>,
 
+    /// True when the `server` has a policy loaded.
+    pub(super) has_policy: AtomicBool,
+
     /// Stashed reference to "/sys/fs/selinux/null" used for replacing inaccessible file descriptors
     /// with a null file.
     pub(super) selinuxfs_null: OnceLock<FileHandle>,
@@ -506,6 +510,10 @@ pub(super) struct KernelState {
 impl KernelState {
     pub(super) fn access_denial_count(&self) -> u64 {
         self.access_denial_count.load(Ordering::Acquire)
+    }
+
+    pub(super) fn has_policy(&self) -> bool {
+        self.has_policy.load(Ordering::Acquire)
     }
 }
 

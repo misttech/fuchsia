@@ -207,7 +207,7 @@ where
     D: Fn(C) -> R,
 {
     if let Some(state) = task.kernel().security_state.state.as_ref() {
-        if state.server.has_policy() { hook(context, &state.server) } else { default(context) }
+        if state.has_policy() { hook(context, &state.server) } else { default(context) }
     } else {
         default(context)
     }
@@ -369,7 +369,7 @@ pub fn file_system_init_security(
 pub fn file_system_post_init_security(kernel: &Kernel, file_system: &FileSystemHandle) {
     track_hook_duration!(c"security.hooks.file_system_post_init_security");
     if let Some(state) = &kernel.security_state.state {
-        if !state.server.has_policy() {
+        if !state.has_policy() {
             // TODO: https://fxbug.dev/367585803 - Revise locking to guard against a policy load
             // sneaking in, in-between `has_policy()` and this `insert()`.
             log_debug!("Queuing {} FileSystem for labeling", file_system.name());
@@ -1666,9 +1666,7 @@ pub fn sb_show_options(
 ) -> Result<(), Errno> {
     track_hook_duration!(c"security.hooks.sb_show_options");
     if let Some(state) = &kernel.security_state.state {
-        if state.server.has_policy() {
-            selinux_hooks::superblock::sb_show_options(&state.server, buf, mount)?;
-        }
+        selinux_hooks::superblock::sb_show_options(&state.server, buf, mount)?;
     }
     Ok(())
 }
@@ -2054,14 +2052,7 @@ where
     L: LockEqualOrBefore<FileOpsCore>,
 {
     track_hook_duration!(c"security.hooks.selinuxfs_policy_loaded");
-    if_selinux_else_with_context(
-        locked,
-        current_task,
-        |locked, security_server| {
-            selinux_hooks::selinuxfs::selinuxfs_policy_loaded(locked, security_server, current_task)
-        },
-        |_| panic!("selinuxfs_policy_loaded() without policy!"),
-    )
+    selinux_hooks::selinuxfs::selinuxfs_policy_loaded(locked, current_task)
 }
 
 /// Used by the "selinuxfs" module to access the SELinux administration API, if enabled.
@@ -2120,6 +2111,7 @@ pub mod testing {
                 pending_file_systems: Mutex::default(),
                 selinuxfs_null: OnceLock::default(),
                 access_denial_count: AtomicU64::new(0u64),
+                has_policy: false.into(),
             }),
         }
     }

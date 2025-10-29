@@ -9,6 +9,7 @@ use crate::vfs::FileHandle;
 use selinux::{InitialSid, SecurityPermission, SecurityServer};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::errors::Errno;
+use std::sync::atomic::Ordering;
 
 pub(in crate::security) fn selinuxfs_init_null(
     current_task: &CurrentTask,
@@ -34,12 +35,16 @@ pub(in crate::security) fn selinuxfs_init_null(
 /// initialization to be completed.
 pub(in crate::security) fn selinuxfs_policy_loaded<L>(
     locked: &mut Locked<L>,
-    security_server: &SecurityServer,
     current_task: &CurrentTask,
 ) where
     L: LockEqualOrBefore<FileOpsCore>,
 {
     let kernel_state = current_task.kernel().security_state.state.as_ref().unwrap();
+    let security_server = &kernel_state.server;
+    assert!(
+        security_server.get_binary_policy().is_some(),
+        "selinuxfs_policy_loaded() without policy"
+    );
 
     // Invoke `file_system_resolve_security()` on all pre-existing `FileSystem`s.
     // No new `FileSystem`s should be added to `pending_file_systems` after policy load.
@@ -57,6 +62,8 @@ pub(in crate::security) fn selinuxfs_policy_loaded<L>(
             });
         }
     }
+
+    kernel_state.has_policy.store(true, Ordering::Release);
 }
 
 /// Used by the "selinuxfs" module to perform checks on SELinux API file accesses.

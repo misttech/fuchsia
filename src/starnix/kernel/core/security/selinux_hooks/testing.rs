@@ -76,7 +76,7 @@ where
         let policy_bytes = HOOKS_TESTS_BINARY_POLICY.to_vec();
         security_server.set_enforcing(true);
         security_server.load_policy(policy_bytes).expect("policy load failed");
-        super::selinuxfs::selinuxfs_policy_loaded(locked, security_server, current_task);
+        crate::security::selinuxfs_policy_loaded(locked, current_task);
         callback(locked, current_task, security_server)
     })
 }
