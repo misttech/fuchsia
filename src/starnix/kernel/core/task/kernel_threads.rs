@@ -4,7 +4,7 @@
 
 use crate::execution::create_kernel_thread;
 use crate::task::dynamic_thread_spawner::DynamicThreadSpawner;
-use crate::task::{CurrentTask, Kernel, Task, ThreadGroup};
+use crate::task::{CurrentTask, DelayedReleaser, Kernel, Task, ThreadGroup};
 use fragile::Fragile;
 use fuchsia_async as fasync;
 use pin_project::pin_project;
@@ -220,6 +220,10 @@ where
     };
     let result = f(locked, &current_task);
     current_task.release(locked);
+
+    // Ensure that no releasables are registered after this point as we unwind the stack.
+    DelayedReleaser::finalize();
+
     Ok(result)
 }
 
