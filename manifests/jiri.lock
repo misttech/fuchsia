@@ -726,8 +726,8 @@
     },
     {
         "package": "fuchsia/tools/futility/linux-amd64",
-        "version": "git_revision:f81450147e05d39b1bd616e61a56d9b06a81b647",
-        "instance_id": "0dGLCNEr6QfjCWes9SLYhYdvd9xXvipxF1TdKp6EVJQC"
+        "version": "git_revision:c35f804aa6c61e3141468bc273e5707c4ff19a14",
+        "instance_id": "GWxkGe0-SbPJvWfzxjwwu75Lqlah9fJgswdS9AHLBvwC"
     },
     {
         "package": "fuchsia/tools/ninjatrace/linux-amd64",
