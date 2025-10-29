@@ -50,7 +50,7 @@ class ElfImage {
 
   using PublishDebugdataFunction = fit::inline_function<ktl::span<ktl::byte>(
       ktl::string_view sink_name, ktl::string_view vmo_name, ktl::string_view suffix,
-      size_t content_size)>;
+      size_t stream_size)>;
 
   using PrintPatchFunction = fit::inline_function<void(ktl::initializer_list<ktl::string_view>)>;
 
@@ -275,7 +275,7 @@ class ElfImage {
   // arguments.  That code exists in the module where PublishDebugdata is
   // called.  PublishSelf exists separately in each module and deals with
   // filling the buffer with the right per-module data.
-  using PublishSelfCallback = fit::inline_function<ktl::span<ktl::byte>(size_t content_size)>;
+  using PublishSelfCallback = fit::inline_function<ktl::span<ktl::byte>(size_t stream_size)>;
 
   // publish_self_ is set to point to this by the module itself, so it points
   // to the instantiation of this function inside that one module.  The first

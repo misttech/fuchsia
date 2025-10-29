@@ -16,9 +16,9 @@ template <const ktl::string_view& kSinkName, const ktl::string_view& kSuffix,
           const ktl::string_view& kAnnounce>
 ElfImage::PublishSelfCallback ElfImage::MakePublishSelfCallback(
     ElfImage::PublishDebugdataFunction& publish_debugdata) const {
-  return [this, &publish_debugdata](size_t content_size) {
-    gSymbolize->DumpFile(kAnnounce, content_size, kSinkName, name_, kSuffix);
-    return publish_debugdata(kSinkName, name_, kSuffix, content_size);
+  return [this, &publish_debugdata](size_t stream_size) {
+    gSymbolize->DumpFile(kAnnounce, stream_size, kSinkName, name_, kSuffix);
+    return publish_debugdata(kSinkName, name_, kSuffix, stream_size);
   };
 }
 
