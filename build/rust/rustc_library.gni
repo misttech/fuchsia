@@ -260,6 +260,7 @@ template("rustc_library") {
                              "define_rustdoc_test_override",
                              "rustdoc_parts_dir",
                              "disable_clippy",
+                             "disable_rustdoc",
                              "disable_rbe",
                              "edition",
                              "enforce_source_listing",

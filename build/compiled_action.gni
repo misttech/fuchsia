@@ -114,6 +114,7 @@ template("_compiled_action_target") {
                              "testonly",
                              "tool_output_dir",
                              "tool_output_name",
+                             "disable_rustdoc",
                              "visibility",
                            ])
     if (!defined(deps)) {
