@@ -7,7 +7,7 @@ use zerocopy::{BigEndian, FromBytes, Immutable, KnownLayout, U32, U64};
 /// The devictree header.
 ///
 /// See https://devicetree-specification.readthedocs.io/en/v0.3/flattened-format.html#header
-#[derive(FromBytes, Debug, KnownLayout, Immutable)]
+#[derive(FromBytes, Debug, KnownLayout, Immutable, Copy, Clone, Default)]
 #[repr(C)]
 pub struct Header {
     /// The value 0xd00dfeed.
@@ -45,7 +45,7 @@ pub struct Header {
     pub size_dt_struct: U32<BigEndian>,
 }
 
-#[derive(FromBytes, Debug, KnownLayout, Immutable)]
+#[derive(FromBytes, Debug, KnownLayout, Immutable, Copy, Clone)]
 #[repr(C)]
 pub struct ReserveEntry {
     /// The physical address of the reserved memory region.
@@ -55,30 +55,30 @@ pub struct ReserveEntry {
     pub size: U64<BigEndian>,
 }
 
-#[derive(Debug)]
-pub struct Property<'a> {
+#[derive(Debug, Default, Clone)]
+pub struct Property {
     /// The name of the property, which is stored as a null-terminated string in the strings
     /// section.
-    pub name: &'a str,
+    pub name: String,
 
     /// The value of the property.
-    pub value: &'a [u8],
+    pub value: Vec<u8>,
 }
 
-#[derive(Debug)]
-pub struct Node<'a> {
-    pub name: &'a str,
-    pub properties: Vec<Property<'a>>,
-    pub children: Vec<Node<'a>>,
+#[derive(Debug, Default, Clone)]
+pub struct Node {
+    pub name: String,
+    pub properties: Vec<Property>,
+    pub children: Vec<Node>,
 }
 
-impl<'a> Node<'a> {
-    pub(crate) fn new(name: &'a str) -> Self {
+impl Node {
+    pub(crate) fn new(name: String) -> Self {
         Node { name, properties: vec![], children: vec![] }
     }
 
     // Finds the first node with a name matching `prefix`, using a depth first search.
-    pub fn find(&self, prefix: &str) -> Option<&Node<'a>> {
+    pub fn find(&self, prefix: &str) -> Option<&Node> {
         if self.name.starts_with(prefix) {
             return Some(self);
         }
@@ -93,16 +93,16 @@ impl<'a> Node<'a> {
         return None;
     }
 
-    pub fn get_property(&self, name: &str) -> Option<&Property<'a>> {
+    pub fn get_property(&self, name: &str) -> Option<&Property> {
         self.properties.iter().find(|p| p.name == name)
     }
 }
 
-#[derive(Debug)]
-pub struct Devicetree<'a> {
-    pub header: &'a Header,
-    pub reserve_entries: &'a [ReserveEntry],
-    pub root_node: Node<'a>,
+#[derive(Debug, Default)]
+pub struct Devicetree {
+    pub header: Header,
+    pub reserve_entries: Vec<ReserveEntry>,
+    pub root_node: Node,
 }
 
 #[cfg(test)]
@@ -111,9 +111,9 @@ mod test {
 
     #[test]
     fn test_node_find() {
-        let child1 = Node { name: "child1", properties: vec![], children: vec![] };
-        let child2 = Node { name: "child2", properties: vec![], children: vec![] };
-        let root = Node { name: "root", properties: vec![], children: vec![child1, child2] };
+        let child1 = Node { name: "child1".to_string(), properties: vec![], children: vec![] };
+        let child2 = Node { name: "child2".to_string(), properties: vec![], children: vec![] };
+        let root = Node { name: "root".to_string(), properties: vec![], children: vec![child1, child2] };
 
         assert_eq!(root.find("root").unwrap().name, "root");
         assert_eq!(root.find("child1").unwrap().name, "child1");
@@ -123,9 +123,9 @@ mod test {
 
     #[test]
     fn test_node_find_nested() {
-        let grandchild = Node { name: "grandchild", properties: vec![], children: vec![] };
-        let child = Node { name: "child", properties: vec![], children: vec![grandchild] };
-        let root = Node { name: "root", properties: vec![], children: vec![child] };
+        let grandchild = Node { name: "grandchild".to_string(), properties: vec![], children: vec![] };
+        let child = Node { name: "child".to_string(), properties: vec![], children: vec![grandchild] };
+        let root = Node { name: "root".to_string(), properties: vec![], children: vec![child] };
 
         assert_eq!(root.find("root").unwrap().name, "root");
         assert_eq!(root.find("child").unwrap().name, "child");
@@ -136,10 +136,10 @@ mod test {
     #[test]
     fn test_node_find_duplicate() {
         let property_value = vec![];
-        let property = Property { name: "p1", value: &property_value };
-        let child1 = Node { name: "child", properties: vec![property], children: vec![] };
-        let child2 = Node { name: "child", properties: vec![], children: vec![] };
-        let root = Node { name: "root", properties: vec![], children: vec![child1, child2] };
+        let property = Property { name: "p1".to_string(), value: property_value };
+        let child1 = Node { name: "child".to_string(), properties: vec![property], children: vec![] };
+        let child2 = Node { name: "child".to_string(), properties: vec![], children: vec![] };
+        let root = Node { name: "root".to_string(), properties: vec![], children: vec![child1, child2] };
 
         assert_eq!(root.find("child").unwrap().name, "child");
         assert!(root.find("child").unwrap().get_property("p1").is_some());

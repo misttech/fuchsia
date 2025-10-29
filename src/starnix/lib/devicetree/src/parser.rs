@@ -59,9 +59,9 @@ impl std::error::Error for ParseError {
 }
 
 /// Parses a full `Devicetree` instance from `data`.
-pub fn parse_devicetree<'a>(data: &'a [u8]) -> Result<Devicetree<'a>, ParseError> {
+pub fn parse_devicetree(data: &[u8]) -> Result<Devicetree, ParseError> {
     // Parse and verify the header.
-    let header = parse_item::<Header>(&data)?;
+    let header = *parse_item::<Header>(&data)?;
     verify_header(&header)?;
 
     // Parse the memory reservation block.
@@ -152,14 +152,16 @@ fn parse_item_and_increment_offset<'a, T: FromBytes + KnownLayout + Immutable>(
 ///
 /// Returns an error if the string is not null-terminated, or the string contains invalid utf8
 /// characters.
-fn parse_string<'a>(data: &'a [u8], offset: &mut usize) -> Result<&'a str, ParseError> {
+fn parse_string(data: &[u8], offset: &mut usize) -> Result<String, ParseError> {
     let str_slice = &data[*offset..];
     let null_index = str_slice.iter().position(|c| *c == 0).ok_or(ParseError::ZeroCopyError)?;
     *offset += null_index + 1;
     // Align the offset to the next 4-byte boundary.
     *offset = (*offset + 3) & !3;
 
-    std::str::from_utf8(&str_slice[..null_index]).map_err(|e| ParseError::Utf8Error(e))
+    std::str::from_utf8(&str_slice[..null_index])
+        .map_err(|e| ParseError::Utf8Error(e))
+        .map(|s| s.to_string())
 }
 
 /// Parses the structure block from `data`.
@@ -169,11 +171,11 @@ fn parse_string<'a>(data: &'a [u8], offset: &mut usize) -> Result<&'a str, Parse
 ///
 /// `strings_block` is a reference to the strings data, and offsets read from properties will be
 /// used to index into this data.
-fn parse_structure_block<'a>(
-    data: &'a [u8],
+fn parse_structure_block(
+    data: &[u8],
     offset: &mut usize,
-    strings_block: &'a [u8],
-) -> Result<Node<'a>, ParseError> {
+    strings_block: &[u8],
+) -> Result<Node, ParseError> {
     let token = parse_item_and_increment_offset::<U32<BigEndian>>(&data[*offset..], offset)?;
     if *token != FDT_BEGIN_NODE {
         return Err(ParseError::MalformedStructure(format!(
@@ -207,7 +209,7 @@ fn parse_structure_block<'a>(
                 let prop_name = parse_string(&strings_block, &mut prop_name_offset)?;
 
                 // Parse the property value, and align the offset to the next 4-byte boundary.
-                let value = &data[*offset..*offset + length];
+                let value = data[*offset..*offset + length].to_vec();
                 *offset += length;
                 *offset = (*offset + 3) & !3;
 
@@ -231,8 +233,8 @@ fn parse_structure_block<'a>(
 }
 
 /// Parses an array of `ReserveEntry`'s from `data`.
-fn parse_reserve_entries<'a>(data: &'a [u8]) -> Result<&'a [ReserveEntry], ParseError> {
-    let mut num_entries = 0;
+fn parse_reserve_entries(data: &[u8]) -> Result<Vec<ReserveEntry>, ParseError> {
+    let mut entries = Vec::new();
     let mut offset = 0;
     loop {
         let entry: &ReserveEntry = ReserveEntry::ref_from_prefix(&data[offset..])
@@ -245,15 +247,11 @@ fn parse_reserve_entries<'a>(data: &'a [u8]) -> Result<&'a [ReserveEntry], Parse
 
         // If both the address and the size are zero, this is the end of the entries.
         if entry.address.get() == 0 && entry.size.get() == 0 {
-            return <[ReserveEntry]>::ref_from_prefix_with_elems(data, num_entries)
-                .map(|s| s.0)
-                .map_err(|_| {
-                    ParseError::MalformedStructure("Invalid reserve entry slice".to_string())
-                });
+            return Ok(entries);
         }
 
+        entries.push(*entry);
         offset += std::mem::size_of::<ReserveEntry>();
-        num_entries += 1;
     }
 }
 
