@@ -78,3 +78,7 @@ optional node "utmi-clk" {
 optional node "reset" {
   fuchsia.reset.NAME == "core_reset";
 }
+
+optional node "regulator" {
+  fuchsia.regulator.NAME == "dwc3-regulator";
+}
