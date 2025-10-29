@@ -59,7 +59,7 @@ rust_library(
     edition = "2021",
     proc_macro_deps = [
         "//third_party/rust_crates/vendor/async-trait-0.1.88:async_trait",
-        "//third_party/rust_crates/vendor/cstr-0.2.11:cstr",
+        "//third_party/rust_crates/vendor/cstr-0.2.12:cstr",
     ],
     rustc_flags = [
         "--cap-lints=allow",

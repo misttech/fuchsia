@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "cstr",
     package_url = "https://github.com/upsuper/cstr",
-    package_version = "0.2.11",
+    package_version = "0.2.12",
 )
 
 license(
@@ -50,7 +50,7 @@ rust_proc_macro(
         ],
     ),
     crate_root = "src/lib.rs",
-    edition = "2018",
+    edition = "2021",
     rustc_flags = [
         "--cap-lints=allow",
     ],
@@ -69,7 +69,7 @@ rust_proc_macro(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.2.11",
+    version = "0.2.12",
     deps = [
         "//third_party/rust_crates/vendor/proc-macro2-1.0.97:proc_macro2",
         "//third_party/rust_crates/vendor/quote-1.0.40:quote",
