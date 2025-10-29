@@ -167,8 +167,6 @@ class _AsyncKey:
 
 def convert_trace_file_to_json(
     trace_path: str | os.PathLike[Any],
-    compressed_input: bool = False,
-    compressed_output: bool = False,
     trace2json_path: str | os.PathLike[Any] | None = None,
     patterns: set[str] | None = None,
 ) -> str:
@@ -178,8 +176,6 @@ def convert_trace_file_to_json(
       trace_path: The path to the trace file to convert.
       trace2json_path: The path to the trace2json executable. When unset, find
           at a runtime_deps/trace2json location in a parent directory.
-      compressed_input: Whether the input file is compressed.
-      compressed_output: Whether the output file should be compressed.
       patterns: Regexps to match against event names. Only events that match one or more of these
                 patterns will be included in the converted trace file.
                 Pass None to include all events.
@@ -192,19 +188,13 @@ def convert_trace_file_to_json(
       The path to the converted trace file.
     """
     converted_path, _ = time_convert_trace_file_to_json(
-        trace_path,
-        compressed_input,
-        compressed_output,
-        trace2json_path,
-        patterns,
+        trace_path, trace2json_path, patterns
     )
     return converted_path
 
 
 def time_convert_trace_file_to_json(
     trace_path: str | os.PathLike[Any],
-    compressed_input: bool = False,
-    compressed_output: bool = False,
     trace2json_path: str | os.PathLike[Any] | None = None,
     patterns: set[str] | None = None,
     timer_cmd: list[str] | None = None,
@@ -232,16 +222,7 @@ def time_convert_trace_file_to_json(
     """
     _LOGGER.info(f"Converting {trace_path} to json")
 
-    trace_path = pathlib.Path(trace_path)
-    compressed_ext: str = ".gz"
-    output_extension: str = ".json" + (
-        compressed_ext if compressed_output else ""
-    )
-    base_path, first_ext = os.path.splitext(str(trace_path))
-    if first_ext == compressed_ext:
-        base_path, _ = os.path.splitext(base_path)
-    output_path = base_path + output_extension
-
+    output_path = pathlib.Path(trace_path).with_suffix(".json")
     with as_file(files(data).joinpath("trace2json")) as f:
         if trace2json_path is None:
             f.chmod(f.stat().st_mode | stat.S_IEXEC)
@@ -253,8 +234,6 @@ def time_convert_trace_file_to_json(
             f"--input-file={trace_path}",
             f"--output-file={output_path}",
         ]
-        if compressed_input or trace_path.suffix == compressed_ext:
-            args.append("--compressed-input")
 
         # patterns can be None, the empty set, or a set containing some patterns.
         # If the caller specified None (or one of their patterns is ".*"), they want all events.
@@ -274,12 +253,11 @@ def time_convert_trace_file_to_json(
         )
         _LOGGER.debug("Output of running %s: %s", args, conversion_output)
 
-    return (output_path, conversion_output)
+    return (str(output_path), conversion_output)
 
 
 def create_model_from_trace_file_path(
     trace_path: str | os.PathLike[Any],
-    compressed_input: bool = False,
     trace2json_path: str | os.PathLike[Any] | None = None,
     patterns: set[str] | None = None,
 ) -> trace_model.Model:
@@ -289,7 +267,6 @@ def create_model_from_trace_file_path(
       trace_path: The path to the trace file to convert.
       trace2json_path: The path to the trace2json executable. When unset, find
           at a runtime_deps/trace2json location in a parent directory.
-      compressed_input: Whether the input file is compressed.
       patterns: Regexps to match against event names. Only events that match one or more of these
                 patterns will be included in the converted trace file.
                 Pass None to include all events.
@@ -302,9 +279,7 @@ def create_model_from_trace_file_path(
         A Model object.
     """
     return create_model_from_file_path(
-        convert_trace_file_to_json(
-            trace_path, compressed_input, False, trace2json_path, patterns
-        )
+        convert_trace_file_to_json(trace_path, trace2json_path, patterns)
     )
 
 
