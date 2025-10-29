@@ -173,3 +173,32 @@ class TargetInfoData:
 
 
 # LINT.ThenChange(/src/developer/ffx/plugins/target/show/src/show.rs)
+
+
+# LINT.IfChange
+@dataclass(frozen=True)
+class MonitorTargetInfo:
+    """Represents a single target's information from ffx monitor status.
+
+    Attributes:
+        nodename: The node name of the target.
+        target_state: The current state of the target (e.g., "Product").
+        rcs_state: Whether RCS is connected ("Y" or "N").
+        addresses: A list of addresses associated with the target.
+        target_type: The type of the target (e.g., "core.x64").
+        is_default: Whether this is the default target.
+    """
+
+    nodename: str
+    target_state: str
+    rcs_state: str
+    addresses: list[IpPort]
+    target_type: str
+    is_default: bool | None
+
+    def __init__(self, **kwargs: Any) -> None:
+        for k, v in kwargs.items():
+            object.__setattr__(self, k, v)
+
+
+# LINT.ThenChange(//src/developer/ffx/lib/target/src/info.rs)

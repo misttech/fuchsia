@@ -17,7 +17,7 @@ from honeydew import errors
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import ffx_impl
-from honeydew.transports.ffx import types as ffx_types
+from honeydew.transports.ffx.types import MonitorTargetInfo, TargetInfoData
 from honeydew.typing import custom_types
 from honeydew.utils import host_shell
 
@@ -91,7 +91,7 @@ _FFX_TARGET_SHOW_JSON: dict[str, Any] = {
 }
 
 _FFX_TARGET_SHOW_OUTPUT: str = json.dumps(_FFX_TARGET_SHOW_JSON)
-_FFX_TARGET_SHOW_INFO = ffx_types.TargetInfoData(**_FFX_TARGET_SHOW_JSON)
+_FFX_TARGET_SHOW_INFO = TargetInfoData(**_FFX_TARGET_SHOW_JSON)
 
 _FFX_TARGET_LIST_OUTPUT: str = (
     '[{"nodename":"fuchsia-emulator","rcs_state":"Y","serial":"<unknown>",'
@@ -99,18 +99,17 @@ _FFX_TARGET_LIST_OUTPUT: str = (
     '"addresses":["fe80::6a47:a931:1e84:5077%qemu"],"is_default":true}]\n'
 )
 
-_FFX_TARGET_LIST_JSON: list[dict[str, Any]] = [
-    {
-        "nodename": _TARGET_NAME,
-        "rcs_state": "Y",
-        "serial": "<unknown>",
-        "target_type": "workstation_eng.x64",
-        "target_state": "Product",
-        "addresses": ["fe80::6a47:a931:1e84:5077%qemu"],
-        "is_default": True,
-    }
-]
+_FFX_TARGET_INFO: dict[str, Any] = {
+    "nodename": _TARGET_NAME,
+    "rcs_state": "Y",
+    "serial": "<unknown>",
+    "target_type": "workstation_eng.x64",
+    "target_state": "Product",
+    "addresses": ["fe80::6a47:a931:1e84:5077%qemu"],
+    "is_default": True,
+}
 
+_FFX_TARGET_LIST_JSON: list[dict[str, Any]] = [_FFX_TARGET_INFO]
 
 _INPUT_ARGS: dict[str, Any] = {
     "target_name": _TARGET_NAME,
@@ -169,12 +168,20 @@ class FfxImplTests(unittest.TestCase):
                 "check_connection",
                 autospec=True,
             ) as mock_ffx_check_connection,
+            mock.patch.object(
+                ffx_impl.FfxImpl,
+                "_check_whether_use_monitor",
+                return_value=False,
+                autospec=True,
+            ) as mock_ffx_check_whether_use_monitor,
         ):
             self.ffx_obj_wo_ip = ffx_impl.FfxImpl(
                 target_name=_INPUT_ARGS["target_name"],
                 config_data=_INPUT_ARGS["ffx_config_data"],
+                use_monitor_state=True,
             )
         mock_ffx_check_connection.assert_called()
+        mock_ffx_check_whether_use_monitor.assert_called()
 
         mock_ffx_check_connection.reset_mock()
 
@@ -189,14 +196,53 @@ class FfxImplTests(unittest.TestCase):
                 "add_target",
                 autospec=True,
             ) as mock_ffx_add_target,
+            mock.patch.object(
+                ffx_impl.FfxImpl,
+                "_check_whether_use_monitor",
+                return_value=False,
+                autospec=True,
+            ) as mock_ffx_check_whether_use_monitor,
         ):
             self.ffx_obj_with_ip = ffx_impl.FfxImpl(
                 target_name=_INPUT_ARGS["target_name"],
                 target_ip_port=_INPUT_ARGS["target_ip_port"],
                 config_data=_INPUT_ARGS["ffx_config_data"],
+                use_monitor_state=True,
             )
         mock_ffx_check_connection.assert_called()
         mock_ffx_add_target.assert_called()
+        mock_ffx_check_whether_use_monitor.assert_called()
+
+        mock_ffx_check_connection.reset_mock()
+        mock_ffx_check_whether_use_monitor.reset_mock()
+
+        with (
+            mock.patch.object(
+                ffx_impl.FfxImpl,
+                "check_connection",
+                autospec=True,
+            ) as mock_ffx_check_connection,
+            mock.patch.object(
+                ffx_impl.FfxImpl,
+                "add_target",
+                autospec=True,
+            ) as mock_ffx_add_target,
+            mock.patch.object(
+                ffx_impl.FfxImpl,
+                "_check_whether_use_monitor",
+                return_value=True,
+                autospec=True,
+            ) as mock_ffx_check_whether_use_monitor,
+        ):
+            self.ffx_obj_with_ip_and_monitor = ffx_impl.FfxImpl(
+                target_name=_INPUT_ARGS["target_name"],
+                target_ip_port=_INPUT_ARGS["target_ip_port"],
+                config_data=_INPUT_ARGS["ffx_config_data"],
+                use_monitor_state=True,
+            )
+        mock_ffx_check_connection.assert_called()
+        mock_ffx_add_target.assert_called()
+        mock_ffx_check_whether_use_monitor.assert_called()
 
     def test_ffx_init_with_ip_as_target_name(self) -> None:
         """Test case for ffx_impl.FfxImpl() when called with target_name=<ip>."""
@@ -557,6 +603,19 @@ class FfxImplTests(unittest.TestCase):
         """Test case for ffx_impl.wait_for_rcs_connection()"""
         self.ffx_obj_with_ip.wait_for_rcs_connection()
         mock_ffx_run.assert_called()
+
+    @mock.patch.object(
+        ffx_impl.FfxImpl,
+        "_get_target_status",
+        return_value=MonitorTargetInfo(**_FFX_TARGET_INFO),
+        autospec=True,
+    )
+    def test_wait_for_rcs_connection_use_monitor(
+        self, get_target_status: mock.Mock
+    ) -> None:
+        """Test case for ffx_impl.wait_for_rcs_connection()"""
+        self.ffx_obj_with_ip_and_monitor.wait_for_rcs_connection()
+        get_target_status.assert_called()
 
     @mock.patch.object(ffx_impl.FfxImpl, "run", return_value="", autospec=True)
     def test_wait_for_rcs_disconnection(self, mock_ffx_run: mock.Mock) -> None:

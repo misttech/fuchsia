@@ -223,6 +223,12 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
     def setUp(self) -> None:
         with (
             mock.patch.object(
+                ffx_impl.FfxImpl,
+                "_check_whether_use_monitor",
+                return_value=False,
+                autospec=True,
+            ),
+            mock.patch.object(
                 fuchsia_controller_impl.FuchsiaControllerImpl,
                 "create_context",
                 autospec=True,
@@ -276,6 +282,12 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
             mock_sl4f_check_connection.assert_not_called()
 
         with (
+            mock.patch.object(
+                ffx_impl.FfxImpl,
+                "_check_whether_use_monitor",
+                return_value=False,
+                autospec=True,
+            ),
             mock.patch.object(
                 fuchsia_controller_impl.FuchsiaControllerImpl,
                 "create_context",

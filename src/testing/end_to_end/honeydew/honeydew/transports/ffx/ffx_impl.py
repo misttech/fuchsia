@@ -7,13 +7,15 @@ import ipaddress
 import json
 import logging
 import subprocess
+from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 from honeydew import errors
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import ffx as ffx_interface
-from honeydew.transports.ffx.types import TargetInfoData
+from honeydew.transports.ffx.types import MonitorTargetInfo, TargetInfoData
 from honeydew.typing import custom_types
 from honeydew.utils import host_shell, properties
 
@@ -30,6 +32,8 @@ _FFX_CMDS: dict[str, list[str]] = {
     "TARGET_DISCONNECT": ["daemon", "disconnect"],
     "TEST_RUN": ["test", "run"],
     "TARGET_SSH": ["target", "ssh"],
+    "MONITOR": ["--machine", "json", "monitor", "status"],
+    "MONITOR_CONFIG_GET": ["config", "get", "monitor.pid_file"],
 }
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -47,6 +51,8 @@ class FfxImpl(ffx_interface.FFX):
 
         Note: When target_ip is provided, it will be used instead of target_name
         while running ffx commands (ex: `ffx -t <target_ip> <command>`).
+        use_monitor_state: True to use ffx monitor for target status, False
+            otherwise.
 
     Raises:
         FfxConnectionError: In case of failed to check FFX connection.
@@ -58,6 +64,7 @@ class FfxImpl(ffx_interface.FFX):
         target_name: str,
         config_data: ffx_config.FfxConfigData,
         target_ip_port: custom_types.IpPort | None = None,
+        use_monitor_state: bool = False,
     ) -> None:
         invalid_target_name: bool = False
         try:
@@ -81,6 +88,10 @@ class FfxImpl(ffx_interface.FFX):
             self._target = str(self._target_ip_port)
         else:
             self._target = self._target_name
+
+        self._use_monitor = (
+            use_monitor_state and self._check_whether_use_monitor()
+        )
 
         if self._target_ip_port:
             self.add_target()
@@ -117,6 +128,28 @@ class FfxImpl(ffx_interface.FFX):
                 ) from err
             raise ffx_errors.FfxCommandError(err) from err
 
+    # FFX monitor session management:
+    # For infra runs, ffx monitor session is started and managed by botanist.
+    # Currently it is not started by default and is only started for on a
+    # specific builder basis. But once ffx monitor is thoroughly tested, it
+    # will be started by default on all infra builders.
+    #
+    # For local runs, ffx monitor eventually will be started and managed by
+    # `fx test`. Until this support is added (b/455924189), local users would
+    # have to manually start monitors through `ffx monitor start`.
+    def _check_whether_use_monitor(self) -> bool:
+        """Check whether there is a running monitor.
+
+        Returns:
+            True if a monitor is running.
+        """
+        cmd: list[str] = _FFX_CMDS["MONITOR_CONFIG_GET"]
+        output: str = self.run(cmd=cmd).strip('"')
+        _LOGGER.debug("`%s` returned: %s", " ".join(cmd), output)
+
+        # If the pid_path exist, it means there is a running monitor.
+        return Path(output).exists()
+
     def check_connection(self) -> None:
         """Checks the FFX connection from host to Fuchsia device.
 
@@ -148,9 +181,14 @@ class FfxImpl(ffx_interface.FFX):
 
         return target_info
 
+    # TODO(b/455928356) This method would be removed in favor of `get_target_status`.
     def get_target_info_from_target_list(self) -> dict[str, Any]:
         """Executed and returns the output of
         `ffx --machine json target list <target>`.
+
+        For monitor, the "targets" field of `ffx monitor status`
+        response is identical with `ffx target list`, so they can share
+        the same parsing logic.
 
         Returns:
             Output of `ffx --machine json target list <target>`.
@@ -158,6 +196,9 @@ class FfxImpl(ffx_interface.FFX):
         Raises:
             FfxCommandError: In case of FFX command failure.
         """
+        if self._use_monitor:
+            return asdict(self._get_target_status())
+
         cmd: list[str] = _FFX_CMDS["TARGET_LIST"] + [self._target]
         output: str = self.run(
             cmd=cmd,
@@ -186,6 +227,10 @@ class FfxImpl(ffx_interface.FFX):
             DeviceNotConnectedError: If FFX fails to reach target.
             FfxCommandError: In case of other FFX command failure.
         """
+        if self._use_monitor:
+            target = self._get_target_status()
+            return target.nodename
+
         ffx_target_show_info: TargetInfoData = self.get_target_information()
         return ffx_target_show_info.target.name
 
@@ -199,6 +244,15 @@ class FfxImpl(ffx_interface.FFX):
             DeviceNotConnectedError: If FFX fails to reach target.
             FfxCommandError: In case of other FFX command failure.
         """
+        if self._use_monitor:
+            target = self._get_target_status()
+            address = target.addresses[0]
+
+            return custom_types.TargetSshAddress(
+                ip=address.ip,
+                port=address.port,
+            )
+
         cmd: list[str] = _FFX_CMDS["TARGET_SSH_ADDRESS"]
         output: str = self.run(cmd=cmd)
 
@@ -222,6 +276,10 @@ class FfxImpl(ffx_interface.FFX):
             DeviceNotConnectedError: If FFX fails to reach target.
             FfxCommandError: In case of other FFX command failure.
         """
+        if self._use_monitor:
+            target = self._get_target_status()
+            return target.target_type.split(".")[1]
+
         target_show_info: TargetInfoData = self.get_target_information()
         return (
             target_show_info.build.board if target_show_info.build.board else ""
@@ -237,6 +295,10 @@ class FfxImpl(ffx_interface.FFX):
             DeviceNotConnectedError: If FFX fails to reach target.
             FfxCommandError: In case of other FFX command failure.
         """
+        if self._use_monitor:
+            target = self._get_target_status()
+            return target.target_type.split(".")[0]
+
         target_show_info: TargetInfoData = self.get_target_information()
         return (
             target_show_info.build.product
@@ -412,6 +474,12 @@ class FfxImpl(ffx_interface.FFX):
             FfxCommandError: In case of other FFX command failure.
         """
         _LOGGER.info("Waiting for %s to connect to host...", self._target_name)
+        if self._use_monitor:
+            while True:
+                target = self._get_target_status()
+                if target.target_state == "Product" and target.rcs_state == "Y":
+                    _LOGGER.info("%s is connected to host", self._target_name)
+                    return
 
         self.run(cmd=_FFX_CMDS["TARGET_WAIT"])
 
@@ -438,6 +506,48 @@ class FfxImpl(ffx_interface.FFX):
         self.run(cmd=_FFX_CMDS["TARGET_DISCONNECT"])
 
         return
+
+    def _get_target_status(self) -> MonitorTargetInfo:
+        """Gets the status information of the target node from 'ffx monitor status'.
+
+        This method is valid only when 'ffx monitor start` session was running
+        for this target. It parses the output of `ffx --machine json monitor status`
+        to find the dictionary corresponding to the current target node.
+
+        Args:
+            None
+
+        Returns:
+            A MonitorTargetInfo containing the status information of the target
+            node, an empty MonitorTargetInfo if the target is not found in the
+            monitor output.
+        Raises:
+            ffx_errors.FFXMonitorNotSupportedError: If this method is called when monitor is not in use.
+        """
+        if not self._use_monitor:
+            raise ffx_errors.FFXMonitorNotSupportedError(
+                "_get_target_status can only be called when ffx monitor is in"
+                " use."
+            )
+        statuses = self.run(
+            cmd=_FFX_CMDS["MONITOR"],
+            include_target=False,
+        )
+        targets = json.loads(statuses).get("targets", [])
+        for target in targets:
+            if target["nodename"] == self._target_name:
+                addresses = []
+                for addr in target.get("addresses", []):
+                    addresses.append(
+                        custom_types.IpPort(
+                            ip=addr["ip"], port=addr["ssh_port"]
+                        )
+                    )
+                target["addresses"] = addresses
+                return MonitorTargetInfo(
+                    **target
+                )  # pytype: disable=wrong-arg-types
+        return MonitorTargetInfo()
 
     def generate_ffx_cmd(
         self,

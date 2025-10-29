@@ -16,3 +16,7 @@ class FfxConnectionError(errors.TransportConnectionError):
 
 class FfxCommandError(errors.TransportError):
     """Exception for errors raised by ffx commands running on host machine."""
+
+
+class FFXMonitorNotSupportedError(errors.HoneydewError):
+    """If this method is called when monitor is not in use."""

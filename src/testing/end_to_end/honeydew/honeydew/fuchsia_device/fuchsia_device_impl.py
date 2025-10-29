@@ -314,10 +314,21 @@ class FuchsiaDeviceImpl(
         Raises:
             FfxCommandError: Failed to instantiate.
         """
+        use_monitor_state = False
+        if self._config is not None:
+            config_use_monitor_state = common.read_from_dict(
+                self._config,
+                key_path=("transports", "ffx", "use_monitor_state"),
+                should_exist=False,
+            )
+            if config_use_monitor_state is not None:
+                use_monitor_state = config_use_monitor_state
+
         ffx_obj: ffx_transport_interface.FFX = ffx_impl.FfxImpl(
             target_name=self.device_name,
             config_data=self._ffx_config_data,
             target_ip_port=self._device_info.ip_port,
+            use_monitor_state=use_monitor_state,
         )
         return ffx_obj
 

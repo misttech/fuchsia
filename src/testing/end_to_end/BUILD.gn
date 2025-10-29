@@ -87,7 +87,7 @@ group_with_no_dir_target_deps("core_x64_unstable_sl4f_tests") {
 
 group_with_no_dir_target_deps("core_x64_unstable_tests") {
   testonly = true
-  public_deps = []
+  public_deps = [ "honeydew/honeydew/transports/ffx/tests/functional_tests:ffx_test_with_monitor_on_x64($host_toolchain)" ]
 }
 
 group("core_x64_staging_sl4f_tests") {

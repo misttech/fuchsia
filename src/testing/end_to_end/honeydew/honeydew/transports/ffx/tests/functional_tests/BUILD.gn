@@ -48,6 +48,34 @@ if (is_host) {
     environments = [ vim3_env ]
   }
 
+  python_mobly_test("ffx_test_with_monitor_on_x64") {
+    main_source = "test_ffx.py"
+    libraries = [
+      "//src/testing/end_to_end/honeydew",
+      "//src/testing/end_to_end/mobly_base_tests:fuchsia_base_test",
+    ]
+    test_data_deps =
+        [ "//src/developer/ffx/tools/power:ffx_power_tool_test_data" ]
+    package_deps = [ "//examples/hello_world/rust:hello-world-rust-tests" ]
+    params = {
+      expected_values = {
+        board = "x64"
+      }
+    }
+    environments = [
+      # Only enable for AEMU-x64 as host-tests aren't supported on QEMU-arm64.
+      aemu_env,
+      nuc11_env,
+    ]
+    honeydew_config = {
+      transports = {
+        ffx = {
+          use_monitor_state = true
+        }
+      }
+    }
+  }
+
   python_mobly_test("ffx_wait_for_rcs_disconnection_test") {
     main_source = "test_ffx_wait_for_rcs_disconnection.py"
     libraries = [
@@ -71,6 +99,7 @@ group("tests") {
   public_deps = [
     ":ffx_test_on_vim3($host_toolchain)",
     ":ffx_test_on_x64($host_toolchain)",
+    ":ffx_test_with_monitor_on_x64($host_toolchain)",
     ":ffx_wait_for_rcs_disconnection_test($host_toolchain)",
   ]
 }

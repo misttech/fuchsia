@@ -52,6 +52,7 @@ impl From<ffx::TargetVSockCtx> for VSockCtx {
     }
 }
 
+// LINT.IfChange
 #[derive(Clone)]
 pub struct TargetInfo {
     pub nodename: Option<String>,
@@ -67,6 +68,7 @@ pub struct TargetInfo {
     // actually to the same device.
     pub boot_id: Option<u64>,
 }
+// LINT.ThenChange(//src/testing/end_to_end/honeydew/honeydew/transports/ffx/types.py)
 
 impl Default for TargetInfo {
     fn default() -> Self {

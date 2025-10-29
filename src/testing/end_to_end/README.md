@@ -159,9 +159,10 @@ $ fx set core.x64 \
     --with //src/sys/bin/start_sl4f \
     --args 'core_realm_shards += [ "//src/testing/sl4f:sl4f_core_shard" ]'
 
-# Step 2- Start the emulator and package server (in separate terminals)
+# Step 2- Start the emulator, package server and monitor (in separate terminals)
 $ fx serve
 $ ffx emu stop ; ffx emu start -H --net tap
+$ ffx monitor start
 
 # Step 3 - Run the test
 $ fx test //src/testing/end_to_end/examples/my_test_dir:my_test_target --e2e \
