@@ -63,11 +63,13 @@ class QualcommExtension final : public PlatformExtension {
   QualcommExtension(const fdf::MmioView& mmio,
                     std::unordered_map<BusPath, fidl::ClientEnd<fhi::Path>> interconnect_clients,
                     std::unordered_map<std::string, fidl::ClientEnd<fclock::Clock>> clock_clients,
-                    fidl::ClientEnd<freset::Reset> reset_client)
+                    fidl::ClientEnd<freset::Reset> reset_client,
+                    fidl::ClientEnd<fvreg::Vreg> regulator_client)
       : mmio_(mmio),
         interconnect_clients_{std::move(interconnect_clients)},
         clock_clients_{std::move(clock_clients)},
-        reset_client_(std::move(reset_client)) {}
+        reset_client_(std::move(reset_client)),
+        regulator_client_(std::move(regulator_client)) {}
 
   // PlatformExtension interface implementation.
   zx::result<> Start() override { return PowerOn(true); }
@@ -141,6 +143,7 @@ class QualcommExtension final : public PlatformExtension {
   std::unordered_map<std::string, fidl::ClientEnd<fvreg::Vreg>> regulator_clients_;
   std::unordered_map<std::string, fidl::ClientEnd<fclock::Clock>> clock_clients_;
   fidl::ClientEnd<freset::Reset> reset_client_;
+  fidl::ClientEnd<fvreg::Vreg> regulator_client_;
 };
 
 std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent,
@@ -185,8 +188,15 @@ std::unique_ptr<QualcommExtension> QualcommExtension::Create(Dwc3* parent,
     return nullptr;
   }
 
+  zx::result regulator_client = parent->incoming()->Connect<fvreg::Service::Vreg>("regulator");
+  if (regulator_client.is_error()) {
+    fdf::info("Failed to get regulator, assuming not qualcomm chipset");
+    return nullptr;
+  }
+
   return std::make_unique<QualcommExtension>(mmio, std::move(interconnect_clients),
-                                             std::move(clock_clients), *std::move(reset_client));
+                                             std::move(clock_clients), *std::move(reset_client),
+                                             *std::move(regulator_client));
 }
 
 zx::result<> QualcommExtension::VoteBandwidth(State state) {
@@ -249,7 +259,24 @@ zx::result<> QualcommExtension::VoteBandwidth(State state) {
 }
 
 zx::result<> QualcommExtension::VoteVoltage(bool on) {
-  // TODO(450598006): Implement this.
+  if (on) {
+    fidl::Result enable = fidl::Call(regulator_client_)->Enable();
+    if (enable.is_error()) {
+      fdf::error("failed to enable regulator: {}", enable.error_value());
+      return zx::error(enable.error_value().is_domain_error()
+                           ? enable.error_value().domain_error()
+                           : enable.error_value().framework_error().status());
+    }
+  } else {
+    fidl::Result disable = fidl::Call(regulator_client_)->Disable();
+    if (disable.is_error()) {
+      fdf::error("failed to disable regulator: {}", disable.error_value());
+      return zx::error(disable.error_value().is_domain_error()
+                           ? disable.error_value().domain_error()
+                           : disable.error_value().framework_error().status());
+    }
+  }
+
   return zx::ok();
 }
 
@@ -1080,6 +1107,10 @@ void Dwc3::OnConnectStatusChanged(
   if (result.is_error()) {
     fdf::error("WatchConnectStatusChanged returned {}",
                zx_status_get_string(result.error_value().domain_error()));
+    return;
+  }
+
+  if (!platform_extension_) {
     return;
   }
 
