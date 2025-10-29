@@ -31,10 +31,10 @@ pub async fn handle_runner_requests(
             fcrunner::ComponentRunnerRequest::Start { start_info, controller, .. } => {
                 let debian_guest = debian_guest.clone();
                 fasync::Task::local(async move {
-                    match serve_test_suite(start_info, controller, debian_guest).await {
-                        Ok(_) => log::info!("Finished serving test suite for component."),
-                        Err(e) => log::error!("Error serving test suite: {:?}", e),
-                    }
+                    serve_test_suite(start_info, controller, debian_guest)
+                        .await
+                        .expect("Starnix test runner failed to serve suite");
+                    log::info!("Finished serving test suite for component.");
                 })
                 .detach();
             }
@@ -86,12 +86,10 @@ async fn serve_test_suite(
                 let start_info = start_info.clone();
                 let start_info =
                     clone_start_info(&mut start_info.lock()).expect("Failed to clone start info");
-                match handle_suite_requests(start_info, stream, debian_guest.clone()).await {
-                    Ok(_) => log::info!("Finished serving test suite requests."),
-                    Err(e) => {
-                        log::error!("Error serving test suite requests: {:?}", e)
-                    }
-                }
+                handle_suite_requests(start_info, stream, debian_guest.clone())
+                    .await
+                    .expect("Starnix test runner failed to serve suite requests");
+                log::info!("Finished serving test suite requests.");
                 let _ = controller.lock().take().map(|c| c.close_with_epitaph(zx::Status::OK));
             }
         }
