@@ -464,7 +464,7 @@ pub(crate) async fn spawn<T>(
     ssh_timeout: u16,
     node: Arc<overnet_core::Router>,
     host_pipe_child_builder: T,
-) -> Result<HostPipeConnection<T>, anyhow::Error>
+) -> Result<(HostPipeConnection<T>, Option<HostAddr>), anyhow::Error>
 where
     T: HostPipeChildBuilder + Clone,
 {
@@ -485,13 +485,12 @@ where
     T: HostPipeChildBuilder + Clone,
 {
     async fn start_child_pipe(
-        target: &Weak<Target>,
+        target: &Target,
         builder: T,
         ssh_timeout: u16,
         watchdogs: bool,
         node: Arc<overnet_core::Router>,
-    ) -> Result<Arc<HostPipeChild>, PipeError> {
-        let target = target.upgrade().ok_or(PipeError::TargetGone)?;
+    ) -> Result<(Arc<HostPipeChild>, Option<HostAddr>), PipeError> {
         let target_nodename: String = target.nodename_str();
         log::debug!("Spawning new host-pipe instance to target {target_nodename}");
         let log_buf = target.host_pipe_log_buffer();
@@ -513,18 +512,11 @@ where
             .await
             .map_err(|e| PipeError::PipeCreationFailed(e.to_string(), target_nodename.clone()))?;
 
-        *target.ssh_host_address.borrow_mut() = host_addr;
-        log::debug!(
-            "Set ssh_host_address to {:?} for {}@{}",
-            target.ssh_host_address,
-            target.nodename_str(),
-            target.id(),
-        );
         if cmd.compatibility_status.is_some() {
             target.set_compatibility_status(&cmd.compatibility_status);
         }
         let hpc = Arc::new(cmd);
-        Ok(hpc)
+        Ok((hpc, host_addr))
     }
 
     async fn spawn_with_builder(
@@ -534,8 +526,9 @@ where
         relaunch_command_delay: Duration,
         watchdogs: bool,
         node: Arc<overnet_core::Router>,
-    ) -> Result<Self, PipeError> {
-        let hpc = Self::start_child_pipe(
+    ) -> Result<(Self, Option<HostAddr>), PipeError> {
+        let target = target.upgrade().ok_or(PipeError::TargetGone)?;
+        let (hpc, host_addr) = Self::start_child_pipe(
             &target,
             host_pipe_child_builder.clone(),
             ssh_timeout,
@@ -543,16 +536,18 @@ where
             node,
         )
         .await?;
-        let target = target.upgrade().ok_or(PipeError::TargetGone)?;
 
-        Ok(Self {
-            target,
-            inner: hpc,
-            relaunch_command_delay,
-            host_pipe_child_builder,
-            ssh_timeout,
-            watchdogs,
-        })
+        Ok((
+            Self {
+                target,
+                inner: hpc,
+                relaunch_command_delay,
+                host_pipe_child_builder,
+                ssh_timeout,
+                watchdogs,
+            },
+            host_addr,
+        ))
     }
 
     pub async fn wait(&mut self, node: &Arc<overnet_core::Router>) -> Result<(), anyhow::Error> {
@@ -566,14 +561,6 @@ where
             let res = unblock(move || waitpid(pid, None)).await;
 
             log::debug!("host-pipe command res: {:?}", res);
-
-            // Keep the ssh_host address in the target. This is the address of the host as seen from
-            // the target. It is primarily used when configuring the package server address.
-            log::debug!(
-                "Skipped clearing ssh_host_address for {}@{}",
-                self.target.nodename_str(),
-                self.target.id()
-            );
 
             match res {
                 Ok(_) => {
@@ -591,8 +578,8 @@ where
             );
             Timer::new(self.relaunch_command_delay).await;
 
-            let hpc = Self::start_child_pipe(
-                &Rc::downgrade(&self.target),
+            let (hpc, _) = Self::start_child_pipe(
+                &self.target,
                 self.host_pipe_child_builder.clone(),
                 self.ssh_timeout,
                 self.watchdogs,
@@ -1027,7 +1014,7 @@ mod test {
         );
         // Test that the overnet_id is available via the Child builder
         let node = overnet_core::Router::new(None).unwrap();
-        let hpc = HostPipeConnection::<FakeHostPipeChildBuilder<'_>>::spawn_with_builder(
+        let (hpc, _) = HostPipeConnection::<FakeHostPipeChildBuilder<'_>>::spawn_with_builder(
             Rc::downgrade(&target),
             FakeHostPipeChildBuilder {
                 operation_type: ChildOperationType::WithOvernetId,

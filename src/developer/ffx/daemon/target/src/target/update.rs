@@ -404,10 +404,6 @@ impl super::Target {
             if let Some(port) = ssh_config.port {
                 self.set_ssh_port(port);
             }
-
-            if let Some(host) = ssh_config.host_addr {
-                self.ssh_host_address.replace(host);
-            }
         }
 
         let Trivia { build_config, boot_timestamp_nanos, rcs_compatibility } = update.trivia;
@@ -445,7 +441,6 @@ mod tests {
         assert_eq!(target.nodename(), None);
 
         assert_eq!(*target.ssh_port.borrow(), None);
-        assert_eq!(*target.ssh_host_address.borrow(), None);
         assert_eq!(*target.build_config.borrow(), None);
         assert_eq!(*target.boot_timestamp_nanos.borrow(), None);
         assert_eq!(*target.compatibility_status.borrow(), None);
@@ -483,7 +478,6 @@ mod tests {
         assert_eq!(target.nodename().as_deref(), Some("nodename"));
 
         assert_eq!(*target.ssh_port.borrow(), Some(2122));
-        assert_eq!(*target.ssh_host_address.borrow(), Some(host_addr));
         assert_eq!(*target.build_config.borrow(), Some(build_config));
         assert_eq!(*target.boot_timestamp_nanos.borrow(), Some(1234));
         assert_eq!(*target.compatibility_status.borrow(), Some(compatibility));
@@ -499,7 +493,6 @@ mod tests {
         );
 
         assert_eq!(*target.ssh_port.borrow(), None);
-        assert_eq!(*target.ssh_host_address.borrow(), None);
         assert_eq!(*target.build_config.borrow(), None);
         assert_eq!(*target.boot_timestamp_nanos.borrow(), None);
         assert_eq!(*target.compatibility_status.borrow(), None);

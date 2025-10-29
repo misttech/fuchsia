@@ -686,22 +686,6 @@ impl TargetCollection {
             if to_update.is_connected() {
                 to_update.disconnect();
                 to_update.maybe_reconnect(None);
-                *to_update.ssh_host_address.borrow_mut() = None;
-            }
-        } else {
-            if to_update.ssh_host_address.borrow().is_none() {
-                if new_target.ssh_host_address.borrow().is_some() {
-                    log::debug!(
-                        "Setting ssh_host_address to {:?} for {}@{}",
-                        new_target.ssh_host_address,
-                        to_update.nodename_str(),
-                        to_update.id()
-                    );
-                    *to_update.ssh_host_address.borrow_mut() =
-                        new_target.ssh_host_address.borrow().clone();
-                } else if to_update.ssh_address().is_some() {
-                    to_update.refresh_ssh_host_addr();
-                }
             }
         }
 
@@ -2113,6 +2097,7 @@ mod tests {
             task: Task::local(future::pending()),
             overnet_node: local_node,
             ssh_addr: None,
+            ssh_host_address: None,
             remote_overnet_id: target::RemoteOvernetIdState::Pending(vec![]),
         });
 
@@ -2135,6 +2120,7 @@ mod tests {
             task: Task::local(future::pending()),
             overnet_node: local_node,
             ssh_addr: None,
+            ssh_host_address: None,
             remote_overnet_id: target::RemoteOvernetIdState::Ready(Some(42)),
         });
         let address = "f111::1";
@@ -2182,6 +2168,7 @@ mod tests {
             task: Task::local(future::pending()),
             overnet_node: local_node,
             ssh_addr: None,
+            ssh_host_address: None,
             remote_overnet_id: target::RemoteOvernetIdState::Ready(Some(42)),
         });
         target.enable();

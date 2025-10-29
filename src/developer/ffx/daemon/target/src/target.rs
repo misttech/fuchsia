@@ -264,6 +264,7 @@ pub(crate) struct HostPipeState {
     pub task: Task<()>,
     pub overnet_node: Arc<overnet_core::Router>,
     pub(crate) ssh_addr: Option<SocketAddr>,
+    pub(crate) ssh_host_address: Option<HostAddr>,
     pub(crate) remote_overnet_id: RemoteOvernetIdState,
 }
 
@@ -320,7 +321,6 @@ pub struct Target {
     // The event synthesizer is retained on the target as a strong
     // reference, as the queue only retains a weak reference.
     target_event_synthesizer: Rc<TargetEventSynthesizer>,
-    pub(crate) ssh_host_address: RefCell<Option<HostAddr>>,
     // A user provided address that should be used to SSH.
     preferred_ssh_address: RefCell<Option<TargetIpAddr>>,
 
@@ -355,7 +355,6 @@ impl Target {
             host_pipe_log_buffer: Rc::new(LogBuffer::new(5)),
             target_event_synthesizer,
             fastboot_interface: RefCell::new(None),
-            ssh_host_address: RefCell::new(None),
             preferred_ssh_address: RefCell::new(None),
             compatibility_status: RefCell::new(None),
             context: context.clone(),
@@ -550,7 +549,12 @@ impl Target {
                 t.nodename.take(),
                 t.addresses.drain(..).filter_map(|x| x.try_into().ok()).collect(),
             );
-            *res.ssh_host_address.borrow_mut() = t.ssh_host_address.take().map(HostAddr::from);
+            // We shouldn't reach in to the host pipe to change the host address
+            // usually but ssh_host_address on `Description` is a bit of a hack
+            // anyway. See the comment there for more details.
+            if let Some(host_pipe) = &mut *res.host_pipe.borrow_mut() {
+                host_pipe.ssh_host_address = t.ssh_host_address.take().map(HostAddr::from);
+            }
             *res.ssh_port.borrow_mut() = t.ssh_port;
             res
         }
@@ -595,7 +599,12 @@ impl Target {
             serial: self.serial(),
             ssh_port: self.ssh_port(),
             fastboot_interface,
-            ssh_host_address: self.ssh_host_address.borrow().as_ref().map(|h| h.to_string()),
+            ssh_host_address: self
+                .host_pipe
+                .borrow()
+                .as_ref()
+                .and_then(|h| h.ssh_host_address.as_ref())
+                .map(|h| h.to_string()),
         }
     }
 
@@ -793,9 +802,10 @@ impl Target {
     }
 
     pub fn ssh_host_address_info(&self) -> Option<ffx::SshHostAddrInfo> {
-        self.ssh_host_address
+        self.host_pipe
             .borrow()
             .as_ref()
+            .and_then(|h| h.ssh_host_address.as_ref())
             .map(|addr| ffx::SshHostAddrInfo { address: addr.to_string() })
     }
 
@@ -1253,7 +1263,9 @@ impl Target {
         fuchsia_async::Task::local(async move {
             match host_pipe_child_builder.get_host_addr(addr).await {
                 Ok(addr) => {
-                    target.ssh_host_address.replace(Some(addr.into()));
+                    if let Some(host_pipe) = &mut *target.host_pipe.borrow_mut() {
+                        host_pipe.ssh_host_address.replace(addr.into());
+                    }
                 }
                 Err(error) => log::debug!(error:? = error; "Error fetching ssh host address"),
             }
@@ -1433,7 +1445,7 @@ impl Target {
             .await;
 
             match nr {
-                Ok(mut hp) => {
+                Ok((mut hp, ssh_host_addr)) => {
                     log::debug!("host pipe spawn returned OK for {target_name_str}");
                     eprintln!("host pipe spawn returned OK for {target_name_str}");
                     let compatibility_status = hp.get_compatibility_status();
@@ -1449,6 +1461,7 @@ impl Target {
                         // gotten an error when the host-pipe was dropped.
                         if let Some(host_pipe) = target.host_pipe.borrow_mut().as_mut() {
                             host_pipe.ssh_addr = Some(hp.get_address());
+                            host_pipe.ssh_host_address = ssh_host_addr;
                             let overnet_id = hp.overnet_id();
                             log::debug!(
                                 "Got host pipe overnet id {:?} -- sending to waiters",
@@ -1510,6 +1523,7 @@ impl Target {
             task: Task::local(task),
             overnet_node,
             ssh_addr: None,
+            ssh_host_address: None,
             remote_overnet_id: RemoteOvernetIdState::Pending(roid_waiters),
         });
     }
@@ -2561,6 +2575,7 @@ mod test {
             task: Task::local(future::pending()),
             overnet_node: local_node,
             ssh_addr: None,
+            ssh_host_address: None,
             remote_overnet_id: RemoteOvernetIdState::Ready(None),
         });
 
@@ -2758,6 +2773,7 @@ mod test {
             task: Task::local(future::pending()),
             overnet_node: local_node.clone(),
             ssh_addr: None,
+            ssh_host_address: None,
             remote_overnet_id: RemoteOvernetIdState::Ready(overnet_id),
         });
         let (snd, rcv) = channel::oneshot::channel::<Option<u64>>();
