@@ -63,6 +63,28 @@ void ConvertAndCompare(const ConvertSettings& settings, const std::string& expec
       << "Files " << settings.output_file_name << " and " << expected_output_file << " differ.";
 }
 
+void ConvertAndCompareSplit(const ConvertSettings& settings,
+                            const std::string& expected_output_file,
+                            const std::string& expected_system_output_file) {
+  ASSERT_TRUE(ConvertTrace(settings));
+  std::string actual_out, expected_out;
+  EXPECT_TRUE(files::ReadFileToString(settings.output_file_name, &actual_out));
+  EXPECT_TRUE(files::ReadFileToString(expected_output_file, &expected_out));
+
+  // Not using EXPECT_EQ here as the trace files can be large, so failures create an unreasonable
+  // amount of error output.
+  EXPECT_TRUE(actual_out == expected_out)
+      << "Files " << settings.output_file_name << " and " << expected_output_file << " differ.";
+
+  std::string actual_system_out, expected_system_out;
+  EXPECT_TRUE(files::ReadFileToString(settings.system_event_output_file_name, &actual_system_out));
+  EXPECT_TRUE(files::ReadFileToString(expected_system_output_file, &expected_system_out));
+
+  EXPECT_TRUE(actual_system_out == expected_system_out)
+      << "Files " << settings.system_event_output_file_name << " and "
+      << expected_system_output_file << " differ.";
+}
+
 TEST(ConvertTest, SimpleTrace) {
   // simple_trace.fxt is a small hand-written trace file that exercises a few
   // basic event types (currently slice begin, slice end, slice complete, async
@@ -73,6 +95,17 @@ TEST(ConvertTest, SimpleTrace) {
   settings.input_file_name = test_data_path + "simple_trace.fxt";
   settings.output_file_name = test_data_path + "simple_trace_actual.json";
   ConvertAndCompare(settings, test_data_path + "simple_trace_expected.json");
+}
+
+TEST(ConvertTest, SplitOutputTrace) {
+  std::string test_data_path = GetTestDataPath();
+  ConvertSettings settings;
+  settings.input_file_name = test_data_path + "simple_trace.fxt";
+  settings.output_file_name = test_data_path + "simple_trace_split_main_actual.json";
+  settings.system_event_output_file_name =
+      test_data_path + "simple_trace_split_system_actual.jsonlines";
+  ConvertAndCompareSplit(settings, test_data_path + "simple_trace_split_main_expected.json",
+                         test_data_path + "simple_trace_split_system_expected.jsonlines");
 }
 
 TEST(ConvertTest, ExampleBenchmark) {

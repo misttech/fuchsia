@@ -23,6 +23,7 @@ namespace tracing {
 class FuchsiaTraceParser {
  public:
   explicit FuchsiaTraceParser(const std::filesystem::path& out,
+                              const std::filesystem::path& system_event_output_file,
                               const std::vector<std::string>& patterns);
   ~FuchsiaTraceParser();
 

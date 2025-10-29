@@ -15,8 +15,7 @@ namespace {
 TEST(TraceParserTest, InvalidTrace) {
   std::istringstream input("asdfasdfasdfasdfasdf");
   const std::filesystem::path& output = "test-trace-invalid.json";
-
-  tracing::FuchsiaTraceParser parser(output, {});
+  tracing::FuchsiaTraceParser parser(output, "", {});
   EXPECT_FALSE(parser.ParseComplete(&input));
 }
 
@@ -31,7 +30,7 @@ TEST(TraceParserTest, EndOfFile) {
   const std::filesystem::path& output = "test-trace.json";
   ;
 
-  tracing::FuchsiaTraceParser parser(output, {});
+  tracing::FuchsiaTraceParser parser(output, "", {});
   EXPECT_TRUE(parser.ParseComplete(&input));
 }
 

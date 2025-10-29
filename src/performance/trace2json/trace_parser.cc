@@ -36,8 +36,10 @@ bool MatchesAny(const std::vector<std::unique_ptr<re2::RE2>>& patterns, std::str
 }  // namespace
 
 FuchsiaTraceParser::FuchsiaTraceParser(const std::filesystem::path& out,
+                                       const std::filesystem::path& system_event_output_file,
                                        const std::vector<std::string>& patterns)
-    : exporter_(out),
+    : exporter_(system_event_output_file.empty() ? ChromiumExporter(out)
+                                                 : ChromiumExporter(out, system_event_output_file)),
       reader_(
           [this](const trace::Record& record) {
             if (ShouldPassthrough(record) || patterns_.empty()) {

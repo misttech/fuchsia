@@ -18,13 +18,11 @@ namespace {
 const char kHelp[] = "help";
 const char kInputFile[] = "input-file";
 const char kOutputFile[] = "output-file";
+const char kSystemEventOutputFile[] = "system-event-output-file";
 const char kPattern[] = "pattern";
 
 std::set<std::string> kKnownOptions = {
-    kHelp,
-    kInputFile,
-    kOutputFile,
-    kPattern,
+    kHelp, kInputFile, kOutputFile, kSystemEventOutputFile, kPattern,
 };
 
 void PrintHelpMessage() {
@@ -34,6 +32,9 @@ void PrintHelpMessage() {
       {"output-file=[]",
        "Write the converted trace to the specified file. If no file is "
        "specified, the output is written to stdout."},
+      {"system-event-output-file=[]",
+       "Optional. Write the system trace events to the specified file in jsonlines "
+       "format. If provided, the main output file will not contain system trace events."},
       {"pattern=[]",
        "A regular expression to match against event names. Events that do not "
        "match will be dropped. This parameter may be specified multiple times."},
@@ -96,6 +97,9 @@ int main(int argc, char** argv) {
   }
   if (command_line.HasOption(kOutputFile)) {
     command_line.GetOptionValue(kOutputFile, &settings.output_file_name);
+  }
+  if (command_line.HasOption(kSystemEventOutputFile)) {
+    command_line.GetOptionValue(kSystemEventOutputFile, &settings.system_event_output_file_name);
   }
   auto patterns_sv = command_line.GetOptionValues(kPattern);
   settings.patterns.assign(patterns_sv.begin(), patterns_sv.end());

@@ -64,6 +64,8 @@ if (is_host) {
       "test_data/simple_trace_expected.json.gz",
       "test_data/simple_trace_filtered_expected.json",
       "test_data/simple_trace_multi_filtered_expected.json",
+      "test_data/simple_trace_split_main_expected.json",
+      "test_data/simple_trace_split_system_expected.jsonlines",
     ]
 
     outputs = [ "$root_out_dir/test_data/trace2json/{{source_file_part}}" ]

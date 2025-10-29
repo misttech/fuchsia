@@ -11,6 +11,7 @@
 struct ConvertSettings {
   std::string input_file_name;
   std::string output_file_name;
+  std::string system_event_output_file_name;
   std::vector<std::string> patterns;
 };
 

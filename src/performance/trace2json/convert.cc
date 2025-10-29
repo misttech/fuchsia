@@ -63,6 +63,7 @@ bool ConvertTrace(const ConvertSettings& settings) {
     return false;
   }
 
-  tracing::FuchsiaTraceParser parser(settings.output_file_name, settings.patterns);
+  tracing::FuchsiaTraceParser parser(settings.output_file_name,
+                                     settings.system_event_output_file_name, settings.patterns);
   return parser.ParseComplete(in_stream);
 }
