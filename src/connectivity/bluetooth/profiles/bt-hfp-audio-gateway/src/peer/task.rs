@@ -83,6 +83,7 @@ impl PeerTask {
         id: PeerId,
         profile_proxy: bredr::ProfileProxy,
         audio_control: Arc<Mutex<Box<dyn audio::Control>>>,
+        a2dp_control: a2dp::Control,
         local_config: AudioGatewayFeatureSupport,
         connection_behavior: ConnectionBehavior,
         hfp_sender: Sender<hfp::Event>,
@@ -90,7 +91,6 @@ impl PeerTask {
     ) -> Result<Self, Error> {
         let connection =
             ServiceLevelConnection::with_init_timeout(Timer::new(CONNECTION_INIT_TIMEOUT));
-        let a2dp_control = a2dp::Control::connect();
         Ok(Self {
             id,
             local_config,
@@ -121,6 +121,7 @@ impl PeerTask {
         id: PeerId,
         profile_proxy: bredr::ProfileProxy,
         audio_control: Arc<Mutex<Box<dyn audio::Control>>>,
+        a2dp_control: a2dp::Control,
         local_config: AudioGatewayFeatureSupport,
         connection_behavior: ConnectionBehavior,
         hfp_sender: Sender<hfp::Event>,
@@ -132,6 +133,7 @@ impl PeerTask {
             id,
             profile_proxy,
             audio_control,
+            a2dp_control,
             local_config,
             connection_behavior,
             hfp_sender,
@@ -522,6 +524,7 @@ impl PeerTask {
                 self.connection.receive_ag_request(marker.unwrap(), AgUpdate::Ok).await;
 
                 let codecs = self.get_codecs();
+                let pause_token = self.a2dp_control.pause(Some(self.id)).await.unwrap_or(None);
                 // TODO(b/452387835): Remove this workaround when we can synchronize closing of old
                 // SCO connections.
                 let mut retries_left = 1;
@@ -529,7 +532,7 @@ impl PeerTask {
                     let setup_result =
                         self.sco_connector.connect(self.id.clone(), codecs.clone()).await;
                     match setup_result {
-                        Ok(conn) => break self.finish_sco_connection(conn).await,
+                        Ok(conn) => break self.finish_sco_connection(conn, pause_token).await,
                         Err(err) => {
                             if retries_left > 0 {
                                 warn!(
@@ -604,7 +607,8 @@ impl PeerTask {
                     info!(peer:% = self.id; "Handling SCO Connection accepted");
                     match conn_res {
                         Ok(sco) if !sco.is_closed() => {
-                            let finish_sco_res = self.finish_sco_connection(sco).await;
+                            let pause_token = self.a2dp_control.pause(Some(self.id)).await.unwrap_or(None);
+                            let finish_sco_res = self.finish_sco_connection(sco, pause_token).await;
                             if let Err(err) = finish_sco_res {
                                 warn!(peer:% = self.id, err:?; "Failed to finish SCO connection");
                             }
@@ -813,20 +817,10 @@ impl PeerTask {
     async fn finish_sco_connection(
         &mut self,
         sco_connection: sco::Connection,
+        pause_token: a2dp::PauseToken,
     ) -> Result<(), Error> {
         let peer_id = self.id.clone();
         info!(peer_id:%; "Finishing SCO connection");
-        let res = self.a2dp_control.pause(Some(peer_id)).await;
-        let pause_token = match res {
-            Err(e) => {
-                warn!(peer_id:%, e:?; "Couldn't pause A2DP audio");
-                None
-            }
-            Ok(token) => {
-                info!(peer_id:%; "Successfully paused A2DP audio");
-                token
-            }
-        };
         let vigil = Vigil::new(sco::Active::new(&sco_connection, pause_token));
         {
             let mut audio = self.audio_control.lock();
@@ -958,13 +952,13 @@ mod tests {
         PeerHandlerRequest, PeerHandlerRequestStream, PeerHandlerWatchNextCallResponder,
         SignalStrength,
     };
-    use fuchsia_async as fasync;
     use fuchsia_bluetooth::types::Channel;
     use futures::future::ready;
     use futures::stream::{FusedStream, Stream};
     use proptest::prelude::*;
     use std::collections::HashSet;
     use std::pin::pin;
+    use {fidl_fuchsia_bluetooth_internal_a2dp as fidl_a2dp, fuchsia_async as fasync};
 
     use crate::features::{AgFeatures, HfFeatures};
     use crate::peer::indicators::{AgIndicatorsReporting, HfIndicators};
@@ -1008,9 +1002,12 @@ mod tests {
         mpsc::Receiver<PeerRequest>,
         ProfileRequestStream,
         audio::TestControl,
+        fidl_a2dp::ControllerRequestStream,
     ) {
         let (sender, receiver) = mpsc::channel(1);
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<ProfileMarker>();
+        let (a2dp_control_proxy, a2dp_request_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fidl_a2dp::ControllerMarker>();
         let test_audio = audio::TestControl::default();
         let sco_connector = sco::Connector::build(proxy.clone(), HashSet::new());
         let audio: Arc<Mutex<Box<dyn audio::Control>>> =
@@ -1025,10 +1022,12 @@ mod tests {
             }
         })
         .detach();
+        let a2dp_control = a2dp::Control::from_proxy(a2dp_control_proxy);
         let mut task = PeerTask::new(
             PeerId(1),
             proxy,
             audio,
+            a2dp_control,
             AudioGatewayFeatureSupport::default(),
             ConnectionBehavior::default(),
             mpsc::channel(1).0,
@@ -1038,14 +1037,21 @@ mod tests {
         if let Some(conn) = connection {
             task.connection = conn;
         }
-        (task, sender, receiver, stream, test_audio)
+        (task, sender, receiver, stream, test_audio, a2dp_request_stream)
     }
 
     fn setup_peer_task(
         connection: Option<ServiceLevelConnection>,
-    ) -> (PeerTask, Sender<PeerRequest>, mpsc::Receiver<PeerRequest>, ProfileRequestStream) {
-        let (task, sender, receiver, request_stream, _) = setup_peer_task_audiocontrol(connection);
-        (task, sender, receiver, request_stream)
+    ) -> (
+        PeerTask,
+        Sender<PeerRequest>,
+        mpsc::Receiver<PeerRequest>,
+        ProfileRequestStream,
+        fidl_a2dp::ControllerRequestStream,
+    ) {
+        let (task, sender, receiver, request_stream, _, a2dp_request_stream) =
+            setup_peer_task_audiocontrol(connection);
+        (task, sender, receiver, request_stream, a2dp_request_stream)
     }
 
     proptest! {
@@ -1138,7 +1144,7 @@ mod tests {
     #[fuchsia::test]
     fn task_runs_until_all_event_sources_close() {
         let mut exec = fasync::TestExecutor::new();
-        let (peer, mut sender, receiver, profile_requests) = setup_peer_task(None);
+        let (peer, mut sender, receiver, profile_requests, _a2dp_requests) = setup_peer_task(None);
 
         let mut run_fut = pin!(peer.run(receiver));
 
@@ -1165,7 +1171,7 @@ mod tests {
     #[fuchsia::test]
     fn peer_task_drives_procedure() {
         let mut exec = fasync::TestExecutor::new();
-        let (mut peer, _sender, receiver, _profile) = setup_peer_task(None);
+        let (mut peer, _sender, receiver, _profile, _a2dp_requests) = setup_peer_task(None);
 
         // Set up the RFCOMM connection.
         let (local, mut remote) = Channel::create();
@@ -1219,7 +1225,8 @@ mod tests {
             ..SlcState::default()
         };
         let (connection, mut remote) = create_and_initialize_slc(state);
-        let (peer, mut sender, receiver, _profile) = setup_peer_task(Some(connection));
+        let (peer, mut sender, receiver, _profile, _a2dp_requests) =
+            setup_peer_task(Some(connection));
 
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<PeerHandlerMarker>();
 
@@ -1278,7 +1285,7 @@ mod tests {
     fn terminated_slc_ends_peer_task() {
         let mut exec = fasync::TestExecutor::new();
         let (connection, remote) = create_and_initialize_slc(SlcState::default());
-        let (peer, _sender, receiver, _profile) = setup_peer_task(Some(connection));
+        let (peer, _sender, receiver, _profile, _a2dp_requests) = setup_peer_task(Some(connection));
 
         let run_fut = peer.run(receiver);
         let mut run_fut = pin!(run_fut);
@@ -1305,7 +1312,7 @@ mod tests {
         assert!(remote.set_disposition(Some(zx::SocketWriteDisposition::Disabled), None).is_ok());
         let local = Channel::from_socket_infallible(local, Channel::DEFAULT_MAX_TX);
         connection.initialize_at_state(local, SlcState::default());
-        let (peer, _sender, receiver, _profile) = setup_peer_task(Some(connection));
+        let (peer, _sender, receiver, _profile, _a2dp_requests) = setup_peer_task(Some(connection));
 
         let run_fut = peer.run(receiver);
         let mut run_fut = pin!(run_fut);
@@ -1383,7 +1390,8 @@ mod tests {
             ..SlcState::default()
         };
         let (connection, mut remote) = create_and_initialize_slc(state);
-        let (peer, mut sender, receiver, _profile) = setup_peer_task(Some(connection));
+        let (peer, mut sender, receiver, _profile, _a2dp_reqeusts) =
+            setup_peer_task(Some(connection));
 
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<PeerHandlerMarker>();
 
@@ -1426,7 +1434,8 @@ mod tests {
 
         // Setup the peer task.
         let (connection, _remote) = create_and_initialize_slc(SlcState::default());
-        let (peer, mut sender, receiver, mut profile) = setup_peer_task(Some(connection));
+        let (peer, mut sender, receiver, mut profile, mut a2dp_requests) =
+            setup_peer_task(Some(connection));
 
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<PeerHandlerMarker>();
 
@@ -1457,6 +1466,10 @@ mod tests {
             req => panic!("Expected WatchState, got {:?}", req),
         };
         state_responder.send(CallState::OngoingActive).expect("Sent OngoingActive.");
+
+        let (_token_requests, run_fut) =
+            run_while(&mut exec, run_fut, expect_a2dp_paused(&mut a2dp_requests));
+
         let (sco, mut run_fut) =
             run_while(&mut exec, run_fut, expect_sco_connection(&mut profile, true, Ok(())));
         let _ = exec.run_until_stalled(&mut run_fut);
@@ -1479,6 +1492,10 @@ mod tests {
             req => panic!("Expected WatchState, got {:?}", req),
         };
         state_responder.send(CallState::OngoingActive).expect("Sent OngoingActive.");
+
+        let (_token_requests, run_fut) =
+            run_while(&mut exec, run_fut, expect_a2dp_paused(&mut a2dp_requests));
+
         // Don't send a SCO connection until they are trying to connect.
         let (sco, mut run_fut) =
             run_while(&mut exec, run_fut, expect_sco_connection(&mut profile, true, Ok(())));
@@ -1503,6 +1520,9 @@ mod tests {
         // SCO is set up by HF and call is transferred to HF
         let (_sco, run_fut) =
             run_while(&mut exec, run_fut, expect_sco_connection(&mut profile, false, Ok(())));
+        // We pause A2DP in response to the SCO connection when we are waiting.
+        let (_token_requests, run_fut) =
+            run_while(&mut exec, run_fut, expect_a2dp_paused(&mut a2dp_requests));
         let (_watch_state_req, run_fut) = run_while(&mut exec, run_fut, &mut call_stream.next());
         let (req, mut run_fut) = run_while(&mut exec, run_fut, &mut call_stream.next());
         assert_matches!(req, Some(Ok(CallRequest::RequestActive { .. })));
@@ -1522,7 +1542,8 @@ mod tests {
         hf_indicators.enable_indicators(vec![at::BluetoothHFIndicator::BatteryLevel]);
         let state = SlcState { hf_indicators, ..SlcState::default() };
         let (connection, mut remote) = create_and_initialize_slc(state);
-        let (peer, mut sender, receiver, _profile) = setup_peer_task(Some(connection));
+        let (peer, mut sender, receiver, _profile, _a2dp_requests) =
+            setup_peer_task(Some(connection));
 
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<PeerHandlerMarker>();
         // The battery level that will be reported by the peer.
@@ -1572,7 +1593,8 @@ mod tests {
         let state =
             SlcState { hf_indicators, ag_indicator_events_reporting, ..SlcState::default() };
         let (connection, mut remote) = create_and_initialize_slc(state);
-        let (peer, mut sender, receiver, _profile) = setup_peer_task(Some(connection));
+        let (peer, mut sender, receiver, _profile, _a2dp_requests) =
+            setup_peer_task(Some(connection));
 
         // Run the PeerTask.
         let run_fut = peer.run(receiver);
@@ -1608,7 +1630,8 @@ mod tests {
             ..SlcState::default()
         };
         let (connection, mut remote) = create_and_initialize_slc(state);
-        let (peer, mut sender, receiver, _profile) = setup_peer_task(Some(connection));
+        let (peer, mut sender, receiver, _profile, _a2dp_requests) =
+            setup_peer_task(Some(connection));
 
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<PeerHandlerMarker>();
 
@@ -1660,7 +1683,8 @@ mod tests {
             ..SlcState::default()
         };
         let (connection, remote) = create_and_initialize_slc(state);
-        let (peer, mut sender, receiver, mut profile) = setup_peer_task(Some(connection));
+        let (peer, mut sender, receiver, mut profile, mut a2dp_requests) =
+            setup_peer_task(Some(connection));
 
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<PeerHandlerMarker>();
 
@@ -1691,6 +1715,10 @@ mod tests {
             req => panic!("Expected WatchState, got {:?}", req),
         };
         state_responder.send(CallState::OngoingActive).expect("Sent OngoingActive.");
+
+        let (_token_requests, run_fut) =
+            run_while(&mut exec, run_fut, expect_a2dp_paused(&mut a2dp_requests));
+
         let (sco, run_fut) =
             run_while(&mut exec, run_fut, expect_sco_connection(&mut profile, true, Ok(())));
         let _sco = sco.expect("SCO Connection.");
@@ -1718,7 +1746,7 @@ mod tests {
     #[fuchsia::test]
     fn connection_behavior_request_updates_state() {
         let mut exec = fasync::TestExecutor::new();
-        let (peer, mut sender, receiver, mut profile) = setup_peer_task(None);
+        let (peer, mut sender, receiver, mut profile, _a2dp_requests) = setup_peer_task(None);
 
         let _peer_task = fasync::Task::local(peer.run(receiver));
 
@@ -1774,7 +1802,7 @@ mod tests {
     #[fuchsia::test]
     fn non_rfcomm_search_result_is_ignored() {
         let mut exec = fasync::TestExecutor::new();
-        let (peer, mut sender, receiver, mut profile) = setup_peer_task(None);
+        let (peer, mut sender, receiver, mut profile, _a2dp_requests) = setup_peer_task(None);
 
         let _peer_task = fasync::Task::local(peer.run(receiver));
 
@@ -1801,7 +1829,8 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         let connection = ServiceLevelConnection::new();
         let (local, mut remote) = Channel::create();
-        let (peer, mut sender, receiver, _profile) = setup_peer_task(Some(connection));
+        let (peer, mut sender, receiver, _profile, _a2dp_requests) =
+            setup_peer_task(Some(connection));
 
         assert!(!peer.connection.connected());
 
@@ -1833,7 +1862,8 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         // SLC is connected at the start of the test.
         let (connection, mut old_remote) = create_and_connect_slc();
-        let (peer, mut sender, receiver, _profile) = setup_peer_task(Some(connection));
+        let (peer, mut sender, receiver, _profile, _a2dp_requests) =
+            setup_peer_task(Some(connection));
 
         assert!(peer.connection.connected());
 
@@ -1986,11 +2016,26 @@ mod tests {
 
         let res = exec.run_until_stalled(&mut audio_connection_fut).expect("should be done");
         let local_sco = res.expect("should have started up okay");
-        let audio_connection_fut2 = peer.finish_sco_connection(local_sco);
+        let audio_connection_fut2 = peer.finish_sco_connection(local_sco, None);
         let mut audio_connection_fut2 = pin!(audio_connection_fut2);
         exec.run_singlethreaded(&mut audio_connection_fut2).expect("finished");
 
         remote_sco.unwrap()
+    }
+
+    async fn expect_a2dp_paused(
+        request_stream: &mut fidl_a2dp::ControllerRequestStream,
+    ) -> fidl_a2dp::StreamSuspenderRequestStream {
+        let request = request_stream.next().await;
+        let Some(Ok(fidl_a2dp::ControllerRequest::Suspend { peer_id: _, token, responder })) =
+            request
+        else {
+            panic!("Expected A2DP Suspend but got {request:?}");
+        };
+        let _ = responder.send();
+        let (suspend_request_stream, control_handle) = token.into_stream_and_control_handle();
+        let _ = control_handle.send_on_suspended();
+        suspend_request_stream
     }
 
     #[fuchsia::test]
@@ -1998,7 +2043,7 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         // SLC is connected at the start of the test.
         let (connection, _old_remote) = create_and_connect_slc();
-        let (peer, _sender, _receiver, mut profile_requests, test_audio_control) =
+        let (peer, _sender, _receiver, mut profile_requests, test_audio_control, _a2dp_requests) =
             setup_peer_task_audiocontrol(Some(connection));
 
         let mut peer = run_peer_until_stalled(&mut exec, peer);
@@ -2029,7 +2074,8 @@ mod tests {
             ..SlcState::default()
         };
         let (connection, mut remote) = create_and_initialize_slc(state);
-        let (peer, mut sender, receiver, mut profile) = setup_peer_task(Some(connection));
+        let (peer, mut sender, receiver, mut profile, mut a2dp_requests) =
+            setup_peer_task(Some(connection));
 
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<PeerHandlerMarker>();
 
@@ -2070,6 +2116,9 @@ mod tests {
         let mut buf = Vec::new();
         at::Command::serialize(&mut buf, &vec![codec_confirm_cmd]).expect("serialization is ok");
         let _ = remote.write(&buf[..]).expect("channel write is ok");
+
+        let (_token_requests, run_fut) =
+            run_while(&mut exec, run_fut, expect_a2dp_paused(&mut a2dp_requests));
 
         // First SCO connections fail (T2 and T1), causing a re-negotiation of the codec state.
         let accepted_paramset = vec![bredr::HfpParameterSet::S4];
@@ -2113,7 +2162,8 @@ mod tests {
             ..SlcState::default()
         };
         let (connection, mut remote) = create_and_initialize_slc(state);
-        let (peer, mut sender, receiver, mut profile) = setup_peer_task(Some(connection));
+        let (peer, mut sender, receiver, mut profile, mut a2dp_requests) =
+            setup_peer_task(Some(connection));
 
         let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<PeerHandlerMarker>();
 
@@ -2155,6 +2205,9 @@ mod tests {
         at::Command::serialize(&mut buf, &vec![codec_confirm_cmd]).expect("serialization is ok");
         let _ = remote.write(&buf[..]).expect("channel write is ok");
 
+        let (_token_requests, run_fut) =
+            run_while(&mut exec, run_fut, expect_a2dp_paused(&mut a2dp_requests));
+
         // First SCO connections fail (T2 and T1), causing a re-negotiation of the codec state.
         let accepted_paramset = vec![bredr::HfpParameterSet::S4];
         let (sco, run_fut) = run_while(
@@ -2186,6 +2239,9 @@ mod tests {
         at::Command::serialize(&mut buf, &vec![codec_confirm_cmd]).expect("serialization is ok");
         let _ = remote.write(&buf[..]).expect("channel write is ok");
 
+        let (_token_requests, run_fut) =
+            run_while(&mut exec, run_fut, expect_a2dp_paused(&mut a2dp_requests));
+
         // Expect a connection with the CVSD params.
         let (sco, mut run_fut) = run_while(
             &mut exec,
@@ -2205,7 +2261,7 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         // SLC is connected at the start of the test.
         let (connection, _old_remote) = create_and_connect_slc();
-        let (mut peer, _sender, receiver, mut profile_requests, test_audio_control) =
+        let (mut peer, _sender, receiver, mut profile_requests, test_audio_control, _a2dp_requests) =
             setup_peer_task_audiocontrol(Some(connection));
 
         assert!(peer.connection.connected());
@@ -2235,7 +2291,7 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         // SLC is connected at the start of the test.
         let (connection, _old_remote) = create_and_initialize_slc(SlcState::default());
-        let (peer, _sender, _receiver, _profile_requests, test_audio_control) =
+        let (peer, _sender, _receiver, _profile_requests, test_audio_control, _a2dp_requests) =
             setup_peer_task_audiocontrol(Some(connection));
 
         let peer = run_peer_until_stalled(&mut exec, peer);
@@ -2250,7 +2306,7 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         // SLC is connected at the start of the test.
         let (connection, old_remote) = create_and_initialize_slc(SlcState::default());
-        let (peer, _sender, receiver, _profile_requests, test_audio_control) =
+        let (peer, _sender, receiver, _profile_requests, test_audio_control, _a2dp_requests) =
             setup_peer_task_audiocontrol(Some(connection));
 
         let peer = run_peer_until_stalled(&mut exec, peer);
@@ -2271,8 +2327,14 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         // SLC is connected at the start of the test.
         let (connection, _old_remote) = create_and_connect_slc();
-        let (mut peer, mut sender, receiver, mut profile_requests, test_audio_control) =
-            setup_peer_task_audiocontrol(Some(connection));
+        let (
+            mut peer,
+            mut sender,
+            receiver,
+            mut profile_requests,
+            test_audio_control,
+            _a2dp_requests,
+        ) = setup_peer_task_audiocontrol(Some(connection));
 
         assert!(peer.connection.connected());
 
@@ -2315,7 +2377,7 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
         // SLC is connected at the start of the test.
         let (connection, _old_remote) = create_and_connect_slc();
-        let (mut peer, _sender, _receiver, mut profile_requests) =
+        let (mut peer, _sender, _receiver, mut profile_requests, _a2dp_requests) =
             setup_peer_task(Some(connection));
 
         assert!(peer.connection.connected());

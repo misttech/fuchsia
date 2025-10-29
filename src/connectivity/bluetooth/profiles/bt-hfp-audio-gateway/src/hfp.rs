@@ -55,6 +55,8 @@ pub struct Hfp {
     connection_behavior: ConnectionBehavior,
     /// A shared audio controller, to start and route audio devices for peers.
     audio: Arc<Mutex<Box<dyn audio::Control>>>,
+    /// Shared A2DP controller, used to pause A2DP when HFP is active.
+    a2dp_control: bt_hfp::a2dp::Control,
     /// Provides Hfp with battery updates from the `fuchsia.power.battery.BatteryManager` protocol -
     /// these are battery updates about the local (Fuchsia) device.
     battery_client: MaybeStream<BatteryClient>,
@@ -81,6 +83,7 @@ impl Hfp {
         profile_svc: bredr::ProfileProxy,
         battery_client: Option<BatteryClient>,
         audio: Box<dyn audio::Control>,
+        a2dp_control: bt_hfp::a2dp::Control,
         call_manager_registration: Receiver<CallManagerProxy>,
         config: AudioGatewayFeatureSupport,
         sco_connector: sco::Connector,
@@ -98,6 +101,7 @@ impl Hfp {
             test_requests,
             connection_behavior: ConnectionBehavior::default(),
             audio: Arc::new(Mutex::new(audio)),
+            a2dp_control,
             battery_client: battery_client.into(),
             internal_events_rx,
             internal_events_tx,
@@ -207,6 +211,7 @@ impl Hfp {
                     id,
                     self.profile_svc.clone(),
                     self.audio.clone(),
+                    self.a2dp_control.clone(),
                     self.config,
                     self.connection_behavior,
                     self.internal_events_tx.clone(),
@@ -347,10 +352,10 @@ mod tests {
     use assert_matches::assert_matches;
     use async_test_helpers::run_while;
     use async_utils::PollExt;
-    use bt_rfcomm::profile::build_rfcomm_protocol;
     use bt_rfcomm::ServerChannel;
+    use bt_rfcomm::profile::build_rfcomm_protocol;
     use diagnostics_assertions::assert_data_tree;
-    use fidl::endpoints::{create_proxy, create_proxy_and_stream, ControlHandle};
+    use fidl::endpoints::{ControlHandle, create_proxy, create_proxy_and_stream};
     use fidl_fuchsia_bluetooth_hfp::{
         CallManagerMarker, CallManagerRequest, CallManagerRequestStream,
     };
@@ -364,9 +369,9 @@ mod tests {
         fidl_fuchsia_power_battery as fpower, fuchsia_async as fasync,
     };
 
-    use crate::peer::fake::PeerFake;
     use crate::peer::PeerRequest;
-    use crate::profile::test_server::{setup_profile_and_test_server, LocalProfileTestServer};
+    use crate::peer::fake::PeerFake;
+    use crate::profile::test_server::{LocalProfileTestServer, setup_profile_and_test_server};
 
     #[fuchsia::test(allow_stalls = false)]
     async fn profile_error_propagates_error_from_hfp_run() {
@@ -388,6 +393,7 @@ mod tests {
             profile_svc,
             Some(battery_client),
             Box::new(audio::TestControl::default()),
+            bt_hfp::a2dp::Control::default(),
             rx1,
             AudioGatewayFeatureSupport::default(),
             sco_connector,
@@ -420,6 +426,7 @@ mod tests {
             profile_svc,
             Some(battery_client),
             Box::new(audio::TestControl::default()),
+            bt_hfp::a2dp::Control::default(),
             receiver,
             AudioGatewayFeatureSupport::default(),
             sco_connector,
@@ -464,6 +471,7 @@ mod tests {
             profile_svc,
             Some(battery_client),
             Box::new(audio::TestControl::default()),
+            bt_hfp::a2dp::Control::default(),
             receiver,
             AudioGatewayFeatureSupport::default(),
             sco_connector,
@@ -523,6 +531,7 @@ mod tests {
             profile_svc,
             Some(battery_client),
             Box::new(audio::TestControl::default()),
+            bt_hfp::a2dp::Control::default(),
             receiver,
             AudioGatewayFeatureSupport::default(),
             sco_connector,
@@ -567,6 +576,7 @@ mod tests {
             profile_svc,
             Some(battery_client),
             Box::new(audio::TestControl::default()),
+            bt_hfp::a2dp::Control::default(),
             receiver,
             AudioGatewayFeatureSupport::default(),
             sco_connector,
@@ -623,6 +633,7 @@ mod tests {
             profile_svc,
             Some(battery_client),
             Box::new(audio::TestControl::default()),
+            bt_hfp::a2dp::Control::default(),
             receiver,
             AudioGatewayFeatureSupport::default(),
             sco_connector,
@@ -752,6 +763,7 @@ mod tests {
             profile_svc,
             Some(battery_client),
             Box::new(audio::TestControl::default()),
+            bt_hfp::a2dp::Control::default(),
             call_mgr_rx,
             AudioGatewayFeatureSupport::default(),
             sco_connector,
@@ -800,6 +812,7 @@ mod tests {
             profile_svc,
             Some(battery_client),
             Box::new(audio::TestControl::default()),
+            bt_hfp::a2dp::Control::default(),
             receiver,
             AudioGatewayFeatureSupport::default(),
             sco_connector,
@@ -845,6 +858,7 @@ mod tests {
             profile_svc,
             Some(battery_client),
             Box::new(audio::TestControl::default()),
+            bt_hfp::a2dp::Control::default(),
             call_mgr_rx,
             AudioGatewayFeatureSupport::default(),
             sco_connector,
@@ -898,6 +912,7 @@ mod tests {
             profile_svc,
             Some(battery_client),
             Box::new(audio::TestControl::default()),
+            bt_hfp::a2dp::Control::default(),
             rx1,
             AudioGatewayFeatureSupport::default(),
             sco_connector,

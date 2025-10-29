@@ -18,7 +18,7 @@ pub enum Error {
 
 /// A client for fuchsia.bluetooth.internal.a2dp.
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Control {
     proxy: Option<a2dp::ControllerProxy>,
 }
@@ -31,8 +31,7 @@ impl Control {
         Self { proxy }
     }
 
-    #[cfg(all(test, feature = "test_a2dp_controller"))]
-    fn from_proxy(proxy: a2dp::ControllerProxy) -> Self {
+    pub fn from_proxy(proxy: a2dp::ControllerProxy) -> Self {
         Self { proxy: Some(proxy) }
     }
 

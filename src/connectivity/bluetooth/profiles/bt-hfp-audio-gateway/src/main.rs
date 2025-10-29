@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 #![recursion_limit = "1024"]
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use battery_client::BatteryClient;
 use bt_hfp::codec_id::CodecId;
 use bt_hfp::{audio, sco};
@@ -98,11 +98,14 @@ async fn main() -> Result<(), Error> {
 
     let sco_connector = sco::Connector::build(profile_svc.clone(), controller_codecs);
 
+    let a2dp_control = bt_hfp::a2dp::Control::connect();
+
     let mut hfp = Hfp::new(
         profile_client,
         profile_svc,
         battery_client,
         audio,
+        a2dp_control,
         call_manager_receiver,
         feature_support,
         sco_connector,

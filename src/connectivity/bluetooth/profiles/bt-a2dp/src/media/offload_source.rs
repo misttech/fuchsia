@@ -171,9 +171,6 @@ pub(crate) struct ConfiguredTask {
     provider: ProviderProxy,
     /// Codec Config
     codec_config: MediaCodecConfig,
-    /// AudioOffloadController when started, used to stop offload and get indication of when
-    /// started.
-    offload_controller: Option<AudioOffloadControllerProxy>,
 }
 
 impl ConfiguredTask {
@@ -194,7 +191,6 @@ impl ConfiguredTask {
             inspect: Default::default(),
             provider,
             codec_config,
-            offload_controller: None,
         }
     }
 
@@ -233,11 +229,11 @@ impl MediaTaskRunner for ConfiguredTask {
         if let Err(e) = offload_proxy.start_audio_offload(&self.configuration, controller_server) {
             return Err(MediaTaskError::Other(format!("Couldn't start audio offload: {e:?}")));
         }
-        self.offload_controller = Some(controller_proxy);
         Ok(Box::new(RunningTask::build(
             self.codec_config.clone(),
             self.provider.clone(),
             self.peer_id,
+            controller_proxy,
         )))
     }
 
@@ -260,6 +256,9 @@ impl MediaTaskRunner for ConfiguredTask {
 struct RunningTask {
     stream_task: Option<fasync::Task<()>>,
     result_fut: Shared<BoxFuture<'static, Result<(), MediaTaskError>>>,
+    /// AudioOffloadController, used to stop offload and get indication of when
+    /// started.
+    offload_controller: AudioOffloadControllerProxy,
 }
 
 impl RunningTask {
@@ -337,7 +336,12 @@ impl RunningTask {
         codec_task.await
     }
 
-    fn build(codec_config: MediaCodecConfig, provider: ProviderProxy, peer_id: PeerId) -> Self {
+    fn build(
+        codec_config: MediaCodecConfig,
+        provider: ProviderProxy,
+        peer_id: PeerId,
+        offload_controller: AudioOffloadControllerProxy,
+    ) -> Self {
         let (sender, receiver) = oneshot::channel();
         let stream_task_fut = Self::stream_task(codec_config, provider, peer_id);
         let wrapped_task = fasync::Task::local(async move {
@@ -348,7 +352,7 @@ impl RunningTask {
             let _ = sender.send(result);
         });
         let result_fut = receiver.map_ok_or_else(|_err| Ok(()), |result| result).boxed().shared();
-        Self { stream_task: Some(wrapped_task), result_fut }
+        Self { stream_task: Some(wrapped_task), result_fut, offload_controller }
     }
 }
 
@@ -358,6 +362,8 @@ impl MediaTask for RunningTask {
     }
 
     fn stop(&mut self) -> Result<(), MediaTaskError> {
+        // Send a stop, although dropping the offload controller (or this task) should also stop
+        let _ = self.offload_controller.stop().now_or_never();
         if let Some(task) = self.stream_task.take() {
             trace::instant!(c"bt-a2dp", c"Media:Stopped", trace::Scope::Thread);
             drop(task);
@@ -620,7 +626,9 @@ mod tests {
     async fn running_task_error_from_provider() {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_audio_device::ProviderMarker>();
-        let mut task = RunningTask::build(build_sbc_source(), proxy, PeerId(1));
+        let (offload_proxy, _offload_stream) =
+            fidl::endpoints::create_proxy_and_stream::<AudioOffloadControllerMarker>();
+        let mut task = RunningTask::build(build_sbc_source(), proxy, PeerId(1), offload_proxy);
 
         let mut finished_fut = task.finished();
         assert!(fasync::TestExecutor::poll_until_stalled(&mut finished_fut).await.is_pending());
@@ -635,7 +643,9 @@ mod tests {
     async fn running_task_stop_terminates() {
         let (proxy, _stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_audio_device::ProviderMarker>();
-        let mut task = RunningTask::build(build_sbc_source(), proxy, PeerId(1));
+        let (offload_proxy, _offload_stream) =
+            fidl::endpoints::create_proxy_and_stream::<AudioOffloadControllerMarker>();
+        let mut task = RunningTask::build(build_sbc_source(), proxy, PeerId(1), offload_proxy);
 
         assert!(task.stop().is_ok());
         assert!(task.finished().await.is_ok());
