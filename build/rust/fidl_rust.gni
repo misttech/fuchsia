@@ -38,7 +38,6 @@ template("_fidl_rust_crate") {
                                "applicable_licenses",
                                "testonly",
                                "fidl_ir_json",
-                               "disable_rustdoc",
                                "fidl_ir_target",
                              ])
       visibility = [
@@ -80,6 +79,7 @@ template("_fidl_rust_crate") {
                  "deps",
                  "public_deps",
                  "visibility",
+                 "disable_rustdoc",
                  "features",
                ])
   } else {
