@@ -2144,6 +2144,7 @@ foreach(_target_type,
                                "script",
                                "testonly",
                                "visibility",
+                               "disable_rustdoc",
                                "metadata",
                              ])
 
