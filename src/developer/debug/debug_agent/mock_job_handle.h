@@ -58,6 +58,9 @@ class MockJobHandle final : public JobHandle {
     child_processes_.push_back(std::move(process));
   }
 
+  // Returns a mutable pointer to the job with the given |job_koid|.
+  MockJobHandle* FindChildJob(zx_koid_t job_koid);
+
  private:
   zx_koid_t job_koid_;
   std::string name_;

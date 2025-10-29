@@ -32,6 +32,7 @@
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/logging/logging.h"
 #include "src/developer/debug/shared/status.h"
+#include "src/developer/debug/shared/string_util.h"
 
 #if defined(__linux__)
 #include <unistd.h>
@@ -72,7 +73,7 @@ bool ShouldDeferSendingModules(const debug_ipc::AttachConfig& config) {
 
 bool FilterDoesNotAppearIn(const Filter& needle, const std::vector<Filter>& haystack) {
   return std::ranges::none_of(haystack, [&needle](const auto& filter) {
-    return needle.filter().pattern == filter.filter().pattern;
+    return debug::StringStartsWith(needle.filter().pattern, filter.filter().pattern);
   });
 }
 
@@ -1167,8 +1168,11 @@ void DebugAgent::OnComponentStarted(const std::string& moniker, const std::strin
     if (auto realm_filter = filter->MakeRecursiveFilter(moniker)) {
       // TODO(https://fxbug.dev/450924906): Handle conflicting filter option resolution.
       if (maybe_realm_filter) {
-        if (maybe_realm_filter->pattern == realm_filter->filter().pattern)
-          continue;
+        // Ensure that the filter that would have been created by this matching filter matches what
+        // we already had in |maybe_realm_filter|. Since this notification is only received for a
+        // single component instance, all filters that match should create the same realm filter.
+        FX_DCHECK(maybe_realm_filter->pattern == realm_filter->filter().pattern);
+        continue;
       }
       if (FilterDoesNotAppearIn(*realm_filter, filters_)) {
         // Support older clients on debug_ipc version < 73.
@@ -1191,20 +1195,21 @@ void DebugAgent::OnComponentStarted(const std::string& moniker, const std::strin
       }
     }
 
-    // All matching filters are reported in the notification.
-    if (job_koid != ZX_KOID_INVALID) {
+    // All matching filters are reported in the notification. Make sure we don't falsely report that
+    // non-job-only filters match this component started event (process starting events come
+    // separately via a job's DEBUGGER exception channel).
+    if (job_koid != ZX_KOID_INVALID && filter->filter().config.job_only) {
       component_started.matching_filters.emplace_back(filter->filter().id,
                                                       std::vector<uint64_t>{job_koid});
     }
   }
 
-  // And add the component information.
-  if (!matching_filters.empty()) {
+  // And add the component information, if something matched.
+  if (!component_started.matching_filters.empty()) {
     component_started.component.moniker = moniker;
     component_started.component.url = url;
     component_started.timestamp = GetNowTimestamp();
 
-    // Only send the notification if something matched.
     SendNotification(component_started);
   }
 

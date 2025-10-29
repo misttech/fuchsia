@@ -30,6 +30,23 @@ std::unique_ptr<JobHandle> MockSystemInterface::AddJob(
   return this->GetJob(koid);
 }
 
+std::unique_ptr<JobHandle> MockSystemInterface::AddJob(
+    MockJobHandle child, zx_koid_t parent_job,
+    std::optional<debug_ipc::ComponentInfo> component_info) {
+  auto parent = root_job_.FindChildJob(parent_job);
+  zx_koid_t child_koid = child.GetKoid();
+
+  if (parent) {
+    parent->AddChildJob(std::move(child));
+
+    if (component_info) {
+      mock_component_manager().AddComponentInfo(child_koid, *component_info);
+    }
+  }
+
+  return this->GetJob(child_koid);
+}
+
 std::unique_ptr<MockSystemInterface> MockSystemInterface::CreateWithData() {
   // Job 121.
   MockProcessHandle job121_p1(19, "job121-p1");

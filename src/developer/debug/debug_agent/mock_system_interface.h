@@ -34,7 +34,9 @@ class MockSystemInterface final : public SystemInterface {
   // Adds a new child job to the root job, with the given component info if provided.
   std::unique_ptr<JobHandle> AddJob(zx_koid_t koid,
                                     std::optional<debug_ipc::ComponentInfo> component_info);
-
+  // Same as above but with a specified parent job.
+  std::unique_ptr<JobHandle> AddJob(MockJobHandle child, zx_koid_t parent_job,
+                                    std::optional<debug_ipc::ComponentInfo> component_info);
   // Creates a default process tree:
   // clang-format off
   //

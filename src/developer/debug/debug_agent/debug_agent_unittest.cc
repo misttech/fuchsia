@@ -11,9 +11,11 @@
 #include "src/developer/debug/debug_agent/arch.h"
 #include "src/developer/debug/debug_agent/mock_debug_agent_harness.h"
 #include "src/developer/debug/debug_agent/mock_exception_handle.h"
+#include "src/developer/debug/debug_agent/mock_job_handle.h"
 #include "src/developer/debug/debug_agent/mock_process.h"
 #include "src/developer/debug/debug_agent/mock_process_handle.h"
 #include "src/developer/debug/debug_agent/mock_thread_handle.h"
+#include "src/developer/debug/debug_agent/remote_api.h"
 #include "src/developer/debug/debug_agent/test_utils.h"
 #include "src/developer/debug/ipc/filter_utils.h"
 #include "src/developer/debug/ipc/protocol.h"
@@ -882,6 +884,136 @@ TEST_F(DebugAgentTests, DoNotAttachToChildJobs) {
 
   EXPECT_TRUE(harness.debug_agent()->GetDebuggedJob(kParentJobKoid));
   EXPECT_FALSE(harness.debug_agent()->GetDebuggedJob(kChildJobKoid));
+}
+
+TEST_F(DebugAgentTests, RecursiveJobOnlyFilterDoesNotCannibalizeChildComponents) {
+  constexpr zx_koid_t kRootJobKoid = 1001;
+  constexpr zx_koid_t kParentJobKoid = 1002;
+  constexpr zx_koid_t kParentJobProcessKoid = 1003;
+  constexpr zx_koid_t kChildJobKoid = 1005;
+  constexpr zx_koid_t kChildJobProcessKoid = 1006;
+
+  // We're going to create a custom component topology on the fly for this test. Here is what the
+  // initial state looks like:
+  //
+  // j: 1001 root
+  //   j: 1002 parent-job
+  //     p: 1003 parent-job-p1 some/moniker fuchsia-pkg://some/url
+  //       t: 1004 initial-thread
+  MockProcessHandle parent_job_process(kParentJobProcessKoid, "parent-job-p1");
+  parent_job_process.set_threads({MockThreadHandle(1004, "initial-thread")});
+  MockJobHandle parent_component_job(kParentJobKoid, "parent-job");
+  parent_component_job.set_child_processes({std::move(parent_job_process)});
+
+  MockJobHandle root_job(kRootJobKoid, "root");
+  root_job.set_child_jobs({std::move(parent_component_job)});
+
+  auto unique_mock_system_interface = std::make_unique<MockSystemInterface>(std::move(root_job));
+  auto mock_system_interface = unique_mock_system_interface.get();
+
+  constexpr char kParentComponentMoniker[] = "some/moniker";
+  constexpr char kChildComponentMoniker[] = "some/moniker/other/moniker";
+
+  mock_system_interface->mock_component_manager().AddComponentInfo(
+      kParentJobKoid, {.moniker = kParentComponentMoniker, .url = "fuchsia-pkg://some/url"});
+
+  MockDebugAgentHarness harness(std::move(unique_mock_system_interface));
+  RemoteAPI* remote_api = harness.debug_agent();
+
+  // Install a recursive job-only filter. This will install its recursive (process-only) counterpart
+  // immediately upon installation since it should already match.
+  debug_ipc::UpdateFilterRequest request;
+  auto& filter = request.filters.emplace_back();
+  filter.type = debug_ipc::Filter::Type::kComponentMonikerSuffix;
+  filter.pattern = "moniker";
+  filter.config.job_only = true;
+  filter.config.recursive = true;
+
+  // This will immediately match the parent component and install the recursive filter.
+  debug_ipc::UpdateFilterReply reply;
+  remote_api->OnUpdateFilter(request, &reply);
+
+  // We should have gotten a filter created event.
+  ASSERT_EQ(harness.stream_backend()->filters().size(), 1u);
+  EXPECT_EQ(harness.stream_backend()->filters()[0].originating_filter_id, filter.id);
+  EXPECT_EQ(harness.stream_backend()->filters()[0].filter.pattern, kParentComponentMoniker);
+  EXPECT_FALSE(harness.stream_backend()->filters()[0].filter.config.job_only);
+  EXPECT_FALSE(harness.stream_backend()->filters()[0].filter.config.recursive);
+  EXPECT_TRUE(harness.stream_backend()->filters()[0].filter.config.never_attach);
+  const auto& moniker_prefix_filter = harness.stream_backend()->filters()[0].filter;
+
+  // Now, we want to inject a new child component that matches both the original recursive job-only
+  // filter and the new moniker prefix filter.
+  MockProcessHandle child_job_process(kChildJobProcessKoid, "child-job-p1");
+  child_job_process.set_threads({MockThreadHandle(1007, "initial-thread")});
+  MockJobHandle child_job(kChildJobKoid, "child-job");
+  child_job.set_child_processes({std::move(child_job_process)});
+
+  debug_ipc::ComponentInfo child_info = {.moniker = kChildComponentMoniker,
+                                         .url = "fuchsia-pkg://some/other/url"};
+
+  // The job is now inserted into the job tree along with the component info, so the entire tree
+  // looks like this now:
+  //
+  // j: 1001 root
+  //   j: 1002 parent-job
+  //     p: 1003 parent-job-p1 some/moniker fuchsia-pkg://some/url
+  //       t: 1004 initial-thread
+  //     j: 1005 child-job
+  //       p: 1006 child-job-p1 some/moniker/other/moniker fuchsia-pkg://some/other/url
+  //         t: 1007 initial-thread
+  mock_system_interface->AddJob(std::move(child_job), kParentJobKoid, child_info);
+
+  // Inject the component starting event, so that our filters notice.
+  harness.debug_agent()->OnComponentStarted(child_info.moniker, child_info.url, kChildJobKoid);
+
+  // We should have received the event. This will be for the job, which we don't want to issue an
+  // attach for (the DebugAgent would ignore it anyway since we're attached to the parent).
+  EXPECT_EQ(harness.stream_backend()->component_starts().size(), 1u);
+
+  // We should still only have the one extra filter added from before, there should *not* be a new
+  // recursive filter installed for the child's complete moniker (which is redundant since the
+  // parent's moniker will match everything in the child component).
+  ASSERT_EQ(harness.stream_backend()->filters().size(), 1u);
+  EXPECT_EQ(harness.stream_backend()->filters()[0].originating_filter_id, filter.id);
+  EXPECT_EQ(harness.stream_backend()->filters()[0].filter.pattern, kParentComponentMoniker);
+
+  // Send the notification that the child process of "child-job" started.
+  harness.debug_agent()->OnProcessChanged(
+      DebugAgent::ProcessChangedHow::kStarting,
+      harness.debug_agent()->system_interface().GetProcess(kChildJobProcessKoid));
+
+  EXPECT_EQ(harness.stream_backend()->process_starts().size(), 1u);
+  // The moniker prefix filter should be the matching filter.
+  EXPECT_EQ(harness.stream_backend()->process_starts()[0].filter_id, moniker_prefix_filter.id);
+
+  // And we should still not have any other filter created events.
+  ASSERT_EQ(harness.stream_backend()->filters().size(), 1u);
+  EXPECT_EQ(harness.stream_backend()->filters()[0].originating_filter_id, filter.id);
+  EXPECT_EQ(harness.stream_backend()->filters()[0].filter.pattern, kParentComponentMoniker);
+
+  // We should be explicitly attached to the child job's process, since it was created after we had
+  // a matching filter in place. Note that since we didn't issue explicit attach requests in
+  // response to the UpdateFilter request at the beginning of this test, we are _not_ attached to
+  // the parent job or its process.
+  EXPECT_TRUE(harness.debug_agent()->GetDebuggedProcess(kChildJobProcessKoid));
+  // We are _not_ attached to this second job, even though it would also match the component moniker
+  // prefix filter, because that filter is not configured as job-only.
+  EXPECT_FALSE(harness.debug_agent()->GetDebuggedJob(kChildJobKoid));
+
+  // Check that we don't have any extra filters installed other than the original recursive job
+  // filter and the highest level component moniker prefix filter.
+  debug_ipc::StatusReply status;
+  remote_api->OnStatus({}, &status);
+  ASSERT_EQ(status.filters.size(), 2u);
+  EXPECT_FALSE(status.filters[0].config.job_only);
+  EXPECT_FALSE(status.filters[0].config.recursive);
+  EXPECT_EQ(status.filters[0].pattern, kParentComponentMoniker);
+  EXPECT_EQ(status.filters[0].type, debug_ipc::Filter::Type::kComponentMonikerPrefix);
+  EXPECT_TRUE(status.filters[1].config.job_only);
+  EXPECT_TRUE(status.filters[1].config.recursive);
+  EXPECT_EQ(status.filters[1].pattern, "moniker");
+  EXPECT_EQ(status.filters[1].type, debug_ipc::Filter::Type::kComponentMonikerSuffix);
 }
 
 }  // namespace debug_agent

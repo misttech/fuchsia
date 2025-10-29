@@ -32,6 +32,20 @@ std::vector<std::unique_ptr<ProcessHandle>> MockJobHandle::GetChildProcesses() c
   return result;
 }
 
+MockJobHandle* MockJobHandle::FindChildJob(zx_koid_t job_koid) {
+  if (GetKoid() == job_koid) {
+    return this;
+  }
+
+  for (auto& job : child_jobs_) {
+    if (auto found = job.FindChildJob(job_koid)) {
+      return found;
+    }
+  }
+
+  return nullptr;
+}
+
 void MockJobHandle::OnException(std::unique_ptr<MockExceptionHandle> exception,
                                 MockJobExceptionInfo info) {
   switch (info) {
