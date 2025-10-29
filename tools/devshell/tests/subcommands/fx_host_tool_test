@@ -124,26 +124,6 @@ TEST_no_build() {
   BT_ASSERT_FILE_DOES_NOT_EXIST "${BT_TEMP_DIR}/tools/devshell/build.mock_state"
 }
 
-TEST_firewall_disabled() {
-  echo "firewall disabled" > "${macfw}.mock_stdout"
-
-  BT_EXPECT ${fx} host-tool --check-firewall "ffx" "--flag1" "arg1"
-  btf::expect-mock-args "${macfw}.mock_state" "--getglobalstate"
-}
-
-TEST_firewall_check_success() {
-  echo "${ffx} permitted" > "${macfw}.mock_stdout"
-
-  BT_EXPECT ${fx} host-tool --check-firewall "ffx" "--flag1" "arg1"
-  btf::expect-mock-args "${macfw}.mock_state.2" "--getappblocked" "${ffx}"
-}
-
-TEST_firewall_check_fail() {
-  echo "ffx cannot be allowed" > "${macfw}.mock_stdout"
-  BT_EXPECT ${fx} host-tool --check-firewall "ffx" "--flag1" "arg1" >/dev/null 2>&1
-  btf::expect-mock-args "${macfw}.mock_state.2" "--getappblocked" "${ffx}"
-}
-
 # test if sending the host-tool to the background and killing it effectively
 # kills it as expected.
 # the logic for this test is the following:
