@@ -128,8 +128,7 @@ zx_status_t VmAddressRegion::CreateSubVmarInner(size_t offset, size_t size, uint
 
   {
     Guard<CriticalMutex> region_guard{region_lock()};
-    Guard<CriticalMutex> guard{lock()};
-    if (state_ != LifeCycleState::ALIVE) {
+    if (state_locked_region() != LifeCycleState::ALIVE) {
       return ZX_ERR_BAD_STATE;
     }
 
@@ -176,9 +175,10 @@ zx_status_t VmAddressRegion::CreateSubVmarInner(size_t offset, size_t size, uint
       if (align_pow2 > 0 && (new_base & ((1ULL << align_pow2) - 1))) {
         return ZX_ERR_INVALID_ARGS;
       }
-      if (!subregions_.IsRangeAvailable(new_base, size)) {
+      if (!subregions_locked_region().IsRangeAvailable(new_base, size)) {
         if (is_specific_overwrite) {
           *base_out = new_base;
+          Guard<CriticalMutex> guard{lock()};
           return OverwriteVmMappingLocked(new_base, size, vmar_flags, vmo, vmo_offset,
                                           arch_mmu_flags, out);
         }
@@ -214,6 +214,7 @@ zx_status_t VmAddressRegion::CreateSubVmarInner(size_t offset, size_t size, uint
       vmar = fbl::AdoptRef(new (&ac) VmAddressRegion(*this, new_base, size, vmar_flags, name));
     }
 
+    Guard<CriticalMutex> guard{lock()};
     if (!ac.check()) {
       return ZX_ERR_NO_MEMORY;
     }
