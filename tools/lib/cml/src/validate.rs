@@ -106,8 +106,9 @@ pub(crate) fn validate_cml(
 pub(crate) fn validate_cml_with_span(
     documents: HashMap<&Path, (&SpannedDocument, &String)>,
     features: &FeatureSet,
+    capability_requirements: &CapabilityRequirements<'_>,
 ) -> Result<(), Error> {
-    let mut ctx = ValidationContextWithSpan::new(documents, features);
+    let mut ctx = ValidationContextWithSpan::new(documents, features, capability_requirements);
     ctx.validate()
 }
 
@@ -135,31 +136,6 @@ pub(crate) fn byte_index_to_location(source: Option<&String>, index: usize) -> O
     None
 }
 
-fn duplicate_capability_check<'a>(
-    duplicate_check: &mut HashSet<CapabilityId<'a>>,
-    capability_string: &str,
-    offered_to_all: &Vec<&'a Offer>,
-    filter: impl Fn(&&&Offer) -> bool,
-) -> Result<(), Error> {
-    let problem_capabilities = offered_to_all
-        .iter()
-        .filter(filter)
-        .map(|o| CapabilityId::from_offer_expose(*o))
-        .collect::<Result<Vec<Vec<CapabilityId<'a>>>, _>>()?
-        .into_iter()
-        .flatten()
-        .filter(|cap_id| !duplicate_check.insert((*cap_id).clone()))
-        .collect::<Vec<_>>();
-    if !problem_capabilities.is_empty() {
-        return Err(Error::validate(format!(
-            r#"{} {:?} offered to "all" multiple times"#,
-            capability_string,
-            problem_capabilities.iter().map(|p| format!("{p}")).collect::<Vec<_>>()
-        )));
-    }
-    Ok(())
-}
-
 fn offer_can_have_dependency_no_span(offer: &Offer) -> bool {
     offer.directory.is_some()
         || offer.protocol.is_some()
@@ -173,9 +149,9 @@ fn offer_dependency_no_span(offer: &Offer) -> DependencyType {
 
 fn offer_can_have_dependency(offer: &SpannedOffer) -> bool {
     offer.directory.is_some()
-        || offer.protocol.is_some()
+        || offer.protocol().is_some()
         || offer.service.is_some()
-        || offer.dictionary.is_some()
+        || offer.dictionary().is_some()
 }
 struct ValidationContext<'a> {
     document: &'a Document,
@@ -198,6 +174,8 @@ struct ValidationContext<'a> {
 struct ValidationContextWithSpan<'a> {
     documents: HashMap<&'a Path, (&'a SpannedDocument, &'a String)>,
     features: &'a FeatureSet,
+    #[allow(dead_code)]
+    capability_requirements: &'a CapabilityRequirements<'a>,
     current_file_path: Option<&'a Path>,
     current_file_source: Option<&'a String>,
     all_children: HashMap<&'a BorrowedName, &'a SpannedChild>,
@@ -206,16 +184,21 @@ struct ValidationContextWithSpan<'a> {
     use_ids: HashMap<String, CapabilityId<'a>>,
     expose_ids: HashMap<String, CapabilityId<'a>>,
     framework_expose_ids: HashMap<String, CapabilityId<'a>>,
+    offer_ids: HashSet<CapabilityId<'a>>,
+    problem_protocols: Vec<CapabilityId<'a>>,
+    problem_dictionaries: Vec<CapabilityId<'a>>,
 }
 
 impl<'a> ValidationContextWithSpan<'a> {
     fn new(
         documents: HashMap<&'a Path, (&'a SpannedDocument, &'a String)>,
         features: &'a FeatureSet,
+        capability_requirements: &'a CapabilityRequirements<'a>,
     ) -> Self {
         ValidationContextWithSpan {
             documents,
             features,
+            capability_requirements,
             current_file_path: None,
             current_file_source: None,
             all_children: HashMap::new(),
@@ -224,6 +207,9 @@ impl<'a> ValidationContextWithSpan<'a> {
             use_ids: HashMap::new(),
             expose_ids: HashMap::new(),
             framework_expose_ids: HashMap::new(),
+            offer_ids: HashSet::new(),
+            problem_protocols: Vec::new(),
+            problem_dictionaries: Vec::new(),
         }
     }
 
@@ -949,7 +935,79 @@ which is almost certainly a mistake: {}",
     }
 
     fn validate_offer(&mut self, offer: &'a Spanned<SpannedOffer>) -> Result<(), Error> {
-        offer.capability_type()?;
+        let mut res = offer.capability_type();
+        if let Err(Error::ValidateWithSpan { location, filename, .. }) = &mut res {
+            *location = byte_index_to_location(self.current_file_source, offer.span().0);
+            if let Some(file) = self.current_file_path {
+                *filename = Some(file.to_string_lossy().into_owned());
+            }
+
+            return res.map(|_| ());
+        }
+
+        // validate duplicate offer to all
+        if matches!(offer.to, OneOrMany::One(OfferToRef::All)) {
+            if offer.protocol.is_some() {
+                for cap_id in CapabilityId::from_spanned_offer(
+                    offer,
+                    self.current_file_path,
+                    self.current_file_source,
+                )? {
+                    if !self.offer_ids.insert(cap_id.clone()) {
+                        self.problem_protocols.push(cap_id);
+                    }
+                }
+            }
+
+            if offer.dictionary.is_some() {
+                for cap_id in CapabilityId::from_spanned_offer(
+                    offer,
+                    self.current_file_path,
+                    self.current_file_source,
+                )? {
+                    if !self.offer_ids.insert(cap_id.clone()) {
+                        self.problem_dictionaries.push(cap_id);
+                    }
+                }
+            }
+
+            if !self.problem_protocols.is_empty() {
+                let location = byte_index_to_location(
+                    self.current_file_source,
+                    offer.protocol.as_ref().unwrap().span().0,
+                );
+
+                return Err(Error::validate_with_span(
+                    format!(
+                        r#"{} {:?} offered to "all" multiple times"#,
+                        "Protocol(s)",
+                        self.problem_protocols.iter().map(|p| format!("{p}")).collect::<Vec<_>>()
+                    ),
+                    location,
+                    self.current_file_path,
+                ));
+            }
+
+            if !self.problem_dictionaries.is_empty() {
+                let location = byte_index_to_location(
+                    self.current_file_source,
+                    offer.dictionary.as_ref().unwrap().span().0,
+                );
+
+                return Err(Error::validate_with_span(
+                    format!(
+                        r#"{} {:?} offered to "all" multiple times"#,
+                        "Dictionary(s)",
+                        self.problem_dictionaries
+                            .iter()
+                            .map(|p| format!("{p}"))
+                            .collect::<Vec<_>>()
+                    ),
+                    location,
+                    self.current_file_path,
+                ));
+            }
+        }
 
         if let Some(stream) = offer.event_stream.as_ref() {
             if stream.iter().len() > 1 && offer.r#as.is_some() {
@@ -1278,26 +1336,54 @@ impl<'a> ValidationContext<'a> {
         // Validate "offer".
         if let Some(offers) = self.document.offer.as_ref() {
             let mut used_ids = HashMap::new();
+
+            let mut duplicate_check: HashSet<CapabilityId<'a>> = HashSet::new();
+            let mut problem_protocols = Vec::new();
+            let mut problem_dictionaries = Vec::new();
+
+            offers
+                .iter()
+                .filter(|o| matches!(o.to, OneOrMany::One(OfferToRef::All)))
+                .try_for_each(|offer| -> Result<(), Error> {
+                    if offer.protocol.is_some() {
+                        for cap_id in CapabilityId::from_offer_expose(offer)? {
+                            if !duplicate_check.insert(cap_id.clone()) {
+                                problem_protocols.push(cap_id);
+                            }
+                        }
+                    }
+
+                    if offer.dictionary.is_some() {
+                        for cap_id in CapabilityId::from_offer_expose(offer)? {
+                            if !duplicate_check.insert(cap_id.clone()) {
+                                problem_dictionaries.push(cap_id);
+                            }
+                        }
+                    }
+                    Ok(())
+                })?;
+
+            if !problem_protocols.is_empty() {
+                return Err(Error::validate(format!(
+                    r#"{} {:?} offered to "all" multiple times"#,
+                    "Protocol(s)",
+                    problem_protocols.iter().map(|p| format!("{p}")).collect::<Vec<_>>()
+                )));
+            }
+
+            if !problem_dictionaries.is_empty() {
+                return Err(Error::validate(format!(
+                    r#"{} {:?} offered to "all" multiple times"#,
+                    "Dictionary(s)",
+                    problem_dictionaries.iter().map(|p| format!("{p}")).collect::<Vec<_>>()
+                )));
+            }
+
             let offered_to_all = offers
                 .iter()
                 .filter(|o| matches!(o.to, OneOrMany::One(OfferToRef::All)))
                 .filter(|o| o.protocol.is_some() || o.dictionary.is_some())
                 .collect::<Vec<&Offer>>();
-
-            let mut duplicate_check: HashSet<CapabilityId<'a>> = HashSet::new();
-
-            duplicate_capability_check(
-                &mut duplicate_check,
-                "Protocol(s)",
-                &offered_to_all,
-                |o| o.protocol.is_some(),
-            )?;
-            duplicate_capability_check(
-                &mut duplicate_check,
-                "Dictionary(s)",
-                &offered_to_all,
-                |o| o.dictionary.is_some(),
-            )?;
 
             for offer in offers.iter() {
                 self.validate_offer(&offer, &mut used_ids, &offered_to_all)?;
@@ -2907,11 +2993,46 @@ mod tests {
     }
 
     fn validate_for_test_with_span(filename: &str, input: &[u8]) -> Result<(), Error> {
+        validate_with_features_for_test_with_span(
+            filename,
+            input,
+            &FeatureSet::empty(),
+            &[],
+            &[],
+            &[],
+        )
+    }
+
+    fn validate_with_features_for_test_with_span(
+        filename: &str,
+        input: &[u8],
+        features: &FeatureSet,
+        required_offers: &[String],
+        required_uses: &[String],
+        required_dictionary_offers: &[String],
+    ) -> Result<(), Error> {
         let input = format!("{}", std::str::from_utf8(input).unwrap().to_string());
         let file = Path::new(filename);
         let document = crate::parse_one_document_with_span(&input, &file)?;
-
-        validate_cml_with_span(HashMap::from([(file, (&document, &input))]), &FeatureSet::empty())
+        validate_cml_with_span(
+            HashMap::from([(file, (&document, &input))]),
+            &features,
+            &CapabilityRequirements {
+                must_offer: &required_offers
+                    .iter()
+                    .map(|value| OfferToAllCapability::Protocol(value))
+                    .chain(
+                        required_dictionary_offers
+                            .iter()
+                            .map(|value| OfferToAllCapability::Dictionary(value)),
+                    )
+                    .collect::<Vec<_>>(),
+                must_use: &required_uses
+                    .iter()
+                    .map(|value| MustUseRequirement::Protocol(value))
+                    .collect::<Vec<_>>(),
+            },
+        )
     }
 
     fn validate_with_features_for_test(
@@ -3480,6 +3601,52 @@ mod tests {
 
     #[test]
     fn offer_to_all_from_diff_sources() {
+        let input = r##"{
+            "children": [
+                {
+                    "name": "logger",
+                    "url": "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm"
+                },
+                {
+                    "name": "something",
+                    "url": "fuchsia-pkg://fuchsia.com/something#meta/something.cm"
+                }
+            ],
+            "offer": [
+                {
+                    "protocol": "fuchsia.logger.LogSink",
+                    "from": "parent",
+                    "to": "all"
+                },
+                {
+                    "protocol": "fuchsia.logger.LogSink",
+                    "from": "framework",
+                    "to": "all"
+                }
+            ]
+        }"##;
+
+        let result = validate_with_features_for_test_with_span(
+            "test.cml",
+            input.as_bytes(),
+            &FeatureSet::empty(),
+            &vec!["fuchsia.logger.LogSink".into()],
+            &Vec::new(),
+            &[],
+        );
+
+        assert_matches!(result,
+            Err(Error::ValidateWithSpan { err, .. }) => {
+                assert_eq!(
+                    err,
+                    offer_to_all_diff_sources_message(&["fuchsia.logger.LogSink"]),
+                );
+            }
+        );
+    }
+
+    #[test]
+    fn offer_to_all_from_diff_sources_no_span() {
         let input = r##"{
             children: [
                 {

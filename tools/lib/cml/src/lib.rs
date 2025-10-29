@@ -4195,7 +4195,7 @@ pub struct SpannedOffer {
     pub service: Option<OneOrMany<Name>>,
 
     /// When routing a protocol, the [name](#name) of a [protocol capability][doc-protocol].
-    pub protocol: Option<OneOrMany<Name>>,
+    pub protocol: Option<Spanned<OneOrMany<Name>>>,
 
     /// When routing a directory, the [name](#name) of a [directory capability][doc-directory].
     pub directory: Option<OneOrMany<Name>>,
@@ -4210,7 +4210,7 @@ pub struct SpannedOffer {
     pub storage: Option<Spanned<OneOrMany<Name>>>,
 
     /// When routing a dictionary, the [name](#name) of a [dictionary capability][doc-dictionaries].
-    pub dictionary: Option<OneOrMany<Name>>,
+    pub dictionary: Option<Spanned<OneOrMany<Name>>>,
 
     /// When routing a config, the [name](#name) of a configuration capability.
     pub config: Option<OneOrMany<Name>>,
@@ -4676,6 +4676,16 @@ where
     T: AsRef<S>,
 {
     o.as_ref().map(|o| o.as_ref())
+}
+
+fn option_spanned_one_or_many_as_ref<T, S: ?Sized>(
+    o: &Option<Spanned<OneOrMany<T>>>,
+) -> Option<OneOrMany<&S>>
+where
+    T: AsRef<S>,
+{
+    o.as_ref()
+        .map(|spanned_value| spanned_value.get_ref().iter().map(|name| name.as_ref()).collect())
 }
 
 impl CapabilityClause for Capability {
@@ -5225,9 +5235,7 @@ impl SpannedCapabilityClause for SpannedExpose {
         option_one_or_many_as_ref(&self.resolver)
     }
     fn event_stream(&self) -> Option<OneOrMany<&BorrowedName>> {
-        self.event_stream
-            .as_ref()
-            .map(|spanned_value| spanned_value.get_ref().iter().map(|name| name.as_ref()).collect())
+        option_spanned_one_or_many_as_ref(&self.event_stream)
     }
     fn dictionary(&self) -> Option<OneOrMany<&BorrowedName>> {
         option_one_or_many_as_ref(&self.dictionary)
@@ -5416,15 +5424,13 @@ impl SpannedCapabilityClause for SpannedOffer {
         option_one_or_many_as_ref(&self.service)
     }
     fn protocol(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.protocol)
+        option_spanned_one_or_many_as_ref(&self.protocol)
     }
     fn directory(&self) -> Option<OneOrMany<&BorrowedName>> {
         option_one_or_many_as_ref(&self.directory)
     }
     fn storage(&self) -> Option<OneOrMany<&BorrowedName>> {
-        self.storage
-            .as_ref()
-            .map(|spanned_value| spanned_value.get_ref().iter().map(|name| name.as_ref()).collect())
+        option_spanned_one_or_many_as_ref(&self.storage)
     }
     fn runner(&self) -> Option<OneOrMany<&BorrowedName>> {
         option_one_or_many_as_ref(&self.runner)
@@ -5433,12 +5439,10 @@ impl SpannedCapabilityClause for SpannedOffer {
         option_one_or_many_as_ref(&self.resolver)
     }
     fn event_stream(&self) -> Option<OneOrMany<&BorrowedName>> {
-        self.event_stream
-            .as_ref()
-            .map(|spanned_value| spanned_value.get_ref().iter().map(|name| name.as_ref()).collect())
+        option_spanned_one_or_many_as_ref(&self.event_stream)
     }
     fn dictionary(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.dictionary)
+        option_spanned_one_or_many_as_ref(&self.dictionary)
     }
     fn config(&self) -> Option<OneOrMany<&BorrowedName>> {
         option_one_or_many_as_ref(&self.config)
