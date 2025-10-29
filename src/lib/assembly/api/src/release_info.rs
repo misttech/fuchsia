@@ -35,7 +35,6 @@ pub fn load_platform_release_info(path: &Utf8Path) -> Result<ReleaseInfo> {
     .context("Failed to parse platform release info")
 }
 
-/// Load a Product artifact and return the version information.
 /// Load a Product Input Bundle artifact and return the version information.
 pub fn load_pib_release_info(path: &Utf8Path) -> Result<ReleaseInfo> {
     serde_json::from_value(get_value_from_json_file(
@@ -54,7 +53,7 @@ pub fn load_product_release_info(path: &Utf8Path) -> Result<ProductReleaseInfo> 
     .context("Failed to parse product release info")
 }
 
-/// Load a Board Config artifact and return the version information.
+/// Return the "arch" field within this Board Configuration.
 pub fn load_board_arch(path: &Utf8Path) -> Result<String> {
     serde_json::from_value(get_value_from_json_file(
         &path.join("board_configuration.json"),
@@ -72,6 +71,7 @@ pub fn load_bib_set_release_info(path: &Utf8Path) -> Result<ReleaseInfo> {
     .context("Failed to parse BIB Set release info")
 }
 
+/// Load a Board Config artifact and return the version information.
 pub fn load_board_release_info(path: &Utf8Path) -> Result<BoardReleaseInfo> {
     serde_json::from_value(get_value_from_json_file(
         &path.join("board_configuration.json"),
