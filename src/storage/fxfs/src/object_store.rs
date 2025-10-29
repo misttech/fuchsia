@@ -748,6 +748,7 @@ impl ObjectStore {
         root.record_uint("device_write_ops", self.device_write_ops.load(Ordering::Relaxed));
         root.record_uint("logical_read_ops", self.logical_read_ops.load(Ordering::Relaxed));
         root.record_uint("logical_write_ops", self.logical_write_ops.load(Ordering::Relaxed));
+        root.record_uint("object_id_hi", self.last_object_id.lock().id >> 32);
 
         let this = self.clone();
         root.record_child("lsm_tree", move |node| this.tree().record_inspect_data(node));
