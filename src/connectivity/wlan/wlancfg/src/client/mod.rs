@@ -503,10 +503,10 @@ mod tests {
     use crate::util::testing::{
         generate_random_fidl_network_config, generate_random_fidl_network_config_with_ssid,
     };
-    use anyhow::{format_err, Error};
+    use anyhow::{Error, format_err};
     use assert_matches::assert_matches;
     use async_trait::async_trait;
-    use fidl::endpoints::{create_proxy, create_request_stream, Proxy};
+    use fidl::endpoints::{Proxy, create_proxy, create_request_stream};
     use fuchsia_async as fasync;
     use futures::channel::{mpsc, oneshot};
     use futures::task::Poll;
@@ -626,7 +626,7 @@ mod tests {
 
         async fn set_country(
             &mut self,
-            _country_code: Option<[u8; client_types::REGION_CODE_LEN]>,
+            _country_code: Option<types::CountryCode>,
         ) -> Result<(), Error> {
             unimplemented!()
         }
@@ -1303,11 +1303,12 @@ mod tests {
         });
         assert_matches!(exec.run_until_stalled(&mut remove_fut), Poll::Ready(Ok(Ok(()))));
         assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);
-        assert!(exec
-            .run_singlethreaded(
+        assert!(
+            exec.run_singlethreaded(
                 test_values.saved_networks.lookup(&test_values.net_id_open.clone().into())
             )
-            .is_empty());
+            .is_empty()
+        );
 
         // Removing a network that is not saved should not trigger a disconnect.
         let mut remove_fut = controller.remove_network(&network_config);
@@ -1642,7 +1643,7 @@ mod tests {
 
         async fn set_country(
             &mut self,
-            _country_code: Option<[u8; client_types::REGION_CODE_LEN]>,
+            _country_code: Option<types::CountryCode>,
         ) -> Result<(), Error> {
             unimplemented!()
         }
@@ -1715,11 +1716,13 @@ mod tests {
         )
         .expect("Failed to create network config");
 
-        assert!(saved_networks
-            .store(network_id.clone(), Credential::Password(b"password".to_vec()))
-            .await
-            .expect("Failed to store network config")
-            .is_none());
+        assert!(
+            saved_networks
+                .store(network_id.clone(), Credential::Password(b"password".to_vec()))
+                .await
+                .expect("Failed to store network config")
+                .is_none()
+        );
 
         assert_eq!(
             Some(cfg),

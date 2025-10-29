@@ -5,7 +5,7 @@
 use crate::mode_management::phy_manager::PhyManagerApi;
 use fidl_fuchsia_wlan_product_deprecatedconfiguration as fidl_deprecated;
 use futures::lock::Mutex;
-use futures::{select, StreamExt};
+use futures::{StreamExt, select};
 use ieee80211::MacAddr;
 use log::{error, info};
 use std::sync::Arc;
@@ -53,10 +53,10 @@ impl DeprecatedConfigurator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::types as client_types;
+    use crate::mode_management::Defect;
     use crate::mode_management::phy_manager::{CreateClientIfacesReason, PhyManagerError};
     use crate::mode_management::recovery::RecoverySummary;
-    use crate::mode_management::Defect;
-    use crate::regulatory_manager::REGION_CODE_LEN;
     use assert_matches::assert_matches;
     use async_trait::async_trait;
     use fidl::endpoints::create_proxy;
@@ -138,7 +138,7 @@ mod tests {
 
         async fn set_country_code(
             &mut self,
-            _country_code: Option<[u8; REGION_CODE_LEN]>,
+            _country_code: Option<client_types::CountryCode>,
         ) -> Result<(), PhyManagerError> {
             unimplemented!();
         }

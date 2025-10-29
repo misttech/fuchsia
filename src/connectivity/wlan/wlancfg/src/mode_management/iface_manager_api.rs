@@ -7,7 +7,6 @@ use crate::client::types as client_types;
 use crate::config_management::network_config::Credential;
 use crate::mode_management::iface_manager_types::*;
 use crate::mode_management::{Defect, IfaceFailure};
-use crate::regulatory_manager::REGION_CODE_LEN;
 use crate::telemetry;
 use anyhow::{Error, bail, format_err};
 use async_trait::async_trait;
@@ -86,7 +85,7 @@ pub trait IfaceManagerApi {
     /// Sets the country code for WLAN PHYs.
     async fn set_country(
         &mut self,
-        country_code: Option<[u8; REGION_CODE_LEN]>,
+        country_code: Option<client_types::CountryCode>,
     ) -> Result<(), Error>;
 }
 
@@ -195,7 +194,7 @@ impl IfaceManagerApi for IfaceManager {
 
     async fn set_country(
         &mut self,
-        country_code: Option<[u8; REGION_CODE_LEN]>,
+        country_code: Option<client_types::CountryCode>,
     ) -> Result<(), Error> {
         let (responder, receiver) = oneshot::channel();
         let req = SetCountryRequest { country_code, responder };

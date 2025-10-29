@@ -18,8 +18,7 @@ use {
     fidl_fuchsia_wlan_policy as fidl_policy, fidl_fuchsia_wlan_sme as fidl_sme,
 };
 
-#[cfg(test)]
-pub(crate) use crate::regulatory_manager::REGION_CODE_LEN;
+pub(crate) use crate::regulatory_manager::CountryCode;
 
 pub type NetworkIdentifier = config_management::network_config::NetworkIdentifier;
 pub type SecurityTypeDetailed = fidl_sme::Protection;

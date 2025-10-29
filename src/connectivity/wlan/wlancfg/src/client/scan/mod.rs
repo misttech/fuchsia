@@ -582,7 +582,7 @@ mod tests {
 
         async fn set_country(
             &mut self,
-            _country_code: Option<[u8; types::REGION_CODE_LEN]>,
+            _country_code: Option<types::CountryCode>,
         ) -> Result<(), Error> {
             unimplemented!()
         }

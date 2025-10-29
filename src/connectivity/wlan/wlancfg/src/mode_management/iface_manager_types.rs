@@ -5,7 +5,6 @@
 use crate::access_point::{state_machine as ap_fsm, types as ap_types};
 use crate::client::types as client_types;
 use crate::mode_management::iface_manager_api as api;
-use crate::regulatory_manager::REGION_CODE_LEN;
 use anyhow::Error;
 use futures::channel::oneshot;
 
@@ -83,7 +82,7 @@ pub struct StopAllApsRequest {
 
 #[derive(Debug)]
 pub struct SetCountryRequest {
-    pub country_code: Option<[u8; REGION_CODE_LEN]>,
+    pub country_code: Option<client_types::CountryCode>,
     pub responder: oneshot::Sender<Result<(), Error>>,
 }
 

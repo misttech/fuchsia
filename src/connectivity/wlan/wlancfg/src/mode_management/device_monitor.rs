@@ -97,14 +97,14 @@ async fn on_iface_added_legacy(listener: &Listener, iface_id: u16) -> Result<(),
         // The AP service make direct use of the PhyManager to get interfaces.
         fidl_common::WlanMacRole::Ap => {}
         fidl_common::WlanMacRole::Mesh => {
-            return Err(format_err!("Unexpectedly observed a mesh iface: {}", iface_id))
+            return Err(format_err!("Unexpectedly observed a mesh iface: {}", iface_id));
         }
         fidl_common::WlanMacRoleUnknown!() => {
             return Err(format_err!(
                 "Unknown WlanMacRole type {:?} on iface {}",
                 response.role,
                 iface_id
-            ))
+            ));
         }
     }
 
@@ -128,17 +128,16 @@ mod tests {
     use super::*;
     use crate::access_point::{state_machine as ap_fsm, types as ap_types};
     use crate::client::types as client_types;
+    use crate::mode_management::Defect;
     use crate::mode_management::iface_manager_api::{ConnectAttemptRequest, SmeForScan};
     use crate::mode_management::phy_manager::{CreateClientIfacesReason, PhyManagerError};
     use crate::mode_management::recovery::RecoverySummary;
-    use crate::mode_management::Defect;
-    use crate::regulatory_manager::REGION_CODE_LEN;
     use anyhow::Error;
     use assert_matches::assert_matches;
     use async_trait::async_trait;
+    use futures::StreamExt;
     use futures::channel::oneshot;
     use futures::task::Poll;
-    use futures::StreamExt;
     use ieee80211::MacAddr;
     use std::collections::HashMap;
     use std::pin::pin;
@@ -778,7 +777,7 @@ mod tests {
 
         async fn set_country_code(
             &mut self,
-            _country_code: Option<[u8; REGION_CODE_LEN]>,
+            _country_code: Option<client_types::CountryCode>,
         ) -> Result<(), PhyManagerError> {
             unimplemented!();
         }
@@ -871,7 +870,7 @@ mod tests {
 
         async fn set_country(
             &mut self,
-            _country_code: Option<[u8; REGION_CODE_LEN]>,
+            _country_code: Option<client_types::CountryCode>,
         ) -> Result<(), Error> {
             unimplemented!();
         }

@@ -15,7 +15,35 @@ pub struct RegulatoryManager<I: IfaceManagerApi + ?Sized> {
     iface_manager: Arc<Mutex<I>>,
 }
 
-pub(crate) const REGION_CODE_LEN: usize = 2;
+mod country_code {
+    use anyhow::{Error, format_err};
+    use std::str::FromStr;
+    const CODE_LENGTH: usize = 2;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct CountryCode([u8; CODE_LENGTH]);
+
+    impl FromStr for CountryCode {
+        type Err = Error;
+        fn from_str(region: &str) -> Result<Self, Self::Err> {
+            region
+                .as_bytes()
+                .try_into()
+                .map_err(|_| {
+                    format_err!("Invalid length: {region}, {} != {CODE_LENGTH}", region.len())
+                })
+                .map(CountryCode)
+        }
+    }
+
+    impl From<CountryCode> for [u8; CODE_LENGTH] {
+        fn from(country_code: CountryCode) -> Self {
+            country_code.0
+        }
+    }
+}
+
+pub use country_code::CountryCode;
 
 impl<I: IfaceManagerApi + ?Sized> RegulatoryManager<I> {
     pub fn new(
@@ -49,16 +77,17 @@ impl<I: IfaceManagerApi + ?Sized> RegulatoryManager<I> {
 
             info!("Received regulatory region code {}", region_string);
 
-            let mut region_array = [0u8; REGION_CODE_LEN];
-            if region_string.len() != region_array.len() {
-                warn!("Region code {:?} does not have length {}", region_string, REGION_CODE_LEN);
-                continue;
-            }
-            region_array.copy_from_slice(region_string.as_bytes());
+            let country_code = match region_string.parse::<CountryCode>() {
+                Err(e) => {
+                    warn!("{:?}", e.context("Failed to parse region string."));
+                    continue;
+                }
+                Ok(country_code) => country_code,
+            };
 
             // Apply the new country code.
             let mut iface_manager = self.iface_manager.lock().await;
-            if let Err(e) = iface_manager.set_country(Some(region_array)).await {
+            if let Err(e) = iface_manager.set_country(Some(country_code)).await {
                 warn!("Failed to set region code: {:?}", e);
                 continue;
             }
@@ -78,8 +107,7 @@ mod tests {
     use crate::access_point::{state_machine as ap_fsm, types as ap_types};
     use crate::client::types as client_types;
     use crate::mode_management::iface_manager_api::{ConnectAttemptRequest, SmeForScan};
-    use crate::regulatory_manager::REGION_CODE_LEN;
-    use anyhow::{format_err, Error};
+    use anyhow::{Error, format_err};
     use assert_matches::assert_matches;
     use async_trait::async_trait;
     use fidl::endpoints::create_proxy;
@@ -200,7 +228,7 @@ mod tests {
         let mut iface_manager_fut = pin!(iface_manager_fut);
         match context.executor.run_until_stalled(&mut iface_manager_fut) {
             Poll::Ready(iface_manager) => {
-                assert_eq!(iface_manager.country_code, Some([b'U', b'S']))
+                assert_eq!(iface_manager.country_code, Some("US".parse().unwrap()))
             }
             Poll::Pending => panic!("Expected to be able to lock the IfaceManager."),
         };
@@ -249,7 +277,9 @@ mod tests {
             let iface_manager_fut = context.iface_manager.lock();
             let mut iface_manager_fut = pin!(iface_manager_fut);
             match context.executor.run_until_stalled(&mut iface_manager_fut) {
-                Poll::Ready(mut iface_manager) => iface_manager.country_code = Some([b'U', b'S']),
+                Poll::Ready(mut iface_manager) => {
+                    iface_manager.country_code = Some("US".parse().unwrap())
+                }
                 Poll::Pending => panic!("Expected to be able to lock the IfaceManager."),
             }
         }
@@ -337,7 +367,7 @@ mod tests {
             let mut iface_manager_fut = pin!(iface_manager_fut);
             match context.executor.run_until_stalled(&mut iface_manager_fut) {
                 Poll::Ready(iface_manager) => {
-                    assert_eq!(iface_manager.country_code, Some([b'U', b'S']))
+                    assert_eq!(iface_manager.country_code, Some("US".parse().unwrap()))
                 }
                 Poll::Pending => panic!("Expected to be able to lock the IfaceManager."),
             }
@@ -366,7 +396,7 @@ mod tests {
             let mut iface_manager_fut = pin!(iface_manager_fut);
             match context.executor.run_until_stalled(&mut iface_manager_fut) {
                 Poll::Ready(iface_manager) => {
-                    assert_eq!(iface_manager.country_code, Some([b'C', b'A']))
+                    assert_eq!(iface_manager.country_code, Some("CA".parse().unwrap()))
                 }
                 Poll::Pending => panic!("Expected to be able to lock the IfaceManager."),
             };
@@ -374,15 +404,15 @@ mod tests {
     }
 
     struct StubIfaceManager<S: Stream<Item = Result<(), Error>> + Unpin> {
-        country_code: Option<[u8; REGION_CODE_LEN]>,
+        country_code: Option<client_types::CountryCode>,
         set_country_response_stream: S,
     }
 
     /// A default StubIfaceManager
     /// * immediately returns Ok() in response to stop_client_connections(), and
     /// * immediately returns Ok() in response to start_client_connections()
-    fn make_default_stub_iface_manager(
-    ) -> StubIfaceManager<impl Stream<Item = Result<(), Error>> + Unpin> {
+    fn make_default_stub_iface_manager()
+    -> StubIfaceManager<impl Stream<Item = Result<(), Error>> + Unpin> {
         StubIfaceManager {
             country_code: None,
             set_country_response_stream: stream::unfold((), |_| async { Some((Ok(()), ())) })
@@ -456,7 +486,7 @@ mod tests {
 
         async fn set_country(
             &mut self,
-            country_code: Option<[u8; REGION_CODE_LEN]>,
+            country_code: Option<client_types::CountryCode>,
         ) -> Result<(), Error> {
             self.country_code = country_code;
             self.set_country_response_stream

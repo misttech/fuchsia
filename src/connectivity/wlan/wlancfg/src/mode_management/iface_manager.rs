@@ -1511,7 +1511,6 @@ mod tests {
     use crate::mode_management::phy_manager::{self, PhyManagerError};
     use crate::mode_management::recovery::RecoverySummary;
     use crate::mode_management::{IfaceFailure, PhyFailure};
-    use crate::regulatory_manager::REGION_CODE_LEN;
     use crate::util::testing::fakes::FakeScanRequester;
     use crate::util::testing::{
         generate_connect_selection, generate_random_scanned_candidate, poll_sme_req,
@@ -1646,7 +1645,7 @@ mod tests {
         create_iface_ok: bool,
         destroy_iface_ok: bool,
         set_country_ok: bool,
-        country_code: Option<[u8; REGION_CODE_LEN]>,
+        country_code: Option<client_types::CountryCode>,
         client_connections_enabled: bool,
         client_ifaces: Vec<u16>,
         defects: Vec<Defect>,
@@ -1723,7 +1722,7 @@ mod tests {
 
         async fn set_country_code(
             &mut self,
-            country_code: Option<[u8; REGION_CODE_LEN]>,
+            country_code: Option<client_types::CountryCode>,
         ) -> Result<(), PhyManagerError> {
             if self.set_country_ok {
                 self.country_code = country_code;
@@ -5332,7 +5331,10 @@ mod tests {
 
         // Call set_country and drive the operation to completion.
         let (set_country_sender, set_country_receiver) = oneshot::channel();
-        let req = SetCountryRequest { country_code: Some([0, 0]), responder: set_country_sender };
+        let req = SetCountryRequest {
+            country_code: Some("WW".parse().unwrap()),
+            responder: set_country_sender,
+        };
         let req = IfaceManagerRequest::SetCountry(req);
 
         run_service_test(
@@ -5350,7 +5352,7 @@ mod tests {
             assert_matches!(
                 exec.run_until_stalled(&mut phy_manager_fut),
                 Poll::Ready(phy_manager) => {
-                    assert_eq!(phy_manager.country_code, Some([0, 0]))
+                    assert_eq!(phy_manager.country_code, Some("WW".parse().unwrap()))
                 }
             );
         }

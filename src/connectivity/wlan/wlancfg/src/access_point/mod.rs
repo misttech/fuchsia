@@ -4,18 +4,18 @@
 
 use crate::mode_management::iface_manager_api::IfaceManagerApi;
 use crate::util::listener;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl::epitaph::ChannelEpitaphExt;
 use futures::channel::mpsc;
 use futures::future::LocalBoxFuture;
 use futures::lock::{Mutex, MutexGuard};
 use futures::sink::SinkExt;
 use futures::stream::{FuturesUnordered, StreamExt, TryStreamExt};
-use futures::{select, FutureExt, TryFutureExt};
+use futures::{FutureExt, TryFutureExt, select};
 use log::{error, info, warn};
 use std::sync::Arc;
-use wlan_common::channel::Cbw;
 use wlan_common::RadioConfig;
+use wlan_common::channel::Cbw;
 use {fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_policy as fidl_policy};
 
 pub mod state_machine;
@@ -346,10 +346,9 @@ mod tests {
     use super::*;
     use crate::client::types as client_types;
     use crate::mode_management::iface_manager_api::{ConnectAttemptRequest, SmeForScan};
-    use crate::regulatory_manager::REGION_CODE_LEN;
     use assert_matches::assert_matches;
     use async_trait::async_trait;
-    use fidl::endpoints::{create_proxy, create_request_stream, Proxy};
+    use fidl::endpoints::{Proxy, create_proxy, create_request_stream};
     use fuchsia_async as fasync;
     use futures::channel::oneshot;
     use futures::task::Poll;
@@ -453,7 +452,7 @@ mod tests {
 
         async fn set_country(
             &mut self,
-            _country_code: Option<[u8; REGION_CODE_LEN]>,
+            _country_code: Option<client_types::CountryCode>,
         ) -> Result<(), Error> {
             unimplemented!()
         }

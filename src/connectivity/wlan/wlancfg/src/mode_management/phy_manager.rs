@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::client::types as client_types;
 use crate::mode_management::recovery::{
     self, IfaceRecoveryOperation, PhyRecoveryOperation, RecoveryAction,
 };
 use crate::mode_management::{Defect, EventHistory, IfaceFailure, PhyFailure};
-use crate::regulatory_manager::REGION_CODE_LEN;
 use crate::telemetry::{TelemetryEvent, TelemetrySender};
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
@@ -136,7 +136,7 @@ pub trait PhyManagerApi {
     /// newly-discovered PHYs.
     async fn set_country_code(
         &mut self,
-        country_code: Option<[u8; REGION_CODE_LEN]>,
+        country_code: Option<client_types::CountryCode>,
     ) -> Result<(), PhyManagerError>;
 
     /// Store a record for the provided defect.
@@ -154,7 +154,7 @@ pub struct PhyManager {
     device_monitor: fidl_service::DeviceMonitorProxy,
     client_connections_enabled: bool,
     suggested_ap_mac: Option<MacAddr>,
-    saved_country_code: Option<[u8; REGION_CODE_LEN]>,
+    saved_country_code: Option<client_types::CountryCode>,
     _node: inspect::Node,
     telemetry_sender: TelemetrySender,
     recovery_action_sender: recovery::RecoveryActionSender,
@@ -658,7 +658,7 @@ impl PhyManagerApi for PhyManager {
 
     async fn set_country_code(
         &mut self,
-        country_code: Option<[u8; REGION_CODE_LEN]>,
+        country_code: Option<client_types::CountryCode>,
     ) -> Result<(), PhyManagerError> {
         self.saved_country_code = country_code;
 
@@ -914,10 +914,10 @@ async fn reset_phy(
 async fn set_phy_country_code(
     proxy: &fidl_service::DeviceMonitorProxy,
     phy_id: u16,
-    country_code: [u8; REGION_CODE_LEN],
+    country_code: client_types::CountryCode,
 ) -> Result<(), PhyManagerError> {
     let status = proxy
-        .set_country(&fidl_service::SetCountryRequest { phy_id, alpha2: country_code })
+        .set_country(&fidl_service::SetCountryRequest { phy_id, alpha2: country_code.into() })
         .await
         .map_err(|e| {
             error!("Failed to set country code for PHY {}: {:?}", phy_id, e);
@@ -1472,7 +1472,7 @@ mod tests {
         );
 
         {
-            let set_country_fut = phy_manager.set_country_code(Some([0, 1]));
+            let set_country_fut = phy_manager.set_country_code(Some("US".parse().unwrap()));
             let mut set_country_fut = pin!(set_country_fut);
             assert_matches!(exec.run_until_stalled(&mut set_country_fut), Poll::Ready(Ok(())));
         }
@@ -1496,7 +1496,7 @@ mod tests {
                     fidl_service::DeviceMonitorRequest::SetCountry {
                         req: fidl_service::SetCountryRequest {
                             phy_id: 1,
-                            alpha2: [0, 1],
+                            alpha2: [b'U', b'S'],
                         },
                         responder,
                     }
@@ -3049,7 +3049,7 @@ mod tests {
 
         // Apply a country code and ensure that it is propagated to the device service.
         {
-            let set_country_fut = phy_manager.set_country_code(Some([0, 1]));
+            let set_country_fut = phy_manager.set_country_code(Some("US".parse().unwrap()));
             let mut set_country_fut = pin!(set_country_fut);
 
             // Ensure that both PHYs have their country codes set.
@@ -3061,7 +3061,7 @@ mod tests {
                         fidl_service::DeviceMonitorRequest::SetCountry {
                             req: fidl_service::SetCountryRequest {
                                 phy_id: _,
-                                alpha2: [0, 1],
+                                alpha2: [b'U', b'S'],
                             },
                             responder,
                         }
@@ -3073,7 +3073,7 @@ mod tests {
 
             assert_matches!(exec.run_until_stalled(&mut set_country_fut), Poll::Ready(Ok(())));
         }
-        assert_eq!(phy_manager.saved_country_code, Some([0, 1]));
+        assert_eq!(phy_manager.saved_country_code, Some("US".parse().unwrap()));
 
         // Unset the country code and ensure that the clear country code message is sent to the
         // device service.
@@ -3136,7 +3136,7 @@ mod tests {
 
         // Apply a country code and ensure that it is propagated to the device service.
         {
-            let set_country_fut = phy_manager.set_country_code(Some([0, 1]));
+            let set_country_fut = phy_manager.set_country_code(Some("US".parse().unwrap()));
             let mut set_country_fut = pin!(set_country_fut);
 
             assert_matches!(exec.run_until_stalled(&mut set_country_fut), Poll::Pending);
@@ -3146,7 +3146,7 @@ mod tests {
                     fidl_service::DeviceMonitorRequest::SetCountry {
                         req: fidl_service::SetCountryRequest {
                             phy_id: 0,
-                            alpha2: [0, 1],
+                            alpha2: [b'U', b'S'],
                         },
                         responder,
                     }
@@ -3163,7 +3163,7 @@ mod tests {
                 Poll::Ready(Err(PhyManagerError::PhySetCountryFailure))
             );
         }
-        assert_eq!(phy_manager.saved_country_code, Some([0, 1]));
+        assert_eq!(phy_manager.saved_country_code, Some("US".parse().unwrap()));
     }
 
     /// Tests the case where multiple client interfaces need to be recovered.
@@ -4566,10 +4566,12 @@ mod tests {
 
     // TODO(https://fxbug.dev/424173437) - Re-enable once IfaceManager deadlock issue has been resolved.
     #[ignore]
-    #[test_case(Some([4, 2]); "Cached country code")]
+    #[test_case(Some("US".parse().unwrap()); "Cached country code")]
     #[test_case(None; "No cached country code")]
     #[fuchsia::test(add_test_attr = false)]
-    fn test_perform_recovery_reset_requests_phy_reset(cached_country_code: Option<[u8; 2]>) {
+    fn test_perform_recovery_reset_requests_phy_reset(
+        cached_country_code: Option<client_types::CountryCode>,
+    ) {
         let mut exec = TestExecutor::new();
         let mut test_values = test_setup();
         let mut phy_manager = phy_manager_for_recovery_test(
@@ -4623,7 +4625,7 @@ mod tests {
                         responder,
                     }
                 ))) => {
-                    assert_eq!(cc_in_req, cached_cc);
+                    assert_eq!(cc_in_req, <[u8; 2]>::from(cached_cc));
                     responder
                         .send(zx::sys::ZX_OK)
                         .expect("failed to send setCountry response.");
