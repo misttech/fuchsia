@@ -57,16 +57,25 @@ TEST(FilterUtils, GetAttachConfigsForFilterMatches) {
           },
   };
 
-  std::vector<Filter> filters = {filter1, filter2, filter3};
+  Filter filter4 = {
+      .id = Filter::Identifier(4, Filter::Originator::kUnknown),
+      .config =
+          {
+              .never_attach = true,
+          },
+  };
 
+  std::vector<Filter> filters = {filter1, filter2, filter3, filter4};
+
+  constexpr uint64_t kWeakPid1 = 0x1234;
+  constexpr uint64_t kWeakPid2 = 0x1235;
   constexpr uint64_t kStrongProcessPid = 0x1236;
   constexpr uint64_t kJobPid = 0x1237;
 
   const std::vector<FilterMatch> kMatches = {
-      FilterMatch(filter1.id, {0x1234, 0x1235, kStrongProcessPid}),
-      FilterMatch(filter2.id, {kStrongProcessPid}),
-      FilterMatch(filter3.id, {kJobPid}),
-  };
+      FilterMatch(filter1.id, {kWeakPid1, kWeakPid2, kStrongProcessPid}),
+      FilterMatch(filter2.id, {kStrongProcessPid}), FilterMatch(filter3.id, {kJobPid}),
+      FilterMatch(filter4.id, {kWeakPid2})};
 
   auto result = GetAttachConfigsForFilterMatches(kMatches, filters);
 
@@ -84,6 +93,16 @@ TEST(FilterUtils, GetAttachConfigsForFilterMatches) {
   ASSERT_NE(job_attach, result.end());
   EXPECT_EQ(job_attach->second.target, AttachConfig::Target::kJob);
   EXPECT_FALSE(job_attach->second.weak);
+
+  auto weak_attach1 = result.find(kWeakPid1);
+  ASSERT_NE(weak_attach1, result.end());
+  EXPECT_TRUE(weak_attach1->second.weak);
+  EXPECT_EQ(weak_attach1->second.target, AttachConfig::Target::kProcess);
+
+  auto weak_attach2 = result.find(kWeakPid2);
+  ASSERT_NE(weak_attach2, result.end());
+  EXPECT_TRUE(weak_attach2->second.weak);
+  EXPECT_EQ(weak_attach2->second.target, AttachConfig::Target::kProcess);
 }
 
 }  // namespace debug_ipc

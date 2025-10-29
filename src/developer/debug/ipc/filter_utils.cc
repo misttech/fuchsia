@@ -90,7 +90,7 @@ std::map<uint64_t, AttachConfig> GetAttachConfigsForFilterMatches(
 
     for (uint64_t matched_pid : match.matched_pids) {
       debug_ipc::AttachConfig config;
-      config.weak = matched_filter->config.weak;
+      config.weak = matched_filter->config.weak || matched_filter->config.never_attach;
       config.target = matched_filter->config.job_only ? debug_ipc::AttachConfig::Target::kJob
                                                       : debug_ipc::AttachConfig::Target::kProcess;
 
