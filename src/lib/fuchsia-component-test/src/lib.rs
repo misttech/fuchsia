@@ -432,7 +432,7 @@ impl Capability {
 
     /// Creates a new dictionary capability.
     pub fn dictionary(name: impl Into<String>) -> DictionaryCapability {
-        DictionaryCapability { name: name.into(), as_: None, availability: None }
+        DictionaryCapability { name: name.into(), as_: None, availability: None, path: None }
     }
 
     /// Creates a new resolver capability.
@@ -755,6 +755,7 @@ pub struct DictionaryCapability {
     name: String,
     as_: Option<String>,
     availability: Option<fdecl::Availability>,
+    path: Option<String>,
 }
 
 impl DictionaryCapability {
@@ -777,6 +778,13 @@ impl DictionaryCapability {
         self.availability = Some(fdecl::Availability::SameAsTarget);
         self
     }
+
+    /// The path at which this dictionary will be used. Only relevant if the route's target is a
+    /// local component.
+    pub fn path(mut self, path: impl Into<String>) -> Self {
+        self.path = Some(path.into());
+        self
+    }
 }
 
 impl Into<ftest::Capability> for DictionaryCapability {
@@ -785,6 +793,7 @@ impl Into<ftest::Capability> for DictionaryCapability {
             name: Some(self.name),
             as_: self.as_,
             availability: self.availability,
+            path: self.path,
             ..Default::default()
         })
     }
@@ -2746,7 +2755,12 @@ mod tests {
     async fn dictionary_capability_construction() {
         assert_eq!(
             Capability::dictionary("test"),
-            DictionaryCapability { name: "test".to_string(), as_: None, availability: None },
+            DictionaryCapability {
+                name: "test".to_string(),
+                as_: None,
+                availability: None,
+                path: None
+            },
         );
         assert_eq!(
             Capability::dictionary("test").as_("test2"),
@@ -2754,6 +2768,7 @@ mod tests {
                 name: "test".to_string(),
                 as_: Some("test2".to_string()),
                 availability: None,
+                path: None,
             },
         );
         assert_eq!(
@@ -2762,6 +2777,7 @@ mod tests {
                 name: "test".to_string(),
                 as_: None,
                 availability: Some(fdecl::Availability::Optional),
+                path: None,
             },
         );
         assert_eq!(
@@ -2770,6 +2786,16 @@ mod tests {
                 name: "test".to_string(),
                 as_: None,
                 availability: Some(fdecl::Availability::SameAsTarget),
+                path: None,
+            },
+        );
+        assert_eq!(
+            Capability::dictionary("test").path("/data"),
+            DictionaryCapability {
+                name: "test".to_string(),
+                as_: None,
+                availability: None,
+                path: Some("/data".to_string()),
             },
         );
     }

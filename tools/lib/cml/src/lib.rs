@@ -175,6 +175,19 @@ impl<'a> CapabilityId<'a> {
         }
     }
 
+    /// Return the target path of the capability, if this capability has one.
+    pub fn get_target_path(&self) -> Option<NamespacePath> {
+        match self {
+            CapabilityId::UsedService(p)
+            | CapabilityId::UsedProtocol(p)
+            | CapabilityId::UsedEventStream(p)
+            | CapabilityId::UsedDirectory(p)
+            | CapabilityId::UsedStorage(p)
+            | CapabilityId::UsedDictionary(p) => Some(p.clone().into()),
+            _ => None,
+        }
+    }
+
     /// Given a Use clause, return the set of target identifiers.
     ///
     /// When only one capability identifier is specified, the target identifier name is derived

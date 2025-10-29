@@ -663,17 +663,26 @@ which is almost certainly a mistake: {}",
         let capability_ids =
             CapabilityId::from_spanned_use(use_, self.current_file_path, self.current_file_source)?;
         for capability_id in capability_ids {
-            if self.use_ids.insert(capability_id.to_string(), capability_id.clone()).is_some() {
-                let location = byte_index_to_location(self.current_file_source, use_.span().0);
-                return Err(Error::validate_with_span(
-                    format!(
-                        "\"{}\" is a duplicate \"use\" target {}",
-                        capability_id,
-                        capability_id.type_str()
-                    ),
-                    location,
-                    self.current_file_path,
-                ));
+            if let Some(conflicting_capability_id) =
+                self.use_ids.insert(capability_id.to_string(), capability_id.clone())
+            {
+                if let (CapabilityId::UsedDictionary(_), CapabilityId::UsedDictionary(_)) =
+                    (&capability_id, &conflicting_capability_id)
+                {
+                    // Dictionaries may have conflicting use paths, as they'll be merged together
+                    // at runtime.
+                } else {
+                    let location = byte_index_to_location(self.current_file_source, use_.span().0);
+                    return Err(Error::validate_with_span(
+                        format!(
+                            "\"{}\" is a duplicate \"use\" target {}",
+                            capability_id,
+                            capability_id.type_str()
+                        ),
+                        location,
+                        self.current_file_path,
+                    ));
+                }
             }
             let dir = capability_id.get_dir_path();
 
@@ -700,36 +709,69 @@ which is almost certainly a mistake: {}",
                 if capability_id == *used_id {
                     continue;
                 }
-                let Some(ref dir) = dir else {
+                let Some(ref path_b) = capability_id.get_target_path() else {
                     continue;
                 };
-                let Some(used_dir) = used_id.get_dir_path() else {
+                let Some(path_a) = used_id.get_target_path() else {
                     continue;
                 };
-
-                if match (used_id, &capability_id) {
-                    // Directories and storage can't be the same or partially overlap.
-                    (CapabilityId::UsedDirectory(_), CapabilityId::UsedStorage(_))
-                    | (CapabilityId::UsedStorage(_), CapabilityId::UsedDirectory(_))
-                    | (CapabilityId::UsedDirectory(_), CapabilityId::UsedDirectory(_))
-                    | (CapabilityId::UsedStorage(_), CapabilityId::UsedStorage(_)) => {
-                        dir.has_prefix(&used_dir) || used_dir.has_prefix(&dir)
+                #[derive(Debug, Clone, Copy)]
+                enum NodeType {
+                    Service,
+                    Directory,
+                    // This variant is never constructed if we're at an API version before "use
+                    // dictionary" was added.
+                    #[allow(unused)]
+                    Dictionary,
+                }
+                fn capability_id_to_type(id: &CapabilityId<'_>) -> Option<NodeType> {
+                    match id {
+                        CapabilityId::UsedConfiguration(_) => None,
+                        #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                        CapabilityId::UsedDictionary(_) => Some(NodeType::Dictionary),
+                        CapabilityId::UsedDirectory(_) => Some(NodeType::Directory),
+                        CapabilityId::UsedEventStream(_) => Some(NodeType::Service),
+                        CapabilityId::UsedProtocol(_) => Some(NodeType::Service),
+                        #[cfg(fuchsia_api_level_at_least = "HEAD")]
+                        CapabilityId::UsedRunner(_) => None,
+                        CapabilityId::UsedService(_) => Some(NodeType::Directory),
+                        CapabilityId::UsedStorage(_) => Some(NodeType::Directory),
+                        _ => None,
                     }
-
-                    // Protocols and services can't overlap with directories or storage.
-                    (CapabilityId::UsedDirectory(_), _)
-                    | (CapabilityId::UsedStorage(_), _)
-                    | (_, CapabilityId::UsedDirectory(_))
-                    | (_, CapabilityId::UsedStorage(_)) => {
-                        dir.has_prefix(&used_dir) || used_dir.has_prefix(&dir)
+                }
+                let Some(type_a) = capability_id_to_type(&used_id) else {
+                    continue;
+                };
+                let Some(type_b) = capability_id_to_type(&capability_id) else {
+                    continue;
+                };
+                let mut conflicts = false;
+                match (type_a, type_b) {
+                    (NodeType::Service, NodeType::Service)
+                    | (NodeType::Directory, NodeType::Service)
+                    | (NodeType::Service, NodeType::Directory)
+                    | (NodeType::Directory, NodeType::Directory) => {
+                        if path_a.has_prefix(&path_b) || path_b.has_prefix(&path_a) {
+                            conflicts = true;
+                        }
                     }
-
-                    // Protocols and services containing directories may be same, but
-                    // partial overlap is disallowed.
-                    (_, _) => {
-                        *dir != used_dir && (dir.has_prefix(&used_dir) || used_dir.has_prefix(&dir))
+                    (NodeType::Dictionary, NodeType::Service)
+                    | (NodeType::Dictionary, NodeType::Directory) => {
+                        if path_a.has_prefix(&path_b) {
+                            conflicts = true;
+                        }
                     }
-                } {
+                    (NodeType::Service, NodeType::Dictionary)
+                    | (NodeType::Directory, NodeType::Dictionary) => {
+                        if path_b.has_prefix(&path_a) {
+                            conflicts = true;
+                        }
+                    }
+                    (NodeType::Dictionary, NodeType::Dictionary) => {
+                        // All combinations of two dictionaries are valid.
+                    }
+                }
+                if conflicts {
                     let location = byte_index_to_location(self.current_file_source, use_.span().0);
                     return Err(Error::validate_with_span(
                         format!(
@@ -1523,12 +1565,21 @@ which is almost certainly a mistake: {}",
         // Disallow multiple capability ids of the same name.
         let capability_ids = CapabilityId::from_use(use_)?;
         for capability_id in capability_ids {
-            if used_ids.insert(capability_id.to_string(), capability_id.clone()).is_some() {
-                return Err(Error::validate(format!(
-                    "\"{}\" is a duplicate \"use\" target {}",
-                    capability_id,
-                    capability_id.type_str()
-                )));
+            if let Some(conflicting_capability_id) =
+                used_ids.insert(capability_id.to_string(), capability_id.clone())
+            {
+                if let (CapabilityId::UsedDictionary(_), CapabilityId::UsedDictionary(_)) =
+                    (&capability_id, &conflicting_capability_id)
+                {
+                    // Dictionaries may have conflicting use paths, as they'll be merged together
+                    // at runtime.
+                } else {
+                    return Err(Error::validate(format!(
+                        "\"{}\" is a duplicate \"use\" target {}",
+                        capability_id,
+                        capability_id.type_str()
+                    )));
+                }
             }
             let dir = capability_id.get_dir_path();
 
@@ -1550,36 +1601,69 @@ which is almost certainly a mistake: {}",
                 if capability_id == *used_id {
                     continue;
                 }
-                let Some(ref dir) = dir else {
+                let Some(ref path_b) = capability_id.get_target_path() else {
                     continue;
                 };
-                let Some(used_dir) = used_id.get_dir_path() else {
+                let Some(path_a) = used_id.get_target_path() else {
                     continue;
                 };
-
-                if match (used_id, &capability_id) {
-                    // Directories and storage can't be the same or partially overlap.
-                    (CapabilityId::UsedDirectory(_), CapabilityId::UsedStorage(_))
-                    | (CapabilityId::UsedStorage(_), CapabilityId::UsedDirectory(_))
-                    | (CapabilityId::UsedDirectory(_), CapabilityId::UsedDirectory(_))
-                    | (CapabilityId::UsedStorage(_), CapabilityId::UsedStorage(_)) => {
-                        dir.has_prefix(&used_dir) || used_dir.has_prefix(&dir)
+                #[derive(Debug, Clone, Copy)]
+                enum NodeType {
+                    Service,
+                    Directory,
+                    // This variant is never constructed if we're at an API version before "use
+                    // dictionary" was added.
+                    #[allow(unused)]
+                    Dictionary,
+                }
+                fn capability_id_to_type(id: &CapabilityId<'_>) -> Option<NodeType> {
+                    match id {
+                        CapabilityId::UsedConfiguration(_) => None,
+                        #[cfg(fuchsia_api_level_at_least = "NEXT")]
+                        CapabilityId::UsedDictionary(_) => Some(NodeType::Dictionary),
+                        CapabilityId::UsedDirectory(_) => Some(NodeType::Directory),
+                        CapabilityId::UsedEventStream(_) => Some(NodeType::Service),
+                        CapabilityId::UsedProtocol(_) => Some(NodeType::Service),
+                        #[cfg(fuchsia_api_level_at_least = "HEAD")]
+                        CapabilityId::UsedRunner(_) => None,
+                        CapabilityId::UsedService(_) => Some(NodeType::Directory),
+                        CapabilityId::UsedStorage(_) => Some(NodeType::Directory),
+                        _ => None,
                     }
-
-                    // Protocols and services can't overlap with directories or storage.
-                    (CapabilityId::UsedDirectory(_), _)
-                    | (CapabilityId::UsedStorage(_), _)
-                    | (_, CapabilityId::UsedDirectory(_))
-                    | (_, CapabilityId::UsedStorage(_)) => {
-                        dir.has_prefix(&used_dir) || used_dir.has_prefix(&dir)
+                }
+                let Some(type_a) = capability_id_to_type(&used_id) else {
+                    continue;
+                };
+                let Some(type_b) = capability_id_to_type(&capability_id) else {
+                    continue;
+                };
+                let mut conflicts = false;
+                match (type_a, type_b) {
+                    (NodeType::Service, NodeType::Service)
+                    | (NodeType::Directory, NodeType::Service)
+                    | (NodeType::Service, NodeType::Directory)
+                    | (NodeType::Directory, NodeType::Directory) => {
+                        if path_a.has_prefix(&path_b) || path_b.has_prefix(&path_a) {
+                            conflicts = true;
+                        }
                     }
-
-                    // Protocols and services containing directories may be same, but
-                    // partial overlap is disallowed.
-                    (_, _) => {
-                        *dir != used_dir && (dir.has_prefix(&used_dir) || used_dir.has_prefix(&dir))
+                    (NodeType::Dictionary, NodeType::Service)
+                    | (NodeType::Dictionary, NodeType::Directory) => {
+                        if path_a.has_prefix(&path_b) {
+                            conflicts = true;
+                        }
                     }
-                } {
+                    (NodeType::Service, NodeType::Dictionary)
+                    | (NodeType::Directory, NodeType::Dictionary) => {
+                        if path_b.has_prefix(&path_a) {
+                            conflicts = true;
+                        }
+                    }
+                    (NodeType::Dictionary, NodeType::Dictionary) => {
+                        // All combinations of two dictionaries are valid.
+                    }
+                }
+                if conflicts {
                     return Err(Error::validate(format!(
                         "{} \"{}\" is a prefix of \"use\" target {} \"{}\"",
                         used_id.type_str(),
@@ -8375,6 +8459,25 @@ mod tests {
                     },
                     {
                         "dictionary": "toolbox",
+                        "path": "/svc",
+                    },
+                ],
+            }),
+            Ok(())
+        ),
+    }}
+
+    // Tests that two dictionaries can be used at the same path
+    test_validate_cml_with_feature! { FeatureSet::from(vec![Feature::UseDictionaries]), {
+        test_cml_validate_set_allow_use_2_dictionaries_at_same_path(
+            json!({
+                "use": [
+                    {
+                        "dictionary": "toolbox-1",
+                        "path": "/svc",
+                    },
+                    {
+                        "dictionary": "toolbox-2",
                         "path": "/svc",
                     },
                 ],

@@ -564,6 +564,9 @@ impl NamespacePath {
     pub fn has_prefix(&self, prefix: &Self) -> bool {
         let my_segments = self.split();
         let prefix_segments = prefix.split();
+        if prefix_segments.len() > my_segments.len() {
+            return false;
+        }
         prefix_segments.into_iter().zip(my_segments.into_iter()).all(|(a, b)| a == b)
     }
 

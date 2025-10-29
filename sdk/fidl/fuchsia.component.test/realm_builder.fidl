@@ -391,6 +391,11 @@ type Dictionary = table {
     /// the capability. Superseded by [`Realm.AddRouteFromDictionary`].
     @available(added=25, removed=29)
     5: from_dictionary string:MAX;
+
+    /// Optional. The path at which this dictionary is used (if the target is a
+    /// local component).
+    @available(added=HEAD)
+    6: path string:fuchsia.component.MAX_PATH_LENGTH;
 };
 
 /// A resolver capability

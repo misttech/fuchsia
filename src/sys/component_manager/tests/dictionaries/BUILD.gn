@@ -11,9 +11,21 @@ rustc_test("dictionaries_integration_test_bin") {
   testonly = true
   sources = [ "src/lib.rs" ]
   deps = [
+    "//examples/components/routing/fidl:echo_rust",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-component-test",
+    "//src/lib/fuchsia-fs",
+    "//src/lib/fuchsia-sync",
+    "//src/storage/lib/vfs/rust:vfs",
     "//src/sys/component_manager/tests/fidl:components_rust",
+    "//src/sys/lib/cm_rust",
+    "//src/sys/lib/cm_types",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:log",
   ]
 }
 
@@ -41,6 +53,7 @@ fuchsia_unittest_package("dictionaries_integration_test") {
   deps = [
     ":dictionaries_integration_test_bin",
     ":trigger_c",
+    "//src/sys/component_manager:component-manager-realm-builder-cmp",
     "//src/sys/component_manager/testing/echo_server",
     "//src/sys/component_manager/tests/collections:trigger_a",
     "//src/sys/component_manager/tests/collections:trigger_b",

@@ -1490,6 +1490,8 @@ fn extend_dict_with_dictionary_use<C: ComponentInstanceInterface + 'static>(
         _ => Dict::new(),
     };
     let router = UseDictionaryRouter::new(
+        path.clone(),
+        component.moniker().clone(),
         original_dictionary,
         dictionary_routers,
         CapabilitySource::Component(ComponentSource {

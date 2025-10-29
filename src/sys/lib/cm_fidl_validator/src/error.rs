@@ -490,6 +490,24 @@ impl fmt::Display for DeclType {
     }
 }
 
+impl From<&fdecl::Use> for DeclType {
+    fn from(use_: &fdecl::Use) -> Self {
+        match use_ {
+            fdecl::Use::Config(_) => DeclType::UseConfiguration,
+            #[cfg(fuchsia_api_level_at_least = "NEXT")]
+            fdecl::Use::Dictionary(_) => DeclType::UseDictionary,
+            fdecl::Use::Directory(_) => DeclType::UseDirectory,
+            fdecl::Use::EventStream(_) => DeclType::UseEventStream,
+            fdecl::Use::Protocol(_) => DeclType::UseProtocol,
+            #[cfg(fuchsia_api_level_at_least = "HEAD")]
+            fdecl::Use::Runner(_) => DeclType::UseRunner,
+            fdecl::Use::Service(_) => DeclType::UseService,
+            fdecl::Use::Storage(_) => DeclType::UseStorage,
+            _ => DeclType::Use,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct DeclField {
     pub decl: DeclType,

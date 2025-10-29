@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use clonable_error::ClonableError;
 use cm_rust::{CapabilityTypeName, ExposeDeclCommon, OfferDeclCommon, SourceName, UseDeclCommon};
 use cm_types::{Availability, Name};
+use itertools::Itertools;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
 use router_error::{DowncastErrorForTest, Explain, RouterError};
 use std::sync::Arc;
@@ -363,9 +364,10 @@ pub enum RoutingError {
     PathTooLong { moniker: ExtendedMoniker, path: String, keyword: String },
 
     #[error(
-        "conflicting dictionary entries detected with name `{conflicting_name}` in component `{moniker}`"
+        "conflicting dictionary entries detected component `{moniker}`: {}",
+        conflicting_names.iter().map(|n| format!("{}", n)).join(", ")
     )]
-    ConflictingDictionaryEntries { moniker: ExtendedMoniker, conflicting_name: Name },
+    ConflictingDictionaryEntries { moniker: ExtendedMoniker, conflicting_names: Vec<Name> },
 }
 
 impl Explain for RoutingError {
