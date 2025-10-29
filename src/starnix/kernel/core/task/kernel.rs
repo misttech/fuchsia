@@ -36,6 +36,7 @@ use fidl::endpoints::{
 use fidl_fuchsia_component_runner::{ComponentControllerControlHandle, ComponentStopInfo};
 use fidl_fuchsia_feedback::CrashReporterProxy;
 use fidl_fuchsia_time_external::AdjustSynchronousProxy;
+use fuchsia_inspect::ArrayProperty;
 use futures::FutureExt;
 use netlink::interfaces::InterfacesHandler;
 use netlink::{NETLINK_LOG_TAG, Netlink};
@@ -789,6 +790,18 @@ impl Kernel {
                     }
                 };
                 if task.tid == thread_group.leader {
+                    let mut argv = task.read_argv(256).unwrap_or_default();
+
+                    // Any runtime that overwrites argv is likely to leave a lot of trailing
+                    // nulls, no need to print those in inspect.
+                    argv.retain(|arg| !arg.is_empty());
+
+                    let inspect_argv = tg_node.create_string_array("argv", argv.len());
+                    for (i, arg) in argv.iter().enumerate() {
+                        inspect_argv.set(i, arg.to_string());
+                    }
+                    tg_node.record(inspect_argv);
+
                     set_properties(&tg_node);
                 } else {
                     tasks_node.record_child(task.tid.to_string(), |task_node| {
