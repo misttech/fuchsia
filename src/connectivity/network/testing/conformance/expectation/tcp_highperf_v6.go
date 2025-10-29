@@ -100,7 +100,13 @@ var tcpHighperfV6ExpectationsNS3 map[AnvlCaseNumber]outcome.Outcome = map[AnvlCa
 	// TODO(https://fxbug.dev/438961717): Support TCP PAWS.
 	{4, 18}: Fail,
 	{4, 19}: Pass,
-	{4, 20}: Pass,
+	// This test verifies that TCP timestamps use a clock speed no-faster than
+	// 1 tick per millisecond. It times the difference between two TCP segments
+	// with millisecond precision, and asserts that the difference in timestamp
+	// is appropriate. Because Netstack3 uses a millisecond timer, were right up
+	// against the allowed lower bound. That fact alongside CQ timing randomness
+	// leads to this test flaking.
+	{4, 20}: Flaky,
 	{5, 18}: Pass,
 	{5, 19}: Pass,
 	// TODO(https://fxbug.dev/438961717): Support TCP PAWS.
