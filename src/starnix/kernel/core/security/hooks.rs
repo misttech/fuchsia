@@ -807,6 +807,7 @@ pub fn fs_node_permission(
 /// Returns whether the `current_task` can receive `file` via a socket IPC.
 /// Corresponds to the `file_receive()` LSM hook.
 pub fn file_receive(current_task: &CurrentTask, file: &FileObject) -> Result<(), Errno> {
+    track_hook_duration!(c"security.hooks.file_receive");
     if_selinux_else_default_ok(current_task, |security_server| {
         let receiving_sid = current_task_state(current_task).lock().current_sid;
         selinux_hooks::file::file_receive(security_server, current_task, receiving_sid, file)
@@ -1096,6 +1097,7 @@ pub fn check_socket_create_access<L>(
 where
     L: LockEqualOrBefore<FileOpsCore>,
 {
+    track_hook_duration!(c"security.hooks.socket_create");
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::socket::check_socket_create_access(
             locked,
@@ -1125,6 +1127,7 @@ pub fn socket_socketpair(
 /// Computes and updates the socket security class associated with a new socket.
 /// Corresponds to the `socket_post_create()` LSM hook.
 pub fn socket_post_create(socket: &Socket) {
+    track_hook_duration!(c"security.hooks.socket_post_create");
     selinux_hooks::socket::socket_post_create(socket);
 }
 
@@ -1597,6 +1600,7 @@ pub fn task_setrlimit(
     old_limit: rlimit,
     new_limit: rlimit,
 ) -> Result<(), Errno> {
+    track_hook_duration!(c"security.hooks.task_setrlimit");
     if_selinux_else_default_ok(source, |security_server| {
         selinux_hooks::task::task_setrlimit(
             &security_server.as_permission_check(),
@@ -1660,6 +1664,7 @@ pub fn sb_show_options(
     buf: &mut impl OutputBuffer,
     mount: &Mount,
 ) -> Result<(), Errno> {
+    track_hook_duration!(c"security.hooks.sb_show_options");
     if let Some(state) = &kernel.security_state.state {
         if state.server.has_policy() {
             selinux_hooks::superblock::sb_show_options(&state.server, buf, mount)?;
@@ -1911,6 +1916,7 @@ pub fn check_bpf_access<Attr: FromBytes>(
     attr: &Attr,
     attr_size: u32,
 ) -> Result<(), Errno> {
+    track_hook_duration!(c"security.hooks.check_bpf_access");
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::bpf::check_bpf_access(security_server, current_task, cmd, attr, attr_size)
     })
@@ -1924,6 +1930,7 @@ pub fn check_bpf_map_access(
     bpf_map: &BpfMap,
     flags: PermissionFlags,
 ) -> Result<(), Errno> {
+    track_hook_duration!(c"security.hooks.check_bpf_map_access");
     if_selinux_else_default_ok(current_task, |security_server| {
         let subject_sid = current_task_state(current_task).lock().current_sid;
         selinux_hooks::bpf::check_bpf_map_access(
@@ -1944,6 +1951,7 @@ pub fn check_bpf_prog_access(
     current_task: &CurrentTask,
     bpf_program: &Program,
 ) -> Result<(), Errno> {
+    track_hook_duration!(c"security.hooks.check_bpf_prog_access");
     if_selinux_else_default_ok(current_task, |security_server| {
         let subject_sid = current_task_state(current_task).lock().current_sid;
         selinux_hooks::bpf::check_bpf_prog_access(
@@ -1964,6 +1972,7 @@ pub fn check_perf_event_open_access(
     attr: &perf_event_attr,
     event_type: PerfEventType,
 ) -> Result<(), Errno> {
+    track_hook_duration!(c"security.hooks.check_perf_event_open_access");
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::perf_event::check_perf_event_open_access(
             security_server,
