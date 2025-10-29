@@ -121,7 +121,7 @@ _FSH_INSPECT_DATA_BEFORE: list[dict[str, Any]] = [
             "component_url": "fuchsia-boot:///generic-suspend#meta/generic-suspend.cm",
             "timestamp": 372140515750,
         },
-        "moniker": "'bootstrap/boot-drivers:dev.sys.platform.pt.suspend'",
+        "moniker": "'bootstrap/boot-drivers:suspend'",
         "name": "generic-suspend",
         "payload": {"root": {"suspend_events": {}}},
         "version": 1,

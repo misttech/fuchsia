@@ -58,8 +58,7 @@ class InspectTestCase : public gtest::RealLoopFixture {
     {
       std::ostringstream builder;
       builder << "realm_builder:" << devmgr_.RealmChildName()
-              << "/driver_test_realm/realm_builder:0/boot-drivers:dev.sys.platform."
-              << kPlatformDeviceName;
+              << "/driver_test_realm/realm_builder:0/boot-drivers:" << kPlatformDeviceName;
       moniker = builder.str();
     }
 

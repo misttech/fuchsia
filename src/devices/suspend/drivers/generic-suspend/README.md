@@ -24,8 +24,8 @@ To see output, use the `-o` flag.
 To grab the inspect data, run this `ffx` command:
 
 ```
-$ ffx inspect show "bootstrap/boot-drivers\:dev.sys.platform.pt.suspend"
-bootstrap/boot-drivers:dev.sys.platform.pt.suspend:
+$ ffx inspect show "bootstrap/boot-drivers\:suspend"
+bootstrap/boot-drivers:suspend:
   metadata:
     name = generic-suspend
     component_url = fuchsia-boot:///generic-suspend#meta/generic-suspend.cm

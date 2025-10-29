@@ -8,9 +8,9 @@ namespace {
 
 TEST_F(DeviceEnumerationTest, QemuArm64Test) {
   static const char* kNodeMonikers[] = {
-      "dev.sys.platform.pt.qemu-bus",
-      "dev.sys.platform.pl031.rtc",
-      "dev.sys.platform.pci.00_00_0_",
+      "qemu-bus",
+      "pl031.rtc",
+      "pci.00_00_0_",
   };
 
   VerifyNodes(kNodeMonikers);

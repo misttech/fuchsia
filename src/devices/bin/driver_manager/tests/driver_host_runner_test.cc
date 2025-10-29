@@ -196,7 +196,7 @@ TEST_F(DynamicLinkingTest, StartRootDriver) {
   ASSERT_EQ(24, WaitForProcessExit(process));
 
   StopDriverComponent(std::move(root_driver->controller));
-  realm().AssertDestroyedChildren({driver_runner::CreateChildRef("dev", "boot-drivers")});
+  realm().AssertDestroyedChildren({driver_runner::CreateChildRef("root", "boot-drivers")});
 }
 
 TEST_F(DynamicLinkingTest, StartCompatDriver) {
@@ -270,7 +270,7 @@ TEST_F(DynamicLinkingTest, StartCompatDriver) {
   driver->CloseBinding();
   driver->DropNode();
   StopDriverComponent(std::move(root_driver->controller));
-  realm().AssertDestroyedChildren({driver_runner::CreateChildRef("dev", "boot-drivers"),
+  realm().AssertDestroyedChildren({driver_runner::CreateChildRef("root", "boot-drivers"),
                                    driver_runner::CreateChildRef("dev.compat", "boot-drivers")});
 }
 
@@ -318,7 +318,7 @@ TEST_F(DynamicLinkingTest, StartColocatedSecondDriverNoDynamicLinking) {
 
   ServeStopListener(std::move(controller));
   StopDriverComponent(std::move(root_driver->controller));
-  realm().AssertDestroyedChildren({driver_runner::CreateChildRef("dev", "boot-drivers"),
+  realm().AssertDestroyedChildren({driver_runner::CreateChildRef("root", "boot-drivers"),
                                    driver_runner::CreateChildRef("dev.second", "boot-drivers")});
 }
 

@@ -86,7 +86,7 @@ This command prints output similar to the following:
 
 ```none {:.devsite-disable-click-to-copy}
 Name     : pt
-Moniker  : dev.sys.platform.pt.acpi._SB_.PCI0.ISA_.RTC_.pt
+Moniker  : acpi._SB_.PCI0.ISA_.RTC_.pt
 Driver   : unbound
 5 Properties
 [ 1/  5] : Key fuchsia.BIND_ACPI_ID           Value 0x000004
@@ -96,10 +96,10 @@ Driver   : unbound
 [ 5/  5] : Key "fuchsia.hardware.acpi.Service" Value "fuchsia.hardware.acpi.Service.ZirconTransport"
 2 Offers
 Service: fuchsia.driver.compat.Service
-  Source: dev.sys.platform.pt
+  Source: board
   Instances: default
 Service: fuchsia.hardware.acpi.Service
-  Source: dev.sys.platform.pt
+  Source: board
   Instances: default
 ```
 
@@ -360,21 +360,21 @@ each node, for example:
 
 ```none {:.devsite-disable-click-to-copy}
 Name     : RTC_-composite-spec
-Moniker  : dev.sys.platform.pt.acpi._SB_.PCI0.ISA_.RTC_.pt.RTC_-composite-spec
+Moniker  : acpi._SB_.PCI0.ISA_.RTC_.pt.RTC_-composite-spec
 Driver   : fuchsia-boot:///intel-rtc#meta/intel-rtc.cm
 0 Properties
 4 Offers
 Service: fuchsia.driver.compat.Service
-  Source: dev.sys.platform.pt
+  Source: board
   Instances: default acpi
 Service: fuchsia.hardware.acpi.Service
-  Source: dev.sys.platform.pt
+  Source: board
   Instances: default acpi
 Service: fuchsia.driver.compat.Service
-  Source: dev.sys.platform.00_00_1b
+  Source: 00_00_1b
   Instances: sysmem
 Service: fuchsia.hardware.sysmem.Service
-  Source: dev.sys.platform.00_00_1b
+  Source: 00_00_1b
   Instances: sysmem
 ```
 

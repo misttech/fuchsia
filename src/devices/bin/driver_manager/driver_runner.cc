@@ -995,7 +995,7 @@ void DriverRunner::RestartWithDictionary(fidl::StringView moniker,
 
         std::shared_ptr<driver_manager::Node> restarted_node = nullptr;
         PerformBFS(root_node_, [&](const std::shared_ptr<driver_manager::Node>& current) {
-          if (current->MakeComponentMoniker() == moniker) {
+          if (current->MakeComponentMoniker() == moniker && current->HasDriverComponent()) {
             if (current->dictionary_ref().has_value()) {
               fdf_log::error(
                   "RestartWithDictionary requested node id already contains a dictionary_ref from another RestartWithDictionary operation.");

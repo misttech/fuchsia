@@ -792,7 +792,7 @@ class SystemPowerStateControllerUsingStarnix(
         #             "component_url": "fuchsia-boot:///generic-suspend#meta/generic-suspend.cm",
         #             "timestamp": 372140515750,
         #         },
-        #         "moniker": "'bootstrap/boot-drivers:dev.sys.platform.pt.suspend'",
+        #         "moniker": "'bootstrap/boot-drivers:suspend'",
         #         "payload": {
         #             'root': {
         #                 'suspend_events': {

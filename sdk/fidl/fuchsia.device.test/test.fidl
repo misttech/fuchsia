@@ -8,7 +8,7 @@ using zx;
 
 /// The path which can be used to open the control device.
 /// This path is relative to /dev/.
-const CONTROL_DEVICE string = "sys/test/test";
+const CONTROL_DEVICE string = "sys/test/test2";
 
 /// Returns the result summary of a test run
 type TestReport = struct {

@@ -186,7 +186,7 @@ TEST(SpmiVisitorTest, TwoControllers) {
   EXPECT_EQ(*target_3->name(), "vreg");
 
   // First controller composite node specs
-  const auto vreg_1000 = spmi_tester->FindMgrRequest("vreg-1000_group");
+  const auto vreg_1000 = spmi_tester->FindMgrRequest("vreg-1000");
   ASSERT_TRUE(vreg_1000);
 
   ASSERT_TRUE(vreg_1000->parents2());
@@ -215,10 +215,10 @@ TEST(SpmiVisitorTest, TwoControllers) {
 
   // gpio@2000 and i2c@3000 are referenced by another node, so no composite node specs should be
   // added for them.
-  const auto gpio_2000 = spmi_tester->FindMgrRequest("gpio-2000_group");
+  const auto gpio_2000 = spmi_tester->FindMgrRequest("gpio-2000");
   EXPECT_FALSE(gpio_2000);
 
-  const auto i2c_3000 = spmi_tester->FindMgrRequest("i2c-3000_group");
+  const auto i2c_3000 = spmi_tester->FindMgrRequest("i2c-3000");
   EXPECT_FALSE(i2c_3000);
 
   // Second controller metadata
@@ -251,7 +251,7 @@ TEST(SpmiVisitorTest, TwoControllers) {
   EXPECT_FALSE(target_1_0->sub_targets());
 
   // Second controller composite node specs
-  const auto target_c_0 = spmi_tester->FindMgrRequest("target-c-0_group");
+  const auto target_c_0 = spmi_tester->FindMgrRequest("target-c-0");
   ASSERT_TRUE(target_c_0);
 
   ASSERT_TRUE(target_c_0->parents2());
@@ -281,7 +281,7 @@ TEST(SpmiVisitorTest, TwoControllers) {
   ASSERT_TRUE(pbus_node_ignored);
   EXPECT_FALSE(pbus_node_ignored->metadata());
 
-  const auto not_spmi = spmi_tester->FindMgrRequest("not-spmi-abce0000_group");
+  const auto not_spmi = spmi_tester->FindMgrRequest("not-spmi-abce0000");
   ASSERT_TRUE(not_spmi);
 
   ASSERT_TRUE(not_spmi->parents2());

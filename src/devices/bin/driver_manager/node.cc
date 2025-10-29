@@ -465,14 +465,31 @@ const std::string& Node::driver_url() const {
 
 std::string Node::MakeTopologicalPath() const {
   std::deque<std::string_view> names;
+  std::string_view prev;
   for (auto node = this; node != nullptr; node = node->GetPrimaryParent()) {
-    names.push_front(node->name());
+    std::string_view name = node->name();
+    if (name != prev) {
+      names.push_front(name);
+      prev = name;
+    }
   }
   return fxl::JoinStrings(names, "/");
 }
 
 std::string Node::MakeComponentMoniker() const {
   std::string topo_path = MakeTopologicalPath();
+
+  const std::string_view kPrefix = "dev/sys/platform/pt/";
+  const std::string_view kPrefix2 = "dev/sys/platform/";
+  if (topo_path == "dev") {
+    topo_path = "root";
+  } else if (topo_path == "dev/sys/platform/pt") {
+    topo_path = "board";
+  } else if (topo_path.starts_with(kPrefix)) {
+    topo_path.erase(0, kPrefix.length());
+  } else if (topo_path.starts_with(kPrefix2)) {
+    topo_path.erase(0, kPrefix2.length());
+  }
 
   // The driver's component name is based on the node name, which means that the
   // node name cam only have [a-z0-9-_.] characters. DFv1 composites contain ':'

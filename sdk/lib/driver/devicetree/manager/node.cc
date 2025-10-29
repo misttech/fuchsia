@@ -250,7 +250,7 @@ zx::result<> Node::Publish(fdf::WireSyncClient<fuchsia_hardware_platform_bus::Pl
             parents_.size());
 
     fdf::CompositeNodeSpec group{{
-        .name = fdf_name() + "_group",
+        .name = fdf_name(),
         .parents2 = std::move(parents_),
     }};
 

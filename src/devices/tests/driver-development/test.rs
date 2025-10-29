@@ -134,11 +134,13 @@ async fn set_up_test_driver_realm() -> Result<(RealmInstance, fdd::ManagerProxy)
 }
 
 fn assert_contains_driver_url(driver_infos: &Vec<fdf::DriverInfo>, expected_driver_url: &str) {
-    assert!(driver_infos
-        .iter()
-        .find(|driver_info| driver_info.url.as_ref().expect("Missing device URL")
-            == expected_driver_url)
-        .is_some());
+    assert!(
+        driver_infos
+            .iter()
+            .find(|driver_info| driver_info.url.as_ref().expect("Missing device URL")
+                == expected_driver_url)
+            .is_some()
+    );
 }
 
 // GetDriverInfo tests
@@ -308,7 +310,7 @@ async fn test_get_device_info_no_filter() -> Result<()> {
 
     let root = &device_nodes[0];
 
-    assert_eq!(root.info.moniker.as_ref().expect("node missing moniker"), "dev");
+    assert_eq!(root.info.moniker.as_ref().expect("node missing moniker"), "root");
     assert_eq!(
         root.info.bound_driver_url.as_ref().expect("node missing driver URL"),
         PARENT_DRIVER_URL

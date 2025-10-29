@@ -11,7 +11,7 @@ zx::result<> TestDriver::Start() {
       {.connector_supports{fuchsia_device_fs::ConnectionType::kController}});
 
   // Create a child that driver-test-realm tests can watch for.
-  zx::result child = AddOwnedChild("test", devfs_args);
+  zx::result child = AddOwnedChild("test2", devfs_args);
   if (child.is_error()) {
     fdf::error("Failed to add child: {}", child);
     return child.take_error();

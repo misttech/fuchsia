@@ -563,9 +563,9 @@ The most common issue with migrating to services is not connecting all the capab
 up correctly. Look for errors in your logs similar to:
 
 ```none {:.devsite-disable-click-to-copy}
-WARN: service `fuchsia.example.EchoService` was not available for target `bootstrap/boot-drivers:dev.sys.platform.pt.PCI0`:
-	`fuchsia.example.EchoService` was not offered to `bootstrap/boot-drivers:dev.sys.platform.pt.PCI0` by parent
-For more, run `ffx component doctor bootstrap/boot-drivers:dev.sys.platform.pt.PCI0`
+WARN: service `fuchsia.example.EchoService` was not available for target `bootstrap/boot-drivers:PCI0`:
+	`fuchsia.example.EchoService` was not offered to `bootstrap/boot-drivers:PCI0` by parent
+For more, run `ffx component doctor bootstrap/boot-drivers:PCI0`
 ```
 
 You can also check your component routing while the system is running.

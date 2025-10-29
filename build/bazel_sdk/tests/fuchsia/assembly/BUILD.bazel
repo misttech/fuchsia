@@ -123,7 +123,7 @@ fuchsia_board_configuration(
     platform = {
         "connectivity": {
             "network": {
-                "netsvc_interface": "/dwmac-ff3f0000_group/dwmac/Designware-MAC/netdevice-migration/network-device",
+                "netsvc_interface": "/dwmac-ff3f0000/dwmac/Designware-MAC/netdevice-migration/network-device",
             },
         },
         "development_support": {

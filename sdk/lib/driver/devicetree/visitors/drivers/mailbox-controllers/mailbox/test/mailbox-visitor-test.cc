@@ -151,7 +151,7 @@ TEST(MailboxVisitorTest, TwoControllers) {
   EXPECT_TRUE(FindChannel(0x1234, *controller_1));
 
   // First client composite node specs
-  const auto client_0 = mailbox_tester->FindMgrRequest("node-abcf0000_group");
+  const auto client_0 = mailbox_tester->FindMgrRequest("node-abcf0000");
   ASSERT_TRUE(client_0);
 
   ASSERT_TRUE(client_0->parents2());
@@ -213,7 +213,7 @@ TEST(MailboxVisitorTest, TwoControllers) {
       (*client_0->parents2())[3].properties(), false));
 
   // Second client composite node specs
-  const auto client_1 = mailbox_tester->FindMgrRequest("node-abd00000_group");
+  const auto client_1 = mailbox_tester->FindMgrRequest("node-abd00000");
   ASSERT_TRUE(client_1);
 
   ASSERT_TRUE(client_1->parents2());

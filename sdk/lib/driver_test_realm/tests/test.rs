@@ -191,7 +191,7 @@ async fn test_pkg_dir() -> Result<()> {
     );
 
     let dev = instance.driver_test_realm_connect_to_dev()?;
-    device_watcher::recursive_wait(&dev, "sys/test/test").await?;
+    device_watcher::recursive_wait(&dev, "sys/test/test2").await?;
 
     Ok(())
 }

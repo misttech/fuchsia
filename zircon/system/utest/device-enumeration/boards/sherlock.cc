@@ -8,92 +8,92 @@ namespace {
 
 TEST_F(DeviceEnumerationTest, SherlockTest) {
   static const char* kNodeMonikers[] = {
-      "dev.sys.platform.pt.sherlock",
-      "dev.sys.platform.pt.sherlock.post-init.post-init",
-      "dev.sys.platform.gpio.aml-gpio.gpio",
-      "dev.sys.platform.gpio.aml-gpio.gpio-init",
-      "dev.sys.platform.sherlock-clk.clocks",
-      "dev.sys.platform.sherlock-clk.clocks.clock-init",
-      "dev.sys.platform.gpio-light.aml_light",
-      "dev.sys.platform.i2c-0.i2c-0.aml-i2c",
-      "dev.sys.platform.i2c-1.i2c-1.aml-i2c",
-      "dev.sys.platform.i2c-2.i2c-2.aml-i2c",
-      "dev.sys.platform.canvas.aml-canvas",
-      "dev.sys.platform.05_04_a.aml_thermal_pll.thermal",
-      "dev.sys.platform.display.display.amlogic-display.display-coordinator",
-      "dev.sys.platform.aml-usb-phy.aml_usb_phy",
+      "sherlock",
+      "sherlock.post-init",
+      "gpio.aml-gpio.gpio",
+      "gpio.aml-gpio.gpio-init",
+      "sherlock-clk.clocks",
+      "sherlock-clk.clocks.clock-init",
+      "gpio-light.aml_light",
+      "i2c-0.aml-i2c",
+      "i2c-1.aml-i2c",
+      "i2c-2.aml-i2c",
+      "canvas.aml-canvas",
+      "05_04_a.aml_thermal_pll.thermal",
+      "display.amlogic-display.display-coordinator",
+      "aml-usb-phy",
 
       // XHCI driver will not be loaded if we are in USB peripheral mode.
-      // "xhci.xhci.usb-bus",
+      // "xhci.usb-bus",
 
-      "dev.sys.platform.sherlock-emmc.sherlock_emmc.aml-sd-emmc.sdmmc.sdmmc-mmc.boot1.block",
-      "dev.sys.platform.sherlock-emmc.sherlock_emmc.aml-sd-emmc.sdmmc.sdmmc-mmc.boot2.block",
-      "dev.sys.platform.sherlock-emmc.sherlock_emmc.aml-sd-emmc.sdmmc.sdmmc-mmc.rpmb",
-      "dev.sys.platform.sherlock-sd-emmc.sherlock_sd_emmc.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1",
-      "dev.sys.platform.sherlock-sd-emmc.sherlock_sd_emmc.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-2",
+      "sherlock-emmc.sherlock_emmc.aml-sd-emmc.sdmmc.sdmmc-mmc.boot1.block",
+      "sherlock-emmc.sherlock_emmc.aml-sd-emmc.sdmmc.sdmmc-mmc.boot2.block",
+      "sherlock-emmc.sherlock_emmc.aml-sd-emmc.sdmmc.sdmmc-mmc.rpmb",
+      "sherlock-sd-emmc.sherlock_sd_emmc.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1",
+      "sherlock-sd-emmc.sherlock_sd_emmc.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-2",
 
-      "dev.sys.platform.aml-nna.aml_nna",
-      "dev.sys.platform.pwm",  // pwm
-      "dev.sys.platform.gpio-light.aml_light",
-      "dev.sys.platform.aml_gpu.aml-gpu-composite.aml-gpu",
-      "dev.sys.platform.sherlock-pdm-audio-in.aml_pdm.sherlock-audio-pdm-in",
-      "dev.sys.platform.sherlock-i2s-audio-out.aml_tdm.sherlock-audio-i2s-out",
-      "dev.sys.platform.i2c-1.i2c-1.aml-i2c.i2c.i2c-1-56.focaltech_touch",
-      "dev.sys.platform.tee.tee.optee",
-      "dev.sys.platform.gpio-c.aml-gpio.gpio.gpio-50.spi_0.aml-spi-0.spi.spi-0-0",
-      "dev.sys.platform.sherlock-buttons.sherlock-buttons.buttons",
-      "dev.sys.platform.i2c-2.i2c-2.aml-i2c.i2c.i2c-2-44.backlight",
-      "dev.sys.platform.i2c-0.i2c-0.aml-i2c.i2c.i2c-0-57.tcs3400_light.tcs-3400",
-      "dev.sys.platform.aml-secure-mem.aml_securemem.aml-securemem",
-      "dev.sys.platform.pwm.aml-pwm-device.pwm-4.pwm_init",
-      "dev.sys.platform.aml-ram-ctl.ram",
-      "dev.sys.platform.registers",  // registers device
+      "aml-nna.aml_nna",
+      "pwm",  // pwm
+      "gpio-light.aml_light",
+      "aml_gpu.aml-gpu-composite.aml-gpu",
+      "sherlock-pdm-audio-in.aml_pdm.sherlock-audio-pdm-in",
+      "sherlock-i2s-audio-out.aml_tdm.sherlock-audio-i2s-out",
+      "i2c-1.aml-i2c.i2c.i2c-1-56.focaltech_touch",
+      "tee.optee",
+      "gpio-c.aml-gpio.gpio.gpio-50.spi_0.aml-spi-0.spi.spi-0-0",
+      "sherlock-buttons.buttons",
+      "i2c-2.aml-i2c.i2c.i2c-2-44.backlight",
+      "i2c-0.aml-i2c.i2c.i2c-0-57.tcs3400_light.tcs-3400",
+      "aml-secure-mem.aml_securemem.aml-securemem",
+      "pwm.aml-pwm-device.pwm-4.pwm_init",
+      "aml-ram-ctl.ram",
+      "registers",  // registers device
 
       // CPU Devices.
-      "dev.sys.platform.aml-cpu",
-      "dev.sys.platform.05_04_a.aml_thermal_pll.thermal.aml_cpu_legacy.big-cluster",
-      "dev.sys.platform.05_04_a.aml_thermal_pll.thermal.aml_cpu_legacy.little-cluster",
+      "aml-cpu",
+      "05_04_a.aml_thermal_pll.thermal.aml_cpu_legacy.big-cluster",
+      "05_04_a.aml_thermal_pll.thermal.aml_cpu_legacy.little-cluster",
 
       // Thermal devices.
-      "dev.sys.platform.05_04_a",
-      "dev.sys.platform.aml-thermal-ddr",
-      "dev.sys.platform.aml-thermal-ddr.thermal",
+      "05_04_a",
+      "aml-thermal-ddr",
+      "aml-thermal-ddr.thermal",
 
-      "dev.sys.platform.adc",
-      "dev.sys.platform.adc.aml-saradc.0",
-      "dev.sys.platform.adc.aml-saradc.SHERLOCK_THERMISTOR_BASE",
-      "dev.sys.platform.adc.aml-saradc.SHERLOCK_THERMISTOR_AUDIO",
-      "dev.sys.platform.adc.aml-saradc.SHERLOCK_THERMISTOR_AMBIENT",
+      "adc",
+      "adc.aml-saradc.0",
+      "adc.aml-saradc.SHERLOCK_THERMISTOR_BASE",
+      "adc.aml-saradc.SHERLOCK_THERMISTOR_AUDIO",
+      "adc.aml-saradc.SHERLOCK_THERMISTOR_AMBIENT",
 
       // Audio
-      "dev.sys.platform.i2c-0.i2c-0.aml-i2c.i2c.i2c-0-111.audio-tas5720-woofer",
-      "dev.sys.platform.i2c-0.i2c-0.aml-i2c.i2c.i2c-0-108.audio-tas5720-left-tweeter",
-      "dev.sys.platform.i2c-0.i2c-0.aml-i2c.i2c.i2c-0-109.audio-tas5720-right-tweeter",
+      "i2c-0.aml-i2c.i2c.i2c-0-111.audio-tas5720-woofer",
+      "i2c-0.aml-i2c.i2c.i2c-0-108.audio-tas5720-left-tweeter",
+      "i2c-0.aml-i2c.i2c.i2c-0-109.audio-tas5720-right-tweeter",
 
       // LCD Bias
-      "dev.sys.platform.i2c-2.i2c-2.aml-i2c.i2c.i2c-2-62",
+      "i2c-2.aml-i2c.i2c.i2c-2-62",
 
       // Touchscreen
-      "dev.sys.platform.i2c-1.i2c-1.aml-i2c.i2c.i2c-1-56.focaltech_touch.focaltouch-HidDevice",
+      "i2c-1.aml-i2c.i2c.i2c-1-56.focaltech_touch.focaltouch-HidDevice",
 
 #ifdef include_packaged_drivers
 
-      "dev.sys.platform.mipi-csi2.aml-mipi",
-      "dev.sys.platform.mipi-csi2.aml-mipi.imx227_sensor",
-      "dev.sys.platform.mipi-csi2.aml-mipi.imx227_sensor.imx227.gdc",
-      "dev.sys.platform.mipi-csi2.aml-mipi.imx227_sensor.imx227.ge2d",
+      "mipi-csi2.aml-mipi",
+      "mipi-csi2.aml-mipi.imx227_sensor",
+      "mipi-csi2.aml-mipi.imx227_sensor.imx227.gdc",
+      "mipi-csi2.aml-mipi.imx227_sensor.imx227.ge2d",
 
-      "dev.sys.platform.aml_video.aml_video",
-      "dev.sys.platform.aml-video-enc.aml-video-enc",
+      "aml_video",
+      "aml-video-enc",
 
-      "dev.sys.platform.gpio-c.aml-gpio.gpio.gpio-50.spi_0.aml-spi-0.spi.spi-0-0.nrf52840_radio.ot-radio",
+      "gpio-c.aml-gpio.gpio.gpio-50.spi_0.aml-spi-0.spi.spi-0-0.nrf52840_radio.ot-radio",
 
       // WLAN
-      "dev.sys.platform.sherlock-sd-emmc.sherlock_sd_emmc.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1.wifi.brcmfmac-wlanphyimpl",
-      "dev.sys.platform.sherlock-sd-emmc.sherlock_sd_emmc.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1.wifi.brcmfmac-wlanphyimpl.wlanphy",
+      "sherlock-sd-emmc.sherlock_sd_emmc.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1.wifi.brcmfmac-wlanphyimpl",
+      "sherlock-sd-emmc.sherlock_sd_emmc.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1.wifi.brcmfmac-wlanphyimpl.wlanphy",
 
-      "dev.sys.platform.mipi-csi2.aml-mipi.imx227_sensor.imx227.isp",
-      "dev.sys.platform.mipi-csi2.aml-mipi.imx227_sensor.imx227.isp.arm-isp.camera_controller",
+      "mipi-csi2.aml-mipi.imx227_sensor.imx227.isp",
+      "mipi-csi2.aml-mipi.imx227_sensor.imx227.isp.arm-isp.camera_controller",
 #endif
   };
   VerifyNodes(kNodeMonikers);

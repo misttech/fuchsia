@@ -611,7 +611,7 @@ zx::result<DriverRunnerTestBase::StartDriverResult> DriverRunnerTestBase::StartR
   realm().SetCreateChildHandler(
       [](fdecl::CollectionRef collection, fdecl::Child decl, auto offers) {
         EXPECT_EQ("boot-drivers", collection.name());
-        EXPECT_EQ("dev", decl.name());
+        EXPECT_EQ("root", decl.name());
         EXPECT_EQ(root_driver_url, decl.url());
       });
   auto start = driver_runner().StartRootDriver(root_driver_url);
@@ -623,7 +623,7 @@ zx::result<DriverRunnerTestBase::StartDriverResult> DriverRunnerTestBase::StartR
   StartDriverHandler start_handler = [](TestDriver* driver, fdfw::DriverStartArgs start_args) {
     ValidateProgram(start_args.program(), root_driver_binary, "false", "false", "false");
   };
-  return zx::ok(StartDriver("dev",
+  return zx::ok(StartDriver("root",
                             {
                                 .url = root_driver_url,
                                 .binary = root_driver_binary,
@@ -634,7 +634,7 @@ zx::result<DriverRunnerTestBase::StartDriverResult> DriverRunnerTestBase::StartR
 zx::result<DriverRunnerTestBase::StartDriverResult>
 DriverRunnerTestBase::StartRootDriverDynamicLinking(test_utils::TestPkg::Config driver_host_config,
                                                     test_utils::TestPkg::Config driver_config) {
-  PrepareRealmForDriverComponentStart("dev", driver_runner::root_driver_url);
+  PrepareRealmForDriverComponentStart("root", driver_runner::root_driver_url);
 
   auto start = driver_runner().StartRootDriver(driver_runner::root_driver_url);
   if (start.is_error()) {
@@ -656,7 +656,7 @@ DriverRunnerTestBase::StartRootDriverDynamicLinking(test_utils::TestPkg::Config 
   test_utils::TestPkg driver_host_test_pkg(std::move(driver_host_pkg_endpoints.server),
                                            driver_host_config);
 
-  return zx::ok(StartDriver("dev",
+  return zx::ok(StartDriver("root",
                             {
                                 .url = driver_runner::root_driver_url,
                                 .binary = std::string(driver_config.main_module.open_path),

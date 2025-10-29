@@ -52,7 +52,7 @@ class ZxcryptInspect : public gtest::RealLoopFixture {
 
     const std::string moniker =
         std::string{"realm_builder:"} + devmgr_.RealmChildName() +
-        "/driver_test_realm/realm_builder:0/boot-drivers:dev.sys.platform.ram-disk.ramctl.ramdisk-0.block";
+        "/driver_test_realm/realm_builder:0/boot-drivers:ram-disk.ramctl.ramdisk-0.block";
 
     return fpromise::make_ok_promise(
                std::unique_ptr<ArchiveReader>(new ArchiveReader(

@@ -70,7 +70,7 @@ TEST_F(PciDriverTests, TestRunner) {
 
   // The final path is made up of the FakeBusDriver, the bind point it creates, and
   // the final protocol test driver.
-  // dev.sys.platform.pcictl.pcictl.00_01.2.00_01_2.pciproto
+  // pcictl.00_01.2.00_01_2.pciproto
   std::array<char, 64> proto_driver_path = {};
   snprintf(proto_driver_path.data(), proto_driver_path.max_size(),
            "sys/platform/%s/%s/%02x:%02x.%1x/%02x_%02x_%1x/%s", kDeviceEntry.name,

@@ -244,7 +244,7 @@ For example, the following command only graphs the relatives
 of the 'virtio-input' node:
 
 ```posix-terminal
-ffx driver node graph -o relatives:dev.sys.platform.pt.PCI0.bus.00_03_0.00_03_0.virtio-input
+ffx driver node graph -o relatives:PCI0.bus.00_03_0.00_03_0.virtio-input
 ```
 
 Use the following filters with the `--only` flag
@@ -284,7 +284,7 @@ To avoid this, always use this flag with a filter. For example:
 
 
 ```posix-terminal
-ffx driver node graph --services -o relatives:dev.sys.platform.pt.PCI0.bus.00_03_0.00_03_0.virtio-input
+ffx driver node graph --services -o relatives:PCI0.bus.00_03_0.00_03_0.virtio-input
 ```
 
 #### Creating the graph image {:#graph-the-node-topology-creating}
@@ -305,7 +305,7 @@ and then pipe the resulting SVG back into the graph command with the `--html` fl
 For example:
 
 ```posix-terminal
-ffx driver node graph --services -o relatives:dev.sys.platform.pt.PCI0.bus.00_03_0.00_03_0.virtio-input | \
+ffx driver node graph --services -o relatives:PCI0.bus.00_03_0.00_03_0.virtio-input | \
     dot -Tsvg | \
     ffx driver node graph --html > local/graph.html
 ```
@@ -326,31 +326,31 @@ This command prints output similar to the following:
 
 ```none {:.devsite-disable-click-to-copy}
 $ ffx driver node list
-dev
+root
 dev.sys
 dev.sys.platform
-dev.sys.platform.ram-disk
-dev.sys.platform.ram-nand
-dev.sys.platform.virtual-audio
-dev.sys.platform.bt-hci-emulator
-dev.sys.platform.fake-battery
-dev.sys.platform.pt
-dev.sys.platform.00_00_1b
-dev.sys.platform.ram-disk.ramctl
-dev.sys.platform.virtual-audio.virtual_audio
-dev.sys.platform.fake-battery.fake-battery
-dev.sys.platform.fake-battery.power-simulator
-dev.sys.platform.pt.PCI0
-dev.sys.platform.pt.acpi
-dev.sys.platform.00_00_1b.sysmem
-dev.sys.platform.pt.PCI0.bus
-dev.sys.platform.pt.acpi.acpi-_SB_
-dev.sys.platform.pt.acpi.acpi-_TZ_
-dev.sys.platform.00_00_1b.sysmem.sysmem-banjo
-dev.sys.platform.00_00_1b.sysmem.sysmem-fidl
-dev.sys.platform.pt.PCI0.bus.00_00_0
-dev.sys.platform.pt.PCI0.bus.00_01_0
-dev.sys.platform.pt.PCI0.bus.00_02_0
+ram-disk
+ram-nand
+virtual-audio
+bt-hci-emulator
+fake-battery
+board
+00_00_1b
+ram-disk.ramctl
+virtual-audio.virtual_audio
+fake-battery.fake-battery
+fake-battery.power-simulator
+PCI0
+acpi
+00_00_1b.sysmem
+PCI0.bus
+acpi.acpi-_SB_
+acpi.acpi-_TZ_
+00_00_1b.sysmem.sysmem-banjo
+00_00_1b.sysmem.sysmem-fidl
+PCI0.bus.00_00_0
+PCI0.bus.00_01_0
+PCI0.bus.00_02_0
 ...
 ```
 
@@ -366,36 +366,36 @@ This command prints output similar to the following:
 $ ffx driver node list -v
 ...
  State          Moniker                                                          Owner
- Bound        dev                                                               fuchsia-boot:///platform-bus#meta/platform-bus.cm
+ Bound        root                                                              fuchsia-boot:///platform-bus#meta/platform-bus.cm
  Bound        dev.sys                                                           parent
  Bound        dev.sys.platform                                                  parent
- Bound        dev.sys.platform.pt                                               fuchsia-boot:///platform-bus-x86#meta/platform-bus-x86.cm
- Bound        dev.sys.platform.virtual-audio                                    fuchsia-pkg://fuchsia.com/virtual-audio#meta/virtual-audio-driver.cm
- Bound        dev.sys.platform.virtual-audio-legacy                             fuchsia-pkg://fuchsia.com/virtual-audio-legacy#meta/virtual-audio-legacy-driver.cm
- Bound        dev.sys.platform.fake-battery                                     fuchsia-pkg://fuchsia.com/fake_battery#meta/fake_battery.cm
- Bound        dev.sys.platform.pt.PCI0                                          fuchsia-boot:///bus-pci#meta/bus-pci.cm
- Bound        dev.sys.platform.pt.acpi                                          parent
- Bound        dev.sys.platform.virtual-audio.virtual-audio                      parent
- Bound        dev.sys.platform.virtual-audio-legacy.virtual-audio-legacy        parent
- Bound        dev.sys.platform.pt.PCI0.bus                                      parent
- Bound        dev.sys.platform.pt.acpi._SB_                                     parent
- Bound        dev.sys.platform.pt.acpi._TZ_                                     parent
- Unbound      dev.sys.platform.pt.PCI0.bus.00_00_0                              none
+ Bound        board                                                             fuchsia-boot:///platform-bus-x86#meta/platform-bus-x86.cm
+ Bound        virtual-audio                                                     fuchsia-pkg://fuchsia.com/virtual-audio#meta/virtual-audio-driver.cm
+ Bound        virtual-audio-legacy                                              fuchsia-pkg://fuchsia.com/virtual-audio-legacy#meta/virtual-audio-legacy-driver.cm
+ Bound        fake-battery                                                      fuchsia-pkg://fuchsia.com/fake_battery#meta/fake_battery.cm
+ Bound        PCI0                                                              fuchsia-boot:///bus-pci#meta/bus-pci.cm
+ Bound        acpi                                                              parent
+ Bound        virtual-audio.virtual-audio                                       parent
+ Bound        virtual-audio-legacy.virtual-audio-legacy                         parent
+ Bound        PCI0.bus                                                          parent
+ Bound        acpi._SB_                                                         parent
+ Bound        acpi._TZ_                                                         parent
+ Unbound      PCI0.bus.00_00_0                                                  none
 ...
 ```
 
 To view the properties of a specific device node with more detailed information use `ffx driver node show`:
 
 ```posix-terminal
-ffx driver node show dev.sys.platform.virtual-audio
+ffx driver node show virtual-audio
 ```
 
 This command prints output similar to the following:
 
 ```none {:.devsite-disable-click-to-copy}
-$ ffx driver node show dev.sys.platform.virtual-audio
+$ ffx driver node show virtual-audio
           Name:  virtual-audio
-       Moniker:  dev.sys.platform.virtual-audio
+       Moniker:  virtual-audio
          Owner:  fuchsia-pkg://fuchsia.com/virtual-audio#meta/virtual-audio-driver.cm
     Node State:  Bound
      Host Koid:  19434
@@ -439,21 +439,21 @@ Replace `<NODE>` with a component moniker.
 This example filters the results to only show the descendants of the `acpi` node:
 
 ```none {:.devsite-disable-click-to-copy}
-$ ffx driver node list -o descendants:dev.sys.platform.pt.acpi
-dev.sys.platform.pt.acpi
-dev.sys.platform.pt.acpi.acpi-_SB_
-dev.sys.platform.pt.acpi.acpi-_TZ_
-dev.sys.platform.pt.acpi.acpi-_SB_.pt
-dev.sys.platform.pt.acpi.acpi-_SB_.acpi-PCI0
-dev.sys.platform.pt.acpi.acpi-_SB_.acpi-HPET
-dev.sys.platform.pt.acpi.acpi-_SB_.acpi-LNKE
-dev.sys.platform.pt.acpi.acpi-_SB_.acpi-LNKF
-dev.sys.platform.pt.acpi.acpi-_SB_.acpi-LNKG
-dev.sys.platform.pt.acpi.acpi-_SB_.acpi-LNKH
-dev.sys.platform.pt.acpi.acpi-_SB_.acpi-GSIE
-dev.sys.platform.pt.acpi.acpi-_SB_.acpi-GSIF
-dev.sys.platform.pt.acpi.acpi-_SB_.acpi-GSIG
-dev.sys.platform.pt.acpi.acpi-_SB_.acpi-GSIH
+$ ffx driver node list -o descendants:acpi
+acpi
+acpi.acpi-_SB_
+acpi.acpi-_TZ_
+acpi.acpi-_SB_.pt
+acpi.acpi-_SB_.acpi-PCI0
+acpi.acpi-_SB_.acpi-HPET
+acpi.acpi-_SB_.acpi-LNKE
+acpi.acpi-_SB_.acpi-LNKF
+acpi.acpi-_SB_.acpi-LNKG
+acpi.acpi-_SB_.acpi-LNKH
+acpi.acpi-_SB_.acpi-GSIE
+acpi.acpi-_SB_.acpi-GSIF
+acpi.acpi-_SB_.acpi-GSIG
+acpi.acpi-_SB_.acpi-GSIH
 ...
 ```
 

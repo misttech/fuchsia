@@ -11,8 +11,8 @@ TEST_F(DeviceEnumerationTest, GceArm64Test) {
   static const char* kNodeMonikers[] = {
       // TODO(https://fxbug.dev/42052364): Once we use userspace PCI, add PCI devices we expect to
       // see.
-      "dev.sys.platform.pt.acpi",
-      "dev.sys.platform.pt.acpi._SB_",
+      "acpi",
+      "acpi._SB_",
   };
 
   VerifyNodes(kNodeMonikers);

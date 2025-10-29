@@ -9,9 +9,9 @@ namespace {
 TEST_F(DeviceEnumerationTest, QemuRiscv64Test) {
   // clang-format off
   static const char* kNodeMonikers[] = {
-      "dev.sys.platform.goldfish-rtc",        // goldfish-rtc
-      "dev.sys.platform.pt.PCI0.bus.00_00_0", // host bridge
-      "dev.sys.platform.pt.qemu-riscv64",     // board driver
+      "goldfish-rtc",        // goldfish-rtc
+      "PCI0.bus.00_00_0", // host bridge
+      "qemu-riscv64",     // board driver
   };
   // clang-format on
 
