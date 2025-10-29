@@ -3,119 +3,22 @@
 // found in the LICENSE file.
 
 use crate::arch::vdso::VDSO_SIGRETURN_NAME;
-use crate::mm::PAGE_SIZE;
 use crate::mm::memory::MemoryObject;
-use crate::time::utc::update_utc_clock;
-use fuchsia_runtime::{UtcClockTransform, UtcInstant};
+use fidl_fuchsia_io as fio;
 use process_builder::elf_parse;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::{errno, from_status_like_fdio, uapi};
-use std::mem::size_of;
-use std::sync::atomic::Ordering;
+use starnix_uapi::{errno, from_status_like_fdio};
 use std::sync::{Arc, LazyLock};
 
-use fidl_fuchsia_io as fio;
-
-static VVAR_SIZE: LazyLock<usize> = LazyLock::new(|| *PAGE_SIZE as usize);
 pub static ZX_TIME_VALUES_MEMORY: LazyLock<Arc<MemoryObject>> = LazyLock::new(|| {
     load_time_values_memory().expect(
         "Could not find time values VMO! Please ensure /boot/kernel was routed to the starnix kernel.",
     )
 });
 
-#[derive(Default)]
-pub struct MemoryMappedVvar {
-    map_addr: usize,
-}
-
-impl MemoryMappedVvar {
-    /// Maps the vvar memory to a region of the Starnix kernel root VMAR and stores the address of
-    /// the mapping in this object.
-    /// Initialises the mapped region with data by writing an initial set of vvar data
-    pub fn new(memory: &MemoryObject) -> Result<MemoryMappedVvar, zx::Status> {
-        let vvar_data_size = size_of::<uapi::vvar_data>();
-        // Check that the vvar_data struct isn't larger than the size of the memory mapped vvar
-        debug_assert!(vvar_data_size <= *VVAR_SIZE);
-        let flags = zx::VmarFlags::PERM_READ
-            | zx::VmarFlags::ALLOW_FAULTS
-            | zx::VmarFlags::REQUIRE_NON_RESIZABLE
-            | zx::VmarFlags::PERM_WRITE;
-        let map_addr =
-            memory.map_in_vmar(&fuchsia_runtime::vmar_root_self(), 0, 0, *VVAR_SIZE, flags)?;
-        let memory_mapped_vvar = MemoryMappedVvar { map_addr };
-        let vvar_data = memory_mapped_vvar.get_pointer_to_memory_mapped_vvar();
-        vvar_data.seq_num.store(0, Ordering::Release);
-        Ok(memory_mapped_vvar)
-    }
-
-    fn get_pointer_to_memory_mapped_vvar(&self) -> &uapi::vvar_data {
-        #[allow(
-            clippy::undocumented_unsafe_blocks,
-            reason = "Force documented unsafe blocks in Starnix"
-        )]
-        let vvar_data = unsafe {
-            // SAFETY: It is checked in the assertion in MemporyMappedVvar's constructor that the
-            // size of the memory region map_addr points to is larger than the size of
-            // uapi::vvar_data.
-            &*(self.map_addr as *const uapi::vvar_data)
-        };
-        vvar_data
-    }
-
-    pub fn update_utc_data_transform(&self, new_transform: &UtcClockTransform) {
-        assert!(new_transform.rate.reference_ticks != 0);
-        let vvar_data = self.get_pointer_to_memory_mapped_vvar();
-        let old_transform = UtcClockTransform {
-            reference_offset: zx::BootInstant::from_nanos(
-                vvar_data.boot_to_utc_reference_offset.load(Ordering::Acquire),
-            ),
-            synthetic_offset: UtcInstant::from_nanos(
-                vvar_data.boot_to_utc_synthetic_offset.load(Ordering::Acquire),
-            ),
-            rate: zx::sys::zx_clock_rate_t {
-                synthetic_ticks: vvar_data.boot_to_utc_synthetic_ticks.load(Ordering::Acquire),
-                reference_ticks: vvar_data.boot_to_utc_reference_ticks.load(Ordering::Acquire),
-            },
-        };
-        if old_transform != *new_transform {
-            let seq_num = vvar_data.seq_num.fetch_add(1, Ordering::Acquire);
-            // Verify that no other thread is currently trying to update vvar_data
-            debug_assert!(seq_num & 1 == 0);
-            vvar_data
-                .boot_to_utc_reference_offset
-                .store(new_transform.reference_offset.into_nanos(), Ordering::Release);
-            vvar_data
-                .boot_to_utc_synthetic_offset
-                .store(new_transform.synthetic_offset.into_nanos(), Ordering::Release);
-            vvar_data
-                .boot_to_utc_reference_ticks
-                .store(new_transform.rate.reference_ticks, Ordering::Release);
-            vvar_data
-                .boot_to_utc_synthetic_ticks
-                .store(new_transform.rate.synthetic_ticks, Ordering::Release);
-            let seq_num_after = vvar_data.seq_num.swap(seq_num + 2, Ordering::Release);
-            // Verify that no other thread also tried to update vvar_data during this update
-            debug_assert!(seq_num_after == seq_num + 1)
-        }
-    }
-}
-
-impl Drop for MemoryMappedVvar {
-    fn drop(&mut self) {
-        // SAFETY: We owned the mapping.
-        unsafe {
-            fuchsia_runtime::vmar_root_self()
-                .unmap(self.map_addr, *VVAR_SIZE)
-                .expect("failed to unmap MemoryMappedVvar");
-        }
-    }
-}
-
 pub struct Vdso {
     pub memory: Arc<MemoryObject>,
     pub sigreturn_offset: u64,
-    pub vvar_writeable: Arc<MemoryMappedVvar>,
-    pub vvar_readonly: Arc<MemoryObject>,
 }
 
 impl Vdso {
@@ -127,8 +30,7 @@ impl Vdso {
             None => 0,
         };
 
-        let (vvar_writeable, vvar_readonly) = create_vvar_and_handles();
-        Self { memory, sigreturn_offset, vvar_writeable, vvar_readonly }
+        Self { memory, sigreturn_offset }
     }
 
     pub fn new_arch32() -> Option<Self> {
@@ -143,34 +45,8 @@ impl Vdso {
             None => 0,
         };
 
-        let (vvar_writeable, vvar_readonly) = create_vvar_and_handles();
-        Some(Self { memory, sigreturn_offset, vvar_writeable, vvar_readonly })
+        Some(Self { memory, sigreturn_offset })
     }
-}
-
-fn create_vvar_and_handles() -> (Arc<MemoryMappedVvar>, Arc<MemoryObject>) {
-    // Creating a vvar memory which has a handle which is writeable.
-    let vvar_memory_writeable = Arc::new(
-        MemoryObject::from(
-            zx::Vmo::create(*VVAR_SIZE as u64).expect("Couldn't create vvar memory"),
-        )
-        .with_zx_name(b"starnix:vvar"),
-    );
-    // Map the writeable vvar_memory to a region of Starnix kernel VMAR and write initial vvar_data
-    let vvar_memory_mapped =
-        Arc::new(MemoryMappedVvar::new(&vvar_memory_writeable).expect("couldn't map vvar memory"));
-    // Write initial boot time to utc transform to the vvar.
-    update_utc_clock(&vvar_memory_mapped);
-    let vvar_writeable_rights = vvar_memory_writeable.basic_info().rights;
-    // Create a duplicate handle to this vvar memory which doesn't have write permission
-    // This handle is used to map vvar into linux userspace
-    let vvar_readable_rights = vvar_writeable_rights.difference(zx::Rights::WRITE);
-    let vvar_memory_readonly = Arc::new(
-        vvar_memory_writeable
-            .duplicate_handle(vvar_readable_rights)
-            .expect("couldn't duplicate vvar handle"),
-    );
-    (vvar_memory_mapped, vvar_memory_readonly)
 }
 
 fn sync_open_in_namespace(

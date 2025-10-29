@@ -30,7 +30,6 @@ group("tests") {
     "syscalls:tests",
     "sysrq:tests",
     "thermal:tests",
-    "vdso:tests",
   ]
 
   if (target_cpu == "riscv64") {

@@ -11,7 +11,6 @@ use anyhow::{Context, Error, anyhow, bail};
 use bootreason::get_android_bootreason;
 use bstr::{BString, ByteSlice};
 use devicetree::parser::parse_devicetree;
-use fasync::OnSignals;
 use fidl::endpoints::{ControlHandle, RequestStream, ServerEnd};
 use fidl_fuchsia_component_runner::{TaskProviderRequest, TaskProviderRequestStream};
 use fidl_fuchsia_feedback::CrashReporterMarker;
@@ -33,7 +32,6 @@ use starnix_core::task::container_namespace::ContainerNamespace;
 use starnix_core::task::{
     CurrentTask, ExitStatus, Kernel, RoleOverrides, SchedulerManager, parse_cmdline,
 };
-use starnix_core::time::utc::update_utc_clock;
 use starnix_core::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use starnix_core::vfs::{FileSystemOptions, FsContext, LookupContext, Namespace, WhatToMount};
 use starnix_logging::{
@@ -54,7 +52,7 @@ use std::ffi::CString;
 use std::ops::DerefMut;
 use std::sync::Arc;
 use zx::{
-    AsHandleRef, Signals, Task as _, {self as zx},
+    AsHandleRef, Task as _, {self as zx},
 };
 use {
     fidl_fuchsia_boot as fboot, fidl_fuchsia_component as fcomponent,
@@ -478,25 +476,6 @@ pub async fn create_component_from_stream(
                     })?;
                 let service_config =
                     ContainerServiceConfig { start_info, request_stream, receiver };
-
-                container.kernel.kthreads.spawn_future({
-                    let kernel = container.kernel.clone();
-                    let utc_clock =
-                        fruntime::duplicate_utc_clock_handle(zx::Rights::SAME_RIGHTS).unwrap();
-                    async move {
-                        let vvar = &kernel.vdso.vvar_writeable;
-                        loop {
-                            let waitable =
-                                OnSignals::new(utc_clock.as_handle_ref(), Signals::CLOCK_UPDATED);
-                            update_utc_clock(&vvar);
-                            if let Some(vdso_32) = &kernel.vdso_arch32 {
-                                update_utc_clock(&vdso_32.vvar_writeable);
-                            }
-                            waitable.await.expect("async_wait should always succeed");
-                            log_info!("Received a UTC update");
-                        }
-                    }
-                });
                 return Ok((container, service_config));
             }
             frunner::ComponentRunnerRequest::_UnknownMethod { ordinal, .. } => {

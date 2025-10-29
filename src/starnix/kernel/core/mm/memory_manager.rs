@@ -596,8 +596,9 @@ impl MemoryManagerState {
     ) -> Result<UserAddress, Errno> {
         self.validate_addr(addr, length)?;
 
+        let selected_address = self.select_address(addr, length, flags)?;
         let mapped_addr = self.map_in_user_vmar(
-            self.select_address(addr, length, flags)?,
+            selected_address,
             &memory,
             memory_offset,
             length,
@@ -1814,7 +1815,7 @@ impl MemoryManagerState {
         bytes: &'a mut [MaybeUninit<u8>],
     ) -> Result<&'a mut [u8], Errno> {
         if !mapping.can_read() {
-            return error!(EFAULT);
+            return error!(EFAULT, "read_mapping_memory called on unreadable mapping");
         }
         match self.get_mapping_backing(mapping) {
             MappingBacking::Memory(backing) => backing.read_memory(addr, bytes),
@@ -1914,7 +1915,7 @@ impl MemoryManagerState {
         bytes: &[u8],
     ) -> Result<(), Errno> {
         if !mapping.can_write() {
-            return error!(EFAULT);
+            return error!(EFAULT, "write_mapping_memory called on unwritable memory");
         }
         match self.get_mapping_backing(mapping) {
             MappingBacking::Memory(backing) => backing.write_memory(addr, bytes),
@@ -2916,6 +2917,9 @@ impl MemoryManager {
         })
     }
 
+    /// Create a snapshot of the memory mapping from `self` into `target`. All
+    /// memory mappings are copied entry-for-entry, and the copies end up at
+    /// exactly the same addresses.
     pub fn snapshot_to<L>(
         &self,
         locked: &mut Locked<L>,
@@ -3631,15 +3635,15 @@ impl MemoryManager {
                 // We only care about map info for actual mappings.
                 let zx_details = zx_mapping.details();
                 let Some(zx_details) = zx_details.as_mapping() else { continue };
+                let user_address = UserAddress::from(zx_mapping.base as u64);
                 let (_, mm_mapping) = state
                     .mappings
-                    .get(UserAddress::from(zx_mapping.base as u64))
-                    .expect("mapping bookkeeping must be consistent with zircon's");
+                    .get(user_address)
+                    .unwrap_or_else(|| panic!("mapping bookkeeping must be consistent with zircon's: not found: {user_address:?}"));
                 debug_assert_eq!(
                     match state.get_mapping_backing(mm_mapping) {
-                        MappingBacking::Memory(m) => m.memory().get_koid(),
-                        MappingBacking::PrivateAnonymous =>
-                            state.private_anonymous.backing.get_koid(),
+                        MappingBacking::Memory(m)=>m.memory().get_koid(),
+                        MappingBacking::PrivateAnonymous=>state.private_anonymous.backing.get_koid(),
                     },
                     zx_details.vmo_koid,
                     "MemoryManager and Zircon must agree on which VMO is mapped in this range",
@@ -3823,6 +3827,7 @@ impl SelectedAddress {
     }
 }
 
+/// Write one line of the memory map intended for adding to `/proc/self/maps`.
 fn write_map(
     task: &Task,
     sink: &mut DynamicFileBuf,
@@ -3920,6 +3925,7 @@ pub struct MemoryStats {
     pub vm_lck: usize,
 }
 
+/// Implements `/proc/self/maps`.
 #[derive(Clone)]
 pub struct ProcMapsFile(WeakRef<Task>);
 impl ProcMapsFile {
@@ -4019,8 +4025,14 @@ impl DynamicFileSource for ProcSmapsFile {
                 writeln!(sink, "Size:           {size_kb:>8} kB",)?;
                 let share_count = match state.get_mapping_backing(mm_mapping) {
                     MappingBacking::Memory(backing) => {
-                        let memory_info = backing.memory().info()?;
-                        memory_info.share_count as u64
+                        let memory = backing.memory();
+                        if memory.is_clock() {
+                            // Clock memory mappings are not shared in a meaningful way.
+                            1
+                        } else {
+                            let memory_info = backing.memory().info()?;
+                            memory_info.share_count as u64
+                        }
                     }
                     MappingBacking::PrivateAnonymous => {
                         1 // Private mapping

@@ -8,8 +8,6 @@
 #include <stdint.h>
 #include <zircon/time.h>
 
-#include "vvar_data.h"
-
 constexpr uint32_t kNanosecondsPerSecond = 1'000'000'000;
 constexpr int64_t kUtcInvalid = 0;
 
@@ -35,7 +33,7 @@ constexpr int64_t kUtcInvalid = 0;
 // https://cs.android.com/android/platform/superproject/main/+/main:system/core/init/main.cpp;drc=813871767921010aaccae39f4bbaaf78d21211e6
 // [2]: https://gist.github.com/ghananigans/a642ec3b7854f54c3694c55db22de2fe
 // [3]: https://clang.llvm.org/docs/ClangCommandLineReference.html#cmdoption-clang-fvisibility
-__attribute__((__visibility__("hidden"))) extern "C" vvar_data vvar;
+__attribute__((__visibility__("hidden"))) extern "C" char vvar;
 
 // Defined by vdso.ld.
 //

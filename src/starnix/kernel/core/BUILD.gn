@@ -276,6 +276,7 @@ _starnix_core_deps = [
   "//src/lib/fuchsia-rcu-collections",
   "//src/lib/fuchsia-runtime",
   "//src/lib/fuchsia-sync",
+  "//src/lib/mapped-clock:lib",
   "//src/lib/mundane",
   "//src/lib/network/fidl_fuchsia_net_filter_ext",
   "//src/lib/network/fidl_fuchsia_net_matchers_ext",

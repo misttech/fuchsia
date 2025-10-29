@@ -617,28 +617,38 @@ pub fn load_executable(
     } else {
         &current_task.kernel().vdso.memory
     };
-    let vvar_memory = if main_elf.arch_width.is_arch32() {
-        current_task.kernel().vdso_arch32.as_ref().unwrap().vvar_readonly.clone()
-    } else {
-        current_task.kernel().vdso.vvar_readonly.clone()
-    };
 
     let vdso_size = vdso_memory.get_size();
-    const VDSO_PROT_FLAGS: ProtectionFlags = ProtectionFlags::READ.union(ProtectionFlags::EXEC);
-    const VDSO_MAX_ACCESS: Access = Access::READ.union(Access::EXEC);
-
-    let vvar_size = vvar_memory.get_size();
     const VVAR_PROT_FLAGS: ProtectionFlags = ProtectionFlags::READ;
     const VVAR_MAX_ACCESS: Access = Access::READ;
+
+    let utc_clock_handle = crate::time::utc::duplicate_real_utc_clock_handle()
+        .expect("clock should always be readable");
+    let utc_clock = Arc::new(MemoryObject::from(utc_clock_handle));
+    let utc_clock_size = utc_clock.get_size();
 
     // Map the time values VMO used by libfasttime. We map this right behind the vvar so that
     // userspace sees this as one big vvar block in memory.
     let time_values_size = ZX_TIME_VALUES_MEMORY.get_size();
-    let time_values_map_result = mm.map_memory(
+    let time_values_address = mm.map_memory(
         DesiredAddress::Any,
         ZX_TIME_VALUES_MEMORY.clone(),
         0,
-        (time_values_size as usize) + (vvar_size as usize) + (vdso_size as usize),
+        (time_values_size as usize) + (utc_clock_size as usize) + (vdso_size as usize),
+        VVAR_PROT_FLAGS,
+        VVAR_MAX_ACCESS,
+        MappingOptions::empty(),
+        MappingName::Vvar,
+    )?;
+
+    // Overwrite the second part of the vvar mapping with the memory mapped UTC clock.
+    let vvar_map_address = mm.map_memory(
+        DesiredAddress::FixedOverwrite(
+            (time_values_address + time_values_size).expect("vvar should always be mappable"),
+        ),
+        utc_clock,
+        /*memory_offset=*/ 0u64,
+        utc_clock_size as usize,
         VVAR_PROT_FLAGS,
         VVAR_MAX_ACCESS,
         MappingOptions::empty(),
@@ -656,21 +666,14 @@ pub fn load_executable(
             .map_err(|status| from_status_like_fdio!(status))?,
     );
 
-    // Overwrite the second part of the vvar mapping with starnix's vvar.
-    let vvar_map_result = mm.map_memory(
-        DesiredAddress::FixedOverwrite((time_values_map_result + time_values_size)?),
-        vvar_memory,
-        0,
-        vvar_size as usize,
-        VVAR_PROT_FLAGS,
-        VVAR_MAX_ACCESS,
-        MappingOptions::empty(),
-        MappingName::Vvar,
-    )?;
+    const VDSO_PROT_FLAGS: ProtectionFlags = ProtectionFlags::READ.union(ProtectionFlags::EXEC);
+    const VDSO_MAX_ACCESS: Access = Access::READ.union(Access::EXEC);
 
     // Overwrite the third part of the vvar mapping to contain the vDSO clone.
-    let vdso_base = mm.map_memory(
-        DesiredAddress::FixedOverwrite((vvar_map_result + vvar_size)?),
+    let vdso_base_address = mm.map_memory(
+        DesiredAddress::FixedOverwrite(
+            (vvar_map_address + utc_clock_size).expect("vdso should always be mappable"),
+        ),
         vdso_executable,
         0,
         vdso_size as usize,
@@ -696,7 +699,7 @@ pub fn load_executable(
             (AT_PHNUM, main_elf.headers.file_header().phnum as u64),
             (AT_BASE, interp_elf.map_or(0, |interp| interp.file_base as u64)),
             (AT_ENTRY, main_elf_entry as u64),
-            (AT_SYSINFO_EHDR, vdso_base.into()),
+            (AT_SYSINFO_EHDR, vdso_base_address.into()),
             (AT_SECURE, secure),
             (AT_HWCAP, get_hwcap(main_elf.arch_width.is_arch32()) as u64),
         ]
@@ -740,7 +743,7 @@ pub fn load_executable(
     mm_state.environ_start = stack.environ_start;
     mm_state.environ_end = stack.environ_end;
 
-    mm_state.vdso_base = vdso_base;
+    mm_state.vdso_base = vdso_base_address;
 
     let ptr_size: usize =
         if main_elf.arch_width.is_arch32() { size_of::<u32>() } else { size_of::<*const u8>() };

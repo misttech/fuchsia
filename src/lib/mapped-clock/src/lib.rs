@@ -89,7 +89,7 @@ impl<Reference: zx::Timeline, Output: zx::Timeline> MappedClock<Reference, Outpu
         vmar_flags: zx::VmarFlags,
     ) -> Result<MappedClock<Reference, Output>, Status> {
         Self::try_new_internal(
-            clock,
+            &clock,
             parent_vmar,
             vmar_flags,
             /*unmap_on_drop=*/ true,
@@ -109,12 +109,18 @@ impl<Reference: zx::Timeline, Output: zx::Timeline> MappedClock<Reference, Outpu
         vmar_flags: zx::VmarFlags,
         offset: u64,
     ) -> Result<MappedClock<Reference, Output>, Status> {
-        Self::try_new_internal(clock, parent_vmar, vmar_flags, /*unmap_on_drop=*/ true, offset)
+        Self::try_new_internal(
+            &clock,
+            parent_vmar,
+            vmar_flags,
+            /*unmap_on_drop=*/ true,
+            offset,
+        )
     }
 
     /// Same as `try_new`, but does not unmap the clock at end of this struct's lifetime.
     pub fn try_new_without_unmap(
-        clock: zx::Clock<Reference, Output>,
+        clock: &zx::Clock<Reference, Output>,
         parent_vmar: &zx::Vmar,
         vmar_flags: zx::VmarFlags,
         offset: u64,
@@ -129,7 +135,7 @@ impl<Reference: zx::Timeline, Output: zx::Timeline> MappedClock<Reference, Outpu
     }
 
     fn try_new_internal(
-        clock: zx::Clock<Reference, Output>,
+        clock: &zx::Clock<Reference, Output>,
         parent_vmar: &zx::Vmar,
         vmar_flags: zx::VmarFlags,
         unmap_on_drop: bool,

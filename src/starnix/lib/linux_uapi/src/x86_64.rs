@@ -23858,15 +23858,6 @@ pub struct StdAtomicU32 {
 pub struct StdAtomicU64 {
     pub _bindgen_opaque_blob: __BindgenOpaqueArray8<[u8; 8usize]>,
 }
-#[repr(C)]
-#[derive(Debug, Default)]
-pub struct vvar_data {
-    pub seq_num: std::sync::atomic::AtomicU64,
-    pub boot_to_utc_reference_offset: std::sync::atomic::AtomicI64,
-    pub boot_to_utc_synthetic_offset: std::sync::atomic::AtomicI64,
-    pub boot_to_utc_reference_ticks: std::sync::atomic::AtomicU32,
-    pub boot_to_utc_synthetic_ticks: std::sync::atomic::AtomicU32,
-}
 pub const SECCOMP_IOCTL_NOTIF_RECV: __u32 = 3226476800;
 pub const SECCOMP_IOCTL_NOTIF_SEND: __u32 = 3222806785;
 pub const SECCOMP_IOCTL_NOTIF_ID_VALID: __u32 = 1074274562;

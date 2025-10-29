@@ -20216,15 +20216,6 @@ pub struct StdAtomicU64 {
     pub _bindgen_opaque_blob: __BindgenOpaqueArray8<[u8; 8usize]>,
 }
 #[repr(C)]
-#[derive(Debug, Default)]
-pub struct vvar_data {
-    pub seq_num: std::sync::atomic::AtomicU64,
-    pub boot_to_utc_reference_offset: std::sync::atomic::AtomicI64,
-    pub boot_to_utc_synthetic_offset: std::sync::atomic::AtomicI64,
-    pub boot_to_utc_reference_ticks: std::sync::atomic::AtomicU32,
-    pub boot_to_utc_synthetic_ticks: std::sync::atomic::AtomicU32,
-}
-#[repr(C)]
 #[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
 pub struct sigset64_t {
     pub sig: [crate::types::arch32::c_ulong; 1usize],

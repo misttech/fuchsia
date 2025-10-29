@@ -2,11 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::vdso::vdso_loader::MemoryMappedVvar;
+//! Starnix-specific UTC clock implementation.
+//!
+//! UTC clock behaves differently in Fuchsia to what Starnix programs expect. This module abstracts
+//! the differences away. It provides a UTC clock that always runs. In contrast to Fuchsia UTC
+//! clock, which gets started only when the system is reasonably confident that the clock reading
+//! is accurate.
+//!
+//! Starnix UTC clock is started from [backstop][ff] on initialization, and jumps to actual UTC once
+//! Fuchsia provides actual UTC value.
+//!
+//! Consult the [Fuchsia UTC clock specification][ff] for details about UTC clock behavior
+//! specifically on Fuchsia.
+//!
+//! [ff]: https://fuchsia.dev/fuchsia-src/concepts/kernel/time/utc/behavior#differences_from_other_operating_systems
+
 use fidl_fuchsia_time as fftime;
 use fuchsia_component::client::connect_to_protocol_sync;
 use fuchsia_runtime::{
-    UtcClock as UtcClockHandle, UtcClockTransform, UtcInstant, zx_utc_reference_get,
+    UtcClock as UtcClockHandle, UtcClockTransform, UtcInstant, UtcTimeline, zx_utc_reference_get,
 };
 use starnix_logging::{log_info, log_warn};
 use starnix_sync::Mutex;
@@ -72,25 +86,46 @@ fn utc_clock() -> Unowned<'static, UtcClockHandle> {
         }
     })
 }
+
 fn duplicate_utc_clock_handle(rights: zx::Rights) -> Result<UtcClockHandle, zx::Status> {
     utc_clock().duplicate(rights)
 }
 
-/// A Linux-compliant UTC clock.
-///
-/// Many Linux APIs need a running UTC clock to function. In contrast, Fuchsia does not
-/// necessarily always start its UTC clock, so Fuchsia's UTC clock can not be directly
-/// reused.
-///
-/// Since there can be a delay until the UTC clock in Zircon starts up
-/// (https://fxbug.dev/42081426), Starnix provides a synthetic utc clock initially, and polls for
-/// the signal `ZX_CLOCK_STARTED`. Once this signal is asserted, the synthetic utc clock is
-/// replaced by a real utc clock.
+// Check whether the UTC clock is started based on actual clock read. If you need something
+// faster, cache the `read` value.
+fn check_utc_clock_started_slow(
+    clock: &UtcClockHandle,
+    backstop: UtcInstant,
+) -> (bool, UtcInstant) {
+    let read = clock.read().expect("clock is readable");
+    (read != backstop, read)
+}
+
+// Returns the details of `clock`.
+fn get_utc_clock_details(
+    clock: &UtcClockHandle,
+) -> zx::ClockDetails<zx::BootTimeline, UtcTimeline> {
+    clock.get_details().expect("clock details are readable")
+}
+
+// The implementation of a UTC clock that is offered to programs in a Starnix container.
+//
+// Many Linux APIs need a running UTC clock to function. Since there can be a delay until the UTC
+// clock in Zircon starts up (https://fxbug.dev/42081426), Starnix provides a synthetic utc clock
+// initially, Once the UTC clock is started, the synthetic utc clock is replaced by a real utc
+// clock.
 #[derive(Debug)]
 struct UtcClock {
+    // The real underlying Fuchsia UTC clock. This clock may never start,
+    // see module-level documentation for details.
     real_utc_clock: UtcClockHandle,
-    current_transform: UtcClockTransform,
-    real_utc_clock_started: bool,
+    // The UTC clock transform from boot timeline to UTC timeline, used while
+    // `real_utc_clock` is not started.  This clock starts from UTC backstop
+    // on boot, and progresses with a nominal 1sec/1sec rate.
+    synthetic_transform: UtcClockTransform,
+    // The UTC backstop value. This is the earliest UTC value that may ever be
+    // shown by any UTC clock in Fuchsia.
+    backstop: UtcInstant,
 }
 
 impl UtcClock {
@@ -99,20 +134,22 @@ impl UtcClock {
     /// The `real_utc_clock` is a handle to an underlying Fuchsia UTC clock. It will
     /// be used once started.
     pub fn new(real_utc_clock: UtcClockHandle) -> Self {
-        let current_transform = zx::ClockTransformation {
+        let backstop = real_utc_clock.get_details().unwrap().backstop;
+        let synthetic_transform = zx::ClockTransformation {
             // The boot timeline always starts at zero on boot.
             reference_offset: zx::BootInstant::ZERO,
             // By definition, absent other information, a zero reference offset
             // represents a backstop UTC time instant.
-            synthetic_offset: real_utc_clock.get_details().unwrap().backstop,
+            synthetic_offset: backstop,
             // Default rate of 1 synthetic second per 1 reference second disregards
             // any device variations.
             rate: zx::sys::zx_clock_rate_t { synthetic_ticks: 1, reference_ticks: 1 },
         };
-        let mut utc_clock =
-            Self { real_utc_clock, current_transform, real_utc_clock_started: false };
-        utc_clock.poll_transform();
-        if !utc_clock.real_utc_clock_started {
+
+        let (is_real_utc_clock_started, _) =
+            check_utc_clock_started_slow(&real_utc_clock, backstop);
+        let utc_clock = Self { real_utc_clock, synthetic_transform, backstop };
+        if !is_real_utc_clock_started {
             log_warn!(
                 "Waiting for real UTC clock to start, using synthetic clock in the meantime."
             );
@@ -120,29 +157,23 @@ impl UtcClock {
         utc_clock
     }
 
-    fn check_real_utc_clock_started(&self) -> bool {
-        // Poll the utc clock to check if CLOCK_STARTED is asserted.
-        match self
-            .real_utc_clock
-            .wait_handle(zx::Signals::CLOCK_STARTED, zx::MonotonicInstant::INFINITE_PAST)
-            .to_result()
-        {
-            Ok(e) if e.contains(zx::Signals::CLOCK_STARTED) => true,
-            Ok(_) | Err(zx::Status::TIMED_OUT) => false,
-            Err(e) => {
-                log_warn!("Error checking if CLOCK_STARTED is asserted: {:?}", e);
-                false
-            }
-        }
+    /// A slow way to verify whether the real UTC clock has started.
+    fn check_real_utc_clock_started_slow(&self) -> (bool, UtcInstant) {
+        check_utc_clock_started_slow(&self.real_utc_clock, self.backstop)
     }
 
     /// Returns the current UTC time.
     pub fn now(&self) -> UtcInstant {
-        let boot_time = zx::BootInstant::get();
-        // Utc time is calculated using the same transform as the one stored in vvar. This is
-        // to ensure that utc calculations are the same whether using a syscall or the vdso
-        // function.
-        self.current_transform.apply(boot_time)
+        let (is_started, utc_now) = self.check_real_utc_clock_started_slow();
+        if is_started {
+            utc_now
+        } else {
+            let boot_time = zx::BootInstant::get();
+            // Utc time is calculated using the same (constant) transform as the one stored in vdso
+            // code. This ensures that the result of `now()` is the same as in
+            // `calculate_utc_time_nsec` in `vdso_calculate_utc.cc`.
+            self.synthetic_transform.apply(boot_time)
+        }
     }
 
     /// Estimates the boot time corresponding to `utc`.
@@ -150,38 +181,15 @@ impl UtcClock {
     /// # Returns
     /// - zx::BootInstant: estimated boot time;
     /// - bool: true if the system UTC clock has been started.
-    pub fn estimate_boot_deadline(&self, utc: UtcInstant) -> (zx::BootInstant, bool) {
-        (self.current_transform.apply_inverse(utc), self.real_utc_clock_started)
-    }
-
-    fn poll_transform(&mut self) {
-        if !self.real_utc_clock_started {
-            if self.check_real_utc_clock_started() {
-                log_info!("Real UTC clock has started");
-                self.real_utc_clock_started = true;
-            }
-        }
-        if self.real_utc_clock_started {
-            self.current_transform =
-                self.real_utc_clock.get_details().unwrap().reference_to_synthetic;
-        }
-    }
-
-    /// Updates the UTC clock transform.
-    ///
-    /// Fetches the most up-to-date clock transform from Zircon, then updates the clock transform in
-    /// both self (the UtcClock) and dest (the MemoryMappedVvar).
-    pub fn update_utc_clock(&mut self, dest: &MemoryMappedVvar) {
-        self.poll_transform();
-        // TODO(https://fxbug.dev/356911500): Remove the parsing
-        let reference_transform = zx::ClockTransformation {
-            reference_offset: zx::BootInstant::from_nanos(
-                self.current_transform.reference_offset.into_nanos(),
-            ),
-            synthetic_offset: self.current_transform.synthetic_offset,
-            rate: self.current_transform.rate.clone(),
+    pub fn estimate_boot_time(&self, utc: UtcInstant) -> (zx::BootInstant, bool) {
+        let (started, _) = self.check_real_utc_clock_started_slow();
+        let estimated_boot = if started {
+            let details = get_utc_clock_details(&self.real_utc_clock);
+            details.reference_to_synthetic.apply_inverse(utc)
+        } else {
+            self.synthetic_transform.apply_inverse(utc)
         };
-        dest.update_utc_data_transform(&reference_transform);
+        (estimated_boot, started)
     }
 }
 
@@ -190,18 +198,25 @@ static UTC_CLOCK: LazyLock<Mutex<UtcClock>> = LazyLock::new(|| {
 });
 
 /// Creates a copy of the UTC clock handle currently in use in Starnix.
+///
+/// Ensure that you are not reading UTC clock for Starnix use from this clock,
+/// use the [utc_now] function instead.
 pub fn duplicate_real_utc_clock_handle() -> Result<UtcClockHandle, zx::Status> {
     let lock = (*UTC_CLOCK).lock();
     // Maybe reduce rights here?
     (*lock).real_utc_clock.duplicate_handle(zx::Rights::SAME_RIGHTS)
 }
 
-/// Updates the UTC clock transform.
-pub fn update_utc_clock(dest: &MemoryMappedVvar) {
-    (*UTC_CLOCK).lock().update_utc_clock(dest);
-}
-
-/// Returns the current UTC time.
+/// Returns the current UTC time based on the Starnix UTC clock.
+///
+/// The Starnix UTC clock is always started. This is in contrast to Fuchsia's
+/// UTC clock which may spend an undefined amount of wall-clock time stuck at
+/// [backstop] time reading.
+///
+/// To ensure an uniform reading of the Starnix UTC clock, always use this
+/// function call if you need to know Starnix's view of the current wall time.
+///
+/// [backstop]: https://fuchsia.dev/fuchsia-src/concepts/kernel/time/utc/behavior#differences_from_other_operating_systems
 pub fn utc_now() -> UtcInstant {
     #[cfg(test)]
     {
@@ -231,7 +246,7 @@ pub fn estimate_boot_deadline_from_utc(utc: UtcInstant) -> (zx::BootInstant, boo
             return (test_time, true);
         }
     }
-    (*UTC_CLOCK).lock().estimate_boot_deadline(utc)
+    (*UTC_CLOCK).lock().estimate_boot_time(utc)
 }
 
 #[cfg(test)]
