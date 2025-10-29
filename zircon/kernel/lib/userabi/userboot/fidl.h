@@ -64,10 +64,16 @@ struct fuchsia_boot_BootfsFileVmo {
   uint32_t offset;
   zx_handle_t contents;
 };
+
 struct fuchsia_boot_PostBootfsFilesRequestMessage {
   FIDL_ALIGNDECL
   fidl_message_header_t hdr;
   fidl_vector_t vector;
+};
+
+struct fuchsia_boot_PostBootfsFilesRequestMessageBuffer {
+  fuchsia_boot_PostBootfsFilesRequestMessage request;
+  fuchsia_boot_BootfsFileVmo entries[ZX_CHANNEL_MAX_MSG_HANDLES];
 };
 
 constexpr uint64_t fuchsia_boot_UserbootPostBootfsFilesOrdinal = 2985117035928536724l;
@@ -77,33 +83,36 @@ inline zx::result<> UserbootPostBootfsEntries(const zx::channel& userboot_client
   if (entries.empty()) {
     return zx::ok();
   }
-  std::array<uint8_t,
-             FIDL_ALIGN(sizeof(fuchsia_boot_PostBootfsFilesRequestMessage)) +
-                 FIDL_ALIGN(sizeof(fuchsia_boot_BootfsFileVmo) * ZX_CHANNEL_MAX_MSG_HANDLES)>
-      buffer;
+  fuchsia_boot_PostBootfsFilesRequestMessageBuffer buffer;
   std::array<zx_handle_t, ZX_CHANNEL_MAX_MSG_HANDLES> handles;
 
-  auto* request = reinterpret_cast<fuchsia_boot_PostBootfsFilesRequestMessage*>(buffer.data());
+  auto* request = &buffer.request;
+  assert(reinterpret_cast<uintptr_t>(request) %
+             alignof(fuchsia_boot_PostBootfsFilesRequestMessage) ==
+         0);
   fidl_init_txn_header(&request->hdr, 0, fuchsia_boot_UserbootPostBootfsFilesOrdinal, 0);
 
   // Aligned main object and secondary object.
   // | request        | payload     |
   // | hdr | vector_t | vector data |
-  auto* raw_entries_ptr = buffer.data() + sizeof(fuchsia_boot_PostBootfsFilesRequestMessage);
+  auto* raw_entries_ptr = &buffer.entries;
   auto* typed_entries = reinterpret_cast<fuchsia_boot_BootfsFileVmo*>(raw_entries_ptr);
+  assert(reinterpret_cast<uintptr_t>(typed_entries) % alignof(fuchsia_boot_BootfsFileVmo) == 0);
   for (size_t i = 0; i < entries.size(); ++i) {
     typed_entries[i].contents = FIDL_HANDLE_PRESENT;
     typed_entries[i].offset = entries[i].offset;
     handles[i] = entries[i].contents.release();
   }
-  size_t num_bytes = FIDL_ALIGN(reinterpret_cast<uintptr_t>(typed_entries + entries.size())) -
-                     reinterpret_cast<uintptr_t>(buffer.data());
+  // Header + number of files provided. this assumes they are both properly
+  // aligned.
+  size_t num_bytes =
+      offsetof(fuchsia_boot_PostBootfsFilesRequestMessageBuffer, entries[entries.size()]);
   request->vector.count = entries.size();
   // Turn this into a flat offset from message start.
   request->vector.data = reinterpret_cast<void*>(FIDL_ALLOC_PRESENT);
   return zx::make_result(
-      userboot_client_endpoint.write(0, buffer.data(), static_cast<uint32_t>(num_bytes),
-                                     handles.data(), static_cast<uint32_t>(entries.size())));
+      userboot_client_endpoint.write(0, &buffer, static_cast<uint32_t>(num_bytes), handles.data(),
+                                     static_cast<uint32_t>(entries.size())));
 }
 
 #endif  // ZIRCON_KERNEL_LIB_USERABI_USERBOOT_FIDL_H_
