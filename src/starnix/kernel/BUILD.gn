@@ -67,7 +67,7 @@ rustc_binary("starnix_kernel_bin") {
 
   # Enable performance features in release mode.
   if (compilation_mode == "release") {
-    configs += [ "//build/config/lto:lto-rust" ]
+    configs += [ "//build/config/lto:lto-if-not-enabled" ]
 
     # Enable moderate level of optimization for better performance.
     configs += [ "//build/config:optimize_moderate" ]

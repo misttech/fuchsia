@@ -235,10 +235,8 @@ rustc_binary("fxfs") {
   ]
 
   # Add thinlto config if lto variants are not used.
-  if (!is_lto_variant) {
-    # Optimize for speed (Fxfs is split into several crates; apply optimizations across them).
-    configs += [ "//build/config/lto:thinlto" ]
-  }
+  # Optimize for speed (Fxfs is split into several crates; apply optimizations across them).
+  configs += [ "//build/config/lto:thinlto-if-not-enabled" ]
 
   # As this is a large binary that uses many resources to compile (and takes minutes when LTO is
   # enabled, shift it to the large RBE worker pool)

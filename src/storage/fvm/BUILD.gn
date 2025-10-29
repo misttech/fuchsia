@@ -268,9 +268,7 @@ rustc_binary("fvm_rust") {
   # optimizations for all builds.
   configs -= [ "//build/config:default_optimize" ]
   configs += [ "//build/config:optimize_speed" ]
-  if (!is_lto_variant) {
-    configs += [ "//build/config/lto:thinlto" ]
-  }
+  configs += [ "//build/config/lto:thinlto-if-not-enabled" ]
 }
 
 rustc_test("fvm_rust_test") {

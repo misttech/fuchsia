@@ -235,12 +235,10 @@ config("netstack3_configs") {
       "//build/config:optimize_speed",
     ]
 
-    # Add thinlto config if lto variants are not used.
-    if (!is_lto_variant) {
-      # Allow cross-crate optimization since netstack3 is split between multiple
-      # crates.
-      configs += [ "//build/config/lto:thinlto" ]
-    }
+    # Add thinlto config.
+    # Allow cross-crate optimization since netstack3 is split between multiple
+    # crates.
+    configs += [ "//build/config/lto:thinlto-if-not-enabled" ]
   }
 }
 
@@ -252,12 +250,10 @@ config("netstack3_debug_configs") {
       "//build/config:optimize_debug",
     ]
 
-    # Add thinlto config if lto variants are not used.
-    if (!is_lto_variant) {
-      # Allow cross-crate optimization since netstack3 is split between multiple
-      # crates.
-      configs += [ "//build/config/lto:thinlto" ]
-    }
+    # Add thinlto config.
+    # Allow cross-crate optimization since netstack3 is split between multiple
+    # crates.
+    configs += [ "//build/config/lto:thinlto-if-not-enabled" ]
   }
 }
 

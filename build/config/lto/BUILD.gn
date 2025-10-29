@@ -169,6 +169,14 @@ variant("lto") {
   ]
 }
 
+# Add the lto config only if no other LTO variant
+# or configuration is already active.
+config("lto-if-not-enabled") {
+  if (!is_lto_variant) {
+    configs = [ ":lto" ]
+  }
+}
+
 config("thinlto-clang") {
   cflags = [ "-flto=thin" ]
   asmflags = cflags
@@ -244,4 +252,12 @@ variant("thinlto") {
     ":thinlto-clang",
     ":thinlto-rust",
   ]
+}
+
+# Add the thinlto config only if no other LTO variant
+# or configuration is already active.
+config("thinlto-if-not-enabled") {
+  if (!is_lto_variant) {
+    configs = [ ":thinlto" ]
+  }
 }

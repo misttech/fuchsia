@@ -61,13 +61,8 @@ template("ffx") {
         # the entire set of dependency crates, to minimize final binary size
         # without spending an undue amount of time (this is still faster than
         # using codegen_units=1)
-        # Add thinlto config if lto variants are not used.
-        if (!is_lto_variant) {
-          configs += [ "//build/config/lto:thinlto" ]
-          if (is_linux) {
-            configs += [ "//build/config/lto:lto-rust-linker-plugin" ]
-          }
-        }
+        # Add thinlto config.
+        configs += [ "//build/config/lto:thinlto-if-not-enabled" ]
       }
     }
 
