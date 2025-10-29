@@ -14,7 +14,7 @@ use fidl_fuchsia_developer_ffx_speedtest as fspeedtest;
 #[argh(
     subcommand,
     name = "speedtest",
-    description = "Developer tool for testing fffx latency and throughput to the target."
+    description = "Developer tool for testing ffx latency and throughput to the target."
 )]
 pub struct SpeedtestCommand {
     /// how many times to repeat the test. Set zero to run until interrupted.
