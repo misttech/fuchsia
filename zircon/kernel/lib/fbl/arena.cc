@@ -284,6 +284,7 @@ void Arena::Dump() const {
   DEBUG_ASSERT(vmar_ != nullptr);
   printf("%s mappings:\n", vmar_->name());
   {
+    Guard<CriticalMutex> region_guard{vmar_->region_lock()};
     Guard<CriticalMutex> guard{vmar_->lock()};
     vmar_->DumpLocked(/* depth */ 1, /* verbose */ true);
   }

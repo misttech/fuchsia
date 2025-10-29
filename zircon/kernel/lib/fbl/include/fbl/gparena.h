@@ -274,6 +274,7 @@ class __OWNER(void) GPArena {
     DEBUG_ASSERT(vmar_ != nullptr);
     printf("GPArena<%#zx,%#zx> %s mappings:\n", PersistSize, ObjectSize, vmar_->name());
     {
+      Guard<CriticalMutex> region_guard{vmar_->region_lock()};
       Guard<CriticalMutex> vmar_guard{vmar_->lock()};
       vmar_->DumpLocked(/* depth */ 1, /* verbose */ true);
     }

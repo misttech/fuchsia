@@ -134,7 +134,7 @@ fbl::RefPtr<VmObject> VmMapping::vmo() const {
 VmMapping::AttributionCounts VmMapping::GetAttributedMemoryLocked() const {
   canary_.Assert();
 
-  if (state_ != LifeCycleState::ALIVE) {
+  if (state_locked() != LifeCycleState::ALIVE) {
     return AttributionCounts{};
   }
 
@@ -151,7 +151,8 @@ void VmMapping::DumpLocked(uint depth, bool verbose) const {
   char vmo_name[32];
   object_->get_name(vmo_name, sizeof(vmo_name));
   printf("map %p [%#" PRIxPTR " %#" PRIxPTR "] sz %#zx state %d mergeable %s\n", this, base_,
-         base_ + size_ - 1, size_, (int)state_, mergeable_ == Mergeable::YES ? "true" : "false");
+         base_ + size_ - 1, size_, (int)state_locked(),
+         mergeable_ == Mergeable::YES ? "true" : "false");
   EnumerateProtectionRangesLocked(base_, size_, [depth](vaddr_t base, size_t len, uint mmu_flags) {
     for (uint i = 0; i < depth + 1; ++i) {
       printf("  ");
@@ -263,6 +264,7 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
   }
 
   AssertHeld(parent_->lock_ref());
+  AssertHeld(parent_->region_lock_ref());
 
   // Should never be unmapping everything, otherwise should destroy.
   DEBUG_ASSERT(base != base_ || size != size_);
@@ -279,6 +281,7 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
                                              Mergeable::YES));
     if (!ac.check()) {
       return ZX_ERR_NO_MEMORY;
+      AssertHeld(parent_->region_lock_ref());
     }
   }
   if (base + size != base_ + size_) {
@@ -342,6 +345,7 @@ zx_status_t VmMapping::UnmapLocked(vaddr_t base, size_t size) {
     if (mapping) {
       AssertHeld(mapping->lock_ref());
       AssertHeld(mapping->object_lock_ref());
+      AssertHeld(mapping->region_lock_ref());
       mapping->ActivateLocked();
     }
   };
@@ -670,7 +674,7 @@ zx_status_t VmMapping::MapRange(size_t offset, size_t len, bool commit, bool ign
     return ZX_ERR_INVALID_ARGS;
   }
 
-  if (state_ != LifeCycleState::ALIVE) {
+  if (state_locked() != LifeCycleState::ALIVE) {
     return ZX_ERR_BAD_STATE;
   }
 
@@ -828,7 +832,7 @@ zx_status_t VmMapping::DecommitRange(size_t offset, size_t len) {
   LTRACEF("%p [%#zx+%#zx], offset %#zx, len %#zx\n", this, base_, size_, offset, len);
 
   Guard<CriticalMutex> guard{lock()};
-  if (state_ != LifeCycleState::ALIVE) {
+  if (state_locked() != LifeCycleState::ALIVE) {
     return ZX_ERR_BAD_STATE;
   }
   if (offset + len < offset || offset + len > size_) {
@@ -885,6 +889,7 @@ zx_status_t VmMapping::DestroyLockedObject(bool unmap) {
   // Detach the region from the parent.
   if (parent_) {
     AssertHeld(parent_->lock_ref());
+    AssertHeld(parent_->region_lock_ref());
     DEBUG_ASSERT(this->in_subregion_tree());
     parent_->subregions_.RemoveRegion(this);
   }
@@ -1179,6 +1184,7 @@ void VmMapping::ActivateLocked() {
   }
 
   AssertHeld(parent_->lock_ref());
+  AssertHeld(parent_->region_lock_ref());
   parent_->subregions_.InsertRegion(fbl::RefPtr<VmAddressRegionOrMapping>(this));
 }
 
@@ -1189,6 +1195,7 @@ void VmMapping::Activate() {
 
 fbl::RefPtr<VmMapping> VmMapping::TryMergeRightNeighborLocked(VmMapping* right_candidate) {
   AssertHeld(right_candidate->lock_ref());
+  AssertHeld(right_candidate->region_lock_ref());
 
   // This code is tolerant of many 'miss calls' if mappings aren't mergeable or are not neighbours
   // etc, but the caller should not be attempting to merge if these mappings are not actually from
@@ -1265,14 +1272,17 @@ fbl::RefPtr<VmMapping> VmMapping::TryMergeRightNeighborLocked(VmMapping* right_c
           ASSERT(status == ZX_ERR_NO_MEMORY);
           return true;
         }
+        AssertHeld(region_lock_ref());
 
         AssertHeld(new_mapping->object_lock_ref());
         new_mapping->protection_ranges_ = ktl::move(protection_ranges_);
 
         status = DestroyLockedObject(false);
         ASSERT(status == ZX_OK);
+        AssertHeld(right_candidate->region_lock_ref());
         status = right_candidate->DestroyLockedObject(false);
         ASSERT(status == ZX_OK);
+        AssertHeld(new_mapping->region_lock_ref());
         new_mapping->ActivateLocked();
         return false;
       }();
@@ -1301,6 +1311,7 @@ void VmMapping::TryMergeNeighborsLocked() {
   DEBUG_ASSERT(ref_count_debug() > 1);
 
   AssertHeld(parent_->lock_ref());
+  AssertHeld(parent_->region_lock_ref());
 
   // Find our two merge candidates.
   fbl::RefPtr<VmMapping> left, right;
@@ -1320,11 +1331,13 @@ void VmMapping::TryMergeNeighborsLocked() {
     // We either merge the left with our result of the right merge, or if that was not successful
     // with |this|.
     AssertHeld(left->lock_ref());
+    AssertHeld(left->region_lock_ref());
     left->TryMergeRightNeighborLocked(right ? right.get() : this);
   }
 }
 
 void VmMapping::MarkMergeable(fbl::RefPtr<VmMapping> mapping) {
+  Guard<CriticalMutex> region_guard{mapping->region_lock()};
   Guard<CriticalMutex> guard{mapping->lock()};
   // Now that we have the lock check this mapping is still alive and we haven't raced with some
   // kind of destruction.
@@ -1341,7 +1354,7 @@ void VmMapping::MarkMergeable(fbl::RefPtr<VmMapping> mapping) {
 }
 
 zx_status_t VmMapping::SetMemoryPriorityLocked(VmAddressRegion::MemoryPriority priority) {
-  DEBUG_ASSERT(state_ == LifeCycleState::ALIVE);
+  DEBUG_ASSERT(state_locked() == LifeCycleState::ALIVE);
   const bool to_high = priority == VmAddressRegion::MemoryPriority::HIGH;
   const int64_t delta = to_high ? 1 : -1;
   if (priority == memory_priority_) {
@@ -1364,9 +1377,9 @@ template <bool SplitOnUnmap>
 void VmMapping::SetMemoryPriorityDefaultLockedObject() {
   if constexpr (SplitOnUnmap) {
     // all that's required to set our priority is to have object_ and aspace_ set up
-    DEBUG_ASSERT(state_ == LifeCycleState::NOT_READY && object_ && aspace_);
+    DEBUG_ASSERT(state_locked() == LifeCycleState::NOT_READY && object_ && aspace_);
   } else {
-    DEBUG_ASSERT(state_ == LifeCycleState::ALIVE);
+    DEBUG_ASSERT(state_locked() == LifeCycleState::ALIVE);
   }
   if (memory_priority_ == VmAddressRegion::MemoryPriority::DEFAULT) {
     return;
@@ -1384,9 +1397,9 @@ template <bool SplitOnUnmap>
 void VmMapping::SetMemoryPriorityHighAlreadyPositiveLockedObject() {
   if constexpr (SplitOnUnmap) {
     // all that's required to set our priority is to have object_ and aspace_ set up
-    DEBUG_ASSERT(state_ == LifeCycleState::NOT_READY && object_ && aspace_);
+    DEBUG_ASSERT(state_locked() == LifeCycleState::NOT_READY && object_ && aspace_);
   } else {
-    DEBUG_ASSERT(state_ == LifeCycleState::ALIVE);
+    DEBUG_ASSERT(state_locked() == LifeCycleState::ALIVE);
   }
   if (memory_priority_ == VmAddressRegion::MemoryPriority::HIGH) {
     return;
@@ -1407,7 +1420,7 @@ void VmMapping::CommitHighMemoryPriority() {
   uint64_t len;
   {
     Guard<CriticalMutex> guard{lock()};
-    if (state_ != LifeCycleState::ALIVE || memory_priority_ != MemoryPriority::HIGH) {
+    if (state_locked() != LifeCycleState::ALIVE || memory_priority_ != MemoryPriority::HIGH) {
       return;
     }
     vmo = object_;
@@ -1422,7 +1435,7 @@ void VmMapping::CommitHighMemoryPriority() {
 
 zx_status_t VmMapping::ForceWritableLocked() {
   canary_.Assert();
-  if (state_ != LifeCycleState::ALIVE) {
+  if (state_locked() != LifeCycleState::ALIVE) {
     return ZX_ERR_BAD_STATE;
   }
   DEBUG_ASSERT(object_);

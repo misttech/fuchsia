@@ -119,7 +119,7 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
   void AttachToThread(Thread* t);
 
   void Dump(bool verbose) const;
-  void DumpLocked(bool verbose) const TA_REQ(lock_);
+  void DumpLocked(bool verbose) const TA_REQ(region_lock()) TA_REQ(lock_);
 
   static void DropAllUserPageTables();
   void DropUserPageTables();
@@ -234,6 +234,8 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
   friend class hypervisor::GuestPhysicalAspace;
   Lock<CriticalMutex>* lock() const TA_RET_CAP(lock_) { return &lock_; }
   Lock<CriticalMutex>& lock_ref() const TA_RET_CAP(lock_) { return lock_; }
+  Lock<CriticalMutex>* region_lock() const TA_RET_CAP(region_lock_) { return &region_lock_; }
+  Lock<CriticalMutex>& region_lock_ref() const TA_RET_CAP(region_lock_) { return region_lock_; }
 
   // Expose the PRNG for ASLR to VmAddressRegion
   crypto::Prng& AslrPrng() {
@@ -313,7 +315,20 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
   // that it can be safely read outside the lock, however writes should occur inside the lock.
   ktl::atomic<int64_t> high_priority_count_ = 0;
 
+  // Primary lock that is used by all objects (VMARS and mappings) in the aspace hierarchy, and
+  // serializes most modifications. Holding this lock is not sufficient to perform allocations or
+  // deallocations (i.e. access the subregions_ field in VMARs and transitions objects to/from
+  // ALIVE. For this the region_lock_ must also be held.
   mutable DECLARE_CRITICAL_MUTEX(VmAspace) lock_;
+
+  // Conceptually the region_lock_ represents the authority to manipulate the portions of the
+  // address space that are allocated. This is implemented by requiring both lock_ and region_lock_
+  // to be held in order to modify the subregions_ list, or transition a vmar/mapping to/from the
+  // ALIVE state. As a consequence, holding either lock_ OR region_lock_ is sufficient to know that
+  // any presently ALIVE objects cannot change state, and that the subregions_ can be safely
+  // iterated.
+  // Where both must be held, the region_lock_ is to be acquired before lock_.
+  mutable DECLARE_CRITICAL_MUTEX(VmAspace) region_lock_;
 
   // Keep a cache of the VmMapping of the last PageFault that occurred. On a page fault this can
   // be checked to see if it matches more quickly than walking the full vmar tree. Mappings that

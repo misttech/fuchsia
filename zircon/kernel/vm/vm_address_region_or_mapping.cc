@@ -34,6 +34,7 @@ VmAddressRegionOrMapping::VmAddressRegionOrMapping(vaddr_t base, size_t size, ui
 zx_status_t VmAddressRegionOrMapping::Destroy() {
   canary_.Assert();
 
+  Guard<CriticalMutex> region_guard{aspace_->region_lock()};
   Guard<CriticalMutex> guard{aspace_->lock()};
   if (state_ != LifeCycleState::ALIVE) {
     return ZX_ERR_BAD_STATE;
@@ -55,7 +56,7 @@ VmAddressRegionOrMapping::~VmAddressRegionOrMapping() {
 
 VmObject::AttributionCounts VmAddressRegionOrMapping::GetAttributedMemory() {
   Guard<CriticalMutex> guard{aspace_->lock()};
-  if (state_ != LifeCycleState::ALIVE) {
+  if (state_locked() != LifeCycleState::ALIVE) {
     return AttributionCounts{};
   }
   return GetAttributedMemoryLocked();

@@ -80,6 +80,7 @@ zx_status_t VmAddressRegion::CreateRootLocked(VmAspace& aspace, uint32_t vmar_fl
   }
 
   AssertHeld(vmar->lock_ref());
+  AssertHeld(vmar->region_lock_ref());
 
   vmar->state_ = LifeCycleState::ALIVE;
   *out = fbl::AdoptRef(vmar);
@@ -126,6 +127,7 @@ zx_status_t VmAddressRegion::CreateSubVmarInner(size_t offset, size_t size, uint
   fbl::RefPtr<VmAddressRegionOrMapping> vmar;
 
   {
+    Guard<CriticalMutex> region_guard{region_lock()};
     Guard<CriticalMutex> guard{lock()};
     if (state_ != LifeCycleState::ALIVE) {
       return ZX_ERR_BAD_STATE;
@@ -187,7 +189,7 @@ zx_status_t VmAddressRegion::CreateSubVmarInner(size_t offset, size_t size, uint
       const vaddr_t upper_bound =
           is_upper_bound ? base_ + offset : ktl::numeric_limits<vaddr_t>::max();
       zx_status_t status =
-          AllocSpotLocked(size, align_pow2, arch_mmu_flags, &new_base, upper_bound);
+          AllocSpotLockedRegion(size, align_pow2, arch_mmu_flags, &new_base, upper_bound);
       if (status != ZX_OK) {
         return status;
       }
@@ -230,6 +232,7 @@ zx_status_t VmAddressRegion::CreateSubVmarInner(size_t offset, size_t size, uint
     // CommitHighMemoryPriority, which requires that the lock not be held.
     [this, &vmar]() TA_REQ(lock()) {
       AssertHeld(vmar->lock_ref());
+      AssertHeld(vmar->region_lock_ref());
       vmar->Activate();
       // Propagate any memory priority settings. This should only fail if not alive, but we hold the
       // lock and just made it alive, so that cannot happen.
@@ -358,6 +361,7 @@ zx_status_t VmAddressRegion::OverwriteVmMappingLocked(vaddr_t base, size_t size,
   }
 
   AssertHeld(vmar->lock_ref());
+  AssertHeld(vmar->region_lock_ref());
   vmar->Activate();
 
   // Propagate any memory priority settings. This should only fail if not alive, but we hold the
@@ -381,6 +385,7 @@ zx_status_t VmAddressRegion::DestroyLocked() {
   // the last reference to them when removing from their parent.
   fbl::RefPtr<VmAddressRegion> cur(this);
   AssertHeld(cur->lock_ref());
+  AssertHeld(cur->region_lock_ref());
   while (cur) {
     // Iterate through children destroying mappings. If we find a
     // subregion, stop so we can traverse down.
@@ -389,6 +394,7 @@ zx_status_t VmAddressRegion::DestroyLocked() {
       VmAddressRegionOrMapping* child = &cur->subregions_.front();
       if (child->is_mapping()) {
         AssertHeld(child->lock_ref());
+        AssertHeld(child->region_lock_ref());
         // DestroyLocked should remove this child from our list on success.
         status = child->DestroyLocked();
         if (status != ZX_OK) {
@@ -408,6 +414,7 @@ zx_status_t VmAddressRegion::DestroyLocked() {
       if (cur->parent_) {
         DEBUG_ASSERT(cur->in_subregion_tree());
         AssertHeld(cur->parent_->lock_ref());
+        AssertHeld(cur->parent_->region_lock_ref());
         cur->parent_->subregions_.RemoveRegion(cur.get());
       }
       cur->state_ = LifeCycleState::DEAD;
@@ -428,10 +435,14 @@ fbl::RefPtr<VmAddressRegionOrMapping> VmAddressRegion::FindRegion(vaddr_t addr) 
 }
 
 fbl::RefPtr<VmAddressRegionOrMapping> VmAddressRegion::FindRegionLocked(vaddr_t addr) {
-  if (state_ != LifeCycleState::ALIVE) {
+  if (state_locked() != LifeCycleState::ALIVE) {
     return nullptr;
   }
-  return fbl::RefPtr(subregions_.FindRegion(addr));
+  // The const_cast here is safe as this method itself is non-const, however subregions_locked()
+  // returns a const references to the subregions. The subregions are const as with only holding
+  // lock_ we are not permitted to modify the subregions_ tree, but we are allowed to manipulate the
+  // objects in the tree, hence can remove const.
+  return fbl::RefPtr(const_cast<VmAddressRegionOrMapping*>(subregions_locked().FindRegion(addr)));
 }
 
 VmObject::AttributionCounts VmAddressRegion::GetAttributedMemoryLocked() const {
@@ -456,11 +467,15 @@ VmObject::AttributionCounts VmAddressRegion::GetAttributedMemoryLocked() const {
 VmMapping* VmAddressRegion::FindMappingLocked(vaddr_t va) {
   canary_.Assert();
 
-  VmAddressRegion* vmar = this;
+  const VmAddressRegion* vmar = this;
   AssertHeld(vmar->lock_ref());
-  while (VmAddressRegionOrMapping* next = vmar->subregions_.FindRegion(va)) {
+  while (const VmAddressRegionOrMapping* next = vmar->subregions_locked().FindRegion(va)) {
     if (auto mapping = next->as_vm_mapping_ptr()) {
-      return mapping;
+      // The const_cast here is safe as this method itself is non-const, however subregions_locked()
+      // returns a const references to the subregions. The subregions are const as with only holding
+      // lock_ we are not permitted to modify the subregions_ tree, but we are allowed to manipulate
+      // the objects in the tree, hence can remove const.
+      return const_cast<VmMapping*>(mapping);
     }
     vmar = next->as_vm_address_region_ptr();
   }
@@ -468,11 +483,11 @@ VmMapping* VmAddressRegion::FindMappingLocked(vaddr_t va) {
   return nullptr;
 }
 
-ktl::optional<vaddr_t> VmAddressRegion::CheckGapLocked(const VmAddressRegionOrMapping* prev,
-                                                       const VmAddressRegionOrMapping* next,
-                                                       vaddr_t search_base, vaddr_t align,
-                                                       size_t region_size, size_t min_gap,
-                                                       uint arch_mmu_flags) {
+ktl::optional<vaddr_t> VmAddressRegion::CheckGapLockedRegion(const VmAddressRegionOrMapping* prev,
+                                                             const VmAddressRegionOrMapping* next,
+                                                             vaddr_t search_base, vaddr_t align,
+                                                             size_t region_size, size_t min_gap,
+                                                             uint arch_mmu_flags) {
   vaddr_t gap_beg;  // first byte of a gap
   vaddr_t gap_end;  // last byte of a gap
 
@@ -536,7 +551,7 @@ zx_status_t VmAddressRegion::EnumerateChildren(VmEnumerator* ve) {
   canary_.Assert();
   DEBUG_ASSERT(ve != nullptr);
   Guard<CriticalMutex> guard{lock()};
-  if (state_ != LifeCycleState::ALIVE) {
+  if (state_locked() != LifeCycleState::ALIVE) {
     return ZX_ERR_BAD_STATE;
   }
   zx_status_t status = ve->OnVmAddressRegion(this, 0, guard);
@@ -607,6 +622,7 @@ void VmAddressRegion::Activate() {
 
   state_ = LifeCycleState::ALIVE;
   AssertHeld(parent_->lock_ref());
+  AssertHeld(parent_->region_lock_ref());
 
   // Validate we are a correct child of our parent.
   DEBUG_ASSERT(parent_->is_in_range(base_, size_));
@@ -643,7 +659,7 @@ zx_status_t VmAddressRegion::RangeOp(RangeOpType op, vaddr_t base, size_t len,
   Guard<CriticalMutex> guard{lock()};
   // Capture the validation that we need to do whenever the lock is acquired.
   auto validate = [this, base, len]() TA_REQ(lock()) -> zx_status_t {
-    if (state_ != LifeCycleState::ALIVE) {
+    if (state_locked() != LifeCycleState::ALIVE) {
       return ZX_ERR_BAD_STATE;
     }
 
@@ -808,6 +824,7 @@ zx_status_t VmAddressRegion::Unmap(vaddr_t base, size_t size,
     return ZX_ERR_INVALID_ARGS;
   }
 
+  Guard<CriticalMutex> region_guard{region_lock()};
   Guard<CriticalMutex> guard{lock()};
   if (state_ != LifeCycleState::ALIVE) {
     return ZX_ERR_BAD_STATE;
@@ -826,6 +843,7 @@ zx_status_t VmAddressRegion::UnmapAllowPartial(vaddr_t base, size_t size) {
     return ZX_ERR_INVALID_ARGS;
   }
 
+  Guard<CriticalMutex> region_guard{region_lock()};
   Guard<CriticalMutex> guard{lock()};
   if (state_ != LifeCycleState::ALIVE) {
     return ZX_ERR_BAD_STATE;
@@ -884,12 +902,14 @@ zx_status_t VmAddressRegion::UnmapInternalLocked(vaddr_t base, size_t size,
       // destroyed. As such we stash a copy of its base in a variable in our outer scope.
       auto curr = itr++;
       AssertHeld(curr->lock_ref());
+      AssertHeld(curr->region_lock_ref());
       curr_base = curr->base();
       // The parent will keep living even if we destroy curr so can place that in the outer scope.
       up = curr->parent_;
 
       if (VmMapping* mapping = curr->as_vm_mapping_ptr(); mapping) {
         AssertHeld(mapping->lock_ref());
+        AssertHeld(mapping->region_lock_ref());
         vaddr_t curr_end_byte = 0;
         DEBUG_ASSERT(curr->size() > 1);
         overflowed = add_overflow(curr->base(), curr->size() - 1, &curr_end_byte);
@@ -930,6 +950,7 @@ zx_status_t VmAddressRegion::UnmapInternalLocked(vaddr_t base, size_t size,
           // If partial VMARs are allowed, we descend into sub-VMARs.
           VmAddressRegion* vmar = curr->as_vm_address_region_ptr();
           AssertHeld(vmar->lock_ref());
+          AssertHeld(vmar->region_lock_ref());
           if (!vmar->subregions_.IsEmpty()) {
             begin = vmar->subregions_.IncludeOrHigher(base);
             end = vmar->subregions_.UpperBound(end_addr_byte);
@@ -945,6 +966,7 @@ zx_status_t VmAddressRegion::UnmapInternalLocked(vaddr_t base, size_t size,
 
     if (allow_partial_vmar && !at_top && itr == end) {
       AssertHeld(up->lock_ref());
+      AssertHeld(up->region_lock_ref());
       // If partial VMARs are allowed, and we have reached the end of a
       // sub-VMAR range, we ascend and continue iteration.
       do {
@@ -979,7 +1001,7 @@ zx_status_t VmAddressRegion::Protect(vaddr_t base, size_t size, uint new_arch_mm
   }
 
   Guard<CriticalMutex> guard{lock()};
-  if (state_ != LifeCycleState::ALIVE) {
+  if (state_locked() != LifeCycleState::ALIVE) {
     return ZX_ERR_BAD_STATE;
   }
 
@@ -1094,8 +1116,9 @@ zx_status_t VmAddressRegion::Protect(vaddr_t base, size_t size, uint new_arch_mm
 // of the address space and are capped by the address entropy limit. The entropy limit is retrieved
 // from the address space, and can vary based on whether the user has requested compact allocations
 // or not.
-zx_status_t VmAddressRegion::AllocSpotLocked(size_t size, uint8_t align_pow2, uint arch_mmu_flags,
-                                             vaddr_t* spot, vaddr_t upper_limit) {
+zx_status_t VmAddressRegion::AllocSpotLockedRegion(size_t size, uint8_t align_pow2,
+                                                   uint arch_mmu_flags, vaddr_t* spot,
+                                                   vaddr_t upper_limit) {
   LTRACEF("size=%zu align_pow2=%u arch_mmu_flags=%x upper_limit=%zx\n", size, align_pow2,
           arch_mmu_flags, upper_limit);
   canary_.Assert();
@@ -1115,8 +1138,8 @@ zx_status_t VmAddressRegion::AllocSpotLocked(size_t size, uint8_t align_pow2, ui
     prng = &aspace_->AslrPrng();
   }
 
-  zx_status_t status = subregions_.GetAllocSpot(&alloc_spot, align_pow2, entropy, size, base_,
-                                                size_, prng, upper_limit);
+  zx_status_t status = subregions_locked_region().GetAllocSpot(
+      &alloc_spot, align_pow2, entropy, size, base_, size_, prng, upper_limit);
 
   if (status != ZX_OK) {
     return status;
@@ -1126,16 +1149,16 @@ zx_status_t VmAddressRegion::AllocSpotLocked(size_t size, uint8_t align_pow2, ui
   vaddr_t alloc_last_byte;
   bool overflowed = add_overflow(alloc_spot, size - 1, &alloc_last_byte);
   ASSERT(!overflowed);
-  auto after_iter = subregions_.UpperBound(alloc_last_byte);
+  auto after_iter = subregions_locked_region().UpperBound(alloc_last_byte);
   auto before_iter = after_iter;
 
-  if (after_iter == subregions_.begin() || subregions_.IsEmpty()) {
-    before_iter = subregions_.end();
+  if (after_iter == subregions_locked_region().begin() || subregions_locked_region().IsEmpty()) {
+    before_iter = subregions_locked_region().end();
   } else {
     --before_iter;
   }
 
-  ASSERT(before_iter == subregions_.end() || before_iter.IsValid());
+  ASSERT(before_iter == subregions_locked_region().end() || before_iter.IsValid());
   const VmAddressRegionOrMapping* before = nullptr;
   if (before_iter.IsValid()) {
     before = &(*before_iter);
@@ -1144,7 +1167,7 @@ zx_status_t VmAddressRegion::AllocSpotLocked(size_t size, uint8_t align_pow2, ui
   if (after_iter.IsValid()) {
     after = &(*after_iter);
   }
-  if (auto va = CheckGapLocked(before, after, alloc_spot, align, size, 0, arch_mmu_flags)) {
+  if (auto va = CheckGapLockedRegion(before, after, alloc_spot, align, size, 0, arch_mmu_flags)) {
     *spot = *va;
     return ZX_OK;
   }
@@ -1225,7 +1248,7 @@ zx_status_t VmAddressRegion::SetMemoryPriority(MemoryPriority priority) {
     if (status != ZX_OK) {
       return status;
     }
-    have_children = !subregions_.IsEmpty();
+    have_children = !subregions_locked().IsEmpty();
   }
   // If a high memory priority was set, perform another pass through any mappings to commit it,
   // unless we know we didn't have any children at the point we set the priority to avoid a needless
@@ -1237,7 +1260,7 @@ zx_status_t VmAddressRegion::SetMemoryPriority(MemoryPriority priority) {
 }
 
 zx_status_t VmAddressRegion::SetMemoryPriorityLocked(MemoryPriority priority) {
-  if (state_ != LifeCycleState::ALIVE) {
+  if (state_locked() != LifeCycleState::ALIVE) {
     DEBUG_ASSERT(memory_priority_ == MemoryPriority::DEFAULT);
     return ZX_ERR_BAD_STATE;
   }
@@ -1276,7 +1299,7 @@ void VmAddressRegion::CommitHighMemoryPriority() {
   Guard<CriticalMutex> guard{lock()};
   // Capture the validation that we need to do whenever the lock is acquired.
   auto validate = [this]() TA_REQ(lock()) -> bool {
-    if (state_ != LifeCycleState::ALIVE) {
+    if (state_locked() != LifeCycleState::ALIVE) {
       return false;
     }
 

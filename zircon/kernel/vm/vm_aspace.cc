@@ -160,6 +160,7 @@ zx_status_t VmAspace::Init(ShareOpt share_opt) {
 
   InitializeAslr();
 
+  Guard<CriticalMutex> region_guard{region_lock()};
   Guard<CriticalMutex> guard{&lock_};
 
   if (likely(!root_vmar_)) {
@@ -301,6 +302,7 @@ zx_status_t VmAspace::Destroy() {
   canary_.Assert();
   LTRACEF("%p '%s'\n", this, name_);
 
+  Guard<CriticalMutex> region_guard{region_lock()};
   Guard<CriticalMutex> guard{&lock_};
 
   // Don't let a vDSO mapping prevent destroying a VMAR
@@ -309,6 +311,7 @@ zx_status_t VmAspace::Destroy() {
 
   // tear down and free all of the regions in our address space
   if (root_vmar_) {
+    AssertHeld(root_vmar_->region_lock_ref());
     AssertHeld(root_vmar_->lock_ref());
     zx_status_t status = root_vmar_->DestroyLocked();
     if (status != ZX_OK && status != ZX_ERR_BAD_STATE) {
@@ -640,8 +643,10 @@ zx_status_t VmAspace::PageFaultInternal(vaddr_t va, uint flags, size_t additiona
       zx_status_t st = page_request.Wait(/*suspendable=*/flags & VMM_PF_FLAG_USER);
       if (st != ZX_OK) {
         if (st == ZX_ERR_TIMED_OUT) {
+          Guard<CriticalMutex> region_guard{region_lock()};
           Guard<CriticalMutex> guard{&lock_};
           AssertHeld(root_vmar_->lock_ref());
+          AssertHeld(root_vmar_->region_lock_ref());
           root_vmar_->DumpLocked(0, false);
         }
         return st;
@@ -699,6 +704,7 @@ zx_status_t VmAspace::AccessedFault(vaddr_t va) {
 }
 
 void VmAspace::Dump(bool verbose) const {
+  Guard<CriticalMutex> region_guard{region_lock()};
   Guard<CriticalMutex> guard{&lock_};
   DumpLocked(verbose);
 }
@@ -711,6 +717,7 @@ void VmAspace::DumpLocked(bool verbose) const {
 
   if (verbose && root_vmar_) {
     AssertHeld(root_vmar_->lock_ref());
+    AssertHeld(root_vmar_->region_lock_ref());
     root_vmar_->DumpLocked(1, verbose);
   }
 }

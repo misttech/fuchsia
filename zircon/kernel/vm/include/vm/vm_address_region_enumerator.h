@@ -50,7 +50,7 @@ class VmAddressRegionEnumerator {
       : min_addr_(min_addr),
         max_addr_(max_addr),
         vmar_(vmar),
-        itr_(vmar_.subregions_.IncludeOrHigher(min_addr_)) {
+        itr_(vmar_.subregions_locked().IncludeOrHigher(min_addr_)) {
     if constexpr (Type == VmAddressRegionEnumeratorType::VmarsAndMappings) {
       // If enumerating vmars and mappings validate that, unless the range is empty, that any
       // vmar is wholly contained within the range. This will not catch all errors in users
@@ -97,7 +97,13 @@ class VmAddressRegionEnumerator {
             mapping->base() > max_addr_) {
           continue;
         }
-        ret = NextResult{mapping, depth_};
+        // The const_cast here allows for returning a pointer with the same constness as the
+        // originally provided VmAddressRegion, but allowing for the fact that we use a
+        // const_iterator for traversal. This is safe since we have a non-const references to the
+        // tree, and we are allowed to manipulate the underlying objects, however since we do not
+        // hold the region_lock_ we cannot manipulate the subregion_ tree itself, hence we have to
+        // use const_iterator.
+        ret = NextResult{const_cast<maybe_const<VmMapping*>>(mapping), depth_};
       } else {
         auto* vmar = curr->as_vm_address_region_ptr();
         DEBUG_ASSERT(vmar != nullptr);
@@ -107,12 +113,12 @@ class VmAddressRegionEnumerator {
         // way into a VMAR, we can simply validate that the vmar base is >= our min.
         if constexpr (Type == VmAddressRegionEnumeratorType::VmarsAndMappings) {
           if (vmar->base() >= min_addr_) {
-            ret = NextResult{vmar, depth_};
+            ret = NextResult{const_cast<maybe_const<VmAddressRegion*>>(vmar), depth_};
           }
         }
-        if (!vmar->subregions_.IsEmpty()) {
+        if (!vmar->subregions_locked().IsEmpty()) {
           // If the sub-VMAR is not empty, iterate through its children.
-          itr_ = vmar->subregions_.begin();
+          itr_ = vmar->subregions_locked().begin();
           depth_++;
           continue;
         }
@@ -122,7 +128,7 @@ class VmAddressRegionEnumerator {
         // If we are at a depth greater than the minimum, and have reached
         // the end of a sub-VMAR range, we ascend and continue iteration.
         do {
-          itr_ = up->subregions_.UpperBound(curr->base());
+          itr_ = up->subregions_locked().UpperBound(curr->base());
           if (itr_.IsValid()) {
             break;
           }
@@ -175,7 +181,7 @@ class VmAddressRegionEnumerator {
         // Generate a new iterator that starts at the right offset, but back at the top. The next
         // call to next() will walk back down if necessary to find the next mapping / VMAR.
         min_addr_ = state_.next_offset_;
-        itr_ = vmar_.subregions_.IncludeOrHigher(min_addr_);
+        itr_ = vmar_.subregions_locked().IncludeOrHigher(min_addr_);
         depth_ = kStartDepth;
       } else {
         DEBUG_ASSERT(&*itr_ == &*state_.region_or_mapping_);
@@ -209,10 +215,7 @@ class VmAddressRegionEnumerator {
   VMAR& vmar_;
   // This iterator represents the object at which |next| should use to find the next item to return.
   // An invalid itr_ therefore represents no next object, and means enumeration has finished.
-  ktl::conditional_t<ktl::is_const_v<VMAR>,
-                     RegionList<VmAddressRegionOrMapping>::ChildList::const_iterator,
-                     RegionList<VmAddressRegionOrMapping>::ChildList::iterator>
-      itr_;
+  RegionList<VmAddressRegionOrMapping>::ChildList::const_iterator itr_;
 };
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_VM_ADDRESS_REGION_ENUMERATOR_H_
