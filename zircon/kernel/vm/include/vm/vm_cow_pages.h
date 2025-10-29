@@ -534,21 +534,21 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // See VmObjectPaged::GetLookupCursorLocked
   zx::result<LookupCursor> GetLookupCursorLocked(VmCowRange range) TA_REQ(lock());
 
-  // TODO(https://fxbug.dev/441409277): This enum and its use of the term 'Zero' needs to be
-  // rethought to avoid confusion between root and non-root VMOs.
-  // Controls the type of content that can be overwritten by the Add[New]Page[s]Locked functions.
-  enum class CanOverwriteContent : uint8_t {
-    // Do not overwrite any kind of content, i.e. only add a page at the slot if there is true
-    // absence of content.
-    None,
-    // Only overwrite slots that represent zeros. In the case of anonymous VMOs, both gaps and zero
-    // page markers represent zeros, as the entire VMO is implicitly zero on creation. For pager
-    // backed VMOs, zero page markers and zero intervals represent zeros.
-    // This definition of zero, and the checks done therein, only consider the local page list and
-    // do not consider the content of any visible parent.
-    Zero,
-    // Overwrite any slots, regardless of the type of content.
-    NonZero,
+  // Controls the type of VmPageOrMarker slot in |this| VmCowPages' page_list_ that can be
+  // overwritten by the Add[New]Page[s]Locked functions. It is the caller's responsibility to ensure
+  // that the previous content is dealt with correctly (e.g. any pages and compressed
+  // references are freed).
+  enum class CanOverwriteSlot : uint8_t {
+    // Only overwrite empty slots.
+    Empty,
+    // Can overwrite parent content markers (in addition to empty slots).
+    EmptyOrParent,
+    // Can overwrite zero page markers and zero intervals (in addition to empty slots and
+    // parent content markers).
+    ZeroMarkerOrInterval,
+    // Can overwrite pages and compressed references (in addition to empty slots, parent content
+    // markers, zero markers and intervals), i.e. can overwrite all VmPageOrMarker types.
+    PageOrRef,
   };
   // Adds an allocated page to this cow pages at the specified offset, can be optionally zeroed and
   // any mappings invalidated. If an error is returned the caller retains ownership of |page|.
@@ -562,7 +562,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // released from the page list as a result of overwriting, it is returned through |released_page|
   // and the caller takes ownership of this page. If the |overwrite| action is such that a page
   // cannot be released, it is valid for the caller to pass in nullptr for |released_page|.
-  zx_status_t AddNewPageLocked(uint64_t offset, vm_page_t* page, CanOverwriteContent overwrite,
+  zx_status_t AddNewPageLocked(uint64_t offset, vm_page_t* page, CanOverwriteSlot overwrite,
                                VmPageOrMarker* released_page, bool zero, DeferredOps* deferred)
       TA_REQ(lock());
 
@@ -571,10 +571,10 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // optionally zeroed before inserting. start_offset must be page aligned.
   //
   // |overwrite| controls how the function handles pre-existing content in the range, however it is
-  // not valid to specify the |CanOverwriteContent::NonZero| option, as any pages that would get
-  // released as a consequence cannot be returned.
+  // not valid to specify the |CanOverwriteSlot::PageOrRef| option, as any pages or compressed
+  // references that would get released as a consequence cannot be returned.
   zx_status_t AddNewPagesLocked(uint64_t start_offset, list_node_t* pages,
-                                CanOverwriteContent overwrite, bool zero, DeferredOps* deferred)
+                                CanOverwriteSlot overwrite, bool zero, DeferredOps* deferred)
       TA_REQ(lock());
 
   // Attempts to release pages in the pages list causing the range to become copy-on-write again.
@@ -1123,7 +1123,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // fail.
   class AddPageTransaction {
    public:
-    AddPageTransaction(VmPageOrMarkerRef slot, uint64_t offset, CanOverwriteContent overwrite)
+    AddPageTransaction(VmPageOrMarkerRef slot, uint64_t offset, CanOverwriteSlot overwrite)
         : slot_(slot), offset_(offset), overwrite_(overwrite) {}
     AddPageTransaction(AddPageTransaction&& other)
         : slot_(other.slot_), offset_(other.offset_), overwrite_(other.overwrite_) {
@@ -1137,12 +1137,12 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
     void Cancel(VmPageList& pl);
     VmPageOrMarker Complete(VmPageOrMarker p);
     uint64_t offset() const { return offset_; }
-    CanOverwriteContent overwrite() const { return overwrite_; }
+    CanOverwriteSlot overwrite() const { return overwrite_; }
 
    private:
     VmPageOrMarkerRef slot_;
-    uint64_t offset_;
-    CanOverwriteContent overwrite_;
+    const uint64_t offset_;
+    const CanOverwriteSlot overwrite_;
   };
 
   // Performs initial checks and slot allocations for inserting a new page at the specified
@@ -1158,7 +1158,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // starting or ending a transaction should be assumed to invalidate any page_list_ iterators or
   // slots that have been looked up unless the caller explicitly knows otherwise.
   [[nodiscard]] zx::result<AddPageTransaction> BeginAddPageLocked(uint64_t offset,
-                                                                  CanOverwriteContent overwrite)
+                                                                  CanOverwriteSlot overwrite)
       TA_REQ(lock());
 
   // Similar to |BeginAddPageLocked| except only the |overwrite| checks are performed and a ready to
@@ -1167,7 +1167,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   //  * Does not fall in the middle of an interval.
   // All other requirements of |BeginAddPageLocked| otherwise apply.
   [[nodiscard]] zx::result<AddPageTransaction> BeginAddPageWithSlotLocked(
-      uint64_t offset, VmPageOrMarkerRef slot, CanOverwriteContent overwrite) TA_REQ(lock());
+      uint64_t offset, VmPageOrMarkerRef slot, CanOverwriteSlot overwrite) TA_REQ(lock());
 
   // Flag for CompleteAddPageLocked to allow the caller to state whether they known, for certain,
   // any properties of the visible parent content.
@@ -1213,14 +1213,14 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
 
   // Helper for checking the |overwrite| conditions on a given slot.
   zx_status_t CheckOverwriteConditionsLocked(uint64_t offset, VmPageOrMarkerRef slot,
-                                             CanOverwriteContent overwrite) TA_REQ(lock());
+                                             CanOverwriteSlot overwrite) TA_REQ(lock());
 
   // Add a page to the object at |offset|. This is just a wrapper around performing
   // |BeginAddPageLocked| and then |CompleteAddPageLocked|, with error handling to perform a free of
   // the page given in |p| should insertion fail. Otherwise see those methods for a description of
   // the parameters.
   zx::result<VmPageOrMarker> AddPageLocked(uint64_t offset, VmPageOrMarker&& p,
-                                           CanOverwriteContent overwrite, DeferredOps* deferred)
+                                           CanOverwriteSlot overwrite, DeferredOps* deferred)
       TA_REQ(lock());
 
   // Unmaps and frees all the committed pages in the specified range.
