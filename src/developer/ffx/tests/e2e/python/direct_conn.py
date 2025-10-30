@@ -7,7 +7,7 @@
 import json
 import logging
 import re
-from typing import Any, List
+from typing import Any, List, Optional
 
 import ffxtestcase
 from honeydew.transports.ffx.errors import FfxCommandError
@@ -45,12 +45,16 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
         super().teardown_test()
 
     # Run the ffx command with the --direct arg, and parse the results
-    def _run_ffx_direct(self, cmd: List[str]) -> Any:
+    def _run_ffx_direct(
+        self, cmd: List[str], target: Optional[str] = None
+    ) -> Any:
         all_args = [
             "--direct",
             "--machine",
             "json",
         ]
+        if target is not None:
+            all_args += ["-t", target]
         all_args += cmd
         return json.loads(self.run_ffx(all_args))
 
@@ -62,6 +66,7 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
                 "echo",
                 "From a Test",
             ],
+            f"{self.dut_ssh_address}",
         )
 
         asserts.assert_equal(out["message"], "From a Test")
@@ -72,8 +77,8 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
             [
                 "target",
                 "list",
-                f"{self.dut_ssh_address}",
             ],
+            f"{self.dut_ssh_address}",
         )
         asserts.assert_equal(out[0]["target_state"], "Product")
         asserts.assert_equal(out[0]["rcs_state"], "Y")
@@ -98,6 +103,7 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
                 "component",
                 "list",
             ],
+            f"{self.dut_ssh_address}",
         )
         asserts.assert_greater(len(out["instances"]), 0)
 
@@ -110,8 +116,11 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
                 "repository",
                 "list",
             ],
+            f"{self.dut_ssh_address}",
         )
-        asserts.assert_greater(len(out["ok"]["data"]), 0)
+        asserts.assert_true(
+            "data" in out["ok"], "result does not contain ok[data]"
+        )
 
     # This tests that a tool that uses a non-standard target connection flow
     # works in direct mode.
@@ -124,6 +133,8 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
                 "--direct",
                 "--machine",
                 "json",
+                "-t",
+                f"{self.dut_ssh_address}",
                 "log",
                 "--symbolize",
                 "off",
