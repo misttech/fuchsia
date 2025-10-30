@@ -10,8 +10,6 @@
 
 #include <cerrno>
 #include <cstring>
-#include <fstream>
-#include <iostream>
 #include <map>
 #include <string>
 #include <vector>
@@ -19,6 +17,8 @@
 #include <linux/fuse.h>
 
 #define FUSE_DIRENT_ALIGN(x) (((x) + sizeof(uint64_t) - 1) & ~(sizeof(uint64_t) - 1))
+
+namespace {
 
 // The FUSE implementation will write to this fd to signal readiness.
 constexpr int kFuseReadyFd = 3;
@@ -43,7 +43,7 @@ struct FileNode {
   std::string content;
 };
 
-std::map<std::string, FileNode> filesystem;
+std::map<std::string, FileNode> g_filesystem;
 
 void HandleLookup(int fd, fuse_in_header* in_header) {
   fuse_out_header out_header;
@@ -52,8 +52,8 @@ void HandleLookup(int fd, fuse_in_header* in_header) {
   char* filename = reinterpret_cast<char*>(in_header + 1);
   std::string path(filename);
 
-  auto it = filesystem.find(path);
-  if (it == filesystem.end()) {
+  auto it = g_filesystem.find(path);
+  if (it == g_filesystem.end()) {
     out_header.len = sizeof(fuse_out_header);
     out_header.error = -ENOENT;
     write(fd, &out_header, sizeof(out_header));
@@ -84,7 +84,7 @@ void HandleGetattr(int fd, fuse_in_header* in_header) {
   out_header.unique = in_header->unique;
 
   const FileNode* node = nullptr;
-  for (auto const& [key, val] : filesystem) {
+  for (auto const& [key, val] : g_filesystem) {
     if (val.attr.st_ino == in_header->nodeid) {
       node = &val;
       break;
@@ -121,7 +121,7 @@ void HandleMknod(int fd, fuse_in_header* in_header) {
   char* filename = reinterpret_cast<char*>(in_payload + 1);
   std::string path(filename);
 
-  if (filesystem.find(path) != filesystem.end()) {
+  if (g_filesystem.contains(path)) {
     out_header.len = sizeof(fuse_out_header);
     out_header.error = -EEXIST;
     write(fd, &out_header, sizeof(out_header));
@@ -129,10 +129,10 @@ void HandleMknod(int fd, fuse_in_header* in_header) {
   }
 
   FileNode new_node;
-  new_node.attr.st_ino = filesystem.size() + 1;  // 0 is not valid.
+  new_node.attr.st_ino = g_filesystem.size() + 1;  // 0 is not valid.
   new_node.attr.st_mode = in_payload->mode;
   new_node.attr.st_nlink = 1;
-  filesystem[path] = new_node;
+  g_filesystem[path] = new_node;
 
   fuse_entry_out out_payload;
   memset(&out_payload, 0, sizeof(out_payload));
@@ -180,6 +180,15 @@ void HandleFlush(int fd, fuse_in_header* in_header) {
   write(fd, &out_header, sizeof(out_header));
 }
 
+void HandleNotImplemented(int fd, fuse_in_header* in_header) {
+  // Return ENOSYS to let FUSE know the operation is not implemented.
+  fuse_out_header out_header;
+  out_header.unique = in_header->unique;
+  out_header.len = sizeof(fuse_out_header);
+  out_header.error = -ENOSYS;
+  write(fd, &out_header, sizeof(out_header));
+}
+
 void HandleOpen(int fd, fuse_in_header* in_header) {
   fuse_out_header out_header;
   out_header.unique = in_header->unique;
@@ -198,9 +207,11 @@ void HandleOpen(int fd, fuse_in_header* in_header) {
   write(fd, response.data(), response.size());
 }
 
+}  // namespace
+
 int main(int argc, char* argv[]) {
   if (argc < 3) {
-    std::cerr << "Usage: " << argv[0] << " <fuse_dev> <mountpoint>" << std::endl;
+    fprintf(stderr, "Usage: %s <fuse_dev> <mountpoint>\n", argv[0]);
     return 1;
   }
 
@@ -209,38 +220,37 @@ int main(int argc, char* argv[]) {
 
   int fd = open(fuse_dev.c_str(), O_RDWR);
   if (fd == -1) {
-    std::cerr << "Failed to open " << fuse_dev << ": " << strerror(errno) << std::endl;
+    fprintf(stderr, "Failed to open %s: %s\n", fuse_dev.c_str(), strerror(errno));
     return 1;
   }
 
   std::string options = "fd=" + std::to_string(fd) + ",rootmode=40000,user_id=0,group_id=0";
 
   if (mount("memfs", mountpoint.c_str(), "fuse", 0, options.c_str()) == -1) {
-    std::cerr << "Failed to mount filesystem: " << strerror(errno) << std::endl;
+    fprintf(stderr, "Failed to mount filesystem: %s\n", strerror(errno));
     return 1;
   }
 
-  std::cerr << "Filesystem mounted at " << mountpoint << std::endl;
+  fprintf(stderr, "Filesystem mounted at %s\n", mountpoint.c_str());
   constexpr char kReadyMessage[] = "ready";
   write(kFuseReadyFd, kReadyMessage, sizeof(kReadyMessage));
 
   // Add root directory
-  filesystem["/"].attr.st_ino = 1;
-  filesystem["/"].attr.st_mode = S_IFDIR | 0755;
-  filesystem["/"].attr.st_nlink = 2;
+  g_filesystem["/"].attr.st_ino = 1;
+  g_filesystem["/"].attr.st_mode = S_IFDIR | 0755;
+  g_filesystem["/"].attr.st_nlink = 2;
 
   std::vector<char> buffer(FUSE_MIN_READ_BUFFER);
   while (true) {
     ssize_t bytes_read = read(fd, buffer.data(), buffer.size());
     if (bytes_read == -1) {
       if (errno == ENODEV) {
-        std::cerr << "Read from fuse device returned ENODEV - we probably have been unmounted."
-                  << std::endl;
+        fprintf(stderr,
+                "Read from fuse device returned ENODEV - we probably have been unmounted.\n");
         return 0;
-      } else {
-        std::cerr << "Failed to read from " << fuse_dev << ": " << strerror(errno) << std::endl;
-        return 1;
       }
+      fprintf(stderr, "Failed to read from %s: %s\n", fuse_dev.c_str(), strerror(errno));
+      return 1;
     }
 
     fuse_in_header* in_header = reinterpret_cast<fuse_in_header*>(buffer.data());
@@ -263,15 +273,13 @@ int main(int argc, char* argv[]) {
       case FUSE_OPEN:
         HandleOpen(fd, in_header);
         break;
+      case FUSE_RELEASE:
+      case FUSE_CREATE:
+        HandleNotImplemented(fd, in_header);
+        break;
       default: {
-        fuse_out_header out_header;
-        out_header.len = sizeof(fuse_out_header);
-        if (in_header->opcode != FUSE_RELEASE && in_header->opcode != FUSE_CREATE) {
-          std::cerr << "Unknown FUSE opcode: " << in_header->opcode << std::endl;
-        }
-        out_header.error = -ENOSYS;
-        out_header.unique = in_header->unique;
-        write(fd, &out_header, sizeof(out_header));
+        fprintf(stderr, "Unknown FUSE opcode: %d\n", in_header->opcode);
+        HandleNotImplemented(fd, in_header);
         break;
       }
     }
