@@ -41,7 +41,7 @@ size_t entropy_len;
 }  // namespace
 
 fbl::RefPtr<VmObjectPaged> entropy_vmo;
-size_t entropy_vmo_content_size;
+size_t entropy_vmo_stream_size;
 bool entropy_was_lost = false;
 
 static void SetupEntropyVmo(uint level) {
@@ -55,7 +55,7 @@ static void SetupEntropyVmo(uint level) {
     entropy_was_lost = true;
     return;
   }
-  entropy_vmo_content_size = entropy_len;
+  entropy_vmo_stream_size = entropy_len;
 
   constexpr const char* name = "debug/entropy.bin";
   if (entropy_vmo->set_name(name, strlen(name)) != ZX_OK) {

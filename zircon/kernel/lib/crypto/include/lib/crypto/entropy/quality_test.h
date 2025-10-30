@@ -19,7 +19,7 @@ namespace entropy {
 // These fields are read in kernel/lib/userabi/userboot.cc, in order to pass
 // the VmObject on to bootsvc (where it's added to the filesystem).
 extern fbl::RefPtr<VmObjectPaged> entropy_vmo;
-extern size_t entropy_vmo_content_size;
+extern size_t entropy_vmo_stream_size;
 extern bool entropy_was_lost;
 #endif
 
