@@ -566,15 +566,15 @@ void Dwc3::ReleaseResources() {
         ZX_ASSERT(false);
       }
     }
+
+    ResetEndpoints();
   }
 
   // Now go ahead and release any buffers we may have pinned.
-  Ep0Reset();
   ep0_.buffer.reset();
   ep0_.shared_fifo.Release();
 
   for (UserEndpoint& uep : user_endpoints_) {
-    UserEpReset(uep);
     uep.fifo.Release();
   }
 
