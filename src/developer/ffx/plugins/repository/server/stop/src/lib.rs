@@ -126,9 +126,11 @@ mod tests {
     use pkg::ServerMode;
     use std::collections::BTreeSet;
     use std::fs;
+    use std::io::Write;
     use std::net::Ipv4Addr;
     use std::os::unix::fs::PermissionsExt as _;
     use std::process::{Child, Command};
+    use std::sync::Mutex;
 
     const FAKE_SERVER_CONTENTS: &str = r#"#!/bin/bash
        while sleep 1s
@@ -137,22 +139,39 @@ mod tests {
        done
     "#;
 
+    // Need to have a guard around our Command::new::spawn() due to this bug:
+    // https://github.com/rust-lang/rust/issues/114554
+    // TLDR: the `spawn` for the first Test will call `fork(2)` which inherits
+    // the file descriptors opened by the current process. This includes
+    // the file descripotor for the second test (happening in another thread).
+    // This causes an `ExecutableFileBusy` (`ETXTBSY`) error since the fd is
+    // open for write when we are trying to execute it.
+    static COMMAND_LOCK: std::sync::LazyLock<Mutex<()>> =
+        std::sync::LazyLock::new(|| Mutex::new(()));
+
     fn make_standalone_instance(
         name: String,
         product_bundle_path: Option<Utf8PathBuf>,
         context: &EnvironmentContext,
         test_env: &TestEnv,
     ) -> Result<(PkgServerInstances, Child)> {
+        let command_guard = COMMAND_LOCK.lock().expect("lock command");
         let fake_server = test_env.isolate_root.path().join(format!("{name}_fake_server.sh"));
         // write out the shell script
-        fs::write(&fake_server, FAKE_SERVER_CONTENTS).expect("writing fake server");
-        let mut perm =
-            fs::metadata(&fake_server).expect("Failed to get test server metadata").permissions();
+        {
+            let mut file = fs::File::create(&fake_server).expect("creating fake server");
+            file.write_all(FAKE_SERVER_CONTENTS.as_bytes()).expect("writing fake server");
+            let mut perm = fs::metadata(&fake_server)
+                .expect("Failed to get test server metadata")
+                .permissions();
 
-        perm.set_mode(0o755);
-        fs::set_permissions(&fake_server, perm).expect("Failed to set permissions on test runner");
+            perm.set_mode(0o755);
+            file.set_permissions(perm).expect("Failed to set permissions on test runner");
+        }
 
         let child = Command::new(fake_server).spawn().expect("child process");
+
+        drop(command_guard);
 
         let instance_root = context.get("repository.process_dir").expect("instance dir");
         let mgr = PkgServerInstances::new(instance_root);
