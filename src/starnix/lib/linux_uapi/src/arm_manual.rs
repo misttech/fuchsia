@@ -426,3 +426,61 @@ check_arch_independent_layout! {
         capability,
     }
 }
+
+arch_translate_data! {
+    TryFrom64<fb_fix_screeninfo> {
+        id,
+        smem_start,
+        smem_len,
+        type_,
+        type_aux,
+        visual,
+        xpanstep,
+        ypanstep,
+        ywrapstep,
+        line_length,
+        mmio_start,
+        mmio_len,
+        accel,
+        capabilities,
+        reserved,
+    }
+
+    BidiFrom<fb_bitfield> {
+        offset,
+        length,
+        msb_right,
+    }
+
+    BidiFrom<fb_var_screeninfo> {
+        xres,
+        yres,
+        xres_virtual,
+        yres_virtual,
+        xoffset,
+        yoffset,
+        bits_per_pixel,
+        grayscale,
+        red,
+        green,
+        blue,
+        transp,
+        nonstd,
+        activate,
+        height,
+        width,
+        accel_flags,
+        pixclock,
+        left_margin,
+        right_margin,
+        upper_margin,
+        lower_margin,
+        hsync_len,
+        vsync_len,
+        sync,
+        vmode,
+        rotate,
+        colorspace,
+        reserved,
+    }
+}

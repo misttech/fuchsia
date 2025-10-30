@@ -22,10 +22,10 @@ use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::user_address::{UserAddress, UserRef};
+use starnix_uapi::user_address::{MultiArchUserRef, UserAddress};
 use starnix_uapi::{
     FB_TYPE_PACKED_PIXELS, FB_VISUAL_TRUECOLOR, FBIOGET_FSCREENINFO, FBIOGET_VSCREENINFO,
-    FBIOPUT_VSCREENINFO, errno, error, fb_bitfield, fb_fix_screeninfo, fb_var_screeninfo,
+    FBIOPUT_VSCREENINFO, errno, error, fb_bitfield, fb_fix_screeninfo, fb_var_screeninfo, uapi,
 };
 use std::sync::Arc;
 use zerocopy::IntoBytes;
@@ -225,6 +225,11 @@ struct FramebufferDevice {
     framebuffer: Arc<Framebuffer>,
 }
 
+type FbFixScreeninfoPtr =
+    MultiArchUserRef<uapi::fb_fix_screeninfo, uapi::arch32::fb_fix_screeninfo>;
+type FbVarScreeninfoPtr =
+    MultiArchUserRef<uapi::fb_var_screeninfo, uapi::arch32::fb_var_screeninfo>;
+
 impl DeviceOps for FramebufferDevice {
     fn open(
         &self,
@@ -273,19 +278,21 @@ impl FileOps for Framebuffer {
                     line_length: info.bits_per_pixel / 8 * info.xres,
                     ..fb_fix_screeninfo::default()
                 };
-                current_task.write_object(UserRef::new(user_addr), &finfo)?;
+                let user_ref = FbFixScreeninfoPtr::new(current_task, user_addr);
+                current_task.write_multi_arch_object(user_ref, finfo)?;
                 Ok(SUCCESS)
             }
 
             FBIOGET_VSCREENINFO => {
                 let info = self.info.read();
-                current_task.write_object(UserRef::new(user_addr), &*info)?;
+                let user_ref = FbVarScreeninfoPtr::new(current_task, user_addr);
+                current_task.write_multi_arch_object(user_ref, *info)?;
                 Ok(SUCCESS)
             }
 
             FBIOPUT_VSCREENINFO => {
-                let new_info: fb_var_screeninfo =
-                    current_task.read_object(UserRef::new(user_addr))?;
+                let user_ref = FbVarScreeninfoPtr::new(current_task, user_addr);
+                let new_info: fb_var_screeninfo = current_task.read_multi_arch_object(user_ref)?;
                 let old_info = self.info.read();
                 // We don't yet support actually changing anything
                 if new_info.as_bytes() != old_info.as_bytes() {
