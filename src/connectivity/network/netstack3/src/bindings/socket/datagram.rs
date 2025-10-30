@@ -42,6 +42,7 @@ use netstack3_core::{IpExt, icmp, udp};
 use packet::{Buf, BufferMut};
 use packet_formats::ip::DscpAndEcn;
 use thiserror::Error;
+use zx::AsHandleRef as _;
 use zx::prelude::HandleBased as _;
 
 use crate::bindings::errno::ErrnoError;
@@ -1598,6 +1599,24 @@ where
                 } else {
                     ReusePortOption::Disabled
                 };
+                let result = self.set_reuse_port(value);
+                responder
+                    .send(result.log_errno_error("set_reuse_port"))
+                    .unwrap_or_log("failed to respond");
+            }
+            Request::SetReusePort2 { value, responder } => {
+                let value = match value {
+                    fposix_socket::ReusePortOption::Disabled(fposix_socket::Empty) => {
+                        ReusePortOption::Disabled
+                    }
+                    fposix_socket::ReusePortOption::Enabled(token) => {
+                        let koid = token
+                            .get_koid()
+                            .expect("invalid sharing domain token in ReusePortOption");
+                        ReusePortOption::Enabled(SharingDomain::new(koid.raw_koid()))
+                    }
+                };
+
                 let result = self.set_reuse_port(value);
                 responder
                     .send(result.log_errno_error("set_reuse_port"))

@@ -48,6 +48,19 @@ type TimestampOption = strict enum {
     MICROSECOND = 2;
 };
 
+/// A token used to identify a sharing domain used for SO_REUSEPORT.
+@available(added=HEAD)
+alias SharingDomainToken = zx.Handle:<EVENT, zx.Rights.TRANSFER>;
+
+/// SO_REUSEPORT option.
+@available(added=HEAD)
+type ReusePortOption = strict resource union {
+    /// SO_REUSEPORT disabled.
+    1: disabled Empty;
+    /// SO_REUSEPORT enabled in the sharing domain identified by the token.
+    2: enabled SharingDomainToken;
+};
+
 /// A socket.
 closed protocol BaseSocket {
     compose fuchsia.unknown.Cloneable;
@@ -136,9 +149,17 @@ closed protocol BaseSocket {
     }) error fuchsia.posix.Errno;
 
     /// Set `SOL_SOCKET` -> `SO_REUSEPORT`.
+    @available(added=HEAD)
+    strict SetReusePort2(resource struct {
+        value ReusePortOption;
+    }) -> () error fuchsia.posix.Errno;
+
+    /// Old version of `SetReusePort`. Will be deprecated and removed in the
+    /// future.
     strict SetReusePort(struct {
         value bool;
     }) -> () error fuchsia.posix.Errno;
+
     /// Get `SOL_SOCKET` -> `SO_REUSEPORT`.
     strict GetReusePort() -> (struct {
         value bool;
