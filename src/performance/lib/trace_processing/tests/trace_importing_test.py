@@ -5,6 +5,7 @@
 """Unit tests for trace_importing.py."""
 
 import os
+import pathlib
 import unittest
 from typing import Any, Dict, List
 
@@ -19,11 +20,10 @@ class TraceImportingTest(unittest.TestCase):
     """Trace importing tests"""
 
     def setUp(self) -> None:
-        # A second dirname is required to account for the .pyz archive which
+        # A second `parent` is required to account for the .pyz archive which
         # contains the test and a third one since data is a sibling of the test.
-        self._runtime_deps_path: str = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "runtime_deps",
+        self._runtime_deps_path = (
+            pathlib.Path(__file__).parent.parent.parent / "runtime_deps"
         )
 
     def test_create_model(self) -> None:
@@ -51,6 +51,38 @@ class TraceImportingTest(unittest.TestCase):
             )
         )
         test_utils.assertModelsEqual(self, model, model_from_split_json)
+
+    def test_time_convert_trace_file_to_json_split(self) -> None:
+        """Test converting a trace file to split JSON files."""
+        # Temporarily refer directly to these dependencies until we align behavior
+        # across packages.
+        trace2json_data_path = (
+            pathlib.Path("host_x64").absolute() / "test_data" / "trace2json"
+        )
+
+        trace_file = trace2json_data_path / "simple_trace.fxt"
+
+        (
+            output_json,
+            jsonlines_path,
+            _,
+        ) = trace_importing.time_convert_trace_file_to_json(
+            trace_file, split=True
+        )
+
+        model_from_split = trace_importing.create_model_from_file_paths(
+            output_json, jsonlines_path
+        )
+
+        expected_model_path = (
+            trace2json_data_path / "simple_trace_expected.json"
+        )
+
+        expected_model = trace_importing.create_model_from_file_path(
+            expected_model_path
+        )
+
+        test_utils.assertModelsEqual(self, expected_model, model_from_split)
 
     def test_dangling_begin_event(self) -> None:
         model: trace_model.Model = trace_importing.create_model_from_string(

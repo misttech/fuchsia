@@ -76,7 +76,10 @@ python_host_test("trace_importing_test") {
   main_source = "trace_importing_test.py"
   sources = [ "test_utils.py" ]
   libraries = [ "//src/performance/lib/trace_processing" ]
-  deps = [ ":trace_importing_test_data" ]
+  deps = [
+    ":trace_importing_test_data",
+    "//src/performance/trace2json:test_data",
+  ]
 }
 
 python_host_test("trace_metrics_test") {

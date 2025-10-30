@@ -18,6 +18,7 @@ from typing import Any, Dict, List, NamedTuple, Optional, Self, TextIO, Tuple
 from trace_processing import data, trace_model, trace_time
 
 _LOGGER: logging.Logger = logging.getLogger("Performance")
+_JSONLINES_SUFFIX = ".systemTraceEvents.jsonlines"
 
 
 class _FlowKey:
@@ -208,7 +209,7 @@ def convert_trace_file_to_json(
     Returns:
       The path to the converted trace file.
     """
-    converted_path, _ = time_convert_trace_file_to_json(
+    converted_path, _, _ = time_convert_trace_file_to_json(
         trace_path, trace2json_path, patterns
     )
     return converted_path
@@ -218,20 +219,20 @@ def time_convert_trace_file_to_json(
     trace_path: str | os.PathLike[Any],
     trace2json_path: str | os.PathLike[Any] | None = None,
     patterns: set[str] | None = None,
+    split: bool = False,
     timer_cmd: list[str] | None = None,
-) -> tuple[str, str]:
+) -> tuple[str, str, str]:
     """Converts the specified trace file to JSON.
 
     Args:
       trace_path: The path to the trace file to convert.
       trace2json_path: The path to the trace2json executable. When unset, find
           at a runtime_deps/trace2json location in a parent directory.
-      compressed_input: Whether the input file is compressed.
-      compressed_output: Whether the output file should be compressed.
       patterns: Regexps to match against event names. Only events that match one or more of these
                 patterns will be included in the converted trace file.
                 Pass None to include all events.
                 Pass the empty set to discard all events.
+      split: Whether to split `systemTraceEvents` out into a separate, jsonlines-formatted, file.
       timer_cmd: Command (e.g. `/usr/bin/time -v`) to wrap conversion process in
 
     Raises:
@@ -239,11 +240,13 @@ def time_convert_trace_file_to_json(
 
     Returns:
       The path to the converted trace file.
+      The path to the split-out jsonlines file, if requested, or the emoty string.
       Output of the conversion process.
     """
     _LOGGER.info(f"Converting {trace_path} to json")
 
     output_path = pathlib.Path(trace_path).with_suffix(".json")
+    jsonlines_path = output_path.with_suffix(_JSONLINES_SUFFIX) if split else ""
     with as_file(files(data).joinpath("trace2json")) as f:
         if trace2json_path is None:
             f.chmod(f.stat().st_mode | stat.S_IEXEC)
@@ -255,6 +258,8 @@ def time_convert_trace_file_to_json(
             f"--input-file={trace_path}",
             f"--output-file={output_path}",
         ]
+        if jsonlines_path:
+            args.append(f"--system-event-output-file={jsonlines_path}")
 
         # patterns can be None, the empty set, or a set containing some patterns.
         # If the caller specified None (or one of their patterns is ".*"), they want all events.
@@ -269,12 +274,16 @@ def time_convert_trace_file_to_json(
         args.extend([f"--pattern={pattern}" for pattern in patterns])
 
         _LOGGER.info(f"Running {args}")
-        conversion_output = subprocess.check_output(
-            args, text=True, stderr=subprocess.STDOUT
-        )
+        try:
+            conversion_output = subprocess.check_output(
+                args, text=True, stderr=subprocess.STDOUT
+            )
+        except subprocess.CalledProcessError as cpe:
+            _LOGGER.error("trace2json failed: %s", cpe.stdout)
+            raise
         _LOGGER.debug("Output of running %s: %s", args, conversion_output)
 
-    return (str(output_path), conversion_output)
+    return (str(output_path), str(jsonlines_path), conversion_output)
 
 
 def create_model_from_trace_file_path(
