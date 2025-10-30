@@ -19,6 +19,21 @@ struct StarnixClockTransformationAdapter {
 
 using StarnixClockTransformation = fasttime::ClockTransformation<StarnixClockTransformationAdapter>;
 
+// This is performance sensitive code. Run benchmarks before
+// and after to verify the impact of changes. At the time of this writing,
+// the relevant setup was:
+//
+// ```
+// fx set ... --with-test //src/starnix/tests:gvisor:tests
+// ```
+//
+// then for example:
+//
+// ```
+// fx test starnix_gvisor_clock_gettime_benchmark -o
+// ```
+//
+// See for example of impact: https://fxbug.dev/456248727
 int64_t calculate_utc_time_nsec() {
   // SAFETY: initialization should ensure that `vvar` is placed at
   // start of the memory region mapped to the memory-mapped UTC clock. Note, however
