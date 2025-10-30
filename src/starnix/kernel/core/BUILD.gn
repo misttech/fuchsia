@@ -304,6 +304,7 @@ _starnix_core_deps = [
   "//src/starnix/lib/starnix_stack",
   "//src/starnix/lib/starnix_sync",
   "//src/starnix/lib/starnix_syscalls",
+  "//src/starnix/lib/starnix_task_command",
   "//src/starnix/lib/starnix_types",
   "//src/starnix/lib/starnix_uapi",
   "//src/starnix/lib/syncio",

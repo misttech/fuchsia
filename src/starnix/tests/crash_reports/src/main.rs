@@ -89,7 +89,7 @@ async fn main() {
     };
     assert_eq!(native_report.minidump, None);
     assert_eq!(native_report.process_name.unwrap(), "generate_linux_crash_report");
-    assert_eq!(native_report.thread_name.unwrap(), "generate_linux_");
+    assert_eq!(native_report.thread_name.unwrap(), "generate_linux_crash_report");
     assert!(native_report.process_koid.is_some());
     assert!(native_report.thread_koid.is_some());
 

@@ -121,7 +121,7 @@ impl CrashReporter {
             .get_koid()
             .expect("handles for crashing threads are still valid");
         let linux_pid = current_task.thread_group().leader as i64;
-        let thread_name = current_task.command().to_string_lossy().into_owned();
+        let thread_name = current_task.command().to_string();
         let signal = match exit_status {
             ExitStatus::CoreDump(s) => s.signal,
             other => unreachable!(

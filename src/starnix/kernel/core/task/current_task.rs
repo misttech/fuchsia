@@ -27,6 +27,7 @@ use starnix_sync::{
 };
 use starnix_syscalls::SyscallResult;
 use starnix_syscalls::decls::Syscall;
+use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
 use starnix_types::futex_address::FutexAddress;
 use starnix_types::ownership::{
@@ -1221,16 +1222,9 @@ impl CurrentTask {
 
         self.thread_group().write().did_exec = true;
 
-        // Get the basename of the path, which will be used as the name displayed with
-        // `prctl(PR_GET_NAME)` and `/proc/self/stat`
-        let basename = if let Some(idx) = memchr::memrchr(b'/', path.to_bytes()) {
-            // SAFETY: Substring of a CString will contain no null bytes.
-            CString::new(&path.to_bytes()[idx + 1..]).unwrap()
-        } else {
-            path
-        };
-        fuchsia_runtime::with_thread_self(|thread| set_zx_name(thread, basename.as_bytes()));
-        self.set_command_name(basename);
+        let name = TaskCommand::from_path_bytes(path.to_bytes());
+        fuchsia_runtime::with_thread_self(|thread| set_zx_name(thread, name.as_bytes()));
+        self.set_command_name(name);
 
         Ok(())
     }
@@ -1670,7 +1664,7 @@ impl CurrentTask {
                     child_exit_signal,
                     process_group,
                     signal_actions,
-                    command.as_bytes(),
+                    command.clone(),
                 )?);
 
                 cgroup2_pid_table.inherit_cgroup(self.thread_group(), &task_info.thread_group);

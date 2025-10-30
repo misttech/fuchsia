@@ -19,6 +19,7 @@ use crate::vfs::{
 use starnix_logging::{log_error, log_info, log_trace, set_zx_name, track_stub};
 use starnix_sync::{Locked, RwLock, Unlocked};
 use starnix_syscalls::SyscallResult;
+use starnix_task_command::TaskCommand;
 use starnix_types::ownership::WeakRef;
 use starnix_types::time::timeval_from_duration;
 use starnix_uapi::auth::{
@@ -1054,20 +1055,15 @@ pub fn sys_prctl(
         }
         PR_SET_NAME => {
             let addr = UserAddress::from(arg2);
-            let mut name = current_task.read_memory_to_array::<16>(addr)?;
-            fuchsia_runtime::with_thread_self(|thread| set_zx_name(thread, &name));
-
-            // The name is truncated to 16 bytes (including the nul)
-            name[15] = 0;
-            // this will succeed, because we set 0 at end above
-            let string_end = name.iter().position(|&c| c == 0).unwrap();
-            let name_str = CString::new(&mut name[0..string_end]).map_err(|_| errno!(EINVAL))?;
-            current_task.set_command_name(name_str);
+            let name = TaskCommand::new(&current_task.read_memory_to_array::<16>(addr)?);
+            fuchsia_runtime::with_thread_self(|thread| set_zx_name(thread, &name.as_bytes()));
+            current_task.set_command_name(name);
             Ok(0.into())
         }
         PR_GET_NAME => {
             let addr = UserAddress::from(arg2);
-            current_task.write_memory(addr, current_task.command().to_bytes_with_nul())?;
+            let name = current_task.command().prctl_name();
+            current_task.write_memory(addr, &name[..])?;
             Ok(().into())
         }
         PR_SET_PTRACER => {
@@ -2103,6 +2099,7 @@ mod tests {
     use crate::mm::syscalls::sys_munmap;
     use crate::testing::{AutoReleasableTask, map_memory, spawn_kernel_and_run};
     use starnix_syscalls::SUCCESS;
+    use starnix_task_command::TaskCommand;
     use starnix_uapi::auth::Credentials;
     use starnix_uapi::{SCHED_FIFO, SCHED_NORMAL};
     use std::ffi::CString;
@@ -2306,7 +2303,7 @@ mod tests {
             let second_task = crate::execution::create_init_child_process(
                 locked,
                 &kernel.weak_self.upgrade().unwrap(),
-                &CString::new("second task").unwrap(),
+                TaskCommand::new(b"second task"),
                 Some(&CString::new("#kernel").unwrap()),
             )
             .expect("failed to create second task");

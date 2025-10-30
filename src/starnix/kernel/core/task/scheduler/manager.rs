@@ -63,9 +63,7 @@ impl SchedulerManager {
                 .ok_or_else(|| errno!(EINVAL))?
                 .command();
             let thread_name = task.command();
-            if let Some(name) =
-                self.role_overrides.get_role_name(process_name.as_bytes(), thread_name.as_bytes())
-            {
+            if let Some(name) = self.role_overrides.get_role_name(&process_name, &thread_name) {
                 name
             } else {
                 scheduler_state.role_name()

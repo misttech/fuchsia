@@ -29,6 +29,7 @@ rustc_library("starnix_logging") {
     "//src/lib/fuchsia-runtime",
     "//src/lib/trace/rust:trace",
     "//src/starnix/lib/starnix_sync",
+    "//src/starnix/lib/starnix_task_command",
     "//src/starnix/lib/starnix_uapi",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:bstr",

@@ -24,6 +24,7 @@ use starnix_sync::{
     FileOpsCore, LockBefore, LockEqualOrBefore, Locked, Mutex, MutexGuard, RwLock, RwLockReadGuard,
     RwLockWriteGuard, TaskRelease, TerminalLock,
 };
+use starnix_task_command::TaskCommand;
 use starnix_types::ownership::{
     OwnedRef, Releasable, ReleasableByRef, ReleaseGuard, TempRef, WeakRef,
 };
@@ -37,7 +38,6 @@ use starnix_uapi::{
     error, from_status_like_fdio, pid_t, sigaction_t, sigaltstack, tid_t, uapi,
 };
 use std::collections::VecDeque;
-use std::ffi::CString;
 use std::mem::MaybeUninit;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -884,7 +884,7 @@ pub struct TaskPersistentInfoState {
     thread_group_key: ThreadGroupKey,
 
     /// The command of this task.
-    command: Mutex<CString>,
+    command: Mutex<TaskCommand>,
 
     /// The security credentials for this task. These are only set when the task is the CurrentTask,
     /// or on task creation.
@@ -895,7 +895,7 @@ impl TaskPersistentInfoState {
     fn new(
         tid: tid_t,
         thread_group_key: ThreadGroupKey,
-        command: CString,
+        command: TaskCommand,
         creds: Credentials,
     ) -> TaskPersistentInfo {
         Arc::new(Self {
@@ -914,7 +914,7 @@ impl TaskPersistentInfoState {
         self.thread_group_key.pid()
     }
 
-    pub fn command(&self) -> MutexGuard<'_, CString> {
+    pub fn command_guard(&self) -> MutexGuard<'_, TaskCommand> {
         self.command.lock()
     }
 
@@ -1148,7 +1148,7 @@ impl Task {
     #[allow(clippy::let_and_return)]
     pub fn new(
         tid: tid_t,
-        command: CString,
+        command: TaskCommand,
         thread_group: OwnedRef<ThreadGroup>,
         thread: Option<zx::Thread>,
         files: FdTable,
@@ -1222,7 +1222,7 @@ impl Task {
                 // Note that `Kernel::pids` is already locked by the caller of `Task::new()`.
                 let _l1 = task.read();
                 let _l2 = task.persistent_info.real_creds();
-                let _l3 = task.persistent_info.command();
+                let _l3 = task.persistent_info.command_guard();
             }
             task
         })
@@ -1473,18 +1473,18 @@ impl Task {
         }
     }
 
-    pub fn command(&self) -> CString {
+    pub fn command(&self) -> TaskCommand {
         self.persistent_info.command.lock().clone()
     }
 
-    pub fn set_command_name(&self, name: CString) {
+    pub fn set_command_name(&self, new_name: TaskCommand) {
         // Set the name on the Linux thread.
         if let Some(thread) = self.thread.read().as_ref() {
-            set_zx_name(&**thread, name.as_bytes());
+            set_zx_name(&**thread, new_name.as_bytes());
         }
         // If this is the thread group leader, use this name for the process too.
         if self.is_leader() {
-            set_zx_name(&self.thread_group().process, name.as_bytes());
+            set_zx_name(&self.thread_group().process, new_name.as_bytes());
             let _ = zx::Thread::raise_user_exception(
                 zx::RaiseExceptionOptions::TARGET_JOB_DEBUGGER,
                 zx::sys::ZX_EXCP_USER_CODE_PROCESS_NAME_CHANGED,
@@ -1495,17 +1495,8 @@ impl Task {
             }
         }
 
-        set_current_task_info(&name, self.thread_group().leader, self.tid);
-
-        // Truncate to 16 bytes, including null byte.
-        let bytes = name.to_bytes();
-
-        *self.persistent_info.command.lock() = if bytes.len() > 15 {
-            // SAFETY: Substring of a CString will contain no null bytes.
-            CString::new(&bytes[..15]).unwrap()
-        } else {
-            name
-        };
+        set_current_task_info(new_name.clone(), self.thread_group().leader, self.tid);
+        *self.persistent_info.command.lock() = new_name;
     }
 
     pub fn set_seccomp_state(&self, state: SeccompStateValue) -> Result<(), Errno> {
@@ -1668,7 +1659,7 @@ impl fmt::Debug for Task {
             "{}:{}[{}]",
             self.thread_group().leader,
             self.tid,
-            self.persistent_info.command.lock().to_string_lossy()
+            self.persistent_info.command.lock()
         )
     }
 }

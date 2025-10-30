@@ -43,6 +43,7 @@ use starnix_modules_layeredfs::LayeredFs;
 use starnix_modules_magma::get_magma_params;
 use starnix_modules_overlayfs::OverlayStack;
 use starnix_sync::{Locked, Unlocked};
+use starnix_task_command::TaskCommand;
 use starnix_uapi::errors::{ENOENT, SourceContext};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::resource_limits::Resource;
@@ -705,9 +706,9 @@ async fn create_container(
         .with_source_context(|| format!("opening init: {:?}", &argv[0]))?;
 
     let initial_name = if start_info.program.init.is_empty() {
-        CString::default()
+        TaskCommand::default()
     } else {
-        CString::new(start_info.program.init[0].clone())?
+        TaskCommand::new(start_info.program.init[0].as_bytes())
     };
 
     let rlimits = parse_rlimits(&start_info.program.rlimits)?;

@@ -206,8 +206,6 @@ pub(super) fn audit_decision(
             // Gather details about the calling task.
             let pid = current_task.get_pid();
             let command = current_task.command();
-            let command = BStr::new(command.as_bytes());
-
             format!("avc: {decision} {{ {permission_name} }} for pid={pid} comm=\"{command}\"{audit_data} scontext={scontext} tcontext={tcontext} tclass={tclass}")
         }
     );
@@ -288,7 +286,7 @@ impl Display for Auditable<'_> {
             }
             Auditable::None => Ok(()),
             Auditable::Task(task) => {
-                write!(f, " pid={}, comm={}", task.get_pid(), BStr::new(task.command().as_bytes()))
+                write!(f, " pid={}, comm={}", task.get_pid(), task.command())
             }
             Auditable::TodoCheck => {
                 write!(f, " todo_check")

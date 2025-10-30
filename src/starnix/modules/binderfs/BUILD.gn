@@ -57,6 +57,7 @@ rustc_library("binderfs") {
 
   test_deps = [
     "//src/lib/fuchsia",
+    "//src/starnix/lib/starnix_task_command",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:memoffset",
     "//third_party/rust_crates:rand",

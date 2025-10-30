@@ -406,9 +406,6 @@ impl SeccompState {
     // is in place for when we have to support it for real.
     fn log_action(task: &CurrentTask, syscall: &Syscall) {
         let (uid, gid) = task.with_current_creds(|creds| (creds.uid, creds.gid));
-        let comm_r = task.command();
-        let comm = if let Ok(c) = comm_r.to_str() { c } else { "???" };
-
         let arch = if cfg!(target_arch = "x86_64") {
             "x86_64"
         } else if cfg!(target_arch = "aarch64") {
@@ -421,7 +418,7 @@ impl SeccompState {
             uid,
             gid,
             task.thread_group().leader,
-            comm,
+            task.command(),
             syscall.decl.number,
             task.thread_state.registers.instruction_pointer_register(),
             arch,

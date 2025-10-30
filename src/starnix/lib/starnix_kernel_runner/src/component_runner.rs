@@ -27,6 +27,7 @@ use starnix_core::vfs::{
 use starnix_core::{security, signals};
 use starnix_logging::{log_debug, log_error, log_info, log_warn};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
+use starnix_task_command::TaskCommand;
 use starnix_types::ownership::WeakRef;
 use starnix_uapi::auth::{Capabilities, Credentials};
 use starnix_uapi::device_type::DeviceType;
@@ -221,7 +222,7 @@ pub async fn start_component(
     let current_task = create_init_child_process(
         system_task.kernel().kthreads.unlocked_for_async().deref_mut(),
         system_task.kernel(),
-        &program.binary,
+        TaskCommand::new(program.binary.as_bytes()),
         program.seclabel.as_ref(),
     )?;
 
@@ -340,7 +341,7 @@ async fn serve_component_controller(
                             task.as_ref(),
                             signals::SignalInfo::default(SIGINT),
                         );
-                        log_info!("Sent SIGINT to program {:}", task.command().to_string_lossy());
+                        log_info!("Sent SIGINT to program {}", task.command());
                     }
                 }
                 Ok(ComponentControllerRequest::Kill { .. }) => {
@@ -350,7 +351,7 @@ async fn serve_component_controller(
                             &task,
                             signals::SignalInfo::default(SIGKILL),
                         );
-                        log_info!("Sent SIGKILL to program {:}", task.command().to_string_lossy());
+                        log_info!("Sent SIGKILL to program {}", task.command());
                         controller_handle.shutdown_with_epitaph(zx::Status::from_raw(
                             fcomponent::Error::InstanceDied.into_primitive() as i32,
                         ));

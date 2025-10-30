@@ -13,6 +13,7 @@ use crate::vfs::{FdTable, FsContext};
 use starnix_sync::{
     LockBefore, Locked, ProcessGroupState, RwLockWriteGuard, TaskRelease, Unlocked,
 };
+use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
 use starnix_types::ownership::{OwnedRef, Releasable, ReleaseGuard, Share, TempRef};
 use starnix_types::release_on_error;
@@ -53,7 +54,7 @@ pub fn create_zircon_process<L>(
     exit_signal: Option<Signal>,
     process_group: Arc<ProcessGroup>,
     signal_actions: Arc<SignalActions>,
-    name: &[u8],
+    name: TaskCommand,
 ) -> Result<ReleaseGuard<TaskInfo>, Errno>
 where
     L: LockBefore<ProcessGroupState>,
@@ -100,11 +101,10 @@ where
 fn create_shared(
     process: &zx::Process,
     options: zx::ProcessOptions,
-    name: &[u8],
+    name: TaskCommand,
 ) -> Result<(zx::Process, zx::Vmar), zx::Status> {
     let self_raw = process.raw_handle();
-    let name_ptr = name.as_ptr();
-    let name_len = name.len();
+    let name_bytes = name.as_bytes();
     let mut process_out = 0;
     let mut restricted_vmar_out = 0;
     #[allow(
@@ -115,8 +115,8 @@ fn create_shared(
         zx::sys::zx_process_create_shared(
             self_raw,
             options.bits(),
-            name_ptr,
-            name_len,
+            name_bytes.as_ptr(),
+            name_bytes.len(),
             &mut process_out,
             &mut restricted_vmar_out,
         )
@@ -155,7 +155,7 @@ fn create_shared(
 pub fn create_init_child_process<L>(
     locked: &mut Locked<L>,
     kernel: &Arc<Kernel>,
-    initial_name: &CString,
+    initial_name: TaskCommand,
     seclabel: Option<&CString>,
 ) -> Result<TaskBuilder, Errno>
 where
@@ -163,7 +163,6 @@ where
 {
     let weak_init = kernel.pids.read().get_task(1);
     let init_task = weak_init.upgrade().ok_or_else(|| errno!(EINVAL))?;
-    let initial_name_bytes = initial_name.as_bytes().to_owned();
 
     let security_context = if let Some(seclabel) = seclabel {
         security::task_for_context(&init_task, seclabel.as_bytes().into())?
@@ -190,7 +189,7 @@ where
                 Some(SIGCHLD),
                 process_group,
                 SignalActions::default(),
-                &initial_name_bytes,
+                initial_name.clone(),
             )
         },
         security_context,
@@ -230,18 +229,17 @@ pub fn create_init_process(
     locked: &mut Locked<Unlocked>,
     kernel: &Arc<Kernel>,
     pid: pid_t,
-    initial_name: CString,
+    initial_name: TaskCommand,
     fs: Arc<FsContext>,
     rlimits: &[(Resource, u64)],
 ) -> Result<TaskBuilder, Errno> {
-    let initial_name_bytes = initial_name.as_bytes().to_owned();
     let pids = kernel.pids.write();
     create_task_with_pid(
         locked,
         kernel,
         pids,
         pid,
-        initial_name,
+        initial_name.clone(),
         fs,
         |locked, pid, process_group| {
             create_zircon_process(
@@ -252,7 +250,7 @@ pub fn create_init_process(
                 Some(SIGCHLD),
                 process_group,
                 SignalActions::default(),
-                &initial_name_bytes,
+                initial_name.clone(),
             )
         },
         Credentials::root(),
@@ -285,7 +283,7 @@ where
     let builder = create_task(
         locked,
         kernel,
-        CString::new("kthreadd").unwrap(),
+        TaskCommand::new(b"kthreadd"),
         fs,
         |locked, pid, process_group| {
             let process = zx::Process::from(zx::Handle::invalid());
@@ -309,7 +307,7 @@ where
 pub fn create_task<F, L>(
     locked: &mut Locked<L>,
     kernel: &Kernel,
-    initial_name: CString,
+    initial_name: TaskCommand,
     root_fs: Arc<FsContext>,
     task_info_factory: F,
     security_state: security::TaskState,
@@ -339,7 +337,7 @@ fn create_task_with_pid<F, L>(
     kernel: &Kernel,
     mut pids: RwLockWriteGuard<'_, PidTable>,
     pid: pid_t,
-    initial_name: CString,
+    initial_name: TaskCommand,
     root_fs: Arc<FsContext>,
     task_info_factory: F,
     creds: Credentials,
@@ -415,7 +413,7 @@ where
 pub fn create_kernel_thread<L>(
     locked: &mut Locked<L>,
     system_task: &Task,
-    initial_name: CString,
+    initial_name: TaskCommand,
 ) -> Result<CurrentTask, Errno>
 where
     L: LockBefore<TaskRelease>,

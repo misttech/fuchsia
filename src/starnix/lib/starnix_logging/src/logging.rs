@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use starnix_task_command::TaskCommand;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{pid_t, tid_t};
 use std::cell::RefCell;
-use std::ffi::CString;
 use std::fmt;
 
 // This needs to be available to the macros in this module without clients having to depend on
@@ -22,7 +22,7 @@ enum TaskDebugInfo {
     Kernel,
     /// The thread with this set is used to service syscalls for a specific user thread, and this
     /// describes the user thread's identity.
-    User { pid: pid_t, tid: tid_t, command: String },
+    User { pid: pid_t, tid: tid_t, command: TaskCommand },
     /// Unknown info. This happens when trying to log while in the destructor of a thread local
     /// variable.
     Unknown,
@@ -155,11 +155,10 @@ pub fn with_zx_name<O: zx::AsHandleRef>(obj: O, name: impl AsRef<[u8]>) -> O {
 /// Set the context for log messages from this thread. Should only be called when a thread has been
 /// created to execute a user-level task, and should only be called once at the start of that
 /// thread's execution.
-pub fn set_current_task_info(name: &CString, pid: pid_t, tid: tid_t) {
-    fuchsia_runtime::with_thread_self(|thread| set_zx_name(thread, name.as_bytes()));
+pub fn set_current_task_info(command: TaskCommand, pid: pid_t, tid: tid_t) {
+    fuchsia_runtime::with_thread_self(|thread| set_zx_name(thread, command.as_bytes()));
     CURRENT_TASK_INFO.with(|task_info| {
-        *task_info.borrow_mut() =
-            TaskDebugInfo::User { pid, tid, command: name.to_string_lossy().to_string() };
+        *task_info.borrow_mut() = TaskDebugInfo::User { pid, tid, command };
     });
 }
 

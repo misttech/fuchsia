@@ -24,6 +24,7 @@ use starnix_sync::{
     EbpfSuspendLock, FileOpsCore, LockBefore, Locked, Mutex, MutexGuard, OrderedRwLock,
     RwLockReadGuard,
 };
+use starnix_task_command::TaskCommand;
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
@@ -63,8 +64,8 @@ pub struct SuspendResumeManagerInner {
 
     /// The currently active EPOLLWAKEUPs in the system. If non-empty, this prevents
     /// the container from suspending.
-    active_epolls: HashMap<EpollKey, String>,
-    inactive_epolls: HashSet<String>,
+    active_epolls: HashMap<EpollKey, TaskCommand>,
+    inactive_epolls: HashSet<TaskCommand>,
 
     /// The event pair that is passed to the Starnix runner so it can observe whether
     /// or not any wake locks are active before completing a suspend operation.
@@ -140,7 +141,7 @@ impl SuspendResumeManagerInner {
         Vec::from_iter(self.inactive_locks.clone())
     }
 
-    fn active_epolls(&self) -> Vec<String> {
+    fn active_epolls(&self) -> Vec<TaskCommand> {
         Vec::from_iter(self.active_epolls.values().cloned())
     }
 
@@ -198,7 +199,7 @@ impl SuspendResumeManagerInner {
         inspect.active_epolls = inspect.root.create_string_array(fobs::ACTIVE_EPOLLS, len);
         for (i, key) in active_epolls.keys().sorted().rev().take(len).enumerate() {
             if let Some(name) = active_epolls.get(key) {
-                inspect.active_epolls.set(i, name);
+                inspect.active_epolls.set(i, name.to_string());
             }
         }
     }
@@ -210,7 +211,7 @@ impl SuspendResumeManagerInner {
         let len = min(inactive_epolls.len(), INSPECT_MAX_WAKE_LOCK_NAMES);
         inspect.inactive_epolls = inspect.root.create_string_array(fobs::INACTIVE_EPOLLS, len);
         for (i, name) in inactive_epolls.iter().sorted().take(len).enumerate() {
-            inspect.inactive_epolls.set(i, name);
+            inspect.inactive_epolls.set(i, name.to_string());
         }
     }
 }
@@ -306,14 +307,7 @@ impl SuspendResumeManager {
     /// Adds a wake lock `key` to the active epoll wake locks.
     pub fn add_epoll(&self, current_task: &CurrentTask, key: EpollKey) {
         let mut state = self.lock();
-        state.active_epolls.insert(
-            key,
-            current_task
-                .persistent_info
-                .command()
-                .to_str()
-                .map_or_else(|_| current_task.get_pid().to_string(), |s| s.to_string()),
-        );
+        state.active_epolls.insert(key, current_task.command());
         state.signal_wake_events();
         state.record_active_epolls();
     }
@@ -450,7 +444,7 @@ impl SuspendResumeManager {
                         let epoll_names = state.active_epolls();
                         let last_resume_reason = format!(
                             "Abort: {}",
-                            wake_lock_names.join(" ") + &epoll_names.join(" ")
+                            wake_lock_names.join(" ") + &epoll_names.iter().join(" ")
                         );
                         state.update_suspend_stats(|suspend_stats| {
                             // Power analysis tools require `Abort: ` in the case of failed suspends
@@ -476,7 +470,7 @@ impl SuspendResumeManager {
                         let epolls_array =
                             node.create_string_array(fobs::ACTIVE_EPOLLS, epolls.len());
                         for (i, name) in epolls.iter().enumerate() {
-                            epolls_array.set(i, name);
+                            epolls_array.set(i, name.to_string());
                         }
                         node.record(epolls_array);
                     }

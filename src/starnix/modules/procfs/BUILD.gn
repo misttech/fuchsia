@@ -60,6 +60,7 @@ rustc_library("procfs") {
     "//src/starnix/kernel/core",
     "//src/starnix/lib/starnix_logging",
     "//src/starnix/lib/starnix_sync",
+    "//src/starnix/lib/starnix_task_command",
     "//src/starnix/lib/starnix_types",
     "//src/starnix/lib/starnix_uapi",
     "//third_party/rust_crates:anyhow",

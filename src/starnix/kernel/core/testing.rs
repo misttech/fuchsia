@@ -28,6 +28,7 @@ use fuchsia_async::LocalExecutor;
 use selinux::SecurityServer;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_syscalls::{SyscallArg, SyscallResult};
+use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
@@ -236,7 +237,7 @@ fn create_test_init_task(
         locked,
         &kernel.weak_self.upgrade().unwrap(),
         init_pid,
-        CString::new("test-task").unwrap(),
+        TaskCommand::new(b"test-task"),
         fs.fork(),
         &[],
     )
@@ -291,7 +292,7 @@ pub fn create_task(
     let task = create_init_child_process(
         locked,
         &kernel.weak_self.upgrade().unwrap(),
-        &CString::new(task_name).unwrap(),
+        TaskCommand::new(task_name.as_bytes()),
         Some(&CString::new("#kernel").unwrap()),
     )
     .expect("failed to create second task");

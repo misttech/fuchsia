@@ -11,10 +11,10 @@ use futures::TryFutureExt;
 use futures::channel::oneshot;
 use starnix_logging::{log_debug, log_error};
 use starnix_sync::{Locked, Unlocked};
+use starnix_task_command::TaskCommand;
 use starnix_types::ownership::{WeakRef, release_after};
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
-use std::ffi::CString;
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::mpsc::{SendError, SyncSender, TrySendError, sync_channel};
@@ -302,7 +302,7 @@ impl RunningThread {
                         match create_kernel_thread(
                             locked,
                             &system_task,
-                            CString::new("kthreadd").unwrap(),
+                            TaskCommand::new(b"kthreadd"),
                         ) {
                             Ok(task) => task,
                             Err(e) => {

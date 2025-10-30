@@ -22,6 +22,7 @@ use starnix_core::vfs::{FdFlags, FileHandle};
 use starnix_logging::{log_error, log_warn};
 use starnix_modules_framebuffer::Framebuffer;
 use starnix_sync::{Locked, Unlocked};
+use starnix_task_command::TaskCommand;
 use starnix_types::ownership::TempRef;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::UncheckedSignal;
@@ -108,7 +109,7 @@ async fn spawn_console(
         let current_task = create_init_child_process(
             kernel.kthreads.unlocked_for_async().deref_mut(),
             &kernel.weak_self.upgrade().expect("Kernel must still be alive"),
-            &binary_path,
+            TaskCommand::new(binary_path.as_bytes()),
             None,
         )?;
         let (sender, receiver) = oneshot::channel();

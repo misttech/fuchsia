@@ -30,6 +30,7 @@ use starnix_core::vfs::{
 };
 use starnix_logging::{bug_ref, track_stub};
 use starnix_sync::{FileOpsCore, Locked};
+use starnix_task_command::TaskCommand;
 use starnix_types::ownership::{OwnedRef, TempRef, WeakRef};
 use starnix_types::time::duration_to_scheduler_clock;
 use starnix_uapi::auth::{CAP_SYS_NICE, CAP_SYS_RESOURCE};
@@ -44,9 +45,9 @@ use starnix_uapi::{
     pid_t, uapi,
 };
 use std::borrow::Cow;
-use std::ffi::CString;
 use std::ops::{Deref, Range};
 use std::sync::{Arc, LazyLock, Weak};
+
 /// Loads entries for the `scope` of a task.
 fn task_entries(scope: TaskEntryScope) -> Vec<(FsString, FileMode)> {
     // NOTE: keep entries in sync with `TaskDirectory::lookup()`.
@@ -839,10 +840,7 @@ impl FileOps for CommFile {
         // What happens if userspace writes to this file in multiple syscalls? We need more
         // detailed tests to see when the data is actually committed back to the task.
         let bytes = data.read_all()?;
-        let command =
-            CString::new(bytes.iter().copied().take_while(|c| *c != b'\0').collect::<Vec<_>>())
-                .unwrap();
-        task.set_command_name(command);
+        task.set_command_name(TaskCommand::new(&bytes));
         Ok(bytes.len())
     }
 }
@@ -855,7 +853,7 @@ impl DynamicFileSource for CommFileSource {
         _current_task: &CurrentTask,
         sink: &mut DynamicFileBuf,
     ) -> Result<(), Errno> {
-        sink.write(self.0.command().as_bytes());
+        sink.write(self.0.command_guard().comm_name());
         sink.write(b"\n");
         Ok(())
     }
@@ -1056,7 +1054,7 @@ impl DynamicFileSource for StatFile {
         // All fields and their types as specified in the man page. Unimplemented fields are set to
         // 0 here.
         let pid: pid_t; // 1
-        let comm: &str;
+        let comm: TaskCommand;
         let state: char;
         let ppid: pid_t;
         let pgrp: pid_t; // 5
@@ -1109,8 +1107,7 @@ impl DynamicFileSource for StatFile {
         let exit_code: i32 = 0;
 
         pid = task.get_tid();
-        let command = task.command();
-        comm = command.as_c_str().to_str().unwrap_or("unknown");
+        comm = task.command();
         state = task.state_code().code_char();
         nice = task.read().scheduler_state.normal_priority().as_nice() as i64;
 
@@ -1222,7 +1219,7 @@ impl DynamicFileSource for StatusFile {
                 // issue with the task lock acquired below, and cloning info is
                 // expensive.
                 write!(sink, "Name:\t")?;
-                sink.write(task.persistent_info.command().as_bytes());
+                sink.write(task.persistent_info.command_guard().comm_name());
                 let creds = task.persistent_info.real_creds();
                 (
                     Some(task.persistent_info.pid()),

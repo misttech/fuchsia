@@ -1184,6 +1184,7 @@ mod tests {
     use starnix_core::power::{LockSource, OwnedMessageCounter};
     use starnix_core::testing::*;
     use starnix_core::vfs::{FileSystemOptions, WhatToMount};
+    use starnix_task_command::TaskCommand;
     use starnix_types::PAGE_SIZE;
     use starnix_uapi::file_mode::mode;
     use starnix_uapi::mount_flags::MountFlags;
@@ -1244,7 +1245,7 @@ mod tests {
                     let builder = create_task(
                         locked,
                         &kernel,
-                        CString::new("kthreadd").unwrap(),
+                        TaskCommand::new(b"kthreadd"),
                         fs,
                         |locked, pid, process_group| {
                             let process = fuchsia_runtime::process_self()

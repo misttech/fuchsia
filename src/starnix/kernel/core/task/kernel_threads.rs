@@ -10,11 +10,11 @@ use fuchsia_async as fasync;
 use pin_project::pin_project;
 use scopeguard::ScopeGuard;
 use starnix_sync::{Locked, Unlocked};
+use starnix_task_command::TaskCommand;
 use starnix_types::ownership::{OwnedRef, TempRef, WeakRef};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 use std::cell::{RefCell, RefMut};
-use std::ffi::CString;
 use std::future::Future;
 use std::ops::DerefMut;
 use std::pin::Pin;
@@ -216,7 +216,7 @@ where
         let Some(system_task) = system_task.upgrade() else {
             return error!(ESRCH);
         };
-        create_kernel_thread(locked, &system_task, CString::new("kthreadd").unwrap())?
+        create_kernel_thread(locked, &system_task, TaskCommand::new(b"kthreadd")).unwrap()
     };
     let result = f(locked, &current_task);
     current_task.release(locked);
