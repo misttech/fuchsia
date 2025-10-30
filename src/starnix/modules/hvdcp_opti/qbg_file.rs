@@ -3,9 +3,8 @@
 // found in the LICENSE file.
 
 use super::utils::connect_to_device_channel;
-use futures_util::StreamExt;
 use starnix_core::mm::MemoryAccessorExt;
-use starnix_core::power::{OwnedMessageCounterHandle, create_proxy_for_wake_events_counter};
+use starnix_core::power::{ContainerWakingStream, create_proxy_for_wake_events_counter};
 use starnix_core::task::{CurrentTask, EventHandler, WaitCanceler, WaitQueue, Waiter};
 use starnix_core::vfs::{
     FileObject, FileOps, InputBuffer, NamespaceNode, OutputBuffer, VecInputBuffer,
@@ -42,16 +41,11 @@ pub fn create_qbg_device(
 struct QbgDeviceState {
     waiters: WaitQueue,
     read_queue: Mutex<VecDeque<(VecInputBuffer, Option<fpower::LeaseToken>)>>,
-    message_counter: Mutex<Option<OwnedMessageCounterHandle>>,
 }
 
 impl QbgDeviceState {
     fn new() -> Self {
-        Self {
-            waiters: WaitQueue::default(),
-            read_queue: Mutex::new(VecDeque::new()),
-            message_counter: Mutex::new(None),
-        }
+        Self { waiters: WaitQueue::default(), read_queue: Mutex::new(VecDeque::new()) }
     }
 
     fn handle_event(&self, event: fhvdcpopti::DataProviderEvent) {
@@ -63,10 +57,9 @@ impl QbgDeviceState {
 
 async fn run_qbg_device_event_loop(
     device_state: Arc<QbgDeviceState>,
-    mut event_stream: fhvdcpopti::DataProviderEventStream,
+    mut event_stream: ContainerWakingStream<fhvdcpopti::DataProviderEventStream>,
 ) {
     loop {
-        device_state.message_counter.lock().as_ref().map(|c| c.mark_handled());
         match event_stream.next().await {
             Some(Ok(event)) => {
                 device_state.handle_event(event);
@@ -94,17 +87,18 @@ fn spawn_qbg_device_tasks(
         let counter_name = "hvdcp_opti";
         let (proxy_channel, counter) =
             create_proxy_for_wake_events_counter(channel, counter_name.to_string());
-        *device_state.message_counter.lock() = Some(
-            locked_and_task
-                .current_task()
-                .kernel()
-                .suspend_resume_manager
-                .add_message_counter(counter_name, Some(counter)),
-        );
+        let message_counter = locked_and_task
+            .current_task()
+            .kernel()
+            .suspend_resume_manager
+            .add_message_counter(counter_name, Some(counter));
         run_qbg_device_event_loop(
             device_state,
-            fhvdcpopti::DataProviderProxy::new(fidl::AsyncChannel::from_channel(proxy_channel))
-                .take_event_stream(),
+            ContainerWakingStream::new(
+                message_counter,
+                fhvdcpopti::DataProviderProxy::new(fidl::AsyncChannel::from_channel(proxy_channel))
+                    .take_event_stream(),
+            ),
         )
         .await;
     });

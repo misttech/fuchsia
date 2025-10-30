@@ -16,7 +16,7 @@ use fidl::endpoints::Proxy;
 use fuchsia_component::client::connect_to_protocol_sync;
 use fuchsia_inspect::{ArrayProperty, StringArrayProperty};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
-use futures::stream::Next;
+use futures::stream::{FusedStream, Next};
 use futures::{FutureExt, StreamExt};
 use itertools::Itertools;
 use starnix_logging::{log_info, log_warn};
@@ -748,16 +748,16 @@ impl<P: Proxy> ContainerWakingProxy<P> {
     }
 }
 
-/// A fidl stream wrapper that manages a `zx::Counter` to allow the container to suspend
+/// A stream wrapper that manages a `zx::Counter` to allow the container to suspend
 /// after events are being processed.
 ///
 /// When the stream is dropped, the counter is reset to 0 to release the wake-lock.
-pub struct ContainerWakingStream<S: fidl::endpoints::RequestStream> {
+pub struct ContainerWakingStream<S: FusedStream + Unpin> {
     counter: OwnedMessageCounterHandle,
     stream: S,
 }
 
-impl<S: fidl::endpoints::RequestStream> ContainerWakingStream<S> {
+impl<S: FusedStream + Unpin> ContainerWakingStream<S> {
     pub fn new(counter: OwnedMessageCounterHandle, stream: S) -> Self {
         Self { counter, stream }
     }
