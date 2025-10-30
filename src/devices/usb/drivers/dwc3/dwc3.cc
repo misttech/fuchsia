@@ -541,6 +541,11 @@ zx_status_t Dwc3::Init() {
     return status;
   }
 
+  irq_handler_.set_object(irq_.get());
+  irq_handler_.Begin(fdf::Dispatcher::GetCurrent()->async_dispatcher());
+  // Ack IRQ in case previous ack was hanging
+  irq_.ack();
+
   // Things went well.  Cancel our cleanup routine.
   cleanup.cancel();
   return ZX_OK;
@@ -823,6 +828,8 @@ void Dwc3::Stop() {
   if (status != ZX_OK) {
     fdf::error("Failed to release page quarantine ({})", zx_status_get_string(status));
   }
+
+  controller_started_ = false;
 }
 
 void Dwc3::Suspend(fdf_power::SuspendCompleter completer) {
@@ -867,14 +874,14 @@ void Dwc3::SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Syn
 }
 
 void Dwc3::StartController(StartControllerCompleter::Sync& completer) {
+  controller_started_ = true;
   StartPeripheralMode();
   completer.Reply(zx::ok());
 }
 
 void Dwc3::StopController(StopControllerCompleter::Sync& completer) {
+  controller_started_ = false;
   ResetEndpoints();
-
-  irq_handler_.Cancel();
 
   zx_status_t status = ResetHw();
   if (status != ZX_OK) {

@@ -348,6 +348,9 @@ class Dwc3 : public fdf::DriverBase,
 
   EventFifo event_fifo_;
   async::IrqMethod<Dwc3, &Dwc3::HandleIrq> irq_handler_{this};
+  // If true, `StartController()` has been called by the client. If false, it has not been called or
+  // `StopController()` was called most recently.
+  bool controller_started_{false};
 
   Ep0 ep0_;
   UserEndpointCollection user_endpoints_;

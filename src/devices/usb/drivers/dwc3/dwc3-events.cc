@@ -180,6 +180,15 @@ void Dwc3::HandleEvent(uint32_t event) {
 
 void Dwc3::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_status_t status,
                      const zx_packet_interrupt_t* interrupt) {
+  irq_.ack();
+
+  if (!controller_started_) {
+    // Ack but otherwise ignore interrupts that arrive while client has stopped us. A limited number
+    // of interrupts may be triggered while things are settling, and we need to ack them to avoid
+    // blocking system suspend.
+    return;
+  }
+
   auto* mmio = get_mmio();
 
   uint32_t event_bytes;
@@ -193,8 +202,6 @@ void Dwc3::HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_sta
     // acknowledge the events we have processed
     GEVNTCOUNT::Get(0).FromValue(0).set_EVNTCOUNT(event_bytes).WriteTo(mmio);
   }
-
-  irq_.ack();
 }
 
 void Dwc3::StartEvents() {
@@ -203,10 +210,6 @@ void Dwc3::StartEvents() {
     fdf::error("Failed to init event fifo {}", result);
     return;
   }
-  irq_handler_.set_object(irq_.get());
-  irq_handler_.Begin(fdf::Dispatcher::GetCurrent()->async_dispatcher());
-  // Ack IRQ in case previous ack was hanging
-  irq_.ack();
 
   auto* mmio = get_mmio();
 
