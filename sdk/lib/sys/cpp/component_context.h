@@ -193,7 +193,6 @@ class ComponentContext final {
  private:
   std::shared_ptr<ServiceDirectory> svc_;
   std::shared_ptr<OutgoingDirectory> outgoing_;
-  zx::channel outgoing_directory_request;
 };
 
 }  // namespace sys
