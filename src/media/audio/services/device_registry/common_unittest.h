@@ -11,6 +11,36 @@
 
 namespace media_audio {
 
+// Convenience function to avoid taking a dependency upon audio/lib/[format | format2].
+inline uint32_t frame_size(const fuchsia_audio::Format& format) {
+  if (!format.sample_type().has_value()) {
+    return 0;
+  }
+  if (!format.channel_count().has_value()) {
+    return 0;
+  }
+
+  uint32_t sample_size = 0;
+  switch (*format.sample_type()) {
+    case fuchsia_audio::SampleType::kUint8:
+      sample_size = 1;
+      break;
+    case fuchsia_audio::SampleType::kInt16:
+      sample_size = 2;
+      break;
+    case fuchsia_audio::SampleType::kInt32:
+    case fuchsia_audio::SampleType::kFloat32:
+      sample_size = 4;
+      break;
+    case fuchsia_audio::SampleType::kFloat64:
+      sample_size = 8;
+      break;
+    default:
+      break;
+  }
+  return sample_size * *format.channel_count();
+}
+
 fuchsia_hardware_audio::DaiFormat SafeDaiFormatFromElementDaiFormatSets(
     ElementId element_id,
     const std::vector<fuchsia_audio_device::ElementDaiFormatSet>& element_dai_format_sets);

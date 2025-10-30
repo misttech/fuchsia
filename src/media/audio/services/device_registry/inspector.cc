@@ -37,9 +37,9 @@ SetActiveChannelsInspectInstance::SetActiveChannelsInspectInstance(
     const zx::time& completed_at)
     : set_active_channels_node_(std::move(set_active_channels_node)) {
   ADR_LOG_METHOD(kTraceInspector);
-  called_at_ = set_active_channels_node_.CreateInt(kCalledAt, called_at.get());
-  completed_at_ = set_active_channels_node_.CreateInt(kCompletedAt, completed_at.get());
-  channel_bitmask_ = set_active_channels_node_.CreateUint(kChannelBitmask, channel_bitmask);
+  set_active_channels_node_.RecordInt(kCalledAt, called_at.get());
+  set_active_channels_node_.RecordInt(kCompletedAt, completed_at.get());
+  set_active_channels_node_.RecordUint(kChannelBitmask, channel_bitmask);
 }
 
 SetActiveChannelsInspectInstance::~SetActiveChannelsInspectInstance() {
@@ -52,7 +52,7 @@ RunningIntervalInspectInstance::RunningIntervalInspectInstance(inspect::Node run
                                                                const zx::time& started_at)
     : running_interval_node_(std::move(running_interval_node)) {
   ADR_LOG_METHOD(kTraceInspector);
-  started_at_ = running_interval_node_.CreateInt(kStartedAt, started_at.get());
+  running_interval_node_.RecordInt(kStartedAt, started_at.get());
 }
 
 RunningIntervalInspectInstance::~RunningIntervalInspectInstance() {
@@ -61,7 +61,7 @@ RunningIntervalInspectInstance::~RunningIntervalInspectInstance() {
 
 void RunningIntervalInspectInstance::RecordStopTime(const zx::time& stopped_at) {
   ADR_LOG_METHOD(kTraceInspector) << kStoppedAt << stopped_at.get();
-  stopped_at_ = running_interval_node_.CreateInt(kStoppedAt, stopped_at.get());
+  running_interval_node_.RecordInt(kStoppedAt, stopped_at.get());
 }
 
 ///////////////////////////////////////
@@ -70,14 +70,14 @@ RingBufferInspectInstance::RingBufferInspectInstance(inspect::Node ring_buffer_i
                                                      const zx::time& created_at)
     : ring_buffer_instance_node_(std::move(ring_buffer_instance_node)) {
   ADR_LOG_METHOD(kTraceInspector);
-  created_at_ = ring_buffer_instance_node_.CreateInt(kCreatedAt, created_at.get());
+  ring_buffer_instance_node_.RecordInt(kCreatedAt, created_at.get());
 }
 
 RingBufferInspectInstance::~RingBufferInspectInstance() { ADR_LOG_METHOD(kTraceInspector); }
 
 void RingBufferInspectInstance::RecordDestructionTime(const zx::time& destroyed_at) {
   ADR_LOG_METHOD(kTraceInspector) << kDestroyedAt << destroyed_at.get();
-  destroyed_at_ = ring_buffer_instance_node_.CreateInt(kDestroyedAt, destroyed_at.get());
+  ring_buffer_instance_node_.RecordInt(kDestroyedAt, destroyed_at.get());
 }
 
 void RingBufferInspectInstance::RecordStartTime(const zx::time& started_at) {
@@ -117,12 +117,54 @@ RingBufferInspectInstance::RecordSetActiveChannelsCall(uint64_t channel_bitmask,
   return set_active_channels_instance;
 }
 
+void RingBufferInspectInstance::RecordBuffer(uint64_t requested_bytes, uint64_t producer_frames,
+                                             uint64_t consumer_frames, uint64_t vmo_size) {
+  buffer_node_ = ring_buffer_instance_node_.CreateChild(kBufferProps);
+  buffer_node_.RecordUint(kRequestedBytes, requested_bytes);
+  buffer_node_.RecordUint(kProducerFrames, producer_frames);
+  buffer_node_.RecordUint(kConsumerFrames, consumer_frames);
+  buffer_node_.RecordUint(kVmoBytes, vmo_size);
+}
+
+void RingBufferInspectInstance::RecordFormat(uint32_t channel_count, uint32_t frames_per_second,
+                                             fuchsia_audio::SampleType sample_type) {
+  format_node_ = ring_buffer_instance_node_.CreateChild(kFormatProps);
+  format_node_.RecordUint(kChannelCount, channel_count);
+  format_node_.RecordUint(kFramesPerSecond, frames_per_second);
+
+  switch (sample_type) {
+    case fuchsia_audio::SampleType::kUint8:
+      format_node_.RecordString(kSampleFormat, "UINT_8");
+      return;
+    case fuchsia_audio::SampleType::kInt16:
+      format_node_.RecordString(kSampleFormat, "INT_16");
+      return;
+    case fuchsia_audio::SampleType::kInt32:
+      format_node_.RecordString(kSampleFormat, "INT_32");
+      return;
+    case fuchsia_audio::SampleType::kFloat32:
+      format_node_.RecordString(kSampleFormat, "FLOAT_32");
+      return;
+    case fuchsia_audio::SampleType::kFloat64:
+      format_node_.RecordString(kSampleFormat, "FLOAT_64");
+      return;
+    default:
+      format_node_.RecordString(kSampleFormat, "UNKNOWN");
+      return;
+  }
+}
+
 ///////////////////////////////////////
 // RingBufferElement methods
-RingBufferElement::RingBufferElement(inspect::Node ring_buffer_element_node, ElementId element_id)
+RingBufferElement::RingBufferElement(inspect::Node ring_buffer_element_node, ElementId element_id,
+                                     const std::optional<std::string>& element_name)
     : ring_buffer_element_node_(std::move(ring_buffer_element_node)), element_id_(element_id) {
   ADR_LOG_METHOD(kTraceInspector);
-  element_id_property_ = ring_buffer_element_node_.CreateUint(kElementId, element_id);
+  ring_buffer_element_node_.RecordUint(kElementId, element_id);
+  if (element_name.has_value()) {
+    ring_buffer_element_node_.RecordString(kDescription, *element_name);
+  }
+  // Consider recording an 'is_input' bool, indicating dataflow direction (derived from Topology?).
 }
 
 RingBufferElement::~RingBufferElement() { ADR_LOG_METHOD(kTraceInspector); }
@@ -130,13 +172,48 @@ RingBufferElement::~RingBufferElement() { ADR_LOG_METHOD(kTraceInspector); }
 std::shared_ptr<RingBufferInspectInstance> RingBufferElement::RecordRingBufferInstance(
     const zx::time& created_at) {
   auto ring_buffer_instance_node = ring_buffer_element_node_.CreateChild(
-      std::string("instance ") + std::to_string(ring_buffer_instances_.size()));
+      std::string("instance_") + std::to_string(ring_buffer_instances_.size()));
   auto ring_buffer_instance =
       std::make_shared<RingBufferInspectInstance>(std::move(ring_buffer_instance_node), created_at);
   ADR_LOG_METHOD(kTraceInspector) << "returning " << ring_buffer_instance;
 
   ring_buffer_instances_.push_back(ring_buffer_instance);
   return ring_buffer_instance;
+}
+
+///////////////////////////////////////
+// DaiElement methods
+DaiElement::DaiElement(inspect::Node dai_element_node, ElementId element_id,
+                       const std::optional<std::string>& element_name)
+    : dai_element_node_(std::move(dai_element_node)), element_id_(element_id) {
+  ADR_LOG_METHOD(kTraceInspector);
+  dai_element_node_.RecordUint(kElementId, element_id);
+  if (element_name.has_value()) {
+    dai_element_node_.RecordString(kDescription, *element_name);
+  }
+}
+
+DaiElement::~DaiElement() { ADR_LOG_METHOD(kTraceInspector); }
+
+void DaiElement::RecordSetDaiFormat(const zx::time& set_at,
+                                    const fuchsia_hardware_audio::DaiFormat& dai_format) {
+  ADR_LOG_METHOD(kTraceInspector);
+  format_node_ = dai_element_node_.CreateChild(kFormatProps);
+
+  format_node_.RecordUint(kBitsPerFrame, dai_format.bits_per_slot());
+  format_node_.RecordUint(kBitsPerSample, dai_format.bits_per_sample());
+  format_node_.RecordUint(kChannelCount, dai_format.number_of_channels());
+  format_node_.RecordUint(kChannelBitmask, dai_format.channels_to_use_bitmask());
+  format_node_.RecordUint(kFramesPerSecond, dai_format.frame_rate());
+
+  std::stringstream format_stream;
+  format_stream << dai_format.frame_format();
+  format_node_.RecordString(kFrameFormat, format_stream.str());
+
+  format_stream.str("");
+  format_stream.clear();
+  format_stream << dai_format.sample_format();
+  format_node_.RecordString(kSampleFormat, format_stream.str());
 }
 
 ///////////////////////////////////////
@@ -147,21 +224,21 @@ DeviceInspectInstance::DeviceInspectInstance(inspect::Node device_node, std::str
     : device_node_(std::move(device_node)), name_(std::move(device_name)) {
   ADR_LOG_METHOD(kTraceInspector);
   std::stringstream device_type_ss;
-  added_at_ = device_node_.CreateInt(kAddedAt, added_at.get());
-  added_by_ = device_node_.CreateString(kAddedBy, added_by);
+  device_node_.RecordInt(kAddedAt, added_at.get());
+  device_node_.RecordString(kAddedBy, added_by);
 
   device_type_ss << device_type;
-  type_ = device_node_.CreateString(kDeviceType, device_type_ss.str());
+  device_node_.RecordString(kDeviceType, device_type_ss.str());
 
-  timeout_count_ = device_node_.CreateUint(kDriverTimeout, 0);
-  late_response_count_ = device_node_.CreateUint(kDriverLateResponse, 0);
+  count_timeout_ = device_node_.CreateUint(kDriverTimeout, 0);
+  count_late_response_ = device_node_.CreateUint(kDriverLateResponse, 0);
 }
 
 DeviceInspectInstance::~DeviceInspectInstance() { ADR_LOG_METHOD(kTraceInspector); }
 
 void DeviceInspectInstance::RecordTokenId(TokenId token_id) {
   ADR_LOG_METHOD(kTraceInspector);
-  token_id_ = device_node_.CreateUint(kTokenId, token_id);
+  device_node_.RecordUint(kTokenId, token_id);
 }
 
 void DeviceInspectInstance::RecordDeviceHealthOk() {
@@ -176,32 +253,52 @@ void DeviceInspectInstance::RecordProperties(std::optional<bool> is_input,
                                              std::optional<ClockDomain> clock_domain) {
   ADR_LOG_METHOD(kTraceInspector);
   if (is_input.has_value()) {
-    is_input_ = device_node_.CreateBool(kIsInput, *is_input);
+    device_node_.RecordBool(kIsInput, *is_input);
   }
   if (manufacturer.has_value()) {
-    manufacturer_ = device_node_.CreateString(kManufacturer, *manufacturer);
+    device_node_.RecordString(kManufacturer, *manufacturer);
   }
   if (product.has_value()) {
-    product_ = device_node_.CreateString(kProduct, *product);
+    device_node_.RecordString(kProduct, *product);
   }
   if (unique_instance_id.has_value()) {
-    unique_instance_id_ = device_node_.CreateString(kUniqueId, *unique_instance_id);
+    device_node_.RecordString(kUniqueId, *unique_instance_id);
   }
   if (clock_domain.has_value()) {
-    clock_domain_ = device_node_.CreateUint(kClockDomain, *clock_domain);
+    std::string domain_str = std::to_string(*clock_domain);
+    if (*clock_domain == fuchsia_hardware_audio::kClockDomainMonotonic) {
+      domain_str += " (CLOCK_DOMAIN_MONOTONIC)";
+    } else if (*clock_domain == fuchsia_hardware_audio::kClockDomainExternal) {
+      domain_str += " (CLOCK_DOMAIN_EXTERNAL)";
+    }
+    device_node_.RecordString(kClockDomain, domain_str);
   }
 }
 
+std::shared_ptr<DaiElement> DeviceInspectInstance::RecordDaiElement(
+    ElementId element_id, const std::optional<std::string>& element_name) {
+  ADR_LOG_METHOD(kTraceInspector);
+  if (dai_elements_.empty()) {
+    dai_elements_root_node_ = device_node_.CreateChild(kDaiElements);
+  }
+  auto dai_element_node = dai_elements_root_node_.CreateChild(std::to_string(dai_elements_.size()));
+  auto dai_element =
+      std::make_shared<DaiElement>(std::move(dai_element_node), element_id, element_name);
+
+  dai_elements_.push_back(dai_element);
+  return dai_element;
+}
+
 std::shared_ptr<RingBufferElement> DeviceInspectInstance::RecordRingBufferElement(
-    ElementId element_id) {
+    ElementId element_id, const std::optional<std::string>& element_name) {
   ADR_LOG_METHOD(kTraceInspector);
   if (ring_buffer_elements_.empty()) {
-    ring_buffers_root_node_ = device_node_.CreateChild(kRingBufferElements);
+    ring_buffer_elements_root_node_ = device_node_.CreateChild(kRingBufferElements);
   }
   auto ring_buffer_element_node =
-      ring_buffers_root_node_.CreateChild(std::to_string(ring_buffer_elements_.size()));
-  auto ring_buffer_element =
-      std::make_shared<RingBufferElement>(std::move(ring_buffer_element_node), element_id);
+      ring_buffer_elements_root_node_.CreateChild(std::to_string(ring_buffer_elements_.size()));
+  auto ring_buffer_element = std::make_shared<RingBufferElement>(
+      std::move(ring_buffer_element_node), element_id, element_name);
 
   ring_buffer_elements_.push_back(ring_buffer_element);
   return ring_buffer_element;
@@ -226,12 +323,12 @@ void DeviceInspectInstance::RecordCommandTimeout(const std::string& cmd_tag,
                                                  const zx::duration& expected,
                                                  std::optional<zx::duration> actual) {
   if (actual.has_value()) {
-    late_response_count_.Add(1);
+    count_late_response_.Add(1);
     ADR_LOG_METHOD(kTraceInspector)
         << "Driver command '" << cmd_tag << "' expected in " << expected.to_usecs()
         << " usec, received in " << actual->to_usecs() << " usec.";
   } else {
-    timeout_count_.Add(1);
+    count_timeout_.Add(1);
     ADR_LOG_METHOD(kTraceInspector) << "Driver command '" << cmd_tag << "' expected in "
                                     << expected.to_usecs() << " usec, not yet received.";
   }
@@ -240,12 +337,12 @@ void DeviceInspectInstance::RecordCommandTimeout(const std::string& cmd_tag,
 void DeviceInspectInstance::RecordError(const zx::time& failed_at) {
   ADR_LOG_METHOD(kTraceInspector);
   healthy_ = device_node_.CreateBool(kHealthy, false);
-  failed_at_ = device_node_.CreateInt(kFailedAt, failed_at.get());
+  device_node_.RecordInt(kFailedAt, failed_at.get());
 }
 
 void DeviceInspectInstance::RecordRemoval(const zx::time& removed_at) {
   ADR_LOG_METHOD(kTraceInspector);
-  removed_at_ = device_node_.CreateInt(kRemovedAt, removed_at.get());
+  device_node_.RecordInt(kRemovedAt, removed_at.get());
 }
 
 ///////////////////////////////////////
@@ -254,14 +351,14 @@ FidlServerInspectInstance::FidlServerInspectInstance(inspect::Node instance_node
                                                      const zx::time& created_at)
     : instance_node_(std::move(instance_node)) {
   ADR_LOG_METHOD(kTraceInspector);
-  created_at_ = instance_node_.CreateInt(kCreatedAt, created_at.get());
+  instance_node_.RecordInt(kCreatedAt, created_at.get());
 }
 
 FidlServerInspectInstance::~FidlServerInspectInstance() { ADR_LOG_METHOD(kTraceInspector); }
 
 void FidlServerInspectInstance::RecordDestructionTime(const zx::time& destroyed_at) {
   ADR_LOG_METHOD(kTraceInspector);
-  destroyed_at_ = instance_node_.CreateInt(kDestroyedAt, destroyed_at.get());
+  instance_node_.RecordInt(kDestroyedAt, destroyed_at.get());
 }
 
 ///////////////////////////////////////
@@ -304,7 +401,7 @@ Inspector::Inspector(async_dispatcher_t* dispatcher)
   ring_buffer_servers_root_ = fidl_servers_root_.CreateChild(kRingBufferServerInstances);
   provider_servers_root_ = fidl_servers_root_.CreateChild(kProviderServerInstances);
 
-  count_devices_failed_to_connect_ = inspect_root_.CreateUint(kDetectionConnectionErrors, 0);
+  count_device_failed_to_connect_ = inspect_root_.CreateUint(kDetectionConnectionErrors, 0);
   count_device_watcher_failures_ = inspect_root_.CreateUint(kDetectionOtherErrors, 0);
   count_detected_unsupported_device_type_ =
       inspect_root_.CreateUint(kDetectionUnsupportedDevices, 0);
@@ -324,7 +421,7 @@ void Inspector::RecordUnhealthy(const std::string& health_message) {
 
 void Inspector::RecordDetectionFailureToConnect() {
   ADR_LOG_METHOD(kTraceInspector);
-  count_devices_failed_to_connect_.Add(1);
+  count_device_failed_to_connect_.Add(1);
 }
 
 void Inspector::RecordDetectionFailureOther() {

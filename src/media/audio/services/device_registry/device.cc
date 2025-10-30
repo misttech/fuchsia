@@ -1396,14 +1396,19 @@ void Device::RetrieveDaiFormatSets() {
   }
   auto remaining_dai_ids = std::make_shared<std::unordered_set<ElementId>>(dai_ids_);
   element_dai_format_sets_.clear();
+  dai_element_inspect_nodes_.clear();
   for (auto element_id : *remaining_dai_ids) {
+    auto element_node = inspect()->RecordDaiElement(
+        element_id, sig_proc_element_map_[element_id].element.description());
+    dai_element_inspect_nodes_.insert({element_id, element_node});
     GetDaiFormatSets(element_id, [this, remaining_dai_ids](
                                      ElementId element_id,
                                      const std::vector<fuchsia_hardware_audio::DaiSupportedFormats>&
                                          dai_format_sets) mutable {
       ADR_LOG_OBJECT(kLogCodecFidlCalls || kLogCompositeFidlCalls)
           << "GetDaiFormats(id " << element_id << "): success";
-      element_dai_format_sets_.push_back({{element_id, dai_format_sets}});
+      element_dai_format_sets_.push_back(
+          {{.element_id = element_id, .format_sets = dai_format_sets}});
       remaining_dai_ids->erase(element_id);
       if (remaining_dai_ids->empty()) {
         dai_format_sets_retrieved_ = true;
@@ -1496,7 +1501,7 @@ void Device::RetrieveRingBufferFormatSets() {
       std::make_shared<std::unordered_set<ElementId>>(ring_buffer_ids_);
 
   for (auto id : ring_buffer_ids_) {
-    inspect()->RecordRingBufferElement(id);
+    inspect()->RecordRingBufferElement(id, sig_proc_element_map_[id].element.description());
 
     if (is_composite()) {
       ADR_LOG_METHOD(kLogCompositeFidlCalls) << " GetRingBufferFormats (element " << id << ")";
@@ -1541,7 +1546,8 @@ void Device::AddRingBufferFormatSet(
   ADR_LOG_METHOD(kLogCompositeFidlResponses) << context;
 
   element_driver_ring_buffer_format_sets_.emplace_back(id, format_set);
-  element_ring_buffer_format_sets_.push_back({{id, translated_ring_buffer_format_sets}});
+  element_ring_buffer_format_sets_.push_back(
+      {{.element_id = id, .format_sets = translated_ring_buffer_format_sets}});
   remaining_ring_buffer_ids->erase(id);
   if (remaining_ring_buffer_ids->empty()) {
     ADR_LOG_OBJECT(kLogCompositeFidlResponses) << context << ": success";
@@ -1874,6 +1880,13 @@ void Device::SetDaiFormat(ElementId element_id, const fha::DaiFormat& dai_format
 
   // Check for no-change
 
+  if (dai_element_inspect_nodes_.contains(element_id)) {
+    dai_element_inspect_nodes_[element_id]->RecordSetDaiFormat(zx::clock::get_monotonic(),
+                                                               dai_format);
+  } else {
+    ADR_WARN_METHOD() << "No DAI inspect node found for element_id " << element_id;
+  }
+
   if (is_codec()) {
     (*codec_client_)
         ->SetDaiFormat(dai_format)
@@ -1929,7 +1942,8 @@ void Device::SetDaiFormat(ElementId element_id, const fha::DaiFormat& dai_format
           codec_format_ =
               CodecFormat{.dai_format = dai_format, .codec_format_info = result->state()};
           if (codec_start_state_.started) {
-            codec_start_state_ = CodecStartState{false, zx::clock::get_monotonic()};
+            codec_start_state_ =
+                CodecStartState{.started = false, .start_stop_time = zx::clock::get_monotonic()};
             notify->CodecIsStopped(codec_start_state_.start_stop_time);
           }
           notify->DaiFormatIsChanged(element_id, codec_format_->dai_format,
@@ -2342,7 +2356,7 @@ void Device::ConnectRingBufferFidl(
             }
           }
 
-          ADR_WARN_METHOD() << "Failed to create ring buffer: " << result.error_value();
+          ADR_WARN_OBJECT() << "Failed to create ring buffer: " << result.error_value();
           callback(error);
           return;
         }
@@ -2370,7 +2384,7 @@ void Device::ConnectRingBufferFidl(
             .ring_buffer_handler = std::make_unique<RingBufferFidlErrorHandler<fha::RingBuffer>>(
                 this, element_id, "RingBuffer"),
             .vmo_format = {{
-                .sample_type = *client_sample_type,
+                .sample_type = client_sample_type,
                 .channel_count = driver_format.pcm_format()->number_of_channels(),
                 .frames_per_second = driver_format.pcm_format()->frame_rate(),
                 // TODO(https://fxbug.dev/42168795): handle channel_layout when communicated from
@@ -2587,7 +2601,17 @@ void Device::CheckForRingBufferReady(ElementId element_id) {
       }},
   }));
   ring_buffer.create_ring_buffer_callback = nullptr;
+
   ring_buffer.inspect_instance = inspect()->RecordRingBufferInstance(element_id, now);
+  ring_buffer.inspect_instance->RecordFormat(
+      ring_buffer.vmo_format.channel_count().value_or(0u),
+      ring_buffer.vmo_format.frames_per_second().value_or(0u),
+      ring_buffer.vmo_format.sample_type().value_or(fuchsia_audio::SampleType::Unknown()));
+  ring_buffer.inspect_instance->RecordBuffer(
+      ring_buffer.requested_ring_buffer_bytes.value_or(0ull),
+      ring_buffer.ring_buffer_producer_bytes / ring_buffer.bytes_per_frame,
+      ring_buffer.ring_buffer_consumer_bytes / ring_buffer.bytes_per_frame,
+      *ring_buffer.num_ring_buffer_frames * ring_buffer.bytes_per_frame);
 }
 
 // Returns TRUE if it actually calls out to the driver. We avoid doing so if we already know

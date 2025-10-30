@@ -14,7 +14,6 @@
 
 #include <gtest/gtest.h>
 
-#include "src/media/audio/services/device_registry/common_unittest.h"
 #include "src/media/audio/services/device_registry/inspector.h"
 
 using ::inspect::BoolPropertyValue;
@@ -45,7 +44,7 @@ TEST_F(InspectorTest, DefaultValues) {
                 ->value(),
             0u);
 
-  // Expect empty child nodes for Devices and FIDL servers (with children).
+  // Expect empty child nodes for Devices and FIDL_servers (with children).
   // Expect fuchsia.inspect.Health to already be in the "starting up" state - this occurs at static
   // initialization time: when audio_device_registry's (or this unittest bin's) main() starts up.
   ASSERT_FALSE(hierarchy.children().empty());
@@ -118,8 +117,7 @@ TEST_F(InspectorTest, DefaultValues) {
   EXPECT_TRUE(health_node->children().empty());
 }
 
-// The relevant fields are `start_timestamp_nanos at` and `status` -- located at
-// root/fuchsia.inspect.Health/
+// Relevant fields: `start_timestamp_nanos`, `status` -- found at root/fuchsia.inspect.Health/
 TEST_F(InspectorTest, ComponentHealthy) {
   auto before_health_ok = zx::clock::get_monotonic();
   Inspector::Singleton()->RecordHealthOk();
@@ -137,8 +135,7 @@ TEST_F(InspectorTest, ComponentHealthy) {
   EXPECT_TRUE(health_node->children().empty());
 }
 
-// The relevant fields are `start_timestamp_nanos at`, `status` and `message` -- located at
-// root/fuchsia.inspect.Health/
+// Relevant fields: `start_timestamp_nanos`, `status`, `message` -- at root/fuchsia.inspect.Health/
 TEST_F(InspectorTest, ComponentUnhealthy) {
   constexpr std::string kUnhealthyMessasge{"Unhealthy message"};
 
@@ -160,11 +157,10 @@ TEST_F(InspectorTest, ComponentUnhealthy) {
   EXPECT_TRUE(health_node->children().empty());
 }
 
-// The relevant fields are `added at`, `token id` and many others -- located at
-// root/Devices/[device name]/
+// Relevant fields: `added_at`, `token_id` and many others -- found at root/Devices/[device name]/
 TEST_F(InspectorTest, DetectedDevice) {
   auto before_add = zx::clock::get_monotonic();
-  auto fake_driver = CreateAndAddFakeComposite();
+  set_fake_driver(CreateAndAddFakeComposite());
 
   auto hierarchy = GetHierarchy();
   ASSERT_EQ(hierarchy.name(), "root");
@@ -194,8 +190,9 @@ TEST_F(InspectorTest, DetectedDevice) {
             before_add.get());
   EXPECT_EQ(device_node->node().get_property<UintPropertyValue>(std::string(kTokenId))->value(),
             0u);
-  EXPECT_EQ(device_node->node().get_property<UintPropertyValue>(std::string(kClockDomain))->value(),
-            FakeComposite::kDefaultClockDomain);
+  EXPECT_EQ(
+      device_node->node().get_property<StringPropertyValue>(std::string(kClockDomain))->value(),
+      FakeComposite::kDefaultClockDomainStr);
   EXPECT_EQ(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy))->value(),
             true);
   EXPECT_EQ(
@@ -208,7 +205,7 @@ TEST_F(InspectorTest, DetectedDevice) {
       "COMPOSITE");
   EXPECT_EQ(device_node->node().get_property<StringPropertyValue>(std::string(kUniqueId))->value(),
             UidToString(FakeComposite::kDefaultUniqueInstanceId));
-  ASSERT_EQ(device_node->children().size(), 1u);
+  ASSERT_EQ(device_node->children().size(), 2u);
 
   auto ring_buffer_elements_node =
       std::find_if(device_node->children().begin(), device_node->children().end(),
@@ -235,13 +232,13 @@ TEST_F(InspectorTest, DetectedDevice) {
   EXPECT_TRUE(ring_buffer_elements_node->children().crbegin()->children().empty());
 }
 
-// The relevant field is `removed at` -- located at // root/Devices/[device name]/
+// Relevant field: `removed_at` -- found at // root/Devices/[device name]/
 TEST_F(InspectorTest, RemovedDevice) {
   auto before_add = zx::clock::get_monotonic();
-  auto fake_driver = CreateAndAddFakeComposite();
+  set_fake_driver(CreateAndAddFakeComposite());
 
   auto before_drop = zx::clock::get_monotonic();
-  fake_driver->DropComposite();
+  fake_driver()->DropComposite();
   RunLoopUntilIdle();
 
   auto hierarchy = GetHierarchy();
@@ -272,11 +269,10 @@ TEST_F(InspectorTest, RemovedDevice) {
             before_add.get());
   EXPECT_GT(device_node->node().get_property<IntPropertyValue>(std::string(kRemovedAt))->value(),
             before_drop.get());
-  EXPECT_EQ(device_node->children().size(), 1u);
+  EXPECT_EQ(device_node->children().size(), 2u);
 }
 
-// The relevant fields are `created at` and `destroyed at` -- located at
-// root/FIDL servers/RegistryServer instances/0/
+// Relevant fields: `created_at`, `destroyed_at` -- at root/FIDL_servers/RegistryServer_instances/0/
 // We don't test kDestroyedAt because of unpredictable cleanup timing.
 TEST_F(InspectorTest, CreateRegistryServer) {
   auto before_create = zx::clock::get_monotonic();
@@ -309,11 +305,10 @@ TEST_F(InspectorTest, CreateRegistryServer) {
   EXPECT_TRUE(registry_server_node->children().empty());
 }
 
-// The relevant fields are `created at` and `destroyed at` -- located at
-// root/FIDL servers/ObserverServer instances/0/
+// Relevant fields: `created_at`, `destroyed_at` -- at root/FIDL_servers/ObserverServer_instances/0/
 // We don't test kDestroyedAt because of unpredictable cleanup timing.
 TEST_F(InspectorTest, CreateObserverServer) {
-  auto fake_driver = CreateAndAddFakeComposite();
+  set_fake_driver(CreateAndAddFakeComposite());
   auto registry = CreateTestRegistryServer();
   std::optional<TokenId> added_device_id = WaitForAddedDeviceTokenId(registry->client());
   ASSERT_EQ(RegistryServer::count(), 1u);
@@ -349,8 +344,7 @@ TEST_F(InspectorTest, CreateObserverServer) {
   EXPECT_TRUE(observer_server_node->children().empty());
 }
 
-// The relevant fields are `created at` and `destroyed at` -- located at
-// root/FIDL servers/ControlCreatorServer instances/0/
+// Relevant: `created_at`, `destroyed_at` at root/FIDL_servers/ControlCreatorServer_instances/0/
 // We don't test kDestroyedAt because of unpredictable cleanup timing.
 TEST_F(InspectorTest, CreateControlCreatorServer) {
   auto before_create = zx::clock::get_monotonic();
@@ -384,22 +378,12 @@ TEST_F(InspectorTest, CreateControlCreatorServer) {
   EXPECT_TRUE(control_creator_server_node->children().empty());
 }
 
-// The relevant fields are `created at` and `destroyed at` -- located at
-// root/FIDL servers/ControlServer instances/0/
+// Relevant fields: `created_at`, `destroyed_at` -- at root/FIDL_servers/ControlServer_instances/0/
 // We don't test kDestroyedAt because of unpredictable cleanup timing.
 TEST_F(InspectorTest, CreateControlServer) {
-  auto fake_driver = CreateAndAddFakeComposite();
-  auto registry = CreateTestRegistryServer();
-  std::optional<TokenId> added_device_id = WaitForAddedDeviceTokenId(registry->client());
-  ASSERT_EQ(RegistryServer::count(), 1u);
-  ASSERT_TRUE(added_device_id.has_value());
-
-  auto [presence, device_to_control] = adr_service()->FindDeviceByTokenId(*added_device_id);
-  EXPECT_EQ(presence, AudioDeviceRegistry::DevicePresence::Active);
+  set_fake_driver(CreateFakeComposite());
   auto before_create = zx::clock::get_monotonic();
-  auto control = CreateTestControlServer(device_to_control);
-  RunLoopUntilIdle();
-  ASSERT_EQ(ControlServer::count(), 1u);
+  CreateControlledDevice();
 
   auto hierarchy = GetHierarchy();
   ASSERT_FALSE(hierarchy.children().empty());
@@ -427,38 +411,26 @@ TEST_F(InspectorTest, CreateControlServer) {
   EXPECT_TRUE(control_server_node->children().empty());
 }
 
-// The relevant fields are `created at` and `destroyed at` -- located at
-// root/FIDL servers/RingBufferServer instances/0/
+// Relevant fields: `created_at`, `destroyed_at` at root/FIDL_servers/RingBufferServer_instances/0/
 // We don't test kDestroyedAt because of unpredictable cleanup timing.
 TEST_F(InspectorTest, CreateRingBufferServer) {
-  // start of RingBuffer testcase setup, same as other RingBuffer unittests
-  auto fake_driver = CreateFakeComposite();
+  set_fake_driver(CreateFakeComposite());
   auto element_id = FakeComposite::kMaxRingBufferElementId;
-  fake_driver->ReserveRingBufferSize(element_id, 8192);
-  auto device = Device::Create(adr_service(), dispatcher(), "Test composite name",
-                               fad::DeviceType::kComposite,
-                               fad::DriverClient::WithComposite(fake_driver->Enable()), kClassName);
-  adr_service()->AddDevice(device);
-  RunLoopUntilIdle();
-  auto registry = CreateTestRegistryServer();
-  std::optional<TokenId> added_device_id = WaitForAddedDeviceTokenId(registry->client());
-  ASSERT_EQ(RegistryServer::count(), 1u);
-  ASSERT_TRUE(added_device_id.has_value());
-  auto [presence, device_to_control] = adr_service()->FindDeviceByTokenId(*added_device_id);
-  EXPECT_EQ(presence, AudioDeviceRegistry::DevicePresence::Active);
-  auto control = CreateTestControlServer(device_to_control);
-  RunLoopUntilIdle();
-  ASSERT_EQ(ControlServer::count(), 1u);
+  fake_driver()->ReserveRingBufferSize(element_id, 8192);
+
+  CreateControlledDevice();
+
   auto [ring_buffer_client_end, ring_buffer_server_end] =
       CreateNaturalAsyncClientOrDie<fad::RingBuffer>();
   auto ring_buffer_client = fidl::Client<fad::RingBuffer>(
       std::move(ring_buffer_client_end), dispatcher(), ring_buffer_fidl_handler().get());
   auto before_create = zx::clock::get_monotonic();
-  auto ring_buffer = adr_service()->CreateRingBufferServer(
-      std::move(ring_buffer_server_end), control->server_ptr(), device_to_control, 0);
+  auto ring_buffer = adr_service()->CreateRingBufferServer(std::move(ring_buffer_server_end),
+                                                           control()->server_ptr(),
+                                                           device(),  // device_to_control,
+                                                           0);
   RunLoopUntilIdle();
   EXPECT_TRUE(ring_buffer_client.is_valid());
-  // end of RingBuffer testcase setup, same as other RingBuffer unittests
 
   auto hierarchy = GetHierarchy();
   ASSERT_FALSE(hierarchy.children().empty());
@@ -487,8 +459,7 @@ TEST_F(InspectorTest, CreateRingBufferServer) {
   EXPECT_TRUE(ring_buffer_server_node->children().empty());
 }
 
-// The relevant fields are `created at` and `destroyed at` -- located at
-// root/FIDL servers/ProviderServer instances/0/
+// Relevant fields: `created_at`, `destroyed_at` -- at root/FIDL_servers/ProviderServer_instances/0/
 // We don't test kDestroyedAt because of unpredictable cleanup timing.
 TEST_F(InspectorTest, CreateProviderServer) {
   auto before_create = zx::clock::get_monotonic();
@@ -525,7 +496,7 @@ TEST_F(InspectorTest, CreateProviderServer) {
   EXPECT_TRUE(added_devices_node->children().empty());
 }
 
-// Verify that multiple instances are tracked separately: check instance name and `created at`.
+// Verify that multiple instances are tracked separately: check instance name and `created_at`.
 TEST_F(InspectorTest, CreateMultipleServerInstances) {
   auto registry0 = CreateTestRegistryServer();
   ASSERT_EQ(RegistryServer::count(), 1u);
@@ -570,8 +541,8 @@ TEST_F(InspectorTest, CreateMultipleServerInstances) {
   ASSERT_TRUE(registry_server1_node->children().empty());
 }
 
-// The relevant fields are `added at` and `type` (as well as [device name]) -- located at
-// root/FIDL servers/ProviderServer instances/0/Added devices/[device name]/
+// Relevant fields: `added_at` and `type` (as well as [device name]) -- found at
+// root/FIDL_servers/ProviderServer_instances/0/Added_devices/[device name]/
 // We add two devices, to validate that these can be tracked separately.
 TEST_F(InspectorTest, ProviderAddedDevice) {
   auto before_create = zx::clock::get_monotonic();
@@ -665,58 +636,16 @@ TEST_F(InspectorTest, ProviderAddedDevice) {
   EXPECT_TRUE(last_device->children().empty());
 }
 
-// The relevant fields are `started at` and `stopped at` -- located at
-// root/Devices/[device-name]/ring buffer elements/0/instance 0/running intervals/0/
+// Relevant fields: `started at` and `stopped at` -- found at
+// root/Devices/[device name]/RingBuffer_elements/0/instance_0/running_intervals/0/
 // We test multiple start/stop calls, to validate running intervals are tracked separately.
 TEST_F(InspectorTest, StartStop) {
-  // start of RingBuffer testcase setup, same as other RingBuffer unittests
-  auto fake_driver = CreateFakeComposite();
-  auto element_id = FakeComposite::kMaxRingBufferElementId;
-  fake_driver->ReserveRingBufferSize(element_id, 8192);
-  auto device = Device::Create(adr_service(), dispatcher(), "Test composite name",
-                               fad::DeviceType::kComposite,
-                               fad::DriverClient::WithComposite(fake_driver->Enable()), kClassName);
-  adr_service()->AddDevice(device);
-  RunLoopUntilIdle();
-  auto registry = CreateTestRegistryServer();
-  std::optional<TokenId> added_device_id = WaitForAddedDeviceTokenId(registry->client());
-  ASSERT_EQ(RegistryServer::count(), 1u);
-  ASSERT_TRUE(added_device_id.has_value());
-  auto [presence, device_to_control] = adr_service()->FindDeviceByTokenId(*added_device_id);
-  EXPECT_EQ(presence, AudioDeviceRegistry::DevicePresence::Active);
-  auto control = CreateTestControlServer(device_to_control);
-  RunLoopUntilIdle();
-  ASSERT_EQ(ControlServer::count(), 1u);
-  auto [ring_buffer_client_end, ring_buffer_server_end] =
-      CreateNaturalAsyncClientOrDie<fad::RingBuffer>();
-  auto ring_buffer_client = fidl::Client<fad::RingBuffer>(
-      std::move(ring_buffer_client_end), dispatcher(), ring_buffer_fidl_handler().get());
-  bool received_callback = false;
-
-  auto requested_format = SafeRingBufferFormatFromElementRingBufferFormatSets(
-      element_id, device->ring_buffer_format_sets());
-  uint32_t requested_ring_buffer_bytes = 2000;
-  control->client()
-      ->CreateRingBuffer({{
-          .element_id = element_id,
-          .options = fad::RingBufferOptions{{
-              .format = requested_format,
-              .ring_buffer_min_bytes = requested_ring_buffer_bytes,
-          }},
-          .ring_buffer_server = std::move(ring_buffer_server_end),
-      }})
-      .Then([&received_callback](fidl::Result<fad::Control::CreateRingBuffer>& result) {
-        EXPECT_TRUE(result.is_ok()) << result.error_value();
-        received_callback = true;
-      });
-  RunLoopUntilIdle();
-  EXPECT_TRUE(ring_buffer_client.is_valid());
-  // end of RingBuffer testcase setup, same as other RingBuffer unittests
+  AddDeviceAndCreateRingBuffer();
 
   zx::time start_time0;
-  received_callback = false;
+  bool received_callback = false;
   auto before_start0 = zx::clock::get_monotonic();
-  ring_buffer_client->Start({}).Then(
+  ring_buffer_client()->Start({}).Then(
       [&received_callback, &start_time0](fidl::Result<fad::RingBuffer::Start>& result) {
         ASSERT_TRUE(result.is_ok()) << result.error_value();
         ASSERT_TRUE(result->start_time());
@@ -726,13 +655,13 @@ TEST_F(InspectorTest, StartStop) {
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
-  EXPECT_TRUE(fake_driver->started(element_id));
-  EXPECT_EQ(start_time0, fake_driver->mono_start_time(element_id));
+  EXPECT_TRUE(fake_driver()->started(element_id()));
+  EXPECT_EQ(start_time0, fake_driver()->mono_start_time(element_id()));
   EXPECT_GT(start_time0.get(), before_start0.get());
 
   auto before_stop0 = zx::clock::get_monotonic();
   received_callback = false;
-  ring_buffer_client->Stop({}).Then(
+  ring_buffer_client()->Stop({}).Then(
       [&received_callback](fidl::Result<fad::RingBuffer::Stop>& result) {
         EXPECT_TRUE(result.is_ok()) << result.error_value();
         received_callback = true;
@@ -740,14 +669,14 @@ TEST_F(InspectorTest, StartStop) {
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
-  EXPECT_FALSE(fake_driver->started(element_id));
+  EXPECT_FALSE(fake_driver()->started(element_id()));
   auto after_stop0 = zx::clock::get_monotonic();
 
-  // Now we do another start/stop, to validate multiple `running intervals`.
+  // Now we do another start/stop, to validate multiple running intervals.
   zx::time start_time1;
   received_callback = false;
   auto before_start1 = zx::clock::get_monotonic();
-  ring_buffer_client->Start({}).Then(
+  ring_buffer_client()->Start({}).Then(
       [&received_callback, &start_time1](fidl::Result<fad::RingBuffer::Start>& result) {
         ASSERT_TRUE(result.is_ok()) << result.error_value();
         ASSERT_TRUE(result->start_time());
@@ -757,13 +686,13 @@ TEST_F(InspectorTest, StartStop) {
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
-  EXPECT_TRUE(fake_driver->started(element_id));
-  EXPECT_EQ(start_time1, fake_driver->mono_start_time(element_id));
+  EXPECT_TRUE(fake_driver()->started(element_id()));
+  EXPECT_EQ(start_time1, fake_driver()->mono_start_time(element_id()));
   EXPECT_GT(start_time1.get(), before_start1.get());
 
   auto before_stop1 = zx::clock::get_monotonic();
   received_callback = false;
-  ring_buffer_client->Stop({}).Then(
+  ring_buffer_client()->Stop({}).Then(
       [&received_callback](fidl::Result<fad::RingBuffer::Stop>& result) {
         EXPECT_TRUE(result.is_ok()) << result.error_value();
         received_callback = true;
@@ -771,7 +700,7 @@ TEST_F(InspectorTest, StartStop) {
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_callback);
-  EXPECT_FALSE(fake_driver->started(element_id));
+  EXPECT_FALSE(fake_driver()->started(element_id()));
   auto after_stop1 = zx::clock::get_monotonic();
 
   auto hierarchy = GetHierarchy();
@@ -795,11 +724,11 @@ TEST_F(InspectorTest, StartStop) {
   ASSERT_EQ(ring_buffer_element_node->node()
                 .get_property<UintPropertyValue>(std::string(kElementId))
                 ->value(),
-            element_id);
+            element_id());
   ASSERT_FALSE(ring_buffer_element_node->children().empty());
 
   auto ring_buffer_instance_node = ring_buffer_element_node->children().begin();
-  ASSERT_EQ(ring_buffer_instance_node->name(), "instance 0");
+  ASSERT_EQ(ring_buffer_instance_node->name(), "instance_0");
   ASSERT_FALSE(ring_buffer_instance_node->children().empty());
 
   auto running_intervals = std::find_if(
@@ -837,58 +766,16 @@ TEST_F(InspectorTest, StartStop) {
   EXPECT_TRUE(running_intervals->children().crbegin()->children().empty());
 }
 
-// The relevant fields are `called at`, `completed at` and `channel bitmask` -- located at
-// root/Devices/[device-name]/ring buffer elements/0/instance 0/SetActiveChannels calls/0/
+// Relevant fields: `called_at`, `completed_at` and `channel_bitmask` -- found at
+// root/Devices/[device name]/RingBuffer_elements/0/instance_0/SetActiveChannels_calls/0/
 // We test multiple SetActiveChannels calls to ensure these are tracked separately.
 TEST_F(InspectorTest, SetActiveChannels) {
-  // start of RingBuffer testcase setup, same as other RingBuffer unittests
-  auto fake_driver = CreateFakeComposite();
-  auto element_id = FakeComposite::kMaxRingBufferElementId;
-  fake_driver->EnableActiveChannelsSupport(element_id);
-  fake_driver->ReserveRingBufferSize(element_id, 8192);
-  auto device = Device::Create(adr_service(), dispatcher(), "Test composite name",
-                               fad::DeviceType::kComposite,
-                               fad::DriverClient::WithComposite(fake_driver->Enable()), kClassName);
-  adr_service()->AddDevice(device);
-  RunLoopUntilIdle();
-  auto registry = CreateTestRegistryServer();
-  std::optional<TokenId> added_device_id = WaitForAddedDeviceTokenId(registry->client());
-  ASSERT_EQ(RegistryServer::count(), 1u);
-  ASSERT_TRUE(added_device_id.has_value());
-  auto [presence, device_to_control] = adr_service()->FindDeviceByTokenId(*added_device_id);
-  EXPECT_EQ(presence, AudioDeviceRegistry::DevicePresence::Active);
-  auto control = CreateTestControlServer(device_to_control);
-  RunLoopUntilIdle();
-  ASSERT_EQ(ControlServer::count(), 1u);
-  auto [ring_buffer_client_end, ring_buffer_server_end] =
-      CreateNaturalAsyncClientOrDie<fad::RingBuffer>();
-  auto ring_buffer_client = fidl::Client<fad::RingBuffer>(
-      std::move(ring_buffer_client_end), dispatcher(), ring_buffer_fidl_handler().get());
-  bool received_callback = false;
-  auto requested_format = SafeRingBufferFormatFromElementRingBufferFormatSets(
-      element_id, device->ring_buffer_format_sets());
-  uint32_t requested_ring_buffer_bytes = 2000;
-  control->client()
-      ->CreateRingBuffer({{
-          .element_id = element_id,
-          .options = fad::RingBufferOptions{{
-              .format = requested_format,
-              .ring_buffer_min_bytes = requested_ring_buffer_bytes,
-          }},
-          .ring_buffer_server = std::move(ring_buffer_server_end),
-      }})
-      .Then([&received_callback](fidl::Result<fad::Control::CreateRingBuffer>& result) {
-        EXPECT_TRUE(result.is_ok()) << result.error_value();
-        received_callback = true;
-      });
-  RunLoopUntilIdle();
-  EXPECT_TRUE(ring_buffer_client.is_valid());
-  // end of RingBuffer testcase setup, same as other RingBuffer unittests
+  AddDeviceAndCreateRingBuffer();
 
-  received_callback = false;
+  bool received_callback = false;
   zx::time set_active_channels_completed_at0;
   auto before_set_active_channels0 = zx::clock::get_monotonic();
-  ring_buffer_client
+  ring_buffer_client()
       ->SetActiveChannels({{
           .channel_bitmask = 0x0,
       }})
@@ -907,7 +794,7 @@ TEST_F(InspectorTest, SetActiveChannels) {
   received_callback = false;
   zx::time set_active_channels_completed_at1;
   auto before_set_active_channels1 = zx::clock::get_monotonic();
-  ring_buffer_client
+  ring_buffer_client()
       ->SetActiveChannels({{
           .channel_bitmask = 0x1,
       }})
@@ -939,15 +826,15 @@ TEST_F(InspectorTest, SetActiveChannels) {
 
   auto ring_buffer_element_node = ring_buffer_elements_node->children().begin();
   ASSERT_EQ(ring_buffer_element_node->name(), "0");
-  ASSERT_EQ(ring_buffer_element_node->node().properties().size(), 1u);
+  ASSERT_EQ(ring_buffer_element_node->node().properties().size(), 2u);
   ASSERT_EQ(ring_buffer_element_node->node()
                 .get_property<UintPropertyValue>(std::string(kElementId))
                 ->value(),
-            element_id);
+            element_id());
   ASSERT_FALSE(ring_buffer_element_node->children().empty());
 
   auto ring_buffer_instance_node = ring_buffer_element_node->children().begin();
-  ASSERT_EQ(ring_buffer_instance_node->name(), "instance 0");
+  ASSERT_EQ(ring_buffer_instance_node->name(), "instance_0");
   ASSERT_FALSE(ring_buffer_instance_node->children().empty());
 
   auto set_active_channels_calls_node = std::find_if(
@@ -980,6 +867,220 @@ TEST_F(InspectorTest, SetActiveChannels) {
   EXPECT_EQ(last_set_call.get_property<UintPropertyValue>(std::string(kChannelBitmask))->value(),
             1ull);
   EXPECT_TRUE(set_active_channels_calls_node->children().crbegin()->children().empty());
+}
+
+// Relevant fields: `requested_bytes`, `client_frames`, `driver_frames`, `vmo_bytes` -- found at
+// root/Devices/[device name]/RingBuffer_elements/0/instance_0/.
+TEST_F(InspectorTest, BufferProperties) {
+  AddDeviceAndCreateRingBuffer();
+
+  auto hierarchy = GetHierarchy();
+  auto devices_node =
+      std::find_if(hierarchy.children().begin(), hierarchy.children().end(),
+                   [](const inspect::Hierarchy& h) { return h.name() == kDevices; });
+  ASSERT_NE(devices_node, hierarchy.children().end());
+  ASSERT_FALSE(devices_node->children().empty());
+
+  auto device_node = devices_node->children().begin();
+  auto ring_buffer_elements_node =
+      std::find_if(device_node->children().begin(), device_node->children().end(),
+                   [](const inspect::Hierarchy& h) { return h.name() == kRingBufferElements; });
+  ASSERT_NE(ring_buffer_elements_node, device_node->children().end());
+  ASSERT_FALSE(ring_buffer_elements_node->children().empty());
+
+  auto ring_buffer_element_node = ring_buffer_elements_node->children().begin();
+  ASSERT_EQ(ring_buffer_element_node->name(), "0");
+  ASSERT_EQ(ring_buffer_element_node->node().properties().size(), 2u);
+  ASSERT_EQ(ring_buffer_element_node->node()
+                .get_property<UintPropertyValue>(std::string(kElementId))
+                ->value(),
+            element_id());
+  ASSERT_FALSE(ring_buffer_element_node->children().empty());
+
+  auto ring_buffer_instance_node = ring_buffer_element_node->children().begin();
+  ASSERT_EQ(ring_buffer_instance_node->name(), "instance_0");
+  ASSERT_FALSE(ring_buffer_instance_node->children().empty());
+
+  auto buffer_node = std::find_if(
+      ring_buffer_instance_node->children().begin(), ring_buffer_instance_node->children().end(),
+      [](const inspect::Hierarchy& h) { return h.name() == kBufferProps; });
+  ASSERT_EQ(buffer_node->node().name(), kBufferProps);
+  ASSERT_NE(buffer_node, ring_buffer_instance_node->children().end());
+  ASSERT_TRUE(buffer_node->children().empty());
+
+  EXPECT_FALSE(buffer_node->node().properties().empty());
+  ASSERT_EQ(buffer_node->node().properties().size(), 4u);
+  auto bytes_per_frame = frame_size(rb_format());
+  EXPECT_EQ(
+      buffer_node->node().get_property<UintPropertyValue>(std::string(kRequestedBytes))->value(),
+      requested_ring_buffer_bytes());
+  EXPECT_EQ(
+      buffer_node->node().get_property<UintPropertyValue>(std::string(kProducerFrames))->value(),
+      *ring_buffer()->producer_bytes() / bytes_per_frame);
+  EXPECT_EQ(
+      buffer_node->node().get_property<UintPropertyValue>(std::string(kConsumerFrames))->value(),
+      *ring_buffer()->consumer_bytes() / bytes_per_frame);
+  EXPECT_EQ(buffer_node->node().get_property<UintPropertyValue>(std::string(kVmoBytes))->value(),
+            ring_buffer()->buffer()->size());
+}
+
+// Relevant fields: `frames_per_second`, `channel_count`, `sample_format` -- found at
+// root/Devices/[device name]/RingBuffer_elements/0/instance_0/.
+TEST_F(InspectorTest, RingBufferFormat) {
+  AddDeviceAndCreateRingBuffer();
+
+  auto hierarchy = GetHierarchy();
+  auto devices_node =
+      std::find_if(hierarchy.children().begin(), hierarchy.children().end(),
+                   [](const inspect::Hierarchy& h) { return h.name() == kDevices; });
+  ASSERT_NE(devices_node, hierarchy.children().end());
+  ASSERT_FALSE(devices_node->children().empty());
+
+  auto device_node = devices_node->children().begin();
+  auto ring_buffer_elements_node =
+      std::find_if(device_node->children().begin(), device_node->children().end(),
+                   [](const inspect::Hierarchy& h) { return h.name() == kRingBufferElements; });
+  ASSERT_NE(ring_buffer_elements_node, device_node->children().end());
+  ASSERT_FALSE(ring_buffer_elements_node->children().empty());
+
+  auto ring_buffer_element_node = ring_buffer_elements_node->children().begin();
+  ASSERT_EQ(ring_buffer_element_node->name(), "0");
+  ASSERT_EQ(ring_buffer_element_node->node().properties().size(), 2u);
+  ASSERT_EQ(ring_buffer_element_node->node()
+                .get_property<UintPropertyValue>(std::string(kElementId))
+                ->value(),
+            element_id());
+  ASSERT_FALSE(ring_buffer_element_node->children().empty());
+
+  auto ring_buffer_instance_node = ring_buffer_element_node->children().begin();
+  ASSERT_EQ(ring_buffer_instance_node->name(), "instance_0");
+  ASSERT_FALSE(ring_buffer_instance_node->children().empty());
+
+  auto format_node = std::find_if(
+      ring_buffer_instance_node->children().begin(), ring_buffer_instance_node->children().end(),
+      [](const inspect::Hierarchy& h) { return h.name() == kFormatProps; });
+  ASSERT_NE(format_node, ring_buffer_instance_node->children().end());
+
+  EXPECT_EQ(format_node->node().name(), kFormatProps);
+  EXPECT_TRUE(format_node->children().empty());
+
+  EXPECT_FALSE(format_node->node().properties().empty());
+  EXPECT_EQ(format_node->node().properties().size(), 3u);
+  EXPECT_EQ(
+      format_node->node().get_property<UintPropertyValue>(std::string(kFramesPerSecond))->value(),
+      *rb_format().frames_per_second());
+  EXPECT_EQ(
+      format_node->node().get_property<UintPropertyValue>(std::string(kChannelCount))->value(),
+      *rb_format().channel_count());
+  FX_LOGS(INFO) << *rb_format().sample_type();
+  EXPECT_EQ(
+      format_node->node().get_property<StringPropertyValue>(std::string(kSampleFormat))->value(),
+      "INT_32");
+}
+
+// Relevant fields: `channel_count`, `channels_to_use_bitmask`, `sample_format`, `frame_format`,
+// `bits_per_slot`, `bits_per_sample` -- found at root/Devices/[device name]/DAI_elements/0.
+TEST_F(InspectorTest, DaiFormat) {
+  set_fake_driver(CreateFakeComposite());
+  auto element_id = FakeComposite::kSourceDaiElementId;
+
+  CreateControlledDevice();
+
+  bool received_callback = false;
+  control()
+      ->client()
+      ->SetDaiFormat({{
+          .element_id = element_id,
+          .dai_format = FakeComposite::kDefaultDaiFormat,
+      }})
+      .Then(
+          [&received_callback](fidl::Result<fuchsia_audio_device::Control::SetDaiFormat>& result) {
+            received_callback = true;
+            ASSERT_TRUE(result.is_ok()) << result.error_value();
+          });
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(received_callback);
+  EXPECT_TRUE(control()->client().is_valid());
+
+  auto hierarchy = GetHierarchy();
+  auto devices_node =
+      std::find_if(hierarchy.children().begin(), hierarchy.children().end(),
+                   [](const inspect::Hierarchy& h) { return h.name() == kDevices; });
+  ASSERT_NE(devices_node, hierarchy.children().end());
+  ASSERT_FALSE(devices_node->children().empty());
+
+  auto device_node = devices_node->children().begin();
+  auto dai_elements_node =
+      std::find_if(device_node->children().begin(), device_node->children().end(),
+                   [](const inspect::Hierarchy& h) { return h.name() == kDaiElements; });
+  ASSERT_NE(dai_elements_node, device_node->children().end()) << "No DAI elements node found";
+  ASSERT_FALSE(dai_elements_node->children().empty()) << "No DAI element children";
+
+  auto dai_element_node = dai_elements_node->children().begin();
+  ASSERT_EQ(dai_element_node->name(), "0");
+  ASSERT_EQ(dai_element_node->node().properties().size(), 2u);
+  ASSERT_EQ(
+      dai_element_node->node().get_property<UintPropertyValue>(std::string(kElementId))->value(),
+      element_id);
+  ASSERT_FALSE(dai_element_node->children().empty());
+
+  auto format_node =
+      std::find_if(dai_element_node->children().begin(), dai_element_node->children().end(),
+                   [](const inspect::Hierarchy& h) { return h.name() == kFormatProps; });
+  ASSERT_NE(format_node, dai_element_node->children().end());
+
+  EXPECT_EQ(format_node->node().name(), kFormatProps);
+  EXPECT_TRUE(format_node->children().empty());
+
+  ASSERT_FALSE(format_node->node().properties().empty());
+  EXPECT_EQ(format_node->node().properties().size(), 7u);
+
+  ASSERT_TRUE(format_node->node().get_property<UintPropertyValue>(std::string(kBitsPerFrame)))
+      << "'" << kBitsPerFrame << "' property not found";
+  EXPECT_EQ(
+      format_node->node().get_property<UintPropertyValue>(std::string(kBitsPerFrame))->value(),
+      FakeComposite::kDefaultDaiFormat.bits_per_slot());
+
+  ASSERT_TRUE(format_node->node().get_property<UintPropertyValue>(std::string(kBitsPerSample)))
+      << "'" << kBitsPerSample << "' property not found";
+  EXPECT_EQ(
+      format_node->node().get_property<UintPropertyValue>(std::string(kBitsPerSample))->value(),
+      FakeComposite::kDefaultDaiFormat.bits_per_sample());
+
+  ASSERT_TRUE(format_node->node().get_property<UintPropertyValue>(std::string(kChannelCount)))
+      << "'" << kChannelCount << "' property not found";
+  EXPECT_EQ(
+      format_node->node().get_property<UintPropertyValue>(std::string(kChannelCount))->value(),
+      FakeComposite::kDefaultDaiFormat.number_of_channels());
+
+  ASSERT_TRUE(format_node->node().get_property<UintPropertyValue>(std::string(kChannelBitmask)))
+      << "'" << kChannelBitmask << "' property not found";
+  EXPECT_EQ(
+      format_node->node().get_property<UintPropertyValue>(std::string(kChannelBitmask))->value(),
+      FakeComposite::kDefaultDaiFormat.channels_to_use_bitmask());
+
+  ASSERT_TRUE(format_node->node().get_property<UintPropertyValue>(std::string(kFramesPerSecond)))
+      << "'" << kFramesPerSecond << "' property not found";
+  EXPECT_EQ(
+      format_node->node().get_property<UintPropertyValue>(std::string(kFramesPerSecond))->value(),
+      FakeComposite::kDefaultDaiFormat.frame_rate());
+
+  ASSERT_TRUE(format_node->node().get_property<StringPropertyValue>(std::string(kFrameFormat)))
+      << "'" << kFrameFormat << "' property not found";
+  std::stringstream frame_fmt_stream;
+  frame_fmt_stream << FakeComposite::kDefaultDaiFrameFormat;
+  EXPECT_EQ(
+      format_node->node().get_property<StringPropertyValue>(std::string(kFrameFormat))->value(),
+      frame_fmt_stream.str());
+
+  ASSERT_TRUE(format_node->node().get_property<StringPropertyValue>(std::string(kSampleFormat)))
+      << "'" << kSampleFormat << "' property not found";
+  std::stringstream sample_fmt_stream;
+  sample_fmt_stream << FakeComposite::kDefaultDaiSampleFormat;
+  EXPECT_EQ(
+      format_node->node().get_property<StringPropertyValue>(std::string(kSampleFormat))->value(),
+      sample_fmt_stream.str());
 }
 
 }  // namespace media_audio

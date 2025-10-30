@@ -18,49 +18,66 @@
 namespace media_audio {
 
 static constexpr std::string_view kDetectionConnectionErrors =
-    "Device detection connection failures (count)";
+    "Device_detection_connection_failure_count";
 static constexpr std::string_view kDetectionOtherErrors =
-    "Device detection unclassified errors (count)";
+    "Device_detection_unclassified_error_count";
 static constexpr std::string_view kDetectionUnsupportedDevices =
-    "Device detection unsupported devices (count)";
+    "Device_detection_unsupported_device_count";
 
 static constexpr std::string_view kDevices = "Devices";
-static constexpr std::string_view kAddedAt = "added at";
-static constexpr std::string_view kAddedBy = "added by";
-static constexpr std::string_view kFailedAt = "failed at";
-static constexpr std::string_view kRemovedAt = "removed at";
-
+static constexpr std::string_view kAddedAt = "added_at";
+static constexpr std::string_view kAddedBy = "added_by";
+static constexpr std::string_view kFailedAt = "failed_at";
+static constexpr std::string_view kRemovedAt = "removed_at";
 static constexpr std::string_view kDeviceType = "type";
-static constexpr std::string_view kTokenId = "token id";
+static constexpr std::string_view kTokenId = "token_id";
 static constexpr std::string_view kHealthy = "healthy";
 static constexpr std::string_view kIsInput = "is_input";
 static constexpr std::string_view kManufacturer = "manufacturer";
 static constexpr std::string_view kProduct = "product";
-static constexpr std::string_view kUniqueId = "unique id";
-static constexpr std::string_view kClockDomain = "clock domain";
-static constexpr std::string_view kDriverTimeout = "driver timeouts";
-static constexpr std::string_view kDriverLateResponse = "driver late responses";
+static constexpr std::string_view kUniqueId = "unique_id";
+static constexpr std::string_view kClockDomain = "clock_domain";
+static constexpr std::string_view kDriverTimeout = "driver_timeouts";
+static constexpr std::string_view kDriverLateResponse = "driver_late_responses";
 
-static constexpr std::string_view kRingBufferElements = "ring buffer elements";
-static constexpr std::string_view kElementId = "element id";
-static constexpr std::string_view kRunningIntervals = "Running intervals";
-static constexpr std::string_view kStartedAt = "started at";
-static constexpr std::string_view kStoppedAt = "stopped at";
-static constexpr std::string_view kSetActiveChannelsCalls = "SetActiveChannels calls";
-static constexpr std::string_view kCalledAt = "called at";
-static constexpr std::string_view kCompletedAt = "completed at";
-static constexpr std::string_view kChannelBitmask = "channel bitmask";
+static constexpr std::string_view kDaiElements = "DAI_elements";
+static constexpr std::string_view kRingBufferElements = "RingBuffer_elements";
+static constexpr std::string_view kDescription = "description";
+static constexpr std::string_view kElementId = "element_id";
 
-static constexpr std::string_view kFidlServers = "FIDL servers";
-static constexpr std::string_view kRegistryServerInstances = "RegistryServer instances";
-static constexpr std::string_view kObserverServerInstances = "ObserverServer instances";
-static constexpr std::string_view kControlCreatorServerInstances = "ControlCreatorServer instances";
-static constexpr std::string_view kControlServerInstances = "ControlServer instances";
-static constexpr std::string_view kRingBufferServerInstances = "RingBufferServer instances";
-static constexpr std::string_view kProviderServerInstances = "ProviderServer instances";
-static constexpr std::string_view kCreatedAt = "created at";
-static constexpr std::string_view kDestroyedAt = "destroyed at";
-static constexpr std::string_view kAddedDevices = "Added devices";
+static constexpr std::string_view kFormatProps = "format";
+static constexpr std::string_view kBitsPerFrame = "bits_per_slot";
+static constexpr std::string_view kBitsPerSample = "bits_per_sample";
+static constexpr std::string_view kChannelBitmask = "channel_bitmask";
+static constexpr std::string_view kChannelCount = "channel_count";
+static constexpr std::string_view kFramesPerSecond = "frames_per_second";
+static constexpr std::string_view kFrameFormat = "frame_format";
+static constexpr std::string_view kSampleFormat = "sample_format";
+
+static constexpr std::string_view kBufferProps = "buffer";
+static constexpr std::string_view kRequestedBytes = "requested_bytes";
+static constexpr std::string_view kProducerFrames = "producer_frames";
+static constexpr std::string_view kConsumerFrames = "consumer_frames";
+static constexpr std::string_view kVmoBytes = "vmo_bytes";
+
+static constexpr std::string_view kRunningIntervals = "Running_intervals";
+static constexpr std::string_view kStartedAt = "started_at";
+static constexpr std::string_view kStoppedAt = "stopped_at";
+
+static constexpr std::string_view kSetActiveChannelsCalls = "SetActiveChannels_calls";
+static constexpr std::string_view kCalledAt = "called_at";
+static constexpr std::string_view kCompletedAt = "completed_at";
+
+static constexpr std::string_view kFidlServers = "FIDL_servers";
+static constexpr std::string_view kRegistryServerInstances = "RegistryServer_instances";
+static constexpr std::string_view kObserverServerInstances = "ObserverServer_instances";
+static constexpr std::string_view kControlCreatorServerInstances = "ControlCreatorServer_instances";
+static constexpr std::string_view kControlServerInstances = "ControlServer_instances";
+static constexpr std::string_view kRingBufferServerInstances = "RingBufferServer_instances";
+static constexpr std::string_view kProviderServerInstances = "ProviderServer_instances";
+static constexpr std::string_view kCreatedAt = "created_at";
+static constexpr std::string_view kDestroyedAt = "destroyed_at";
+static constexpr std::string_view kAddedDevices = "Added_devices";
 
 //
 // These classes encapsulate the creation and update of the fuchsia Inspect data store. The parent
@@ -77,12 +94,9 @@ class SetActiveChannelsInspectInstance {
   ~SetActiveChannelsInspectInstance();
 
  private:
-  static inline constexpr std::string_view kClassName = "SetActiveChannelsInspectInstance";
+  static constexpr std::string_view kClassName = "SetActiveChannelsInspectInstance";
 
   inspect::Node set_active_channels_node_;
-  inspect::IntProperty called_at_;
-  inspect::UintProperty channel_bitmask_;
-  inspect::IntProperty completed_at_;
 };
 
 // This represents a single Start/Stop segment.
@@ -94,11 +108,9 @@ class RunningIntervalInspectInstance {
   void RecordStopTime(const zx::time& stopped_at);
 
  private:
-  static inline constexpr std::string_view kClassName = "RunningIntervalInspectInstance";
+  static constexpr std::string_view kClassName = "RunningIntervalInspectInstance";
 
   inspect::Node running_interval_node_;
-  inspect::IntProperty started_at_;
-  inspect::IntProperty stopped_at_;
 };
 
 // This represents an active instance of the audio driver RingBuffer protocol.
@@ -116,39 +128,67 @@ class RingBufferInspectInstance {
   std::shared_ptr<SetActiveChannelsInspectInstance> RecordSetActiveChannelsCall(
       uint64_t channel_bitmask, const zx::time& called_at, const zx::time& completed_at);
 
+  void RecordBuffer(uint64_t requested_bytes, uint64_t producer_frames, uint64_t consumer_frames,
+                    uint64_t vmo_size);
+  void RecordFormat(uint32_t channel_count, uint32_t frames_per_second,
+                    fuchsia_audio::SampleType sample_type);
+
  private:
-  static inline constexpr std::string_view kClassName = "RingBufferInspectInstance";
+  static constexpr std::string_view kClassName = "RingBufferInspectInstance";
 
   inspect::Node ring_buffer_instance_node_;
-  inspect::IntProperty created_at_;
-  inspect::IntProperty destroyed_at_;
 
   inspect::Node set_active_channels_calls_root_node_;
   std::vector<std::shared_ptr<SetActiveChannelsInspectInstance>> set_active_channels_calls_;
 
   inspect::Node running_intervals_root_node_;
   std::vector<std::shared_ptr<RunningIntervalInspectInstance>> running_intervals_;
+
+  inspect::Node buffer_node_;
+  inspect::Node format_node_;
 };
 
 // This represents a ring buffer element expressed in the hardware topology. Over time, it may have
 // RingBufferInspectInstance children, if a client connects to the RingBuffer API.
 class RingBufferElement {
  public:
-  RingBufferElement(inspect::Node ring_buffer_element_node, ElementId element_id);
+  RingBufferElement(inspect::Node ring_buffer_element_node, ElementId element_id,
+                    const std::optional<std::string>& element_name);
   ~RingBufferElement();
 
   inspect::Node& inspect_node() { return ring_buffer_element_node_; }
   std::shared_ptr<RingBufferInspectInstance> RecordRingBufferInstance(const zx::time& created_at);
+
   ElementId element_id() const { return element_id_; }
 
  private:
-  static inline constexpr std::string_view kClassName = "RingBufferElement";
+  static constexpr std::string_view kClassName = "RingBufferElement";
 
   inspect::Node ring_buffer_element_node_;
   ElementId element_id_;
-  inspect::UintProperty element_id_property_;
 
   std::vector<std::shared_ptr<RingBufferInspectInstance>> ring_buffer_instances_;
+};
+
+// This represents a DAI element expressed in the hardware topology.
+class DaiElement {
+ public:
+  DaiElement(inspect::Node dai_element_node, ElementId element_id,
+             const std::optional<std::string>& element_name);
+  ~DaiElement();
+
+  inspect::Node& inspect_node() { return dai_element_node_; }
+  void RecordSetDaiFormat(const zx::time& set_at,
+                          const fuchsia_hardware_audio::DaiFormat& dai_format);
+
+  ElementId element_id() const { return element_id_; }
+
+ private:
+  static constexpr std::string_view kClassName = "DaiElement";
+
+  inspect::Node dai_element_node_;
+  inspect::Node format_node_;
+  ElementId element_id_;
 };
 
 // This represents an audio driver and its device. It is created when an audio device is detected in
@@ -168,7 +208,12 @@ class DeviceInspectInstance {
                         std::optional<std::string> product,
                         std::optional<std::string> unique_instance_id,
                         std::optional<ClockDomain> clock_domain);
-  std::shared_ptr<RingBufferElement> RecordRingBufferElement(ElementId element_id);
+
+  std::shared_ptr<DaiElement> RecordDaiElement(ElementId element_id,
+                                               const std::optional<std::string>& element_name);
+
+  std::shared_ptr<RingBufferElement> RecordRingBufferElement(
+      ElementId element_id, const std::optional<std::string>& element_name);
   std::shared_ptr<RingBufferInspectInstance> RecordRingBufferInstance(ElementId element_id,
                                                                       const zx::time& created_at);
 
@@ -178,29 +223,19 @@ class DeviceInspectInstance {
   void RecordRemoval(const zx::time& removed_at);
 
  private:
-  static inline constexpr std::string_view kClassName = "DeviceInspectInstance";
+  static constexpr std::string_view kClassName = "DeviceInspectInstance";
 
   inspect::Node device_node_;
   std::string name_;
-  inspect::IntProperty added_at_;
-  inspect::StringProperty added_by_;
-  inspect::StringProperty type_;
 
-  inspect::Node ring_buffers_root_node_;
-  inspect::UintProperty token_id_;
-  inspect::BoolProperty is_input_;
-  inspect::StringProperty manufacturer_;
-  inspect::StringProperty product_;
-  inspect::StringProperty unique_instance_id_;
-  inspect::UintProperty clock_domain_;
+  inspect::Node dai_elements_root_node_;
+  inspect::Node ring_buffer_elements_root_node_;
 
   inspect::BoolProperty healthy_;
-  inspect::IntProperty failed_at_;
-  inspect::IntProperty removed_at_;
+  inspect::UintProperty count_timeout_;
+  inspect::UintProperty count_late_response_;
 
-  inspect::UintProperty timeout_count_;
-  inspect::UintProperty late_response_count_;
-
+  std::vector<std::shared_ptr<DaiElement>> dai_elements_;
   std::vector<std::shared_ptr<RingBufferElement>> ring_buffer_elements_;
 };
 
@@ -217,11 +252,9 @@ class FidlServerInspectInstance {
   inspect::Node& instance_node() { return instance_node_; }
 
  private:
-  static inline constexpr std::string_view kClassName = "FidlServerInspectInstance";
+  static constexpr std::string_view kClassName = "FidlServerInspectInstance";
 
   inspect::Node instance_node_;
-  inspect::IntProperty created_at_;
-  inspect::IntProperty destroyed_at_;
 };
 
 // We save additional information or each client Provider instance: the devices that it has added.
@@ -236,7 +269,7 @@ class ProviderInspectInstance : public FidlServerInspectInstance {
                          const zx::time& added_at);
 
  private:
-  static inline constexpr std::string_view kClassName = "ProviderInspectInstance";
+  static constexpr std::string_view kClassName = "ProviderInspectInstance";
 
   inspect::Node provider_devices_root_node_;
   std::vector<std::shared_ptr<DeviceInspectInstance>> provider_devices_;
@@ -282,14 +315,14 @@ class Inspector {
       const zx::time& created_at);
 
  private:
-  static inline constexpr std::string_view kClassName = "Inspector";
+  static constexpr std::string_view kClassName = "Inspector";
 
   static std::unique_ptr<Inspector> singleton_;
 
   std::unique_ptr<inspect::ComponentInspector> component_inspector_;
   inspect::Node& inspect_root_;
 
-  inspect::UintProperty count_devices_failed_to_connect_;
+  inspect::UintProperty count_device_failed_to_connect_;
   inspect::UintProperty count_device_watcher_failures_;
   inspect::UintProperty count_detected_unsupported_device_type_;
 

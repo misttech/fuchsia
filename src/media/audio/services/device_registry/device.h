@@ -449,7 +449,6 @@ class Device : public std::enable_shared_from_this<Device> {
   std::unordered_map<ElementId, ElementRecord> sig_proc_element_map_;
 
   std::unordered_set<ElementId> dai_ids_;
-  std::unordered_set<ElementId> volatile_dai_ids_for_iteration_;
   std::unordered_set<ElementId> ring_buffer_ids_;
   std::unordered_set<ElementId> element_ids_;
 
@@ -460,6 +459,7 @@ class Device : public std::enable_shared_from_this<Device> {
 
   bool dai_format_sets_retrieved_ = false;
   std::vector<fuchsia_audio_device::ElementDaiFormatSet> element_dai_format_sets_;
+  std::unordered_map<ElementId, std::shared_ptr<DaiElement>> dai_element_inspect_nodes_;
   std::unordered_map<ElementId, fuchsia_hardware_audio::DaiFormat> composite_dai_formats_;
 
   bool ring_buffer_format_sets_retrieved_ = false;

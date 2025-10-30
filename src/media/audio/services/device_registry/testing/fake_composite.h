@@ -44,6 +44,7 @@ class FakeComposite final
       0x0E, 0x2C, 0x4A, 0x68, 0x86, 0xA4, 0xC2, 0xE0,
   };
   static constexpr ClockDomain kDefaultClockDomain = fuchsia_hardware_audio::kClockDomainMonotonic;
+  static constexpr char kDefaultClockDomainStr[] = "0 (CLOCK_DOMAIN_MONOTONIC)";
 
   // DaiFormats and format sets
   //

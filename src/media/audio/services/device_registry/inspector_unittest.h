@@ -13,6 +13,7 @@
 
 #include "src/media/audio/services/common/fidl_thread.h"
 #include "src/media/audio/services/device_registry/adr_server_unittest_base.h"
+#include "src/media/audio/services/device_registry/common_unittest.h"
 #include "src/media/audio/services/device_registry/inspector.h"
 #include "src/media/audio/services/device_registry/testing/fake_composite.h"
 
@@ -54,6 +55,7 @@ class InspectorTest : public AudioDeviceRegistryServerTestBase {
     return h;
   }
 
+  // Use this if you don't need to preconfigure a RingBuffer before adding the device.
   std::shared_ptr<FakeComposite> CreateAndAddFakeComposite() {
     auto fake_driver = CreateFakeComposite();
     adr_service()->AddDevice(Device::Create(
@@ -80,7 +82,94 @@ class InspectorTest : public AudioDeviceRegistryServerTestBase {
     return added_device_id;
   }
 
+  void CreateControlledDevice() {
+    device_ = Device::Create(
+        adr_service(), dispatcher(), "Test composite name",
+        fuchsia_audio_device::DeviceType::kComposite,
+        fuchsia_audio_device::DriverClient::WithComposite(fake_driver()->Enable()), kClassName);
+    adr_service()->AddDevice(device());
+    RunLoopUntilIdle();
+    auto registry = CreateTestRegistryServer();
+    std::optional<TokenId> added_device_id = WaitForAddedDeviceTokenId(registry->client());
+    ASSERT_EQ(RegistryServer::count(), 1u);
+    ASSERT_TRUE(added_device_id.has_value());
+    auto [presence, device_to_control] = adr_service()->FindDeviceByTokenId(*added_device_id);
+    EXPECT_EQ(presence, AudioDeviceRegistry::DevicePresence::Active);
+    ASSERT_EQ(device_, device_to_control);
+    control_ = CreateTestControlServer(device_);
+    RunLoopUntilIdle();
+    ASSERT_EQ(ControlServer::count(), 1u);
+  }
+
+  // RingBuffer testcase setup, used in a number of RingBuffer-related unittests
+  // Must be saved: fake_driver/device/control/ring_buffer_client/ring_buffer
+  void AddDeviceAndCreateRingBuffer() {
+    fake_driver_ = CreateFakeComposite();
+    element_id_ = FakeComposite::kMaxRingBufferElementId;
+    fake_driver()->EnableActiveChannelsSupport(element_id_);
+    fake_driver()->ReserveRingBufferSize(element_id_, 8192);
+
+    CreateControlledDevice();
+
+    auto [ring_buffer_client_end, ring_buffer_server_end] =
+        CreateNaturalAsyncClientOrDie<fuchsia_audio_device::RingBuffer>();
+
+    ring_buffer_client_ = fidl::Client<fuchsia_audio_device::RingBuffer>(
+        std::move(ring_buffer_client_end), dispatcher(), ring_buffer_fidl_handler().get());
+    bool received_callback = false;
+
+    rb_format_ = SafeRingBufferFormatFromElementRingBufferFormatSets(
+        element_id_, device()->ring_buffer_format_sets());
+    requested_ring_buffer_bytes_ = 2000;
+    control()
+        ->client()
+        ->CreateRingBuffer({{
+            .element_id = element_id_,
+            .options = fuchsia_audio_device::RingBufferOptions{{
+                .format = rb_format_,
+                .ring_buffer_min_bytes = requested_ring_buffer_bytes_,
+            }},
+            .ring_buffer_server = std::move(ring_buffer_server_end),
+        }})
+        .Then([&received_callback,
+               this](fidl::Result<fuchsia_audio_device::Control::CreateRingBuffer>& result) {
+          EXPECT_TRUE(result.is_ok()) << result.error_value();
+          ring_buffer_ = std::move(result->ring_buffer());
+          received_callback = true;
+        });
+    RunLoopUntilIdle();
+    EXPECT_TRUE(received_callback);
+    EXPECT_TRUE(ring_buffer_client_.is_valid());
+  }
+
+  std::shared_ptr<Device>& device() { return device_; }
+  std::shared_ptr<FakeComposite>& fake_driver() { return fake_driver_; }
+  void set_fake_driver(std::shared_ptr<FakeComposite> driver) { fake_driver_ = std::move(driver); }
+
+  ElementId element_id() const { return element_id_; }
+  std::unique_ptr<TestServerAndNaturalAsyncClient<ControlServer>>& control() { return control_; }
+
+  fuchsia_audio::Format rb_format() const { return rb_format_; }
+  uint32_t requested_ring_buffer_bytes() const { return requested_ring_buffer_bytes_; }
+
+  fidl::Client<fuchsia_audio_device::RingBuffer>& ring_buffer_client() {
+    return ring_buffer_client_;
+  }
+  std::optional<fuchsia_audio::RingBuffer>& ring_buffer() { return ring_buffer_; }
+
  private:
+  std::shared_ptr<FakeComposite> fake_driver_;
+  std::shared_ptr<Device> device_;
+
+  ElementId element_id_;
+  std::unique_ptr<TestServerAndNaturalAsyncClient<ControlServer>> control_;
+
+  fuchsia_audio::Format rb_format_;
+  uint32_t requested_ring_buffer_bytes_;
+
+  fidl::Client<fuchsia_audio_device::RingBuffer> ring_buffer_client_;
+  std::optional<fuchsia_audio::RingBuffer> ring_buffer_;
+
   std::shared_ptr<FidlThread> server_thread_;
 };
 

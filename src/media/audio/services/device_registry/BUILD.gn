@@ -172,8 +172,6 @@ source_set("device_registry_lib") {
 
   public_deps = [
     ":common",
-    "//sdk/fidl/fuchsia.audio.device:fuchsia.audio.device_cpp",
-    "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/inspect/component/cpp",
     "//src/lib/fsl",
@@ -186,9 +184,7 @@ source_set("device_registry_lib") {
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fdio",
     "//sdk/lib/sys/cpp",
-    "//sdk/lib/syslog/cpp",
     "//zircon/system/public",
-    "//zircon/system/ulib/zx",
   ]
 }
 

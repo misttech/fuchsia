@@ -68,7 +68,8 @@ TEST_F(InspectorWarningTest, FailedDevice) {
   EXPECT_EQ(
       device_node->node().get_property<StringPropertyValue>(std::string(kDeviceType))->value(),
       "CODEC");
-  EXPECT_TRUE(device_node->children().empty());
+  // Inspect still indicates the DAIs and/or RingBuffers of a failed device.
+  EXPECT_FALSE(device_node->children().empty());
 }
 
 // The relevant fields are `failed at` and `removed at` -- located at // root/Devices/[device name]/
@@ -114,7 +115,8 @@ TEST_F(InspectorWarningTest, FailedThenRemovedDevice) {
   EXPECT_GT(device_node->node().get_property<IntPropertyValue>(std::string(kRemovedAt))->value(),
             before_removed.get());
   EXPECT_FALSE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy))->value());
-  EXPECT_TRUE(device_node->children().empty());
+  // Inspect still indicates the DAIs and/or RingBuffers for a failed+removed device.
+  EXPECT_FALSE(device_node->children().empty());
 }
 
 }  // namespace media_audio
